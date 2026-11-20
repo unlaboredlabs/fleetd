@@ -5,8 +5,7 @@ import type { Database } from "bun:sqlite";
 import type { Grant, Role } from "../shared/contracts.ts";
 import { dirname } from "node:path";
 import { NAMELESS } from "../hub/auth/nodes.ts";
-import { RUNNER_CODE } from "../hub/auth/node_rules.ts";
-import { RUNNER_ID, runnerRefused } from "../shared/sandbox.ts";
+import { HOSTED_ID, hostedIdRefused } from "../hub/hosted_gone/index.ts";
 import { HubDb } from "../hub/store/db.ts";
 import { isLiveHubHome, refuseLiveHubWrite } from "./common.ts";
 
@@ -181,10 +180,9 @@ export function keyWorks(db: HubDb, key: string): boolean {
 // ---- enroll codes ----
 
 /** One-time, valid for 15 minutes; it replaces the machine's open one. With no machine, it enrolls a node under the
- * name it asks for, made unique (hub/auth/nodes.ts), and replaces none. Never one for the hub's own runner: only the
- * hub mints that (NodeKeys.createRunnerEnrollToken). */
+ * name it asks for, made unique (hub/auth/nodes.ts), and replaces none. Never one for HOSTED_ID, which no computer takes. */
 export function createEnrollToken(db: HubDb, machineId: string | undefined): { token: string; expiresAt: string } {
-  if (machineId === RUNNER_ID) throw new Error(runnerRefused("nothing joins as them."));
+  if (machineId === HOSTED_ID) throw new Error(hostedIdRefused("nothing joins as it."));
   writable(db, "Making an enroll code");
   const now = Date.now();
   const expires = now + ENROLL_TTL_MS;
@@ -213,7 +211,7 @@ export function openEnrollTokens(db: HubDb): OpenEnrollCode[] {
     .all(ENROLL_CODE_ID_LEN, Date.now())
     .map((r) => ({
       id: r.id,
-      machineId: r.machine_id === RUNNER_CODE ? RUNNER_ID : r.machine_id,
+      machineId: r.machine_id,
       createdAt: isoMs(r.expires_ms - ENROLL_TTL_MS),
       expiresAt: isoMs(r.expires_ms),
     }));
@@ -228,7 +226,7 @@ export function revokeEnrollToken(db: HubDb, id: string): string | undefined {
        AND used_ms IS NULL AND expires_ms > ?3 RETURNING machine_id`,
     )
     .get(ENROLL_CODE_ID_LEN, id, Date.now());
-  return row?.machine_id === RUNNER_CODE ? RUNNER_ID : row?.machine_id;
+  return row?.machine_id;
 }
 
 // ---- people ----

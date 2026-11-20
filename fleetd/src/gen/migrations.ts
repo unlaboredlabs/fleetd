@@ -179,6 +179,7 @@ import m175 from "../hub/store/migrations/202611190400_sandbox_where.sql" with {
 import m176 from "../hub/store/migrations/202611190500_e2b_daytona_removed.sql" with { type: "text" };
 import m177 from "../hub/store/migrations/202611192300_agent_notes.sql" with { type: "text" };
 import m178 from "../hub/store/migrations/202611200100_project_ask_reply.sql" with { type: "text" };
+import m179 from "../hub/store/migrations/202611202100_own_machines_only.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -360,4 +361,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611190500_e2b_daytona_removed", sql: m176 },
   { name: "202611192300_agent_notes", sql: m177 },
   { name: "202611200100_project_ask_reply", sql: m178 },
+  { name: "202611202100_own_machines_only", sql: m179 },
 ];

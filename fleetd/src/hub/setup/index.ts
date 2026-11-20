@@ -120,9 +120,8 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       test: "Reach the hub at its address",
       ways: [way(undefined, ["hub/reachable", "hub/https"])],
     }),
-    // Where agents run (D558): a computer of the team's, or a hosted sandbox provider on its own account. Either is
-    // enough; with both, a computer's bots use its own slots first, then the providers.
-    step("machines", "hub", "Where agents run", "A computer of yours, or sandboxes at boat.dev on your own account.", { kind: "required" }, {
+    // Where agents run (D594): a computer of the team's, directly on it.
+    step("machines", "hub", "Where agents run", "A computer of yours: agents run on it directly.", { kind: "required" }, {
       parts: [
         part(
           "A computer",
@@ -139,14 +138,6 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           ],
         ),
         part(
-          "Or hosted sandboxes",
-          "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your " +
-            "device. Each agent runs in a sandbox of its own there, with its browser, Linux desktop and Android, billed to " +
-            "your account while it runs.",
-          [link("boat.dev › API keys", "https://docs.boat.dev/api-keys")],
-          [value("Key name", name)],
-        ),
-        part(
           "Android screens (optional)",
           "Android emulators run on any Linux machine with KVM: the first one installs itself. " +
             "iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
@@ -155,24 +146,8 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
       ],
       place: "machines",
-      test: "Read each computer's checks, and list fleetd's sandboxes at each connected provider",
-      ways: [way("a computer", ["*/online"]), way("hosted sandboxes", ["hub/sandboxes"])],
-    }),
-    // Optional (D573), right before Claude: hosted agents reach the team's tailnet (a Claude endpoint, MCP servers)
-    // through one device the hub runs. One click and a sign-in at Tailscale; nothing to paste.
-    step("tailscale", "accounts", "Tailscale", "Hosted agents reach your tailnet's addresses and names through one device the hub runs.", { kind: "optional" }, {
-      parts: [
-        part(
-          "Connect, then sign in to Tailscale",
-          "Connect opens Tailscale's sign-in page: sign in and approve the device. One device for the whole team, never " +
-            "one per agent. Skip it if nothing your agents use is on a tailnet.",
-          [link("Tailscale admin", "https://login.tailscale.com/admin/machines")],
-          [command("Or on the hub, from a terminal", "fleetd init --step tailscale")],
-        ),
-      ],
-      place: "tailscale",
-      test: "Read the hub's Tailscale device",
-      ways: [way(undefined, ["hub/tailnet"])],
+      test: "Read each computer's checks",
+      ways: [way(undefined, ["*/online"])],
     }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
     step("claude", "accounts", "Claude", "Agents think with Claude: the hub's API key, your subscription, or each machine's login.", { kind: "required" }, {
@@ -187,8 +162,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             plain(
               "Where",
               "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init " +
-                "--step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's; one on your " +
-                "tailnet reaches hosted agents once Tailscale is connected.",
+                "--step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's.",
             ),
           ],
         ),

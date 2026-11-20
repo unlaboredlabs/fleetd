@@ -33,14 +33,14 @@ describe("the computer image's line", () => {
   const H = 3_600_000;
 
   it("has no row with no commands, on a machine that can't build one, nor from a hub too old to say", () => {
-    expect(imageLine({ state: "none", where: "vm" }, 0, NOW)).toBeNull();
-    // No VMs and no provider: the hub says none, kept nowhere, and there is nothing to rebuild.
+    expect(imageLine({ state: "none", where: "boat" }, 0, NOW)).toBeNull();
+    // A machine that builds no image: the hub says none, kept nowhere, and there is nothing to rebuild.
     expect(imageLine({ state: "none" }, 2, NOW)).toBeNull();
     expect(imageLine(undefined, 2, NOW)).toBeNull();
   });
 
   it("says when it was built and its size, or that it isn't yet", () => {
-    expect(imageLine({ state: "none", where: "vm" }, 2, NOW)).toEqual({ text: "Not built yet", tone: "quiet" });
+    expect(imageLine({ state: "none", where: "boat" }, 2, NOW)).toEqual({ text: "Not built yet", tone: "quiet" });
     expect(imageLine({ state: "ready", builtAt: ago(3 * H), bytes: 1_181_116_006 }, 2, NOW)).toEqual({ text: "Built 3h ago · 1.1 GB", tone: "quiet" });
     expect(imageLine({ state: "ready", builtAt: ago(10_000), bytes: 640 * 1024 * 1024 }, 2, NOW)?.text).toBe("Built just now · 640 MB");
     // A provider that doesn't say its size.
@@ -69,14 +69,14 @@ describe("Runs on", () => {
   });
 
   const choices = [
-    { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
+    { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" },
     { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev's key failed its last test: refused" },
   ];
 
   it("is Automatic, then each of the hub's choices in its order, provider and size together", () => {
     expect(pickOptions({ computers: choices })).toEqual([
       { value: AUTO, label: "Automatic" },
-      { value: "vm:2:4", label: "Local VM · 2 vCPU / 4 GB", pick: { kind: "vm", cpu: 2, memGb: 4 } },
+      { value: "boat:2:4", label: "boat.dev · 2 vCPU / 4 GB", pick: { kind: "boat", cpu: 2, memGb: 4 } },
       {
         value: "boat:4:8",
         label: "boat.dev · 4 vCPU / 8 GB",
@@ -90,16 +90,15 @@ describe("Runs on", () => {
   });
 
   it("says a reason the options side by side share once, under the last of them, with its fix", () => {
-    const why = "devbox runs no VMs now: AppArmor keeps this user from making user namespaces.";
-    const fix = "sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0";
-    const vm = (cpu: number, memGb: number) => ({ kind: "vm", cpu, memGb, label: `Local VM · ${cpu} vCPU / ${memGb} GB`, unavailable: why, fix });
-    const options = pickOptions({ computers: [vm(2, 4), vm(4, 8), vm(8, 16), { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" }] });
+    const why = "boat.dev's key failed its last test: refused";
+    const fix = "make a new key in boat.dev's dashboard";
+    const boat = (cpu: number, memGb: number) => ({ kind: "boat", cpu, memGb, label: `boat.dev · ${cpu} vCPU / ${memGb} GB`, unavailable: why, fix });
+    const options = pickOptions({ computers: [boat(2, 4), boat(4, 8), boat(8, 16)] });
     expect(options?.map((o) => [o.label, o.why !== undefined, o.note])).toEqual([
       ["Automatic", false, undefined],
-      ["Local VM · 2 vCPU / 4 GB", true, undefined],
-      ["Local VM · 4 vCPU / 8 GB", true, undefined],
-      ["Local VM · 8 vCPU / 16 GB", true, { why, fix }],
-      ["boat.dev · 2 vCPU / 4 GB", false, undefined],
+      ["boat.dev · 2 vCPU / 4 GB", true, undefined],
+      ["boat.dev · 4 vCPU / 8 GB", true, undefined],
+      ["boat.dev · 8 vCPU / 16 GB", true, { why, fix }],
     ]);
   });
 

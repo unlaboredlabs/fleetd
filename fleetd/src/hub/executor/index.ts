@@ -181,8 +181,6 @@ export class Executors {
     steer?: SteerSink;
     clone?: CloneSink;
     thread?: ThreadSink;
-    /** A checkout's computer image changed on the machine (node/place/image.ts). */
-    image?: (machineId: MachineId, projectId: string) => void;
     /** The time area's cursor of the node's spans outbox, sent with each subscribe. */
     spansAfter?: (machineId: MachineId) => number | undefined;
   } = {};
@@ -506,7 +504,6 @@ export class Executors {
       const { type: _type, ...receipt } = event;
       this.sinks.steer?.(machineId, receipt);
     }
-    if (event.type === "image" && !baseline) this.sinks.image?.(machineId, event.projectId);
     const slot = this.machines.get(machineId);
     if (!slot) return;
     const ids =

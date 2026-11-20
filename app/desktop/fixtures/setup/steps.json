@@ -66,22 +66,6 @@
           ]
         },
         {
-          "links": [
-            {
-              "label": "boat.dev › API keys",
-              "url": "https://docs.boat.dev/api-keys"
-            }
-          ],
-          "note": "Make an API key at the provider and paste it in Settings › Hub › Machines › Providers; the app seals it on your device. Each agent runs in a sandbox of its own there, with its browser, Linux desktop and Android, billed to your account while it runs.",
-          "title": "Or hosted sandboxes",
-          "values": [
-            {
-              "label": "Key name",
-              "value": "fleetd on devbox"
-            }
-          ]
-        },
-        {
           "links": [],
           "note": "Android emulators run on any Linux machine with KVM: the first one installs itself. iOS simulators are the agents' Mac's: A Mac for agents sets it up.",
           "title": "Android screens (optional)",
@@ -90,62 +74,16 @@
       ],
       "place": "machines",
       "status": "todo",
-      "test": "Read each computer's checks, and list fleetd's sandboxes at each connected provider",
+      "test": "Read each computer's checks",
       "title": "Where agents run",
       "ways": [
         {
           "checks": [
             "*/online"
-          ],
-          "label": "a computer"
-        },
-        {
-          "checks": [
-            "hub/sandboxes"
-          ],
-          "label": "hosted sandboxes"
-        }
-      ],
-      "why": "A computer of yours, or sandboxes at boat.dev on your own account."
-    },
-    {
-      "fields": [],
-      "group": "accounts",
-      "id": "tailscale",
-      "need": {
-        "kind": "optional"
-      },
-      "parts": [
-        {
-          "links": [
-            {
-              "label": "Tailscale admin",
-              "url": "https://login.tailscale.com/admin/machines"
-            }
-          ],
-          "note": "Connect opens Tailscale's sign-in page: sign in and approve the device. One device for the whole team, never one per agent. Skip it if nothing your agents use is on a tailnet.",
-          "title": "Connect, then sign in to Tailscale",
-          "values": [
-            {
-              "command": true,
-              "label": "Or on the hub, from a terminal",
-              "value": "fleetd init --step tailscale"
-            }
           ]
         }
       ],
-      "place": "tailscale",
-      "status": "todo",
-      "test": "Read the hub's Tailscale device",
-      "title": "Tailscale",
-      "ways": [
-        {
-          "checks": [
-            "hub/tailnet"
-          ]
-        }
-      ],
-      "why": "Hosted agents reach your tailnet's addresses and names through one device the hub runs."
+      "why": "A computer of yours: agents run on it directly."
     },
     {
       "fields": [],
@@ -172,7 +110,7 @@
             {
               "label": "Where",
               "plain": true,
-              "value": "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init --step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's; one on your tailnet reaches hosted agents once Tailscale is connected."
+              "value": "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init --step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's."
             }
           ]
         },
@@ -512,8 +450,7 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "said": "Dev's 1Password token reads one vault, fleetd.",
@@ -521,10 +458,6 @@
         },
         "people": {
           "said": "Ada has joined.",
-          "status": "done"
-        },
-        "tailscale": {
-          "said": "Connected to acme.com as fleetd-devbox.",
           "status": "done"
         }
       },
@@ -550,8 +483,7 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "said": "Dev's 1Password token reads one vault, fleetd.",
@@ -559,10 +491,6 @@
         },
         "people": {
           "said": "Ada has joined.",
-          "status": "done"
-        },
-        "tailscale": {
-          "said": "Connected to acme.com as fleetd-devbox.",
           "status": "done"
         }
       }
@@ -593,16 +521,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       },
@@ -632,16 +556,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       }
@@ -667,16 +587,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       },
@@ -701,16 +617,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       }
@@ -742,16 +654,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       },
@@ -782,16 +690,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       }
@@ -822,16 +726,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       },
@@ -856,16 +756,12 @@
         },
         "machines": {
           "said": "devbox is online.",
-          "status": "done",
-          "way": "a computer"
+          "status": "done"
         },
         "onepassword": {
           "status": "todo"
         },
         "people": {
-          "status": "todo"
-        },
-        "tailscale": {
           "status": "todo"
         }
       }
@@ -892,8 +788,7 @@
       },
       "machines": {
         "said": "devbox is online.",
-        "status": "done",
-        "way": "a computer"
+        "status": "done"
       },
       "onepassword": {
         "failing": false,
@@ -907,9 +802,6 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
-      },
-      "tailscale": {
-        "status": "todo"
       }
     },
     "requiredLeft": 0,
@@ -933,8 +825,7 @@
       },
       "machines": {
         "said": "devbox is online.",
-        "status": "done",
-        "way": "a computer"
+        "status": "done"
       },
       "onepassword": {
         "failing": false,
@@ -948,9 +839,6 @@
       "people": {
         "said": "Alice and Bob have joined.",
         "status": "done"
-      },
-      "tailscale": {
-        "status": "todo"
       }
     }
   }

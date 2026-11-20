@@ -87,32 +87,6 @@ test("a bot git can't fetch fails the check with the login fix", () => {
   expect(yesterday.message).toContain("as of 10-25 06:00 UTC");
 });
 
-test("the VM row says where agents run: in VMs, off by choice, or the reason with its fix, never an unexplained off", () => {
-  const inVms = c.vms("devbox", false, { kind: "microvm" })!;
-  expect([inVms.id, inVms.status, inVms.message]).toEqual(["devbox/vm", "ok", "Agents on devbox run in VMs of their own."]);
-  const off = c.vms("devbox", false, { kind: "process", why: `turned off on this machine (node.json "sandbox": "process")`, expected: true })!;
-  expect([off.status, off.fix]).toEqual(["ok", undefined]);
-  expect(off.message).toBe(`Agents on devbox run as plain processes, not in VMs: turned off on this machine (node.json "sandbox": "process")`);
-  const noKvm = c.vms("devbox", false, { kind: "process", why: "devuser can't open /dev/kvm read-write.", fix: "sudo usermod -aG kvm devuser" })!;
-  expect([noKvm.status, noKvm.fix?.command, noKvm.message]).toEqual([
-    "warn",
-    "sudo usermod -aG kvm devuser",
-    "Agents on devbox run as plain processes, not in VMs: devuser can't open /dev/kvm read-write.",
-  ]);
-  // A reason with no command still says itself, and warns.
-  const noDns = c.vms("devbox", false, { kind: "process", why: "No DNS server for VMs." })!;
-  expect([noDns.status, noDns.fix, noDns.message.endsWith("No DNS server for VMs.")]).toEqual(["warn", undefined, true]);
-  // In VMs, but some agents not (a machine signed in with `claude login`): it warns, with which and the fix.
-  const login = c.vms("devbox", false, { kind: "microvm", why: "this machine signs in to Claude with its own login, so agents whose bot has no Claude account run as plain processes", fix: "claude setup-token" })!;
-  expect([login.status, login.fix?.command, login.message]).toEqual([
-    "warn",
-    "claude setup-token",
-    "Agents on devbox run in VMs of their own, but this machine signs in to Claude with its own login, so agents whose bot has no Claude account run as plain processes",
-  ]);
-  expect(c.vms("devbox", true, { kind: "microvm" })).toBeUndefined();
-  expect(c.vms("devbox", false, undefined)).toBeUndefined();
-});
-
 test("screens fail with the fix a person runs, and say nothing where they are off or offline", () => {
   const broken = { state: "unavailable", message: "devuser may not use /dev/kvm.", fix: "sudo usermod -aG kvm devuser" };
   const entry = c.androidSessions("devbox", false, broken)!;
@@ -149,8 +123,6 @@ test("setup checks are there only once their step is set up", () => {
     githubApp: { appId: 1, slug: "fleetd-on-devbox", name: "fleetd on devbox", clientId: "Iv23", owner: "acme", htmlUrl: "", settingsUrl: "", createdAt: "2026-10-19T09:00:00.000Z" },
     onepassword: [["Sam"]],
     vault: { mode: "file", path: "/home/dev/.config/fleetd/vault.key", locked: false, unsafe: [], recoverySaved: true },
-    sandboxes: [["boat.dev", { at: "2026-10-19T09:00:00.000Z", ok: true }]],
-    tailnet: { status: "connected", tailnet: "acme.com" },
   });
   expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });
@@ -604,8 +576,7 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   cleanup = t.done;
   const s = hubSources(t.hub);
   expect(s.machines()).toEqual([]);
-  // Tailscale is off on a fresh hub: there, and no check for it.
-  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [], sandboxes: [], tailnet: expect.objectContaining({ status: "off" }) });
+  expect(s.setupFacts()).toEqual({ joined: [], onepassword: [] });
   expect(s.reposWithoutCi()).toEqual([]);
   expect(s.bases("lab-a")).toEqual([]);
   expect(s.sameComputer("lab-a")).toEqual([]);

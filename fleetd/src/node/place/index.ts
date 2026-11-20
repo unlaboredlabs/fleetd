@@ -1,28 +1,23 @@
 // Where an agent's session runs: a `Place`. The node starts, adopts, stops and ends a session's host, runs its setup
-// commands and reads its chat files through the session's place, never by host pids or paths of its own. Three kinds:
+// commands and reads its chat files through the session's place, never by host pids or paths of its own. Two kinds:
 // - `process` (./process.ts): the session host as a detached process on this machine;
-// - `microvm` (./microvm.ts): the session host in a VM of its own, the default for a task's agent wherever the machine
-//   can run one. It records its box in the session's host dir (`box.json`), which `placeAt` reads back;
-// - `hosted` (./hosted.ts): the session host in a box of the team's own hosted provider, when the hub's slot board
-//   placed the session there. Its record is `place.json`, which `placeAt` reads first.
-import { existsSync, rmSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+// - `hosted` (./hosted.ts): the session host in a box of a hosted provider, when the hub's slot board placed the
+//   session there, and every session on a hosted runner. Its record is `place.json`, which `placeAt` reads first.
+import { join } from "node:path";
 import type { ConfinedRun, RunOutcome } from "../cmd/index.ts";
 import type { Image } from "../actions/image.ts";
 import { LaunchError, sweep as sweepHosts, type HostLink, type Launch } from "../runner/host.ts";
-import { boxFile, destroyBox } from "./box_record.ts";
-import type { MicroVm, PlaceFor as MicroVmFor } from "./microvm.ts";
-import { notOffered, sizeText, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
+import type { SessionRole } from "../../shared/sessions.ts";
+import type { ProviderId, Size } from "../../sandbox/providers/index.ts";
 import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
 import type { Box } from "../sandbox/box.ts";
-import type { View } from "./view.ts";
 import { processPlace } from "./process.ts";
-import { unprovision } from "./provision.ts";
 
-export type PlaceKind = "process" | "microvm" | "hosted";
+export type PlaceKind = "process" | "hosted";
 
-/** The session a place is picked for (./microvm.ts), and where the hub placed it: `hosted` names the provider. */
-export type PlaceFor = MicroVmFor & { hosted?: ProviderId };
+/** The session a place is picked for, and where the hub placed it: `hosted` names the provider, `size` the bot's
+ * pick of its box's size. */
+export type PlaceFor = { sessionId: string; dir: string; role: SessionRole; account?: boolean; size?: Size; hosted?: ProviderId };
 
 /** Where one agent's session runs. Each session picks one at launch (`pick`); what it left is found by `placeAt`. */
 export interface Place {
@@ -41,33 +36,24 @@ export interface Place {
   run(r: ConfinedRun): Promise<RunOutcome>;
   /** A piece of the image or chat file at `path` in the session's working directory `root` (actions/image.ts). */
   read(root: string, path: string, offset: number, file: boolean): Promise<Image>;
-  /** A local VM's: whether the session's box, booted now, runs over its bot's computer image (./image.ts). */
-  fromImage?(r: { cwd: string; env: Record<string, string | undefined> }): Promise<boolean>;
 }
 
 /** The dir a session's host keeps its registration and socket in. */
 export const hostDir = (home: string, sessionId: string) => join(home, "hosts", sessionId);
 
-let vm: MicroVm | undefined;
+/** Whether session `session` runs in a hosted box: what runs on this machine for it (a program the Linux desktop
+ * launches) would run outside that box. */
+export const inBox = (session: string): boolean => hasBox(session);
 
-/** The node's VMs (none: every session runs as a process). */
-export const useVm = (m: MicroVm | undefined) => void (vm = m);
-export const currentVm = () => vm;
-
-/** Whether session `session` runs in a box, hosted or this node's VM: what runs on this machine for it (a program the
- * Linux desktop launches) would run outside that box. */
-export const inBox = (session: string): boolean => hasBox(session) || (vm?.holds(session) ?? false);
-
-/** Session `session`'s box once it is up, and what of this machine's files it shows (none for a hosted box, which
- * shares none): where its browser's connections go out, and what its paths are checked against (../browser/egress.ts). */
-export const boxOf = (session: string): { box: Box; view?: View } | undefined => {
+/** Session `session`'s box once it is up: where its browser and screens run (box_screens.ts). */
+export const boxOf = (session: string): { box: Box } | undefined => {
   const hosted = hostedBox(session);
-  return hosted ? { box: hosted } : vm?.boxOf(session);
+  return hosted ? { box: hosted } : undefined;
 };
 
-/** What the Linux desktop says to a VM's agent asking it to launch a program. */
-export const VM_NO_DESKTOP_LAUNCH =
-  "This agent runs in a VM of its own, and the Linux desktop runs on this machine outside it, so it can't launch programs for it: one started there would run outside the VM. Say in your result that the desktop check was skipped.";
+/** What the Linux desktop says to a hosted agent asking it to launch a program on this machine. */
+export const BOX_NO_DESKTOP_LAUNCH =
+  "This agent runs in a hosted sandbox, and the Linux desktop runs on this machine outside it, so it can't launch programs for it: one started there would run outside the sandbox. Say in your result that the desktop check was skipped.";
 
 let runner: (() => ProviderId | undefined) | undefined;
 
@@ -82,74 +68,29 @@ export const runnerProvider = (): ProviderId | undefined => runner?.();
 export const RUNNER_NO_PROVIDER =
   "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects boat.dev in Settings › Hub › Machines";
 
-/** A place a session never starts in, saying why: the runner's for a session no provider takes, or a Local VM's
- * picked size on a machine that can't boot one now. */
-const refused = (why: string): Place => ({
+/** The place the runner gives a session no provider takes: it never starts, and says why. */
+const noPlace: Place = {
   ...processPlace,
   start: async () => {
-    throw new LaunchError(why);
+    throw new LaunchError(RUNNER_NO_PROVIDER);
   },
-  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: why }),
-});
-const noPlace = refused(RUNNER_NO_PROVIDER);
-
-/** Why a task's agent whose bot picked a Local VM of `size` can't have one here now; undefined when it can. Never a
- * plain process or another size instead: what the bot picked is what runs. */
-export function vmRefusal(s: PlaceFor & { size: Size }): string | undefined {
-  const picked = `its bot's computer is a Local VM · ${sizeText(s.size)}`;
-  const not = notOffered("vm", s.size);
-  if (not) return `${picked}, which isn't a size a Local VM comes in (${not}): pick another on the bot's Computer page`;
-  const st = vm?.status();
-  if (!vm || !st) return `${picked}, and this machine runs no VMs`;
-  if (st.kind !== "microvm") return `${picked}, and this machine runs agents as plain processes now: ${st.why}`;
-  if (!vm.wants(s)) return `${picked}, and ${st.why ?? "this machine's VMs take only agents on a Claude account of their bot's"}`;
-  return undefined;
-}
+  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: RUNNER_NO_PROVIDER }),
+};
 
 /** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it
- * in, else a task's agent in a VM where the machine can run one, else a process. On the hub's runner, always a box. */
+ * in, else this machine, as a process. On the hub's runner, always a box. */
 export const pick = (s?: PlaceFor): Place => {
   const hosted = s?.hosted ?? runner?.();
   if (s && hosted) return hostedPlace(hosted, s.sessionId, s.dir, s.size);
-  if (runner) return noPlace;
-  // A task's agent whose bot picked a Local VM's size: in one of exactly that, or not at all.
-  if (s?.size && s.role === "worker") {
-    const why = vmRefusal({ ...s, size: s.size });
-    return why ? refused(why) : vm!.bound(s);
-  }
-  return s && vm?.wants(s) && vm.status().kind === "microvm" ? vm.bound(s) : processPlace;
+  return runner ? noPlace : processPlace;
 };
 
-/** A box whose node has no VMs now (turned off since it started): it can still be ended, its dir with it. */
-const strayBox: Place = {
-  ...processPlace,
-  kind: "microvm",
-  adopt: async () => undefined,
-  async end(dir) {
-    const ended = (await destroyBox(dir)) + (await processPlace.end(dir));
-    rmSync(dir, { recursive: true, force: true });
-    // What the box was given (its home): the node's home is the hosts dir's parent.
-    unprovision(dirname(dirname(dir)), basename(dir));
-    return ended;
-  },
-};
-
-/** The place the session whose host dir is `dir` was started in. */
+/** The place the session whose host dir is `dir` was started in. A box a local VM left there (./left_vm.ts) is ended
+ * by the process place's stop. */
 export const placeAt = (dir: string): Place => {
   const hosted = readRecord(dir);
-  if (hosted) return hostedPlace(hosted.provider, hosted.session, dir);
-  if (!existsSync(boxFile(dir))) return processPlace;
-  if (!vm) return strayBox;
-  return vm.bound({ sessionId: dir.split("/").at(-1)!, dir, role: "worker" });
+  return hosted ? hostedPlace(hosted.provider, hosted.session, dir) : processPlace;
 };
-
-/** Whether the session whose host dir is `dir`, with `runs`, leaves its VM now: it runs in one on a machine whose next
- * start of it wouldn't (VMs turned off, or its last VM failed), and no run of it is under way, which finishes in its
- * box. Its claude then goes before the next turn, which starts where `pick` says. */
-export const leavesBox = (dir: string, runs: { status: string }[], account = false): boolean =>
-  !runs.some((r) => r.status === "running" || r.status === "waiting") &&
-  placeAt(dir).kind === "microvm" &&
-  pick({ sessionId: dir.split("/").at(-1)!, dir, role: "worker", account }).kind !== "microvm";
 
 /** Stops every session's host in `hosts` but those of `keep`, and removes their dirs. How many were still running. */
 export const sweep = (hosts: string, keep: Set<string>): Promise<number> => sweepHosts(hosts, keep);

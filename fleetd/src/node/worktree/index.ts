@@ -172,7 +172,7 @@ const REMOVE = ["worktree", "remove", "--force", "--force"];
 
 /**
  * Locks the worktree at `path` for as long as its session lives, so no `git worktree prune` drops its record in the
- * repo's git dir. One run where the worktree's folder isn't seen (an agent's VM sees the shared git dir and its own
+ * repo's git dir. One run where the worktree's folder isn't seen (an agent's box sees the shared git dir and its own
  * worktree only) takes every other worktree for deleted and prunes it, and an agent whose record is gone can't use git
  * at all. A worktree already locked, or none (the repo's own checkout), is left as it is.
  */

@@ -1,6 +1,9 @@
 // Every MCP tool's least role and the module that registers it. typecheck fails while a tool in the contracts' ToolMap
-// has no line here.
+// has no line here. A tool only fleetd's cloud serves (CLOUD: hosted sandboxes, their tailnet, computer images) keeps
+// the module it had, which fleetd cloud's port map names, and isn't registered here: this hub answers that it has no
+// such tool, which is how the apps know to show none of it.
 import type { Role, ToolMap } from "../../shared/contracts.ts";
+
 
 /** Each MCP tool: the least role it needs and the module that serves it. */
 export const TOOLS = {
@@ -30,10 +33,10 @@ export const TOOLS = {
   project_signins_forget: { scope: "operate", module: "src/hub/project_lead" },
   project_purchases: { scope: "read", module: "src/hub/project_lead" },
   project_card_set: { scope: "operate", module: "src/hub/project_lead" },
+  project_image_rebuild: { scope: "operate", module: "src/hub/projects" },
   project_settings_get: { scope: "read", module: "src/hub/projects" },
   project_settings_set: { scope: "operate", module: "src/hub/projects" },
   project_env_set: { scope: "operate", module: "src/hub/projects" },
-  project_image_rebuild: { scope: "operate", module: "src/hub/projects" },
   mcp_servers_get: { scope: "read", module: "src/hub/mcp_servers" },
   mcp_server_set: { scope: "operate", module: "src/hub/mcp_servers" },
   mcp_server_remove: { scope: "operate", module: "src/hub/mcp_servers" },
@@ -218,3 +221,17 @@ export const TOOLS = {
 } as const satisfies { [K in keyof ToolMap]: { scope: Role; module: string } };
 
 export type ToolName = keyof typeof TOOLS;
+
+/** The tools only fleetd's cloud serves: a self-hosted hub runs no hosted sandboxes, gateway or computer images. */
+export const CLOUD: ReadonlySet<ToolName> = new Set<ToolName>([
+  "sandbox_get",
+  "sandbox_connect",
+  "sandbox_set",
+  "sandbox_where_set",
+  "sandbox_test",
+  "sandbox_disconnect",
+  "tailnet_get",
+  "tailnet_connect",
+  "tailnet_disconnect",
+  "project_image_rebuild",
+]);

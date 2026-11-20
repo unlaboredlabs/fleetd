@@ -3,7 +3,7 @@
 // and its slot board places agents by count (hub/slots/board.ts); a node checks a key with the provider's client and
 // makes one box per agent there (node/sandbox, node/place/hosted.ts).
 import type { ComputerChoice, ComputerPick, KnownSandboxCheckReason, KnownSandboxProvider, ProviderTrouble, SandboxProviderState, SlotSandbox } from "./contracts.ts";
-import { type ComputerKind, notOffered, SIZES, type Size, sizeText } from "../sandbox/providers/common.ts";
+import { notOffered, SIZES, sizeText } from "../sandbox/providers/common.ts";
 
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
 export const CAP_SANDBOX = "sandbox";
@@ -138,97 +138,35 @@ export const troubleLine = (t: Pick<ProviderTrouble, "message" | "fix" | "until"
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
 
-/** Each kind of computer by name, where a person reads it. */
-export const COMPUTER_NAMES: Readonly<Record<ComputerKind, string>> = { vm: "Local VM", ...NAMES };
-
-const kindOf = (k: string): ComputerKind | undefined => (k === "vm" || isProvider(k) ? k : undefined);
-
-/** A bot's computer as a person reads it: "Local VM · 2 vCPU / 4 GB", "boat.dev · 4 vCPU / 8 GB". */
-export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): string => {
-  const k = kindOf(p.kind);
-  return `${k ? COMPUTER_NAMES[k] : p.kind} · ${sizeText(p)}`;
-};
-
-/** Whether a machine of `host`'s CPUs and memory (GB) runs a Local VM of `size`: its CPUs at most, and half its
- * memory at most, the rest for the machine itself and its other agents. A machine that hasn't said runs none. */
-export const vmFits = (size: Size, host: { cpus: number; memGb?: number } | undefined): boolean =>
-  host !== undefined && host.memGb !== undefined && size.cpu <= host.cpus && size.memGb * 2 <= host.memGb;
+/** A bot's computer as a person reads it: "boat.dev · 4 vCPU / 8 GB". */
+export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): string => `${isProvider(p.kind) ? NAMES[p.kind] : p.kind} · ${sizeText(p)}`;
 
 /** Why a bot's agents can't have a hosted sandbox: they'd run on their machine's own Claude login, which never leaves it. */
 export const NO_ACCOUNT_HOSTED = `hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Your accounts › Claude`;
 
-/** Why machine `m`'s VMs won't take a bot's agents (`account`: they run on a Claude account), or undefined when they will:
- * a machine signed in with its own `claude login` puts only agents on an account in its VMs (node/place/microvm.ts). */
-export const vmTakes = (m: { name: string; sandbox?: SlotSandbox }, account: boolean): string | undefined =>
-  m.sandbox?.accountsOnly && !account
-    ? `${m.name}'s VMs take only agents on a Claude account, and this bot's run on its own login: connect one in Settings › Your accounts › Claude`
-    : undefined;
-
-/** What a VM takes of its machine's memory beside its guest's, GiB (node/place/microvm.ts memPerAgentBytes). */
-const VM_OVERHEAD_GB = 0.1;
-
-/** The slots of its machine a Local VM of `size` takes: as many as its memory is of one of the machine's default VMs
- * (`vmGb`, its overhead with it), rounded up, at least one, so a big VM never over-commits the machine's memory; one
- * while the machine hasn't said its default's. */
-export const vmSlots = (size: Size, vmGb: number | undefined): number =>
-  vmGb === undefined || vmGb <= 0 ? 1 : Math.max(1, Math.ceil((size.memGb + VM_OVERHEAD_GB) / vmGb - 1e-9));
-
-/** Why machine `m` can never run a Local VM of `size`: it takes more slots than the machine's own cap holds. */
-export const overCap = (m: { name: string; cap?: number; host?: { vmGb?: number } }, size: Size): string | undefined => {
-  const slots = vmSlots(size, m.host?.vmGb);
-  return m.cap !== undefined && slots > m.cap
-    ? `${m.name} runs at most ${m.cap} agents at once, and a VM of ${sizeText(size)} takes ${slots} of them (its memory's worth): raise ${m.name}'s max agents in Settings › Hub › Machines, or pick a smaller one`
-    : undefined;
-};
-
-/** The bot's machine as `computerChoices` reads it, `cap` its own slots; undefined for a bot no machine runs (the
- * hub's runner). */
+/** The bot's machine as fleetd cloud still passes it to `computerChoices` until its W760 pin move: no choice reads it. */
 export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number; vmGb?: number }; cap?: number };
 
 /**
- * What a bot may pick for its agents' computers, each a real machine at an exact size: its machine's Local VM in each
- * size it runs, where it runs VMs (or would, but can't now: then each says why, and the command that fixes it when there is
- * one; off by choice or by design, none), then
- * each connected provider's sizes in ORDER (a key that failed its last check says so). A pick no longer among them (its
- * provider disconnected, a size its machine no longer runs) stays, saying why, so it is never shown as another.
+ * What a bot may pick for its agents' computers, each a real machine at an exact size: each connected provider's sizes
+ * in ORDER (a key that failed its last test says so). A pick no longer among them (its provider disconnected) stays,
+ * saying why, so it is never shown as another. None where no provider is connected: the bot's agents run on its
+ * machine, and there is nothing to pick.
  */
-export function computerChoices(o: { machine?: ComputerMachine; providers: readonly SandboxProviderState[]; pick?: ComputerPick; account: boolean }): ComputerChoice[] {
+export function computerChoices(o: { providers: readonly SandboxProviderState[]; pick?: ComputerPick; account: boolean; machine?: ComputerMachine }): ComputerChoice[] {
   const out: ComputerChoice[] = [];
-  const add = (kind: ComputerKind, size: Size, unavailable?: string, fix?: string) =>
-    out.push({
-      kind,
-      cpu: size.cpu,
-      memGb: size.memGb,
-      label: computerLabel({ kind, ...size }),
-      ...(unavailable ? { unavailable, ...(fix ? { fix } : {}) } : {}),
-    });
-  const m = o.machine;
-  const sb = m?.sandbox;
-  if (m && sb && (sb.kind === "microvm" || !sb.expected)) {
-    const down = sb.kind !== "microvm";
-    const off = down ? `${m.name} runs no VMs now: ${sb.why ?? "no reason given"}` : vmTakes(m, o.account);
-    for (const size of SIZES.vm) if (vmFits(size, m.host)) add("vm", size, off ?? overCap(m, size), down ? sb.fix : undefined);
-  }
   for (const p of ORDER) {
     const st = o.providers.find((x) => x.provider === p);
     if (!st?.connected) continue;
     const off =
       st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? "test it again in Settings › Hub › Machines"}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
-    for (const size of SIZES[p]) add(p, size, off);
+    for (const size of SIZES[p]) out.push({ kind: p, cpu: size.cpu, memGb: size.memGb, label: computerLabel({ kind: p, ...size }), ...(off ? { unavailable: off } : {}) });
   }
   const pick = o.pick;
   if (pick && !out.some((c) => c.kind === pick.kind && c.cpu === pick.cpu && c.memGb === pick.memGb)) {
-    const k = kindOf(pick.kind);
-    const why = !k
+    const why = !isProvider(pick.kind)
       ? `this hub doesn't know ${pick.kind}`
-      : (notOffered(k, pick) ??
-        (k === "vm"
-          ? !m
-            ? "no computer of the team's runs this bot"
-            : m.sandbox?.kind === "microvm" || (m.sandbox && !m.sandbox.expected)
-              ? `${m.name} hasn't the CPUs or memory for it`
-              : `${m.name} runs no VMs${m.sandbox?.why ? `: ${m.sandbox.why}` : ""}`
-          : `${NAMES[k as KnownSandboxProvider]} isn't connected: an admin connects it in Settings › Hub › Machines`));
+      : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} isn't connected: an admin connects it in Settings › Hub › Machines`);
     out.push({ kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb, label: computerLabel(pick), unavailable: why });
   }
   return out;

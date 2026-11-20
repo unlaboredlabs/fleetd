@@ -362,7 +362,7 @@ describe("each provider's own settings", () => {
 
 describe("exact sizes, never rounded", () => {
   test("each provider lists exact sizes, the default first", () => {
-    for (const k of ["vm", "boat"] as const) {
+    for (const k of ["boat"] as const) {
       expect(SIZES[k][0]).toEqual(DEFAULT_SIZE);
       expect(SIZES[k].every((s) => Number.isInteger(s.cpu) && Number.isInteger(s.memGb))).toBe(true);
     }

@@ -68,7 +68,7 @@ const ago = (iso: string | undefined, nowMs: number): string | null => {
 
 /**
  * What the Image row says, or null when there is no row: no commands means no image (the hub says "none"), a machine
- * that can't build one (no VMs, no provider) says "none" with no `where`, and an older hub sends no image at all. A
+ * that can't build one says "none" with no `where`, and a hub that builds none (a self-hosted one) sends no image. A
  * building or failed image may still have an older one serving, built at `builtAt`.
  */
 export function imageLine(image: ComputerImage | undefined, commands: number, nowMs: number): ImageLine | null {
@@ -87,11 +87,10 @@ export function imageLine(image: ComputerImage | undefined, commands: number, no
 
 // Open: a newer hub may keep it somewhere this build has no words for.
 const WHERE: Partial<Record<string, string>> = {
-  vm: "a local VM image",
   boat: "a boat.dev snapshot",
 };
 
-/** Where the image is kept, for the row's hover: "a local VM image". */
+/** Where the image is kept, for the row's hover: "a boat.dev snapshot". */
 export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : (WHERE[image.where] ?? null));
 
 /** The pick's value in the Runs on select: AUTO for none, else `<kind>:<cpu>:<memGb>`. */
@@ -110,13 +109,13 @@ export type PickNote = { why: string; fix?: string };
 
 /** One option of the Runs on select: each real machine the bot may have, as the hub words it; one that can't be used
  * now is disabled and says why, never greyed out alone. Options side by side that can't for the same reason (a
- * machine's every Local VM size) say it once, as the last one's `note`. */
+ * provider's every size) say it once, as the last one's `note`. */
 export type PickOption = { value: string; label: string; why?: string; pick?: ComputerPick; note?: PickNote };
 
 /**
  * The Runs on select's options: Automatic (no pick: placed and sized as by default), then the hub's choices in its
- * order. Null when there is nothing to pick and nothing picked (no VMs on its machine, no provider connected, or a
- * hub too old to say): no row then.
+ * order. Null when there is nothing to pick and nothing picked (a hub whose bots run on their machine, no provider
+ * connected, or a hub too old to say): no row then.
  */
 export function pickOptions(settings: { computer?: ComputerPick; computers?: ComputerChoice[] }): PickOption[] | null {
   const choices = settings.computers;

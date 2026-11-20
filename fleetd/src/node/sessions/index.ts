@@ -24,8 +24,8 @@ import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
-import { reapLeaked } from "../place/box_record.ts";
-import { hostDir, isRunner, leavesBox, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
+import { reapLeaked, sweepVm } from "../place/left_vm.ts";
+import { hostDir, isRunner, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
 import { type HostedStep, stepNow, stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
 import { NAMES } from "../../shared/sandbox.ts";
@@ -55,7 +55,7 @@ import { Steers } from "./steers.ts";
 import { Stages } from "../../shared/stages.ts";
 import { tilde } from "../runner/claude/setup.ts";
 import * as setup from "../worktree/setup.ts";
-import { images, startsFrom, takesImage } from "../place/image.ts";
+import { images, takesImage } from "../place/image.ts";
 import * as hooks from "../worktree/hooks.ts";
 import type { LaunchArea, ScreenHooks } from "../api.ts";
 import * as warm from "../worktree/warm.ts";
@@ -470,7 +470,10 @@ export class SessionService {
     const stopped = await sweep(hosts, adopted);
     if (stopped) console.warn(`${nowIso()} WARN stopped sessions' hosts no session runs on {"stopped":${stopped}}`);
     const reaped = await reapLeaked(hosts);
-    if (reaped) console.warn(`${nowIso()} WARN ended VMs no session's record holds (a removed host dir, or a node that stopped mid-boot) {"ended":${reaped}}`);
+    if (reaped) console.warn(`${nowIso()} WARN ended what local VMs left running: agents run on this machine now {"ended":${reaped}}`);
+    // The rest of what the VMs left (their tools, disks and homes), now that each one's transcript is back here.
+    const vmLeft = sweepVm(config.home);
+    if (vmLeft) console.log(`${nowIso()} INFO removed what local VMs left on this machine {"entries":${vmLeft}}`);
     const killed = await killOrphans(config.home, protectedPids);
     if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
     // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept).
@@ -1391,14 +1394,7 @@ export class SessionService {
   /** `ahead`: started with no send (`SessionLaunch.ahead`), so its note waits with the launch's prompt for the first. */
   async #spawn(id: string, stages: Stages, ahead = false): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
-    // A claude still in a VM on a machine that runs none now (turned off, or its last VM failed) goes before a new turn,
-    // which starts as a plain process from its transcript. Never mid-turn: a run under way (a steer, a message queued
-    // behind it, a Monitor's wake) finishes in its box, as the reaper waits for it.
-    if (current && !current.closing && leavesBox(hostDir(this.home, id), this.store.runs(id), !!this.#session(id).local.claudeAccount)) {
-      console.log(`${nowIso()} INFO moving a session out of its VM: this machine runs agents as plain processes now {"sessionId":"${id}"}`);
-      current.closing = true;
-      current.link.send(shutdown(REAP_GRACE_MS));
-    } else if (current && !current.closing) return [current, undefined];
+    if (current && !current.closing) return [current, undefined];
     if (current) {
       await Promise.race([current.exited, Bun.sleep(EXIT_WAIT_MS)]);
       stages.done("exit wait");
@@ -2136,8 +2132,7 @@ export class SessionService {
     };
     const place = pick({ sessionId: id, dir: hostDir(this.home, id), role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(hostedOf(row.local.hosted) ? { hosted: hostedOf(row.local.hosted)! } : {}), ...(row.local.size ? { size: row.local.size } : {}) });
     // A box starts from its bot's computer image where one is ready for this setup (place/image.ts): its setup ran there.
-    const chose = place.kind === "process" || !takesImage(row.local) ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, place.kind === "hosted" ? hostedOf(row.local.hosted) : "vm", row.local.baseRef);
-    const image = await startsFrom(place, chose, this.home, id, row.local.cwd, env);
+    const image = place.kind === "process" || !takesImage(row.local) ? undefined : images()?.use(row.summary.projectId, plan, row.local.cwd, id, hostedOf(row.local.hosted), row.local.baseRef);
     const outcome = await setup.run(
       place,
       plan,
@@ -2299,8 +2294,8 @@ export class SessionService {
   }
 
   /** The task ended: its agent's claude goes now unless it may still go on by itself (a run under way, a Monitor that
-   * may fire, a screen it holds), as the idle reap would close it later. A VM's box goes with it, rather than holding
-   * its memory, uncounted, for the idle reap's 10 minutes. */
+   * may fire, a screen it holds), as the idle reap would close it later. A hosted box goes with it, rather than running
+   * on for the idle reap's 10 minutes. */
   async #stopIdle(id: string): Promise<SessionOutput> {
     const live = this.#live.get(id);
     if (!this.store.session(id)) return { kind: "done" };

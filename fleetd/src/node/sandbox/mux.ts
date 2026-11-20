@@ -1,12 +1,12 @@
 // The one link between the node and a box's guest helper (`fleetd sandbox-guest`, ./guest.ts): any duplex byte stream
-// (a unix socket now, vsock or a provider's port later), carrying numbered channels in frames of one shape:
+// (a unix socket to a stand-in, or a provider's port), carrying numbered channels in frames of one shape:
 //
 //   type u8 | channel u32 BE | length u32 BE | payload
 //
 // - OPEN: a channel starts; its payload is the JSON target. The guest opens channels 2 and up (below NODE_CHANNELS),
 //   for a connection to a node.sock forward (`{"unix":path}`) or a TCP forward (`{"tcp":port}`); the node opens
 //   channel 1, the session host's lines (`{"host":true}`), and from NODE_CHANNELS up a connection the guest makes from
-//   inside the box (`{"dial":{"host","port"}}`, its browser's: ../browser/egress.ts). The guest says how that dial
+//   inside the box (`{"dial":{"host","port"}}`, a screen's: ../place/box_screens.ts). The guest says how that dial
 //   went in a control message, `{"op":"dial","channel":n}` or with `"error"`, before any of the channel's bytes.
 //   A hosted box's guest also opens a channel per connection to the team's tailnet (`{"tailnet":{"host","port"}}`), and
 //   the node says how its dial went the same way (`{"op":"tailnetDialed","channel"[,"error"]}`), and one per tailnet

@@ -1,6 +1,5 @@
 // Each doctor check as a pure function of what the hub read: a status, a plain message, and at most one fix, a
 // command for a person to run, with the same ids and words.
-import { RUNNER_ID } from "../../shared/sandbox.ts";
 import type {
   ClaudeHubApi,
   ClaudeSealedOn,
@@ -11,8 +10,6 @@ import type {
   DoctorStatus,
   GithubApp,
   OnePasswordTest,
-  SandboxCheck,
-  TailnetState,
 } from "../../shared/contracts.ts";
 import type { MacHealth, NodeDisk, NodeLoad, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
@@ -106,10 +103,6 @@ export type SetupFacts = {
   onepassword: [name: string, test?: OnePasswordTest][];
   /** The vault's root key (W549), as the hub loaded it. */
   vault?: VaultKeyFacts;
-  /** Each connected hosted sandbox provider (W688), by its name, with its key's last check. */
-  sandboxes?: [name: string, check?: SandboxCheck][];
-  /** The team's Tailscale gateway (W722), as the hub runs it now. */
-  tailnet?: TailnetState;
 };
 
 /** What `hub/vault_key` reads. */
@@ -149,7 +142,7 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
  * The ids `setupChecks` answers for. Each is there only while its state is (someone joined, an App, a token, the
  * vault's key), so one missing from a read means it is gone, not that an earlier read still holds.
  */
-export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key", "hub/sandboxes", "hub/tailnet"]);
+export const SETUP_CHECK_IDS: ReadonlySet<string> = new Set(["hub/people", "hub/github_app", "hub/onepassword_vault", "hub/vault_key"]);
 
 /** The setup checks the hub reads from its own state: someone else joined, the GitHub App. */
 export function setupChecks(facts: SetupFacts): DoctorCheck[] {
@@ -168,51 +161,7 @@ export function setupChecks(facts: SetupFacts): DoctorCheck[] {
   const vault = onepasswordVault(facts.onepassword);
   if (vault) out.push(vault);
   if (facts.vault) out.push(vaultKey(facts.vault));
-  const hosted = sandboxProviders(facts.sandboxes ?? []);
-  if (hosted) out.push(hosted);
-  const tailnet = facts.tailnet === undefined ? undefined : tailnetGateway(facts.tailnet);
-  if (tailnet) out.push(tailnet);
   return out;
-}
-
-/**
- * `hub/tailnet`: the team's Tailscale gateway, for hosted agents. Absent while it is off and can run here (it is
- * optional); waiting on a sign-in or an approval, not set up yet; failed, a warning with what it said.
- */
-export function tailnetGateway(s: TailnetState): DoctorCheck | undefined {
-  const page = "Settings › Hub › Setup › Tailscale";
-  switch (s.status) {
-    case "connected":
-      return hubEntry("tailnet", "ok", `Connected to ${s.tailnet ?? "your tailnet"}${s.device === undefined ? "" : ` as ${s.device}`}.`);
-    case "login":
-    case "starting":
-      return hubEntry("tailnet", "unknown", "Waiting for a sign-in to Tailscale.", manual(`Sign in and approve the device: ${page}, Connect`));
-    case "approve":
-      return hubEntry("tailnet", "unknown", "Signed in; an admin of your tailnet approves the device in Tailscale's admin console.", manual("Approve it on https://login.tailscale.com/admin/machines"));
-    case "failed":
-      return hubEntry("tailnet", "warn", `Tailscale: ${trimDots(s.problem ?? "it stopped")}.`, manual(`Connect again on ${page}`));
-    default:
-      // Where it can't run (the hub's OS), the step says why; nothing is wrong.
-      return s.problem === undefined ? undefined : hubEntry("tailnet", "unknown", `${trimDots(s.problem)}.`);
-  }
-}
-
-/**
- * `hub/sandboxes`: the team's connected hosted sandbox providers, each from its key's last check. Absent while none is
- * connected; ok while every one passed; else a warning naming the first that didn't, with its fix.
- */
-export function sandboxProviders(providers: [string, SandboxCheck?][]): DoctorCheck | undefined {
-  if (providers.length === 0) return undefined;
-  const page = "Settings › Hub › Machines › Providers";
-  const bad = providers.find(([, c]) => c?.ok !== true);
-  if (!bad) {
-    const names = providers.map(([n]) => n);
-    return hubEntry("sandboxes", "ok", `${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`} answered for the team's key.`);
-  }
-  const [name, check] = bad;
-  if (!check) return hubEntry("sandboxes", "unknown", `${name}'s key hasn't been tested yet: Test it in ${page}.`);
-  const fix = check.fix ? ` ${check.fix.charAt(0).toUpperCase()}${check.fix.slice(1)}.`.replace(/\.\.$/, ".") : "";
-  return hubEntry("sandboxes", "warn", `${name}: ${trimDots(check.message ?? "its key didn't pass its last test")}.${fix}`);
 }
 
 const RANK: Record<DoctorStatus, number> = { ok: 0, unknown: 1, warn: 2, fail: 3 };
@@ -537,7 +486,7 @@ function accountEntry(
   }
   const missing = machines.filter((m) => !sealedOn.some((s) => s.machineId === m));
   if (missing.length > 0) {
-    const list = missing.map((m) => (m === RUNNER_ID ? "the hosted sandboxes" : m)).join(", ");
+    const list = missing.join(", ");
     return hubEntry(
       name,
       "warn",
@@ -729,22 +678,6 @@ function screen(machineId: string, name: string, offline: boolean, health: Scree
   const status: DoctorStatus = health.state === "unavailable" ? "fail" : "ok";
   const fix = health.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within minutes`, health.fix);
   return machineEntry(machineId, name, status, health.message, fix);
-}
-
-/** Where the machine's agents run (`vm`): in VMs of their own, or as plain processes with the reason and, where a
- * person has one, its fix. By choice or the machine's design (turned off, macOS) passes; anything else warns, since
- * its agents run without a VM's walls. Undefined offline and from a node that doesn't say (older, or the agents' Mac). */
-export function vms(machineId: string, offline: boolean, sandbox: NodeLoad["sandbox"]): DoctorCheck | undefined {
-  if (!sandbox || offline) return undefined;
-  if (sandbox.kind === "microvm" && !sandbox.why) return machineEntry(machineId, "vm", "ok", `Agents on ${machineId} run in VMs of their own.`);
-  if (sandbox.kind === "microvm") {
-    const fix = sandbox.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within a minute`, sandbox.fix);
-    return machineEntry(machineId, "vm", "warn", `Agents on ${machineId} run in VMs of their own, but ${sandbox.why}`, fix);
-  }
-  const why = `Agents on ${machineId} run as plain processes, not in VMs: ${sandbox.why}`;
-  if (sandbox.expected) return machineEntry(machineId, "vm", "ok", why);
-  const fix = sandbox.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within a minute`, sandbox.fix);
-  return machineEntry(machineId, "vm", "warn", why, fix);
 }
 
 /** Whether the machine can host android sessions; undefined where they are off (or offline, or an older node). */

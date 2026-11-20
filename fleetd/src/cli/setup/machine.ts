@@ -4,7 +4,6 @@
 //
 // The hub's machine_setup (Add machine in the app) calls the same `resolve`, `prepare`, `execute`, `remove`,
 // `candidates`, `leadsOn` and `repair` with its own Runner, Builds and Progress, as the Rust hub does.
-import { RUNNER_ID } from "../../shared/sandbox.ts";
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import type { ProjectRef } from "../../shared/contracts.ts";
@@ -732,8 +731,6 @@ export async function remove(
   runner: Runner,
   progress: Progress,
 ): Promise<Removed> {
-  // The hub's own runner is no computer to remove (hub/runner): it goes once nothing hosted needs it.
-  if (machineId === RUNNER_ID) throw Stop.fail("Hosted sandboxes are the hub's own, not a computer of the team's: disconnect every provider and delete the bots that run there instead.");
   const erase = hub.erase;
   if (erase === undefined) throw new NotImplemented("src/hub/project_lead/erase.ts: erasing a removed machine's bots");
   let state: SetupState | undefined;

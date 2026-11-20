@@ -168,7 +168,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
           )}
           {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
             <SettingsSection title="Agents" reveal="hub.caps">
-              <MachineCap machineId={machineId} name={machine.name} />
+              <MachineCap machineId={machineId} />
             </SettingsSection>
           )}
           {machine !== undefined && roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (

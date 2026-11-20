@@ -448,15 +448,7 @@ test("a box whose VMM is gone ends its link at once, without dialling for the gu
   expect(Date.now() - at).toBeLessThan(3_000);
 }, 20_000);
 
-test("a local VM's clock is set from this machine's on each link; a guest that can't set one says so and goes on", async () => {
-  const b = await standIn();
-  // The stand-in isn't a VM's guest (not root, no kernel's user): it leaves its clock alone, and the link is fine.
-  const box = await Box.open({ session: "s-clock", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), clock: true });
-  expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
-  box.close();
-}, 20_000);
-
-test("a guest takes over the link socket a killed one left (a session's next VM boots over its disk); a live guest's it leaves", async () => {
+test("a guest takes over the link socket a killed one left; a live guest's it leaves", async () => {
   const b = await standIn();
   const sock = join(b.dir, "link.sock");
   const again = () =>
@@ -467,7 +459,7 @@ test("a guest takes over the link socket a killed one left (a session's next VM 
   const second = again();
   expect(await within(second.exited, 10_000, "the second guest's end")).toBe(1);
   expect(await new Response(second.stderr).text()).toContain("EADDRINUSE");
-  // Killed as the node ends a VM: its socket stays behind, and nothing answers it.
+  // Killed: its socket stays behind, and nothing answers it.
   b.proc.kill("SIGKILL");
   await b.proc.exited;
   expect(existsSync(sock)).toBe(true);

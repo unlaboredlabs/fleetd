@@ -5349,7 +5349,7 @@
       "type": "object"
     },
     "ComputerImage": {
-      "description": "A repo's computer image: its setup commands run once, kept as the disk new agents start from (a local VM's layer, or a\nhosted provider's snapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start\nfrom now, kept through a rebuild and a failed build.",
+      "description": "A repo's computer image: its setup commands run once, kept as the disk new agents start from (a hosted provider's\nsnapshot), so their setup doesn't run again. `builtAt` and `bytes` describe the image agents start\nfrom now, kept through a rebuild and a failed build.",
       "properties": {
         "builtAt": {
           "$ref": "#/$defs/Timestamp",
@@ -5379,7 +5379,7 @@
         },
         "where": {
           "$ref": "#/$defs/ComputerImageWhere",
-          "description": "Where it is kept: this machine's VMs, or a hosted provider's snapshot."
+          "description": "Where it is kept: a hosted provider's snapshot."
         }
       },
       "required": [
@@ -5399,18 +5399,16 @@
       "x-open": true
     },
     "ComputerImageWhere": {
-      "description": "\"vm\": this machine's local VMs; else the hosted provider.",
+      "description": "The hosted provider whose snapshot holds it.",
       "enum": [
-        "vm",
         "boat"
       ],
       "type": "string",
       "x-open": true
     },
     "ComputerKind": {
-      "description": "Where an agent's computer is: its machine's own VM (`vm`), or a box of a hosted provider.",
+      "description": "Where an agent's computer is: a box of a hosted provider.",
       "enum": [
-        "vm",
         "boat"
       ],
       "type": "string",
@@ -17387,7 +17385,7 @@
           "description": "Its pick of its agents' computer, exactly what each of them gets; absent: none (the default placement and size)."
         },
         "computers": {
-          "description": "What it may pick, each a real machine: the Local VM where its machine runs VMs, and each connected provider's\nsizes; one that can't be used now says why, the pick among them. Absent with `repo`, and from older hubs.",
+          "description": "What it may pick, each a real machine: each connected provider's sizes; one that can't be used now says why, the\npick among them. Absent with `repo`, from older hubs, and from a hub with nothing to pick (its bots run on their\nmachine).",
           "items": {
             "$ref": "#/$defs/ComputerChoice"
           },
@@ -21254,7 +21252,7 @@
       "type": "object"
     },
     "SlotSandbox": {
-      "description": "Where the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
+      "description": "fleetd cloud reads this until its W760 pin move, and no node of this fleetd sends it (agents run on their machine).\nWhere the machine's agents run, as its node last said: in a VM of their own each (`microvm`), or as plain processes (`process`) with the reason, the command that fixes it where a person has one, and `expected` when that is by choice or the machine's design (turned off, macOS). Absent from a node that doesn't say (older, or the agents' Mac).",
       "properties": {
         "accountsOnly": {
           "description": "In VMs, but only agents on a Claude account of their bot's: the machine signs in to Claude with its own login,\nwhich never goes into a VM, so a bot with none runs its agents as plain processes there.",

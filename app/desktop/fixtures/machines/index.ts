@@ -300,22 +300,15 @@ function withShares(f: Fixture, perMachine: JsonObject[]): void {
   for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = put(frame["slots"]);
 }
 
-const VM = "; each agent in a VM of its own";
-const MACOS = "VMs need Linux with KVM; this machine runs macOS, so its agents run as plain processes.";
-const APPARMOR = "AppArmor keeps this user from making the user namespace virtiofsd shares files from. The command lets unprivileged users make them again, now and after a reboot.";
-const APPARMOR_FIX = "echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-fleetd-userns.conf && sudo sysctl --system";
-const NO_VM = (why: string) => `; agents run as plain processes: ${why}`;
-
 /**
- * The page as a team that has grown into it uses it: devbox well and busy, each agent in a VM; laptop with claude
- * logged out, a Mac whose agents run as processes; buildbox offline for three days. boat.dev connected, its key
- * refused. `places-vm-off` is devbox unable to run VMs, with the command that fixes it.
+ * The page as a team that has grown into it uses it: devbox well and busy; laptop with claude logged out;
+ * buildbox offline for three days. boat.dev connected, its key refused.
  */
-function places(from: Fixture, name: string, note: string, devboxWhy: string, devboxSandbox: JsonObject): Fixture {
+function places(from: Fixture, name: string, note: string): Fixture {
   const f = unwell(from, name, note);
   withShares(f, [
-    { machineId: "devbox", cap: 22, auto: 22, running: 8, why: `memory 60 GB, about 2 GB an agent${devboxWhy}`, sandbox: devboxSandbox },
-    { machineId: "laptop", cap: 6, auto: 6, running: 0, why: `memory 16 GB, about 2 GB an agent${NO_VM(MACOS)}`, sandbox: { kind: "process", why: MACOS, expected: true } },
+    { machineId: "devbox", cap: 22, auto: 22, running: 8, why: "memory 60 GB, about 2 GB an agent" },
+    { machineId: "laptop", cap: 6, auto: 6, running: 0, why: "memory 16 GB, about 2 GB an agent" },
   ]);
   f.answer("sandbox_get", undefined, SANDBOXES_ON);
   f.answer("tailnet_get", undefined, TAILNET_ON);
@@ -323,10 +316,10 @@ function places(from: Fixture, name: string, note: string, devboxWhy: string, de
   return f;
 }
 
-/** A hub just set up, as one machine and nothing connected: devbox alone, each agent in a VM. */
+/** A hub just set up, as one machine and nothing connected: devbox alone. */
 function onePlace(from: Fixture): Fixture {
-  const f = one(from, "machines-places-one", "devbox alone and well, each agent in a VM; no sandbox provider connected yet");
-  withShares(f, [{ machineId: "devbox", cap: 22, auto: 22, running: 3, why: `memory 60 GB, about 2 GB an agent${VM}`, sandbox: { kind: "microvm" } }]);
+  const f = one(from, "machines-places-one", "devbox alone and well; no sandbox provider connected yet");
+  withShares(f, [{ machineId: "devbox", cap: 22, auto: 22, running: 3, why: "memory 60 GB, about 2 GB an agent" }]);
   // The live feed as the snapshot has it: devbox alone, and well.
   for (const frame of f.live) {
     if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].filter((m) => isObject(m) && m["machineId"] === "devbox").map((m) => ({ ...(m as JsonObject), status: "online", running: 3 }));
@@ -417,14 +410,7 @@ export default defineGroup({
       ],
     }),
     unwell(base("typical")),
-    places(base("typical"), "machines-places", "devbox busy in VMs, laptop logged out (a Mac: processes), buildbox offline; boat.dev connected, so Linux machine is a pick", VM, { kind: "microvm" }),
-    places(
-      base("typical"),
-      "machines-places-vm-off",
-      "As places, devbox unable to run VMs: AppArmor, and the command that fixes it",
-      NO_VM(`${APPARMOR} Fix: ${APPARMOR_FIX}`),
-      { kind: "process", why: APPARMOR, fix: APPARMOR_FIX },
-    ),
+    places(base("typical"), "machines-places", "devbox busy, laptop logged out, buildbox offline; boat.dev connected, so Linux machine is a pick"),
     onePlace(base("empty")),
     none(base("empty")),
     hostedOnly(base("empty"), "machines-hosted-starting", "boat.dev connected and the hub's runner coming up: Starting… on its row, no button", {

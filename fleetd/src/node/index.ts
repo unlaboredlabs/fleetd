@@ -18,9 +18,8 @@ import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig 
 import { GatedRuns } from "./gated/index.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity, type NodeBoxKey } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
-import { boxOf, inBox, runnerProvider, useRunner, useVm } from "./place/index.ts";
+import { boxOf, inBox, runnerProvider, useRunner } from "./place/index.ts";
 import { Images, useImages } from "./place/image.ts";
-import { MicroVm, reportVm } from "./place/microvm.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
 import { NodeTailnet, nodeTailnet, setNodeTailnet } from "./sandbox/tailnet.ts";
 import { BOX_CLAUDE, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
@@ -395,16 +394,10 @@ export async function startNode(
   void currentScope();
   // Before any session starts: they're hosted by, and start their fleetd tools from, the node's pinned copy.
   const fleetd = pinSelf(home);
-  // A task's agent runs in a VM of its own where this machine can run one; its boxes are re-adopted with its sessions,
-  // before the node.sock hooks they answer calls with exist.
   // The hub's runner reads no claude.env of the machine it runs on: its agents run on the team's Claude account.
   const sessionConfig = configFor(home, config.runner ? home : fleetdDir(), fleetd, boxKey);
   // Its sessions' claude is the one their boxes' template installs.
   if (config.runner) sessionConfig.claudeBin = BOX_CLAUDE.path;
-  let leadHooks: LeadSocketHooks | undefined;
-  const vm =
-    isAgentsMac(config) || config.runner ? undefined : new MicroVm({ home, fleetd, lead: () => leadHooks, scope: currentScope, claudeEnv: () => runnerEnv(sessionConfig) });
-  useVm(vm);
   // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
   if (process.platform === "linux" && !isAgentsMac(config)) {
     setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
@@ -412,11 +405,11 @@ export async function startNode(
     setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
   }
   const sessions = await SessionService.start(sessionConfig);
-  // Its bots' computer images (place/image.ts): in its VMs, or on the hub's runner in the hosted provider's snapshots.
+  // Its bots' computer images (place/image.ts): on the hub's runner, in the hosted provider's snapshots.
   useImages(
     new Images({
       home,
-      backend: () => (config.runner ? hostedBackend(home, runnerProvider()) : vm?.backend()),
+      backend: () => (config.runner ? hostedBackend(home, runnerProvider()) : undefined),
       root: (project) => sessions.projectRootOf(project),
       vars: (project) => sessions.imageVars(project),
       changed: (project, image) => sessions.imageChanged(project, image),
@@ -453,11 +446,10 @@ export async function startNode(
   // The hub's runner wants agent-browser for its agents and ffmpeg for their recordings too; it launches no Chrome.
   // No switch turns browsers off (an older node.json's `browser.enabled` is ignored).
   if (!isAgentsMac(config)) broker(node).prepare();
-  // A boxed agent's browser sees its box's network and files, not this machine's (browser/egress.ts).
+  // A hosted agent's browser runs in its box (place/box_screens.ts), on the box's network and files.
   broker(node).boxed = (thread) => {
     const b = boxOf(thread);
-    // A hosted box shows nothing of this machine's: its browser runs in it (place/box_screens.ts).
-    if (b) return { dial: (host, port) => b.box.dial(host, port), ...(b.view ? { view: b.view } : { box: b.box }) };
+    if (b) return { box: b.box };
     return inBox(thread) ? "starting" : undefined;
   };
   // The agents' Mac is a tool, never a runner: no lead call leaves it, and its hello lists only a tool's calls.
@@ -465,7 +457,7 @@ export async function startNode(
   relay.toolOnly = isAgentsMac(config);
   const link = node.area("link");
   const local = node.area("local");
-  leadHooks = {
+  const leadHooks: LeadSocketHooks = {
     relay,
     identify: (pid: number) => sessions.peerSession(pid),
     maskFor: (session: string) => sessions.maskFor(session),
@@ -642,7 +634,6 @@ export async function startNode(
     capabilities: () => (hello = helloCapabilities(own, node.area("caps").list(), mac)),
     heartbeat: async () => {
       const parts = { load: readLoad(sessions.loginLimits() as never, home), steps: [] as unknown[], busy: { threads: sessions.running(), screens: 0, uploads: uploads(home), hosted: 0 } };
-      if (parts.load && vm) reportVm(parts.load, vm.status(), vm.memGiB());
       await hb.fill(parts);
       return { ...(parts.load ? { load: parts.load } : {}), ...(parts.steps.length ? { steps: parts.steps } : {}), busy: parts.busy };
     },
@@ -682,7 +673,6 @@ export async function startNode(
     stopSocket();
     await stopAreas(node);
     await sessions.shutdown();
-    vm?.close();
   };
   return { node, sessions, stop, done };
 }

@@ -12,7 +12,7 @@ import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
-import { destroyBox } from "../place/box_record.ts";
+import { destroyBox } from "../place/left_vm.ts";
 import { HostLink as Link, type HostDial, type Registration } from "./host_link.ts";
 
 export { PROTOCOL, shutdown, type HostDial, type HostHandlers, type HostSocket, type Numbered, type Refusal, type Registration, type RunnerEvent, type SessionCommand } from "./host_link.ts";
@@ -170,7 +170,7 @@ export async function startHost(l: Launch, log: number): Promise<ChildProcess> {
   return started.child;
 }
 
-/** Makes `dir` empty and private, stopping a host (or a box: ../place/box_record.ts) a previous spawn of the session
+/** Makes `dir` empty and private, stopping a host (or a box: ../place/left_vm.ts) a previous spawn of the session
  * left there. */
 export async function prepare(dir: string): Promise<void> {
   const left = readRegistration(dir);

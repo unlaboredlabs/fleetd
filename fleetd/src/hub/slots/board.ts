@@ -11,15 +11,15 @@
 // What runs where's Linux machine (`setHosted`'s `linux`) narrows that: `ours_first` is the rule above, `ours_only`
 // leaves the providers out, and a provider's id leaves the machines' own slots out and the other providers too.
 //
-// A bot that picked its agents' computer (`setComputer`: a Local VM or one hosted provider, at an exact size) has its
-// agents placed there and nowhere else: while it has no room, or can't be used (VMs off, the provider disconnected),
+// A bot that picked its agents' computer (`setComputer`: one hosted provider, at an exact size) has its
+// agents placed there and nowhere else: while it has no room, or can't be used (its provider disconnected),
 // they wait, saying why, rather than run elsewhere or at another size. Its pick is the bot's own, so it holds whatever
 // the Linux machine says.
 import type { MachineId, ProjectRef, ProviderTrouble, SlotHosted, SlotSandbox, SlotState, SlotStatePerMachine, SlotStatePerProject } from "../../shared/contracts.ts";
 import { HEARTBEAT_TIMEOUT_SECS, type NodeLoad, type SandboxTrouble } from "../../shared/node_link.ts";
-import { computerLabel, isProvider, type Limit, NAMES, ORDER, NO_ACCOUNT_HOSTED, overCap, RUNNER_ID, troubleLine, troubleOf, vmFits, vmSlots, vmTakes } from "../../shared/sandbox.ts";
+import { computerLabel, isProvider, type Limit, NAMES, ORDER, NO_ACCOUNT_HOSTED, RUNNER_ID, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import type { Size } from "../../sandbox/providers/common.ts";
-import { type Auto, type Host, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
+import { type Auto, UNMEASURED, UNMEASURED_WHY } from "./sizing.ts";
 
 /** An agent started this recently still counts against its machine's disk room: its worktree hasn't grown yet. */
 export const SETTLE_MS = 10 * 60 * 1000;
@@ -67,12 +67,9 @@ const machineCapOf = (m: Machine) => m.maxAgents ?? m.auto.cap;
 /** Where a held slot runs: the machine's own slots, or a hosted provider's box. */
 export const LOCAL = "local";
 
-/** A bot's pick of its agents' computer (shared/contracts.ts ComputerPick): `vm`, its machine's own VM, or a hosted
- * provider, and the exact size every agent of the bot gets there. */
+/** A bot's pick of its agents' computer (shared/contracts.ts ComputerPick): a hosted provider, and the exact size
+ * every agent of the bot gets there. */
 export type ComputerPick = { kind: string; cpu: number; memGb: number };
-
-/** Where a pick's agents are placed: LOCAL for a Local VM, else its provider. */
-export const pickPlace = (p: Pick<ComputerPick, "kind">): string => (p.kind === "vm" ? LOCAL : p.kind);
 
 /** Why it fits that many, or "set" for a person's setting. */
 const machineWhy = (m: Machine) => (m.maxAgents !== undefined ? "set" : m.auto.why);
@@ -126,7 +123,6 @@ export type MachineRow = {
   maxAgents?: number;
   auto: number;
   why: string;
-  sandbox?: SlotSandbox;
   running: number;
   diskRoom?: number;
 };
@@ -308,19 +304,14 @@ export class Board {
   /** Claim `c`, just placed: the size its computer starts at, its bot's pick where it is placed there. */
   private stamp(c: Claim): void {
     const pick = this.computerOf(c.projectRef);
-    if (pick && pickPlace(pick) === (c.place ?? LOCAL)) c.size = { cpu: pick.cpu, memGb: pick.memGb };
+    if (pick && pick.kind === c.place) c.size = { cpu: pick.cpu, memGb: pick.memGb };
     else delete c.size;
   }
 
   /** Machine `m`'s name, where its agents run and its CPUs and memory, as its node last said; undefined: not seen. */
-  machineFacts(m: MachineId): { name: string; sandbox?: SlotSandbox; host?: Host; cap: number } | undefined {
+  machineFacts(m: MachineId): { name: string; cap: number } | undefined {
     const x = this.machine(m);
-    return x && { name: x.name, ...(x.auto.sandbox ? { sandbox: { ...x.auto.sandbox } } : {}), ...(x.auto.host ? { host: { ...x.auto.host } } : {}), cap: this.ownCap(m) };
-  }
-
-  /** Whether machine `m`'s node runs agents in VMs now, as its last heartbeat said. */
-  private runsVms(m: MachineId): boolean {
-    return this.machine(m)?.auto.sandbox?.kind === "microvm";
+    return x && { name: x.name, cap: this.ownCap(m) };
   }
 
   /** The fleet cap when set, else what the machines fit together and the hosted limits any of them can use. */
@@ -363,22 +354,9 @@ export class Board {
     return this.localClaims(m).length;
   }
 
-  /** The slots of `m`'s they take: each one, but a VM of its bot's own size its memory's worth, at the size it was
-   * started at (`vmSlots`). */
-  private localUsed(m: MachineId): number {
-    const vmGb = this.machine(m)?.auto.host?.vmGb;
-    return this.localClaims(m).reduce((n, c) => n + (c.size ? vmSlots(c.size, vmGb) : 1), 0);
-  }
-
-  /** The slots a new agent of bot `r` takes on `m`: one, but a Local VM its bot picked its memory's worth (`vmSlots`). */
-  private slotsOf(r: ProjectRef, m: MachineId): number {
-    const pick = this.computerOf(r);
-    return pick && pickPlace(pick) === LOCAL ? vmSlots(pick, this.machine(m)?.auto.host?.vmGb) : 1;
-  }
-
-  /** Whether an agent of bot `r` fits `m`'s own slots now. */
-  private localRoom(r: ProjectRef, m: MachineId): boolean {
-    return this.localUsed(m) + this.slotsOf(r, m) <= this.ownCap(m);
+  /** Whether another agent fits `m`'s own slots now. */
+  private localRoom(m: MachineId): boolean {
+    return this.localHeld(m) < this.ownCap(m);
   }
 
   /** `provider`'s boxes across all machines: every live one a node reports, held or idle between turns, and each held
@@ -433,22 +411,14 @@ export class Board {
    * room, then the machine's own slots, then each hosted provider in order. */
   private freePlace(c: Pick<Claim, "place" | "hostable" | "threadId" | "projectRef">, m: MachineId): string | undefined {
     if (!this.runsAgents(m)) return undefined;
-    const localFree = this.localRoom(c.projectRef, m);
+    const localFree = this.localRoom(m);
     const live = c.threadId === undefined ? undefined : this.places(m)[c.threadId];
     if (live !== undefined && live !== LOCAL) return live;
     if (live === LOCAL) return localFree ? LOCAL : undefined;
     const hostedFree = (p: string) => c.hostable === true && this.canHost(m, p) && this.hostedUse(p) < (this.hosted_.find((l) => l.provider === p)?.max ?? 0);
     // Its bot's pick: there, or nowhere yet.
     const pick = this.computerOf(c.projectRef);
-    if (pick) {
-      const at = pickPlace(pick);
-      if (at === LOCAL) {
-        const machine = this.machine(m);
-        const takes = machine !== undefined && vmTakes({ name: machine.name, ...(machine.auto.sandbox ? { sandbox: machine.auto.sandbox } : {}) }, c.hostable === true) === undefined;
-        return localFree && m !== RUNNER_ID && this.runsVms(m) && takes && vmFits(pick, machine?.auto.host) ? LOCAL : undefined;
-      }
-      return hostedFree(at) ? at : undefined;
-    }
+    if (pick) return hostedFree(pick.kind) ? pick.kind : undefined;
     // Else where the Linux machine says: where it ran last while that has room, the machine's own slots, the providers.
     const picked = this.picked();
     if (c.place && c.place !== LOCAL && picked.some((l) => l.provider === c.place) && hostedFree(c.place)) return c.place;
@@ -534,11 +504,6 @@ export class Board {
       m.placesAt = this.nowMs;
       if (trouble.length) m.trouble = trouble.map((t) => ({ ...t }));
       else delete m.trouble;
-      // Where its agents run comes with every heartbeat and isn't stored: kept as it was said last.
-      if (auto.sandbox) m.auto.sandbox = { ...auto.sandbox };
-      else delete m.auto.sandbox;
-      if (auto.host) m.auto.host = { ...auto.host };
-      else delete m.auto.host;
       if (m.auto.cap !== auto.cap || m.auto.why !== auto.why || m.name !== name) {
         m.auto = { ...auto };
         m.name = name;
@@ -628,21 +593,8 @@ export class Board {
   private pickBlocker(r: ProjectRef, pick: ComputerPick, m: MachineId, hostable: boolean): string {
     const picked = `its bot's computer is ${computerLabel(pick)}`;
     const other = "or pick another on the bot's Computer page";
-    const machine = this.machine(m);
-    const name = machine?.name ?? m;
-    const at = pickPlace(pick);
-    if (at === LOCAL) {
-      if (m === RUNNER_ID) return `${picked}, and no computer of the team's runs this bot: connect one, ${other}`;
-      if (!this.runsVms(m)) return `${picked}, and ${name} runs no VMs now${machine?.auto.sandbox?.why ? `: ${machine.auto.sandbox.why}` : ""}; ${other}`;
-      if (!vmFits(pick, machine?.auto.host)) return `${picked}, and ${name} hasn't the CPUs or memory for it; ${other}`;
-      const over = overCap({ name, cap: this.ownCap(m), ...(machine?.auto.host ? { host: machine.auto.host } : {}) }, pick);
-      if (over) return `${picked}, but ${over}`;
-      const not = machine ? vmTakes({ name, ...(machine.auto.sandbox ? { sandbox: machine.auto.sandbox } : {}) }, hostable) : undefined;
-      if (not) return `${picked}, but ${not}, ${other}`;
-      const slots = this.slotsOf(r, m);
-      const takes = slots > 1 ? `, which takes ${slots} of ${name}'s slots` : "";
-      return `${picked}${takes}: ${this.localUsed(m)} of ${this.ownCap(m)} in use on ${name} (${machine ? machineWhy(machine) : UNMEASURED_WHY})`;
-    }
+    const name = this.machine(m)?.name ?? m;
+    const at = pick.kind;
     const provider = nameOf(at);
     const limit = this.hosted_.find((l) => l.provider === at);
     if (!limit) return `${picked}, and ${provider} isn't connected: an admin connects it in Settings › Hub › Machines, ${other}`;
@@ -677,12 +629,7 @@ export class Board {
           return providerOnlyBlocker(this.linux_, this.picked()[0], this.picked()[0] ? this.hostedUse(this.linux_) : 0, this.canHost(m, this.linux_), name, c.hostable === true, t ? troubleLine(t) : undefined);
         }
         const why = machine ? machineWhy(machine) : UNMEASURED_WHY;
-        const [held, used] = [this.localHeld(m), this.localUsed(m)];
-        // A bot's bigger VMs take more than a slot each: then the slots in use say why it's full.
-        const own =
-          used === held
-            ? `machine cap: ${held} of ${this.ownCap(m)} running on ${name} (${why})`
-            : `machine cap: ${used} of ${this.ownCap(m)} slots in use on ${name} (${why}), by ${held} agents, a bot's bigger VMs taking more than one`;
+        const own = `machine cap: ${this.localHeld(m)} of ${this.ownCap(m)} running on ${name} (${why})`;
         if (usable.length === 0) {
           // A provider its node set aside after a failure: what went wrong there, rather than nothing.
           const troubles = c.hostable === true ? this.troubleLines() : [];
@@ -935,7 +882,6 @@ export class Board {
         why: `${m.auto.why}${shared}`,
         running: this.localHeld(m.machineId),
       };
-      if (m.auto.sandbox) row.sandbox = { ...m.auto.sandbox };
       if (m.maxAgents !== undefined) row.maxAgents = m.maxAgents;
       const disk = this.diskRoom(m.machineId);
       if (disk !== undefined) row.diskRoom = disk;
@@ -954,12 +900,8 @@ export class Board {
   }
 }
 
-/** The longest a machine's `why` goes to the apps, and its sandbox reason and fix: past them, each is cut with an
- * ellipsis, never dropped (a VM refusal's reason with its fix runs to about 450 characters). */
+/** The longest a machine's `why` goes to the apps: past it, it is cut with an ellipsis, never dropped. */
 export const WHY_MAX = 1000;
-export const SANDBOX_WHY_MAX = 600;
-export const SANDBOX_FIX_MAX = 300;
-export const SANDBOX_DETAIL_MAX = 2000;
 
 /** `text`, or its first `max - 1` characters and an ellipsis. */
 export function clip(text: string, max: number): string {
@@ -967,27 +909,10 @@ export function clip(text: string, max: number): string {
   return chars.length > max ? `${chars.slice(0, Math.max(0, max - 1)).join("")}…` : text;
 }
 
-/** A cap's reason with where the machine's agents run: in a VM each, or as plain processes and why (a person reads
- * it beside the machine's cap). Here, beside `clip`, so fleetd cloud sizes its machines with it too. */
-export function withSandbox<T extends { why: string }>(auto: T, sandbox: NodeLoad["sandbox"]): T & { sandbox?: SlotSandbox } {
-  if (!sandbox) return auto;
-  if (sandbox.kind === "microvm") {
-    // In VMs, but some agents not (a machine signed in with `claude login`): which, why and the fix, in the same line.
-    if (!sandbox.why) return { ...auto, why: `${auto.why}; each agent in a VM of its own`, sandbox: { kind: "microvm" } };
-    const note = clip(String(sandbox.why), SANDBOX_WHY_MAX);
-    const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
-    return {
-      ...auto,
-      why: `${auto.why}; each agent in a VM of its own, but ${fix ? `${note} Fix: ${fix}` : note}`,
-      sandbox: { kind: "microvm", why: note, ...(fix ? { fix } : {}), ...(sandbox.accountsOnly ? { accountsOnly: true } : {}) },
-    };
-  }
-  // Whole, or cut with an ellipsis: a reason is never dropped from the line people read.
-  const reason = clip(String(sandbox.why ?? "") || "no reason given", SANDBOX_WHY_MAX);
-  const fix = typeof sandbox.fix === "string" && sandbox.fix ? clip(sandbox.fix, SANDBOX_FIX_MAX) : undefined;
-  const detail = typeof sandbox.detail === "string" && sandbox.detail ? clip(sandbox.detail, SANDBOX_DETAIL_MAX) : undefined;
-  const out: SlotSandbox = { kind: "process", why: reason, ...(fix ? { fix } : {}), ...(sandbox.expected ? { expected: true } : {}), ...(detail ? { detail } : {}) };
-  return { ...auto, why: `${auto.why}; agents run as plain processes: ${fix ? `${reason} Fix: ${fix}` : reason}`, sandbox: out };
+/** fleetd cloud calls this until its W760 pin move. No node of this fleetd says it runs VMs any more, so a cap's
+ * reason is its own: nothing of where agents run is added to it. */
+export function withSandbox<T extends { why: string }>(auto: T, _sandbox: NodeLoad["sandbox"]): T & { sandbox?: SlotSandbox } {
+  return auto;
 }
 
 /** A provider's name where a person reads it; one this build doesn't know, by its id. */
@@ -1039,13 +964,6 @@ export function slotState(s: BoardState): SlotState {
     m.auto = count(row.auto);
     m.why = row.why ? clip(row.why, WHY_MAX) : "auto";
     m.running = count(row.running);
-    if (row.sandbox) {
-      const sb: SlotSandbox = { kind: row.sandbox.kind };
-      if (row.sandbox.why) sb.why = clip(row.sandbox.why, SANDBOX_WHY_MAX);
-      if (row.sandbox.fix) sb.fix = clip(row.sandbox.fix, SANDBOX_FIX_MAX);
-      if (row.sandbox.expected) sb.expected = true;
-      m.sandbox = sb;
-    }
     if (row.diskRoom !== undefined) m.diskRoom = count(row.diskRoom);
     return m as SlotStatePerMachine;
   });

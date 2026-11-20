@@ -12,7 +12,6 @@ What fleetd trusts and why. fleetd is built for one person or a small team runni
 | The hub is never public by default | `fleetd init` listens on your tailnet address, or on `127.0.0.1` without Tailscale. |
 | Plain HTTP only on loopback or a tailnet | Tailscale's tunnel is encrypted. Anywhere else, put HTTPS in front: see [the HTTPS check](/docs/troubleshooting#hub). |
 | Nodes connect out | A worker's node connects to the hub and proves itself with its own key pair. No worker opens a port beyond loopback: the [browser proxy](/docs/browser-sessions#isolation) listens on `127.0.0.1` only, with a token per agent session. |
-| One tailnet device per team, shields up | Hosted sandboxes reach your tailnet only through the hub's own [Tailscale device](/docs/machines#tailscale), in userspace with its own state: never the host's Tailscale, routes or DNS. Nothing on the tailnet connects to the hub's machine through it. Each sandbox's connection to it is signed by its machine's key and checked against the key the hub enrolled; its login state is sealed under the vault's key. Disconnect logs it out at once. |
 | Codes are one-time | Enrollment tokens and pairing codes work once and expire after 15 minutes; an [invite](/docs/people#invite) works once, for 7 days. [The agents' Mac's](/docs/agents-mac#app) 6-digit setup code works once, for 10 minutes, one at a time; it goes to one hub only, and ten wrong codes tried while it's open close it (5 a minute per address), never locking the hub. |
 
 ## Keys {#keys}
@@ -76,12 +75,8 @@ the hub running as a separate OS user, which fleetd doesn't set up.
 
 ## What an agent can reach on a machine {#agent-reach}
 
-An agent runs as the OS user its machine's node runs as, which is usually you. On a Linux machine that can run them,
-a task's agent runs in a [VM of its own](/docs/machines#vms): it sees nothing of your home but its worktree and its
-repo's `.git`, gets only its own order's tokens, and can't reach the machine over the network, so the points below
-don't hold for it.
-Leads, and agents on a Mac or on a machine without VMs, run with no sandbox (as [leads run](#how-leads-run)). So on its
-machine an agent can reach what you can:
+An agent runs as the OS user its machine's node runs as, which is usually you, with no sandbox (as [leads
+run](#how-leads-run)). So on its machine an agent can reach what you can:
 
 - your files: your home, your bots, and any key or token kept in them;
 - your logins there: `gh`, your SSH keys and agent, git's credentials, and other CLIs you have logged in;

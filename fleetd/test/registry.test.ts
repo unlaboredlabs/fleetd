@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
-import { TOOLS } from "../src/hub/api/tool_roles.ts";
+import { CLOUD, TOOLS } from "../src/hub/api/tool_roles.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { HubDb } from "../src/hub/store/db.ts";
@@ -20,7 +20,11 @@ const caller = (role: Role, kind?: "human"): Caller => ({
 test("every tool in the contracts' table is registered, a stub until its module replaces it", async () => {
   const tools = new Registry();
   registerAll(tools);
-  expect(tools.names().sort() as string[]).toEqual(Object.keys(TOOLS).sort());
+  expect(tools.names().sort() as string[]).toEqual(
+    Object.keys(TOOLS)
+      .filter((n) => !CLOUD.has(n as keyof typeof TOOLS))
+      .sort(),
+  );
   expect(Object.keys(TOOLS).length).toBeGreaterThan(150);
   // Before its module's register runs, a tool is the stub that names the module.
   const result = await new Registry().call(hub, caller("admin"), "fleetd_status", {});

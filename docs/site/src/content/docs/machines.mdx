@@ -5,9 +5,9 @@ description: Add workers to the hub, log in their Claude, remove them, and check
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-A machine is optional: agents run on a computer of yours, in [hosted sandboxes](#sandboxes) on your own boat.dev
-account, or both. With no computer at all, the hub runs them in sandboxes itself ([No computer
-connected](#no-computer)).
+Agents run on your own computers, directly on each, as plain processes of your user: the machine's tools, its network
+and its files are theirs. fleetd's cloud also offers computers of its own to its teams; a hub of your own runs agents
+on your computers only.
 
 You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
 and admins add, repair and remove them in the app, and log in their Claude from it too. The [CLI](#cli) does the same
@@ -16,22 +16,23 @@ from a terminal on the hub.
 A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
 yet.
 
-Cloud machines (boat.dev) were removed from fleetd: before you upgrade from a fleetd that had them, delete any machines
-it made on your boat.dev account.
+Local VMs (each agent in a VM of its own) and hosted sandboxes on your own boat.dev key were removed from fleetd: a hub
+updated from a fleetd that had them runs every agent on its machine again, deletes the keys it kept, and tells each bot
+that had picked one so, once, in its chat. A bot that lived in the hosted sandboxes keeps its files in
+`~/.fleetd/hub/runner` on the hub's machine, and its chat says where: add its repo on one of your computers to go on.
 
 ## The Machines page {#page}
 
-**Settings › Hub › Machines** is one page, for the hub's owners and admins, in four groups:
+**Settings › Hub › Machines** is one page, for the hub's owners and admins, in three groups:
 
 | Group | What it holds |
 |---|---|
 | **Machines** | Every machine, a dot before its name: grey while it is well, amber while it needs someone. At the row's end, what runs there now ("8 agents · 2 screens", Idle) or what is wrong ("Offline since Fri 09:03", "Claude is not logged in"). A role other than both shows beside the name. A row opens [its page](#checks). The plus adds a machine. |
-| **Providers** | The team's own accounts at [hosted sandbox providers](#sandboxes) (boat.dev), one list, each with what it can run beside its name. Not connected, **Connect**; connected, its limit where it has one and a menu with **Test** and **Disconnect**. A hosted provider's dot and line are its real state: **Starting…** (a ring) while the hub's runner comes up, **Ready · 3 of 20 running** (grey), **Needs a Claude account** with **Connect** (amber), or **Couldn't start** with why, its fix and **Try again** (red); a key refused at its test says so with **Test again**. The hub menu says the same while it isn't ready ("boat.dev isn't ready: billing isn't set up") and opens the row; `#/settings/hub/machines/hosted` opens it too. A ring while it isn't connected. A hub without a provider's tools lists none of them. A hub that had Revyl, E2B or Daytona connected before fleetd removed it says so in one line above them for 30 days; its key was deleted (iOS simulators run on a Mac machine; agents on your machines or boat.dev). |
-| **What runs where** | Two rows. **Linux machine**: where agents run, and their browser, Linux desktop and Android with them (an agent's screens run where it runs). With a machine and a provider both, a pick: **Your machines**, **Your machines first, then boat.dev** (the default, as every hub placed before the pick), or **boat.dev only**; the hub places every agent by it ([How placement picks](#sandboxes)). With one place, that place as a value; with none, **None yet**, with how to add one in its hover. **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
+| **What runs where** | **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
 | **Updates** | Where the hub and its machines stand, **Update**, and **Update automatically** ([Updating](/docs/updating-and-uninstall)). |
 
-The phone's **Settings › Machines** has the same groups for an admin: the machines and how each is, the providers
-(a tap opens one, to connect it, set its limit, test or disconnect it) and what runs where. Updates stay on Settings.
+The phone's **Settings › Machines** has the same groups for an admin: the machines and how each is, and what runs where.
+Updates stay on Settings.
 
 ## Add a machine in the app {#app}
 
@@ -58,7 +59,7 @@ first. The app knows the hub's own computer the same way, wherever the hub keeps
 
 The Machines group lists every machine with its state (above). Open one for its own page: its state, **Repair**
 while it is degraded or offline, what is wrong with it, if anything, then **Used for** (its role), **Agents** (how many
-at once, with what runs now, and [where each runs](#vms)), **Screens** and **Remove**.
+at once, with what runs now), **Screens** and **Remove**.
 
 A machine is degraded while its claude can't run sessions, or while it has no IPv4 network and git there can't reach
 GitHub. For the second, a Linux node checks its own network hardware (not Tailscale, docker or loopback) with each heartbeat:
@@ -356,276 +357,6 @@ if it isn't, so it starts at the next boot. The rewritten unit takes effect at i
 (any setting fleetd doesn't write) is left as it is. A node started as a service before its config is there (`fleetd
 node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
 rather than exiting.
-
-## Each agent in its own VM {#vms}
-
-On a Linux machine that can run them, each task's agent runs in a small VM of its own
-([Cloud Hypervisor](https://www.cloudhypervisor.org)), not as a plain process: its kills, its `/tmp`, its memory and
-its network stay its own, and it can't reach the machine itself over the network (the hub's port among them). Nothing
-about tasks, chat, PRs, screens or resumes changes. Leads and a person's own threads stay plain processes, and so does
-every agent on a Mac.
-
-| What | How |
-|---|---|
-| Its files | Nothing of your home: the machine is a plain host for VMs, and a VM is set up as a [hosted sandbox](#sandboxes) is. It sees its worktree and its repo's `.git` (writable, at the same paths, so builds, commits, setup and `chat_file` work as before), its scratch dir (`$TMPDIR`), the session's own fleetd files and the tools fleetd installed for it (agent-browser, agent-device), read-only, and the folder where its tool calls mark themselves waiting on an update (`update/held/`). Not your `~/.claude`, `~/.config` (gh), `~/.ssh`, shell files, toolchains (`~/.cargo`, `~/.rustup`, `~/.bun`, `~/.local`), package caches, your other repos, or the repo's main checkout. `/tmp` is the VM's own memory (1 GiB at most, `/dev/shm` 512 MiB) and goes with the VM, at the idle close after 10 minutes too, while `$TMPDIR` and the VM's own disk stay until the task ends: keep what must last between turns there. Each share is its own file system in the VM, and Linux renames and hard-links within one only: a link or rename between the worktree and `$TMPDIR` fails (`EXDEV`). pnpm gets a store in the worktree (`.fleetd/pnpm-store/`, kept out of git). A change made to the files from outside the VM raises no inotify event inside it. |
-| What it is given | A disk of its own (`~/.fleetd/node/vm/disks/<session>.img`, sparse: it takes only what the agent writes), the writable layer over the image's system, with its home on it (`/var/lib/fleetd/home`), kept between its VMs (the idle close) and removed when its task ends. Over its bot's [computer image](/docs/projects#computer) when it started from one, read-only. Its Claude folder and `.gitconfig` (`GIT_CONFIG_GLOBAL`) in `~/.fleetd/node/vm/homes/<session>`, on the machine; the `.gitconfig` holds only your git name and email. Package caches (Bun's, npm's, `XDG_CACHE_HOME`) in `~/.fleetd/node/vm/cache`, shared by the machine's VMs. Its order's variables (`GH_TOKEN`) and none of another order's, renewed as the hub renews them; never the machine's gh login. Your environment without the variables that name a place in your home it doesn't have (`CARGO_HOME`, say); `PATH` adds its home's `~/.local/bin`, `~/.cargo/bin` and `~/.bun/bin`. Its transcript, so it resumes after the idle close, and it comes back to the machine's Claude folder once the VM is done. |
-| Its tools | Its image's: Ubuntu 24.04 with git, gh, Bun, Node.js 24 with npm, pnpm and Yarn (so fleetd's own installs from a repo's lockfiles run there), a C toolchain, Python 3, Playwright's Chrome, and the usual network and archive tools. Anything else (Rust, Postgres) its bot's [setup commands](/docs/projects#setup) install into its home: they run in the VM, with its home and caches. They run once, for the bot's [computer image](/docs/projects#computer), and every later agent starts from it; until the image is ready each task installs them again (rustup's minimal toolchain took 11 s on the devbox). The machine's own `claude` runs there, linked into `~/.fleetd/node/vm/claude`. The agent runs at your user's ids, under your user name, never root. |
-| Open files | virtiofsd, which shares the files, keeps one open file for each file the VM has looked at, until the VM forgets it, and can hold only as many as the machine lets one process (524,288 on the devbox). The node counts them every second, and at a quarter of that it has the VM forget the files it isn't using, and says so in its log (`a VM's file share held … open files`), so an agent never meets the limit. |
-| Network | Its own, through passt, which runs in a network namespace of its own where every address of this machine leads nowhere: its loopback, its LAN and tailnet addresses, its bridges' (Docker's, LXD's), IPv4 and IPv6. The node reads them again every 2 s and sets each running VM's routes when they change (a new DHCP lease, IPv6's rotating addresses, a VPN coming up). Its own addresses are those of every interface, up or down (Docker's `docker0` with no container still answers). The internet and DNS work as before, over IPv4 only: the guest kernel has no IPv6, so a server listening on `::` or `::1` in the VM fails, and an IPv6-only host can't be reached. `ping` works. Other machines are reached as from a plain process: the LAN (your router's page) and every other tailnet peer. Only the ports a session needs are passed in, over the VM's own link to the node rather than the network: its browser's and Android's adb, at the same `127.0.0.1` ports as before. |
-| Claude | Always through the node, over the same link, wherever the endpoint is: Anthropic's API, a gateway on this machine's `localhost`, on its LAN or tailnet address, or on another tailnet host, by name or IP, http or https. The endpoint is the one claude itself would pick: `ANTHROPIC_BASE_URL` from its environment, then each settings file's `env` (`~/.claude/settings.json`, the bot's, `--settings`, managed settings), the last one setting it winning. The VM's claude gets the Claude variables of your settings' `env` (`ANTHROPIC_*`, `CLAUDE_*` and the like: the endpoint and its token) in settings of its own, and nothing else of `~/.claude`. A bot's [Claude account](/docs/people#claude) signs it in too. A machine whose agents sign in with its own Claude login (`claude login`, kept in `~/.claude/.credentials.json`) can't give a VM that login, which renews itself there: an agent whose bot has a Claude account still runs in a VM, and every other runs as a plain process. The machine's page says so, with the fix: `claude setup-token`, and the token it prints in `~/.fleetd/claude.env` as `CLAUDE_CODE_OAUTH_TOKEN=…`. In the VM the URL keeps its name, which points at the VM's loopback (an IP is added there), and the node connects to the endpoint as this machine does, so TLS still checks the endpoint's own certificate and no tailnet DNS is needed in the VM. Before the agent starts, the VM calls the endpoint once, with no key; if that fails, the agent runs as a plain process instead. |
-| Calls to the node | An agent's fleetd tools reach the node through the VM's link, and every call on it acts as that VM's session, whatever the call names: a VM can't act as another agent. |
-| Build turns | A cargo build in a VM takes the machine's [build slots](#fair-share) from the node over the same link, in the same queue as every other agent's, and gives them back when it ends, or when its VM does. |
-| Start and end | About 1 s to start, on top of the worktree. Setup commands run in it, unless it starts from its bot's computer image. It goes when the agent's claude does (stop, the idle close after 10 minutes, the task's end), and the next message starts a fresh one. A node restart leaves it running and picks it up again. |
-| Memory | Each VM has 4 GiB and 4 CPUs. The CPUs are shared with the machine's other work and cost no memory. The memory is taken as the VM uses it, but not given back until the VM ends, so the machine's [max agents](/docs/projects#max-agents) counts all of it plus 0.1 GiB an agent: a 64 GB machine runs 10 VMs at once (24 as plain processes), a 32 GB one 5. A bot can pick its agents' VM size instead ([Runs on](/docs/projects#runs-on): 2 vCPU / 4 GB, 4 / 4, 4 / 8 or 8 / 16); such a VM counts its memory's worth of the machine's agents (a 16 GB one on a machine of 4 GiB VMs counts as 4), so a big pick never over-commits it. A machine whose agents build big things (a Rust crate's tests can take more than 4 GiB) sets its VMs' size in `~/.fleetd/node/node.json`, `"vmMemoryGiB"` (2 to 256): 6 GiB runs 7 on 64 GB and 3 on 32 GB, 8 GiB 5 and 2. A VM that runs out of its memory tells its agent at its next tool call what was killed and that `vmMemoryGiB` is the fix. A VM goes when its task ends. Machines, or [hosted sandboxes](#sandboxes), add more. |
-| Speed | Builds over the shared files take about 16% longer and a third more CPU than a plain process. A test suite that starts many short processes takes longer: on the devbox fleetd's own took 234 s in a VM against 91–112 s as a plain process on 4 CPUs, and fleetd-cloud's with its Postgres 366 s against 206 s. Starting a process costs about 3× more in a VM, and git's many small writes on the shared files more still. |
-| What it needs | x86_64 Linux, `/dev/kvm` this user can open (the `kvm` group), unprivileged user, mount and network namespaces, `ip` (iproute2), `nsenter` (util-linux) and `/dev/net/tun`, which most Linux machines have, and a DNS server the VM can reach, not on this machine itself. No root: the node fetches its pinned Cloud Hypervisor, virtiofsd, passt, guest kernel and root image into `~/.fleetd/node/vm/` the first time, and checks each. |
-
-The machine's page says which, under Agents: **Each agent runs in** **A VM**, or **A process** with the reason and,
-where there is one, the command that fixes it, to copy. A reason that is by choice or by the machine's design (turned
-off, macOS) has nothing to fix and stays in the row's hover. The max agents line's reason says the same:
-"memory 60 GB, about 4.4 GB an agent; each agent in a VM of its own", or "…; agents run as plain processes:" and the
-reason. The doctor's `vm` row for the machine says the same, with the fix
-where there is one: it passes when agents run in VMs, or as plain processes by choice or on a Mac, and warns otherwise.
-A machine that can't run VMs never refuses agents: they run as plain processes, and both say why.
-
-A machine signed in to Claude with its own login (`claude login`), and with no token a VM can be given, still shows
-**A VM**, in warning colour, with a line saying that its agents whose bot has no Claude account run as plain
-processes, and the command that fixes it: `claude setup-token`, whose token goes in `~/.fleetd/claude.env` as
-`CLAUDE_CODE_OAUTH_TOKEN=<token>`. Agents on a bot's Claude account run in VMs either way. Each agent's setup commands
-run where the agent does: in its VM, or as plain processes with it. The doctor's `vm` row warns
-with the same.
-
-| Why it runs plain processes | Fix |
-|---|---|
-| turned off on this machine (node.json "sandbox": "process") | Remove the key. |
-| node.json "sandbox" is something else, or node.json can't be read | Fix the file: `"process"` turns VMs off, no key turns them on. Until then they stay off. |
-| VMs need Linux with KVM; this machine runs macOS | None: a Mac runs plain processes. |
-| This user can't open /dev/kvm | Add the user to the `kvm` group (the line gives the command): the node then starts VMs through `sg kvm` within minutes, with no restart. |
-| AppArmor keeps this user from making the user namespace virtiofsd shares files from | The line gives the `sysctl` that allows it. |
-| No DNS server for VMs | Give systemd-resolved an upstream server: a VM can't use its local stub, or a server on this machine itself. |
-| A VM's network needs the `ip` command, `nsenter` or `/dev/net/tun` | Install iproute2 or util-linux with the system's package manager; for `/dev/net/tun`, the line gives the command that loads the tun module. |
-| fetching the VM files for the first time | Wait: agents run in VMs once they're there. A fetch that fails is tried again an hour later. |
-| this node runs fleetd from source | Run an installed fleetd. |
-| the last VM didn't start: … (the box can't reach Claude at host:port, say) | The node tries VMs again 10 minutes later; until then every new agent runs as a plain process. The reason names the endpoint and the file that set it: check that this machine reaches it. An endpoint a bot's own `.claude/settings.json` names sends only that agent to a plain process. |
-
-**What stays shared on purpose.** A VM is a wall around the machine's processes, network, your home and fleetd's own
-folders. What it still shares:
-
-- **Each repo's `.git` is shared writable** with every agent working in that repo, so an agent can change another's
-  branch or refs, as it can as a plain process.
-- **The VM caches** (`~/.fleetd/node/vm/cache`) are shared writable by every VM on the machine, so one agent could
-  poison a package another one installs.
-- **The agent runs at your user's ids**: files it writes in its worktree are yours.
-- **File locks don't cross a VM's share.** A lock (`flock`, `fcntl`) taken in the VM holds only inside it: another
-  VM, or a plain process such as the lead, takes the same lock at once. Lock files made by creating them (git's
-  `index.lock`, claude's own) work across.
-- **A VM agent's browser sees the VM's network.** Its Chrome runs on this machine, but every connection it makes
-  (pages, websockets, service workers) goes out through the VM: `localhost:5173` is the agent's own dev server in
-  the VM, and this machine's loopback, LAN and tailnet addresses (the hub's among them) are as out of reach as they
-  are from the VM. It opens only `http`, `https`, `data:` and `blob:` pages, never `file:` or `chrome:`, and it
-  downloads to and uploads from only folders the VM shows (your worktree, say), never its `/tmp` or fleetd's own
-  folders. The Linux desktop refuses to launch programs for a VM agent, since they'd run outside its VM.
-- **Other machines on your network and tailnet** are reached as from a plain process: only this machine's own
-  addresses are kept out.
-
-Leads and a person's own threads aren't in VMs: they run in your home as plain processes.
-
-**Leaked VMs.** A VM goes with its agent, at stop and at the task's end, and powers itself off 2 s after its session
-ends, so one whose session is over doesn't stay. Each VM's processes carry a marker naming the folder
-the node made for it (`~/.fleetd/node/hosts/<session>`). At its start, the node ends every VM with its own marker that
-no session's record holds: one whose folder is gone, and one that started just before a crash, before its record was
-written. It finds them only by that marker under its own home, never by a process's name, so another fleet's VMs on the
-same machine (a second `FLEETD_HOME`) are never touched. `fleetd machine remove` ends them too.
-
-**Turn it off on a machine.** Add `"sandbox": "process"` to its [`node.json`](/docs/config-and-files#node-json). New
-agents run as plain processes within a minute; an agent in a VM finishes the run it is in there (messages that arrive
-meanwhile join it), and its next one starts as a plain process. Remove the key to turn VMs back on. It turns off local
-VMs only: with a [hosted provider](#sandboxes) connected, agents past the machine's max agents still go there. A
-provider's limit of 0 sends none.
-
-## Hosted sandboxes {#sandboxes}
-
-A team can run its agents with its own account at a hosted sandbox provider, [boat.dev](https://boat.dev), instead of
-a computer or beside one. Each agent then
-runs in a sandbox of its own there, made by the machine that holds the bot's checkout (or by the hub itself, with no
-computer: [below](#no-computer)) and gone when the agent ends. With computers, a provider gives agents room past their
-own [max agents](/docs/projects#max-agents). The provider bills the team directly, by the second while a sandbox runs;
-fleetd charges nothing for it and holds no account of its own.
-
-A provider is one whose sandboxes run everything a Linux machine runs: agents, their browser, Linux desktop and
-Android's emulator, which needs KVM inside the sandbox (boat.dev's do). fleetd checked on real sandboxes and removed the ones that
-can't: **E2B** (its Firecracker microVMs have no KVM) and **Daytona** (its sandboxes have `/dev/kvm`, but it can't be
-opened in their user-namespaced containers). A hub that had either connected lost the key at the update, a bot that
-picked one for [Runs on](/docs/projects#runs-on) is back on the default, and Providers says so for 30 days.
-
-**Connect one.** Make an API key at boat.dev, in its dashboard or with `boat api-key create`. In **Settings › Hub ›
-Machines › Providers** (or Settings › Machines on the phone), an admin presses its **Connect**, pastes the key into
-its sealed field and presses Connect. The app seals the key to the hub, which keeps it sealed as it keeps [vault](/docs/vault) values:
-it is never shown again, logged or given to an agent, and each use is logged without it. **Disconnect**, in the
-row's menu, removes the key and its limit. The guided hub setup (`fleetd init`, the app's first run, Settings › Hub › Setup) lists
-it as an optional step, **Hosted sandboxes**.
-
-**Test.** Connect tests the key at once; **Test**, in the row's menu, does it again. The hub sends the key sealed to the team's Linux
-machines online, in the order of their ids (with none, to its own runner), and the first asks the provider for
-fleetd's sandboxes there, which starts nothing. A key the provider refuses, an account at its plan's limit or behind on
-billing, and a provider that doesn't answer each read as such, with what to do: one plain line, never a machine's name
-or a status code. A test that works also has the team's machines try a provider they set aside again at once. Sandboxes are
-made from Linux on x86_64, never from a Mac: a hub on a Mac with no Linux computer says so.
-
-**Limit and order.** Each connected provider has one number, how many of the team's agents may run there at once
-(0 to 500; 5 until set; 0 keeps the key and sends none). It is the team's total for that provider, across all its
-machines; keep it at or under the provider's own (boat.dev's $20 plan runs 100 at once).
-
-**How placement picks.** A bot that picked its computer ([Runs on](/docs/projects#runs-on)) has its agents placed
-there alone, at that size. Otherwise by count alone, when an agent's run starts, where [What runs where](#page)'s **Linux machine** says: by
-default its machine's own slots first; once those are full, the connected providers in the order listed, each up to its
-limit; then the agent waits in line, and the line says why, e.g. "machine cap: 10 of 10 running on devbox (memory 60
-GB), and hosted sandboxes are full: boat.dev 5 of 5". **Your machines** never sends one to a provider; **boat.dev
-only** sends every one there, leaving the machines' own slots empty ("the team's agents run on boat.dev only, and it
-is full: 5 of 5"). A sandbox counts against its provider's limit for as long as it runs, the idle minutes between an
-agent's turns included, so the team never has more running than the limit. A run that comes back to an agent whose
-sandbox (or Claude on its machine) still runs goes back to it. Only an agent on a Claude account goes to a sandbox: one
-on its machine's own Claude login stays on its machine's slots (that login never leaves the machine). A machine's max
-agents shows its own slots, and names the team's hosted limits beside them: they are shared, not each machine's. Where
-an agent runs shows in its row's hover in the agents list, e.g. "writer · boat.dev · receipt-dates".
-
-**When the provider refuses.** A refusal (the key, the plan's limit, billing), a provider that doesn't answer, or a
-sandbox of its that doesn't come up sets the provider aside for 10 minutes on the machine that met it: no sandbox is
-asked of it meanwhile, and the agents it would take wait, saying why ("boat.dev refused: billing isn't set up on the
-account (set up billing in boat.dev's dashboard); trying again at 12:45", the hub's clock). boat.dev's limit on starts
-a minute frees by itself, so it sets the provider aside for one minute and says "boat.dev's start rate: trying again
-in a minute", and a lead it refused starts again a minute later. The provider's row turns red with the same words and
-**Try again**; a lead that couldn't start says them in the chat. A provider whose running sandboxes can't be kept
-running says that on its row too. A start that fails for one bot's own reason (its repo didn't clone, its files didn't
-go in, its setup) fails that start alone, in its own words ("its boat.dev sandbox came up, but it couldn't get the
-repo"), and every other bot's start goes on.
-
-**What differs from an agent on its machine.**
-- *Files.* The sandbox starts from the agent's worktree on its machine: the repo cloned from its origin with the
-  order's GitHub token, at the same path, then its commits and uncommitted work. Ignored files (`node_modules`,
-  `target/`) don't travel, so the repo's [setup commands](/docs/projects#setup) run again in each new sandbox. On the
-  hub's own runner with boat.dev, a bot's sandboxes start from its [computer image](/docs/projects#computer) instead
-  (a boat snapshot holding the repo's clone and what setup installed): the clone only fetches what's new, and setup
-  doesn't run. After each
-  of the agent's turns, and when the sandbox ends, its commits, uncommitted work and conversation come back to the
-  machine, so the machine's copy is never more than a turn behind.
-- *Life.* A sandbox goes when its agent's Claude does: after 10 minutes idle (unless a Monitor or a screen holds
-  it), at a stop, or when the task ends. The next message makes a new one and resumes the conversation. It is never
-  paused or kept at the provider. A sandbox that dies on its own (an outage, a stop at boat.dev) loses only the turn
-  under way: the agent's line says its sandbox stopped and since when its work was lost, and it goes on from its last
-  finished turn. While it runs, the machine keeps renewing its time at the provider; when that fails (a revoked key,
-  boat.dev down), the provider's row says so, and the agent is ended with its work brought back before its time runs
-  out. Disconnecting the key ends every running sandbox the same way first.
-- *Secrets.* The provider key stays on the hub and the machine; no sandbox sees it. The agent's Claude account and
-  GitHub token reach the sandbox only as its programs start, never in what the provider stores, and go with it.
-- *Screens in the sandbox.* An agent's browser, Linux desktop and Android run in its own sandbox, beside its files and on its
-  network: a fresh Chrome (Playwright's headless shell, in the template) and an X display of its own (Xvfb with
-  openbox), driven by the same tools as on a machine (agent-browser, the desktop tool, whose `launch` starts the app in
-  the sandbox). The machine (or the hub's runner) drives them over the sandbox's link, records them and serves their
-  live view and takeover as for its own screens; ending one kills it and everything launched on it. Android is
-  fleetd's pinned emulator (Android 15), booted with KVM in the sandbox: the first time in a sandbox it fetches the
-  emulator and its image (about 1.2 GB) and boots, about two minutes, so `session_start` says it is starting and the
-  agent calls it again. The agent's agent-device runs in the sandbox; the machine drives the emulator's adb and scrcpy
-  over the sandbox's link. A sandbox whose `/dev/kvm` doesn't open says so.
-- *The same as on the machine:* chat, PRs and pushes (the pre-push gate included), `fleetd` tools, Monitors,
-  `chat_file`, artifacts and resume.
-- *Claude.* The sandbox calls the endpoint as set: Anthropic's API on the internet, or a gateway on your tailnet once
-  [Tailscale](#tailscale) is connected. Nothing of a machine's own network is carried into a sandbox, so a gateway on a
-  machine's `localhost` or LAN isn't reached there: point the account at the machine's tailnet name instead. The
-  endpoint is checked from inside the sandbox before the agent starts, and refused in plain words when it can't be
-  reached; one on a private network with no Tailscale connection says to connect it, and so does the hosted runner's
-  row in Machines.
-- *Refused, in plain words:* the agents' Mac and iOS simulators, and an agent on the machine's own Claude login.
-- *Machines.* Only an x86_64 Linux machine makes sandboxes (each runs the machine's own fleetd); an arm64 one keeps
-  its agents on its own slots.
-- *Failures.* A sandbox that doesn't come up (a key the provider refuses, its plan's limit, billing, an outage, or the
-  repo not cloning in it) fails that run with the provider's or the sandbox's words on the agent. The machine leaves
-  that provider out for 10 minutes, and a minute later fleetd's recovery starts the agent again in its own thread, with
-  the message that run never got (its brief, or its lead's message): on the machine's own slots, another provider with
-  room, or in line. Twice in a row, and the task fails for its lead to decide.
-
-### No computer connected {#no-computer}
-
-A team with a provider connected and no computer still runs agents. The hub starts a runner of its own, a fleetd node
-that runs no agent on the hub's machine, and every agent of a bot added there, its lead too, runs in a sandbox of the
-connected providers. It shows as **Hosted sandboxes** wherever a bot says where it runs, never in the list of
-computers (on the phone too) or the command palette, and it goes by itself once no provider is connected and no bot
-lives on it. It has no machine page: a link to one opens the provider's row under Providers, whose limit is how many
-run at once, and the hub refuses a join code, a role or a max agents of its own for it.
-
-- *Bots.* A bot there is a GitHub repository, cloned on the hub with the hub's [GitHub App](/docs/github) token for
-  it; a folder of the hub's machine can't be one. Its agents push and open PRs from their sandboxes as any hosted
-  agent does.
-- *Claude.* Its agents run on the team's Claude account: the hub's API key, or a person's subscription, saved in
-  Settings › Your accounts › Claude. No machine's Claude login comes into it. An account saved before the first
-  provider was connected reaches the sandboxes by itself: a computer holding it seals it to them as they start, with
-  the key's endpoint, and the hub only passes it through. That computer must be online once for it.
-- *Screens.* Its agents' browser, Linux desktop and Android run in their sandboxes, recorded and watched as a
-  machine's are.
-- *Not there:* approved commands and checks run on a machine, and the agents' Mac.
-- *With a computer too*, nothing changes for the computer's bots: their agents use its slots first, then the
-  providers, and a new bot goes to a computer.
-- The hub must run on Linux on x86_64 for this, as every machine that makes sandboxes.
-
-### Your tailnet (Tailscale) {#tailscale}
-
-Hosted sandboxes reach your [Tailscale](https://tailscale.com) tailnet (its addresses and MagicDNS names, so a Claude
-gateway, an MCP server or a dashboard there) through one device the hub runs for the whole team.
-
-- **Connect.** Settings › Hub › Machines › Network › **Tailscale** › Connect (also a step of its own in
-  [setup](/docs/quick-start#setup-steps) and on Get started, right before Claude, and `fleetd init --step tailscale` in a
-  terminal). Tailscale's sign-in page opens: sign in
-  and approve. Nothing is pasted. That adds one device, `fleetd`, to your tailnet, owned by whoever approved it, with
-  shields up: nothing on the tailnet reaches the hub's machine through it. It is one device however many sandboxes
-  run. With device approval on in your tailnet, the row says so until an admin approves `fleetd` in Tailscale's
-  console.
-- **What sandboxes reach.** Tailnet addresses (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) and MagicDNS names, full and
-  short, from every program with no proxy settings: curl, git, ssh, `fetch` in node, raw TCP. Only that traffic goes
-  through the hub; everything else leaves the sandbox directly, as before. UDP to the tailnet isn't carried (its DNS
-  is). Only the tailnet's devices are reached, by address or full name: never the `fleetd` device itself, so nothing
-  reaches the hub's machine through it. What the device may reach is what your tailnet's access rules let its owner's
-  devices reach.
-- **On the hub.** The hub fetches Tailscale's static build (1.104.7, its checksum checked) the first time and runs
-  it in userspace under its own home, with its own socket: never the host's own Tailscale, routes or DNS. Its login
-  state is sealed in the hub's database under the vault's key, and is in the clear only in a RAM-backed directory
-  while it runs; the hub brings the device back after a restart. Linux hubs only (x86_64 or arm64).
-- **Expiry.** The device's key expires as your tailnet sets it (180 days by default); the row then says to connect
-  again. To avoid that, disable key expiry for `fleetd` in Tailscale's console.
-- **Disconnect** (the row's menu) logs the device out, so it leaves the tailnet, and deletes its state: sandboxes lose
-  the tailnet at once. With no connection, sandboxes reach only the internet.
-- **How.** In each sandbox a TUN device takes the tailnet's routes and hands each connection to fleetd's helper there,
-  which carries it over the sandbox's own link to its machine and on to the hub, signed with the machine's key. The
-  sandbox's resolver points at the same helper, which asks the hub's device for tailnet names and the sandbox's own
-  nameservers for everything else.
-- A local VM uses its machine's own network, tailnet included, as before.
-
-**What the machine does.** The machine builds fleetd's template in the team's account in the background, when it links
-to the hub and when a key is connected, never while someone waits on a message (the same recipe as a local VM's image,
-plus Claude Code at the version fleetd was tested with and the tunnel for your tailnet; every download in it is
-checked against a pinned SHA-256, and its packages come from Ubuntu's own archive as it was on one day). It takes a
-few minutes, once per recipe, and a template the account already holds is used, never built again. Until a new
-recipe's template is there, or when it didn't build, sandboxes start from the newest one that did, and the start says
-so ("a newer computer image didn't build; using the one from Nov 18"); the next link tries the build again. Only a
-team's very first sandbox, with no template at all, waits on the build. Each sandbox runs the machine's own fleetd: a
-release build's template holds that very build, so a sandbox starts it at once; a sandbox from an older template
-fetches it from GitHub itself, else the machine sends it (about 57 MB). A new template's build deletes the account's
-older ones past the newest two (each costs by the day), never a bot's computer image. The machine labels each sandbox
-with its own id and deletes, every 10 minutes, any of its own that no agent holds any more.
-
-**Cost.** Providers bill by the second while a sandbox runs, idle or not; a bigger [Runs on](/docs/projects#runs-on)
-size costs more. At the default size (2 vCPUs, 4 GiB),
-from their published rates:
-
-| Provider | Per agent-hour | Besides |
-|---|---|---|
-| boat.dev | about $0.02 (small: 2 vCPUs, 4 GB) | its $20 plan starts 12 sandboxes a minute, 100 at once |
-
-Ten agents for 8 hours a day on 22 days come to about $35 a month at boat.dev's small rate, plus its plan. A sandbox that waits
-on CI with nothing to do costs the same as one that works, until its 10 idle minutes are up.
-
-MCP clients use `sandbox_get`, `sandbox_connect`, `sandbox_set`, `sandbox_test`, `sandbox_disconnect` and
-`sandbox_where_set` (the Linux machine). A key
-connected on one hub doesn't move with it: [connect it again](/docs/moving-a-hub) on the new hub.
 
 ## Machine roles {#roles}
 

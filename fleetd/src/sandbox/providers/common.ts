@@ -21,24 +21,14 @@ export const SECRET_HEADER = "x-fleetd-box-secret";
 export type Size = { cpu: number; memGb: number };
 export const DEFAULT_SIZE: Size = { cpu: 2, memGb: 4 };
 
-/** Where an agent's computer is: this machine's own VM (`vm`), or a box of a hosted provider. */
-export type ComputerKind = "vm" | ProviderId;
+/** Where an agent's computer is, when its bot picked one: a box of a hosted provider. */
+export type ComputerKind = ProviderId;
 
 /**
  * The exact sizes each kind of computer comes in, smallest first: what a bot may pick for its agents, and the only
  * sizes a computer is made at (never rounded to a nearest one). boat's are its machine types (docs.boat.dev/machines).
- * A Local VM's
- * are offered where its machine has the CPUs and twice the memory (the hub's `computerChoices`), and each counts its
- * memory's worth of its machine's slots (hub/slots/board.ts slotsOf).
  */
 export const SIZES: Readonly<Record<ComputerKind, readonly Size[]>> = {
-  vm: [
-    { cpu: 2, memGb: 4 },
-    // A VM's own default with no pick (node/place/microvm.ts GUEST_CPUS, GUEST_MEM_GIB): picking it is what Automatic gives.
-    { cpu: 4, memGb: 4 },
-    { cpu: 4, memGb: 8 },
-    { cpu: 8, memGb: 16 },
-  ],
   boat: [
     { cpu: 2, memGb: 4 },
     { cpu: 4, memGb: 8 },
@@ -53,7 +43,7 @@ export const sameSize = (a: Size, b: Size) => a.cpu === b.cpu && a.memGb === b.m
 export const sizeText = (s: Size) => `${s.cpu} vCPU / ${s.memGb} GB`;
 
 /** Why `kind` can't make a computer of `size` exactly, or undefined when it can. */
-export function notOffered(kind: ComputerKind, size: Size, name: string = kind === "vm" ? "A Local VM" : kind): string | undefined {
+export function notOffered(kind: ComputerKind, size: Size, name: string = kind): string | undefined {
   if (SIZES[kind].some((s) => sameSize(s, size))) return undefined;
   return `${name} comes in no ${sizeText(size)}: its sizes are ${SIZES[kind].map(sizeText).join(", ")}`;
 }

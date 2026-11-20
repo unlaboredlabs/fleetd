@@ -184,8 +184,8 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
     throw problemError(
       problem(
         "no_worker",
-        "nothing is connected to run the bot: no computer is online and no hosted sandbox provider is connected",
-        "Connect a computer, or connect boat.dev in Settings › Hub › Machines",
+        "nothing is connected to run the bot: no computer is online",
+        "Connect a computer in Settings › Hub › Machines, or start fleetd on one that joined",
       ),
     );
   }

@@ -1,9 +1,10 @@
 // MCP tool name → handler, built once; /mcp and /app's `call` both call through it.
 // Every tool in the contracts' table starts as a stub that throws
-// NotImplemented naming its module; that module's `register` (src/hub/serve/areas.ts lists them) replaces it.
+// NotImplemented naming its module; that module's `register` (src/hub/serve/areas.ts lists them) replaces it. A tool
+// only fleetd's cloud serves (tool_roles.ts CLOUD) gets none: here it is no tool.
 import type { AgentKeyInfo, ToolMap } from "../../shared/contracts.ts";
 import { internalError, NotImplemented, ToolError } from "../../shared/errors.ts";
-import { TOOLS, type ToolName } from "./tool_roles.ts";
+import { CLOUD, TOOLS, type ToolName } from "./tool_roles.ts";
 import { DecodeError, decodeInput } from "./decode.ts";
 import { isHuman, requireRole } from "./grants.ts";
 import type { Hub } from "./hub.ts";
@@ -34,6 +35,8 @@ export class Registry {
 
   constructor() {
     for (const [name, tool] of Object.entries(TOOLS)) {
+      // A tool only fleetd's cloud serves isn't this hub's at all: a call of it is one of no such tool.
+      if (CLOUD.has(name as ToolName)) continue;
       this.tools.set(name, () => {
         throw new NotImplemented(`${tool.module} (tool ${name})`);
       });

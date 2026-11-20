@@ -1,7 +1,5 @@
-// The image a hosted box starts from. There is one recipe for every sandbox: the local VM's root image Dockerfile
-// (sandbox/image, with the distro, git, the pinned Bun and the libraries agents' tests need). It is a base: a local VM
-// gets the node's own fleetd and the machine's claude over its file share, and a hosted box has no share, so its
-// template adds the pinned Claude Code and the fleetd binary on top (`hosted`). That template is built in the team's
+// The image a hosted box starts from: the base Dockerfile (sandbox/image, with the distro, git, the pinned Bun and the
+// libraries agents' tests need), and on top of it the pinned Claude Code and the fleetd binary (`hosted`). That template is built in the team's
 // own provider account with the team's key (each client's `build`); fleetd publishes no image holding Claude Code.
 //
 // The recipe holds one FROM, then only RUN, ENV, WORKDIR and USER, so it builds with no context files on any

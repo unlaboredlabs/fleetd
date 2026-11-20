@@ -27,13 +27,8 @@ export type NodeConfig = {
   desktop?: Record<string, unknown>;
   mac?: Record<string, unknown>;
   agentsMac?: boolean;
-  /** Where this machine's agents run: in a VM of their own when it can run one (absent, the default), or `"process"`,
-   * as plain processes (node/place/microvm.ts). */
-  sandbox?: "process";
   /** The hub's own runner (hub/runner, shared/sandbox.ts CAP_RUNNER): every session runs in a hosted box. */
   runner?: boolean;
-  /** Each agent's VM's memory, GiB (node/place/microvm.ts GUEST_MEM_GIB when absent): the hub's cap counts it whole. */
-  vmMemoryGiB?: number;
 };
 
 /** MachineId: `[a-z0-9-]{1,32}`. */

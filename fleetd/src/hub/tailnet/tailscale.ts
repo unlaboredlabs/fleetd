@@ -1,6 +1,7 @@
-// Tailscale's own programs as the hub's gateway runs them: the pinned static build, which the hub fetches for itself
-// (checksum verified) the first time it's needed, and tailscaled's local API on its unix socket (status, a dial, a
-// name lookup). The person installs nothing, and the host's own Tailscale, if it has one, is never touched.
+// Tailscale's own programs as a gateway runs them: the pinned static build, fetched (checksum verified) the first time
+// it's needed, and tailscaled's local API on its unix socket (status, a dial, a name lookup). A self-hosted hub runs no
+// gateway since W760 (D594); fleetd cloud's gateway, written again in its own src/tailnet, is held against this pin
+// and its stand-in (test/tailnet_standin.ts) by its tests until its pin move takes them over (W760's cloud follow-up).
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { connect, isIP, type Socket } from "node:net";
 import { join } from "node:path";

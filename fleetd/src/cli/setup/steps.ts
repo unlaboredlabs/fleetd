@@ -89,7 +89,6 @@ export function unowned(checks: any[], steps: any[]): any[] {
 }
 
 function placeWords(place: string): string {
-  if (place === "tailscale") return "Settings › Hub › Setup › Tailscale, Connect";
   if (place === "claude") {
     return "Settings › Hub › Setup › Claude for the hub's API key; Settings › Your accounts › Claude for your own subscription";
   }

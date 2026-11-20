@@ -52,7 +52,7 @@ describe("imageRows", () => {
   });
 
   it("is not built yet while there are commands and no image", () => {
-    expect(imageRows({ state: "none", where: "vm" }, true, clock)).toEqual([{ title: "Image", value: "Not built yet", tone: "plain" }]);
+    expect(imageRows({ state: "none", where: "boat" }, true, clock)).toEqual([{ title: "Image", value: "Not built yet", tone: "plain" }]);
   });
 
   it("is building, with the older image that still serves", () => {
@@ -73,12 +73,12 @@ describe("imageRows", () => {
   });
 
   it("is nothing on a machine that builds no images", () => {
-    // No VMs and no hosted provider: the node says none, and not where.
+    // A self-hosted hub's machine: the node says none, and not where.
     expect(imageRows({ state: "none" }, true, clock)).toEqual([]);
   });
 
   it("is nothing without commands, or from a hub that doesn't say", () => {
-    expect(imageRows({ state: "none", where: "vm" }, false, clock)).toEqual([]);
+    expect(imageRows({ state: "none", where: "boat" }, false, clock)).toEqual([]);
     expect(imageRows(undefined, true, clock)).toEqual([]);
   });
 });
@@ -89,7 +89,7 @@ describe("canRebuild", () => {
     expect(canRebuild({ state: "failed" }, true)).toBe(true);
     expect(canRebuild({ state: "none", where: "boat" }, true)).toBe(true);
     expect(canRebuild({ state: "building" }, true)).toBe(false);
-    expect(canRebuild({ state: "none", where: "vm" }, false)).toBe(false);
+    expect(canRebuild({ state: "none", where: "boat" }, false)).toBe(false);
     // A machine that builds no images: nothing to rebuild.
     expect(canRebuild({ state: "none" }, true)).toBe(false);
     expect(canRebuild(undefined, true)).toBe(false);
@@ -106,7 +106,7 @@ describe("touchesComputer", () => {
 
 describe("Runs on", () => {
   const choices = [
-    { kind: "vm", cpu: 2, memGb: 4, label: "Local VM · 2 vCPU / 4 GB" },
+    { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" },
     { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB" },
     { kind: "boat", cpu: 8, memGb: 16, label: "boat.dev · 8 vCPU / 16 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
   ];
@@ -115,7 +115,7 @@ describe("Runs on", () => {
     const rows = runsOnRows({ computer: { kind: "boat", cpu: 4, memGb: 8 }, computers: choices });
     expect(rows.map((r) => [r.title, r.selected])).toEqual([
       ["Automatic", false],
-      ["Local VM · 2 vCPU / 4 GB", false],
+      ["boat.dev · 2 vCPU / 4 GB", false],
       ["boat.dev · 4 vCPU / 8 GB", true],
       ["boat.dev · 8 vCPU / 16 GB", false],
     ]);
@@ -128,16 +128,15 @@ describe("Runs on", () => {
   });
 
   it("says a reason the rows side by side share once, under the last of them, with its fix", () => {
-    const why = "devbox runs no VMs now: AppArmor keeps this user from making user namespaces.";
-    const fix = "sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0";
-    const vm = (cpu: number, memGb: number) => ({ kind: "vm", cpu, memGb, label: `Local VM · ${String(cpu)} vCPU / ${String(memGb)} GB`, unavailable: why, fix });
-    const rows = runsOnRows({ computers: [vm(2, 4), vm(4, 8), vm(8, 16), { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" }] });
+    const why = "boat.dev's key failed its last test: refused";
+    const fix = "make a new key in boat.dev's dashboard";
+    const boat = (cpu: number, memGb: number) => ({ kind: "boat", cpu, memGb, label: `boat.dev · ${String(cpu)} vCPU / ${String(memGb)} GB`, unavailable: why, fix });
+    const rows = runsOnRows({ computers: [boat(2, 4), boat(4, 8), boat(8, 16)] });
     expect(rows.map((r) => [r.title, r.why !== undefined, r.note])).toEqual([
       ["Automatic", false, undefined],
-      ["Local VM · 2 vCPU / 4 GB", true, undefined],
-      ["Local VM · 4 vCPU / 8 GB", true, undefined],
-      ["Local VM · 8 vCPU / 16 GB", true, { why, fix }],
-      ["boat.dev · 2 vCPU / 4 GB", false, undefined],
+      ["boat.dev · 2 vCPU / 4 GB", true, undefined],
+      ["boat.dev · 4 vCPU / 8 GB", true, undefined],
+      ["boat.dev · 8 vCPU / 16 GB", true, { why, fix }],
     ]);
   });
 
