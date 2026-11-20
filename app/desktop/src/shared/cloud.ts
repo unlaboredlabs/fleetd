@@ -1,6 +1,7 @@
 // fleetd cloud's Sign in, as the page sees it (main: src/main/cloud). Only a build given the cloud's accounts address
 // and WorkOS client id offers it; any other build is the self-hosted app alone, with nothing of this on screen.
 import type { AccountsInvite } from "./contracts";
+import type { BillingBuy, BillingState } from "./billing";
 import type { PairFailure } from "./pairing";
 
 export interface CloudState {
@@ -89,6 +90,18 @@ export type GithubReposOutcome =
 
 /** GitHub in one trip on the web: on its way (this tab navigates to GitHub), or why not; `connected` when there was nothing to do. */
 export type ConnectGithubOutcome = { readonly ok: true } | { readonly ok: false; readonly connected?: true; readonly failure: PairFailure };
+
+/** A cloud team's plan, credits and use (GET BILLING_PATH), or why they couldn't be read. */
+export type BillingOutcome = { readonly ok: true; readonly billing: BillingState } | { readonly ok: false; readonly failure: PairFailure };
+
+/** What Billing opens in the browser: Stripe's portal, or its checkout for a plan or credits. */
+export type BillingOpen = "portal" | BillingBuy;
+
+/** Stripe's page opened in the browser, or the team's refusal in its words. */
+export type BillingOpenOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };
+
+/** The spend cap as the team keeps it now (cents a month, null: none), or why it wasn't set. */
+export type BillingCapOutcome = { readonly ok: true; readonly capCents: number | null } | { readonly ok: false; readonly failure: PairFailure };
 
 /** An invite taken back, or why not. */
 export type RevokeInviteOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

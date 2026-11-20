@@ -73,6 +73,12 @@ export const IPC = {
   cloudRevokeInvite: "cloud:revoke-invite",
   /** invoke(hub) → InstallGithubOutcome. Opens GitHub's install page for fleetd's App, as the cloud team answers it (POST GITHUB_INSTALL_PATH with its key). */
   cloudInstallGithub: "cloud:install-github",
+  /** invoke(hub) → BillingOutcome. A cloud team's plan, credits and use (GET BILLING_PATH with its key). */
+  cloudBilling: "cloud:billing",
+  /** invoke(hub, BillingOpen) → BillingOpenOutcome. Opens Stripe's checkout or portal in the browser, as the team answers it. */
+  cloudBillingOpen: "cloud:billing-open",
+  /** invoke(hub, capCents | null) → BillingCapOutcome. Sets the team's monthly spend cap. */
+  cloudBillingCap: "cloud:billing-cap",
   /** invoke() → string. This computer's host name, to tell whether it is one of the hub's machines. */
   systemHostName: "system:host-name",
   /**

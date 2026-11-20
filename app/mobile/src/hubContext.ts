@@ -139,6 +139,8 @@ export type SettingsParams = {
   Provider: { id: string };
   /** The hub's Claude API key and its endpoint, for admins. */
   Claude: undefined;
+  /** A fleetd cloud team's plan, credits, computer time and spend cap, for its owners and admins. */
+  Billing: undefined;
 } & VaultParams;
 /** A Settings screen's props: its own stack's, and the root stack's above it (New Project). */
 export type SettingsProps<T extends keyof SettingsParams> = CompositeScreenProps<NativeStackScreenProps<SettingsParams, T>, NativeStackScreenProps<RootParams>>;

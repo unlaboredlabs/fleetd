@@ -3,10 +3,13 @@
 // shoots the real screens. No section: Sign in is off, as in a release. On a fixture whose hub came with the account,
 // its invites by email are kept here as the team keeps them: an invite is added, an email already invited refused.
 // A sign-in may arrive (`signIn.arrival`): who signed in and the invitations to ask about, as the accounts service
-// answers them; Join and Not now then connect nothing, a fixture's hubs being fixed.
+// answers them; Join and Not now then connect nothing, a fixture's hubs being fixed. Its `billing` is the team's
+// `GET /billing/v1` answer as the service sends it: Change plan, Add credits and Manage payment open nothing, and a cap
+// set is kept here.
 import { readFileSync } from "node:fs";
 import { z } from "zod";
-import type { Arrival, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import { readBilling, type BillingState } from "../../shared/billing";
+import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -38,6 +41,10 @@ export const CloudSection = z.object({
   inviteFailure: Failure.optional(),
   /** Installing fleetd's GitHub App is refused so; with `connectFirst`, as the team answers a person whose own GitHub isn't connected. Absent: GitHub's page "opens". */
   githubInstallFailure: Failure.extend({ connectFirst: z.literal(true).optional() }).optional(),
+  /** The team's billing, as `GET /billing/v1` answers it (read through shared/billing.ts's readBilling). */
+  billing: z.unknown().optional(),
+  /** Reading the billing fails so, as the team would. */
+  billingFailure: Failure.optional(),
 });
 export type CloudSection = z.infer<typeof CloudSection>;
 
@@ -52,11 +59,14 @@ export class FixtureCloud implements Cloud {
   #invites: AccountsInvite[];
   #next = 0;
   #arrival: Arrival | null = null;
+  #billing: BillingState | null;
 
   constructor(section: CloudSection | null) {
     this.#section = section;
     this.#email = section?.email ?? null;
     this.#invites = [...(section?.invites ?? [])];
+    this.#billing = section?.billing === undefined ? null : readBilling(section.billing);
+    if (section?.billing !== undefined && this.#billing === null) throw new Error("The fixture's cloud.billing isn't a GET /billing/v1 answer.");
   }
 
   state(): CloudState {
@@ -147,6 +157,28 @@ export class FixtureCloud implements Cloud {
   revokeInvite(_hub: string, inviteId: string): Promise<RevokeInviteOutcome> {
     this.#invites = this.#invites.filter((i) => i.inviteId !== inviteId);
     return Promise.resolve({ ok: true });
+  }
+
+  billing(): Promise<BillingOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    const refusal = this.#section?.billingFailure;
+    if (refusal !== undefined) return Promise.resolve(failed(refusal));
+    if (this.#billing === null) return Promise.resolve(failed({ code: "not_found", message: "Nothing is here." }));
+    return Promise.resolve({ ok: true, billing: this.#billing });
+  }
+
+  billingOpen(): Promise<BillingOpenOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    return Promise.resolve({ ok: true });
+  }
+
+  billingCap(_hub: string, capCents: number | null): Promise<BillingCapOutcome> {
+    if (!this.#team() || this.#billing === null) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    const credits = { ...this.#billing.credits, capCents };
+    const reached = capCents !== null && credits.capSpentCents >= capCents;
+    const held = reached ? "cap" : this.#billing.held === "cap" ? null : this.#billing.held;
+    this.#billing = { ...this.#billing, credits, held };
+    return Promise.resolve({ ok: true, capCents });
   }
 
   installGithub(): Promise<InstallGithubOutcome> {

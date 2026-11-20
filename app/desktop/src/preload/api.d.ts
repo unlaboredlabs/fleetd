@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, HubLinkRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -201,6 +201,12 @@ export interface FleetdApi {
     revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
     /** Opens GitHub's install page for fleetd's App on a cloud team, as the team answers it. Never rejects. */
     installGithub(hub: HubId): Promise<InstallGithubOutcome>;
+    /** A cloud team's plan, credits and use; refused for a hub that didn't come with the account. Never rejects. */
+    billing(hub: HubId): Promise<BillingOutcome>;
+    /** Opens Stripe's checkout (a plan, credits) or portal for a cloud team in the browser, as the team answers it. Never rejects. */
+    billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
+    /** Sets a cloud team's monthly spend cap in cents, null for none. Never rejects. */
+    billingCap(hub: HubId, capCents: number | null): Promise<BillingCapOutcome>;
     /** The repositories fleetd's GitHub App reaches for a cloud team, for Get started's picker; the web app's alone for now. Never rejects. */
     githubRepos(hub: HubId): Promise<GithubReposOutcome>;
     /**
