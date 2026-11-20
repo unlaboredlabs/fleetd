@@ -315,6 +315,15 @@ function fleetdServer(fleetd: string[], role: SessionRole, sock: string, session
   return { type: "stdio", command: fleetd[0], args: [...fleetd.slice(1), "agent-mcp", "--role", arg], alwaysLoad: true, env: { FLEETD_NODE_SOCK: sock, FLEETD_THREAD_ID: sessionId } };
 }
 
+/** The session's `--mcp-config` entry for a server that signs in with OAuth: `fleetd mcp-relay`, which asks the node
+ * for the server's current token at each request (actions/mcp_relay.ts). */
+export const relayServer = (fleetd: string[], sock: string, sessionId: string) => (server: string): Record<string, unknown> => ({
+  type: "stdio",
+  command: fleetd[0],
+  args: [...fleetd.slice(1), "mcp-relay", "--server", server],
+  env: { FLEETD_NODE_SOCK: sock, FLEETD_THREAD_ID: sessionId },
+});
+
 const scratchName = (sessionId: string) => createHash("sha256").update(sessionId).digest("hex").slice(0, 16);
 /** The session whose scratch dir `row` uses: the one it took over (`scratchOf`), else its own. */
 const scratchOwner = (row: SessionRow) => row.local.scratchOf ?? row.summary.sessionId;
@@ -1467,7 +1476,7 @@ export class SessionService {
     const role = row.local.role ?? "plain";
     // The configured servers of the session's role, their secrets resolved here, then fleetd's own. The file holds
     // secrets, so it is written as the node's secret files are (0600).
-    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.fleetd, role, sock, id), id);
+    const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.fleetd, role, sock, id), id, relayServer(this.config.fleetd, sock, id));
     const mcpConfig = join(dir, "mcp.json");
     writeAtomic(mcpConfig, sessionMcp.json);
     const env: Env = { ...base };

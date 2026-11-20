@@ -95,6 +95,9 @@ export type McpSessionServer = {
   transport: McpTransport;
   env?: McpSessionValue[];
   headers?: McpSessionValue[];
+  /** It signs in with OAuth: the session reaches it through `fleetd mcp-relay`, which takes its current token from
+   * the node at each request, never from the session's `mcp.json`. */
+  oauth?: boolean;
 };
 
 /** mcp_servers.rs `McpSessionConfig`. */

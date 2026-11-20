@@ -7,6 +7,8 @@ import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
 import { getRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
+import { registerLeadCalls } from "../src/hub/mcp_oauth/calls.ts";
+import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
 import { oauthCallback } from "../src/hub/mcp_oauth/callback.ts";
 import { type ServeStatus, serveFront } from "../src/hub/mcp_oauth/https_front.ts";
@@ -20,7 +22,7 @@ import { tempHome } from "./helpers.ts";
 
 /** A service that signs in with OAuth as MCP's spec has it, with dynamic client registration. */
 function service() {
-  const seen = { registered: 0, tokens: [] as Record<string, string>[], revoked: [] as string[], refreshes: 0 };
+  const seen = { registered: 0, tokens: [] as Record<string, string>[], revoked: [] as string[], refreshes: 0, refuseRefresh: false };
   let n = 0;
   let port = 0;
   const server: Bun.Server<undefined> = Bun.serve({
@@ -59,7 +61,7 @@ function service() {
           seen.tokens.push(form);
           if (form.grant_type === "refresh_token") {
             seen.refreshes++;
-            if (form.refresh_token === "rt-revoked") return Response.json({ error: "invalid_grant", error_description: "revoked" }, { status: 400 });
+            if (form.refresh_token === "rt-revoked" || seen.refuseRefresh) return Response.json({ error: "invalid_grant", error_description: "revoked" }, { status: 400 });
           }
           n++;
           return Response.json({ access_token: `at-${n}`, refresh_token: `rt-${n}`, token_type: "Bearer", expires_in: 3600 });
@@ -111,8 +113,10 @@ class FakeLink implements Link {
     if (call.op === "mcp_test") return { result: { ok: { kind: "mcp_tested", server: "crm", tools: [{ name: "list_contacts" }, { name: "send_email" }] } } };
     throw new Error(`unexpected ${String(call.op)}`);
   }
+  /** The machine is offline: no link. */
+  offline = false;
   can = () => true;
-  linkId = () => "L1";
+  linkId = () => (this.offline ? undefined : "L1");
 }
 
 /** A hub on 127.0.0.1:4795; `serve` stands in for `tailscale serve status --json` (none by default). */
@@ -479,5 +483,75 @@ test("a sign-in from an app on plain http calls back at the hub's https front, a
     expect(own.redirectUri).toBe("https://hub.example.com/oauth/callback");
   } finally {
     svc2.server.stop(true);
+  }
+});
+
+/** A project's "docs" server, signed in through the fake service: its token is on the machine. */
+async function signedIn(l: ReturnType<typeof lab>) {
+  await l.call("mcp_server_set", {
+    scope,
+    name: "docs",
+    enabled: true,
+    roles: { lead: true, writers: true, reviewers: true },
+    transport: { type: "http", url: `${svc.base}/mcp` },
+  });
+  const started = await l.call("mcp_oauth_start", { scope, name: "docs", hubUrl: "http://127.0.0.1:4795" });
+  const st = new URL(started.authorizeUrl as string).searchParams.get("state")!;
+  await oauthCallback(new Request(`http://127.0.0.1:4795/oauth/callback?state=${st}&code=c-1`), { hub: l.hub } as never);
+  expect(mcpServers(l.hub).get(scope, "docs")!.oauth?.status).toBe("connected");
+}
+
+const agentCaller: LeadCaller = { projectRef: { machineId: "lab", projectId: "p1" }, by: "lead:lab/p1", agent: { kind: "task", taskId: "T1" }, threadId: "th-1" };
+
+test("an agent's relay has a turned-away token renewed, and one that renewing can't cure signs the server out for real", async () => {
+  const l = lab();
+  await signedIn(l);
+  registerLeadCalls(l.hub);
+  const renew = leadCalls(l.hub).handler("mcp_oauth_renew")!;
+  // A session's server, relayed: the hub marks it so the node writes `fleetd mcp-relay` for it.
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers[0]).toMatchObject({ name: "docs", oauth: true });
+
+  // Turned away: renewed now, and the new token is on the machine before the answer.
+  const before = l.link.opened.length;
+  expect(await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs" })).toEqual({ renewed: "yes" });
+  expect(l.link.opened.length).toBe(before + 1);
+  expect(l.link.opened.at(-1)).toMatch(/^Bearer at-\d+$/);
+
+  // The token just renewed was turned away too: Settings stops saying Connected, and the chat says what to do.
+  const out = await renew(agentCaller, { op: "mcp_oauth_renew", server: "docs", refused: true });
+  expect(out).toMatchObject({ renewed: "signed_out", problem: expect.stringContaining("turned away the sign-in fleetd had just renewed") });
+  const server = mcpServers(l.hub).get(scope, "docs")!;
+  expect(server.oauth).toMatchObject({ status: "signed_out", problem: expect.stringContaining("sign in again") });
+  // Its dead token leaves the machine and the server's headers: no new session gets the server.
+  expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "project", projectId: "p1" }, server: "docs", set: [], keep: [] });
+  expect(server.headers).toEqual([]);
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([]);
+
+  // Only a session's relay asks, and only for a server its bot gets that signs in.
+  await expect(Promise.resolve().then(() => renew({ ...agentCaller, threadId: undefined }, { op: "mcp_oauth_renew", server: "docs" }))).rejects.toMatchObject({ code: "forbidden" });
+  expect(await renew(agentCaller, { op: "mcp_oauth_renew", server: "nope" })).toMatchObject({ renewed: "signed_out" });
+});
+
+test("a sign-in the service ends takes its token off the machine, at once or once the machine is back", async () => {
+  const l = lab();
+  await signedIn(l);
+  try {
+    svc.seen.refuseRefresh = true;
+    l.link.offline = true;
+    // Due for renewal; the service refuses: signed out, but the machine can't be told yet.
+    l.tick(31 * 60_000);
+    await renewDue(l.hub);
+    expect(mcpServers(l.hub).get(scope, "docs")!.oauth?.status).toBe("signed_out");
+    expect(mcpServers(l.hub).get(scope, "docs")!.headers).toEqual([expect.objectContaining({ name: "Authorization" })]);
+    // Back: the next round takes the token off it.
+    l.link.offline = false;
+    await renewDue(l.hub);
+    expect(l.link.calls.at(-1)).toEqual({ op: "mcp_secrets", scope: { kind: "project", projectId: "p1" }, server: "docs", set: [], keep: [] });
+    expect(mcpServers(l.hub).get(scope, "docs")!.headers).toEqual([]);
+    const calls = l.link.calls.length;
+    await renewDue(l.hub);
+    expect(l.link.calls.length).toBe(calls);
+  } finally {
+    svc.seen.refuseRefresh = false;
   }
 });

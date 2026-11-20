@@ -113,7 +113,8 @@ export const namedState = (entry: Named, servers: ReadonlyArray<McpServer>): Nam
   const o = server.oauth;
   // Saved by hand with a key of its own: it doesn't sign in.
   if (o === undefined && (server.headers ?? []).length > 0) return { kind: "connected", server };
-  if (o?.status === "connected") return { kind: "connected", server };
+  // Signed in, but fleetd can't renew its token (the hub says why): agents are turned away, so it isn't Connected.
+  if (o?.status === "connected" && o.problem === undefined) return { kind: "connected", server };
   if (o?.signingIn === true) return { kind: "signing", server };
   return { kind: "signin", server, problem: o?.problem };
 };

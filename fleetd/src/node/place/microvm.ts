@@ -68,6 +68,12 @@ export const IMAGE_MARKER = "/run/fleetd/image";
 export const GUEST_MEM_GIB = 4;
 export const GUEST_CPUS = 4;
 
+/** Where SQLite in a box puts its temp files (a big sort's or GROUP BY's spill): the box's own disk, not $TMPDIR, the
+ * node's scratch dir shared in, where each write is a trip to this machine and waits behind every other VM's. They are
+ * deleted as they're opened, so nothing of them is kept: fleetd's time-reads test took 15.5 s with them in $TMPDIR and
+ * 3.7 s here. */
+export const BOX_SQLITE_TMPDIR = "/var/tmp";
+
 /** This machine's VMs' memory, GiB: node.json's `vmMemoryGiB` when it's a whole number from 2 to 256, else the default. */
 export function guestMemGiB(home: string): number {
   let n: unknown;
@@ -440,9 +446,11 @@ export class MicroVm {
   }
 
   /** A command's environment in a box: git's GitHub helper, its builds' turns asked of the node over the box's link
-   * (the machine's build slots, not ones of the box's own), and pnpm's store in its checkout (boxStore). */
+   * (the machine's build slots, not ones of the box's own), pnpm's store in its checkout (boxStore), and SQLite's temp
+   * files on the box's own disk (BOX_SQLITE_TMPDIR). */
   async #inBox<E extends Record<string, string | undefined>>(env: E, cwd: string): Promise<E & Record<string, string>> {
     const out = { ...gitInBox(env), [SLOT_SOCK_VAR]: slotSock(this.o.home) } as Record<string, string | undefined>;
+    out.SQLITE_TMPDIR ??= BOX_SQLITE_TMPDIR;
     const store = await boxStore(cwd);
     if (store) out.pnpm_config_store_dir ??= store;
     return out as E & Record<string, string>;
