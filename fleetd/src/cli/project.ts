@@ -811,7 +811,7 @@ async function followClone(
 
 function finish(out: Out) {
   const next =
-    "Write to its lead in the app's chat, or from any agent with chat_send; the lead starts with the first message.";
+    "Write to its lead in the app's chat, or from any agent with chat_send; it starts as the bot is made.";
   if (out.tty) tty.outro(next);
   else println(next);
 }

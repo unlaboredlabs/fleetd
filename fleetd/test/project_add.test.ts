@@ -6,6 +6,7 @@ import { approvals } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/index.ts";
+import { leadWiring } from "../src/hub/leads/ports.ts";
 import { start as startLeadArea } from "../src/hub/project_lead/loops.ts";
 import { clones } from "../src/hub/projects/add.ts";
 import { start as startLoops } from "../src/hub/projects/loops.ts";
@@ -126,7 +127,7 @@ test("a checkout on GitHub is inspected through gh, bound to its repo and base, 
   expect(n.calls.some((c) => c.op === "project_upsert")).toBe(false);
   const out = await k.ok(person, "project_add", { machineId: "devbox", path: "/home/me/src/shop", title: "Shop" });
   expect(out.created).toBe(true);
-  expect(out.next).toBe("ready: main requires ci; the train waits for them before each squash merge. Write to its lead with chat_send; the lead starts with the first message.");
+  expect(out.next).toBe("ready: main requires ci; the train waits for them before each squash merge. Write to its lead with chat_send; it starts as the bot is made.");
   const r = { machineId: "devbox", projectId: out.projectId };
   expect(k.hub.db.conn.query("SELECT repo_key, base FROM work_projects").get()).toEqual({ repo_key: "github.com/acme/shop", base: "main" });
   expect(repos.own(k.hub.db.conn, r)).toMatchObject({ name: "shop", repoKey: "github.com/acme/shop", base: "main" });
@@ -458,4 +459,22 @@ test("removing a repo names the tasks the leads area's removals cancelled", asyn
   // The leads area makes it at its start; here, the area as its owner would.
   k.hub.area("lead_removals", () => ({ reconcile: async () => {}, endRemovedRepos: async () => ["T7"] }));
   expect((await k.ok(operate, "project_repo_remove", { ...r, name: "api" })).cancelled).toEqual(["T7"]);
+});
+
+test("a new bot's lead starts as it is made, ahead of its first message; a bot added again starts nothing", async () => {
+  const k = kit();
+  await node(k, ["repos", "folder_make"]);
+  gh(k, {});
+  const launched: { projectId: string; ahead?: true; role: string }[] = [];
+  leadWiring(k.hub).ports.launch = async (_m, input, role) => {
+    launched.push({ projectId: input.projectId, ...(input.ahead ? { ahead: input.ahead } : {}), role });
+    return `lead-${launched.length}`;
+  };
+  const out = await k.ok(operate, "project_add", { machineId: "devbox", create: true, title: "Notes" });
+  await settle();
+  expect(launched).toEqual([{ projectId: out.projectId, ahead: true, role: "lead" }]);
+  const again = await k.ok(operate, "project_add", { machineId: "devbox", path: out.path });
+  await settle();
+  expect(again.created).toBe(false);
+  expect(launched.length).toBe(1);
 });

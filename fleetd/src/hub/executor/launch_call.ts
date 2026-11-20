@@ -24,6 +24,8 @@ export type LaunchInput = {
   title?: string;
   /** The session and run ids derive from it, so a retried launch returns the same thread. */
   clientRequestId: string;
+  /** Starts the session with no run: `prompt` goes in with its first send (SessionLaunch.ahead). */
+  ahead?: boolean;
 };
 
 export type LaunchOptions = {
@@ -91,6 +93,7 @@ export function launchCall(m: MachineId, input: LaunchInput, options: LaunchOpti
     runtimeMode: input.runtimeMode,
     workspace: options.workspace ?? { type: "root" },
     prompt,
+    ...(input.ahead ? { ahead: true } : {}),
     ...(systemPrompt !== undefined ? { systemPrompt } : {}),
     runId: uuidFrom(`run\n${seed}`),
     allowedTools: options.onlyTools ?? rules.allow,

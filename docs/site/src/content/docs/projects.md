@@ -30,7 +30,7 @@ one for taxes. Every bot has the same abilities: memory, [automations](/docs/aut
    Default branch: main
    CI: none; required checks: none
    Merge: unprotected, squash allowed
-   Write to its lead in the app's chat, or from any agent with chat_send; the lead starts with the first message.
+   Write to its lead in the app's chat, or from any agent with chat_send; it starts as the bot is made.
    ```
 
 2. Read the `Lead needs:` line. It names anything to fix or to know on GitHub before the first pull request, such
@@ -69,7 +69,7 @@ type. **×** takes a repo out before you create. With several machines, pick the
 - With no name, the bot takes its first repo's.
 - A folder that is already a bot isn't added: open that bot instead.
 
-The bot's chat opens at once, and its lead starts with your first message. The dialog stays while its repos come in:
+The bot's chat opens at once, and its lead starts with it, so your first message finds it ready. The dialog stays while its repos come in:
 each clone's progress, a check once added, or why it failed with **Retry** (and **Use the checkout there** when the
 clone's folder already holds that repo). Closing it doesn't stop a clone; a notice says how it ended. With no repo,
 the lead does the work itself: it chats, remembers, writes drafts and notes, reads the web and uses screens in the
@@ -413,8 +413,8 @@ git remote set-head origin release
 
 ## Its lead {#its-lead}
 
-Each bot has one [lead](/docs/glossary#lead) and one chat with it. Your first message starts the lead: there is
-nothing to start by hand. See [Chat with the lead](/docs/chat).
+Each bot has one [lead](/docs/glossary#lead) and one chat with it. The lead starts as the bot is made, so your first
+message finds it ready; one that couldn't start then starts with your first message. There is nothing to start by hand. See [Chat with the lead](/docs/chat).
 
 If the lead can't start, your message waits and the chat says why. Common causes:
 

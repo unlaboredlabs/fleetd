@@ -27,7 +27,7 @@ import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf
 import { reapLeaked } from "../place/box_record.ts";
 import { hostDir, isRunner, leavesBox, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
-import { stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
+import { type HostedStep, stepNow, stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
@@ -386,6 +386,8 @@ export class SessionService {
   #active = new Set<string>();
   #announced = new Map<string, number>();
   #spawning = new Map<string, Promise<unknown>>();
+  /** Sessions launched ahead (`SessionLaunch.ahead`) whose claude is still starting: a send meanwhile joins that start. */
+  #ahead = new Set<string>();
   /** Launches under way, by session: a retry that comes while one fetches or makes its worktree shares its outcome. */
   #launching = new Map<string, Promise<SessionOutput>>();
   #files = new Map<string, { at: number; paths: string[] }>();
@@ -1183,6 +1185,8 @@ export class SessionService {
       row.local.setup = plan;
       row.local.setupPending = true;
     }
+    // Started ahead of its first turn: no run, and claude gets the prompt with the first send.
+    if (launch.ahead) row.local.unsent = [prompt];
     this.store.commit(row, [], false);
     stages.done("store");
     const dir = join(this.home, "sessions", id);
@@ -1193,8 +1197,17 @@ export class SessionService {
       throw new Refusal("internal", `cannot keep the session's skills: ${(error as Error).message}`);
     }
     stages.done("record");
-    // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done.
-    if (plan) {
+    // A new worktree is set up first, while the run shows as starting; the brief goes to claude once it is done. One
+    // started ahead starts claude now, unasked: a start that fails says nothing, and the first send starts it again.
+    if (launch.ahead) {
+      if (!plan) {
+        this.#ahead.add(id);
+        void this.#ensureLive(id, true)
+          .catch((error: Error) => console.log(`${nowIso()} INFO a session started ahead didn't start; its first send starts it {"sessionId":"${id}","error":${JSON.stringify(error.message)}}`))
+          .finally(() => this.#ahead.delete(id));
+      }
+      stages.done("ahead");
+    } else if (plan) {
       if (this.#recordRun(id, launch.runId, prompt)) this.#setUpThenSend(id, launch.runId, prompt, "plain", plan);
       stages.done("setup queued");
     } else {
@@ -1268,11 +1281,13 @@ export class SessionService {
       }
     };
     // A hosted session with no claude running makes its box first (a template's first build takes minutes): the
-    // launch or send answers now, and the run fails with the provider's words if no box comes up.
+    // launch or send answers now, and the run fails with the provider's words if no box comes up. A send while its
+    // start ahead still makes the box shows that start's steps, from the one it is at.
     const row = this.store.session(id);
     const provider = hostedOf(row?.local.hosted);
-    if (!this.#live.has(id) && provider !== undefined && !hasBox(id)) {
-      const end = this.#hostedProgress(id, runId, provider);
+    const joining = this.#ahead.has(id);
+    if (!this.#live.has(id) && provider !== undefined && (joining || !hasBox(id))) {
+      const end = this.#hostedProgress(id, runId, provider, joining ? stepNow(id) : undefined);
       void send().then(
         () => end(true),
         () => end(false),
@@ -1286,7 +1301,7 @@ export class SessionService {
   /** The run's progress line while the session's hosted computer starts (place/hosted_steps.ts): one item whose words
    * follow each step, which the chat shows under the lead's "working" and the agents panel on the agent; `end` once
    * claude started there or the start failed. */
-  #hostedProgress(id: string, runId: string, provider: ProviderId): (started: boolean) => void {
+  #hostedProgress(id: string, runId: string, provider: ProviderId, at?: HostedStep): (started: boolean) => void {
     const itemId = `starting-${runId}`;
     const startedAt = nowIso();
     const put = (text: string, status: "running" | "completed" | "failed") => {
@@ -1305,7 +1320,7 @@ export class SessionService {
         );
       } catch {}
     };
-    let text = stepWords("computer", provider);
+    let text = stepWords(at ?? "computer", provider);
     put(text, "running");
     const unwatch = watchSteps(id, (step) => {
       text = stepWords(step, provider);
@@ -1360,20 +1375,21 @@ export class SessionService {
 
   /** The live process, spawning (first start) or resuming the session when there is none. One spawn per session at a
    * time, so two sends never start two processes. */
-  #ensureLive(id: string): Promise<[Live, string | undefined]> {
+  #ensureLive(id: string, ahead = false): Promise<[Live, string | undefined]> {
     const stages = new Stages("node spawn", id);
     const prior = this.#spawning.get(id) ?? Promise.resolve();
     const next = prior
       .catch(() => {})
       .then(() => {
         stages.done("spawn lock");
-        return this.#spawn(id, stages);
+        return this.#spawn(id, stages, ahead);
       });
     this.#spawning.set(id, next);
     return next;
   }
 
-  async #spawn(id: string, stages: Stages): Promise<[Live, string | undefined]> {
+  /** `ahead`: started with no send (`SessionLaunch.ahead`), so its note waits with the launch's prompt for the first. */
+  async #spawn(id: string, stages: Stages, ahead = false): Promise<[Live, string | undefined]> {
     const current = this.#live.get(id);
     // A claude still in a VM on a machine that runs none now (turned off, or its last VM failed) goes before a new turn,
     // which starts as a plain process from its transcript. Never mid-turn: a run under way (a steer, a message queued
@@ -1463,6 +1479,10 @@ export class SessionService {
     this.#live.set(id, live);
     void this.#pump(id, live, undefined);
     stages.end();
+    if (ahead && note) {
+      this.update(id, (c) => void (c.row.local.unsent = [note, ...(c.row.local.unsent ?? [])]));
+      return [live, undefined];
+    }
     return [live, note];
   }
 

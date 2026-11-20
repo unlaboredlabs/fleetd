@@ -12,6 +12,8 @@ import { NAMES } from "../../shared/sandbox.ts";
 export type HostedStep = "computer" | "template" | { older: string; building: boolean } | "clone" | "files" | "setup" | "again";
 
 const watchers = new Map<string, (step: HostedStep) => void>();
+/** Each session's latest step: a send that joins a start already under way shows where that start is. */
+const latest = new Map<string, HostedStep>();
 
 /** Calls `fn` with each step of `session`'s start until the returned unwatch. One watcher per session. */
 export function watchSteps(session: string, fn: (step: HostedStep) => void): () => void {
@@ -23,10 +25,14 @@ export function watchSteps(session: string, fn: (step: HostedStep) => void): () 
 
 /** `session`'s start is at `step` now. */
 export function stepped(session: string, step: HostedStep): void {
+  latest.set(session, step);
   try {
     watchers.get(session)?.(step);
   } catch {}
 }
+
+/** The step `session`'s start said last, if it said any. */
+export const stepNow = (session: string): HostedStep | undefined => latest.get(session);
 
 /** The step in a person's words. */
 export function stepWords(step: HostedStep, provider: ProviderId): string {

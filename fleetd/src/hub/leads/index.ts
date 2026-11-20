@@ -119,9 +119,17 @@ export class Leads {
     return p;
   }
 
-  /** Launches the project's lead, or returns the one it already has. */
+  /**
+   * Launches the project's lead, or returns the one it already has. One started ahead that hasn't run a turn starts
+   * for real, as a lead launched now does: its first turn reads its start.
+   */
   async start(r: ProjectRef): Promise<Lead> {
-    return (await this.startWith(r)).lead;
+    const { lead, launched } = await this.startWith(r);
+    if (launched) return lead;
+    return this.locked(async () => {
+      const ahead = this.aheadUnrun(r);
+      return ahead ? this.launch(r, this.projectOf(r), ahead.lead.sessionGeneration + 1) : (this.get(r) ?? lead);
+    });
   }
 
   private startWith(r: ProjectRef, first?: string): Promise<{ lead: Lead; launched: boolean }> {
@@ -133,6 +141,22 @@ export class Leads {
       if (existing) return { lead: this.withState(existing), launched: false };
       return { lead: await this.launch(r, this.projectOf(r), 0, first), launched: true };
     });
+  }
+
+  /**
+   * Starts a new bot's lead with no turn, so its first message finds it ready: its computer comes up and claude waits,
+   * and the start text this launch builds goes in with that message (the node keeps it). Says nothing when it can't
+   * start: the first message then starts the lead as it would have. A lead the bot already has is left as it is.
+   */
+  async startAhead(r: ProjectRef): Promise<void> {
+    try {
+      await this.locked(async () => {
+        if (this.records.leadGet(r) || this.archived(r)) return;
+        await this.launch(r, this.projectOf(r), 0, undefined, true);
+      });
+    } catch (error) {
+      console.info(`the lead of ${r.machineId}/${r.projectId} was not started ahead; its first message starts it: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** Starts the project's lead for its waiting orders; `first`, the chat message that starts it, ends its first message. */
@@ -211,9 +235,47 @@ export class Leads {
     return mcpServers(this.hub).leadSet(r);
   }
 
-  /** Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, or its profile switch is due. */
+  /**
+   * Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, its profile switch is due,
+   * or it was started ahead on what its bot has changed since.
+   */
   freshDue(r: ProjectRef): boolean {
-    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r);
+    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r) || this.aheadStale(r);
+  }
+
+  /** What a lead's start hangs on besides the digest: whether it does its own work (no repo), and its bot's repos. */
+  private shapeOf(r: ProjectRef, project: ProjectSummary): string {
+    const ownWork = leadWiring(this.hub).ports.oneLeadMode(r.machineId) && (project.repos ?? []).length === 0;
+    return JSON.stringify({ ownWork, repos: reposBlock(r, project.repos ?? []) ?? null });
+  }
+
+  /** The project's lead while its session was started ahead (`startAhead`) and hasn't run a turn, and what it was
+   * started on (`shapeOf`). */
+  private aheadUnrun(r: ProjectRef): { lead: StoredLead; shape: string } | undefined {
+    const lead = this.records.leadGet(r);
+    if (!lead) return undefined;
+    const started = this.hub.db.all<{ shape: string | null }>(
+      `SELECT json_extract(data, '$.data.shape') AS shape FROM events
+       WHERE type = 'lead.started' AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 ORDER BY seq DESC LIMIT 1`,
+      [r.machineId, lead.threadId],
+    )[0];
+    if (started?.shape == null) return undefined;
+    const ran = this.hub.db.all<{ n: number }>(
+      `SELECT 1 AS n FROM events WHERE type IN ('thread.started', 'thread.completed', 'thread.failed', 'thread.interrupted')
+       AND machine_id = ?1 AND json_extract(data, '$.threadId') = ?2 LIMIT 1`,
+      [r.machineId, lead.threadId],
+    );
+    return ran.length > 0 ? undefined : { lead, shape: started.shape };
+  }
+
+  /**
+   * A lead started ahead that hasn't run a turn, whose bot's repos changed since its start was built, as repos a new
+   * bot's dialog adds after making it do: that start says the wrong repos (and maybe the wrong role).
+   */
+  private aheadStale(r: ProjectRef): boolean {
+    const ahead = this.aheadUnrun(r);
+    const project = ahead && store(this.hub).projectGet(r);
+    return project !== undefined && ahead!.shape !== this.shapeOf(r, project);
   }
 
   /** What a lead session started now is launched with: the lead profile's name, model, effort and fast mode. */
@@ -282,7 +344,7 @@ export class Leads {
     return this.locked(async () => {
       const changed = this.mcpChanged(r);
       const existing = this.records.leadGet(r);
-      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r))) return undefined;
+      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r) && !this.aheadStale(r))) return undefined;
       const project = this.projectOf(r);
       // A digest as of no wake, as at any start.
       const { lastWakeAt: _, ...rest } = existing;
@@ -366,7 +428,8 @@ export class Leads {
     return `## Recent chat\nYour session started fresh; the chat before this is not in it. Times are in ${told(zone)}.\n${lines.join("\n")}`;
   }
 
-  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string): Promise<Lead> {
+  /** `ahead`: the node starts it with no turn and keeps the start text for its first message (`startAhead`). */
+  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string, ahead = false): Promise<Lead> {
     this.refuseArchived(r);
     const held = this.archived(r);
     if (held) throw held;
@@ -428,6 +491,7 @@ export class Leads {
         title: [...`fleetd lead: ${project.title}`].slice(0, 80).join(""),
         // The node's launch is idempotent on the id, so the id names this launch.
         clientRequestId: `fleetd-lead:${r.machineId}/${r.projectId}:${sessionGeneration}:${launchedMs}`,
+        ...(ahead ? { ahead: true as const } : {}),
       },
       ownWork ? "assistant" : "lead",
     );
@@ -450,8 +514,9 @@ export class Leads {
       machineId: r.machineId,
       projectId: r.projectId,
       threadId,
-      summary: `Lead of ${project.title} started (session ${sessionGeneration})`,
-      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha },
+      summary: `Lead of ${project.title} started (session ${sessionGeneration}${ahead ? ", ahead of its first message" : ""})`,
+      // An ahead start's shape: its bot's first message starts it fresh if that changes before its first turn.
+      data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha, ...(ahead ? { ahead: true, shape: this.shapeOf(r, project) } : {}) },
     });
     return this.withState(lead);
   }

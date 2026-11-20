@@ -138,7 +138,7 @@ async function node(probe: (url: string) => Promise<void>) {
     await go("follow", { sessionId: session });
   };
   const failed = (session: string, runId: string) => until(`${runId} to fail`, () => service.store.runs(session).find((r) => r.id === runId && r.status === "failed"));
-  return { service, s, launch, failed, progress };
+  return { service, s, go, launch, failed, progress };
 }
 
 const PLAIN =
@@ -223,4 +223,24 @@ test("a task's start that can't reach Claude fails at once as `sandbox`: its rec
   } finally {
     console.warn = warn;
   }
+});
+
+test("a message to a lead whose box is still coming up from its start ahead shows that start's steps, into one box", async () => {
+  // The box's Claude check waits until the message has gone: the start ahead is still under way when it comes.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const { service, s, go, progress } = await node(() => held);
+  await go("launch", { sessionId: "s-ahead", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "the start text", runId: "r0", role: "lead", place: "boat", ahead: true });
+  await go("follow", { sessionId: "s-ahead" });
+  await until("the box to be made", () => s.calls.some((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")));
+  await go("send", { sessionId: "s-ahead", runId: "r1", text: "hello" });
+  // The person sees the start at once, from where it is, not a bare wait.
+  await until("the progress line", () => progress("r1").said.length > 0);
+  release();
+  await until("the progress line to end", () => progress("r1").ended);
+  expect(progress("r1").ended).toBe("completed");
+  expect(progress("r1").said.every((w) => w.startsWith("Starting its computer at boat.dev") || w === "Cloning the repo")).toBe(true);
+  // One box, one claude: the send went into the start ahead's.
+  expect(s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length).toBe(1);
+  expect(service.store.runs("s-ahead").map((r) => r.id)).toEqual(["r1"]);
 });

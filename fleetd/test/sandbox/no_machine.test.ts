@@ -12,6 +12,7 @@ import { serve, stop } from "../../src/hub/http/index.ts";
 import { doctor } from "../../src/hub/doctor/index.ts";
 import { boxKey } from "../../src/hub/hub_links/store.ts";
 import { leadCalls } from "../../src/hub/lead_calls/index.ts";
+import { leads } from "../../src/hub/leads/index.ts";
 import { dialUrl, Runner, runner, type Spawn } from "../../src/hub/runner/index.ts";
 import { registerAll } from "../../src/hub/serve/areas.ts";
 import { startAll } from "../../src/hub/serve/loops.ts";
@@ -186,6 +187,9 @@ test("with no computer connected, a provider's key and a Claude account run a bo
   sh(tmp, `git clone -q ${origin} ${seed} && cd ${seed} && echo demo > README.md && git add -A && git commit -qm init && git push -q origin main`);
   const checkout = join(runner(hub).home, "src", "demo");
   sh(tmp, `git clone -q ${origin} ${checkout}`);
+  // This is about the writer's box: the stand-in's boxes share this machine's paths, so the new bot's lead isn't also
+  // started ahead in one of its own (chat-flow.test.ts and sessions.test.ts cover that start).
+  leads(hub).startAhead = async () => {};
   const added = await call("project_add", { machineId: RUNNER_ID, path: checkout, title: "demo" });
   expect(added.machineId ?? RUNNER_ID).toBe(RUNNER_ID);
 

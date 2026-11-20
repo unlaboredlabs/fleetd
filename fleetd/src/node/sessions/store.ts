@@ -65,7 +65,8 @@ export type SessionLocal = {
   setup?: Plan;
   setupPending?: boolean;
   /** The messages of runs whose claude never started because their hosted box didn't come up (the brief, a lead's
-   * message): they go to claude ahead of the next message it gets. */
+   * message), and the prompt of a launch started ahead of its first turn: they go to claude ahead of the next message
+   * it gets. */
   unsent?: string[];
   profile?: string;
   fast?: boolean;
