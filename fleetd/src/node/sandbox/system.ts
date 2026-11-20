@@ -4,11 +4,21 @@
 // and .home), then sets the kernel's limits as this machine has them, and watches for the guest running out of memory.
 // It runs in sandbox-guest's own process, by mount(2) and plain writes, never a program.
 import { dlopen, FFIType, ptr, read } from "bun:ffi";
-import { chownSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Marks a guest set up already. */
+/** Marks a guest set up already, holding the boot it was set up in: a local VM's /run is on its box's own disk, which
+ * the session's next box boots over, and what `tune` sets is the kernel's, gone with the VM. */
 const SET_UP = "/run/fleetd/set-up";
+const BOOT_ID = "/proc/sys/kernel/random/boot_id";
+
+const text = (path: string) => {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return "";
+  }
+};
 
 const MS_REMOUNT = 32;
 const MS_NOSUID = 2;
@@ -84,17 +94,11 @@ export function guestAccount(env: Record<string, string | undefined>): GuestAcco
  * line, or undefined elsewhere: a hosted box, and a guest that isn't the VM's own (its init started it as root, with
  * the kernel's FLEETD_GUEST_UID), such as a test's stand-in an agent in the box runs. */
 export function setUpGuest(env: Record<string, string | undefined> = process.env, etc = "/etc"): string | undefined {
-  if (process.getuid?.() !== 0 || !env.FLEETD_GUEST_UID || existsSync(SET_UP)) return undefined;
+  const boot = text(BOOT_ID).trim();
+  if (process.getuid?.() !== 0 || !env.FLEETD_GUEST_UID || (existsSync(SET_UP) && text(SET_UP) === boot)) return undefined;
   const user = guestAccount(env);
   if (user) {
-    const text = (f: string) => {
-      try {
-        return readFileSync(join(etc, f), "utf8");
-      } catch {
-        return "";
-      }
-    };
-    const out = withUser(text("passwd"), text("group"), user);
+    const out = withUser(text(join(etc, "passwd")), text(join(etc, "group")), user);
     writeFileSync(join(etc, "passwd"), out.passwd);
     writeFileSync(join(etc, "group"), out.group);
     // Its home, on the box's own disk: made the first time, and kept as its bot's image left it.
@@ -105,7 +109,9 @@ export function setUpGuest(env: Record<string, string | undefined> = process.env
   }
   tune(env);
   mkdirSync("/run/fleetd", { recursive: true });
-  writeFileSync(SET_UP, "");
+  // An earlier boot's word that it ran out of memory isn't this one's.
+  rmSync(OOM_NOTE, { force: true });
+  writeFileSync(SET_UP, boot);
   return user ? `the agent runs as ${user.name} (${user.uid}), its home ${user.home}` : "the agent runs at its ids alone, with no user named";
 }
 

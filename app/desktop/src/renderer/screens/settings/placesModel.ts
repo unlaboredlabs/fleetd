@@ -25,8 +25,11 @@ export const loadWords = (load: { agents?: number | undefined; screens?: number 
 const IN_VMS = "; each agent in a VM of its own";
 const AS_PROCESSES = "; agents run as plain processes: ";
 
-/** In VMs, but some agents not and why (`why`, `fix`: a machine signed in with `claude login`); or plain processes. */
-export type Isolation = { readonly vm: true; readonly why?: string; readonly fix?: string } | { readonly vm: false; readonly why: string; readonly fix?: string; readonly expected: boolean };
+/** In VMs, but some agents not and why (`why`, `fix`: a machine signed in with `claude login`); or plain processes, and
+ * `detail` behind the reason (the last VM's console), shown only when asked for. */
+export type Isolation =
+  | { readonly vm: true; readonly why?: string; readonly fix?: string }
+  | { readonly vm: false; readonly why: string; readonly fix?: string; readonly expected: boolean; readonly detail?: string };
 
 const sentence = (words: string): string => {
   const w = words.charAt(0).toUpperCase() + words.slice(1);
@@ -48,7 +51,13 @@ export const isolationOf = (why: string, sandbox?: SlotSandbox): { why: string; 
       return { why: own, isolation: sandbox.why ? { vm: true, why: sentence(sandbox.why), ...(sandbox.fix ? { fix: sandbox.fix } : {}) } : { vm: true } };
     return {
       why: own,
-      isolation: { vm: false, why: sentence(sandbox.why ?? "Its agents run as plain processes"), expected: sandbox.expected === true, ...(sandbox.fix === undefined || sandbox.expected === true ? {} : { fix: sandbox.fix }) },
+      isolation: {
+        vm: false,
+        why: sentence(sandbox.why ?? "Its agents run as plain processes"),
+        expected: sandbox.expected === true,
+        ...(sandbox.fix === undefined || sandbox.expected === true ? {} : { fix: sandbox.fix }),
+        ...(sandbox.detail ? { detail: sandbox.detail } : {}),
+      },
     };
   }
   if (vmAt >= 0) return { why: own, isolation: { vm: true } };

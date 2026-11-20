@@ -107,15 +107,25 @@ export class Guest {
     }, Math.min(30_000, Math.max(50, idleMs / 4)));
   }
 
-  /** Listens for the node. */
-  serve(): Promise<void> {
+  /** Listens for the node. A socket at `listen` that nothing answers is a guest's that ended without removing it: a
+   * local VM's /run is on its box's own disk, kept between the session's boxes, and the node ends a box by killing its
+   * VM. It goes, and this one takes its place; one a live guest answers stays, and this guest doesn't listen. */
+  async serve(): Promise<void> {
     mkdirSync(this.o.dir, { recursive: true, mode: 0o700 });
     const server = createServer({ allowHalfOpen: false }, (socket) => this.#link(socket));
     this.#server = server;
-    return new Promise((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(this.o.listen, () => resolve());
-    });
+    const listen = () =>
+      new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(this.o.listen, () => (server.off("error", reject), resolve()));
+      });
+    try {
+      await listen();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE" || (await answers(this.o.listen))) throw error;
+      rmSync(this.o.listen, { force: true });
+      await listen();
+    }
   }
 
   /** Listens for the node's WebSocket on `port` (all addresses: the provider's proxy reaches it from outside), taking
@@ -578,6 +588,14 @@ function registration(dir: string): Registration | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Whether something listens on the unix socket `path`. */
+function answers(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = connect(path);
+    s.once("connect", () => (s.destroy(), resolve(true))).once("error", () => resolve(false));
+  });
 }
 
 const USAGE = `usage: fleetd ${GUEST_COMMAND} (--listen <unix path> | --port <n>) --dir <dir>`;
