@@ -78,7 +78,7 @@ export class Boxes {
     readonly machineId: string,
     private readonly opener: Opener,
     /** Tests: another provider than the real clients, another fleetd source, and how long a new box is left alone. */
-    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number } = {},
+    readonly o: { provider?: (id: ProviderId, auth: ProviderAuth, c?: ClientOptions) => Provider; source?: () => Source; dial?: (b: BoxRecord) => Promise<Duplex>; makingMs?: number; released?: (url: string) => Promise<boolean> } = {},
   ) {
     for (const p of PROVIDERS) {
       const sealed = this.#keyFile(p);
@@ -127,7 +127,9 @@ export class Boxes {
     }
     // The hub sends the keys at each link and when one is connected: the template is built then, in the background,
     // never at a person's message.
-    for (const p of this.connected()) this.ahead(p);
+    void this.#probe().then(() => {
+      for (const p of this.connected()) this.ahead(p);
+    });
   }
 
   /** The providers this node holds a key for. */
@@ -212,6 +214,7 @@ export class Boxes {
    * template at all waits on a build. boat sizes a box at create, so one serves every size; a provider that fixed a
    * box's size in its template would build one per size (`<name>-<cpu>c<mem>g`). */
   async template(p: ProviderId, size: Size = DEFAULT_SIZE, said?: (step: HostedStep) => void): Promise<string> {
+    await this.#probe();
     const { name, file, key } = this.#named(p, size);
     let kept: { name?: string; id?: string } = {};
     try {
@@ -242,19 +245,35 @@ export class Boxes {
     return { name: `${name}${sized}`, sized, baked, file: join(this.home, "sandbox", `template-${p}${sized}.json`), key: `${p}${sized}` };
   }
 
-  /** This node's fleetd as a template holds it: a release build's URL and SHA-256, read once (hashing the binary takes
-   * a while); undefined for a build of one's own, or a machine that makes no boxes. */
-  #bakedMemo: { url: string; sha256: string } | null | undefined;
+  /** This node's fleetd as a template holds it, once `#probe` found it: a release build's URL and SHA-256. Undefined
+   * for a build of one's own (its URL names an asset no release has), a release whose asset isn't published there, a
+   * machine that makes no boxes, or before the probe. */
+  #bakedMemo: { url: string; sha256: string } | undefined;
+  #probed: Promise<void> | undefined;
   #baked(): { url: string; sha256: string } | undefined {
-    if (this.#bakedMemo === undefined) {
+    return this.#bakedMemo;
+  }
+
+  /** Finds once whether this node's fleetd is a published release asset (`source().url` answers), the only one a
+   * template's build can fetch: a URL is every machine's (a build of one's own gets one that answers 404). A template
+   * of a build that isn't one holds no fleetd, and its boxes fetch or take it at their start as before. */
+  #probe(): Promise<void> {
+    return (this.#probed ??= (async () => {
+      let s: Source;
       try {
-        const s = this.source();
-        this.#bakedMemo = s.url ? { url: s.url, sha256: s.sha256 } : null;
+        s = this.source();
       } catch {
-        this.#bakedMemo = null;
+        return;
       }
-    }
-    return this.#bakedMemo ?? undefined;
+      if (!s.url) return;
+      const released = this.o.released ?? (async (url: string) => (await fetch(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(15_000) })).ok);
+      let ok = false;
+      try {
+        ok = await released(s.url);
+      } catch {}
+      if (ok) this.#bakedMemo = { url: s.url, sha256: s.sha256 };
+      else console.log(`${nowIso()} INFO this machine's fleetd isn't a published release: its hosted template holds none {"url":${JSON.stringify(s.url)}}`);
+    })());
   }
 
   /** Builds this recipe's template in the background unless it is there or under way: the account's saved templates
