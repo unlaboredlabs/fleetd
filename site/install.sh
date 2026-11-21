@@ -7,8 +7,8 @@
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
 # ~/Applications/fleetd.app on macOS, or an AppImage in ~/.local/share/fleetd/app on Linux (only with a display, or
-# --app); the app then updates itself. The app needs macOS 12: on an older Mac the installer stops before changing
-# anything, unless --no-app. It replaces the earlier GPUI app in the same place; the new app takes over its
+# --app); the app then updates itself. The CLI needs macOS 13 (Bun's floor): on an older Mac the installer stops before
+# changing anything. It replaces the earlier GPUI app in the same place; the new app takes over its
 # hub key when it first opens. Every download is checked against the release's checksums. Safe to run again; it
 # replaces what it installed.
 # With a terminal it then runs `fleetd init` (the setup wizard) on it; --no-init, or no terminal, only installs.
@@ -611,13 +611,11 @@ main() {
   base="${FLEETD_BASE_URL:-$default_base}"
   header "fleetd install"
 
-  if [ "$os" = darwin ] && [ "$want_app" != no ]; then
+  if [ "$os" = darwin ]; then
     macos="$(sw_vers -productVersion 2>/dev/null || true)"
     case "${macos%%.*}" in
       "" | *[!0-9]*) ;;
-      *) [ "${macos%%.*}" -ge 12 ] || die "the fleetd app needs macOS 12 or newer, and this Mac runs $macos; nothing was changed.
-An earlier fleetd app you have keeps working. To install or update only the CLI:
-  curl -fsSL https://fleetd.sh | sh -s -- --no-app" ;;
+      *) [ "${macos%%.*}" -ge 13 ] || die "fleetd's CLI and hub need macOS 13 or newer, and this Mac runs ${macos}; nothing was changed." ;;
     esac
   fi
   platform="$os $arch"
