@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { botLookOf } from "./contracts";
-import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, BODY, BOT_BODIES, BOT_COLORS, BOT_PAINT, BOT_SHAPES, colorOf, paintOf, shapeOf, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, BODY, BOT_BODIES, REACH, BOT_COLORS, BOT_PAINT, BOT_SHAPES, colorOf, paintOf, shapeOf, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
 
 /** WCAG's contrast ratio of two "#rrggbb". */
 const contrast = (a: string, b: string): number => {
@@ -62,6 +62,31 @@ describe("the bot", () => {
     expect(BOT_BODIES.pebble).toBe(BODY);
     for (const d of Object.values(BOT_BODIES)) expect(d).toMatch(/^M[\d. C]+Z$/u);
     expect([undefined, "ghost", "dragon"].map(shapeOf)).toEqual(["pebble", "ghost", "pebble"]);
+  });
+
+  it("keeps every body, in every state, within the room whatever draws it leaves past its crop (REACH)", () => {
+    const lo = { x: CROP.x - REACH, y: CROP.y - REACH };
+    const hi = { x: CROP.x + CROP.w + REACH, y: CROP.y + CROP.w + REACH };
+    for (const shape of BOT_SHAPES) {
+      // Its points and curves' handles: the curves never leave their hull.
+      const n = (BOT_BODIES[shape].match(/-?[\d.]+/gu) ?? []).map(Number);
+      for (const state of BOT_STATES) {
+        for (const box of [20, 112]) {
+          const r = newRig(state, drawnAt(box), 7, box >= 80);
+          let top = Infinity;
+          run(r, 20, false, (x) => {
+            const [a, b, c, d, e, f] = bodyOf(x);
+            for (let i = 0; i + 1 < n.length; i += 2) {
+              const px = a * (n[i] ?? 0) + c * (n[i + 1] ?? 0) + e;
+              const py = b * (n[i] ?? 0) + d * (n[i + 1] ?? 0) + f;
+              top = Math.min(top, py);
+              if (px < lo.x || px > hi.x || py < lo.y || py > hi.y) throw new Error(`${shape} ${state} at ${String(box)} px reaches ${px.toFixed(1)}, ${py.toFixed(1)}`);
+            }
+          });
+          expect(top, `${shape} ${state} at ${String(box)} px`).toBeGreaterThan(lo.y);
+        }
+      }
+    }
   });
 
   it("gives a new bot a shape and color from its id: the same id the same look, and ids apart look apart", () => {

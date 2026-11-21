@@ -10,7 +10,7 @@ import { useContext, useEffect, useId, useRef, useState, type ComponentRef } fro
 import { Dimensions, View } from "react-native";
 import Animated, { useAnimatedProps, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import Svg, { Defs, FeGaussianBlur, Filter, G, Path, type GProps, type PathProps } from "react-native-svg";
-import { advanceRig, BOT_BODIES, CROP, DIMMED, drawnAt, frameOf, LARGE, moment, newRig, paintOf, setRigState, shapeOf, type BotState, type Frame, type Rig } from "../desktop";
+import { advanceRig, BOT_BODIES, CROP, DIMMED, REACH, drawnAt, frameOf, LARGE, moment, newRig, paintOf, setRigState, shapeOf, type BotState, type Frame, type Rig } from "../desktop";
 import { useTheme } from "../theme";
 import { bringToLife, type Life } from "./beingLife";
 import { useReduceMotion } from "./motion";
@@ -18,9 +18,6 @@ import { useReduceMotion } from "./motion";
 const AnimatedG = Animated.createAnimatedComponent(G);
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-/** How far past its box, in the drawing's units, the canvas reaches on each side: a hop rises about 5 at most, a
- * slump spreads about 1. */
-const REACH = 8;
 const VIEW = `${String(CROP.x - REACH)} ${String(CROP.y - REACH)} ${String(CROP.w + 2 * REACH)} ${String(CROP.w + 2 * REACH)}`;
 
 export function Being({ state, size, color, shape }: { state: BotState; size: number; color?: string | undefined; shape?: string | undefined }) {

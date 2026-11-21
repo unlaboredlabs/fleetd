@@ -20,7 +20,7 @@
 // garbage that only a major GC frees: three bots in live states held 60 MB more of it after 10 s idle (`pnpm perf`'s
 // idle memory went from 347 to 412 MB), and writing only what changed didn't lower that, only how soon it got there.
 import { covered } from "./covered";
-import { advanceRig, BOT_BODIES, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, shapeOf, traceEyes, type BotShapeName, type BotState, type Pen, type Rig } from "../../../shared/bot";
+import { advanceRig, BOT_BODIES, bodyOf, CROP, REACH, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, shapeOf, traceEyes, type BotShapeName, type BotState, type Pen, type Rig } from "../../../shared/bot";
 
 interface Member {
   readonly rig: Rig;
@@ -48,7 +48,7 @@ interface Member {
 
 /** How far the canvas reaches past each side of the box, of its side, so a hop or a slump is never cut off
  * (Bot.module.css's .canvas). */
-export const PAD = 0.25;
+export const PAD = REACH / CROP.w;
 /** The eyes' glow: their blur's standard deviation, in the body's units. */
 const GLOW_BLUR = 2.4;
 

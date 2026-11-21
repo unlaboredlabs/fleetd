@@ -102,6 +102,10 @@ export const botShapeLabel = (shape: BotShapeName): string => shape.charAt(0).to
  * Its hops and slumps reach past the box, so whatever holds it never clips it. */
 export const CROP = { x: 10, y: 14.6, w: 80 } as const;
 export const VIEW_BOX = `${CROP.x} ${CROP.y} ${CROP.w} ${CROP.w}`;
+/** How far past its crop, in the drawing's units, whatever draws a bot leaves room on each side (the desktop's canvas,
+ * the phone's Svg), so no body is ever clipped: Bunny's ears in a Needs-you hop reach about 17 above it, the most of
+ * any shape in any state (bot.test.ts holds every body inside it). */
+export const REACH = 20;
 /** The size a bot in a `box` px box is drawn at, as if its whole 100 box showed: its size for newRig. */
 export const drawnAt = (box: number): number => {
   "worklet";
