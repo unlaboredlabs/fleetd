@@ -19,6 +19,7 @@ import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
 import { probe } from "./mcp_probe.ts";
+import { spawnGroup } from "./mcp_spawn.ts";
 import { applyToken, importedFields, importKind, OnePassword, readToken, TOKEN_ENV } from "./onepassword.ts";
 import { CallRefusal, invalid, notFound } from "./refusal.ts";
 import { forgetSignins } from "./signins.ts";
@@ -28,6 +29,7 @@ import { hostedHint, PROBE_SEC, privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { dialFetch, type Fetcher } from "../sandbox/tailnet_fetch.ts";
 import { tailnetIp, tailnetName } from "../../shared/tailnet.ts";
+import { VERSION } from "../../shared/version.ts";
 
 /** What these calls need of the node: its home and box key, its claude, and the session service's lookups. */
 export type CallContext = {
@@ -147,7 +149,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         for (const [k, v] of projectVars(home, call.projectId)) if (!(k in env) && k !== TOKEN_ENV) env[k] = v;
       }
       try {
-        return { kind: "mcp_tested", ...(await probe(resolve(home, call.server), cwd, env)) };
+        return { kind: "mcp_tested", ...(await probe(resolve(home, call.server), { fetch, spawn: spawnGroup, cwd, env, version: VERSION })) };
       } catch (error) {
         if (!(error instanceof MissingSecrets)) throw error;
         return { kind: "mcp_tested", tools: [], error: `this machine doesn't hold its ${error.message}: save the server again` };

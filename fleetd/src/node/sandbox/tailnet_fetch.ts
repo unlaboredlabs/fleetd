@@ -1,27 +1,39 @@
 // HTTP over the team's tailnet from the node itself (W722): the hub's runner isn't on the tailnet (100.x doesn't route
 // there), so a call it makes to a tailnet endpoint (a Claude account's Test) goes over a connection through the team's
-// gateway (./tailnet.ts `dial`) instead: one HTTP/1.1 GET, TLS on top for https, its answer read to its end.
+// gateway (./tailnet.ts `dial`) instead: one HTTP/1.1 request (a GET, or a method with a body: an MCP server's Test
+// POSTs), TLS on top for https, its answer read to its end.
 import type { Duplex } from "node:stream";
 import { isIP } from "node:net";
 import { connect as tlsConnect, type ConnectionOptions } from "node:tls";
 
 /** What the node's calls to an endpoint need of `fetch`. */
-export type Fetcher = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal; redirect?: "follow" | "manual" | "error" }) => Promise<Response>;
+export type Fetcher = (
+  url: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: "follow" | "manual" | "error" },
+) => Promise<Response>;
 
 type Dial = (host: string, port: number) => Promise<Duplex>;
 
 const HEAD_MAX = 64 << 10;
 const BODY_MAX = 4 << 20;
 
-/** A `fetch` for GETs whose every connection is `dial`'s; `tls` adds to https's options (a test's own CA). */
+/** A `fetch` whose every connection is `dial`'s; `tls` adds to https's options (a test's own CA). */
 export function dialFetch(dial: Dial, tls: ConnectionOptions = {}): Fetcher {
   return async (url, init = {}) => {
     const u = new URL(url);
     if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error(`${u.protocol} isn't http or https`);
     const host = u.hostname.replace(/^\[(.*)\]$/u, "$1");
     const port = Number(u.port || (u.protocol === "https:" ? 443 : 80));
-    const lines = [`GET ${u.pathname || "/"}${u.search} HTTP/1.1`, `Host: ${u.host}`, "Connection: close", "Accept: */*", "User-Agent: fleetd"];
+    const method = init.method ?? "GET";
+    if (!/^[A-Z]+$/u.test(method)) throw new Error(`${method} isn't an HTTP method`);
+    const body = init.body === undefined ? undefined : Buffer.from(init.body, "utf8");
+    const given = new Set(Object.keys(init.headers ?? {}).map((k) => k.toLowerCase()));
+    const lines = [`${method} ${u.pathname || "/"}${u.search} HTTP/1.1`, `Host: ${u.host}`, "Connection: close"];
+    if (!given.has("accept")) lines.push("Accept: */*");
+    if (!given.has("user-agent")) lines.push("User-Agent: fleetd");
+    if (body) lines.push(`Content-Length: ${body.length}`);
     for (const [k, v] of Object.entries(init.headers ?? {})) {
+      if (["host", "connection", "content-length"].includes(k.toLowerCase())) continue;
       if (/[\r\n]/u.test(k + v)) throw new Error(`the header ${k} holds a line break`);
       lines.push(`${k}: ${v}`);
     }
@@ -39,6 +51,7 @@ export function dialFetch(dial: Dial, tls: ConnectionOptions = {}): Fetcher {
       conn = raw;
       if (u.protocol === "https:") conn = await secure(raw, host, tls);
       conn.write(`${lines.join("\r\n")}\r\n\r\n`);
+      if (body) conn.write(body);
       return await answer(conn);
     };
     try {

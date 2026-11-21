@@ -125,7 +125,7 @@ test("the box side drives a box over the network and nothing else: no file, proc
   expect(findings("fleetd/src/node/sandbox/link.ts", read, { allow: allowed("./hub/x") }).map((f) => f.taint)).toEqual(["network", "network", "network"]);
   // What a service with no node needs to drive a box with fleetd's own code (the cloud's), each entry box side.
   const box = exported().filter((e) => e.name.startsWith("./box/")).map((e) => e.name);
-  expect(box.sort()).toEqual(["./box/bootstrap", "./box/box", "./box/chat_file", "./box/claude", "./box/file_rules", "./box/files", "./box/hook_scripts", "./box/host_link", "./box/kept", "./box/lead", "./box/mask", "./box/mux", "./box/onepassword", "./box/onepassword_fields", "./box/providers", "./box/session_state", "./box/setup_words", "./box/tailnet_fetch"]);
+  expect(box.sort()).toEqual(["./box/bootstrap", "./box/box", "./box/chat_file", "./box/claude", "./box/file_rules", "./box/files", "./box/hook_scripts", "./box/host_link", "./box/kept", "./box/lead", "./box/mask", "./box/mcp_probe", "./box/mux", "./box/onepassword", "./box/onepassword_fields", "./box/providers", "./box/session_state", "./box/setup_words", "./box/tailnet_fetch"]);
 });
 
 test("a pure module left out on purpose is still pure and still left out", () => {

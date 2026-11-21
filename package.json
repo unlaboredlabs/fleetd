@@ -55,6 +55,7 @@
     "./box/file_rules": "./fleetd/src/node/sessions/file_rules.ts",
     "./box/chat_file": "./fleetd/src/node/actions/chat_file.ts",
     "./box/kept": "./fleetd/src/node/place/kept.ts",
+    "./box/mcp_probe": "./fleetd/src/node/actions/mcp_probe.ts",
     "./box/onepassword": "./fleetd/src/node/actions/onepassword_helper.ts",
     "./box/onepassword_fields": "./fleetd/src/node/actions/onepassword_fields.ts",
     "./box/tailnet_fetch": "./fleetd/src/node/sandbox/tailnet_fetch.ts",

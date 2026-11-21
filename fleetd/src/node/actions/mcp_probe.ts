@@ -3,12 +3,56 @@
 // directory with the agent's environment plus its own env, in a process group of its own that is killed afterwards;
 // an HTTP server is called with its headers (MCP's streamable HTTP, cli/mcp_client.rs); an SSE server (MCP's older
 // HTTP transport) is read from its event stream. What goes wrong comes back as one line a person can act on, with a
-// command's stderr tail, every one of the server's secrets masked.
-import type { McpTestResult, McpToolInfo } from "../../shared/contracts.ts";
-import { VERSION } from "../../shared/version.ts";
+// command's stderr tail, every one of the server's secrets masked, as they are in what a working one lists.
+//
+// Box side (`fleetd/box/mcp_probe`): the caller hands in the `fetch` and the `spawn` it runs with, so a service with
+// no node probes a server as the node does (the node's own are ./mcp_spawn.ts and the global fetch; `fleetd
+// mcp-probe` runs it in a box).
+import type { McpTestResult, McpToolInfo, McpTransport } from "../../shared/contracts.ts";
 import { Masker } from "../mask.ts";
-import type { Env } from "../util.ts";
-import type { Resolved } from "./mcp.ts";
+
+/** A server with its values, as the node resolves it from what it holds (./mcp.ts `resolve`). */
+export type Resolved = {
+  name: string;
+  transport: McpTransport;
+  /** Env (stdio) or headers (HTTP, SSE). */
+  values: [name: string, value: string][];
+  /** Its secrets as `<server>.<NAME>`, for masking. */
+  secrets: [name: string, value: string][];
+};
+
+/** A started process: its pipes, how it ended, and a kill of it and everything it started. */
+export type Child = {
+  stdin: { write(text: string): unknown; flush(): unknown };
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+  exited: Promise<number>;
+  /** The signal that ended it, once one did. */
+  readonly signalCode: string | number | null;
+  /** Kills its whole process group: a launcher such as `npx` or `uvx` runs the real server as its own child. */
+  kill(): void;
+};
+
+/** Starts `argv` in `cwd` with exactly `env`; throws (with Node's `code`, ENOENT for a missing command) when it can't. */
+export type Spawn = (argv: string[], options: { cwd: string; env: Record<string, string> }) => Child;
+
+/** What the probe asks of `fetch`: the global one fits, and so does `fleetd/box/tailnet_fetch`'s `dialFetch`. */
+export type Fetch = (
+  url: string,
+  init: { method?: string; headers: Record<string, string>; body?: string; signal: AbortSignal; redirect?: "manual" },
+) => Promise<Response>;
+
+export type ProbeIo = {
+  /** For an HTTP or SSE server. */
+  fetch: Fetch;
+  /** For a stdio server; without it one isn't started. */
+  spawn?: Spawn;
+  /** Where a stdio server runs, and the environment its own env adds to. */
+  cwd?: string;
+  env?: Record<string, string>;
+  /** fleetd's version, as the client's in `initialize` and its user agent. */
+  version?: string;
+};
 
 export const TIMEOUT_MS = 30_000;
 export const PROTOCOL_VERSION = "2025-06-18";
@@ -18,8 +62,9 @@ const TOOL_PAGES = 20;
 
 type Json = Record<string, unknown>;
 type Found = { server?: string; tools: Json[] };
+type Client = { fetch: Fetch; version: string; signal: AbortSignal };
 
-export async function probe(server: Resolved, cwd: string, env: Env): Promise<McpTestResult> {
+export async function probe(server: Resolved, io: ProbeIo): Promise<McpTestResult> {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -29,12 +74,21 @@ export async function probe(server: Resolved, cwd: string, env: Env): Promise<Mc
     }, TIMEOUT_MS);
   });
   const t = server.transport;
-  const run = t.type === "stdio" ? stdio(t.command, t.args ?? [], cwd, env, server.values, abort.signal) : t.type === "http" ? http(t.url, server.values, abort.signal) : sse(t.url, server.values, abort.signal);
+  const c: Client = { fetch: io.fetch, version: io.version ?? "0.0.0", signal: abort.signal };
+  const run =
+    t.type === "stdio"
+      ? stdio(t.command, t.args ?? [], io.cwd ?? ".", io.env ?? {}, server.values, io.spawn, c)
+      : t.type === "http"
+        ? http(t.url, server.values, c)
+        : sse(t.url, server.values, c);
+  // What the server says goes through the mask too: one may echo a key back in its name or a tool's description.
+  const mask = new Masker(server.secrets);
   try {
     const found = await Promise.race([run, timeout]);
-    return { ...(found.server ? { server: found.server } : {}), tools: found.tools.flatMap(toolInfo) };
+    const tools = found.tools.flatMap(toolInfo).map((t) => ({ ...t, name: mask.text(t.name), ...(t.description !== undefined ? { description: mask.text(t.description) } : {}) }));
+    return { ...(found.server ? { server: mask.text(found.server) } : {}), tools };
   } catch (error) {
-    return { tools: [], error: new Masker(server.secrets).text((error as Error).message) };
+    return { tools: [], error: mask.text((error as Error).message) };
   } finally {
     clearTimeout(timer);
     abort.abort();
@@ -48,11 +102,11 @@ function toolInfo(tool: Json): McpToolInfo[] {
   return [{ name: tool.name, ...(description !== undefined ? { description } : {}), ...(typeof readOnly === "boolean" ? { readOnly } : {}) }];
 }
 
-const initialize = (id: number) => ({
+const initialize = (id: number, version: string) => ({
   jsonrpc: "2.0",
   id,
   method: "initialize",
-  params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: CLIENT, version: VERSION } },
+  params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: CLIENT, version } },
 });
 const initialized = { jsonrpc: "2.0", method: "notifications/initialized" };
 const list = (id: number, cursor?: string) => ({ jsonrpc: "2.0", id, method: "tools/list", params: cursor ? { cursor } : {} });
@@ -77,8 +131,8 @@ const isResponse = (value: unknown, id: number): value is Json =>
 type Exchange = { send(message: Json): Promise<void>; response(id: number): Promise<Json> };
 
 /** initialize, initialized, then every page of tools/list. */
-async function session(x: Exchange): Promise<Found> {
-  await x.send(initialize(0));
+async function session(x: Exchange, version: string): Promise<Found> {
+  await x.send(initialize(0, version));
   const init = resultOf(await x.response(0));
   await x.send(initialized);
   const tools: Json[] = [];
@@ -93,22 +147,18 @@ async function session(x: Exchange): Promise<Found> {
   return { server: serverInfo(init), tools };
 }
 
-async function stdio(command: string, args: string[], cwd: string, env: Env, values: [string, string][], signal: AbortSignal): Promise<Found> {
-  let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+async function stdio(command: string, args: string[], cwd: string, env: Record<string, string>, values: Resolved["values"], spawn: Spawn | undefined, c: Client): Promise<Found> {
+  if (!spawn) throw new Error(`nothing here can start ${command}: a stdio server is tested where its agents run`);
+  let proc: Child;
   try {
-    proc = Bun.spawn([command, ...args], { cwd, env: { ...env, ...Object.fromEntries(values) }, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: true });
+    proc = spawn([command, ...args], { cwd, env: { ...env, ...Object.fromEntries(values) } });
   } catch (error) {
     const code = (error as { code?: string }).code;
     throw new Error(code === "ENOENT" ? `${command} was not found on this machine's PATH (or ${cwd} doesn't exist)` : `${command} could not start: ${(error as Error).message}`);
   }
-  // Its whole process group goes when the test ends, by any path: a launcher such as `npx` or `uvx` runs the real
-  // server as its own child, which killing the launcher alone would leave behind.
-  const killGroup = () => {
-    try {
-      process.kill(-proc.pid, "SIGKILL");
-    } catch {}
-  };
-  signal.addEventListener("abort", killGroup);
+  // Its whole process group goes when the test ends, by any path.
+  const killGroup = () => proc.kill();
+  c.signal.addEventListener("abort", killGroup);
   let stderr = Buffer.alloc(0);
   const tail = (async () => {
     for await (const chunk of proc.stderr) {
@@ -145,13 +195,13 @@ async function stdio(command: string, args: string[], cwd: string, env: Env, val
   };
   let outcome: Found | Error;
   try {
-    outcome = await session(x);
+    outcome = await session(x, c.version);
   } catch (error) {
     outcome = error as Error;
   }
   const code = ended ? await Promise.race([proc.exited, Bun.sleep(5_000).then(() => undefined)]) : undefined;
   killGroup();
-  signal.removeEventListener("abort", killGroup);
+  c.signal.removeEventListener("abort", killGroup);
   if (!(outcome instanceof Error)) return outcome;
   await Promise.race([tail, Bun.sleep(2_000)]);
   let text = stderr.toString("utf8").trim();
@@ -177,11 +227,11 @@ async function* readLines(stream: ReadableStream<Uint8Array>): AsyncGenerator<st
 
 /** `fetch` following at most 10 redirects, each to the first URL's own origin only: a server's headers (secrets among
  * them) never go elsewhere. */
-async function sameOrigin(url: string, init: RequestInit): Promise<Response> {
+async function sameOrigin(fetcher: Fetch, url: string, init: Omit<Parameters<Fetch>[1], "redirect">): Promise<Response> {
   const origin = new URL(url).origin;
   let at = url;
   for (let hop = 0; ; hop++) {
-    const response = await fetch(at, { ...init, redirect: "manual" });
+    const response = await fetcher(at, { ...init, redirect: "manual" });
     const location = response.headers.get("location");
     if (response.status < 300 || response.status >= 400 || !location || hop >= 10) return response;
     const next = new URL(location, at);
@@ -220,7 +270,7 @@ export function findResponse(body: string, id: number): Json | undefined {
 }
 
 /** MCP's streamable HTTP, as the Rust McpClient speaks it: every message a POST, the session id kept. */
-async function http(url: string, headers: [string, string][], signal: AbortSignal): Promise<Found> {
+async function http(url: string, headers: Resolved["values"], c: Client): Promise<Found> {
   const keyed = headers.length > 0;
   let session: string | undefined;
   let protocol = PROTOCOL_VERSION;
@@ -228,15 +278,15 @@ async function http(url: string, headers: [string, string][], signal: AbortSigna
   const post = async (message: Json): Promise<string | undefined> => {
     let response: Response;
     try {
-      response = await sameOrigin(url, {
+      response = await sameOrigin(c.fetch, url, {
         method: "POST",
-        signal,
+        signal: c.signal,
         headers: {
           ...Object.fromEntries(headers),
           accept: "application/json, text/event-stream",
           "content-type": "application/json",
           "mcp-protocol-version": protocol,
-          "user-agent": `${CLIENT}/${VERSION}`,
+          "user-agent": `${CLIENT}/${c.version}`,
           ...(session ? { "mcp-session-id": session } : {}),
         },
         body: JSON.stringify(message),
@@ -259,7 +309,7 @@ async function http(url: string, headers: [string, string][], signal: AbortSigna
     return resultOf(reply);
   };
   try {
-    const init = await request("initialize", initialize(0).params);
+    const init = await request("initialize", initialize(0, c.version).params);
     if (typeof init.protocolVersion === "string") protocol = init.protocolVersion;
     await post(initialized);
     const tools: Json[] = [];
@@ -280,7 +330,7 @@ async function http(url: string, headers: [string, string][], signal: AbortSigna
 
 /** MCP's older HTTP transport: a GET opens the event stream, whose first `endpoint` event names where to POST; every
  * answer comes back on the stream as a `message` event. */
-async function sse(url: string, headers: [string, string][], signal: AbortSignal): Promise<Found> {
+async function sse(url: string, headers: Resolved["values"], c: Client): Promise<Found> {
   let base: URL;
   try {
     base = new URL(url);
@@ -288,10 +338,10 @@ async function sse(url: string, headers: [string, string][], signal: AbortSignal
     throw new Error(`${url} is not a URL`);
   }
   const keyed = headers.length > 0;
-  const own = { ...Object.fromEntries(headers), "user-agent": `${CLIENT}/${VERSION}` };
+  const own = { ...Object.fromEntries(headers), "user-agent": `${CLIENT}/${c.version}` };
   let response: Response;
   try {
-    response = await sameOrigin(url, { signal, headers: { ...own, accept: "text/event-stream" } });
+    response = await sameOrigin(c.fetch, url, { signal: c.signal, headers: { ...own, accept: "text/event-stream" } });
   } catch (error) {
     throw new Error(described(error));
   }
@@ -345,7 +395,7 @@ async function sse(url: string, headers: [string, string][], signal: AbortSignal
       }
       let posted: Response;
       try {
-        posted = await fetch(endpoint, { method: "POST", signal, headers: { ...own, "content-type": "application/json" }, body: JSON.stringify(message) });
+        posted = await c.fetch(endpoint, { method: "POST", signal: c.signal, headers: { ...own, "content-type": "application/json" }, body: JSON.stringify(message) });
       } catch (error) {
         throw new Error(described(error));
       }
@@ -367,7 +417,7 @@ async function sse(url: string, headers: [string, string][], signal: AbortSignal
     },
   };
   try {
-    return await session(x);
+    return await session(x, c.version);
   } finally {
     await reader.cancel().catch(() => {});
   }
