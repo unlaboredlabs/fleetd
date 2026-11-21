@@ -66,10 +66,17 @@ export async function sh(box: ScreenBox, script: string, env: Record<string, str
 export const detach = (box: ScreenBox, script: string, pidFile: string, env: Record<string, string> = {}) =>
   sh(box, `setsid sh ${shq(script)} </dev/null >/dev/null 2>&1 & echo $! > ${shq(pidFile)}`, env);
 
-/** Kills every process session whose pid a file in `dir` names, and anything still naming `dir` (Xvfb by its cookie,
- * Chrome by its profile), then removes `dir`. */
+/**
+ * Kills every process session whose id a file in `dir` names (by its session id, as dash's `kill` takes no negative
+ * id; never an empty or zero one, which would be pkill's own session), removes `dir`, then kills anything still
+ * naming it (Xvfb by its cookie, Chrome by its profile). That last pkill is exec'd: the sweep's own shell names `dir`
+ * too, and as pkill it is never one it kills.
+ */
 export const sweep = (box: ScreenBox, dir: string) =>
-  sh(box, `for f in ${shq(dir)}/*.pid; do [ -f "$f" ] && kill -KILL -- "-$(cat "$f")" 2>/dev/null; done; pkill -KILL -f -- ${shq(dir)} 2>/dev/null; rm -rf ${shq(dir)}; true`).catch(() => "");
+  sh(
+    box,
+    `for f in ${shq(dir)}/*.pid; do [ -f "$f" ] || continue; p=$(cat "$f" 2>/dev/null); case "$p" in ''|*[!0-9]*|0) ;; *) pkill -KILL -s "$p" 2>/dev/null ;; esac; done; rm -rf ${shq(dir)}; exec pkill -KILL -f -- ${shq(dir)} 2>/dev/null`,
+  ).catch(() => "");
 
 /** A stream to `port` on the box's loopback once something listens there, trying again until `ms` is up. */
 export async function dialUntil(box: ScreenBox, at: number, ms = timing.upMs): Promise<Duplex> {

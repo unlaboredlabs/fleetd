@@ -64,8 +64,11 @@ export type DesktopSnapshot = {
 
 const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
-/** Why a session whose display went ends, in the agent's and the person's words. */
-export const goneNote = (why: string) => `the desktop in the box went: ${why}`;
+/** Why a session whose display went while it changed holders ends, in the agent's and the person's words. */
+export const goneNote = (why: string) => `the desktop in the box went while it moved to another server: ${why}`;
+
+/** A box display's folder, as BoxDisplay.start names it: nothing else of the box is ever swept for a snapshot. */
+const DISPLAY_DIR = /^\/tmp\/fleetd-desktop-[0-9a-f]+$/;
 
 export class DesktopSessions {
   /** Live sessions by the agent session they belong to: one each. */
@@ -232,18 +235,20 @@ export class DesktopSessions {
     }
   }
 
-  /** Ends a session already out of the map: its end reaches the hub, then its recording ends and goes. */
+  /** Ends a session already out of the map: its recording ends, then its end reaches the hub, with why it has no
+   * video if it hasn't. */
   protected async close(session: Session): Promise<Record<string, unknown>> {
     // Out of the map but not yet ended: the sweep leaves its recording alone until it has.
     this.ending.add(session.id);
     this.displays.delete(session.thread);
     try {
       session.logStep("session_end", {}, true);
-      // The end reaches the hub now, before the store's own reports of its recording, which a missing or unreadable
-      // recording stops.
-      await this.report(session, "uploading", new Date().toISOString());
       const files = await session.close();
       const note = session.note();
+      // The end reaches the hub now, not only with the store's own reports of its recording, which a missing or
+      // unreadable recording stops. A hub takes a recorded session's state as final, so one that comes after them
+      // changes nothing.
+      await this.report(session, "uploading", new Date().toISOString());
       return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
     } finally {
       this.closed(session);
@@ -414,8 +419,21 @@ export class DesktopSessions {
     if (snapshot?.v !== 1 || snapshot.thread !== thread || !snapshot.display?.dir || !/^B[0-9a-f]{32}$/.test(String(snapshot.id))) {
       throw new Error("not a desktop session's snapshot for this agent session");
     }
+    if (!DISPLAY_DIR.test(snapshot.display.dir)) throw new Error("the snapshot's display isn't a desktop's folder in the box");
     const open = this.sessions.get(thread);
     if (open) return { adopted: true, sessionId: open.id };
+    if (this.starting.has(thread)) throw new Error("a desktop of this agent session is starting or being taken over here already");
+    // Held until the session is in the map (or ended): a session_start meanwhile can't open a second display.
+    this.starting.add(thread);
+    try {
+      return await this.adoptHeld(thread, snapshot);
+    } finally {
+      this.starting.delete(thread);
+    }
+  }
+
+  /** `adopt`, with the agent session held. */
+  private async adoptHeld(thread: string, snapshot: DesktopSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
     const secrets = this.host.secrets(thread);
     const handle: DisplayHandle = {
       dir: snapshot.display.dir,
@@ -448,7 +466,7 @@ export class DesktopSessions {
     }
     if (!display || !x) {
       // A display that isn't there to drive: its session ends now, recorded as far as it went.
-      const note = goneNote(`${why}, while it moved to another server`);
+      const note = goneNote(why);
       const scrub = new Scrub(secrets);
       const offsetMs = Math.max(0, Date.now() - Date.parse(snapshot.startedAt));
       const step = { seq: snapshot.seq + 1, at: new Date().toISOString(), offsetMs, tool: "desktop_gone", args: { why }, ok: false, durationMs: 0 };
