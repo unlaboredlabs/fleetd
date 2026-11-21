@@ -1393,6 +1393,19 @@ export class Tasks {
         // Continued outside `task message`: the usage layer's continue, or a human writing to the thread.
         const recovering = task.state === "queued" && task.recovery?.nextAt !== undefined;
         if (!recovering && !(task.state === "done" || task.state === "failed" || task.state === "idle")) return;
+        // Its order closed: a Monitor of its own (one the close's stop missed, its node offline then) or a person writing
+        // to its thread would run it on the token its claude started with, which GitHub has ended. Stopped, it stays ended.
+        if (!recovering && this.closedOrder(task)) {
+          console.info(`a closed order's ended agent started a turn; stopping it (${task.taskId})`);
+          spawnInBackground(
+            "stopping a closed order's woken agent",
+            this.ports.stop(threadRef).catch((error) => {
+              const e = portError(error);
+              if (!e.gone) console.warn(`closed order's woken agent not stopped (${task.taskId}):`, e.message);
+            }),
+          );
+          return;
+        }
         const board = slots(this.hub);
         const hostable = this.ports.claudeAccountKey(task.projectRef, task.workstreamId, machineId) !== undefined;
         board.acquire({ holder: task.taskId, projectRef: task.projectRef, priority: priorityOf(task.kind), hostable });
@@ -2258,7 +2271,11 @@ export class Tasks {
       if (!thread) continue;
       spawnInBackground(
         "closing a closed order's ended agent",
-        this.ports.stop(thread).catch((error) => console.warn(`closed order's ended agent not closed (${task.taskId}):`, portError(error).message)),
+        this.ports.stop(thread).catch((error) => {
+          // One its node no longer knows is closed already.
+          const e = portError(error);
+          if (!e.gone) console.warn(`closed order's ended agent not closed (${task.taskId}):`, e.message);
+        }),
       );
     }
     return waited;

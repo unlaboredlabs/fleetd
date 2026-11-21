@@ -11,6 +11,8 @@ export class PortError extends Error {
   constructor(
     readonly offline: boolean,
     message: string,
+    /** Its node no longer knows the thread: there is nothing left to stop. */
+    readonly gone = false,
   ) {
     super(message);
     this.name = "PortError";
@@ -36,6 +38,7 @@ export class PortError extends Error {
 export function portError(error: unknown): PortError {
   if (error instanceof PortError) return error;
   if (error instanceof ExecutorError && error.kind === "not_connected") return new PortError(true, error.message);
+  if (error instanceof ExecutorError && error.kind === "thread_not_found") return new PortError(false, error.message, true);
   return new PortError(false, error instanceof Error ? error.message : String(error));
 }
 
@@ -91,6 +94,8 @@ export class StartError extends Error {
   constructor(
     readonly offline: boolean,
     message: string,
+    /** Its node no longer knows the thread: there is nothing left to stop. */
+    readonly gone = false,
   ) {
     super(message);
   }

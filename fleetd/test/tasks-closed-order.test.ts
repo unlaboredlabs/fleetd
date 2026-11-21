@@ -6,6 +6,7 @@ import { expect, test } from "bun:test";
 import { type CiReads, pollCiWaits, type Read } from "../src/hub/tasks/ci_wait.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
+import { PortError } from "../src/hub/tasks/launch.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { P, tasksKit, until } from "./tasks-kit.ts";
 
@@ -77,5 +78,42 @@ test("a lead's message to an ended task of a closed order is refused, saying why
   );
   expect(k.ports.sends).toEqual([]);
   expect(k.t.get("T1")?.state).toBe("done");
+  k.hub.shutdown.abort();
+});
+
+test("an agent its Monitor wakes after its order closed, its node offline at the close, is stopped, and no turn starts", async () => {
+  const k = await waiting();
+  // Its node is offline at the close: the stop doesn't reach it, and its Monitor lives on.
+  const stop = k.ports.stop;
+  k.ports.stop = async () => {
+    throw PortError.offline("lab-a");
+  };
+  await workstreams(k.hub).close(P, k.w.workstreamId, "merged", "lead");
+  k.ports.stop = stop;
+  expect(k.ports.stops).toEqual([]);
+  // It links again, and the Monitor fires: claude starts a turn of its own.
+  k.threadRow("s1", "running");
+  k.thread("thread.started", "s1", { runId: "t1-woke-1" });
+  await until(() => k.ports.stops.some((s) => s.threadId === "s1"));
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
+  expect(k.ports.sends).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
+test("closing an order says nothing of ended agents whose threads their node no longer knows", async () => {
+  const k = await waiting();
+  k.ports.stop = async (thread) => {
+    throw new PortError(false, `thread ${thread.threadId} is not known on machine lab-a`, true);
+  };
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warned.push(args.join(" "));
+  try {
+    await workstreams(k.hub).close(P, k.w.workstreamId, "merged", "lead");
+    await Bun.sleep(0);
+  } finally {
+    console.warn = warn;
+  }
+  expect(warned.filter((w) => w.includes("closed order"))).toEqual([]);
   k.hub.shutdown.abort();
 });
