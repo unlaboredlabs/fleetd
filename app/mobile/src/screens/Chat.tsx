@@ -29,7 +29,7 @@ import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, Fla
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { holds, windowChat } from "../around";
+import { farFailure, farStep, holds, shownWindow, windowChat } from "../around";
 import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
@@ -146,7 +146,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const sends = state.sends[chatKey];
   // Opened at a message far back (a search hit, a pin): the page around it, until it joins the chat (around.ts). Your
   // sends on their way are at the newest end, which it isn't.
-  const win = state.windows[chatKey];
+  // A window still reading the page around its message isn't drawn: the chat stays as it was until the page comes.
+  const opening = state.windows[chatKey];
+  const win = shownWindow(opening);
   const items = useMemo(() => (win === undefined ? chatItems(chat, sends ?? []) : chatItems(windowChat(win), [])), [chat, sends, win]);
   // A window closed from here (back to the newest, a send, a jump), as against one that joined the chat as it was read on.
   const closing = useRef(false);
@@ -402,6 +404,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   useLayoutEffect(() => {
     const wanted = `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`;
     if (landed.current === wanted || !chat.loaded) return;
+    // The page around it is on its way: landed on once it comes.
+    if (messageId !== undefined && opening?.anchor === messageId && opening.loading === "around") return;
     if (newestFirst.length === 0) {
       landed.current = wanted;
       setPlaced(true);
@@ -416,14 +420,15 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (found !== undefined && showHidden(found)) return;
     // Further back than the chat holds: the page around it is read, then landed on as it comes (around.ts). One that
     // can't be read lands nowhere, as one gone from the chat.
-    if (found !== undefined && !items.some((i) => i.message?.messageId === found)) {
-      // The chat's own messages have it, a window doesn't: the window goes.
-      if (holds(chat, found)) return closeWindow();
-      if (win?.anchor !== found) return void session.openAround(chatKey, found);
-      if (win.loading === "around") return;
+    const step = found === undefined ? "land" : farStep(chat, opening, found, items.some((i) => i.message?.messageId === found));
+    // The chat's own messages have it, a window's don't: the window goes.
+    if (step === "close") return closeWindow();
+    if (step === "open" && found !== undefined) return void session.openAround(chatKey, found);
+    if (step === "wait") return;
+    if (step === "failed") {
       closeWindow();
       haptics.warning();
-      Alert.alert("The message didn't open", win.error?.code === "not_found" ? "It isn't in the chat any more." : (win.error?.message ?? "It isn't in the chat any more."));
+      Alert.alert("The message didn't open", farFailure(opening));
     }
     // Landed on in a window just read: drawn there at once, as the thread around it is new.
     const fresh = found !== undefined && win?.anchor === found;
@@ -534,8 +539,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   useEffect(() => {
     const to = jumping.current;
     if (to === null) return;
-    const far = win?.anchor === to;
-    if (far && win.loading === "around") return;
+    const far = opening?.anchor === to;
+    if (far && opening.loading === "around") return;
     jumping.current = null;
     const there = () => setMoving(false);
     if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === to, 0.5, !far && !reduce, far ? there : undefined)) return void setLit(to);
@@ -543,7 +548,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (!far) return;
     closeWindow();
     haptics.warning();
-    Alert.alert("The message didn't open", win.error?.code === "not_found" || win.error === undefined ? "It isn't in the chat any more." : win.error.message);
+    Alert.alert("The message didn't open", farFailure(opening));
   });
 
   // A lens: on, the thread shows its order from the newest end; off, it goes back to the bubble whose tag opened it.

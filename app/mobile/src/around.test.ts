@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { followLive, holds, joined, meets, openingWindow, pageFrom, windowChat, withError, withPage } from "./around";
+import { farFailure, farStep, followLive, holds, joined, meets, openingWindow, pageFrom, shownWindow, windowChat, withError, withPage } from "./around";
 import { emptyChat, type Chat, type ChatHistoryOutput, type ChatMessage, type ProjectChatState } from "./desktop";
 
 const at = (seq: number): string => new Date(Date.UTC(2026, 0, 1, 0, seq)).toISOString();
@@ -73,5 +73,31 @@ describe("a window around a message far back", () => {
     const edited = followLive(w, m(10, { text: "moved", updatedAt: at(99) }));
     expect(edited.messages.find((x) => x.seq === 10)?.text).toBe("moved");
     expect(followLive(w, m(99))).toBe(w);
+  });
+
+  it("isn't drawn while its first page reads, so a hit far back waits for it rather than land on an empty thread", () => {
+    const chat = chatOf(range(951, 1000));
+    const opening = openingWindow("m500");
+    expect(shownWindow(opening)).toBeUndefined();
+    // The search hit from Info: not held, so the page around it is read, then waited for, then landed on.
+    expect(farStep(chat, undefined, "m500", false)).toBe("open");
+    expect(farStep(chat, opening, "m500", false)).toBe("wait");
+    const got = withPage(opening, page(range(476, 525), true, true), "around");
+    expect(shownWindow(got)).toBe(got);
+    expect(farStep(chat, got, "m500", holds(got, "m500"))).toBe("land");
+    // Another hit while a window is open: the chat holds it, so the window goes; one further back reads its own.
+    expect(farStep(chat, got, "m990", false)).toBe("close");
+    expect(farStep(chat, got, "m100", false)).toBe("open");
+    // Held and shown already: no window at all.
+    expect(farStep(chat, undefined, "m990", true)).toBe("land");
+  });
+
+  it("says a hit gone from the chat didn't open, once its page has failed", () => {
+    const chat = chatOf(range(951, 1000));
+    const gone = withError(openingWindow("m5"), { code: "not_found", message: "m5 is not a message of this chat." });
+    expect(shownWindow(gone)).toBeUndefined();
+    expect(farStep(chat, gone, "m5", false)).toBe("failed");
+    expect(farFailure(gone)).toBe("It isn't in the chat any more.");
+    expect(farFailure(withError(openingWindow("m5"), { code: "offline", message: "No link to the hub." }))).toBe("No link to the hub.");
   });
 });

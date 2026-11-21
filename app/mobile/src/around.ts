@@ -80,3 +80,22 @@ export const followLive = (w: ChatWindow, message: ChatMessage): ChatWindow => {
 
 /** The window as a chat the thread draws (desktop.ts chatItems): its messages alone, nothing streaming or on its way. */
 export const windowChat = (w: ChatWindow): Chat => ({ ...emptyChat, messages: w.messages, hasOlder: w.moreBefore, loadingOlder: w.loading === "older", loaded: w.loading !== "around" });
+
+/** The window the thread draws: one with messages in it. One still reading its first page, or whose page failed, isn't. */
+export const shownWindow = (w: ChatWindow | undefined): ChatWindow | undefined => (w !== undefined && w.messages.length > 0 ? w : undefined);
+
+/**
+ * What a landing or a jump does with a message, as the thread shows it (`shown`): lands on it; closes the window, when
+ * the chat's own messages hold it; reads the page around it; waits for that page; or, the page come or failed without
+ * it, says it didn't open.
+ */
+export const farStep = (chat: Pick<Chat, "messages">, w: ChatWindow | undefined, messageId: string, shown: boolean): "land" | "close" | "open" | "wait" | "failed" => {
+  if (shown) return "land";
+  if (holds(chat, messageId)) return w === undefined ? "land" : "close";
+  if (w?.anchor !== messageId) return "open";
+  if (w.loading === "around") return "wait";
+  return "failed";
+};
+
+/** Why a message far back didn't open, as its alert says. */
+export const farFailure = (w: ChatWindow | undefined): string => (w?.error === undefined || w.error.code === "not_found" ? "It isn't in the chat any more." : w.error.message);
