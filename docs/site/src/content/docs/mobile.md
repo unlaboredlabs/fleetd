@@ -17,6 +17,10 @@ you (a captcha, a bank's check, a sign-in only you can do), open a screen of you
 [share](#share) text, links and images into a chat from any app. An admin can update fleetd and restart the hub. Secrets, machines, people
 and the hub's other admin pages stay in the desktop app.
 
+On a screen with room for two, such as the iPhone Duo unfolded or an iPad, Chats stays on the left with the open chat
+beside it, as Messages does on an iPad. Picking another chat swaps it in, and the list marks the open one. Folded, or on
+any other phone, a chat opens over the list as usual.
+
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
 runners: no Expo account and no EAS.
 

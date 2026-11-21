@@ -10,15 +10,17 @@
 // search field and filters in a toolbar at the bottom, no tab bar; the person's avatar at its top left pushes
 // Settings, a stack with a large title of its own, and a chat is pushed over the list, which a swipe from the edge
 // takes back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat
-// answers it.
-import { createNavigationContainerRef, NavigationContainer, useNavigation, type InitialState } from "@react-navigation/native";
+// answers it. A window with room for two (the iPhone Duo unfolded, an iPad: src/split.ts) has Chats beside the chat,
+// as Messages on an iPad: the list in a pane of its own on the left, the root stack on the right, where a chat picked
+// in the list takes the open one's place.
+import { createNavigationContainerRef, NavigationContainer, NavigationIndependentTree, useNavigation, type InitialState } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { requireOptionalNativeModule } from "expo";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -54,10 +56,12 @@ import { VaultItem } from "./src/screens/vault/VaultItem";
 import { VaultMove } from "./src/screens/vault/VaultMove";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
-import type { State } from "./src/store";
+import type { Key, State } from "./src/store";
+import { onHome, openChatKey, splitOf } from "./src/split";
 import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
-import { navigationTheme, useTheme, type Palette } from "./src/theme";
+import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
+import { BesideContext, PaneWidth, useBeside, type Beside } from "./src/ui/pane";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -473,17 +477,111 @@ const RootStack = createNativeStackNavigator<RootParams>();
 
 function Root() {
   const t = useTheme();
+  const split = splitOf(useWindowDimensions().width);
+  const wide = split !== undefined;
+  const openKey = useOpenChatKey(wide);
+  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey } : null), [wide, openKey]);
   return (
-    // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
-    // changes the state with every word.
-    <RootStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
-      <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
-      <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
-      {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place. */}
-      <RootStack.Screen name="Chat" component={Chat} getId={({ params }) => params.key} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
-      <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
-      {manageScreens(RootStack, t)}
-    </RootStack.Navigator>
+    <BesideContext.Provider value={beside}>
+      <View style={styles.panes}>
+        {split === undefined ? null : (
+          <View style={[styles.list, { width: split.list, borderRightColor: t.separator }]}>
+            <PaneWidth.Provider value={split.list}>
+              <ChatsBeside />
+            </PaneWidth.Provider>
+          </View>
+        )}
+        <View style={styles.fill}>
+          <PaneWidth.Provider value={split?.chat}>
+            {/* A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed
+                reply changes the state with every word. */}
+            <RootStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
+              <RootStack.Screen name="Home" component={Home} options={{ headerShown: false, title: "Chats" }} />
+              <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
+              {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place.
+                  Beside the list, one picked there takes the open one's place at once, as Messages' on an iPad, and one
+                  straight on Home has nothing behind it to swipe back to. */}
+              <RootStack.Screen
+                name="Chat"
+                component={Chat}
+                getId={({ params }) => params.key}
+                options={({ route, navigation }) => ({
+                  ...chatOptions(t),
+                  ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })),
+                  ...(wide ? { animation: "none" as const, ...(besideList(navigation.getState().routes, route.key) ? { gestureEnabled: false, headerBackVisible: false } : {}) } : {}),
+                })}
+              />
+              <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
+              {manageScreens(RootStack, t)}
+            </RootStack.Navigator>
+          </PaneWidth.Provider>
+        </View>
+      </View>
+    </BesideContext.Provider>
+  );
+}
+
+/** Whether the chat whose route is `key` stands straight on Home, beside the list. */
+const besideList = (routes: readonly { name: string; key: string }[], key: string): boolean =>
+  onHome(
+    routes,
+    routes.findIndex((r) => r.key === key),
+  );
+
+/**
+ * A chat picked in the list beside the chat's pane: the one open already takes the new params (a search hit in it),
+ * any other takes the pane's whole stack, over Home, in place of whatever was there.
+ */
+const openBeside = (key: Key, messageId?: string): void => {
+  if (!nav.isReady()) return;
+  const params = messageId === undefined ? { key } : { key, messageId };
+  const routes = nav.getRootState()?.routes ?? [];
+  const top = routes[routes.length - 1];
+  if (top?.name === "Chat" && openChatKey(routes) === key) return void nav.navigate("Chat", params);
+  const home = routes[0];
+  nav.reset({ index: 1, routes: [home ?? { name: "Home" }, { name: "Chat", params }] } as Parameters<typeof nav.reset>[0]);
+};
+
+/** The chat open in the root stack while the list is beside it, so the list marks its row. */
+const useOpenChatKey = (on: boolean): Key | undefined => {
+  const [key, setKey] = useState<Key | undefined>(undefined);
+  useEffect(() => {
+    if (!on) return;
+    const read = () => setKey(nav.isReady() ? openChatKey(nav.getRootState()?.routes ?? []) : undefined);
+    read();
+    return nav.addListener("state", read);
+  }, [on]);
+  return on ? key : undefined;
+};
+
+/** Home: the chats list, or beside the list, what the chat's pane shows with no chat open. */
+function Home() {
+  return useBeside() === null ? <ChatsHome /> : <NoChatOpen />;
+}
+
+/** The chat's pane with no chat in it, as Messages' on an iPad: its own ground, and one quiet line. */
+function NoChatOpen() {
+  const t = useTheme();
+  return (
+    <View style={[styles.fill, styles.center, { backgroundColor: t.thread }]}>
+      <Text style={[type.subhead, { color: t.tertiary }]}>No chat selected</Text>
+    </View>
+  );
+}
+
+/**
+ * The chats list in the pane beside the chat: a navigation tree of its own, for its bars, whose chats, Settings and +
+ * go to the root stack beside it (Chats reads them from useBeside).
+ */
+function ChatsBeside() {
+  const t = useTheme();
+  const theme = useMemo(() => navigationTheme(t), [t]);
+  return (
+    <NavigationIndependentTree>
+      <NavigationContainer theme={theme}>
+        <ChatsHome />
+      </NavigationContainer>
+    </NavigationIndependentTree>
   );
 }
 
@@ -535,4 +633,7 @@ function SettingsScreens() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  center: { alignItems: "center", justifyContent: "center" },
+  panes: { flex: 1, flexDirection: "row" },
+  list: { borderRightWidth: StyleSheet.hairlineWidth },
 });

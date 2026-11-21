@@ -35,6 +35,8 @@ import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, t
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
+import { onHome, sideStrip } from "../split";
+import { useBeside } from "../ui/pane";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
 import { useCanStop } from "../stopProbe";
@@ -97,6 +99,13 @@ export const chatOptions = (t: Palette): NativeStackNavigationOptions =>
 /** The bar's height under the status bar, and its glass buttons', as iOS 26's own (Messages' are 44). */
 const BAR = 54;
 const BAR_BUTTON = 44;
+/**
+ * Where the bar stands on a window with no top inset (the iPhone Duo unfolded): its buttons' middle 48 pt down, as the
+ * native bars' there (measured).
+ */
+const BAR_TOP_BARE = 26;
+/** How far down the Duo's side strip its first button stands, under the status: where iOS puts a bar's own there (measured). */
+const STRIP_TOP = 124;
 
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
@@ -138,6 +147,9 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Opened again after the app was closed: drawn where it was scrolled to from its first frame (cache.ts OpenChat).
   const [reopened] = useState(route.params.at);
   const insets = useSafeAreaInsets();
+  // Beside the list (src/split.ts), a chat straight on Home has nothing to go back to: the list picks another.
+  const beside = useBeside();
+  const besideList = beside !== null && onHome(navigation.getState().routes, navigation.getState().routes.findIndex((r) => r.key === route.key));
   const project = state.projects?.[chatKey];
   const chatState = state.chatStates[chatKey];
   const chat = state.chats[chatKey] ?? openingChat(state.latest[chatKey]);
@@ -187,9 +199,19 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const lastHuman = items.findLastIndex((i) => i.author === "human");
   const index = useMemo(() => new Map(items.map((i, n) => [i.id, n])), [items]);
   const title = project?.title ?? "Chat";
+  // The iPhone Duo unfolded has no top inset (its status is a column at the right, `insets.right`), yet iOS lays its
+  // own bars, the list's beside the chat among them, a status bar's height down: the chat's bar lines up with them.
+  const barTop = insets.top > 0 ? insets.top : BAR_TOP_BARE;
+  // Where the Duo has its control strip at the side (src/split.ts), the thread and composer stay out of it and Back and
+  // Info stand in it, as iOS moves its own bars' buttons there. Beside the list, the chat touches only the right edge.
+  const strip = Platform.OS === "ios" ? sideStrip(insets) : undefined;
+  const stripLeft = strip === undefined || beside !== null ? 0 : strip.left;
+  const stripRight = strip?.right ?? 0;
+  const inStrip = stripLeft > 0 || stripRight > 0;
+  const goBack = besideList ? undefined : () => navigation.goBack();
   // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and the pins'
   // and a lens's capsules under it.
-  const barEnd = Platform.OS === "ios" ? insets.top + BAR : 0;
+  const barEnd = Platform.OS === "ios" ? barTop + BAR : 0;
   const pinRoom = capsule === undefined ? 0 : PIN_ROOM;
   const top = barEnd + pinRoom + (lens === null ? 0 : LENS_ROOM);
   // A message a jump goes to (a search hit, a push, a tapped quote) that the lens hides: the lens closed; true when it
@@ -668,7 +690,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const pageError = win === undefined ? olderError : opening?.error?.end === "around" ? undefined : opening?.error?.error;
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
-      <View style={styles.fill}>
+      <View style={[styles.fill, { marginLeft: stripLeft, marginRight: stripRight }]}>
         <RevealArea margin={metrics.margin}>
           <ArtifactLinks.Provider value={openLink}>
             <Animated.FlatList
@@ -751,7 +773,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             style={[styles.topEdge, { height: top }]}
             fallback={<LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />}
           >
-            <ChatBar top={insets.top} onBack={() => navigation.goBack()} onInfo={openInfo}>
+            <ChatBar top={barTop} onBack={goBack} onInfo={openInfo} inStrip={inStrip}>
               <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
             </ChatBar>
           </EdgeEffect>
@@ -819,6 +841,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           </EdgeEffect>
         </KeyboardStickyView>
       </View>
+      {Platform.OS === "ios" && inStrip ? <StripButtons side={stripRight > 0 ? "right" : "left"} width={stripRight > 0 ? stripRight : stripLeft} onBack={goBack} onInfo={openInfo} /> : null}
       {focused ? <StatusBarTap onTap={olderByAScreen} /> : null}
       <SelectText text={selecting} onClose={() => setSelecting(null)} />
       <PinnedSheet
@@ -888,22 +911,50 @@ function EmptyThread({ picture, title, code, onPick }: { picture: Pictured | und
   );
 }
 
-/** iOS's bar over the thread (chatOptions): glass back and Info buttons either side of the title, as the stack's own. */
-function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: () => void; onInfo: () => void; children: ReactNode }) {
+/**
+ * iOS's bar over the thread (chatOptions): glass back and Info buttons either side of the title, as the stack's own.
+ * No `onBack` beside the list (src/split.ts), where the chat has nothing behind it: its room stays, the title centred.
+ * `inStrip`: the Duo's side strip holds Back and Info (StripButtons), and the bar is the title alone.
+ */
+function ChatBar({ top, onBack, onInfo, inStrip, children }: { top: number; onBack: (() => void) | undefined; onInfo: () => void; inStrip: boolean; children: ReactNode }) {
+  if (inStrip) {
+    return (
+      <View style={[styles.bar, styles.barAlone, { top }]} pointerEvents="box-none">
+        {children}
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.bar, { top }]} pointerEvents="box-none">
+      {onBack === undefined ? <View style={styles.barButton} /> : <BarButton label="Back" symbol="chevron.left" onPress={onBack} />}
+      {children}
+      <BarButton label="Info" symbol="info.circle" onPress={onInfo} />
+    </View>
+  );
+}
+
+/**
+ * Back over Info in the Duo's side strip, under its status, as iOS puts a bar's buttons there: the top of the column for
+ * a bar's top, in reach of the thumb. No Back beside the list, where the chat has nothing behind it.
+ */
+function StripButtons({ side, width, onBack, onInfo }: { side: "left" | "right"; width: number; onBack: (() => void) | undefined; onInfo: () => void }) {
+  return (
+    <View style={[styles.strip, { width, top: STRIP_TOP }, side === "right" ? styles.stripRight : styles.stripLeft]} pointerEvents="box-none">
+      {onBack === undefined ? null : <BarButton label="Back" symbol="chevron.left" onPress={onBack} />}
+      <BarButton label="Info" symbol="info.circle" onPress={onInfo} />
+    </View>
+  );
+}
+
+/** One of the bar's glass buttons. */
+function BarButton({ label, symbol, onPress }: { label: string; symbol: "chevron.left" | "info.circle"; onPress: () => void }) {
   const t = useTheme();
-  const button = (label: string, symbol: "chevron.left" | "info.circle", onPress: () => void) => (
+  return (
     <Glass interactive style={styles.barButton}>
       <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.barHit} onPress={onPress}>
         <Symbol ios={symbol} android={symbol === "info.circle" ? "info" : "arrow_back"} size={symbol === "info.circle" ? 26 : 24} color={t.label} />
       </Pressable>
     </Glass>
-  );
-  return (
-    <View style={[styles.bar, { top }]} pointerEvents="box-none">
-      {button("Back", "chevron.left", onBack)}
-      {children}
-      {button("Info", "info.circle", onInfo)}
-    </View>
   );
 }
 
@@ -1680,6 +1731,10 @@ const styles = StyleSheet.create({
   error: { position: "absolute", left: 0, right: 0, paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },
   bar: { position: "absolute", left: 12, right: 12, height: BAR_BUTTON, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22 - BAR_BUTTON / 2 },
   barButton: { width: BAR_BUTTON, height: BAR_BUTTON, borderRadius: BAR_BUTTON / 2 },
+  barAlone: { justifyContent: "center" },
+  strip: { position: "absolute", alignItems: "center", gap: space.sm },
+  stripRight: { right: 0 },
+  stripLeft: { left: 0 },
   barHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   titleGlass: { borderRadius: 22, borderCurve: "continuous" },
   title: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: 240, paddingLeft: 6, paddingRight: space.lg, paddingVertical: 5 },

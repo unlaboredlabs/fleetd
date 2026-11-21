@@ -72,7 +72,10 @@ describe("the avatar that opens Settings", () => {
 
   it("sits at the top left and pushes Settings, which has a way back and no tab bar under it", () => {
     expect(chats).toContain('unstable_headerLeftItems: () => [{ type: "custom", element: avatar }]');
-    expect(chats).toMatch(/const openSettings = \(\) => \{\s*swiped\.close\(\);\s*root\.navigate\("Settings"\);\s*\};\s*const avatar = <MeButton [^>]*onPress=\{openSettings\} \/>;/u);
+    expect(chats).toMatch(/const openSettings = \(\) => \{\s*swiped\.close\(\);\s*root\.settings\(\);\s*\};\s*const avatar = <MeButton [^>]*onPress=\{openSettings\} \/>;/u);
+    // The root stack's Settings, from the list beside the chat (its own navigation tree) as from the list alone.
+    expect(chats).toContain('settings: beside?.settings ?? (() => own.navigate("Settings"))');
+    expect(app).toContain('settings: () => nav.navigate("Settings")');
     expect(app).toContain('<RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />');
     expect(app).toContain("options={backTo(t, () => root.goBack())}");
     expect(app).not.toMatch(/TabBar|bottom-tabs/u);

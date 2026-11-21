@@ -4,7 +4,7 @@
 // actions as the view's own.
 import { requireNativeView } from "expo";
 import { useRef, useState, type ComponentRef, type ComponentType, type ReactNode } from "react";
-import { Platform, Pressable, View, type NativeSyntheticEvent, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
+import { Platform, Pressable, View, type AccessibilityState, type NativeSyntheticEvent, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { sfSymbol } from "./Icon";
 import { Menu, type MenuItem, type Rect } from "./Menu";
 
@@ -46,6 +46,7 @@ export function HoldMenu({
   accessibilityRole,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityState,
   voiceActions = [],
   style,
   preview,
@@ -63,6 +64,8 @@ export function HoldMenu({
   accessibilityRole?: "button" | "header" | undefined;
   accessibilityLabel?: string | undefined;
   accessibilityHint?: string | undefined;
+  /** Selected: a chat row whose chat is open beside the list. */
+  accessibilityState?: AccessibilityState | undefined;
   /** What VoiceOver can do inside the view, a finger's taps there (a link, a code block's Copy): after the menu's actions. */
   voiceActions?: ReadonlyArray<{ label: string; onPress: () => void }>;
   style?: PressableProps["style"];
@@ -82,6 +85,7 @@ export function HoldMenu({
       accessibilityRole={accessibilityRole}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      accessibilityState={accessibilityState}
       accessibilityActions={[...items, ...voiceActions].map((m) => ({ name: m.label, label: m.label }))}
       onAccessibilityAction={(e) => run(e.nativeEvent.actionName)}
       style={style}

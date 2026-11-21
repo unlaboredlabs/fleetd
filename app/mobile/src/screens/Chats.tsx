@@ -10,7 +10,7 @@
 // (pins.ts); mute and read live on this phone (prefs.ts). Search finds chats by name and messages by their words (search.ts). Pulling down reads
 // the hub again. Under the pins, the chats in none of the person's sections come first, then each section under its
 // quiet label (Sections.tsx), which folds it at a tap; a chat's hold menu moves it to one. A filter or a search is a
-// flat list, with no labels.
+// flat list, with no labels. Beside the chat (src/split.ts), a row opens its chat in the other pane, marked while it's open.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +34,9 @@ import { archiveWords, UNDO_MS } from "../archive";
 import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
+import { useBeside } from "../ui/pane";
+import { sideStrip } from "../split";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -98,7 +101,14 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const reduce = useReduceMotion();
   const { state, session, paired } = useHub();
   const prefs = usePrefs();
-  const root = useNavigation<NavigationProp<RootParams>>();
+  const own = useNavigation<NavigationProp<RootParams>>();
+  // Beside the chat, the list is a navigation tree of its own: its chats, Settings and + go to the root stack beside it.
+  const beside = useBeside();
+  // The Duo's side strip (src/split.ts) holds the bars' buttons; the rows stay out of it. Beside the chat, the list touches
+  // neither the strip's edge nor its status.
+  const insets = useSafeAreaInsets();
+  const strip = Platform.OS === "ios" && beside === null ? sideStrip(insets) : undefined;
+  const root = useMemo(() => ({ settings: beside?.settings ?? (() => own.navigate("Settings")), newChat: beside?.newChat ?? (() => own.navigate("NewProject")) }), [beside, own]);
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   // A link's filter (Open Approvals: Needs You), each time it's opened.
@@ -126,7 +136,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
     const color = word?.tone === "danger" ? t.danger : t.secondary;
     const openSettings = () => {
       swiped.close();
-      root.navigate("Settings");
+      root.settings();
     };
     navigation.setOptions({
       title: text ?? "",
@@ -181,7 +191,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const arrived = useArrived(lines.map((l) => l.key));
   const pinArrived = useArrived(split.grid.map((r) => r.key));
 
-  const open = (key: Key, messageId?: string) => root.navigate("Chat", messageId === undefined ? { key } : { key, messageId });
+  const open = (key: Key, messageId?: string) => (beside === null ? own.navigate("Chat", messageId === undefined ? { key } : { key, messageId }) : beside.open(key, messageId));
   const pin = (row: ChatRow) => {
     const on = !row.pinned;
     // To the hub's own pins, which the ones on show may not be yet (pins.ts).
@@ -245,11 +255,11 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   useLayoutEffect(() => {
     const openSettings = () => {
       swiped.close();
-      root.navigate("Settings");
+      root.settings();
     };
     const avatar = <MeButton initial={me.initial} tone={me.tone} label={me.label} picture={state.me === undefined ? undefined : { personId: state.me, avatar: state.meAvatar }} onPress={openSettings} />;
     const filters = filterMenu(choices, filter, pick);
-    const add = newChatItem(() => root.navigate("NewProject"));
+    const add = newChatItem(root.newChat);
     const options: Partial<NativeStackNavigationOptions> =
       Platform.OS === "ios"
         ? {
@@ -303,6 +313,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <Animated.FlatList
         data={lines}
         keyExtractor={(l) => l.key}
+        {...(strip === undefined ? {} : { style: { marginLeft: strip.left, marginRight: strip.right } })}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -360,7 +371,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
               ) : line.t === "hit" ? (
                 <HitRow hit={line.hit} picture={state.projects?.[line.hit.key]} title={state.projects?.[line.hit.key]?.title ?? ""} separator={separator} onPress={() => open(line.hit.key, line.hit.messageId)} />
               ) : (
-                <SwipingChat row={line.row} separator={separator} onPress={() => open(line.row.key)} onPin={pin} more={[sectionMenus.moveItem(line.row), archiveItem(line.row)]} />
+                <SwipingChat row={line.row} separator={separator} open={beside?.openKey === line.row.key} onPress={() => open(line.row.key)} onPin={pin} more={[sectionMenus.moveItem(line.row), archiveItem(line.row)]} />
               )}
             </Animated.View>
           );
@@ -481,7 +492,8 @@ const FILLED: Partial<Record<IconName, IconName>> = { read: "readFill", unread: 
  * A chat row that swipes, as in Messages: right for read (blue, a full swipe's) and pin (orange), left for mute
  * (indigo, a full swipe's too). `more`: what its hold menu offers after those (Move to Section…, Archive).
  */
-function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; separator: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: readonly MenuItem[] }) {
+/** `open`: its chat is open in the pane beside the list, which marks it as Messages on an iPad does. */
+function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: ChatRow; separator: boolean; open: boolean; onPress: () => void; onPin: (row: ChatRow) => void; more: readonly MenuItem[] }) {
   const t = useTheme();
   const acts = rowActions(row, onPin);
   const [read, pin, mute] = acts;
@@ -496,7 +508,8 @@ function SwipingChat({ row, separator, onPress, onPin, more }: { row: ChatRow; s
           onPress={tap(onPress)}
           accessibilityRole="button"
           accessibilityLabel={rowLabel(row)}
-          style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : null)}
+          accessibilityState={{ selected: open }}
+          style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : open ? { backgroundColor: t.fill } : null)}
         >
           <ChatRowFace row={row} separator={separator} lifted={lifted} />
         </HoldMenu>

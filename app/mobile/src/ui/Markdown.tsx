@@ -12,6 +12,7 @@ import { columnWidths, isNumeric, longestWord, type Measured } from "../table";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
 import { Icon } from "./Icon";
+import { usePaneWidth } from "./pane";
 import { SkeletonBlock } from "./Skeleton";
 
 /**
@@ -179,7 +180,8 @@ export function Grid({
   bleed: number;
   settled?: boolean;
 }) {
-  const { width: screen, fontScale } = useWindowDimensions();
+  const { fontScale } = useWindowDimensions();
+  const screen = usePaneWidth();
   const key = `${String(fontScale)}:${String(screen)}:${JSON.stringify([header, rows])}`;
   const columns = useMemo(() => header.map((h, c) => ({ cells: rows.map((r) => r[c] ?? []), head: longestWord([h]), word: longestWord(rows.map((r) => r[c] ?? [])) })), [header, rows]);
   const numeric = useMemo(() => columns.map((c) => isNumeric(c.cells)), [columns]);
