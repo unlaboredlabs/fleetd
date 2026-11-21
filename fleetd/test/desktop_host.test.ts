@@ -11,7 +11,7 @@ import type { BrowserCallFrame } from "../src/shared/screens_wire.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import { type DesktopHost, DesktopSessions, type DesktopSnapshot } from "../src/node/desktop/desktops.ts";
 import type { Scrub } from "../src/node/mask.ts";
-import type { ScreenBox } from "../src/node/place/box_screens.ts";
+import { BoxDisplay, type ScreenBox } from "../src/node/place/box_screens.ts";
 import { FakeX } from "./fake_x.ts";
 
 const THREAD = "t-cloud";
@@ -36,8 +36,9 @@ function standInBox(o: { lacks?: string[] } = {}) {
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const runs: string[] = [];
   const dials: number[] = [];
-  const at = { x: undefined as FakeX | undefined };
-  const socket = join(dir, "X");
+  // The newest display's: each one listens on a socket of its own.
+  const at = { x: undefined as FakeX | undefined, socket: "" };
+  let made = 0;
   const box: ScreenBox = {
     run: async (r) => {
       const script = r.argv.join(" ");
@@ -48,15 +49,17 @@ function standInBox(o: { lacks?: string[] } = {}) {
     write: async (path, bytes) => {
       if (!path.endsWith("/xauth")) return;
       const x = new FakeX(bytes.slice(-16), 64, 40);
+      const socket = join(dir, `X${++made}`);
       await x.listen(socket);
       at.x = x;
+      at.socket = socket;
       cleanups.push(() => x.close());
     },
     dial: (_host, port) =>
       new Promise<Duplex>((resolve, reject) => {
         dials.push(port);
         if (!at.x) return reject(new Error("ECONNREFUSED"));
-        const s = connect(socket);
+        const s = connect(at.socket);
         s.once("connect", () => resolve(s)).once("error", reject);
       }),
   };
@@ -64,7 +67,7 @@ function standInBox(o: { lacks?: string[] } = {}) {
 }
 
 /** A recording store that keeps everything in memory: each recording's lines, its frames, and how it ended. */
-function memoryStore() {
+function memoryStore(o: { endNote?: string; events?: string[] } = {}) {
   const recordings: { meta: Meta; lines: string[]; frames: number; ended?: { note?: string; scrubbed: string[] } }[] = [];
   const store: RecordingStore = {
     open: async (meta) => {
@@ -83,6 +86,8 @@ function memoryStore() {
         append: (file, line) => void (file === "actions" && r.lines.push(line)),
         filled: () => {},
         end: async (ended, scrub: Scrub) => {
+          o.events?.push("end");
+          if (o.endNote) ended = { ...ended, note: ended.note ? `${ended.note}; ${o.endNote}` : o.endNote };
           r.ended = { ...(ended.note ? { note: ended.note } : {}), scrubbed: r.lines.map((l) => scrub.text(l)) };
           return { files: [{ file: "actions", bytes: r.lines.length }], ...(ended.note ? { note: ended.note } : {}) };
         },
@@ -94,13 +99,14 @@ function memoryStore() {
 }
 
 /** A host as a service gives it: its calls, frames and changes kept, the box given. */
-function host(box: ScreenBox | undefined, store: RecordingStore, idle?: number) {
+function host(box: ScreenBox | undefined, store: RecordingStore, idle?: number, events?: string[]) {
   const calls: { op: string; args: Record<string, unknown> }[] = [];
   const frames: Record<string, unknown>[] = [];
   const changed: string[] = [];
   const h: DesktopHost = {
     call: async (op, args) => {
       calls.push({ op, args });
+      if (op === "browser_session") events?.push(`report ${String(args.state)}`);
       return {};
     },
     send: (frame) => void frames.push(frame),
@@ -228,7 +234,8 @@ test("a holder that adopts a session whose display went ends it plainly, control
   const b = new DesktopSessions(second.h);
   const adopted = await b.adopt(THREAD, snap);
   expect(adopted.adopted).toBe(false);
-  expect(adopted).toMatchObject({ note: expect.stringContaining("the desktop in the box went: the desktop in the agent's box is gone") });
+  // The note a person reads says it once: what went, when, and why.
+  expect(adopted).toMatchObject({ note: expect.stringMatching(/^the desktop in the box went while it moved to another server: it doesn't answer \(.+\)$/) });
   expect(b.count()).toBe(0);
   expect(sessions(second.calls).at(-1)).toMatchObject({ sessionId: id, state: "uploading", control: "agent" });
   expect(recordings[1]!.ended?.note).toContain("while it moved to another server");
@@ -258,4 +265,64 @@ test("the idle end leaves a session a person has or is handing back, and ends on
   expect(d.count()).toBe(0);
   expect(recordings[0]!.ended).toBeDefined();
   expect(sessions(calls).at(-1)).toMatchObject({ sessionId: id, state: "uploading" });
+});
+
+test("a session's end reaches the hub after its recording ends, with why it has no video", async () => {
+  const { box } = standInBox();
+  const events: string[] = [];
+  const { store } = memoryStore({ endNote: "no video: ffmpeg failed (1)", events });
+  const { h, calls } = host(box, store, undefined, events);
+  const d = new DesktopSessions(h);
+  const id = String((await d.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }))).sessionId);
+  const ended = await d.handle(THREAD, call("session_end"));
+  expect(ended).toMatchObject({ sessionId: id, note: "no video: ffmpeg failed (1)" });
+  expect(events.slice(-2)).toEqual(["end", "report uploading"]);
+  expect(sessions(calls).at(-1)).toMatchObject({ sessionId: id, state: "uploading", note: "no video: ffmpeg failed (1)" });
+});
+
+test("a session_start while the agent session's desktop is being taken over is refused, and no second display opens", async () => {
+  const { box, runs } = standInBox();
+  const { store, recordings } = memoryStore();
+  const a = new DesktopSessions(host(box, store).h);
+  const id = String((await a.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }))).sessionId);
+  const snap = a.snapshot(THREAD)!;
+  await a.letGo();
+  const b = new DesktopSessions(host(box, store).h);
+  cleanups.push(() => b.shutdown());
+  let reached!: () => void;
+  const gate = new Promise<void>((r) => (reached = r));
+  b.reattachDisplay = async (given, handle) => {
+    await gate;
+    return BoxDisplay.reattach(given, handle);
+  };
+  const adopting = b.adopt(THREAD, snap);
+  const starts = runs.filter((r) => r.includes("/start.sh")).length;
+  await expect(b.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "another" }))).rejects.toThrow("Another session_start of yours is under way.");
+  await expect(b.adopt(THREAD, snap)).rejects.toThrow("being taken over here already");
+  reached();
+  expect(await adopting).toEqual({ adopted: true, sessionId: id });
+  expect(b.count()).toBe(1);
+  expect(runs.filter((r) => r.includes("/start.sh")).length).toBe(starts);
+  expect(recordings.length).toBe(2);
+  // Once it is in, a start is refused for the open session, as ever.
+  await expect(b.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "another" }))).rejects.toThrow(`Desktop session ${id} is open.`);
+});
+
+test("a snapshot whose display folder isn't a desktop's is refused before anything reaches the box", async () => {
+  const { box, runs } = standInBox();
+  const { store, recordings } = memoryStore();
+  const a = new DesktopSessions(host(box, store).h);
+  await a.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }));
+  const snap = a.snapshot(THREAD)!;
+  await a.letGo();
+  const b = new DesktopSessions(host(box, store).h);
+  const before = runs.length;
+  for (const dir of ["/", "/home/agent", "/tmp/fleetd-desktop-", "/tmp/fleetd-desktop-ab/../..", "/tmp/fleetd-desktop-ab cd"]) {
+    await expect(b.adopt(THREAD, { ...snap, display: { ...snap.display, dir } })).rejects.toThrow("the snapshot's display isn't a desktop's folder in the box");
+  }
+  expect(runs.length).toBe(before);
+  expect(recordings.length).toBe(1);
+  // BoxDisplay.reattach itself never sweeps another folder either.
+  await expect(BoxDisplay.reattach(box, { ...snap.display, dir: "/", cookie: new Uint8Array(16) })).rejects.toThrow("not a desktop's folder in the box");
+  expect(runs.length).toBe(before);
 });

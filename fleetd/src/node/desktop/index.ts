@@ -232,6 +232,8 @@ export type Hooks = { secretsFor: (thread: string) => [string, string][]; worktr
 export class Desktops extends DesktopSessions implements Screens {
   private prep: Prep = { kind: "wanted" };
   private housekeeping: Timer | undefined;
+  /** Where its recordings are kept until the hub has them. */
+  private readonly disk: DiskDesktopRecordings;
   /** Read of the node's own sessions (node-core's `sessions` area) where it has one; a test's own otherwise. */
   hooks: Hooks = {
     // A host key's are what its agent's node sealed to this one; this node's own sessions' are its own.
@@ -264,19 +266,21 @@ export class Desktops extends DesktopSessions implements Screens {
   ) {
     // What the host reads of this object (its hooks, its ffmpeg) it reads once the object is made.
     const late: { d?: Desktops } = {};
+    const disk = new DiskDesktopRecordings(
+      recordingsDir(node.home),
+      (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }),
+      () => late.d!.ffmpeg(),
+      [iosRecordingsDir(node.home)],
+    );
     super({
       call: (op, args, opts) => hubCall(node, op, args, opts),
       send: (frame) => void toHub(node, frame),
       secrets: (thread) => late.d!.hooks.secretsFor(thread),
       inBox: (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined),
-      recordings: new DiskDesktopRecordings(
-        recordingsDir(node.home),
-        (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }),
-        () => late.d!.ffmpeg(),
-        [iosRecordingsDir(node.home)],
-      ),
+      recordings: disk,
     });
     late.d = this;
+    this.disk = disk;
     this.latest = new Steps();
     // The agents' Mac lends its screen, whatever an older node.json's `mac.enabled` says; no other machine does.
     this.mac = mac ?? { ...((node.config.mac ?? {}) as MacConfig), enabled: node.config.agentsMac === true };
@@ -464,9 +468,11 @@ export class Desktops extends DesktopSessions implements Screens {
     return findFfmpeg(browserInstallDir(this.node.home));
   }
 
-  /** A session ended: the Mac's lease and its claims go back, its last agent-desktop command stopped. */
+  /** A session ended: the Mac's lease and its claims go back, its last agent-desktop command stopped; its recording
+   * goes to the hub, which has heard of its end. */
   protected override closed(session: Session): void {
     this.release(session);
+    this.disk.send(session.id);
   }
 
   /** Before a Mac screen session's action: its lease or a claim. */

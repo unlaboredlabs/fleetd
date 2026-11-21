@@ -100,12 +100,14 @@ export class BoxDisplay implements Lent {
    * cookie, or it is gone and swept with whatever of it is left (the caller ends its session). Throws why.
    */
   static async reattach(box: ScreenBox, handle: DisplayHandle, ms = 5_000): Promise<BoxDisplay> {
+    // Only a folder `start` names is ever swept.
+    if (!/^\/tmp\/fleetd-desktop-[0-9a-f]+$/.test(handle.dir)) throw new Error("not a desktop's folder in the box");
     const d = new BoxDisplay(box, handle.dir, handle.name, handle.port, handle.cookie);
     try {
       (await X.connect(() => dialUntil(box, handle.port, ms), handle.cookie)).close();
     } catch (e) {
       await sweep(box, handle.dir);
-      throw new Error(`the desktop in the agent's box is gone: ${(e as Error).message}`);
+      throw new Error(`it doesn't answer (${(e as Error).message})`);
     }
     return d;
   }

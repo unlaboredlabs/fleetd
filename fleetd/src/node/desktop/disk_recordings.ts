@@ -1,13 +1,13 @@
 // The node's desktop recordings (a `RecordingStore`, node/browser/recording.ts): each session's in a folder of its own
 // under `<home>/desktop/recordings/`, as a browser session's is (node/browser/record.ts): its `session.json`, its
 // action log and its video, made by an ffmpeg from the session's first frame on, at that frame's size (a Mac screen's
-// is its own). Once the session ends it goes to the hub a piece at a time, tried again at each sweep until it does,
-// with any a Rust node's iOS screens left.
+// is its own). Once the session ends and the hub has heard so (`send`, after the desktops' own report), it goes to the
+// hub a piece at a time, tried again at each sweep until it does, with any a Rust node's iOS screens left.
 import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { jpegSize } from "../browser/fit.ts";
-import { files, type HubCall, type Meta, type Recording, type RecordingStore, scrubFile, Uploads, type Video, VideoSink, writeMeta } from "../browser/record.ts";
+import { files, type HubCall, type Meta, readMeta, type Recording, type RecordingStore, scrubFile, Uploads, type Video, VideoSink, writeMeta } from "../browser/record.ts";
 import { NO_VIDEO } from "./session.ts";
 
 /** A video whose ffmpeg starts with the first frame, at its size: a session that never shows one has none. */
@@ -96,10 +96,16 @@ export class DiskDesktopRecordings implements RecordingStore {
         }
         write({ ...meta, endedAt: ended.endedAt, credentialsFilled: ended.credentialsFilled, ...(why ? { note: why } : {}) });
         const made = files(dir).map(([file, bytes]) => ({ file, bytes }));
-        void this.uploads.send(dir);
         return { files: made, ...(why ? { note: why } : {}) };
       },
     };
+  }
+
+  /** Session `id`'s ended recording to the hub, off the caller's step: a large video takes a while, and the sweep
+   * tries again if it doesn't go. */
+  send(id: string): void {
+    const dir = join(this.root, id);
+    if (readMeta(dir)?.endedAt) void this.uploads.send(dir);
   }
 
   async sweep(live: string[], now: number): Promise<void> {

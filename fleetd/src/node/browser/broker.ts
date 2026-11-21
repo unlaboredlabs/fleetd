@@ -745,6 +745,18 @@ export class BrowserBroker {
   async adopt(thread: string, snapshot: BrowserSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
     if (snapshot?.v !== 1 || snapshot.session?.threadId !== thread || !snapshot.handle) throw new Error("not a browser session's snapshot for this agent session");
     if (this.sessions.has(thread)) return { adopted: true, sessionId: this.sessions.get(thread)!.session.id };
+    if (this.starting.has(thread)) throw new Error("a browser of this agent session is starting or being taken over here already");
+    // Held until the session is in the map (or ended): a session_start meanwhile can't open a second browser.
+    this.starting.add(thread);
+    try {
+      return await this.adoptHeld(thread, snapshot);
+    } finally {
+      this.starting.delete(thread);
+    }
+  }
+
+  /** `adopt`, with the agent session held. */
+  private async adoptHeld(thread: string, snapshot: BrowserSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
     for (const [ref, value] of snapshot.filled) this.credentials.filled(thread, ref, value);
     const boxed = this.boxed?.(thread);
     const box = boxed && boxed !== "starting" ? boxed.box : undefined;

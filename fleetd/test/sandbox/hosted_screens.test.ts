@@ -3,6 +3,8 @@
 // in the agent's box rather than on the node's machine. The boxes here are stand-ins: what reaches them is checked,
 // and a real box's Chrome and Xvfb are the PR's proof on boat.dev.
 import { afterEach, expect, test } from "bun:test";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { registerAreas } from "../../src/node/areas.ts";
 import { broker } from "../../src/node/browser/index.ts";
@@ -12,6 +14,7 @@ import { devices } from "../../src/node/device/index.ts";
 import { sdkAt } from "../../src/node/device/sdk.ts";
 import type { BoxedEmulator } from "../../src/node/place/box_android.ts";
 import { BoxDisplay, boxChrome, type ScreenBox, streamTransport, timing } from "../../src/node/place/box_screens.ts";
+import { detach, sweep } from "../../src/node/place/box_chrome.ts";
 import { testNode } from "../node_helpers.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -213,8 +216,47 @@ test("a desktop in a box is swept with everything launched on it", async () => {
   expect(text).toContain("openbox");
   expect(text).toMatch(/socat TCP-LISTEN:\d+,bind=127\.0\.0\.1,fork,reuseaddr UNIX-CONNECT:\/tmp\/\.X11-unix\/X\d+/);
   // Every process session it started is killed, then its folder goes.
-  expect(runs.at(-1)).toContain(`kill -KILL -- "-$(cat "$f")"`);
+  expect(runs.at(-1)).toContain(`pkill -KILL -s "$p"`);
   expect(runs.at(-1)).toContain(`rm -rf '${dir}'`);
+});
+
+test("a box's sweep kills each process session it started, under dash's sh too", async () => {
+  // Ubuntu's sh is dash, whose `kill` takes no negative id: the sweep kills each session by its id. Run for real here,
+  // under dash where this machine has one.
+  const sh = Bun.which("dash") ?? Bun.which("sh");
+  if (!sh || !Bun.which("setsid") || !Bun.which("pkill") || !Bun.which("pgrep")) return;
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "box-sweep-"));
+  const box: ScreenBox = {
+    run: async (r) => {
+      const argv = r.argv[0] === "sh" ? [sh, ...r.argv.slice(1)] : r.argv;
+      const p = Bun.spawnSync(argv, { cwd: r.cwd, env: { ...process.env, ...r.env }, stdout: "pipe", stderr: "pipe" });
+      return { exitCode: p.exitCode, outputTail: `${p.stdout}${p.stderr}`, timedOut: false };
+    },
+    write: async (path, bytes, mode) => {
+      writeFileSync(path, bytes);
+      if (mode) chmodSync(path, mode);
+    },
+    dial: async () => {
+      throw new Error("no dial here");
+    },
+  };
+  const inSession = (sid: string) => `${Bun.spawnSync(["pgrep", "-s", sid], { stdout: "pipe" }).stdout}`.trim().split("\n").filter(Boolean);
+  let sid = "";
+  try {
+    // What runs in the session doesn't name the folder, so only the kill by session reaches it.
+    writeFileSync(join(dir, "start.sh"), "exec sleep 300\n");
+    await detach(box, join(dir, "start.sh"), join(dir, "session.pid"));
+    await waitFor(() => (existsSync(join(dir, "session.pid")) && readFileSync(join(dir, "session.pid"), "utf8").trim() ? true : undefined));
+    sid = readFileSync(join(dir, "session.pid"), "utf8").trim();
+    await waitFor(() => (inSession(sid).length > 0 ? true : undefined));
+    await sweep(box, dir);
+    await waitFor(() => (inSession(sid).length === 0 ? true : undefined), 3_000);
+    expect(existsSync(dir)).toBe(false);
+  } finally {
+    // Only what this test started: the processes of its own session.
+    if (sid) for (const pid of inSession(sid)) process.kill(Number(pid), "SIGKILL");
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 async function waitFor<T>(fn: () => T | undefined, ms = 5_000): Promise<T> {

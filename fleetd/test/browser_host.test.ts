@@ -292,6 +292,39 @@ test("a Chrome that takes no new connection within its grace: the session ends w
   expect(recordings[0]!.ended!.note).toStartWith("the browser in the box went: ");
 });
 
+test("a session_start while the agent session's browser is being taken over is refused, and no second browser opens", async () => {
+  const chrome = await standInChrome();
+  const box = standInBox();
+  const first = cloudBroker(box, chrome.port, memoryStore().store);
+  const started = (await first.broker.call(THREAD, { id: "1", cwd: "/", call: { op: "session_start", purpose: "pay" } as never })) as unknown as { sessionId: string };
+  const snapshot = JSON.parse(JSON.stringify(first.broker.snapshot(THREAD))) as BrowserSnapshot;
+  first.broker.letGo();
+  const b = memoryStore();
+  const second = cloudBroker(box, chrome.port, b.store);
+  let launched = 0;
+  const inBox = second.broker.inBox;
+  second.broker.inBox = async (given, profile) => {
+    launched++;
+    return inBox(given, profile);
+  };
+  let reached!: () => void;
+  const gate = new Promise<void>((r) => (reached = r));
+  second.broker.reattach = async (given, handle, firstId, ms) => {
+    await gate;
+    return reattachChrome(given, handle, firstId, ms);
+  };
+  const adopting = second.broker.adopt(THREAD, snapshot);
+  await expect(second.broker.call(THREAD, { id: "2", cwd: "/", call: { op: "session_start", purpose: "another" } as never })).rejects.toThrow(
+    "Your browser session is starting already.",
+  );
+  await expect(second.broker.adopt(THREAD, snapshot)).rejects.toThrow("being taken over here already");
+  reached();
+  expect(await adopting).toEqual({ adopted: true, sessionId: started.sessionId });
+  expect(launched).toBe(0);
+  expect(second.broker.live(THREAD)!.id).toBe(started.sessionId);
+  expect(b.recordings.length).toBe(1);
+});
+
 test("another holder adopts a session from its snapshot: the same session, sealed, recording on; one whose Chrome went ends plainly", async () => {
   const chrome = await standInChrome();
   const box = standInBox();
