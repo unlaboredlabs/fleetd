@@ -805,3 +805,157 @@ describe("a tap on a screen just taken over", () => {
     });
   });
 });
+
+describe("A chat opened at a message far back", () => {
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => message(from + i, `m ${String(from + i)}`));
+  const historyCalls = (hub: ReturnType<typeof setup>["hub"]) => hub.sentOf("call").filter((c) => c.tool === "chat_history").map((c) => c.input as Record<string, unknown>);
+
+  it("reads the page around it, not every page down to it, and leaves the chat's newest and its unread as they were", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page(range(951, 1000)), moreBefore: true });
+    await flush();
+    const before = historyCalls(hub).length;
+    void session.openAround(KEY, "msg500");
+    expect(historyCalls(hub).at(-1)).toMatchObject({ around: "msg500", limit: 50 });
+    expect(session.state.windows[KEY]?.loading).toBe("around");
+    hub.answer("chat_history", { ...page(range(476, 525)), moreBefore: true, moreAfter: true });
+    await flush();
+    expect(session.state.windows[KEY]?.messages.map((m) => m.seq)).toContain(500);
+    // The chat itself holds its newest page still: live messages land there, and the read mark is untouched by this.
+    expect(session.state.chats[KEY]?.messages[0]?.seq).toBe(951);
+    expect(historyCalls(hub)).toHaveLength(before + 1);
+  });
+
+  it("reads on newer and older from the window's ends, and joins the chat once it reaches it", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page(range(101, 150)), moreBefore: true });
+    await flush();
+    void session.openAround(KEY, "msg40");
+    hub.answer("chat_history", { ...page(range(16, 65)), moreBefore: true, moreAfter: true });
+    await flush();
+    void session.pageWindow(KEY, "older");
+    expect(historyCalls(hub).at(-1)).toMatchObject({ before: 16 });
+    const asked = historyCalls(hub).length;
+    // One at a time.
+    void session.pageWindow(KEY, "newer");
+    expect(historyCalls(hub)).toHaveLength(asked);
+    hub.answer("chat_history", { ...page(range(1, 15)), moreBefore: false, moreAfter: true });
+    await flush();
+    void session.pageWindow(KEY, "newer");
+    expect(historyCalls(hub).at(-1)).toMatchObject({ after: 65 });
+    hub.answer("chat_history", { ...page(range(66, 100)), moreBefore: true, moreAfter: true });
+    await flush();
+    // Reached the chat's oldest held message: one thread from the start to the newest, and no window.
+    expect(session.state.windows[KEY]).toBeUndefined();
+    const seqs = session.state.chats[KEY]?.messages.map((m) => m.seq) ?? [];
+    expect(seqs[0]).toBe(1);
+    expect(seqs.at(-1)).toBe(150);
+    expect(seqs).toHaveLength(150);
+    expect(session.state.chats[KEY]?.hasOlder).toBe(false);
+  });
+
+  it("keeps live messages in the chat while a window is open, and closes it back to the newest", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page(range(951, 1000)), moreBefore: true });
+    await flush();
+    void session.openAround(KEY, "msg500");
+    hub.answer("chat_history", { ...page(range(476, 525)), moreBefore: true, moreAfter: true });
+    await flush();
+    hub.link.frame({ t: "event", seq: 9, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg1001", seq: 1001, author: "lead", state: "final", message: message(1001, "New") } });
+    expect(session.state.chats[KEY]?.messages.at(-1)?.seq).toBe(1001);
+    expect(session.state.windows[KEY]?.messages.at(-1)?.seq).toBe(525);
+    session.closeWindow(KEY);
+    expect(session.state.windows[KEY]).toBeUndefined();
+  });
+
+  it("drops a page for a window since closed", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", { ...page(range(951, 1000)), moreBefore: true });
+    await flush();
+    void session.openAround(KEY, "msg500");
+    session.closeWindow(KEY);
+    hub.answer("chat_history", { ...page(range(476, 525)), moreBefore: true, moreAfter: true });
+    await flush();
+    expect(session.state.windows[KEY]).toBeUndefined();
+    expect(session.state.chats[KEY]?.messages[0]?.seq).toBe(951);
+  });
+
+  it("says why a message far back didn't open", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.answer("chat_history", page(range(1, 3)));
+    await flush();
+    void session.openAround(KEY, "gone");
+    hub.fail("chat_history", "not_found", "gone is not a message of this chat.");
+    await flush();
+    expect(session.state.windows[KEY]).toMatchObject({ loading: null, messages: [], error: { code: "not_found" } });
+  });
+});
+
+describe("Pinned messages", () => {
+  const PIN = { messageId: "msg1", seq: 1, pinnedAt: AT, pinnedBy: { personId: "p_ada", name: "Ada" }, author: "lead", createdAt: AT, text: "The plan" };
+  const pinCalls = (hub: ReturnType<typeof setup>["hub"], tool: string) => hub.sentOf("call").filter((c) => c.tool === tool);
+  const live = () => {
+    const hub = fakeHub();
+    const session = new Session({ hub: "http://devbox:4790", key: "key_abc", transport: hub.transport, now: () => Date.parse(AT) });
+    session.start();
+    hub.ready(["chat_find_pins"]);
+    hub.link.frame(snapshot);
+    return { hub, session };
+  };
+
+  it("are read as the chat opens, on a hub that keeps them, and not on one before them", async () => {
+    const { hub, session } = live();
+    session.openChat(KEY);
+    expect(pinCalls(hub, "chat_message_pins")).toHaveLength(1);
+    hub.answer("chat_message_pins", { pins: [PIN] });
+    await flush();
+    expect(session.state.messagePins[KEY]).toEqual([PIN]);
+    const old = setup();
+    old.session.openChat(KEY);
+    expect(pinCalls(old.hub, "chat_message_pins")).toHaveLength(0);
+  });
+
+  it("are pinned and unpinned for everyone, the hub's list after it shown at once", async () => {
+    const { hub, session } = live();
+    session.openChat(KEY);
+    hub.answer("chat_message_pins", { pins: [] });
+    await flush();
+    const r = session.pinMessage(KEY, "msg1", true);
+    expect(pinCalls(hub, "chat_message_pin").at(-1)?.input).toEqual({ projectRef: REF, messageId: "msg1", pinned: true });
+    hub.answer("chat_message_pin", { pins: [PIN] });
+    expect((await r).ok).toBe(true);
+    expect(session.state.messagePins[KEY]).toEqual([PIN]);
+    const refused = session.pinMessage(KEY, "msg2", true);
+    hub.fail("chat_message_pin", "invalid", "Unpin one first");
+    expect((await refused).ok).toBe(false);
+    expect(session.state.messagePins[KEY]).toEqual([PIN]);
+  });
+
+  it("are read again when someone else pins or unpins one in a chat shown here, and only then", async () => {
+    const { hub, session } = live();
+    session.openChat(KEY);
+    hub.answer("chat_message_pins", { pins: [] });
+    await flush();
+    hub.link.frame({ t: "event", seq: 5, type: "chat.message_pins", at: AT, machineId: "m1", projectId: "inbox", data: { projectRef: REF, messageId: "msg1", pinned: true, by: { personId: "p_bo", name: "Bo" } } });
+    expect(pinCalls(hub, "chat_message_pins")).toHaveLength(2);
+    hub.answer("chat_message_pins", { pins: [PIN] });
+    await flush();
+    expect(session.state.messagePins[KEY]).toEqual([PIN]);
+    // Another chat's, never opened here: nothing to read.
+    hub.link.frame({ t: "event", seq: 6, type: "chat.message_pins", at: AT, data: { projectRef: { machineId: "m1", projectId: "shop" }, messageId: "x", pinned: true, by: { personId: "p_bo", name: "Bo" } } });
+    expect(pinCalls(hub, "chat_message_pins")).toHaveLength(2);
+    // Not the person's pinned chats: those have their own event.
+    expect(pinCalls(hub, "chat_pins_get").length).toBeLessThanOrEqual(1);
+  });
+
+  it("search the chat on the hub with the filters as chat_find takes them", () => {
+    const { hub, session } = live();
+    void session.find(KEY, { words: "deploy", author: "lead", has: ["pr"] }, "msg9", 30);
+    expect(pinCalls(hub, "chat_find").at(-1)?.input).toEqual({ projectRef: REF, words: "deploy", author: "lead", has: ["pr"], before: "msg9", limit: 30 });
+  });
+});

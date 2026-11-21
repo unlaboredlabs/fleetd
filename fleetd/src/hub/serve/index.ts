@@ -13,6 +13,7 @@ import { Registry } from "../api/registry.ts";
 import { serve, stop } from "../http/index.ts";
 import { link } from "../link/index.ts";
 import { HubDb } from "../store/db.ts";
+import { MigrationFailed } from "../store/migrations.ts";
 import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
 
@@ -147,7 +148,15 @@ export async function hubStart(argv: string[]): Promise<number> {
   stampLogs();
   protect("hub");
   refreshOwnUnit();
-  const { hub, tools } = build(home, options.listen);
+  let built: ReturnType<typeof build>;
+  try {
+    built = build(home, options.listen);
+  } catch (error) {
+    if (!(error instanceof MigrationFailed)) throw error;
+    process.stderr.write(`fleetd: ${error.message}\n`);
+    return 1;
+  }
+  const { hub, tools } = built;
   const server = serve(hub, tools);
   // On stderr as the Rust hub's, which what starts a hub reads it from, and an INFO line all the same.
   console.error(`${new Date().toISOString()} INFO fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);

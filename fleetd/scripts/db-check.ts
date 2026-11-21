@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { HubDb } from "../src/hub/store/db.ts";
-import { migrate, userVersion } from "../src/hub/store/migrations.ts";
+import { migrate, REWRITTEN, userVersion } from "../src/hub/store/migrations.ts";
 import { NodeStore } from "../src/node/sessions/store.ts";
 
 const [hubPath, nodePath] = process.argv.slice(2);
@@ -62,7 +62,7 @@ const shipped = new Map(MIGRATIONS.map((m) => [m.name, sha256(m.sql)]));
 const pending = MIGRATIONS.filter((m) => !applied.has(m.name)).map((m) => m.name);
 for (const [name, sum] of applied) {
   if (!shipped.has(name)) differ(`hub: migration ${name} ran there, and this build has no such file (a newer fleetd's?)`);
-  else if (shipped.get(name) !== sum) differ(`hub: migration ${name} changed since it ran there`);
+  else if (shipped.get(name) !== sum && REWRITTEN[name] !== sum) differ(`hub: migration ${name} changed since it ran there`);
 }
 if (userVersion(hub) !== applied.size) differ(`hub: user_version is ${userVersion(hub)}, ${applied.size} migrations recorded`);
 console.log(

@@ -27,8 +27,9 @@ describe("the chat's top bar", () => {
     const bar = fn(chat, "ChatBar");
     expect(bar).toContain('button("Back", "chevron.left", onBack)');
     expect(bar).toContain('button("Info", "info.circle", onInfo)');
-    // The thread starts under it, as it did under the stack's, and under a lens's capsule while one is on.
-    expect(chat).toContain('const top = (Platform.OS === "ios" ? insets.top + BAR : 0) + (lens === null ? 0 : LENS_ROOM);');
+    // The thread starts under it, as it did under the stack's, and under the pins' and a lens's capsules while they show.
+    expect(chat).toContain('const barEnd = Platform.OS === "ios" ? insets.top + BAR : 0;');
+    expect(chat).toContain("const top = barEnd + pinRoom + (lens === null ? 0 : LENS_ROOM);");
     expect(chat).not.toContain("useHeaderHeight");
   });
 

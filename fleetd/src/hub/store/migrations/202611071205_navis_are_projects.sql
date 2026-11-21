@@ -4,7 +4,8 @@
 -- moves, and every other table keeps its keys: a Navi's chat, memory, skills, automations, Telegram, hub links,
 -- approvals, sites, purchases and asks are keyed by its project already. Each person's sidebar order puts their own
 -- Navis first, as their sidebar showed them, so nothing moves once the apps show one list: the ones the order named,
--- in its order, then the rest, oldest first, then everything else as it was.
+-- in its order, then the rest, oldest first, then everything else as it was. The array is built by a window over
+-- that order, not `json_group_array(... ORDER BY ...)`, which needs SQLite 3.44 (a Mac hub runs on macOS's own).
 ALTER TABLE project_settings ADD COLUMN only_me INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE project_settings ADD COLUMN owner_person TEXT;
   ALTER TABLE project_settings ADD COLUMN archived_ms INTEGER;
@@ -21,7 +22,8 @@ ALTER TABLE project_settings ADD COLUMN only_me INTEGER NOT NULL DEFAULT 0;
       created_by_key = excluded.created_by_key, created_by_name = excluded.created_by_name;
   INSERT INTO sidebar_orders (person_id, refs)
     SELECT o.person_id, (
-        SELECT json_group_array(json(x.ref) ORDER BY x.navi DESC, x.pos IS NULL, x.pos, x.created_ms)
+        SELECT json_group_array(json(x.ref)) OVER (ORDER BY x.navi DESC, x.pos IS NULL, x.pos, x.created_ms
+            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
         FROM (
           SELECT e.value AS ref, n.project_id IS NOT NULL AS navi, e.key AS pos, n.created_ms AS created_ms
           FROM json_each(o.refs) e
@@ -34,7 +36,7 @@ ALTER TABLE project_settings ADD COLUMN only_me INTEGER NOT NULL DEFAULT 0;
           WHERE n.owner_person = o.person_id AND NOT EXISTS (SELECT 1 FROM json_each(o.refs) e
             WHERE json_extract(e.value, '$.machineId') = n.machine_id
               AND json_extract(e.value, '$.projectId') = n.project_id)
-        ) x)
+        ) x LIMIT 1)
     FROM (SELECT a.owner_person AS person_id, COALESCE((SELECT s.refs FROM sidebar_orders s
             WHERE s.person_id = a.owner_person AND json_valid(s.refs) AND json_type(s.refs) = 'array'), '[]') AS refs
           FROM assistants a WHERE a.owner_person IS NOT NULL GROUP BY a.owner_person) o

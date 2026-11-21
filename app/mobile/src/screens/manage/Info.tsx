@@ -1,4 +1,6 @@
-// A project's own screen, opened from its chat's header, as a contact's in a chat app: its avatar and name (tapping the
+// A project's own screen, opened from its chat's header, as a contact's in a chat app. Its search bar searches the whole
+// chat on the hub (ChatFind.tsx), with filters in the bar's menu; while it's in use the page gives way to the hits.
+// Then its avatar and name (tapping the
 // avatar, or Edit under it, opens its icon's sheet: its bot, or a photo: IconPicker.tsx), then what
 // runs there now (Agents: agents_list, then the DMs its agents sent each other: screens/dms), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on, where it lives and its Computer
@@ -8,8 +10,12 @@
 // Delete last, red, in a sheet that erases everything fleetd keeps for it, with a tickbox for its folder, once its
 // name is typed (TypedDelete).
 import { StackActions, useFocusEffect } from "@react-navigation/native";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import type { NativeStackHeaderItem } from "@react-navigation/native-stack";
+import { asks, HAS_ORDER, HAS_WORDS, NO_QUERY, othersOf, toggleHas, WHEN_WORDS, type FindFrom, type FindQuery, type FindWhen } from "../../chatFind";
+import { findPinsShown } from "../../messagePins";
+import { DaySheet, FindView, useChatFind } from "./ChatFind";
 import { listTime } from "../../chatView";
 import { isArchived, tilde, type ProjectSummary, type TodoItem } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
@@ -115,6 +121,65 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
   const [forgot, setForgot] = useState(false);
   const [typing, setTyping] = useState<DeleteWords | null>(null);
   const v = info.value;
+
+  // The chat's search: the bar's words and the filters, the hits for them, and the day sheet.
+  const searchable = findPinsShown(state.hub);
+  const [query, setQuery] = useState<FindQuery>(NO_QUERY);
+  const [searching, setSearching] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const found = useChatFind(session, key, query, state.me);
+  const others = useMemo(() => othersOf(state.chats[key]?.messages ?? [], state.me), [state.chats, key, state.me]);
+  // Only on a hub that searches chats for people: an older one's bar would only fail.
+  useLayoutEffect(() => {
+    if (!searchable) return;
+    navigation.setOptions({
+      headerSearchBarOptions: {
+            placeholder: "Search",
+            hideWhenScrolling: false,
+            autoCapitalize: "none",
+            tintColor: t.accent,
+            onFocus: () => setSearching(true),
+            onChangeText: (e) => {
+              const words = e.nativeEvent.text;
+              setQuery((q) => ({ ...q, words }));
+            },
+            // Cancel ends the search, its filters too, and the page comes back.
+            onCancelButtonPress: () => {
+              setQuery(NO_QUERY);
+              setSearching(false);
+            },
+          },
+    });
+  }, [navigation, searchable, t.accent]);
+  // The filters, in the bar's own menu while searching, each ticked while it's on (iOS 26).
+  const filtered = query.from !== undefined || query.when !== undefined || query.has.length > 0;
+  useLayoutEffect(() => {
+    if (Platform.OS !== "ios") return;
+    navigation.setOptions({ unstable_headerRightItems: () => (searchable && (searching || asks(query)) ? [filterMenu(query, setQuery, p.title, others, () => setPicking(true), filtered)] : []) });
+  }, [navigation, searchable, searching, query, p.title, others, filtered]);
+  const openHit = (messageId: string) => {
+    haptics.tap();
+    navigation.navigate("Chat", { key, messageId, tap: Date.now() });
+  };
+  const daySheet = (
+    <DaySheet
+      open={picking}
+      onClose={() => setPicking(false)}
+      onPick={(day) => {
+        setPicking(false);
+        setSearching(true);
+        setQuery((q) => ({ ...q, when: { t: "day", day } }));
+      }}
+    />
+  );
+  if (searchable && (searching || asks(query))) {
+    return (
+      <>
+        <FindView query={query} setQuery={setQuery} find={found.find} more={found.more} again={found.again} bot={p.title} me={state.me} onOpen={(hit) => openHit(hit.messageId)} onPickDay={() => setPicking(true)} />
+        {daySheet}
+      </>
+    );
+  }
   const agents = agentLines(v?.agents ?? []);
   const orders = orderLines(v?.orders ?? []);
   const list = checklist(v?.checklist ?? []);
@@ -292,9 +357,53 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title="Delete Bot" destructive chevron={false} {...(busy === null && live ? { onPress: () => void remove() } : {})} {...(busy === "delete" ? { accessory: spinner } : {})} />
       </ListSection>
       <TypedDelete words={typing} name={p.title} onCancel={() => setTyping(null)} onDelete={doDelete} />
+      {daySheet}
     </ScrollView>
   );
 }
+
+/** The bar's filter menu: From, Date and what it holds, each ticked while on; picked again, it goes off. */
+const filterMenu = (q: FindQuery, set: (q: FindQuery) => void, bot: string, others: readonly { personId: string; name: string }[], pickDay: () => void, on: boolean): NativeStackHeaderItem => {
+  const sameFrom = (a: FindFrom | undefined, b: FindFrom): boolean => a?.t === b.t && (a.t !== "person" || (b.t === "person" && a.person.personId === b.person.personId));
+  const from = (label: string, f: FindFrom) => ({ type: "action" as const, label, state: sameFrom(q.from, f) ? ("on" as const) : ("off" as const), onPress: () => set({ ...q, from: sameFrom(q.from, f) ? undefined : f }) });
+  const when = (w: Exclude<FindWhen["t"], "day">) => ({ type: "action" as const, label: WHEN_WORDS[w], state: q.when?.t === w ? ("on" as const) : ("off" as const), onPress: () => set({ ...q, when: q.when?.t === w ? undefined : { t: w } }) });
+  return {
+    type: "menu",
+    label: "Filters",
+    icon: { type: "sfSymbol", name: on ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle" },
+    accessibilityLabel: on ? "Filters, on" : "Filters",
+    menu: {
+      items: [
+        {
+          type: "submenu",
+          label: "From",
+          icon: { type: "sfSymbol", name: "person" },
+          items: [from("You", { t: "me" }), ...others.map((person) => from(person.name, { t: "person", person })), from(bot, { t: "lead" }), from("Agents", { t: "agents" })],
+        },
+        {
+          type: "submenu",
+          label: "Date",
+          icon: { type: "sfSymbol", name: "calendar" },
+          items: [
+            when("today"),
+            when("yesterday"),
+            when("week"),
+            when("month"),
+            when("year"),
+            { type: "action", label: "Pick a Day…", state: q.when?.t === "day" ? "on" : "off", onPress: pickDay },
+          ],
+        },
+        {
+          type: "submenu",
+          label: "Contains",
+          inline: true,
+          items: HAS_ORDER.map((h) => ({ type: "action" as const, label: HAS_WORDS[h] ?? h, state: q.has.includes(h) ? ("on" as const) : ("off" as const), onPress: () => set(toggleHas(q, h)) })),
+        },
+        ...(on ? [{ type: "action" as const, label: "Clear Filters", destructive: true, onPress: () => set({ ...NO_QUERY, words: q.words }) }] : []),
+      ],
+    },
+  };
+};
 
 function ChecklistRow({ item }: { item: TodoItem }) {
   const t = useTheme();

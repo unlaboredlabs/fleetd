@@ -5,6 +5,25 @@ import type { Database } from "bun:sqlite";
 
 export type Migration = { name: string; sql: string };
 
+/**
+ * The oldest SQLite a hub migrates on. On macOS Bun's SQLite is the system's (fleetd ships none), and the CLI needs
+ * macOS 13, whose SQLite is 3.39: this leaves room. CI's fleetd job runs every migration on it
+ * (scripts/old-sqlite-check.ts).
+ */
+export const OLDEST_SQLITE = "3.37.2";
+
+/**
+ * The SHA-256 a migration's file had when it shipped, for one rewritten since to run on OLDEST_SQLITE with the same
+ * schema and data (W775): a hub that ran it before reads no drift, and nothing runs again.
+ */
+export const REWRITTEN: Readonly<Record<string, string>> = {
+  "202611071205_navis_are_projects": "a80021edeacce256e10454531fadd4f2b7ef9c7865a9ab73f95f40afca167f0a",
+  "202611121235_one_team_vault": "c6ec2aedfe2e59bcc314a342183a4d1a3f4839eb91647347224e8ea5e5b0aeec",
+};
+
+/** A migration that didn't run, its transaction rolled back: the next start runs it again. */
+export class MigrationFailed extends Error {}
+
 /** `changed`: its file changed after it ran. `unknown`: no file of this build has its name. */
 export type Drift = { kind: "changed" | "unknown"; name: string };
 
@@ -28,7 +47,11 @@ export function migrate(conn: Database, migrations: readonly Migration[]): Drift
         const next = migrations.find((m) => !ran.has(m.name));
         if (!next) return drift(ran, migrations);
         if (next.sql.includes("DROP TABLE profile_settings")) logDroppedOverrides(conn);
-        conn.run(next.sql);
+        try {
+          conn.run(next.sql);
+        } catch (error) {
+          throw failed(conn, next.name, error);
+        }
         record(conn, next);
         conn.run(`PRAGMA user_version = ${ran.size + 1}`);
         return undefined;
@@ -54,9 +77,35 @@ function applied(conn: Database): Map<string, string> {
 function drift(ran: Map<string, string>, migrations: readonly Migration[]): Drift[] {
   const known = new Set(migrations.map((m) => m.name));
   return [
-    ...migrations.filter((m) => ran.has(m.name) && ran.get(m.name) !== sha256(m.sql)).map((m) => ({ kind: "changed" as const, name: m.name })),
+    ...migrations
+      .filter((m) => ran.has(m.name) && ran.get(m.name) !== sha256(m.sql) && ran.get(m.name) !== REWRITTEN[m.name])
+      .map((m) => ({ kind: "changed" as const, name: m.name })),
     ...[...ran.keys()].filter((name) => !known.has(name)).sort().map((name) => ({ kind: "unknown" as const, name })),
   ];
+}
+
+/** Names the SQLite found and the one needed rather than SQLite's own words alone. */
+function failed(conn: Database, name: string, error: unknown): MigrationFailed {
+  const found = (conn.query("SELECT sqlite_version() AS v").get() as { v: string }).v;
+  return new MigrationFailed(failure(name, found, error instanceof Error ? error.message : String(error)), { cause: error });
+}
+
+export function failure(name: string, found: string, why: string): string {
+  return olderThan(found, OLDEST_SQLITE)
+    ? `the hub's database can't update: migration ${name} needs SQLite ${OLDEST_SQLITE} or newer, and this machine's ` +
+        `is ${found} (${why})`
+    : `the hub's database can't update: migration ${name} failed on SQLite ${found}, which fleetd supports ` +
+        `(${OLDEST_SQLITE} or newer): ${why}`;
+}
+
+/** Whether dotted version `a` is older than `b`. */
+export function olderThan(a: string, b: string): boolean {
+  const x = a.split(".").map(Number);
+  const y = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
 }
 
 /** Profiles became rows (W146): one line for each project's model or effort override the migration drops. */

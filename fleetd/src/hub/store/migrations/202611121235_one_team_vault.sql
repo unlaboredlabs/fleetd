@@ -52,10 +52,13 @@ CREATE TEMP TABLE team_targets AS
       AND NOT EXISTS (SELECT 1 FROM vault_items o WHERE o.kind = 'env' AND o.scope = 'project' AND o.deleted_ms IS NULL
         AND o.machine_id = p.machine_id AND o.project_id = p.project_id AND o.env_name = v.env_name))
   WHERE first = 1;
+-- None to copy, no row: a filter on the count, as HAVING without GROUP BY needs SQLite 3.39 (a Mac hub runs on macOS's).
 INSERT INTO vault_settings (key, value)
-  SELECT 'team_vault_copies', json_group_array(json_object('itemId', item_id, 'machineId', machine_id, 'projectId', project_id))
-  FROM (SELECT item_id, machine_id, project_id FROM team_targets WHERE nth > 1 ORDER BY item_id, machine_id, project_id)
-  HAVING count(*) > 0;
+  SELECT 'team_vault_copies', copies FROM (
+    SELECT json_group_array(json_object('itemId', item_id, 'machineId', machine_id, 'projectId', project_id)) AS copies,
+        count(*) AS n
+    FROM (SELECT item_id, machine_id, project_id FROM team_targets WHERE nth > 1 ORDER BY item_id, machine_id, project_id))
+  WHERE n > 0;
 UPDATE vault_items
   SET sealed_scope = 'person:' || person_id, scope = 'project', person_id = NULL,
     machine_id = (SELECT machine_id FROM team_targets t WHERE t.item_id = vault_items.item_id AND t.nth = 1),
