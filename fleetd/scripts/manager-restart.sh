@@ -26,11 +26,11 @@ trap cleanup EXIT INT TERM
 cat > "${work}/Dockerfile" <<'EOF'
 FROM ubuntu:26.04
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv dbus dbus-user-session sudo git procps curl ca-certificates >/dev/null && apt-get clean
-RUN userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash wynn && mkdir -p /var/lib/systemd/linger && touch /var/lib/systemd/linger/wynn
+RUN userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash dev && mkdir -p /var/lib/systemd/linger && touch /var/lib/systemd/linger/dev
 # A stand-in claude: setup only needs one installed.
-RUN mkdir -p /home/wynn/.local/bin /home/wynn/.fleetd/bin && printf '#!/bin/sh\ncase "$1" in --version) echo "2.1.314 (Claude Code)";; esac\n' > /home/wynn/.local/bin/claude && chmod 755 /home/wynn/.local/bin/claude
-COPY fleetd /home/wynn/.fleetd/bin/fleetd
-RUN chown -R wynn:wynn /home/wynn
+RUN mkdir -p /home/dev/.local/bin /home/dev/.fleetd/bin && printf '#!/bin/sh\ncase "$1" in --version) echo "2.1.314 (Claude Code)";; esac\n' > /home/dev/.local/bin/claude && chmod 755 /home/dev/.local/bin/claude
+COPY fleetd /home/dev/.fleetd/bin/fleetd
+RUN chown -R dev:dev /home/dev
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
 EOF
@@ -38,7 +38,7 @@ cp "${bin}" "${work}/fleetd"
 docker build -q -t "${image}" "${work}" >/dev/null
 
 as_root() { docker exec "${c}" sh -c "$1"; }
-as_user() { docker exec -u wynn -w /home/wynn -e HOME=/home/wynn -e XDG_RUNTIME_DIR=/run/user/1000 -e PATH=/home/wynn/.fleetd/bin:/home/wynn/.local/bin:/usr/bin:/bin "${c}" sh -c "$1"; }
+as_user() { docker exec -u dev -w /home/dev -e HOME=/home/dev -e XDG_RUNTIME_DIR=/run/user/1000 -e PATH=/home/dev/.fleetd/bin:/home/dev/.local/bin:/usr/bin:/bin "${c}" sh -c "$1"; }
 services() { as_user 'systemctl --user is-active fleetd-hub fleetd-node 2>/dev/null | tr "\n" " "' || true; }
 fail() { echo "FAIL: $1"; exit 1; }
 
@@ -64,7 +64,7 @@ sigterm() {
 
 echo "== 1. sudo without a password: fleetd init arranges it =="
 start sudo
-as_root 'echo "wynn ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wynn'
+as_root 'echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev'
 as_user 'fleetd init --yes --git-identity "Test <t@example.com>" >/dev/null 2>&1' || true
 [ "$(services)" = "active active " ] || fail "init didn't start the hub and node"
 as_root 'cat /etc/systemd/system/user@1000.service.d/fleetd.conf' | grep -qx 'Restart=always' || fail "init wrote no drop-in"
@@ -76,16 +76,16 @@ echo "== 2. no sudo: the note, the doctor, the outage, then the pasted command =
 start paste
 out=$(as_user 'fleetd init --yes --git-identity "Test <t@example.com>" 2>&1' || true)
 [ "$(services)" = "active active " ] || fail "init didn't start the hub and node"
-cmd=$(printf '%s\n' "${out}" | grep -o 'sudo sh -c "loginctl enable-linger wynn[^"]*"' | head -n 1)
+cmd=$(printf '%s\n' "${out}" | grep -o 'sudo sh -c "loginctl enable-linger dev[^"]*"' | head -n 1)
 [ -n "${cmd}" ] || fail "init gives no command: ${out}"
 printf 'init says: %s\n' "$(printf '%s\n' "${out}" | grep -m 1 'nothing starts it again')"
 as_user 'fleetd doctor 2>&1' | grep -F "${cmd}" >/dev/null || fail "the doctor gives no command"
 back=$(sigterm 60); [ "${back}" = down ] || fail "came back without the drop-in?"
 echo "without it, a SIGTERM leaves the hub and node down for 60 s and more (user@1000: $(as_root 'systemctl is-active user@1000.service' || true))"
 as_root 'systemctl start user@1000.service'
-as_root 'echo "wynn ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/wynn'
+as_root 'echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev'
 as_user "${cmd}"
-as_root 'rm /etc/sudoers.d/wynn'
+as_root 'rm /etc/sudoers.d/dev'
 back=$(sigterm 60); [ "${back}" != down ] || fail "not back within 60 s after the command"
 echo "with it, the hub and node answered again ${back} s after the SIGTERM"
 back=$(sigterm 60); [ "${back}" != down ] || fail "not back the second time"
@@ -104,7 +104,7 @@ sleep 10
 [ "$(as_root 'systemctl is-active user@1000.service' || true)" = inactive ] || fail "root's stop was undone"
 echo "root stopping the manager (a shutdown, an admin) still stops it"
 
-as_root 'loginctl disable-linger wynn; systemd-run -q --uid=wynn -p PAMName=login sh -c "sleep 5"'
+as_root 'loginctl disable-linger dev; systemd-run -q --uid=dev -p PAMName=login sh -c "sleep 5"'
 sleep 3
 [ "$(as_root 'systemctl is-active user@1000.service' || true)" = active ] || fail "a login didn't start the manager"
 sleep 25

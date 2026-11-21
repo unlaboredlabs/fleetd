@@ -10,11 +10,11 @@ import { matchesCheck } from "../../src/hub/setup/index.ts";
 // The command tested in a throwaway systemd container (scripts/manager-restart.sh): after it, a SIGTERM to the user's
 // manager has it, the hub and the node back within seconds.
 const DEVBOX =
-  `sudo sh -c "loginctl enable-linger wynn && mkdir -p /etc/systemd/system/user@1000.service.d && ` +
+  `sudo sh -c "loginctl enable-linger dev && mkdir -p /etc/systemd/system/user@1000.service.d && ` +
   `printf '[Service]\\nRestart=always\\nRestartSec=5\\n' > /etc/systemd/system/user@1000.service.d/fleetd.conf && systemctl daemon-reload"`;
 
 test("the one command an admin pastes: linger and Restart=always on the user's manager, nothing else", () => {
-  expect(keepManagerCommand("wynn", 1000)).toBe(DEVBOX);
+  expect(keepManagerCommand("dev", 1000)).toBe(DEVBOX);
   expect(managerDropIn(1000)).toBe("/etc/systemd/system/user@1000.service.d/fleetd.conf");
 });
 
@@ -68,17 +68,17 @@ test("setup arranges it where it may be root, and else notes the command", () =>
 });
 
 test("the doctor's service_manager check: ok, the command while it's missing, nothing where there's nothing to tell", () => {
-  const m = { user: "wynn", uid: 1000, linger: true, restarts: false };
+  const m = { user: "dev", uid: 1000, linger: true, restarts: false };
   const node = c.serviceManager("devbox", "node", m)!;
   expect([node.id, node.status, node.message]).toEqual([
     "devbox/service_manager",
     "warn",
-    "If wynn's service manager (systemd --user) stops, nothing starts it again until wynn logs in: the node stays down, and every agent with it.",
+    "If dev's service manager (systemd --user) stops, nothing starts it again until dev logs in: the node stays down, and every agent with it.",
   ]);
   expect([node.fix?.label, node.fix?.command, node.fix?.on]).toEqual(["As an admin on devbox, once", DEVBOX, "machine"]);
   const hub = c.serviceManager("hub", "hub", { ...m, linger: false })!;
   expect([hub.id, hub.status, hub.fix?.command, hub.fix?.on]).toEqual(["hub/service_manager", "warn", DEVBOX, "hub"]);
-  expect(hub.message).toBe("Linger is off for wynn: the hub stops when wynn logs out, and starts again only at their next login.");
+  expect(hub.message).toBe("Linger is off for dev: the hub stops when dev logs out, and starts again only at their next login.");
   const ok = c.serviceManager("devbox", "node", { ...m, restarts: true })!;
   expect([ok.status, ok.fix]).toEqual(["ok", undefined]);
   expect(c.serviceManager("devbox", "node", undefined)).toBeUndefined();
