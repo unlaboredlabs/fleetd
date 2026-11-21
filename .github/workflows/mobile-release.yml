@@ -177,7 +177,9 @@ jobs:
     name: ios
     needs: [signing, runtime]
     if: needs.signing.outputs.ios == 'true'
-    runs-on: macos-latest
+    # Xcode 27's iOS 27 SDK: one built against an older SDK runs letterboxed, phone-sized, on the iPhone Duo unfolded,
+    # and App Store Connect takes none older from April 2027 (ITMS-90725). macos-latest's default is still Xcode 26.
+    runs-on: xcode-27
     timeout-minutes: 60
     defaults:
       run:
