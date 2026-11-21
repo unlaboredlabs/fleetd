@@ -239,7 +239,10 @@ export const pathWithoutClaude = () => {
 /** The real claude binary on the user's PATH (for shims that hand over to it). */
 export const realClaude = () => execFileSync("sh", ["-c", "command -v claude"], { env: scrubbedEnv(), encoding: "utf8" }).trim();
 
-/** A process from /proc: its start time (clock ticks since boot) tells a live pid from a reused one. */
+/**
+ * A process from /proc (from `ps` on macOS, which has none, as the phone lab on GitHub's macOS runner): its start time
+ * tells a live pid from a reused one.
+ */
 export interface ProcInfo {
   readonly pid: number;
   readonly ppid: number;
@@ -248,7 +251,21 @@ export interface ProcInfo {
   readonly cmdline: ReadonlyArray<string>;
 }
 
+/** What `ps` lists of `pids` (every process when none): its start time is lstart, its argv the command split on spaces. */
+const psInfo = (pids?: ReadonlyArray<number>): Array<ProcInfo> => {
+  const r = spawnSync("ps", [...(pids === undefined ? ["-ax"] : ["-p", pids.join(",")]), "-o", "pid=,ppid=,pgid=,stat=,lstart=,command="], { encoding: "utf8" });
+  return (r.stdout ?? "").split("\n").flatMap((line) => {
+    // lstart is five words: "Sat Nov 21 23:51:39 2026".
+    const f = line.trim().split(/\s+/u);
+    if (f.length < 10 || f[3]!.startsWith("Z")) return [];
+    return [{ pid: Number(f[0]), ppid: Number(f[1]), pgid: Number(f[2]), startTime: f.slice(4, 9).join(" "), cmdline: f.slice(9) }];
+  });
+};
+
+const hasProc = fs.existsSync("/proc/self/stat");
+
 export const procInfo = (pid: number): ProcInfo | undefined => {
+  if (!hasProc) return psInfo([pid])[0];
   try {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
     // The command name (field 2) may hold spaces and parentheses; the rest follows the last ")".
@@ -263,7 +280,7 @@ export const procInfo = (pid: number): ProcInfo | undefined => {
 
 /** Every live descendant of `pid`, by walking /proc ppid links (read only). */
 export const descendants = (pid: number): Array<ProcInfo> => {
-  const all = fs.readdirSync("/proc").filter((d) => /^\d+$/u.test(d)).flatMap((d) => procInfo(Number(d)) ?? []);
+  const all = hasProc ? fs.readdirSync("/proc").filter((d) => /^\d+$/u.test(d)).flatMap((d) => procInfo(Number(d)) ?? []) : psInfo();
   const out: Array<ProcInfo> = [];
   const frontier = [pid];
   while (frontier.length > 0) {
