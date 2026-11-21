@@ -61,11 +61,9 @@ const PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 const enc = (s: string) => new TextEncoder().encode(s);
 const hex = (n: number) => randomBytes(n).toString("hex");
-/** A port on the box's loopback for one session's part: a random one, which a box's few screens rarely share. */
 /** Kills the process session whose leader's pid `file` names: dash's own `kill` takes no negative pid, so procps'
  * pkill by session id, never with an empty or zero id (pkill's own session). */
 const killSession = (file: string) => `p=$(cat ${shq(file)} 2>/dev/null); case "$p" in ''|*[!0-9]*|0) ;; *) pkill -KILL -s "$p" 2>/dev/null ;; esac`;
-const randomPort = () => 20_000 + (randomBytes(2).readUInt16LE(0) % 30_000);
 
 /** A stream to `at` on the box's loopback once something listens there, trying again until `ms` is up. */
 async function dialUntil(box: Pick<Box, "dial">, at: number, ms: number): Promise<Duplex> {
@@ -304,15 +302,17 @@ export type PartHandle = { port: number; token: string };
 
 const partDir = (sessionId: string) => `${BOX_ROOT}/parts/${sessionId.replace(/[^A-Za-z0-9_-]/g, "")}`;
 
-/** Starts a session's part in the box, in a process session of its own that outlives the call. */
+/** Starts a session's part in the box, in a process session of its own that outlives the call, and answers where it
+ * listens once it does. */
 export async function startPart(box: AndroidBox, sessionId: string): Promise<PartHandle> {
-  const handle: PartHandle = { port: randomPort(), token: hex(24) };
+  const token = hex(24);
   const dir = partDir(sessionId);
+  const portFile = `${dir}/port`;
   const sdk = boxSdk();
   const scid = (Number.parseInt(hex(4), 16) & 0x7fffffff).toString(16).padStart(8, "0");
   const config = {
-    port: handle.port,
-    token: handle.token,
+    portFile,
+    token,
     graceMs: timing.graceMs,
     adb: sdk.adb,
     serial: SERIAL,
@@ -327,7 +327,17 @@ export async function startPart(box: AndroidBox, sessionId: string): Promise<Par
   await box.write(`${BOX_ROOT}/android_part.mjs`, enc(part), 0o644);
   await box.write(`${dir}/config.json`, enc(JSON.stringify(config)), 0o600);
   await sh(box, `cd ${shq(dir)} && setsid bun ${shq(`${BOX_ROOT}/android_part.mjs`)} config.json </dev/null >>part.log 2>&1 & echo $! > ${shq(`${dir}/part.pid`)}`);
-  return handle;
+  const deadline = Date.now() + timing.reachMs;
+  for (;;) {
+    const said = await box.read(portFile, 16).then((b) => Number(new TextDecoder().decode(b).trim()), () => 0);
+    if (Number.isInteger(said) && said > 0 && said < 65_536) return { port: said, token };
+    if (Date.now() > deadline) {
+      const log = await sh(box, `tail -c 400 ${shq(`${dir}/part.log`)} 2>/dev/null || true`).catch(() => "");
+      await stopPart(box, sessionId);
+      throw new Error(`the screen's part didn't start in the box within ${timing.reachMs / 1000} s${log.trim() ? `: ${log.trim()}` : ""}`);
+    }
+    await Bun.sleep(Math.min(timing.pollMs, 200));
+  }
 }
 
 /** Ends a session's part (its stream, its decoder) and its folder. */

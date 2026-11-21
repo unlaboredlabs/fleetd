@@ -1,6 +1,7 @@
 // fleetd's Android part in a hosted box (../place/box_emulator.ts starts it): run by the box's own Bun beside the
 // emulator, it starts scrcpy's server over the box's adb, decodes its H.264 with the box's ffmpeg into JPEGs, and
-// serves them to whoever holds the session outside the box, one connection at a time on the box's loopback (the box's
+// serves them to whoever holds the session outside the box, one connection at a time on a port of the box's loopback
+// (it writes which in its config's portFile; the box's
 // guest dials it for the holder). A person's input comes back as scrcpy's control messages, encoded by the holder, and
 // goes on the server's control socket as it is.
 //
@@ -11,9 +12,9 @@
 // Records, both ways: a u32 length (of what follows), a type byte, then the body. Part → holder: 1 a frame (u32 seq,
 // then the JPEG), 2 a note (why the stream went, UTF-8). Holder → part: 3 control bytes, 4 stop.
 //
-// The config (argv[2], JSON): port, token, graceMs, adb, serial, env, jar, serverPath, scid, serverArgs, ffmpeg,
+// The config (argv[2], JSON): portFile, token, graceMs, adb, serial, env, jar, serverPath, scid, serverArgs, ffmpeg,
 // decoderArgs. Everything is the holder's word: what it runs is pinned there (../device/pins.ts, scrcpy_wire.ts).
-const { readFileSync } = require("node:fs");
+const { readFileSync, renameSync, writeFileSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 const net = require("node:net");
 const { timingSafeEqual } = require("node:crypto");
@@ -229,6 +230,14 @@ const listener = net.createServer((sock) => {
     arm();
   });
 });
-listener.listen(cfg.port, "127.0.0.1");
+listener.once("error", (e) => {
+  log(`cannot listen: ${e.message}`);
+  process.exit(1);
+});
+// A port of its own choosing, said in `portFile` once it listens: the holder reads it there.
+listener.listen(0, "127.0.0.1", () => {
+  writeFileSync(`${cfg.portFile}.part`, String(listener.address().port));
+  renameSync(`${cfg.portFile}.part`, cfg.portFile);
+});
 arm();
 start().catch((e) => fail(e.message));
