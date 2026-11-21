@@ -1,33 +1,29 @@
 // People's 1Password service account tokens (D235): one file each in
 // `<node home>/onepassword-tokens/<person id>.json`, kept as a Claude subscription is (./accounts.ts). And the SDK
 // helper that reads 1Password with one: `@1password/sdk`, pinned, run under Node.js by ./onepassword_helper.mjs, in
-// the node's install directory. The token is the helper's first line on stdin, never in an environment or argument;
-// errors are masked by the caller.
+// the node's install directory (its script, pin and lines: ./onepassword_helper.ts). The token is the helper's first
+// line on stdin, never in an environment or argument; errors are masked by the caller.
 //
 // A session launched with a person (`SessionLaunch.onepassword`) has their token among its masked secrets as
 // OP_SERVICE_ACCOUNT_TOKEN when its project and order have none of their own (`fallback`). It never reaches an
 // environment.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import helperScript from "./onepassword_helper.mjs" with { type: "text" };
-import type { OnePasswordCard, VaultImportedFields, VaultKind } from "../../shared/contracts.ts";
+import type { VaultImportedFields, VaultKind } from "../../shared/contracts.ts";
 import { expiry, TOKEN_ENV } from "../browser/logins.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import type { Vars } from "../secrets/env.ts";
 import { fingerprintOf, writeAtomic } from "../secrets/files.ts";
+import { answerOf, HELPER, type HelperAnswer, HelperAsks, type HelperRequest, type ReadItem, requestLine, SDK_PACKAGE, SDK_VERSION, tokenLine } from "./onepassword_helper.ts";
 import { hasControl, ioWhy, openB64, readIfThere, removeIfThere, utf8 } from "./refusal.ts";
 
+export { HELPER, OnePasswordError, type Overview, type ReadItem, SDK_VERSION } from "./onepassword_helper.ts";
 export { TOKEN_ENV };
-/** The SDK release the node installs. */
-export const SDK_VERSION = "0.5.0";
 const DIR = "onepassword-tokens";
 const VALUE_MAX = 4096;
 const RESOLVE_TIMEOUT_MS = 30_000;
 const INSTALL_TIMEOUT_MS = 180_000;
-
-/** The helper script the node runs under Node.js, with the SDK installed beside it. */
-export const HELPER: string = helperScript;
 
 const tokenPath = (home: string, person: string) => join(home, DIR, `${person}.json`);
 
@@ -110,7 +106,7 @@ async function installNow(home: string): Promise<string> {
   const helper = join(dir, "resolve.mjs");
   let have = false;
   try {
-    have = JSON.parse(readFileSync(join(dir, "node_modules/@1password/sdk/package.json"), "utf8")).version === SDK_VERSION;
+    have = JSON.parse(readFileSync(join(dir, "node_modules", SDK_PACKAGE, "package.json"), "utf8")).version === SDK_VERSION;
   } catch {}
   if (!have) {
     try {
@@ -120,7 +116,7 @@ async function installNow(home: string): Promise<string> {
     }
     let failed: string | undefined;
     try {
-      const npm = Bun.spawn(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", dir, `@1password/sdk@${SDK_VERSION}`], {
+      const npm = Bun.spawn(["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", dir, `${SDK_PACKAGE}@${SDK_VERSION}`], {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
@@ -147,18 +143,8 @@ async function installNow(home: string): Promise<string> {
   return helper;
 }
 
-/** What the helper answered as an error, in plain words (never a value), and whether 1Password rate-limited it. */
-export class OnePasswordError extends Error {
-  constructor(
-    message: string,
-    readonly rateLimited = false,
-  ) {
-    super(message);
-  }
-}
-
 /** The SDK helper with one token: a process started on the first question, asked one line at a time. */
-export class OnePassword {
+export class OnePassword extends HelperAsks {
   #proc: Bun.Subprocess<"pipe", "pipe", "ignore"> | undefined;
   #lines: AsyncIterator<string> | undefined;
   #queue: Promise<unknown> = Promise.resolve();
@@ -166,7 +152,9 @@ export class OnePassword {
   constructor(
     readonly home: string,
     readonly token: string,
-  ) {}
+  ) {
+    super();
+  }
 
   async #start(): Promise<void> {
     const helper = await install(this.home);
@@ -177,22 +165,22 @@ export class OnePassword {
     } catch (error) {
       throw new Error(`cannot start Node.js for the 1Password SDK: ${(error as Error).message}`);
     }
-    this.#proc.stdin.write(`${JSON.stringify({ token: this.token })}\n`);
+    this.#proc.stdin.write(tokenLine(this.token));
     this.#proc.stdin.flush();
     this.#lines = lines(this.#proc.stdout);
   }
 
   /** One line to the helper and its answer, parsed; its error thrown as `1Password: …`. */
-  exchange(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+  exchange(request: HelperRequest): Promise<HelperAnswer> {
     const next = this.#queue.catch(() => {}).then(() => this.#exchange(request));
     this.#queue = next;
     return next;
   }
 
-  async #exchange(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async #exchange(request: HelperRequest): Promise<HelperAnswer> {
     if (!this.#proc) await this.#start();
     try {
-      this.#proc!.stdin.write(`${JSON.stringify(request)}\n`);
+      this.#proc!.stdin.write(requestLine(request));
       this.#proc!.stdin.flush();
     } catch {
       this.#proc = undefined;
@@ -208,68 +196,7 @@ export class OnePassword {
       this.close();
       throw new Error("1Password did not answer in 30 s");
     }
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(answer) as Record<string, unknown>;
-    } catch {
-      throw new Error("the 1Password helper said nothing readable");
-    }
-    if (typeof parsed.error === "string") throw new OnePasswordError(`1Password: ${parsed.error}`, parsed.rateLimited === true);
-    return parsed;
-  }
-
-  /** A reference's value and its item's websites; an item without a website comes with no value (nothing fills it). */
-  async ask(reference: string): Promise<{ value: string; urls: string[] }> {
-    const parsed = await this.exchange({ ref: reference });
-    const urls = (Array.isArray(parsed.urls) ? parsed.urls : []).filter((u): u is string => typeof u === "string");
-    if (typeof parsed.value === "string") return { value: parsed.value, urls };
-    if (parsed.value === undefined && urls.length === 0) return { value: "", urls };
-    throw new OnePasswordError("1Password returned no value");
-  }
-
-  /** A field of an Identity, Passport, Driver License or Social Security item: for an approved secure input only. */
-  async identity(reference: string): Promise<{ value: string; urls: string[] }> {
-    const parsed = await this.exchange({ identity: reference });
-    if (typeof parsed.value === "string" && parsed.value) return { value: parsed.value, urls: [] };
-    throw new OnePasswordError("1Password returned no value");
-  }
-
-  /** A Credit Card item's details, as the helper reads them (browser/onepassword.ts shapes them). */
-  async card(reference: string): Promise<{ number: string; expiry: string; cvc: string; name: string }> {
-    const parsed = await this.exchange({ card: reference });
-    const card = (parsed.card ?? {}) as Record<string, unknown>;
-    const take = (key: string) => (typeof card[key] === "string" ? (card[key] as string) : "");
-    return { number: take("number"), expiry: take("expiry"), cvc: take("cvc"), name: take("name") };
-  }
-
-  /** The names of the vaults the token reads: a token's Test. */
-  async vaultNames(): Promise<string[]> {
-    const parsed = await this.exchange({ vaults: true });
-    return (Array.isArray(parsed.vaults) ? parsed.vaults : []).filter((v): v is string => typeof v === "string");
-  }
-
-  /** The Credit Card items the token reads: a project's card picker. */
-  async cards(): Promise<OnePasswordCard[]> {
-    const parsed = await this.exchange({ cards: true });
-    return (Array.isArray(parsed.cards) ? parsed.cards : []).filter(
-      (c): c is OnePasswordCard => !!c && typeof c.ref === "string" && typeof c.title === "string" && typeof c.vault === "string",
-    );
-  }
-
-  /** The items a vault import may take whose title or website has `query` in it: overviews, never a value. */
-  async search(query: string): Promise<Overview[]> {
-    const parsed = await this.exchange({ search: query });
-    return (Array.isArray(parsed.items) ? parsed.items : []).filter(
-      (i): i is Overview => !!i && typeof i.ref === "string" && typeof i.title === "string" && typeof i.category === "string" && typeof i.vault === "string",
-    );
-  }
-
-  /** One item's fields, for an import the person confirmed: sealed to the hub at once (vault_import_read). */
-  async read(reference: string): Promise<ReadItem> {
-    const parsed = await this.exchange({ read: reference });
-    const item = (parsed.item ?? {}) as ReadItem;
-    if (typeof item.title !== "string" || typeof item.category !== "string") throw new OnePasswordError("1Password returned no item");
-    return { ...item, sites: Array.isArray(item.sites) ? item.sites.filter((u) => typeof u === "string") : [], fields: Array.isArray(item.fields) ? item.fields : [] };
+    return answerOf(answer);
   }
 
   close(): void {
@@ -279,17 +206,6 @@ export class OnePassword {
     this.#proc = undefined;
   }
 }
-
-/** An item the helper's search found: its reference, title, category, vault and websites. */
-export type Overview = { ref: string; title: string; category: string; vault: string; sites?: string[] };
-/** An item the helper read for import: every field as 1Password keeps it. */
-export type ReadItem = {
-  title: string;
-  category: string;
-  sites: string[];
-  notes?: string;
-  fields: { id?: string; title?: string; type?: string; value?: string; details?: Record<string, unknown> }[];
-};
 
 /** What a 1Password category becomes in fleetd's vault; none for those it doesn't import. */
 export function importKind(category: string): VaultKind | undefined {
