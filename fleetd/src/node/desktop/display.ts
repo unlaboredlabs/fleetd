@@ -14,7 +14,7 @@ import type { Runtime } from "./container.ts";
 import { NAME_PREFIX } from "./container.ts";
 import { onPath, SIZE } from "./paths.ts";
 import type { Launched, Lent } from "./screen.ts";
-import { CONNECT_TIMEOUT, X } from "./x11.ts";
+import { CONNECT_TIMEOUT, X, xauth } from "./x11.ts";
 import { agentScoreLine, agentSpawn } from "../oom.ts";
 
 /** Window managers the xvfb backend starts when the host has one, first found first. */
@@ -42,14 +42,7 @@ export type Settings = {
 const x11Dir = (s: Settings) => s.x11Dir ?? "/tmp/.X11-unix";
 const lockDir = (s: Settings) => s.lockDir ?? "/tmp";
 
-/** An X authority file naming `cookie` for any display on any host (FamilyWild). */
-export function xauth(cookie: Uint8Array): Uint8Array {
-  const parts: number[] = [0xff, 0xff];
-  for (const field of [new Uint8Array(0), new Uint8Array(0), new TextEncoder().encode("MIT-MAGIC-COOKIE-1"), cookie]) {
-    parts.push(field.length >> 8, field.length & 0xff, ...field);
-  }
-  return new Uint8Array(parts);
-}
+export { xauth } from "./x11.ts";
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 

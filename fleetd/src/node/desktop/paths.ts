@@ -2,8 +2,7 @@
 import { accessSync, constants, statSync } from "node:fs";
 import { join } from "node:path";
 
-/** The screen every session gets, in pixels. */
-export const SIZE: [number, number] = [1280, 800];
+export { SIZE } from "./screen.ts";
 
 /** A program on the PATH. */
 export function onPath(name: string): string | undefined {

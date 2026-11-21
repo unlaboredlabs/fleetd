@@ -1,21 +1,16 @@
 // One live desktop session: the display it was lent (or the Mac's lease),
 // the node's connection to its screen (x11.ts, mac/screen.ts), the screen it reads ten times a second while anything
 // changes (the video, and the frames a person watches), and the action log, a line per `desktop` action and session
-// tool call as a browser session keeps it (node/browser/record.ts), each scrubbed of the session's secrets.
+// tool call as a browser session keeps it, each scrubbed of the session's secrets. Both go to the `Recording` it is
+// given (node/browser/recording.ts): the node's keeps them on its disk (disk_recordings.ts), a service's its own.
 //
 // A Mac screen session that holds neither the Mac's lease nor an app's claim only observes: it reads the screen only
 // while a person watches it, and records no video meanwhile.
-import { rmSync } from "node:fs";
-import { inBox, BOX_NO_DESKTOP_LAUNCH } from "../place/index.ts";
-import { join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
-import { RECORDING_FILES } from "../../shared/screens_wire.ts";
 import { Pacer } from "../browser/fit.ts";
-import { appendAction, files as recordedFiles, type Meta, scrubFile, type Steps, VideoSink, writeMeta } from "../browser/record.ts";
+import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
-import type { Target } from "./mac/agent_desktop.ts";
-import type { App } from "./mac/index.ts";
-import type { Launched, Lent, Screen } from "./screen.ts";
+import type { App, Launched, Lent, Screen, Target } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
 /** What a session's recording says without an ffmpeg to encode its video. */
@@ -54,13 +49,17 @@ export type Opened = {
   /** The agent session's secrets (its project's, its order's, its MCP servers'), scrubbed from the recording. */
   secrets: [string, string][];
   kind: "linux_desktop" | "mac";
-  /** The recording's folder, and the ffmpeg that encodes its video (none: no video). Absent: nothing is recorded. */
-  dir?: string;
-  ffmpeg?: string;
-  /** Each session's latest step, for the heartbeat (the browsers' record.ts `Steps`). */
+  /** Where it is recorded, opened for it; absent: nothing is. */
+  recording?: Recording;
+  /** Each session's latest step, for the heartbeat (the browsers' `Steps`). */
   steps?: Steps;
   /** A Mac screen session that starts holding neither the lease nor a claim. */
   observing?: boolean;
+  /** Why the agent may not launch an app on this display, when it may not: a hosted agent on this machine's display,
+   * whose apps would run outside its box. */
+  launchRefusal?: () => string | undefined;
+  /** It goes on from a holder before (DesktopSessions `adopt`): when it started, its steps so far, who drove it. */
+  resumed?: { startedAt: string; seq: number; control: BrowserControl; note?: string };
 };
 
 export class Session {
@@ -72,8 +71,8 @@ export class Session {
   /** A Mac screen session without the lease or a claim: it only observes, and reads the screen only for a person
    * watching it. */
   private observingNow: boolean;
-  readonly startedAt = new Date().toISOString();
-  private readonly start = performance.now();
+  readonly startedAt: string;
+  private readonly start: number;
   private lent: Lent | undefined;
   private controlNow: BrowserControl = "agent";
   private watcher: Watcher | undefined;
@@ -85,14 +84,14 @@ export class Session {
   private noteText: string | undefined;
   private seq = 0;
   private readonly scrub: Scrub;
-  readonly dir: string | undefined;
-  private readonly ffmpeg: string | undefined;
+  private readonly recording: Recording | undefined;
   private readonly latest: Steps | undefined;
-  private video: VideoSink | undefined;
+  private readonly launchRefusal: (() => string | undefined) | undefined;
   private ticker: Timer | undefined;
-  private videoFailed = false;
   private lastActive = performance.now();
   private closed = false;
+  /** What `close` found, for a second call. */
+  private closedFiles: [string, number][] = [];
   private capturing: Promise<void> = Promise.resolve();
   /** The latest step, for the heartbeat. */
   step: BrowserAction | undefined;
@@ -112,17 +111,30 @@ export class Session {
     this.kind = opened.kind;
     this.observingNow = opened.observing ?? false;
     this.scrub = new Scrub(opened.secrets);
-    this.dir = opened.dir;
-    this.ffmpeg = opened.ffmpeg;
+    this.recording = opened.recording;
     this.latest = opened.steps;
-    if (this.dir && !this.ffmpeg) this.noteText = NO_VIDEO;
-    this.writeMeta();
+    this.launchRefusal = opened.launchRefusal;
+    const resumed = opened.resumed;
+    this.startedAt = resumed?.startedAt ?? new Date().toISOString();
+    // A resumed session's offsets go on from its start, as its action log and video have them.
+    this.start = performance.now() - (resumed ? Math.max(0, Date.now() - Date.parse(resumed.startedAt)) : 0);
+    if (resumed) {
+      this.seq = resumed.seq;
+      this.controlNow = resumed.control;
+    }
+    const note = resumed?.note ?? opened.recording?.note;
+    if (note !== undefined) this.noteText = note;
   }
 
   /** Starts reading the screen, and keeps a still screen's frame showing in the video. */
   open(): void {
     this.capturing = this.capture();
-    this.ticker = setInterval(() => this.video?.tick(this.offsetMs()), 1_000);
+    this.ticker = setInterval(() => this.recording?.video?.tick(this.offsetMs()), 1_000);
+  }
+
+  /** How far its steps went: the last one's number, for a new holder. */
+  lastSeq(): number {
+    return this.seq;
   }
 
   meta(endedAt?: string): Meta {
@@ -137,15 +149,6 @@ export class Session {
       credentialsFilled: 0,
       ...(this.noteText !== undefined ? { note: this.noteText } : {}),
     };
-  }
-
-  writeMeta(endedAt?: string): void {
-    if (!this.dir) return;
-    try {
-      writeMeta(this.dir, this.meta(endedAt));
-    } catch (e) {
-      console.warn(`desktop ${this.id}: session file not written: ${(e as Error).message}`);
-    }
   }
 
   offsetMs(): number {
@@ -222,15 +225,7 @@ export class Session {
   /** A new screen: into the video (not while it only observes), and to the hub while it watches. */
   private frame(jpeg: Uint8Array, width: number, height: number): void {
     if (this.closed) return;
-    if (this.dir && this.ffmpeg && !this.video && !this.observingNow && !this.videoFailed) {
-      try {
-        this.video = new VideoSink(this.ffmpeg, join(this.dir, RECORDING_FILES.video.name), [width, height]);
-      } catch (e) {
-        this.videoFailed = true;
-        this.setNote(`no video: ${(e as Error).message}`);
-      }
-    }
-    if (!this.observingNow) this.video?.frame(jpeg, this.offsetMs());
+    if (!this.observingNow) this.recording?.video?.frame(jpeg, this.offsetMs());
     this.liveSeq++;
     this.last = {
       sessionId: this.id,
@@ -294,9 +289,10 @@ export class Session {
     const clean = this.scrub.value(action);
     this.step = clean;
     this.steps.push(clean);
-    if (this.dir && this.latest) {
+    if (this.recording) {
+      this.latest?.note(this.recording.key ?? this.id, this.id, clean);
       try {
-        appendAction(this.dir, action, this.scrub, this.latest, this.id);
+        this.recording.append("actions", JSON.stringify(clean));
       } catch (e) {
         console.warn(`desktop ${this.id}: action not logged: ${(e as Error).message}`);
       }
@@ -337,7 +333,8 @@ export class Session {
     if (!command) throw new Error("launch needs text: the command");
     // A hosted agent on this machine's display: what it launches would run outside its box. One whose display is in its
     // box (../place/box_screens.ts) launches there, with its files.
-    if (!this.lent?.inBox && inBox(this.thread)) throw new Error(BOX_NO_DESKTOP_LAUNCH);
+    const refused = this.lent?.inBox ? undefined : this.launchRefusal?.();
+    if (refused) throw new Error(refused);
     const launched = await this.launch(command);
     if (!launched.exited) return { message: `Started \`${command}\` (pid ${launched.pid}). Take a screenshot to see its window.` };
     const { code, output } = launched.exited;
@@ -366,40 +363,43 @@ export class Session {
     return this.lent.launch(command, this.cwd);
   }
 
-  /**
-   * Stops reading the screen, finishes the video and throws the display away with everything on it. Returns the
-   * recording's files there are.
-   */
-  async close(): Promise<[string, number][]> {
-    if (this.closed) return this.dir ? recordedFiles(this.dir) : [];
+  /** Stops reading the screen and lets go of its connection, leaving the display and the recording as they are: a
+   * new holder goes on with both (DesktopSessions `letGo`). */
+  async detach(): Promise<void> {
+    if (this.closed) return;
     this.closed = true;
     this.watcher = undefined;
     clearInterval(this.ticker);
     await this.capturing;
     this.screen.close();
-    const sink = this.video;
-    this.video = undefined;
-    if (sink && this.dir) {
-      const why = await sink.finish(this.offsetMs());
-      if (why) {
-        rmSync(join(this.dir, RECORDING_FILES.video.name), { force: true });
-        this.setNote(`no video: ${why}`);
-      }
-    }
+    this.lent = undefined;
+  }
+
+  /**
+   * Stops reading the screen, throws the display away with everything on it, and ends the recording: its video
+   * finished, its action log scrubbed once more whole with every secret known. Returns the recording's files there are.
+   */
+  async close(): Promise<[string, number][]> {
+    if (this.closed) return this.closedFiles;
+    this.closed = true;
+    this.watcher = undefined;
+    clearInterval(this.ticker);
+    await this.capturing;
+    this.screen.close();
     const lent = this.lent;
     this.lent = undefined;
     await lent?.drop();
-    if (!this.dir) return [];
-    // The action log was scrubbed line by line as it was written; scrubbed once more whole, with every secret known.
-    const actions = join(this.dir, RECORDING_FILES.actions.name);
+    if (!this.recording) return [];
     try {
-      scrubFile(actions, this.scrub);
+      const ended = { endedAt: new Date().toISOString(), credentialsFilled: 0, ...(this.noteText !== undefined ? { note: this.noteText } : {}) };
+      const done = await this.recording.end(ended, this.scrub, this.offsetMs());
+      if (done.note !== undefined) this.noteText = done.note;
+      this.closedFiles = done.files.map((f) => [f.file, f.bytes]);
     } catch (e) {
-      console.warn(`desktop ${this.id}: recording not scrubbed: ${(e as Error).message}`);
-      rmSync(actions, { force: true });
+      console.warn(`desktop ${this.id}: recording not ended: ${(e as Error).message}`);
+      this.setNote(`its recording didn't end: ${(e as Error).message}`);
     }
-    this.writeMeta(new Date().toISOString());
-    return recordedFiles(this.dir);
+    return this.closedFiles;
   }
 }
 
