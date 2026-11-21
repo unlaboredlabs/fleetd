@@ -1,8 +1,11 @@
 // The hub and node services `fleetd init` created for a binary, and restarting one (crates/fleetd/src/update/
-// service.rs): `systemctl --user restart`, `launchctl kickstart -k`.
+// service.rs): `systemctl --user restart`, `launchctl kickstart -k`. And whether systemd starts the user's manager,
+// which runs them, again by itself.
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
+import type { NodeManager } from "../shared/node_link.ts";
 
 /** A hub or node service: its unit file's name (`fleetd-hub.service`), and the part between prefix and extension. */
 export type Service = { name: string; unit: string };
@@ -90,4 +93,55 @@ export function spawnOutside(program: string, args: string[], what = "update"): 
 export function restartOutside(service: Service): void {
   const [cmd, args] = restartCommand(service);
   spawnOutside(cmd, args, "restart");
+}
+
+/** The unit this process runs as: the last part of its cgroup path under the user's manager (`user@1000.service`),
+ * when that's a service (`fleetd-node.service`, not an agent's `run-….scope`). */
+export function ownUnit(cgroup: string): string | undefined {
+  const path = cgroup
+    .split("\n")
+    .find((l) => l.startsWith("0::"))
+    ?.slice(3);
+  if (path === undefined) return undefined;
+  const parts = path.split("/");
+  const manager = parts.findIndex((p) => p.startsWith("user@") && p.endsWith(".service"));
+  if (manager < 0 || manager === parts.length - 1) return undefined;
+  const last = parts.at(-1)!;
+  return last.endsWith(".service") ? last : undefined;
+}
+
+/** Where the root drop-in goes that has systemd start `uid`'s service manager again whenever it stops. user@.service
+ * has no Restart= of its own, so a lingering user's manager that exits (a SIGTERM to it) stays down, and the hub and
+ * node with it, until that user logs in. A logout still ends a manager that doesn't linger: logind stops it, and
+ * systemd never restarts a unit that was stopped. */
+export const managerDropIn = (uid: number) => `/etc/systemd/system/user@${uid}.service.d/fleetd.conf`;
+
+/** What root runs to keep `user`'s service manager running by itself: linger, so it starts at boot and outlives a
+ * logout, and the drop-in, so it starts again 5 s after it stops. Run again, it changes nothing; the manager that
+ * runs now carries on. */
+export function keepManagerScript(user: string, uid: number): string {
+  const file = managerDropIn(uid);
+  return `loginctl enable-linger ${user} && mkdir -p ${file.slice(0, file.lastIndexOf("/"))} && printf '[Service]\\nRestart=always\\nRestartSec=5\\n' > ${file} && systemctl daemon-reload`;
+}
+
+/** keepManagerScript as the one line an admin pastes. */
+export const keepManagerCommand = (user: string, uid: number) => `sudo sh -c "${keepManagerScript(user, uid)}"`;
+
+/** Whether systemd brings this user's service manager back by itself, read from inside it: undefined off Linux, when
+ * this process isn't a systemd user service, and when systemd can't be asked. */
+export function readManager(): NodeManager | undefined {
+  if (process.platform !== "linux") return undefined;
+  let user: string;
+  try {
+    if (ownUnit(readFileSync("/proc/self/cgroup", "utf8")) === undefined) return undefined;
+    user = userInfo().username;
+  } catch {
+    return undefined;
+  }
+  const uid = process.getuid?.();
+  if (uid === undefined) return undefined;
+  const r = spawnSync("systemctl", ["show", `user@${uid}.service`, "-p", "Restart", "--value"], { encoding: "utf8", timeout: 10_000 });
+  if (r.error || r.status !== 0) return undefined;
+  // logind keeps linger as a file per user.
+  return { user, uid, linger: existsSync(`/var/lib/systemd/linger/${user}`), restarts: r.stdout.trim() === "always" };
 }

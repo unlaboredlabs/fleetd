@@ -3,12 +3,13 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { relocated } from "../../shared/home.ts";
-import { isHubService, services, unitDir, userManagerEnv } from "../../update/service.ts";
+import { isHubService, ownUnit, services, unitDir, userManagerEnv } from "../../update/service.ts";
 import { q } from "../pair.ts";
 import type { Platform } from "./shared.ts";
 
 export type Role = "hub" | "node";
 export { q };
+export { keepManagerCommand, keepManagerScript, managerDropIn, ownUnit, readManager } from "../../update/service.ts";
 
 export type ServiceSpec = {
   role: Role;
@@ -149,21 +150,6 @@ function words(line: string, exec: boolean): string[] | undefined {
     out.push(exec ? word.replaceAll("$$", "$") : word);
   }
   return out;
-}
-
-/** The unit this process runs as: the last part of its cgroup path under the user's manager (`user@1000.service`),
- * when that's a service (`fleetd-node.service`, not an agent's `run-….scope`). */
-export function ownUnit(cgroup: string): string | undefined {
-  const path = cgroup
-    .split("\n")
-    .find((l) => l.startsWith("0::"))
-    ?.slice(3);
-  if (path === undefined) return undefined;
-  const parts = path.split("/");
-  const manager = parts.findIndex((p) => p.startsWith("user@") && p.endsWith(".service"));
-  if (manager < 0 || manager === parts.length - 1) return undefined;
-  const last = parts.at(-1)!;
-  return last.endsWith(".service") ? last : undefined;
 }
 
 const info = (unit: string, message: string) => console.log(`${new Date().toISOString()} INFO ${message} {"unit":${JSON.stringify(unit)}}`);

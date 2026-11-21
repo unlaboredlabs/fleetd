@@ -76,8 +76,11 @@ export interface Problem {
   readonly screens?: boolean;
 }
 
-/** The checks a machine's page reads: claude, the identity its commits carry, its projects' remotes, its screens. */
-const CHECKS = ["claude_version", "claude_login", "runner_conformance", "commit_identity", "git_fetch", "android", "desktop"];
+/**
+ * The checks a machine's page reads: claude, the identity its commits carry, its service manager coming back, its
+ * projects' remotes, its screens.
+ */
+const CHECKS = ["claude_version", "claude_login", "runner_conformance", "commit_identity", "service_manager", "git_fetch", "android", "desktop"];
 const SCREENS = new Set(["android", "desktop"]);
 
 /**
