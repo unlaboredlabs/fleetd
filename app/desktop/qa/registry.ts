@@ -23,7 +23,6 @@ import { CHAT_SENDS } from "../fixtures/composer/sends.ts";
 import { OFFLINE_SENDS } from "../fixtures/offline/sends.ts";
 import { ADA, ADA_ROUTE, HOME_ROUTE, TAXES_ROUTE } from "../fixtures/no-repo/ids.ts";
 import { notches, scrollMoves, watchScroll } from "./scroll.ts";
-import { BOT_COLORS } from "../src/shared/bot.ts";
 
 /**
  * What the system answers when the app posts a notification: shown, or not supported. Nothing reaches the screen of
@@ -1228,7 +1227,7 @@ export const screens: readonly Screen[] = [
       const bots = page.getByRole("navigation", { name: "Sidebar" }).locator("[data-bot][data-color]");
       await expect(bots.first()).toBeVisible();
       const colors = await bots.evaluateAll((els) => els.map((el) => el.getAttribute("data-color")));
-      for (const c of BOT_COLORS) expect(colors).toContain(c);
+      for (const c of ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"]) expect(colors).toContain(c);
     },
   },
   // The hub switcher: the owner's hub marked while setup steps are left; a member's never is.

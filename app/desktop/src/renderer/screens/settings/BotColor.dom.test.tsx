@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// Settings › Projects › Color over a fake hub: slate is picked while the hub names no color; a swatch picks its color at
+// Settings › Projects › Color over a fake hub: grey is picked while the hub names no color, and an earlier name (lilac)
+// as the color it became; a swatch picks its color at
 // once and saves it with project_settings_set; the Icon's bot wears the color the hub's summary names; the arrow keys
 // move the pick; a refusal says why and goes back to the saved color.
 import { act } from "react";
@@ -129,51 +130,57 @@ const checked = () => [...row().querySelectorAll('[role="radio"][aria-checked="t
 const iconBot = () => document.querySelector('section[aria-label="Icon"] [data-bot][data-color]')?.getAttribute("data-color");
 const sets = () => calls.filter((c) => c.tool === "project_settings_set").map((c) => c.input);
 
-it("offers the palette, slate picked while the hub names none, and the Icon's bot in it", async () => {
+it("offers the palette, grey picked while the hub names none, and the Icon's bot in it", async () => {
   await render(undefined);
-  expect([...row().querySelectorAll('[role="radio"]')].map((el) => el.getAttribute("aria-label"))).toEqual(["Slate", "Mono", "Blue", "Lilac", "Coral", "Amber", "Sage", "Teal"]);
-  expect(checked()).toEqual(["Slate"]);
-  expect(swatch("Slate").tabIndex).toBe(0);
-  expect(swatch("Sage").tabIndex).toBe(-1);
-  expect(iconBot()).toBe("slate");
+  expect([...row().querySelectorAll('[role="radio"]')].map((el) => el.getAttribute("aria-label"))).toEqual(["Mono", "Brown", "Red", "Orange", "Amber", "Green", "Teal", "Blue", "Purple", "Pink", "Grey"]);
+  expect(checked()).toEqual(["Grey"]);
+  expect(swatch("Grey").tabIndex).toBe(0);
+  expect(swatch("Green").tabIndex).toBe(-1);
+  expect(iconBot()).toBe("grey");
+});
+
+it("shows an earlier name (an older app's lilac) as the color it became", async () => {
+  await render("lilac");
+  expect(checked()).toEqual(["Purple"]);
+  expect(iconBot()).toBe("purple");
 });
 
 it("picks a color at once, saves it, and the bot wears what the hub's summary names", async () => {
   const next = await render(undefined);
   await act(async () => {
-    swatch("Sage").click();
+    swatch("Green").click();
     await Promise.resolve();
   });
-  expect(checked()).toEqual(["Sage"]);
+  expect(checked()).toEqual(["Green"]);
   await settle();
-  expect(sets()).toEqual([{ machineId: "devbox", projectId: "p1", avatarColor: "sage" }]);
-  await next(snapshot("sage", 2));
-  expect(checked()).toEqual(["Sage"]);
-  expect(iconBot()).toBe("sage");
+  expect(sets()).toEqual([{ machineId: "devbox", projectId: "p1", avatarColor: "green" }]);
+  await next(snapshot("green", 2));
+  expect(checked()).toEqual(["Green"]);
+  expect(iconBot()).toBe("green");
   // The one picked again sends nothing.
   await act(async () => {
-    swatch("Sage").click();
+    swatch("Green").click();
     await Promise.resolve();
   });
   expect(sets()).toHaveLength(1);
 });
 
 it("moves the pick with the arrow keys, round the ends", async () => {
-  await render("teal");
+  await render("grey");
   await act(async () => {
-    swatch("Teal").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    swatch("Grey").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     await Promise.resolve();
   });
   await settle();
-  expect(sets().at(-1)).toEqual({ machineId: "devbox", projectId: "p1", avatarColor: "slate" });
-  expect(document.activeElement?.getAttribute("aria-label")).toBe("Slate");
+  expect(sets().at(-1)).toEqual({ machineId: "devbox", projectId: "p1", avatarColor: "mono" });
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Mono");
 });
 
 it("says why when the hub refuses, and shows the saved color again", async () => {
   refuse = true;
   await render("blue");
   await act(async () => {
-    swatch("Coral").click();
+    swatch("Red").click();
     await Promise.resolve();
   });
   await settle();
