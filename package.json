@@ -54,6 +54,7 @@
     "./box/setup_words": "./fleetd/src/node/worktree/setup_words.ts",
     "./box/file_rules": "./fleetd/src/node/sessions/file_rules.ts",
     "./box/chat_file": "./fleetd/src/node/actions/chat_file.ts",
+    "./browser/agent_browser": "./fleetd/src/node/browser/agent_browser_plugin.ts",
     "./browser/agent_browser_policy": "./fleetd/src/node/browser/agent_browser_policy.ts",
     "./browser/box_chrome": "./fleetd/src/node/place/box_chrome.ts",
     "./browser/broker": "./fleetd/src/node/browser/broker.ts",

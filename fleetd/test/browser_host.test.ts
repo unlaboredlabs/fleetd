@@ -16,6 +16,7 @@ import { seal } from "../src/node/browser/credentials.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import type { Scrub } from "../src/node/mask.ts";
 import { boxChrome, reattachChrome, type ScreenBox, timing } from "../src/node/place/box_chrome.ts";
+import { pluginFiles } from "../src/node/browser/agent_browser_plugin.ts";
 import { chrome as realChrome } from "./browser_rig.ts";
 
 const THREAD = "t-cloud";
@@ -33,6 +34,7 @@ async function standInChrome() {
   let nextSession = 1;
   const seen: { conn: number; id: number; method: string }[] = [];
   const unread: string[] = [];
+  const typed: string[] = [];
   let conns = 0;
   let buffered = Buffer.alloc(0);
   const server: Server = createServer((socket) => {
@@ -45,7 +47,7 @@ async function standInChrome() {
       for (let at = buffered.indexOf(0); at >= 0; at = buffered.indexOf(0)) {
         const text = buffered.subarray(0, at).toString();
         buffered = buffered.subarray(at + 1);
-        let m: { id: number; method: string; sessionId?: string };
+        let m: { id: number; method: string; sessionId?: string; params?: { text?: string } };
         try {
           m = JSON.parse(text) as typeof m;
         } catch {
@@ -53,8 +55,21 @@ async function standInChrome() {
           continue;
         }
         seen.push({ conn, id: m.id, method: m.method });
+        if (m.method === "Input.insertText") typed.push(String(m.params?.text));
+        const page = "https://shop.test/login";
+        // A login page with one text field, `#pw`, for a secure input to type into.
+        const field: Record<string, unknown> = {
+          "Target.getTargetInfo": { targetInfo: { targetId: "P1", type: "page", url: page } },
+          "Page.getFrameTree": { frameTree: { frame: { id: "F1", url: page } } },
+          "Page.createIsolatedWorld": { executionContextId: 3 },
+          "Runtime.evaluate": { result: { type: "object", objectId: "O1" } },
+          "Runtime.callFunctionOn": { result: { type: "object", value: { field: true, url: page } } },
+          "DOM.describeNode": { node: { backendNodeId: 42 } },
+        };
         const result =
-          m.method === "Target.getTargets"
+          m.method in field
+            ? field[m.method]
+            : m.method === "Target.getTargets"
             ? { targetInfos: [{ targetId: "P1", type: "page", url: "https://shop.test/login" }] }
             : m.method === "Target.attachToTarget"
               ? { sessionId: `S${nextSession++}` }
@@ -77,6 +92,8 @@ async function standInChrome() {
     port,
     seen,
     unread,
+    /** What the broker typed into the page (Input.insertText). */
+    typed,
     connections: () => conns,
     /** The connection drops, as when the box's link redials or the instance driving it goes. */
     drop: () => current?.destroy(),
@@ -130,14 +147,20 @@ function memoryStore() {
 const KEY = "5e".repeat(32);
 
 /** A broker as a service with no node runs one: every session's Chrome in its box, everything else given. */
-function cloudBroker(box: ScreenBox | undefined, chromePort: number, store: RecordingStore, proxyKey: string | undefined = KEY) {
+function cloudBroker(
+  box: ScreenBox | undefined,
+  chromePort: number,
+  store: RecordingStore,
+  proxyKey: string | undefined = KEY,
+  answers: Record<string, Record<string, unknown>> = {},
+) {
   const calls: { op: string; args: Record<string, unknown> }[] = [];
   const policies: [string, string][] = [];
   const changed: string[] = [];
   const host: BrokerHost = {
     call: async (op, args) => {
       calls.push({ op, args });
-      return {};
+      return answers[op] ?? {};
     },
     send: () => {},
     secrets: () => [],
@@ -381,4 +404,59 @@ test("a connection that dropped mid-frame doesn't swallow the next one's first c
   cleanups.push(() => again.cdp.shut());
   expect(chrome.unread).toEqual(['{"id":7,"method":"Input.dispatchMou']);
   expect(chrome.seen.map((s) => s.method)).toEqual(["Browser.getVersion"]);
+});
+
+test("a secure input a person was asked for survives a takeover: the new holder types it in once, and nobody sees it", async () => {
+  const chrome = await standInChrome();
+  const box = standInBox();
+  const asked = { secure_input_open: { requestId: "R1", state: "open" } };
+  const a = memoryStore();
+  const first = cloudBroker(box, chrome.port, a.store, KEY, asked);
+  // A bot's lead asks for a secure input (only a lead may).
+  first.broker.lead(THREAD, "assistant", "bot-1");
+  const started = (await first.broker.call(THREAD, { id: "1", cwd: "/", call: { op: "session_start" } as never })) as unknown as { sessionId: string };
+  await first.broker.call(THREAD, { id: "2", cwd: "/", call: { op: "request_secure_input", site: { domain: "shop.test" }, target: "#pw", label: "the password" } as never });
+  const waiting = JSON.parse(JSON.stringify(first.broker.snapshot(THREAD))) as BrowserSnapshot;
+  // The request alone, where it types: no value is in a snapshot taken while it waits.
+  expect(waiting.waiting).toEqual([{ requestId: "R1", domain: "shop.test", target: "#pw", label: "the password" }]);
+  first.broker.letGo();
+
+  const b = memoryStore();
+  const second = cloudBroker(box, chrome.port, b.store, KEY, asked);
+  second.broker.lead(THREAD, "assistant", "bot-1");
+  expect(await second.broker.adopt(THREAD, waiting)).toMatchObject({ adopted: true });
+  const frame = { id: "d1", sink: `fill:devbox:${started.sessionId}`, sealed: Buffer.from("sealed").toString("base64"), requestId: "R1" } as never;
+  const key = { open: () => new TextEncoder().encode(SECRET) };
+  expect(await second.broker.deliver(frame, key, "devbox")).toMatchObject({ id: "d1", fingerprint: expect.stringMatching(/^[0-9a-f]{8}$/) });
+  expect(chrome.typed).toEqual([SECRET]);
+  // Once: a second delivery finds nothing waiting.
+  expect((await second.broker.deliver(frame, key, "devbox")).error).toContain("nothing waits for R1");
+  expect(chrome.typed).toEqual([SECRET]);
+  // The session is sealed now, and the value is kept only to scrub it with.
+  const session = second.broker.live(THREAD)!;
+  expect(session.sealed()).toBe(true);
+  const after = second.broker.snapshot(THREAD)!;
+  expect(after.waiting).toEqual([]);
+  const where = (o: unknown, path: string[] = []): string[] =>
+    typeof o === "string"
+      ? o.includes(SECRET)
+        ? [path.join(".")]
+        : []
+      : o && typeof o === "object"
+        ? Object.entries(o).flatMap(([k, v]) => where(v, [...path, k]))
+        : [];
+  expect(where(after).map((p) => p.replace(/\.\d+(\.\d+)?$/, ""))).toEqual(["session.secrets", "filled"]);
+  // The agent never hears it, and the recording keeps none of it.
+  const agent = await driver(second.broker.proxy.url(THREAD));
+  expect(errorOf(await agent.send("Page.printToPDF"))).toContain("is off in this browser session");
+  await second.broker.call(THREAD, { id: "3", cwd: "/", call: { op: "session_end" } as never });
+  expect(b.recordings[0]!.ended!.scrubbed.join("\n")).not.toContain(SECRET);
+  expect(JSON.stringify(b.recordings[0]!.lines)).not.toContain(SECRET);
+});
+
+test("agent-browser's skill as a plugin's files, for a box's claude", () => {
+  expect(pluginFiles("# agent-browser\n")).toEqual([
+    { path: ".claude-plugin/plugin.json", text: `${JSON.stringify({ name: "agent-browser", description: "agent-browser's skill, for the browser session fleetd opens with session_start." })}\n` },
+    { path: "skills/agent-browser/SKILL.md", text: "# agent-browser\n" },
+  ]);
 });
