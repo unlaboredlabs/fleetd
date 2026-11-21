@@ -13,21 +13,25 @@
 // node runs in rather than a display of its own, shared by several sessions at once: one claim per app for
 // agent-desktop's headless commands, and a lease, one holder at a time, for real pointer and key input.
 //
-// Each session is recorded as a browser session is (session.ts, node/browser/record.ts): its video, where an ffmpeg
+// A hosted agent's desktop runs in its own box; what drives, records and watches it is the node-free core this class
+// extends (desktops.ts), which a service with no node runs as well. This class gives it the node's host (the link,
+// the sessions' secrets, the hosted boxes, recordings on this disk) and adds this machine's displays and the Mac.
+//
+// Each session is recorded as a browser session is (session.ts, disk_recordings.ts): its video, where an ffmpeg
 // is installed, and its action log, scrubbed of its agent session's secrets (for a session hosted here for an agent
 // elsewhere, the ones its node sealed to this one). Once it ends the recording goes to the hub, tried again each
 // minute until it does, with any a Rust node left here, iOS screens' included.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BrowserControlTo, BrowserSessionState, HostCheck } from "../../shared/contracts.ts";
+import type { HostCheck } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import type { SessionsArea } from "../api.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
-import { findFfmpeg, report, Steps, Uploads } from "../browser/record.ts";
+import { findFfmpeg, Steps } from "../browser/record.ts";
 import { installDir as browserInstallDir } from "../browser/chrome.ts";
 import { deviceDir, sdkAt } from "../device/sdk.ts";
-import { type Answer, router, type Screens, type SessionKind } from "../device/router.ts";
+import { router, type Screens } from "../device/router.ts";
 import { router as sessionRoute } from "../session_route/index.ts";
 import { homeDir } from "../util.ts";
 import { image as pinnedImage, Runtime } from "./container.ts";
@@ -38,8 +42,10 @@ import { type App, type Blocked, blocked as macBlocked, IDLE_MINUTES as MAC_IDLE
 import { MacScreen } from "./mac/screen.ts";
 import type { Screen } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
-import { BoxDisplay, type ScreenBox } from "../place/box_screens.ts";
+import { DesktopSessions, IDLE_MINUTES } from "./desktops.ts";
+import { DiskDesktopRecordings } from "./disk_recordings.ts";
 import { hasBox, hostedBox } from "../place/hosted.ts";
+import { BOX_NO_DESKTOP_LAUNCH, inBox as agentInBox } from "../place/index.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
 export const CAP_SESSION_DESKTOP = "session_linux_desktop";
@@ -176,9 +182,6 @@ export async function capabilities(node: Node): Promise<string[]> {
   return h?.state === "ready" ? [CAP_SESSION_DESKTOP] : [];
 }
 
-/** A screen's idle timeout where node.json sets none. */
-const IDLE_MINUTES = 30;
-
 /** The desktop's line in the heartbeat's `load.hosts` (hosts.rs `desktop`). */
 export async function hostCheck(home: string, config: DesktopConfig): Promise<HostCheck> {
   const check = (off: string | undefined, detail: string, fix?: string): HostCheck => ({
@@ -224,13 +227,10 @@ const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) 
  * and their worktrees. The node core sets these from its session service; the defaults know no session. */
 export type Hooks = { secretsFor: (thread: string) => [string, string][]; worktreeFor: WorktreeFor };
 
-/** The node's Linux desktop sessions. */
-export class Desktops implements Screens {
+/** The node's desktop sessions: its agents' in their boxes (./desktops.ts), and those on this machine's own displays
+ * and on the agents' Mac's screen. */
+export class Desktops extends DesktopSessions implements Screens {
   private prep: Prep = { kind: "wanted" };
-  /** Live sessions by the agent session they belong to: one each. */
-  private readonly sessions = new Map<string, Session>();
-  /** Agent sessions whose `session_start` is under way. */
-  private readonly starting = new Set<string>();
   private housekeeping: Timer | undefined;
   /** Read of the node's own sessions (node-core's `sessions` area) where it has one; a test's own otherwise. */
   hooks: Hooks = {
@@ -238,9 +238,6 @@ export class Desktops implements Screens {
     secretsFor: (thread) => sessionRoute(this.node).secretsOf(thread),
     worktreeFor: (thread) => this.sessionsArea()?.sessionCwd(thread),
   };
-  /** Each session's latest step, for the heartbeat. */
-  private readonly latest = new Steps();
-  private readonly uploads = new Uploads((thread, cwd, op, args) => hubCall(this.node, op, args, { threadId: thread, cwd }), "desktop");
   /** What the hello lists for desktop sessions now (`capabilities`), kept for the `caps` seam, which reads it at once. */
   capsNow: string[] = [];
   /** node.json's `mac`: the agents' Mac's screen, where this node lends it. */
@@ -259,16 +256,28 @@ export class Desktops implements Screens {
   macGate: () => Blocked | undefined = macBlocked;
   /** The Mac's own screen, for a session to read and drive (a test's own). */
   openMacScreen: (scratch: string) => Screen = () => MacScreen.open();
-  /** The hosted box an agent session runs in, where its desktop runs (`starting` while it is made); a test's own. */
-  inBox: (thread: string) => ScreenBox | "starting" | undefined = (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined);
-  /** How a display starts in a box: Xvfb there, or a test's. */
-  boxDisplay: (box: ScreenBox) => Promise<BoxDisplay> = (box) => BoxDisplay.start(box);
 
   constructor(
     private readonly node: Node,
     readonly config: DesktopConfig = desktopConfig(node),
     mac?: MacConfig,
   ) {
+    // What the host reads of this object (its hooks, its ffmpeg) it reads once the object is made.
+    const late: { d?: Desktops } = {};
+    super({
+      call: (op, args, opts) => hubCall(node, op, args, opts),
+      send: (frame) => void toHub(node, frame),
+      secrets: (thread) => late.d!.hooks.secretsFor(thread),
+      inBox: (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined),
+      recordings: new DiskDesktopRecordings(
+        recordingsDir(node.home),
+        (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }),
+        () => late.d!.ffmpeg(),
+        [iosRecordingsDir(node.home)],
+      ),
+    });
+    late.d = this;
+    this.latest = new Steps();
     // The agents' Mac lends its screen, whatever an older node.json's `mac.enabled` says; no other machine does.
     this.mac = mac ?? { ...((node.config.mac ?? {}) as MacConfig), enabled: node.config.agentsMac === true };
   }
@@ -379,55 +388,15 @@ export class Desktops implements Screens {
     return this.prep.kind === "ready" ? this.prep.pool.warm() : 0;
   }
 
-  count(): number {
-    return this.sessions.size;
+  /** `session_start` kind mac lends the Mac's screen; the rest go to the core. */
+  protected override startKind(thread: string, cwd: string, call: BrowserCallFrame["call"]): Promise<Record<string, unknown>> {
+    if (call.kind === "mac") return this.macStart(thread, cwd, String(call.purpose ?? "a Mac screen session"));
+    return super.startKind(thread, cwd, call);
   }
 
-  session(thread: string): Session | undefined {
-    return this.sessions.get(thread);
-  }
-
-  live(thread: string): { id: string; kind: SessionKind } | undefined {
-    const s = this.sessions.get(thread);
-    return s ? { id: s.id, kind: s.kind } : undefined;
-  }
-
-  /** Each session's latest step, for the heartbeat: the live ones', and those whose recording is still here. */
-  steps(): { sessionId: string; step: unknown }[] {
-    const listed = this.latest.list();
-    const live = [...this.sessions.values()].flatMap((s) => (s.step && !listed.some((l) => l.sessionId === s.id) ? [{ sessionId: s.id, step: s.step }] : []));
-    return [...listed, ...live];
-  }
-
-  byId(id: string): Session | undefined {
-    for (const s of this.sessions.values()) if (s.id === id) return s;
-    return undefined;
-  }
-
-  /** A session call for `thread`'s desktop (node/device's router sends it here). */
-  async handle(thread: string, frame: BrowserCallFrame): Promise<Answer> {
-    const call = frame.call;
-    switch (call.op) {
-      case "session_start":
-        if (call.kind === "mac") {
-          return { op: "session_start", ...(await this.macStart(thread, frame.cwd, String(call.purpose ?? "a Mac screen session"))) };
-        }
-        return { op: "session_start", ...(await this.sessionStart(thread, frame.cwd, String(call.purpose ?? "a desktop session"))) };
-      case "session_end":
-        return { op: "session_end", ...(await this.sessionEnd(thread)) };
-      case "desktop":
-        return { op: "desktop", ...(await this.act(thread, call as unknown as DesktopCall)) };
-      case "request_takeover":
-        return { op: "request_takeover", ...(await this.requestTakeover(thread, String(call.reason ?? ""))) };
-      default:
-        throw new ToolError("invalid", `${call.op} is for browser sessions.`, "do without it and say so in your result");
-    }
-  }
-
-  async sessionStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
-    // A hosted agent's desktop runs in its own box, whatever this machine lends (../place/box_screens.ts).
-    const own = this.inBox(thread);
-    if (own) return this.boxStart(thread, cwd, purpose, own);
+  /** `session_start` of an agent in no box (a hosted agent's desktop runs in its own box, whatever this machine
+   * lends: ./desktops.ts): a display of this machine's pool. */
+  protected override async machineStart(thread: string, cwd: string, purpose: string): Promise<Record<string, unknown>> {
     if (!enabled(this.config)) {
       throw new ToolError(
         "failed",
@@ -436,9 +405,7 @@ export class Desktops implements Screens {
       );
     }
     const started = performance.now();
-    if (this.starting.has(thread)) throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
-    const open = this.sessions.get(thread);
-    if (open) throw new ToolError("invalid", `Desktop session ${open.id} is open.`, "use it, or end it with session_end before starting another");
+    this.notTwice(thread);
     this.starting.add(thread);
     try {
       const pool = await this.pool();
@@ -460,7 +427,15 @@ export class Desktops implements Screens {
         throw didntStart((e as Error).message);
       }
       const id = newId();
-      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", ...this.recording(id) });
+      let recording;
+      try {
+        recording = await this.record(this.metaOf(id, thread, cwd, purpose, new Date().toISOString(), "linux_desktop"));
+      } catch (e) {
+        x.close();
+        await display.drop();
+        throw e;
+      }
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, launchRefusal: this.launchRefusal(thread) });
       this.sessions.set(thread, session);
       session.open();
       session.logStep("session_start", { purpose, kind: "linux_desktop", backend: display.backend, worktree: mount ?? null }, true);
@@ -476,147 +451,32 @@ export class Desktops implements Screens {
     }
   }
 
-  /** `session_start` of an agent in a hosted box: a display of its own in that box, recorded and watched from here as
-   * one of this machine's is. */
-  private async boxStart(thread: string, cwd: string, purpose: string, own: ScreenBox | "starting"): Promise<Record<string, unknown>> {
-    if (own === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
-    const started = performance.now();
-    if (this.starting.has(thread)) throw new ToolError("invalid", "Another session_start of yours is under way.", "wait for its answer and use that session");
-    const open = this.sessions.get(thread);
-    if (open) throw new ToolError("invalid", `Desktop session ${open.id} is open.`, "use it, or end it with session_end before starting another");
-    this.starting.add(thread);
-    try {
-      const secrets = this.secrets(thread);
-      let display: BoxDisplay;
-      let x;
-      try {
-        display = await this.boxDisplay(own);
-      } catch (e) {
-        throw new ToolError("failed", `The desktop did not start: ${(e as Error).message}.`, "try session_start again");
-      }
-      try {
-        x = await display.connect();
-      } catch (e) {
-        await display.drop();
-        throw new ToolError("failed", `The desktop did not start: ${(e as Error).message}.`, "try session_start again");
-      }
-      const id = newId();
-      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", ...this.recording(id) });
-      this.sessions.set(thread, session);
-      session.open();
-      session.logStep("session_start", { purpose, kind: "linux_desktop", backend: display.backend, worktree: cwd }, true);
-      await this.report(session, "live");
-      // Its apps run in the box, in the agent's own files.
-      return { sessionId: session.id, desktop: display.backend, worktree: cwd, startMs: Math.round(performance.now() - started) };
-    } finally {
-      this.starting.delete(thread);
-    }
-  }
-
-  async sessionEnd(thread: string): Promise<Record<string, unknown>> {
-    const session = this.sessions.get(thread);
-    if (!session) throw new ToolError("not_found", "No desktop session is open.", "nothing to end");
-    this.sessions.delete(thread);
-    return this.close(session);
-  }
-
-  /** The session's secrets for its recording; refused when they can't be read, so nothing is recorded unscrubbed. */
-  private secrets(thread: string): [string, string][] {
-    try {
-      return this.hooks.secretsFor(thread);
-    } catch (e) {
-      throw new ToolError(
-        "failed",
-        `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
-        "try again; if it keeps failing, check the node's log",
-      );
-    }
-  }
-
-  /** Where session `id` is recorded, and the ffmpeg that encodes its video. */
-  private recording(id: string): { dir: string; ffmpeg?: string; steps: Steps } {
-    const ffmpeg = this.ffmpeg();
-    return { dir: join(recordingsDir(this.node.home), id), ...(ffmpeg ? { ffmpeg } : {}), steps: this.latest };
+  /** A hosted agent on this machine's display: what it launches would run outside its box. */
+  private launchRefusal(thread: string): () => string | undefined {
+    return () => (agentInBox(thread) ? BOX_NO_DESKTOP_LAUNCH : undefined);
   }
 
   /** `FLEETD_FFMPEG` (node.json `desktop.ffmpeg`), else one the Android or browser sessions installed. */
-  private ffmpeg(): string | undefined {
+  ffmpeg(): string | undefined {
     if (this.config.ffmpeg) return this.config.ffmpeg;
     const android = sdkAt(this.node.home).ffmpeg;
     if (existsSync(android) && statSync(android).isFile()) return android;
     return findFfmpeg(browserInstallDir(this.node.home));
   }
 
-  /** Ends a session already out of the map, and starts its upload. */
-  private async close(session: Session): Promise<Record<string, unknown>> {
-    // Out of the map but not yet ended: the sweep leaves its recording alone until its upload has started.
-    this.ending.add(session.id);
-    try {
-      session.logStep("session_end", {}, true);
-      const files = await session.close();
-      const note = session.note();
-      // The end reaches the hub now, not only with the upload, which a missing or unreadable recording stops.
-      await this.report(session, "uploading", new Date().toISOString());
-      if (session.dir) void this.uploads.send(session.dir);
-      return { sessionId: session.id, kind: session.kind, files: files.map(([file, bytes]) => ({ file, bytes })), ...(note ? { note } : {}) };
-    } finally {
-      // Only now, its screen closed and its last agent-desktop command stopped: the lease and its claims go back.
-      this.release(session);
-      this.ending.delete(session.id);
-    }
+  /** A session ended: the Mac's lease and its claims go back, its last agent-desktop command stopped. */
+  protected override closed(session: Session): void {
+    this.release(session);
   }
 
-  /** Sessions out of the map whose end is still under way (their video): not yet a recording to send, nor one a
-   * stopped node left. */
-  private readonly ending = new Set<string>();
-
-  /** Tells the hub where a session is now, in its agent's name. */
-  async report(session: Session, state: BrowserSessionState, endedAt?: string): Promise<void> {
-    try {
-      await hubCall(this.node, "browser_session", report(session.meta(endedAt), state, session.control(), []), {
-        threadId: session.thread,
-        cwd: session.cwd,
-      });
-    } catch (e) {
-      console.warn(`desktop session ${session.id} not reported to the hub: ${(e as Error).message}`);
-    }
-  }
-
-  /** The agent's `desktop` action, on its live session. Refused while a person has control; the first after a handback
-   * gives the desktop back to the agent. */
-  async act(thread: string, call: DesktopCall): Promise<Record<string, unknown>> {
-    const session = this.sessions.get(thread);
-    if (!session) throw new ToolError("not_found", "No desktop session is open.", "start one with session_start kind linux_desktop");
-    switch (session.control()) {
-      case "human":
-        throw new ToolError(
-          "invalid",
-          "A person has control of this desktop.",
-          "carry on with what you can without it; once they hand it back, take a screenshot first: they may have changed things",
-        );
-      case "handing_back":
-        session.setControl("agent", "agent");
-        session.logStep("agent_resumed", {}, true);
-        void this.report(session, "live");
-    }
+  /** Before a Mac screen session's action: its lease or a claim. */
+  protected override async beforeAct(session: Session, call: DesktopCall): Promise<void> {
     if (session.kind === "mac") await this.macAccess(session, call);
-    try {
-      return await session.act(call);
-    } catch (e) {
-      throw new ToolError("failed", (e as Error).message, "check the action's arguments, take a screenshot, and try again");
-    }
   }
 
-  /** An agent's `request_takeover`: the hub lists it under "waiting on you". */
-  async requestTakeover(thread: string, reason: string): Promise<Record<string, unknown>> {
-    const session = this.sessions.get(thread);
-    if (!session) throw new ToolError("not_found", "No desktop session is open.", "start one with session_start");
-    await hubCall(this.node, "browser_takeover", { sessionId: session.id, reason }, { threadId: thread, cwd: session.cwd });
-    session.logStep("request_takeover", { reason }, true);
-    return {
-      message:
-        "Asked: it shows under waiting on you. Carry on with what you can, or end your turn: you are told the moment they hand it back; then take a screenshot first.",
-    };
+  /** A person takes a Mac screen session over: the lease is theirs. */
+  protected override takingOver(session: Session): void {
+    if (session.kind === "mac") this.personTakesLease(session);
   }
 
   /** Who holds the Mac's lease, in a line for the others; undefined while nobody does. */
@@ -681,9 +541,31 @@ export class Desktops implements Screens {
       await lent.drop();
       throw e;
     }
+    // Held while its recording opens: the only way in.
+    this.starting.add(thread);
+    let recording;
+    try {
+      recording = await this.record(this.metaOf(id, thread, cwd, purpose, new Date().toISOString(), "mac"));
+    } catch (e) {
+      await lent.drop();
+      throw e;
+    } finally {
+      this.starting.delete(thread);
+    }
     const heldBy = this.heldBy();
     const claimed = this.claimed().map((c) => c.app);
-    const session = new Session(lent, screen, { id, thread, cwd, purpose, secrets, kind: "mac", observing: true, ...this.recording(id) });
+    const session = new Session(lent, screen, {
+      id,
+      thread,
+      cwd,
+      purpose,
+      secrets,
+      kind: "mac",
+      observing: true,
+      recording,
+      steps: this.latest,
+      launchRefusal: this.launchRefusal(thread),
+    });
     this.sessions.set(thread, session);
     session.open();
     session.logStep("session_start", { purpose, kind: "mac" }, true, heldBy);
@@ -798,87 +680,27 @@ export class Desktops implements Screens {
     this.claims = this.claims.filter((c) => c.session !== session);
   }
 
-  /** The hub's live view for one of these sessions: false when the id isn't one of these. */
-  watch(frame: BrowserWatchFrame): boolean {
-    const session = this.byId(frame.sessionId);
-    if (!session) return false;
-    if (!frame.on) session.setWatcher(undefined);
-    else if (session.watched()) session.setBudget(frame.kbps);
-    else session.setWatcher({ kbps: frame.kbps, send: (f) => void toHub(this.node, { t: "browser_frame", ...f }) });
-    return true;
+  /** A Mac screen session's idle limit is the Mac's; a Linux desktop's the core's. */
+  protected override idleLimit(session: Session): number {
+    return session.kind === "mac" ? 60_000 * MAC_IDLE_MINUTES : super.idleLimit(session);
   }
 
-  input(frame: BrowserInputFrame): boolean {
-    const session = this.byId(frame.sessionId);
-    if (!session) return false;
-    session.queueInput(frame.input);
-    return true;
-  }
-
-  /** A person takes a session over, or hands it back; the hub hears who drives, changed or not. */
-  control(frame: BrowserControlFrame): boolean {
-    const session = this.byId(frame.sessionId);
-    if (!session) return false;
-    const to: BrowserControlTo = frame.control;
-    const now = session.control();
-    if (to === "human" && now !== "human") {
-      if (session.kind === "mac") this.personTakesLease(session);
-      session.setControl("human", frame.by);
-    }
-    else if (to === "agent" && now === "human") session.setControl("handing_back", frame.by);
-    void this.report(session, "live");
-    return true;
-  }
-
-  endScreen(thread: string, id: string): boolean {
-    if (this.sessions.get(thread)?.id !== id) return false;
-    this.ended(thread);
-    return true;
-  }
-
-  /** The agent session ended: its desktop session ends too. */
-  ended(thread: string): void {
-    const session = this.sessions.get(thread);
-    if (!session) return;
-    this.sessions.delete(thread);
-    session.logStep("agent_session_ended", {}, true);
-    void this.close(session);
-  }
-
-  /** Ends sessions idle past the limit, and gives back a lease unused that long. */
-  async housekeep(): Promise<void> {
-    const linux = 60_000 * IDLE_MINUTES;
-    const mac = 60_000 * MAC_IDLE_MINUTES;
+  /** Ends sessions idle past the limit, and gives back a lease unused that long; then sends the recordings still
+   * waiting for the hub: this kind's, and what a Rust node's iOS screens left. */
+  override async housekeep(now = Date.now()): Promise<void> {
     const holder = this.lease;
-    if (holder && holder.control() === "agent" && this.clock() - this.leaseUsed >= mac) {
+    if (holder && holder.control() === "agent" && this.clock() - this.leaseUsed >= 60_000 * MAC_IDLE_MINUTES) {
       this.lease = undefined;
       // Not a step: one would count as the session's action and keep it from ending idle.
       this.lostLease(holder, "unused", false);
     }
-    for (const [thread, session] of [...this.sessions]) {
-      if (session.idleFor() >= (session.kind === "mac" ? mac : linux) && session.control() === "agent") {
-        console.info(`desktop session ${session.id} idle; ending it`);
-        this.sessions.delete(thread);
-        await this.close(session);
-      }
-    }
-    await this.sweep();
-  }
-
-  /** Sends the recordings still waiting for the hub: this kind's, and what a Rust node's iOS screens left. */
-  async sweep(now = Date.now()): Promise<void> {
-    const live = [...this.sessions.values()].map((s) => s.id).concat([...this.ending]);
-    await this.uploads.sweep(recordingsDir(this.node.home), live, now);
-    await this.uploads.sweep(iosRecordingsDir(this.node.home), [], now);
+    await super.housekeep(now);
   }
 
   /** Ends every live session and every warm display (the node stops); their recordings go at the node's next start. */
-  async shutdown(): Promise<void> {
+  override async shutdown(): Promise<void> {
     clearInterval(this.housekeeping);
-    for (const [thread, session] of [...this.sessions]) {
-      this.sessions.delete(thread);
-      await this.close(session);
-    }
+    await super.shutdown();
     if (this.prep.kind === "ready") for (const d of this.prep.pool.drain()) await d.drop();
   }
 }

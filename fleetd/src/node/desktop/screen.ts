@@ -4,8 +4,15 @@
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
-import type { Target } from "./mac/agent_desktop.ts";
-import type { App } from "./mac/index.ts";
+
+/** The screen every session gets, in pixels. */
+export const SIZE: [number, number] = [1280, 800];
+
+/** What an agent-desktop command names: an app, or a snapshot's refs (mac/agent_desktop.ts). */
+export type Target = { app?: string; snapshot?: string };
+
+/** An app on the Mac's screen: every name it goes by, and the one it was asked for (mac/index.ts). */
+export type App = { keys: string[]; name: string };
 
 /** One read of the screen: its pixels as the screen gives them, at its size then. */
 export type Raw = { data: Uint8Array; width: number; height: number };

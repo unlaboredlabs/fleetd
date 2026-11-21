@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Target } from "../screen.ts";
 
 /** The agent-desktop release the node installs. */
 export const VERSION = "1.1.0";
@@ -165,7 +166,7 @@ export type Needs = "read" | "app" | "lease";
 
 /** The app a command names: by name or bundle id (`--app`, or its first word), or by a ref's snapshot (`@s8f3k2p9:e12`
  * is snapshot `s8f3k2p9`'s), which the session saw read one app. */
-export type Target = { app?: string; snapshot?: string };
+export type { Target } from "../screen.ts";
 
 /** One command, checked before it runs: its arguments, whether it only observes, whether it launches with `--cdp`
  * (the node closes that app when the session ends), what it needs, and the app it names. */
