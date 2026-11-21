@@ -3,7 +3,7 @@
 // said in words). Messages from one side in a burst group, tight; a time line goes between
 // bursts; and the desktop's turn line shows while the lead works. Pure, so it is unit-tested.
 import { agentName, type Tag } from "./chatTags";
-import { workedFor, type ChatItem } from "./desktop";
+import { emptyChat, holds, openWindow, pageWindow, windowJoins, workedFor, type Chat, type ChatHistoryOutput, type ChatItem, type ChatMessage, type ChatWindow, type HubError } from "./desktop";
 import { isBlockFence, parseMarkdown, previewText, UNSHOWN } from "./markdown";
 
 export type Bubble =
@@ -473,3 +473,88 @@ export const holdFrom = (away: boolean, tall: boolean, streamAt: number | undefi
 /** The lead's messages that came in after `seq` (the button down's count), or none without one. */
 export const arrivedSince = (items: readonly ChatItem[], seq: number | null): number =>
   seq === null ? 0 : items.filter((i) => i.author !== "human" && i.kind === "message" && (i.message?.seq ?? 0) > seq).length;
+
+// A chat opened at a message far back (a search hit, a pin), as Telegram opens one: the hub's page around it
+// (chat_history `around`), not every page down to it, in the desktop's window (desktop.ts openWindow, pageWindow,
+// windowJoins, joinWindow). The chat keeps its newest messages and live ones as always; the thread shows the window
+// while it is open, pages it older and newer from its ends, and once it reaches the chat's oldest held message (or the
+// newest end) it joins the chat and goes, so one thread scrolls on down to the newest. The phone keeps it with what the
+// desktop's has no room for: the message asked for before its page comes, and why a page didn't.
+
+export interface FarWindow {
+  /** The message it was opened at. */
+  readonly at: string;
+  /** The desktop's window, once the page around the message has come; undefined while it's on its way, or failed. */
+  readonly window: ChatWindow | undefined;
+  /** Why a page didn't come, and at which end: the first (`around`), or one older or newer. */
+  readonly error?: { readonly end: "around" | "older" | "newer"; readonly error: HubError } | undefined;
+}
+
+/** A window asked for at `at`, before its page comes: nothing shown yet. */
+export const openingFar = (at: string): FarWindow => ({ at, window: undefined });
+
+/** Whether its first page is still on its way. */
+export const farOpening = (f: FarWindow): boolean => f.window === undefined && f.error === undefined;
+
+/** A page folded in: the one around its message, or one older or newer. */
+export const farPage = (f: FarWindow, page: ChatHistoryOutput, end: "around" | "older" | "newer"): FarWindow => ({
+  at: f.at,
+  window: end === "around" || f.window === undefined ? openWindow(f.at, page) : pageWindow(f.window, page, end === "older"),
+});
+
+/** A page asked for at one end. */
+export const farLoading = (f: FarWindow, end: "older" | "newer"): FarWindow =>
+  f.window === undefined ? f : { at: f.at, window: { ...f.window, ...(end === "older" ? { loadingOlder: true } : { loadingNewer: true }) } };
+
+/** A page that didn't come: said where it would be; the window's messages stay. */
+export const farFailed = (f: FarWindow, end: "around" | "older" | "newer", error: HubError): FarWindow => ({
+  at: f.at,
+  window: f.window === undefined ? undefined : { ...f.window, loadingOlder: false, loadingNewer: false },
+  error: { end, error },
+});
+
+/** Where the next page goes from: the seq before the oldest (`before`) or after the newest (`after`); one at a time. */
+export const farPageFrom = (f: FarWindow, end: "older" | "newer"): number | undefined => {
+  const w = f.window;
+  if (w === undefined || w.loadingOlder || w.loadingNewer || (end === "older" ? !w.hasOlder : !w.hasNewer)) return undefined;
+  return end === "older" ? w.messages[0]?.seq : w.messages.at(-1)?.seq;
+};
+
+/** Whether the window has met the chat's own loaded messages, and joins them (desktop.ts windowJoins). */
+export const farJoins = (f: FarWindow, chat: Chat): boolean => f.window !== undefined && f.window.messages.length > 0 && chat.loaded && windowJoins(f.window, chat);
+
+/**
+ * A live message that is also in the window (an edit, a retag, a stream's end): the window's copy follows, so the
+ * thread shows it as it is now.
+ */
+export const followLive = (f: FarWindow, message: ChatMessage): FarWindow => {
+  const w = f.window;
+  const at = w?.messages.findIndex((m) => m.messageId === message.messageId) ?? -1;
+  if (w === undefined || at < 0) return f;
+  return { ...f, window: { ...w, messages: w.messages.map((m, i) => (i === at ? message : m)) } };
+};
+
+/** The window the thread draws: one with messages in it. One still reading its first page, or whose page failed, isn't. */
+export const shownWindow = (f: FarWindow | undefined): ChatWindow | undefined => (f?.window !== undefined && f.window.messages.length > 0 ? f.window : undefined);
+
+/** The window as a chat the thread draws (desktop.ts chatItems): its messages alone, nothing streaming or on its way. */
+export const windowChat = (w: ChatWindow): Chat => ({ ...emptyChat, messages: w.messages, hasOlder: w.hasOlder, loadingOlder: w.loadingOlder, loaded: true });
+
+/**
+ * What a landing or a jump does with a message, as the thread shows it (`shown`): lands on it; closes the window, when
+ * the chat's own messages hold it; reads the page around it; waits for that page; or, the page come or failed without
+ * it, says it didn't open.
+ */
+export const farStep = (chat: Chat, f: FarWindow | undefined, messageId: string, shown: boolean): "land" | "close" | "open" | "wait" | "failed" => {
+  if (shown) return "land";
+  if (holds(chat, messageId)) return f === undefined ? "land" : "close";
+  if (f?.at !== messageId) return "open";
+  if (farOpening(f)) return "wait";
+  return "failed";
+};
+
+/** Why a message far back didn't open, as its alert says. */
+export const farFailure = (f: FarWindow | undefined): string => {
+  const error = f?.error?.error;
+  return error === undefined || error.code === "not_found" ? "It isn't in the chat any more." : error.message;
+};

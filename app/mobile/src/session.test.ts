@@ -818,10 +818,10 @@ describe("A chat opened at a message far back", () => {
     const before = historyCalls(hub).length;
     void session.openAround(KEY, "msg500");
     expect(historyCalls(hub).at(-1)).toMatchObject({ around: "msg500", limit: 50 });
-    expect(session.state.windows[KEY]?.loading).toBe("around");
+    expect(session.state.windows[KEY]).toEqual({ at: "msg500", window: undefined });
     hub.answer("chat_history", { ...page(range(476, 525)), moreBefore: true, moreAfter: true });
     await flush();
-    expect(session.state.windows[KEY]?.messages.map((m) => m.seq)).toContain(500);
+    expect(session.state.windows[KEY]?.window?.messages.map((m) => m.seq)).toContain(500);
     // The chat itself holds its newest page still: live messages land there, and the read mark is untouched by this.
     expect(session.state.chats[KEY]?.messages[0]?.seq).toBe(951);
     expect(historyCalls(hub)).toHaveLength(before + 1);
@@ -866,7 +866,7 @@ describe("A chat opened at a message far back", () => {
     await flush();
     hub.link.frame({ t: "event", seq: 9, type: "chat.message", at: AT, data: { projectRef: REF, messageId: "msg1001", seq: 1001, author: "lead", state: "final", message: message(1001, "New") } });
     expect(session.state.chats[KEY]?.messages.at(-1)?.seq).toBe(1001);
-    expect(session.state.windows[KEY]?.messages.at(-1)?.seq).toBe(525);
+    expect(session.state.windows[KEY]?.window?.messages.at(-1)?.seq).toBe(525);
     session.closeWindow(KEY);
     expect(session.state.windows[KEY]).toBeUndefined();
   });
@@ -892,7 +892,7 @@ describe("A chat opened at a message far back", () => {
     void session.openAround(KEY, "gone");
     hub.fail("chat_history", "not_found", "gone is not a message of this chat.");
     await flush();
-    expect(session.state.windows[KEY]).toMatchObject({ loading: null, messages: [], error: { code: "not_found" } });
+    expect(session.state.windows[KEY]).toMatchObject({ at: "gone", window: undefined, error: { end: "around", error: { code: "not_found" } } });
   });
 });
 

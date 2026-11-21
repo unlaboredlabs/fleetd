@@ -12,7 +12,7 @@ import { memoryPins, Pins, type PinStore } from "./pins";
 import { memorySections, Sections, type Section, type SectionStore } from "./sections";
 import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
-import { pageFrom } from "./around";
+import { farPageFrom } from "./chatView";
 import { FIND_PINS } from "./messagePins";
 import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
@@ -276,24 +276,24 @@ export class Session {
 
   /**
    * The chat opened at a message it doesn't hold (a search hit, a pin far back): the hub's page around it, in a window
-   * of its own (around.ts), rather than every page down to it.
+   * of its own (chatView.ts FarWindow), rather than every page down to it.
    */
   async openAround(key: Key, messageId: string): Promise<void> {
     this.#dispatch({ t: "window_open", key, anchor: messageId });
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), around: messageId, limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "window_page", key, anchor: messageId, page: r.output, end: "around" });
-    else this.#dispatch({ t: "window_failed", key, anchor: messageId, error: r.error });
+    else this.#dispatch({ t: "window_failed", key, anchor: messageId, end: "around", error: r.error });
   }
 
   /** The open window's next page, older or newer: one at a time, none once its end says there's no more. */
   async pageWindow(key: Key, end: "older" | "newer"): Promise<void> {
     const w = this.#state.windows[key];
-    const from = w === undefined ? undefined : pageFrom(w, end);
+    const from = w === undefined ? undefined : farPageFrom(w, end);
     if (w === undefined || from === undefined) return;
     this.#dispatch({ t: "window_loading", key, end });
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), ...(end === "older" ? { before: from } : { after: from }), limit: CHAT_PAGE });
-    if (r.ok) this.#dispatch({ t: "window_page", key, anchor: w.anchor, page: r.output, end });
-    else this.#dispatch({ t: "window_failed", key, anchor: w.anchor, error: r.error });
+    if (r.ok) this.#dispatch({ t: "window_page", key, anchor: w.at, page: r.output, end });
+    else this.#dispatch({ t: "window_failed", key, anchor: w.at, end, error: r.error });
   }
 
   /** Back to the chat's newest: the window goes. */

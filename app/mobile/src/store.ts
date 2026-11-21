@@ -3,7 +3,7 @@
 // open requests (held through a drop, as the chats are), what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
-import { followLive, joined, meets, openingWindow, withError, withPage, type ChatWindow } from "./around";
+import { farFailed, farJoins, farLoading, farPage, farPageFrom, followLive, openingFar, type FarWindow } from "./chatView";
 import { RESTART_FAST_MS, type HubFrame } from "./hub/client";
 import { keyOf, refOf, type Key } from "./projectKey";
 import {
@@ -12,6 +12,7 @@ import {
   applyHistory,
   emptyChat,
   heldChat,
+  joinWindow,
   mergeMessages,
   mergeLive,
   mergeOwn,
@@ -96,10 +97,10 @@ export interface State {
   /** Each chat's newest page, read when search opens: what search looks through, with the chats opened. */
   readonly corpus: Readonly<Record<Key, readonly ChatMessage[]>>;
   /**
-   * A chat opened at a message far back, around it (around.ts): shown in its thread until it joins the chat's own
+   * A chat opened at a message far back, around it (chatView.ts FarWindow): shown in its thread until it joins the chat's own
    * messages or the person goes back to the newest.
    */
-  readonly windows: Readonly<Record<Key, ChatWindow>>;
+  readonly windows: Readonly<Record<Key, FarWindow>>;
   /** Each chat's pinned messages, newest pinned first (messagePins.ts), read as it opens and again as one changes. */
   readonly messagePins: Readonly<Record<Key, readonly ChatMessagePin[]>>;
   /** The open requests (requests_list); undefined until read, or as last seen before the app was closed (cache.ts). */
@@ -176,11 +177,11 @@ export type Action =
   | { readonly t: "loading_older"; readonly key: Key }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
-  /** A window asked for around a message far back, a page of it come or failed, or it closed (around.ts). */
+  /** A window asked for around a message far back, a page of it come or failed, or it closed (chatView.ts FarWindow). */
   | { readonly t: "window_open"; readonly key: Key; readonly anchor: string }
   | { readonly t: "window_page"; readonly key: Key; readonly anchor: string; readonly page: ChatHistoryOutput; readonly end: "around" | "older" | "newer" }
   | { readonly t: "window_loading"; readonly key: Key; readonly end: "older" | "newer" }
-  | { readonly t: "window_failed"; readonly key: Key; readonly anchor: string; readonly error: HubError }
+  | { readonly t: "window_failed"; readonly key: Key; readonly anchor: string; readonly end: "around" | "older" | "newer"; readonly error: HubError }
   | { readonly t: "window_close"; readonly key: Key }
   | { readonly t: "message_pins"; readonly key: Key; readonly pins: readonly ChatMessagePin[] }
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined; readonly meAvatar?: string | undefined; readonly meRole?: HubRole | undefined; readonly leftOut?: readonly string[] | undefined }
@@ -227,11 +228,11 @@ export const openingChat = (latest: readonly ChatMessage[] | undefined): Chat =>
 
 const withChat = (s: State, key: Key, chat: Chat): State => (chat === s.chats[key] ? s : { ...s, chats: { ...s.chats, [key]: chat } });
 
-/** A chat's window, changed; one that has met the chat's own messages joins them and goes (around.ts meets). */
-const withWindow = (s: State, key: Key, w: ChatWindow | undefined): State => {
+/** A chat's window, changed; one that has met the chat's own messages joins them and goes (desktop.ts joinWindow). */
+const withWindow = (s: State, key: Key, w: FarWindow | undefined): State => {
   if (w === undefined) return { ...s, windows: without(s.windows, key) };
   const chat = s.chats[key];
-  if (chat !== undefined && meets(w, chat)) return withChat({ ...s, windows: without(s.windows, key) }, key, joined(chat, w));
+  if (chat !== undefined && w.window !== undefined && farJoins(w, chat)) return withChat({ ...s, windows: without(s.windows, key) }, key, joinWindow(chat, w.window));
   return { ...s, windows: { ...s.windows, [key]: w } };
 };
 
@@ -277,19 +278,19 @@ export const reduce = (s: State, a: Action): State => {
     case "corpus":
       return { ...s, corpus: { ...s.corpus, [a.key]: a.messages } };
     case "window_open":
-      return withWindow(s, a.key, openingWindow(a.anchor));
+      return withWindow(s, a.key, openingFar(a.anchor));
     case "window_loading": {
       const w = s.windows[a.key];
-      return w === undefined || w.loading !== null ? s : withWindow(s, a.key, { ...w, loading: a.end, error: undefined });
+      return w === undefined || farPageFrom(w, a.end) === undefined ? s : withWindow(s, a.key, farLoading(w, a.end));
     }
     case "window_page": {
       // A page for a window since closed, or opened at another message: dropped.
       const w = s.windows[a.key];
-      return w?.anchor !== a.anchor ? s : withWindow(s, a.key, withPage(w, a.page, a.end));
+      return w?.at !== a.anchor ? s : withWindow(s, a.key, farPage(w, a.page, a.end));
     }
     case "window_failed": {
       const w = s.windows[a.key];
-      return w?.anchor !== a.anchor ? s : withWindow(s, a.key, withError(w, a.error));
+      return w?.at !== a.anchor ? s : withWindow(s, a.key, farFailed(w, a.end, a.error));
     }
     case "window_close":
       return a.key in s.windows ? withWindow(s, a.key, undefined) : s;

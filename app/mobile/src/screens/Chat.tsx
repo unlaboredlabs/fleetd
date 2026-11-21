@@ -29,12 +29,11 @@ import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, Fla
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { farFailure, farStep, holds, shownWindow, windowChat } from "../around";
 import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { chatItems, holds, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
@@ -144,7 +143,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const chat = state.chats[chatKey] ?? openingChat(state.latest[chatKey]);
   const olderError = state.olderErrors[chatKey];
   const sends = state.sends[chatKey];
-  // Opened at a message far back (a search hit, a pin): the page around it, until it joins the chat (around.ts). Your
+  // Opened at a message far back (a search hit, a pin): the page around it, until it joins the chat (chatView.ts FarWindow). Your
   // sends on their way are at the newest end, which it isn't.
   // A window still reading the page around its message isn't drawn: the chat stays as it was until the page comes.
   const opening = state.windows[chatKey];
@@ -405,7 +404,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     const wanted = `${messageId ?? ""} ${requestId ?? ""} ${String(tap ?? 0)}`;
     if (landed.current === wanted || !chat.loaded) return;
     // The page around it is on its way: landed on once it comes.
-    if (messageId !== undefined && opening?.anchor === messageId && opening.loading === "around") return;
+    if (messageId !== undefined && opening?.at === messageId && farOpening(opening)) return;
     if (newestFirst.length === 0) {
       landed.current = wanted;
       setPlaced(true);
@@ -418,7 +417,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     }
     // Outside the lens: shown first, then landed on as the thread draws again.
     if (found !== undefined && showHidden(found)) return;
-    // Further back than the chat holds: the page around it is read, then landed on as it comes (around.ts). One that
+    // Further back than the chat holds: the page around it is read, then landed on as it comes (chatView.ts). One that
     // can't be read lands nowhere, as one gone from the chat.
     const step = found === undefined ? "land" : farStep(chat, opening, found, items.some((i) => i.message?.messageId === found));
     // The chat's own messages have it, a window's don't: the window goes.
@@ -431,7 +430,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       Alert.alert("The message didn't open", farFailure(opening));
     }
     // Landed on in a window just read: drawn there at once, as the thread around it is new.
-    const fresh = found !== undefined && win?.anchor === found;
+    const fresh = found !== undefined && win?.at === found;
     const first = landed.current === null;
     landed.current = wanted;
     const target = found;
@@ -534,13 +533,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const now = useRef({ items, title, send, scrollToRow, chatKey, openOrders, showHidden, closeWindow });
   now.current = { items, title, send, scrollToRow, chatKey, openOrders, showHidden, closeWindow };
   // A jump to a message that was hidden, or further back than the chat holds: made once the thread has drawn it (the
-  // page around it read first, around.ts). One that can't be read is said, and the thread stays where it was.
+  // page around it read first, chatView.ts FarWindow). One that can't be read is said, and the thread stays where it was.
   const jumping = useRef<string | null>(null);
   useEffect(() => {
     const to = jumping.current;
     if (to === null) return;
-    const far = opening?.anchor === to;
-    if (far && opening.loading === "around") return;
+    const far = opening?.at === to;
+    if (far && farOpening(opening)) return;
     jumping.current = null;
     const there = () => setMoving(false);
     if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === to, 0.5, !far && !reduce, far ? there : undefined)) return void setLit(to);
@@ -666,7 +665,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   );
   const loading = !chat.loaded && chat.cached !== true;
   // A window's page that didn't come is said where the older ones would be, as theirs.
-  const pageError = win === undefined ? olderError : win.messages.length > 0 ? win.error : undefined;
+  const pageError = win === undefined ? olderError : opening?.error?.end === "around" ? undefined : opening?.error?.error;
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
@@ -715,7 +714,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               // Upside down too: the newest end, where its live screens sit over the composer.
               ListHeaderComponent={
                 <View>
-                  {win?.moreAfter === true ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
+                  {win?.hasNewer === true ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
                   <ScreenCards chatKey={chatKey} />
                   {/* The composer's room and the turn line's over it, always: the thread never moves for the line. */}
                   <View style={{ height: composerHeight + TURN_BAND }} />
@@ -727,11 +726,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 <View style={{ paddingTop: top + space.sm }}>
                   {loading && items.length === 0 ? (
                     <SkeletonThread />
-                  ) : (win === undefined ? chat.loadingOlder : win.loading === "older") ? (
+                  ) : (win === undefined ? chat.loadingOlder : win.loadingOlder) ? (
                     <ActivityIndicator style={styles.older} color={t.secondary} />
                   ) : pageError !== undefined ? (
                     // Where the older messages would be: why they didn't come, and a tap reads them again.
-                    <Pressable accessibilityRole="button" accessibilityHint="Reads them again" onPress={() => void (win === undefined ? session.loadOlder(chatKey) : session.pageWindow(chatKey, win.moreBefore ? "older" : "newer"))} style={styles.older}>
+                    <Pressable accessibilityRole="button" accessibilityHint="Reads them again" onPress={() => void (win === undefined ? session.loadOlder(chatKey) : session.pageWindow(chatKey, opening?.error?.end === "newer" ? "newer" : "older"))} style={styles.older}>
                       <Text style={[type.footnote, styles.olderError, { color: t.secondary }]}>
                         {`${win === undefined ? "Older messages" : "Messages"} didn't load. ${pageError.message} `}
                         <Text style={{ color: t.accent }}>Try Again</Text>
