@@ -47,6 +47,16 @@ const failedHandling = () => new ToolError("failed", "the hub failed while handl
 const KEEP_MS = 5 * 60_000;
 /** An answer longer than this (a file's piece, a long read) isn't kept: a repeat hears the call ran. */
 const KEEP_CHARS = 64 * 1024;
+/** A repeat this hub can't match to its first: it may have run before the hub restarted, or on a node that didn't
+ * forward its id, so it isn't run again. */
+const unknownRepeat = (id: string): LeadResultFrame => ({
+  id,
+  error: new ToolError(
+    "machine_offline",
+    "this call was cut before its answer, and the hub can't tell whether it ran; the call may or may not have gone through",
+    "try again shortly",
+  ).toJSON(),
+});
 const ranAlready = (id: string): LeadResultFrame => ({
   id,
   error: new ToolError("failed", "this call ran already, and its answer was too long to keep for a repeat", "make the call again if you still need its answer").toJSON(),
@@ -77,12 +87,16 @@ export class LeadCalls {
   private screens: Screens | undefined;
   /** Answers kept for a repeated `callId`, by machine, session and call id, oldest first. */
   private readonly kept = new Map<string, { at: number; answer: Promise<LeadResultFrame> }>();
+  /** When this hub started taking calls: what it kept before is gone. */
+  private readonly started: number;
 
   constructor(
     private readonly hub: Hub,
     /** Which of fleetd's agents a session is. The tasks area may set its own with `setDirectory`. */
     private directory: Directory = directoryOver(hub.db),
-  ) {}
+  ) {
+    this.started = hub.clock.now();
+  }
 
   /** Registers `op`'s handler; an op nobody registered is refused. A second register replaces the first. */
   register(op: string, handler: LeadCallHandler): void {
@@ -147,10 +161,12 @@ export class LeadCalls {
 
   /**
    * Answers a forwarded call, and a repeat of one with the same `callId` from the same machine and session (its caller
-   * sent it again after a cut) with the first's answer, waiting for it while the first still runs: never twice.
+   * sent it again after a cut) with the first's answer, waiting for it while the first still runs: never twice. A
+   * repeat with no `callId` (a node from before forwarded it), or one it doesn't know within KEEP_MS of its own start
+   * (its first may have run before a restart), isn't run: it may have run already.
    */
   async answer(machineId: MachineId, sent: LeadCallFrame): Promise<LeadResultFrame> {
-    if (!isCallId(sent.callId)) return this.answerOnce(machineId, sent);
+    if (!isCallId(sent.callId)) return sent.resent ? unknownRepeat(sent.id) : this.answerOnce(machineId, sent);
     const now = this.hub.clock.now();
     for (const [key, k] of this.kept) {
       if (now - k.at < KEEP_MS) break;
@@ -159,6 +175,7 @@ export class LeadCalls {
     const key = JSON.stringify([machineId, sent.threadId ?? null, sent.callId]);
     const kept = this.kept.get(key);
     if (kept) return { ...(await kept.answer), id: sent.id };
+    if (sent.resent && now - this.started < KEEP_MS) return unknownRepeat(sent.id);
     const answer = this.answerOnce(machineId, sent);
     const entry = { at: now, answer };
     this.kept.set(key, entry);

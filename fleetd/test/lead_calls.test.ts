@@ -246,3 +246,28 @@ test("a repeated callId from the same session is answered once and acts once", a
   now += 5 * 60_000;
   expect(await send("lc-14", "slow", { resent: true })).toEqual({ id: "lc-14", result: { asked: 6, long: "", op: "ask_lead" } });
 });
+
+// The hub keeps its answers in memory: one that restarted between a call and its repeat can't tell whether the call
+// ran, so the repeat isn't run, for as long as a repeat may come. Nor is one a node from before sent on without its id.
+test("a repeat a restarted hub doesn't know, or one with no callId, isn't run again", async () => {
+  let now = 2_000_000;
+  const clocked = Object.create(hub, { clock: { value: { now: () => now } } }) as typeof hub;
+  const restarted = new LeadCalls(clocked);
+  let acted = 0;
+  restarted.register("ask_lead", () => ({ asked: ++acted }));
+  const frame = { id: "lc-1", cwd: "/work/app", threadId: "th-task", call: { op: "ask_lead", question: "?" } as never };
+  const callId = "cli-42-2b5e6a2c-3f1d-4e7a-9c2b-5d8e7f6a1b2c";
+  const unsure = {
+    code: "machine_offline" as const,
+    message: "this call was cut before its answer, and the hub can't tell whether it ran; the call may or may not have gone through",
+    fix: "try again shortly",
+  };
+  expect(error(await restarted.answer("devbox", { ...frame, callId, resent: true }))).toEqual(unsure);
+  expect(error(await restarted.answer("devbox", { ...frame, resent: true }))).toEqual(unsure);
+  expect(acted).toBe(0);
+  // A first send it never saw runs, as does a repeat once no first from before the restart can be waiting.
+  expect("result" in (await restarted.answer("devbox", { ...frame, callId: "cli-42-3b5e6a2c-3f1d-4e7a-9c2b-5d8e7f6a1b2c" }))).toBe(true);
+  now += 5 * 60_000;
+  expect("result" in (await restarted.answer("devbox", { ...frame, callId, resent: true }))).toBe(true);
+  expect(acted).toBe(2);
+});
