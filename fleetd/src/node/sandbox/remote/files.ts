@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { readImage, type Image } from "../../actions/image.ts";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts.ts";
+import { within } from "../../sessions/file_rules.ts";
 import { BOX_DIR } from "./bootstrap.ts";
 import { type BoxFs, q, sh, unpack } from "./box_files.ts";
 
@@ -47,7 +48,7 @@ const tryGit = (cwd: string, args: string[]) => git(cwd, args).catch(() => undef
  * PATH-like one), and what the environment file the agent's commands source names in turn. */
 export function named(argv: string[], env: Record<string, string | undefined>, under: string[], skip: string[]): string[] {
   const out = new Set<string>();
-  const beneath = (p: string, roots: string[]) => roots.some((r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep));
+  const beneath = (p: string, roots: string[]) => roots.some((r) => within(r, p));
   const consider = (p: string) => {
     if (!isAbsolute(p) || !beneath(p, under) || beneath(p, skip) || !existsSync(p)) return;
     out.add(p);
