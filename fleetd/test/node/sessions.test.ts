@@ -14,6 +14,8 @@ const home = tempHome();
 const repo = join(home.dir, "repo");
 const frames: NodeFrame[] = [];
 let service: SessionService;
+// How far the node's clock is ahead of the real one: a test moves it past a Monitor's time rather than wait that out.
+let skew = 0;
 
 const config = (): SessionConfig => ({
   home: join(home.dir, "node"),
@@ -23,6 +25,7 @@ const config = (): SessionConfig => ({
   fleetd: [join(import.meta.dir, "fake-host.sh")],
   retryScheduleMs: [50, 50, 50],
   idleReapMs: 60_000,
+  now: () => Date.now() + skew,
 });
 
 const git = (...args: string[]) => spawnSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" });
@@ -307,21 +310,25 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
 test("a turn after a Monitor's time ran out has told the agent: the claude's later death wakes nobody for it", async () => {
   const lostRuns = () => service.store.runs("s1").filter((r) => r.id.includes("-monitor-lost-")).length;
   const before = lostRuns();
-  // A Monitor of 2 s: kept past the turn that armed it, its time has run out by the next turn, which carries claude's
-  // notice that it did.
-  await ok("send", { sessionId: "s1", runId: "r9b", text: "monitor-ms=2000: wait for ci" });
+  // A Monitor of 10 minutes: kept past the turn that armed it. With the node's clock past its time, the next turn
+  // carries claude's notice that it ran out.
+  await ok("send", { sessionId: "s1", runId: "r9b", text: "monitor: wait for ci" });
   await until("the run", () => summary("s1")?.latestRun?.id === "r9b" && summary("s1")?.latestRun?.status === "completed");
   expect(service.store.session("s1")?.local.monitors?.length).toBe(1);
-  await Bun.sleep(2_100);
-  await ok("send", { sessionId: "s1", runId: "r9c", text: "next" });
-  await until("the next run", () => summary("s1")?.latestRun?.id === "r9c" && summary("s1")?.latestRun?.status === "completed");
-  expect(service.store.session("s1")?.local.monitors).toBeUndefined();
-  expect(summary("s1")?.watchingUntil).toBeUndefined();
-  const pid = service.store.session("s1")!.local.pid!;
-  process.kill(pid, "SIGKILL");
-  await until("the exit", () => service.store.session("s1")?.local.pid === undefined || undefined);
-  await Bun.sleep(200);
-  expect(lostRuns()).toBe(before);
+  skew = 11 * 60_000;
+  try {
+    await ok("send", { sessionId: "s1", runId: "r9c", text: "next" });
+    await until("the next run", () => summary("s1")?.latestRun?.id === "r9c" && summary("s1")?.latestRun?.status === "completed");
+    expect(service.store.session("s1")?.local.monitors).toBeUndefined();
+    expect(summary("s1")?.watchingUntil).toBeUndefined();
+    const pid = service.store.session("s1")!.local.pid!;
+    process.kill(pid, "SIGKILL");
+    // The exit decides its wake as it clears the pid: a wake for it would be a run already.
+    await until("the exit", () => service.store.session("s1")?.local.pid === undefined || undefined);
+    expect(lostRuns()).toBe(before);
+  } finally {
+    skew = 0;
+  }
 });
 
 test("a session whose host ran on through a node restart is re-adopted and keeps going", async () => {

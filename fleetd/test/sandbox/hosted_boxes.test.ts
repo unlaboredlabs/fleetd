@@ -429,8 +429,9 @@ test("a release asset's HEAD that missed is asked again PROBE_AGAIN_MS later, no
   expect(asked).toHaveLength(2);
   expect(steps).toEqual([{ older: expect.any(String), building: true }]);
   const own = `${boxes.templateName()}-f${sha(FLEETD).slice(0, 12)}`;
-  await until(() => s.saved!.has(own) && saves(s).length === 2);
-  await until(() => s.saved!.get(own)!.asked >= 2);
+  // The node's own build is what ends: boat answering the save ready comes a round trip (the build box's delete) before.
+  await boxes.ahead("boat")?.done;
+  expect(saves(s)).toHaveLength(2);
   expect(await boxes.template("boat")).toBe(own);
   // Found stays found: never asked again.
   now += 10 * PROBE_AGAIN_MS;

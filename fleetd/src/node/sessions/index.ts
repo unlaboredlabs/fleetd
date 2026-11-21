@@ -192,6 +192,8 @@ export type SessionConfig = {
   retryScheduleMs?: number[];
   /** Idle processes cost RAM: one without an active run this long is closed; the next send resumes it. */
   idleReapMs?: number;
+  /** The clock a Monitor's deadline is read on; tests move it past one rather than wait it out. */
+  now?: () => number;
 };
 
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
@@ -540,6 +542,10 @@ export class SessionService {
 
   get #idleReapMs(): number {
     return this.config.idleReapMs ?? 600_000;
+  }
+
+  #now(): number {
+    return (this.config.now ?? Date.now)();
   }
 
   get home(): string {
@@ -1960,7 +1966,8 @@ export class SessionService {
     const ms = typeof input.timeout_ms === "number" && Number.isFinite(input.timeout_ms) && input.timeout_ms >= 0 ? Math.round(input.timeout_ms) : MONITOR_DEFAULT_MS;
     // From the call's start, before claude starts its clock: a turn past `untilMs - MONITOR_GRACE_MS` is past its time.
     const started = Date.parse(item.startedAt ?? "");
-    const untilMs = Math.min(Date.now(), Number.isFinite(started) ? started : Date.now()) + Math.min(ms, MONITOR_MAX_MS) + MONITOR_GRACE_MS;
+    const now = this.#now();
+    const untilMs = Math.min(now, Number.isFinite(started) ? started : now) + Math.min(ms, MONITOR_MAX_MS) + MONITOR_GRACE_MS;
     live.watching.set(item.id, untilMs);
     const armed = { id: item.id, ...(typeof input.description === "string" ? { description: input.description } : {}), untilMs };
     this.update(id, (c) => {
@@ -1972,7 +1979,7 @@ export class SessionService {
    * gives a notice not yet given in the turn under way or the next one), so the agent has been told: that Monitor goes
    * from the row and wakes nobody later. */
   #dropRunOut(c: Change, live: Live): void {
-    const now = Date.now();
+    const now = this.#now();
     const kept = (c.row.local.monitors ?? []).filter((m) => m.untilMs - MONITOR_GRACE_MS > now);
     for (const m of c.row.local.monitors ?? []) if (!kept.includes(m)) live.watching.delete(m.id);
     if (kept.length) c.row.local.monitors = kept;
@@ -1993,7 +2000,7 @@ export class SessionService {
     const now = Date.now();
     for (const [id, live] of this.#live) {
       if (live.closing || now - live.lastActive < this.#idleReapMs) continue;
-      if ([...live.watching.values()].some((until) => until > now)) continue;
+      if ([...live.watching.values()].some((until) => until > this.#now())) continue;
       if (this.store.session(id)?.summary.activeRunId) continue;
       // A screen it holds waits for its next turn, until the screen's own idle limit ends it.
       if (this.screens?.holdsScreen(id)) continue;
@@ -2306,8 +2313,8 @@ export class SessionService {
     const live = this.#live.get(id);
     if (!this.store.session(id)) return { kind: "done" };
     if (this.store.runs(id).some((r) => isActive(r.status))) return { kind: "done" };
-    if (live && [...live.watching.values()].some((until) => until > Date.now())) return { kind: "done" };
-    if ((this.#session(id).local.monitors ?? []).some((m) => m.untilMs > Date.now())) return { kind: "done" };
+    if (live && [...live.watching.values()].some((until) => until > this.#now())) return { kind: "done" };
+    if ((this.#session(id).local.monitors ?? []).some((m) => m.untilMs > this.#now())) return { kind: "done" };
     if (this.screens?.holdsScreen(id)) return { kind: "done" };
     return this.#stop(id, false, "its task ended");
   }
@@ -2326,7 +2333,7 @@ export class SessionService {
     const row = this.#session(id);
     // A Monitor of its own may still continue the task there: its worktree and scratch stay, and the hub's removal is
     // tried again by the nightly sweep, long after any Monitor's deadline.
-    if (removeWorktree && (row.local.monitors ?? []).some((m) => m.untilMs > Date.now()))
+    if (removeWorktree && (row.local.monitors ?? []).some((m) => m.untilMs > this.#now()))
       throw invalid(`${row.local.cwd} not removed: a Monitor of its session may still continue it`);
     const live = this.#live.get(id);
     if (live) {
