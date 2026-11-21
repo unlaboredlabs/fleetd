@@ -1359,6 +1359,20 @@ export const screens: readonly Screen[] = [
       await expect(page.locator("[data-find]")).toContainText("4");
     },
   },
+  // A filter alone, no words: its hits, not the filters left to pick.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-search"],
+    variant: "find-filter",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.keyboard.press("ControlOrMeta+F");
+      await page.getByRole("listbox", { name: "Filters" }).getByRole("option", { name: "From the lead" }).click();
+      await expect(page.getByRole("listbox", { name: "Results" }).getByRole("option").first()).toContainText("deploy");
+      await expect(page.locator("[data-find]")).toContainText("From the lead");
+    },
+  },
   {
     id: "chat",
     route: CHAT,

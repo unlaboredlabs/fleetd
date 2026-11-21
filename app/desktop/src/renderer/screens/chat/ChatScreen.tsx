@@ -234,7 +234,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     if (was.id === undefined) toEnd();
     else {
       const id = was.id;
-      void layer.chat.jump(key, id).then(() => setShown((p) => ({ id, n: (p?.n ?? 0) + 1 })));
+      void layer.chat.jump(key, id).then((error) => {
+        // Not there (offline, a timeout): the chat stays where it is rather than paging back to look for it.
+        if (error === undefined) setShown((p) => ({ id, n: (p?.n ?? 0) + 1 }));
+      });
     }
   }, [layer, key, toEnd]);
   useGoTo(project, useCallback((id: string) => goTo(id, false), [goTo]));
@@ -461,7 +464,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         {/* In the top row, which floats over the conversation: search at its end, the newest pin under the pill. */}
         {finding > 0 ? (
           <Suspense fallback={null}>
-            <Find key={finding} project={project} bot={title} who={who} names={names} onJump={(id) => goTo(id, true)} onClose={closeFind} />
+            <Find focus={finding} project={project} bot={title} who={who} names={names} onJump={(id) => goTo(id, true)} onClose={closeFind} />
           </Suspense>
         ) : findPins && !data.missing && lens === undefined ? (
           <PinCapsule pins={pins} onOpen={openPins} />

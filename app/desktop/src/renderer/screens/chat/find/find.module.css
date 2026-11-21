@@ -207,3 +207,8 @@
     animation: none;
   }
 }
+
+/* Where the list reads on: nothing to see, a little room at its end. */
+.more {
+  height: 8px;
+}

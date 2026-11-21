@@ -29,6 +29,8 @@ export interface FindProps {
   readonly onJump: (messageId: string) => void;
   /** Esc or ×: the field goes, and the chat back to where it was. */
   readonly onClose: () => void;
+  /** Bumped by each ⌘F: the field takes the focus again. */
+  readonly focus: number;
   /** The names people go by now, by id. */
   readonly names: ReadonlyMap<string, string>;
 }
@@ -48,14 +50,25 @@ export function Find(props: FindProps) {
   /** The hit open in the chat, by its place in the hits. */
   const [at, setAt] = useState<number>();
   const asked = useRef(0);
+  const list = useRef<HTMLDivElement>(null);
+  /** Moved by the keyboard: that row is brought into the list's view; the pointer's moves never scroll it. */
+  const keyed = useRef(false);
   const nowMs = useNow(true, 60_000);
 
+  // ⌘F again, with the field open: back to it, as it was.
   useEffect(() => {
     input.current?.focus();
-  }, []);
+    input.current?.select();
+  }, [props.focus]);
 
   const last = text.split(/\s+/).at(-1) ?? "";
-  const offered = useMemo(() => (listOpen ? suggestions(text.trim() === "" ? "" : last, who).filter((c) => !chips.some((h) => chipLabel(h) === chipLabel(c))) : []), [listOpen, text, last, who, chips]);
+  // The filters to pick: on an empty field with none picked yet, or while one is being typed. Once a filter is picked
+  // and nothing is typed, the list is its hits.
+  const typing = text.trim() === "" ? "" : last;
+  const offered = useMemo(
+    () => (listOpen && (typing !== "" || chips.length === 0) ? suggestions(typing, who).filter((c) => !chips.some((h) => chipLabel(h) === chipLabel(c))) : []),
+    [listOpen, typing, who, chips],
+  );
   const words = offered.length > 0 && last.includes(":") ? text.slice(0, text.length - last.length) : text;
 
   // As you type: the first page of what the words and chips find, a moment after the typing stops.
@@ -68,8 +81,8 @@ export function Find(props: FindProps) {
       void layer.call("chat_find", { ...findInput(project, words, chips, who.me), limit: PAGE }).then((r) => {
         if (asked.current !== n) return;
         setLoading(false);
-        if (!r.ok) return;
-        const out = r.output;
+        // A failed search leaves nothing that looks like its answer.
+        const out = r.ok ? r.output : { hits: [], more: false, count: undefined, countMore: undefined };
         setFound({ hits: out.hits, more: out.more, count: out.count, countMore: out.countMore === true });
         setSelected(0);
         setAt(undefined);
@@ -94,6 +107,12 @@ export function Find(props: FindProps) {
     setFound({ ...f, hits, more: out.more });
     return hits;
   }, [found, layer, project, words, chips, who.me]);
+
+  useEffect(() => {
+    if (!keyed.current) return;
+    keyed.current = false;
+    list.current?.querySelector(`#find-hit-${String(selected)}`)?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   const jump = (i: number, hits = found?.hits) => {
     const hit = hits?.[i];
@@ -151,6 +170,7 @@ export function Find(props: FindProps) {
       const d = e.key === "ArrowDown" ? 1 : -1;
       if (listOpen && rows > 0) {
         const next = Math.min(Math.max(selected + d, 0), rows - 1);
+        keyed.current = true;
         setSelected(next);
         if (offered.length === 0 && found !== undefined && next >= found.hits.length - 3) void more();
       } else void step(d);
@@ -230,7 +250,7 @@ export function Find(props: FindProps) {
         </span>
       </div>
       {showList ? (
-        <div className={s.results} id="find-results" role="listbox" aria-label={offered.length > 0 ? "Filters" : "Results"}>
+        <div ref={list} className={s.results} id="find-results" role="listbox" aria-label={offered.length > 0 ? "Filters" : "Results"}>
           {offered.length > 0
             ? offered.map((c, i) => (
                 <div
@@ -254,7 +274,7 @@ export function Find(props: FindProps) {
                   onMouseDown={(e) => e.preventDefault()}
                   onMouseEnter={() => setSelected(i)}
                   onClick={() => jump(i)}
-                  ref={i === selected ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                  id={`find-hit-${String(i)}`}
                 >
                   <span className={s.head}>
                     <span className={s.who}>{whoOf(h, props.bot, who.me, props.names)}</span>
@@ -263,6 +283,7 @@ export function Find(props: FindProps) {
                   <span className={s.line}>{marked(h.text, h.marks)}</span>
                 </div>
               ))}
+          {offered.length === 0 && found?.more === true ? <MoreRow list={list} onMore={more} /> : null}
         </div>
       ) : null}
     </div>
@@ -280,4 +301,22 @@ export function marked(text: string, marks: readonly (readonly [number, number])
   }
   if (i < text.length) out.push(text.slice(i));
   return out;
+}
+
+/** The list's last row while more hits are left: scrolling near it reads the next page, as the chat's own ends do. */
+function MoreRow({ list, onMore }: { list: { readonly current: HTMLDivElement | null }; onMore: () => unknown }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void onMore();
+      },
+      { root: list.current, rootMargin: "0px 0px 120px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [list, onMore]);
+  return <div ref={ref} className={s.more} aria-hidden />;
 }
