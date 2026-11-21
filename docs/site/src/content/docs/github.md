@@ -95,17 +95,17 @@ Who an order's agents are on GitHub, on a repository the App reaches:
 | Started by nobody (automations, train fixes) | The App, `fleetd-on-devbox[bot]` |
 
 The token reaches the order's agents as `GH_TOKEN`, one of the order's variables: masked in what they report, renewed
-before it ends, and gone when the order closes. A closed order's agents are done: one that finished waiting on CI, a merge
-or a Monitor isn't woken again, so none runs on a token GitHub has ended. Renewing yours ends the one before at GitHub, so the renewal hands the
-new one to every open order of yours, on every machine and in every sandbox, before anything goes on; a machine
-offline then gets it at the first check after it reconnects (every 5 minutes). It reaches agents already at work at
-their next command, not only their next turn. An agent whose `gh` or `git push` is refused anyway keeps its work
-committed and tries again for a few minutes before asking its lead. If the hub can't renew it before it
-ends (GitHub unreachable), its agents hold a value GitHub refuses until it can, and the lead is told; they never fall
-back to the machine's login. A task launched while GitHub gives no token starts anyway, holding that same value: it is
-told so in its first message, and its token reaches its next command at the first renewal GitHub answers (every 5
-minutes). Each repo the order works in gets its own: the App's token for that repo's owner, and
-none in a repo the App doesn't reach, where `gh` uses the machine's own login.
+before it ends, and gone when the order closes. A closed order's agents are done: one that finished waiting on CI, a
+merge or a Monitor doesn't start again, so none runs on a token GitHub has ended. Renewing yours ends the one before
+at GitHub, so the renewal hands the new one to every open order of yours, on every machine and in every sandbox,
+before anything goes on; a machine offline then gets it at the first check after it reconnects (every 5 minutes). It
+reaches agents already at work at their next command, not only their next turn. An agent whose `gh` or `git push` is
+refused anyway keeps its work committed and tries again for a few minutes before asking its lead. If the hub can't
+renew it before it ends (GitHub unreachable), its agents hold a value GitHub refuses until it can, and the lead is
+told; they never fall back to the machine's login. A task launched while GitHub gives no token starts anyway, holding
+that same value: it is told so in its first message, and its token reaches its next command at the first renewal
+GitHub answers (every 5 minutes). Each repo the order works in gets its own: the App's token for that repo's owner,
+and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
 If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Your accounts › GitHub says so, with
 **Connect again**. **Disconnect** revokes the token at GitHub and forgets it. Your open orders' agents then hold a
