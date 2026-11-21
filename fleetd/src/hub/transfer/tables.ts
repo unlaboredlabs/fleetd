@@ -144,6 +144,7 @@ export const REBUILT: Record<string, string> = {
   chat_find: "the chats' search index, filled again from the messages while the hub runs",
   chat_find_built: "how far the chats' search index is filled: set to fill it all again",
   chat_find_config: "part of the chats' search index",
+  chat_find_content: "part of the chats' search index",
   chat_find_data: "part of the chats' search index",
   chat_find_docsize: "part of the chats' search index",
   chat_find_idx: "part of the chats' search index",

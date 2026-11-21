@@ -5,7 +5,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { Registry } from "../src/hub/api/registry.ts";
 import { chat } from "../src/hub/chat/index.ts";
-import { fillStep, unfilled } from "../src/hub/chat/find.ts";
+import { fillStep, timeTags, unfilled } from "../src/hub/chat/find.ts";
 import { hitText, holds, marksOf, parseWords } from "../src/hub/chat/find_rules.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { build } from "../src/hub/serve/index.ts";
@@ -147,6 +147,35 @@ test("the index follows the chat: a streamed message once final, an edit, a remo
   expect([all.count, all.indexing]).toEqual([25, undefined]);
   expect(texts(await find(call, { words: "migration" }))).toEqual(["half a migration plan"]);
   done();
+});
+
+test("a date filter finds a message by its own time, read in late with an early one; a message being written is in no search", async () => {
+  const { hub, call, say, done } = setup();
+  for (let i = 0; i < 30; i++) say(`live note ${i}`, { at: `2026-10-${String(1 + (i % 28)).padStart(2, "0")}T12:00:00Z` });
+  // An old order read in after the live messages: a later number, an early time.
+  say("order from long ago", { history: "order", at: "2025-03-04T09:00:00Z" });
+  const day = { since: "2025-03-04T00:00:00Z", until: "2025-03-05T00:00:00Z" };
+  expect(texts(await find(call, day))).toEqual(["order from long ago"]);
+  expect(texts(await find(call, { words: "order", until: "2025-06-01T00:00:00Z" }))).toEqual(["order from long ago"]);
+  expect(texts(await find(call, { since: "2025-01-01T00:00:00Z", until: "2025-12-31T00:00:00Z" }))).toEqual(["order from long ago"]);
+  expect((await find(call, { since: "2026-10-01T00:00:00Z" })).count).toBe(30);
+  // A streamed reply on its way: no search lists it, a date alone either, until it is final.
+  const { message } = chat(hub).add(PROJECT, { author: "lead", text: "", streaming: true, createdMs: Date.parse("2025-03-04T10:00:00Z") });
+  chat(hub).append(message, "order notes so far");
+  expect(texts(await find(call, day))).toEqual(["order from long ago"]);
+  expect(texts(await find(call, { words: "notes" }))).toEqual([]);
+  chat(hub).finish(chat(hub).byId(message.messageId)!, "order notes, done");
+  expect(texts(await find(call, day))).toEqual(["order notes, done", "order from long ago"]);
+  done();
+});
+
+test("a date filter's index words cover every day of its range, then months, then none", () => {
+  const d = Date.parse;
+  expect(timeTags(d("2026-10-14T00:00:00Z"), d("2026-10-15T00:00:00Z"))).toEqual(["d20261014"]);
+  expect(timeTags(d("2026-10-14T22:00:00Z"), d("2026-10-16T01:00:00Z"))).toEqual(["d20261014", "d20261015", "d20261016"]);
+  expect(timeTags(d("2025-11-20T00:00:00Z"), d("2026-02-01T00:00:00Z"))).toEqual(["u202511", "u202512", "u202601"]);
+  expect(timeTags(d("2000-01-01T00:00:00Z"), d("2026-01-01T00:00:00Z"))).toBeUndefined();
+  expect(timeTags(undefined, d("2026-01-01T00:00:00Z"))).toBeUndefined();
 });
 
 /** The index as a hub from before it has it: empty, every message still to fill. */

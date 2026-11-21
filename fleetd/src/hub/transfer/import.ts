@@ -233,7 +233,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
       const theirs = new Set(manifest.schema.map((m) => m.name));
       migrate(staged, MIGRATIONS.filter((m) => theirs.has(m.name)));
       const there = tablesOf(staged);
-      for (const table of there) if (table !== "migrations_applied" && !table.startsWith("decisions_fts_") && !/^chat_find_(config|data|docsize|idx)$/.test(table)) staged.run(`DELETE FROM ${quoted(table)}`);
+      for (const table of there) if (table !== "migrations_applied" && !table.startsWith("decisions_fts_") && !/^chat_find_(config|content|data|docsize|idx)$/.test(table)) staged.run(`DELETE FROM ${quoted(table)}`);
       staged.run("DELETE FROM sqlite_sequence");
 
       const tables = new Map<string, { t: HubExportTable; insert: ReturnType<Database["query"]>; load: Loader }>();

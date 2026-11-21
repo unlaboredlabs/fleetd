@@ -2,7 +2,8 @@
 // holding some words, in a date range or not, newest first and a page at a time, and `chat_read` reads the messages
 // around one of them. A fresh session sees only the latest part of the chat; these reach all of it.
 //
-// Plain text matching over the stored chat (`chat(hub).search`), nothing more. Only a project's own lead makes these
+// The chats' search index (`chat(hub).search`, chat/find.ts), as a person's search reads it: each word from the start
+// of a word, a message still being written in none. Only a project's own lead makes these
 // calls: the chat is always the caller's own project's, and a message id from another chat is refused.
 import type { ChatMessage } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";

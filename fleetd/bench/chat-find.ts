@@ -120,6 +120,7 @@ const queries: [string, Partial<FindQuery> & { words?: string; has?: ChatFindHas
   ["has an image", { words: common, has: ["image"] }],
   ["pinned, no words", { has: ["pinned"] }],
   ["a day far back, no words", { sinceMs: start + 40_000 * 60_000, untilMs: start + 40_000 * 60_000 + 86_400_000 }],
+  ["before a day far back, no words (one end)", { untilMs: start + 40_000 * 60_000 }],
   ["a word in a month far back", { words: common, sinceMs: start + 30_000 * 60_000, untilMs: start + 30_000 * 60_000 + 30 * 86_400_000 }],
 ];
 
@@ -153,6 +154,10 @@ for (const [name, q] of queries) {
 }
 console.log("");
 console.log(`worst p95: ${ms(worst)} (budget 100 ms)`);
+const one = (sql: string) => Object.values(conn.query(sql).get() as Record<string, number>)[0] ?? 0;
+const mib = (n: number) => `${(n / 1048576).toFixed(0)} MiB`;
+const text = one("SELECT SUM(length(json_extract(data, '$.text'))) FROM chat_messages");
+console.log(`database: ${mib(one("PRAGMA page_count") * one("PRAGMA page_size"))}; the messages' text ${mib(text)}`);
 db.close();
 rmSync(home, { recursive: true, force: true });
 if (worst > 100) process.exit(1);
