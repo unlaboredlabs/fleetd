@@ -34,7 +34,7 @@ import type { ChromeHandle, Launched } from "./launch_args.ts";
 import { type Credential, type VaultFor } from "./logins.ts";
 import { boxChrome, reattachChrome, type ScreenBox, timing } from "../place/box_chrome.ts";
 import { type Meta, type Recording, type RecordingStore, Steps } from "./recording.ts";
-import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting } from "./secure_input.ts";
+import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting, waitingKey } from "./secure_input.ts";
 import { Session, type SessionState } from "./session.ts";
 
 /** A session no step touched this long ends (BrokerHost `idleMinutes`, else 30). */
@@ -124,6 +124,9 @@ export type BrowserSnapshot = {
   kept?: string;
   /** The values filled into the agent session's browsers (Credentials `filledSince`). */
   filled: [string, string][];
+  /** The secure inputs a person was asked for that the session waits on: each request, where it types, never a
+   * value. Absent in a snapshot from before they were carried. */
+  waiting?: Waiting[];
 };
 
 /** A connection's first id: each of ten generations takes its own span, far below Chrome's 32-bit ids. */
@@ -727,15 +730,16 @@ export class BrowserBroker {
       gen: open.gen,
       ...(open.kept ? { kept: open.kept } : {}),
       filled: this.credentials.filledSince(thread, 0) ?? [],
+      waiting: [...this.waiting].filter(([key]) => key.startsWith(`${open.session.id}/`)).map(([, w]) => ({ ...w })),
     };
   }
 
   /**
    * Takes over agent session `thread`'s browser session from the holder before (`snapshot`): its box's Chrome dialled
    * again, the session as it was (sealed if it filled a value, the broker's own sessions on its Chrome still hidden from
-   * the driver), recording on from there. A Chrome that went meanwhile (its grace ran out, or its box) ends the session
-   * plainly instead: its recording ends with a note, and it is reported ended, so control never stays with a person on
-   * a session nobody drives. Throws for a snapshot it can't read, and when the recording store refuses to go on (its
+   * the driver, the secure inputs it waits on still waiting), recording on from there. A Chrome that went meanwhile
+   * (its grace ran out, or its box) ends the session plainly instead: its recording ends with a note, and it is
+   * reported ended, so control never stays with a person on a session nobody drives. Throws for a snapshot it can't read, and when the recording store refuses to go on (its
    * Chrome then waits on in its grace, for a try again).
    */
   async adopt(thread: string, snapshot: BrowserSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
@@ -784,6 +788,10 @@ export class BrowserBroker {
       throw new Error(`the browser session's recording didn't go on: ${(e as Error).message}`);
     }
     this.attach(thread, entry, recording);
+    // A secure input the person was asked for is typed in here once they give it: the hub's delivery finds it.
+    for (const w of snapshot.waiting ?? []) {
+      this.waiting.set(waitingKey(session.id, w.requestId), { requestId: w.requestId, domain: w.domain, target: w.target, label: w.label });
+    }
     try {
       await session.resume();
     } catch (e) {

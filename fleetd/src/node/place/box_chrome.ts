@@ -8,8 +8,10 @@
 // socat takes the next connection on the same port, one at a time, for GRACE_MS after each one ends. With none by then,
 // or once Chrome exits, the launcher's whole process session goes, Chrome with it. Messages crossing as a connection
 // drops are lost with it: a new connection starts with a lone NUL, which ends a frame the last one left cut short
-// (Chrome answers it as no command), so that piece never swallows the new connection's first command. A new
-// connection's own ids never meet an old one's answers (BrowserBroker `adopt`).
+// (Chrome answers it as no command), so that piece never swallows the new connection's first command. Where the cut
+// fell right before the old command's own NUL, that piece is a whole command, which the NUL completes: Chrome runs it
+// once, as the old connection asked, and its answer, under an old id, is dropped. A new connection's own ids never meet
+// an old one's answers (BrowserBroker `adopt`).
 //
 // The guard and the no-read-back seal hold for the agent's driver, which reaches Chrome only through the broker's
 // proxy, outside the box. They don't hold against the box itself: a process in it can open the FIFOs, or socat's port
@@ -177,7 +179,8 @@ export const pruneKeptInBox = (box: ScreenBox, dir: string) =>
  * `again`: an earlier connection to it may have left a frame cut short. */
 async function connected(box: ScreenBox, handle: ChromeHandle, kept: string | undefined, firstId: number, ms: number, again = false): Promise<Launched> {
   const stream = await dialUntil(box, handle.port, ms);
-  // A frame the last connection left cut short ends here, as an empty one, rather than in front of this one's first.
+  // A frame the last connection left cut short ends here, rather than in front of this one's first: as an empty one,
+  // or as the whole command it was but for its NUL, which Chrome then runs, its answer (an old id) dropped.
   if (again) stream.write("\0");
   const cdp = new Cdp(streamTransport(stream), firstId);
   const ready = await Promise.race([

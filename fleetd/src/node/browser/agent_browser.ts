@@ -5,8 +5,10 @@
 // where it is missing (`install`).
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pluginFiles } from "./agent_browser_plugin.ts";
 import { policy, sessionEnv, VERSION } from "./agent_browser_policy.ts";
 
+export { PLUGIN_MANIFEST, pluginFiles } from "./agent_browser_plugin.ts";
 export { ALWAYS_DENIED, CREDENTIAL_DENIED, policy, sessionEnv, VERSION } from "./agent_browser_policy.ts";
 
 export const installDir = (home: string) => join(home, "browser", "agent-browser");
@@ -79,11 +81,10 @@ function makePlugin(skill: string, plugin: string): void {
     throw new Error(`the agent-browser package has no skill: ${(e as Error).message}`);
   }
   rmSync(plugin, { recursive: true, force: true });
-  mkdirSync(join(plugin, "skills", "agent-browser"), { recursive: true });
-  mkdirSync(join(plugin, ".claude-plugin"), { recursive: true });
-  const manifest = { name: "agent-browser", description: "agent-browser's skill, for the browser session fleetd opens with session_start." };
-  writeFileSync(join(plugin, ".claude-plugin", "plugin.json"), `${JSON.stringify(manifest)}\n`);
-  writeFileSync(join(plugin, "skills", "agent-browser", "SKILL.md"), text);
+  for (const file of pluginFiles(text)) {
+    mkdirSync(dirname(join(plugin, file.path)), { recursive: true });
+    writeFileSync(join(plugin, file.path), file.text);
+  }
 }
 
 /** Where a session's policy file is. */
