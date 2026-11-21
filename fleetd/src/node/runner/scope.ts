@@ -4,6 +4,16 @@
 // scope of its own a host outlives the node, and the next node re-adopts it. One build the kernel kills for memory
 // also lands in that one scope, which has `OOMPolicy=continue`, rather than failing the node's whole unit.
 //
+// Each session's scope has a memory cap (`memoryCap`): the machine's memory less a reserve for the system, the hub, the
+// node and the other agents, and its swap the same way. The cap is there so one session can't starve the rest, not to
+// share memory out (the OOM score already makes an agent the kernel's pick). The reserve is a quarter of the machine,
+// at least 4 GB and at most half: on the devbox the hub (2 GB at most since Nov 10), the node (4.8 GB) and the system
+// (3.9 GB) together peak near 11 GB with some 30 agents, and what a node needs grows with the agents its machine fits,
+// while a 16 GB laptop must still fit one build (10.6 GB, a build slot's size). On 2026-11-21 one agent's `bun` grew to
+// 58 GB of the devbox's 59 GB before the kernel killed it (scope peak 55.9 GB); its cap is now 44.6 GB. Past it the
+// kernel kills the scope's largest process there, the rest of the machine untouched, and the agent is told
+// (./host/memory.ts).
+//
 // `systemd-run --scope` moves itself into the new scope and then execs the command, so the host keeps the pid and the
 // session the node gave it. A scope never fails a session: when systemd-run doesn't start the host, the session starts
 // again without one (`spawnScoped`), scopes stay off until the next check (`RECHECK_MS`), and the node says so once.
@@ -11,6 +21,7 @@
 // node's own cgroup.
 import { type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { totalmem } from "node:os";
 import { basename, delimiter, join } from "node:path";
 import { nowIso } from "../util.ts";
 
@@ -34,17 +45,51 @@ export type Scope = {
   nodeUnit?: string;
   /** `OOMPolicy=continue` on the scope; an older systemd that can't set it on a scope still gets a scope. */
   oomContinue: boolean;
+  /** The session's memory cap (`memoryCap`), in bytes; a systemd that can't set it still gets a scope. */
+  memory?: Cap;
   /** The node's `BUS_VARS`, added to the session's environment. */
   env: Record<string, string>;
 };
 
+/** A session's memory cap: `MemoryMax=` and `MemorySwapMax=`, in bytes. */
+export type Cap = { max: number; swapMax: number };
+
+/** The least the reserve keeps for the rest of the machine. */
+export const MIN_RESERVE = 4 * 1024 ** 3;
+
+/** What a session leaves of `total` bytes for the rest of the machine: a quarter, at least `MIN_RESERVE`, at most half. */
+export const reserve = (total: number) => Math.min(Math.max(total / 4, MIN_RESERVE), total / 2);
+
+/** The cap of every session on a machine with `memory` bytes of memory and `swap` of swap: each less its reserve. */
+export const memoryCap = (memory: number, swap: number): Cap => ({ max: Math.floor(memory - reserve(memory)), swapMax: Math.floor(swap - reserve(swap)) });
+
+/** This machine's swap, in bytes, from `/proc/meminfo`; 0 where it can't be read. */
+export function swapTotal(meminfo = readMeminfo()): number {
+  const kb = /^SwapTotal:\s+(\d+) kB$/m.exec(meminfo)?.[1];
+  return kb === undefined ? 0 : Number(kb) * 1024;
+}
+
+const readMeminfo = () => {
+  try {
+    return readFileSync("/proc/meminfo", "utf8");
+  } catch {
+    return "";
+  }
+};
+
 /** A session host's scope: not `PartOf=` the node's unit, so stopping or restarting the node leaves the session running. */
-export const hostScope = (scope: Scope): Scope => ({ program: scope.program, oomContinue: scope.oomContinue, env: scope.env });
+export const hostScope = (scope: Scope): Scope => ({
+  program: scope.program,
+  oomContinue: scope.oomContinue,
+  ...(scope.memory ? { memory: scope.memory } : {}),
+  env: scope.env,
+});
 
 /** `systemd-run`'s own arguments, up to and including the `--` before the command. */
 function scopeArgs(scope: Scope, sessionId: string): string[] {
   const args = ["--user", "--scope", "--collect", "--quiet", `--description=fleetd agent ${sessionId}`];
   if (scope.oomContinue) args.push("--property=OOMPolicy=continue");
+  if (scope.memory) args.push(`--property=MemoryMax=${scope.memory.max}`, `--property=MemorySwapMax=${scope.memory.swapMax}`);
   if (scope.nodeUnit !== undefined) args.push(`--property=PartOf=${scope.nodeUnit}`, `--property=Before=${scope.nodeUnit}`);
   args.push("--");
   return args;
@@ -245,7 +290,7 @@ export function resetForTest(scope?: Scope): void {
 function log(before: Scope | undefined, now: Scope | undefined, why: string): void {
   if (!before && now) {
     console.log(
-      `${nowIso()} INFO each session runs in a systemd scope of its own {"nodeUnit":${JSON.stringify(now.nodeUnit ?? null)},"oomContinue":${now.oomContinue}}`,
+      `${nowIso()} INFO each session runs in a systemd scope of its own {"nodeUnit":${JSON.stringify(now.nodeUnit ?? null)},"oomContinue":${now.oomContinue},"memoryMax":${now.memory?.max ?? null},"memorySwapMax":${now.memory?.swapMax ?? null}}`,
     );
   } else if (before && !now) {
     console.warn(`${nowIso()} WARN sessions start without a systemd scope until the next check in ${RECHECK_MS / 60_000} min: ${why}`);
@@ -268,11 +313,14 @@ async function probe(): Promise<Scope | undefined> {
   } catch {}
   // An older systemd may refuse a property on a scope: the most it takes wins, and a bare scope still keeps the node
   // alive.
+  const cap = memoryCap(totalmem(), swapTotal());
   const tries: Scope[] = [];
-  for (const oomContinue of [true, false]) {
-    if (nodeUnit !== undefined) tries.push({ program, nodeUnit, oomContinue, env });
-    tries.push({ program, oomContinue, env });
-  }
+  for (const memory of [cap, undefined])
+    for (const oomContinue of [true, false]) {
+      const props = { program, oomContinue, ...(memory ? { memory } : {}), env };
+      if (nodeUnit !== undefined) tries.push({ ...props, nodeUnit });
+      tries.push(props);
+    }
   for (const scope of tries) if (await starts(scope)) return scope;
   return undefined;
 }
