@@ -594,12 +594,12 @@ export class Train {
     if (done) await this.wakeLead(change.projectRef, prLeft(change.changeId, change.prUrl, why));
   }
 
-  /** `landed` is the batch PR it landed in with the others, when it did. */
-  async finishMerged(change: Change, mergedSha: string | undefined, landed?: batch.Landed): Promise<void> {
+  /** `landed` is the batch PR it landed in with the others, when it did; `left`, what is left to do (its PR's close). */
+  async finishMerged(change: Change, mergedSha: string | undefined, landed?: batch.Landed, left?: string): Promise<void> {
     const sha = mergedSha?.toLowerCase();
     const merged = this.update(change.changeId, undefined, (c) => {
       const { lastError: _, ...rest } = c;
-      return { ...rest, state: "merged", ...(sha !== undefined ? { mergedSha: sha } : {}) };
+      return { ...rest, state: "merged", ...(sha !== undefined ? { mergedSha: sha } : {}), ...(left !== undefined ? { lastError: left } : {}) };
     });
     if (!merged) return;
     this.mergeRefusals.delete(change.changeId);
@@ -1553,6 +1553,8 @@ export class Train {
       const writer = writers.find(([, b]) => headRef === b || (headRef.startsWith(b) && headRef.slice(b.length).startsWith("-")));
       if (!writer) continue;
       if (this.records.openFor(repo, pull.number)) continue;
+      // Landed in a batch, its PR not closed yet: reconcile closes it.
+      if (this.records.landedAt(repo, pull.number, pull.head.sha)) continue;
       const key = `${repo}\u0000${pull.number}\u0000${pull.head.sha.toLowerCase()}`;
       if (this.readyHeads.has(key)) continue;
       this.readyHeads.add(key);
@@ -1968,6 +1970,16 @@ export class Train {
         if (pull.merged && result) throw err(MERGED, `${prUrl} is already merged.`);
         if (pull.merged || pull.state !== "open") {
           throw this.refuse(projectRef, prUrl, { message: `It is ${pull.merged ? "already merged" : pull.state}.`, fix: "enqueue an open PR" }, row);
+        }
+        // A batch landed this head, and its PR isn't closed yet: nothing of it is left to merge or review.
+        const landed = this.records.landedAt(repo, prNumber, row.headSha);
+        if (landed && result) throw err(MERGED, `${prUrl} already landed at its head.`);
+        if (landed) {
+          const as = landed.mergedSha !== undefined ? ` (${short(landed.mergedSha)})` : "";
+          throw this.refuse(projectRef, prUrl, {
+            message: `Its head ${short(row.headSha)} already landed as ${landed.changeId}${as}, so nothing of it is left to merge; the train closes it.`,
+            fix: "nothing for this head; push new commits to the PR for new work",
+          });
         }
         if (pull.head.repo?.full_name.toLowerCase() !== repo) {
           throw this.refuse(projectRef, prUrl, { message: "Its branch lives in another repository.", fix: `push the branch to ${repo} and open the PR from there` }, row);

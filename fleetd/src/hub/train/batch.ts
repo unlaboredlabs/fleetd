@@ -793,19 +793,26 @@ export async function finishBatchMember(t: Train, change: Change, landed: Landed
     t.update(change.changeId, ["ready", "rebasing", "ci", "merging"], (c) => ({ ...c, state: "ready", lastError: errorText(why) }));
     return;
   }
-  await t.finishMerged(change, landed.mergedSha, landed);
-  if (pull.state === "open") await closeMember(t, change, landed);
+  // Recorded as not closed with the merge itself: a hub gone between the two (a restart) leaves reconcile the close.
+  const open = pull.state === "open";
+  await t.finishMerged(change, landed.mergedSha, landed, open ? NOT_CLOSED : undefined);
+  if (open) await closeMember(t, change, landed);
 }
 
-/** Closes a landed member's PR with a link to its batch; a failure stays on the Change for reconcile to retry. */
+/**
+ * Closes a landed member's PR with a link to its batch, its comment once however often it is tried; a failure stays
+ * on the Change for reconcile to retry.
+ */
 async function closeMember(t: Train, change: Change, landed: Landed): Promise<void> {
   const others = landed.members.filter((n) => n !== change.prNumber).map((n) => `#${n}`);
   const comment = `Landed in #${landed.prNumber} (${short(landed.mergedSha)}) by the fleetd merge train: merged together with ${others.join(", ")} after one CI run on the batch.`;
   let failure: string | undefined;
   try {
-    await t.github.close(change.repo, change.prNumber, comment);
+    await t.github.close(change.repo, change.prNumber, comment, true);
   } catch (error) {
     failure = (error as Error).message;
+    const line = `train: ${change.changeId} landed in batch #${landed.prNumber}, but its PR #${change.prNumber} is not closed; the next pass tries again`;
+    t.warnHourly([line], failure, `${line}: ${failure}`);
   }
   t.update(change.changeId, ["merged"], (c) => {
     const { lastError: _, ...rest } = c;

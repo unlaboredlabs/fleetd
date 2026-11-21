@@ -97,6 +97,15 @@ export class ChangeRecords {
     return this.latest(repo, prNumber, false);
   }
 
+  /** The PR's merged Change at `headSha`: that head already landed (alone, or in a batch). */
+  landedAt(repo: string, prNumber: number, headSha: string): Change | undefined {
+    return this.db.conn
+      .query<{ data: string }, [string, number, string]>("SELECT data FROM changes WHERE repo = ?1 AND pr_number = ?2 AND state = ?3 ORDER BY n DESC")
+      .all(repo.toLowerCase(), prNumber, "merged")
+      .map((row) => decode(row.data))
+      .find((c) => c.headSha === headSha.toLowerCase());
+  }
+
   /** Whether a Change of the workstream merged. */
   anyMerged(r: ProjectRef, workstreamId: string): boolean {
     return (

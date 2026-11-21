@@ -358,6 +358,11 @@ export class FakeGh implements GhRunner {
           }),
       );
     }
+    if (a === "issues" && c === "comments" && method === "GET") {
+      const p = this.pulls.get(Number(b));
+      if (!p) return httpError(404, "Not Found");
+      return ok(p.comments.map((body) => ({ body })));
+    }
     if (a === "issues" && c === "comments" && method === "POST") {
       const p = this.pulls.get(Number(b));
       if (!p) return httpError(404, "Not Found");
