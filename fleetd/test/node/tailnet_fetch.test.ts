@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
+import { probe } from "../../src/node/actions/mcp_probe.ts";
 import { dialFetch } from "../../src/node/sandbox/tailnet_fetch.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -50,6 +51,36 @@ test("a GET over the dial: its headers go, the status and body come back, whole,
     expect((await f("http://100.104.249.49:80/none")).status).toBe(204);
     expect(dialed).toEqual(["devbox.tail1234.ts.net:8317", "100.104.249.49:80", "100.104.249.49:80"]);
     await expect(f("http://100.104.249.49/", { headers: { "x-bad": "a\r\nb" } })).rejects.toThrow("line break");
+  } finally {
+    srv.stop(true);
+  }
+});
+
+test("a POST over the dial sends its body, and an MCP server on the tailnet lists its tools through it", async () => {
+  const seen: string[] = [];
+  const srv = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const text = await req.text();
+      seen.push(`${req.method} ${Number(req.headers.get("content-length")) === Buffer.byteLength(text)} ${req.headers.get("accept")} ${req.headers.get("user-agent")?.split("/")[0]}`);
+      if (new URL(req.url).pathname === "/echo") return new Response(`got ${text}`);
+      if (req.headers.get("authorization") !== "Bearer made-up-key") return new Response("no", { status: 401 });
+      const body = JSON.parse(text) as { id?: number; method: string };
+      if (body.id === undefined) return new Response(null, { status: 202 });
+      const result = body.method === "initialize" ? { protocolVersion: "2025-06-18", serverInfo: { name: "tailnet-mcp", version: "1.0.0" } } : { tools: [{ name: "search" }] };
+      return Response.json({ jsonrpc: "2.0", id: body.id, result }, { headers: { "mcp-session-id": "s1" } });
+    },
+  });
+  const f = dialFetch(to(srv.port!, []));
+  try {
+    const echoed = await f("http://100.104.249.49/echo", { method: "POST", body: "héllo", headers: { "content-length": "1" } });
+    expect(await echoed.text()).toBe("got héllo");
+    expect(seen.shift()).toBe("POST true */* fleetd");
+    await expect(f("http://100.104.249.49/", { method: "GET /x HTTP/1.1\r\n" })).rejects.toThrow("isn't an HTTP method");
+    const server = { name: "crm", transport: { type: "http" as const, url: "http://devbox.tail1234.ts.net:8080/mcp" }, values: [["Authorization", "Bearer made-up-key"]] as [string, string][], secrets: [] };
+    expect(await probe(server, { fetch: f })).toEqual({ server: "tailnet-mcp 1.0.0", tools: [{ name: "search" }] });
+    // The probe's own accept and user agent, not the dial's defaults beside them.
+    expect(seen).toEqual(Array(3).fill("POST true application/json, text/event-stream fleetd-mcp-test"));
   } finally {
     srv.stop(true);
   }

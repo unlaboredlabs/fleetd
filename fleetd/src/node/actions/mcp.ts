@@ -13,7 +13,11 @@ import type { NodeBoxKey } from "../identity.ts";
 import type { Vars } from "../secrets/env.ts";
 import { ENV_VALUE_MAX_BYTES, fingerprintOf, writeAtomic } from "../secrets/files.ts";
 import { nowIso } from "../util.ts";
+import type { Resolved } from "./mcp_probe.ts";
 import { ioWhy, openB64, readIfThere, removeIfThere, utf8 } from "./refusal.ts";
+
+/** A server with its secrets resolved: what claude gets. */
+export type { Resolved };
 
 const DIR = "mcp-secrets";
 const KEPT = "mcp-servers.json";
@@ -147,16 +151,6 @@ export function kept(dir: string): Kept | undefined {
     return undefined;
   }
 }
-
-/** A server with its secrets resolved: what claude gets. */
-export type Resolved = {
-  name: string;
-  transport: McpTransport;
-  /** Env (stdio) or headers (HTTP, SSE). */
-  values: Vars;
-  /** Its secrets as `<server>.<NAME>`, for masking. */
-  secrets: Vars;
-};
 
 /** The server's entry in claude's `mcpServers`. */
 export function entry(r: Resolved): Record<string, unknown> {

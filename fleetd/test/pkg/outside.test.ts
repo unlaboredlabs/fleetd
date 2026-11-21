@@ -145,6 +145,19 @@ test("a project outside the repo installs the package, imports every entry point
   });
   expect(typecheck("fields.ts")).toEqual({ code: 0, out: "" });
 
+  // An MCP server's Test as fleetd cloud runs it with no node: over its own fetch (a stand-in here, so nothing reaches
+  // the network), a server that lists its tools and one that echoes its made-up key back, masked; a command, with no
+  // spawn given, isn't started.
+  writeFileSync(join(project, "probe.ts"), PROBE);
+  expect(JSON.parse(bun(["probe.ts"]).out)).toEqual({
+    listed: { server: "stand-in 1.0.0", tools: [{ name: "search", description: "Searches.", readOnly: true }] },
+    echoed: { tools: [], error: "Error POSTing to endpoint (HTTP 500): bad key ***crm.Authorization***" },
+    command: { tools: [], error: "nothing here can start some-server: a stdio server is tested where its agents run" },
+    sent: ["initialize", "notifications/initialized", "tools/list"],
+    timeout: 30000,
+  });
+  expect(typecheck("probe.ts")).toEqual({ code: 0, out: "" });
+
   // A type the package exports is the real one, not `any`: a wrong use fails.
   writeFileSync(join(project, "wrong.ts"), `import { TOOL_LIST } from "fleetd/tools";\nexport const n: number = TOOL_LIST[0]!.name;\n`);
   expect(typecheck("wrong.ts").out).toContain("wrong.ts(2,14): error TS2322");
@@ -302,6 +315,36 @@ console.log(JSON.stringify({
   ...all,
   expiry: ["12/2028", "3/28", "202812", "122028", "1228", "13/2028", "12/028", "", "ab/cd"].map((v) => expiry(v) ?? null),
 }));
+`;
+
+/** An MCP server's Test through the package, over a stand-in fetch that answers as a streamable HTTP server. */
+const PROBE = `
+import { type Fetch, probe, type Resolved, TIMEOUT_MS } from "fleetd/box/mcp_probe";
+
+const sent: string[] = [];
+const stand: Fetch = async (_url, init) => {
+  const body = JSON.parse(String(init.body)) as { id?: number; method: string };
+  sent.push(body.method);
+  const key = new Headers(init.headers).get("authorization");
+  if (key !== "Bearer made-up-key") return new Response(\`bad key \${key}\`, { status: 500 });
+  if (body.id === undefined) return new Response(null, { status: 202 });
+  const result =
+    body.method === "initialize"
+      ? { protocolVersion: "2025-06-18", serverInfo: { name: "stand-in", version: "1.0.0" } }
+      : { tools: [{ name: "search", description: "Searches.\\nMore.", annotations: { readOnlyHint: true } }] };
+  return Response.json({ jsonrpc: "2.0", id: body.id, result });
+};
+const crm = (key: string): Resolved => ({
+  name: "crm",
+  transport: { type: "http", url: "https://mcp.example.test/mcp" },
+  values: [["Authorization", key]],
+  secrets: [["crm.Authorization", key]],
+});
+const listed = await probe(crm("Bearer made-up-key"), { fetch: stand, version: "1.2.3" });
+const seen = [...sent];
+const echoed = await probe(crm("Bearer made-up-wrong-key"), { fetch: stand });
+const command = await probe({ name: "x", transport: { type: "stdio", command: "some-server" }, values: [], secrets: [] }, { fetch: stand });
+console.log(JSON.stringify({ listed, echoed, command, sent: seen, timeout: TIMEOUT_MS }));
 `;
 
 /** A "New sign-in" notice sealed as fleetd cloud seals one, opened and shown by the phone's reader through the package. */
