@@ -67,6 +67,8 @@
     "./browser/session": "./fleetd/src/node/browser/session.ts",
     "./desktop/box_display": "./fleetd/src/node/place/box_screens.ts",
     "./desktop/desktops": "./fleetd/src/node/desktop/desktops.ts",
+    "./device/box_android": "./fleetd/src/node/place/box_emulator.ts",
+    "./device/devices": "./fleetd/src/node/device/devices.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",
     "./fakes/accounts": "./fleetd/test/fake-accounts.ts",
