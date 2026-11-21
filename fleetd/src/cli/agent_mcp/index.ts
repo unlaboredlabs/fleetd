@@ -3,9 +3,11 @@
 // through the node's socket with the session's `FLEETD_THREAD_ID`; the hub decides who may make it. The role only
 // picks which tools are listed. Results that take time (a task's result, an answer, an approval) arrive in a later
 // wake, never by polling.
+import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { newCallId } from "../../shared/lead_once.ts";
 import { VERSION } from "../../shared/version.ts";
 import { checkArguments } from "./check.ts";
 import { at, isObject, rustJson } from "./json.ts";
@@ -87,11 +89,11 @@ export const envDeps = (): LeadDeps => ({
 });
 
 /** One lead call (`{"op": …, …}`) to the hub through the node: the answer frame, or (thrown) why the node could not
- * be asked. */
+ * be asked. Each call has its own id, so one sent again after a cut is answered once (../../shared/lead_once.ts). */
 export function sendCall(call: Call, deps: LeadDeps): Promise<Record<string, unknown>> {
   const frame: Call = {
     t: BROWSER_OPS.has(String(call.op)) ? "browser_call" : "lead_call",
-    id: `cli-${process.pid}`,
+    id: newCallId(process.pid, randomUUID()),
     cwd: callerCwd(deps.pwd, deps.cwd),
     call,
   };

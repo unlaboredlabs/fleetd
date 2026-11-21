@@ -4,6 +4,7 @@
 // ./peer.ts, so a service with no node answers a box's node.sock calls with it too.
 import { Duplex } from "node:stream";
 import type { Masker } from "../mask.ts";
+import { isCallId, LEAD_CALL_ONCE } from "../../shared/lead_once.ts";
 import type { NodeFrame } from "../../shared/node_link.ts";
 import { headUtf16 } from "../text.ts";
 
@@ -39,7 +40,8 @@ export const NODE_OPS = [
 ];
 
 export type McpToolError = { code: string; message: string; fix?: string };
-export type LeadCallFrame = { id: string; cwd: string; call: { op: string } & Record<string, unknown>; threadId?: string };
+/** `resent`: the caller sends it again after a cut before its answer (../../shared/lead_once.ts). */
+export type LeadCallFrame = { id: string; cwd: string; call: { op: string } & Record<string, unknown>; threadId?: string; resent?: boolean };
 export type LeadResultFrame = { id: string; result?: unknown; error?: McpToolError };
 
 const errorFrame = (id: string, error: McpToolError): LeadResultFrame => ({ id, error });
@@ -88,8 +90,9 @@ export class LeadRelay {
     }
   }
 
-  /** Forwards one frame and returns the hub's answer under the caller's id. Never throws: trouble is an error frame.
-   * A call is sent once: one lost after sending may have run, so it is never sent again. */
+  /** Forwards one frame and returns the hub's answer under the caller's id, which goes with it as `callId` when it is
+   * one call's own. Never throws: trouble is an error frame. A call lost after sending may have run, so this never
+   * sends it again; a caller that does (`resent`) is sent on only to a hub that answers a repeated `callId` once. */
   async call(frame: LeadCallFrame, waitMs = ANSWER_TIMEOUT_MS): Promise<LeadResultFrame> {
     const callerId = frame.id;
     if (!this.#send) {
@@ -101,9 +104,12 @@ export class LeadRelay {
     }
     const send = this.#send;
     if (!send) return errorFrame(callerId, { code: "machine_offline", message: HUB_UNREACHABLE });
+    const callId = isCallId(callerId) ? callerId : undefined;
+    if (frame.resent && !(callId && this.hubCan(LEAD_CALL_ONCE)))
+      return unanswered(callerId, "the connection was cut before the answer came, and this hub can't take the call again safely");
     const id = `lc-${++this.#nextId}`;
     const answered = new Promise<LeadResultFrame>((resolve) => this.#pending.set(id, resolve));
-    send({ t: "lead_call", ...frame, id });
+    send({ t: "lead_call", ...frame, id, ...(callId ? { callId } : {}) });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<LeadResultFrame>((resolve) => {
       timer = setTimeout(() => resolve(unanswered(id, `the fleetd hub did not answer within ${Math.round(waitMs / 1000)} s`)), waitMs);
@@ -198,6 +204,8 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
   // `fleetd mac` is the node's to answer, for the session its process runs in: never masked or sent on as it is.
   if (op === "mac") {
     if (!hooks.mac) return reply(errorFrame(call.id, { code: "invalid", message: "this node doesn't reach the agents' Mac" }));
+    // Nothing here answers a repeat once: a step sent again would run again.
+    if (call.resent) return reply(unanswered(call.id, "the connection was cut before the answer came"));
     const attributed = attribute(call, peer());
     if (isResult(attributed)) return reply(attributed);
     if (attributed.threadId === undefined)

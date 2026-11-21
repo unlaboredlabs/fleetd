@@ -194,7 +194,7 @@ describe("agent-mcp", () => {
     };
     const answer = (await handle("worker", message, deps)) as any;
     expect(sent).toEqual([{
-      socket: "/n.sock", t: "lead_call", id: `cli-${process.pid}`, cwd: "/work/p", threadId: "s1",
+      socket: "/n.sock", t: "lead_call", id: expect.stringMatching(new RegExp(`^cli-${process.pid}-[0-9a-f-]{36}$`)), cwd: "/work/p", threadId: "s1",
       call: { op: "ask_lead", question: "Which DB?" },
     }]);
     expect(answer.id).toBe(7);

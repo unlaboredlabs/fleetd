@@ -81,6 +81,7 @@
     "./shared/cap_lines": "./fleetd/src/shared/cap_lines.ts",
     "./shared/clock": "./fleetd/src/shared/clock.ts",
     "./shared/errors": "./fleetd/src/shared/errors.ts",
+    "./shared/lead_once": "./fleetd/src/shared/lead_once.ts",
     "./shared/limit_text": "./fleetd/src/shared/limit_text.ts",
     "./shared/node_link": "./fleetd/src/shared/node_link.ts",
     "./shared/redact": "./fleetd/src/shared/redact.ts",
