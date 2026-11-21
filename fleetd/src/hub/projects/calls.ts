@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type {
   BotColor,
+  BotShape,
   ChatMessageId,
   EnvVarSet,
   ProjectIcon,
@@ -47,7 +48,7 @@ import { peopleOnly } from "./people_only.ts";
 import * as propose from "./propose.ts";
 import * as create from "./repo_create_rules.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
-import { announce, BOT_COLOR_DEFAULT, botColorOf, projectSettings, rename, repoNamed, setColor, setEnv } from "./settings.ts";
+import { announce, BOT_COLOR_DEFAULT, BOT_SHAPE_DEFAULT, botColorOf, projectSettings, rename, repoNamed, setColor, setEnv, setShape } from "./settings.ts";
 
 export const OPS = ["repo_add", "repo_create", "repo_remove", "project_setup"] as const;
 
@@ -56,7 +57,7 @@ type Before =
   | { kind: "repo_added"; repo: RepoName; created: boolean }
   | { kind: "repo_removed"; repo: RepoName; path?: string; setup?: WorktreeSetup }
   | { kind: "title"; title: string }
-  | { kind: "look"; icon?: ProjectIcon; color: BotColor }
+  | { kind: "look"; icon?: ProjectIcon; color: BotColor; shape?: BotShape }
   | { kind: "instructions"; text?: string; base?: string }
   | { kind: "setup"; repo?: RepoName; setup?: WorktreeSetup }
   | { kind: "env"; set: { name: string; value: string }[]; remove: string[] }
@@ -65,6 +66,7 @@ type Before =
 type SetupCall = {
   archive?: boolean;
   color?: BotColor;
+  shape?: BotShape;
   env?: { set?: { name: string; value: string }[]; remove?: string[] };
   icon?: ProjectIcon;
   instructions?: string;
@@ -429,9 +431,9 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
     });
   }
 
-  if (c.icon !== undefined || picture !== undefined || c.color !== undefined) {
+  if (c.icon !== undefined || picture !== undefined || c.color !== undefined || c.shape !== undefined) {
     await step(() => {
-      const before: Before = { kind: "look", color: project.avatarColor ?? BOT_COLOR_DEFAULT };
+      const before: Before = { kind: "look", color: project.avatarColor ?? BOT_COLOR_DEFAULT, shape: project.avatarShape ?? BOT_SHAPE_DEFAULT };
       const pick = icon.picked(db, r);
       if (pick) before.icon = pick;
       const jpeg = avatar.jpegOf(db, r);
@@ -448,8 +450,12 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
         setColor(hub, projectOf(hub, r), c.color);
         parts.push("color");
       }
+      if (c.shape !== undefined && c.shape !== before.shape) {
+        setShape(hub, projectOf(hub, r), c.shape);
+        parts.push("shape");
+      }
       if (parts.length === 0) return undefined;
-      const line = `Changed the bot's ${parts.join(" and ")}`;
+      const line = `Changed the bot's ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}` : parts.join("")}`;
       post(hub, r, line, before, undefined, jpeg);
       return line;
     });
@@ -576,6 +582,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
       const avatarId = avatar.keep(hub, r, picture);
       announce(hub, r, `${project.title}'s look is back`, { icon: icon.of(db, r), avatar: avatarId ?? null });
       setColor(hub, projectOf(hub, r), before.color);
+      if (before.shape !== undefined) setShape(hub, projectOf(hub, r), before.shape);
       return undefined;
     }
     case "instructions": {

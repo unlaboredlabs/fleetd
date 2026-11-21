@@ -67,33 +67,44 @@ export const BOT_COLORED: Readonly<Record<string, string>> = {
   "Rewrite the pricing": "pink",
 };
 
+/** The bots' shapes (shared/bot.ts BOT_BODIES), every one of them, storefront a ghost; the others Pebble, the default,
+ * which the hub names by no shape at all. */
+export const BOT_SHAPED: Readonly<Record<string, string>> = {
+  storefront: "ghost",
+  billing: "kitty",
+  checkout: "bunny",
+  docs: "toast",
+  search: "ghost",
+};
+
 /** Three quiet bots more, in the palette's colors status-rows has no bot for. */
-const EXTRA_COLORED: readonly (readonly [title: string, projectId: string, color: string])[] = [
-  ["design", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e51", "brown"],
-  ["payments", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e52", "amber"],
+const EXTRA_COLORED: readonly (readonly [title: string, projectId: string, color: string, shape?: string])[] = [
+  ["design", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e51", "brown", "bunny"],
+  ["payments", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e52", "amber", "kitty"],
   ["analytics", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e53", "teal"],
 ];
 
-/** `f`'s projects, each bot in its color (BOT_COLORED). */
+/** `f`'s projects, each bot in its color (BOT_COLORED) and shape (BOT_SHAPED). */
 const colored = (f: Fixture): Fixture => {
   if (f.snapshot !== undefined) {
     f.snapshot["projects"] = arr(f.snapshot["projects"]).map((p) => {
       const title = asText(obj(p)["title"]);
       const color = Object.entries(BOT_COLORED).find(([t]) => title.startsWith(t))?.[1];
-      return color === undefined ? p : { ...obj(p), avatarColor: color };
+      const shape = Object.entries(BOT_SHAPED).find(([t]) => title === t)?.[1];
+      return { ...obj(p), ...(color === undefined ? {} : { avatarColor: color }), ...(shape === undefined ? {} : { avatarShape: shape }) };
     });
   }
   return f;
 };
 
 const colors = (base: Fixture): Fixture => {
-  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: every color of the palette, a bot in each, mobile in grey, the default."));
+  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: every color of the palette and every shape, mobile a grey Pebble, the default."));
   if (f.snapshot !== undefined) {
     const projects = arr(f.snapshot["projects"]);
     const at = Date.parse(asText(obj(projects.at(-1))["lastActivityAt"]));
     f.snapshot["projects"] = [
       ...projects,
-      ...EXTRA_COLORED.map(([title, projectId, avatarColor], i) => ({
+      ...EXTRA_COLORED.map(([title, projectId, avatarColor, avatarShape], i) => ({
         machineId: "devbox",
         projectId,
         title,
@@ -101,6 +112,7 @@ const colors = (base: Fixture): Fixture => {
         lastActivityAt: new Date(at - (i + 1) * 60 * 60_000).toISOString(),
         threads: { running: 0, waiting: 0, idle: 1, failed: 0 },
         avatarColor,
+        ...(avatarShape === undefined ? {} : { avatarShape }),
       })),
     ];
   }

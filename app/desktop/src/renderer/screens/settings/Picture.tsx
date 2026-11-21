@@ -17,7 +17,7 @@ import { errorText, useHubCall } from "./hub";
 import { SettingsRow } from "./parts";
 import p from "./Picture.module.css";
 
-type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "avatar" | "avatarColor">;
+type Pictured = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "avatar" | "avatarColor" | "avatarShape">;
 type Picked = { readonly file: File; readonly mime: AttachmentMime; readonly url: string; readonly size: Size };
 
 const TAKES: readonly string[] = ["image/png", "image/jpeg", "image/webp"];
@@ -122,7 +122,7 @@ export function PictureSetting({ project }: { project: Pictured }) {
             onDragLeave={() => setDragging(false)}
             onDrop={drop}
           >
-            <Avatar name={project.title} size={PREVIEW} src={hasPicture ? picture : undefined} bot={bot} color={project.avatarColor} className={p.preview} />
+            <Avatar name={project.title} size={PREVIEW} src={hasPicture ? picture : undefined} bot={bot} color={project.avatarColor} shape={project.avatarShape} className={p.preview} />
             <span className={p.hover} aria-hidden>
               <Upload />
             </span>

@@ -173,6 +173,29 @@ test("a bot's bot color: grey until picked, kept with the bot, announced, and on
   expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarColor: "blue" })).toBe("forbidden");
 });
 
+test("a bot's shape: Pebble until picked, kept with the bot, announced, and only from the shapes", async () => {
+  const k = kit();
+  const r = { machineId: "devbox", projectId: "app" };
+  project(k.hub, r, { title: "App" });
+  expect(store(k.hub).projectGet(r)?.avatarShape).toBeUndefined();
+  const out = await k.ok(key("operate"), "project_settings_set", { ...r, avatarShape: "ghost" });
+  expect(out.next).toBe("Its bot is a ghost on every device now.");
+  expect(store(k.hub).projectGet(r)?.avatarShape).toBe("ghost");
+  expect(store(k.hub).projectsList().find((p) => p.projectId === "app")?.avatarShape).toBe("ghost");
+  expect(events(k.hub).page(0).events.map((e) => [e.type, e.summary, e.data])).toEqual([["project.settings", "App's bot is a ghost now", { avatarShape: "ghost" }]]);
+  // The same shape again says nothing new; with a color, both are named.
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarShape: "ghost" });
+  expect(events(k.hub).page(0).events).toHaveLength(1);
+  expect((await k.ok(key("operate"), "project_settings_set", { ...r, avatarShape: "kitty", avatarColor: "pink" })).next).toBe("Its bot is a kitty in pink on every device now.");
+  expect([store(k.hub).projectGet(r)?.avatarShape, store(k.hub).projectGet(r)?.avatarColor]).toEqual(["kitty", "pink"]);
+  // Pebble, the default, is kept as none.
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarShape: "pebble" });
+  expect(store(k.hub).projectGet(r)?.avatarShape).toBeUndefined();
+  expect(k.hub.db.conn.query("SELECT avatar_shape FROM project_settings").get()).toEqual({ avatar_shape: null });
+  expect(await k.refused(key("operate"), "project_settings_set", { ...r, avatarShape: "dragon" })).toBe("invalid");
+  expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarShape: "toast" })).toBe("forbidden");
+});
+
 test("a bot's settings: setup per repo, an older app's onlyMe ignored, and what env_set refuses", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };

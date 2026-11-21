@@ -1,7 +1,7 @@
 // The hub calls behind a bot's screens, each as the desktop makes it: New Bot (project_discover, then the desktop's
 // create flow: project_add for the bot, project_repo_add for each of its repos), its screen's reads (agents_list, orders_board,
 // checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title),
-// Archive, its bot's color (avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
+// Archive, its bot's shape and color (avatarShape, avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, Linked hubs (hub_links_get,
 // hub_link_remove), its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
@@ -49,6 +49,12 @@ export const rename = async (hub: Hub, p: ProjectRef, name: string): Promise<Res
 /** Its bot's color, from the palette (BOT_COLORS). */
 export const setBotColor = async (hub: Hub, p: ProjectRef, avatarColor: string): Promise<Result<null>> => {
   const r = await hub.call("project_settings_set", { ...ref(p), avatarColor });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Its bot's body, from the shapes (BOT_SHAPES). */
+export const setBotShape = async (hub: Hub, p: ProjectRef, avatarShape: string): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), avatarShape });
   return r.ok ? { ok: true, value: null } : r;
 };
 

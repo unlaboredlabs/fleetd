@@ -1022,6 +1022,22 @@ export type KnownBotColor = "mono" | "brown" | "red" | "orange" | "amber" | "gre
 export type BotColor = KnownBotColor | (string & {});
 /** The palette's earlier names (before W774), still taken and kept as they are, each worn as the color it became. */
 export const BOT_COLORS_WERE: { readonly [was: string]: KnownBotColor | undefined } = { slate: "grey", lilac: "purple", coral: "red", sage: "green" };
+/** The colors in a picker's order (shared/bot.ts BOT_PAINT paints them). */
+export const BOT_COLORS: readonly KnownBotColor[] = ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"];
+
+/** The bodies a bot comes in (shared/bot.ts BOT_BODIES), in a picker's order, pebble its default. */
+export type KnownBotShape = "pebble" | "ghost" | "kitty" | "bunny" | "toast";
+/** KnownBotShape, or a value from a newer hub. */
+export type BotShape = KnownBotShape | (string & {});
+export const BOT_SHAPES: readonly KnownBotShape[] = ["pebble", "ghost", "kitty", "bunny", "toast"];
+
+/** A new bot's look, from its id, so a list of new bots looks varied: FNV-1a (32 bits) of the id's UTF-8 bytes picks its
+ * shape, and what's left of it its color. The hub and the cloud store it when they make the bot. */
+export const botLookOf = (projectId: string): { shape: KnownBotShape; color: KnownBotColor } => {
+  let h = 2166136261;
+  for (const b of new TextEncoder().encode(projectId)) h = Math.imul(h ^ b, 16777619) >>> 0;
+  return { shape: BOT_SHAPES[h % BOT_SHAPES.length] ?? "pebble", color: BOT_COLORS[Math.floor(h / BOT_SHAPES.length) % BOT_COLORS.length] ?? "grey" };
+};
 
 export type BoxPublicKey = string;
 
@@ -6579,6 +6595,8 @@ export type ProjectSettingsGetOutput = {
 export type ProjectSettingsSetInput = {
   /** Its bot's color, from the palette; grey is the default. */
   avatarColor?: BotColor;
+  /** Its bot's body, from the shapes; pebble is the default. */
+  avatarShape?: BotShape;
   /** Turns its chat's tags on or off (a trial; off by default). */
   chatTags?: boolean;
   /** Its agents' computer from now on: one of `computers`, exactly. */
@@ -6726,6 +6744,9 @@ export type ProjectSummary = {
   avatar?: string;
   /** Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: grey, the default. */
   avatarColor?: BotColor;
+  /** Its bot's body, from the hub, the one a person picked or a new bot got from its id (`project_settings_set`).
+   * Absent: pebble, the default. */
+  avatarShape?: BotShape;
   /** Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off. */
   chatTags?: boolean;
   /**

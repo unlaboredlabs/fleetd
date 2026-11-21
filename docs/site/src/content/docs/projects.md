@@ -140,7 +140,7 @@ right-click menu. Its **Bot** page has these, in order:
 | Setting | Does |
 |---|---|
 | Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the bot is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
-| Color | The bot's color, one flat dot of eleven: mono (white in the dark theme, near-black in the light), brown, red, orange, amber, green, teal, blue, purple, pink or grey (the default), each tuned for the light and the dark theme. A pick shows at once on every device that sees the bot. A bot that had one of the earlier colors wears the nearest new one: slate is grey, lilac purple, coral red and sage green. On the phone it's in the bot's info, under **Edit** on its icon. |
+| Look | The bot's shape and color, in one picker. Shapes: Pebble, Ghost, Kitty, Bunny and Toast, each with the same face and the same motion. Colors, one flat dot of eleven: mono (white in the dark theme, near-black in the light), brown, red, orange, amber, green, teal, blue, purple, pink or grey, each tuned for the light and the dark theme. A new bot gets a shape and color from its id, so a list of bots looks varied; a bot made before shapes came keeps Pebble, in grey unless a color was picked. A bot that had one of the earlier colors wears the nearest new one: slate is grey, lilac purple, coral red and sage green. A pick shows at once on every device that sees the bot. On the phone it's in the bot's info, under **Edit** on its icon. |
 | Name | How fleetd shows the bot. Its folder keeps its own name. |
 | Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Computer**: its setup commands. See [Computer](#computer). |
 | Environment variables | Variables every new agent of the bot gets. See [Environment variables](#env). |
@@ -402,7 +402,7 @@ Ask the lead in its chat and it changes its own bot itself, with no approval car
 | A repo, by GitHub URL or `owner/repo` | `repo_add` with `url` | It is cloned onto the bot's machine, as **Add repo** does. The lead is woken when the clone ends, or when it fails, with the fix. |
 | A repo that is already a checkout on the bot's machine | `repo_add` with `path` | The checkout joins the bot. |
 | A repo taken out | `repo_remove` | As **Remove…**: its agents stop, and its checkout stays on disk. |
-| A name, an icon, a picture or a color | `project_setup` | A picture is an image file in the lead's folder. An icon replaces a picture. |
+| A name, an icon, a picture, a color or a shape | `project_setup` | A picture is an image file in the lead's folder. An icon replaces a picture. |
 | The bot's instructions | `project_setup` with `instructions` | The whole text every agent of the bot is told ([Your own instructions](/docs/what-agents-are-told#instructions)); empty clears it. |
 | Setup commands | `project_setup` with `setup` | For the bot or one repo: see [Setup commands](#setup). |
 | A plain variable set or removed | `project_setup` with `env` | See [Environment variables](#env). A value that looks like a key or a password is refused: a secret goes through [secure input](#secure-input), which you fill in on your own device. A variable you set as a secret is not the lead's to change. |
@@ -785,7 +785,10 @@ bot summary says `createdBy` (the id and name of the key that made it) and, once
 app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored. Its bot's color is `project_settings_set {machineId, projectId,
 avatarColor}`, one of `mono`, `brown`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `purple`, `pink` and `grey`; a
 summary's `avatarColor` says which it wears, and has none for grey. The earlier names `slate`, `lilac`, `coral` and `sage`
-(an older app's) are still taken and kept as they came, and the apps paint them grey, purple, red and green. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
+(an older app's) are still taken and kept as they came, and the apps paint them grey, purple, red and green. Its bot's
+shape is `project_settings_set {machineId, projectId, avatarShape}`, one of `pebble`, `ghost`, `kitty`, `bunny` and
+`toast`; a summary's `avatarShape` says which it wears, and has none for pebble, which an app also draws for a shape it
+doesn't know. A new bot's shape and color come from its id (`botLookOf` in the contracts), stored when it is made. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
 crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and
 `project_avatar_get {machineId, projectId}`; a summary's `avatar` names the one it has.
 

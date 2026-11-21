@@ -1,6 +1,6 @@
 // A project's bot, as the desktop draws it (its shared/bot.ts and ui/primitives/Bot.tsx): one character for every
 // project without a picture, whose motion says its state, in react-native-svg. It has no circle: its body alone, in
-// calm slate or the color picked for its project (BOT_PAINT), cropped to fill its box (CROP), is the picture. Its hops
+// the shape (BOT_BODIES) and color (BOT_PAINT) picked for it, cropped to fill its box (CROP), is the picture. Its hops
 // and slumps reach a little past the box, so it's drawn on a canvas REACH larger on each side, never clipped. Its rig
 // lives in a shared value and steps on the UI thread, in a frame callback that runs only while beingLife.ts says it
 // moves (a live state on screen, a moment, a change settling); each frame poses the body and draws both eyes from the
@@ -10,7 +10,7 @@ import { useContext, useEffect, useId, useRef, useState, type ComponentRef } fro
 import { Dimensions, View } from "react-native";
 import Animated, { useAnimatedProps, useFrameCallback, useSharedValue } from "react-native-reanimated";
 import Svg, { Defs, FeGaussianBlur, Filter, G, Path, type GProps, type PathProps } from "react-native-svg";
-import { advanceRig, BODY, CROP, DIMMED, drawnAt, frameOf, LARGE, moment, newRig, paintOf, setRigState, type BotState, type Frame, type Rig } from "../desktop";
+import { advanceRig, BOT_BODIES, CROP, DIMMED, REACH, drawnAt, frameOf, LARGE, moment, newRig, paintOf, setRigState, shapeOf, type BotState, type Frame, type Rig } from "../desktop";
 import { useTheme } from "../theme";
 import { bringToLife, type Life } from "./beingLife";
 import { useReduceMotion } from "./motion";
@@ -18,12 +18,9 @@ import { useReduceMotion } from "./motion";
 const AnimatedG = Animated.createAnimatedComponent(G);
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-/** How far past its box, in the drawing's units, the canvas reaches on each side: a hop rises about 5 at most, a
- * slump spreads about 1. */
-const REACH = 8;
 const VIEW = `${String(CROP.x - REACH)} ${String(CROP.y - REACH)} ${String(CROP.w + 2 * REACH)} ${String(CROP.w + 2 * REACH)}`;
 
-export function Being({ state, size, color }: { state: BotState; size: number; color?: string | undefined }) {
+export function Being({ state, size, color, shape }: { state: BotState; size: number; color?: string | undefined; shape?: string | undefined }) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const nav = useContext(NavigationContext);
@@ -123,7 +120,7 @@ export function Being({ state, size, color }: { state: BotState; size: number; c
           </Defs>
         ) : null}
         <AnimatedG animatedProps={body}>
-          <Path d={BODY} fill={p.body} />
+          <Path d={BOT_BODIES[shapeOf(shape)]} fill={p.body} />
           {glow ? (
             <AnimatedG animatedProps={glowing} filter={`url(#${id}g)`} fill={p.eye}>
               <AnimatedPath animatedProps={leftGlow} />

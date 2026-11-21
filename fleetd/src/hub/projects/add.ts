@@ -27,6 +27,7 @@ import { fromExecutor } from "../executor/tools.ts";
 import { leads } from "../leads/index.ts";
 import { link } from "../link/index.ts";
 import { startNew as startApprovals } from "../project_lead/checker.ts";
+import { startLook } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { type EventLog, events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -122,6 +123,8 @@ async function registerAt(
   const projectId = existing ?? newUuid();
   const named = title ?? name;
   const project = { machineId: m, projectId };
+  // A new bot gets its shape and color from its id, there before any app sees it.
+  if (created) startLook(hub.db.conn, project);
   if (created || named !== name) {
     await projectUpsert(hub, m, projectId, named, path).catch((e) => {
       throw fromExecutor(e);

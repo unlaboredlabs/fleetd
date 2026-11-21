@@ -24,7 +24,7 @@ import type {
   RepoName,
   WorktreeSetup,
 } from "../../shared/contracts.ts";
-import { BOT_COLORS_WERE } from "../../shared/contracts.ts";
+import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type BotShape } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
@@ -36,7 +36,7 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { chatTagsOn, setAvatarColor, setChatTags } from "../project_lead/store.ts";
+import { chatTagsOn, setAvatarColor, setAvatarShape, setChatTags } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -49,9 +49,10 @@ export const ENV_VALUE_MAX_BYTES = 64 * 1024;
 /** All of one project's values together: every one goes into every session's environment. */
 export const ENV_TOTAL_MAX_BYTES = 512 * 1024;
 const SEAL_OVERHEAD = 48;
-/** The colors a bot comes in (app/desktop/src/shared/bot.ts BOT_PAINT), grey its default. */
-export const BOT_COLORS: readonly KnownBotColor[] = ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"];
+/** A bot's color (the contracts' BOT_COLORS, which app/desktop/src/shared/bot.ts BOT_PAINT paints) when it has none. */
 export const BOT_COLOR_DEFAULT: KnownBotColor = "grey";
+/** A bot's body (the contracts' BOT_SHAPES, app/desktop/src/shared/bot.ts BOT_BODIES) when it has none. */
+export const BOT_SHAPE_DEFAULT = "pebble";
 
 /** The palette's color `color` is: its own, the one an earlier name became (an older app still sends those), or
  * undefined for one that isn't a bot's color. */
@@ -295,6 +296,17 @@ export function setColor(hub: Hub, project: ProjectSummary, color: BotColor): vo
   announce(hub, r, `${project.title}'s bot is ${now} now`, { avatarColor: color });
 }
 
+/** Gives the project's bot a body of the shapes, and tells every app that shows it. */
+export function setShape(hub: Hub, project: ProjectSummary, shape: BotShape): void {
+  if (!(BOT_SHAPES as readonly string[]).includes(shape)) {
+    throw new ToolError("invalid", `${shape} isn't one of the bot's shapes.`, `Pick one of ${BOT_SHAPES.join(", ")}.`);
+  }
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  if ((project.avatarShape ?? BOT_SHAPE_DEFAULT) === shape) return;
+  setAvatarShape(hub.db.conn, r, shape);
+  announce(hub, r, `${project.title}'s bot is a ${shape} now`, { avatarShape: shape });
+}
+
 export function register(tools: Registry): void {
   tools.add("project_settings_get", async (hub, caller, input) => {
     requireRole(caller, "read", input.machineId);
@@ -314,6 +326,7 @@ export function register(tools: Registry): void {
     if (input.title !== undefined && input.title !== project.title) await rename(hub, project, input.title);
     // An older app's onlyMe is dropped as the call is decoded: every project is everyone's on the hub (D491).
     if (input.avatarColor !== undefined) setColor(hub, project, input.avatarColor);
+    if (input.avatarShape !== undefined) setShape(hub, store(hub).projectGet(r) ?? project, input.avatarShape);
     if (input.chatTags !== undefined && input.chatTags !== chatTagsOn(hub.db.conn, r)) {
       setChatTags(hub.db.conn, r, input.chatTags);
       announce(hub, r, `${project.title}'s chat tags are ${input.chatTags ? "on" : "off"}`, { chatTags: input.chatTags });
@@ -325,8 +338,9 @@ export function register(tools: Registry): void {
       throw new ToolError("invalid", "This hub's bots run on their own machine: there is no computer to pick.", "Leave the computer out.");
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the bot use these settings.";
-    if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
-      next = `Its bot is ${botColorOf(input.avatarColor) ?? input.avatarColor} on every device now.`;
+    if ((input.avatarColor !== undefined || input.avatarShape !== undefined) && input.setup === undefined && input.title === undefined) {
+      const look = [input.avatarShape !== undefined ? `a ${input.avatarShape}` : undefined, input.avatarColor !== undefined ? (botColorOf(input.avatarColor) ?? input.avatarColor) : undefined];
+      next = `Its bot is ${look.filter((w) => w !== undefined).join(" in ")} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }
