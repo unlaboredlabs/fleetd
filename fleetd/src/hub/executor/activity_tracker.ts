@@ -199,7 +199,8 @@ export class ActivityTracker {
   now(nowMs: number): ActivityNow | undefined {
     const at = (activity: Activity, sinceMs: number): ActivityNow => ({ activity, since: isoMs(Math.min(sinceMs, nowMs)) });
     let newest: Open | undefined;
-    for (const o of this.open.values()) if (!newest || o.startedMs > newest.startedMs) newest = o;
+    // Calls opened in the same millisecond: the later one (`open` keeps the order they opened in) is the newest.
+    for (const o of this.open.values()) if (!newest || o.startedMs >= newest.startedMs) newest = o;
     // A hosted start's progress says more than the setup commands it runs meanwhile.
     for (const o of this.open.values()) if (o.activity.kind === "starting") newest = o;
     if (newest) return at(newest.activity, newest.startedMs);

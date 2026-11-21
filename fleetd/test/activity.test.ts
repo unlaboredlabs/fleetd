@@ -96,6 +96,19 @@ test("says what the thread is doing now", () => {
   expect(t.tokens()).toEqual({ input: 100, output: 20, cacheRead: 5, live: false });
 });
 
+test("of two calls opened in the same millisecond, the later is what the thread does", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  t.apply(item("i1", "running", { type: "command", command: "bun test" }), T0 + 100);
+  t.apply(item("i2", "running", { type: "command", command: "bun run build" }), T0 + 100);
+  expect(t.now(T0 + 200)).toEqual({ activity: { kind: "command", text: "bun run build" }, since: isoMs(T0 + 100) });
+  // A later event of the older call doesn't make it the newer one.
+  t.apply(item("i1", "running", { type: "command", command: "bun test" }), T0 + 300);
+  expect(t.now(T0 + 400)?.activity).toEqual({ kind: "command", text: "bun run build" });
+  t.apply(item("i2", "completed", { type: "command", command: "bun run build" }), T0 + 500);
+  expect(t.now(T0 + 600)?.activity).toEqual({ kind: "command", text: "bun test" });
+});
+
 test("a hosted start's progress line is what the thread does until it ends, over the setup commands it runs", () => {
   const t = new ActivityTracker();
   t.apply(run("running"), T0);
