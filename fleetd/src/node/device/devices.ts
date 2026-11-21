@@ -75,7 +75,11 @@ export type DeviceHost = {
   bootWaitMs?: number;
 };
 
-/** What carries a session to another holder (`snapshot`, `adopt`): plain JSON, no secret in it. */
+/**
+ * What carries a session to another holder (`snapshot`, `adopt`): plain JSON. It holds the part's token, which lets
+ * whoever has it watch the device and drive it through the box's loopback: whoever stores a snapshot seals it, as a
+ * session's secret (the cloud's row is sealed under the team's key). It holds none of the agent session's secrets.
+ */
 export type DeviceSnapshot = {
   v: 1;
   id: string;
@@ -87,7 +91,7 @@ export type DeviceSnapshot = {
   seq: number;
   control: BrowserControl;
   note?: string;
-  /** The box's part: where it listens in the box, and its token. */
+  /** The box's part: where it listens in the box, and its token (a credential: see above). */
   part: PartHandle;
 };
 
@@ -114,7 +118,17 @@ type Open = {
   ticker?: Timer;
   /** Set once it ends or this holder lets go: a late frame or drop starts nothing. */
   over: boolean;
+  /** Redials in a row, each waiting longer (`backoff`), and when the last connection came up. */
+  redials: number;
+  linkedAt: number;
 };
+
+/** How long a redial waits after a dropped connection: from `firstMs`, doubling each time in a row, at most `maxMs`.
+ * A connection that stayed up `steadyMs` starts the count again (a test's own, each). */
+export const redialing = { firstMs: 250, maxMs: 30_000, steadyMs: 30_000 };
+
+/** The wait before the `n`th redial in a row (0 for the first). */
+export const backoff = (n: number) => Math.min(redialing.firstMs * 2 ** Math.min(n, 20), redialing.maxMs);
 
 const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
@@ -262,6 +276,8 @@ export class AndroidSessions {
       touched: Date.now(),
       pressed: false,
       over: false,
+      redials: 0,
+      linkedAt: 0,
     };
     entry.ticker = setInterval(() => entry.recording.video?.tick(this.offsetMs(entry)), 1_000);
     return entry;
@@ -294,22 +310,35 @@ export class AndroidSessions {
         if (!entry.over) this.addNote(entry, `no video or live view: ${text}`);
       },
       closed: () => {
-        if (entry.over || this.lettingGo || entry.link !== link) return;
+        // Before the dial answered, `link` isn't this connection's yet: the dial's own caller hears of it.
+        if (entry.over || this.lettingGo || link === undefined || entry.link !== link) return;
         entry.link = undefined;
         void this.redial(entry);
       },
     };
-    const link: PartLink = await dialPart(entry.box, entry.part, events, ms);
+    let link: PartLink | undefined;
+    link = await dialPart(entry.box, entry.part, events, ms);
     if (entry.over || this.lettingGo) return void link.drop();
+    // Closed as it opened (its `closed` came before `link` was this one's): dialled again, as any drop is.
+    if (!link.open) return void this.redial(entry);
     entry.link = link;
+    entry.linkedAt = Date.now();
   }
 
-  /** A dropped connection to the part (the box's link redialled): dialled again within its grace, else the session
-   * ends plainly, so control never stays with a person on a screen nobody shows. */
+  /**
+   * A dropped connection to the part (the box's link redialled): dialled again within its grace, else the session
+   * ends plainly, so control never stays with a person on a screen nobody shows. Each redial in a row waits longer, so
+   * two holders that both think they hold the session (one the cloud didn't stop) displace each other at most every
+   * `redialing.maxMs`, and a redial is no step of the agent's: it never keeps a session from its idle end.
+   */
   private async redial(entry: Open): Promise<void> {
+    if (Date.now() - entry.linkedAt >= redialing.steadyMs) entry.redials = 0;
+    const wait = backoff(entry.redials++);
+    await Bun.sleep(wait);
+    if (entry.over || this.lettingGo || this.sessions.get(entry.thread) !== entry) return;
     try {
-      await this.connect(entry, timing.graceMs);
-      this.step(entry, "device_reconnected", {}, true, undefined, 0);
+      await this.connect(entry, Math.max(timing.graceMs - wait, 1_000));
+      if (entry.link) this.step(entry, "device_reconnected", { after: entry.redials }, true, undefined, 0, false);
     } catch (e) {
       if (entry.over || this.lettingGo || this.sessions.get(entry.thread) !== entry) return;
       const why = (e as Error).message;
@@ -319,8 +348,8 @@ export class AndroidSessions {
   }
 
   /** Logs one step: a tool call of the agent's, or fleetd's own, scrubbed of the session's secrets. */
-  private step(entry: Open, tool: string, args: unknown, ok: boolean, result: string | undefined, durationMs: number): number {
-    entry.touched = Date.now();
+  private step(entry: Open, tool: string, args: unknown, ok: boolean, result: string | undefined, durationMs: number, touch = true): number {
+    if (touch) entry.touched = Date.now();
     const seq = ++entry.seq;
     const action: BrowserAction = {
       seq,

@@ -9,7 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
-import { AndroidSessions, type DeviceHost, type DeviceSnapshot } from "../src/node/device/devices.ts";
+import { AndroidSessions, backoff, type DeviceHost, type DeviceSnapshot, redialing } from "../src/node/device/devices.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import type { Scrub } from "../src/node/mask.ts";
 import { type AndroidBox, BOX_ROOT, boxAgentEnv, boxControlPath, timing, toolsScript } from "../src/node/place/box_emulator.ts";
@@ -22,9 +22,11 @@ const BOX_TEST_MS = 30_000;
 const SECRET = "hunter2-correct-horse";
 const cleanups: (() => void | Promise<void>)[] = [];
 const saved = { ...timing };
+const savedRedial = { ...redialing };
 afterEach(async () => {
   for (const fn of cleanups.splice(0).reverse()) await fn();
   Object.assign(timing, saved);
+  Object.assign(redialing, savedRedial);
 });
 
 const until = async (what: () => boolean, ms = 10_000) => {
@@ -338,6 +340,37 @@ test("a dropped link to the box is dialled again and the session goes on", async
   const n = recs.get(id)!.frames.length;
   await until(() => recs.get(id)!.frames.length > n);
   expect(d.live(THREAD)).toEqual({ id, kind: "android" });
+}, BOX_TEST_MS);
+
+test("a connection that keeps dropping is dialled again later each time, capped, and never keeps a session from its idle end", async () => {
+  timing.pollMs = 10;
+  redialing.firstMs = 100;
+  redialing.maxMs = 400;
+  redialing.steadyMs = 60_000;
+  expect([0, 1, 2, 3, 4, 40].map(backoff)).toEqual([100, 200, 400, 400, 400, 400]);
+  const b = await standInBox();
+  const { store, recs } = standInStore();
+  const d = sessions(standInHost(b.box, store).host);
+  const { sessionId: id } = (await d.start(THREAD, "/work", "p")) as { sessionId: string };
+  await until(() => (recs.get(id)?.frames.length ?? 0) > 0);
+  const idleFrom = Date.now();
+  const reconnects = () => recs.get(id)!.actions.filter((l) => l.includes("device_reconnected")).length;
+  const waited: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const t = Date.now();
+    b.dropLinks();
+    await until(() => reconnects() === i + 1);
+    waited.push(Date.now() - t);
+  }
+  expect(waited[0]).toBeGreaterThanOrEqual(100);
+  expect(waited[1]).toBeGreaterThanOrEqual(200);
+  expect(waited[2]).toBeGreaterThanOrEqual(400);
+  // Capped: the fourth waits no longer than the third's limit, and well under a doubling.
+  expect(waited[3]).toBeGreaterThanOrEqual(400);
+  expect(waited[3]).toBeLessThan(800 + 2_000);
+  // The redials were no step of the agent's: the session is idle from before them.
+  await d.housekeep(idleFrom + 30 * 60_000 + 50);
+  expect(d.live(THREAD)).toBeUndefined();
 }, BOX_TEST_MS);
 
 test("a session whose box's part went before a new holder came ends plainly, and control goes back to the agent", async () => {
