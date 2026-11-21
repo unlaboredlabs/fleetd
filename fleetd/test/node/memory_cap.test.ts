@@ -1,7 +1,7 @@
 // A session's memory cap (src/node/runner/scope.ts `memoryCap`): a runaway inside a session is killed inside its own
 // scope, and nothing else is. On 2026-11-21 one agent's `bun` grew to 58 GB of the devbox's 59 GB before the kernel
 // killed it. A real session host (`fleetd session-host`) starts in the node's own scope, with a cap small enough to
-// test (the rule's is a third of the machine); its stand-in claude starts a sibling and then a process that allocates
+// test (the rule's is the machine's memory less a reserve); its stand-in claude starts a sibling and then a process that allocates
 // past the cap. The runaway dies with SIGKILL; the sibling, the host, claude and a process outside stay, and the host
 // leaves the agent a note naming what was killed and why. Skipped where no user systemd manager answers (most CI
 // runners).
@@ -60,9 +60,19 @@ mv "$out.tmp" "$out"
 exec cat > /dev/null
 `;
 
-test("the cap is a third of the machine's memory and of its swap, set on the session's scope", () => {
-  const cap = memoryCap(59 * 1024 ** 3, 8 * 1024 ** 3);
-  expect(cap).toEqual({ max: Math.floor((59 * 1024 ** 3) / 3), swapMax: Math.floor((8 * 1024 ** 3) / 3) });
+test("the cap is the machine's memory less a quarter for the rest, at least 4 GB and at most half; swap the same", () => {
+  const G = 1024 ** 3;
+  // The devbox: 59 GB and 8 GB of swap. A 52-56 GB runaway is killed with 15 GB left.
+  expect(memoryCap(59 * G, 8 * G)).toEqual({ max: Math.floor(59 * 0.75 * G), swapMax: 4 * G });
+  // A 16 GB laptop fits one build at its 10.6 GB peak (a build slot); a 32 GB machine more than the 17 GB sessions peak.
+  expect(memoryCap(16 * G, 2 * G)).toEqual({ max: 12 * G, swapMax: 1 * G });
+  expect(memoryCap(32 * G, 0)).toEqual({ max: 24 * G, swapMax: 0 });
+  expect(memoryCap(16 * G, 0).max).toBeGreaterThan(10.6 * G);
+  // An 8 GB machine keeps half; a 128 GB one a quarter.
+  expect(memoryCap(8 * G, 0).max).toBe(4 * G);
+  expect(memoryCap(6 * G, 0).max).toBe(3 * G);
+  expect(memoryCap(128 * G, 0).max).toBe(96 * G);
+  const cap = memoryCap(59 * G, 8 * G);
   const [, argv] = command("fleetd", [], { program: "systemd-run", oomContinue: true, memory: cap, env: {} }, "s1");
   expect(argv).toContain(`--property=MemoryMax=${cap.max}`);
   expect(argv).toContain(`--property=MemorySwapMax=${cap.swapMax}`);
@@ -82,7 +92,7 @@ test("the note names the process the kernel picks: the one gone with the most me
   expect(killed(seen, (pid) => !gone(pid), 100)?.pid).toBe(1);
   expect(killed(seen, () => true, 1000)).toBeUndefined();
   expect(words(undefined, 3 * 1024 ** 3, "2026-01-02T03:04:05.000Z", 9 * 1024 ** 3)).toStartWith(
-    "fleetd: at 03:04:05 UTC the kernel killed a process of this session: this session went past its memory cap of 3.0 GB (each session may use at most a third of this machine's 9.0 GB).",
+    "fleetd: at 03:04:05 UTC the kernel killed a process of this session: this session went past its memory cap of 3.0 GB (this machine's 9.0 GB less what it keeps for the system, fleetd and other agents).",
   );
 });
 

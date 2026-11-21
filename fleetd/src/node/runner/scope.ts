@@ -4,10 +4,14 @@
 // scope of its own a host outlives the node, and the next node re-adopts it. One build the kernel kills for memory
 // also lands in that one scope, which has `OOMPolicy=continue`, rather than failing the node's whole unit.
 //
-// Each session's scope has a memory cap (`memoryCap`): a third of the machine's memory, and a third of its swap. On
-// 2026-11-21 one agent's `bun` grew to 58 GB of the devbox's 59 GB before the kernel killed it; its scope peaked at 55.9
-// GB, while since builds left Rust no other session went past 17 GB, and 99.9% stayed under 13. Past its cap the kernel
-// kills the scope's largest process there, the rest of the machine untouched, and the agent is told
+// Each session's scope has a memory cap (`memoryCap`): the machine's memory less a reserve for the system, the hub, the
+// node and the other agents, and its swap the same way. The cap is there so one session can't starve the rest, not to
+// share memory out (the OOM score already makes an agent the kernel's pick). The reserve is a quarter of the machine,
+// at least 4 GB and at most half: on the devbox the hub (2 GB at most since Nov 10), the node (4.8 GB) and the system
+// (3.9 GB) together peak near 11 GB with some 30 agents, and what a node needs grows with the agents its machine fits,
+// while a 16 GB laptop must still fit one build (10.6 GB, a build slot's size). On 2026-11-21 one agent's `bun` grew to
+// 58 GB of the devbox's 59 GB before the kernel killed it (scope peak 55.9 GB); its cap is now 44.6 GB. Past it the
+// kernel kills the scope's largest process there, the rest of the machine untouched, and the agent is told
 // (./host/memory.ts).
 //
 // `systemd-run --scope` moves itself into the new scope and then execs the command, so the host keeps the pid and the
@@ -50,11 +54,14 @@ export type Scope = {
 /** A session's memory cap: `MemoryMax=` and `MemorySwapMax=`, in bytes. */
 export type Cap = { max: number; swapMax: number };
 
-/** The share of the machine's memory, and of its swap, one session may use. */
-export const SHARE = 3;
+/** The least the reserve keeps for the rest of the machine. */
+export const MIN_RESERVE = 4 * 1024 ** 3;
 
-/** The cap of every session on a machine with `memory` bytes of memory and `swap` of swap: a third of each. */
-export const memoryCap = (memory: number, swap: number): Cap => ({ max: Math.floor(memory / SHARE), swapMax: Math.floor(swap / SHARE) });
+/** What a session leaves of `total` bytes for the rest of the machine: a quarter, at least `MIN_RESERVE`, at most half. */
+export const reserve = (total: number) => Math.min(Math.max(total / 4, MIN_RESERVE), total / 2);
+
+/** The cap of every session on a machine with `memory` bytes of memory and `swap` of swap: each less its reserve. */
+export const memoryCap = (memory: number, swap: number): Cap => ({ max: Math.floor(memory - reserve(memory)), swapMax: Math.floor(swap - reserve(swap)) });
 
 /** This machine's swap, in bytes, from `/proc/meminfo`; 0 where it can't be read. */
 export function swapTotal(meminfo = readMeminfo()): number {

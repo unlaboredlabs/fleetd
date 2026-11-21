@@ -8,7 +8,8 @@
 // only processes of that domain (kill, pidfd_send_signal, a tty's SIGIO; ptrace too). Nothing else changes: every
 // process stays visible (ps, pgrep, /proc), and files, network, sockets and long-running processes are as before. The
 // node, outside the domain, still signals the session, and so does systemd when it stops the session's scope. Landlock
-// needs no_new_privs, so a setuid program (sudo, a setuid sandbox helper) doesn't raise privileges inside a session.
+// needs no_new_privs, so a setuid or file-capability program (sudo, newuidmap, a setuid sandbox helper) doesn't raise
+// privileges inside a session; Chrome and Electron use their namespace sandbox, which works.
 //
 // The domain is set on the calling thread, which is the one Bun spawns from, and on all the host's threads where the
 // kernel can (LANDLOCK_RESTRICT_SELF_TSYNC, ABI 8). A kernel without it (older Linux, Landlock off) or a Mac leaves the

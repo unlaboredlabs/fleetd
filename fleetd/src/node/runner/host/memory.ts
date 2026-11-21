@@ -56,6 +56,14 @@ export function killed(before: Seen[], alive: (pid: number) => boolean, max: num
   return before.filter((s) => !alive(s.pid)).sort((a, b) => badness(b) - badness(a))[0];
 }
 
+/** Whether `pid` is gone or a zombie: one the kernel killed counts before its parent reaps it. */
+function exited(pid: number): boolean {
+  const stat = read(`/proc/${pid}/stat`);
+  if (stat === undefined) return true;
+  const state = stat.slice(stat.lastIndexOf(")") + 1).trim()[0];
+  return state === "Z" || state === "X";
+}
+
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 const MAX_COMMAND = 160;
 
@@ -66,7 +74,7 @@ export function words(victim: Seen | undefined, max: number, at: string, machine
     : "a process of this session";
   return (
     `fleetd: at ${at.slice(11, 19)} UTC the kernel killed ${what}: this session went past its memory cap of ${gb(max)} ` +
-    `(each session may use at most a third of this machine's ${gb(machine)}). Only that process was killed; the rest of the session runs on. ` +
+    `(this machine's ${gb(machine)} less what it keeps for the system, fleetd and other agents). Only that process was killed; the rest of the session runs on. ` +
     `Run it again with less memory (fewer workers or a smaller input), or find what grew.`
   );
 }
@@ -91,7 +99,7 @@ export function watchMemory(file: string, cgroup = ownCgroup(), tick = TICK_MS):
   const timer = setInterval(() => {
     const now = oomKills(read(`${cgroup}/memory.events`));
     if (now > kills) {
-      const victim = killed(before, (pid) => read(`/proc/${pid}/stat`) !== undefined, max);
+      const victim = killed(before, (pid) => !exited(pid), max);
       try {
         note(file, words(victim, max, nowIso()));
       } catch (error) {
