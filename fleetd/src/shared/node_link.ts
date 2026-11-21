@@ -296,7 +296,14 @@ export type NodeAction = {
 /** How long a `hold` lasts unless the hub asks again. */
 export const HOLD_LEASE_SECS = 60;
 
-export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config" };
+/**
+ * Whether systemd starts the user's service manager, which runs the hub and the node, again by itself: linger starts it
+ * at boot and keeps it after a logout, and `Restart=always` on `user@<uid>.service` starts it again after it stops.
+ */
+export type NodeManager = { user: string; uid: number; linger: boolean; restarts: boolean };
+
+/** `manager`: absent off Linux, from a node that isn't a systemd user service, and from older nodes. */
+export type NodeProbe = { gitEmail?: string; gitEmailFrom?: "env" | "git_config"; manager?: NodeManager };
 
 /** Node -> hub, one per `node_action`. Not camelCase: its sign-in URL is `login_url` on the wire. */
 export type NodeActionResult = {

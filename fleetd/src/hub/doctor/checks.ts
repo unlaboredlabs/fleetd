@@ -11,7 +11,8 @@ import type {
   GithubApp,
   OnePasswordTest,
 } from "../../shared/contracts.ts";
-import type { MacHealth, NodeDisk, NodeLoad, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
+import { keepManagerCommand } from "../../update/service.ts";
+import type { MacHealth, NodeDisk, NodeLoad, NodeManager, NodeProbe, ScreenHealth } from "../../shared/node_link.ts";
 import type { RunnerInfo, WorktreeBase } from "../../shared/sessions.ts";
 import { doctorAlert, fetchFailedText, fixLabel, start } from "./base.ts";
 import { addCommand, type HubSetup, type MachineSetup, restartCommand } from "./config.ts";
@@ -642,6 +643,28 @@ export function commitIdentity(machineId: string, read: ProbeRead, config: HubSe
   }
   const noreply = /@users\.noreply\.github\.com$/i.test(email) ? ", a GitHub noreply address" : "";
   return machineEntry(machineId, "commit_identity", "ok", `Commits on ${machineId} use ${email} (from ${from}${noreply}).`);
+}
+
+/** `service_manager`: whether systemd starts the user's service manager, and the hub or node in it, again by itself
+ * (cli/setup/units.ts). `scope` "hub" for the hub's own, else the machine's id; `what` the service it runs. Undefined
+ * where there is nothing to tell: off Linux, outside a systemd user unit, a node too old to say. */
+export function serviceManager(scope: string, what: "hub" | "node", manager: NodeManager | undefined): DoctorCheck | undefined {
+  if (manager === undefined) return undefined;
+  const { user, uid } = manager;
+  const entry = (status: DoctorStatus, message: string, fix?: DoctorFix) =>
+    scope === "hub" ? hubEntry("service_manager", status, message, fix) : machineEntry(scope, "service_manager", status, message, fix);
+  if (manager.linger && manager.restarts) {
+    return entry("ok", `If ${user}'s service manager stops, systemd starts it again within seconds, and the ${what} with it.`);
+  }
+  const where = scope === "hub" ? "the hub's machine" : scope;
+  const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid));
+  return manager.linger
+    ? entry(
+        "warn",
+        `If ${user}'s service manager (systemd --user) stops, nothing starts it again until ${user} logs in: the ${what} stays down, and every agent with it.`,
+        fix,
+      )
+    : entry("warn", `Linger is off for ${user}: the ${what} stops when ${user} logs out, and starts again only at their next login.`, fix);
 }
 
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;

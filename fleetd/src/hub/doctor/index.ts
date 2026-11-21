@@ -3,6 +3,7 @@
 // machines whose status moved since. Emits one doctor.changed per machine (and one for the hub) whose checks changed
 // status since the last run. Every fix is a command for a person to run; doctor_fix answers with it.
 import type { DoctorCheck, DoctorStatus } from "../../shared/contracts.ts";
+import { readManager } from "../../update/service.ts";
 import type { Hub } from "../api/hub.ts";
 import { events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
@@ -107,6 +108,8 @@ export class Doctor {
   /** The probes of URLs and commands; tests replace them. */
   health = health;
   runCmd = runCmd;
+  /** Whether systemd starts the hub's service manager again by itself; tests replace it. */
+  manager = readManager;
 
   constructor(private readonly hub: Hub) {
     this.sources = hubSources(hub);
@@ -142,6 +145,8 @@ export class Doctor {
       checks.httpsReachable(config, problem, port, https),
       checks.repoCi(this.sources.reposWithoutCi()),
     ];
+    const manager = checks.serviceManager("hub", "hub", this.manager());
+    if (manager) out.push(manager);
     const claude = this.sources.claudeSetup();
     if (claude) out.push(checks.claudeKey(claude), checks.claudeOwner(claude));
     out.push(...checks.setupChecks(this.sources.setupFacts()));
@@ -186,6 +191,8 @@ export class Doctor {
       if (override) out.push(override);
     }
     out.push(checks.commitIdentity(id, probe, config));
+    const manager = checks.serviceManager(id, "node", probe.ok ? probe.probe.manager : undefined);
+    if (manager) out.push(manager);
     const load = s.load(id);
     out.push(checks.diskSpace(id, !online, load?.disk, s.paused(id)));
     for (const c of [

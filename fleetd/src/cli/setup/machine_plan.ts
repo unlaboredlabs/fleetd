@@ -3,7 +3,17 @@
 import type { GitIdentity } from "../common.ts";
 import { sortKeys } from "../json.ts";
 import type { Platform } from "./shared.ts";
-import { q, renderUnit, type Role, ServiceManager, type ServiceSpec, systemdName, unitPath } from "./units.ts";
+import {
+  keepManagerCommand,
+  keepManagerScript,
+  q,
+  renderUnit,
+  type Role,
+  ServiceManager,
+  type ServiceSpec,
+  systemdName,
+  unitPath,
+} from "./units.ts";
 
 /** How a person installs claude (node/runner/claude/version.rs `INSTALL`). */
 export const CLAUDE_INSTALL = ["curl -fsSL https://claude.ai/install.sh", "bash"].join(" | ");
@@ -54,6 +64,10 @@ export type Facts = {
   claude?: string;
   claudeVersion?: string;
   linger: string;
+  /** `Restart=` of the user's `user@<uid>.service`: `always` once fleetd's drop-in is there (units.ts managerDropIn). */
+  managerRestart: string;
+  /** Who can write that drop-in now, asked only while it or linger is missing: `root`, `sudo` (no password), or `no`. */
+  root: string;
   gui: string;
   loadedUnit: string;
   files: Map<string, string>;
@@ -75,6 +89,8 @@ export function probeCommand(fleetd?: string): string {
     `CL=$(command -v claude || true); for c in "$H/.local/bin/claude" "$H/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do [ -n "$CL" ] && break; [ -x "$c" ] && CL=$c; done`,
     `if [ -n "$CL" ]; then echo "claude $CL"; echo "claude_version $("$CL" --version 2>/dev/null | head -n 1)"; fi`,
     `L=unknown; if command -v loginctl >/dev/null 2>&1; then L=$(loginctl show-user "$(id -un)" -p Linger --value 2>/dev/null || true); fi; echo "linger \${L:-unknown}"`,
+    // `sudo -n` never asks for a password: it only says whether setup may arrange what root must (units.ts keepManagerScript).
+    `K=unknown; R=no; if [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then K=$(systemctl show "user@$(id -u).service" -p Restart --value 2>/dev/null || true); if [ "\${K}" != always ] || [ "\${L}" != yes ]; then if [ "$(id -u)" = 0 ]; then R=root; elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then R=sudo; fi; fi; fi; echo "manager_restart \${K:-unknown}"; echo "root \${R}"`,
     `U=; if [ "$(uname -s)" = Linux ] && command -v systemctl >/dev/null 2>&1; then U=$(${ServiceManager.linuxCtl("$(id -u)")} show -p FragmentPath --value ${systemdName("node")} 2>/dev/null || true); fi; echo "loaded_unit $U"`,
     `G=unknown; if [ "$(uname -s)" = Darwin ]; then if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then G=yes; else G=no; fi; fi; echo "gui $G"`,
     `for f in ${quoted(reads)}; do if [ -f "$f" ]; then printf 'file %s ' "$f"; base64 < "$f" | tr -d '\\n'; echo; fi; done`,
@@ -94,6 +110,8 @@ export function emptyFacts(): Facts {
     arch: "",
     path: "",
     linger: "",
+    managerRestart: "",
+    root: "",
     gui: "",
     loadedUnit: "",
     files: new Map(),
@@ -146,6 +164,12 @@ export function parseFacts(output: string): Facts {
         break;
       case "linger":
         facts.linger = rest.trim();
+        break;
+      case "manager_restart":
+        facts.managerRestart = rest.trim();
+        break;
+      case "root":
+        facts.root = rest.trim();
         break;
       case "gui":
         facts.gui = rest.trim();
@@ -401,6 +425,15 @@ export function planMachineAdd(facts: Facts, input: MachineAddInput): MachinePla
         .filter(([k]) => k.startsWith("GIT_"))
         .map(([k, v]) => `${k}=${q(v)}`)
         .join(" ")} ${q(l.bin)} node run --home ${q(l.nodeHome)}`.trimStart();
+  // Linger, and systemd starting the user's manager again when it stops (a SIGTERM to it): only root can arrange
+  // them, so setup does where it may be root without a password, and else says the one command.
+  const keepsRunning = facts.linger === "yes" && facts.managerRestart === "always";
+  const asRoot = facts.root === "root" ? "" : facts.root === "sudo" ? "sudo -n " : undefined;
+  if (input.service && platform === "linux" && !keepsRunning && asRoot !== undefined) {
+    steps.push(
+      step(`keep ${facts.user}'s service manager running by itself`, `${asRoot}sh -c "${keepManagerScript(facts.user, facts.uid)}"`),
+    );
+  }
   if (input.service) {
     steps.push(
       nodeRestarts
@@ -411,10 +444,13 @@ export function planMachineAdd(facts: Facts, input: MachineAddInput): MachinePla
   if (verdict !== "ok") {
     notes.push(`${verdictProblem(verdict, printed)} If sessions misbehave, run on the machine: ${verdictFix(verdict)}`);
   }
-  if (input.service && platform === "linux" && facts.linger !== "yes") {
-    notes.push(
-      `linger is ${facts.linger} for ${facts.user}, so the node stops when ${facts.user} logs out. Fix: sudo loginctl enable-linger ${facts.user}`,
-    );
+  if (input.service && platform === "linux" && !keepsRunning && asRoot === undefined) {
+    const u = facts.user;
+    const why =
+      facts.linger !== "yes"
+        ? `linger is ${facts.linger} for ${u}, so the node stops when ${u} logs out`
+        : `if ${u}'s service manager (systemd --user) stops, nothing starts it again until ${u} logs in, so the node stays down`;
+    notes.push(`${why}. Fix: ${keepManagerCommand(u, facts.uid)}`);
   }
   if (platform === "darwin") {
     notes.push(`launchd runs the node while ${facts.user} is logged in at this Mac's screen; after a restart, log that user in again.`);
@@ -451,6 +487,7 @@ export function freshFacts(user: string, arch: string): Facts {
     claude: `/home/${user}/.local/bin/claude`,
     claudeVersion: `${CLAUDE_TESTED} (Claude Code)`,
     linger: "yes",
+    managerRestart: "always",
   };
 }
 

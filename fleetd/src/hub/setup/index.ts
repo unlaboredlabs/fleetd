@@ -118,7 +118,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
       ],
       test: "Reach the hub at its address",
-      ways: [way(undefined, ["hub/reachable", "hub/https"])],
+      ways: [way(undefined, ["hub/reachable", "hub/https", "hub/service_manager"])],
     }),
     // Where agents run (D594): a computer of the team's, directly on it.
     step("machines", "hub", "Where agents run", "A computer of yours: agents run on it directly.", { kind: "required" }, {
@@ -147,7 +147,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       ],
       place: "machines",
       test: "Read each computer's checks",
-      ways: [way(undefined, ["*/online"])],
+      ways: [way(undefined, ["*/online", "*/service_manager"])],
     }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
     step("claude", "accounts", "Claude", "Agents think with Claude: the hub's API key, your subscription, or each machine's login.", { kind: "required" }, {

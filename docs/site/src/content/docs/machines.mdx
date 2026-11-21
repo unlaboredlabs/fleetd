@@ -359,6 +359,37 @@ if it isn't, so it starts at the next boot. The rewritten unit takes effect at i
 node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
 rather than exiting.
 
+## When the service manager stops {#service-manager}
+
+On Linux the hub and the node are services of your systemd user manager (`systemd --user`), and so are agents' scopes.
+If that manager stops (a stray `kill` from any process of yours reaches it, say), it stops them all. systemd's own
+`user@.service` has no restart: with linger on, the manager starts at boot, but once it has stopped nothing starts it
+again until you log in. fleetd fixes that with one drop-in for your user's manager, which only root can write:
+
+```sh
+sudo sh -c "loginctl enable-linger dev && mkdir -p /etc/systemd/system/user@1000.service.d && printf '[Service]\nRestart=always\nRestartSec=5\n' > /etc/systemd/system/user@1000.service.d/fleetd.conf && systemctl daemon-reload"
+```
+
+With your user name and uid (`id -un`, `id -u`) in place of `dev` and `1000`. It turns linger on (the manager starts
+at boot and stays after you log out) and has systemd start the manager again 5 s after it stops, which starts the hub
+and the node (and nothing else stops: the manager running now carries on). After a SIGTERM to the manager, the hub and
+node answer again in about 5 seconds. A logout with linger off still ends the manager, a stop by root (a shutdown, an
+admin) stays a stop, and `fleetd update` and **Restart hub** restart only the hub or node inside it.
+
+- `fleetd init` and `fleetd machine add` write it themselves where they can be root without a password (they run as
+  root, or `sudo -n` works). Elsewhere their plan notes the command, filled in for that machine.
+- The doctor checks it on the hub's machine (`hub/service_manager`) and on every machine (`service_manager`), so an
+  existing install is flagged with its command in Settings › Hub › Setup, `fleetd init` and `fleetd doctor`.
+  `fleetd update` can't write it: it never has root.
+- A user alone has no clean way to do it: a timer in the stopped manager is gone with it, and a cron job that turns
+  linger off and on again as you would start the manager, but polls every minute and restarts everything on a false
+  alarm.
+- macOS: launchd runs the hub and node in your login session and keeps them alive while it lasts; it has no such
+  manager to stop.
+
+`scripts/manager-restart.sh <fleetd binary>` proves it in throwaway systemd containers: the outage without the drop-in,
+the services back after it, and that a logout, a stop by root and a hub restart behave as before.
+
 ## Machine roles {#roles}
 
 Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator or desktop](/docs/browser-sessions), or the agents' Mac's screen),
