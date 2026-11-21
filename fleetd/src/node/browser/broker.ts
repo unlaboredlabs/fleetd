@@ -19,6 +19,7 @@
 // A box's Chrome outlives a dropped connection for a while (box_chrome.ts GRACE_MS): the broker dials it again, and the
 // session goes on as it was, sealed if it was. A new holder of the session (another instance of a service) takes it
 // over from its `snapshot` with `adopt`. Either one that can't reach the Chrome again ends the session with a plain note.
+import { randomBytes } from "node:crypto";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import type { BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -93,7 +94,8 @@ export type BrokerHost = {
   recordings: RecordingStore;
   /** agent-browser's action policy `text` for the agent session, written where its agent-browser reads it. */
   policy(thread: string, text: string): Promise<void>;
-  /** The proxy's key (64 hex characters), which a new holder signs the same tokens with; or the proxy itself. */
+  /** The proxy's key (64 hex characters), which a new holder signs the same tokens with (none: a random one, this
+   * broker's alone); or the proxy itself. */
   proxyKey?: string;
   proxy?: (sessions: Sessions) => Proxy;
   /** The box an agent session runs in, if it runs in one: its browser then runs in it. */
@@ -181,7 +183,8 @@ export class BrowserBroker {
       gone: (thread) => this.gone?.(thread),
       writeRefusal: (session, command) => this.writeRefusal(session, command),
     };
-    this.proxy = host.proxy ? host.proxy(sessions) : Proxy.serve(host.proxyKey ?? "", sessions);
+    // No key given: a random one, never one an agent could compute a token with.
+    this.proxy = host.proxy ? host.proxy(sessions) : Proxy.serve(host.proxyKey ?? randomBytes(32).toString("hex"), sessions);
     this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
   }
 

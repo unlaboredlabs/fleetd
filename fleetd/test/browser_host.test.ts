@@ -9,7 +9,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
+import { createHmac } from "node:crypto";
 import { type BrokerHost, BrowserBroker, type BrowserSnapshot } from "../src/node/browser/broker.ts";
+import { Proxy } from "../src/node/browser/cdp_proxy.ts";
 import { seal } from "../src/node/browser/credentials.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import type { Scrub } from "../src/node/mask.ts";
@@ -118,7 +120,7 @@ function memoryStore() {
 const KEY = "5e".repeat(32);
 
 /** A broker as a service with no node runs one: every session's Chrome in its box, everything else given. */
-function cloudBroker(box: ScreenBox | undefined, chromePort: number, store: RecordingStore) {
+function cloudBroker(box: ScreenBox | undefined, chromePort: number, store: RecordingStore, proxyKey: string | undefined = KEY) {
   const calls: { op: string; args: Record<string, unknown> }[] = [];
   const policies: [string, string][] = [];
   const changed: string[] = [];
@@ -132,7 +134,7 @@ function cloudBroker(box: ScreenBox | undefined, chromePort: number, store: Reco
     boxKey: () => ({ open: () => null }),
     recordings: store,
     policy: async (thread, text) => void policies.push([thread, text]),
-    proxyKey: KEY,
+    ...(proxyKey ? { proxyKey } : {}),
     boxed: (thread) => (thread === THREAD && box ? { box } : undefined),
     changed: (thread) => void changed.push(thread),
   };
@@ -336,3 +338,20 @@ test.skipIf(!realChrome || !hasSocat)("a box's Chrome outlives its dropped conne
   await Bun.sleep(timing.graceMs + 2_500);
   await expect(reattachChrome(here, handle, 400_000_001, 500)).rejects.toThrow();
 }, 30_000);
+
+test("the proxy signs with a key nobody can guess: a host's own, else a random one, and never an empty or short one", async () => {
+  expect(() => Proxy.serve("", { live: () => undefined })).toThrow("64 hex characters");
+  expect(() => Proxy.serve("ab", { live: () => undefined })).toThrow("64 hex characters");
+  const chrome = await standInChrome();
+  const { store } = memoryStore();
+  const { broker } = cloudBroker(standInBox(), chrome.port, store);
+  expect(broker.proxy.url(THREAD)).toEndWith(`${THREAD}.${createHmac("sha256", KEY).update(THREAD).digest("hex")}`);
+  const keyless = cloudBroker(standInBox(), chrome.port, store, undefined).broker;
+  await keyless.call(THREAD, { id: "1", cwd: "/", call: { op: "session_start" } as never });
+  // The token an agent could compute without the key is refused; the broker's own is let through.
+  const forged = `ws://127.0.0.1:${keyless.proxy.port}/devtools/browser/${THREAD}.${createHmac("sha256", "").update(THREAD).digest("hex")}`;
+  const refused = await fetch(forged.replace("ws://", "http://"), { headers: { upgrade: "websocket" } });
+  expect(refused.status).toBe(403);
+  expect(keyless.proxy.url(THREAD)).not.toBe(forged);
+  await driver(keyless.proxy.url(THREAD));
+});

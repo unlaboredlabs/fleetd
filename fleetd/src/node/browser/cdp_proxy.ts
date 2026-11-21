@@ -56,8 +56,10 @@ export class Proxy {
     private readonly server: Server<Data>,
   ) {}
 
-  /** Listens on 127.0.0.1 at `port` (0: any free one), signing tokens with `key` (64 hex characters). */
+  /** Listens on 127.0.0.1 at `port` (0: any free one), signing tokens with `key` (64 hex characters). Any other key
+   * is refused: one anybody could guess would let an agent sign another session's token. */
   static serve(key: string, sessions: Sessions, port = 0): Proxy {
+    if (!/^[0-9a-f]{64}$/.test(key)) throw new Error("the browser proxy's key must be 64 hex characters (32 random bytes)");
     let proxy!: Proxy;
     const server = Bun.serve<Data>({ hostname: "127.0.0.1", port, ...handlers(sessions, () => proxy) }) as unknown as Server<Data>;
     proxy = new Proxy(server.port ?? 0, key, server);
