@@ -75,6 +75,19 @@ jobs:
       - name: Generated files are current (migrations, docs pages, setup steps)
         if: steps.scope.outputs.run == 'true'
         run: bun run gen:check
+      # A Mac hub migrates on macOS's own SQLite (Bun's there), years older than Bun's on Linux: every migration from an
+      # empty database on the oldest one fleetd supports (OLDEST_SQLITE), its sqlite3 built from sqlite.org's source.
+      - name: SQLite build for the migrations on the oldest SQLite
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/old-sqlite
+          key: old-sqlite-${{ hashFiles('fleetd/scripts/old-sqlite-check.ts') }}
+      - name: Hub migrations run on the oldest SQLite
+        if: steps.scope.outputs.run == 'true'
+        env:
+          FLEETD_OLD_SQLITE_DIR: ${{ runner.temp }}/old-sqlite
+        run: bun scripts/old-sqlite-check.ts
       - name: Type check (tsc-rs)
         if: steps.scope.outputs.run == 'true'
         run: bun run typecheck

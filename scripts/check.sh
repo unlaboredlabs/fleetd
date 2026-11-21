@@ -10,7 +10,7 @@
 # Each runs the commands of its CI job, scoped as CI scopes it (.github/fleetd-scope.sh's paths for fleetd):
 # - fleetd: in fleetd/, the generated files (migrations, docs pages, setup steps: bun run gen:check), the hub
 #   migrations check (the worktree, untracked files too, merged onto origin/main, fetched fresh, as CI checks its merge
-#   commit), the type check and the tests. CI's `fleetd` job also builds the binary and runs the black-box tests and
+#   commit), every migration on the oldest SQLite fleetd supports, the type check and the tests. CI's `fleetd` job also builds the binary and runs the black-box tests and
 #   the lab scenarios on it.
 # - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
 #   width. The identifier check runs on every call; it reads every tracked file, and the untracked ones not ignored.
@@ -193,6 +193,8 @@ if wanted fleetd "${fleetd_paths[@]}"; then
   # Fix: rename a new migration to the current UTC time (date -u +%Y%m%d%H%M), after main's newest.
   head=$(merged) || { echo "check.sh: couldn't merge the worktree onto origin/main; checking HEAD's migrations" >&2; head=HEAD; }
   step fleetd node .github/migrations-check.mjs origin/main "$head"
+  # Fix: write the migration it names in SQL the oldest supported SQLite runs (OLDEST_SQLITE, hub/store/migrations.ts).
+  step fleetd in_fleetd bun scripts/old-sqlite-check.ts
   step fleetd in_fleetd bun run typecheck
   # SQLite's temp files (a big sort's spill) in /var/tmp, on the machine's disk: never /tmp, which may be held in memory.
   SQLITE_TMPDIR=${SQLITE_TMPDIR:-/var/tmp} step fleetd in_fleetd bun test --parallel=4
