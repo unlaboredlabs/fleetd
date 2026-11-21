@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipLabel, chipOf, countLabel, dayFrom, findInput, suggestions, withChip, type Chip } from "./model";
+import { chipLabel, chipOf, countLabel, dayFrom, findInput, offers, suggestions, withChip, type Chip } from "./model";
 
 const who = { people: [{ personId: "p_adaadaad", name: "Ada Okafor" }, { personId: "p_benbenbe", name: "Ben" }], me: "p_benbenbe" };
 const now = new Date(2026, 9, 14, 15, 0).getTime();
@@ -51,6 +51,20 @@ describe("the search field's filters", () => {
     expect(suggestions("has:p", who).map(chipLabel)).toEqual(["Pull requests", "Pinned"]);
     expect(suggestions("from:a", who).map(chipLabel)).toEqual(["From Ada Okafor"]);
     expect(suggestions("fr", who)).toEqual([]);
+  });
+
+  it("the list under the field: the filters on an empty field, hits once there are words or a filter", () => {
+    const lead: Chip = { kind: "from", who: "lead" };
+    expect(offers("", [], who)).toHaveLength(7);
+    expect(offers("   ", [], who)).toHaveLength(7);
+    // A word, then a space before the next: still its hits.
+    expect(offers("deploy ", [], who)).toEqual([]);
+    expect(offers("hub deploy", [], who)).toEqual([]);
+    // A filter alone: its hits, not the filters left.
+    expect(offers("", [lead], who)).toEqual([]);
+    // A filter being typed, after words or not; one already picked isn't offered again.
+    expect(offers("deploy has:p", [], who).map(chipLabel)).toEqual(["Pull requests", "Pinned"]);
+    expect(offers("from:", [lead], who).map(chipLabel)).toEqual(["From me", "From Ada Okafor"]);
   });
 
   it("counts: all of them, where you are in them, more than counted", () => {

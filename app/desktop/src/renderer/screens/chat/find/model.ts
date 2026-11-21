@@ -113,6 +113,17 @@ export function suggestions(last: string, who: Who): readonly Chip[] {
   return all.filter((c) => typed(c).startsWith(l) || (c.kind === "from" && typeof c.who === "object" && l.startsWith("from:") && c.who.name.toLowerCase().includes(l.slice(5))));
 }
 
+/**
+ * The filters the list under the field offers, or none, when it lists hits: all of them on an empty field with none
+ * picked yet, else only those the word being typed could become (`has:l`). A word and a space ("deploy ") offers none.
+ */
+export function offers(text: string, chips: readonly Chip[], who: Who): readonly Chip[] {
+  const fresh = text.trim() === "" && chips.length === 0;
+  const last = text.split(/\s+/).at(-1) ?? "";
+  if (!fresh && !last.includes(":")) return [];
+  return suggestions(fresh ? "" : last, who).filter((c) => !chips.some((h) => chipLabel(h) === chipLabel(c)));
+}
+
 /** The words and chips as chat_find's input for `projectRef` (no `before`, no `limit`). */
 export function findInput(projectRef: ChatFindInput["projectRef"], words: string, chips: readonly Chip[], me: string | undefined): ChatFindInput {
   const input: { -readonly [K in keyof ChatFindInput]: ChatFindInput[K] } = { projectRef };

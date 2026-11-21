@@ -11,7 +11,7 @@ import { useDataLayer } from "../../../src/data/react";
 import { useNow } from "../../live/clock";
 import type { ProjectRef } from "../slots";
 import { whenOf, whoOf } from "../pins/pins";
-import { asks, chipLabel, chipOf, countLabel, findInput, suggestions, withChip, type Chip, type Who } from "./model";
+import { asks, chipLabel, chipOf, countLabel, findInput, offers, withChip, type Chip, type Who } from "./model";
 import s from "./find.module.css";
 
 /** How long typing pauses before the hub is asked. */
@@ -64,11 +64,7 @@ export function Find(props: FindProps) {
   const last = text.split(/\s+/).at(-1) ?? "";
   // The filters to pick: on an empty field with none picked yet, or while one is being typed. Once a filter is picked
   // and nothing is typed, the list is its hits.
-  const typing = text.trim() === "" ? "" : last;
-  const offered = useMemo(
-    () => (listOpen && (typing !== "" || chips.length === 0) ? suggestions(typing, who).filter((c) => !chips.some((h) => chipLabel(h) === chipLabel(c))) : []),
-    [listOpen, typing, who, chips],
-  );
+  const offered = useMemo(() => (listOpen ? offers(text, chips, who) : []), [listOpen, text, who, chips]);
   const words = offered.length > 0 && last.includes(":") ? text.slice(0, text.length - last.length) : text;
 
   // As you type: the first page of what the words and chips find, a moment after the typing stops.
@@ -170,7 +166,7 @@ export function Find(props: FindProps) {
       const d = e.key === "ArrowDown" ? 1 : -1;
       if (listOpen && rows > 0) {
         const next = Math.min(Math.max(selected + d, 0), rows - 1);
-        keyed.current = true;
+        keyed.current = next !== selected;
         setSelected(next);
         if (offered.length === 0 && found !== undefined && next >= found.hits.length - 3) void more();
       } else void step(d);
