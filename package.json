@@ -120,6 +120,7 @@
     "./hub/chat/history": "./fleetd/src/hub/chat/history.ts",
     "./hub/chat/lead_text": "./fleetd/src/hub/chat/lead_text.ts",
     "./hub/chat/parts": "./fleetd/src/hub/chat/parts.ts",
+    "./hub/chat/find_rules": "./fleetd/src/hub/chat/find_rules.ts",
     "./hub/chat/rules": "./fleetd/src/hub/chat/rules.ts",
     "./hub/chat/schema": "./fleetd/src/hub/chat/schema.ts",
     "./hub/chat_sections/rules": "./fleetd/src/hub/chat_sections/rules.ts",

@@ -26,6 +26,8 @@ import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { show } from "../intake/attachments.ts";
+import { find, type FindQuery, keepIndex } from "./find.ts";
+import { tokensOf } from "./find_rules.ts";
 import { parts as partsOf } from "./parts.ts";
 import { tagLead } from "./tags.ts";
 import { messageFor } from "./whom.ts";
@@ -117,6 +119,7 @@ export class Chat {
     this.db = hub.db;
     // A read-only database (a reader's) has no writes to see, and keeps no cache worth checking.
     if (!this.db.readonly) this.db.conn.run(VERSIONS);
+    keepIndex(this.db.conn, this.db.readonly);
   }
 
   private now(): number {
@@ -616,31 +619,32 @@ export class Chat {
   }
 
   /**
-   * The messages of `r`'s chat whose text holds every one of `words` (SQLite's LIKE), newest first: before seq
-   * `before`, created from `fromMs` up to `toMs`, at most `limit`, and whether more match past them.
+   * The messages of `r`'s chat holding every one of `words` at a word's start (the search index, find.ts), newest
+   * first: before seq `before`, created from `fromMs` up to `toMs`, at most `limit`, and whether more match past them.
    */
   search(r: ProjectRef, words: string[], fromMs?: number, toMs?: number, before?: number, limit = 20) {
-    let sql = `SELECT data FROM chat_messages WHERE machine_id = ? AND project_id = ? AND seq < ?
-               AND created_ms >= ? AND created_ms <= ?`;
-    const args: (string | number | bigint)[] = [
-      r.machineId,
-      r.projectId,
-      before ?? 9223372036854775807n,
-      fromMs ?? -9223372036854775808n,
-      toMs ?? 9223372036854775807n,
-    ];
-    for (const word of words) {
-      sql += " AND json_extract(data, '$.text') LIKE ? ESCAPE '\\'";
-      args.push(`%${word.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`);
-    }
-    sql += " ORDER BY seq DESC LIMIT ?";
-    args.push(limit + 1);
-    const rows = this.db.conn
-      .query<{ data: string }, (string | number | bigint)[]>(sql)
-      .all(...args)
-      .map((row) => parse(row.data));
-    const more = rows.length > limit;
-    return { messages: rows.slice(0, limit), more };
+    const terms = words.map((w) => ({ tokens: tokensOf(w), prefix: true })).filter((t) => t.tokens.length > 0);
+    if (terms.length === 0) return { messages: [], more: false };
+    const beforeN = before === undefined ? undefined : this.nAt(r, before);
+    const untilMs = toMs === undefined ? undefined : toMs + 1;
+    const { messages, more } = find(this.db.conn, r, { terms, sinceMs: fromMs, untilMs, beforeN, limit });
+    return { messages, more };
+  }
+
+  /** A person's search (chat_find): `q` in `r`'s chat. */
+  find(r: ProjectRef, q: FindQuery) {
+    return find(this.db.conn, r, q);
+  }
+
+  /** The number (`m<n>`) of the message at `seq` in `r`'s chat, or of the first one past it. */
+  private nAt(r: ProjectRef, seq: number): number {
+    return (
+      this.db.conn
+        .query<{ n: number }, [string, string, number]>(
+          "SELECT n FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND seq >= ?3 ORDER BY seq LIMIT 1",
+        )
+        .get(r.machineId, r.projectId, seq)?.n ?? Number.MAX_SAFE_INTEGER
+    );
   }
 
   /** The seq of message `id` ("m<n>") when it is one of `r`'s chat. */

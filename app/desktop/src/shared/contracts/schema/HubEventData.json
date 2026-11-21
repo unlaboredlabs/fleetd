@@ -1044,6 +1044,30 @@
       "pattern": "^m[1-9][0-9]*$",
       "type": "string"
     },
+    "ChatMessagePinsEventData": {
+      "description": "`chat.message_pins`: a message of a bot's chat was pinned or unpinned. chat_message_pins reads the list.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId",
+        "pinned",
+        "by"
+      ],
+      "type": "object"
+    },
     "ChatMessageState": {
       "oneOf": [
         {
@@ -1856,6 +1880,9 @@
         "chat.message": {
           "$ref": "#/$defs/ChatMessageEventData"
         },
+        "chat.message_pins": {
+          "$ref": "#/$defs/ChatMessagePinsEventData"
+        },
         "chat.pins": {
           "$ref": "#/$defs/ChatPinsData"
         },
@@ -2030,6 +2057,7 @@
         "change.refused",
         "change.state",
         "chat.message",
+        "chat.message_pins",
         "chat.pins",
         "chat.sections",
         "chat.waiting",

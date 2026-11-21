@@ -9,6 +9,7 @@ import { type AppConn, appWs, errorFrame } from "../app_ws/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
 import { found } from "../project_lead/bridge.ts";
 import { registerLeadCalls } from "./calls.ts";
+import { fill } from "./find.ts";
 import { run, states } from "./flow.ts";
 import { chat, chatState, sendAsAgent } from "./index.ts";
 
@@ -22,6 +23,8 @@ export function start(hub: Hub): void {
   executorHooks(hub).extendStatus((h, caller) => {
     return { chats: states(h).filter((s) => allows(caller, "read", s.projectRef.machineId)) };
   });
+  // The search index of the messages from before it, filled in small steps while the hub runs.
+  void fill(hub);
   void run(hub).catch((error) => {
     if (!hub.shutdown.signal.aborted) console.error("chat: the flow stopped:", error);
   });

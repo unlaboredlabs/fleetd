@@ -47,9 +47,12 @@ an update only swaps it in and restarts, in order:
 The hub itself never waits: agents don't need it mid-step. A fleetd tool call an agent makes during the hub's few
 seconds of restart fails, and the agent tries it again. A fleetd tool call that a node's restart cuts off before
 its answer is sent again by itself, for up to a minute. Each call carries an id of its own, and the hub answers a
-repeat with the first answer, so the call never acts twice: no second message, no second agent. A node or hub on a
-build from before this doesn't take a repeat, and the call fails as it did. A machine counts as updated as soon as it
-is back on the new build.
+repeat with the first answer, so the call never acts twice: no second message, no second agent. A hub that restarted
+since the first send can't tell whether the call ran: for five minutes after its start it answers a repeat it
+doesn't know with "may or may not have gone through" instead of running it. An older hub, or an older node in front
+of this hub, doesn't take a repeat either, and the call fails as it did. Only an agent on this build calling through
+a node and a hub that are both older can see its call run twice, and an update doesn't leave that mix for long. A
+machine counts as updated as soon as it is back on the new build.
 
 While the hub restarts, the app keeps everything on screen and redials every 250 ms, and a message you send meanwhile
 goes once the hub is back. For an update, the hub's menu at the top of the sidebar says **Updating…** under the hub;

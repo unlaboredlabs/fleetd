@@ -1535,8 +1535,60 @@ export type ChatAboutSetOutput = {
   truncated?: boolean;
 };
 
+export type ChatFindInput = {
+  author?: ChatAuthor;
+  /** Older hits than this one: the last hit's id of the page before. */
+  before?: ChatMessageId;
+  /** What a hit holds: every one given. */
+  has?: ChatFindHas[];
+  limit?: number;
+  personId?: PersonId;
+  projectRef: ProjectRef;
+  since?: Timestamp;
+  until?: Timestamp;
+  /** Words and "quoted phrases": a word matches the start of a word, in any case; a phrase its words in a row. Every one must match. */
+  words?: string;
+};
+
+export type KnownChatFindHas = "link" | "image" | "file" | "pr" | "pinned";
+/** KnownChatFindHas, or a value from a newer hub. */
+export type ChatFindHas = KnownChatFindHas | (string & {});
+
+/** One message holding every word, as a search shows it. */
+export type ChatFindHit = {
+  author: ChatAuthor;
+  /** The name of the key that wrote it: a person's device for a human message, the agent for an agent's. */
+  by?: string;
+  createdAt: Timestamp;
+  /** Where the words are in `text`: `[start, end)` in UTF-16 code units, sorted, not overlapping. */
+  marks: [number, number][];
+  messageId: ChatMessageId;
+  /** The person who wrote it, when a person did. */
+  person?: PersonRef;
+  seq: number;
+  /** One line of the message around its first hit: whitespace folded, at most 160 characters, `…` where cut. */
+  text: string;
+};
+
+export type ChatFindOutput = {
+  /** The first page only (no `before`): every hit of the query, counted up to a cap. */
+  count?: number;
+  /** More hits than `count`. */
+  countMore?: true;
+  /** Newest first. */
+  hits: ChatFindHit[];
+  /** The hub is still indexing older messages: hits cover the newer part of the chat. */
+  indexing?: true;
+  /** Older hits are left: call again with `before` the last hit's id. */
+  more: boolean;
+  next?: string;
+  truncated?: boolean;
+};
+
 export type ChatHistoryInput = {
   after?: number;
+  /** A page around this message: it, (limit - 1) / 2 messages before it and the rest after. Not with before or after. */
+  around?: ChatMessageId;
   before?: number;
   limit?: number;
   projectRef: ProjectRef;
@@ -1660,6 +1712,48 @@ export type ChatMessageEventData = {
   projectRef: ProjectRef;
   seq: number;
   state: ChatMessageState;
+};
+
+/** A pinned message of a bot's chat: the same for everyone in it. */
+export type ChatMessagePin = {
+  author: ChatAuthor;
+  /** The name of the key that wrote it: a person's device for a human message, the agent for an agent's. */
+  by?: string;
+  createdAt: Timestamp;
+  messageId: ChatMessageId;
+  /** The person who wrote it, when a person did. */
+  person?: PersonRef;
+  pinnedAt: Timestamp;
+  pinnedBy: PersonRef;
+  seq: number;
+  /** The message's first line with text, at most 160 characters, `…` where cut. */
+  text: string;
+};
+
+export type ChatMessagePinInput = {
+  messageId: ChatMessageId;
+  /** True pins it, false unpins it; either is a no-op when it already is. */
+  pinned: boolean;
+  projectRef: ProjectRef;
+};
+
+export type ChatMessagePinsInput = {
+  projectRef: ProjectRef;
+};
+
+export type ChatMessagePinsOutput = {
+  next?: string;
+  /** Newest pinned first. A pinned message that is gone is left out. */
+  pins: ChatMessagePin[];
+  truncated?: boolean;
+};
+
+/** `chat.message_pins`: a message of a bot's chat was pinned or unpinned. chat_message_pins reads the list. */
+export type ChatMessagePinsEventData = {
+  by: PersonRef;
+  messageId: ChatMessageId;
+  pinned: boolean;
+  projectRef: ProjectRef;
 };
 
 export type ChatMessageId = string;
@@ -3113,6 +3207,7 @@ export type KnownHubEventType =
   | "sidebar.order"
   | "chat.pins"
   | "chat.sections"
+  | "chat.message_pins"
   | "machine_add.step"
   | "mcp.oauth"
   | "hub.update"
@@ -10134,7 +10229,10 @@ export interface ToolMap {
   cap_set: { input: CapSetInput; output: CapSetOutput };
   changes_list: { input: ChangesListInput; output: ChangesListOutput };
   chat_about_set: { input: ChatAboutSetInput; output: ChatAboutSetOutput };
+  chat_find: { input: ChatFindInput; output: ChatFindOutput };
   chat_history: { input: ChatHistoryInput; output: ChatHistoryOutput };
+  chat_message_pin: { input: ChatMessagePinInput; output: ChatMessagePinsOutput };
+  chat_message_pins: { input: ChatMessagePinsInput; output: ChatMessagePinsOutput };
   chat_nudge_clear: { input: ChatNudgeClearInput; output: ChatNudgeClearOutput };
   chat_pins_get: { input: ChatPinsGetInput; output: ChatPinsGetOutput };
   chat_pins_set: { input: ChatPinsSetInput; output: ChatPinsSetOutput };
@@ -10334,6 +10432,7 @@ export interface HubEventDataMap {
   "change.refused": TrainEventData;
   "change.state": ChangeStateData;
   "chat.message": ChatMessageEventData;
+  "chat.message_pins": ChatMessagePinsEventData;
   "chat.pins": ChatPinsData;
   "chat.sections": ChatSectionsData;
   "chat.waiting": ProjectChatState;

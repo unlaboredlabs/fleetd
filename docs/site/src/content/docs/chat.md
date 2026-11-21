@@ -223,6 +223,26 @@ the PR's number for its repo and branch.
 
 **Open on GitHub**, the arrow beside it, is always there, for anything the app doesn't show.
 
+## Search the chat {#search}
+
+A bot's chat is one long conversation, and search covers all of it, back to its first message, however long it is.
+Every word you type matches the start of a word, in any order and case, and accents don't matter: `deplo friday`
+finds "Deployed on Friday". Put words in quotes to find them exactly, in a row: `"staging password"`. Narrow it down by:
+
+- **Who wrote it:** the lead, or one person.
+- **When:** a range of days, or one day to see what was said then.
+- **What it holds:** a link, an image, a file, a pull request (a GitHub link or `#123`), or a pinned message.
+
+Hits come newest first with your words marked and a count of them all, and opening one opens the chat at that
+message, where you can read on from there. A search reads only that bot's chat, never another's, and the lead never
+hears of it.
+
+## Pin messages {#pins}
+
+Pin a message to find it again in one click: an answer you'll need, a decision, a link. Any message can be pinned, yours
+or the lead's. Pins belong to the bot's chat, not to you: everyone in the bot sees the same ones, in every open app at
+once, with who pinned each and when. A chat holds up to 50. Unpinning takes a message off the list; the message stays.
+
 ## Earlier work {#history}
 
 Work from before the chat existed shows at the top of each bot's chat, under "From before this chat": what you

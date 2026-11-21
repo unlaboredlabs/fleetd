@@ -514,7 +514,8 @@ test("every carried table's rows arrive as they left", async () => {
   // What differs by design: the secrets (sealed again to the new hub's keys, checked above), the machine (offline, no
   // key), and what an export leaves out.
   const differs = ["github_accounts", "github_app", "hub_links", "mcp_oauth", "push_relay", "vault_items", "machines", "vault_settings"];
-  const left = ["agent_keys", "node_keys", "vault_keys", "migrations_applied"];
+  // The chats' search index, which the new hub fills again from the messages as it runs.
+  const left = ["agent_keys", "node_keys", "vault_keys", "migrations_applied", "chat_find"];
   for (const table of Object.keys(was)) {
     if (differs.includes(table) || left.includes(table)) continue;
     expect({ table, rows: is[table] }).toEqual({ table, rows: was[table] });

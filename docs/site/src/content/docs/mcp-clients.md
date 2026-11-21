@@ -160,7 +160,10 @@ as stopping a bot, answering an approval or entering a secret, need one.
 | Tool | Does | Role |
 |---|---|---|
 | `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a bot's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words with a human key, as an agent's with any other. | operate |
-| `chat_history {projectRef, before?, after?, limit?}` | A page of a bot's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest. | read |
+| `chat_history {projectRef, before?, after?, around?, limit?}` | A page of a bot's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest; with `around` (a message id), that message and the ones on each side. | read |
+| `chat_find {projectRef, words?, author?, personId?, since?, until?, has?, before?, limit?}` | [Search](/docs/chat#search) a bot's whole chat, newest first, 20 a page. `words`: words (each from the start of a word) and `"quoted phrases"`. `author` is `lead`, `human` or `agent`; `has` any of `link`, `image`, `file`, `pr`, `pinned`. Each hit is one line of its message with `marks`, where your words are in it. The first page has `count`; `before` (the last hit's id) reads the next. | read |
+| `chat_message_pins {projectRef}` | The chat's [pinned messages](/docs/chat#pins), newest pinned first: who pinned each, when, and the message's first line. | read |
+| `chat_message_pin {projectRef, messageId, pinned}` | Pin (`true`) or unpin (`false`) a message for everyone in the bot. Every app reading the bot hears `chat.message_pins`. | operate, human key |
 | `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
 | `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
 | `decisions_list {projectRef, limit?}` | Every decision in the bot, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). `orders` names each order by its title. | read |

@@ -446,6 +446,11 @@
           "type": "string"
         },
         {
+          "const": "chat.message_pins",
+          "description": "A person pinned or unpinned a message of a bot's chat; `data` is `chat::ChatMessagePinsEventData`.\nEveryone who reads the bot sees it; chat_message_pins reads the pins.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"

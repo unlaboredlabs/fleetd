@@ -3374,12 +3374,197 @@
       ],
       "type": "object"
     },
+    "ChatFindHas": {
+      "oneOf": [
+        {
+          "const": "link",
+          "description": "A web link in its text.",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "An image attached.",
+          "type": "string"
+        },
+        {
+          "const": "file",
+          "description": "A file attached that isn't an image.",
+          "type": "string"
+        },
+        {
+          "const": "pr",
+          "description": "A pull request: a GitHub pull link or `#123`.",
+          "type": "string"
+        },
+        {
+          "const": "pinned",
+          "description": "It is pinned.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "ChatFindHit": {
+      "description": "One message holding every word, as a search shows it.",
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "by": {
+          "description": "The name of the key that wrote it: a person's device for a human message, the agent for an agent's.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "marks": {
+          "description": "Where the words are in `text`: `[start, end)` in UTF-16 code units, sorted, not overlapping.",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "minimum": 0,
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "One line of the message around its first hit: whitespace folded, at most 160 characters, `…` where cut.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messageId",
+        "seq",
+        "createdAt",
+        "author",
+        "text",
+        "marks"
+      ],
+      "type": "object"
+    },
+    "ChatFindInput": {
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "before": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "has": {
+          "description": "What a hit holds: every one given.",
+          "items": {
+            "$ref": "#/$defs/ChatFindHas"
+          },
+          "type": "array",
+          "maxItems": 5
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "personId": {
+          "$ref": "#/$defs/PersonId"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "until": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "words": {
+          "description": "Words and \"quoted phrases\": a word matches the start of a word, in any case; a phrase its words in a row. Every one must match.",
+          "maxLength": 200,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ChatFindOutput": {
+      "properties": {
+        "count": {
+          "description": "The first page only (no `before`): every hit of the query, counted up to a cap.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "countMore": {
+          "description": "More hits than `count`.",
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "hits": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/$defs/ChatFindHit"
+          },
+          "type": "array"
+        },
+        "indexing": {
+          "description": "The hub is still indexing older messages: hits cover the newer part of the chat.",
+          "enum": [
+            true
+          ],
+          "type": "boolean"
+        },
+        "more": {
+          "description": "Older hits are left: call again with `before` the last hit's id.",
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hits",
+        "more"
+      ],
+      "type": "object"
+    },
     "ChatHistoryInput": {
       "properties": {
         "after": {
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "around": {
+          "$ref": "#/$defs/ChatMessageId"
         },
         "before": {
           "maximum": 9007199254740991,
@@ -3654,6 +3839,107 @@
     "ChatMessageId": {
       "pattern": "^m[1-9][0-9]*$",
       "type": "string"
+    },
+    "ChatMessagePin": {
+      "description": "A pinned message of a bot's chat: the same for everyone in it.",
+      "properties": {
+        "author": {
+          "$ref": "#/$defs/ChatAuthor"
+        },
+        "by": {
+          "description": "The name of the key that wrote it: a person's device for a human message, the agent for an agent's.",
+          "maxLength": 120,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "person": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "pinnedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "pinnedBy": {
+          "$ref": "#/$defs/PersonRef"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The message's first line with text, at most 160 characters, `…` where cut.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messageId",
+        "seq",
+        "pinnedAt",
+        "pinnedBy",
+        "author",
+        "createdAt",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ChatMessagePinInput": {
+      "properties": {
+        "messageId": {
+          "$ref": "#/$defs/ChatMessageId"
+        },
+        "pinned": {
+          "description": "True pins it, false unpins it; either is a no-op when it already is.",
+          "type": "boolean"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef",
+        "messageId",
+        "pinned"
+      ],
+      "type": "object"
+    },
+    "ChatMessagePinsInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ChatMessagePinsOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "pins": {
+          "description": "Newest pinned first. A pinned message that is gone is left out.",
+          "items": {
+            "$ref": "#/$defs/ChatMessagePin"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pins"
+      ],
+      "type": "object"
     },
     "ChatMessageState": {
       "oneOf": [
@@ -7810,6 +8096,11 @@
           "type": "string"
         },
         {
+          "const": "chat.message_pins",
+          "description": "A person pinned or unpinned a message of a bot's chat; `data` is `chat::ChatMessagePinsEventData`.\nEveryone who reads the bot sees it; chat_message_pins reads the pins.",
+          "type": "string"
+        },
+        {
           "const": "machine_add.step",
           "description": "A machine_add started, moved a step or ended; `data` is `machine_setup::MachineAddStepData`.\nmachine_add_status reads the rest.",
           "type": "string"
@@ -11152,11 +11443,29 @@
         "chat_about_set.output": {
           "$ref": "#/$defs/ChatAboutSetOutput"
         },
+        "chat_find.input": {
+          "$ref": "#/$defs/ChatFindInput"
+        },
+        "chat_find.output": {
+          "$ref": "#/$defs/ChatFindOutput"
+        },
         "chat_history.input": {
           "$ref": "#/$defs/ChatHistoryInput"
         },
         "chat_history.output": {
           "$ref": "#/$defs/ChatHistoryOutput"
+        },
+        "chat_message_pin.input": {
+          "$ref": "#/$defs/ChatMessagePinInput"
+        },
+        "chat_message_pin.output": {
+          "$ref": "#/$defs/ChatMessagePinsOutput"
+        },
+        "chat_message_pins.input": {
+          "$ref": "#/$defs/ChatMessagePinsInput"
+        },
+        "chat_message_pins.output": {
+          "$ref": "#/$defs/ChatMessagePinsOutput"
         },
         "chat_nudge_clear.input": {
           "$ref": "#/$defs/ChatNudgeClearInput"
@@ -12320,8 +12629,14 @@
         "changes_list.output",
         "chat_about_set.input",
         "chat_about_set.output",
+        "chat_find.input",
+        "chat_find.output",
         "chat_history.input",
         "chat_history.output",
+        "chat_message_pin.input",
+        "chat_message_pin.output",
+        "chat_message_pins.input",
+        "chat_message_pins.output",
         "chat_nudge_clear.input",
         "chat_nudge_clear.output",
         "chat_pins_get.input",

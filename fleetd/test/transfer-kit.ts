@@ -109,7 +109,7 @@ export function rowsOf(home: string): Record<string, string[]> {
   const db = HubDb.openReadonly(home);
   try {
     const out: Record<string, string[]> = {};
-    const names = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'decisions_fts_%' ORDER BY name");
+    const names = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'decisions_fts_%' AND name NOT LIKE 'chat_find_%' ORDER BY name");
     for (const { name } of names) {
       out[name] = db
         .all<Record<string, unknown>>(`SELECT * FROM "${name}"`)
