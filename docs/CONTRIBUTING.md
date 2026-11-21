@@ -118,6 +118,7 @@ imported.
 | `fleetd/box/hook_scripts`, `fleetd/box/setup_words` | box side: a writer's git hooks as the files to write (`trailerFiles`, `gateFiles`, the scripts and names: `src/node/worktree/hook_scripts.ts`, which the node's `hooks.ts` writes) and the words an agent hears about its worktree's setup (`note`, `how`, `timeoutOf`, `SETUP_TIMEOUT_SEC`: `src/node/worktree/setup_words.ts`) |
 | `fleetd/browser/broker`, `fleetd/browser/box_chrome`, `fleetd/browser/proxy`, `fleetd/browser/recording` | box side: an agent's browser in its box, driven from outside it (`BrowserBroker`: sessions, the vault and 1Password fills, cards, addresses, secure input, live view and takeover; its `BrokerHost` gives the hub calls, the recording store, the proxy's key and the box; `snapshot`, `adopt` and `letGo` hand a session to another holder). Chrome in the box, outliving a dropped connection for `GRACE_MS` (`boxChrome`, `reattachChrome`: `src/node/place/box_chrome.ts`), the agent's CDP proxy and its token check (`Proxy`: `src/node/browser/cdp_proxy.ts`), and the recording's seam and video stream (`RecordingStore`, `MkvVideo`, `report`) |
 | `fleetd/browser/cdp`, `fleetd/browser/session`, `fleetd/browser/guard`, `fleetd/browser/logins`, `fleetd/browser/agent_browser_policy`, `fleetd/browser/secret_sink` | box side: the DevTools connection (`Cdp`), one browser session (`Session`, `SessionState`), the proxy's allowlist of agent-browser's commands (`refusal`, `SEALED_METHODS`), 1Password's values (`Vault`, `VaultFor`, `Cache`), agent-browser's pin and policy (`VERSION`, `policy`, `sessionEnv`) and a `secret_deliver` sink (`parseSecretSink`) |
+| `fleetd/desktop/desktops`, `fleetd/desktop/box_display` | box side: an agent's Linux desktop in its box, driven from outside it (`DesktopSessions`: the session calls, the `desktop` actions, live view and takeover, recording; its `DesktopHost` gives the hub calls, the secrets, the box and the recording store; `snapshot`, `adopt` and `letGo` hand a session to another holder, a person's takeover with it). Xvfb, openbox and socat in the box, outliving a dropped connection (`BoxDisplay.start`, `BoxDisplay.reattach`: `src/node/place/box_screens.ts`) |
 
 An exported module is pure: neither it nor anything it imports, a type included, touches the database, the
 filesystem, a process, the network, the machine's environment, the `Hub` or an npm package (the fakes open sockets,
@@ -126,7 +127,7 @@ process as the hub does. In `fleetd/`, `bun test/pkg/purity.ts` prints where eve
 and `src/gen` stands: exported, pure and left out with why (`LEFT_OUT`), pure but for a type it imports, impure only
 through an import.
 
-A box-side module (`fleetd/box/…`, `fleetd/browser/…`) is the second kind: box side, sockets and fetch only, no fs,
+A box-side module (`fleetd/box/…`, `fleetd/browser/…`, `fleetd/desktop/…`) is the second kind: box side, sockets and fetch only, no fs,
 process or env. It
 drives a sandbox box, and a service with no node (fleetd hosted) runs it just as the node does, so the code is shared,
 never forked. It may open sockets and WebSockets and call `fetch`, and otherwise holds to the same rule: no

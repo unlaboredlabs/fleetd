@@ -25,6 +25,15 @@ export const CONNECT_TIMEOUT = 20_000;
 /** How long one round trip may take before the display counts as gone. */
 const REPLY_TIMEOUT = 15_000;
 
+/** An X authority file naming `cookie` for any display on any host (FamilyWild). */
+export function xauth(cookie: Uint8Array): Uint8Array {
+  const parts: number[] = [0xff, 0xff];
+  for (const field of [new Uint8Array(0), new Uint8Array(0), new TextEncoder().encode("MIT-MAGIC-COOKIE-1"), cookie]) {
+    parts.push(field.length >> 8, field.length & 0xff, ...field);
+  }
+  return new Uint8Array(parts);
+}
+
 const pad4 = (n: number) => (4 - (n % 4)) % 4;
 const xErr = (e: unknown) => `the X display: ${e instanceof Error ? e.message : String(e)}`;
 

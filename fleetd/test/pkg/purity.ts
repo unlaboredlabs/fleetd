@@ -163,19 +163,20 @@ export function exported(): { name: string; path: string }[] {
 
 /**
  * What an entry (its name in `exports`) may do beyond pure: the fakes are clients of a server at an address, and the
- * box side (`./box/…`) drives a sandbox box over its sockets, WebSockets and fetch. Neither touches a file, a process
+ * box side (`./box/…`, `./browser/…`, `./desktop/…`) drives a sandbox box over its sockets, WebSockets and fetch. Neither touches a file, a process
  * or the machine's environment.
  */
 export const allowed = (name: string): Taint[] =>
-  name.startsWith("./fakes/") || name.startsWith("./box/") || name.startsWith("./browser/") ? ["network"] : [];
+  name.startsWith("./fakes/") || name.startsWith("./box/") || name.startsWith("./browser/") || name.startsWith("./desktop/") ? ["network"] : [];
 
 /**
  * The npm packages an entry may import: the browser's (`./browser/…`, a box-side kind: an agent's browser driven
  * from outside its box) checks the agent's scripts with acorn, which the root package.json names as a peer
- * dependency, so the importer installs it beside the package.
+ * dependency, so the importer installs it beside the package. The desktop's (`./desktop/…`) reach it through the
+ * box's screens they share with the browser.
  */
 export function peers(name: string): string[] {
-  if (!name.startsWith("./browser/")) return [];
+  if (!name.startsWith("./browser/") && !name.startsWith("./desktop/")) return [];
   const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { peerDependencies?: Record<string, string> };
   return Object.keys(manifest.peerDependencies ?? {});
 }

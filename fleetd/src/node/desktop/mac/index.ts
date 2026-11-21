@@ -26,7 +26,7 @@ import { join } from "node:path";
 import { RESTART_NODE } from "../../agents_mac/index.ts";
 import { tcc } from "../../agents_mac/tcc.ts";
 import { tail } from "../display.ts";
-import type { Launched, Lent } from "../screen.ts";
+import type { App, Launched, Lent } from "../screen.ts";
 import type { DesktopCall } from "../session.ts";
 import { answer, command, launchedPid, listedApp, type Needs, run, snapshotApp, type Target } from "./agent_desktop.ts";
 import { type Console, consoleBlocked, read as readConsole, state } from "./console.ts";
@@ -111,7 +111,7 @@ export const observes = (call: DesktopCall) => needs(call).needs === "read";
 /** An app as claims know it: every name it goes by, in lower case (the one the agent gave, and where agent-desktop
  * lists it running, its display name and bundle id), so a claim made by name before the app ran still matches it by
  * bundle id once it runs; and the name the agent gave, for messages. */
-export type App = { keys: string[]; name: string };
+export type { App } from "../screen.ts";
 
 /** When process `pid` started, as `ps` says it; undefined where there's no such process. */
 function startedAt(pid: number): string | undefined {

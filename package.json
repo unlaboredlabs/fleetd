@@ -62,6 +62,8 @@
     "./browser/recording": "./fleetd/src/node/browser/recording.ts",
     "./browser/secret_sink": "./fleetd/src/node/secrets/sink.ts",
     "./browser/session": "./fleetd/src/node/browser/session.ts",
+    "./desktop/box_display": "./fleetd/src/node/place/box_screens.ts",
+    "./desktop/desktops": "./fleetd/src/node/desktop/desktops.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",
     "./fakes/accounts": "./fleetd/test/fake-accounts.ts",

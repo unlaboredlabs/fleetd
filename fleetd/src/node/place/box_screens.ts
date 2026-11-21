@@ -9,17 +9,31 @@
 // (setsid), so ending it kills that session and everything the agent launched on it, and nothing else of the box's.
 // The template has what they need (sandbox/image/Dockerfile): Playwright's headless shell at $CHROME, Xvfb, openbox
 // and socat.
+//
+// A box's display outlives the connection to it: Xvfb and socat run in their own process session, so another holder
+// (another instance of a service) takes it over from its `handle` with `BoxDisplay.reattach`.
 import { randomBytes } from "node:crypto";
-import { xauth } from "../desktop/display.ts";
-import { SIZE } from "../desktop/paths.ts";
-import type { Launched as AppLaunched, Lent } from "../desktop/screen.ts";
-import { X } from "../desktop/x11.ts";
+import { type Launched as AppLaunched, type Lent, SIZE } from "../desktop/screen.ts";
+import { X, xauth } from "../desktop/x11.ts";
 import { detach, dialUntil, enc, hex, PATH, port, type ScreenBox, sh, shq, sweep } from "./box_chrome.ts";
 
 export { boxChrome, dialUntil, reattachChrome, type ScreenBox, streamTransport, timing } from "./box_chrome.ts";
 
 /** How long `launch` waits before it looks at the app. */
 const SETTLE_MS = 500;
+
+/** What a box's display needs there. */
+const NEEDS = ["Xvfb", "openbox", "socat"];
+
+/** Where a box's display is, for a new holder to reach it again (`BoxDisplay.reattach`). */
+export type DisplayHandle = { dir: string; name: string; port: number; cookie: Uint8Array };
+
+/** Why the box can't run a display, in plain words, or undefined when it can: the programs it lacks. */
+export async function missingIn(box: ScreenBox): Promise<string | undefined> {
+  const said = await sh(box, `for p in ${NEEDS.join(" ")}; do command -v "$p" >/dev/null 2>&1 || echo "$p"; done; true`);
+  const lacks = said.split("\n").map((l) => l.trim()).filter((l) => NEEDS.includes(l));
+  return lacks.length ? `the agent's box has no ${lacks.join(", ")}, which a desktop needs there` : undefined;
+}
 
 /**
  * A Linux desktop in the box: an Xvfb of its own with a random MIT cookie and openbox on it, its socket reached
@@ -29,7 +43,6 @@ const SETTLE_MS = 500;
 export class BoxDisplay implements Lent {
   readonly backend = "box";
   readonly inBox = true;
-  #launched = 0;
   #dropped = false;
 
   private constructor(
@@ -41,7 +54,10 @@ export class BoxDisplay implements Lent {
     readonly cookie: Uint8Array,
   ) {}
 
+  /** A new display in the box. Throws at once, before it waits on anything, when the box lacks what it needs. */
   static async start(box: ScreenBox): Promise<BoxDisplay> {
+    const lacks = await missingIn(box);
+    if (lacks) throw new Error(lacks);
     const dir = `/tmp/fleetd-desktop-${hex(6)}`;
     const n = 100 + (randomBytes(2).readUInt16LE(0) % 400);
     const at = port();
@@ -79,6 +95,26 @@ export class BoxDisplay implements Lent {
     return d;
   }
 
+  /**
+   * The display at `handle` again, as a holder before left it, with everything launched on it: it answers with its
+   * cookie, or it is gone and swept with whatever of it is left (the caller ends its session). Throws why.
+   */
+  static async reattach(box: ScreenBox, handle: DisplayHandle, ms = 5_000): Promise<BoxDisplay> {
+    const d = new BoxDisplay(box, handle.dir, handle.name, handle.port, handle.cookie);
+    try {
+      (await X.connect(() => dialUntil(box, handle.port, ms), handle.cookie)).close();
+    } catch (e) {
+      await sweep(box, handle.dir);
+      throw new Error(`the desktop in the agent's box is gone: ${(e as Error).message}`);
+    }
+    return d;
+  }
+
+  /** Where it is, for a new holder (`reattach`). */
+  handle(): DisplayHandle {
+    return { dir: this.dir, name: this.name, port: this.at, cookie: this.cookie };
+  }
+
   /** What an app on the display sees: the display, its cookie and a home of the display's own. */
   env(): Record<string, string> {
     return { DISPLAY: this.name, XAUTHORITY: `${this.dir}/xauth`, HOME: `${this.dir}/home`, LANG: "C.UTF-8", PATH };
@@ -91,7 +127,8 @@ export class BoxDisplay implements Lent {
 
   async launch(command: string, cwd: string): Promise<AppLaunched> {
     if (this.#dropped) throw new Error("the desktop is gone");
-    const n = ++this.#launched;
+    // Named at random: a holder before may have launched some already.
+    const n = hex(4);
     const script = `${this.dir}/launch-${n}.sh`;
     await this.box.write(script, enc(`cd ${shq(cwd)} 2>/dev/null || cd ${shq(`${this.dir}/home`)}\nexec sh -c ${shq(command)} >${shq(`${this.dir}/launch-${n}.log`)} 2>&1\n`), 0o700);
     await detach(this.box, script, `${this.dir}/launch-${n}.pid`, this.env());
