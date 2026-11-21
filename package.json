@@ -56,6 +56,7 @@
     "./box/chat_file": "./fleetd/src/node/actions/chat_file.ts",
     "./box/kept": "./fleetd/src/node/place/kept.ts",
     "./box/onepassword": "./fleetd/src/node/actions/onepassword_helper.ts",
+    "./box/onepassword_fields": "./fleetd/src/node/actions/onepassword_fields.ts",
     "./box/tailnet_fetch": "./fleetd/src/node/sandbox/tailnet_fetch.ts",
     "./browser/agent_browser": "./fleetd/src/node/browser/agent_browser_plugin.ts",
     "./browser/agent_browser_policy": "./fleetd/src/node/browser/agent_browser_policy.ts",
