@@ -114,6 +114,37 @@ test("a project outside the repo installs the package, imports every entry point
   });
   expect(typecheck("box.ts")).toEqual({ code: 0, out: "" });
 
+  // A 1Password item a box's helper read, as the vault's fields before fleetd cloud seals them to the hub: one item of
+  // each kind the vault imports, one it doesn't, and a card's expiry as 1Password keeps it. Made-up values only.
+  writeFileSync(join(project, "fields.ts"), FIELDS);
+  expect(JSON.parse(bun(["fields.ts"]).out)).toEqual({
+    kinds: ["login", "login", "card", "address", null],
+    login: {
+      title: "Example",
+      sites: ["login.example.com"],
+      login: { username: "ada", password: "made-up-pw", totp: "otpauth://totp/x?secret=MADEUP", notes: "a note" },
+    },
+    card: { title: "Card", card: { number: "4242424242424242", month: "12", year: "2028", cvc: "123", name: "Ada L" } },
+    address: {
+      title: "Home",
+      address: {
+        name: "Ada Lovelace",
+        line1: "1 Main St",
+        line2: "Flat 2, Back",
+        city: "Town",
+        region: "TS",
+        postalCode: "12345",
+        country: "GB",
+        phone: "+44 1",
+        email: "ada@example.com",
+      },
+    },
+    note: { title: "Note" },
+    empty: { title: "Empty" },
+    expiry: [["12", "2028"], ["03", "2028"], ["12", "2028"], ["12", "2028"], ["12", "2028"], null, null, null, null],
+  });
+  expect(typecheck("fields.ts")).toEqual({ code: 0, out: "" });
+
   // A type the package exports is the real one, not `any`: a wrong use fails.
   writeFileSync(join(project, "wrong.ts"), `import { TOOL_LIST } from "fleetd/tools";\nexport const n: number = TOOL_LIST[0]!.name;\n`);
   expect(typecheck("wrong.ts").out).toContain("wrong.ts(2,14): error TS2322");
@@ -222,6 +253,54 @@ console.log(JSON.stringify({
   vaults: await box.vaultNames(),
   refused,
   kept: [KEPT_FOR_MS, KEPT_EVERY_MS],
+}));
+`;
+
+/** A 1Password item of each kind as the vault's fields, and cards' expiries, through the package. */
+const FIELDS = `
+import { expiry, importedFields, importKind, type ReadItem, type VaultImportedFields } from "fleetd/box/onepassword_fields";
+
+const login: ReadItem = {
+  title: "Example",
+  category: "Login",
+  sites: ["https://Login.Example.com/x", "login.example.com", "not a url ::"],
+  notes: "a note",
+  fields: [
+    { id: "username", value: "ada" },
+    { id: "password", value: "made-up-pw" },
+    { type: "Totp", title: "one-time password", value: "otpauth://totp/x?secret=MADEUP" },
+  ],
+};
+const card: ReadItem = {
+  title: "Card",
+  category: "CreditCard",
+  sites: [],
+  fields: [
+    { id: "ccnum", value: "4242 4242 4242 4242" },
+    { type: "MonthYear", title: "expiry date", value: "202812" },
+    { id: "cvv", value: "123" },
+    { id: "cardholder", value: "Ada L" },
+  ],
+};
+const address: ReadItem = {
+  title: "Home",
+  category: "Identity",
+  sites: [],
+  fields: [
+    { id: "firstname", value: "Ada" },
+    { id: "lastname", value: "Lovelace" },
+    { type: "Address", details: { street: "1 Main St\\nFlat 2\\nBack", city: "Town", state: "TS", zip: "12345", country: "gb" } },
+    { type: "Phone", title: "cell", value: "+44 1" },
+    { title: "E-mail", value: "ada@example.com" },
+  ],
+};
+const note: ReadItem = { title: "Note", category: "SecureNote", sites: [], fields: [{ id: "notesPlain", value: "x" }] };
+const empty: ReadItem = { title: "Empty", category: "Password", sites: [], fields: [] };
+const all: Record<string, VaultImportedFields> = { login: importedFields(login), card: importedFields(card), address: importedFields(address), note: importedFields(note), empty: importedFields(empty) };
+console.log(JSON.stringify({
+  kinds: ["Login", "Password", "CreditCard", "Identity", "SecureNote"].map((c) => importKind(c) ?? null),
+  ...all,
+  expiry: ["12/2028", "3/28", "202812", "122028", "1228", "13/2028", "12/028", "", "ab/cd"].map((v) => expiry(v) ?? null),
 }));
 `;
 
