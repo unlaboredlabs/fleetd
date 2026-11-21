@@ -12,6 +12,8 @@ import { nowIso } from "../../util.ts";
 import { COMMAND, leftFile, marker as newMarker, PROTOCOL, startOf, sweep, type Registration } from "../host.ts";
 import { reapLeaked } from "../../place/left_vm.ts";
 import type { RunnerEvent, SessionCommand } from "./events.ts";
+import { fence } from "./fence.ts";
+import { noteFile, watchMemory } from "./memory.ts";
 import { adoptOrphans, recordLeftIn, SESSION_MARKER } from "./reaper.ts";
 import { startSession, type Session } from "./session.ts";
 
@@ -249,6 +251,10 @@ export async function main(argv: string[]): Promise<number> {
     } catch {}
     return 1;
   };
+  // Before the first spawn, so claude and everything it starts signal only this session's processes.
+  const fenced = fence();
+  if (!fenced.fenced) warn(`the session is not fenced: its processes may signal any of this user's: ${fenced.why}`);
+  watchMemory(noteFile(dir));
   recordLeftIn(leftFile(dir));
   adoptOrphans();
   let server: Server;

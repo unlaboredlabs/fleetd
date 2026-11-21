@@ -24,6 +24,7 @@ import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
+import { memoryHook, noteFile } from "../runner/host/memory.ts";
 import { reapLeaked, sweepVm } from "../place/left_vm.ts";
 import { hostDir, isRunner, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
@@ -258,6 +259,7 @@ export function settingsOverlay(
   fast: boolean,
   heavyLsp: boolean,
   holdHook: string,
+  memoryNote?: string,
 ): string {
   const env: Record<string, string> = { ...claude.subagentsOffSettingsEnv(), ...extraEnv };
   env.DISABLE_AUTOUPDATER = "1";
@@ -267,7 +269,15 @@ export function settingsOverlay(
     env,
     permissions: { deny: claude.ALWAYS_DISALLOWED, ...(ask.length ? { ask } : {}) },
     autoMemoryEnabled: false,
-    hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: holdHook, timeout: 6 * 3600 }] }] },
+    hooks: {
+      PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: holdHook, timeout: 6 * 3600 }] }],
+      // A process the session's memory cap killed: claude reads which and why beside the next tool result.
+      ...(memoryNote
+        ? Object.fromEntries(
+            (["PostToolUse", "PostToolUseFailure"] as const).map((event) => [event, [{ matcher: "*", hooks: [{ type: "command", command: memoryHook(memoryNote, event), timeout: 10 }] }]]),
+          )
+        : {}),
+    },
   };
   if (Object.keys(skillOverrides).length) overlay.skillOverrides = skillOverrides;
   if (fast) overlay.fastMode = true;
@@ -1542,7 +1552,7 @@ export class SessionService {
     const settings = join(dir, "settings.json");
     const helperModel = row.local.helperModel ?? claude.MODEL;
     const ask = row.local.allowedOnly ? [] : claude.roleAsk(role, row.summary.runtimeMode);
-    writeAtomic(settings, settingsOverlay({ ...accountSettings, ...roleVars }, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.fleetd, this.home)));
+    writeAtomic(settings, settingsOverlay({ ...accountSettings, ...roleVars }, skills.overrides(prepared), helperModel, ask, !!row.local.fast, claude.heavyLspOn(env), holdHook(this.config.fleetd, this.home), noteFile(hostDir(this.home, id))));
     env.FLEETD_NODE_SOCK = sock;
     env.FLEETD_THREAD_ID = id;
     env.FLEETD_PROJECT_ID = row.summary.projectId;
