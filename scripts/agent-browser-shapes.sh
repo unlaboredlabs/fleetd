@@ -1,7 +1,7 @@
 #!/bin/bash
 # Makes fleetd/src/node/browser/agent_browser_shapes.json: the shapes of the scripts agent-browser evaluates,
 # which a browser session that filled a login from 1Password lets through and no others (shapes.ts). Run it after
-# changing agent-browser's version in agent_browser.ts, and commit the file:
+# changing agent-browser's version in agent_browser_policy.ts, and commit the file:
 #
 #   scripts/agent-browser-shapes.sh
 #
@@ -14,8 +14,8 @@ die() { printf 'agent-browser-shapes: %s\n' "$*" >&2; exit 1; }
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bun_dir="$root/fleetd"
-version="$(sed -n 's/^export const VERSION = "\(.*\)";$/\1/p' "$bun_dir/src/node/browser/agent_browser.ts")"
-[ -n "$version" ] || die "no VERSION in agent_browser.ts"
+version="$(sed -n 's/^export const VERSION = "\(.*\)";$/\1/p' "$bun_dir/src/node/browser/agent_browser_policy.ts")"
+[ -n "$version" ] || die "no VERSION in agent_browser_policy.ts"
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) binary=agent-browser-linux-x64 ;;
   Linux-aarch64) binary=agent-browser-linux-arm64 ;;

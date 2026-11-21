@@ -3,7 +3,7 @@ import { TOOLS } from "../../src/hub/api/tool_roles.ts";
 import type { Registry } from "../../src/hub/api/registry.ts";
 import { toolsList } from "../../src/hub/mcp/endpoint.ts";
 import { SCHEMAS, TOOL_LIST } from "../../src/pkg/tools.ts";
-import { allowed, exported, findings, LEFT_OUT, line, readRepo, scan, type Read, type Taint } from "./purity.ts";
+import { allowed, exported, findings, LEFT_OUT, line, peers, readRepo, scan, type Read, type Taint } from "./purity.ts";
 
 // The package's promise (docs/CONTRIBUTING.md "The package"): what the root package.json exports runs in a server
 // that has no hub around it.
@@ -15,7 +15,7 @@ test("every module the package exports is pure, through all it imports", () => {
       expect(path).toEndWith(".json");
       continue;
     }
-    for (const f of findings(path, readRepo, { allow: allowed(name) })) impure.push(`fleetd${name.slice(1)}: ${line(f)}`);
+    for (const f of findings(path, readRepo, { allow: allowed(name), peers: peers(name) })) impure.push(`fleetd${name.slice(1)}: ${line(f)}`);
   }
   // A module named here either stays pure (its new import goes elsewhere) or loses its line in package.json's
   // `exports`, which whoever imports the package then sees at their next bump.

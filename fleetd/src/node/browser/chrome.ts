@@ -12,9 +12,11 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { join } from "node:path";
 import type { Subprocess } from "bun";
 import { Cdp, type Transport } from "./cdp.ts";
-import { HEIGHT, WIDTH } from "./session.ts";
+import { args, type KeptLease, KEPT_PREFS, type Launched, merge, NOT_KEPT } from "./launch_args.ts";
 import { agentScoreLine } from "../oom.ts";
 import { keptDir } from "../actions/signins.ts";
+
+export { args, type ChromeHandle, type KeptLease, KEPT_PREFS, type Launched, NOT_KEPT } from "./launch_args.ts";
 
 const LAUNCH_TIMEOUT = 20_000;
 const CLOSE_WAIT = 5_000;
@@ -91,33 +93,6 @@ export function findChrome(root: string): string | undefined {
     .find((bin) => existsSync(bin));
 }
 
-export function args(chrome: string, profile: string, sandboxed: boolean, extra: string[] = []): string[] {
-  const out = [
-    "--remote-debugging-pipe",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-backgrounding-occluded-windows",
-    "--disable-renderer-backgrounding",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-extensions",
-    "--disable-sync",
-    "--disable-features=Translate,AutofillServerCommunication,PasswordManagerOnboarding",
-    "--password-store=basic",
-    "--use-mock-keychain",
-    "--metrics-recording-only",
-    "--mute-audio",
-    "--hide-scrollbars",
-    `--window-size=${WIDTH},${HEIGHT}`,
-    `--user-data-dir=${profile}`,
-  ];
-  if (!chrome.includes("headless-shell")) out.push("--headless=new");
-  if (!sandboxed) out.push("--no-sandbox");
-  out.push(...extra, "about:blank");
-  return out;
-}
 
 /** The pipe over the child's stdin (Chrome's fd 3) and stdout (its fd 4), NUL-framed. */
 function childTransport(child: Subprocess<"pipe", "pipe", "pipe">): Transport {
@@ -243,8 +218,6 @@ export async function launch(chrome: string, profiles: string, sandboxed: boolea
   return browser;
 }
 
-/** What a session's browser is: the node's Chrome, or a test's, with its close. */
-export type Launched = { cdp: Cdp; close?: () => Promise<void>; alive?: () => boolean; lease?: KeptLease };
 
 /**
  * Launched browsers waiting for a session (chrome.rs `Pool`): taking one costs no launch, and the pool starts a new one
@@ -351,64 +324,13 @@ export class Pool<B extends Launched = Launched> {
 /** Where a project's kept profile lives (actions/signins.ts): `browser/kept/<project>`. */
 export { keptDir };
 
-/** What a kept profile doesn't keep, in its `Default` dir: the HTTP and code caches (a page as a site showed it, a
- * filled value it echoed too), history, the session to restore, and the stores of saved passwords and form entries.
- * Sign-ins live in its cookies and site storage, which stay. */
-export const NOT_KEPT = [
-  "Cache",
-  "Code Cache",
-  "GPUCache",
-  "DawnGraphiteCache",
-  "DawnWebGPUCache",
-  "Sessions",
-  "Current Session",
-  "Current Tabs",
-  "Last Session",
-  "Last Tabs",
-  "History",
-  "History-journal",
-  "Visited Links",
-  "Top Sites",
-  "Top Sites-journal",
-  "Favicons",
-  "Favicons-journal",
-  "Shortcuts",
-  "Shortcuts-journal",
-  "Network Action Predictor",
-  "Network Action Predictor-journal",
-  "Web Data",
-  "Web Data-journal",
-  "Login Data",
-  "Login Data-journal",
-  "Login Data For Account",
-  "Login Data For Account-journal",
-];
 
 /** Deletes what a kept profile doesn't keep, with no browser on it. */
 export function pruneKept(dir: string): void {
   for (const name of NOT_KEPT) rmSync(join(dir, "Default", name), { recursive: true, force: true });
 }
 
-/** Chrome's preferences for a kept profile: it saves no password or form entry, so a value `fill_credential` typed
- * stays only in the session that typed it, which refuses reading it back (credentials.ts). */
-const KEPT_PREFS = {
-  credentials_enable_service: false,
-  credentials_enable_autosignin: false,
-  profile: { password_manager_enabled: false },
-  autofill: { enabled: false, profile_enabled: false, credit_card_enabled: false },
-};
 
-/** `over` written into `into`, object by object. */
-function merge(into: Record<string, unknown>, over: Record<string, unknown>): Record<string, unknown> {
-  for (const [k, v] of Object.entries(over)) {
-    const was = into[k];
-    into[k] =
-      v && typeof v === "object" && !Array.isArray(v) && was && typeof was === "object" && !Array.isArray(was)
-        ? merge(was as Record<string, unknown>, v as Record<string, unknown>)
-        : v;
-  }
-  return into;
-}
 
 /** Readies a kept profile for its next launch: made (only the node reads it) when new, its preferences set, and the
  * lock and leftovers of the browser before it cleared (the lease says none runs on it now; one killed leaves both). */
@@ -439,8 +361,6 @@ export function readyKept(dir: string): void {
   }
 }
 
-/** A project's profile, held by the one browser running on it (or a wipe) until it lets go. */
-export type KeptLease = { dir: string; release(): void };
 
 /** The projects' kept profiles, one browser on each at a time: a second session of the same project is refused rather
  * than started on a profile Chrome holds. */

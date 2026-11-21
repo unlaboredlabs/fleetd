@@ -13,11 +13,11 @@
 // script shapes), then types the value over the node's own connection and submits, in one step (`fill`). The value
 // never passes the proxy, and every answer to the driver is scrubbed of it.
 import { ToolError } from "../../shared/errors.ts";
-import type { Broker } from "./index.ts";
-import { Cache, CredError, type Credential, hostOf, isOtp, originAllowed, TOKEN_ENV, type Vault, type VaultFor, vaultFor } from "./onepassword.ts";
+import type { BrowserBroker as Broker } from "./broker.ts";
+import { Cache, CredError, type Credential, hostOf, isOtp, originAllowed, TOKEN_ENV, type Vault, type VaultFor } from "./logins.ts";
 import { PAUSED, type Session } from "./session.ts";
 import { maskName, notInVault, onSites, vaultFill, vaultFilled } from "./vault.ts";
-import { isHostKey } from "../device/work.ts";
+import { isHostKey } from "../secrets/sink.ts";
 
 /** A session's vault, made with the token at its first fill, and what it resolved. */
 export type SessionVault = { vault: Vault; cache: Cache };
@@ -30,8 +30,8 @@ export class Credentials {
   /** By agent session: every value filled into its browsers, until its claude exits. */
   private readonly filledBy = new Map<string, [string, string][]>();
 
-  constructor(home: string) {
-    this.vaultFor = vaultFor(home);
+  constructor(vaultFor: VaultFor) {
+    this.vaultFor = vaultFor;
   }
 
   filled(thread: string, reference: string, value: string): void {

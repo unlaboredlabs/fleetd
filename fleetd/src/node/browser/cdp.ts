@@ -23,16 +23,24 @@ type Waiter =
 
 export class Cdp {
   private readonly waiting = new Map<number, Waiter>();
-  private readonly own = new Set<string>();
+  private readonly ownSessions = new Set<string>();
   private readonly ownTargets = new Set<string>();
   /** Targets the broker attaches to now: their `attachedToTarget` waits until its answer says which is its own. */
   private readonly attaching = new Map<string, Event[]>();
   private readonly listeners = new Set<(e: Event) => void>();
   private proxy: ((message: Message) => void) | undefined;
-  private next = 1;
+  private next: number;
   private closed = false;
+  /** Told once the connection closed, by itself or by `shut`. */
+  private readonly closes: (() => void)[] = [];
 
-  constructor(private readonly transport: Transport) {
+  /** `firstId`: its first command's id, past every id an earlier connection to the same Chrome used, so an answer
+   * that one left in flight never meets this one's command (../place/box_chrome.ts `reattachChrome`). */
+  constructor(
+    private readonly transport: Transport,
+    firstId = 1,
+  ) {
+    this.next = firstId;
     transport.onMessage((text) => this.receive(text));
     transport.onClose(() => this.close());
   }
@@ -57,6 +65,30 @@ export class Cdp {
     this.waiting.clear();
     this.listeners.clear();
     this.proxy = undefined;
+    for (const fn of this.closes.splice(0)) fn();
+  }
+
+  /** Calls `fn` once the connection closed. */
+  onClose(fn: () => void): void {
+    if (this.closed) fn();
+    else this.closes.push(fn);
+  }
+
+  /** The broker's own sessions and their targets, to carry onto a new connection to the same Chrome (`adoptOwned`). */
+  owned(): { sessions: string[]; targets: string[] } {
+    return { sessions: [...this.ownSessions], targets: [...this.ownTargets] };
+  }
+
+  /** Sessions and targets an earlier connection to this Chrome attached for the broker: they stay hidden from the
+   * driver here too, and the driver may not name them. */
+  adoptOwned(o: { sessions: string[]; targets: string[] }): void {
+    for (const s of o.sessions) this.ownSessions.add(s);
+    for (const t of o.targets) this.ownTargets.add(t);
+  }
+
+  /** The id its next command takes. */
+  nextId(): number {
+    return this.next;
   }
 
   isClosed(): boolean {
@@ -74,7 +106,7 @@ export class Cdp {
       }
     }
     const session = e.sessionId ?? (e.params.sessionId as string | undefined);
-    if (session !== undefined && this.own.has(session)) return;
+    if (session !== undefined && this.ownSessions.has(session)) return;
     this.proxy?.(toMessage(e));
   }
 
@@ -92,7 +124,7 @@ export class Cdp {
     } else {
       const mine = error ? undefined : (result.sessionId as string | undefined);
       if (mine !== undefined) {
-        this.own.add(mine);
+        this.ownSessions.add(mine);
         this.ownTargets.add(w.target);
       }
       for (const held of this.attaching.get(w.target) ?? []) {
@@ -116,7 +148,7 @@ export class Cdp {
   }
 
   isOwn(session: string): boolean {
-    return this.own.has(session);
+    return this.ownSessions.has(session);
   }
 
   isOwnTarget(target: string): boolean {

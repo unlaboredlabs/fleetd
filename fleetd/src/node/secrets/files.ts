@@ -2,7 +2,7 @@
 // (exclusive create, 0600), fsync, then a rename over the target, so a reader sees the old file or the new one.
 import { closeSync, fsyncSync, openSync, renameSync, rmSync, writeSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 export function writeAtomic(target: string, bytes: Uint8Array | string): void {
   const tmp = join(dirname(target), `.${basename(target)}.fleetd-${randomBytes(6).toString("hex")}`);
@@ -21,8 +21,7 @@ export function writeAtomic(target: string, bytes: Uint8Array | string): void {
   }
 }
 
-/** The first 8 hex characters of sha256 over the plaintext. */
-export const fingerprintOf = (value: Uint8Array | string) => createHash("sha256").update(value).digest("hex").slice(0, 8);
+export { fingerprintOf } from "./sink.ts";
 
 /** A name fleetd or claude keeps for itself (project_settings.rs `env_name_reserved`). */
 export const envNameReserved = (name: string) =>

@@ -1,4 +1,4 @@
-// The node's browser sessions: one per agent session at most, on a
+// The node's browser sessions (the broker, ./broker.ts, with the node's own parts): one per agent session at most, on a
 // warm Chrome from the pool (a fresh process with an empty profile, thrown away at the end), reached by the agent only
 // through the CDP proxy (proxy.ts). It answers agent-mcp's browser calls (through node/device's router), takes the
 // hub's `browser_watch`, `browser_input`, `browser_control` and `session_end` frames, reports each session to the hub
@@ -19,58 +19,41 @@
 //
 // Where Playwright's Chrome or agent-browser is missing, the node installs the pinned builds in the background as it
 // starts, and a session's start waits for that install up to INSTALL_WAIT_MS.
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { ThreadItem } from "../../shared/sessions.ts";
-import type { BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame, SessionEndFrame } from "../../shared/screens_wire.ts";
 import { findChrome, install as installChrome, installDir, Kept, keptDir, type Launched, launch, Pool } from "./chrome.ts";
-import { CAP_BROWSER, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_SEAL, RECORDING_FILES } from "../../shared/screens_wire.ts";
+import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import { CAP_BROWSER, CAP_SESSION_END, CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
 import {
   env as agentBrowserEnv,
   find as findAgentBrowser,
   install as installAgentBrowser,
   pluginDirs as agentBrowserPlugins,
-  policy as agentBrowserPolicy,
   policyPath,
   VERSION as AGENT_BROWSER_VERSION,
-  writePolicy,
+  writePolicyText,
 } from "./agent_browser.ts";
-import { type FillAddressCall, fillAddress } from "./address.ts";
-import { purchaseFill, purchaseRequest, WAIT_ON_PERSON_MS } from "./cards.ts";
-import { Credentials, type FillCredentialCall, fillCredential, filledFieldRefusal, outgoing, remoteVault, type SessionVault, unread } from "./credentials.ts";
-import type { Credential } from "./onepassword.ts";
+import { type BrokerHost, BrowserBroker } from "./broker.ts";
+import { vaultFor } from "./onepassword.ts";
 import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
 import { Proxy } from "./proxy.ts";
-import { boxChrome, type ScreenBox } from "../place/box_screens.ts";
-import { files as recordedFiles, findFfmpeg, GIVE_UP_MS, giveUp, readMeta, recordingsDir, scrubFile, Steps, upload, VideoSink, waitingIn, writeMeta } from "./record.ts";
-import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting } from "./secure_input.ts";
-import { HEIGHT, Session, WIDTH } from "./session.ts";
+import { DiskRecordings, findFfmpeg, recordingsDir } from "./record.ts";
+import { HEIGHT, WIDTH } from "./session.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "./node.ts";
 import type { ScreenHooks, SessionsArea } from "../api.ts";
 import { CAP_VAULT_FILL } from "../../shared/node_link.ts";
-import type { SecretDeliver, SecretResult } from "../wire.ts";
 
-/** What a session's recording says without ffmpeg. */
-export const NO_VIDEO = "no video: this machine has no ffmpeg for it";
-/** A session no step touched this long ends (node.json `screenIdleMinutes`, else 30). */
-const IDLE_MINUTES = 30;
-/** How long a session's start waits for the browser's install in progress: with the browser's launch after it,
- * inside the agent's wait for the node's answer (60 s). */
-export const INSTALL_WAIT_MS = 30_000;
-
-const newId = () => `B${[...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
-
-type Open = { session: Session; browser: Launched; purpose: string; note?: string };
-
-/** Where an agent session's hosted box is, for its browser, which runs in it (../place/box_screens.ts), or `starting`
- * while it is being made. */
-export type BoxedFor = { box: ScreenBox } | "starting";
+export { type BoxedFor, drivesBrowser, type KeptInBox } from "./broker.ts";
+export { NO_VIDEO } from "./record.ts";
 
 /** How a session's browser starts: the node's Chrome through its pool, or a test's, on a fresh profile or `kept`, with
  * `extra` flags. */
 export type Launcher = (kept?: string, extra?: string[]) => Promise<Launched>;
+
+/** How long a session's start waits for the browser's install in progress: with the browser's launch after it,
+ * inside the agent's wait for the node's answer (60 s). */
+export const INSTALL_WAIT_MS = 30_000;
 
 /** What installs the browser's parts: the pinned installs, or a test's stand-ins. */
 export type Installer = { agentBrowser: (home: string) => Promise<unknown>; chrome: (home: string) => Promise<unknown> };
@@ -88,14 +71,6 @@ type Install =
   | { kind: "missing"; why: string; owed: boolean };
 
 /** A session's project, whose kept profile its browser runs on: a lead's, or a person's screen. */
-type KeptOwner = {
-  name: string;
-  /** A person's screen, or a lead with repos: with the kept profile busy, it opens on a fresh one rather than not at all. */
-  freshIfBusy: boolean;
-  /** Its browser runs on this machine, never one the hub would pick: a lead that does its own work. */
-  staysHere: boolean;
-};
-
 const noBrowser = (why: string) =>
   new ToolError(
     "failed",
@@ -115,61 +90,29 @@ export type BrokerOptions = {
   installer?: Installer;
 };
 
-export class Broker {
-  readonly sessions = new Map<string, Open>();
-  readonly proxy: Proxy;
-  private readonly starting = new Set<string>();
-  readonly steps_ = new Steps();
-  private readonly housekeeping: Timer;
-  /** A session of this node's agent hosted on another machine (session_route): its relay and key. */
-  remote: ((thread: string) => { url: string; key: Uint8Array } | undefined) | undefined;
-  gone: ((thread: string) => void) | undefined;
-  /** The box an agent session runs in, if it runs in one (the node's places): its browser then goes out through it, or
-   * runs in it (a hosted box's). */
-  boxed: ((thread: string) => BoxedFor | undefined) | undefined;
-  /** How a hosted box's browser starts in it: the box's Chrome, or a test's. */
-  inBox: (box: ScreenBox) => Promise<Launched> = boxChrome;
-  /** 1Password: each session's vault and what it resolved, and each agent session's filled values. */
-  readonly credentials: Credentials;
-  /** The typed secure inputs sessions wait for, by browser session and request (secure_input.ts). */
-  readonly waiting = new Map<string, Waiting>();
-  /** Payment-provider hosts a card may fill in beyond cards.ts's PAYMENT_FRAMES (tests: a fake provider). */
-  readonly extraPaymentFrames: string[] = [];
-  /** The project of each agent session whose browser runs on its kept profile, by the agent session. */
-  private readonly owners = new Map<string, KeptOwner>();
+export class Broker extends BrowserBroker {
   readonly kept: Kept;
+  readonly home: string;
+  private readonly node: Node;
   private install: Install;
   private readonly installer: Installer;
   /** Told when the install is done, ready or failed: the starts waiting on it. */
   private installDone: (() => void)[] = [];
-  /** Reports and calls for the hub, sent in order (a takeover request never reaches the hub before its session). */
-  private reports: Promise<unknown> = Promise.resolve();
+  private readonly warmSize: number;
 
-  constructor(
-    private readonly node: Node,
-    launcher?: Launcher,
-    options: BrokerOptions = {},
-  ) {
+  constructor(node: Node, launcher?: Launcher, options: BrokerOptions = {}) {
+    const self: { broker?: Broker } = {};
+    super(nodeHost(node, () => self.broker!));
+    self.broker = this;
+    this.node = node;
     this.home = node.home;
-    this.credentials = new Credentials(node.home);
     this.kept = new Kept(node.home);
     this.installer = options.installer ?? PINNED;
     this.install = { kind: "wanted" };
     if (launcher) this.install = { kind: "ready", pool: new Pool((_sandboxed, kept, extra) => launcher(kept, extra), options.warm ?? 0) };
     // The hub's runner launches no Chrome of its own: its agents' browsers run in their boxes.
     this.warmSize = options.warm ?? (node.config.runner === true ? 0 : 1);
-    this.proxy = Proxy.start(node.home, {
-      live: (thread) => this.live(thread),
-      remote: (thread) => this.remote?.(thread),
-      gone: (thread) => this.gone?.(thread),
-      writeRefusal: (session, command) => this.writeRefusal(session, command),
-    });
-    this.housekeeping = setInterval(() => void this.housekeep(), 60_000);
   }
-  readonly home: string;
-  private readonly warmSize: number;
-  /** Why a sealed session refuses the driver's DOM write (a test's stand-in, or credentials.ts's). */
-  writeRefusal: (session: Session, command: Record<string, unknown>) => Promise<string | undefined> = filledFieldRefusal;
 
   /** The Chrome node.json names (`browser.chrome`, `FLEETD_CHROME`), else the node's pinned install's. */
   private chrome(): string | undefined {
@@ -273,30 +216,27 @@ export class Broker {
     return this.install.kind === "ready" ? this.install.pool.warm() : 0;
   }
 
-  live(thread: string): Session | undefined {
-    return this.sessions.get(thread)?.session;
-  }
-
-  byId(id: string): Session | undefined {
-    for (const o of this.sessions.values()) if (o.session.id === id) return o.session;
-    return undefined;
-  }
-
-  count(): number {
-    return this.sessions.size;
-  }
-
-  /** The session's secrets for its start (session_route), to scrub its recording with: taken once by `open`; none
-   * (`undefined`) drops what a start refused before it left. */
-  secretsFor(thread: string, secrets: [string, string][] | undefined): void {
-    if (secrets) this.pendingSecrets.set(thread, secrets);
-    else this.pendingSecrets.delete(thread);
-  }
-  private readonly pendingSecrets = new Map<string, [string, string][]>();
-
-  /** The agent session's own secrets, as the node's sessions hold them (none for a session hosted for elsewhere). */
-  private ownSecrets(thread: string): [string, string][] {
-    return this.sessionsArea()?.secretsFor?.(thread) ?? [];
+  /** A browser on this machine from the pool, on the project's kept profile for a lead (one browser at a time runs on
+   * it: a person's screen meanwhile opens on a fresh one, signed out). A boxed agent's browser runs in its box instead,
+   * on a fresh profile: a project's kept one is a lead's, and a lead never runs in a box. */
+  protected override async launchHere(thread: string): Promise<Launched> {
+    const pool = await this.pool();
+    const owner = this.owners.get(thread);
+    let lease: ReturnType<Kept["take"]> | undefined;
+    if (owner) {
+      try {
+        lease = this.kept.take(owner.name);
+      } catch (e) {
+        if (!owner.freshIfBusy) {
+          throw new ToolError(
+            "invalid",
+            `${(e as Error).message}: it keeps the bot's sign-ins, and one browser at a time runs on them.`,
+            "end that session first (session_end there), or wait for it to end, then session_start again",
+          );
+        }
+      }
+    }
+    return lease ? pool.takeKept(lease) : pool.take();
   }
 
   /** The node's sessions, where the node core set them up (a test's node may have none). */
@@ -308,296 +248,11 @@ export class Broker {
     }
   }
 
-  /** Writes agent-browser's action policy for `thread` (sealed once a value was filled), and into its hosted box too,
-   * where its agent-browser runs and reads it: the box got the node's files as they were at its launch, before this. */
-  async policy(thread: string, credentials: boolean): Promise<void> {
-    writePolicy(this.home, thread, credentials);
-    const boxed = this.boxed?.(thread);
-    if (boxed && boxed !== "starting") await boxed.box.write(policyPath(this.home, thread), new TextEncoder().encode(agentBrowserPolicy(credentials)), 0o600);
-  }
-
-  /** The agent's `session_start`: a browser for its session, reported live to the hub. */
-  async open(thread: string, purpose: string, given?: [string, string][]): Promise<{ sessionId: string; cdp: string; startMs: number }> {
-    const secrets = given ?? this.pendingSecrets.get(thread);
-    this.pendingSecrets.delete(thread);
-    const started = performance.now();
-    const open = this.sessions.get(thread);
-    if (open) {
-      throw new ToolError(
-        "invalid",
-        `Your browser session ${open.session.id} is open already.`,
-        "use it, or end it with session_end before starting another",
-      );
-    }
-    if (this.starting.has(thread)) throw new ToolError("invalid", "Your browser session is starting already.", "wait for it");
-    this.starting.add(thread);
-    try {
-      const boxed = this.boxed?.(thread);
-      if (boxed === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
-      // A hosted box's browser runs in the box, with nothing of this machine's: no pool, no egress.
-      const inside = boxed?.box;
-      const pool = inside ? undefined : await this.pool();
-      // A boxed agent's browser goes out through its box, on a fresh profile: a project's kept one is a lead's, and a
-      // lead never runs in a box.
-      const owner = boxed ? undefined : this.owners.get(thread);
-      // One browser at a time runs on a kept profile: a person's screen meanwhile opens on a fresh one, signed out.
-      let lease: ReturnType<Kept["take"]> | undefined;
-      if (owner) {
-        try {
-          lease = this.kept.take(owner.name);
-        } catch (e) {
-          if (!owner.freshIfBusy) {
-            throw new ToolError(
-              "invalid",
-              `${(e as Error).message}: it keeps the bot's sign-ins, and one browser at a time runs on them.`,
-              "end that session first (session_end there), or wait for it to end, then session_start again",
-            );
-          }
-        }
-      }
-      let browser: Launched;
-      try {
-        if (inside) browser = await this.inBox(inside);
-        else browser = lease ? await pool!.takeKept(lease) : await pool!.take();
-      } catch (e) {
-        throw new ToolError(
-          "failed",
-          `The browser didn't start: ${(e as Error).message}`,
-          "do without it and say so in your result; a person can check this machine's browser screens in Settings › Hub › Machines",
-        );
-      }
-      let own: [string, string][];
-      try {
-        own = secrets ?? this.ownSecrets(thread);
-      } catch (e) {
-        await browser.close?.().catch(() => {});
-        throw new ToolError(
-          "failed",
-          `The node could not read this session's secrets to scrub its recording (${(e as Error).message}).`,
-          "try again; if it keeps failing, check the node's log",
-        );
-      }
-      // The agent's agent-browser may connect to no other browser (agent_browser.rs `write_policy`).
-      await this.policy(thread, false);
-      const session = new Session(newId(), thread, browser.cdp, own);
-      session.onControl = () => {
-        session.stepAt("agent_resumed", {}, true, undefined, 0);
-        void this.report(session, "live");
-      };
-      session.outgoingHook = outgoing;
-      const dir = join(recordingsDir(this.node.home), session.id);
-      writeMeta(dir, { sessionId: session.id, kind: "browser", threadId: thread, cwd: "/", purpose, startedAt: session.startedAt, credentialsFilled: 0 });
-      const ffmpeg = findFfmpeg(installDir(this.node.home));
-      let video: VideoSink | undefined;
-      let note: string | undefined = ffmpeg ? undefined : NO_VIDEO;
-      try {
-        video = ffmpeg ? new VideoSink(ffmpeg, join(dir, "video.webm"), [WIDTH, HEIGHT]) : undefined;
-      } catch (e) {
-        note = `no video: ${(e as Error).message}`;
-      }
-      session.recording = { dir, steps: this.steps_, video };
-      this.sessions.set(thread, {
-        session,
-        browser,
-        purpose,
-        ...(note ? { note } : {}),
-      });
-      try {
-        await session.start();
-      } catch (e) {
-        this.sessions.delete(thread);
-        await browser.close?.().catch(() => {});
-        throw new ToolError("failed", `The browser didn't start: ${(e as Error).message}`);
-      }
-      await this.report(session, "live");
-      return { sessionId: session.id, cdp: this.proxy.url(thread), startMs: Math.round(performance.now() - started) };
-    } finally {
-      this.starting.delete(thread);
-    }
-  }
-
-  /** The agent's `session_end`, or the hub's: closes the browser and reports the session ended. */
-  async end(thread: string): Promise<{ sessionId: string; kind: "browser"; files: { file: string; bytes: number }[]; note?: string }> {
-    const open = this.sessions.get(thread);
-    if (!open) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
-    this.sessions.delete(thread);
-    const { session } = open;
-    // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until it is.
-    this.ending.add(session.id);
-    try {
-      return await this.close(open);
-    } finally {
-      this.ending.delete(session.id);
-    }
-  }
-
-  /** Sessions out of the map whose end is still under way (their video, their DOM captures): not yet a recording to
-   * send, nor one a stopped node left. */
-  private readonly ending = new Set<string>();
-
-  private async close(open: Open): Promise<{ sessionId: string; kind: "browser"; files: { file: string; bytes: number }[]; note?: string }> {
-    const { session } = open;
-    // Every step's DOM capture queued so far lands first, while the page is still there.
-    await session.flushCaptures();
-    session.end();
-    this.credentials.forget(session.id);
-    for (const key of [...this.waiting.keys()]) if (key.startsWith(`${session.id}/`)) this.waiting.delete(key);
-    await open.browser.close?.();
-    const r = session.recording;
-    // The text files scrubbed once more whole, with every value the session knew.
-    if (r) for (const file of [RECORDING_FILES.actions.name, RECORDING_FILES.dom.name]) scrubFile(join(r.dir, file), session.scrub());
-    let note = open.note;
-    if (r?.video) {
-      const why = await r.video.finish(session.offsetMs());
-      if (why) note = `no video: ${why}`;
-    }
-    const endedAt = new Date().toISOString();
-    if (!r) {
-      await this.report(session, "recorded", { endedAt, ...(note ? { note } : {}) }, open.purpose);
-      return { sessionId: session.id, kind: "browser", files: [], ...(note ? { note } : {}) };
-    }
-    const meta = readMeta(r.dir);
-    if (meta) writeMeta(r.dir, { ...meta, endedAt, credentialsFilled: session.credentialsFilled, ...(note ? { note } : {}) });
-    const made = recordedFiles(r.dir).map(([file, bytes]) => ({ file, bytes }));
-    // Off the agent's call: a large video takes a while to reach the hub, and housekeeping tries again if it doesn't.
-    void this.send(r.dir);
-    return { sessionId: session.id, kind: "browser", files: made, ...(note ? { note } : {}) };
-  }
-
-  /** A session's meta with how many values it filled, after a fill. */
-  filledMeta(session: Session): void {
-    const dir = session.recording?.dir;
-    const meta = dir ? readMeta(dir) : undefined;
-    if (dir && meta) writeMeta(dir, { ...meta, credentialsFilled: session.credentialsFilled });
-  }
-
   /** This node's box key, which the hub seals vault values to (loaded at its first use). */
-  boxKey(): NodeBoxKey {
+  override boxKey(): NodeBoxKey {
     return (this.#boxKey ??= loadOrCreateBoxKey(this.home));
   }
   #boxKey: NodeBoxKey | undefined;
-
-  /** The session's 1Password vault: the one made at its first fill, or a new one with the token from its secrets. */
-  vault(session: Session): SessionVault {
-    return this.credentials.vaultBy(session.id, () => this.ownSecrets(session.threadId));
-  }
-
-  /** A reference read from this machine's 1Password, with the token from agent session `thread`'s secrets, for its
-   * session whose browser runs on another machine: only the value goes there (sealed), never the token. */
-  async resolveCredential(thread: string, reference: string): Promise<Credential> {
-    const vault = this.credentials.vaultBy(remoteVault(thread), () => this.ownSecrets(thread));
-    try {
-      return await vault.cache.get(vault.vault, reference);
-    } catch (e) {
-      throw unread(reference, e);
-    }
-  }
-
-  /** One browser call of an agent's for its session here, other than its start and end (node/device's router). */
-  async call(thread: string, frame: BrowserCallFrame, given?: Credential): Promise<{ op: string } & Record<string, unknown>> {
-    const call = frame.call as { op: string } & Record<string, unknown>;
-    switch (call.op) {
-      case "session_start":
-        return { op: "session_start", ...(await this.open(thread, String(call.purpose ?? "a browser session"))) };
-      case "session_end":
-        return { op: "session_end", ...(await this.end(thread)) };
-      case "request_takeover":
-        return { op: "request_takeover", ...(await this.requestTakeover(thread, String(call.reason ?? ""))) };
-      case "fill_credential":
-        return { op: "fill_credential", ...(await fillCredential(this, thread, call as FillCredentialCall, given)) };
-      case "fill_address":
-        return { op: "fill_address", ...(await fillAddress(this, thread, call as FillAddressCall)) };
-      case "purchase_request":
-        return { op: "purchase_request", ...(await purchaseRequest(this, thread, call)) };
-      case "purchase_fill":
-        return { op: "purchase_fill", ...(await purchaseFill(this, thread, call)) };
-      case "request_secure_input":
-        return { op: "request_secure_input", ...(await requestSecureInput(this, thread, call)) };
-      case "secure_input_fill":
-        return { op: "secure_input_fill", ...(await fillApproved(this, thread, call)) };
-      case "desktop":
-        throw new ToolError("invalid", "The desktop tool drives desktop sessions, not browsers.", "drive the browser with agent-browser");
-      case "device":
-        throw new ToolError("not_found", "No iOS session is open.", "start a simulator with mac sim start; agent-device then drives it");
-      default:
-        throw new ToolError("invalid", `${call.op} is not a browser call.`);
-    }
-  }
-
-  /** The sealed value of a `fill:` sink from the hub: a person's secure input, typed into its session's field. */
-  deliver(frame: SecretDeliver, boxKey: { open(sealed: Uint8Array): Uint8Array | null } | undefined, machine: string): Promise<SecretResult> {
-    return deliverSecureInput(this, frame, boxKey, machine);
-  }
-
-  /** An agent's `request_takeover`: the hub lists it under "waiting on you". */
-  private async requestTakeover(thread: string, reason: string): Promise<{ message: string }> {
-    const session = this.live(thread);
-    if (!session) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
-    await this.inTurn(session, "browser_takeover", { sessionId: session.id, reason });
-    // A person may take a while (a bank's confirmation, a captcha): the session waits for them, and a held fare or room
-    // with it.
-    session.hold(WAIT_ON_PERSON_MS);
-    session.stepAt("request_takeover", { reason }, true, undefined, 0);
-    return {
-      message:
-        "Asked: it shows under waiting on you. Carry on with what you can, or end your turn: you are told the moment they hand it back, and your next browser command then sees the page as they left it.",
-    };
-  }
-
-  /** A call about a session for the hub, after every report before it, and its answer. */
-  inTurn(session: Session, op: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    return this.inOrder(() => hubCall(this.node, op, args, { threadId: session.threadId }));
-  }
-
-  /** Runs `fn` after every report and call queued before it: at once when none is. */
-  private inOrder<T>(fn: () => Promise<T>): Promise<T> {
-    const run = () => fn().finally(() => (this.queued -= 1));
-    const answer = this.queued === 0 ? run() : this.reports.then(run);
-    this.queued += 1;
-    this.reports = answer.catch(() => {});
-    return answer;
-  }
-  private queued = 0;
-
-  /** A person's screen `key` for project `project` of this machine's, as the hub's own frame names it (D239): on its
-   * kept profile, or a fresh one while that profile is busy. */
-  personScreen(key: string, project: string): void {
-    this.owners.set(key, { name: project, freshIfBusy: true, staysHere: true });
-  }
-
-  /** The agent session's claude launched as a lead of `project` (ScreenHooks `launched`). */
-  lead(thread: string, role: string, project: string): void {
-    if (role === "assistant") this.owners.set(thread, { name: project, freshIfBusy: false, staysHere: true });
-    else if (role === "lead") this.owners.set(thread, { name: project, freshIfBusy: true, staysHere: false });
-  }
-
-  /** Whether the agent session's browser runs on this machine whatever the hub would pick: a lead that does its own
-   * work, whose kept profile is here. */
-  staysHere(thread: string): boolean {
-    return this.owners.get(thread)?.staysHere ?? false;
-  }
-
-  /** Whether the session's browser runs here on its project's kept profile: a project's lead's, or a person's screen. */
-  hasKept(thread: string): boolean {
-    return this.owners.has(thread);
-  }
-
-  /** The session ended: its browser no longer runs on a kept profile. */
-  dropKept(thread: string): void {
-    this.owners.delete(thread);
-  }
-
-  /** The agent session's claude exited (the launch area's `ended`, before session_route ends its screens elsewhere):
-   * its browser session here ends now, and what it filled is let go. */
-  exited(thread: string): void {
-    this.credentials.ended(thread);
-    this.credentials.forget(remoteVault(thread));
-    this.dropKept(thread);
-    const open = this.sessions.get(thread);
-    if (!open) return;
-    open.session.stepAt("agent_session_ended", {}, true, undefined, 0);
-    void this.end(thread).catch(() => {});
-  }
 
   /**
    * Forgets project `project`'s sign-ins: the browser session of any of its agent sessions ends (its recording goes to
@@ -614,151 +269,37 @@ export class Broker {
     await this.kept.wipe(project);
   }
 
-  /** A finished session's recording to the hub; kept for the next try when the hub didn't take it. */
-  /** Recordings on their way to the hub now: one upload per folder, as the Rust broker keeps one `uploading` task. */
-  private readonly uploading = new Set<string>();
-  private housekeepingNow = false;
-
-  private async send(dir: string): Promise<boolean> {
-    // An upload starts at offset 0, which cuts short one still going: never two of one folder.
-    if (this.uploading.has(dir)) return false;
-    this.uploading.add(dir);
-    try {
-      await upload((thread, cwd, op, args) => hubCall(this.node, op, args, { threadId: thread, cwd }), dir);
-      return true;
-    } catch (e) {
-      console.warn(`browser recording ${dir}: not uploaded yet: ${(e as Error).message}`);
-      return false;
-    } finally {
-      this.uploading.delete(dir);
-    }
-  }
-
-  /**
-   * Every minute: ends sessions no step touched for the idle limit (none while they wait on a person), and sends the
-   * recordings still waiting for the hub; one that waited GIVE_UP_MS is reported lost.
-   */
-  async housekeep(now = Date.now()): Promise<void> {
-    // A run that outlasts the minute isn't joined by the next.
-    if (this.housekeepingNow) return;
-    this.housekeepingNow = true;
-    try {
-      await this.housekeepOnce(now);
-    } finally {
-      this.housekeepingNow = false;
-    }
-  }
-
-  private async housekeepOnce(now: number): Promise<void> {
-    const idle = IDLE_MINUTES * 60_000;
-    for (const [thread, open] of this.sessions) {
-      if (open.session.control() !== "human" && open.session.idleFor(now) >= idle) await this.end(thread).catch(() => {});
-    }
-    // One a stopped node left unended (this one's or a Rust node's) is ended with a note, and goes too.
-    const live = [...this.sessions.values()].map((o) => o.session.id).concat([...this.ending]);
-    for (const dir of waitingIn(recordingsDir(this.node.home), live, now)) {
-      const meta = readMeta(dir);
-      if (!meta?.endedAt) continue;
-      if (now - Date.parse(meta.endedAt) >= GIVE_UP_MS) {
-        await giveUp((thread, cwd, op, args) => hubCall(this.node, op, args, { threadId: thread, cwd }), dir, "its recording never reached the hub").catch(() => {});
-        continue;
-      }
-      await this.send(dir);
-    }
-  }
-
-  /** A finished thread item of `thread`'s: an `agent-browser` command is a step of its live session. */
-  item(thread: string, item: ThreadItem): boolean {
-    const open = this.sessions.get(thread);
-    const kind = item.kind;
-    if (!open || kind.type !== "command" || !drivesBrowser(kind.command)) return false;
-    if (item.status !== "completed" && item.status !== "failed") return false;
-    const end = item.completedAt ? Date.parse(item.completedAt) : Number.NaN;
-    const durationMs = Number.isNaN(end) ? 0 : Math.max(end - Date.parse(item.startedAt), 0);
-    const ok = item.status === "completed" && (kind.exitCode === undefined || kind.exitCode === 0);
-    open.session.agentStep(kind.command, ok, kind.output, durationMs);
-    return true;
-  }
-
-  /** Tells the hub how the session is now, in its agent's name, after what was reported before. */
-  report(
-    session: Session,
-    state: BrowserSessionState,
-    extra: { endedAt?: string; note?: string; files?: { file: string; bytes: number }[] } = {},
-    purpose = [...this.sessions.values()].find((o) => o.session === session)?.purpose,
-  ): Promise<void> {
-    return this.inOrder(async () => {
-      try {
-        await hubCall(this.node, "browser_session", {
-          threadId: session.threadId,
-          sessionId: session.id,
-          kind: "browser",
-          purpose: purpose ?? "a browser session",
-          state,
-          control: session.control(),
-          startedAt: session.startedAt,
-          files: [],
-          credentialsFilled: session.credentialsFilled,
-          ...extra,
-        }, { threadId: session.threadId });
-      } catch (e) {
-        console.warn(`browser ${session.id}: not reported to the hub: ${(e as Error).message}`);
-      }
-    });
-  }
-
-  watch(frame: BrowserWatchFrame): void {
-    const session = this.byId(frame.sessionId);
-    if (!session) return;
-    if (!frame.on) return session.setWatcher(undefined);
-    if (session.watched()) return session.setBudget(frame.kbps);
-    session.setWatcher({
-      kbps: frame.kbps,
-      send: (f) => toHub(this.node, { t: "browser_frame", ...f }),
-    });
-  }
-
-  input(frame: BrowserInputFrame): void {
-    const session = this.byId(frame.sessionId);
-    // Queued behind what came before it: each input lands in order.
-    if (session) this.inputs = this.inputs.then(() => session.input(frame.input as BrowserInput).catch(() => {}));
-  }
-  private inputs: Promise<void> = Promise.resolve();
-
-  /** A person takes a session over, or hands it back; the hub waits for the node to say who drives, changed or not. */
-  control(frame: BrowserControlFrame): void {
-    const session = this.byId(frame.sessionId);
-    if (!session) return;
-    const to: BrowserControlTo = frame.control;
-    const now = session.control();
-    let next: BrowserControl | undefined;
-    if (to === "human" && now !== "human") next = "human";
-    else if (to === "agent" && now === "human") next = "handing_back";
-    if (next) {
-      session.setControl(next);
-      session.stepAt(next === "human" ? "takeover" : "handback", { by: frame.by }, true, undefined, 0);
-    }
-    void this.report(session, "live");
-  }
-
-  /** The hub ended the task of `threadId`: its screen `sessionId` goes, if it still holds it. Its claude runs on: it is
-   * still its project's lead, for its next session_start. */
-  sessionEnd(frame: SessionEndFrame): void {
-    const open = this.sessions.get(frame.threadId);
-    if (open?.session.id === frame.sessionId) void this.end(frame.threadId).catch(() => {});
-  }
-
-  /** Each live session's latest step, for the heartbeat. */
-  steps(): { sessionId: string; step: unknown }[] {
-    return this.steps_.list();
-  }
-
-  async shutdown(): Promise<void> {
-    clearInterval(this.housekeeping);
-    for (const thread of [...this.sessions.keys()]) await this.end(thread).catch(() => {});
+  override async shutdown(): Promise<void> {
+    await super.shutdown();
     if (this.install.kind === "ready") await this.install.pool.drain();
-    this.proxy.stop();
   }
+}
+
+/** What the node's broker has of the node: its link to the hub, its sessions' secrets, its box key, its recordings in
+ * a folder under its home sent to the hub, agent-browser's policy file there (and in a hosted box, where its
+ * agent-browser reads it), the proxy's port and key kept there, and 1Password through the SDK helper. */
+function nodeHost(node: Node, broker: () => Broker): BrokerHost {
+  const home = node.home;
+  return {
+    call: (op, args, opts) => hubCall(node, op, args, opts),
+    send: (frame) => toHub(node, frame),
+    secrets: (thread) => broker().sessionsArea()?.secretsFor?.(thread) ?? [],
+    boxKey: () => broker().boxKey(),
+    recordings: new DiskRecordings(
+      recordingsDir(home),
+      (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }),
+      () => findFfmpeg(installDir(home)),
+      [WIDTH, HEIGHT],
+    ),
+    // The box got the node's files as they were at its launch, before this.
+    policy: async (thread, text) => {
+      writePolicyText(home, thread, text);
+      const boxed = broker().boxed?.(thread);
+      if (boxed && boxed !== "starting") await boxed.box.write(policyPath(home, thread), new TextEncoder().encode(text), 0o600);
+    },
+    proxy: (sessions) => Proxy.start(home, sessions),
+    vaultFor: vaultFor(home),
+  };
 }
 
 /** The node's broker: `given` (a test's) when it is the first to ask, else the node's own. */
@@ -820,6 +361,3 @@ export function start(node: Node, given?: Broker): Broker {
   });
   return b;
 }
-
-/** Whether a command the agent ran drove its browser. */
-export const drivesBrowser = (command: string) => command.includes("agent-browser");
