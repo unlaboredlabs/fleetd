@@ -761,21 +761,27 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
     return back({ kind: "failed", why: githubWhy(error) });
   }
   const commitBody = withTrailers(memberLines(merging), merging.map((m) => m.change));
-  let out;
+  // From the merge to its members' closes, an update waits for it before it restarts the hub.
+  t.landings += 1;
   try {
-    out = await t.github.merge(repo, pr, sha, [`${title} (#${pr})`, commitBody]);
-  } catch (error) {
-    // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
-    return back({ kind: "unknown", why: githubWhy(error) });
+    let out;
+    try {
+      out = await t.github.merge(repo, pr, sha, [`${title} (#${pr})`, commitBody]);
+    } catch (error) {
+      // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
+      return back({ kind: "unknown", why: githubWhy(error) });
+    }
+    if (out.kind === "refused") {
+      console.info(`train: batch #${pr} refused (HTTP ${out.status}): ${out.message}; each member goes alone`);
+      return back({ kind: "refused", why: `GitHub refused batch #${pr} (HTTP ${out.status}): ${out.message}; each of its PRs goes alone` });
+    }
+    watchMerge(t, repo, base, out.sha, `https://github.com/${repo}/pull/${pr}`);
+    const landed: Landed = { prNumber: pr, mergedSha: out.sha, members: numbers };
+    for (const m of merging) await finishBatchMember(t, m.change, landed);
+    return undefined;
+  } finally {
+    t.landings -= 1;
   }
-  if (out.kind === "refused") {
-    console.info(`train: batch #${pr} refused (HTTP ${out.status}): ${out.message}; each member goes alone`);
-    return back({ kind: "refused", why: `GitHub refused batch #${pr} (HTTP ${out.status}): ${out.message}; each of its PRs goes alone` });
-  }
-  watchMerge(t, repo, base, out.sha, `https://github.com/${repo}/pull/${pr}`);
-  const landed: Landed = { prNumber: pr, mergedSha: out.sha, members: numbers };
-  for (const m of merging) await finishBatchMember(t, m.change, landed);
-  return undefined;
 }
 
 /** Merged in `landed`: recorded as merged with the batch's squash, and its own PR closed with a link to it. */
@@ -793,19 +799,26 @@ export async function finishBatchMember(t: Train, change: Change, landed: Landed
     t.update(change.changeId, ["ready", "rebasing", "ci", "merging"], (c) => ({ ...c, state: "ready", lastError: errorText(why) }));
     return;
   }
-  await t.finishMerged(change, landed.mergedSha, landed);
-  if (pull.state === "open") await closeMember(t, change, landed);
+  // Recorded as not closed with the merge itself: a hub gone between the two (a restart) leaves reconcile the close.
+  const open = pull.state === "open";
+  await t.finishMerged(change, landed.mergedSha, landed, open ? NOT_CLOSED : undefined);
+  if (open) await closeMember(t, change, landed);
 }
 
-/** Closes a landed member's PR with a link to its batch; a failure stays on the Change for reconcile to retry. */
+/**
+ * Closes a landed member's PR with a link to its batch, its comment once however often it is tried; a failure stays
+ * on the Change for reconcile to retry.
+ */
 async function closeMember(t: Train, change: Change, landed: Landed): Promise<void> {
   const others = landed.members.filter((n) => n !== change.prNumber).map((n) => `#${n}`);
   const comment = `Landed in #${landed.prNumber} (${short(landed.mergedSha)}) by the fleetd merge train: merged together with ${others.join(", ")} after one CI run on the batch.`;
   let failure: string | undefined;
   try {
-    await t.github.close(change.repo, change.prNumber, comment);
+    await t.github.close(change.repo, change.prNumber, comment, true);
   } catch (error) {
     failure = (error as Error).message;
+    const line = `train: ${change.changeId} landed in batch #${landed.prNumber}, but its PR #${change.prNumber} is not closed; the next pass tries again`;
+    t.warnHourly([line], failure, `${line}: ${failure}`);
   }
   t.update(change.changeId, ["merged"], (c) => {
     const { lastError: _, ...rest } = c;

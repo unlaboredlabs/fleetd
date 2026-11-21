@@ -820,10 +820,26 @@ export class TrainGitHub {
     return { base: c.merge_base_commit.sha.toLowerCase(), commits: c.commits.map((x) => x.sha.toLowerCase()) };
   }
 
-  /** Comments on the PR with why (marked as the train's), then closes it. */
-  async close(repo: string, n: number, comment: string): Promise<void> {
-    await this.json("POST", `repos/${repo}/issues/${n}/comments`, [["body", `${comment}\n\n${TRAIN_MARK}`]], (v) => v ?? null);
+  /**
+   * Comments on the PR with why (marked as the train's), then closes it. `once`: no comment when the PR already has
+   * that one, as a close tried again after its comment went out does.
+   */
+  async close(repo: string, n: number, comment: string, once = false): Promise<void> {
+    const body = `${comment}\n\n${TRAIN_MARK}`;
+    if (!once || !(await this.commented(repo, n, body))) await this.json("POST", `repos/${repo}/issues/${n}/comments`, [["body", body]], (v) => v ?? null);
     await this.json("PATCH", `repos/${repo}/pulls/${n}`, [["state", "closed"]], (v) => v ?? null);
+  }
+
+  /** Whether one of the PR's first 1,000 comments is `body`. */
+  private async commented(repo: string, n: number, body: string): Promise<boolean> {
+    for (let page = 1; page <= 10; page++) {
+      const comments = await this.json<{ body?: string | null }[]>("GET", `repos/${repo}/issues/${n}/comments?per_page=100&page=${page}`, [], (v) =>
+        Array.isArray(v) ? v : undefined,
+      );
+      if (comments.some((c) => c.body?.trim() === body.trim())) return true;
+      if (comments.length < 100) break;
+    }
+    return false;
   }
 
   /** Opens a PR from `head` into `base`, or, when one is already open, retitles it. Its number. */

@@ -14,6 +14,7 @@ import { isHubService, services } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
 import { TESTED } from "../../node/runner/claude.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
+import type { TrainArea } from "../train/index.ts";
 import { CAP_BUILD_BUN, CAP_BUILD_RUST } from "../../shared/node_link.ts";
 import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
 
@@ -70,6 +71,7 @@ export function hubPorts(hub: Hub): UpdatePorts {
     previous: runningBinary,
     healthUrl: () => healthUrl(hub.config.listen.host, hub.config.listen.port),
     startWatcher,
+    trainLandings: () => hub.peek<TrainArea>("merge_train")?.train.landings ?? 0,
     nodes(): NodeFacts[] {
       const l = link(hub);
       const ex = executors(hub);

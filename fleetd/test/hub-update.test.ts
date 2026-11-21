@@ -34,6 +34,9 @@ class Fake implements UpdatePorts {
   fetched: string[] = [];
   claude: string[] = [];
   holds = 0;
+  /** The merge train's batches being landed now. */
+  landings = 0;
+  trainLandings = () => this.landings;
   facts: NodeFacts[];
   waiters: (() => void)[] = [];
   answer: (m: string) => NodeActionResult = () => ({ ok: true, message: "in place" });
@@ -271,6 +274,37 @@ test("a node waits for its agents, at most the drain, and Update now doesn't wai
   // Update now: it stops waiting.
   u.start(undefined, true);
   await until(() => byMachine(u.status()!).get("m0")!.state === "done");
+});
+
+test("the hub's restart waits for a batch the merge train is landing, the drain at most", async () => {
+  const hub = (u: Updates) => byMachine(u.status()!).get("")!;
+  // The batch lands: the hub stages its build once it has.
+  const landed = new Fake(join(home.dir, "landing"), []);
+  landed.landings = 1;
+  const u = updatesIn(join(home.dir, "landing"), landed);
+  u.start(undefined, false);
+  await until(() => hub(u).message === "waits for the merge train to finish landing a batch");
+  expect(landed.plans).toEqual([]);
+  expect(readFileSync(landed.exePath, "utf8")).toBe("old fleetd");
+  landed.landings = 0;
+  await until(() => landed.plans.length === 1);
+  expect(hub(u).state).toBe("restarting");
+
+  // A landing that never ends holds the update for the drain only.
+  const stuck = new Fake(join(home.dir, "stuck"), []);
+  stuck.landings = 1;
+  const v = updatesIn(join(home.dir, "stuck"), stuck);
+  v.start(undefined, false);
+  await until(() => hub(v).message === "waits for the merge train to finish landing a batch");
+  stuck.now += 50;
+  await until(() => stuck.plans.length === 1);
+
+  // Update now doesn't wait.
+  const now = new Fake(join(home.dir, "now"), []);
+  now.landings = 1;
+  const w = updatesIn(join(home.dir, "now"), now);
+  w.start(undefined, true);
+  await until(() => now.plans.length === 1);
 });
 
 test("settings, the automatic update's due time, and its last result", () => {
