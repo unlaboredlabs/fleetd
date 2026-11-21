@@ -1,0 +1,61 @@
+/* Settings › Projects › Look (BotLook.tsx): one compact picker, the five shapes over the palette's eleven flat dots, as
+   a color picker sets them, right-aligned like any row's control. The picked one of each is ringed in the text color
+   with a gap of the group's own fill. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.radios {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch,
+.shape {
+  flex: none;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+  transition: box-shadow 120ms ease-out;
+}
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--light);
+}
+:root[data-theme="dark"] .swatch {
+  background: var(--dark);
+}
+/* A shape is its own small bot, in a soft square that shows only when picked or hovered. */
+.shape {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.swatch[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--group),
+    0 0 0 3.5px color-mix(in srgb, var(--text) 55%, transparent);
+}
+.shape[aria-checked="true"] {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 55%, transparent);
+}
+.swatch:hover:not([aria-checked="true"]) {
+  box-shadow:
+    0 0 0 2px var(--group),
+    0 0 0 4px var(--border);
+}
+.shape:hover:not([aria-checked="true"]) {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.swatch:focus-visible,
+.shape:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

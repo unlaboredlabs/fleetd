@@ -2,6 +2,7 @@
 // repos_tests.rs, order_env_tests.rs): project_discover, project_add (path, create, clone), project_repo_add/list/
 // remove, project_remove's gates, and an order's variables.
 import { expect, test } from "bun:test";
+import { botLookOf } from "../src/shared/contracts.ts";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { checksDone, onThreadEvent } from "../src/hub/approvals/permissions.ts";
 import { executors } from "../src/hub/executor/index.ts";
@@ -58,6 +59,10 @@ test("a new bot gets a folder under the bots root and no repo", async () => {
   }
   // A new project starts in YOLO.
   expect(await mode(k, out.projectId)).toBe("yolo");
+  // Its bot gets a shape and color from its id (botLookOf), so new bots look varied; pebble and grey are kept as none.
+  const look = botLookOf(out.projectId);
+  const made = store(k.hub).projectGet(r);
+  expect([made?.avatarShape ?? "pebble", made?.avatarColor ?? "grey"]).toEqual([look.shape, look.color]);
   const event = added(k).at(-1);
   expect(event?.summary).toBe(`Field Notes added on devbox: ${FOLDER_NEEDS}`);
   expect(event?.data).toMatchObject({ title: "Field Notes", path, created: true });

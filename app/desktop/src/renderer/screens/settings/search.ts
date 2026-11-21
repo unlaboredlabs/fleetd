@@ -86,7 +86,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hubs.links", label: "Hub links", tab: "hubs", keywords: ["hub link", "links to this hub", "link key", "other hub", "revoke"] },
   page("projects", ["bot settings", "repo", "repository"]),
   { key: "projects.picture", label: "Bot icon", tab: "projects", keywords: ["avatar", "photo", "image", "picture", "face"] },
-  { key: "projects.color", label: "Bot color", tab: "projects", keywords: ["avatar", "colour", "bot", "pebble", "palette"] },
+  { key: "projects.look", label: "Bot shape and color", tab: "projects", keywords: ["avatar", "color", "colour", "shape", "bot", "pebble", "ghost", "kitty", "bunny", "toast", "palette"] },
   { key: "projects.name", label: "Bot name", tab: "projects", keywords: ["rename", "title"] },
   { key: "projects.repos", label: "Repos", tab: "projects", keywords: ["repo", "repository", "remote", "base branch", "checkout", "preview", "folder"] },
   { key: "projects.env", label: "Environment variables", tab: "projects", keywords: ["env", ".env", "secrets", "api key", "token", "variables"] },

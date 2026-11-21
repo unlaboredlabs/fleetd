@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, readLinks, rebuildImage, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setMyName, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, readLinks, rebuildImage, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -53,6 +53,16 @@ describe("Rename and Archive", () => {
     await expect(set).resolves.toEqual({ ok: true, value: null });
     hub.link.frame({ t: "snapshot", cursor: 2, attention: [], machines: [], projects: [ADA, { ...SHOP, avatarColor: "green" }], chats: [] });
     expect(session.state.projects?.["devbox/shop"]?.avatarColor).toBe("green");
+  });
+
+  it("gives its bot a shape by its settings, and a bot keeps it in its summary", async () => {
+    const { hub, session, calls } = setup();
+    const set = setBotShape(session, SHOP, "kitty");
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, avatarShape: "kitty" });
+    hub.answer("project_settings_set", { settings: {} });
+    await expect(set).resolves.toEqual({ ok: true, value: null });
+    hub.link.frame({ t: "snapshot", cursor: 2, attention: [], machines: [], projects: [ADA, { ...SHOP, avatarShape: "kitty" }], chats: [] });
+    expect(session.state.projects?.["devbox/shop"]?.avatarShape).toBe("kitty");
   });
 
   it("archives any bot and brings it back, by the bot's archive tool", async () => {

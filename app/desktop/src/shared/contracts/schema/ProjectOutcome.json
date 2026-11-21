@@ -74,6 +74,18 @@
       "type": "string",
       "x-open": true
     },
+    "BotShape": {
+      "description": "The bodies a bot comes in (shared/bot.ts BOT_BODIES), in a picker's order, pebble its default.",
+      "enum": [
+        "pebble",
+        "ghost",
+        "kitty",
+        "bunny",
+        "toast"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "Brief": {
       "properties": {
         "constraints": {
@@ -449,6 +461,10 @@
         "avatarColor": {
           "$ref": "#/$defs/BotColor",
           "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: grey, the default."
+        },
+        "avatarShape": {
+          "$ref": "#/$defs/BotShape",
+          "description": "Its bot's body, from the hub, the one a person picked or a new bot got from its id (`project_settings_set`).\nAbsent: pebble, the default."
         },
         "chatTags": {
           "description": "Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off.",

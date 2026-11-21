@@ -22,9 +22,9 @@ const lighter = (hex: string, amount: number): string => {
   return `rgb(${String(mix((n >> 16) & 255))},${String(mix((n >> 8) & 255))},${String(mix(n & 255))})`;
 };
 
-/** Whose picture: a project's summary has these (and its bot's color), or a person (hub_info's me). */
+/** Whose picture: a project's summary has these (and its bot's shape and color), or a person (hub_info's me). */
 export type Pictured =
-  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly avatarColor?: string | undefined }
+  | { readonly machineId: string; readonly projectId: string; readonly avatar?: string | undefined; readonly avatarColor?: string | undefined; readonly avatarShape?: string | undefined }
   | { readonly personId: string; readonly avatar?: string | undefined };
 
 const fileOf = (avatar: string): File => new File(Paths.cache, `avatar-${avatar}.jpg`);
@@ -115,6 +115,7 @@ export function Avatar({
   const project = picture !== undefined && "machineId" in picture ? `${picture.machineId}/${picture.projectId}` : undefined;
   const state = useBot(project);
   const color = picture !== undefined && "machineId" in picture ? picture.avatarColor : undefined;
+  const shape = picture !== undefined && "machineId" in picture ? picture.avatarShape : undefined;
   const drawn = bot ?? state;
   // The picture that has come in over the bot, which goes from under it.
   const [covers, setCovers] = useState<string | undefined>(undefined);
@@ -122,7 +123,7 @@ export function Avatar({
     const uri = shown.uri;
     return (
       <View accessible={false} style={{ width: size, height: size }}>
-        {uri !== undefined && covers === uri ? null : <Being state={drawn} size={size} color={color} />}
+        {uri !== undefined && covers === uri ? null : <Being state={drawn} size={size} color={color} shape={shape} />}
         {uri === undefined ? null : (
           <View style={[StyleSheet.absoluteFill, styles.base, box]}>
             <Picture key={uri} uri={uri} fade={shown.fresh} onShown={() => setCovers(uri)} />

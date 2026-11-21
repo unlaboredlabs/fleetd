@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// Settings › Projects › Color over a fake hub: grey is picked while the hub names no color, and an earlier name (lilac)
-// as the color it became; a swatch picks its color at
+// Settings › Projects › Look over a fake hub: Pebble and grey are picked while the hub names none, an earlier color name
+// (lilac) as the color it became; a shape picks its body at once and saves it; a swatch picks its color at
 // once and saves it with project_settings_set; the Icon's bot wears the color the hub's summary names; the arrow keys
 // move the pick; a refusal says why and goes back to the saved color.
 import { act } from "react";
@@ -29,7 +29,7 @@ const settings: Settings = {
   env: [],
 };
 
-const snapshot = (avatarColor: string | undefined, cursor = 1): HubFrame => ({
+const snapshot = (avatarColor: string | undefined, cursor = 1, avatarShape?: string): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor,
@@ -44,6 +44,7 @@ const snapshot = (avatarColor: string | undefined, cursor = 1): HubFrame => ({
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
         ...(avatarColor === undefined ? {} : { avatarColor }),
+        ...(avatarShape === undefined ? {} : { avatarShape }),
       },
     ],
   },
@@ -116,18 +117,26 @@ const render = async (avatarColor: string | undefined) => {
   };
 };
 
-const row = () => {
-  const el = document.querySelector<HTMLElement>('section[aria-label="Color"]');
-  if (el === null) throw new Error("no Color setting");
+const group = (label: "Color" | "Shape") => {
+  const el = document.querySelector<HTMLElement>(`section[aria-label="Look"] [role="radiogroup"][aria-label="${label}"]`);
+  if (el === null) throw new Error(`no ${label} in the Look setting`);
   return el;
 };
+const row = () => group("Color");
 const swatch = (name: string) => {
   const el = row().querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${name}"]`);
   if (el === null) throw new Error(`no ${name} swatch`);
   return el;
 };
+const shapeRadio = (name: string) => {
+  const el = group("Shape").querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${name}"]`);
+  if (el === null) throw new Error(`no ${name} shape`);
+  return el;
+};
 const checked = () => [...row().querySelectorAll('[role="radio"][aria-checked="true"]')].map((el) => el.getAttribute("aria-label"));
+const checkedShape = () => [...group("Shape").querySelectorAll('[role="radio"][aria-checked="true"]')].map((el) => el.getAttribute("aria-label"));
 const iconBot = () => document.querySelector('section[aria-label="Icon"] [data-bot][data-color]')?.getAttribute("data-color");
+const iconShape = () => document.querySelector('section[aria-label="Icon"] [data-bot][data-shape]')?.getAttribute("data-shape");
 const sets = () => calls.filter((c) => c.tool === "project_settings_set").map((c) => c.input);
 
 it("offers the palette, grey picked while the hub names none, and the Icon's bot in it", async () => {
@@ -137,6 +146,37 @@ it("offers the palette, grey picked while the hub names none, and the Icon's bot
   expect(swatch("Grey").tabIndex).toBe(0);
   expect(swatch("Green").tabIndex).toBe(-1);
   expect(iconBot()).toBe("grey");
+});
+
+it("offers the five shapes, Pebble picked while the hub names none, each a small bot in the bot's color", async () => {
+  await render("pink");
+  expect([...group("Shape").querySelectorAll('[role="radio"]')].map((el) => el.getAttribute("aria-label"))).toEqual(["Pebble", "Ghost", "Kitty", "Bunny", "Toast"]);
+  expect(checkedShape()).toEqual(["Pebble"]);
+  expect([...group("Shape").querySelectorAll("[data-bot]")].map((el) => [el.getAttribute("data-shape"), el.getAttribute("data-color")])).toEqual([
+    ["pebble", "pink"],
+    ["ghost", "pink"],
+    ["kitty", "pink"],
+    ["bunny", "pink"],
+    ["toast", "pink"],
+  ]);
+  expect(iconShape()).toBe("pebble");
+});
+
+it("picks a shape at once, saves it, and the bot wears what the hub's summary names; one it doesn't know is Pebble", async () => {
+  const next = await render(undefined);
+  await act(async () => {
+    shapeRadio("Ghost").click();
+    await Promise.resolve();
+  });
+  expect(checkedShape()).toEqual(["Ghost"]);
+  await settle();
+  expect(sets()).toEqual([{ machineId: "devbox", projectId: "p1", avatarShape: "ghost" }]);
+  await next(snapshot(undefined, 2, "ghost"));
+  expect(checkedShape()).toEqual(["Ghost"]);
+  expect(iconShape()).toBe("ghost");
+  await next(snapshot(undefined, 3, "dragon"));
+  expect(checkedShape()).toEqual(["Pebble"]);
+  expect(iconShape()).toBe("pebble");
 });
 
 it("shows an earlier name (an older app's lilac) as the color it became", async () => {
@@ -185,5 +225,5 @@ it("says why when the hub refuses, and shows the saved color again", async () =>
   });
   await settle();
   expect(checked()).toEqual(["Blue"]);
-  expect(row().querySelector('[role="alert"]')?.textContent).toContain("Only its owner changes it.");
+  expect(document.querySelector('section[aria-label="Look"] [role="alert"]')?.textContent).toContain("Only its owner changes it.");
 });

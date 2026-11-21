@@ -314,16 +314,16 @@ async function setupRig(files: Record<string, Uint8Array> = {}) {
 
 test("project_setup sets the title, icon, color and setup commands, one line each; the same again changes nothing; Undo puts each back", async () => {
   const k = await setupRig();
-  const call = { title: " Storefront ", icon: { face: "wink", color: "teal" }, color: "red", setup: { commands: ["bun install", "bun run build"] } };
+  const call = { title: " Storefront ", icon: { face: "wink", color: "teal" }, color: "red", shape: "bunny", setup: { commands: ["bun install", "bun run build"] } };
   const out = await k.setup(call);
-  expect(out.changed).toEqual(["Renamed the bot to Storefront", "Changed the bot's icon and color", "Set the setup commands"]);
-  expect(out.next).toBe("Renamed the bot to Storefront. Changed the bot's icon and color. Set the setup commands. Each is one line in the chat, which the person can undo.");
-  expect([k.shop()?.title, k.shop()?.avatarColor, icon.picked(k.db, PROJECT)]).toEqual(["Storefront", "red", { face: "wink", color: "teal" }]);
+  expect(out.changed).toEqual(["Renamed the bot to Storefront", "Changed the bot's icon, color and shape", "Set the setup commands"]);
+  expect(out.next).toBe("Renamed the bot to Storefront. Changed the bot's icon, color and shape. Set the setup commands. Each is one line in the chat, which the person can undo.");
+  expect([k.shop()?.title, k.shop()?.avatarColor, k.shop()?.avatarShape, icon.picked(k.db, PROJECT)]).toEqual(["Storefront", "red", "bunny", { face: "wink", color: "teal" }]);
   expect(projectSettings(k.hub).setupIn(PROJECT, undefined)?.commands).toEqual(["bun install", "bun run build"]);
   expect(k.n.calls.find((c) => c.op === "project_upsert" && c.title === "Storefront")).toMatchObject({ projectId: "p1", workspaceRoot: "/srv/p1" });
   expect(k.lines().map((m) => [m.author, m.text, m.setupChanged])).toEqual([
     ["system", "Renamed the bot to Storefront", { kind: "title" }],
-    ["system", "Changed the bot's icon and color", { kind: "look" }],
+    ["system", "Changed the bot's icon, color and shape", { kind: "look" }],
     ["system", "Set the setup commands", { kind: "setup" }],
   ]);
   expect(await k.setup(call)).toMatchObject({ changed: [], next: "Nothing changed: the bot already has all of it." });
@@ -339,7 +339,7 @@ test("project_setup sets the title, icon, color and setup commands, one line eac
   await k.undo(commands);
   expect(projectSettings(k.hub).setupIn(PROJECT, undefined)).toBeUndefined();
   await k.undo(look);
-  expect([k.shop()?.avatarColor, icon.picked(k.db, PROJECT), k.shop()?.icon]).toEqual([undefined, undefined, icon.derived(PROJECT)]);
+  expect([k.shop()?.avatarColor, k.shop()?.avatarShape, icon.picked(k.db, PROJECT), k.shop()?.icon]).toEqual([undefined, undefined, undefined, icon.derived(PROJECT)]);
   await k.undo(title);
   expect(k.shop()?.title).toBe("Shop");
   expect(k.lines().map((m) => m.setupChanged?.undone)).toEqual([true, true, true, true]);

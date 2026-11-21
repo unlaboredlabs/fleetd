@@ -1,8 +1,8 @@
 // What the hub keeps of a project beyond its node's report, in its own `project_settings` columns (D310): the key that
-// made it, when it was archived, its bot's color and the card it pays with. Every project is everyone's on its hub
+// made it, when it was archived, its bot's color and shape and the card it pays with. Every project is everyone's on its hub
 // (D491): `only_me` and `owner_person` are no longer read.
 import type { Database } from "bun:sqlite";
-import type { BotColor, ProjectSite, ProjectCreator, ProjectRef, Timestamp } from "../../shared/contracts.ts";
+import { botLookOf, type BotColor, type BotShape, type ProjectCreator, type ProjectRef, type ProjectSite, type Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 
 /** What the hub keeps of any project: its maker and archive. */
@@ -11,6 +11,8 @@ export type Kept = {
   archivedAt?: Timestamp;
   /** Absent: grey, the default. */
   avatarColor?: BotColor;
+  /** Absent: pebble, the default. */
+  avatarShape?: BotShape;
   /** Its chat's tags trial is on; absent: off. */
   chatTags?: true;
 };
@@ -20,6 +22,7 @@ type KeptRow = {
   created_by_name: string | null;
   archived_ms: number | null;
   avatar_color: string | null;
+  avatar_shape: string | null;
   chat_tags: number | null;
 };
 
@@ -27,7 +30,7 @@ type KeptRow = {
 export function kept(db: Database, r: ProjectRef): Kept | undefined {
   const row = db
     .query<KeptRow, [string, string]>(
-      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, chat_tags FROM project_settings
+      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags FROM project_settings
          WHERE machine_id = ? AND project_id = ?`,
     )
     .get(r.machineId, r.projectId);
@@ -36,6 +39,7 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.created_by_key !== null) out.createdBy = { keyId: row.created_by_key, name: row.created_by_name ?? "" };
   if (row.archived_ms !== null) out.archivedAt = isoMs(row.archived_ms);
   if (row.avatar_color !== null) out.avatarColor = row.avatar_color;
+  if (row.avatar_shape !== null) out.avatarShape = row.avatar_shape;
   if (row.chat_tags === 1) out.chatTags = true;
   return out;
 }
@@ -62,6 +66,22 @@ export function setAvatarColor(db: Database, r: ProjectRef, color: BotColor, isD
     `INSERT INTO project_settings (machine_id, project_id, avatar_color) VALUES (?1, ?2, ?3)
          ON CONFLICT (machine_id, project_id) DO UPDATE SET avatar_color = excluded.avatar_color`,
   ).run(r.machineId, r.projectId, isDefault ? null : color);
+}
+
+/** Gives the project's bot `shape`; pebble, the default, is kept as none. */
+export function setAvatarShape(db: Database, r: ProjectRef, shape: BotShape): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, avatar_shape) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET avatar_shape = excluded.avatar_shape`,
+  ).run(r.machineId, r.projectId, shape === "pebble" ? null : shape);
+}
+
+/** Gives a new project's bot its look from its id (botLookOf), so a list of new bots looks varied; one made before keeps
+ * Pebble in the color it had. Pebble and grey are kept as none, as a pick of them is. */
+export function startLook(db: Database, r: ProjectRef): void {
+  const { shape, color } = botLookOf(r.projectId);
+  setAvatarShape(db, r, shape);
+  setAvatarColor(db, r, color, color === "grey");
 }
 
 /** Records who made a new project and when. */

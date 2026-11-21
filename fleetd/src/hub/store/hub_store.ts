@@ -171,7 +171,7 @@ function aProject(r: ProjectRef): void {
 
 /**
  * The project with what the hub keeps of it, whatever its stored row says: its repos from `repos`, and from
- * `project_settings` who made it, its archive and its bot's color.
+ * `project_settings` who made it, its archive and its bot's color and shape.
  */
 function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   const r = { machineId: stored.machineId, projectId: stored.projectId };
@@ -181,6 +181,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     archivedAt: _archivedAt,
     avatar: _avatar,
     avatarColor: _avatarColor,
+    avatarShape: _avatarShape,
     chatTags: _chatTags,
     icon: _icon,
     ...project
@@ -192,6 +193,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.createdBy) out.createdBy = kept.createdBy;
   if (kept.archivedAt !== undefined) out.archivedAt = kept.archivedAt;
   if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
+  if (kept.avatarShape !== undefined) out.avatarShape = kept.avatarShape;
   if (kept.chatTags) out.chatTags = true;
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
@@ -207,6 +209,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     archivedAt: _archivedAt,
     avatar: _avatar,
     avatarColor: _avatarColor,
+    avatarShape: _avatarShape,
     chatTags: _chatTags,
     icon: _icon,
     ...row

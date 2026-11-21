@@ -16,8 +16,10 @@ export interface AvatarProps {
   readonly src?: string | undefined;
   /** A bot's, in this state (Bot), shown when it has no picture, in place of the letters. */
   readonly bot?: BotState | undefined;
-  /** The bot's color (BOT_PAINT); none: slate. */
+  /** The bot's color (BOT_PAINT); none: grey. */
   readonly color?: string | undefined;
+  /** The bot's body (BOT_BODIES); none: Pebble. */
+  readonly shape?: string | undefined;
   readonly className?: string | undefined;
 }
 
@@ -26,7 +28,7 @@ export interface AvatarProps {
  * a color picked from its name, the same as the phone's. Under 24 px it shows one letter. Decorative: the row or
  * title beside it says the name, and the letters are drawn by its CSS, so they are no part of that row's text.
  */
-export function Avatar({ name, size = 20, src, bot, color, className }: AvatarProps) {
+export function Avatar({ name, size = 20, src, bot, color, shape, className }: AvatarProps) {
   const all = initials(name);
   const text = size < 24 ? (Array.from(all)[0] ?? all) : all;
   const style: CSSProperties = { width: size, height: size, fontSize: Math.round(size * (text.length > 1 ? 0.38 : 0.46)) };
@@ -43,7 +45,7 @@ export function Avatar({ name, size = 20, src, bot, color, className }: AvatarPr
       {src !== undefined ? (
         <img className={s.picture} src={src} alt="" draggable={false} />
       ) : bot !== undefined ? (
-        <Bot state={bot} size={size} color={color} />
+        <Bot state={bot} size={size} color={color} shape={shape} />
       ) : null}
     </span>
   );

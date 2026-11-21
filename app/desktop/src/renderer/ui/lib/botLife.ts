@@ -20,7 +20,7 @@
 // garbage that only a major GC frees: three bots in live states held 60 MB more of it after 10 s idle (`pnpm perf`'s
 // idle memory went from 347 to 412 MB), and writing only what changed didn't lower that, only how soon it got there.
 import { covered } from "./covered";
-import { advanceRig, BODY, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, traceEyes, type BotState, type Pen, type Rig } from "../../../shared/bot";
+import { advanceRig, BOT_BODIES, bodyOf, CROP, dimOf, DIMMED, glowOf, isAwake, listRest, moment, paintOf, random, setRigState, shapeOf, traceEyes, type BotShapeName, type BotState, type Pen, type Rig } from "../../../shared/bot";
 
 interface Member {
   readonly rig: Rig;
@@ -29,8 +29,10 @@ interface Member {
   readonly ctx: CanvasRenderingContext2D | null;
   /** Its box's side, in CSS px. */
   readonly box: number;
-  /** Its project's color (BOT_PAINT); none: slate. */
+  /** Its bot's color (BOT_PAINT); none: grey. */
   color: string | undefined;
+  /** Its bot's body (BOT_BODIES); none: Pebble. */
+  shape: string | undefined;
   seen: boolean;
   /** Its outline and light as last drawn (poseOf). */
   readonly drawn: number[];
@@ -79,7 +81,14 @@ let themes: MutationObserver | undefined;
 /** Watches for a modal covering the app or leaving it (inert). */
 let covers: MutationObserver | undefined;
 let pixels: MediaQueryList | undefined;
-let body: Path2D | undefined;
+/** Each body as a path, made the first time a bot wears it. */
+const bodies = new Map<BotShapeName, Path2D>();
+const bodyPath = (shape: string | undefined): Path2D => {
+  const name = shapeOf(shape);
+  let p = bodies.get(name);
+  if (p === undefined) bodies.set(name, (p = new Path2D(BOT_BODIES[name])));
+  return p;
+};
 /** The eye being traced, reused frame to frame. */
 const outline: number[] = [];
 
@@ -154,7 +163,7 @@ const draw = (m: Member): void => {
   c.transform(a, b, cc, d, e, f);
   const paint = paintOf(m.color, dark);
   c.fillStyle = paint.body;
-  c.fill((body ??= new Path2D(BODY)));
+  c.fill(bodyPath(m.shape));
   c.beginPath();
   traceEyes(m.rig, c, outline);
   c.fillStyle = paint.eye;
@@ -392,14 +401,14 @@ const stop = (): void => {
 export interface Living {
   /** Moves it to a new state, blending from where it is. */
   readonly set: (state: BotState) => void;
-  /** Paints it in another color, at once. */
-  readonly paint: (color: string | undefined) => void;
+  /** Paints it in another color, or another body, at once. */
+  readonly paint: (color: string | undefined, shape?: string) => void;
   readonly release: () => void;
 }
 
-/** Brings the bot on `canvas` (Bot.tsx's), in a `box` px box and `color`, to life on `rig`, drawn at once, until it's
+/** Brings the bot on `canvas` (Bot.tsx's), in a `box` px box, `color` and `shape`, to life on `rig`, drawn at once, until it's
  * released. */
-export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number, color?: string): Living => {
+export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number, color?: string, shape?: string): Living => {
   const m: Member = {
     rig,
     canvas,
@@ -407,6 +416,7 @@ export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number, co
     ctx: typeof Path2D === "function" ? canvas.getContext("2d") : null,
     box,
     color,
+    shape,
     // Without an observer, as if always seen.
     seen: typeof IntersectionObserver !== "function",
     drawn: [],
@@ -433,8 +443,9 @@ export const bringToLife = (canvas: HTMLCanvasElement, rig: Rig, box: number, co
       setRigState(rig, state, calm());
       wake(m);
     },
-    paint: (next) => {
+    paint: (next, nextShape) => {
       m.color = next;
+      m.shape = nextShape;
       draw(m);
     },
     release: () => {

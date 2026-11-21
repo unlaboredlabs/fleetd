@@ -1,7 +1,8 @@
 // The bot every project wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
 // in grey, or the color a person picked for its bot (BOT_PAINT), with two eyes and no mouth, standing free
-// with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). Its motion says what
+// with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). It comes in five
+// bodies (BOT_BODIES: Pebble, Ghost, Kitty, Bunny, Toast), the face and motion the same on each. Its motion says what
 // it is doing: idle, thinking, working, needs you, done, or an error.
 //
 // It is all here, pure, so both apps draw and move it alike. One rig: every frame is drawn from a few channels (the
@@ -19,7 +20,7 @@
 // stops, so it wakes exactly where it was. The functions the phone runs on its UI thread are worklets ("worklet"), a
 // plain string to the desktop.
 
-import { BOT_COLORS_WERE, type KnownBotColor } from "./contracts";
+import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type KnownBotColor, type KnownBotShape } from "./contracts";
 
 /** What a bot shows, from the app's own words (projects/botState.ts). */
 export type BotState = "idle" | "thinking" | "working" | "needs" | "done" | "error";
@@ -72,6 +73,30 @@ export const BODY = "M50 22C66.2 22 79.6 33.2 83.2 50.6C85.9 63.6 84.2 75.6 72.4
 const SEAT_X = 50;
 const SEAT_Y = 85;
 
+/** The bodies a bot comes in (the contracts' BotShape), each one silhouette on the same seat, round the same eyes, so
+ * every shape wears the same face and moves the same way (W774). Each was drawn by hand and judged at 20 px in every
+ * color, light and dark, against nine others that were cut. Kitty's and Bunny's ears reach above Pebble's crown, into
+ * the canvas's pad. */
+export const BOT_BODIES: { readonly [S in KnownBotShape]: string } = {
+  pebble: BODY,
+  /** A round crown and a hem of three scallops. */
+  ghost: "M50 22C67 22 81 35 82 53C83 65 84 76 84 82C84.5 85.5 80 87 74 86.4C69 85.9 66 81 62 81C58 81 55 86.5 50 86.5C45 86.5 42 81 38 81C34 81 31 85.9 26 86.4C20 87 15.5 85.5 16 82C16 76 17 65 18 53C19 35 33 22 50 22Z",
+  /** Pebble with two soft ears, their tips rounded. */
+  kitty: "M50 26C56 26 60 25.5 63.5 24.5C66.5 20 69 13.5 73 13C76.5 12.5 77.5 16 77.8 20C78.2 25 78.3 28 79.5 33C84 45 85.5 64 80 74C75 83 63 85 50 85C37 85 25 83 20 74C14.5 64 16 45 20.5 33C21.7 28 21.8 25 22.2 20C22.5 16 23.5 12.5 27 13C31 13.5 33.5 20 36.5 24.5C40 25.5 44 26 50 26Z",
+  /** Two tall rounded ears, leaning a touch out. */
+  bunny: "M50 33C54 33 56.5 32.5 58.5 31.5C58 22 61 11 67.5 10.5C74 10 76.5 20 75.5 33C83.5 43 85.5 60 81.5 72C77.5 82 65 85 50 85C35 85 22.5 82 18.5 72C14.5 60 16.5 43 24.5 33C23.5 20 26 10 32.5 10.5C39 11 42 22 41.5 31.5C43.5 32.5 46 33 50 33Z",
+  /** A slice of bread: a crown that overhangs straight sides. */
+  toast: "M50 24C62 24 70 26 76 30C85 36 86 46 79 50C80.5 60 81 72 80.5 79C80.3 84 77 85 70 85C63 85 57 85 50 85C43 85 37 85 30 85C23 85 19.7 84 19.5 79C19 72 19.5 60 21 50C14 46 15 36 24 30C30 26 38 24 50 24Z",
+};
+export type BotShapeName = KnownBotShape;
+export { BOT_SHAPES };
+
+/** The shape a bot of `shape` wears: its own, or Pebble for none or one a newer hub added. */
+export const shapeOf = (shape: string | undefined): BotShapeName => (shape !== undefined && (BOT_SHAPES as readonly string[]).includes(shape) ? (shape as BotShapeName) : "pebble");
+
+/** A shape's name, as a picker says it. */
+export const botShapeLabel = (shape: BotShapeName): string => shape.charAt(0).toUpperCase() + shape.slice(1);
+
 /** The part of the 100 box a bot shows: the body at 80% of the drawing, centred on its optical centre (50, 54.6),
  * halfway from its bounds' centre to its area's centroid, which sits low, so its weight lands on a row's centre line.
  * Its hops and slumps reach past the box, so whatever holds it never clips it. */
@@ -93,7 +118,7 @@ export interface Paint {
 
 /** The colors a bot comes in (the contracts' BotColor), in the order a picker shows them: the neutral, then round the
  * wheel from brown to pink, and grey, the default. */
-export const BOT_COLORS: readonly KnownBotColor[] = ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"];
+export { BOT_COLORS };
 export type BotColorName = KnownBotColor;
 /** A bot with no color wears grey. */
 export const BOT_COLOR_DEFAULT: BotColorName = "grey";

@@ -3083,6 +3083,17 @@
           ],
           "type": "object"
         },
+        "shape": {
+          "description": "Its bot's body.",
+          "enum": [
+            "pebble",
+            "ghost",
+            "kitty",
+            "bunny",
+            "toast"
+          ],
+          "type": "string"
+        },
         "title": {
           "description": "The project's name in fleetd; its folder keeps its own.",
           "maxLength": 200,
