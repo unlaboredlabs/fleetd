@@ -57,16 +57,19 @@
       ]
     },
     "BotColor": {
-      "description": "The colors a project's bot comes in (shared/bot.ts BOT_PAINT), slate its default.",
+      "description": "The colors a bot comes in (shared/bot.ts BOT_PAINT), in a picker's order, grey its default.",
       "enum": [
-        "slate",
         "mono",
-        "blue",
-        "lilac",
-        "coral",
+        "brown",
+        "red",
+        "orange",
         "amber",
-        "sage",
-        "teal"
+        "green",
+        "teal",
+        "blue",
+        "purple",
+        "pink",
+        "grey"
       ],
       "type": "string",
       "x-open": true
@@ -445,7 +448,7 @@
         },
         "avatarColor": {
           "$ref": "#/$defs/BotColor",
-          "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default."
+          "description": "Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: grey, the default."
         },
         "chatTags": {
           "description": "Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off.",

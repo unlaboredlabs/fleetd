@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, BOT_COLORS, BOT_PAINT, paintOf, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
+import { advanceRig, bodyOf, BOT_STATES, CROP, DIM, drawnAt, frameOf, GLOW, isAwake, LIFT, LOW, MOODS, moment, newRig, BOT_COLORS, BOT_PAINT, colorOf, paintOf, setRigState, STEP, traceEyes, UP, type BotState, type Rig } from "./bot";
 
 /** WCAG's contrast ratio of two "#rrggbb". */
 const contrast = (a: string, b: string): number => {
@@ -44,10 +44,13 @@ describe("the bot", () => {
     }
   });
 
-  it("paints slate for no color and for one it doesn't know", () => {
-    expect(paintOf(undefined, false)).toBe(BOT_PAINT.slate.light);
-    expect(paintOf("neon", true)).toBe(BOT_PAINT.slate.dark);
-    expect(paintOf("sage", true)).toBe(BOT_PAINT.sage.dark);
+  it("paints grey for no color and for one it doesn't know, and each earlier name as the color it became", () => {
+    expect(paintOf(undefined, false)).toBe(BOT_PAINT.grey.light);
+    expect(paintOf("neon", true)).toBe(BOT_PAINT.grey.dark);
+    expect(paintOf("green", true)).toBe(BOT_PAINT.green.dark);
+    // Today's eight keep their pick: four by name, the others as the nearest of the palette.
+    expect(["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"].map(colorOf)).toEqual(["grey", "mono", "blue", "purple", "red", "amber", "green", "teal"]);
+    expect(paintOf("lilac", false)).toBe(BOT_PAINT.purple.light);
   });
 
   it("offers the contracts' colors, in their order", () => {

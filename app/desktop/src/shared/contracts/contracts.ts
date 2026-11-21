@@ -1016,10 +1016,12 @@ export type BaseError = {
 /** Why a worktree's base may be behind its remote's default branch. */
 export type BaseErrorKind = "offline" | "auth" | "no_access" | "no_ssh" | "no_default_branch" | "no_remote" | "failed";
 
-/** The colors a project's bot comes in (shared/bot.ts BOT_PAINT), slate its default. */
-export type KnownBotColor = "slate" | "mono" | "blue" | "lilac" | "coral" | "amber" | "sage" | "teal";
+/** The colors a bot comes in (shared/bot.ts BOT_PAINT), in a picker's order, grey its default. */
+export type KnownBotColor = "mono" | "brown" | "red" | "orange" | "amber" | "green" | "teal" | "blue" | "purple" | "pink" | "grey";
 /** KnownBotColor, or a value from a newer hub. */
 export type BotColor = KnownBotColor | (string & {});
+/** The palette's earlier names (before W774), still taken and kept as they are, each worn as the color it became. */
+export const BOT_COLORS_WERE: { readonly [was: string]: KnownBotColor | undefined } = { slate: "grey", lilac: "purple", coral: "red", sage: "green" };
 
 export type BoxPublicKey = string;
 
@@ -6480,7 +6482,7 @@ export type ProjectSettingsGetOutput = {
 };
 
 export type ProjectSettingsSetInput = {
-  /** Its bot's color, from the palette; slate is the default. */
+  /** Its bot's color, from the palette; grey is the default. */
   avatarColor?: BotColor;
   /** Turns its chat's tags on or off (a trial; off by default). */
   chatTags?: boolean;
@@ -6627,7 +6629,7 @@ export type ProjectSummary = {
    * picture, whose bytes come from `project_avatar_get`. Absent: its letters show.
    */
   avatar?: string;
-  /** Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: slate, the default. */
+  /** Its bot's color, from the hub, the one a person picked (`project_settings_set`). Absent: grey, the default. */
   avatarColor?: BotColor;
   /** Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off. */
   chatTags?: boolean;

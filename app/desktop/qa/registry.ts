@@ -1216,7 +1216,8 @@ export const screens: readonly Screen[] = [
   // UX-1 [5]: a row that wants you (reply, approve, secret, blocked) ends in the warning's dot, and docs' reply that arrives
   // after the app opened is bold.
   { id: "shell", route: "#/", fixtures: ["sidebar-reasons"], variant: "sidebar" },
-  // Each project's bot in the color picked for it (W573), mobile in slate, the default the hub names by no color.
+  // Each bot in the color picked for it (W573), every color of the vibrant palette (W774), mobile in grey, the default
+  // the hub names by no color.
   {
     id: "shell",
     route: "#/",
@@ -1226,7 +1227,7 @@ export const screens: readonly Screen[] = [
       const bots = page.getByRole("navigation", { name: "Sidebar" }).locator("[data-bot][data-color]");
       await expect(bots.first()).toBeVisible();
       const colors = await bots.evaluateAll((els) => els.map((el) => el.getAttribute("data-color")));
-      for (const c of ["sage", "blue", "coral", "mono", "amber", "lilac", "teal", "slate"]) expect(colors).toContain(c);
+      for (const c of ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"]) expect(colors).toContain(c);
     },
   },
   // The hub switcher: the owner's hub marked while setup steps are left; a member's never is.
@@ -4496,7 +4497,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
     },
   },
-  // A project's bot color (W573): the palette's swatches beside its Icon, sage picked, and the Icon's bot in sage.
+  // A bot's color (W573, W774): the palette's eleven dots beside its Icon, green picked, and the Icon's bot in green.
   {
     id: "settings.projects",
     variant: "bot-color",
@@ -4504,9 +4505,9 @@ export const screens: readonly Screen[] = [
     fixtures: ["sidebar-colors"],
     open: async (page) => {
       const row = page.getByRole("region", { name: "Color" });
-      await expect(row.getByRole("radio")).toHaveCount(8);
-      await expect(row.getByRole("radio", { name: "Sage" })).toBeChecked();
-      await expect(page.getByRole("region", { name: "Icon" }).locator('[data-bot][data-color="sage"]')).toBeVisible();
+      await expect(row.getByRole("radio")).toHaveCount(11);
+      await expect(row.getByRole("radio", { name: "Green" })).toBeChecked();
+      await expect(page.getByRole("region", { name: "Icon" }).locator('[data-bot][data-color="green"]')).toBeVisible();
     },
   },
   // A project's approvals (W239): the three modes with the checker on, its model and effort, and what ran without asking.

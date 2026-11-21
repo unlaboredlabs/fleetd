@@ -1119,14 +1119,17 @@
      "color": {
       "description": "Its bot's color.",
       "enum": [
-       "slate",
        "mono",
-       "blue",
-       "lilac",
-       "coral",
+       "brown",
+       "red",
+       "orange",
        "amber",
-       "sage",
-       "teal"
+       "green",
+       "teal",
+       "blue",
+       "purple",
+       "pink",
+       "grey"
       ],
       "type": "string"
      },

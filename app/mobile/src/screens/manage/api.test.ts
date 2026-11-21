@@ -47,12 +47,12 @@ describe("Rename and Archive", () => {
 
   it("gives its bot a color by its settings, and a bot keeps it in its summary", async () => {
     const { hub, session, calls } = setup();
-    const set = setBotColor(session, SHOP, "sage");
-    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, avatarColor: "sage" });
+    const set = setBotColor(session, SHOP, "green");
+    expect(calls("project_settings_set").at(-1)?.input).toEqual({ ...REF, avatarColor: "green" });
     hub.answer("project_settings_set", { settings: {} });
     await expect(set).resolves.toEqual({ ok: true, value: null });
-    hub.link.frame({ t: "snapshot", cursor: 2, attention: [], machines: [], projects: [ADA, { ...SHOP, avatarColor: "sage" }], chats: [] });
-    expect(session.state.projects?.["devbox/shop"]?.avatarColor).toBe("sage");
+    hub.link.frame({ t: "snapshot", cursor: 2, attention: [], machines: [], projects: [ADA, { ...SHOP, avatarColor: "green" }], chats: [] });
+    expect(session.state.projects?.["devbox/shop"]?.avatarColor).toBe("green");
   });
 
   it("archives any bot and brings it back, by the bot's archive tool", async () => {

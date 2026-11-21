@@ -142,24 +142,33 @@ test("picking an icon forgets the picture and says so; a bot with no picture has
   expect(await k.refused(key("operate"), "project_icon_set", { machineId: "devbox", projectId: "nope", icon: { face: "joy", color: "sun" } })).toBe("not_found");
 });
 
-test("a bot's bot color: slate until picked, kept with the bot, announced, and only from the palette", async () => {
+test("a bot's bot color: grey until picked, kept with the bot, announced, and only from the palette or its earlier names", async () => {
   const k = kit();
   const r = { machineId: "devbox", projectId: "app" };
   project(k.hub, r, { title: "App" });
   expect(store(k.hub).projectGet(r)?.avatarColor).toBeUndefined();
-  const out = await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "sage" });
-  expect(out.next).toBe("Its bot is sage on every device now.");
-  expect(store(k.hub).projectGet(r)?.avatarColor).toBe("sage");
-  expect(store(k.hub).projectsList().find((p) => p.projectId === "app")?.avatarColor).toBe("sage");
+  const out = await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "green" });
+  expect(out.next).toBe("Its bot is green on every device now.");
+  expect(store(k.hub).projectGet(r)?.avatarColor).toBe("green");
+  expect(store(k.hub).projectsList().find((p) => p.projectId === "app")?.avatarColor).toBe("green");
   expect(events(k.hub).page(0).events.map((e) => [e.type, e.summary, e.data])).toEqual([
-    ["project.settings", "App's bot is sage now", { avatarColor: "sage" }],
+    ["project.settings", "App's bot is green now", { avatarColor: "green" }],
   ]);
-  // The same color again says nothing new; slate, the default, is kept as none.
+  // The same color again, or its earlier name (sage, from an older app), says nothing new.
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "green" });
   await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "sage" });
   expect(events(k.hub).page(0).events).toHaveLength(1);
-  await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "slate" });
+  // An older app's lilac is kept as it came, so that app still shows it, and is purple to everyone else.
+  expect((await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "lilac" })).next).toBe("Its bot is purple on every device now.");
+  expect(store(k.hub).projectGet(r)?.avatarColor).toBe("lilac");
+  expect(events(k.hub).page(0).events.at(-1)?.summary).toBe("App's bot is purple now");
+  // Grey, the default, is kept as none, as is slate, its earlier name.
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "grey" });
   expect(store(k.hub).projectGet(r)?.avatarColor).toBeUndefined();
   expect(k.hub.db.conn.query("SELECT avatar_color FROM project_settings").get()).toEqual({ avatar_color: null });
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "red" });
+  await k.ok(key("operate"), "project_settings_set", { ...r, avatarColor: "slate" });
+  expect(store(k.hub).projectGet(r)?.avatarColor).toBeUndefined();
   expect(await k.refused(key("operate"), "project_settings_set", { ...r, avatarColor: "neon" })).toBe("invalid");
   expect(await k.refused(key("read"), "project_settings_set", { ...r, avatarColor: "blue" })).toBe("forbidden");
 });

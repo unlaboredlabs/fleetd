@@ -47,7 +47,7 @@ import { peopleOnly } from "./people_only.ts";
 import * as propose from "./propose.ts";
 import * as create from "./repo_create_rules.ts";
 import { type AddHooks, addTo, removeFrom } from "./repos.ts";
-import { announce, projectSettings, rename, repoNamed, setColor, setEnv } from "./settings.ts";
+import { announce, BOT_COLOR_DEFAULT, botColorOf, projectSettings, rename, repoNamed, setColor, setEnv } from "./settings.ts";
 
 export const OPS = ["repo_add", "repo_create", "repo_remove", "project_setup"] as const;
 
@@ -431,7 +431,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
 
   if (c.icon !== undefined || picture !== undefined || c.color !== undefined) {
     await step(() => {
-      const before: Before = { kind: "look", color: project.avatarColor ?? "slate" };
+      const before: Before = { kind: "look", color: project.avatarColor ?? BOT_COLOR_DEFAULT };
       const pick = icon.picked(db, r);
       if (pick) before.icon = pick;
       const jpeg = avatar.jpegOf(db, r);
@@ -444,7 +444,7 @@ async function setup(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Reco
         announce(hub, r, `${projectOf(hub, r).title} has a new picture`, { avatar: avatar.keep(hub, r, picture) ?? null });
         parts.push("picture");
       }
-      if (c.color !== undefined && c.color !== before.color) {
+      if (c.color !== undefined && botColorOf(c.color) !== botColorOf(before.color)) {
         setColor(hub, projectOf(hub, r), c.color);
         parts.push("color");
       }

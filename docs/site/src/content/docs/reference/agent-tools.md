@@ -799,7 +799,7 @@ A lead's call, for when a person asks for it: set up your own bot. Give any of t
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `archive` | boolean | no | True archives the bot: its chat leaves the list and its lead stops. A person brings it back. |
-| `color` | string | no | Its bot's color. One of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage`, `teal`. |
+| `color` | string | no | Its bot's color. One of `mono`, `brown`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `purple`, `pink`, `grey`. |
 | `env` | object | no | Plain variables for the bot's agents. A secret goes through `request_secret`, never here. |
 | `env.remove` | string[] | no | At most 100 items. |
 | `env.set` | object[] | no | At most 100 items. |

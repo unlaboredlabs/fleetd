@@ -140,7 +140,7 @@ right-click menu. Its **Bot** page has these, in order:
 | Setting | Does |
 |---|---|
 | Icon | What its chat shows in the sidebar, the chat and on the phone: its bot, whose motion shows what the bot is doing, or an image of your own. **Upload image…** (or drop a png, jpeg or webp on the icon); **Move and scale** lets you drag and zoom it before **Save**. The hub keeps only the circle's square, at most 512 px, without the file's metadata. **Remove image** brings the bot back. |
-| Color | The bot's color: slate (the default), mono, blue, lilac, coral, amber, sage or teal, each tuned for the light and the dark theme. A pick shows at once on every device that sees the bot. On the phone it's in the bot's info, under **Edit** on its icon. |
+| Color | The bot's color, one flat dot of eleven: mono (white in the dark theme, near-black in the light), brown, red, orange, amber, green, teal, blue, purple, pink or grey (the default), each tuned for the light and the dark theme. A pick shows at once on every device that sees the bot. A bot that had one of the earlier colors wears the nearest new one: slate is grey, lilac purple, coral red and sage green. On the phone it's in the bot's info, under **Edit** on its icon. |
 | Name | How fleetd shows the bot. Its folder keeps its own name. |
 | Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Computer**: its setup commands. See [Computer](#computer). |
 | Environment variables | Variables every new agent of the bot gets. See [Environment variables](#env). |
@@ -783,8 +783,9 @@ A new bot is `project_add {create: true, title, machineId?, gitInit?}`; `project
 projectId, title?}` renames it; `project_archive {machineId, projectId, archived?}` archives it or brings it back. A
 bot summary says `createdBy` (the id and name of the key that made it) and, once archived, `archivedAt`. An older
 app's `onlyMe` on `project_add` or `project_settings_set` is taken and ignored. Its bot's color is `project_settings_set {machineId, projectId,
-avatarColor}`, one of `slate`, `mono`, `blue`, `lilac`, `coral`, `amber`, `sage` and `teal`; a summary's `avatarColor`
-says which it wears, and has none for slate. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
+avatarColor}`, one of `mono`, `brown`, `red`, `orange`, `amber`, `green`, `teal`, `blue`, `purple`, `pink` and `grey`; a
+summary's `avatarColor` says which it wears, and has none for grey. The earlier names `slate`, `lilac`, `coral` and `sage`
+(an older app's) are still taken and kept as they came, and the apps paint them grey, purple, red and green. Its picture is `project_avatar_set {machineId, projectId, attachmentId?,
 crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId` removes it) and
 `project_avatar_get {machineId, projectId}`; a summary's `avatar` names the one it has.
 
