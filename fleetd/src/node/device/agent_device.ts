@@ -11,23 +11,18 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } f
 import { dirname, join } from "node:path";
 import { mkdirPrivate } from "../config.ts";
 import { writeAtomic } from "../secrets/files.ts";
-import { ADB_SERVER_PORT, deviceDir, type Sdk, sdkAt } from "./sdk.ts";
+import {
+  AGENT_DEVICE_INTEGRITY as TARBALL_INTEGRITY,
+  AGENT_DEVICE_SKILL_SHA256 as SKILL_SHA256,
+  AGENT_DEVICE_SKILL_URL as SKILL_URL,
+  AGENT_DEVICE_URL as TARBALL_URL,
+  AGENT_DEVICE_VERSION as VERSION,
+  wrapperScript,
+} from "./pins.ts";
+import { deviceDir, sdkAt } from "./sdk.ts";
 
-/** The agent-device release the node installs. */
-export const VERSION = "0.21.31";
-
-/** Its npm package, checked against npm's own integrity digest for it. */
-const TARBALL_URL = "https://registry.npmjs.org/agent-device/-/agent-device-0.21.31.tgz";
-const TARBALL_INTEGRITY =
-  "sha512-541X/tXHqQS3Xg5PutPSek1nQFLgEJEXFdLPiZ9jTvSb+SMHr/Z4kzVCnBkGza59R+EHO1atLWx0ZAW5vK84IQ==";
-
-/** Its skill, from the same tag (the npm package leaves it out), checked by digest. */
-const SKILL_URL = "https://raw.githubusercontent.com/callstack/agent-device/v0.21.31/skills/agent-device/SKILL.md";
-const SKILL_SHA256 = "ad3b4ccbd2d43c3baae80a5b0d5aaad14becffb49fabccb6c93d61d44dcd6698";
-
-/** What the wrapper says while a person has control. */
-export const PAUSED =
-  "A person has control of the device now. You are told the moment they hand it back (carry on with other work meanwhile, or end your turn); your next agent-device command after that sees the screen as they left it.";
+/** The pins (./pins.ts), where the node's own code has always found them. */
+export { AGENT_DEVICE_VERSION as VERSION, PAUSED, wrapperScript } from "./pins.ts";
 
 export const installDir = (home: string) => join(deviceDir(home), "agent-device");
 /** The directory put first on a session's PATH: it holds only the `agent-device` wrapper. */
@@ -101,25 +96,6 @@ export async function install(home: string): Promise<string> {
   chmodSync(wrapper, 0o755);
   writeFileSync(join(dir, "VERSION"), VERSION);
   return wrapper;
-}
-
-/**
- * The wrapper: refuses while the session's control file says a person has the device, else runs agent-device with the
- * node's SDK and adb (on the node's own adb server port). Those are set here only, for agent-device: an agent's own
- * `ANDROID_HOME`, `PATH` and adb stay as they were for its own Android work.
- */
-export function wrapperScript(entryPath: string, sdk: Sdk): string {
-  const quote = (p: string) => p.replaceAll("'", "'\\''");
-  return (
-    "#!/bin/sh\n" +
-    `# fleetd's: agent-device ${VERSION}, pointed at this session's emulator.\n` +
-    'if [ -n "$FLEETD_DEVICE_CONTROL" ] && [ -e "$FLEETD_DEVICE_CONTROL" ]; then\n' +
-    `  echo '${quote(PAUSED)}' >&2\n  exit 75\nfi\n` +
-    `ANDROID_HOME='${quote(sdk.root)}'\nANDROID_SDK_ROOT='${quote(sdk.root)}'\nPATH='${quote(dirname(sdk.adb))}':"$PATH"\n` +
-    `ANDROID_ADB_SERVER_PORT=${ADB_SERVER_PORT}\n` +
-    "export ANDROID_HOME ANDROID_SDK_ROOT PATH ANDROID_ADB_SERVER_PORT\n" +
-    `exec node '${quote(entryPath)}' "$@"\n`
-  );
 }
 
 export function makePlugin(skill: string, plugin: string): void {

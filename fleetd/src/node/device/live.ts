@@ -4,7 +4,7 @@
 // fitted to the watcher's link (browser/fit.ts); a person's mouse and keys become one finger, a scroll, a key or text.
 import type { BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
 import { Pacer } from "../browser/fit.ts";
-import type { Frame, Input } from "./scrcpy.ts";
+import type { Frame, Input } from "./scrcpy_wire.ts";
 
 /** A device's screen frame as the hub's live view takes it. */
 export function browserFrame(sessionId: string, frame: Frame, control: BrowserControl): BrowserFrame {
