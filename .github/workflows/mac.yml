@@ -9,7 +9,7 @@ name: Nightly
 #
 # A manual run's `only` picks a part: `all` (the default) runs the Mac checks, `ios` builds just the iOS simulator app
 # (with `metro` for a Debug build), `links` runs just the link check, `hosted` just the hosted template's build at
-# boat.dev (below) (Actions › Nightly › Run workflow, or
+# boat.dev (below), `swipe` just the sidebar's swipe on a Mac's input path (Actions › Nightly › Run workflow, or
 # `gh workflow run mac.yml --ref <branch> -f only=ios -f metro=<host:port>`). No EAS, no Expo service and no secret:
 # signed builds are mobile-release.yml's.
 #
@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "What to run: the Mac checks, only the iOS simulator build, only the site's external link check, or only the hosted template's build."
+        description: "What to run: the Mac checks, only the iOS simulator build, only the site's external link check, only the hosted template's build, or only the sidebar's swipe."
         type: choice
-        options: [all, ios, links, hosted]
+        options: [all, ios, links, hosted, swipe]
         default: all
       metro:
         description: >-
@@ -98,6 +98,48 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  swipe:
+    # The sidebar's hub swipe on a Mac's own input path (app/desktop/qa/swipe.spec.ts): a trackpad's phased scroll
+    # events posted at the real app, alone on the runner's screen (the QA shards run two apps at once). `only=swipe`
+    # runs it alone, for a branch.
+    name: swipe (macos)
+    if: ${{ contains(fromJSON('["all","swipe"]'), inputs.only || 'all') }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: app/desktop
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/desktop/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: app/desktop/pnpm-lock.yaml
+      - uses: ./.github/actions/electron-cache
+      - run: pnpm install --frozen-lockfile
+      - run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
+      - run: pnpm fixtures
+      - run: pnpm qa:build
+      # Its second test opens Chromium as a browser, which the app's own Electron isn't.
+      - run: pnpm exec playwright install chromium
+      # Three times over, one at a time (they share the screen): a swipe that only mostly works fails here.
+      - run: pnpm exec playwright test -c qa/playwright.config.ts --project=swipe --repeat-each=3 --workers=1
+        env:
+          QA_SCALE: 2
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: swipe-macos
+          path: |
+            app/desktop/qa-results/
+            app/desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
   desktop-macos:
     # The edge build's macOS packaged smoke (build-release.yml, desktop-macos) on an ad-hoc signed arm64 test build:
     # the packed mac app launches and its screens and recorder load from the asar.
@@ -157,7 +199,7 @@ jobs:
     # extension's crypto against the hub's sealed boxes, the share extension's decisions and the Shortcuts actions'.
     # Its name is an after-merge check in .fleetd/train.json: rename them in one PR.
     name: mobile (ios)
-    if: ${{ (inputs.only || 'all') != 'links' }}
+    if: ${{ (inputs.only || 'all') != 'links' && inputs.only != 'swipe' }}
     # A newer manual run on a branch cancels this job in its running one; main's runs and release.yml's call each get
     # a group of their own.
     concurrency:
@@ -281,7 +323,7 @@ jobs:
     # A failed (or timed out) Mac job on main opens one `macos-nightly-failed` issue, or comments on the one open; a run
     # with every Mac job green closes it. Runs off main, a release's among them, and a manual run of one part report
     # nothing.
-    needs: [fleetd-macos, ios-simulators, desktop-macos, qa, mobile]
+    needs: [fleetd-macos, ios-simulators, desktop-macos, swipe, qa, mobile]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && (inputs.only || 'all') == 'all' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
