@@ -12,6 +12,10 @@
 // - connects from inside the box where the node opens a dial channel (`{"dial":{"host","port"}}`, its browser's),
 //   answering `{"op":"dial","channel":n}`, or with `"error"`, once it connected or failed.
 //
+// A connection made where the guest listens while no link is up (the node restarting, a hosted box's link moving to
+// another of the service's hosts) waits, unread, for the next link, up to HOLD_MS, and is closed only then. One whose
+// link drops under it is closed: a lead call's CLI sends it again (../../cli/agent_mcp/socket.ts), and it waits here.
+//
 // A hosted box has no unix socket the node reaches: there the guest listens on `--port` for one WebSocket at a time,
 // through the provider's private port, and takes it only with fleetd's own per-box secret in SECRET_HEADER (the
 // value of FLEETD_BOX_SECRET in its environment, given at its start, never at the box's create).
@@ -50,6 +54,9 @@ const START_TIMEOUT_MS = 10_000;
 /** How long an ended connection to the session host may take to close before it is cut. */
 const CLOSE_MS = 2_000;
 const CONFIRM_MS = 200;
+/** How long a connection made while no link is up waits for one (the node's own wait for its hub link, after a drop,
+ * is as long: lead/channel.ts RELINK_WAIT_MS). */
+const HOLD_MS = 30_000;
 /** The variable holding the per-box secret a hosted guest takes its link with. */
 export const SECRET_ENV = "FLEETD_BOX_SECRET";
 
@@ -59,6 +66,8 @@ type Options = {
   /** The address the TCP forwards listen on: 127.0.0.1 in a box; a stand-in box beside its node takes another of
    * 127/8, where the node's own ports aren't. */
   loopback: string;
+  /** HOLD_MS; tests pass their own. */
+  holdMs?: number;
 };
 
 const warn = (message: string) => process.stderr.write(`${new Date().toISOString()} WARN sandbox-guest: ${message}\n`);
@@ -73,6 +82,8 @@ export class Guest {
   #runs = new Map<string, AbortController>();
   #ws: { stop(close?: boolean): void } | undefined;
   #tailnet: BoxTailnet | undefined;
+  /** Connections waiting for the next link, each with what opens its channel there. */
+  #held = new Set<{ socket: Socket; open: (mux: Mux) => void; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(readonly o: Options) {}
 
@@ -158,6 +169,8 @@ export class Guest {
     this.#ws?.stop(true);
     this.#server?.close();
     for (const l of this.#listeners.values()) l.close();
+    for (const h of this.#held) (clearTimeout(h.timer), h.socket.destroy());
+    this.#held.clear();
     this.#mux?.close("the guest stopped");
   }
 
@@ -176,6 +189,23 @@ export class Guest {
     this.#mux = mux;
     const h = this.#live();
     mux.control({ op: "hello", protocol: GUEST_PROTOCOL, host: h ? { ...h.info, lines: h.pipe.lines } : null });
+    const held = [...this.#held];
+    this.#held.clear();
+    for (const c of held) (clearTimeout(c.timer), c.open(mux));
+  }
+
+  /** Opens `socket`'s channel to `target` on the link, or on the next one when none is up. */
+  #carry(socket: Socket, target: Target): void {
+    const open = (mux: Mux) => {
+      mux.open(this.#next++, target, socket);
+      socket.resume();
+    };
+    const mux = this.#mux;
+    if (mux && !mux.closed) return open(mux);
+    const holdMs = this.o.holdMs ?? HOLD_MS;
+    const held = { socket, open, timer: setTimeout(() => (this.#held.delete(held), socket.destroy()), holdMs) };
+    this.#held.add(held);
+    socket.once("close", () => (clearTimeout(held.timer), this.#held.delete(held)));
   }
 
   #live() {
@@ -233,15 +263,7 @@ export class Guest {
     if (this.#listeners.has(key)) return target;
     // Never removes what is at the path: in a box whose node home is shared with the host, that file is the node's.
     if ("unix" in target && existsSync(target.unix)) throw new Error(`${target.unix} exists already`);
-    const server = createServer({ allowHalfOpen: true, pauseOnConnect: true }, (socket) => {
-      const mux = this.#mux;
-      if (!mux) {
-        socket.destroy();
-        return;
-      }
-      mux.open(this.#next++, target, socket);
-      socket.resume();
-    });
+    const server = createServer({ allowHalfOpen: true, pauseOnConnect: true }, (socket) => this.#carry(socket, target));
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       if ("unix" in target) server.listen(target.unix, () => resolve());

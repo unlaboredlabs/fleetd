@@ -202,3 +202,47 @@ test("a lead's call for an order is what its turn touched; a task's call and a r
   await answer("/work/app", DECIDE, "th-lead");
   expect(turnOrders(hub, p1, hub.clock.now() + 1).length).toBe(before + 1);
 });
+
+// A call its CLI sent again after a cut (a box's link moving, a node restarting): the hub answers the repeat with the
+// first's answer, and the call acts once (../src/shared/lead_once.ts).
+test("a repeated callId from the same session is answered once and acts once", async () => {
+  let now = 1_000_000;
+  const clocked = Object.create(hub, { clock: { value: { now: () => now } } }) as typeof hub;
+  const once = new LeadCalls(clocked);
+  let acted = 0;
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  once.register("ask_lead", async (_caller, call) => {
+    acted++;
+    if (call.question === "slow") await held;
+    return { asked: acted, long: call.question === "long" ? "x".repeat(70_000) : "" };
+  });
+  const callId = "cli-42-0b5e6a2c-3f1d-4e7a-9c2b-5d8e7f6a1b2c";
+  const send = (id: string, question: string, extra: Record<string, unknown> = {}) =>
+    once.answer("devbox", { id, cwd: "/work/app", threadId: "th-task", call: { op: "ask_lead", question } as never, callId, ...extra });
+  // The repeat comes while the first still runs: it waits for the first's answer, under its own frame id.
+  const first = send("lc-1", "slow");
+  const repeat = send("lc-7", "slow", { resent: true });
+  release();
+  expect(await first).toEqual({ id: "lc-1", result: { asked: 1, long: "", op: "ask_lead" } });
+  expect(await repeat).toEqual({ id: "lc-7", result: { asked: 1, long: "", op: "ask_lead" } });
+  // And after it was answered.
+  expect(await send("lc-8", "slow", { resent: true })).toEqual({ id: "lc-8", result: { asked: 1, long: "", op: "ask_lead" } });
+  expect(acted).toBe(1);
+  // The same id from another session, or with no id of its own (`cli-<pid>`, an older CLI's), is another call.
+  await once.answer("devbox", { id: "lc-9", cwd: "/work/other", threadId: "th-other", call: { op: "ask_lead", question: "?" } as never, callId });
+  await once.answer("devbox", { id: "lc-10", cwd: "/work/app", threadId: "th-task", call: { op: "ask_lead", question: "?" } as never, callId: "cli-42" });
+  await once.answer("devbox", { id: "lc-11", cwd: "/work/app", threadId: "th-task", call: { op: "ask_lead", question: "?" } as never, callId: "cli-42" });
+  expect(acted).toBe(4);
+  // An answer too long to keep: the repeat hears the call ran, and it doesn't run again.
+  const longId = "cli-42-1b5e6a2c-3f1d-4e7a-9c2b-5d8e7f6a1b2c";
+  const long = { id: "lc-12", cwd: "/work/app", threadId: "th-task", call: { op: "ask_lead", question: "long" } as never, callId: longId };
+  expect("result" in (await once.answer("devbox", long))).toBe(true);
+  expect(error(await once.answer("devbox", { ...long, id: "lc-13", resent: true }))?.message).toBe(
+    "this call ran already, and its answer was too long to keep for a repeat",
+  );
+  expect(acted).toBe(5);
+  // Kept five minutes, then forgotten.
+  now += 5 * 60_000;
+  expect(await send("lc-14", "slow", { resent: true })).toEqual({ id: "lc-14", result: { asked: 6, long: "", op: "ask_lead" } });
+});

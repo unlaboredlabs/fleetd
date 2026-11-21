@@ -9,6 +9,7 @@
 import { hostname } from "node:os";
 import { NODE_TO_HUB, type NodeToHubTag } from "../../shared/wire_tags.ts";
 import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
+import { LEAD_CALL_ONCE } from "../../shared/lead_once.ts";
 import { type DegradedCause, type HubEvent, type Machine, type MachineStatus, PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
@@ -600,7 +601,7 @@ export class Link {
       hubId: this.hubId,
       machineId,
       protocol: PROTOCOL_VERSION,
-      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE],
+      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE, LEAD_CALL_ONCE],
     });
     // Compressed both ways from here on, for a node that asked.
     if (caps.includes(CAP_LINK_DEFLATE)) {
@@ -701,6 +702,7 @@ export class Link {
         if (typeof frame.id !== "string" || frame.id === "") throw new FrameError("missing field `id`");
         if (typeof frame.cwd !== "string") throw new FrameError("missing field `cwd`");
         if (!frame.call || typeof frame.call !== "object" || Array.isArray(frame.call)) throw new FrameError("missing field `call`");
+        if (frame.callId !== undefined && typeof frame.callId !== "string") throw new FrameError("`callId` must be a string");
         {
           const inFlight = this.callStarted();
           if (!inFlight) {

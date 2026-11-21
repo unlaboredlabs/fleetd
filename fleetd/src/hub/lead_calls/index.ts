@@ -7,6 +7,7 @@
 // throwing a ToolError to refuse.
 import type { MachineId, ProjectRef, ThreadId, ThreadRef } from "../../shared/contracts.ts";
 import { NotImplemented, ToolError } from "../../shared/errors.ts";
+import { isCallId } from "../../shared/lead_once.ts";
 import type { Hub } from "../api/hub.ts";
 import { callOrder, TOUCHING_OPS, touched } from "../chat/about.ts";
 import { outsideEveryProject, projectIndexForCwd } from "./cwd.ts";
@@ -41,6 +42,16 @@ export const leadBy = (r: ProjectRef) => `lead:${r.machineId}/${r.projectId}`;
 
 const failedHandling = () => new ToolError("failed", "the hub failed while handling this call", "try again shortly");
 
+/** How long the answer to a call with its own `callId` is kept for a repeat: well past the CLI's RESEND_MS plus a
+ * box guest's wait for its next link. */
+const KEEP_MS = 5 * 60_000;
+/** An answer longer than this (a file's piece, a long read) isn't kept: a repeat hears the call ran. */
+const KEEP_CHARS = 64 * 1024;
+const ranAlready = (id: string): LeadResultFrame => ({
+  id,
+  error: new ToolError("failed", "this call ran already, and its answer was too long to keep for a repeat", "make the call again if you still need its answer").toJSON(),
+});
+
 /** The project whose workspace root is `cwd` or one of its ancestors; nested roots: the deepest; equal: the first. */
 export function projectForCwd<P extends WorkspaceProject>(projects: P[], cwd: string): P | undefined {
   const i = projectIndexForCwd(
@@ -64,6 +75,8 @@ export class LeadCalls {
   private readonly handlers = new Map<string, LeadCallHandler>();
   private hosts: Hosts | undefined;
   private screens: Screens | undefined;
+  /** Answers kept for a repeated `callId`, by machine, session and call id, oldest first. */
+  private readonly kept = new Map<string, { at: number; answer: Promise<LeadResultFrame> }>();
 
   constructor(
     private readonly hub: Hub,
@@ -133,10 +146,32 @@ export class LeadCalls {
   }
 
   /**
+   * Answers a forwarded call, and a repeat of one with the same `callId` from the same machine and session (its caller
+   * sent it again after a cut) with the first's answer, waiting for it while the first still runs: never twice.
+   */
+  async answer(machineId: MachineId, sent: LeadCallFrame): Promise<LeadResultFrame> {
+    if (!isCallId(sent.callId)) return this.answerOnce(machineId, sent);
+    const now = this.hub.clock.now();
+    for (const [key, k] of this.kept) {
+      if (now - k.at < KEEP_MS) break;
+      this.kept.delete(key);
+    }
+    const key = JSON.stringify([machineId, sent.threadId ?? null, sent.callId]);
+    const kept = this.kept.get(key);
+    if (kept) return { ...(await kept.answer), id: sent.id };
+    const answer = this.answerOnce(machineId, sent);
+    const entry = { at: now, answer };
+    this.kept.set(key, entry);
+    const result = await answer;
+    if (JSON.stringify(result).length > KEEP_CHARS) entry.answer = Promise.resolve(ranAlready(sent.id));
+    return result;
+  }
+
+  /**
    * Decodes a forwarded call against its contract, attributes it to the project its cwd is in, on the machine whose
    * node sent it, and answers it. Handlers only ever see a decoded call.
    */
-  async answer(machineId: MachineId, sent: LeadCallFrame): Promise<LeadResultFrame> {
+  private async answerOnce(machineId: MachineId, sent: LeadCallFrame): Promise<LeadResultFrame> {
     const { id } = sent;
     try {
       const frame = decodeFrame(sent);

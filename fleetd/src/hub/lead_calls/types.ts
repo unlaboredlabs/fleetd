@@ -15,6 +15,10 @@ export type LeadCallFrame = {
   call: LeadCall;
   /** The fleetd session the call comes from (`FLEETD_THREAD_ID`); absent from a person's own shell. */
   threadId?: ThreadId;
+  /** The caller's own id for this one call, node → hub: a repeat of it is answered once (../../shared/lead_once.ts). */
+  callId?: string;
+  /** The caller sent it again after a cut before its answer. */
+  resent?: boolean;
 };
 
 /** A McpToolError as on the wire: `{ code, message, fix?, reason? }`. */
