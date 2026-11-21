@@ -55,6 +55,13 @@ The sidebar shows one hub at a time. Its name at the top, on a line of its own u
 list of your hubs: pick one to show it. A dot by its name means a bot on another hub needs you, or something is off
 with a hub. Under it, that hub's pins, its bots, then your sections under their labels.
 
+To go to the next or previous hub, swipe left or right with two fingers anywhere on the sidebar: the list follows your
+fingers, the next hub's slides in beside it, and it settles on whichever is nearer when you let go. A scroll up or down
+the list never switches, and one swipe moves one hub at most. At the bottom of the sidebar, a small square for each hub
+shows which one you're on; click one to go to it. ⇧⌘] and ⇧⌘[ (Ctrl+Shift+] and Ctrl+Shift+[ on Linux) go to the next
+and previous hub, and View › Next Hub and Previous Hub do the same. With reduced motion turned on in your system, the
+hub switches without the slide.
+
 Opening a bot from elsewhere (a notification, ⌘K) shows its hub. ⌘1 to ⌘9 count the rows you can see, in order.
 
 ## Everything that needs you {#attention}

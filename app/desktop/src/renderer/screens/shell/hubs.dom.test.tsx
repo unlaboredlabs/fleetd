@@ -153,9 +153,9 @@ const mount = async (entries: HubEntry[]) => {
 };
 
 const settle = () => act(() => new Promise((r) => setTimeout(r, 0)));
-/** The sidebar's bots, by name, in order (each named by one of `names`). */
+/** The sidebar's bots, by name, in order (each named by one of `names`); not the next hub's, sliding in beside them. */
 const bots = (...names: string[]) =>
-  [...host.querySelectorAll<HTMLElement>("nav[aria-label='Sidebar'] [data-reorder-row] button")].flatMap((b) => names.filter((n) => b.textContent.startsWith(n)).slice(0, 1));
+  [...host.querySelectorAll<HTMLElement>("nav[aria-label='Sidebar'] [data-reorder-row] button")].filter((b) => b.closest("[inert]") === null).flatMap((b) => names.filter((n) => b.textContent.startsWith(n)).slice(0, 1));
 /** The hub row's switcher, as a screen reader hears it: the hub on show, and what is off with any. */
 const switcher = () => host.querySelector<HTMLElement>("[data-opens='hubs']");
 /** Opens a menu from its trigger, as the keys do (a press opens it on pointer-down, which the DOM here has no way to give). */
@@ -717,4 +717,181 @@ it("switches the hub a Hub page manages in place: the sheet and the app under it
   expect(host.querySelector("[data-screen='shell']")).toBe(frame);
   expect(fake.chats.filter(([id, p]) => id === "a1b2" && p !== null)).toEqual([]);
   expect(hub("a1b2").calls.some((c) => c.tool === "people_list")).toBe(true);
+});
+
+/**
+ * The swipe across the sidebar (hubSwipe.ts), on the clock: a list as wide as the default sidebar, and wheel events
+ * as a trackpad sends them, 10 ms apart. Returns whether the page let the list scroll with each.
+ */
+const swiping = () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+  const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(256);
+  const swipe = (deltas: ReadonlyArray<readonly [number, number]>): boolean[] =>
+    deltas.map(([dx, dy]) => {
+      const e = new WheelEvent("wheel", { deltaX: dx, deltaY: dy, bubbles: true, cancelable: true });
+      act(() => {
+        // Over a row of the list on show, as a trackpad's swipe starts.
+        (host.querySelector("nav[aria-label='Sidebar'] [data-reorder-row] button") ?? host.querySelector("nav"))?.dispatchEvent(e);
+        vi.advanceTimersByTime(10);
+      });
+      return !e.defaultPrevented;
+    });
+  /** Fingers off: the pause that ends the gesture, and the spring's settle. */
+  const lift = () => act(() => void vi.advanceTimersByTime(1000));
+  const done = () => {
+    width.mockRestore();
+    vi.useRealTimers();
+  };
+  return { swipe, lift, done };
+};
+/** The list on show where it belongs: not moved, not moving, nothing beside it. */
+const inPlace = () => {
+  const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
+  expect(list?.style.transform).toBe("");
+  expect(list?.parentElement?.hasAttribute("data-moving")).toBe(false);
+  expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+};
+const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Hubs'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
+const twoHubs = async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme", color: "amber" },
+  ]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(project("laptop", "billing"));
+  });
+  await settle();
+};
+
+it("switches to the next hub on a swipe across the sidebar, once a gesture however far it goes, and back on the next", async () => {
+  await twoHubs();
+  expect(marks()).toEqual(["[Personal]", "Acme"]);
+  const { swipe, lift, done } = swiping();
+  try {
+    // Two fingers left, past a whole width and on: Acme, and no further; the list never scrolled with it.
+    const free = swipe(Array.from({ length: 40 }, () => [14, 1] as const));
+    expect(free.slice(1).every((f) => !f)).toBe(true);
+    expect(bots("storefront", "billing")).toEqual(["billing"]);
+    expect(switcher()?.getAttribute("aria-label")).toContain("Acme");
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    // Its momentum, the other way, in the same gesture: swallowed.
+    swipe(Array.from({ length: 30 }, () => [-12, 0] as const));
+    expect(bots("storefront", "billing")).toEqual(["billing"]);
+    lift();
+    // A new gesture, fingers right, a little over half way and let go: it settles back on Personal.
+    swipe([[-4, 0], [-30, 0], [-40, 0], [-40, 0], [-30, 0]]);
+    expect(bots("storefront", "billing")).toEqual(["billing"]);
+    lift();
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+    expect(marks()).toEqual(["[Personal]", "Acme"]);
+    // Not far enough: back where it was.
+    swipe([[4, 0], [20, 0], [20, 0], [20, 0]]);
+    lift();
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+    // Past the last hub it gives a little and stays.
+    swipe([[-4, 0], [-60, 0], [-60, 0], [-60, 0], [-60, 0]]);
+    lift();
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+  } finally {
+    done();
+  }
+});
+
+it("never switches on a scroll up or down the list, whatever it drifts sideways", async () => {
+  await twoHubs();
+  const { swipe, lift, done } = swiping();
+  try {
+    const free = swipe([[1, 6], [3, 12], [14, 10], [30, 8], [40, 4], [20, 1], [10, 0], [6, 0]]);
+    lift();
+    expect(free.every((f) => f)).toBe(true);
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+    expect(marks()).toEqual(["[Personal]", "Acme"]);
+  } finally {
+    done();
+  }
+});
+
+it("switches from the marks at the foot and from ⇧⌘[ / ⇧⌘], and the marks follow", async () => {
+  await twoHubs();
+  const { lift, done } = swiping();
+  try {
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    lift();
+    expect(bots("storefront", "billing")).toEqual(["billing"]);
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    // Round the end, as ⌘] goes round the bots.
+    act(() => void runCommand("hub.next"));
+    lift();
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+    act(() => void runCommand("hub.previous"));
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    // The hub on show after a swipe still says what is off with it, as after a pick.
+    act(() => hub("a1b2").send(offline));
+    act(() => void runCommand("hub.next"));
+    act(() => void runCommand("hub.next"));
+    lift();
+    expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another hub needs you, Can't reach Acme");
+    inPlace();
+    // There and straight back, and the same mark clicked mid-slide: the hub on show never changes, and the list is
+    // drawn in place, clickable, with nothing beside it.
+    act(() => void runCommand("hub.next"));
+    act(() => void vi.advanceTimersByTime(100));
+    act(() => void runCommand("hub.previous"));
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    inPlace();
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Personal']")?.click());
+    act(() => void vi.advanceTimersByTime(100));
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    inPlace();
+  } finally {
+    done();
+  }
+});
+
+it("with one hub, a swipe does nothing and there are no marks", async () => {
+  await mount([{ id: "hub", label: "devbox" }]);
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(project("devbox", "storefront"));
+  });
+  await settle();
+  const { swipe, lift, done } = swiping();
+  try {
+    expect(marks()).toEqual([]);
+    const free = swipe(Array.from({ length: 30 }, () => [14, 0] as const));
+    lift();
+    expect(free.every((f) => f)).toBe(true);
+    expect(bots("storefront")).toEqual(["storefront"]);
+    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+  } finally {
+    done();
+  }
+});
+
+it("with reduced motion, switches without the slide once a swipe has gone far enough", async () => {
+  await twoHubs();
+  const media = vi.spyOn(window, "matchMedia").mockImplementation((q: string) => ({ matches: q.includes("reduced-motion"), media: q, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false }));
+  const { swipe, lift, done } = swiping();
+  try {
+    const list = () => host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
+    swipe([[4, 0], [20, 0], [20, 0]]);
+    // Still, with nothing beside it.
+    expect(list()?.style.transform).toBe("");
+    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+    expect(bots("storefront", "billing")).toEqual(["storefront"]);
+    swipe([[20, 0], [20, 0], [20, 0]]);
+    expect(bots("storefront", "billing")).toEqual(["billing"]);
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+  } finally {
+    done();
+    media.mockRestore();
+  }
 });

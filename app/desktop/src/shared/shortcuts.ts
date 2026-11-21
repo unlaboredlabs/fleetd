@@ -30,6 +30,9 @@ export const SHORTCUTS = {
   "project.nextNeedsYou": { keys: "Mod+.", title: "Next Bot That Needs You", section: "Bots" },
   "factory.open": { keys: "Mod+;", title: "Factory", section: "Go to" },
   "settings.open": { keys: "Mod+,", title: "Settings…", section: "Go to" },
+  // Two fingers across the sidebar do the same (screens/shell/hubSwipe.ts).
+  "hub.previous": { keys: "Mod+Shift+[", title: "Previous Hub", section: "Go to" },
+  "hub.next": { keys: "Mod+Shift+]", title: "Next Hub", section: "Go to" },
   "composer.attach": { keys: "Mod+Shift+A", title: "Attach a File", section: "Composer" },
   // Caught in the capture phase, so a page you have taken over never sees it (screens/sessions).
   "session.handBack": { keys: "Mod+Shift+Enter", title: "Hand Back the Page", section: "Screens" },
