@@ -286,18 +286,30 @@ test("an HTML artifact runs its scripts with no network and no reach into the ap
 
 // A link in an HTML artifact opens in the browser, as a Markdown link does, and the report stays on screen; a link
 // its script posts without a click opens nothing.
+//
+// It failed once on a macOS runner (W771: the click opened nothing in 5 s) and passed 351 runs since under every load
+// tried. Should it fail again, its result folder keeps what that run did: a Playwright trace, every pointer event the
+// page and the frame saw with what was under it, the messages the page got, and the window's focus.
 test("a link clicked in an HTML artifact opens in the browser and the report stays", async () => {
   const { app, page, settled, close } = await launch("artifacts-published");
+  await page.context().tracing.start({ screenshots: true, snapshots: true });
+  const chart = page.frameLocator('iframe[sandbox="allow-scripts"]');
+  let failed = false;
   try {
-    await app.evaluate(({ shell }) => {
+    await app.evaluate(({ BrowserWindow, shell }) => {
       const opened: string[] = [];
-      (globalThis as { opened?: string[] }).opened = opened;
+      const windows: string[] = [];
+      Object.assign(globalThis, { opened, windows });
       shell.openExternal = (url: string) => (opened.push(url), Promise.resolve());
+      for (const w of BrowserWindow.getAllWindows()) {
+        for (const what of ["focus", "blur", "show", "hide", "minimize", "restore"] as const) w.on(what as "focus", () => windows.push(`${what} at ${performance.now().toFixed(0)} ms`));
+      }
     });
     await settled();
     await show(page, "shell", "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22/artifacts/build-times");
-    const chart = page.frameLocator('iframe[sandbox="allow-scripts"]');
     await expect(chart.locator("rect.bar")).toHaveCount(6);
+    await logInput(page, "page");
+    await chart.locator("body").evaluate(logInputHere, "frame");
     // Unprompted, a script's message or click opens nothing, and its page never holds the key.
     expect(await chart.locator("body").evaluate(() => document.documentElement.outerHTML.includes("key:"))).toBe(false);
     await chart.locator("body").evaluate(() => parent.postMessage({ fleetdArtifactLink: "https://example.com/unasked" }, "*"));
@@ -309,10 +321,49 @@ test("a link clicked in an HTML artifact opens in the browser and the report sta
       .toEqual(["https://github.com/acme/storefront/actions/workflows/release.yml"]);
     // The frame never left its page.
     await expect(chart.locator("rect.bar")).toHaveCount(6);
+  } catch (error) {
+    failed = true;
+    const said = (what: string, read: () => Promise<unknown>) => read().then((v) => `${what}:\n${JSON.stringify(v, null, 2)}`, (e: unknown) => `${what}: unread (${String(e)})`);
+    const parts = await Promise.all([
+      said("opened", () => app.evaluate(() => (globalThis as { opened?: string[] }).opened)),
+      said("the window", () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ focused: w.isFocused(), visible: w.isVisible(), bounds: w.getBounds() })))),
+      said("the window's events", () => app.evaluate(() => (globalThis as { windows?: string[] }).windows)),
+      said("the page's input and messages", () => page.evaluate(() => (window as { inputLog?: string[] }).inputLog)),
+      said("the frame's input", () => chart.locator("body").evaluate(() => (window as { inputLog?: string[] }).inputLog, undefined, { timeout: 5_000 })),
+    ]);
+    writeFileSync(test.info().outputPath("link-click.txt"), `${parts.join("\n\n")}\n`);
+    await page.context().tracing.stop({ path: test.info().outputPath("trace.zip") });
+    throw error;
   } finally {
+    if (!failed) await page.context().tracing.stop();
     await close();
   }
 });
+
+/** Logs, in `where`'s window, every pointer event with its target and what lies under it, and every message. */
+function logInputHere(_: Element, where: string) {
+  const log: string[] = [];
+  const at = () => `${performance.now().toFixed(0)} ms`;
+  const named = (t: EventTarget | null) => (t instanceof Element ? `${t.localName}${t.id === "" ? "" : `#${t.id}`}` : t === window ? "window" : "?");
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    window.addEventListener(
+      type,
+      (e) => {
+        const { clientX: x, clientY: y } = e as MouseEvent;
+        log.push(`${where} ${type} at ${at()}: trusted ${String(e.isTrusted)}, on ${named(e.target)}, at ${String(x)},${String(y)} over ${named(document.elementFromPoint(x, y))}`);
+      },
+      true,
+    );
+  }
+  window.addEventListener("message", (e: MessageEvent) => {
+    const frame = document.querySelector("iframe");
+    log.push(`${where} message at ${at()}: ${JSON.stringify(e.data).replace(/"key":"[0-9a-f]+"/u, '"key":"(set)"')}, from the frame ${String(frame !== null && e.source === frame.contentWindow)}`);
+  });
+  window.addEventListener("blur", () => log.push(`${where} blur at ${at()}`));
+  window.addEventListener("focus", () => log.push(`${where} focus at ${at()}`));
+  Object.assign(window, { inputLog: log });
+}
+const logInput = (page: Page, where: string) => page.locator("body").evaluate(logInputHere, where);
 
 // A modal's backdrop over the Mac's see-through sidebar (vibrancy): the page paints nothing there, so a backdrop
 // filter has only the sidebar's own words to blur, and its blurred copy is see-through too, with the crisp words
@@ -334,7 +385,10 @@ interface Under {
   mean: number;
 }
 
-async function seeThroughShot(page: Page, ground: number): Promise<{ side: Under; main: Under; png: Buffer }> {
+/** Where a shot was measured, for a failure's readings: the shot's pixels, the page's view and the rects measured. */
+type ShotFrame = Record<string, unknown>;
+
+async function seeThroughShot(page: Page, ground: number): Promise<{ side: Under; main: Under; png: Buffer; frame: ShotFrame }> {
   await settle(page);
   const png = await page.screenshot({ omitBackground: true, animations: "disabled", caret: "hide" });
   const measured = await page.evaluate(
@@ -376,7 +430,18 @@ async function seeThroughShot(page: Page, ground: number): Promise<{ side: Under
         }
         return { sharp: sharp / n, mean: mean / n };
       };
-      return { side: measure("qa-probe-side"), main: measure("qa-probe-main") };
+      const rect = (el: Element | null | undefined) => (el ? JSON.stringify(el.getBoundingClientRect()) : "none");
+      return {
+        side: measure("qa-probe-side"),
+        main: measure("qa-probe-main"),
+        frame: {
+          shot: `${String(bitmap.width)}x${String(bitmap.height)}`,
+          view: `${String(window.innerWidth)}x${String(window.innerHeight)} at ${String(window.devicePixelRatio)}x, ${document.visibilityState}`,
+          side: rect(document.getElementById("qa-probe-side")),
+          main: rect(document.getElementById("qa-probe-main")),
+          dialog: rect(document.querySelector("[role=dialog]")),
+        },
+      };
     },
     { b64: png.toString("base64"), ground },
   );
@@ -385,6 +450,7 @@ async function seeThroughShot(page: Page, ground: number): Promise<{ side: Under
 
 test("a modal's backdrop blurs and dims the see-through sidebar as it does the main pane", async () => {
   const { app, page, settled, close } = await launch("empty");
+  let failures = test.info().errors.length;
   try {
     await settled();
     const dir = path.join(resultsDir, "png");
@@ -418,6 +484,16 @@ test("a modal's backdrop blurs and dims the see-through sidebar as it does the m
         expect.soft(blur.main, `${said}: the backdrop doesn't blur the main pane`).toBeLessThan(0.8);
         expect.soft(Math.abs(blur.side - blur.main), `${said}: the sidebar is blurred unlike the main pane`).toBeLessThan(0.1);
         expect.soft(Math.abs(dim.side - dim.main), `${said}: the sidebar is dimmed unlike the main pane`).toBeLessThan(0.04);
+        // A reading off once on a macOS runner (W771: no light at either probe in the shot under the modal) and never
+        // in 75 runs since: should one be off again, its result folder keeps both shots and what was measured in them.
+        if (test.info().errors.length > failures) {
+          failures = test.info().errors.length;
+          const name = `backdrop-${modal.screen}-${theme}`;
+          writeFileSync(test.info().outputPath(`${name}-clear.png`), clear.png);
+          writeFileSync(test.info().outputPath(`${name}-under.png`), under.png);
+          const readings = { blur, dim, clear: { side: clear.side, main: clear.main, at: clear.frame }, under: { side: under.side, main: under.main, at: under.frame } };
+          writeFileSync(test.info().outputPath(`${name}.json`), `${JSON.stringify(readings, null, 2)}\n`);
+        }
         await page.keyboard.press("Escape");
         await page.locator("[role=dialog]").waitFor({ state: "detached" });
       }

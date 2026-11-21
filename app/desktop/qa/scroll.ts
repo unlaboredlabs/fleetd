@@ -1,6 +1,13 @@
 // The chat holding still under the reader (W733): watches, frame by frame once each has painted, the row under the
 // conversation's middle and the list's own box, and says every frame something other than the wheel moved them (a
 // picture loading above, a banner pushing the list down). perf/scroll.ts records the same in long runs.
+//
+// A row's move on screen is the list's content moving under it (a picture growing above it) less the list's scroll,
+// and the scroll is the page's own (a scrollTop write, scrollTo) or the browser's (the wheel's). The first two are
+// read in the same frame as the row, so any move they make that the other doesn't undo is said at once. The wheel's
+// scroll is matched with the wheel's events over the whole watch, not frame by frame: on macOS the browser scrolls on
+// its own thread and the page reads the event and the scroll it made in different frames, either first, up to 600 ms
+// apart on a loaded runner (W771). Whatever the browser scrolled that the wheel didn't ask for is said at the end.
 import type { Page } from "@playwright/test";
 
 /** Starts watching the chat's conversation. */
@@ -9,35 +16,55 @@ export const watchScroll = (page: Page) =>
     const el = document.querySelector<HTMLElement>('[aria-label="Conversation with the lead"]');
     if (!el) throw new Error("no conversation");
     const moves: string[] = [];
-    // Wheel deltas since the frame before, px the rows should move (up the wheel, down the rows).
+    // Px the wheel asked the rows to move (up the wheel, down the rows) since the watch began, and that less what the
+    // browser's scroll has moved them.
     let asked = 0;
-    el.addEventListener("wheel", (e) => (asked -= e.deltaY), { passive: true, capture: true });
+    let owed = 0;
+    el.addEventListener(
+      "wheel",
+      (e) => {
+        owed -= e.deltaY;
+        asked -= e.deltaY;
+      },
+      { passive: true, capture: true },
+    );
+    // Px the page's own writes scrolled the list since the frame before.
+    let own = 0;
+    const read = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop") as { get: (this: Element) => number; set: (this: Element, v: number) => void };
+    const written = (write: () => void) => {
+      const from = read.get.call(el);
+      write();
+      own += read.get.call(el) - from;
+    };
+    Object.defineProperty(el, "scrollTop", {
+      configurable: true,
+      get: () => read.get.call(el),
+      set: (v: number) => written(() => read.set.call(el, v)),
+    });
+    for (const name of ["scrollTo", "scroll", "scrollBy"] as const) {
+      const real = el[name].bind(el) as (...a: unknown[]) => void;
+      el[name] = (...a: unknown[]) => written(() => real(...a));
+    }
     let anchor: Element | null = null;
     let anchorTop = 0;
     let box = el.getBoundingClientRect();
-    let was = { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight };
-    /** A frame off by `off` with no wheel, waiting a frame: a wheel event read a frame late shows as -N then +N. */
-    let held: { off: number; what: string } | undefined;
+    let was = el.scrollTop;
     const after = new MessageChannel();
     after.port1.onmessage = () => {
       const r = el.getBoundingClientRect();
       if (Math.abs(r.top - box.top) >= 2 || Math.abs(r.height - box.height) >= 2) moves.push(`the list's box moved: top ${String(box.top)} -> ${String(r.top)}, height ${String(box.height)} -> ${String(r.height)}`);
       box = r;
-      const now = { top: el.scrollTop, height: el.scrollHeight, view: el.clientHeight };
-      // At either end the wheel moves less than it asks.
-      const ends = (s: typeof now) => s.top <= 1 || s.top + s.view >= s.height - 1;
+      const top = el.scrollTop;
+      // The browser's scroll since the frame before: the wheel's, or one it made by itself.
+      const browser = top - was - own;
       if (anchor?.isConnected === true) {
         const moved = anchor.getBoundingClientRect().top - anchorTop;
-        const off = asked !== 0 && (ends(now) || ends(was)) ? (Math.sign(moved) === Math.sign(asked) || moved === 0 ? 0 : moved) : moved - asked;
-        const what = `rows moved ${off.toFixed(0)} px more than the wheel (${String(asked)}) at scrollTop ${String(now.top)}`;
-        if (held !== undefined && Math.abs(held.off + off) < 2) held = undefined;
-        else {
-          if (held !== undefined) moves.push(held.what);
-          held = Math.abs(off) >= 2 ? { off, what } : undefined;
-        }
+        const off = moved + browser;
+        if (Math.abs(off) >= 2) moves.push(`rows moved ${off.toFixed(0)} px more than the wheel's scroll at scrollTop ${String(top)}`);
       }
-      asked = 0;
-      was = now;
+      owed += browser;
+      own = 0;
+      was = top;
       anchor = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest("[data-index]") ?? null;
       anchorTop = anchor?.getBoundingClientRect().top ?? 0;
     };
@@ -46,7 +73,13 @@ export const watchScroll = (page: Page) =>
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    Object.assign(window, { __scrollMoves: () => [...moves, ...(held === undefined ? [] : [held.what])] });
+    const end = () => {
+      // At the end the wheel pushed towards, it moves less than it asks.
+      const atEnd = asked > 0 ? el.scrollTop <= 1 : el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      const short = Math.sign(owed) === Math.sign(asked) && Math.abs(owed) <= Math.abs(asked) && atEnd;
+      return Math.abs(owed) < 2 || short ? [] : [`the list scrolled ${(-owed).toFixed(0)} px more than the wheel asked (${String(asked)}), ending at scrollTop ${String(el.scrollTop)}`];
+    };
+    Object.assign(window, { __scrollMoves: () => [...moves, ...end()] });
   });
 
 /** Every move since watchScroll that the wheel didn't make. */
