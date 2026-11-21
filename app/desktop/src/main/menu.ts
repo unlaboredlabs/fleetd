@@ -85,6 +85,8 @@ export const installMenu = (
         ...(mac ? [{ role: "pasteAndMatchStyle" } as const] : []),
         { role: "delete" },
         { role: "selectAll" },
+        separator,
+        item(opener, "chat.find", "Find in Chat"),
       ],
     },
     {

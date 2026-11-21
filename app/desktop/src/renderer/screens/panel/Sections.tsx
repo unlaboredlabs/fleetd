@@ -9,7 +9,7 @@
 // with its route; several land in one tab, the first of them its list and the others a place in it. A view the hub
 // doesn't serve (tabs.ts `feature`) isn't there: Agents without Sessions has no Screens group, and a tab whose every
 // view needs a feature shows once it is served.
-import { BookOpen, Bot, FileText, History, ListChecks, Ship, type LucideIcon } from "lucide-react";
+import { BookOpen, Bot, FileText, History, ListChecks, Pin, Ship, type LucideIcon } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { Tab, TabList, Tooltip } from "../../ui";
 import { forgetFolds } from "./folds";
@@ -65,6 +65,15 @@ export const SECTIONS: readonly Section[] = [
     line: "Reports the lead and its agents published here, every version kept, and the files sent in the chat.",
     views: ["artifacts"],
     pane: () => import("./panes").then((m) => m.ArtifactsTab),
+    tucked: true,
+  },
+  {
+    id: "pinned",
+    label: "Pinned",
+    icon: Pin,
+    line: "The messages pinned in this chat, the same for everyone in it.",
+    views: ["pinned"],
+    pane: () => import("./panes").then((m) => m.PinnedTab),
     tucked: true,
   },
   {

@@ -5,7 +5,7 @@
 // Agents, Sessions, Pull requests, Skills and Artifacts also name an item in their routes (one agent's work, one
 // session, one PR, one skill, one artifact); every other view is `{ tab }`. Skills is only its one skill, with no tab
 // or Go to command: the list is in the project's settings.
-import { Activity, AppWindow, BookOpen, Bot, FileText, GitPullRequest, ListChecks, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
+import { Activity, AppWindow, BookOpen, Bot, FileText, GitPullRequest, ListChecks, Pin, Scale, Send, TrainFront, type LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PanelView, ProjectKey } from "../shell/routes";
 
@@ -89,6 +89,14 @@ export const PANEL_TABS = [
     keywords: ["report", "reports", "artifact", "document", "page", "html", "markdown", "published", "versions"],
     back: "All artifacts",
     feature: "artifacts",
+  },
+  {
+    id: "pinned",
+    label: "Pinned",
+    icon: Pin,
+    detail: "The messages pinned in this chat",
+    keywords: ["pin", "pins", "pinned", "saved", "bookmark"],
+    feature: "chat_find_pins",
   },
   {
     id: "activity",

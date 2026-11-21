@@ -14,6 +14,7 @@ import { projectAgents } from "../agents/model";
 import { ArtifactsTabView } from "../artifacts/ArtifactsPane";
 import { ChecklistPane } from "../checklist/ChecklistPane";
 import { DecisionsPane } from "../decisions/DecisionsPane";
+import { PinnedPane } from "../chat/pins/PinnedPane";
 import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { openCount } from "../prs/words";
@@ -81,6 +82,11 @@ export function PlanTab({ project, view }: PaneProps) {
 /** What happened, or (a row away, with its way back) the decisions. */
 export function HistoryTab({ project, view }: PaneProps) {
   return view.tab === "decisions" ? <DecisionsPane project={project} /> : <ActivityPane project={project} view={view} />;
+}
+
+/** The chat's pinned messages, each opening the chat at it. */
+export function PinnedTab({ project }: PaneProps) {
+  return <PinnedPane project={project} />;
 }
 
 /** One of a project's skills, which asks for the frame's wide width. */

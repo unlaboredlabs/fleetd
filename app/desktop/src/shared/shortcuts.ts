@@ -22,6 +22,7 @@ export const SHORTCUTS = {
   "palette.toggle": { keys: "Mod+K", title: "Command Palette", section: "General" },
   "shortcuts.show": { keys: "Mod+/", title: "Keyboard Shortcuts", section: "General" },
   "composer.focus": { keys: "Mod+L", title: "Focus Composer", section: "General" },
+  "chat.find": { keys: "Mod+F", title: "Find in Chat", section: "General" },
   "sidebar.toggle": { keys: "Mod+B", title: "Toggle Sidebar", section: "General" },
   "panel.toggle": { keys: "Mod+Alt+B", title: "Toggle Panel", section: "General" },
   ...jump,

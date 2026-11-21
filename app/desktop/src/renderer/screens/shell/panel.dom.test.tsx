@@ -435,7 +435,7 @@ const selectedTab = () => panel()?.querySelector<HTMLElement>("[role='tab'][aria
 
 it("has one row of tabs and no other: every view is a route that selects its tab and shows its list, with no tabs inside", async () => {
   // A hub that serves every view, browser sessions and artifacts too; storefront has none published.
-  await mount({ features: ["browser_sessions", "artifacts"] });
+  await mount({ features: ["browser_sessions", "artifacts", "chat_find_pins"] });
   expect(outer().map((tab) => tab.textContent.replace(/[0-9]+$/u, ""))).toEqual(["Agents", "Shipping", "Plan", "History"]);
   // Skills has no tab of its own (below).
   for (const tab of PANEL_TABS.filter((t) => t.id !== "skills")) {
@@ -476,6 +476,7 @@ const LANDS: readonly (readonly [route: string, tab: string | null, screen: stri
   ["artifacts", "artifacts", "artifacts"],
   ["artifacts/dependency-sweep", "artifacts", "artifact"],
   ["artifacts/dependency-sweep/1", "artifacts", "artifact"],
+  ["pinned", "pinned", "pinned"],
   ["activity", "history", "activity"],
   ["activity/dms", "history", "activity"],
   ["decisions", "history", "decisions"],
@@ -485,7 +486,7 @@ const LANDS: readonly (readonly [route: string, tab: string | null, screen: stri
 
 it("lands every route the panel ever had on its tab and view", async () => {
   artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
-  await mount({ features: ["browser_sessions", "artifacts"] });
+  await mount({ features: ["browser_sessions", "artifacts", "chat_find_pins"] });
   const landed: (readonly [string, string | null, string | undefined])[] = [];
   for (const [route] of LANDS) {
     await go(`${CHAT}/${route}`);
@@ -496,10 +497,10 @@ it("lands every route the panel ever had on its tab and view", async () => {
 
 it("lands each of the palette's Go to commands, and the view the panel was last left on, on its tab and view", async () => {
   artifacts = [{ name: "dependency-sweep", newest: SWEEP }];
-  await mount({ features: ["browser_sessions", "artifacts"] });
+  await mount({ features: ["browser_sessions", "artifacts", "chat_find_pins"] });
   // Shell.tsx's commands, one per view with a list: each goes to that view's route.
   const commands = PANEL_TABS.filter((t) => !("itemOnly" in t));
-  expect(commands.map((t) => t.label)).toEqual(["Agents", "Screens", "Pull requests", "Train", "Checklist", "Artifacts", "Activity", "Decisions", "Asked work"]);
+  expect(commands.map((t) => t.label)).toEqual(["Agents", "Screens", "Pull requests", "Train", "Checklist", "Artifacts", "Pinned", "Activity", "Decisions", "Asked work"]);
   const want = new Map(LANDS.map(([route, tab, screen]) => [route, [tab, screen]]));
   for (const tab of commands) {
     await go(toHash(panelRoute(STORE, listView(tab.id))));
@@ -511,7 +512,7 @@ it("lands each of the palette's Go to commands, and the view the panel was last 
     unmount();
     window.location.hash = CHAT;
     window.localStorage.setItem("fleetd.panel", JSON.stringify({ open: true, tab }));
-    await mount({ features: ["browser_sessions", "artifacts"] });
+    await mount({ features: ["browser_sessions", "artifacts", "chat_find_pins"] });
     expect([tab, selectedTab(), screenNow()]).toEqual([tab, ...(want.get(tab) ?? [])]);
   }
 });

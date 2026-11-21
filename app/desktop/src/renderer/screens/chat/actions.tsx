@@ -33,6 +33,8 @@ export interface BubbleActions {
   readonly seen?: ((id: string) => void) | undefined;
   /** The project's chat is tagged (its trial is on): its tags and lens (lens/tags.ts). */
   readonly tags?: TagActions | undefined;
+  /** The chat's pins, the same for everyone in it: which messages are pinned, and Pin / Unpin. Absent on a hub without them. */
+  readonly pins?: { readonly pinned: ReadonlySet<string>; readonly set: (messageId: string, pinned: boolean) => void } | undefined;
 }
 
 export interface TagActions {

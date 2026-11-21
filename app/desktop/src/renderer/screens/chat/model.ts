@@ -50,7 +50,9 @@ export type Row =
   | { readonly kind: "event"; readonly key: string; readonly item: ChatItem }
   | { readonly kind: "inline"; readonly key: string; readonly item: ChatItem }
   /** Above the first message you hadn't seen when the chat opened. */
-  | { readonly kind: "new"; readonly key: "new" };
+  | { readonly kind: "new"; readonly key: "new" }
+  /** A window opened far back (a search hit, a pin) with more after it: reaching it reads the next page. */
+  | { readonly kind: "bottom"; readonly key: "bottom"; readonly loading: boolean };
 
 export type TopState = "more" | "loading" | "start" | "held" | "reread";
 
@@ -193,6 +195,8 @@ export interface RowsInput {
   readonly timeZone?: string;
   /** The project's chat is tagged (its trial is on): tags and the lens, as lens/tags.ts lays them out. */
   readonly tags?: Tags | undefined;
+  /** A window far back with more after it (ChatView.window): its last row reads on. */
+  readonly newer?: { readonly loading: boolean } | undefined;
 }
 
 /**
@@ -294,6 +298,7 @@ export function chatRows(i: RowsInput): Row[] {
     const next = out[n + 1];
     if (r.kind === "message" && next?.kind === "message" && !next.run) out[n] = { ...r, end: false };
   });
+  if (i.newer !== undefined) out.push({ kind: "bottom", key: "bottom", loading: i.newer.loading });
   return out;
 }
 

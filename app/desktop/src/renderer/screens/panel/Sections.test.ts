@@ -32,12 +32,13 @@ describe("the panel's one row", () => {
       checklist: "plan",
       asked: "plan",
       artifacts: "artifacts",
+      pinned: "pinned",
       activity: "history",
       decisions: "history",
       skills: "skills",
     });
     // A tab opens on its list; the views after it are a place in that list or a row away, never a second row.
-    expect(SECTIONS.map((g) => `${g.id}:${listOf(g.id)}`)).toEqual(["agents:agents", "shipping:prs", "plan:checklist", "artifacts:artifacts", "history:activity"]);
+    expect(SECTIONS.map((g) => `${g.id}:${listOf(g.id)}`)).toEqual(["agents:agents", "shipping:prs", "plan:checklist", "artifacts:artifacts", "pinned:pinned", "history:activity"]);
   });
 });
 

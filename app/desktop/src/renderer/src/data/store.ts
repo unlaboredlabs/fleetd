@@ -30,7 +30,7 @@ import {
 } from "../../../shared/contracts";
 import { WAKE_QUIET_MS, type HubFrame, type HubState, type BrowserFrame } from "../../../shared/hub";
 import { compareVersions } from "../../../shared/pairing";
-import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend } from "./chat";
+import { applyDelta, emptyChat, heldChat, mergeLive, settleSends, type Chat, type ChatSend, type ChatWindow } from "./chat";
 import type { AgentRow, ScreenThumb } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
@@ -127,6 +127,8 @@ export interface DataState {
   readonly chats: Readonly<Record<ProjectKey, Chat>>;
   /** The person's messages not yet settled by the hub. Theirs, not the hub's: kept across reconnects. */
   readonly chatSends: Readonly<Record<ProjectKey, readonly ChatSend[]>>;
+  /** A chat opened far back (a search hit, a pin), until it joins the chat or the person goes back to the latest. */
+  readonly chatWindows?: Readonly<Record<ProjectKey, ChatWindow>> | undefined;
   /** Per project: whether its lead waits on the person, and whether it works. */
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
   /** Whether this hub can stop a lead mid-turn (chat_stop); undefined until asked, again on each connection. */
@@ -285,6 +287,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
           agents: undefined,
           details: {},
           chats: heldChats(s.chats),
+          // A window is this connection's: the chat reopens at its latest page.
+          chatWindows: undefined,
           chatStates: byId(snap.chats ?? [], (c) => projectKey(c.projectRef)),
           chatStop: undefined,
           update: snap.update ?? undefined,

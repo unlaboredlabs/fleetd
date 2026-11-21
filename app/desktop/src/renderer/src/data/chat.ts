@@ -176,6 +176,58 @@ export const applyDelta = (chat: Chat, d: ChatDelta, hubNowMs: number): Chat => 
   return { ...chat, streams: { ...chat.streams, [d.messageId]: { text: next, at } } };
 };
 
+// A window on a far-back part of the chat: a search hit or a pin opened where the chat isn't loaded, read around its
+// message (chat_history's `around`) rather than everything up to it. It pages both ways on its own while the chat goes
+// on underneath (live messages land there, never in it), and once its newest message reaches the chat's oldest it
+// joins the chat, which then holds it all, as if paged back to.
+
+export interface ChatWindow {
+  /** The message it was opened at. */
+  readonly at: string;
+  /** Oldest first, by seq, with no gap. */
+  readonly messages: readonly ChatMessage[];
+  readonly hasOlder: boolean;
+  readonly hasNewer: boolean;
+  readonly loadingOlder: boolean;
+  readonly loadingNewer: boolean;
+}
+
+/** A window from its first page, around message `at`. */
+export const openWindow = (at: string, page: Pick<ChatHistoryOutput, "messages" | "moreBefore" | "moreAfter">): ChatWindow => ({
+  at,
+  messages: [...page.messages].sort((a, b) => a.seq - b.seq),
+  hasOlder: page.moreBefore,
+  hasNewer: page.moreAfter,
+  loadingOlder: false,
+  loadingNewer: false,
+});
+
+/** A page before (`older`) or after the window's messages, folded in. */
+export const pageWindow = (w: ChatWindow, page: Pick<ChatHistoryOutput, "messages" | "moreBefore" | "moreAfter">, older: boolean): ChatWindow => {
+  const byId = new Map(w.messages.map((m) => [m.messageId, m]));
+  for (const m of page.messages) {
+    const current = byId.get(m.messageId);
+    if (current === undefined || newer(m, current)) byId.set(m.messageId, m);
+  }
+  const messages = [...byId.values()].sort((a, b) => a.seq - b.seq);
+  return older
+    ? { ...w, messages, hasOlder: page.moreBefore, loadingOlder: false }
+    : { ...w, messages, hasNewer: page.moreAfter && page.messages.length > 0, loadingNewer: false };
+};
+
+/** Whether the window reaches the chat's loaded messages: nothing lies between its newest and the chat's oldest. */
+export const windowJoins = (w: ChatWindow, chat: Chat): boolean => {
+  const newest = w.messages.at(-1)?.seq;
+  const oldest = chat.messages[0]?.seq;
+  return !w.hasNewer || (newest !== undefined && oldest !== undefined && newest + 1 >= oldest);
+};
+
+/** The chat with the window joined to it: its messages as an older page, and what lies before them. */
+export const joinWindow = (chat: Chat, w: ChatWindow): Chat => ({ ...mergeMessages(chat, w.messages, true), hasOlder: w.hasOlder });
+
+/** Whether the chat already holds message `id`, so it opens there with no window. */
+export const holds = (chat: Chat, id: string): boolean => chat.messages.some((m) => m.messageId === id);
+
 // The person's messages on their way.
 
 export type SendState =

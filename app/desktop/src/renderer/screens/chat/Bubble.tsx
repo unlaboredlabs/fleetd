@@ -3,7 +3,7 @@
 // cards. While the lead writes, a typing bubble stands in for the text. Hovering a bubble shows its time and, on the
 // lead's, a tapback and Reply; right-clicking one copies it, and on the lead's replies or reacts too. A reply of yours
 // shows the bubble it answers above it.
-import { Check, Paperclip, Reply, Send, SmilePlus, Tag } from "lucide-react";
+import { Check, Paperclip, Pin, PinOff, Reply, Send, SmilePlus, Tag } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { AttachmentRef } from "../../../shared/contracts";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
@@ -234,6 +234,10 @@ function BubbleLine(props: {
   const retags = tags !== undefined && item.message !== undefined && item.state !== "streaming";
   // Of a message about several orders, this bubble's.
   const about = partAbout(item, bubble.key)?.workstreamId ?? aboutOf(item);
+  // Any message the hub has, yours or the lead's, once its words are final.
+  const pins = actions?.pins;
+  const pinnable = pins !== undefined && item.message !== undefined && item.state === "sent";
+  const pinned = pinnable && pins.pinned.has(item.id);
   const menu = () => (
     <>
       {words ? (
@@ -271,11 +275,17 @@ function BubbleLine(props: {
           </ContextMenuItem>
         </ContextMenuSub>
       ) : null}
+      {pinnable && (words || answers || retags) ? <ContextMenuSeparator /> : null}
+      {pinnable ? (
+        <ContextMenuItem icon={pinned ? <PinOff /> : <Pin />} onSelect={() => pins.set(item.id, !pinned)}>
+          {pinned ? "Unpin" : "Pin"}
+        </ContextMenuItem>
+      ) : null}
     </>
   );
   return (
     <div className={cx(s.line, wide && s.wide, props.tapback !== undefined && s.reacted, enter.className)} style={enter.style}>
-      <ContextMenu menu={menu} disabled={!words && !answers && !retags}>
+      <ContextMenu menu={menu} disabled={!words && !answers && !retags && !pinnable}>
         <div
           ref={box}
           // Focusable from script while it is what Show went to; not a tab stop of its own.

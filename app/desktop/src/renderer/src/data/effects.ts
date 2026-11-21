@@ -131,6 +131,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   }
   // You pinned or unpinned a chat on another device: this sidebar follows (the hub sends it to your devices only).
   if (type === "chat.pins") out.push({ tool: "chat_pins_get" });
+  // Someone pinned or unpinned a message of a bot's chat: its capsule and Pinned list follow, in every app.
+  if (type === "chat.message_pins") out.push({ tool: "chat_message_pins" });
   // You changed your sections of chats on another device: the same.
   if (type === "chat.sections") out.push({ tool: "chat_sections_get" });
   // A device paired: Your devices shows it, and Pair a phone notices it.
