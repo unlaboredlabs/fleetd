@@ -38,7 +38,7 @@ import { type BrokerHost, BrowserBroker } from "./broker.ts";
 import { vaultFor } from "./onepassword.ts";
 import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
 import { Proxy } from "./proxy.ts";
-import { DiskRecordings, findFfmpeg, recordingsDir } from "./record.ts";
+import { DiskRecordings, findFfmpeg, recordingsDir, Steps } from "./record.ts";
 import { HEIGHT, WIDTH } from "./session.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "./node.ts";
 import type { ScreenHooks, SessionsArea } from "../api.ts";
@@ -102,7 +102,8 @@ export class Broker extends BrowserBroker {
 
   constructor(node: Node, launcher?: Launcher, options: BrokerOptions = {}) {
     const self: { broker?: Broker } = {};
-    super(nodeHost(node, () => self.broker!));
+    // A session's latest step goes from the heartbeat once its recording reached the hub and its folder went.
+    super(nodeHost(node, () => self.broker!), new Steps());
     self.broker = this;
     this.node = node;
     this.home = node.home;
