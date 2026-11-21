@@ -1,0 +1,163 @@
+/* The pinned capsule: a small glass capsule just under the chat's pill, left-aligned with it. */
+.capsule {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--top-bar-height) - var(--glass-inset) + 8px);
+  left: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(340px, calc(100% - 2 * var(--space-3)));
+  height: 28px;
+  padding: 0 10px 0 9px;
+  border: none;
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    var(--glass-lift);
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text);
+  cursor: pointer;
+  animation: pin-in var(--dur-base) var(--ease-out);
+  transition: box-shadow var(--dur-quick) var(--ease-snap);
+  -webkit-app-region: no-drag;
+}
+.capsule:hover {
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 100px var(--glass-hover),
+    var(--glass-lift);
+}
+.capsule:active {
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 100px var(--glass-pressed),
+    var(--glass-lift);
+}
+.capsule:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+@keyframes pin-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.pin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--quiet);
+  transform: rotate(35deg);
+}
+.text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.count {
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--selected);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The panel's Pinned list: rows with a faint shade under the pointer, no rules between them. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+}
+.row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--dur-quick) var(--ease-snap);
+}
+.row:hover {
+  background: var(--hover);
+}
+.row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.who {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.when {
+  flex: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.body {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-md);
+  line-height: 1.4;
+  color: var(--quiet);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.by {
+  font-size: var(--text-xs);
+  color: var(--faint);
+}
+.unpin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.row:hover .unpin,
+.row:focus-within .unpin {
+  opacity: 1;
+}
+.row:hover .when,
+.row:focus-within .when {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule {
+    animation: none;
+  }
+}

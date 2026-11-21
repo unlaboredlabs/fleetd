@@ -95,6 +95,10 @@ describe("event effects", () => {
     expect(effectsOf(e("chat.pins"))).toEqual({ invalidate: [{ tool: "chat_pins_get" }], resync: false });
   });
 
+  it("someone pinned or unpinned a message: the chat's pins are read again, in every app", () => {
+    expect(effectsOf(e("chat.message_pins"))).toEqual({ invalidate: [{ tool: "chat_message_pins" }], resync: false });
+  });
+
   it("your sections changed on another device: this sidebar reads them again, and nothing else", () => {
     expect(effectsOf(e("chat.sections"))).toEqual({ invalidate: [{ tool: "chat_sections_get" }], resync: false });
   });

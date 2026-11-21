@@ -299,6 +299,10 @@ export const fixtures = [
   "checklist-listed",
   "checklist-empty",
   "artifacts-published",
+  // The chat's search and pins (fixtures/find): searchable with nothing pinned, one pin, three pins.
+  "find-search",
+  "find-pin-one",
+  "find-pins",
   "artifacts-none",
   // The panel's Train, Activity and Decisions tabs (fixtures/train, fixtures/activity, fixtures/decisions).
   "train-full",
@@ -1324,6 +1328,92 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.locator('[data-opens="panel"]').click();
       await page.getByRole("complementary", { name: "Bot panel" }).waitFor({ state: "detached" });
+    },
+  },
+  // The chat's search (W773): ⌘F opens a glass field at the top row's end with the filters to pick; words find hits,
+  // newest first with the words marked and a count; words that find nothing say so.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-search"],
+    variant: "find-open",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.keyboard.press("ControlOrMeta+F");
+      const field = page.getByRole("combobox", { name: "Search this chat" });
+      await expect(field).toBeFocused();
+      await expect(page.getByRole("listbox", { name: "Filters" }).getByRole("option", { name: "From the lead" })).toBeVisible();
+    },
+  },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-search"],
+    variant: "find-hits",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.keyboard.press("ControlOrMeta+F");
+      await page.getByRole("combobox", { name: "Search this chat" }).fill("deploy");
+      const results = page.getByRole("listbox", { name: "Results" });
+      await expect(results.getByRole("option").first()).toContainText("deploy");
+      await expect(page.locator("[data-find]")).toContainText("4");
+    },
+  },
+  // A filter alone, no words: its hits, not the filters left to pick.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-search"],
+    variant: "find-filter",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.keyboard.press("ControlOrMeta+F");
+      await page.getByRole("listbox", { name: "Filters" }).getByRole("option", { name: "From the lead" }).click();
+      await expect(page.getByRole("listbox", { name: "Results" }).getByRole("option").first()).toContainText("deploy");
+      await expect(page.locator("[data-find]")).toContainText("From the lead");
+    },
+  },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-search"],
+    variant: "find-none",
+    open: async (page) => {
+      await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
+      await page.keyboard.press("ControlOrMeta+F");
+      await page.getByRole("combobox", { name: "Search this chat" }).fill("kiwi");
+      await expect(page.locator("[data-find]")).toContainText("No results");
+    },
+  },
+  // Pins: the capsule under the chat's pill with the newest pin's first line; with several, its count, and a click
+  // opens the panel's Pinned list.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-pin-one"],
+    variant: "pins-one",
+    open: async (page) => {
+      await expect(page.locator("[data-pins]")).toContainText("Three things before launch");
+    },
+  },
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["find-pins"],
+    variant: "pins-several",
+    open: async (page) => {
+      await expect(page.locator('[data-pins="3"]')).toContainText("3");
+    },
+  },
+  {
+    id: "shell",
+    route: CHAT,
+    fixtures: ["find-pins"],
+    variant: "panel-pinned",
+    open: async (page) => {
+      await page.locator('[data-pins="3"]').click();
+      const panel = page.getByRole("complementary", { name: "Bot panel" });
+      await expect(panel.locator('[data-pane="pinned"]').getByRole("listitem")).toHaveCount(3);
     },
   },
   // The panel's Artifacts (W367): the reports published in the chat, newest first; a Markdown one at an older version

@@ -237,11 +237,27 @@ Hits come newest first with your words marked and a count of them all, and openi
 message, where you can read on from there. A search reads only that bot's chat, never another's, and the lead never
 hears of it.
 
+In the desktop app and the web app, press ⌘F (Ctrl+F) in a chat: the search field floats at the top row's end, and
+results show as you type. Pick a filter from the list under the empty field, or type it: `from:lead`, `from:me`,
+`from:ada`, `has:link`, `has:image`, `has:file`, `has:pr`, `has:pinned`, `on:2026-10-14` (or `on:today`),
+`before:` and `after:` a day. Backspace in the empty field takes off the last filter. ↑ and ↓ move through the results
+and Enter opens one; after that Enter and ⇧Enter (or ↓ and ↑) step to the next older and newer hit, with "3 of 48" at
+the field's end. Esc closes it and takes you back to where you were. A hit far back opens there with the messages
+around it, not the whole chat in between; **Latest** takes you back to the end.
+
+On the phone, the chat's info page (tap its name) has a search bar: results show as you type, with filters in the
+bar's menu and as tokens (From, Date or a day picked from a calendar, Links, Photos, Files, Pull Requests, Pinned)
+and a count; tap a hit to open the chat at that message.
+
 ## Pin messages {#pins}
 
 Pin a message to find it again in one click: an answer you'll need, a decision, a link. Any message can be pinned, yours
 or the lead's. Pins belong to the bot's chat, not to you: everyone in the bot sees the same ones, in every open app at
 once, with who pinned each and when. A chat holds up to 50. Unpinning takes a message off the list; the message stays.
+
+Right-click a message (press and hold on the phone) for **Pin** or **Unpin**. The newest pin shows in a small capsule
+under the chat's name: with one pin it opens the chat at that message; with several it opens **Pinned**, in the panel
+on the desktop and in a sheet on the phone, where each pin opens the chat at its message and Unpin is on the row.
 
 ## Earlier work {#history}
 

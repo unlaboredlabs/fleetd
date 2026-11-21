@@ -5,6 +5,7 @@ export const MENU_COMMANDS = [
   "app.checkForUpdates",
   "go:projects.add",
   "composer.focus",
+  "chat.find",
   "factory.open",
   "go:time",
   "palette.toggle",

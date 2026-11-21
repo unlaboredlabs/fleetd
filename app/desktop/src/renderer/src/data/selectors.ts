@@ -11,7 +11,7 @@
 import type { AgentLane, LiveLane, Machine, MachineLive, PrRef, ProjectChatState, ProjectSummary } from "../../../shared/contracts";
 import type { AgentRow } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
-import { chatItems, type ChatItem, type ChatSend } from "./chat";
+import { chatItems, emptyChat, type ChatItem, type ChatSend } from "./chat";
 import { projectKey, settled, type DataState, type ProjectKey } from "./store";
 import { leadLaneId } from "../../../shared/turnWords";
 
@@ -360,6 +360,8 @@ export interface ChatView {
   readonly offline: boolean;
   /** While held: when what is shown was last current. */
   readonly asOf?: number | undefined;
+  /** Opened far back (chat.ts's window): what it shows is a part of the chat, with more after it or not. */
+  readonly window?: { readonly at: string; readonly hasNewer: boolean; readonly loadingNewer: boolean } | undefined;
 }
 
 const noSends: readonly ChatSend[] = [];
@@ -370,10 +372,21 @@ const noSends: readonly ChatSend[] = [];
  */
 export const selectChat = perKey((key) =>
   memo(
-    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends, s.asOf],
-    (fresh, chat, sends, asOf): ChatView | undefined => {
+    (s) => [s.fresh, s.chats[key], s.chatSends[key] ?? noSends, s.asOf, s.chatWindows?.[key]],
+    (fresh, chat, sends, asOf, w): ChatView | undefined => {
       if (chat === undefined || (!chat.loaded && chat.cached !== true)) return undefined;
       const held = !fresh || !chat.loaded;
+      if (w !== undefined && !held) {
+        // A window shows its own messages; the person's sends and the live ones are the chat's, at its end.
+        return {
+          items: chatItems({ ...emptyChat, messages: w.messages }, noSends),
+          hasOlder: w.hasOlder,
+          loadingOlder: w.loadingOlder,
+          held: false,
+          offline: false,
+          window: { at: w.at, hasNewer: w.hasNewer, loadingNewer: w.loadingNewer },
+        };
+      }
       return {
         items: chatItems(chat, sends),
         hasOlder: chat.hasOlder,

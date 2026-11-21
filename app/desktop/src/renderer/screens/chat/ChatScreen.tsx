@@ -7,7 +7,7 @@
 // The conversation scrolls on under the window's top row too, where the chat's pill floats as a glass capsule: its
 // picture and name, which opens and closes the project's panel (its agents, PRs, checklist and a way to its settings);
 // an empty chat asks what to do. It opens where you stopped reading, under a "New" divider.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BubbleActionsContext, type BubbleActions, type ReplyTarget, type TagActions } from "./actions";
 import { Button, FrameTitle, IdChip, markShown, StatusChip, Text, toast } from "../../ui";
 import type { ChatAbout } from "../../../shared/contracts";
@@ -28,6 +28,8 @@ import { useChatData } from "./data";
 import { EmptyChat } from "./EmptyChat";
 import { arrivalsOf, chatRows, heldLabel, isMine, keepRows, rowIndexOf, type Arrivals, type Row } from "./model";
 import { ChatComposer } from "./Composer";
+import { PinCapsule, useFindPins, useGoTo, usePinActions, usePins } from "./pins/pins";
+import { listView, panelRoute } from "../shell/routes";
 import type { ProjectRef } from "./slots";
 import { useAsOfWords } from "../shell/offline";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
@@ -39,6 +41,9 @@ import { display } from "../../../shared/shortcuts";
 import { usePersonNames } from "../admin/names";
 import { useHubRole } from "../admin/role";
 import s from "./view.module.css";
+
+/** The search field loads with its first ⌘F, not with the chat. */
+const Find = lazy(() => import("./find/Find").then((m) => ({ default: m.Find })));
 
 /** The gap between the conversation's last row and the island's band, px (--space-2). */
 const ISLAND_CLEAR = 8;
@@ -113,7 +118,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
             held: view.held,
             offline: view.offline,
             worked,
-            seenSeq,
+            // Opened far back, nothing in it is new; its end reads on.
+            seenSeq: view.window === undefined ? seenSeq : undefined,
+            newer: view.window?.hasNewer === true ? { loading: view.window.loadingNewer } : undefined,
             me,
             names,
             tags,
@@ -148,7 +155,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   // Show to what isn't loaded yet (an approval pages back): older pages load until it is, or there are none.
   const away = shown !== undefined && items !== undefined && !items.some((i) => i.id === shown.id);
   // A page that failed stops it: no retrying in a loop.
-  const loadOlder = data.loadOlder;
+  const layerOf = useDataLayer();
+  const windowed = view?.window !== undefined;
+  const loadOlder = useMemo(() => (windowed ? () => layerOf.chat.pageWindow(key, true) : data.loadOlder), [windowed, layerOf, key, data.loadOlder]);
   const halted = view?.loadingOlder === true || view?.error !== undefined;
   useEffect(() => {
     if (away && older && !halted) loadOlder();
@@ -170,6 +179,8 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
     }
   }
   const empty = view !== undefined && view.items.length === 0 && !view.hasOlder;
+  // Who a search's from: can name: the hub's people, and you.
+  const who = useMemo(() => ({ people: [...names].map(([personId, name]) => ({ personId, name })), me }), [names, me]);
   const title = data.title ?? "";
   const summary = useData((d) => d.projects[key]);
   // Its bot: what the bar says, and done for a moment after the lead's turn ends.
@@ -180,12 +191,62 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const bot = { needs: barWaiting !== undefined, blocked: !held && data.blocked !== undefined, done: justDone };
   const [replyTo, setReplyTo] = useState<ReplyTarget>();
   const onSent = useCallback(() => {
-    // Back to following the newest message.
+    // Back to following the newest message, out of a window far back.
+    layerOf.chat.leaveWindow(key);
     setShown(undefined);
     setReplyTo(undefined);
     setSent((n) => n + 1);
-  }, []);
-  const layer = useDataLayer();
+  }, [layerOf, key]);
+  const layer = layerOf;
+  // Search (⌘F) and pins. A hit or a pin opens the chat at its message, read around it when it is far back; Esc from
+  // search goes back to where you were: the message you were reading, or the end.
+  const findPins = useFindPins();
+  const pins = usePins(project);
+  const pinActions = usePinActions(project, pins);
+  const [finding, setFinding] = useState(0);
+  const place = useRef<(() => string | undefined) | undefined>(undefined);
+  const back = useRef<{ readonly id: string | undefined } | null>(null);
+  const goTo = useCallback(
+    (id: string, remember: boolean) => {
+      if (remember && back.current === null) back.current = { id: place.current?.() };
+      setLooking(undefined);
+      void layer.chat.jump(key, id).then((error) => {
+        if (error !== undefined) {
+          toast({ title: "Couldn’t open that message", description: error.message, key: `jump:${id}` });
+          return;
+        }
+        const at = Date.now();
+        setShown((p) => ({ id, n: (p?.n ?? 0) + 1, at }));
+      });
+    },
+    [layer, key],
+  );
+  const toEnd = useCallback(() => {
+    layer.chat.leaveWindow(key);
+    setShown(undefined);
+    setSent((n) => n + 1);
+  }, [layer, key]);
+  const closeFind = useCallback(() => {
+    setFinding(0);
+    const was = back.current;
+    back.current = null;
+    if (was === null) return;
+    if (was.id === undefined) toEnd();
+    else {
+      const id = was.id;
+      void layer.chat.jump(key, id).then((error) => {
+        // Not there (offline, a timeout): the chat stays where it is rather than paging back to look for it.
+        if (error === undefined) setShown((p) => ({ id, n: (p?.n ?? 0) + 1 }));
+      });
+    }
+  }, [layer, key, toEnd]);
+  useGoTo(project, useCallback((id: string) => goTo(id, false), [goTo]));
+  const windowActions = useMemo(() => ({ onLoadNewer: () => layer.chat.pageWindow(key, false), onLatest: toEnd }), [layer, key, toEnd]);
+  const openPins = () => {
+    const only = pins.length === 1 ? pins[0] : undefined;
+    if (only !== undefined) goTo(only.messageId, false);
+    else navigate(panelRoute(project, listView("pinned")));
+  };
   // The island's room at the conversation's end: from its band's top to the screen's bottom, and a gap over it. The
   // band counts as tall whether anything floats in it or not, so only the pill growing with its words changes it: at
   // the end, the last message rides up with it (ChatList); scrolled up, nothing moves. The list's own box never
@@ -335,11 +396,13 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       lookAt,
       seen,
       tags: tagActions,
+      pins: pinActions,
     }),
-    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen, tagActions],
+    [project, waitedOn, question, onSent, layer, key, mark, lookAt, seen, tagActions, pinActions],
   );
 
   const panel = usePanelHandle();
+  const findOn = findPins && view !== undefined && !data.missing;
   // Its settings left the top bar for the panel's tab row; ⌘K reaches them from anywhere in the chat too.
   const settingsShown = summary !== undefined && !data.missing;
   useCommands(
@@ -353,8 +416,17 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         enabled: () => settingsShown,
         run: () => navigate({ id: "settings", tab: "projects", for: key }),
       },
+      {
+        id: "chat.find",
+        title: "Find in this chat",
+        detail: "Search the whole conversation",
+        group: "actions",
+        keywords: ["search", "find", "look up"],
+        enabled: () => findOn,
+        run: () => setFinding((n) => n + 1),
+      },
     ],
-    [],
+    [findOn],
   );
   // A red main: the island's dot, its reason in the island's card. The train keeps merging, so it is no block.
   const warning = view?.held === true ? undefined : data.warning;
@@ -389,6 +461,14 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
         }
       >
         {lens === undefined ? null : <LensCapsule about={lens} phase={phase} onClose={closeLens} />}
+        {/* In the top row, which floats over the conversation: search at its end, the newest pin under the pill. */}
+        {finding > 0 ? (
+          <Suspense fallback={null}>
+            <Find focus={finding} project={project} bot={title} who={who} names={names} onJump={(id) => goTo(id, true)} onClose={closeFind} />
+          </Suspense>
+        ) : findPins && !data.missing && lens === undefined ? (
+          <PinCapsule pins={pins} onOpen={openPins} />
+        ) : null}
       </FrameTitle>
       {notice ? (
         // Connected, but this chat's newest page couldn't be read: it stays marked as last known, with why.
@@ -427,7 +507,22 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
           <EmptyChat project={project} title={title} pictured={summary} />
         ) : (
           <BubbleActionsContext.Provider value={actions}>
-            <ChatList key={lens?.workstreamId ?? ""} rows={rows} project={project} under={under} onLoadOlder={data.loadOlder} openAt={openAt} openSeq={shown?.n} openPart={shown?.part} sent={sent} entering={arrived?.entering} inset={inset} latestSlot={latestSlot} />
+            <ChatList
+              key={lens?.workstreamId ?? ""}
+              rows={rows}
+              project={project}
+              under={under}
+              onLoadOlder={loadOlder}
+              openAt={openAt}
+              openSeq={shown?.n}
+              openPart={shown?.part}
+              sent={sent}
+              entering={arrived?.entering}
+              inset={inset}
+              latestSlot={latestSlot}
+              window={windowed ? windowActions : undefined}
+              placeRef={place}
+            />
           </BubbleActionsContext.Provider>
         )}
         <div className={s.fade} aria-hidden />

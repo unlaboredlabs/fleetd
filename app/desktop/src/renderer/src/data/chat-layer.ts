@@ -13,9 +13,15 @@ import {
   settleSends,
   toResend,
   upsertSend,
+  holds as holdsMessage,
+  joinWindow,
+  openWindow,
+  pageWindow,
+  windowJoins,
   type CallResult,
   type Chat,
   type ChatSend,
+  type ChatWindow,
 } from "./chat";
 import type { AttachmentRef, ChatHistoryOutput, ChatReplyTo, ChatSendInput, ChatStopInput, ChatStopOutput } from "./chat-contract";
 import { lacksTool } from "./errors";
@@ -64,7 +70,19 @@ export interface ChatActions {
    * The hub's copy shows at once; undefined once it has, else why not.
    */
   retag(key: ProjectKey, messageId: string, workstreamId: string | undefined): Promise<HubError | undefined>;
+  /**
+   * Opens the chat at message `messageId` (a search hit, a pin): held already, nothing to read; else a window read
+   * around it (chat.ts), which joins the chat once it reaches it. Resolves once it can be shown, or with why not.
+   */
+  jump(key: ProjectKey, messageId: string): Promise<HubError | undefined>;
+  /** The page before or after a window's messages; one that reaches the chat joins it. */
+  pageWindow(key: ProjectKey, older: boolean): void;
+  /** Back to the latest: the window goes. */
+  leaveWindow(key: ProjectKey): void;
 }
+
+/** The messages a window reads around its message. */
+export const WINDOW_PAGE = 50;
 
 const TRANSIENT = new Set(["timeout", "offline", "disconnected"]);
 
@@ -336,7 +354,64 @@ export const createChatActions = (
     return undefined;
   };
 
-  const actions: ChatActions = { open, close, loadOlder, send, retry, discard: dropRow, probeStop, stop, retag };
+  const windows = (st: DataState) => st.chatWindows ?? {};
+  /** `w` as `key`'s window, or joined to its chat when it reaches it. */
+  const putWindow = (key: ProjectKey, w: ChatWindow | undefined) =>
+    update((st) => {
+      const rest = Object.fromEntries(Object.entries(windows(st)).filter(([k]) => k !== key));
+      if (w === undefined) return { chatWindows: rest };
+      const chat = chatOf(st, key);
+      if (windowJoins(w, chat)) return { chatWindows: rest, chats: { ...st.chats, [key]: joinWindow(chat, w) } };
+      return { chatWindows: { ...rest, [key]: w } };
+    });
+
+  const jump: ChatActions["jump"] = async (key, messageId) => {
+    const s = store.getState();
+    if (holdsMessage(chatOf(s, key), messageId) || windows(s)[key]?.messages.some((m) => m.messageId === messageId) === true) {
+      // Held already: a window elsewhere goes, so it shows in the chat.
+      if (windows(s)[key] !== undefined && holdsMessage(chatOf(s, key), messageId)) putWindow(key, undefined);
+      return undefined;
+    }
+    const generation = s.generation;
+    const r = await call("chat_history", { projectRef: refOf(key), around: messageId, limit: WINDOW_PAGE });
+    if (store.getState().generation !== generation) return undefined;
+    if (!r.ok) return r.error;
+    putWindow(key, openWindow(messageId, r.output));
+    return undefined;
+  };
+
+  const pageWindowOf: ChatActions["pageWindow"] = (key, older) => {
+    const s = store.getState();
+    const w = windows(s)[key];
+    const edge = older ? w?.messages[0] : w?.messages.at(-1);
+    if (w === undefined || edge === undefined || (older ? !w.hasOlder || w.loadingOlder : !w.hasNewer || w.loadingNewer)) return;
+    update((st) => {
+      const now = windows(st)[key];
+      return now === undefined ? {} : { chatWindows: { ...windows(st), [key]: older ? { ...now, loadingOlder: true } : { ...now, loadingNewer: true } } };
+    });
+    const generation = s.generation;
+    void call("chat_history", { projectRef: refOf(key), ...(older ? { before: edge.seq } : { after: edge.seq }), limit: CHAT_PAGE }).then((r) => {
+      const now = windows(store.getState())[key];
+      if (store.getState().generation !== generation || now === undefined) return;
+      if (r.ok) putWindow(key, pageWindow(now, r.output, older));
+      else putWindow(key, { ...now, loadingOlder: false, loadingNewer: false });
+    });
+  };
+
+  const actions: ChatActions = {
+    open,
+    close,
+    loadOlder,
+    send,
+    retry,
+    discard: dropRow,
+    probeStop,
+    stop,
+    retag,
+    jump,
+    pageWindow: pageWindowOf,
+    leaveWindow: (key) => putWindow(key, undefined),
+  };
   /** The chat on screen, which the disk cache keeps first. */
   const focus = (): ProjectKey | null => focused;
   return { actions, onState, focus };

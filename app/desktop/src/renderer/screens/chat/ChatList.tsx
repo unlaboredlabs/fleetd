@@ -78,6 +78,32 @@ function Top({ state, onLoadOlder }: { state: TopState; onLoadOlder: () => void 
  * A secret field or a gated command (F5). The hub's message carries the item; E1's stub contract doesn't type it
  * yet, so it is read from the message here until E1 moves to H1's generated contract.
  */
+/** A window's last row, with more after it: coming within a screen of it reads the next page, as Top does the one before. */
+function Bottom({ loading, onLoadNewer }: { loading: boolean; onLoadNewer: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (loading || !el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onLoadNewer();
+      },
+      { root: el.closest("[role=list]"), rootMargin: "0px 0px 100% 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loading, onLoadNewer]);
+  return (
+    <div ref={ref} className={s.top}>
+      {loading ? (
+        <Text size="xs" tone="quiet">
+          Loading later messages…
+        </Text>
+      ) : null}
+    </div>
+  );
+}
+
 function Inline({ item, enter }: { item: ChatItem; enter: Arrival | undefined }) {
   const inline = (item.message as { readonly item?: InlineItem } | undefined)?.item;
   // An integration's card names the project: "Ada wants to send an email".
@@ -114,6 +140,7 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
 
 /** Every chat's rows' heights as last measured, by key: a chat opened again lays its rows out at their heights at once. */
 const heights = new Map<string | number, number>();
+const noop = () => {};
 
 const RowView = memo(function RowView(props: {
   row: Row;
@@ -123,11 +150,14 @@ const RowView = memo(function RowView(props: {
   /** It came in while the chat was open: it enters. */
   enter: Arrival | undefined;
   onLoadOlder: () => void;
+  onLoadNewer: () => void;
 }) {
   const { row: r, project } = props;
   switch (r.kind) {
     case "top":
       return <Top state={r.state} onLoadOlder={props.onLoadOlder} />;
+    case "bottom":
+      return <Bottom loading={r.loading} onLoadNewer={props.onLoadNewer} />;
     case "history":
       return (
         <div className={s.day} role="separator">
@@ -245,6 +275,13 @@ export function ChatList(props: {
   inset?: number | undefined;
   /** Where Latest goes: the end of the island's band, beside the live strip rather than under it. */
   latestSlot?: HTMLElement | null | undefined;
+  /**
+   * A window far back (a search hit, a pin): it doesn't follow the end, its last row reads later pages, and Latest is
+   * there all along and leaves it.
+   */
+  window?: { readonly onLoadNewer: () => void; readonly onLatest: () => void } | undefined;
+  /** Where the reader is: the newest message in view, by id, or undefined at the end (Esc from search goes back there). */
+  placeRef?: { current: (() => string | undefined) | undefined } | undefined;
 }) {
   const { rows, openAt, openSeq, openPart, sent, entering } = props;
   const virtualizer = useRef<Virtualizer<HTMLDivElement, Element> | null>(null);
@@ -349,11 +386,31 @@ export function ChatList(props: {
       ro.disconnect();
     };
   }, []);
-  const latest = latestLabel(rows, awayFrom);
+  const inWindow = props.window;
+  const latest = inWindow !== undefined ? "Latest" : latestLabel(rows, awayFrom);
   const toLatest = () => {
     unpin.current?.();
-    virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
+    if (inWindow !== undefined) inWindow.onLatest();
+    else virtualizer.current?.scrollToIndex(rows.length - 1, { align: "end" });
   };
+  const { placeRef } = props;
+  useEffect(() => {
+    if (placeRef === undefined) return;
+    placeRef.current = () => {
+      const v = virtualizer.current;
+      const el = v?.scrollElement;
+      if (!v || !el || (inWindow === undefined && el.scrollHeight - el.scrollTop - el.clientHeight <= 24)) return undefined;
+      const bottom = el.scrollTop + el.clientHeight;
+      const seen = v.getVirtualItems().flatMap((i) => {
+        const row = rowsNow.current[i.index];
+        return i.start < bottom && row !== undefined && "item" in row ? [row.item.id] : [];
+      });
+      return seen.at(-1);
+    };
+    return () => {
+      placeRef.current = undefined;
+    };
+  });
   const latestButton = (
     // A press keeps the cursor in the box: it would otherwise go to the button, which then goes.
     <Button variant="secondary" onMouseDown={(e) => e.preventDefault()} onClick={toLatest}>
@@ -395,7 +452,7 @@ export function ChatList(props: {
         // clear of it and a new bubble rises from behind the island. Its first measure lands before the first paint;
         // until then, a one-line island's.
         paddingEnd={inset ?? 100}
-        followOutput
+        followOutput={inWindow === undefined}
         startAtEnd
         paddingStart={props.under === true ? TOP_BAR : 0}
         className={s.scroller}
@@ -408,6 +465,7 @@ export function ChatList(props: {
             mineLatest={r.key === mineLatest}
             enter={entering?.get(r.key)}
             onLoadOlder={props.onLoadOlder}
+            onLoadNewer={inWindow?.onLoadNewer ?? noop}
           />
         )}
       />
