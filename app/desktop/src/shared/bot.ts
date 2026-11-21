@@ -1,6 +1,6 @@
 // The bot every project wears until a person gives it a picture, on the desktop (ui/primitives/Bot.tsx) and
 // the phone alike: one character for every bot (D377, the bot-avatar report with its eyes C, Button), a soft dumpling
-// of calm slate, or the color a person picked for its project (BOT_PAINT), with two eyes and no mouth, standing free
+// in grey, or the color a person picked for its bot (BOT_PAINT), with two eyes and no mouth, standing free
 // with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). Its motion says what
 // it is doing: idle, thinking, working, needs you, done, or an error.
 //
@@ -19,7 +19,7 @@
 // stops, so it wakes exactly where it was. The functions the phone runs on its UI thread are worklets ("worklet"), a
 // plain string to the desktop.
 
-import type { KnownBotColor } from "./contracts";
+import { BOT_COLORS_WERE, type KnownBotColor } from "./contracts";
 
 /** What a bot shows, from the app's own words (projects/botState.ts). */
 export type BotState = "idle" | "thinking" | "working" | "needs" | "done" | "error";
@@ -91,61 +91,55 @@ export interface Paint {
   readonly glowA: number;
 }
 
-/** The colors a bot comes in (the contracts' BotColor), in the order a picker shows them: slate, the default, and the
- * neutral, then round the wheel. */
-export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"];
+/** The colors a bot comes in (the contracts' BotColor), in the order a picker shows them: the neutral, then round the
+ * wheel from brown to pink, and grey, the default. */
+export const BOT_COLORS: readonly KnownBotColor[] = ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"];
 export type BotColorName = KnownBotColor;
+/** A bot with no color wears grey. */
+export const BOT_COLOR_DEFAULT: BotColorName = "grey";
+
+/** Paint with white eyes, glowing when the state lights them. */
+const lit = (l: number, c: number, h: number): Paint => ({ body: oklch(l, c, h), eye: oklch(0.99, 0.006, h), glowA: 0.4 });
+/** Paint too light for white eyes: dark ones of its own hue, with no glow. */
+const inked = (l: number, c: number, h: number): Paint => ({ body: oklch(l, c, h), eye: oklch(0.27, 0.04, h), glowA: 0 });
 
 /**
- * Each color's paint in both themes: one flat body, its eyes and their glow. The hues sit round the wheel at one calm
- * chroma (no neon); each body is dark enough in light for white eyes to read at 20 px (at least 3.7:1) and in dark
- * light enough to stand off the screen (at least 4.3:1) while keeping Done's crescents (at least 3.4:1).
+ * Each color's paint in both themes: one flat body, its eyes and their glow. The palette is the human's (W774): flat,
+ * saturated hues like a phone's color picker, no gradients. In dark each sits near its picker swatch, its chroma a
+ * hair under so it doesn't glow on the see-through sidebar; in light a step deeper so it stays solid on white and its
+ * white eyes read at 20 px (at least 3.4:1, which keeps Done's crescents). Amber, green and teal are too light for
+ * white eyes without going muddy, so they wear dark ones, as mono does in dark.
  */
 export const BOT_PAINT: { readonly [C in BotColorName]: { readonly light: Paint; readonly dark: Paint } } = {
-  /** One calm dusk slate (hue 258, low chroma), the default: dark enough in light for white eyes to read at 20 px
-   * (about 5.5:1), light enough in dark to stand off the screen and still keep Done's crescents (about 4:1). */
-  slate: {
-    light: { body: oklch(0.5, 0.062, 258), eye: oklch(0.99, 0.006, 258), glowA: 0.35 },
-    dark: { body: oklch(0.6, 0.06, 258), eye: oklch(0.995, 0.004, 258), glowA: 0.4 },
-  },
   /** The app's own neutral: near-black in light and near-white in dark, which takes dark eyes and no glow. */
-  mono: {
-    light: { body: oklch(0.29, 0.01, 260), eye: oklch(0.98, 0.004, 258), glowA: 0.35 },
-    dark: { body: oklch(0.94, 0.005, 250), eye: oklch(0.25, 0.015, 258), glowA: 0 },
-  },
-  blue: {
-    light: { body: oklch(0.57, 0.13, 252), eye: oklch(0.99, 0.006, 252), glowA: 0.35 },
-    dark: { body: oklch(0.615, 0.12, 252), eye: oklch(0.995, 0.004, 252), glowA: 0.4 },
-  },
-  lilac: {
-    light: { body: oklch(0.57, 0.1, 298), eye: oklch(0.99, 0.006, 298), glowA: 0.35 },
-    dark: { body: oklch(0.625, 0.095, 298), eye: oklch(0.995, 0.004, 298), glowA: 0.4 },
-  },
-  coral: {
-    light: { body: oklch(0.62, 0.12, 33), eye: oklch(0.99, 0.006, 33), glowA: 0.35 },
-    dark: { body: oklch(0.645, 0.115, 33), eye: oklch(0.995, 0.004, 33), glowA: 0.4 },
-  },
-  /** Too light for white eyes in either theme: dark ones, with no glow. */
-  amber: {
-    light: { body: oklch(0.76, 0.11, 75), eye: oklch(0.3, 0.035, 60), glowA: 0 },
-    dark: { body: oklch(0.8, 0.105, 78), eye: oklch(0.27, 0.035, 60), glowA: 0 },
-  },
-  sage: {
-    light: { body: oklch(0.59, 0.085, 152), eye: oklch(0.99, 0.006, 152), glowA: 0.35 },
-    dark: { body: oklch(0.625, 0.085, 152), eye: oklch(0.995, 0.004, 152), glowA: 0.4 },
-  },
-  teal: {
-    light: { body: oklch(0.57, 0.075, 200), eye: oklch(0.99, 0.006, 200), glowA: 0.35 },
-    dark: { body: oklch(0.615, 0.075, 200), eye: oklch(0.995, 0.004, 200), glowA: 0.4 },
-  },
+  mono: { light: lit(0.29, 0.01, 260), dark: inked(0.95, 0.004, 250) },
+  brown: { light: lit(0.53, 0.08, 62), dark: lit(0.58, 0.085, 62) },
+  red: { light: lit(0.6, 0.2, 25), dark: lit(0.63, 0.19, 25) },
+  orange: { light: lit(0.63, 0.17, 44), dark: lit(0.64, 0.165, 45) },
+  amber: { light: inked(0.77, 0.15, 68), dark: inked(0.77, 0.14, 68) },
+  green: { light: inked(0.71, 0.155, 150), dark: inked(0.72, 0.14, 151) },
+  teal: { light: inked(0.69, 0.105, 182), dark: inked(0.71, 0.095, 180) },
+  blue: { light: lit(0.59, 0.19, 259), dark: lit(0.625, 0.18, 259) },
+  purple: { light: lit(0.57, 0.215, 292), dark: lit(0.615, 0.2, 292) },
+  pink: { light: lit(0.6, 0.21, 354), dark: lit(0.645, 0.195, 354) },
+  /** A neutral grey with a hair of slate's blue, the earlier default. */
+  grey: { light: lit(0.55, 0.008, 258), dark: lit(0.6, 0.008, 258) },
 };
 
 /** A color's name, as a picker says it. */
 export const botColorLabel = (color: BotColorName): string => color.charAt(0).toUpperCase() + color.slice(1);
 
-/** The paint of a bot of `color` (slate for none, or one a newer hub added), in the app's theme. */
+/** The palette's color a bot of `color` wears: its own, the one an earlier name became (BOT_COLORS_WERE), or grey for
+ * none or one a newer hub added. */
+export const colorOf = (color: string | undefined): BotColorName => {
+  if (color === undefined) return BOT_COLOR_DEFAULT;
+  if ((BOT_COLORS as readonly string[]).includes(color)) return color as BotColorName;
+  return BOT_COLORS_WERE[color] ?? BOT_COLOR_DEFAULT;
+};
+
+/** The paint of a bot of `color` (colorOf), in the app's theme. */
 export const paintOf = (color: string | undefined, dark: boolean): Paint => {
-  const p = (BOT_PAINT as Record<string, { readonly light: Paint; readonly dark: Paint } | undefined>)[color ?? "slate"] ?? BOT_PAINT.slate;
+  const p = BOT_PAINT[colorOf(color)];
   return dark ? p.dark : p.light;
 };
 

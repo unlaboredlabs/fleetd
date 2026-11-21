@@ -55,17 +55,24 @@ const reasons = (base: Fixture): Fixture => {
   return f;
 };
 
-/** The bots' colors (shared/bot.ts BOT_PAINT): status-rows' eight projects, one in each color, mobile in slate, the
- * default, which the hub names by no color at all. */
+/** The bots' colors (shared/bot.ts BOT_PAINT): status-rows' eight projects, each in a color of its own, mobile in grey,
+ * the default, which the hub names by no color at all; with EXTRA_COLORED, every color of the palette. */
 export const BOT_COLORED: Readonly<Record<string, string>> = {
-  storefront: "sage",
+  storefront: "green",
   billing: "blue",
-  checkout: "coral",
+  checkout: "red",
   docs: "mono",
-  inventory: "amber",
-  search: "lilac",
-  "Rewrite the pricing": "teal",
+  inventory: "orange",
+  search: "purple",
+  "Rewrite the pricing": "pink",
 };
+
+/** Three quiet bots more, in the palette's colors status-rows has no bot for. */
+const EXTRA_COLORED: readonly (readonly [title: string, projectId: string, color: string])[] = [
+  ["design", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e51", "brown"],
+  ["payments", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e52", "amber"],
+  ["analytics", "5b0c3d4e-2f1a-4c6b-9d8e-7a1b2c3d4e53", "teal"],
+];
 
 /** `f`'s projects, each bot in its color (BOT_COLORED). */
 const colored = (f: Fixture): Fixture => {
@@ -80,7 +87,23 @@ const colored = (f: Fixture): Fixture => {
 };
 
 const colors = (base: Fixture): Fixture => {
-  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: each bot in a color of its own, mobile in slate, the default."));
+  const f = colored(Fixture.from(base, "sidebar-colors", "Sidebar: every color of the palette, a bot in each, mobile in grey, the default."));
+  if (f.snapshot !== undefined) {
+    const projects = arr(f.snapshot["projects"]);
+    const at = Date.parse(asText(obj(projects.at(-1))["lastActivityAt"]));
+    f.snapshot["projects"] = [
+      ...projects,
+      ...EXTRA_COLORED.map(([title, projectId, avatarColor], i) => ({
+        machineId: "devbox",
+        projectId,
+        title,
+        workspaceRoot: `/home/dev/src/${title}`,
+        lastActivityAt: new Date(at - (i + 1) * 60 * 60_000).toISOString(),
+        threads: { running: 0, waiting: 0, idle: 1, failed: 0 },
+        avatarColor,
+      })),
+    ];
+  }
   // storefront's settings, where its color is picked.
   const storefront = obj(arr(f.snapshot?.["projects"]).find((p) => obj(p)["title"] === "storefront"));
   const ref = { machineId: asText(storefront["machineId"]), projectId: asText(storefront["projectId"]) };

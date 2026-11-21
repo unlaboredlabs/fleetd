@@ -24,6 +24,7 @@ import type {
   RepoName,
   WorktreeSetup,
 } from "../../shared/contracts.ts";
+import { BOT_COLORS_WERE } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_SETTINGS, CAP_WORKTREE_SETUP } from "../../shared/node_link.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
@@ -48,8 +49,14 @@ export const ENV_VALUE_MAX_BYTES = 64 * 1024;
 /** All of one project's values together: every one goes into every session's environment. */
 export const ENV_TOTAL_MAX_BYTES = 512 * 1024;
 const SEAL_OVERHEAD = 48;
-/** The colors a project's bot comes in (app/desktop/src/shared/bot.ts BOT_PAINT), slate its default. */
-export const BOT_COLORS: readonly KnownBotColor[] = ["slate", "mono", "blue", "lilac", "coral", "amber", "sage", "teal"];
+/** The colors a bot comes in (app/desktop/src/shared/bot.ts BOT_PAINT), grey its default. */
+export const BOT_COLORS: readonly KnownBotColor[] = ["mono", "brown", "red", "orange", "amber", "green", "teal", "blue", "purple", "pink", "grey"];
+export const BOT_COLOR_DEFAULT: KnownBotColor = "grey";
+
+/** The palette's color `color` is: its own, the one an earlier name became (an older app still sends those), or
+ * undefined for one that isn't a bot's color. */
+export const botColorOf = (color: BotColor): KnownBotColor | undefined =>
+  (BOT_COLORS as readonly string[]).includes(color) ? (color as KnownBotColor) : BOT_COLORS_WERE[color];
 
 /** The refusal when a change would take a project's values past ENV_TOTAL_MAX_BYTES, naming the total. */
 export const envTotalOver = (total: number) =>
@@ -277,15 +284,15 @@ export async function rename(hub: Hub, project: ProjectSummary, title: string): 
   announce(hub, r, `${project.title} renamed ${title}`, { title });
 }
 
-/** Gives the project's bot a color of the palette, and tells every app that shows it. */
+/** Gives the project's bot a color of the palette, and tells every app that shows it. An earlier name (an older app's)
+ * is kept as it came, so that app still shows its pick; a newer app wears the color it became. */
 export function setColor(hub: Hub, project: ProjectSummary, color: BotColor): void {
-  if (!(BOT_COLORS as readonly string[]).includes(color)) {
-    throw new ToolError("invalid", `${color} isn't one of the bot's colors.`, `Pick one of ${BOT_COLORS.join(", ")}.`);
-  }
+  const now = botColorOf(color);
+  if (now === undefined) throw new ToolError("invalid", `${color} isn't one of the bot's colors.`, `Pick one of ${BOT_COLORS.join(", ")}.`);
   const r = { machineId: project.machineId, projectId: project.projectId };
-  if ((project.avatarColor ?? "slate") === color) return;
-  setAvatarColor(hub.db.conn, r, color);
-  announce(hub, r, `${project.title}'s bot is ${color} now`, { avatarColor: color });
+  if ((botColorOf(project.avatarColor ?? BOT_COLOR_DEFAULT) ?? BOT_COLOR_DEFAULT) === now) return;
+  setAvatarColor(hub.db.conn, r, color, now === BOT_COLOR_DEFAULT);
+  announce(hub, r, `${project.title}'s bot is ${now} now`, { avatarColor: color });
 }
 
 export function register(tools: Registry): void {
@@ -319,7 +326,7 @@ export function register(tools: Registry): void {
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the bot use these settings.";
     if (input.avatarColor !== undefined && input.setup === undefined && input.title === undefined) {
-      next = `Its bot is ${input.avatarColor} on every device now.`;
+      next = `Its bot is ${botColorOf(input.avatarColor) ?? input.avatarColor} on every device now.`;
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }

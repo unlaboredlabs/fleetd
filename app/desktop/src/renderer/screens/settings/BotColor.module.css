@@ -1,14 +1,15 @@
-/* Settings › Projects › Color (BotColor.tsx): a row of round swatches, each the bot's body in the theme, the picked one
-   ringed in the text color with a gap of the group's own fill. */
+/* Settings › Projects › Color (BotColor.tsx): one compact row of the palette's eleven flat dots, as a color picker
+   sets them, each the bot's body in the theme, the picked one ringed in the text color with a gap of the group's own
+   fill. */
 .swatches {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
 }
 .swatch {
   flex: none;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border: none;
   border-radius: 50%;

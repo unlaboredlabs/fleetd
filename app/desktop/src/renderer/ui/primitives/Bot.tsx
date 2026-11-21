@@ -4,7 +4,7 @@
 // arrives settled in its state, drawn before its first paint; botLife then moves it on its springs, and a new `state`
 // blends from wherever it is. A new `color` paints it at once.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { drawnAt, LARGE, newRig, type BotState } from "../../../shared/bot";
+import { colorOf, drawnAt, LARGE, newRig, type BotState } from "../../../shared/bot";
 import { bringToLife, type Living } from "../lib/botLife";
 import s from "./Bot.module.css";
 
@@ -38,7 +38,7 @@ export function Bot({ state, size, color }: { state: BotState; size: number; col
     life.current?.paint(color);
   }, [color]);
   return (
-    <span className={s.bot} style={{ width: size, height: size }} data-bot={state} data-color={color ?? "slate"} aria-hidden>
+    <span className={s.bot} style={{ width: size, height: size }} data-bot={state} data-color={colorOf(color)} aria-hidden>
       <canvas ref={ref} className={s.canvas} />
     </span>
   );

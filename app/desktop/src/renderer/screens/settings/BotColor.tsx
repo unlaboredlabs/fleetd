@@ -1,9 +1,10 @@
-// Settings › Projects › Color: the color of the project's bot (shared/bot.ts BOT_PAINT), a row of swatches, each the
-// bot's body in the app's theme, the picked one ringed. A pick shows at once and is saved with project_settings_set
+// Settings › Projects › Color: the color of the project's bot (shared/bot.ts BOT_PAINT), one compact row of the
+// palette's flat dots, each the bot's body in the app's theme, the picked one ringed. An earlier name (lilac) shows as
+// the color it became (purple). A pick shows at once and is saved with project_settings_set
 // (avatarColor); the hub's project.settings event brings it to every app that shows the project. A picture, when the
 // project has one, still shows over the bot.
 import { useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import { BOT_COLORS, BOT_PAINT, botColorLabel, type BotColorName } from "../../../shared/bot";
+import { BOT_COLORS, BOT_PAINT, botColorLabel, colorOf, type BotColorName } from "../../../shared/bot";
 import type { ProjectSummary } from "../../../shared/contracts";
 import { errorText, useHubCall } from "./hub";
 import { SettingsRow } from "./parts";
@@ -11,12 +12,9 @@ import c from "./BotColor.module.css";
 
 type Colored = Pick<ProjectSummary, "machineId" | "projectId" | "title" | "avatar" | "avatarColor">;
 
-/** The project's color as a swatch knows it: slate for none, or for one this app doesn't know yet. */
-const known = (color: string | undefined): BotColorName => (BOT_COLORS as readonly string[]).includes(color ?? "") ? (color as BotColorName) : "slate";
-
 export function BotColorSetting({ project }: { project: Colored }) {
   const hubCall = useHubCall();
-  const saved = known(project.avatarColor);
+  const saved = colorOf(project.avatarColor);
   // The pick in flight, with the color it was picked over: shown until the hub's summary names another (this one, or
   // another device's).
   const [picked, setPicked] = useState<{ color: BotColorName; over: BotColorName } | null>(null);
@@ -42,7 +40,7 @@ export function BotColorSetting({ project }: { project: Colored }) {
     e.preventDefault();
     const j = (to + n) % n;
     swatches.current[j]?.focus();
-    pick(BOT_COLORS[j] ?? "slate");
+    pick(BOT_COLORS[j] ?? saved);
   };
 
   return (

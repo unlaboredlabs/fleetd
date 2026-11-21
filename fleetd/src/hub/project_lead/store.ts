@@ -9,7 +9,7 @@ import { isoMs } from "../store/time.ts";
 export type Kept = {
   createdBy?: ProjectCreator;
   archivedAt?: Timestamp;
-  /** Absent: slate, the default. */
+  /** Absent: grey, the default. */
   avatarColor?: BotColor;
   /** Its chat's tags trial is on; absent: off. */
   chatTags?: true;
@@ -56,12 +56,12 @@ export function setChatTags(db: Database, r: ProjectRef, on: boolean): void {
   ).run(r.machineId, r.projectId, on ? 1 : null);
 }
 
-/** Gives the project's bot `color`; slate, the default, is kept as none. */
-export function setAvatarColor(db: Database, r: ProjectRef, color: BotColor): void {
+/** Gives the project's bot `color`; the default (grey, or slate as an older app names it) is kept as none. */
+export function setAvatarColor(db: Database, r: ProjectRef, color: BotColor, isDefault: boolean): void {
   db.query(
     `INSERT INTO project_settings (machine_id, project_id, avatar_color) VALUES (?1, ?2, ?3)
          ON CONFLICT (machine_id, project_id) DO UPDATE SET avatar_color = excluded.avatar_color`,
-  ).run(r.machineId, r.projectId, color === "slate" ? null : color);
+  ).run(r.machineId, r.projectId, isDefault ? null : color);
 }
 
 /** Records who made a new project and when. */

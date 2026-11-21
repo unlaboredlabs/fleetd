@@ -1,4 +1,4 @@
-// A project's icon, from its screen (Info): a sheet with its bot or photo large at the top, its bot's color (a row of
+// A project's icon, from its screen (Info): a sheet with its bot or photo large at the top, its bot's color (rows of
 // swatches from the palette, BOT_PAINT, the picked one ringed), and Choose Photo / Take Photo (then Move and Scale) /
 // Remove Photo, as the desktop's Settings › Projects › Icon and Color. Every project without a photo wears the same
 // bot, whose motion shows what it's doing; its color is the one thing to pick. A pick shows at once and is saved with
@@ -6,7 +6,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { BOT_COLORS, BOT_PAINT, botColorLabel, type BotColorName } from "../../desktop";
+import { BOT_COLORS, BOT_PAINT, botColorLabel, colorOf, type BotColorName } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { space, useTheme } from "../../theme";
 import { Avatar } from "../../ui/Avatar";
@@ -19,8 +19,11 @@ import { errorWords, sheetOptions } from "./parts";
 import { fromCamera, fromLibrary } from "./pick";
 
 const PREVIEW = 112;
-/** A swatch's side, its ring around it. */
+/** A swatch's side, its ring around it, and the room between two rings. */
 const SWATCH = 30;
+const GAP = 16;
+/** Six to a row, as a color picker sets them: the palette's eleven sit in two rows, the second centred. */
+const ROW = 6 * (SWATCH + 6) + 5 * GAP;
 
 export function IconPicker({ navigation, route }: NativeStackScreenProps<RootParams, "Icon">) {
   const t = useTheme();
@@ -53,7 +56,7 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
     });
   };
 
-  const saved = (BOT_COLORS as readonly string[]).includes(p.avatarColor ?? "") ? (p.avatarColor as BotColorName) : "slate";
+  const saved = colorOf(p.avatarColor);
   const color = picked !== null && picked.over === saved ? picked.color : saved;
   const pick = (next: BotColorName) => {
     if (next === color) return;
@@ -101,7 +104,7 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
 const styles = StyleSheet.create({
   content: { paddingBottom: space.xxl },
   preview: { alignItems: "center", paddingTop: space.lg, paddingBottom: space.xl },
-  swatches: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: space.md, paddingVertical: space.md },
+  swatches: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: GAP, width: ROW, alignSelf: "center", paddingVertical: space.md },
   ring: { width: SWATCH + 6, height: SWATCH + 6, borderRadius: (SWATCH + 6) / 2, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   swatch: { width: SWATCH - 4, height: SWATCH - 4, borderRadius: (SWATCH - 4) / 2 },
   pressed: { opacity: 0.6 },
