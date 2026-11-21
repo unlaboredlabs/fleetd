@@ -168,8 +168,12 @@ export class BrowserBroker {
   /** Why a sealed session refuses the driver's DOM write (a test's stand-in, or credentials.ts's). */
   writeRefusal: (session: Session, command: Record<string, unknown>) => Promise<string | undefined> = filledFieldRefusal;
 
-  constructor(protected readonly host: BrokerHost) {
-    this.steps_ = new Steps();
+  /** `steps`: each live session's latest step, kept while its recording is (the node's: while its folder is there). */
+  constructor(
+    protected readonly host: BrokerHost,
+    steps: Steps = new Steps(),
+  ) {
+    this.steps_ = steps;
     this.credentials = new Credentials(
       host.vaultFor ??
         (() => {

@@ -7,7 +7,15 @@
 // pipe close when a connection drops (the box's link redialled, or the instance driving it replaced by another):
 // socat takes the next connection on the same port, one at a time, for GRACE_MS after each one ends. With none by then,
 // or once Chrome exits, the launcher's whole process session goes, Chrome with it. Messages crossing as a connection
-// drops are lost with it; a new connection's own ids never meet an old one's answers (BrowserBroker `adopt`).
+// drops are lost with it: a new connection starts with a lone NUL, which ends a frame the last one left cut short
+// (Chrome answers it as no command), so that piece never swallows the new connection's first command. A new
+// connection's own ids never meet an old one's answers (BrowserBroker `adopt`).
+//
+// The guard and the no-read-back seal hold for the agent's driver, which reaches Chrome only through the broker's
+// proxy, outside the box. They don't hold against the box itself: a process in it can open the FIFOs, or socat's port
+// on the box's loopback while it waits for a connection, and speak raw CDP to Chrome, as it could already reach
+// Chrome's pipe through /proc as the same user. What the seal keeps from the agent is what the broker fills over its
+// own connection and never sends back on the driver's.
 //
 // Each Chrome keeps its files in a folder of its own under /tmp in the box, and runs in a process session of its own
 // (setsid), so ending it kills that session and everything in it, and nothing else of the box's. A bot's kept profile
@@ -165,9 +173,12 @@ export async function readyKeptInBox(box: KeptBox, dir: string): Promise<void> {
 export const pruneKeptInBox = (box: ScreenBox, dir: string) =>
   sh(box, `cd ${shq(`${dir}/Default`)} 2>/dev/null && rm -rf ${NOT_KEPT.map(shq).join(" ")}; true`);
 
-/** The Chrome at `handle` over a new stream, its pipe answering, and its close. `firstId`: the connection's first id. */
-async function connected(box: ScreenBox, handle: ChromeHandle, kept: string | undefined, firstId: number, ms: number): Promise<Launched> {
+/** The Chrome at `handle` over a new stream, its pipe answering, and its close. `firstId`: the connection's first id;
+ * `again`: an earlier connection to it may have left a frame cut short. */
+async function connected(box: ScreenBox, handle: ChromeHandle, kept: string | undefined, firstId: number, ms: number, again = false): Promise<Launched> {
   const stream = await dialUntil(box, handle.port, ms);
+  // A frame the last connection left cut short ends here, as an empty one, rather than in front of this one's first.
+  if (again) stream.write("\0");
   const cdp = new Cdp(streamTransport(stream), firstId);
   const ready = await Promise.race([
     cdp.call(undefined, "Browser.getVersion").then(
@@ -219,5 +230,5 @@ export async function boxChrome(box: KeptBox, extra: string[] = [], o: BoxChrome
 /** The box's Chrome at `handle` again, over a new connection, while it still waits for one (GRACE_MS since the last
  * dropped). `firstId`: the new connection's first id, past any the last one used. Throws when it is gone. */
 export function reattachChrome(box: ScreenBox, handle: ChromeHandle, firstId: number, ms = timing.upMs): Promise<Launched> {
-  return connected(box, { dir: handle.dir, port: handle.port }, handle.profile, firstId, ms);
+  return connected(box, { dir: handle.dir, port: handle.port }, handle.profile, firstId, ms, true);
 }

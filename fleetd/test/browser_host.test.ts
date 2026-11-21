@@ -26,23 +26,32 @@ afterEach(async () => {
 });
 
 /** A Chrome on a port of this machine: one connection at a time, its pages and sessions kept across connections, as a
- * box's Chrome keeps them behind its FIFOs. */
+ * box's Chrome keeps them behind its FIFOs; and like them, what a connection left of a frame waits for the next. A
+ * frame that isn't JSON (an empty one, or one cut short with another's start) is answered by no command. */
 async function standInChrome() {
   let current: Socket | undefined;
   let nextSession = 1;
   const seen: { conn: number; id: number; method: string }[] = [];
+  const unread: string[] = [];
   let conns = 0;
+  let buffered = Buffer.alloc(0);
   const server: Server = createServer((socket) => {
     current?.destroy();
     current = socket;
     const conn = ++conns;
-    let buffered = Buffer.alloc(0);
     socket.on("error", () => {});
     socket.on("data", (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
       for (let at = buffered.indexOf(0); at >= 0; at = buffered.indexOf(0)) {
-        const m = JSON.parse(buffered.subarray(0, at).toString()) as { id: number; method: string; sessionId?: string };
+        const text = buffered.subarray(0, at).toString();
         buffered = buffered.subarray(at + 1);
+        let m: { id: number; method: string; sessionId?: string };
+        try {
+          m = JSON.parse(text) as typeof m;
+        } catch {
+          unread.push(text);
+          continue;
+        }
         seen.push({ conn, id: m.id, method: m.method });
         const result =
           m.method === "Target.getTargets"
@@ -67,6 +76,7 @@ async function standInChrome() {
   return {
     port,
     seen,
+    unread,
     connections: () => conns,
     /** The connection drops, as when the box's link redials or the instance driving it goes. */
     drop: () => current?.destroy(),
@@ -354,4 +364,21 @@ test("the proxy signs with a key nobody can guess: a host's own, else a random o
   expect(refused.status).toBe(403);
   expect(keyless.proxy.url(THREAD)).not.toBe(forged);
   await driver(keyless.proxy.url(THREAD));
+});
+
+test("a connection that dropped mid-frame doesn't swallow the next one's first command: the box's Chrome is reached again", async () => {
+  const was = timing.upMs;
+  timing.upMs = 500;
+  cleanups.push(() => void (timing.upMs = was));
+  const chrome = await standInChrome();
+  const box = standInBox();
+  // The last connection's command, cut short by the drop: its start waits in the pipe.
+  const cut = await box.dial("127.0.0.1", chrome.port);
+  await new Promise<void>((resolve) => cut.end('{"id":7,"method":"Input.dispatchMou', () => resolve()));
+  await new Promise((resolve) => cut.once("close", resolve));
+  expect(chrome.connections()).toBe(1);
+  const again = await reattachChrome(box, { dir: "/tmp/fleetd-browser-standin", port: chrome.port }, 200_000_001);
+  cleanups.push(() => again.cdp.shut());
+  expect(chrome.unread).toEqual(['{"id":7,"method":"Input.dispatchMou']);
+  expect(chrome.seen.map((s) => s.method)).toEqual(["Browser.getVersion"]);
 });

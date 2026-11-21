@@ -488,3 +488,15 @@ test("the minute's sweep leaves a session that is still ending alone: it goes on
   expect(states).toEqual(["live", "uploading", "recorded"]);
   expect(String(calls.find((c) => c.args.state === "recorded")?.args.note)).not.toContain("the node stopped");
 });
+
+test("a session's latest step leaves the heartbeat once its recording reached the hub and its folder went", async () => {
+  const { broker, local, node } = nodeWith(async () => ({ cdp: new Cdp(fakeBrowser()) }));
+  const started = (await local.call("session_start", { purpose: "look" }, "t9")) as { sessionId: string };
+  broker.live("t9")!.stepAt("agent-browser", { command: "agent-browser open https://shop.test" }, true, undefined, 0);
+  expect(broker.steps().map((s) => s.sessionId)).toEqual([started.sessionId]);
+  await local.call("session_end", {}, "t9");
+  const dir = join(recordingsDir(node.home), started.sessionId);
+  for (let i = 0; i < 200 && existsSync(dir); i++) await Bun.sleep(10);
+  expect(existsSync(dir)).toBe(false);
+  expect(broker.steps()).toEqual([]);
+});
