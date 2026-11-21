@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Env } from "../util.ts";
 import { agentSpawn } from "../oom.ts";
+import { noteFile } from "./host/memory.ts";
 import { failed as scopeFailed, hostScope, type Scope, spawnScoped } from "./scope.ts";
 import { dedupe, descendants, gone, signal, statOf, table, type Proc } from "./procs.ts";
 import { destroyBox } from "../place/left_vm.ts";
@@ -199,6 +200,7 @@ export async function stop(dir: string): Promise<void> {
   if (registration) killTree(registration);
   await destroyBox(dir);
   rmSync(dir, { recursive: true, force: true });
+  rmSync(noteFile(dir), { force: true });
 }
 
 /** Where the host in `dir` records the orphans its session leaves it: beside the dir, which the session's next host
