@@ -98,6 +98,9 @@ export const installMenu = (
         item(opener, "sidebar.toggle", "Toggle Sidebar"),
         item(opener, "panel.toggle", "Toggle Panel"),
         separator,
+        item(opener, "hub.previous", "Previous Hub"),
+        item(opener, "hub.next", "Next Hub"),
+        separator,
         { role: "togglefullscreen" },
         // Reload and devtools only in dev and test builds: a reload drops the live view's state for nothing, and
         // devtools reach window.fleetd. Keyed on the build, not app.isPackaged (the executable's name).

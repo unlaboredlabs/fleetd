@@ -11,6 +11,8 @@ export const MENU_COMMANDS = [
   "shortcuts.show",
   "sidebar.toggle",
   "panel.toggle",
+  "hub.previous",
+  "hub.next",
   "project.previous",
   "project.next",
   "project.nextNeedsYou",

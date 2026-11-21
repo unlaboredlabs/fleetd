@@ -1235,6 +1235,30 @@ export const screens: readonly Screen[] = [
   // Several hubs: one at a time, the switcher marked while Acme is offline, which waits on its own while Personal
   // works on.
   { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
+  // W772: two fingers across the sidebar switch hubs (screens/shell/hubSwipe.ts), as wheel events with a horizontal
+  // delta. A scroll up and down the list never does; a swipe left goes to the next hub, once however far it goes, and
+  // the marks at the foot follow. QA runs with reduced motion, so the hub switches without the slide.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-hubs", "sidebar-many-hubs"],
+    variant: "hub-swipe",
+    open: async (page) => {
+      const box = await page.getByRole("navigation", { name: "Sidebar" }).boundingBox();
+      if (box === null) throw new Error("no sidebar");
+      const on = page.locator("[role='group'][aria-label='Hubs'] button[aria-current]");
+      await expect(on).toHaveAttribute("aria-label", "Personal");
+      await page.mouse.move(box.x + box.width / 2, box.y + 160);
+      for (const dy of [12, 24, 30, 24, 12]) await page.mouse.wheel(dy / 4, dy);
+      await page.waitForTimeout(250);
+      await expect(on).toHaveAttribute("aria-label", "Personal");
+      // One long event, a gesture on its own however slow the runner is between two.
+      await page.mouse.wheel(90, 0);
+      await expect(on).toHaveAttribute("aria-label", "Acme");
+      await expect(page.locator("[data-opens='hubs']")).toContainText("Acme");
+      await page.mouse.move(600, 400);
+    },
+  },
   // The hub row's switcher, which carries a dot while another hub has a bot that wants you; its menu lists them all,
   // the one on show ticked, each other with its own dot, and Add a hub.
   {

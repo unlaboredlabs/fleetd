@@ -2,8 +2,10 @@
 // first line): the hub's mark and name, which pick another hub and say what is off with one, and the list's ⋯; under it
 // search (the palette) and New bot, a plus at the search's end. Then your chats, each a row with its picture, its name
 // and its newest line, newest first, and you at the foot with Screens and the Factory as two small icons beside you
-// (You.tsx). Your pinned chats stay on top in your order (pins.ts), up to three to a line, each a picture over its name
-// in a capsule (a name cut short shows whole in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them;
+// (You.tsx), and with several hubs a small mark for each between them, the one on show filled: a click switches to it,
+// and so does a two-finger swipe left or right across the sidebar, the list following the fingers and the next or
+// previous hub's sliding in beside it, as Dia's spaces do (hubSwipe.ts). Your pinned chats stay on top in your order
+// (pins.ts), up to three to a line, each a picture over its name in a capsule (a name cut short shows whole in a tooltip): drag one, or move a focused one with ⌥↑ / ⌥↓, among them;
 // drag a chat up among them to pin it there, or a pin down out of them to unpin it. Every other chat takes its place by
 // its newest line (latest.ts) and glides there on the app's spring when it moves, the one kinetic moment here. While
 // the pointer is over the list nothing moves (sidebarState.ts holdRows): what changed takes its place once it leaves,
@@ -25,7 +27,7 @@
 import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
@@ -35,6 +37,7 @@ import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSepar
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { useHubState } from "./hubFeed";
+import { switchHub, useHubSwipe } from "./hubSwipe";
 import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
 import { HubText } from "../projects/HubText";
@@ -440,23 +443,82 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const openOn = (id: string): ProjectKey | null => (screen.id === "project" && screen.at === id ? screen.project : null);
   const hold = { onPointerEnter: () => holdRows(keys ?? null), onPointerLeave: () => holdRows(null) };
   // A hub whose projects haven't loaded (offline from the start, say) waits on its own.
-  const waiting = projects === undefined || shownHub === undefined || (loaded.has(shownHub.id) && loaded.get(shownHub.id)?.projects === undefined);
-  const rows = waiting ? undefined : projects.filter((p) => p.hub === shownHub.id);
+  const waitsOn = (h: HubView): boolean => projects === undefined || (loaded.has(h.id) && loaded.get(h.id)?.projects === undefined);
+  const group = (h: HubView, jump: (p: Placed) => number | null) => (
+    <HubScope key={h.id} hub={h}>
+      <ProjectGroup rows={waitsOn(h) ? undefined : projects?.filter((p) => p.hub === h.id)} all={projects?.filter((p) => p.hub === h.id) ?? []} view={view} several={hubs.length > 1} open={openOn(h.id)} jumpOf={jump} go={go} />
+    </HubScope>
+  );
+
+  // Two fingers across it switch hubs (hubSwipe.ts): the list follows them, the next or previous hub's beside it, and
+  // the marks at the foot follow too. The whole sidebar listens, its top included.
+  const area = useRef<HTMLElement | null>(null);
+  const pane = useRef<HTMLDivElement>(null);
+  const besidePane = useRef<HTMLDivElement>(null);
+  const marks = useRef<HTMLDivElement>(null);
+  const ids = useMemo(() => hubs.map((h) => h.id), [hubs]);
+  const at = shownHub === undefined ? -1 : ids.indexOf(shownHub.id);
+  const { beside, moving } = useHubSwipe({
+    area,
+    pane,
+    hubs: ids,
+    at,
+    paint: (offset, by, width) => {
+      if (pane.current !== null) pane.current.style.transform = offset === 0 ? "" : `translate3d(${String(offset)}px, 0, 0)`;
+      if (besidePane.current !== null && by !== null) besidePane.current.style.transform = `translate3d(${String(offset + by.side * width)}px, 0, 0)`;
+      marks.current?.style.setProperty("--at", String(at - (width > 0 ? offset / width : 0)));
+    },
+  });
+  const besideHub = beside === null ? undefined : hubs[beside.to];
+  // Each hub opens at its top, the one slid in as it was drawn beside.
+  useLayoutEffect(() => {
+    if (pane.current !== null) pane.current.scrollTop = 0;
+  }, [shownHub?.id]);
 
   return (
-    <nav className={s.sidebar} aria-label="Sidebar" data-compact={view.compact || undefined}>
-      <div className={s.list} {...hold}>
-        {shownHub === undefined ? null : (
-          <HubScope key={shownHub.id} hub={shownHub}>
-            <ProjectGroup rows={rows} all={projects?.filter((p) => p.hub === shownHub.id) ?? []} view={view} several={hubs.length > 1} open={openOn(shownHub.id)} jumpOf={jumpOf} go={go} />
-          </HubScope>
+    <nav
+      ref={(el) => {
+        area.current = el?.closest<HTMLElement>("#sidebar") ?? el;
+      }}
+      className={s.sidebar}
+      aria-label="Sidebar"
+      data-compact={view.compact || undefined}
+    >
+      <div className={s.pages} data-moving={moving || undefined}>
+        <div ref={pane} className={s.list} {...hold}>
+          {shownHub === undefined ? null : group(shownHub, jumpOf)}
+        </div>
+        {besideHub === undefined ? null : (
+          <div ref={besidePane} className={cx(s.list, s.beside)} aria-hidden inert>
+            {group(besideHub, () => null)}
+          </div>
         )}
       </div>
       <div className={s.foot}>
         <You go={go} />
+        <HubDots ref={marks} at={at} />
         <PlaceIcons screen={screen} factory={factory} go={go} />
       </div>
     </nav>
+  );
+}
+
+/**
+ * One small mark a hub at the sidebar's foot, between you and the two icons, the one on show filled; a swipe moves it
+ * with the fingers. A click switches to that hub, on the slide. None with one hub.
+ */
+function HubDots({ ref, at }: { ref: RefObject<HTMLDivElement | null>; at: number }) {
+  const hubs = useHubs();
+  if (hubs.length < 2) return null;
+  return (
+    <div ref={ref} className={s.marks} role="group" aria-label="Hubs" style={{ "--at": String(at) } as CSSProperties}>
+      {hubs.map((h, i) => (
+        <Tooltip key={h.id} content={h.label} side="top">
+          <button type="button" className={s.markHub} aria-label={h.label} {...(i === at ? { "aria-current": "true" as const } : {})} onClick={() => switchHub(h.id)} />
+        </Tooltip>
+      ))}
+      <span className={s.markOn} aria-hidden />
+    </div>
   );
 }
 

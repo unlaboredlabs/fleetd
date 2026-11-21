@@ -16,6 +16,28 @@
   min-height: 0;
 }
 
+/* The hub on show's list and, while a swipe or a slide brings it, the next or previous hub's beside it (hubSwipe.ts):
+   only their transforms move, on the sidebar's own clear ground, so nothing in them ever paints a fill of its own that
+   the Mac's see-through sidebar would show as a box. */
+.pages {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.beside {
+  position: absolute;
+  inset: 0;
+  overflow-y: hidden;
+}
+/* Nothing under the fingers lights up or opens a tooltip while it moves. */
+.pages[data-moving] > .list {
+  pointer-events: none;
+  will-change: transform;
+}
+
 .list {
   flex: 1;
   min-height: 0;
@@ -522,6 +544,56 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* One small square a hub (a hub's own shape; a bot's is round), the one on show filled; a swipe moves the fill with the
+   fingers (--at, from hubSwipe.ts's paint). Each a slim button the foot's height, so it takes no row of its own. */
+.marks {
+  --pitch: 12px;
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-right: var(--space-1);
+}
+.markHub {
+  display: grid;
+  place-items: center;
+  width: var(--pitch);
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  cursor: pointer;
+}
+.markHub::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--faint);
+  opacity: 0.55;
+  transition: opacity var(--dur-quick) var(--ease-snap);
+}
+.markHub:hover::before {
+  opacity: 1;
+}
+.markHub:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.markOn {
+  position: absolute;
+  top: 50%;
+  left: calc((var(--pitch) - 6px) / 2);
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 2px;
+  background: var(--text);
+  transform: translateX(calc(var(--at) * var(--pitch)));
+  pointer-events: none;
 }
 
 .tools {

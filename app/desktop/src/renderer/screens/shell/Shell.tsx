@@ -33,6 +33,7 @@ import { Sidebar, SidebarTop } from "./Sidebar";
 import { useHeldRows, useSidebar } from "./sidebarState";
 import { showHub, shownRows, useSidebarView, viewedHub } from "./sidebarLayout";
 import { useSidebarWidth } from "./sidebarWidth";
+import { switchHubBy } from "./hubSwipe";
 import { SidebarEdge } from "./ResizeEdge";
 import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
@@ -243,6 +244,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
     if (next !== null) goTo(next);
   };
 
+  const stepHubs = (by: 1 | -1) => switchHubBy(hubs.map((h) => h.id), viewHub, by);
+
   // A hub from before metrics has no Factory output: its menu item, command and shortcut go, and the sidebar's Factory
   // opens on Agent time (factory/support.ts).
   const metrics = useMetricsSupport();
@@ -270,6 +273,9 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
       },
       { id: "sidebar.toggle", title: "Toggle sidebar", group: "actions", enabled: () => chrome, run: sidebar.toggle },
       { id: "panel.toggle", title: "Toggle the panel", group: "actions", keywords: ["panel", "right", "agents", "prs", "checklist"], enabled: () => chrome && open !== null, run: panel.toggle },
+      // With several hubs, the one before or after the one on show, round the ends, on the sidebar's slide.
+      { id: "hub.previous", title: "Previous hub", group: "go-to", keywords: ["hub", "switch", "space"], enabled: () => chrome && hubs.length > 1, run: () => stepHubs(-1) },
+      { id: "hub.next", title: "Next hub", group: "go-to", keywords: ["hub", "switch", "space"], enabled: () => chrome && hubs.length > 1, run: () => stepHubs(1) },
       { id: "project.previous", title: "Previous bot", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(-1) },
       { id: "project.next", title: "Next bot", group: "projects", searchOnly: true, enabled: () => chrome && (projects?.length ?? 0) > 0, run: () => step(1) },
       {
