@@ -39,6 +39,8 @@ export type LeadHooks = {
     agents(r: ProjectRef): AgentsLine;
     cancel(r: ProjectRef, taskId: string, reason: string): Promise<void>;
     leftovers(r: ProjectRef, workstreamId: string): string[];
+    /** The closed order's ended tasks go on no more (no wait_ci, no Monitor): those whose waits were dropped. */
+    endFor?(r: ProjectRef, workstreamId: string): string[];
     /** Live tasks (of `r`, or every project's). */
     live?(r: ProjectRef | undefined): { taskId: string; projectRef: ProjectRef }[];
     /** Live tasks that work in a repo of their project. */

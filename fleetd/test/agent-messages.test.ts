@@ -28,6 +28,10 @@ async function setup() {
     askedAt: (taskId: string) => k.t.askedAt(taskId),
     answered: (taskId: string) => k.t.answered(taskId),
     hasCiWait: () => false,
+    closedOrder: (taskId: string) => {
+      const task = k.t.get(taskId);
+      return task ? k.t.closedOrder(task) : undefined;
+    },
   });
   k.ports.takeHeld = ((taskId: string, thread: never, id: string) => takeHeld(k.hub, taskId, thread, id)) as never;
   k.ports.rehold = ((id: string) => rehold(k.hub, id)) as never;
@@ -112,6 +116,19 @@ test("a message to a finished agent never restarts it, and goes in when its Moni
   expect(k.t.get("T1")?.state).toBe("running");
   expect(steerOf(k as never, sent.messageId).held).toBeUndefined();
   expect(steers.heldForTask(k.hub.db, "T1")).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
+test("a message to a finished agent of a closed order is refused, saying why, never held", async () => {
+  const k = await setup();
+  await k.ended();
+  k.hub.db.conn.query("UPDATE workstreams SET state = 'done', data = json_set(data, '$.state', 'done') WHERE n = 1").run();
+  const sent = await k.dm(["T1"], "Use 1001, not 1012");
+  expect(sent.to[0]?.outcome).toBe("refused");
+  expect(sent.to[0]?.detail).toContain("T1 can't go on: its order W1 is done, and its variables (its GitHub token among them) went with it.");
+  expect(steers.heldForTask(k.hub.db, "T1")).toEqual([]);
+  expect(k.ports.sends).toEqual([]);
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
   k.hub.shutdown.abort();
 });
 

@@ -400,7 +400,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "The workstream is done: say why in one line. Its agents still queued, running or waiting are stopped; the merge train's reviewers are left to the train.",
+   "description": "The workstream is done: say why in one line. Its agents still queued, running or waiting are stopped; the merge train's reviewers are left to the train. Its finished agents go on no more: their wait_ci waits and Monitors end and nothing continues them, since its variables (its GitHub token among them) go with it.",
    "inputSchema": {
     "properties": {
      "why": {

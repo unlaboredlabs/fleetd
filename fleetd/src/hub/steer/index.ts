@@ -62,6 +62,8 @@ export type SteerTasks = {
   answered(taskId: string): void;
   /** Whether the task keeps a wait_ci open. */
   hasCiWait(taskId: string): boolean;
+  /** Why the ended task can't run again (its order closed): the line and its fix (tasks `closedOrder`). */
+  closedOrder(taskId: string): [string, string] | undefined;
 };
 
 /** The tasks area's part: set by it when it starts; until then a steer to a task that isn't running can't be held. */
@@ -77,6 +79,7 @@ export const steerTasks = (hub: Hub) =>
     askedAt: () => undefined,
     answered: () => {},
     hasCiWait: () => false,
+    closedOrder: () => undefined,
   }));
 
 type Resolved = { workstreamId: string; title: string; task?: Task; thread: ThreadRef };
@@ -169,6 +172,9 @@ export const sendRunId = (r: ThreadRef, clientRequestId: string) => uuidFrom(`se
  */
 export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> {
   const to = resolve(hub, by, req.target);
+  // An ended task of a closed order never runs again, so nothing would ever carry this to it.
+  const closed = to.task && (to.task.state === "done" || to.task.state === "failed") ? steerTasks(hub).closedOrder(to.task.taskId) : undefined;
+  if (closed) throw invalid(...closed);
   const crid = `steer:${stored(by)}:${req.clientRequestId}`;
   const now = nowMs(hub.clock);
   const text = jsTake(req.text, STEER_TEXT_MAX);

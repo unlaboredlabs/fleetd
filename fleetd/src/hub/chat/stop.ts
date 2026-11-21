@@ -57,6 +57,8 @@ export async function stopOrder(
   await approvals(hub).closeOpen(r, id, `${id} was stopped`);
   const at = isoMs(nowMs(hub.clock));
   records.workstreamPut({ ...stored, state: "stopped", headline: "Stopped by you", headlineAt: at, updatedAt: at });
+  // Its ended agents go on no more either (no wait_ci, no Monitor): its variables go with it.
+  tasks?.endFor?.(r, id);
   events(hub).append({
     at,
     type: "workstream.state",

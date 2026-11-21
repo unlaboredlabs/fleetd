@@ -136,7 +136,8 @@ function setErrors(db: Database, taskId: string, url: string, errors: number): v
 }
 
 /**
- * One pass: each finished wait wakes its task and goes. A wait of a failed, cancelled or deleted task goes silently.
+ * One pass: each finished wait wakes its task and goes. A wait of a failed, cancelled or deleted task, or of one whose
+ * order is closed (its token went with it), goes silently.
  * `openBlocking` gives a PR's still-open blocking findings for its line. Returns how many tasks were woken.
  */
 export async function pollCiWaits(
@@ -155,7 +156,7 @@ export async function pollCiWaits(
       console.warn("ci wait: task not read:", error);
       continue;
     }
-    if (!task || task.state === "cancelled" || task.state === "failed") {
+    if (!task || task.state === "cancelled" || task.state === "failed" || tasks.closedOrder(task)) {
       done(db, taskId, url);
       continue;
     }

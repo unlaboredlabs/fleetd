@@ -51,6 +51,7 @@ export function start(hub: Hub): void {
         }),
       cancel: (r: ProjectRef, taskId: string, reason: string) => t.cancelForRemoval(r, taskId, reason),
       leftovers: (r: ProjectRef, workstreamId: string) => t.liveIn(r, workstreamId).filter((id) => !(taskHooks(hub).reviews?.isReviewer(id) ?? false)),
+      endFor: (r: ProjectRef, workstreamId: string) => t.endFor(r, workstreamId),
   };
   // The doctor's recovery breaker and unowned sessions checks read the tasks sweep's memory (usage/wire.rs `Fleet`).
   Object.assign(doctor(hub).sources, {
@@ -69,6 +70,10 @@ export function start(hub: Hub): void {
     answered: (taskId: string) => t.answered(taskId),
     hasCiWait: (taskId: string) =>
       (hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM ci_waits WHERE task_id = ?").get(taskId)?.n ?? 0) > 0,
+    closedOrder: (taskId: string) => {
+      const task = t.get(taskId);
+      return task ? t.closedOrder(task) : undefined;
+    },
   });
   // The landing scanner found git on a machine lose or regain GitHub: its agents hear it once per flip.
   work(hub).onGithubReach = (machineId, reached) => t.githubReach(machineId, reached);
