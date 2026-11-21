@@ -29,10 +29,12 @@ import { ActionSheetIOS, ActivityIndicator, Alert, AppState, findNodeHandle, Fla
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { holds, windowChat } from "../around";
+import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
 import { aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, type AttachmentRef, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
@@ -75,6 +77,7 @@ import { ImportCard } from "./vault/ImportCard";
 import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
 import { ScreenCards } from "./ScreenCards";
+import { PIN_ROOM, PinCapsuleView, PinnedSheet } from "./PinnedMessages";
 import { Symbol } from "./manage/parts";
 import { machineName } from "./manage/model";
 import type { SkillSaved } from "./manage/skillsModel";
@@ -123,6 +126,8 @@ interface ThreadActions {
   readonly lens: (about: ChatAbout, from: string | undefined) => void;
   /** About… on a bubble, in a tagged chat: moves its message to another open order or none; undefined with tags off. */
   readonly about: ((messageId: string, current: string | undefined) => void) | undefined;
+  /** Pin or Unpin on a bubble, for everyone in the chat; undefined on a hub that doesn't keep pins. */
+  readonly pin: ((messageId: string, on: boolean) => void) | undefined;
 }
 
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
@@ -139,7 +144,21 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const chat = state.chats[chatKey] ?? openingChat(state.latest[chatKey]);
   const olderError = state.olderErrors[chatKey];
   const sends = state.sends[chatKey];
-  const items = useMemo(() => chatItems(chat, sends ?? []), [chat, sends]);
+  // Opened at a message far back (a search hit, a pin): the page around it, until it joins the chat (around.ts). Your
+  // sends on their way are at the newest end, which it isn't.
+  const win = state.windows[chatKey];
+  const items = useMemo(() => (win === undefined ? chatItems(chat, sends ?? []) : chatItems(windowChat(win), [])), [chat, sends, win]);
+  // A window closed from here (back to the newest, a send, a jump), as against one that joined the chat as it was read on.
+  const closing = useRef(false);
+  const closeWindow = () => {
+    closing.current = true;
+    session.closeWindow(chatKey);
+  };
+  const pins = state.messagePins[chatKey];
+  const capsule = useMemo(() => capsuleOf(pins), [pins]);
+  const pinned = useMemo(() => new Set((pins ?? []).map((p) => p.messageId)), [pins]);
+  const canPin = findPinsShown(state.hub);
+  const [pinsOpen, setPinsOpen] = useState(false);
   const working = chatState?.leadWorking === true;
   const live = state.hub.phase === "live";
   // What was read when the chat opened: the unread bar stays there while it's open, as chat apps' does.
@@ -167,9 +186,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const lastHuman = items.findLastIndex((i) => i.author === "human");
   const index = useMemo(() => new Map(items.map((i, n) => [i.id, n])), [items]);
   const title = project?.title ?? "Chat";
-  // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and a lens's
-  // capsule under it.
-  const top = (Platform.OS === "ios" ? insets.top + BAR : 0) + (lens === null ? 0 : LENS_ROOM);
+  // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and the pins'
+  // and a lens's capsules under it.
+  const barEnd = Platform.OS === "ios" ? insets.top + BAR : 0;
+  const pinRoom = capsule === undefined ? 0 : PIN_ROOM;
+  const top = barEnd + pinRoom + (lens === null ? 0 : LENS_ROOM);
   // A message a jump goes to (a search hit, a push, a tapped quote) that the lens hides: the lens closed; true when it
   // was hidden.
   const showHidden = (messageId: string): boolean => {
@@ -196,7 +217,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
 
   useEffect(() => {
     session.openChat(chatKey);
-    return () => session.openChat(null);
+    return () => {
+      session.openChat(null);
+      // Opened again, it lands on the first unread or the newest, as ever.
+      session.closeWindow(chatKey);
+    };
   }, [session, chatKey]);
 
   // Removed elsewhere (the desktop app, another phone) while open: back to the list, as nothing is left to show. A tick
@@ -251,6 +276,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // The list is upside down, its newest end at 0, or under the keyboard's padding (before 0) while it's up.
   const newestEnd = () => -Math.max(0, -keyboard.height.value - lift);
   const toNewest = () => list.current?.scrollToOffset({ offset: newestEnd(), animated: !reduce });
+  // Back to the newest from anywhere: from a window far back, the chat's own newest end comes in its place, at once.
+  const backToNewest = () => {
+    if (state.windows[chatKey] === undefined) return toNewest();
+    closeWindow();
+    setAwayFrom(null);
+    setHeldAt(null);
+    requestAnimationFrame(() => list.current?.scrollToOffset({ offset: newestEnd(), animated: false }));
+  };
 
   const newestSeq = items.reduce((n, i) => Math.max(n, i.message?.seq ?? 0), 0);
   // Scrolled away from the newest end at all: the seq it was at. The rows hold still there (holdFrom), so a reply lands
@@ -259,9 +292,23 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Scrolled away from the newest past AWAY: the seq it was at (where the hold started), so the button down counts what
   // came since.
   const [awayFrom, setAwayFrom] = useState<number | null>(() => (reopened !== undefined && reopened.offset > AWAY ? newestSeq : null));
-  const cameSince = arrivedSince(items, awayFrom ?? heldAt);
-  // Nothing new below while near the newest end: no button down, and what came in is read.
-  const atNewest = awayFrom === null && cameSince === 0;
+  // In a window far back, the lead's messages that came since it opened count instead.
+  const windowFrom = useRef<number | null>(null);
+  if (win !== undefined) windowFrom.current ??= chatState?.lastSeq ?? newestSeq;
+  // A window that joined the chat as it was read on: the rows keep their place as the chat's newer ones come in under
+  // them, and the button down counts what came since it opened, as if the chat had been scrolled up to there.
+  const hadWindow = useRef(false);
+  const joining = hadWindow.current && win === undefined && !closing.current;
+  hadWindow.current = win !== undefined;
+  if (win === undefined) closing.current = false;
+  // Closed, it counts from nothing: the next window starts its own.
+  if (win === undefined && !joining) windowFrom.current = null;
+  const heldFrom = win === undefined ? newestSeq : (windowFrom.current ?? newestSeq);
+  const sinceWindow = useMemo(() => (win === undefined ? 0 : chat.messages.filter((m) => m.author !== "human" && m.seq > (windowFrom.current ?? Infinity)).length), [win, chat.messages]);
+  const cameSince = win === undefined ? arrivedSince(items, awayFrom ?? heldAt) : sinceWindow;
+  // Nothing new below while near the newest end: no button down, and what came in is read. A window far back is never
+  // at the newest end.
+  const atNewest = win === undefined && awayFrom === null && cameSince === 0;
   // Where it's scrolled to, and how far it goes, for the status bar's tap: the length as the content grows (a chat
   // opened at its newest end never scrolls, and older pages come in without a scroll).
   const scrolled = useRef({ y: 0, length: 0 });
@@ -272,10 +319,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     scrolled.current = { y: e.nativeEvent.contentOffset.y, length: e.nativeEvent.contentSize.height };
     // How far from the newest end, wherever the keyboard puts it.
     const y = e.nativeEvent.contentOffset.y - newestEnd();
-    session.scrolledTo(chatKey, { offset: y < AWAY / 3 ? 0 : Math.round(y) });
-    if (y > AWAY && awayFrom === null) setAwayFrom(heldAt ?? newestSeq);
+    // In a window far back, the cache keeps the newest end: opened again, the chat lands as it always does.
+    session.scrolledTo(chatKey, { offset: win !== undefined || y < AWAY / 3 ? 0 : Math.round(y) });
+    if (y > AWAY && awayFrom === null) setAwayFrom(heldAt ?? heldFrom);
     else if (y < AWAY / 3 && awayFrom !== null) setAwayFrom(null);
-    if (y > AT_NEWEST && heldAt === null) setHeldAt(newestSeq);
+    if (y > AT_NEWEST && heldAt === null) setHeldAt(heldFrom);
     else if (y <= AT_NEWEST && heldAt !== null) setHeldAt(null);
   };
   // The status bar's tap goes a screen older, as chat apps' does, never to the newest end.
@@ -299,8 +347,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (reading && atNewest && lastSeq !== undefined && chat.loaded) dispatchPrefs({ t: "read", key: chatKey, seq: lastSeq });
   }, [reading, atNewest, lastSeq, chat.loaded, chatKey]);
   const onScreen = useRef<readonly ThreadRow[]>([]);
-  const seen = useRef({ reading, chatKey });
-  seen.current = { reading, chatKey };
+  const seen = useRef({ reading, chatKey, windowed: win !== undefined });
+  seen.current = { reading, chatKey, windowed: win !== undefined };
   const readSeen = useCallback(() => {
     const seq = seenSeq(onScreen.current);
     if (seen.current.reading && seq !== undefined) dispatchPrefs({ t: "read", key: seen.current.chatKey, seq });
@@ -311,7 +359,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     // What shows, for the cache: the thread opens on it again after the app is closed.
     const rows = viewableItems.reduce((n, v) => Math.max(n, (v.index ?? 0) + 1), 0);
     const seqs = onScreen.current.flatMap((r) => (r.t === "item" && r.item.message !== undefined ? [r.item.message.seq] : []));
-    if (rows > 0) session.scrolledTo(seen.current.chatKey, { rows, oldestSeq: seqs.length === 0 ? undefined : Math.min(...seqs) });
+    if (rows > 0 && !seen.current.windowed) session.scrolledTo(seen.current.chatKey, { rows, oldestSeq: seqs.length === 0 ? undefined : Math.min(...seqs) });
     readSeen();
   }).current;
   const viewability = useRef({ itemVisiblePercentThreshold: 60, minimumViewTime: 300 }).current;
@@ -366,6 +414,19 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     }
     // Outside the lens: shown first, then landed on as the thread draws again.
     if (found !== undefined && showHidden(found)) return;
+    // Further back than the chat holds: the page around it is read, then landed on as it comes (around.ts). One that
+    // can't be read lands nowhere, as one gone from the chat.
+    if (found !== undefined && !items.some((i) => i.message?.messageId === found)) {
+      // The chat's own messages have it, a window doesn't: the window goes.
+      if (holds(chat, found)) return closeWindow();
+      if (win?.anchor !== found) return void session.openAround(chatKey, found);
+      if (win.loading === "around") return;
+      closeWindow();
+      haptics.warning();
+      Alert.alert("The message didn't open", win.error?.code === "not_found" ? "It isn't in the chat any more." : (win.error?.message ?? "It isn't in the chat any more."));
+    }
+    // Landed on in a window just read: drawn there at once, as the thread around it is new.
+    const fresh = found !== undefined && win?.anchor === found;
     const first = landed.current === null;
     landed.current = wanted;
     const target = found;
@@ -381,14 +442,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       setPlaced(true);
       return;
     }
-    if (first) setMoving(true);
+    if (first || fresh) setMoving(true);
     setTimeout(() => {
       const there = () => {
         setMoving(false);
         setPlaced(true);
       };
       const find = (r: ThreadRow) => (target !== undefined ? r.t === "item" && r.item.message?.messageId === target : r.t === "unread");
-      if (!scrollToRow(find, target !== undefined ? 0.5 : 1, !first && !reduce, there)) there();
+      if (!scrollToRow(find, target !== undefined ? 0.5 : 1, !first && !fresh && !reduce, there)) there();
       if (target !== undefined) setLit(target);
       else if (unreadFrom !== undefined) setAwayFrom(unreadFrom);
     }, 50);
@@ -416,7 +477,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   useEffect(() => {
     if (streamAt === undefined) setTall(false);
   }, [streamAt]);
-  const held = holdFrom(heldAt !== null || awayFrom !== null, tall, streamAt);
+  // In a window far back every row keeps its place too, as newer pages come in under it.
+  const held = holdFrom(heldAt !== null || awayFrom !== null || win !== undefined || joining, tall, streamAt);
+  useEffect(() => {
+    if (!joining) return;
+    const from = windowFrom.current;
+    if (from !== null) setHeldAt((h) => h ?? from);
+  }, [joining]);
   const hold = useMemo(() => (held === undefined ? undefined : { minIndexForVisible: held }), [held]);
   // At the newest end the rows make room for a new bubble, or the reply growing, on its spring, as it rides up with
   // them. Not while held still: the list keeps its place there, and a row moving to its new place would slide.
@@ -431,10 +498,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     if (out === null) return;
     setAwayFrom(null);
     setHeldAt(null);
+    // It goes at the newest end: a window far back makes way for it.
+    const far = state.windows[chatKey] !== undefined;
+    if (far) closeWindow();
     // In a frame, once the hold above is off: on, the list would keep its place as your message went in under it.
     requestAnimationFrame(() => {
       session.send(chatKey, out.text, { attachments: files, replyTo: out.replyTo, about: lensId });
-      toNewest();
+      if (far) list.current?.scrollToOffset({ offset: newestEnd(), animated: false });
+      else toNewest();
     });
   };
 
@@ -455,15 +526,24 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   };
 
   // What the actions read, as of the last draw.
-  const now = useRef({ items, title, send, scrollToRow, chatKey, openOrders, showHidden });
-  now.current = { items, title, send, scrollToRow, chatKey, openOrders, showHidden };
-  // A jump to a message that was hidden: made once the thread has drawn it.
+  const now = useRef({ items, title, send, scrollToRow, chatKey, openOrders, showHidden, closeWindow });
+  now.current = { items, title, send, scrollToRow, chatKey, openOrders, showHidden, closeWindow };
+  // A jump to a message that was hidden, or further back than the chat holds: made once the thread has drawn it (the
+  // page around it read first, around.ts). One that can't be read is said, and the thread stays where it was.
   const jumping = useRef<string | null>(null);
   useEffect(() => {
     const to = jumping.current;
     if (to === null) return;
+    const far = win?.anchor === to;
+    if (far && win.loading === "around") return;
     jumping.current = null;
-    if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === to, 0.5)) setLit(to);
+    const there = () => setMoving(false);
+    if (scrollToRow((r) => r.t === "item" && r.item.message?.messageId === to, 0.5, !far && !reduce, far ? there : undefined)) return void setLit(to);
+    setMoving(false);
+    if (!far) return;
+    closeWindow();
+    haptics.warning();
+    Alert.alert("The message didn't open", win.error?.code === "not_found" || win.error === undefined ? "It isn't in the chat any more." : win.error.message);
   });
 
   // A lens: on, the thread shows its order from the newest end; off, it goes back to the bubble whose tag opened it.
@@ -487,8 +567,16 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       selectText: setSelecting,
       openImage: setImage,
       jumpTo: (messageId) => {
-        if (now.current.scrollToRow((r) => r.t === "item" && r.item.message?.messageId === messageId, 0.5)) setLit(messageId);
-        else if (now.current.showHidden(messageId)) jumping.current = messageId;
+        if (now.current.scrollToRow((r) => r.t === "item" && r.item.message?.messageId === messageId, 0.5)) return setLit(messageId);
+        if (now.current.showHidden(messageId)) return void (jumping.current = messageId);
+        const key = now.current.chatKey;
+        const chat = session.state.chats[key];
+        jumping.current = messageId;
+        // Held by the chat but not shown (a window is): the window goes, and the thread draws it.
+        if (chat !== undefined && holds(chat, messageId)) return now.current.closeWindow();
+        // Further back: hidden while the thread around it comes in, then drawn there at once.
+        setMoving(true);
+        void session.openAround(key, messageId);
       },
       whoWrote: (messageId) => (now.current.items.find((i) => i.id === messageId)?.author === "human" ? "You" : now.current.title),
       answer: (text) => now.current.send(text),
@@ -522,8 +610,18 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               }),
             )
         : undefined,
+      pin: canPin
+        ? (messageId, on) => {
+            haptics.tap();
+            void session.pinMessage(now.current.chatKey, messageId, on).then((r) => {
+              if (r.ok) return announce(on ? "Pinned" : "Unpinned");
+              haptics.warning();
+              Alert.alert(on ? "The message wasn't pinned" : "The message wasn't unpinned", r.error.message);
+            });
+          }
+        : undefined,
     }),
-    [navigation, session, tagsOn],
+    [navigation, session, tagsOn, canPin],
   );
   // The reply streaming in is measured, to know when its first line reaches the bar.
   const measureStream = useCallback((e: LayoutChangeEvent) => {
@@ -543,12 +641,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
         lens={lensId}
         actions={actions}
         lit={row.t === "item" && row.item.message?.messageId !== undefined && row.item.message.messageId === lit}
+        pinned={row.t === "item" && row.item.message !== undefined && pinned.has(row.item.message.messageId)}
         enter={row.t === "item" ? entering.get(rowKeyOf(row.item)) : undefined}
         reduce={reduce}
         onLayout={at === streamAt ? measureStream : row.t === "item" && hitId !== undefined && row.item.message?.messageId === hitId ? measureHit : undefined}
       />
     ),
-    [chatKey, title, index, lastHuman, showTags, lensId, actions, lit, entering, reduce, streamAt, measureStream, hitId, measureHit],
+    [chatKey, title, index, lastHuman, showTags, lensId, actions, lit, pinned, entering, reduce, streamAt, measureStream, hitId, measureHit],
   );
 
   // An artifact link in a message opens it as its card does.
@@ -561,6 +660,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
     [actions],
   );
   const loading = !chat.loaded && chat.cached !== true;
+  // A window's page that didn't come is said where the older ones would be, as theirs.
+  const pageError = win === undefined ? olderError : win.messages.length > 0 ? win.error : undefined;
   return (
     <View style={[styles.fill, { backgroundColor: t.thread }]}>
       <View style={styles.fill}>
@@ -603,10 +704,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 if (a.tries > 3 && !more) return void a.done?.();
                 setTimeout(() => aimAt(info.index, a), 80);
               }}
-              onEndReached={() => void session.loadOlder(chatKey)}
+              onEndReached={() => void (win === undefined ? session.loadOlder(chatKey) : session.pageWindow(chatKey, "older"))}
+              // A window far back reads on towards the newest as it is scrolled down.
+              {...(win === undefined ? {} : { onStartReached: () => void session.pageWindow(chatKey, "newer"), onStartReachedThreshold: 1 })}
               // Upside down too: the newest end, where its live screens sit over the composer.
               ListHeaderComponent={
                 <View>
+                  {win?.moreAfter === true ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
                   <ScreenCards chatKey={chatKey} />
                   {/* The composer's room and the turn line's over it, always: the thread never moves for the line. */}
                   <View style={{ height: composerHeight + TURN_BAND }} />
@@ -618,13 +722,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                 <View style={{ paddingTop: top + space.sm }}>
                   {loading && items.length === 0 ? (
                     <SkeletonThread />
-                  ) : chat.loadingOlder ? (
+                  ) : (win === undefined ? chat.loadingOlder : win.loading === "older") ? (
                     <ActivityIndicator style={styles.older} color={t.secondary} />
-                  ) : olderError !== undefined ? (
+                  ) : pageError !== undefined ? (
                     // Where the older messages would be: why they didn't come, and a tap reads them again.
-                    <Pressable accessibilityRole="button" accessibilityHint="Reads them again" onPress={() => void session.loadOlder(chatKey)} style={styles.older}>
+                    <Pressable accessibilityRole="button" accessibilityHint="Reads them again" onPress={() => void (win === undefined ? session.loadOlder(chatKey) : session.pageWindow(chatKey, win.moreBefore ? "older" : "newer"))} style={styles.older}>
                       <Text style={[type.footnote, styles.olderError, { color: t.secondary }]}>
-                        {`Older messages didn't load. ${olderError.message} `}
+                        {`${win === undefined ? "Older messages" : "Messages"} didn't load. ${pageError.message} `}
                         <Text style={{ color: t.accent }}>Try Again</Text>
                       </Text>
                     </Pressable>
@@ -648,8 +752,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             </ChatBar>
           </EdgeEffect>
         ) : null}
+        {capsule === undefined ? null : (
+          <View pointerEvents="box-none" style={[styles.lensRow, { top: barEnd + space.xs }]}>
+            <PinCapsuleView capsule={capsule} onPress={() => (capsule.goesTo === undefined ? setPinsOpen(true) : actions.jumpTo(capsule.goesTo))} />
+          </View>
+        )}
         {lens === null ? null : (
-          <View pointerEvents="box-none" style={[styles.lensRow, { top: top - LENS_ROOM + space.xs }]}>
+          <View pointerEvents="box-none" style={[styles.lensRow, { top: barEnd + pinRoom + space.xs }]}>
             <LensCapsule about={lens} phase={openOrders.find((o) => o.workstreamId === lens.workstreamId)?.phaseDetail} onClose={closeLens} />
           </View>
         )}
@@ -666,7 +775,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
                   style={styles.downHit}
                   onPress={() => {
                     haptics.tap();
-                    toNewest();
+                    backToNewest();
                   }}
                 >
                   <Icon name="down" size={18} color={t.label} weight="semibold" />
@@ -708,6 +817,20 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
       </View>
       {focused ? <StatusBarTap onTap={olderByAScreen} /> : null}
       <SelectText text={selecting} onClose={() => setSelecting(null)} />
+      <PinnedSheet
+        pins={pins ?? NO_PINS}
+        open={pinsOpen}
+        me={me}
+        title={title}
+        canUnpin={actions.pin !== undefined}
+        onClose={() => setPinsOpen(false)}
+        onGo={(messageId) => {
+          setPinsOpen(false);
+          // Once the sheet has gone down.
+          setTimeout(() => actions.jumpTo(messageId), SHEET_GONE_MS);
+        }}
+        onUnpin={(messageId) => actions.pin?.(messageId, false)}
+      />
       <ImageViewer image={image} onClose={() => setImage(null)} />
     </View>
   );
@@ -721,6 +844,9 @@ const TURN_BAND = TURN_LINE_HEIGHT + space.sm;
 /** The room a lens's capsule takes under the bar, its gap under it included. */
 const LENS_ROOM = 44;
 const NO_ORDERS: readonly OpenOrder[] = [];
+const NO_PINS: readonly ChatMessagePin[] = [];
+/** How long a sheet takes to go down, before the thread under it moves. */
+const SHEET_GONE_MS = 350;
 
 const stopId = (): string => `stop-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
@@ -813,6 +939,8 @@ interface RowProps {
   readonly lens: string | undefined;
   readonly actions: ThreadActions;
   readonly lit: boolean;
+  /** Pinned for the chat: its menu says Unpin. */
+  readonly pinned: boolean;
   readonly enter: { at: number; step: number } | undefined;
   readonly reduce: boolean;
   /** The reply streaming in, or the message the chat lands on: its height. */
@@ -821,9 +949,9 @@ interface RowProps {
 
 /** Draws again only when its own row changed: the thread's rows are made anew with each streamed word. */
 const sameProps = (a: RowProps, b: RowProps): boolean =>
-  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.tags === b.tags && a.lens === b.lens && a.actions === b.actions && a.lit === b.lit && a.enter === b.enter && a.reduce === b.reduce && a.onLayout === b.onLayout && sameRow(a.row, b.row);
+  a.chatKey === b.chatKey && a.title === b.title && a.canAnswer === b.canAnswer && a.tags === b.tags && a.lens === b.lens && a.actions === b.actions && a.lit === b.lit && a.pinned === b.pinned && a.enter === b.enter && a.reduce === b.reduce && a.onLayout === b.onLayout && sameRow(a.row, b.row);
 
-const RowView = memo(function RowView({ row, chatKey, title, canAnswer, tags, lens, actions, lit, enter, reduce, onLayout }: RowProps) {
+const RowView = memo(function RowView({ row, chatKey, title, canAnswer, tags, lens, actions, lit, pinned, enter, reduce, onLayout }: RowProps) {
   const t = useTheme();
   const now = useNow();
   // Entering only as it mounts soon after it came: a row scrolled back to later shows still.
@@ -843,7 +971,7 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, tags, le
       </View>
     );
   }
-  const item = <ItemView item={row.item} side={row.side} first={row.first} tag={row.tag} tags={tags} lens={lens} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} />;
+  const item = <ItemView item={row.item} side={row.side} first={row.first} tag={row.tag} tags={tags} lens={lens} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} pinned={pinned} />;
   const body =
     row.side === "center" ? (
       item
@@ -901,6 +1029,7 @@ function ItemView({
   title,
   canAnswer,
   actions,
+  pinned,
 }: {
   item: ChatItem;
   side: "me" | "them" | "center";
@@ -912,6 +1041,7 @@ function ItemView({
   title: string;
   canAnswer: boolean;
   actions: ThreadActions;
+  pinned: boolean;
 }) {
   const t = useTheme();
   const now = useNow();
@@ -970,7 +1100,7 @@ function ItemView({
                 said={said}
                 text={words}
                 target={messageId === undefined ? undefined : { id: messageId, part: 0, who }}
-                about={messageId === undefined ? undefined : aboutAction(actions, messageId, item.message)}
+                about={messageId === undefined ? undefined : moreActions(actions, messageId, item.message, pinned)}
                 onPress={
                   retry
                     ? () => {
@@ -998,7 +1128,7 @@ function ItemView({
         {files.map((b, i) => (
           // Each in a view of its own, the last's holding the mark of a slow send: one tree from sending to sent.
           <View key={i}>
-            <MediaView bubble={b} chatKey={chatKey} mine actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} about={messageId === undefined ? undefined : aboutAction(actions, messageId, item.message)} />
+            <MediaView bubble={b} chatKey={chatKey} mine actions={actions} when={when} said={said} target={messageId === undefined ? undefined : { id: messageId, part: 0, who }} about={messageId === undefined ? undefined : moreActions(actions, messageId, item.message, pinned)} />
             {i === files.length - 1 ? <SendWait state={item.state} at={item.at} /> : null}
           </View>
         ))}
@@ -1018,7 +1148,7 @@ function ItemView({
   const streaming = item.state === "streaming";
   // Nothing written yet: the turn line over the composer says what the lead does.
   if (parts.length === 0 && files.length === 0 && streaming) return null;
-  const about = messageId === undefined || streaming ? undefined : aboutAction(actions, messageId, item.message);
+  const about = messageId === undefined || streaming ? undefined : moreActions(actions, messageId, item.message, pinned);
   // A message about several orders: each bubble whose order differs from the one before says its own.
   const partAbout = (n: number) => (tags && item.message?.about === undefined ? item.message?.parts?.[n]?.about : undefined);
   const lensOn = (a: ChatAbout) => actions.lens(a, messageId);
@@ -1401,6 +1531,14 @@ const aboutAction = (actions: ThreadActions, messageId: string, message: ChatIte
   if (pick === undefined) return undefined;
   const current = aboutOf(message)?.workstreamId;
   return [{ label: "About…", icon: "tag", presents: true, onPress: () => pick(messageId, current) }];
+};
+
+/** A bubble's menu past Reply, Copy and Select Text: Pin or Unpin, then About… in a tagged chat. */
+const moreActions = (actions: ThreadActions, messageId: string, message: ChatItem["message"], pinned: boolean): readonly MenuItem[] | undefined => {
+  const pin = actions.pin;
+  const pinItem: readonly MenuItem[] = pin === undefined ? [] : [{ label: pinned ? "Unpin" : "Pin", icon: pinned ? "unpin" : "pin", onPress: () => pin(messageId, !pinned) }];
+  const all = [...pinItem, ...(aboutAction(actions, messageId, message) ?? [])];
+  return all.length === 0 ? undefined : all;
 };
 
 /** The About… choices, the current one ticked; `go` with the order picked (undefined: Nothing), never with the current. */

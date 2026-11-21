@@ -3,6 +3,7 @@
 // open requests (held through a drop, as the chats are), what the open chat's lead does this moment (its live lane) with when its turn began, and the screens
 // of the chats looked at (their cards, and the live view's). The session (session.ts) does the calls and feeds their
 // answers back here; a screen's frames go past it (session.ts onFrame), as they come many a second.
+import { followLive, joined, meets, openingWindow, withError, withPage, type ChatWindow } from "./around";
 import { RESTART_FAST_MS, type HubFrame } from "./hub/client";
 import { keyOf, refOf, type Key } from "./projectKey";
 import {
@@ -21,6 +22,8 @@ import {
   type ChatHistoryOutput,
   type ChatMessage,
   type ChatMessageEventData,
+  type ChatMessagePin,
+  type ChatMessagePinsEventData,
   type ChatSend,
   type FleetStatus,
   type HubError,
@@ -92,6 +95,13 @@ export interface State {
   readonly latest: Readonly<Record<Key, readonly ChatMessage[]>>;
   /** Each chat's newest page, read when search opens: what search looks through, with the chats opened. */
   readonly corpus: Readonly<Record<Key, readonly ChatMessage[]>>;
+  /**
+   * A chat opened at a message far back, around it (around.ts): shown in its thread until it joins the chat's own
+   * messages or the person goes back to the newest.
+   */
+  readonly windows: Readonly<Record<Key, ChatWindow>>;
+  /** Each chat's pinned messages, newest pinned first (messagePins.ts), read as it opens and again as one changes. */
+  readonly messagePins: Readonly<Record<Key, readonly ChatMessagePin[]>>;
   /** The open requests (requests_list); undefined until read, or as last seen before the app was closed (cache.ts). */
   readonly requests: readonly HumanRequest[] | undefined;
   /** Whether the open requests were read from the hub since the app started, rather than only kept from before. */
@@ -139,6 +149,8 @@ export const initial = (hub: HubState): State => ({
   sends: {},
   latest: {},
   corpus: {},
+  windows: {},
+  messagePins: {},
   requests: undefined,
   requestsRead: false,
   answering: {},
@@ -164,6 +176,13 @@ export type Action =
   | { readonly t: "loading_older"; readonly key: Key }
   | { readonly t: "latest"; readonly key: Key; readonly messages: readonly ChatMessage[] }
   | { readonly t: "corpus"; readonly key: Key; readonly messages: readonly ChatMessage[] }
+  /** A window asked for around a message far back, a page of it come or failed, or it closed (around.ts). */
+  | { readonly t: "window_open"; readonly key: Key; readonly anchor: string }
+  | { readonly t: "window_page"; readonly key: Key; readonly anchor: string; readonly page: ChatHistoryOutput; readonly end: "around" | "older" | "newer" }
+  | { readonly t: "window_loading"; readonly key: Key; readonly end: "older" | "newer" }
+  | { readonly t: "window_failed"; readonly key: Key; readonly anchor: string; readonly error: HubError }
+  | { readonly t: "window_close"; readonly key: Key }
+  | { readonly t: "message_pins"; readonly key: Key; readonly pins: readonly ChatMessagePin[] }
   | { readonly t: "admin"; readonly admin: boolean; readonly me?: string | undefined; readonly meName?: string | undefined; readonly meAvatar?: string | undefined; readonly meRole?: HubRole | undefined; readonly leftOut?: readonly string[] | undefined }
   | { readonly t: "send"; readonly key: Key; readonly row: ChatSend }
   | { readonly t: "sent"; readonly key: Key; readonly clientRequestId: string; readonly result: CallResult; readonly leadWaiting?: string | undefined }
@@ -208,6 +227,14 @@ export const openingChat = (latest: readonly ChatMessage[] | undefined): Chat =>
 
 const withChat = (s: State, key: Key, chat: Chat): State => (chat === s.chats[key] ? s : { ...s, chats: { ...s.chats, [key]: chat } });
 
+/** A chat's window, changed; one that has met the chat's own messages joins them and goes (around.ts meets). */
+const withWindow = (s: State, key: Key, w: ChatWindow | undefined): State => {
+  if (w === undefined) return { ...s, windows: without(s.windows, key) };
+  const chat = s.chats[key];
+  if (chat !== undefined && meets(w, chat)) return withChat({ ...s, windows: without(s.windows, key) }, key, joined(chat, w));
+  return { ...s, windows: { ...s.windows, [key]: w } };
+};
+
 /** The newest messages kept for a chat's preview. */
 export const LATEST = 3;
 
@@ -232,8 +259,12 @@ export const reduce = (s: State, a: Action): State => {
       if (chat?.cached !== true) return s;
       return withChat(s, a.key, { ...mergeMessages({ ...chat, cached: false, loaded: true }, chat.held), held: [] });
     }
-    case "history":
-      return withChat({ ...s, olderErrors: without(s.olderErrors, a.key) }, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
+    case "history": {
+      const out = withChat({ ...s, olderErrors: without(s.olderErrors, a.key) }, a.key, applyHistory(chatOf(s, a.key), a.page, a.direction));
+      // Its newest page may reach back to an open window's newest end.
+      const w = out.windows[a.key];
+      return w === undefined ? out : withWindow(out, a.key, w);
+    }
     case "loading_older":
       return withChat(s, a.key, { ...chatOf(s, a.key), loadingOlder: true });
     case "history_failed":
@@ -245,6 +276,25 @@ export const reduce = (s: State, a: Action): State => {
       return withLatest(s, a.key, a.messages);
     case "corpus":
       return { ...s, corpus: { ...s.corpus, [a.key]: a.messages } };
+    case "window_open":
+      return withWindow(s, a.key, openingWindow(a.anchor));
+    case "window_loading": {
+      const w = s.windows[a.key];
+      return w === undefined || w.loading !== null ? s : withWindow(s, a.key, { ...w, loading: a.end, error: undefined });
+    }
+    case "window_page": {
+      // A page for a window since closed, or opened at another message: dropped.
+      const w = s.windows[a.key];
+      return w?.anchor !== a.anchor ? s : withWindow(s, a.key, withPage(w, a.page, a.end));
+    }
+    case "window_failed": {
+      const w = s.windows[a.key];
+      return w?.anchor !== a.anchor ? s : withWindow(s, a.key, withError(w, a.error));
+    }
+    case "window_close":
+      return a.key in s.windows ? withWindow(s, a.key, undefined) : s;
+    case "message_pins":
+      return { ...s, messagePins: { ...s.messagePins, [a.key]: a.pins } };
     case "admin": {
       const leftOut = a.leftOut ?? [];
       return s.admin === a.admin && s.me === a.me && s.meName === a.meName && s.meAvatar === a.meAvatar && s.meRole === a.meRole && s.leftOut.join() === leftOut.join()
@@ -427,7 +477,7 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   // A new message lifts its chat in the list at once, with its time: the hub says chat.waiting only when what its
   // chat waits for changes.
   const at = message?.createdAt ?? event.at;
-  const base =
+  let base =
     known === undefined || data.seq <= known.lastSeq
       ? s
       : { ...s, chatStates: { ...s.chatStates, [key]: { ...known, lastSeq: data.seq, lastMessageAt: known.lastMessageAt === undefined || at > known.lastMessageAt ? at : known.lastMessageAt } } };
@@ -439,6 +489,9 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   }
   const sends = base.sends[key];
   const settled = sends === undefined ? undefined : settleSends(sends, [message]);
+  // A message the open window holds too (a stream's end, a retag): its copy there follows.
+  const w = base.windows[key];
+  if (w !== undefined) base = { ...base, windows: { ...base.windows, [key]: followLive(w, message) } };
   // Its newest few too: a chat held from an earlier link keeps new messages aside, and the list's preview reads these.
   const out = withChat(withLatest(base, key, [message]), key, mergeLive(chat, message));
   return settled === undefined || settled === sends ? out : { ...out, sends: { ...out.sends, [key]: settled } };
@@ -447,10 +500,12 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
 /**
  * What an event asks the session to read again: the open requests, the orders board when its agents moved, a whole snapshot when the projects changed (a
  * machine removed too), the pinned chats or the sections when this person changed them on another device, who the person is when the
- * hub's people changed (a new picture), or a chat's screens when one of them started, changed hands or ended.
+ * hub's people changed (a new picture), a chat's screens when one of them started, changed hands or ended, or a
+ * chat's pinned messages when someone pinned or unpinned one (`messagePins`, its chat).
  */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly board: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly sections: boolean; readonly info: boolean; readonly screens?: Key } => {
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly board: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly sections: boolean; readonly info: boolean; readonly screens?: Key; readonly messagePins?: Key } => {
   const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
+  const pinned = event.type === "chat.message_pins" ? (event.data as ChatMessagePinsEventData | undefined)?.projectRef : undefined;
   return {
     requests: event.type.startsWith("request."),
     // An agent started, ended or changed its order: who works where (the bots).
@@ -462,5 +517,6 @@ export const effectsOf = (event: HubEvent): { readonly requests: boolean; readon
     // Who the person is: their name, role or picture may have changed.
     info: event.type === "people.changed",
     ...(screen === undefined ? {} : { screens: keyOf(screen) }),
+    ...(pinned === undefined ? {} : { messagePins: keyOf(pinned) }),
   };
 };
