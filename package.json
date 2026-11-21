@@ -22,6 +22,14 @@
     "app/mobile/src/bytes.ts",
     "app/mobile/src/projectKey.ts"
   ],
+  "peerDependencies": {
+    "acorn": "8.19.0"
+  },
+  "peerDependenciesMeta": {
+    "acorn": {
+      "optional": true
+    }
+  },
   "exports": {
     "./contracts": "./app/desktop/src/shared/contracts/contracts.ts",
     "./contracts/schema/*.json": "./app/desktop/src/shared/contracts/schema/*.json",
@@ -42,6 +50,16 @@
     "./box/claude": "./fleetd/src/node/runner/claude_spec.ts",
     "./box/session_state": "./fleetd/src/node/sessions/state.ts",
     "./box/mask": "./fleetd/src/node/mask.ts",
+    "./browser/agent_browser_policy": "./fleetd/src/node/browser/agent_browser_policy.ts",
+    "./browser/box_chrome": "./fleetd/src/node/place/box_chrome.ts",
+    "./browser/broker": "./fleetd/src/node/browser/broker.ts",
+    "./browser/cdp": "./fleetd/src/node/browser/cdp.ts",
+    "./browser/guard": "./fleetd/src/node/browser/guard.ts",
+    "./browser/logins": "./fleetd/src/node/browser/logins.ts",
+    "./browser/proxy": "./fleetd/src/node/browser/cdp_proxy.ts",
+    "./browser/recording": "./fleetd/src/node/browser/recording.ts",
+    "./browser/secret_sink": "./fleetd/src/node/secrets/sink.ts",
+    "./browser/session": "./fleetd/src/node/browser/session.ts",
     "./fakes/app": "./fleetd/test/fake-app.ts",
     "./fakes/node": "./fleetd/test/fake-node.ts",
     "./fakes/accounts": "./fleetd/test/fake-accounts.ts",

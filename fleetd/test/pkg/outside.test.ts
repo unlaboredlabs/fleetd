@@ -42,9 +42,11 @@ test("a project outside the repo installs the package, imports every entry point
     JSON.stringify({ name: "outside", private: true, type: "module", dependencies: { fleetd: join(dir, "pack", tarball!) } }),
   );
   expect(bun(["install"])).toMatchObject({ code: 0 });
-  // The one thing the project has besides the package: Bun's types, fleetd's own copy.
+  // What the project has besides the package: Bun's types, and the package's peer dependency (acorn, which the
+  // browser's guard reads scripts with), fleetd's own copies.
   mkdirSync(join(project, "node_modules/@types"));
   symlinkSync(join(ROOT, "fleetd/node_modules/@types/bun"), join(project, "node_modules/@types/bun"));
+  symlinkSync(join(ROOT, "fleetd/node_modules/acorn"), join(project, "node_modules/acorn"));
 
   const names = entries();
   expect(names.length).toBeGreaterThan(90);

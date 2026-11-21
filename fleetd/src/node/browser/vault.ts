@@ -7,8 +7,8 @@
 // address.ts), and tells the hub how it went (`vault_filled`). A value is masked as `***vault:<label>/<field>***`.
 import type { AddressSecret, CardSecret, VaultFillPlain } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import type { Broker } from "./index.ts";
-import { type Card, hostOf } from "./onepassword.ts";
+import type { BrowserBroker as Broker } from "./broker.ts";
+import { type Card, hostOf } from "./logins.ts";
 import type { Session } from "./session.ts";
 
 /** Hosting suffixes whose subdomains belong to different people: a site on one matches only as its whole host

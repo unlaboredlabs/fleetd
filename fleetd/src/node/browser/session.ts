@@ -6,9 +6,9 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import type { Cdp, Event } from "./cdp.ts";
 import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
-import { RECORDING_FILES } from "../../shared/screens_wire.ts";
-import { hostOf } from "./onepassword.ts";
-import { appendAction, appendLine, Scrub, type Steps, type VideoSink } from "./record.ts";
+import { hostOf } from "./logins.ts";
+import { Scrub } from "../mask.ts";
+import type { Recording, Steps } from "./recording.ts";
 
 export const WIDTH = 1280;
 export const HEIGHT = 800;
@@ -31,6 +31,23 @@ export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | unde
 /** The schemes of this machine's own files and browser pages, which a boxed session's page is closed on: a backstop only,
  * as Chrome's error page (chrome-error:) and an empty URL are left alone. */
 
+/** A session as it carries over to another connection or holder (`Session.state`), plain JSON. */
+export type SessionState = {
+  id: string;
+  threadId: string;
+  startedAt: string;
+  control: BrowserControl;
+  credentialsFilled: number;
+  secrets: [string, string][];
+  filledFields: [target: string, site: string, nodes: number[]][];
+  driverTargets: [session: string, target: string][];
+  pages: [target: string, session: string][];
+  urls: [target: string, url: string][];
+  steps: number;
+  heldUntil: number;
+  heldForAnswer: boolean;
+};
+
 export class Session implements GuardSession {
   private controlNow: BrowserControl = "agent";
   /** Pages open, oldest first: the target and the broker's own session on it. The newest is followed. */
@@ -50,11 +67,11 @@ export class Session implements GuardSession {
   step: BrowserAction | undefined;
   /** Who is told when control changes here (the agent's first command after a hand-back takes it). */
   onControl: ((control: BrowserControl) => void) | undefined;
-  readonly startedAt = new Date().toISOString();
-  private readonly start0 = performance.now();
+  readonly startedAt: string;
+  private readonly start0: number;
   private steps_ = 0;
   /** Where its recording goes; none for a session that records nothing (tests). */
-  recording: { dir: string; steps: Steps; video: VideoSink | undefined } | undefined;
+  recording: { to: Recording; steps: Steps } | undefined;
   private ticker: Timer | undefined;
   /** The DOM captures after each step, in order, and the hash of the page the last one wrote. */
   private captures: Promise<void> = Promise.resolve();
@@ -74,14 +91,98 @@ export class Session implements GuardSession {
    * it, whatever the answer was. */
   private heldForAnswer = false;
 
+  /** `startedAt`: a session that started before, on another connection (`restore`); its clock goes on from then. */
   constructor(
     readonly id: string,
     readonly threadId: string,
-    readonly cdp: Cdp,
+    /** Its Chrome's connection: another one after a dropped one (`reconnect`). */
+    public cdp: Cdp,
     secrets: [string, string][] = [],
+    startedAt?: string,
   ) {
     this.secrets = [...secrets];
     this.scrubNow = new Scrub(this.secrets);
+    this.startedAt = startedAt ?? new Date().toISOString();
+    this.start0 = startedAt === undefined ? performance.now() : performance.now() - Math.max(Date.now() - Date.parse(startedAt), 0);
+  }
+
+  /** Where the driver's answers and events go (the proxy's socket), on this connection and the next. */
+  private driver: ((message: Record<string, unknown>) => void) | undefined;
+
+  /** The driver's listener of its answers and the events it may see: one at a time. */
+  proxyTo(fn: ((message: Record<string, unknown>) => void) | undefined): void {
+    this.driver = fn;
+    this.cdp.proxyEvents(fn);
+  }
+
+  /** What carries the session to another connection to its Chrome, or another holder's: who drives, what it filled
+   * (the values, so the next one scrubs them too, and the fields, which the driver may still not write to), the pages
+   * it follows and the driver's sessions. Its values are secrets: whoever keeps this seals it. */
+  state(): SessionState {
+    return {
+      id: this.id,
+      threadId: this.threadId,
+      startedAt: this.startedAt,
+      control: this.controlNow,
+      credentialsFilled: this.credentialsFilled,
+      secrets: [...this.secrets],
+      filledFields: [...this.filledFields].map(([target, on]) => [target, on.site, [...on.nodes]]),
+      driverTargets: [...this.driverTargets],
+      pages: this.pages.map(([t, s]) => [t, s]),
+      urls: [...this.urls],
+      steps: this.steps_,
+      heldUntil: this.heldUntil,
+      heldForAnswer: this.heldForAnswer,
+    };
+  }
+
+  /** The session `state` says, on `cdp`, a new connection to its Chrome: `resume` follows its page again. */
+  static restore(state: SessionState, cdp: Cdp): Session {
+    const s = new Session(state.id, state.threadId, cdp, state.secrets, state.startedAt);
+    s.controlNow = state.control;
+    s.credentialsFilled = state.credentialsFilled;
+    for (const [target, site, nodes] of state.filledFields) s.filledFields.set(target, { site, nodes: new Set(nodes) });
+    for (const [session, target] of state.driverTargets) s.driverTargets.set(session, target);
+    s.pages.push(...state.pages.map(([t, p]) => [t, p] as [string, string]));
+    for (const [target, url] of state.urls) s.urls.set(target, url);
+    s.steps_ = state.steps;
+    s.heldUntil = state.heldUntil;
+    s.heldForAnswer = state.heldForAnswer;
+    return s;
+  }
+
+  /** Goes on over `cdp`, a new connection to the same Chrome: the broker's own sessions on it carried over (still
+   * hidden from the driver), the driver's listener moved, and the page followed again. */
+  async reconnect(cdp: Cdp): Promise<void> {
+    this.stopEvents?.();
+    cdp.adoptOwned(this.cdp.owned());
+    this.cdp = cdp;
+    this.cdp.proxyEvents(this.driver);
+    await this.resume();
+  }
+
+  /**
+   * Follows the browser's pages again on a connection that took over from another: what changed while none was there
+   * (a page opened or closed) is looked at now, and the followed page's screencast started again, as a frame it sent
+   * meanwhile went unacknowledged.
+   */
+  async resume(): Promise<void> {
+    this.stopEvents = this.cdp.events((e) => void this.event(e));
+    const { targetInfos } = (await this.cdp.call(undefined, "Target.getTargets")) as { targetInfos: { targetId: string; type: string; url: string }[] };
+    const open = new Set(targetInfos.filter((t) => t.type === "page").map((t) => t.targetId));
+    for (const t of targetInfos) if (t.type === "page") this.urls.set(t.targetId, t.url);
+    this.pages.splice(0, this.pages.length, ...this.pages.filter(([t]) => open.has(t)));
+    for (const target of open) {
+      if (this.pages.some(([t]) => t === target)) continue;
+      try {
+        this.pages.push([target, await this.cdp.attach(target)]);
+      } catch {
+        // Gone before the attach.
+      }
+    }
+    const now = this.page()?.[1];
+    if (now) await this.cdp.call(now, "Page.stopScreencast").catch(() => {});
+    await this.follow(undefined);
   }
 
   /** When a step, a person's input or a change of control last touched the session: what its idle end goes by. */
@@ -183,7 +284,9 @@ export class Session implements GuardSession {
     const r = this.recording;
     if (r) {
       try {
-        appendAction(r.dir, action, this.scrubNow, r.steps, this.id);
+        const clean = this.scrubNow.value(action);
+        r.steps.note(r.to.key ?? this.id, this.id, clean);
+        r.to.append("actions", JSON.stringify(clean));
       } catch (e) {
         console.warn(`browser ${this.id}: action not logged: ${(e as Error).message}`);
       }
@@ -241,7 +344,7 @@ export class Session implements GuardSession {
       html = bytes.subarray(0, end).toString("utf8");
     }
     try {
-      appendLine(r.dir, RECORDING_FILES.dom.name, { seq, offsetMs: this.offsetMs(), url, title, html }, this.scrubNow);
+      r.to.append("dom", JSON.stringify(this.scrubNow.value({ seq, offsetMs: this.offsetMs(), url, title, html })));
     } catch (e) {
       console.warn(`browser ${this.id}: DOM snapshot not written: ${(e as Error).message}`);
     }
@@ -249,7 +352,7 @@ export class Session implements GuardSession {
 
   /** Keeps a still page's frame showing in the video, once a second. */
   private tick(): void {
-    this.ticker ??= setInterval(() => this.recording?.video?.tick(this.offsetMs()), 1000);
+    this.ticker ??= setInterval(() => this.recording?.to.video?.tick(this.offsetMs()), 1000);
   }
 
   /** Follows the browser's pages and their screencast, from the page it has now. */
@@ -339,7 +442,7 @@ export class Session implements GuardSession {
 
   /** One screencast frame of the followed page: the newest, and sent while the hub watches, as LIVE_GAP allows. */
   private liveFrame(data: string, metadata: Record<string, unknown>): void {
-    const video = this.recording?.video;
+    const video = this.recording?.to.video;
     if (video) {
       video.frame(Buffer.from(data, "base64"), this.offsetMs());
       this.tick();

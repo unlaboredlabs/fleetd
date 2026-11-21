@@ -115,6 +115,8 @@ imported.
 | `fleetd/box/providers` | box side: the hosted providers' clients (`provider`, `ProviderError`, `GUEST_PORT`, `SECRET_HEADER`: `src/sandbox/providers`) and the template's recipe (`hostedDockerfile`, `templateName`, `CLAUDE_TESTED`) |
 | `fleetd/box/bootstrap`, `fleetd/box/files` | box side: fleetd handed to a fresh box (`bootArgv`, `firstWord`, `deliver`: `src/node/sandbox/remote/bootstrap.ts`) and what runs in a box for its files (`BoxFs`, `sh`, `prepare`, `unpack`: `src/node/sandbox/remote/box_files.ts`) |
 | `fleetd/box/lead`, `fleetd/box/mask`, `fleetd/box/claude`, `fleetd/box/session_state` | box side: a box's node.sock calls answered (`leadChannel`, `answerLine`, `LeadRelay`, `LeadSocketHooks`: `src/node/lead/channel.ts`) with its session's secrets masked (`Masker`: `src/node/mask.ts`), its claude's launch (`SessionSpec`, `args`, `spawnEnv`, the role's tools: `src/node/runner/claude_spec.ts`) and how its session's runs settle (`settle`, `closeOut`, `runEnd`, `bounded`: `src/node/sessions/state.ts`) |
+| `fleetd/browser/broker`, `fleetd/browser/box_chrome`, `fleetd/browser/proxy`, `fleetd/browser/recording` | box side: an agent's browser in its box, driven from outside it (`BrowserBroker`: sessions, the vault and 1Password fills, cards, addresses, secure input, live view and takeover; its `BrokerHost` gives the hub calls, the recording store, the proxy's key and the box; `snapshot`, `adopt` and `letGo` hand a session to another holder). Chrome in the box, outliving a dropped connection for `GRACE_MS` (`boxChrome`, `reattachChrome`: `src/node/place/box_chrome.ts`), the agent's CDP proxy and its token check (`Proxy`: `src/node/browser/cdp_proxy.ts`), and the recording's seam and video stream (`RecordingStore`, `MkvVideo`, `report`) |
+| `fleetd/browser/cdp`, `fleetd/browser/session`, `fleetd/browser/guard`, `fleetd/browser/logins`, `fleetd/browser/agent_browser_policy`, `fleetd/browser/secret_sink` | box side: the DevTools connection (`Cdp`), one browser session (`Session`, `SessionState`), the proxy's allowlist of agent-browser's commands (`refusal`, `SEALED_METHODS`), 1Password's values (`Vault`, `VaultFor`, `Cache`), agent-browser's pin and policy (`VERSION`, `policy`, `sessionEnv`) and a `secret_deliver` sink (`parseSecretSink`) |
 
 An exported module is pure: neither it nor anything it imports, a type included, touches the database, the
 filesystem, a process, the network, the machine's environment, the `Hub` or an npm package (the fakes open sockets,
@@ -123,12 +125,16 @@ process as the hub does. In `fleetd/`, `bun test/pkg/purity.ts` prints where eve
 and `src/gen` stands: exported, pure and left out with why (`LEFT_OUT`), pure but for a type it imports, impure only
 through an import.
 
-A box-side module (`fleetd/box/…`) is the second kind: box side, sockets and fetch only, no fs, process or env. It
+A box-side module (`fleetd/box/…`, `fleetd/browser/…`) is the second kind: box side, sockets and fetch only, no fs,
+process or env. It
 drives a sandbox box, and a service with no node (fleetd hosted) runs it just as the node does, so the code is shared,
 never forked. It may open sockets and WebSockets and call `fetch`, and otherwise holds to the same rule: no
 filesystem, process, environment, database or `Hub`. So what it needs of the node (the answer to a node.sock call, a
 build slot) comes in as an option, and the node passes its own.
 
+- **Peer dependencies.** The browser's guard checks the agent's scripts with acorn, the one npm package an entry may
+  import: the root `package.json` names it in `peerDependencies` (optional, so an install that doesn't take the
+  browser fetches nothing), and an importer of `fleetd/browser/…` adds it at that version to its own dependencies.
 - **Adding one.** One line in `exports`, the module at its own path. `test/pkg/purity.test.ts` fails while it or
   anything it imports isn't pure (a box-side one: does more than the network); `test/pkg/outside.test.ts` installs the package in a throwaway project outside the
   repo, imports every entry and typechecks it. Don't export a module by copying it: split what is pure into its own

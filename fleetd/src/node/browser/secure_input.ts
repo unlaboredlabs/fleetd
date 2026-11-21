@@ -7,14 +7,16 @@
 // - `fillApproved`: a 1Password field (an Identity, Passport, Driver License or Social Security item's), once the
 //   person approved it: claimed on the hub, read with the session's token and typed in the same way.
 import { ToolError } from "../../shared/errors.ts";
-import type { SecretDeliver, SecretResult } from "../wire.ts";
-import { fingerprintOf } from "../secrets/files.ts";
-import { parseSecretSink } from "../secrets/index.ts";
+import type { SecretDeliver as LinkDeliver, SecretResult } from "../../shared/node_link.ts";
+import { fingerprintOf, parseSecretSink } from "../secrets/sink.ts";
 import { CardError, docs, FILL_WINDOW_MINUTES, leadSession, notTyped, onDomain, oneLine, WAIT_ON_PERSON_MS } from "./cards.ts";
 import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
-import type { Broker } from "./index.ts";
-import { hostOf } from "./onepassword.ts";
+import type { BrowserBroker as Broker } from "./broker.ts";
+import { hostOf } from "./logins.ts";
 import type { Session } from "./session.ts";
+
+/** `secret_deliver` as the node reads it (../wire.ts). */
+type SecretDeliver = Omit<LinkDeliver, "sink"> & { sink: string };
 
 /** A typed secure input its session waits for: where it fills. */
 export type Waiting = { requestId: string; domain: string; target: string; label: string };

@@ -11,15 +11,14 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import helperScript from "./onepassword_helper.mjs" with { type: "text" };
 import type { OnePasswordCard, VaultImportedFields, VaultKind } from "../../shared/contracts.ts";
-import { expiry } from "../browser/onepassword.ts";
+import { expiry, TOKEN_ENV } from "../browser/logins.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import type { Vars } from "../secrets/env.ts";
 import { fingerprintOf, writeAtomic } from "../secrets/files.ts";
 import { hasControl, ioWhy, openB64, readIfThere, removeIfThere, utf8 } from "./refusal.ts";
 
-/** The project secret variable holding the service account token. */
-export const TOKEN_ENV = "OP_SERVICE_ACCOUNT_TOKEN";
+export { TOKEN_ENV };
 /** The SDK release the node installs. */
 export const SDK_VERSION = "0.5.0";
 const DIR = "onepassword-tokens";

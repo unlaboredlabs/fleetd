@@ -10,6 +10,7 @@ import { headUtf16, scrubbedEnv } from "../util.ts";
 import type { GatedResult, GatedRun, SecretDeliver, SecretResult } from "../wire.ts";
 import { deliverOrderVar } from "./env.ts";
 import { fingerprintOf, writeAtomic } from "./files.ts";
+import { parseSecretSink } from "./sink.ts";
 
 export type SecretsContext = {
   machineId: string;
@@ -24,24 +25,7 @@ export type SecretsContext = {
 const INDEX_FILE = "secret-sinks.json";
 type SinkRecord = { kind: "env" | "file"; path: string; envName?: string };
 
-export type SinkKind = "env" | "file" | "order" | "fill";
-export type ParsedSink = { kind: SinkKind; machineId: string; path: string };
-
-const CONTROL = new RegExp("[\\u0000-\\u001f\\u007f\\u2028\\u2029]");
-
-/** fleetd-contracts secrets.rs `parse_secret_sink`. */
-export function parseSecretSink(sink: string): ParsedSink | undefined {
-  const fill = /^fill:([a-z0-9-]{1,32}):(B[0-9a-f]{32})$/.exec(sink);
-  if (fill) return { kind: "fill", machineId: fill[1]!, path: fill[2]! };
-  const order = /^order:([a-z0-9-]{1,32}):(W[1-9][0-9]{0,9})$/.exec(sink);
-  if (order) return { kind: "order", machineId: order[1]!, path: order[2]! };
-  const m = /^(env|file):([a-z0-9-]{1,32}):(\/.*)$/.exec(sink);
-  if (!m || sink.length > 1000) return undefined;
-  const path = m[3]!;
-  if (CONTROL.test(path)) return undefined;
-  if (path.slice(1).split("/").some((s) => s === "" || s === "." || s === "..")) return undefined;
-  return { kind: m[1] as "env" | "file", machineId: m[2]!, path };
-}
+export { parseSecretSink, type ParsedSink, type SinkKind } from "./sink.ts";
 
 /** The variable an `env:` sink writes for a key without `--env-name`: `stripe.test_key` is `STRIPE_TEST_KEY`. */
 export function secretEnvName(secretKey: string): string | undefined {

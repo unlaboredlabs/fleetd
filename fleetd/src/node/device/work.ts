@@ -210,8 +210,7 @@ export function parse(args: string[]): Parsed {
   return parsed;
 }
 
-/** Whether `session` is a key the hub gave this node for a session it hosts for an agent elsewhere (`HostKey`). */
-export const isHostKey = (session: string) => /^H[0-9a-f]{32}$/.test(session);
+export { isHostKey } from "../secrets/sink.ts";
 
 /** A name a file has in a screen's folder: plain, with no path in it. */
 export const safeName = (name: string) => name.length >= 1 && name.length <= 128 && !name.startsWith(".") && /^[A-Za-z0-9._\-+@]+$/.test(name);

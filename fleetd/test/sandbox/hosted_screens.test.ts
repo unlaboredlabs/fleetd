@@ -164,9 +164,11 @@ test("Chrome in a box runs from its own folder, on the box's loopback, and is sw
   expect(text).toContain("--no-sandbox");
   expect(text).toContain(`'--user-data-dir=${dir}/profile'`);
   expect(text).toContain("'--lang=en'");
-  expect(text).toContain("3<&0 4>&1");
+  // Its pipe is the folder's two FIFOs, which the launcher holds open across connections, handed to each in turn.
+  expect(text).toContain(`3<'${dir}/in' 4>'${dir}/out'`);
   const start = files.get(`${dir}/start.sh`) ?? "";
-  expect(start).toMatch(/^socat TCP-LISTEN:(\d+),bind=127\.0\.0\.1,reuseaddr EXEC:\/tmp\/fleetd-browser-[0-9a-f]{12}\/chrome\.sh\n$/);
+  expect(start).toContain(`exec 5<>'${dir}/in' 6<>'${dir}/out'`);
+  expect(start).toMatch(/socat .*TCP-LISTEN:(\d+),bind=127\.0\.0\.1,reuseaddr,accept-timeout=\d+ OPEN:'\/tmp\/fleetd-browser-[0-9a-f]{12}\/out',rdonly!!OPEN:/);
   const port = Number(/TCP-LISTEN:(\d+)/.exec(start)![1]);
   await waitFor(() => (dials.length > 0 ? true : undefined));
   expect(dials[0]).toBe(port);

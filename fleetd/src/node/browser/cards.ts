@@ -11,8 +11,8 @@
 //   field shows dots and a blur. The details pass only the node's own connection to the browser.
 import { ToolError } from "../../shared/errors.ts";
 import { FOCUS, HIDE, pageUrl, scrubbed, seal } from "./credentials.ts";
-import type { Broker } from "./index.ts";
-import { type Card, hostOf } from "./onepassword.ts";
+import type { BrowserBroker as Broker } from "./broker.ts";
+import { type Card, hostOf } from "./logins.ts";
 import { PAUSED, type Session } from "./session.ts";
 import { openCard } from "./vault.ts";
 

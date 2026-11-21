@@ -14,7 +14,7 @@ import { join, posix, relative, resolve } from "node:path";
 export type Taint = "database" | "filesystem" | "process" | "network" | "machine" | "hub" | "dependency" | "missing";
 
 /** One thing a module does that an exported one may not: `what` in the words of the source. */
-export type Use = { taint: Taint; what: string };
+export type Use = { taint: Taint; what: string; /** The package an npm import names. */ spec?: string };
 
 /** A use, the module it is in, and the imports from the entry that reach it (the entry first; empty for its own). */
 export type Finding = Use & { in: string; via: string[] };
@@ -79,7 +79,7 @@ export function scan(text: string): { imports: Import[]; uses: Use[] } {
     const name = spec.replace(/^node:/, "");
     if (PURE_BUILTINS.has(name.split("/")[0]!) && (spec.startsWith("node:") || !name.includes("/"))) return;
     const builtin = BUILTINS.find(([re]) => re.test(spec));
-    uses.push({ taint: builtin?.[1] ?? "dependency", what: `imports ${spec}` });
+    uses.push({ taint: builtin?.[1] ?? "dependency", what: `imports ${spec}`, ...(builtin ? {} : { spec }) });
   };
   for (const m of src.matchAll(/\b(?:import|export)\s+(type\s+)?(?:[^"'`;]*?\bfrom\s*)?["']([^"'\n]+)["']/g)) add(m[2]!, !!m[1]);
   for (const m of src.matchAll(/\b(?:import|require)\s*\(\s*["']([^"'\n]+)["']/g)) add(m[1]!, false);
@@ -98,6 +98,8 @@ type Options = {
   allow?: Taint[];
   /** Follow only what loads at run time, leaving `import type` out: what `nearly` asks. */
   runtimeOnly?: boolean;
+  /** npm packages it may import: the package's own peer dependencies, which the importer installs. */
+  peers?: string[];
 };
 
 /**
@@ -132,7 +134,7 @@ export function findings(entry: string, read: Read, options: Options = {}): Find
       queue.push(to);
     }
   }
-  return out.filter((f) => !options.allow?.includes(f.taint));
+  return out.filter((f) => !options.allow?.includes(f.taint) && !(f.taint === "dependency" && f.spec !== undefined && options.peers?.includes(f.spec)));
 }
 
 /** A relative import with no extension, as the apps' modules write them: its `.ts`, else its folder's `index.ts`. */
@@ -164,7 +166,19 @@ export function exported(): { name: string; path: string }[] {
  * box side (`./box/…`) drives a sandbox box over its sockets, WebSockets and fetch. Neither touches a file, a process
  * or the machine's environment.
  */
-export const allowed = (name: string): Taint[] => (name.startsWith("./fakes/") || name.startsWith("./box/") ? ["network"] : []);
+export const allowed = (name: string): Taint[] =>
+  name.startsWith("./fakes/") || name.startsWith("./box/") || name.startsWith("./browser/") ? ["network"] : [];
+
+/**
+ * The npm packages an entry may import: the browser's (`./browser/…`, a box-side kind: an agent's browser driven
+ * from outside its box) checks the agent's scripts with acorn, which the root package.json names as a peer
+ * dependency, so the importer installs it beside the package.
+ */
+export function peers(name: string): string[] {
+  if (!name.startsWith("./browser/")) return [];
+  const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { peerDependencies?: Record<string, string> };
+  return Object.keys(manifest.peerDependencies ?? {});
+}
 
 /**
  * Pure modules of the hub the package leaves out, each with why. One listed here that stops being pure, or gets
