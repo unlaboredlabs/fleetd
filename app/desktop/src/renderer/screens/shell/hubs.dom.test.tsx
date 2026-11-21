@@ -744,6 +744,13 @@ const swiping = () => {
   };
   return { swipe, lift, done };
 };
+/** The list on show where it belongs: not moved, not moving, nothing beside it. */
+const inPlace = () => {
+  const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
+  expect(list?.style.transform).toBe("");
+  expect(list?.parentElement?.hasAttribute("data-moving")).toBe(false);
+  expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+};
 const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Hubs'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
 const twoHubs = async () => {
   await mount([
@@ -828,6 +835,21 @@ it("switches from the marks at the foot and from ⇧⌘[ / ⇧⌘], and the mark
     act(() => void runCommand("hub.next"));
     lift();
     expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another hub needs you, Can't reach Acme");
+    inPlace();
+    // There and straight back, and the same mark clicked mid-slide: the hub on show never changes, and the list is
+    // drawn in place, clickable, with nothing beside it.
+    act(() => void runCommand("hub.next"));
+    act(() => void vi.advanceTimersByTime(100));
+    act(() => void runCommand("hub.previous"));
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    inPlace();
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Personal']")?.click());
+    act(() => void vi.advanceTimersByTime(100));
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    inPlace();
   } finally {
     done();
   }

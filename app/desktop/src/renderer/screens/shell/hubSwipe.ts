@@ -6,7 +6,8 @@
 // lets go (a pause, or its deltas dying away as the trackpad's momentum takes over after the fingers lift) the rest of
 // it is swallowed until a pause. Past the first or the last hub the list gives a little and springs back; with one hub
 // nothing happens at all. With reduced motion the list stays still and the hub switches once the swipe has gone far
-// enough. The marks at the sidebar's foot, the switcher and ⇧⌘[ / ⇧⌘] switch on the same slide (switchHub).
+// enough. The marks at the sidebar's foot and ⇧⌘[ / ⇧⌘] switch on the same slide (switchHub); the hub switcher's
+// pick shows the hub at once, as it always has.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { showHub } from "./sidebarLayout";
 
@@ -191,9 +192,10 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
   const frame = useRef(0);
   // A settle on the way: where to, and the hub it lands on there (null: back where it was).
   const settling = useRef<{ to: number; hub: number | null; v: number; t: number } | null>(null);
-  const live = useRef({ hubs, paint });
+  // `at` is the hub the sidebar has drawn, which the layout effect below keeps in step.
+  const live = useRef({ hubs, paint, at });
   useLayoutEffect(() => {
-    live.current = { hubs, paint };
+    live.current = { hubs, paint, at };
   });
 
   const draw = useCallback(() => live.current.paint(offset.current, near.current, width.current), []);
@@ -203,21 +205,25 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
     setBeside(b);
   }, []);
 
-  /** Lands on `hub`: shows it; the sidebar draws it in place (the layout effect below). */
+  /**
+   * Lands on `hub`: shows it, and the sidebar draws it in place (the layout effect below). Back where it was, or on the
+   * hub the sidebar has drawn (a slide landed and another took it straight back, before React drew the first), the
+   * hub on show doesn't change, so it is drawn in place here.
+   */
   const land = useCallback(
     (hub: number | null) => {
       settling.current = null;
       cancelAnimationFrame(frame.current);
       const id = hub === null ? undefined : live.current.hubs[hub];
-      if (id === undefined) {
-        offset.current = 0;
-        place(null);
-        draw();
-        setMoving(false);
-        return;
+      if (id !== undefined) {
+        here.current = hub ?? here.current;
+        showHub(id);
       }
-      here.current = hub ?? here.current;
-      showHub(id);
+      if (id !== undefined && hub !== live.current.at) return;
+      offset.current = 0;
+      place(null);
+      draw();
+      setMoving(false);
     },
     [draw, place],
   );
