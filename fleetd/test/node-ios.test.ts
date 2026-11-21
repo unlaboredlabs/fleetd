@@ -255,8 +255,9 @@ function writeGolden(home: string, xctestrun: string): Golden {
   return golden;
 }
 
-/** A stand-in `xcrun simctl --set <set> …`: each call logged, a fresh udid for a clone or create. */
-function fakeXcrun(home: string): { xcrun: string; log: string } {
+/** A stand-in `xcrun simctl --set <set> …`: each call logged, a fresh udid for a clone or create. With `gate`, a clone
+ * answers only once that file is there. */
+function fakeXcrun(home: string, gate?: string): { xcrun: string; log: string } {
   const xcrun = join(home, "bin/xcrun");
   const log = join(home, "xcrun.log");
   const runtimes = join(home, "runtimes.json");
@@ -269,7 +270,7 @@ shift 3
 echo "$@" >> '${log}'
 case "$1" in
   list) if [ "$2" = runtimes ]; then cat '${runtimes}'; else echo '{"devices":{"r":[{"udid":"LEFT-OVER","name":"fleetd-x","state":"Booted"}]}}'; fi ;;
-  clone|create) tr a-z A-Z < /proc/sys/kernel/random/uuid ;;
+  clone|create) ${gate ? `[ "$1" = clone ] && while [ ! -e '${gate}' ]; do sleep 0.02; done; ` : ""}tr a-z A-Z < /proc/sys/kernel/random/uuid ;;
 esac
 exit 0
 `,
@@ -498,6 +499,33 @@ test("a node that stops while a clone still starts its runner throws that clone 
   expect(existsSync(cloneHome)).toBe(false);
   release();
   await until(() => pool.warm() === 0);
+});
+
+test("a node that stops while simctl still clones for the pool deletes that clone unbooted, before the drain is done", async () => {
+  // Nightly, Nov 2026: the drain missed the refill's clone still being made, which then booted and started its runner
+  // beside the lent one on GitHub's 3-vCPU Mac VM, and simctl answered nothing for 87 s.
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  const golden = writeGolden(home.dir, xctestrun);
+  const gate = join(home.dir, "cloned");
+  const { xcrun, log } = fakeXcrun(home.dir, gate);
+  const started: string[] = [];
+  const pool = new Pool(new Simctl(setDir(home.dir), xcrun), home.dir, golden, 1, async (_home, lent) => void started.push(lent.udid));
+  const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
+  pool.refill();
+  await until(() => calls().some((c) => c.startsWith("clone ")));
+  const drained = pool.drain();
+  writeFileSync(gate, "");
+  await drained;
+  const deleted = calls().find((c) => c.startsWith("delete "));
+  expect(deleted).toBeDefined();
+  expect(calls().filter((c) => c.startsWith("boot"))).toEqual([]);
+  expect(started).toEqual([]);
+  expect(pool.warm()).toBe(0);
+  expect(pool.refills.bootingSince).toBeUndefined();
 });
 
 test("a simulator lent with the hub's screen is a screen of the agent's: watched, taken over, handed back, and recorded", async () => {

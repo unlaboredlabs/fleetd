@@ -409,6 +409,8 @@ export class Pool {
   private readonly warmClones: Lent[] = [];
   /** Clones still booting or starting their runner: a drain throws them away too, daemon and all. */
   private readonly booting = new Set<Lent>();
+  /** A refill's `simctl clone` under way, to its end: a clone made after a drain is deleted there. */
+  private cloning: Promise<void> | undefined;
   private filling = false;
   /** Drained (the node stops): a boot still under way deletes its clone instead of keeping it. */
   private closed = false;
@@ -423,15 +425,34 @@ export class Pool {
     private readonly runner: RunnerStarter = startRunner,
   ) {}
 
-  /** Clones the golden, boots the clone and starts its runner. A runner that doesn't start leaves it to its agent. */
-  private async boot(): Promise<Lent> {
+  /**
+   * The golden's clone, or none when the pool was drained while simctl cloned: that clone is deleted unbooted. A drain
+   * waits for it, since until simctl answers nothing names the clone to delete.
+   */
+  private async clone(): Promise<Lent | undefined> {
     const udid = await this.simctl.cloneDevice(this.golden.udid, `fleetd-${shortId()}`);
     const lent = new Lent(udid, cloneHome(this.home, udid), this.simctl);
     lent.scale = this.golden.scale;
+    if (this.closed) {
+      await lent.discard();
+      return undefined;
+    }
     this.booting.add(lent);
+    return lent;
+  }
+
+  /** Clones the golden, boots the clone and starts its runner. A runner that doesn't start leaves it to its agent. */
+  private async boot(): Promise<Lent | undefined> {
+    const cloning = this.clone();
+    this.cloning = cloning.then(
+      () => {},
+      () => {},
+    );
+    const lent = await cloning;
+    if (!lent || this.closed) return undefined;
     try {
       try {
-        await this.simctl.boot(udid, BOOT_TIMEOUT);
+        await this.simctl.boot(lent.udid, BOOT_TIMEOUT);
       } catch (e) {
         void lent.discard();
         throw e;
@@ -440,7 +461,7 @@ export class Pool {
         await this.runner(this.home, lent);
         lent.runner = true;
       } catch (e) {
-        console.warn(`iOS clone ${udid}: runner did not start ahead; its agent's first command starts it: ${(e as Error).message}`);
+        console.warn(`iOS clone ${lent.udid}: runner did not start ahead; its agent's first command starts it: ${(e as Error).message}`);
       }
       // Drained while its runner started: the daemon that came up after the clone was thrown away goes too.
       if (this.closed) await stopDaemon(join(lent.home, "state"));
@@ -487,12 +508,17 @@ export class Pool {
         while (this.warmClones.length < this.size && !this.closed) {
           if (!this.refills.mayBoot(Date.now())) return;
           this.refills.started(Date.now());
-          let lent: Lent;
+          let lent: Lent | undefined;
           try {
             lent = await this.boot();
           } catch (e) {
             const wait = this.refills.failed(Date.now(), (e as Error).message);
             console.warn(`iOS simulator pool not refilled (again in ${Math.round(wait / 1000)} s): ${(e as Error).message}`);
+            return;
+          }
+          // Drained while simctl cloned: that clone went unbooted.
+          if (!lent) {
+            this.refills.released();
             return;
           }
           this.refills.succeeded(Date.now());
@@ -528,13 +554,13 @@ export class Pool {
     return this.refills.lastError;
   }
 
-  /** Deletes every waiting clone, and those still booting: each one's agent-device daemon (with the XCTest runner it
-   * starts) is stopped first, so none outlives the node. */
+  /** Deletes every waiting clone, those still booting and one simctl is still making: each one's agent-device daemon
+   * (with the XCTest runner it starts) is stopped first, so none outlives the node, and none boots after it. */
   drain(): Promise<void> {
     this.closed = true;
     const all = [...this.warmClones.splice(0), ...this.booting];
     this.booting.clear();
-    return Promise.all(all.map((l) => l.discard())).then(() => {});
+    return Promise.all([this.cloning, ...all.map((l) => l.discard())]).then(() => {});
   }
 }
 
