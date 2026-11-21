@@ -110,6 +110,8 @@ type Slot = {
   /** When `liveLink` was last set, in ms. */
   liveSinceMs: number;
   caughtUp?: CaughtUp;
+  /** What the hub settles at each link before it subscribes (`sinks.beforeSubscribe`): every send there waits on it. */
+  settling?: Promise<void>;
   shell: ShellState;
   /** Calls in flight on the current link, by frame id. */
   pending: Map<string, Pending>;
@@ -183,6 +185,9 @@ export class Executors {
     thread?: ThreadSink;
     /** The time area's cursor of the node's spans outbox, sent with each subscribe. */
     spansAfter?: (machineId: MachineId) => number | undefined;
+    /** Settled at each link before the subscribe, and before any send there: the orders' GitHub tokens that ended while
+     * the machine or the hub was away are renewed first (github_app/sessions.ts `renewOnLink`). */
+    beforeSubscribe?: (machineId: MachineId) => Promise<void>;
   } = {};
 
   /** The followed sessions: tail, actions, work, window. */
@@ -364,6 +369,11 @@ export class Executors {
     }
   }
 
+  /** Settles once what the machine's current link settles first is done (`sinks.beforeSubscribe`). */
+  settled(machineId: MachineId): Promise<void> {
+    return this.machines.get(machineId)?.settling ?? Promise.resolve();
+  }
+
   /** One `session_call` and its `session_reply`, at most `waitMs`. */
   async call(machineId: MachineId, operation: NodeOperation, call: SessionCall, waitMs: number): Promise<SessionOutput> {
     return this.ask(machineId, operation, call, waitMs, waitMs);
@@ -449,6 +459,14 @@ export class Executors {
     const baseline = cursor === undefined;
     // The agents' Mac hosts no session and refuses a subscription: its link is live once it is up.
     const toolOnly = store(this.hub).machineGet(machineId)?.agentsMac === true;
+    // Before the node's sessions are read (its cut-off runs resume from them) and before any send: the node holds the
+    // wakes it found at its start for this subscribe.
+    if (!toolOnly && this.sinks.beforeSubscribe) {
+      const settling = this.sinks.beforeSubscribe(machineId).catch((error) => console.warn(`executor: what a link settles first failed (${machineId}):`, error));
+      slot.settling = settling;
+      await settling;
+      if (signal.aborted) return;
+    }
     for (let attempt = 0; !toolOnly && !signal.aborted; ) {
       try {
         const spansAfter = this.sinks.spansAfter?.(machineId);

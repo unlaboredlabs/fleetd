@@ -3,7 +3,8 @@
 // ({"seq","event"} out, {"ack"} / {"command"} / "stop" in), and plays a claude that answers each Send with one run:
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
 // Bash first and ends its run once answered; one with `auth:` fails as a refused login. Shutdown exits. Its
-// environment goes to <dir>/env.json.
+// environment goes to <dir>/env.json. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
+// of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,6 +32,7 @@ const emit = (event: unknown) => {
 };
 let waiting: { run: string; text: string } | undefined;
 const queued: { run: string; text: string }[] = [];
+const armed: string[] = [];
 const answer = (run: string, text: string) => {
   emit({ AssistantText: { message_id: `msg-${run}`, text: `ok: ${text}` } });
   emit({ RunEnded: { run_id: run, outcome: { Completed: { text: `ok: ${text}` } }, usage: null } });
@@ -97,6 +99,7 @@ Bun.listen({
             const at = new Date().toISOString();
             const input = { description: "ci", timeout_ms: monitorMs === undefined ? 600000 : Number(monitorMs) };
             emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input } } });
+            armed.push(`mon-${run_id}`);
           }
           if (text.includes("hang:")) {
             // A turn whose stream went quiet: it ends only when interrupted.
@@ -122,6 +125,11 @@ Bun.listen({
       conn = undefined;
     },
   },
+});
+process.on("SIGTERM", () => {
+  for (const id of armed.splice(0)) emit({ WatchEnded: { tool_use_id: id } });
+  emit({ Exited: { code: null, signal: 15, stderr_tail: "" } });
+  setTimeout(() => process.exit(143), 200);
 });
 // What the session's claude would have been started with, for tests to read.
 writeFileSync(join(dir, "env.json"), JSON.stringify(process.env));

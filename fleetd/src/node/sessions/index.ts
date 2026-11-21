@@ -104,6 +104,9 @@ const REAP_GRACE_MS = 10_000;
 const MONITOR_DEFAULT_MS = 5 * 60_000;
 const MONITOR_MAX_MS = 30 * 60_000;
 const MONITOR_GRACE_MS = 60_000;
+/** A node that starts with Monitors lost in its restart wakes their agents once the hub has subscribed (it hands out
+ * fresh GitHub tokens first), or after this long with no hub. */
+const HELD_WAKE_MS = 60_000;
 /** The steps prune: its first run this long after the node starts, then daily, with a pause between its batches. */
 const ITEMS_PRUNE_AFTER_START_MS = 10 * 60_000;
 const ITEMS_PRUNE_EVERY_MS = 24 * 3600_000;
@@ -113,7 +116,7 @@ const ITEMS_PRUNE_PAUSE_MS = 100;
 export function monitorsLost(lost: { description?: string }[], when: string): string {
   const named = lost.flatMap((m) => (m.description ? [`"${m.description}"`] : []));
   const [what, were] = lost.length === 1 ? ["Your Monitor", "was"] : ["Your Monitors", "were"];
-  return `${named.length ? `${what} ${named.join(", ")}` : what} ${were} lost when ${when}. Check what you were waiting for again.`;
+  return `${named.length ? `${what} ${named.join(", ")}` : what} ${were} lost when ${when}. Check what you were waiting for again, and arm a new Monitor if you still need to wait.`;
 }
 
 const exitWords = (exit: state.ExitInfo) =>
@@ -194,6 +197,9 @@ export type SessionConfig = {
   idleReapMs?: number;
   /** The clock a Monitor's deadline is read on; tests move it past one rather than wait it out. */
   now?: () => number;
+  /** How long a node that starts waits for the hub's subscription before it wakes the agents whose Monitors were lost
+   * in its restart: HELD_WAKE_MS. */
+  heldWakeMs?: number;
 };
 
 /** What a node retry sends, with `--resume`, so claude picks the turn back up. */
@@ -397,6 +403,9 @@ export class SessionService {
   #probing: Promise<unknown> = Promise.resolve();
   #prober: ReturnType<typeof setTimeout> | undefined;
   #itemsPruner: ReturnType<typeof setTimeout> | undefined;
+  /** Sessions whose Monitors were lost in the restart before this node, woken at the hub's subscription. */
+  #held: string[] = [];
+  #heldTimer: ReturnType<typeof setTimeout> | undefined;
   #limits = new Map<string, { limitType: string; utilization?: number; resetsAt?: string; status: string; observedAt: string }>();
   #spans = { enabled: false, sent: 0 };
   #onRunning: ((n: number) => void)[] = [];
@@ -438,11 +447,14 @@ export class SessionService {
     const adopted = new Set<string>();
     // The processes of re-adopted sessions: their hosts and everything under them, which the orphan sweep spares.
     const protectedPids = new Set<number>();
-    // Sessions whose claude went with the last node while a Monitor of theirs could still fire: woken once the sweep
-    // below is done, or it would stop the host each wake starts.
-    const lost: [string, { description?: string }[]][] = [];
+    // Sessions whose claude went with the last node while a Monitor of theirs was kept: woken once the sweep below is
+    // done, or it would stop the host each wake starts.
+    const lost: string[] = [];
     for (const row of service.store.sessions()) {
       const id = row.summary.sessionId;
+      // A wake for lost Monitors the last node recorded but never got to claude: the agent still hasn't been told.
+      const active = row.summary.activeRunId;
+      const unsent = active?.startsWith(`${id}-monitor-lost-`) && service.store.runs(id).some((r) => r.id === active && (r.status === "queued" || r.status === "starting"));
       if (row.local.pid) {
         const dir = join(hosts, id);
         const place = placeAt(dir);
@@ -463,11 +475,15 @@ export class SessionService {
       if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, INTERRUPT_GRACE_MS);
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
       // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it. One kept on the
-      // row never told the agent it ended (its notice drops it, a turn after its time ran out too), so its deadline
-      // passing while the node was away doesn't matter: the agent still waits for it.
+      // row never told the agent it ended (only a turn after its notice drops it, or after its time ran out), so its
+      // deadline passing while the node was away doesn't matter: the agent still waits for it. It stays on the row
+      // until the wake's turn starts, so a node gone again before then wakes it at its own start. One mid-run goes:
+      // that run's recovery resumes claude, which says itself its Monitor didn't finish.
       const armed = row.local.monitors ?? [];
-      if (armed.length) service.update(id, (c) => void delete c.row.local.monitors);
-      if (armed.length && !row.summary.activeRunId) lost.push([id, armed]);
+      if (armed.length && (!active || unsent)) {
+        service.update(id, (c) => void (c.row.local.monitors = armed.map((m) => ({ ...m, ended: true as const }))));
+        lost.push(id);
+      } else if (armed.length) service.update(id, (c) => void delete c.row.local.monitors);
     }
     const stopped = await sweep(hosts, adopted);
     if (stopped) console.warn(`${nowIso()} WARN stopped sessions' hosts no session runs on {"stopped":${stopped}}`);
@@ -506,8 +522,22 @@ export class SessionService {
     pruneItems(ITEMS_PRUNE_AFTER_START_MS);
     // The runner is probed now, and again every 15 s while it can't run sessions.
     service.#scheduleProbe();
-    for (const [id, armed] of lost) service.#wakeLost(id, armed, "this machine's fleetd node restarted");
+    service.#held = lost;
+    if (lost.length) service.#heldTimer = setTimeout(() => service.#wakeHeld(), config.heldWakeMs ?? HELD_WAKE_MS);
     return service;
+  }
+
+  /** Wakes, once, each session whose Monitors were lost in the restart before this node: at the hub's first
+   * subscription, which comes once the hub has handed out fresh GitHub tokens, or HELD_WAKE_MS after the start. One
+   * a turn reached meanwhile (a lead's message) has heard from claude itself that its Monitor didn't finish. */
+  #wakeHeld(): void {
+    clearTimeout(this.#heldTimer);
+    for (const id of this.#held.splice(0)) {
+      const row = this.store.session(id);
+      const armed = row?.local.monitors ?? [];
+      if (!row || !armed.length || row.summary.activeRunId) continue;
+      this.#wakeLost(id, armed, "this machine's fleetd node restarted");
+    }
   }
 
   #adopt(row: SessionRow, link: HostLink): void {
@@ -1733,11 +1763,12 @@ export class SessionService {
             break;
           }
           case "WatchEnded":
-            // Its notice has come, so nothing more of it can wake the session.
+            // Its notice is queued in claude, so nothing more of it can fire; but only a turn that starts or completes
+            // after it tells the agent. A claude killed first (the Monitor's script went with it, as when the whole
+            // machine's session stops) never did, so it stays kept for the wake that says it was lost.
             live.watching.delete(body.tool_use_id);
             this.update(id, (c) => {
-              c.row.local.monitors = (c.row.local.monitors ?? []).filter((m) => m.id !== body.tool_use_id);
-              if (!c.row.local.monitors.length) delete c.row.local.monitors;
+              c.row.local.monitors = (c.row.local.monitors ?? []).map((m) => (m.id === body.tool_use_id ? { ...m, ended: true as const } : m));
             });
             break;
           case "Compacting":
@@ -1927,12 +1958,15 @@ export class SessionService {
     try {
       this.update(id, (c) => {
         // The node stopping keeps them for the next node, which wakes the session for them. Any other exit nobody asked
-        // for wakes it now: each one kept never told the agent it ended, whether it could still fire or its time ran
-        // out with no notice (the reaper closes an idle claude only once every deadline has passed).
+        // for wakes it now: each one kept never told the agent it ended, whether it could still fire, its notice was
+        // queued as claude died, or its time ran out with no notice (the reaper closes an idle claude only once every
+        // deadline has passed). They stay kept, ended, until the wake's turn starts: a wake that never reaches claude
+        // (the node goes too) leaves them for the next node's start.
         if (cause.kind !== "node_stopping") {
           const armed = c.row.local.monitors ?? [];
-          delete c.row.local.monitors;
           if (cause.kind === "exited" && !c.runs.some((r) => isActive(r.status))) lost = armed;
+          if (lost.length) c.row.local.monitors = lost.map((m) => ({ ...m, ended: true as const }));
+          else delete c.row.local.monitors;
         }
         const retried = c.runs.some((r) => isActive(r.status) && this.#retries.has(r.id));
         if (requested || !retried) closed = state.closeOut(c.runs, cause, c.at).map((i) => c.runs[i]!.id);
@@ -1975,12 +2009,12 @@ export class SessionService {
     });
   }
 
-  /** A turn starting, or completing, once a Monitor's time has run out carries claude's notice that it did (claude
-   * gives a notice not yet given in the turn under way or the next one), so the agent has been told: that Monitor goes
-   * from the row and wakes nobody later. */
+  /** A turn starting, or completing, once a Monitor ended or its time ran out carries claude's notice of it (claude
+   * gives a notice not yet given in the turn under way or the next one), and a wake's turn says it was lost: the
+   * agent has been told, so that Monitor goes from the row and wakes nobody later. */
   #dropRunOut(c: Change, live: Live): void {
     const now = this.#now();
-    const kept = (c.row.local.monitors ?? []).filter((m) => m.untilMs - MONITOR_GRACE_MS > now);
+    const kept = (c.row.local.monitors ?? []).filter((m) => !m.ended && m.untilMs - MONITOR_GRACE_MS > now);
     for (const m of c.row.local.monitors ?? []) if (!kept.includes(m)) live.watching.delete(m.id);
     if (kept.length) c.row.local.monitors = kept;
     else delete c.row.local.monitors;
@@ -2389,6 +2423,8 @@ export class SessionService {
 
   #subscribe(after: number | undefined, spansAfter: number | undefined, caughtUp: boolean): SessionOutput {
     this.#subscribed = true;
+    // After the replay below: the hub reads the wakes' runs as they start.
+    queueMicrotask(() => this.#wakeHeld());
     const replay = after === undefined || after === null ? undefined : this.store.eventsAfter(after);
     if (replay) for (const f of replay) this.#machine(f);
     else
@@ -2562,6 +2598,7 @@ export class SessionService {
   /** The node stops: every host is let go of (its session runs on, and the next node re-adopts it). */
   async shutdown(): Promise<void> {
     this.#stopping = true;
+    clearTimeout(this.#heldTimer);
     clearInterval(this.#reaper);
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
@@ -2583,6 +2620,7 @@ export class SessionService {
   /** Ends every session for good (tests, `machine remove`): each host is stopped with its claude. */
   async stopAll(): Promise<void> {
     this.#stopping = true;
+    clearTimeout(this.#heldTimer);
     clearInterval(this.#reaper);
     clearInterval(this.#warmPruner);
     clearTimeout(this.#itemsPruner);
