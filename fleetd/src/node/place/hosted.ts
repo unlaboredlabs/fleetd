@@ -42,6 +42,7 @@ import { claudeEndpoint, probe, unreached } from "./endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import type { Place } from "./index.ts";
 import { stepped } from "./hosted_steps.ts";
+import { KEPT_EVERY_MS, KEPT_FOR_MS } from "./kept.ts";
 import { dropChoice, dropDisk, sessionImage, type Backend, type Built, type Job } from "./image.ts";
 import { SETUP_TIMEOUT_SEC } from "../worktree/setup.ts";
 import { keptToken } from "../repos/github.ts";
@@ -102,13 +103,9 @@ export const KEEP_ALIVE = { everyMs: EXTEND_MS, retryMs: 2 * 60_000, endBeforeMs
  * rewrites when the hub renews its GitHub token) and sent to the box again. Tests set a shorter one. */
 export const REFRESH = { everyMs: 30_000 };
 
-/**
- * A box whose work didn't come back as its session ended is kept, not deleted with the only copy of that work: tried
- * again at once, then every `everyMs` (the node's sweep, and its start) for `forMs` from then, within the hour its life
- * is set to when it is kept. boat.dev erases a stopped box's disk, so a kept box runs, and costs as one does, until its
- * work is back or the last try; then it is deleted without it and the lead is told. Tests set shorter ones.
- */
-export const KEPT = { forMs: 50 * 60_000, everyMs: 10 * 60_000 };
+/** How long a box whose work didn't come back is kept, and how often it is tried again (the node's sweep, and its
+ * start): ./kept.ts says why. Tests set shorter ones. */
+export const KEPT = { forMs: KEPT_FOR_MS, everyMs: KEPT_EVERY_MS };
 
 /** A box's work that didn't come back, for the task's lead: node/index.ts hands it, as a machine event, to the server
  * the runner links to (fleetd's cloud). */

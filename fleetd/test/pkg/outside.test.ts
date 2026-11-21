@@ -1,6 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { SDK_VERSION } from "../../src/node/actions/onepassword.ts";
+import { KEPT } from "../../src/node/place/hosted.ts";
 import { exported, ROOT } from "./purity.ts";
 
 // The package as another repository gets it (docs/CONTRIBUTING.md "The package"): a throwaway project outside this
@@ -95,6 +97,23 @@ test("a project outside the repo installs the package, imports every entry point
   });
   expect(typecheck("push.ts")).toEqual({ code: 0, out: "" });
 
+  // A box's 1Password helper and kept boxes as fleetd cloud runs them: the node's script, pin and lines, its questions
+  // over the importer's own exchange (a stand-in for the helper in a box: no SDK, no account), and the kept timings.
+  writeFileSync(join(project, "box.ts"), BOX);
+  expect(bun(["box.ts"])).toEqual({
+    code: 0,
+    out: JSON.stringify({
+      helper: true,
+      sdk: `@1password/sdk@${SDK_VERSION}`,
+      lines: ['{"token":"t"}\n', '{"ref":"op://v/i/password"}\n'],
+      asked: { value: "pw", urls: ["https://a.example"] },
+      vaults: ["Shared"],
+      refused: ["1Password: no item i", true],
+      kept: [KEPT.forMs, KEPT.everyMs],
+    }),
+  });
+  expect(typecheck("box.ts")).toEqual({ code: 0, out: "" });
+
   // A type the package exports is the real one, not `any`: a wrong use fails.
   writeFileSync(join(project, "wrong.ts"), `import { TOOL_LIST } from "fleetd/tools";\nexport const n: number = TOOL_LIST[0]!.name;\n`);
   expect(typecheck("wrong.ts").out).toContain("wrong.ts(2,14): error TS2322");
@@ -175,6 +194,34 @@ console.log(JSON.stringify({
   plainVisit: visitCarriesData({ url: "https://a.example/" }),
   said: autoApprovedText({ tool: "Bash", summary: "ls", input: {} }, "checker", "asked for"),
   logged: autoApprovedEntry({ tool: "Bash", summary: "ls", input: {} }, "yolo", undefined, 0).what,
+}));
+`;
+
+/** The 1Password helper's questions and the kept timings through the package, over a stand-in exchange. */
+const BOX = `
+import { answerOf, HELPER, type HelperAnswer, HelperAsks, type HelperRequest, OnePasswordError, requestLine, SDK_PACKAGE, SDK_VERSION, tokenLine } from "fleetd/box/onepassword";
+import { KEPT_EVERY_MS, KEPT_FOR_MS } from "fleetd/box/kept";
+
+const said: Record<string, string> = {
+  '{"ref":"op://v/i/password"}': '{"value":"pw","urls":["https://a.example"]}',
+  '{"vaults":true}': '{"vaults":["Shared",7]}',
+  '{"read":"op://v/i"}': '{"error":"no item i","rateLimited":true}',
+};
+class InBox extends HelperAsks {
+  async exchange(request: HelperRequest): Promise<HelperAnswer> {
+    return answerOf(said[requestLine(request).trim()] ?? "?");
+  }
+}
+const box = new InBox();
+const refused = await box.read("op://v/i").catch((e: OnePasswordError) => [e.message, e.rateLimited]);
+console.log(JSON.stringify({
+  helper: HELPER.includes(\`from "\${SDK_PACKAGE}"\`),
+  sdk: \`\${SDK_PACKAGE}@\${SDK_VERSION}\`,
+  lines: [tokenLine("t"), requestLine({ ref: "op://v/i/password" })],
+  asked: await box.ask("op://v/i/password"),
+  vaults: await box.vaultNames(),
+  refused,
+  kept: [KEPT_FOR_MS, KEPT_EVERY_MS],
 }));
 `;
 
