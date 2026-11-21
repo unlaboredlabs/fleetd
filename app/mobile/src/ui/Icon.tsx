@@ -60,6 +60,7 @@ const SYMBOLS = {
   unmuteFill: ["bell.fill", "notifications"],
   plus: ["plus", "add"],
   photos: ["photo.on.rectangle", "photo_library"],
+  calendar: ["calendar", "calendar_month"],
   takePhoto: ["camera", "photo_camera"],
   file: ["doc", "description"],
   share: ["square.and.arrow.up", "ios_share"],

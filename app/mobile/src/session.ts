@@ -12,6 +12,8 @@ import { memoryPins, Pins, type PinStore } from "./pins";
 import { memorySections, Sections, type Section, type SectionStore } from "./sections";
 import { deviceZone } from "./zone";
 import { registerDevice, signOut, type PushDeps } from "./push";
+import { pageFrom } from "./around";
+import { FIND_PINS } from "./messagePins";
 import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
 import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
@@ -249,6 +251,7 @@ export class Session {
     this.#dispatch({ t: "chat_open", key });
     void this.#loadLatest(key);
     void this.readScreens(key);
+    void this.readMessagePins(key);
   }
 
   /** The chat open when the app was last closed, and where: App.tsx opens it again over the list. */
@@ -269,6 +272,53 @@ export class Session {
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), before: oldest.seq, limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "older" });
     else this.#dispatch({ t: "history_failed", key, error: r.error, direction: "older" });
+  }
+
+  /**
+   * The chat opened at a message it doesn't hold (a search hit, a pin far back): the hub's page around it, in a window
+   * of its own (around.ts), rather than every page down to it.
+   */
+  async openAround(key: Key, messageId: string): Promise<void> {
+    this.#dispatch({ t: "window_open", key, anchor: messageId });
+    const r = await this.#client.call("chat_history", { projectRef: refOf(key), around: messageId, limit: CHAT_PAGE });
+    if (r.ok) this.#dispatch({ t: "window_page", key, anchor: messageId, page: r.output, end: "around" });
+    else this.#dispatch({ t: "window_failed", key, anchor: messageId, error: r.error });
+  }
+
+  /** The open window's next page, older or newer: one at a time, none once its end says there's no more. */
+  async pageWindow(key: Key, end: "older" | "newer"): Promise<void> {
+    const w = this.#state.windows[key];
+    const from = w === undefined ? undefined : pageFrom(w, end);
+    if (w === undefined || from === undefined) return;
+    this.#dispatch({ t: "window_loading", key, end });
+    const r = await this.#client.call("chat_history", { projectRef: refOf(key), ...(end === "older" ? { before: from } : { after: from }), limit: CHAT_PAGE });
+    if (r.ok) this.#dispatch({ t: "window_page", key, anchor: w.anchor, page: r.output, end });
+    else this.#dispatch({ t: "window_failed", key, anchor: w.anchor, error: r.error });
+  }
+
+  /** Back to the chat's newest: the window goes. */
+  closeWindow(key: Key): void {
+    this.#dispatch({ t: "window_close", key });
+  }
+
+  /** A chat's pinned messages, read again: as it opens, on each connection, and when someone pins or unpins one. */
+  async readMessagePins(key: Key): Promise<void> {
+    const hub = this.#state.hub;
+    if (hub.phase !== "live" || hub.features?.includes(FIND_PINS) !== true) return;
+    const r = await this.#client.call("chat_message_pins", { projectRef: refOf(key) });
+    if (r.ok) this.#dispatch({ t: "message_pins", key, pins: r.output.pins });
+  }
+
+  /** A message pinned or unpinned, for everyone in the chat: the hub's list after it, shown at once. */
+  async pinMessage(key: Key, messageId: string, pinned: boolean): Promise<Typed<"chat_message_pin">> {
+    const r = await this.#client.call("chat_message_pin", { projectRef: refOf(key), messageId, pinned });
+    if (r.ok) this.#dispatch({ t: "message_pins", key, pins: r.output.pins });
+    return r;
+  }
+
+  /** One page of a chat's search (chat_find, chatFind.ts): its hits, newest first, older than `before`'s. */
+  find(key: Key, query: Omit<ToolInput<"chat_find">, "projectRef" | "before" | "limit">, before: string | undefined, limit: number): Promise<Typed<"chat_find">> {
+    return this.#client.call("chat_find", { ...query, projectRef: refOf(key), limit, ...(before === undefined ? {} : { before }) });
   }
 
   /**
@@ -584,6 +634,8 @@ export class Session {
       // Back from a drop whose events replay, the open chat goes on with them; else its latest page starts it over.
       if (this.#open !== null && frame.replay === true && this.#resumable === this.#open) this.#dispatch({ t: "resume", key: this.#open });
       else if (this.#open !== null) void this.#loadLatest(this.#open);
+      // Someone may have pinned or unpinned while the link was down.
+      if (this.#open !== null) void this.readMessagePins(this.#open);
       this.#resumable = null;
       // The screens of the chats looked at may have changed while the link was down.
       for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
@@ -602,6 +654,7 @@ export class Session {
       if (effects.pins) void this.#pins.read();
       if (effects.sections) void this.#sections.read();
       if (effects.info) void this.#readInfo();
+      if (effects.messagePins !== undefined && (effects.messagePins === this.#open || this.#state.messagePins[effects.messagePins] !== undefined)) void this.readMessagePins(effects.messagePins);
       if (effects.screens !== undefined && (effects.screens === this.#open || this.#state.screens[effects.screens] !== undefined)) void this.readScreens(effects.screens);
     }
     const open = this.#open === null ? undefined : this.#state.chats[this.#open];

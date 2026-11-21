@@ -13,6 +13,14 @@ describe("what an event reads again", () => {
     expect(effectsOf(event("machine.offline", { machineId: "devbox" })).snapshot).toBe(false);
   });
 
+  it("someone pinning or unpinning a message reads that chat's pins again, never the person's pinned chats", () => {
+    const projectRef = { machineId: "devbox", projectId: "p1" };
+    const pinned = effectsOf(event("chat.message_pins", { data: { projectRef, messageId: "m1", pinned: true, by: { personId: "a", name: "Ada" } } }));
+    expect(pinned.messagePins).toBe("devbox/p1");
+    expect(pinned.pins).toBe(false);
+    expect(effectsOf(event("chat.pins")).messagePins).toBeUndefined();
+  });
+
   it("a change to the hub's people (a new picture) reads who the person is again", () => {
     expect(effectsOf(event("people.changed")).info).toBe(true);
     expect(effectsOf(event("project.settings")).info).toBe(false);
