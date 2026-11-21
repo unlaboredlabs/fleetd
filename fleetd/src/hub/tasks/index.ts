@@ -1835,6 +1835,8 @@ export class Tasks {
           return task;
         }
         default: {
+          const closed = this.closedOrder(task);
+          if (closed) throw leadError("invalid", closed[0], closed[1]);
           this.asking.delete(taskId);
           const next: Task = { ...task, attempt: task.attempt + 1 };
           // The lead continued it: a death like the last one is resumed again, within the same cap.
@@ -2224,6 +2226,42 @@ export class Tasks {
       .filter((t) => LIVE_TASKS.includes(t.state))
       .map((t) => t.taskId)
       .reverse();
+  }
+
+  /**
+   * Why an ended task can't run again: its order is closed, and its variables (its GitHub token among them) went with
+   * it, so it would run on the token its claude started with, which GitHub has ended by then. The line and its fix;
+   * undefined while its order is open.
+   */
+  closedOrder(task: Task): [string, string] | undefined {
+    const w = this.workstream(task.workstreamId);
+    if (!w || w.state === "open") return undefined;
+    return [
+      `${task.taskId} can't go on: its order ${task.workstreamId} is ${w.state}, and its variables (its GitHub token among them) went with it.`,
+      "Spawn a new task in an open order for the work that's left.",
+    ];
+  }
+
+  /**
+   * The order closed: its ended tasks go on no more. Their wait_ci waits are dropped, and their agents' claude is
+   * closed, a Monitor of theirs with it. The ids of those whose waits were dropped, oldest first.
+   */
+  endFor(r: ProjectRef, workstreamId: WorkstreamId): TaskId[] {
+    const ended = (this.tryDb(() => this.list({ projectRef: r, workstreamId, limit: SCAN_LIMIT })) ?? [])
+      .filter((t) => t.state === "done" || t.state === "failed")
+      .reverse();
+    const waited: TaskId[] = [];
+    for (const task of ended) {
+      const dropped = this.tryDb(() => this.db.query("DELETE FROM ci_waits WHERE task_id = ?").run(task.taskId).changes) ?? 0;
+      if (dropped > 0) waited.push(task.taskId);
+      const thread = task.threadRef;
+      if (!thread) continue;
+      spawnInBackground(
+        "closing a closed order's ended agent",
+        this.ports.stop(thread).catch((error) => console.warn(`closed order's ended agent not closed (${task.taskId}):`, portError(error).message)),
+      );
+    }
+    return waited;
   }
 
   /** `cancel({ projectRef, by: "hub" }, taskId, reason)` for a removed project, errors ignored. */

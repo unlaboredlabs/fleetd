@@ -140,6 +140,11 @@ export class Workstreams {
     let next = "Closed.";
     if (stopped.length > 0) next += ` Stopped its agents still at it: ${stopped.join(", ")}.`;
     if (running.length > 0) next += ` ${running.join(", ")} could not be stopped yet: call stop_agent on each shortly.`;
+    // Its ended agents go on no more either: their order's variables, its GitHub token among them, go with it.
+    const waited = leadWiring(this.hub).hooks.tasks?.endFor?.(caller, id) ?? [];
+    if (waited.length > 0) {
+      next += ` Dropped the CI and merge waits of ${waited.join(", ")}: they won't wake, so nobody confirms those runs or merges.`;
+    }
     return { workstreamId: id, state: "done", next };
   }
 
