@@ -458,7 +458,7 @@ test("the lead's digest lists a done task that has waited 10 minutes on its own 
   expect(k.t.digestLines(P, since, 10)).toEqual([]);
   k.clock.ms += 5 * 60_000;
   expect(k.t.digestLines(P, since, 10)).toEqual([
-    `- T1 done: Redesign; waits on its Monitor "Final QA subset finishes" (14 min so far): it wakes by itself when that ends or is lost, by ${at(deadline).slice(11, 16)} UTC at the latest`,
+    `- T1 done: Redesign; waits on its Monitor "Final QA subset finishes" (14 min so far): it wakes by itself when that ends or is lost, by ${at(deadline).slice(11, 16)} UTC at the latest, or once its machine is back if that restarts first`,
   ]);
   // Once no Monitor of its own can wake it, it isn't listed as waiting.
   k.threadRow("s1", "completed", "");

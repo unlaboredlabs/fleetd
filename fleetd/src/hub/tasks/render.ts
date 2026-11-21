@@ -359,7 +359,8 @@ export function taskDigestLines(
     if (m !== undefined) {
       const what = m.watching.length === 0 ? "a Monitor" : m.watching.map((w) => `"${oneLine(w, 80)}"`).join(", ");
       const by = m.until.length >= 16 ? `, by ${m.until.slice(11, 16)} UTC at the latest` : "";
-      waiting += `; waits on its Monitor ${what}${so}: it wakes by itself when that ends or is lost${by}`;
+      // Lost in a restart of the hub or its machine, it is woken once they are back, past that time or not.
+      waiting += `; waits on its Monitor ${what}${so}: it wakes by itself when that ends or is lost${by}, or once its machine is back if that restarts first`;
     }
     out.push(`- ${t.taskId} ${t.state}${when}: ${title(t)}${pr}${waiting}${arrow}`);
   }

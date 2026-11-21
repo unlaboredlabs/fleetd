@@ -266,6 +266,8 @@ async function sendWithin(
   } catch {}
   // A busy node may take a while to take it: a patient send goes again until it answers (the node dedupes on runId).
   const ex = executors(hub);
+  // A machine just linked has its orders' GitHub tokens renewed first: no agent is resumed or woken on an ended one.
+  await ex.settled(r.machineId);
   const out = await (patient ? ex.callPatient.bind(ex) : ex.call.bind(ex))(
     r.machineId,
     "send",

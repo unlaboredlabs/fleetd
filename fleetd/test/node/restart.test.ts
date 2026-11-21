@@ -64,11 +64,13 @@ test("a session whose Monitor died with the last node is woken after the restart
     };
     await until("the lost session's host to be reaped", reaped);
     service = await SessionService.start(config);
+    // The hub subscribes: the wakes the node held for it go.
+    await service.handle({ id: "sub", call: { op: "subscribe" } as never });
     const woken = await until("the wake to complete", () =>
       service.store.runs("a-lost").find((r) => r.id.startsWith("a-lost-monitor-lost-") && r.status === "completed"),
     );
     expect(service.store.message("a-lost", woken.id)?.text).toBe(
-      "Your Monitor \"ci\" was lost when this machine's fleetd node restarted. Check what you were waiting for again.",
+      "Your Monitor \"ci\" was lost when this machine's fleetd node restarted. Check what you were waiting for again, and arm a new Monitor if you still need to wait.",
     );
     for (const id of kept) expect(service.store.runs(id).every((r) => r.status === "completed")).toBe(true);
   } finally {
@@ -121,11 +123,13 @@ test("a Monitor whose time ran out while the node was away, with its claude gone
       }
     });
     service = await SessionService.start(config);
+    // The hub subscribes: the wakes the node held for it go.
+    await service.handle({ id: "sub", call: { op: "subscribe" } as never });
     const woken = await until("the wake to complete", () =>
       service.store.runs("a-lost").find((r) => r.id.startsWith("a-lost-monitor-lost-") && r.status === "completed"),
     );
     expect(service.store.message("a-lost", woken.id)?.text).toBe(
-      "Your Monitor \"ci\" was lost when this machine's fleetd node restarted. Check what you were waiting for again.",
+      "Your Monitor \"ci\" was lost when this machine's fleetd node restarted. Check what you were waiting for again, and arm a new Monitor if you still need to wait.",
     );
   } finally {
     await service.stopAll();

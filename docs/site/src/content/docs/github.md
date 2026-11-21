@@ -98,8 +98,10 @@ The token reaches the order's agents as `GH_TOKEN`, one of the order's variables
 before it ends, and gone when the order closes. A closed order's agents are done: one that finished waiting on CI, a
 merge or a Monitor doesn't start again, so none runs on a token GitHub has ended. Renewing yours ends the one before
 at GitHub, so the renewal hands the new one to every open order of yours, on every machine and in every sandbox,
-before anything goes on; a machine offline then gets it at the first check after it reconnects (every 5 minutes). It
-reaches agents already at work at their next command, not only their next turn. An agent whose `gh` or `git push` is
+before anything goes on. A machine that comes back (its node or the hub restarted, even after the token ended) gets
+its orders' tokens renewed as it reconnects, before the hub reads its agents' state or resumes or wakes any of them,
+for at most 30 seconds when GitHub doesn't answer. It reaches agents already at work at their next command, not only
+their next turn. An agent whose `gh` or `git push` is
 refused anyway keeps its work committed and tries again for a few minutes before asking its lead. If the hub can't
 renew it before it ends (GitHub unreachable), its agents hold a value GitHub refuses until it can, and the lead is
 told; they never fall back to the machine's login. A task launched while GitHub gives no token starts anyway, holding

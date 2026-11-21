@@ -73,7 +73,9 @@ export type SessionLocal = {
   helperModel?: string;
   systemPrompt?: string;
   queuedPrompts?: PendingPermission[];
-  monitors?: { id: string; description?: string; untilMs: number }[];
+  /** The Monitors the agent armed, until it has been told each ended: `ended` once claude's watch of it is over (its
+   * notice is queued, or its claude went) and only a turn that starts or completes after that tells the agent. */
+  monitors?: { id: string; description?: string; untilMs: number; ended?: true }[];
   /** The session whose scratch dir ($TMPDIR) it uses: the earliest of the sessions it took over (a task restarted
    * fresh), so the task goes on with the files it kept there. Absent: its own. */
   scratchOf?: string;

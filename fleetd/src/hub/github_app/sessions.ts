@@ -13,9 +13,12 @@
 // the hub), their orders' agents get `BLOCKED_TOKEN` in its place, so `gh` fails there rather than run on the
 // machine's own login, and the order's lead is told. A token that ends before the hub could renew it is replaced with
 // `UNRENEWED_TOKEN` until a sweep renews it. Only where the App doesn't reach do agents use the machine's own login.
+// A node that links (after its restart, or the hub's) gets the tokens that ended or came near their end while it or
+// the hub was away before the hub reads its sessions or sends its agents anything (`renewOnLink`).
 import type { MachineId, PersonId, ProjectRef, RepoId, TaskKind, WorkstreamId } from "../../shared/contracts.ts";
 import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
+import { executors } from "../executor/index.ts";
 import * as seams from "../train/seams.ts";
 import { GITHUB_CONNECT_REFUSAL, GITHUB_TOKEN_ENV, githubApps } from "./index.ts";
 import { account, disconnect, SESSION_MARGIN_MS, userToken } from "./people.ts";
@@ -25,6 +28,8 @@ export { type Block, BLOCKED_TOKEN, blockedLine, CAP_ORDER_ENV, TOKEN_PENDING, U
 
 /** An App token handed to sessions has at least this long left; it is delivered again once it has less. */
 const APP_MARGIN_MS = 30 * 60_000;
+/** The longest a node's link waits for its orders' tokens before the hub reads its sessions and sends to them. */
+export const LINK_RENEW_MS = 30_000;
 /** What the hub keeps under an order's variables for its token, in place of a request id. */
 const REQUEST_ID = "github";
 /** Whose GitHub an order's agents use: the person who started it, or the App's own. */
@@ -498,10 +503,10 @@ async function put(hub: Hub, r: ProjectRef, order: WorkstreamId, token: string):
  * no longer connected, delivered again within its margin of its end, and replaced by `UNRENEWED_TOKEN` once it ends
  * unrenewed. Forgets closed orders'.
  */
-export async function renew(hub: Hub): Promise<void> {
+export async function renew(hub: Hub, machine?: MachineId): Promise<void> {
   const now = hub.clock.now();
   const apps = githubApps(hub);
-  for (const listed of kept(hub)) {
+  for (const listed of kept(hub).filter((k) => machine === undefined || k.checkout.machineId === machine)) {
     // Read again: a refresh for an order before it in this sweep may have handed it its token already.
     const k = keptAt(hub, listed.checkout, listed.order);
     if (!k) continue;
@@ -543,9 +548,32 @@ export async function renew(hub: Hub): Promise<void> {
   }
 }
 
-/** Renews the orders' tokens on every sweep. */
+/**
+ * A node linked: `renew` for the checkouts on it, at most LINK_RENEW_MS. Its tokens ended or came within their margin
+ * while it or the hub was away (a person's lasts 8 hours, and the first sweep comes 5 minutes after a start), so the
+ * hub settles this before it subscribes to the node's sessions and before any send there (executor `beforeSubscribe`):
+ * no agent is resumed or woken, by the hub or by its node, on a token GitHub refuses.
+ */
+export async function renewOnLink(hub: Hub, machine: MachineId): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`github: the orders' tokens on ${machine} not renewed within ${LINK_RENEW_MS / 1000} s of its link; its agents go on, and the sweep renews them`);
+      resolve();
+    }, LINK_RENEW_MS);
+  });
+  const renewed = renew(hub, machine).catch((error) => console.warn(`github: the orders' tokens on ${machine} not renewed at its link: ${error}`));
+  try {
+    await Promise.race([renewed, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Renews the orders' tokens on every sweep, and a machine's at each link of its node. */
 export function run(hub: Hub): void {
   seams.sweep(hub).register({ name: "github-tokens", run: () => renew(hub) });
+  executors(hub).sinks.beforeSubscribe = (machine) => renewOnLink(hub, machine);
 }
 
 /** The box key's public half, for tests that play a node. */

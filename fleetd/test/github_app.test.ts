@@ -12,7 +12,9 @@ import { Registry, type Caller } from "../src/hub/api/registry.ts";
 import { AppGh, repoOf } from "../src/hub/github_app/gh.ts";
 import { doctor } from "../src/hub/doctor/index.ts";
 import { githubApps, manifest } from "../src/hub/github_app/index.ts";
-import { BLOCKED_TOKEN, blockedLine, deliver, deliverAtLaunch, kept, renew, refusal, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
+import { BLOCKED_TOKEN, blockedLine, deliver, deliverAtLaunch, kept, renew, refusal, run, UNRENEWED_TOKEN } from "../src/hub/github_app/sessions.ts";
+import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
+import { sendWith } from "../src/hub/executor/sessions.ts";
 import { leadWakes } from "../src/hub/api/leads.ts";
 import { isoMs } from "../src/hub/train/seams.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
@@ -679,6 +681,45 @@ test("a person's token the hub can't renew before it ends is replaced, and the l
   l.fake.down = false;
   l.clock.advance(5 * 60_000);
   await renew(l.hub);
+  allLive(l, f, orders);
+});
+
+test("a hub back after its orders' tokens ended renews them at the node's link, before it reads its sessions or sends to any agent", async () => {
+  const l = lab();
+  const { f, orders } = await samsOrders(l, ["devbox"]);
+  const [a] = orders as [ReturnType<typeof order>];
+  await deliver(l.hub, a.r, a.w, undefined, true);
+  // The hub and the node were down for longer than the token lasts (the devbox, 2026-11-21: 4 h 48 min).
+  l.clock.advance(9 * 60 * 60_000);
+  const ended = f.holds.get(`order:devbox:${a.w}`);
+  const renewed = () => {
+    const held = f.holds.get(`order:devbox:${a.w}`) ?? "";
+    return held !== ended && l.fake.liveAccess.includes(held);
+  };
+  run(l.hub);
+  const slow = f.hold("devbox");
+  // What the node is sent, with whether the order's agents held a token GitHub takes at that moment.
+  const sent: { op: string; live: boolean }[] = [];
+  const ex = executors(l.hub);
+  ex.attach("devbox", {
+    linkId: 1,
+    send(frame: HubToNodeSession) {
+      if (frame.t !== "session_call") return;
+      sent.push({ op: frame.call.op, live: renewed() });
+      const result = frame.call.op === "send" ? { ok: { kind: "sent", runId: "r1", queued: false } } : { ok: { kind: "done" } };
+      queueMicrotask(() => ex.handleFrame("devbox", { t: "session_reply", id: frame.id, result } as never));
+    },
+  });
+  // A wake the hub sends the moment the node is back (a recovery's resume, a CI wake) waits for the renewal too.
+  const woken = sendWith(l.hub, { machineId: "devbox", threadId: "t1" }, "CI you waited on finished", "wake-1");
+  await slow.begun;
+  await Bun.sleep(20);
+  expect(sent).toEqual([]);
+  slow.release();
+  await woken;
+  await ex.awaitLive("devbox");
+  expect(sent.map((s) => s.op).sort()).toEqual(["send", "subscribe"]);
+  expect(sent.every((s) => s.live)).toBe(true);
   allLive(l, f, orders);
 });
 

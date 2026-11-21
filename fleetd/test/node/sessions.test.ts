@@ -301,7 +301,7 @@ test("a Monitor that dies with its claude wakes the session once to say so", asy
   process.kill(service.store.session("s1")!.local.pid!, "SIGKILL");
   const woken = await until("the wake", () => service.store.runs("s1").find((r) => r.id.startsWith("s1-monitor-lost-") && r.status === "completed"));
   expect(service.store.message("s1", woken.id)?.text).toBe(
-    'Your Monitor "ci" was lost when your claude process exited. Check what you were waiting for again.',
+    'Your Monitor "ci" was lost when your claude process exited. Check what you were waiting for again, and arm a new Monitor if you still need to wait.',
   );
   expect(service.store.session("s1")?.local.monitors).toBeUndefined();
   expect(summary("s1")?.watchingUntil).toBeUndefined();
