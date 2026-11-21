@@ -64,6 +64,7 @@ export const APP_FEATURES = [
   "agent_messages",
   "deflate",
   "frame_acks",
+  "chat_find_pins",
 ] as const;
 export const APP_DEFLATE = "deflate";
 /** The upgrade's `auth`: the key as `Authorization: Bearer`, the features comma-separated in this header. */

@@ -18,6 +18,7 @@ export const CARRIED = [
   "browser_sessions",
   "browser_settings",
   "changes",
+  "chat_message_pins",
   "chat_messages",
   "chat_pins",
   "chat_projects",
@@ -140,6 +141,12 @@ export const RETIRED: Record<string, string> = {
 
 /** The tables import fills by itself, each with how. */
 export const REBUILT: Record<string, string> = {
+  chat_find: "the chats' search index, filled again from the messages while the hub runs",
+  chat_find_built: "how far the chats' search index is filled: set to fill it all again",
+  chat_find_config: "part of the chats' search index",
+  chat_find_data: "part of the chats' search index",
+  chat_find_docsize: "part of the chats' search index",
+  chat_find_idx: "part of the chats' search index",
   decisions_fts: "the decisions' search index, filled again from the decisions",
   decisions_fts_config: "part of the decisions' search index",
   decisions_fts_content: "part of the decisions' search index",

@@ -95,10 +95,12 @@ test("hits come a page at a time, newest first", async () => {
   const third = (await page(ids(second).at(-1))) as Record<string, any>;
   expect(texts(third)).toEqual([4, 3, 2, 1, 0].map((i) => `groceries list ${i}`));
   expect(third.more).toBeUndefined();
-  // LIKE's own signs are only letters here.
+  // A word matches from a word's start, and signs only part words.
   say(hub, inbox, "human", "a 100% refund", AT);
-  expect(texts(await recalled(hub, inbox, { op: "chat_search", words: "0%" }))).toEqual(["a 100% refund"]);
-  expect(ids(await recalled(hub, inbox, { op: "chat_search", words: "groceries_list" }))).toEqual([]);
+  expect(texts(await recalled(hub, inbox, { op: "chat_search", words: "100%" }))).toEqual(["a 100% refund"]);
+  expect(texts(await recalled(hub, inbox, { op: "chat_search", words: "REFU" }))).toEqual(["a 100% refund"]);
+  expect(ids(await recalled(hub, inbox, { op: "chat_search", words: "efund" }))).toEqual([]);
+  expect(texts(await recalled(hub, inbox, { op: "chat_search", words: "groceries_list_44" }))).toEqual(["groceries list 44"]);
 });
 
 test("a date range keeps to its days", async () => {

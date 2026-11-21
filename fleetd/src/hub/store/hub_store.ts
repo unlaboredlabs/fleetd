@@ -64,6 +64,7 @@ export const MACHINE_TABLES = [
   "steers",
   "chat_projects",
   "chat_messages",
+  "chat_message_pins",
   "checklists",
   "leads",
   "lead_mcp",

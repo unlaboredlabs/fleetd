@@ -120,6 +120,13 @@ function rebuildDecisionsFts(conn: Database, schema: string): void {
   );
 }
 
+/** The chats' search index, emptied and marked to be filled again from every message while the new hub runs. */
+function refillChatFind(conn: Database): void {
+  conn.run("DELETE FROM chat_find");
+  conn.run("DELETE FROM chat_find_built");
+  conn.run("INSERT INTO chat_find_built (below) SELECT COALESCE(MAX(n), 0) + 1 FROM chat_messages");
+}
+
 type Loader = (row: HubExportRow) => (null | number | string | Uint8Array)[];
 
 /** How a row of `t` becomes the values to insert, its secrets sealed to the new hub's keys. */
@@ -226,7 +233,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
       const theirs = new Set(manifest.schema.map((m) => m.name));
       migrate(staged, MIGRATIONS.filter((m) => theirs.has(m.name)));
       const there = tablesOf(staged);
-      for (const table of there) if (table !== "migrations_applied" && !table.startsWith("decisions_fts_")) staged.run(`DELETE FROM ${quoted(table)}`);
+      for (const table of there) if (table !== "migrations_applied" && !table.startsWith("decisions_fts_") && !/^chat_find_(config|data|docsize|idx)$/.test(table)) staged.run(`DELETE FROM ${quoted(table)}`);
       staged.run("DELETE FROM sqlite_sequence");
 
       const tables = new Map<string, { t: HubExportTable; insert: ReturnType<Database["query"]>; load: Loader }>();
@@ -276,6 +283,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
         if (set.changes === 0) staged.query("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)").run(name, t.sequence);
       }
       if (there.has("decisions_fts")) rebuildDecisionsFts(staged, "main");
+      if (there.has("chat_find")) refillChatFind(staged);
       // The migrations this fleetd has past the export's, on the rows as the old hub's update would have run them.
       migrate(staged, MIGRATIONS);
     } finally {
