@@ -18,9 +18,10 @@
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
 # - qa: desktop-qa.yml's screens, all shards in one run. It takes long, so it runs only when named. With no check named,
-#   a change to app/desktop's renderer or fixtures runs the screens it shows (app/desktop/qa/touched.ts picks them; past
-#   150 tests, only its own: its fixtures' and its page's or directory's): a screen that asks the hub something new
-#   fails there when one of its fixtures has no answer for it.
+#   a change to app/desktop's renderer, fixtures or QA screens runs the screens it shows (app/desktop/qa/touched.ts
+#   picks them; past 150 tests, only its own: its fixtures', its page's or directory's, and the screens whose QA entries
+#   it changed): a screen that asks the hub something new fails there when one of its fixtures has no answer for it,
+#   and one that moved to another page fails there when its steps don't hold on it.
 #
 # It runs them all, then names each one that failed, with its command, and exits 1. Its last line is one of:
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
@@ -173,7 +174,7 @@ needed=()
 changed "${fleetd_paths[@]}" && needed+=(fleetd)
 changed "${site_paths[@]}" && needed+=(site)
 changed app/desktop .github/workflows/ci.yml && needed+=(desktop)
-changed app/desktop/src/renderer app/desktop/fixtures && needed+=(qa)
+changed app/desktop/src/renderer app/desktop/fixtures app/desktop/qa && needed+=(qa)
 
 # bun install in fleetd/, unless its node_modules is already newer than its lockfile.
 bun_install() {
@@ -240,7 +241,7 @@ touched() {
   local -n into=$1
   shift
   # shellcheck disable=SC2034 # a nameref: it sets the caller's <var>.
-  into=$(cd app/desktop && node qa/touched.ts "$@" "${touched[@]}") && return
+  into=$(cd app/desktop && node qa/touched.ts --base="$base" "$@" "${touched[@]}") && return
   failed+=("qa: node app/desktop/qa/touched.ts $*")
   echo "==> FAILED qa: node app/desktop/qa/touched.ts $*"
   return 1
@@ -254,13 +255,13 @@ if [[ " ${named[*]} " == *" qa "* ]]; then
   step qa pnpm -C app/desktop qa:build
   step qa pnpm -C app/desktop qa:selftest
   step qa pnpm -C app/desktop qa
-elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixtures && ! passed_before qa; then
+elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixtures app/desktop/qa && ! passed_before qa; then
   mapfile -t touched < <(changed_files | sed -n 's|^app/desktop/||p')
   tests='' grep=''
   if touched tests --count && touched grep; then
     if [ "$tests" -gt $qa_most ]; then
       echo "==> qa: the change reaches $tests screens' tests, too many to run here: only its own run (scripts/check.sh qa runs every screen)"
-      touched tests --near --count && touched grep --near || grep=''
+      touched tests --near --most=$qa_most --count && touched grep --near --most=$qa_most || grep=''
     fi
     if [ -z "$grep" ]; then
       echo "==> qa: no screen shows the change; if one shows something new, scripts/check.sh qa runs them all"
@@ -273,7 +274,7 @@ elif [ ${#named[@]} -eq 0 ] && changed app/desktop/src/renderer app/desktop/fixt
     fi
   fi
 elif [ ${#named[@]} -eq 0 ] && changed app/desktop .github/workflows/desktop-qa.yml &&
-  ! changed app/desktop/src/renderer app/desktop/fixtures; then
+  ! changed app/desktop/src/renderer app/desktop/fixtures app/desktop/qa; then
   echo "==> qa: app/desktop changed; if a screen shows something new, scripts/check.sh qa runs the screens CI runs"
 fi
 
