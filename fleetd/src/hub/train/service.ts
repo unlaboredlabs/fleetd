@@ -232,6 +232,8 @@ export class Train {
   readonly lastReadyCheck = new Map<string, number>();
   /** The heads of writers' PRs already sent to review as a ready slice. */
   private readonly readyHeads = new Set<string>();
+  /** Batches being landed now: merged or merging on GitHub, their members not all recorded and closed yet. */
+  landings = 0;
   /** Enqueues GitHub was unavailable for, by PR URL, with whether each came from a task's result. */
   private readonly unread = new Map<string, [ProjectRef, EnqueueCall, boolean]>();
   private readonly mergeRefusals = new Map<string, number>();

@@ -1,5 +1,6 @@
 // `hub_update`: the hub updates itself to the newest build of its channel,
-// then tells every connected node to do the same, with src/update's pieces. The hub restarts at once; a node too when
+// then tells every connected node to do the same, with src/update's pieces. The hub restarts at once, but for a batch
+// the merge train is landing (merged, its PRs not all closed yet), the drain at most; a node too when
 // nothing its restart would cut off runs: its agents run under hosts in systemd scopes of their own, which carry on
 // through it, mid-step included. It waits only for a live session, an approved command, a check the hub runs there or
 // a session that isn't hosted (a project's) mid-step, for a while at most (`drain`, 2 minutes by default). Where its
@@ -128,6 +129,8 @@ export interface UpdatePorts {
   updateNode(machineId: string, update: NodeUpdate): Promise<NodeAnswer>;
   /** Tells the apps how the update looks now (the `hub.update` event); called only when that changed. */
   announce(update: HubUpdateData): void;
+  /** The merge train's batches being landed now, which the hub's restart would cut off between their merge and closes. */
+  trainLandings?(): number;
 }
 
 /** A node's answer to its hold. */
@@ -876,6 +879,8 @@ class Drive {
   async driveHub(ports: UpdatePorts): Promise<void> {
     const channel = this.u.status()?.channel;
     if (channel === undefined) return;
+    await this.waitForTrain(ports);
+    if (this.stopped()) return;
     let plan: Plan | undefined;
     try {
       plan = await this.stageHub(ports, channel);
@@ -902,6 +907,27 @@ class Drive {
     // The watcher restarts this process; the hub that comes up goes on in `resume`. Still here past the deadline, the
     // restart never happened.
     await this.restartMissed(p);
+  }
+
+  /**
+   * Before anything is swapped, a batch the merge train is landing is waited for, the drain at most: the hub's restart
+   * would cut it off between its merge and its PRs' closes. Update now doesn't wait.
+   */
+  private async waitForTrain(ports: UpdatePorts): Promise<void> {
+    const by = this.u.clockNow() + this.u.drain();
+    let said = false;
+    while ((ports.trainLandings?.() ?? 0) > 0) {
+      if (this.u.status()?.now === true || this.u.clockNow() >= by || this.stopped()) return;
+      if (!said) {
+        this.setPart(undefined, "downloading", undefined, "waits for the merge train to finish landing a batch");
+        said = true;
+      }
+      let wake!: () => void;
+      const hurried = new Promise<void>((r) => (wake = r));
+      const off = this.u.onHurry(wake);
+      await Promise.race([this.u.sleep(this.u.timing.drainPoll, this.signal), hurried]);
+      off();
+    }
   }
 
   private async restartMissed(plan: Plan): Promise<void> {

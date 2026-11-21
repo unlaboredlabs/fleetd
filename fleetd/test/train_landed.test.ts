@@ -84,6 +84,8 @@ test("a hub gone between a member's landing comment and its close: the restarted
   // The pass lands the batch, comments on PR 11 and never hears back from its close: the hub restarts there.
   void k.settle();
   await atClose;
+  // An update waits for this before it restarts the hub (hub-update.test.ts).
+  expect(k.train.landings).toBe(1);
   expect(landingComments(k, 11)).toHaveLength(1);
   expect(k.gh.pulls.get(11)!.state).toBe("open");
   close.hang = false;
@@ -101,6 +103,7 @@ test("a hub gone between a member's landing comment and its close: the restarted
     [12, "merged"],
   ]);
   expect(k.gate.reviewed.length).toBe(reviewed);
+  expect(train.landings).toBe(0);
   expect(k.host.eventsOf("change.queued")).toHaveLength(2);
 });
 
