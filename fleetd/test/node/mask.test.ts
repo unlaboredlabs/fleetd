@@ -113,7 +113,7 @@ test("live text streamed in small pieces never cuts a secret in two, even where 
   }
 });
 
-test("a private key is hidden however a tool prints its lines: numbered, indented, grepped or joined by spaces", () => {
+test("a private key is hidden however a tool prints its lines: numbered, indented, grepped, in a diff or joined by spaces", () => {
   const body = Buffer.from("made-up filler for the shapes test, not a key: ".repeat(5)).toString("base64").match(/.{1,64}/g)!;
   const lines = ["-----BEGIN PRIVATE KEY-----", ...body, "-----END PRIVATE KEY-----"];
   const shapes: Record<string, string> = {
@@ -124,6 +124,8 @@ test("a private key is hidden however a tool prints its lines: numbered, indente
     yaml: `data:\n  key: |\n${lines.map((l) => `    ${l}`).join("\n")}\nkind: Secret`,
     echo: lines.join(" "),
     crlf: lines.join("\r\n"),
+    "git diff, removed": `diff --git a/app.pem b/app.pem\ndeleted file mode 100644\n--- a/app.pem\n+++ /dev/null\n@@ -1,${lines.length} +0,0 @@\n${lines.map((l) => `-${l}`).join("\n")}`,
+    "git diff, added": `@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join("\n")}`,
   };
   const m = new Masker();
   const leaked = (text: string) => body.filter((l) => text.includes(l.slice(0, 16)));
@@ -145,4 +147,22 @@ test("a private key is hidden however a tool prints its lines: numbered, indente
     expect({ shape, leaked: leaked(out) }).toEqual({ shape, leaked: [] });
   }
   expect(m.text(shapes.yaml!)).toBe(`data:\n  key: |\n    ${HIDDEN}\nkind: Secret`);
+});
+
+test("a long whitespace run after a key's header or line is matched in linear time, and the key still hidden", () => {
+  const body = Buffer.from("made-up filler for the whitespace test, not a key: ".repeat(4)).toString("base64").match(/.{1,64}/g)!;
+  const m = new Masker();
+  const run = " ".repeat(50_000);
+  for (const text of [
+    `-----BEGIN PRIVATE KEY-----\n${run}.`,
+    `-----BEGIN PRIVATE KEY-----\n${body[0]}\n${run}.`,
+    `-----BEGIN PRIVATE KEY-----\n${run}${body.join(`\n${run}`)}\n-----END PRIVATE KEY-----`,
+    `-----BEGIN PRIVATE KEY-----\n${body.join("\n")}${"\t".repeat(50_000)}`,
+  ]) {
+    const started = performance.now();
+    const shown = m.text(text);
+    m.held(text);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(body.filter((l) => shown.includes(l))).toEqual([]);
+  }
 });
