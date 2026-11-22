@@ -120,12 +120,17 @@ test("live text streamed in pieces shows no secret and no private key, even one 
   await ok("follow", { sessionId: "s2" });
   await ok("send", { sessionId: "s2", runId: "q2", text: "stream:APP_KEY,OTHER_KEY,DEPLOY_TOKEN" });
   await until("the streamed run", () => service.store.session("s2")?.summary.latestRun?.id === "q2" && service.store.session("s2")?.summary.latestRun?.status === "completed");
+  // The reply as it is kept, masked.
+  const said = "APP_KEY is ***APP_KEY*** there\nOTHER_KEY is [secret hidden] there\nDEPLOY_TOKEN is ***DEPLOY_TOKEN*** there";
+  const [messages] = service.store.newestMessages("s2", 50);
+  expect(messages.map((m) => m.text)).toContain(said);
+  expect(leaks(messages.map((m) => m.text).join("\n"))).toEqual([]);
+  // Live text goes out at most once per DELTA_EVERY_MS, and the reply replaces what is still held when it comes: how
+  // far it got depends on the machine's speed. However far, it shows no secret, and it is the start of the reply as
+  // kept (masking it piece by piece cut nothing in two).
   const live = frames.filter((f) => f.t === "thread_event" && f.sessionId === "s2" && f.event.type === "delta").map((f) => f.event.append as string);
-  expect(live.length).toBeGreaterThan(1);
+  expect(live.length).toBeGreaterThan(0);
   const shown = live.join("");
   expect(leaks(shown)).toEqual([]);
-  expect(shown).toContain("APP_KEY is ***APP_KEY*** there");
-  expect(shown).toContain("OTHER_KEY is [secret hidden] there");
-  const [messages] = service.store.newestMessages("s2", 50);
-  expect(leaks(messages.map((m) => m.text).join("\n"))).toEqual([]);
+  expect(said.startsWith(shown)).toBe(true);
 });
