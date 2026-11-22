@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shownRows, sortRows, viewedHub, type SidebarView } from "./sidebarLayout";
+import { foldKey, shownRows, sortRows, viewedHub, type SidebarView } from "./sidebarLayout";
 
 const row = (key: string, hub: string, more: { pinned?: boolean; want?: boolean; title?: string } = {}) => ({
   key,
@@ -34,6 +34,13 @@ describe("the rows on show, which ⌘1–9 count", () => {
     ];
     expect(keys(shownRows(sectioned, view({ sort: "name" }), "a"))).toEqual(["amy", "zed", "api", "web", "bee"]);
     expect(keys(shownRows(sectioned, view({ sort: "needs" }), "a"))).toEqual(["zed", "amy", "web", "api", "bee"]);
+  });
+
+  it("leave out a folded section's chats on its own hub, bar the pinned ones", () => {
+    const sectioned = [{ ...row("pin", "a", { pinned: true }), section: "work" }, { ...row("top", "a"), section: undefined }, { ...row("api", "a"), section: "work" }, { ...row("garden", "a"), section: "home" }];
+    expect(keys(shownRows(sectioned, view(), "a", new Set([foldKey("a", "work")])))).toEqual(["pin", "top", "garden"]);
+    // Another hub's fold of a section by the same id is that hub's alone.
+    expect(keys(shownRows(sectioned, view(), "a", new Set([foldKey("b", "work")])))).toEqual(["pin", "top", "api", "garden"]);
   });
 
   it("keep the order they came in when sorted by recent", () => {

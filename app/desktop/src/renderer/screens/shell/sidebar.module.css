@@ -739,7 +739,8 @@
 }
 
 /* One of your sections (Hubs): a quiet label over its chats, its words in line with their pictures, 12 px under the
-   row above and 2 px over its first chat. No line, no count, no fold. */
+   row above and 2 px over its first chat. No line; a click folds it (W798), and folded it says how many chats it holds
+   and has a dot while one wants you. */
 .sectionSlot {
   margin-top: 10px;
 }
@@ -774,6 +775,43 @@
 /* 12/16, whatever the text's own size brings. */
 .sectionHead > .sectionName {
   line-height: var(--leading-xs);
+}
+.sectionHead[data-folds]:hover {
+  color: var(--text);
+}
+/* Folded: how many chats, a step quieter than the name; the dot of one that wants you (a row's own) at the end, in line
+   with the rows' dots. */
+.sectionCount {
+  flex: none;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.sectionHead > .dot {
+  flex: none;
+  /* The label stops 14 px short of its end, a row's mark 10 px. */
+  margin: 0 -4px 0 auto;
+}
+/* Under the pointer the label's ⋯ stands where the dot is. */
+.sectionSlot:hover .sectionHead > .dot {
+  opacity: 0;
+}
+/* No chevron at rest: under the pointer or the keyboard's focus one hints which way a click goes, turning on the
+   spring as the section folds. */
+.sectionHint {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition:
+    opacity var(--dur-quick) var(--ease-snap),
+    rotate var(--dur-spring) var(--ease-spring);
+}
+.sectionHint[data-folded] {
+  rotate: -90deg;
+}
+.sectionHead:hover > .sectionHint,
+.sectionHead:focus-visible > .sectionHint {
+  opacity: 1;
 }
 /* A chat held over the section would join it: the label takes the rows' shade. */
 .sectionHead[data-taking] {

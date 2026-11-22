@@ -48,7 +48,8 @@ breaks a rule changes this page in the same PR and says why.
   the palette, the composer island, the top row's glass capsules) is the only thing with lift.
 - **One sidebar** (`shell/Sidebar.tsx`, 256 px by default): one hub at a time, its name on a line of its own under the
   traffic lights (the web's first line, as tall as the top row beside it), then search and New bot, the pins, the
-  bots, your sections under quiet labels. Nothing stacks groups that fold. The open row is a faint tint a step off the
+  bots, your sections under quiet labels. A section's label folds it (no chevron at rest, a count and a dot when
+  folded); hubs never fold, so folds never stack. The open row is a faint tint a step off the
   sidebar's own tone (`--row-on`), the hovered one half that (`--row-hover`), no edge or shadow. Screens and the
   Factory are two small icons beside you at the foot, never at the top; you are your picture and name, no second
   line. Rows that glide stay transparent: on macOS the sidebar is the window's see-through material, and a solid fill
