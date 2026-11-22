@@ -139,7 +139,7 @@ export const needsSignIn = (server: McpServer, tested?: Tested): boolean => {
   return tested !== undefined && !("error" in tested) && tested.result.signIn === true;
 };
 
-/** One header or env variable of the form: its name and the vault item it takes its value from. */
+/** One header or env variable of the form: its name and the vault item it takes its value from, or a plain value. */
 export interface DraftValue {
   readonly name: string;
   /** A vault item; "" while none is picked. A value saved before the vault (a sealed secret) is `keep`. */
@@ -147,6 +147,8 @@ export interface DraftValue {
   readonly prefix: string;
   /** Saved as a secret before: kept as it is unless an item is picked. */
   readonly keep?: true;
+  /** A plain value, not a secret (`LOG_LEVEL=1`): sent as typed. Absent: the value is a vault item. */
+  readonly plain?: string;
 }
 
 export interface Draft {
@@ -175,7 +177,11 @@ export const draftOf = (server: McpServer): Draft => {
     name: server.name,
     named: true,
     values: values.map((v) =>
-      v.kind === "vault" ? { name: v.name, itemId: v.itemId ?? "", prefix: v.prefix ?? "" } : { name: v.name, itemId: "", prefix: "", ...(v.kind === "secret" ? { keep: true as const } : {}) },
+      v.kind === "vault"
+        ? { name: v.name, itemId: v.itemId ?? "", prefix: v.prefix ?? "" }
+        : v.kind === "secret"
+          ? { name: v.name, itemId: "", prefix: "", keep: true as const }
+          : { name: v.name, itemId: "", prefix: "", plain: v.value ?? "" },
     ),
     bots: server.scope.kind === "global" ? server.projects : undefined,
   };
@@ -247,7 +253,8 @@ const httpUrl = (url: string): boolean => {
 
 /**
  * The draft as what mcp_server_set saves, or what to fix first. A new one is the team's (scope global), used by the
- * bots picked; a bot's own server edited stays that bot's. Every agent of a bot that uses it gets it, the lead too.
+ * bots picked; a bot's own server edited stays that bot's. A new one goes to every agent of a bot that uses it, the
+ * lead too; an edited one keeps whether it is on and who gets it, as it was saved.
  */
 export const toInput = (
   draft: Draft,
@@ -264,11 +271,14 @@ export const toInput = (
   const values: McpValueSet[] = [];
   for (const v of draft.values) {
     const n = v.name.trim();
-    if (n === "" && v.itemId === "") continue;
+    if (n === "" && v.itemId === "" && (v.plain ?? "") === "") continue;
     if (!(command ? ENV : HEADER).test(n)) return { ok: false, problem: command ? `${n || "A variable"} isn't a variable name.` : `${n || "A header"} isn't a header name.` };
     if (seen.has(n.toLowerCase())) return { ok: false, problem: `${n} is there twice.` };
     seen.add(n.toLowerCase());
-    if (v.itemId !== "") values.push({ kind: "vault", name: n, itemId: v.itemId, ...(v.prefix === "" ? {} : { prefix: v.prefix }) });
+    if (v.plain !== undefined) {
+      if (v.plain.includes("\0") || (!command && /[\r\n]/u.test(v.plain))) return { ok: false, problem: `${n}'s value can't hold a line break or NUL.` };
+      values.push({ kind: "plain", name: n, value: v.plain });
+    } else if (v.itemId !== "") values.push({ kind: "vault", name: n, itemId: v.itemId, ...(v.prefix === "" ? {} : { prefix: v.prefix }) });
     else if (v.keep === true) values.push({ kind: "keep", name: n });
     else return { ok: false, problem: `Pick ${n}'s value from the vault.` };
   }
@@ -290,8 +300,9 @@ export const toInput = (
     input: {
       scope,
       name,
-      enabled: true,
-      roles: { lead: true, writers: true, reviewers: true },
+      // An edit changes what the form shows, never whether it is on or who gets it (the lead alone, say).
+      enabled: editing?.enabled ?? true,
+      roles: editing?.roles ?? { lead: true, writers: true, reviewers: true },
       transport,
       env: command ? values : [],
       headers: command ? [] : values,

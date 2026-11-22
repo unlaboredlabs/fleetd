@@ -32,6 +32,9 @@ const KINDS = [
   { value: "command", label: "Command" },
 ] as const;
 
+/** The value picker's first choice: a plain value typed in the form, not a vault item. */
+const PLAIN = "plain:";
+
 const PREFIXES = [
   { value: "bearer", label: "Bearer" },
   { value: "none", label: "As is" },
@@ -55,6 +58,9 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
   const machines = useData((d) => d.machines);
   const items = useItems(editing);
   const [draft, setDraft] = useState<Draft>(() => (editing === null ? emptyDraft() : draftOf(editing)));
+  // The server as saved: the one being edited, or a new one once its first save went through, so fixing it after a
+  // failed Test saves it again instead of meeting its own name as taken (or making a second one).
+  const [saved, setSaved] = useState<McpServer | null>(editing);
   const [phase, setPhase] = useState<Phase>({ kind: "edit" });
   const [problem, setProblem] = useState<string | null>(null);
   const change = (next: Partial<Draft>) => {
@@ -63,7 +69,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
     if (phase.kind === "tested") setPhase({ kind: "edit" });
   };
   const command = draft.kind === "command";
-  const team = editing === null || editing.scope.kind === "global";
+  const team = saved === null || saved.scope.kind === "global";
   const onTailnet = !command && isTailnetHost(draft.url);
 
   const test = (server: McpServer) => {
@@ -74,7 +80,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
     );
   };
   const submit = () => {
-    const built = toInput(draft, editing, props.taken);
+    const built = toInput(draft, saved, props.taken);
     if (!built.ok) {
       setProblem(built.problem);
       return;
@@ -90,6 +96,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
         }
         refetch(["mcp_servers_get", "setup_list"]);
         const server = (out.output as McpServerSetOutput).server;
+        setSaved(server);
         // It offers OAuth: its sign-in first, then the test.
         if (needsSignIn(server)) setPhase({ kind: "signin", server });
         else test(server);
@@ -106,9 +113,15 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
   const works = tested !== null && !("error" in tested) && tested.result.error === undefined && tested.result.signIn !== true;
   const result = tested === null || signInWanted ? null : testLine(tested, "machineId" in tested ? (machines[tested.machineId]?.name ?? tested.machineId) : "");
   const busy = phase.kind === "saving" || phase.kind === "testing" || phase.kind === "signin";
+  const putValue = (ix: number, value: DraftValue) => change({ values: draft.values.map((v, i) => (i === ix ? value : v)) });
   const setValue = (ix: number, next: Partial<DraftValue>) => change({ values: draft.values.map((v, i) => (i === ix ? { ...v, ...next } : v)) });
+  /** A value's source: a plain value typed here, or a vault item. */
+  const setSource = (ix: number, v: DraftValue, source: string) => {
+    const { plain: _was, ...rest } = v;
+    putValue(ix, source === PLAIN ? { ...rest, itemId: "", plain: "" } : { ...rest, itemId: source });
+  };
   const addValue = () => change({ values: [...draft.values, { name: command ? "" : draft.values.length === 0 ? "Authorization" : "", itemId: "", prefix: command || draft.values.length > 0 ? "" : "Bearer " }] });
-  const options = items.map((i) => ({ value: i.itemId, label: i.kind === "env" ? (i.envName ?? i.label) : i.label }));
+  const options = [{ value: PLAIN, label: "Plain value" }, ...items.map((i) => ({ value: i.itemId, label: i.kind === "env" ? (i.envName ?? i.label) : i.label }))];
 
   return (
     <>
@@ -131,7 +144,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
               aria-label="Name"
               placeholder={suggestedName(draft) || "my-server"}
               value={draft.named ? draft.name : suggestedName(draft)}
-              disabled={editing !== null}
+              disabled={saved !== null}
               onChange={(e) => change({ name: e.target.value, named: true })}
             />
           </Field>
@@ -150,20 +163,21 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
                     <Select aria-label="Prefix" className={c.prefix} options={PREFIXES} value={v.prefix === "" ? "none" : "bearer"} onValueChange={(p) => setValue(ix, { prefix: p === "bearer" ? "Bearer " : "" })} />
                   ) : null}
                   <Select
-                    aria-label={`${v.name || "Value"} from the vault`}
+                    aria-label={`${v.name || "Value"}'s value`}
                     className={c.item}
                     options={options}
-                    value={v.itemId === "" ? undefined : v.itemId}
-                    placeholder={v.keep === true ? "Saved key" : options.length === 0 ? "No vault items yet" : "From the vault"}
-                    disabled={options.length === 0}
-                    onValueChange={(itemId) => setValue(ix, { itemId })}
+                    value={v.plain !== undefined ? PLAIN : v.itemId === "" ? undefined : v.itemId}
+                    placeholder={v.keep === true ? "Saved key" : "From the vault"}
+                    onValueChange={(source) => setSource(ix, v, source)}
                   />
+                  {v.plain === undefined ? null : (
+                    <Input mono aria-label={`${v.name || "Value"} value`} className={c.item} placeholder="value" value={v.plain} onChange={(e) => setValue(ix, { plain: e.target.value })} />
+                  )}
                   <Button size="sm" variant="ghost" iconOnly aria-label={`Remove ${v.name || "this one"}`} onClick={() => change({ values: draft.values.filter((_, i) => i !== ix) })}>
                     <X aria-hidden />
                   </Button>
                 </div>
               ))}
-              {draft.values.length > 0 && options.length === 0 ? <span className={c.line} data-tone="warning">Add the key to the team vault first: Settings › Vault.</span> : null}
             </section>
           ) : (
             <span className={c.line} data-tone="quiet">
@@ -233,7 +247,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
           </Button>
         ) : (
           <Button variant="primary" disabled={busy || nameOf(draft) === "" || (command ? draft.command.trim() === "" : draft.url.trim() === "")} onClick={submit}>
-            {phase.kind === "saving" ? "Saving…" : phase.kind === "testing" ? "Testing…" : tested !== null ? "Save and test again" : editing === null ? "Add and test" : "Save and test"}
+            {phase.kind === "saving" ? "Saving…" : phase.kind === "testing" ? "Testing…" : tested !== null ? "Save and test again" : saved === null ? "Add and test" : "Save and test"}
           </Button>
         )}
       </footer>

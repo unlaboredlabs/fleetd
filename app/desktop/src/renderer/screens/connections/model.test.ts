@@ -178,6 +178,43 @@ describe("Connections", () => {
     expect(built.ok && "projects" in built.input).toBe(false);
   });
 
+  it("saves a new server again under its own name once its first save went through (a failed Test, then a fixed URL)", () => {
+    const draft: Draft = { ...emptyDraft(), url: "http://devbox.tail1234.ts.net:8080/mcp" };
+    expect(toInput(draft, null, ["devbox"])).toEqual({ ok: false, problem: "devbox is already there." });
+    const first = toInput(draft, null, []);
+    if (!first.ok) throw new Error(first.problem);
+    const saved = server("devbox", "http://devbox.tail1234.ts.net:8080/mcp");
+    const again = toInput({ ...draft, url: "http://devbox.tail1234.ts.net:9090/mcp" }, saved, ["devbox"]);
+    expect(again.ok && again.input).toMatchObject({ name: "devbox", transport: { type: "http", url: "http://devbox.tail1234.ts.net:9090/mcp" } });
+  });
+
+  it("keeps a plain value as it was, and takes a new one typed in the form", () => {
+    const saved = server("files", "", {
+      transport: { type: "stdio", command: "files-mcp", args: [] },
+      env: [{ kind: "plain", name: "LOG_LEVEL", value: "1" }],
+    });
+    const draft = draftOf(saved);
+    expect(draft.values).toEqual([{ name: "LOG_LEVEL", itemId: "", prefix: "", plain: "1" }]);
+    const built = toInput({ ...draft, values: [...draft.values, { name: "REGION", itemId: "", prefix: "", plain: "eu" }] }, saved, ["files"]);
+    expect(built.ok && built.input.env).toEqual([
+      { kind: "plain", name: "LOG_LEVEL", value: "1" },
+      { kind: "plain", name: "REGION", value: "eu" },
+    ]);
+    expect(toInput({ ...emptyDraft(), url: "https://a.example/mcp", values: [{ name: "X-A", itemId: "", prefix: "", plain: "a\nb" }] }, null, [])).toEqual({
+      ok: false,
+      problem: "X-A's value can't hold a line break or NUL.",
+    });
+  });
+
+  it("keeps an edited server's on or off and who gets it: a lead-only one stays the lead's", () => {
+    const lead = { lead: true, writers: false, reviewers: false };
+    const saved = server("mail", "https://mail.example/mcp", { enabled: false, roles: lead, integration: { readTools: ["list"] } });
+    const built = toInput({ ...draftOf(saved), url: "https://mail.example/v2/mcp" }, saved, ["mail"]);
+    expect(built.ok && built.input).toMatchObject({ enabled: false, roles: lead, integration: { readTools: ["list"] } });
+    const fresh = toInput({ ...emptyDraft(), url: "https://mail.example/mcp" }, null, []);
+    expect(fresh.ok && fresh.input).toMatchObject({ enabled: true, roles: { lead: true, writers: true, reviewers: true } });
+  });
+
   it("changes only the bots of a saved server", () => {
     const saved = server("linear", "https://mcp.linear.app/mcp", { headers: [{ kind: "vault", name: "Authorization", itemId: "V2", prefix: "Bearer " }], projects: [ada] });
     expect(withBots(saved, undefined)).toEqual({
