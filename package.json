@@ -121,6 +121,7 @@
     "./hub/auth/node_rules": "./fleetd/src/hub/auth/node_rules.ts",
     "./hub/automations/model": "./fleetd/src/hub/automations/model.ts",
     "./hub/browser/check": "./fleetd/src/hub/browser/check.ts",
+    "./hub/browser/flow": "./fleetd/src/hub/browser/flow.ts",
     "./hub/browser/pace": "./fleetd/src/hub/browser/pace.ts",
     "./hub/chat/history": "./fleetd/src/hub/chat/history.ts",
     "./hub/chat/lead_text": "./fleetd/src/hub/chat/lead_text.ts",

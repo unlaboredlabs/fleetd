@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { live } from "../src/hub/browser/live.ts";
+import { Pace } from "../src/hub/browser/pace.ts";
 import { endOutlived, get, prune, tellNodes } from "../src/hub/browser/store.ts";
 import { handedBackLine, tellHandedBack } from "../src/hub/browser/tools.ts";
 import { steerTasks } from "../src/hub/steer/index.ts";
@@ -319,6 +320,46 @@ test("a thumbnail round watches each live screen for one frame and makes it smal
   await Bun.sleep(50);
   expect(t.link.sent("devbox").at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: false });
   expect(viewer.sent[0]).toMatchObject({ t: "screen_thumb", sessionId: S1, width: 640, height: 400 });
+});
+
+test("pace: a slow link sends a big frame alone and says what it carries", () => {
+  // Ported from app_ws/pace.rs: 1 Mbit/s, 300 ms round trips, a frame every 100 ms, for 30 s.
+  const FRAME = 100_000;
+  const pace = new Pace();
+  const bytesPerMs = 125;
+  const rtt = 300;
+  let wireFree = 0;
+  const acks: [number, number][] = [];
+  let waiting: number | undefined;
+  let seq = 0;
+  let went = 0;
+  for (let now = 0, next = 0; now < 30_000; now += 5) {
+    acks.sort((a, b) => a[0] - b[0]);
+    while (acks[0] && acks[0][0] <= now) {
+      const [, s] = acks.shift()!;
+      if (s === 0) pace.pong(now);
+      else pace.acked(s, now);
+    }
+    if (now >= next) {
+      waiting = ++seq;
+      next += 100;
+    }
+    if (waiting !== undefined) {
+      if (pace.room(now).ok) {
+        if (pace.ping(now)) acks.push([Math.max(wireFree, now) + rtt, 0]);
+        pace.sent(waiting, FRAME, now);
+        wireFree = Math.max(wireFree, now) + FRAME / bytesPerMs;
+        acks.push([wireFree + rtt, waiting]);
+        waiting = undefined;
+        went += 1;
+      } else pace.waited(now);
+    }
+  }
+  expect(went).toBeGreaterThanOrEqual(32);
+  expect(went).toBeLessThanOrEqual(40);
+  const kbps = pace.kbps();
+  expect(kbps).toBeGreaterThanOrEqual(800);
+  expect(kbps).toBeLessThanOrEqual(1100);
 });
 
 test("a node's browser call decodes as the contract has it before it reaches the disk", async () => {
