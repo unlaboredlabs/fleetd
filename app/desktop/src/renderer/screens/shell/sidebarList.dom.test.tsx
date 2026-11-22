@@ -241,11 +241,11 @@ describe("one list", () => {
     expect(button("storefront").querySelector("[class*=dot]")).toBeNull();
   });
 
-  it("says there are no chats yet, with New bot, and nothing while they load", () => {
+  it("leaves the list empty with no bots, its one empty state and Add a bot in the main area, and nothing while they load", () => {
     mount([]);
-    expect(host.textContent).toContain("No chats yet");
-    act(() => button("New bot").click());
-    expect(went).toEqual([{ id: "projects.add" }]);
+    expect(host.querySelector("[data-no-bots]")).not.toBeNull();
+    expect(host.querySelector("[data-no-bots]")?.textContent).toBe("");
+    expect(host.querySelector("[data-no-bots] button")).toBeNull();
     const quiet: HubApi = { call: () => Promise.resolve({ ok: true, output: {} }), subscribe: () => () => undefined, resync: () => Promise.resolve(), focus: () => Promise.resolve(), chat: () => Promise.resolve() };
     act(() =>
       root.render(
@@ -257,7 +257,7 @@ describe("one list", () => {
       ),
     );
     expect(host.querySelector("[aria-label='Loading bots']")).not.toBeNull();
-    expect(host.textContent).not.toContain("No chats yet");
+    expect(host.querySelector("[data-no-bots]")).toBeNull();
   });
 
   it("pins a chat from its menu, and unpins a pinned one", async () => {

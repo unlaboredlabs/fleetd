@@ -33,7 +33,7 @@ import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
+import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { useHubState } from "./hubFeed";
@@ -524,17 +524,6 @@ function HubDots({ ref, at }: { ref: RefObject<HTMLDivElement | null>; at: numbe
   );
 }
 
-/** No bots yet: a few quiet words and the way out, where the rows would be. */
-const NoBots = ({ go, at }: { go: (screen: Screen) => void; at: { at?: string } }) => (
-  <div className={s.empty}>
-    <span className={s.emptyTitle}>No chats yet</span>
-    <span className={s.emptyText}>A bot is a chat with its own lead: on a GitHub repo, a folder on one of your machines, or nothing at all.</span>
-    <Button size="sm" onClick={() => go({ id: "projects.add", ...at })}>
-      New bot
-    </Button>
-  </div>
-);
-
 /**
  * Changes `layer`'s pins: `how` gets the hub's own (pins.ts), those of `rows`, as row keys, and returns them changed
  * (the same list for no change). The ones on show may not be the hub's yet.
@@ -762,7 +751,8 @@ function ProjectGroup(props: {
         // only while something is on its way, not while the hub is unreachable.
         <Loading busy={state.phase === "live" || state.phase === "connecting"} />
       ) : rows.length === 0 ? (
-        <NoBots go={go} at={at} />
+        // No bots: nothing here. The main area's one empty state has the one Add a bot (GetStarted), and + is above.
+        <div className={s.empty} data-no-bots="" />
       ) : (
         <>
           {/* With nothing pinned yet, a chat being dragged has somewhere to go: a slim place for the first pin. */}
