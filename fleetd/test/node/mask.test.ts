@@ -1,7 +1,7 @@
 // node/mask.ts: the masker every report goes through, the thorough one a screen's recording scrubs with, and the
 // recording's Scrub (browser/record.rs tests, ported).
 import { expect, test } from "bun:test";
-import { Masker, Scrub } from "../../src/node/mask.ts";
+import { HIDDEN, Masker, Scrub } from "../../src/node/mask.ts";
 
 const formEncoded = (v: string) =>
   [...Buffer.from(v)].map((b) => (b === 32 ? "+" : /[A-Za-z0-9*\-._]/.test(String.fromCharCode(b)) ? String.fromCharCode(b) : `%${b.toString(16).toUpperCase().padStart(2, "0")}`)).join("");
@@ -46,4 +46,30 @@ test("a recording scrubs a short value only where it is a field's whole value", 
   expect(scrub.value({ cvc: "123", note: "x123", key: ["sk_test_4242"] })).toEqual({ cvc: "***CVC***", note: "x123", key: ["***KEY***"] });
   // Thorough: a page's JSON escaping of a filled value is scrubbed too.
   expect(new Scrub([["PW", 'a"b\\c-long']]).text(JSON.stringify('a"b\\c-long'))).toBe('"***PW***"');
+});
+
+test("a private key's PEM block is hidden whoever's it is, and an open one is held back in live text", () => {
+  const body = Buffer.from("made-up filler, not a key ".repeat(4)).toString("base64").match(/.{1,64}/g)!.join("\n");
+  const block = `-----BEGIN RSA PRIVATE KEY-----\n${body}\n-----END RSA PRIVATE KEY-----`;
+  const m = new Masker();
+  expect(m.text(`key:\n${block}\nafter`)).toBe(`key:\n${HIDDEN}\nafter`);
+  // As JSON escapes it, and cut short at the end of a text.
+  expect(m.text(JSON.stringify({ k: block }))).toBe(JSON.stringify({ k: HIDDEN }));
+  expect(m.text(`cut: -----BEGIN PRIVATE KEY-----\n${body.slice(0, 30)}`)).toBe(`cut: ${HIDDEN}`);
+  expect(m.text("-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----")).toContain("abc");
+  // Live text holds back an open block and what could become its header; a closed one goes.
+  const open = `see -----BEGIN PRIVATE KEY-----\n${body.slice(0, 20)}`;
+  expect(m.held(open)).toBe(open.length - 4);
+  expect(m.held("ends ---")).toBe(3);
+  expect(m.held(`${block} done`)).toBe(0);
+});
+
+test("a multi-line value is masked line by line, a line cut at its = padding too", () => {
+  const value = ["-----BEGIN PRIVATE KEY-----", "QUJDREVGR0hJSktMTU5PUFFSU1RVVldY", "WVphYmNkZWZnaA==", "-----END PRIVATE KEY-----"].join("\n");
+  const m = new Masker([["APP_KEY", value]]);
+  // As `env | cut -d= -f1` prints it: the body lines, the last without its padding.
+  expect(m.text("APP_KEY\nQUJDREVGR0hJSktMTU5PUFFSU1RVVldY\nWVphYmNkZWZnaA\n-----END PRIVATE KEY-----")).toBe("APP_KEY\n***APP_KEY***\n***APP_KEY***\n-----END PRIVATE KEY-----");
+  expect(m.text(value)).toBe("***APP_KEY***");
+  // A short line isn't masked wherever it appears.
+  expect(new Masker([["V", "line one is long\nshort"]]).text("a short word")).toBe("a short word");
 });

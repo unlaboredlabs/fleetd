@@ -187,8 +187,15 @@ If an agent prints a secret (`printenv`, a stack trace, a config dump), the node
 the output leaves the machine, in command output, the agent's replies and live text alike. Exactly these are masked:
 
 - the whole value, and its base64 and URL encodings, and its encoding as a web form submits it (`+` for a space);
-- for a secret of several lines, each whole line of 8 characters or more, wherever it appears. PEM armor lines such as
-  `-----BEGIN CERTIFICATE-----` are the same in every file and stay readable.
+- for a secret of several lines, each whole line of 8 characters or more, wherever it appears, and the line without
+  its `=` padding (as `env | cut -d= -f1` prints it). PEM armor lines such as `-----BEGIN CERTIFICATE-----` are the
+  same in every file and stay readable;
+- any private key's PEM block (`-----BEGIN … PRIVATE KEY-----` to its `END` line), whoever's key it is, as
+  `[secret hidden]`.
+
+Claude Code keeps its own copy of the conversation on the machine, which `--resume` reads. When the agent's claude
+exits, the node masks the same values in that file too, and the agent resumes from it as before. What a command printed
+still reached the model itself while it ran: that can't be masked.
 
 Only exact matches are caught. Part of a line (`head -c 20` of a key, one field cut from a line), the value in another
 encoding, or a value under 4 characters goes out as printed, so keep secrets out of output where you can. A line of a
