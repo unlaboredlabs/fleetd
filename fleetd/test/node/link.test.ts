@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { createPublicKey, verify } from "node:crypto";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
-import { compresses, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
+import { BULK_BYTES, BULK_DEAD_MS, compresses, QUIET_DEAD_MS, QUIET_PROBE_MS, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
 import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
@@ -13,7 +13,7 @@ import { tempHome } from "../helpers.ts";
 type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
 
 /** A hub: answers each hello with `welcome` (or closes with `refuse`), and keeps every frame its nodes send. */
-function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string } = {}) {
+function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string; bulk?: boolean } = {}) {
   const conns: Conn[] = [];
   const upgrades: Headers[] = [];
   const inflaters = new Map<unknown, Inflater>();
@@ -41,7 +41,7 @@ function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId
         conn.frames.push(frame);
         if (frame.t !== "hello") return;
         if (opts.refuse) return ws.close(opts.refuse[0], opts.refuse[1]);
-        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
+        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: [...(opts.deflate ? ["session_route", "link_deflate"] : []), ...(opts.bulk === false ? [] : ["link_bulk"])], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
   };
   return { url: `http://127.0.0.1:${server.port}`, conns, upgrades, server };
 }
@@ -266,9 +266,9 @@ test("a capability an area turns on reaches the hub in a new hello; one that did
   home.done();
 });
 
-test("reconnects start fast and back off to 30 s; the URL and the frame caps are the Rust node's", () => {
-  expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((a) => reconnectDelay(a, 1))).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000]);
-  expect(reconnectDelay(1000, 1.2)).toBe(36000);
+test("reconnects start fast and back off to 5 s, so a network back after a long outage is relinked within it; the URL and the frame caps are the Rust node's", () => {
+  expect([0, 1, 2, 3, 4, 5, 6].map((a) => reconnectDelay(a, 1))).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000]);
+  expect(reconnectDelay(1000, 1.2)).toBe(6000);
   expect(linkUrl("https://devbox.example:4790/x?y")).toBe("wss://devbox.example:4790/node/link");
   expect(linkUrl("http://127.0.0.1:4790")).toBe("ws://127.0.0.1:4790/node/link");
   expect(compresses(["link_deflate"], ["link_deflate"])).toBe(true);
@@ -329,4 +329,182 @@ test("deflate keeps its window across messages, and garbage ends the stream", as
     (e: Error) => e.message,
   );
   expect(why).toContain("does not inflate");
+});
+
+/** A TCP hop between the node and its hub that can go dark: while `dark`, every byte either way is dropped and the
+ * connections stay open, as on a network cut under them (a switch, wifi that drops). While `held`, what the node
+ * sends waits in the hop, as on a slow uplink, until `release`. */
+function hop(target: number) {
+  const state = { dark: false, held: false };
+  const waiting: [Bun.Socket<unknown>, Uint8Array][] = [];
+  const pairs = new Set<{ up?: Bun.Socket<unknown>; down: Bun.Socket<unknown> }>();
+  const server = Bun.listen<{ up?: Bun.Socket<unknown>; held: Uint8Array[] }>({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open(down) {
+        down.data = { held: [] };
+        const pair: { up?: Bun.Socket<unknown>; down: Bun.Socket<unknown> } = { down };
+        pairs.add(pair);
+        void Bun.connect({
+          hostname: "127.0.0.1",
+          port: target,
+          socket: {
+            open(up) {
+              pair.up = up;
+              down.data.up = up;
+              for (const c of down.data.held.splice(0)) up.write(c);
+            },
+            data: (_up, chunk) => void (!state.dark && down.write(new Uint8Array(chunk))),
+            close: () => void down.end(),
+            error: () => void down.end(),
+          },
+        });
+      },
+      data(down, chunk) {
+        if (state.dark) return;
+        const copy = new Uint8Array(chunk);
+        if (state.held && down.data.up) waiting.push([down.data.up, copy]);
+        else if (down.data.up) down.data.up.write(copy);
+        else down.data.held.push(copy);
+      },
+      close: (down) => void down.data.up?.end(),
+      error() {},
+    },
+  });
+  const release = () => {
+    state.held = false;
+    for (const [up, chunk] of waiting.splice(0)) up.write(chunk);
+  };
+  return { url: `http://127.0.0.1:${server.port}`, state, release, stop: () => server.stop(true) };
+}
+
+/** A node behind a hop to a fake hub, its losses logged with when they came. */
+function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }, bulk = true) {
+  const hub = fakeHub({ deflate: false, bulk });
+  const h = hop(hub.server.port!);
+  const stop = new AbortController();
+  const lost: { at: number; why: string }[] = [];
+  const links: LinkContext[] = [];
+  const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
+    if (msg === "hub link lost; reconnecting until it is back") lost.push({ at: Date.now(), why: String(fields?.why) });
+  };
+  void runNode(options(h.url, home, { attach: (l) => (links.push(l), () => {}), log, quiet, signal: stop.signal }));
+  const done = () => (stop.abort(), h.stop(), hub.server.stop(true));
+  return { hub, hop: h, lost, links, done };
+}
+
+const QUIET = { probeMs: 100, deadMs: 400, bulkMs: 2500 };
+
+test("a link cut under the node is found dead within the quiet bound, not at the next heartbeats, and dialled again", async () => {
+  // On a real link: pinged after 5 s of quiet, given up 7 s later; 30 s while a big frame may still be crossing.
+  expect([QUIET_PROBE_MS, QUIET_DEAD_MS, BULK_DEAD_MS]).toEqual([5000, 12_000, 30_000]);
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  // Quiet but alive: the hub's pongs keep it.
+  await Bun.sleep(600);
+  expect(n.lost).toEqual([]);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 2000);
+  expect(n.lost[0]!.at - cut).toBeLessThan(QUIET.bulkMs);
+  expect(n.lost[0]!.why).toBe("nothing from the hub for 0 s, and no answer to a ping");
+  n.hop.state.dark = false;
+  await until("the link back", () => n.links.length === 2, 3000);
+  n.done();
+  home.done();
+});
+
+test("after a big frame of its own the node waits the heartbeats' time, until the ping behind it is answered", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  const big = { t: "cmd_result", id: "c1", exitCode: 0, outputTail: "x".repeat(BULK_BYTES), timedOut: false } as const;
+  // Through, and its ping answered: a cut after it is found as quickly as any.
+  n.links[0]!.send(big);
+  await until("the frame", () => n.hub.conns[0]!.frames.some((f) => f.id === "c1"));
+  await Bun.sleep(200);
+  let cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the first loss", () => n.lost.length === 1, 2000);
+  expect(n.lost[0]!.at - cut).toBeLessThan(QUIET.bulkMs);
+  n.hop.state.dark = false;
+  await until("the link back", () => n.links.length === 2, 3000);
+  // Cut while it may still be crossing: no pong, and the node waits the longer bound before it gives the link up.
+  n.hop.state.dark = true;
+  cut = Date.now();
+  n.links[1]!.send({ ...big, id: "c2" });
+  await until("the second loss", () => n.lost.length === 2, 5000);
+  expect(n.lost[1]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
+});
+
+test("a frame of its own big in UTF-8 bytes, though short in characters, gets the longer bound too", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  const outputTail = "é漢".repeat(BULK_BYTES / 4);
+  expect(outputTail.length).toBeLessThan(BULK_BYTES);
+  n.hop.state.dark = true;
+  const cut = Date.now();
+  n.links[0]!.send({ t: "cmd_result", id: "c1", exitCode: 0, outputTail, timedOut: false });
+  await until("the loss", () => n.lost.length === 1, 5000);
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
+  n.done();
+  home.done();
+});
+
+test("a heartbeat that says a big frame comes keeps the longer bound until a frame arrives", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  n.hub.conns[0]!.ws.send(JSON.stringify({ t: "hb", at: "2026-11-08T10:00:00Z", bulk: 5 << 20 }));
+  await Bun.sleep(50);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 5000);
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
+});
+
+test("a hub that doesn't announce its big frames (an older hub or cloud) keeps the heartbeats' bound on its link", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET, false);
+  await until("the welcome", () => n.links.length === 1);
+  // Quiet and nothing big seen: an unannounced frame may still be crossing, so the node waits the longer bound.
+  await Bun.sleep(200);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 5000);
+  // Timed from the last pong, up to a probe before the cut: far past the 400 ms bound either way.
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
+  expect(n.lost[0]!.why).toBe("nothing from the hub for 3 s, and no answer to a ping");
+  n.done();
+  home.done();
+});
+
+test("a watched screen's frames go one at a time, the newest next, and never queue ahead of the rest", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, { probeMs: 5000, deadMs: 10_000, bulkMs: 10_000 });
+  await until("the welcome", () => n.links.length === 1);
+  const frame = (sessionId: string, seq: number) => ({ t: "browser_frame", sessionId, seq, jpegB64: "AAAA", width: 1, height: 1 }) as const;
+  // A slow uplink: nothing the node writes has crossed yet.
+  n.hop.state.held = true;
+  const link = n.links[0]!;
+  link.send(frame("b", 1));
+  link.send(frame("b", 2));
+  link.send(frame("b", 3));
+  link.send(frame("c", 1));
+  link.send({ t: "cmd_result", id: "c1", exitCode: 0, outputTail: "done", timedOut: false });
+  await Bun.sleep(100);
+  n.hop.release();
+  const got = () => n.hub.conns[0]!.frames.filter((f) => f.t !== "hello").map((f) => (f.t === "browser_frame" ? `${f.sessionId}${f.seq}` : f.t));
+  await until("the newest frame", () => got().includes("b3"));
+  // b2 was made while b1 crossed and b3 after it: only the newest went. The other screen and the result didn't wait.
+  expect(got()).toEqual(["b1", "c1", "cmd_result", "b3"]);
+  n.done();
+  home.done();
 });

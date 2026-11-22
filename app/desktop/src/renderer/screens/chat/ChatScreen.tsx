@@ -135,8 +135,9 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const next = kept.from === built ? kept : { from: built, rows: built === undefined ? undefined : keepRows(kept.rows, built) };
   if (next !== kept) setKept(next);
   const rows = next.rows;
-  // The chat's first rows are what the app opened on: what waits for them (Settings' chunk) may load now.
-  const loaded = rows !== undefined;
+  // The chat's first rows are what the app opened on: what waits for them (Settings' chunk, the web's side panel) may
+  // load now. So may it when the chat couldn't be read: what the screen shows then is its error.
+  const loaded = rows !== undefined || data.loadError !== undefined;
   useEffect(() => {
     if (loaded) markShown();
   }, [loaded]);

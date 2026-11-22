@@ -29,6 +29,7 @@ import { ExecutorError, executors, type NodeOperation } from "../executor/index.
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
 import { systemGh } from "../train/gh.ts";
+import { noRulesOnPlan } from "../train/budget.ts";
 import { GhError, TrainGitHub } from "../train/github.ts";
 import {
   bestWorker as best,
@@ -251,7 +252,10 @@ export async function readGithub(hub: Hub, repo: GitHubRepo, local: RepoFacts | 
     const read = async (path: string): Promise<{ ok: true; value: unknown } | { ok: false; why: string }> => {
       try {
         const got = await gh.get(path);
-        return got.ok ? got : { ok: false, why: `HTTP ${got.status}: ${got.message}` };
+        if (got.ok) return got;
+        // A private repo of a free account has no branch rules or rulesets, as the merge train reads its 403 too.
+        if (noRulesOnPlan(got.status, got.message) && path.includes("/rules")) return { ok: true, value: [] };
+        return { ok: false, why: `HTTP ${got.status}: ${got.message}` };
       } catch (e) {
         if (!(e instanceof GhError)) throw e;
         return { ok: false, why: e.message };

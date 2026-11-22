@@ -230,7 +230,12 @@ export type SessionCall =
   | { op: "stop"; sessionId: ThreadId; removeWorktree?: boolean; idle?: boolean }
   | { op: "answer"; sessionId: ThreadId; requestId: string; decision: PermissionDecision; by?: DecidedBy }
   | { op: "subscribe"; after?: number; spansAfter?: number; caughtUp?: boolean }
-  | { op: "follow"; sessionId: ThreadId }
+  /**
+   * `since`: a follow again after a dropped link, from the hub's copy of the thread: only the messages, items and runs
+   * of the window changed at or after it (the node's own times), every running item, the active run and its messages
+   * besides. A node before it sends the whole window.
+   */
+  | { op: "follow"; sessionId: ThreadId; since?: Timestamp }
   | { op: "release"; sessionId: ThreadId }
   | { op: "window"; sessionId: ThreadId; itemId: string; before: number; after: number }
   | { op: "read_item"; sessionId: ThreadId; itemId: string }
@@ -309,6 +314,8 @@ export type ThreadSnapshot = {
   items: ThreadItem[];
   runs: RunInfo[];
   truncated: boolean;
+  /** The follow's `since`, when the snapshot holds only what changed since then: it goes onto the copy it came from. */
+  since?: Timestamp;
 };
 
 export type LoginStatus = "logged_in" | "logged_out" | "unknown";

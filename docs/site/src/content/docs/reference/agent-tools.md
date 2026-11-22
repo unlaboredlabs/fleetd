@@ -58,7 +58,7 @@ Every lead gets these.
 | [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot (MEMORY.md, or a topic file for detail). | No |
 | [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
 | [`memory_read`](#memory_read) | Read one of this bot's memory topic files (MEMORY.md lists them). | No |
-| [`nudge`](#nudge) | Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
+| [`nudge`](#nudge) | Flag the message you end this turn with for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
 | [`automation_create`](#automation_create) | Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). | No |
 | [`automation_list`](#automation_list) | This bot's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run. | No |
 | [`automation_update`](#automation_update) | Change an automation's name, prompt or schedule (removeSchedule: true takes it off), or pause it (paused: true) or resume it (false); fields left out stay. | No |
@@ -471,7 +471,7 @@ Read one of this bot's memory topic files (MEMORY.md lists them).
 
 ### nudge
 
-Flag the chat message you just wrote for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a bot keeps only a few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.
+Flag the message you end this turn with for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a bot keeps only a few, a newer one clearing the oldest. Call it, then write the message last, after every tool call: text before a tool call is never posted. No notification goes out.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -1919,6 +1919,7 @@ Set in the claude process's environment. "In settings" marks the ones also in fl
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `1h` unless your environment or `claude.env` sets it | Threads you start | yes | A person's thread idles while they read and reply. |
 | `CLAUDE_CODE_PROMPT_CACHE_TTL`, `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` | `5m` unless your environment or `claude.env` sets it | Task agents | yes | A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses. |
 | `BASH_MAX_TIMEOUT_MS` | `280000` unless your environment or `claude.env` sets it | Task agents | yes | No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its whole context to the cache again. A longer suite is CI's job. |
+| `CLAUDE_CODE_SILENT_TURN_REMINDER` | `0` | Leads | yes | Turns off claude's mid-turn "the user hasn't heard from you in a while" reminder, which drew narration between tool calls. Only a lead turn's last text reaches the chat, so it would be dropped anyway. |
 | `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_SSE_PORT` | removed | Sessions | no | claude sets it for its own children and treats a process that has it as nested inside another session. |
 
 ## What your own setup adds

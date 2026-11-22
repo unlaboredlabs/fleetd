@@ -65,6 +65,9 @@ type Pending = { resolve: (reply: Buffer) => void; reject: (e: Error) => void };
 /** One connection: requests out, replies matched by sequence number, events and errors as they come. */
 class Wire {
   private buf: Buffer = Buffer.alloc(0);
+  /** Chunks not yet in `buf`, and their bytes. */
+  private waiting: Buffer[] = [];
+  private have = 0;
   private seq = 0;
   private readonly pending = new Map<number, Pending>();
   private closed: Error | undefined;
@@ -88,12 +91,17 @@ class Wire {
   }
 
   private data(chunk: Buffer): void {
-    this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : chunk;
-    while (this.buf.length >= 32) {
+    // A screen's GetImage reply is megabytes in 64 KB chunks: they wait in a list and are copied once, when the whole
+    // reply is here. Joined chunk by chunk, a 1280x800 grab copied ~130 MB and took 27 ms.
+    this.waiting.push(chunk);
+    this.have += chunk.length;
+    while (this.buf.length + this.have >= 32) {
+      if (this.buf.length < 32) this.join(32);
       const kind = this.buf[0]!;
       const long = kind === 1 || (kind & 0x7f) === GENERIC_EVENT;
       const size = long ? 32 + this.buf.readUInt32LE(4) * 4 : 32;
-      if (this.buf.length < size) return;
+      if (this.buf.length + this.have < size) return;
+      if (this.buf.length < size) this.join(size);
       const message = this.buf.subarray(0, size);
       this.buf = this.buf.subarray(size);
       const seq = message.readUInt16LE(2);
@@ -108,6 +116,19 @@ class Wire {
         p?.reject(new Error(`X error ${message[1]} (request ${message[10]}.${message.readUInt16LE(8)})`));
       } else this.onEvent(Buffer.from(message));
     }
+  }
+
+  /** Moves waiting chunks into `buf` until it holds at least `size` bytes (or all there are), in one copy. */
+  private join(size: number): void {
+    const parts = [this.buf];
+    let length = this.buf.length;
+    while (length < size && this.waiting.length) {
+      const next = this.waiting.shift()!;
+      parts.push(next);
+      length += next.length;
+      this.have -= next.length;
+    }
+    this.buf = parts.length === 1 ? this.buf : Buffer.concat(parts, length);
   }
 
   /** Sends one request; its sequence number. */
@@ -237,8 +258,16 @@ function connectSocket(path: string): Promise<Duplex> {
   });
 }
 
+/** A screen's changed part: its left, top, right and bottom edges (right and bottom exclusive). */
+type Box = [number, number, number, number];
+
 export class X implements Screen {
-  private damaged = true;
+  /** What changed since the last grab, as DAMAGE's bounding boxes add up: undefined for nothing, "all" before any. */
+  private dirty: Box | "all" | undefined = "all";
+  /** The screen as the last grab left it, which a grab of only what changed patches. */
+  private kept: Uint8Array | undefined;
+  /** Who waits for the screen to change (nextChange). */
+  private wake: (() => void) | undefined;
   private keys: Keymap;
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -251,6 +280,7 @@ export class X implements Screen {
   ) {
     this.keys = keys;
     wire.onEvent = (event) => this.event(event);
+    if (!damage) this.nextChange = undefined;
   }
 
   /** Connects to the X server at `socket` (its socket file, or a stream to it: a display in an agent's box,
@@ -274,8 +304,8 @@ export class X implements Screen {
         if (found) {
           await wire.ask(request(found.major, 0, body(8, (b) => (b.writeUInt32LE(1, 0), b.writeUInt32LE(1, 4)))));
           const id = setup.ridBase | (1 & setup.ridMask);
-          // ReportLevel NonEmpty: one notify until the node subtracts it.
-          wire.send(request(found.major, 1, body(12, (b) => (b.writeUInt32LE(id, 0), b.writeUInt32LE(setup.root, 4), (b[8] = 3)))));
+          // ReportLevel BoundingBox: a notify each time the changed part grows, with its box, until the node subtracts.
+          wire.send(request(found.major, 1, body(12, (b) => (b.writeUInt32LE(id, 0), b.writeUInt32LE(setup.root, 4), (b[8] = 2)))));
           damage = { ...found, id };
         }
       } catch {
@@ -291,8 +321,11 @@ export class X implements Screen {
 
   private event(event: Buffer): void {
     const code = event[0]! & 0x7f;
-    if (this.damage && code === this.damage.event) this.damaged = true;
-    else if (code === MAPPING_NOTIFY) {
+    if (this.damage && code === this.damage.event) {
+      this.damagedAt(event);
+      this.wake?.();
+      this.wake = undefined;
+    } else if (code === MAPPING_NOTIFY) {
       void readKeymap(this.wire, this.keys.min, this.setup.maxKeycode)
         .then((keys) => {
           keys.scratch = this.keys.scratch;
@@ -310,22 +343,43 @@ export class X implements Screen {
     return [this.setup.width, this.setup.height];
   }
 
-  /** Whether the screen may have changed since the last call: always without DAMAGE. */
-  changed(): boolean {
-    if (!this.damage) return true;
-    const changed = this.damaged;
-    if (changed) {
-      this.damaged = false;
-      try {
-        this.wire.send(request(this.damage.major, 3, body(12, (b) => b.writeUInt32LE(this.damage!.id, 0))));
-      } catch {}
-    }
-    return changed;
+  /** DamageNotify's box (at 16: x, y, width, height) joins what changed; an empty one stands for the whole screen. */
+  private damagedAt(event: Buffer): void {
+    const [w, h] = this.size();
+    const x = event.readInt16LE(16);
+    const y = event.readInt16LE(18);
+    const bw = event.readUInt16LE(20);
+    const bh = event.readUInt16LE(22);
+    if (bw === 0 || bh === 0) return void (this.dirty = "all");
+    const box: Box = [Math.max(0, x), Math.max(0, y), Math.min(w, x + bw), Math.min(h, y + bh)];
+    if (box[2] <= box[0] || box[3] <= box[1] || this.dirty === "all") return;
+    const d = this.dirty;
+    this.dirty = d ? [Math.min(d[0], box[0]), Math.min(d[1], box[1]), Math.max(d[2], box[2]), Math.max(d[3], box[3])] : box;
   }
 
-  /** The screen's pixels as the server sends them (32 bits each). */
-  async grabRaw(): Promise<Raw> {
-    const [width, height] = this.size();
+  /** Whether the screen may have changed since the last grab: always without DAMAGE. */
+  changed(): boolean {
+    return !this.damage || this.dirty !== undefined;
+  }
+
+  /** Resolves once the screen changes (at once if it has since the last grab), or after `ms`; only with DAMAGE, where
+   * the screen says when it changes. */
+  readonly nextChange: ((ms: number) => Promise<void>) | undefined = (ms) => {
+    if (this.changed()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.wake = undefined;
+        resolve();
+      }, ms);
+      this.wake = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+  }
+
+  /** A part of the screen's pixels as the server sends them (32 bits each). */
+  private async getImage(x: number, y: number, width: number, height: number): Promise<Uint8Array> {
     const reply = await this.wire
       .ask(
         request(
@@ -333,6 +387,8 @@ export class X implements Screen {
           2, // ZPixmap
           body(16, (b) => {
             b.writeUInt32LE(this.setup.root, 0);
+            b.writeInt16LE(x, 4);
+            b.writeInt16LE(y, 6);
             b.writeUInt16LE(width, 8);
             b.writeUInt16LE(height, 10);
             b.writeUInt32LE(0xffffffff, 12);
@@ -344,7 +400,44 @@ export class X implements Screen {
     if (data.length < width * height * 4) {
       throw new Error(`the X display sent ${data.length} bytes for a ${width}x${height} screen; it needs 24-bit color`);
     }
-    return { data: data.subarray(0, width * height * 4), width, height };
+    return data.subarray(0, width * height * 4);
+  }
+
+  /**
+   * The screen's pixels as the server sends them (32 bits each). With DAMAGE, only the part that changed since the
+   * last grab is read and patched into the screen that grab left: typing in a terminal reads a few KB, not 4 MB.
+   * `whole` reads all of it anyway.
+   */
+  async grabRaw(whole = false): Promise<Raw> {
+    const [width, height] = this.size();
+    const dirty = this.dirty;
+    const kept = this.kept;
+    if (this.damage) {
+      // What changes from here on is the next grab's: told before this one reads, so nothing falls between.
+      this.dirty = undefined;
+      try {
+        this.wire.send(request(this.damage.major, 3, body(12, (b) => b.writeUInt32LE(this.damage!.id, 0))));
+      } catch {}
+    }
+    try {
+      if (!this.damage || whole || dirty === "all" || !kept || kept.length !== width * height * 4) {
+        const data = await this.getImage(0, 0, width, height);
+        this.kept = this.damage ? new Uint8Array(data) : undefined;
+        return { data, width, height };
+      }
+      if (dirty) {
+        const [x0, y0, x1, y1] = dirty;
+        const part = await this.getImage(x0, y0, x1 - x0, y1 - y0);
+        const row = (x1 - x0) * 4;
+        for (let y = y0; y < y1; y++) kept.set(part.subarray((y - y0) * row, (y - y0 + 1) * row), (y * width + x0) * 4);
+      }
+      // A copy: the kept screen changes with the next grab, maybe while this one is still being encoded.
+      return { data: new Uint8Array(kept), width, height };
+    } catch (e) {
+      // Read again whole next time: the part that changed is not known to be in the kept screen.
+      this.dirty = "all";
+      throw e;
+    }
   }
 
   /** A raw grab as a JPEG. */

@@ -150,6 +150,18 @@ export const WORKER_ENV_WHY: Why<readonly [string, string]> = [
   ],
 ];
 
+/**
+ * Set for a lead, with or without repos; also in its settings overlay. claude (2.1.302 to 2.1.314) reads
+ * CLAUDE_CODE_SILENT_TURN_REMINDER as on, off or unset: "0", "false", "no" and "off" are off, and set it wins over
+ * claude's own default for the reminder.
+ */
+export const LEAD_ENV_WHY: Why<readonly [string, string]> = [
+  [
+    ["CLAUDE_CODE_SILENT_TURN_REMINDER", "0"],
+    "Turns off claude's mid-turn \"the user hasn't heard from you in a while\" reminder, which drew narration between tool calls. Only a lead turn's last text reaches the chat, so it would be dropped anyway.",
+  ],
+];
+
 /** A session's prompt cache TTL by role, unless the node's environment or `claude.env` sets the TTL variables. A
  * 1-hour cache write costs 2x the input price, a 5-minute one 1.25x; reads cost the same. */
 export const PROMPT_CACHE_TTL_WHY: Why<readonly [SessionRole, "5m" | "1h"]> = [

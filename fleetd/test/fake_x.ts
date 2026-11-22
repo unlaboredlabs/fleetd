@@ -68,21 +68,33 @@ export class FakeX {
     this.server?.close();
   }
 
-  /** Paints the whole screen one colour (BGRA), and tells each client that asked for DAMAGE. */
-  paint(b: number, g: number, r: number): void {
-    for (let i = 0; i < this.pixels.length; i += 4) {
-      this.pixels[i] = b;
-      this.pixels[i + 1] = g;
-      this.pixels[i + 2] = r;
+  /** Paints the screen one colour (BGRA), or only `box` ([x, y, width, height]) of it, and tells each client that
+   * asked for DAMAGE what changed, as a BoundingBox-level DamageNotify does. */
+  paint(b: number, g: number, r: number, box: [number, number, number, number] = [0, 0, this.width, this.height]): void {
+    const [bx, by, bw, bh] = box;
+    for (let y = by; y < by + bh; y++) {
+      for (let x = bx; x < bx + bw; x++) {
+        const i = (y * this.width + x) * 4;
+        this.pixels[i] = b;
+        this.pixels[i + 1] = g;
+        this.pixels[i + 2] = r;
+      }
     }
     for (const c of this.clients) {
       if (c.damage === undefined) continue;
       const ev = Buffer.alloc(32);
       ev[0] = DAMAGE_EVENT;
       ev.writeUInt32LE(c.damage, 4);
+      ev.writeInt16LE(bx, 16);
+      ev.writeInt16LE(by, 18);
+      ev.writeUInt16LE(bw, 20);
+      ev.writeUInt16LE(bh, 22);
       c.socket.write(ev);
     }
   }
+
+  /** How many pixels the clients' GetImage requests read, all told. */
+  pixelsRead = 0;
 
   private serve(socket: Socket): void {
     let buf = Buffer.alloc(0);
@@ -201,8 +213,14 @@ export class FakeX {
         for (let i = 0; i < count * per; i++) this.syms[(first - this.minKeycode) * this.per + i] = req.readUInt32LE(8 + 4 * i);
         return;
       }
-      case 73:
-        return reply(24, Buffer.from(this.pixels));
+      case 73: {
+        // GetImage of a part of the screen: its rows, cut out.
+        const [x, y, w, h] = [req.readInt16LE(8), req.readInt16LE(10), req.readUInt16LE(12), req.readUInt16LE(14)];
+        const out = Buffer.alloc(w * h * 4);
+        for (let row = 0; row < h; row++) out.set(this.pixels.subarray(((y + row) * this.width + x) * 4, ((y + row) * this.width + x + w) * 4), row * w * 4);
+        this.pixelsRead += w * h;
+        return reply(24, out);
+      }
       case 38:
         return reply(1, Buffer.alloc(0), (b) => {
           b.writeUInt32LE(0x100, 8);

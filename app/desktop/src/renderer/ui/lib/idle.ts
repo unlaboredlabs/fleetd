@@ -1,16 +1,48 @@
 // What may wait until the app has shown itself: a chunk the first chat doesn't draw (Shiki's highlighter, Settings)
 // loads once the first frame is out and the thread is idle, so it never competes with the start for the network or
 // the main thread, and is in place before anyone opens it.
-import { lazy, type ComponentType, type LazyExoticComponent } from "react";
+import { lazy, useEffect, useState, useSyncExternalStore, type ComponentType, type LazyExoticComponent } from "react";
 
-/** How long a preload waits for markShown before going ahead anyway (a screen that never calls it). */
-export const SHOWN_WAIT_MS = 2000;
+/**
+ * How long a preload waits for markShown before going ahead anyway (a screen that never calls it). Long: on a slow
+ * link the chat takes many seconds to show, and a preload let go before it shares the link with it (Settings' 90 KB
+ * held a 256 kbit/s first chat back ~4 s).
+ */
+export const SHOWN_WAIT_MS = 30_000;
 
 let shown: () => void = () => undefined;
 const shownOnce = new Promise<void>((resolve) => (shown = resolve));
+let isShown = false;
+const shownListeners = new Set<() => void>();
 
 /** The app has drawn what it opened on: the chat's first messages (ChatScreen says so). */
-export const markShown = (): void => shown();
+export const markShown = (): void => {
+  if (isShown) return;
+  isShown = true;
+  shown();
+  for (const l of shownListeners) l();
+};
+
+/**
+ * Whether the app has drawn what it opened on (markShown), or `capMs` has passed since the caller mounted: a part
+ * beside the first screen (the web's side panel) waits on it to ask for its code, so it never competes with the chat.
+ */
+export const useShownYet = (capMs: number): boolean => {
+  const marked = useSyncExternalStore(
+    (l) => {
+      shownListeners.add(l);
+      return () => shownListeners.delete(l);
+    },
+    () => isShown,
+  );
+  const [capped, setCapped] = useState(false);
+  useEffect(() => {
+    if (marked) return;
+    const t = setTimeout(() => setCapped(true), capMs);
+    return () => clearTimeout(t);
+  }, [marked, capMs]);
+  return marked || capped;
+};
 
 /** After the next frame and an idle moment (a second at most); without frames (a hidden tab), once they come back. */
 const nextIdle = (): Promise<void> =>

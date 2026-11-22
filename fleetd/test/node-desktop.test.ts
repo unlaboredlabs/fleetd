@@ -21,7 +21,7 @@ import {
   worktreeMount,
 } from "../src/node/desktop/index.ts";
 import { bmp, jpeg } from "../src/node/desktop/screen.ts";
-import { NO_VIDEO } from "../src/node/desktop/session.ts";
+import { NO_VIDEO, Session } from "../src/node/desktop/session.ts";
 import { recordingsDir as iosSimRecordingsDir } from "../src/node/device/ios/sim_screen.ts";
 import { Masker } from "../src/node/mask.ts";
 import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
@@ -128,7 +128,9 @@ test("the node's X connection reads the screen and types, clicks and scrolls thr
   const x = await X.connect(socket, cookie);
   cleanups.push(() => x.close());
   expect(x.size()).toEqual([64, 40]);
+  // Changed until the first grab reads it.
   expect(x.changed()).toBe(true);
+  await x.grabRaw();
   expect(x.changed()).toBe(false);
   server.paint(10, 20, 30);
   await until("damage", () => x.changed());
@@ -171,13 +173,82 @@ test("the node's X connection reads the screen and types, clicks and scrolls thr
   await expect(x.chord("hyper+x")).rejects.toThrow("is not a key name");
 });
 
+test("with DAMAGE a grab reads only what changed, patched into the screen before, and a change wakes a wait", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  server.paint(0, 0, 200);
+  const x = await X.connect(socket, cookie);
+  cleanups.push(() => x.close());
+  const first = await x.grabRaw();
+  expect(server.pixelsRead).toBe(64 * 40);
+  expect([...first.data.subarray(0, 4)]).toEqual([0, 0, 200, 0]);
+
+  // A wait for a change ends with the change, long before its time.
+  const waited = performance.now();
+  const woke = x.nextChange!(5_000);
+  server.paint(255, 0, 0, [10, 5, 4, 3]);
+  server.paint(255, 0, 0, [20, 30, 2, 2]);
+  await woke;
+  expect(performance.now() - waited).toBeLessThan(1_000);
+  await until("both boxes", () => x.changed());
+  await Bun.sleep(20);
+  const before = server.pixelsRead;
+  const patched = await x.grabRaw();
+  // The two boxes' bounding box only: 12 wide (10..22), 27 tall (5..32).
+  expect(server.pixelsRead - before).toBe(12 * 27);
+  expect([...patched.data]).toEqual([...server.pixels]);
+  expect(x.changed()).toBe(false);
+
+  // Nothing changed: no read at all, the same screen; and a wait runs out.
+  const still = server.pixelsRead;
+  expect([...(await x.grabRaw()).data]).toEqual([...server.pixels]);
+  expect(server.pixelsRead).toBe(still);
+  await x.nextChange!(10);
+  // `whole` reads every pixel again.
+  await x.grabRaw(true);
+  expect(server.pixelsRead - still).toBe(64 * 40);
+  // A grab's pixels stay as they were when the next grab patches the screen.
+  server.paint(1, 2, 3, [0, 0, 1, 1]);
+  await until("damage", () => x.changed());
+  const kept = await x.grabRaw(true);
+  server.paint(9, 9, 9, [0, 0, 1, 1]);
+  await until("damage", () => x.changed());
+  await x.grabRaw();
+  expect([...kept.data.subarray(0, 3)]).toEqual([1, 2, 3]);
+});
+
+test("a watched desktop sends a frame when its screen changes, read as only the part that changed, and none while still", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  const session = new Session(lent, x, { id: "d1", thread: "t1", cwd: dir, purpose: "watch", secrets: [], kind: "linux_desktop" });
+  cleanups.push(() => void session.close());
+  const frames: { seq: number; at: number }[] = [];
+  session.open();
+  session.setWatcher({ kbps: undefined, send: (f) => frames.push({ seq: f.seq, at: performance.now() }) });
+  await until("the first frame", () => frames.length > 0);
+  await Bun.sleep(300);
+  const still = frames.length;
+  const read = server.pixelsRead;
+  await Bun.sleep(300);
+  expect(frames.length).toBe(still);
+  expect(server.pixelsRead).toBe(read);
+  server.paint(255, 0, 0, [3, 4, 5, 6]);
+  await until("the changed screen's frame", () => frames.length > still);
+  expect(server.pixelsRead - read).toBe(5 * 6);
+});
+
 test("without DAMAGE the screen counts as changed at every look", async () => {
   const dir = scratch();
   const { socket, cookie } = await fakeX(dir, { damage: false });
   const x = await X.connect(socket, cookie);
   cleanups.push(() => x.close());
   expect(x.changed()).toBe(true);
+  await x.grabRaw();
   expect(x.changed()).toBe(true);
+  // It can't say when the screen changes: the session reads it on a timer.
+  expect(x.nextChange).toBeUndefined();
 });
 
 /** A fake `docker` that answers `info` as given, and a fake Xvfb starting test/fake_x.ts. */

@@ -1,11 +1,16 @@
 // The hub link: challenge, signed hello, welcome, then heartbeats and the hub's
-// requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20%
+// requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 5 s, ±20%
 // jitter, reset by each welcome), and only gives up when the hub refuses the node. A quiet link is pinged before it is
-// given up on (QUIET_PROBE, QUIET_DEAD). With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).
+// given up on (QUIET_PROBE, QUIET_DEAD): a link cut under it (a network switch, wifi that drops) is found dead within
+// seconds, not at the next heartbeats. With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).
 //
 // Unlike the Rust node, silence is timed from the last whole message or pong, not the last byte read: Bun's client
-// WebSocket doesn't surface partial frames. A large frame still arriving over a slow link counts as silence after
-// QUIET_DEAD (30 s), where the Rust node waits for it.
+// WebSocket doesn't surface partial frames. So while a big frame may still be crossing a slow link (one the node sent,
+// until the ping behind it is answered; one the hub said is coming, until it arrives), the bound is BULK_DEAD (30 s),
+// heartbeats from the other side keeping it alive. A hub that doesn't list `link_bulk` (an older hub or cloud) never
+// says a frame is coming, so its link always has BULK_DEAD. A large frame that takes longer than that to arrive still counts
+// as silence, where the Rust node waits for it. A watched screen's frames go one at a time, each once the one before
+// it has crossed, so a screen faster than the machine's uplink never queues up ahead of its agents' output.
 import { HUB_TO_NODE } from "../../shared/wire_tags.ts";
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import { systemClock, type Clock } from "../../shared/clock.ts";
@@ -22,6 +27,7 @@ import {
   type HubFrame,
   type NodeFrame,
 } from "../wire.ts";
+import { LINK_BULK_BYTES } from "../../shared/node_link.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
 import { BadFrames, knownBy, readHubFrame, refusal } from "./frames.ts";
 
@@ -30,10 +36,18 @@ const SILENCE_TIMEOUT_MS = HEARTBEAT_TIMEOUT_SECS * 1000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** The dial and the upgrade: a hub that takes the connection but never answers it is as gone as a silent one. */
 export const CONNECT_TIMEOUT_MS = SILENCE_TIMEOUT_MS;
-/** Nothing heard for this long, a hub heartbeat 5 s late: the node pings, and any hub answers with a pong. */
-export const QUIET_PROBE_MS = (HEARTBEAT_INTERVAL_SECS + 5) * 1000;
-/** Nothing heard for this long, the ping unanswered for 10 s: the link is gone. */
-export const QUIET_DEAD_MS = (HEARTBEAT_INTERVAL_SECS + 15) * 1000;
+/** Nothing heard for this long: the node pings, and any hub answers with a pong. */
+export const QUIET_PROBE_MS = 5_000;
+/** Nothing heard for this long, the ping unanswered for 7 s (a satellite link answers in under one): the link is gone. */
+export const QUIET_DEAD_MS = 12_000;
+/** The bound instead while a big frame may still be crossing the link: pongs queue behind it, and only the hub's
+ * heartbeats (every 15 s) come through meanwhile. */
+export const BULK_DEAD_MS = (HEARTBEAT_INTERVAL_SECS + 15) * 1000;
+/** A frame this big (as it goes on the wire) may take seconds on a slow link. */
+export const BULK_BYTES = LINK_BULK_BYTES;
+/** A watched screen's frames on the link at once: the next, the newest made meanwhile, goes once this one has crossed.
+ * Two would show a 3G or satellite screen at 1.4-1.7 fps instead of 0.9, and keep the rest waiting twice as long. */
+export const SCREEN_IN_FLIGHT = 1;
 /** The largest frame the node takes from its hub: an attachment's put_file with room to spare. */
 export const LINK_MAX_FRAME_BYTES = 64 << 20;
 /** The largest frame of any other kind. */
@@ -73,9 +87,13 @@ export function linkUrl(hub: string): string {
   return url.toString();
 }
 
+/** The longest wait between redials: a network back after a long outage is relinked within it. A dial to a hub that
+ * is down costs a refused connection, about 300 bytes. */
+export const RECONNECT_MAX_MS = 5_000;
+
 /** The wait before reconnect `attempt` (0 first), `jitter` in 0.8..1.2. */
 export function reconnectDelay(attempt: number, jitter: number): number {
-  return Math.round(Math.min(30_000, 250 * 2 ** Math.min(attempt, 16)) * jitter);
+  return Math.round(Math.min(RECONNECT_MAX_MS, 250 * 2 ** Math.min(attempt, 16)) * jitter);
 }
 
 /** How long the node redials every `RESTART_REDIAL_MS` after the hub closed its link as a restart. */
@@ -155,7 +173,7 @@ export type RunNodeOptions = {
   /** The upgrade proof's time; tests pass their own. */
   clock?: Clock;
   /** Bounds, for tests. */
-  quiet?: { probeMs: number; deadMs: number };
+  quiet?: { probeMs: number; deadMs: number; bulkMs?: number };
   heartbeatMs?: number;
   /** Ends the loop (the node's shutdown): run resolves with undefined. */
   signal?: AbortSignal;
@@ -221,7 +239,7 @@ function runLinkOnce(
   enrollToken: string | undefined,
   onWelcome: (hubId: string, machineId: string) => void,
 ): Promise<LinkEnd> {
-  const quiet = options.quiet ?? { probeMs: QUIET_PROBE_MS, deadMs: QUIET_DEAD_MS };
+  const quiet = { probeMs: QUIET_PROBE_MS, deadMs: QUIET_DEAD_MS, bulkMs: BULK_DEAD_MS, ...options.quiet };
   return new Promise<LinkEnd>((resolve) => {
     let url: string;
     try {
@@ -251,6 +269,18 @@ function runLinkOnce(
     let detach: (() => void) | undefined;
     let heard = Date.now();
     let pinged: number | undefined;
+    // A big frame may still be crossing: one of the node's own, until the ping written behind it is answered; or one the
+    // hub said is coming (its heartbeat's `bulk`), until the next frame arrives.
+    let bulkOut = 0;
+    let inbound = false;
+    // Whether the hub announces its big frames (`link_bulk`): one that doesn't (an older hub or cloud) may send one
+    // unannounced at any time, so its link keeps the heartbeats' bound.
+    let announces = false;
+    // What runs once the hub answered the ping written behind a frame: that frame has crossed the link.
+    const crossed = new Map<string, () => void>();
+    let pings = 0;
+    // Each watched screen's frames on the link (SCREEN_IN_FLIGHT at most), and the newest waiting for room.
+    const screens = new Map<string, { flying: number; next?: string }>();
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let writes: Promise<void> = Promise.resolve();
     // Frames in arrival order, each decoded (inflated) before the next is handled.
@@ -280,15 +310,53 @@ function runLinkOnce(
       return t;
     };
 
+    /** Runs `fn` once everything written before now has crossed the link. */
+    const afterCrossing = (fn: () => void) => {
+      const id = `crossed-${++pings}`;
+      crossed.set(id, fn);
+      try {
+        ws.ping(id);
+      } catch {}
+    };
     const send = (frame: NodeFrame) => {
       if (ended) return;
       const text = JSON.stringify(frame);
+      if (frame.t === "browser_frame") return screen(String(frame.sessionId), text);
+      write(text);
+    };
+    // A screen's frames go only as fast as the link carries them, the newest of those made meanwhile next: a watched
+    // screen faster than the machine's uplink would otherwise queue up ahead of everything else on it.
+    const screen = (id: string, text: string) => {
+      const lane = screens.get(id) ?? { flying: 0 };
+      screens.set(id, lane);
+      if (lane.flying >= SCREEN_IN_FLIGHT) return void (lane.next = text);
+      lane.flying++;
+      write(text, () => {
+        lane.flying--;
+        const next = lane.next;
+        lane.next = undefined;
+        if (next !== undefined) screen(id, next);
+        else if (lane.flying === 0) screens.delete(id);
+      });
+    };
+    const write = (text: string, onCrossed?: () => void) => {
       writes = writes.then(async () => {
         if (ended) return;
+        // In UTF-8 bytes, as it goes on the wire, not the string's length.
+        let bytes = Buffer.byteLength(text);
         if (deflate && text.length >= MIN_DEFLATE_BYTES) {
           const data = await deflater.deflate(text);
-          if (!ended) ws.send(data);
+          if (ended) return;
+          ws.send(data);
+          bytes = data.byteLength;
         } else ws.send(text);
+        const bulk = bytes >= BULK_BYTES;
+        if (bulk) bulkOut++;
+        if (bulk || onCrossed)
+          afterCrossing(() => {
+            if (bulk) bulkOut--;
+            onCrossed?.();
+          });
       });
       writes = writes.catch((error) => finish({ kind: "lost", why: `writing to the hub: ${(error as Error).message}` }));
     };
@@ -318,15 +386,16 @@ function runLinkOnce(
     const watchQuiet = () => {
       if (ended) return;
       const now = Date.now();
-      if (now >= heard + quiet.deadMs)
-        return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(quiet.deadMs / 1000)} s, and no answer to a ping` });
+      const deadMs = !announces || bulkOut > 0 || inbound ? quiet.bulkMs : quiet.deadMs;
+      if (now >= heard + deadMs)
+        return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
       if (now >= heard + quiet.probeMs && pinged !== heard) {
         pinged = heard;
         try {
           ws.ping();
         } catch {}
       }
-      const wake = pinged === heard ? heard + quiet.deadMs : heard + quiet.probeMs;
+      const wake = pinged === heard ? heard + deadMs : heard + quiet.probeMs;
       after(Math.max(10, wake - now), watchQuiet);
     };
 
@@ -362,6 +431,7 @@ function runLinkOnce(
           if (handshake) clearTimeout(handshake);
           const caps = Array.isArray(frame.capabilities) ? (frame.capabilities as string[]) : [];
           deflate = compresses(hello, caps);
+          announces = caps.includes(HUB_CAP.LINK_BULK);
           const hubId = String(frame.hubId ?? "");
           stage = "live";
           live = ctx(hubId, caps);
@@ -374,6 +444,7 @@ function runLinkOnce(
           return;
         }
         case "live":
+          inbound = frame.t === "hb" && typeof frame.bulk === "number";
           if (frame.t === "challenge" || frame.t === "welcome" || frame.t === "hb") return;
           try {
             options.handle(frame, live!);
@@ -408,8 +479,15 @@ function runLinkOnce(
       heard = Date.now();
       waitFor("challenge");
     });
-    ws.addEventListener("pong", () => {
+    ws.addEventListener("pong", (event) => {
       heard = Date.now();
+      const data = (event as MessageEvent).data;
+      const id = data instanceof ArrayBuffer && data.byteLength ? new TextDecoder().decode(data) : undefined;
+      const fn = id === undefined ? undefined : crossed.get(id);
+      if (fn) {
+        crossed.delete(id!);
+        fn();
+      }
     });
     ws.addEventListener("message", (event) => {
       heard = Date.now();

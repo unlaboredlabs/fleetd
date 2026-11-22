@@ -15,6 +15,11 @@ export function rateLimited(status: number, message: string): boolean {
   return status === 429 || (status === 403 && message.toLowerCase().includes("rate limit"));
 }
 
+/** GitHub refused rules or branch protection for the repo's plan, which has none: a 403 on a private repo of a free account. */
+export function noRulesOnPlan(status: number, message: string): boolean {
+  return status === 403 && /upgrade to github pro|make this repository public/i.test(message);
+}
+
 /** When the rate limit that refused `error` (a `GhError`'s `resetMs`) resets; undefined for any other error. */
 export function limitReset(error: unknown): number | undefined {
   const reset = (error as { resetMs?: unknown } | null | undefined)?.resetMs;

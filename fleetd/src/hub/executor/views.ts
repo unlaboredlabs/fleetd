@@ -3,7 +3,7 @@
 // session on its node (`follow`), keeps the node's snapshot plus the live events after it, and releases it once
 // nobody has read it for a minute (a pinned follow stays until released).
 import type { MachineId, ThreadRef } from "../../shared/contracts.ts";
-import type { ThreadEventFrame, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
+import type { RunInfo, ThreadEventFrame, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
 import { clip } from "../api/refusals.ts";
 import { store } from "../store/hub_store.ts";
 import type { ExecutorError as ExecutorErrorType, Executors } from "./index.ts";
@@ -81,6 +81,24 @@ export type Work = { rows: [string, TailRow][]; more: boolean; running: boolean 
 
 const keyOf = (r: ThreadRef) => `${r.machineId}\u0000${r.threadId}`;
 
+/** How long a follow's copy is kept after its link dropped, for the next follow to go on from. */
+export const KEPT_MS = 10 * 60_000;
+/** How far before the copy's newest time a follow again asks from: a step of the node's clock loses nothing. */
+const SINCE_MARGIN_MS = 60_000;
+
+/** Where a follow again goes on from: a minute before the newest message or item the copy holds. */
+export function sinceOf(view: ThreadView): string | undefined {
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const m of view.messages.values()) newest = Math.max(newest, parseMs(m.createdAt) ?? newest);
+  for (const i of view.items.values()) newest = Math.max(newest, parseMs(i.updatedAt) ?? newest);
+  return Number.isFinite(newest) ? new Date(newest - SINCE_MARGIN_MS).toISOString() : undefined;
+}
+
+const parseMs = (at: string) => {
+  const ms = Date.parse(at);
+  return Number.isNaN(ms) ? undefined : ms;
+};
+
 /** A Command that finished with a GitHub PR URL in its output. */
 export function namesAPr(item: ThreadItem): boolean {
   return item.kind.type === "command" && item.status === "completed" && item.kind.output !== undefined && item.kind.output.includes("github.com/") && item.kind.output.includes("/pull/");
@@ -90,6 +108,8 @@ export { skillRan } from "./rules.ts";
 
 export class Views {
   private readonly watches = new Map<string, Watch>();
+  /** The copies of follows a dropped link ended, by thread: the next follow asks only for what changed since. */
+  private readonly kept = new Map<string, { view: ThreadView; atMs: number }>();
   private hooked = false;
 
   constructor(private readonly ex: Executors) {}
@@ -103,6 +123,7 @@ export class Views {
     for (const [k, w] of this.watches) {
       if (!k.startsWith(`${machineId}\u0000`)) continue;
       this.watches.delete(k);
+      if (w.view.ready) this.kept.set(k, { view: w.view, atMs: this.now() });
       w.stop.abort();
       w.settle({ state: "failed", error: ExecutorError.notConnected(machineId) });
     }
@@ -143,6 +164,13 @@ export class Views {
     let w = this.watches.get(keyOf(r));
     if (!w) {
       w = new Watch(this.now());
+      const kept = this.kept.get(keyOf(r));
+      this.kept.delete(keyOf(r));
+      for (const [k, c] of this.kept) if (this.now() - c.atMs >= KEPT_MS) this.kept.delete(k);
+      if (kept && this.now() - kept.atMs < KEPT_MS) {
+        w.view = kept.view;
+        w.view.ready = false;
+      }
       this.watches.set(keyOf(r), w);
       void this.followThread(r, w);
     }
@@ -158,7 +186,8 @@ export class Views {
   private async followThread(r: ThreadRef, w: Watch): Promise<void> {
     let end: ExecutorErrorType;
     try {
-      const out = await this.ex.call(r.machineId, "read", { op: "follow", sessionId: r.threadId }, READ_TIMEOUT_MS);
+      const since = sinceOf(w.view);
+      const out = await this.ex.call(r.machineId, "read", { op: "follow", sessionId: r.threadId, ...(since ? { since } : {}) }, READ_TIMEOUT_MS);
       if (out.kind === "snapshot") {
         const { kind: _kind, ...snapshot } = out;
         applyThreadEvent(w.view, { type: "snapshot", ...snapshot });
@@ -266,6 +295,13 @@ export class Views {
     this.summaryOf(r);
     const w = await this.view(r);
     return [...w.view.messages.values()].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** The session's runs as its view holds them, every one its node keeps, each with how it is or ended. */
+  async runs(r: ThreadRef): Promise<RunInfo[]> {
+    this.summaryOf(r);
+    const w = await this.view(r);
+    return [...w.view.runs.values()];
   }
 
   /** What the session read lately: its newest tool calls and commands, each with its call and whole output. */

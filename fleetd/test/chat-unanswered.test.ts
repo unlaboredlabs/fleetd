@@ -27,6 +27,7 @@ async function rig(o: { unread?: boolean } = {}) {
     if (o.unread) throw new Error("the node didn't answer");
     return said;
   };
+  executors(hub).views.runs = async (_thread: ThreadRef) => [];
   const wakes: Trigger[] = [];
   leads(hub).wakes.trigger = (_r, trigger) => void wakes.push(trigger);
   void run(hub);

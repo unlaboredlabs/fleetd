@@ -1,11 +1,9 @@
 // The chat flow (nudges.rs, project_lead/recall.rs): chat_send starting and reaching the
-// lead, chat_stop and project_stop, the stream mirror, nudge, chat_search and chat_read, chat_nudge_clear.
+// lead, chat_stop and project_stop, nudge, chat_search and chat_read, chat_nudge_clear.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { excerpt, registerLeadCalls, when } from "../src/hub/chat/calls.ts";
-import { type LiveParts, run, since, streamPass } from "../src/hub/chat/flow.ts";
-import { activity } from "../src/hub/executor/activity.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
 import { accounts } from "../src/hub/claude_accounts/tools.ts";
@@ -16,7 +14,6 @@ import { leadWiring } from "../src/hub/leads/ports.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
-import type { ThreadEvent } from "../src/shared/sessions.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 function withFlow(o: { sleep?: (ms: number) => Promise<void> } = {}) {
@@ -302,71 +299,15 @@ test("chat_stop stops every open order once per clientRequestId; an agent key ma
   done();
 });
 
-test("the stream pass opens a bubble, appends to it and lands the reply whole; a quiet turn posts nothing", async () => {
-  const { hub, call, done } = withFlow();
-  await call(human, "chat_send", { projectRef: PROJECT, text: "hi", clientRequestId: "c1" });
-  const sent = new Map<string, number>();
-  let parts: LiveParts = { text: { messageId: "a", tail: "Hel", total: 3 }, done: [], runActive: true };
-  streamPass(hub, sent, () => parts);
-  const source = "lead:lead-1:a";
-  expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "streaming", text: "Hel" });
-  parts = { text: { messageId: "a", tail: "Hello there", total: 11 }, done: [], runActive: true };
-  streamPass(hub, sent, () => parts);
-  expect(chat(hub).bySource(PROJECT, source)?.text).toBe("Hello there");
-  parts = { done: [{ messageId: "a", text: "Hello there!" }], runActive: false };
-  streamPass(hub, sent, () => parts);
-  expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "final", text: "Hello there!" });
-  parts = { text: { messageId: "b", tail: "(qui", total: 4 }, done: [], runActive: true };
-  streamPass(hub, sent, () => parts);
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toBeUndefined();
-  expect(since({ messageId: "x", tail: "défg", total: 10 }, 8)).toBe("fg");
-  done();
-});
-
-test("a lead's first streamed words reach the chat as they come; later ones wait for the tick", async () => {
-  const { hub, done } = testHub();
-  leads(hub).records.leadPut({ projectRef: PROJECT, threadId: "lead-1", startedAt: "2026-11-08T10:00:00Z", sessionGeneration: 1 });
-  await chat(hub).readHistory(PROJECT, () => []);
-  const appended: string[] = [];
-  chat(hub).subscribe((d) => appended.push(d.append));
-  void run(hub);
-  // Its start read through: it now waits on the event log, which the hub's stop ends.
-  await Bun.sleep(20);
-  const feed = (event: unknown) =>
-    activity(hub).onThreadEvent(PROJECT.machineId, { sessionId: "lead-1", at: "2026-11-08T10:00:00Z", event: event as ThreadEvent });
-  feed({
-    type: "snapshot",
-    summary: { sessionId: "lead-1", projectId: PROJECT.projectId, title: "lead", status: "running", activeRunId: "r1" },
-    messages: [],
-    items: [],
-    runs: [{ id: "r1", status: "running", ordinal: 1 }],
-    truncated: false,
-  });
-  // Nothing between the delta and the check lets a tick run: the bubble opened on the delta itself.
-  feed({ type: "delta", messageId: "a", runId: "r1", append: "Hel" });
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toMatchObject({ state: "streaming", text: "Hel" });
-  expect(appended).toEqual(["Hel"]);
-  feed({ type: "delta", messageId: "a", runId: "r1", append: "lo" });
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")?.text).toBe("Hel");
-  // A reply that may still be the quiet one waits for words; once it has them, they go at once too.
-  feed({ type: "delta", messageId: "b", runId: "r1", append: "(" });
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toBeUndefined();
-  feed({ type: "delta", messageId: "b", runId: "r1", append: "Also" });
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:b")).toMatchObject({ state: "streaming", text: "(Also" });
-  done();
-});
-
-test("nudge flags the lead's newest reply, or the one still landing; chat_nudge_clear clears it", async () => {
+test("nudge flags the message the lead's turn ends with as it lands; chat_nudge_clear clears it", async () => {
   const { hub, call, done } = withFlow();
   await call(human, "chat_send", { projectRef: PROJECT, text: "hi", clientRequestId: "c1" });
   const lead = { projectRef: PROJECT, by: "lead:lab-a/p1", agent: { kind: "lead" as const } };
   const nudge = leadCalls(hub).handler("nudge");
-  const none = await refusal(() => nudge?.(lead, { op: "nudge", reason: "look" }));
-  expect(none).toBe("You haven't written anything this turn to flag.");
+  expect(await nudge?.(lead, { op: "nudge", reason: "the toggle" })).toEqual({
+    next: "Flagged: the message you end this turn with shows as something to look at once it is in the chat. Write it last, after every tool call.",
+  });
   const message = chat(hub).add(PROJECT, { author: "lead", text: "Done: the toggle", source: "lead:lead-1:m1" }).message;
-  hub.area("activity", () => ({ live: () => ({ done: [{ messageId: "m1", text: "Done: the toggle" }], runActive: false }) }));
-  const flagged = (await nudge?.(lead, { op: "nudge", reason: "the toggle" })) as Record<string, unknown>;
-  expect(flagged).toEqual({ messageId: message.messageId, next: "Flagged: the person sees it as something to look at until they have seen it." });
   expect(chat(hub).openNudges(PROJECT).map((m) => m.messageId)).toEqual([message.messageId]);
   const task = { ...lead, agent: { kind: "task" as const, taskId: "T1" } };
   expect(await refusal(() => nudge?.(task, { op: "nudge", reason: "x" }))).toBe(

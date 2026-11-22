@@ -31,6 +31,8 @@ export interface HubSource {
   woke(): void;
   /** The screen unlocked or the network came back: the socket may be fine, or half-open. */
   probe(): void;
+  /** A window came to the front: a live link is pinged, and given up when it doesn't answer. */
+  check(): void;
   /** This minute's app presence, sent only on a live link and never answered. */
   presence(frame: PresenceFrame): void;
   /** The browser session whose frames to forward, or null for none; kept across reconnects. */

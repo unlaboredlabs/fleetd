@@ -12,7 +12,7 @@ export { MERGED_PAGES, type MergedPull } from "../work/landing_rules.ts";
 
 export { BATCH_MARKER, batchHeads } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
-import { Budget, limitNote, limitReset, limitText, rateLimited } from "./budget.ts";
+import { Budget, limitNote, limitReset, limitText, noRulesOnPlan, rateLimited } from "./budget.ts";
 
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
 export { NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
@@ -23,9 +23,6 @@ export const READ_TRIES = 3;
 const READ_RETRY_FIRST_MS = 1000;
 
 export type GhErrorKind = "auth" | "missing" | "failed" | "unavailable";
-
-/** GitHub's 403 for rules and branch protection on a plan that has none: a private repo of a free account. */
-const NO_RULES_ON_PLAN = /upgrade to github pro|make this repository public/i;
 
 export class GhError extends Error {
   constructor(
@@ -1065,7 +1062,7 @@ export class TrainGitHub {
     const r = await this.call("GET", path);
     if (r.ok && r.value !== null && typeof r.value === "object") return r.value;
     if (r.ok) throw GhError.failed(`gh api ${path} returned an unexpected shape`);
-    if (r.status === 403 && NO_RULES_ON_PLAN.test(r.message)) return [];
+    if (noRulesOnPlan(r.status, r.message)) return [];
     throw TrainGitHub.failed(path, r.status, r.message);
   }
 

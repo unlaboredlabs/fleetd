@@ -8,24 +8,18 @@ import { preloadChunks } from "./scripts/preloadChunks.ts";
 
 /**
  * What the first chat draws beyond the entry, each a chunk loaded by import(): the app (once the session is read) and
- * the messages' markdown, then the panel and its panes. index.html names them all, and the fonts' Latin halves
- * (scripts/preloadChunks.ts), so the browser fetches them in one wave alongside the entry and the session read, not a
- * wave per import; the panel's at low priority, behind what the chat needs. Settings, Shiki and the rest load once
- * the chat has shown (ui/lib/idle.ts).
+ * the messages' markdown. index.html names them, and the fonts' Latin halves (scripts/preloadChunks.ts), so the
+ * browser fetches them in one wave alongside the entry and the session read, not a wave per import. The side panel's
+ * code is asked for once the chat has shown (shell/panel.tsx), into a slot already at its width; Settings, Shiki and
+ * the rest load then too (ui/lib/idle.ts).
  */
 const FIRST_CHAT = ["src/renderer/src/main.tsx", "src/renderer/ui/markdown/MarkdownBody.tsx"];
-const PANEL = [
-  "src/renderer/screens/panel/ProjectPanel.tsx",
-  "src/renderer/screens/panel/panes.tsx",
-  "src/renderer/screens/panel/counts.tsx",
-  "src/renderer/screens/checklist/ChecklistPane.tsx",
-];
 
 export default defineConfig({
   root: resolve(import.meta.dirname, "src/web"),
   // From the origin's root: the cloud answers index.html on any path, so a relative asset path would break on a deep one.
   base: "/",
-  plugins: [react(), preloadChunks({ entries: FIRST_CHAT, later: PANEL, fonts: /Geist(-\w+|Mono-Regular)-latin-/u })],
+  plugins: [react(), preloadChunks({ entries: FIRST_CHAT, fonts: /Geist(-\w+|Mono-Regular)-latin-/u })],
   build: {
     outDir: resolve(import.meta.dirname, "out/web"),
     emptyOutDir: true,

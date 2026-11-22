@@ -59,9 +59,12 @@ export async function jpeg(bgra: Uint8Array, width: number, height: number): Pro
 export interface Screen {
   /** Its size now. */
   size(): [number, number];
-  /** Whether it may have changed since the last call: always, where the screen can't say. */
+  /** Whether it may have changed since the last grab: always, where the screen can't say. */
   changed(): boolean;
-  grabRaw(): Promise<Raw>;
+  /** Resolves once it changes, or after `ms`; absent where the screen can't say (it is read on a timer). */
+  nextChange?(ms: number): Promise<void>;
+  /** Its pixels now; `whole` reads every one again, where a screen reads only what changed. */
+  grabRaw(whole?: boolean): Promise<Raw>;
   encode(raw: Raw): Promise<Uint8Array>;
   /** The whole screen, as a JPEG. */
   grab(): Promise<Shot>;

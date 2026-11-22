@@ -15,6 +15,8 @@ import { emptyDraft, expired, sendSlot, type DraftFile, type DraftReply } from "
 import { useDraft } from "../draftsStore";
 import type { Key } from "../store";
 import { space, type, useTheme } from "../theme";
+import { fitPhoto } from "../photo";
+import { manipulator } from "../photoNative";
 import { mimeOf, pickedName, refusal, type Uploaded } from "../upload";
 import { Glass, GlassGroup } from "./Glass";
 import { haptics } from "./haptics";
@@ -30,6 +32,9 @@ interface Picked {
   readonly name: string;
   readonly type: string | undefined;
   readonly image: boolean;
+  /** A photo's size as the picker says it, upright: photo.ts shrinks one larger than it sends. */
+  readonly width?: number;
+  readonly height?: number;
 }
 
 let nextId = Date.now();
@@ -120,7 +125,9 @@ export function Composer({
       setFiles((now) => [...now, { id, name: p.name, image: p.image ? p.uri : undefined, progress: 0 }]);
       void (async () => {
         try {
-          const bytes = await new File(p.uri).bytes();
+          // A photo goes up shrunk, upright and without its EXIF (photo.ts); a PNG or a file as it is.
+          const uri = p.width !== undefined && mime === "image/jpeg" ? await fitPhoto(p, manipulator()) : p.uri;
+          const bytes = await new File(uri).bytes();
           const why = refusal(p.name, mime, bytes.length);
           if (why !== undefined || mime === undefined) return set(id, { error: why ?? `${p.name} can't be sent.` });
           const r = await upload(bytes, p.name, mime, (done) => set(id, { progress: done }));
@@ -134,7 +141,7 @@ export function Composer({
   };
 
   // Typed by its name, which pickedName makes match what the picker wrote: a library HEIC comes back as a JPEG.
-  const photo = (a: ImagePicker.ImagePickerAsset): Picked => ({ uri: a.uri, name: pickedName(a.fileName, a.uri, `photo-${String(++nextId)}.jpg`), type: undefined, image: true });
+  const photo = (a: ImagePicker.ImagePickerAsset): Picked => ({ uri: a.uri, name: pickedName(a.fileName, a.uri, `photo-${String(++nextId)}.jpg`), type: undefined, image: true, width: a.width, height: a.height });
   const pickPhotos = async () => {
     // Compatible: a HEIC comes as a JPEG, which the hub takes.
     const r = await ImagePicker.launchImageLibraryAsync({

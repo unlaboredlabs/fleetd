@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, RESTART_FAST_MS, RESTART_RETRY_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
+import { ANSWER_DUE_MS, backoff, FRONT_BACKOFF_CAP_MS, HubClient, INPUT_REFUSAL_MS, PROBE_EVERY_MS, QUIET_FRONT_MS, RACE_AFTER_BEHIND_MS, READY_TIMEOUT_MS, REPLAY_MAX, RESTART_FAST_MS, RESTART_RETRY_MS, SILENT_DEAD_FRONT_MS, SILENT_DEAD_MS, WAKE_PROBE_MS, socketUrl, type HubFrame } from "./client";
 import { fakeHub } from "./fake";
 import { Deflate, Z_SYNC_FLUSH } from "pako";
 import { MAX_FPS } from "../screen";
@@ -126,6 +126,74 @@ describe("HubClient", () => {
     vi.advanceTimersByTime(1);
     expect(first.closed).toBe(true);
     expect(states().at(-1)).toMatchObject({ phase: "retrying", reason: "The hub stopped answering" });
+  });
+
+  it("asks for a sign of life when a call alone on the link hears nothing back, and sends it again on a fresh link", async () => {
+    const { hub, client } = setup();
+    client.start();
+    const first = hub.ready();
+    const probes = () => first.sent.filter((m) => m.t === "call" && m.tool === "hub_info");
+    // The person sends into a link that died quietly: its answer would be the next frame.
+    const sent = client.call("chat_send", { projectRef: { machineId: "m", projectId: "p" }, text: "hi", clientRequestId: "x" });
+    vi.advanceTimersByTime(ANSWER_DUE_MS - 1);
+    expect(probes()).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(probes()).toHaveLength(1);
+    // Nothing back: dialled again a few seconds after the send, not after 15 s of silence.
+    vi.advanceTimersByTime(WAKE_PROBE_MS);
+    expect(first.closed).toBe(true);
+    expect(hub.links).toHaveLength(2);
+    await expect(sent).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });
+    expect(ANSWER_DUE_MS + WAKE_PROBE_MS).toBeLessThan(SILENT_DEAD_FRONT_MS / 2);
+  });
+
+  it("asks nothing early of a link that is heard, a call behind a file's piece, or the app behind", () => {
+    for (const how of ["heard", "behind others", "app behind"] as const) {
+      const { hub, client } = setup();
+      client.start();
+      const first = hub.ready();
+      if (how === "app behind") client.sleep();
+      // A file's piece on its way: the next call waits behind it, which the silence check gives its time.
+      if (how === "behind others") void client.call("attachment_get", { projectRef: { machineId: "m", projectId: "p" }, attachmentId: "F1", offset: 0, length: 65_535 }, 120_000);
+      void client.call("requests_list", { state: "open" });
+      if (how === "heard") {
+        vi.advanceTimersByTime(1000);
+        first.frame({ t: "event", seq: 9, type: "task.started" });
+      }
+      vi.advanceTimersByTime(ANSWER_DUE_MS + WAKE_PROBE_MS);
+      expect(first.sent.filter((m) => m.t === "call" && m.tool === "hub_info")).toHaveLength(0);
+      expect(first.closed).toBe(false);
+      client.stop();
+    }
+  });
+
+  it("on a network change dials a fresh link beside the live one, and keeps whichever shows life first", () => {
+    // The old link was on the network left behind: the fresh one is ready first.
+    {
+      const { hub, client, states } = setup();
+      client.start();
+      const first = hub.ready();
+      client.networkChanged();
+      expect(first.sent.filter((m) => m.t === "call" && m.tool === "hub_info")).toHaveLength(1);
+      expect(hub.links).toHaveLength(2);
+      hub.ready();
+      expect(first.closed).toBe(true);
+      expect(states().at(-1)).toMatchObject({ phase: "live" });
+      client.stop();
+    }
+    // The old one still works (the change didn't touch it): it answers first, and the fresh one goes.
+    {
+      const { hub, client } = setup();
+      client.start();
+      const first = hub.ready();
+      client.networkChanged();
+      const fresh = hub.link;
+      const probe = first.sent.filter((m) => m.t === "call" && m.tool === "hub_info").at(-1);
+      first.frame({ t: "result", id: probe?.id, output: {} });
+      expect(fresh.closed).toBe(true);
+      expect(first.closed).toBe(false);
+      client.stop();
+    }
   });
 
   it("gives a quiet link longer while the app is behind", () => {

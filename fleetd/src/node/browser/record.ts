@@ -2,7 +2,8 @@
 // `<home>/browser/recordings/<sessionId>/` its `session.json`, its action log (`actions.jsonl`, each step scrubbed of
 // the session's secrets) and its video (`video.webm`: the screencast's JPEGs as an MJPEG Matroska stream into
 // ffmpeg's VP9, at FPS frames a second). When the session ends it goes to the hub a piece at a time
-// (`browser_recording_part`), reported `uploading` then `recorded`; the folder goes once the hub has it.
+// (`browser_recording_part`), reported `uploading` then `recorded`; the folder goes once the hub has it. An upload cut
+// short (a dropped link, a node restart) goes on from the last piece the hub took (`sent.json`), not from the start.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -153,19 +154,48 @@ function ffmpegWriter(ffmpeg: string, out: string, [w, h]: [number, number]): Vi
 // ---- upload ----
 
 
-async function sendFile(hub: HubCall, meta: Meta, dir: string, file: keyof typeof RECORDING_FILES): Promise<number> {
+/** How much of each file the hub took, as its answers said: where an upload cut short goes on. */
+const SENT = "sent.json";
+type Sent = Partial<Record<keyof typeof RECORDING_FILES, number>>;
+
+function readSent(dir: string): Sent {
+  try {
+    return JSON.parse(readFileSync(join(dir, SENT), "utf8")) as Sent;
+  } catch {
+    return {};
+  }
+}
+
+async function sendFile(hub: HubCall, meta: Meta, dir: string, file: keyof typeof RECORDING_FILES, sent: Sent): Promise<number> {
   const bytes = readFileSync(join(dir, RECORDING_FILES[file].name));
-  for (let offset = 0; offset < bytes.length; offset += RECORDING_PART_BYTES) {
+  const from = sent[file] ?? 0;
+  for (let offset = from <= bytes.length ? from : 0; offset < bytes.length; offset += RECORDING_PART_BYTES) {
     const piece = bytes.subarray(offset, offset + RECORDING_PART_BYTES);
-    const answer = await hub(meta.threadId, meta.cwd, "browser_recording_part", {
-      sessionId: meta.sessionId,
-      file,
-      offset,
-      dataB64: piece.toString("base64"),
-    });
+    let answer: Record<string, unknown>;
+    try {
+      answer = await hub(meta.threadId, meta.cwd, "browser_recording_part", {
+        sessionId: meta.sessionId,
+        file,
+        offset,
+        dataB64: piece.toString("base64"),
+      });
+    } catch (e) {
+      // The hub holds less than the node thought (it lost what it had): the next try sends the file whole.
+      if (offset > 0 && said(e, "would leave a gap")) writeSent(dir, { ...sent, [file]: 0 });
+      throw e;
+    }
     if (answer.bytes !== offset + piece.length) throw new Error(`the hub answered a piece with ${JSON.stringify(answer)}`);
+    sent[file] = offset + piece.length;
+    writeSent(dir, sent);
   }
   return bytes.length;
+}
+
+/** Whether the hub's refusal (its message or its fix) says `words`. */
+const said = (e: unknown, words: string) => `${(e as Error).message} ${(e as { fix?: string }).fix ?? ""}`.includes(words);
+
+function writeSent(dir: string, sent: Sent): void {
+  writeFileSync(join(dir, SENT), JSON.stringify(sent));
 }
 
 /** Sends a finished recording to the hub: `uploading`, each file in pieces, then `recorded`; then its folder goes. */
@@ -173,9 +203,16 @@ export async function upload(hub: HubCall, dir: string): Promise<void> {
   const meta = readMeta(dir);
   if (!meta) throw new Error(`${dir} has no readable session file`);
   await hub(meta.threadId, meta.cwd, "browser_session", report(meta, "uploading", "agent", []));
+  const progress = readSent(dir);
   const sent: [string, number][] = [];
-  for (const [file] of files(dir)) sent.push([file, await sendFile(hub, meta, dir, file)]);
-  await hub(meta.threadId, meta.cwd, "browser_session", report(meta, "recorded", "agent", sent));
+  for (const [file] of files(dir)) sent.push([file, await sendFile(hub, meta, dir, file, progress)]);
+  try {
+    await hub(meta.threadId, meta.cwd, "browser_session", report(meta, "recorded", "agent", sent));
+  } catch (e) {
+    // The hub's copy of a file is short of it: the next try sends every file whole.
+    if (said(e, "again from offset 0")) rmSync(join(dir, SENT), { force: true });
+    throw e;
+  }
   rmSync(dir, { recursive: true, force: true });
 }
 
