@@ -10,6 +10,7 @@ import {
   initialOf,
   isTailnetHost,
   needsSignIn,
+  onlyText,
   pickedText,
   splitCommand,
   stateOf,
@@ -87,6 +88,11 @@ describe("Connections", () => {
     expect(botsText(server("a", "https://a.example", { projects: [ada, shop] }), BOTS)).toBe("ada, storefront");
     expect(pickedText([ada, billing, shop], [...BOTS, { machineId: "x", projectId: "y", title: "y" }])).toBe("3 bots");
     expect(botsText(server("a", "https://a.example", { scope: { kind: "project", ...shop } }), BOTS)).toBe("storefront");
+    // On its row a bot's name never stands alone (W817).
+    expect(onlyText(server("a", "https://a.example"), BOTS)).toBeNull();
+    expect(onlyText(server("a", "https://a.example", { projects: [] }), BOTS)).toBe("No bot");
+    expect(onlyText(server("a", "https://a.example", { projects: [ada] }), BOTS)).toBe("Only ada");
+    expect(onlyText(server("a", "https://a.example", { scope: { kind: "project", ...shop } }), BOTS)).toBe("Only storefront");
     expect(usedBy(server("a", "https://a.example", { projects: [ada] }), billing)).toBe(false);
     expect(usedBy(server("a", "https://a.example"), billing)).toBe(true);
     expect(usedBy(server("a", "https://a.example", { scope: { kind: "project", ...shop } }), shop)).toBe(true);

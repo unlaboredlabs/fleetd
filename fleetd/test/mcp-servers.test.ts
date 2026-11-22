@@ -211,7 +211,11 @@ test("a bot's server keeps only its secrets' fingerprints, and its sessions get 
       },
     ],
   });
+  // A hub that had the machines' own servers turned off gives them again: the switch is gone (W817).
+  hub.db.conn.query("INSERT INTO mcp_settings (key, value) VALUES ('user_servers', 0)").run();
+  expect(mcpServers(hub).sessionConfig({ machineId: "lab", projectId: "p1" }).userServers).toBe(true);
   const set = mcpServers(hub).leadSet({ machineId: "lab", projectId: "p1" });
+  expect(set.userServers).toBe(true);
   expect(Object.keys(set.servers)).toEqual(["crm"]);
   expect(set.servers.crm).toMatch(/^[0-9a-f]{64}$/);
   const tested = await call("mcp_server_test", { scope, name: "crm" });

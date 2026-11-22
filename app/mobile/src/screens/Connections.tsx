@@ -337,7 +337,7 @@ function AddRow({ taken, tell, reload }: { taken: string[]; tell: (name: string,
       chevron={false}
       onPress={() => {
         haptics.tap();
-        Alert.prompt("Custom MCP", "Its URL. A command or headers from the vault, you add on the desktop.", [{ text: "Cancel", style: "cancel" }, { text: "Add", onPress: (url?: string) => url !== undefined && add(url) }], "plain-text", "", "url");
+        Alert.prompt("Custom MCP", "Paste its URL. Commands and headers are added in the desktop app.", [{ text: "Cancel", style: "cancel" }, { text: "Add", onPress: (url?: string) => url !== undefined && add(url) }], "plain-text", "", "url");
       }}
       {...(busy ? { accessory: <ActivityIndicator color={t.secondary} /> } : {})}
     />

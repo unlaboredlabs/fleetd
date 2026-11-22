@@ -57,7 +57,7 @@ export const pagePath = (tab: Tab): string => {
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
 /**
- * What moved to Connections (D653): Settings' Integrations, MCP servers (a bot's, every bot's, the machines' own) and
+ * What moved to Connections (D653): Settings' Integrations, MCP servers (a bot's, every bot's) and
  * Machines' Network (Tailscale). Found by their old names and words, each opens the sheet.
  */
 const CONNECTIONS: ReadonlyArray<SettingsOption> = [
@@ -77,7 +77,6 @@ const CONNECTIONS: ReadonlyArray<SettingsOption> = [
     opens: "connections",
     keywords: ["tailscale", "tailnet", "network", "vpn", "magicdns", "private", "gateway", "connect"],
   },
-  { key: "connections.own", label: "Machines' own MCP servers", tab: "general", opens: "connections", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers", "agents' own"] },
 ];
 
 /** Every option, in the sidebar's order. The Hub group's are found only by its owners and admins (optionsFor). */

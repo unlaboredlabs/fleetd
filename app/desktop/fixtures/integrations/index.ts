@@ -140,7 +140,7 @@ const signin = (base: Fixture): Fixture => {
     signedInAt: AT,
     problem,
   });
-  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [calendar, custom(ref), mail], userServers: true });
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [calendar, custom(ref), mail] });
   f.answer("mcp_server_test", { scope, name: "mail" }, { machineId: ref.machineId, result: { server: "Mail MCP 1.2.0", tools: MAIL_TOOLS } });
   f.answer("mcp_server_test", { scope, name: "calendar" }, {
     machineId: ref.machineId,
@@ -162,7 +162,7 @@ const signin = (base: Fixture): Fixture => {
 const approvals = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "integrations-approvals", "A bot's approvals with the checker on, and four actions that ran without asking.");
   const ref = home(f);
-  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)] });
   f.answer(PROJECT_TOOLS.approvals, ref, { approvals: CHECKER, log: LOG });
   return f;
 };
@@ -170,7 +170,7 @@ const approvals = (base: Fixture): Fixture => {
 const approvalsLong = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "integrations-approvals-long", "A busy YOLO bot's approvals: 400 actions ran without asking, read in pages.");
   const ref = home(f);
-  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)], userServers: true });
+  f.answer("mcp_servers_get", { project: ref }, { global: [], project: [docs(ref)] });
   for (const [input, output] of longLogPages()) f.answer(PROJECT_TOOLS.approvals, { ...ref, ...input }, { approvals: { ...CHECKER, mode: "yolo" }, ...output });
   return f;
 };
