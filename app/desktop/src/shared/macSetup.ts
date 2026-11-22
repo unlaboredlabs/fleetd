@@ -61,7 +61,26 @@ export interface MacHealthRead {
   readonly hubBehind: HubBehind | null;
   /** This Mac's node runs an older fleetd than the hub: the menu bar offers the hub's Update. Absent from older apps' reads. */
   readonly macBehind?: MacBehind | null;
+  /** How the node's link to its hub stands, as the node writes it (mac-link.json); null from a node that writes none. */
+  readonly link?: MacLink | null;
+  /** The node stopped as this hub's machine (removed, or refused as unknown) and waits for a new code: what to say. */
+  readonly gone?: MacSetupFailure | null;
 }
+
+/** The node's link to its hub (node/agents_mac/common.ts MacLink): dialing, linked, lost, or refused (`why`: the hub's
+ * words). `since`: when it came to that, ms since the epoch. */
+export interface MacLink {
+  readonly state: "linking" | "linked" | "down" | "refused";
+  readonly why?: string;
+  readonly since: number;
+}
+
+/** Stop being the agents' Mac: this Mac's node is gone either way; `told` says whether its hub removed it too (`removed`),
+ * wasn't reached or is too old to (`unreached`, `old`: it shows the Mac offline until an admin removes it), or there was
+ * no hub to tell (`none`). */
+export type MacLeaveOutcome =
+  | { readonly ok: true; readonly told: "removed" | "unreached" | "old" | "none"; readonly hubName: string; readonly machineId: string }
+  | { readonly ok: false; readonly failure: MacSetupFailure };
 
 /**
  * The hub runs an older fleetd than this Mac's node: the edge release had moved on past the hub's build when this Mac
@@ -79,8 +98,9 @@ export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub ›
 
 export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 
-/** What setup opens on the Mac: a System Settings pane, or Xcode's page in the App Store. */
-export const MAC_PANES = ["accessibility", "screen_recording", "app_store"] as const;
+/** What setup opens on the Mac: a System Settings pane (screen_capture: macOS's prompt whether fleetd may capture the
+ * screen directly, shown again, beside the Screen Recording pane), or Xcode's page in the App Store. */
+export const MAC_PANES = ["accessibility", "screen_recording", "screen_capture", "app_store"] as const;
 export type MacPane = (typeof MAC_PANES)[number];
 
 export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };

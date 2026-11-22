@@ -115,6 +115,10 @@ export const IPC = {
   /** invoke() → void. The person declined to replace a node after the hub took the code: it is spent, nothing joins. */
   macSetupCancel: "mac-setup:cancel",
   macSetupUpdateHub: "mac-setup:update-hub",
+  /** invoke() → MacLeaveOutcome. Stop being the agents' Mac: `fleetd node leave`. */
+  macSetupLeave: "mac-setup:leave",
+  /** invoke() → void. Closes the setup window and opens the app's own (Welcome, on a Mac that is no agents' Mac). */
+  macSetupExit: "mac-setup:exit",
   /** invoke() → MacMenuBarRead | null. The menu bar popover's read of this Mac (src/main/menuBar.ts); null until joined. */
   menuBarRead: "menu-bar:read",
   /** invoke(height) → void. The popover's page laid out at this height: the popover takes it. */

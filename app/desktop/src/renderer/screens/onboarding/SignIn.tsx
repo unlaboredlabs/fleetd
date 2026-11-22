@@ -16,7 +16,24 @@ import s from "./signin.module.css";
 export const WAYS = {
   signIn: { name: "Sign in", line: "fleetd hosts your hub. Your agents run on your own computers." },
   own: { name: "Use your own hub", line: "A hub you run yourself. No fleetd account." },
+  mac: { name: "Set up this Mac for agents", line: "For builds and iOS simulators, with a code from your hub." },
 } as const;
+
+/** On a Mac: the third way in, for the Mac every bot's agents use (D309). It opens setup's own window in place of
+ * this one. */
+export function AgentsMacWay() {
+  return (
+    <button type="button" className={`${s.second} ${s.third}`} data-way="agents-mac" onClick={() => void window.fleetd.macSetup.open()}>
+      <span className={s.secondName}>
+        {WAYS.mac.name}
+        <ChevronRight size={14} aria-hidden />
+      </span>
+      <Text size="sm" tone="quiet">
+        {WAYS.mac.line}
+      </Text>
+    </button>
+  );
+}
 
 /** Why the last sign-in ended without connecting, said above Sign in. A page left to run out is no error. */
 export interface SignInNote {
@@ -141,7 +158,8 @@ export function Stage({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-/** The first screen: the character, Sign in, and Use your own hub as a quiet row under it. */
+/** The first screen: the character, Sign in, and Use your own hub as a quiet row under it; on a Mac, Set up this Mac
+ * for agents as another. */
 export function Ways({ note, onSignIn, onOwn }: { note: SignInNote | null; onSignIn: () => void; onOwn: () => void }) {
   return (
     <Stage id="onboarding.ways">
@@ -167,6 +185,7 @@ export function Ways({ note, onSignIn, onOwn }: { note: SignInNote | null; onSig
           {WAYS.own.line}
         </Text>
       </button>
+      {window.fleetd.platform === "darwin" ? <AgentsMacWay /> : null}
     </Stage>
   );
 }

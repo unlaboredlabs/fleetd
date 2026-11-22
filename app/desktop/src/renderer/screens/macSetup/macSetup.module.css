@@ -24,6 +24,12 @@
   margin-inline: auto;
   padding: var(--space-4) var(--space-6) var(--space-8);
 }
+/* The status fills the window, so its way out sits at the foot. */
+.window[data-step="status"] .column {
+  flex: 1 0 auto;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 
 .progress {
   display: flex;
@@ -317,4 +323,123 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* The check step: every check a row, its state a glyph and a word, its one button on the right. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--space-3);
+  min-height: 40px;
+  padding: var(--space-1) 0;
+}
+.rowText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* The state sits on the title's line, not the middle of the row. */
+.rowIcon {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  height: var(--leading-sm);
+}
+.row[data-state="waiting"] .rowText {
+  opacity: 0.6;
+}
+
+/* The agents' Mac's own window: its title and link line, the popover's sections, and the quiet way out. */
+.status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  width: 100%;
+}
+.statusHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.statusLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.statusLine[data-tone="warn"] .dot {
+  background: var(--warning);
+}
+/* The popover's sections set apart by its own hairlines, at the window's margin. */
+.sections > section {
+  margin-inline: 0;
+}
+/* The way out stays in view at the window's foot, however long the list above it. */
+.leave,
+.confirm {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: var(--space-2) 0 var(--space-4);
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.leave {
+  display: flex;
+  justify-content: flex-start;
+}
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+}
+.rowAction {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.rowFailure {
+  max-width: 160px;
+  text-align: right;
+}
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Back to Welcome, under the code. */
+.back {
+  display: flex;
+  justify-content: center;
+}
+
+.confirm .actions {
+  justify-content: flex-start;
+}
+
+.rowDone {
+  display: flex;
+  color: var(--success);
+}
+
+.status .actions {
+  justify-content: flex-start;
 }

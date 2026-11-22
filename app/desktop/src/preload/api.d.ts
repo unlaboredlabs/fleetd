@@ -6,7 +6,7 @@ import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
 import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
-import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
+import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { KeyStore, PairOutcome, PairRequest, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
@@ -256,6 +256,10 @@ export interface FleetdApi {
     cancel(): Promise<void>;
     /** Starts the hub's own Update with this app's key for it, when that is an admin's. Never rejects. */
     updateHub(hub: string): Promise<MacHubUpdateOutcome>;
+    /** Stop being the agents' Mac: the node leaves its hub (or, unreached, only this Mac) and its files go. Never rejects. */
+    leave(): Promise<MacLeaveOutcome>;
+    /** Closes this window for the app's own: Welcome, on a Mac that is no agents' Mac. */
+    exit(): Promise<void>;
   };
   /** The agents' Mac's menu bar popover (src/main/menuBar.ts). */
   readonly menuBar: {

@@ -1,4 +1,4 @@
-// `fleetd node join|run|grants|restart`: the CLI parses the flags and refuses a
+// `fleetd node join|run|grants|restart|leave`: the CLI parses the flags and refuses a
 // usage mistake in the Rust CLI's words; the node itself (src/node) runs join and run; grants is its to
 // port, and `restart` is the update service's (src/update).
 import { NotImplemented } from "../shared/errors.ts";
@@ -97,8 +97,8 @@ export async function nodeCommand(argv: string[]): Promise<number> {
     }
     case "grants": {
       const ask = v.str("ask");
-      if (ask !== undefined && ask !== "accessibility" && ask !== "screen_recording") {
-        return usage("--ask takes accessibility or screen_recording");
+      if (ask !== undefined && ask !== "accessibility" && ask !== "screen_recording" && ask !== "screen_capture") {
+        return usage("--ask takes accessibility, screen_recording or screen_capture");
       }
       const wait = v.str("wait");
       if (ask !== undefined && wait !== undefined && !SECONDS.test(wait)) return usage("--wait takes a number of seconds");
@@ -131,6 +131,11 @@ export async function nodeCommand(argv: string[]): Promise<number> {
       }
       process.stdout.write(`restarted ${service.name}\n`);
       return 0;
+    }
+    case "leave": {
+      const { leaveCommand } = await import("./node_leave.ts");
+      const { defaultNodeHome } = await import("../node/config.ts");
+      return leaveCommand(v.str("home") ?? defaultNodeHome());
     }
     case undefined:
       return usage("missing node command");

@@ -4,13 +4,14 @@
 // check green. The page holds no hub key and no token: main trades the code and runs the CLI (src/main/macSetup.ts).
 // A version difference is one line and one fix: an app too old for the hub gets its Update button; a hub older than
 // the build this Mac got gets Update right there for an admin signed in here, and where to press it for anyone else.
-import { useEffect, useReducer, useRef, useState } from "react";
-import { HUB_UPDATE_WHERE, type HubBehind, type MacPane, type MacSetupFailure } from "../../../shared/macSetup";
-import { Check, CircleDashed } from "lucide-react";
-import { Button, copyText, Field, Input, StateGlyph, Text } from "../../ui";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { MacSetupFailure } from "../../../shared/macSetup";
+import { Check } from "lucide-react";
+import { Button, Field, Input, StateGlyph, Text } from "../../ui";
 import { Mark } from "../onboarding/Mark";
 import { UpdateAppButton } from "../updates/UpdateAppButton";
-import { checkTitle, checkView, digitsOf, passes, waits, initial, READ_EVERY_MS, reduce, spaced, stepOf, STEPS, type CheckRow, type State } from "./model";
+import { digitsOf, initial, READ_EVERY_MS, reduce, setupRows, spaced, stepOf, STEPS, type RowAction, type RowState, type State } from "./model";
+import { HubBehindLine, MacStatus } from "./MacStatus";
 import s from "./macSetup.module.css";
 
 const useNow = (every: number): number => {
@@ -93,6 +94,7 @@ export function MacSetup() {
     <div className={s.window} data-screen="mac-setup" data-step={state.step}>
       <div className={s.titlebar} />
       <main className={s.column}>
+        {state.step === "status" ? null : (
         <ol className={s.progress} aria-label="Steps">
           {STEPS.map((name, i) => {
             const at = STEPS.indexOf(current);
@@ -104,6 +106,7 @@ export function MacSetup() {
             );
           })}
         </ol>
+        )}
         <Body state={state} now={now} dispatch={dispatch} />
       </main>
     </div>
@@ -139,45 +142,6 @@ function Failure({ failure }: { failure: MacSetupFailure }) {
       {failure.updateApp === true ? (
         <div className={s.actions}>
           <UpdateAppButton />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/** The hub runs an older fleetd than this Mac: both work, and the hub's Update brings it level. */
-function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: string }) {
-  const [asked, setAsked] = useState<"no" | "asking" | "started">("no");
-  const [failure, setFailure] = useState<MacSetupFailure>();
-  const update = () => {
-    setAsked("asking");
-    setFailure(undefined);
-    void window.fleetd.macSetup.updateHub(hubUrl).then((outcome) => {
-      setAsked(outcome.ok ? "started" : "no");
-      if (!outcome.ok) setFailure(outcome.failure);
-    });
-  };
-  const line =
-    asked === "started"
-      ? "Your hub is updating. It restarts in a moment, then runs the same build as this Mac."
-      : behind.who === "admin"
-        ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the hub level."
-        : behind.who === "member"
-          ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in Settings › Hub › Machines › Updates."
-          : `Your hub runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
-  return (
-    <div className={s.notice} role="status" data-hub-behind={behind.who}>
-      <Text size="sm">{line}</Text>
-      {failure === undefined ? null : (
-        <Text size="sm" tone="danger">
-          {failure.fix === undefined ? failure.message : `${failure.message} ${failure.fix}`}
-        </Text>
-      )}
-      {behind.who === "admin" && asked !== "started" ? (
-        <div className={s.actions}>
-          <Button variant="secondary" size="md" disabled={asked === "asking"} onClick={update}>
-            {asked === "asking" ? "Starting the update…" : "Update the hub"}
-          </Button>
         </div>
       ) : null}
     </div>
@@ -230,7 +194,22 @@ function Body({ state, now, dispatch }: { state: State; now: number; dispatch: D
       return <JoinStep state={state} dispatch={dispatch} />;
     case "check":
       return <CheckStep state={state} now={now} dispatch={dispatch} />;
+    case "status":
+      return <StatusStep found={state.found} dispatch={dispatch} />;
   }
+}
+
+/** The Mac at work; once it stops being the agents' Mac outside this window, the window says so with a new code. */
+function StatusStep({ found, dispatch }: { found: Extract<State, { step: "status" }>["found"]; dispatch: Dispatch }) {
+  const gone = useCallback(
+    () =>
+      void window.fleetd.macSetup.status().then((status) => {
+        dispatch({ type: "startOver" });
+        dispatch({ type: "resume", status, at: Date.now() });
+      }),
+    [dispatch],
+  );
+  return <MacStatus found={found} gone={gone} />;
 }
 
 function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>; dispatch: Dispatch }) {
@@ -256,7 +235,7 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
         dispatch({ type: "submit" });
       }}
     >
-      <Head face="mark" title="Set up this Mac for agents" line="Every bot's agents use it for builds and iOS simulators. It's a tool: it runs no claude and holds none of your keys." />
+      <Head face="mark" title="Set up this Mac for agents" />
       {state.notice === undefined ? null : (
         <div className={s.notice} role="status">
           <Text size="sm" strong>
@@ -272,7 +251,7 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
       <div className={s.codeBlock}>
         <label className={s.codeLabel} htmlFor="mac-code">
           <Text size="sm" tone="quiet">
-            On your main machine, open Add machine › A Mac for agents and type the code it shows.
+            The code from Add machine › A Mac for agents
           </Text>
         </label>
         <input
@@ -319,9 +298,11 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
           )}
         </div>
       )}
-      <Text size="xs" tone="quiet" className={s.footnote}>
-        Rather use Terminal? Add machine › A Mac for agents on your main machine also has a line to paste here.
-      </Text>
+      <div className={s.back}>
+        <Button type="button" variant="link" size="sm" disabled={state.busy} onClick={() => void window.fleetd.macSetup.exit()}>
+          Back
+        </Button>
+      </div>
     </form>
   );
 }
@@ -334,7 +315,7 @@ function JoinStep({ state, dispatch }: { state: Extract<State, { step: "join" }>
   const failed = join?.state === "failed";
   return (
     <>
-      <Head title={failed ? "Joining stopped" : `Joining ${found.hubName}`} line={failed ? undefined : `This Mac becomes ${found.machineId}: fleetd installs the hub's own version and starts its node in this login.`} />
+      <Head title={failed ? "Joining stopped" : `Joining ${found.hubName}`} />
       <ol className={s.steps}>
         {(join?.steps ?? []).map((step) => (
           <li key={step.title} className={s.stepRow} data-state={step.state}>
@@ -365,188 +346,104 @@ function JoinStep({ state, dispatch }: { state: Extract<State, { step: "join" }>
   );
 }
 
-function CheckLine({ row }: { row: CheckRow }) {
-  const [copied, setCopied] = useState<boolean>();
-  const bad = !passes(row);
-  const says = bad || waits(row);
+const ROW_GLYPH: Readonly<Record<RowState, "done" | "failed" | "working" | "queued" | "waiting">> = {
+  waiting: "queued",
+  running: "working",
+  done: "done",
+  needs_you: "waiting",
+  failed: "failed",
+};
+
+const ROW_WORD: Readonly<Record<RowState, string>> = { waiting: "Waiting", running: "Running", done: "Done", needs_you: "Needs you", failed: "Failed" };
+
+/** A row's one way forward. */
+function RowButton({ action, state, dispatch }: { action: RowAction; state: Extract<State, { step: "check" }>; dispatch: Dispatch }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<MacSetupFailure>();
+  const run = (go: () => Promise<{ ok: boolean; failure?: MacSetupFailure }>) => {
+    setBusy(true);
+    setFailure(undefined);
+    void go().then((out) => {
+      setBusy(false);
+      if (!out.ok) setFailure(out.failure);
+    });
+  };
+  const button =
+    action.kind === "grant" ? (
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => run(() => window.fleetd.macSetup.openPane(action.pane))}>
+        {busy ? "Asking macOS…" : "Allow"}
+      </Button>
+    ) : action.kind === "open" ? (
+      <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => window.fleetd.macSetup.openPane(action.pane))}>
+        Open the App Store
+      </Button>
+    ) : action.kind === "newCode" ? (
+      <Button size="sm" variant="primary" onClick={() => dispatch({ type: "startOver" })}>
+        New code
+      </Button>
+    ) : (
+      <Button size="sm" variant="secondary" disabled={state.restarting} onClick={() => dispatch({ type: "restart" })}>
+        {state.restarting ? "Restarting…" : "Restart the node"}
+      </Button>
+    );
   return (
-    <li className={s.check} data-state={row.state}>
-      <StateGlyph state={row.state === "ok" ? "done" : row.state === "fail" ? "failed" : row.state === "warn" ? "waiting" : "working"} size="sm" />
-      <span className={s.stepText}>
-        <Text size="sm" strong={bad}>
-          {checkTitle(row.id)}
-        </Text>
-        <Text size="xs" tone="quiet">
-          {row.message}
-        </Text>
-        {says && row.fix !== undefined ? <Text size="xs">{row.fix}</Text> : null}
-        {says && row.opens !== undefined ? (
-          <span className={s.opens}>
-            <Button size="sm" variant="secondary" onClick={() => void window.fleetd.macSetup.openPane(row.opens ?? "app_store")}>
-              Open the App Store
-            </Button>
-          </span>
-        ) : says && row.command !== undefined ? (
-          <span className={s.command}>
-            <code>{row.command}</code>
-            <Button size="sm" variant="ghost" onClick={() => void copyText(row.command ?? "").then(setCopied)}>
-              {copied === true ? "Copied" : "Copy"}
-            </Button>
-          </span>
-        ) : null}
-      </span>
-    </li>
+    <>
+      {button}
+      {failure === undefined ? null : (
+        <span role="alert" className={s.rowFailure}>
+          <Text size="xs" tone="danger">
+            {failure.message}
+          </Text>
+        </span>
+      )}
+    </>
   );
 }
 
 function CheckStep({ state, now, dispatch }: { state: Extract<State, { step: "check" }>; now: number; dispatch: Dispatch }) {
-  const view = checkView(state, now);
-  // The grant the node is asking macOS for: within 2 s, then macOS's prompt and the pane, with fleetd in its list.
-  const [asking, setAsking] = useState<MacPane | undefined>(undefined);
-  // The node didn't take the ask: it isn't running, so the page says so with its Restart.
-  const [askFailure, setAskFailure] = useState<MacSetupFailure | undefined>(undefined);
-  const allow = (pane: MacPane) => {
-    setAsking(pane);
-    setAskFailure(undefined);
-    void window.fleetd.macSetup
-      .openPane(pane)
-      .then((outcome) => setAskFailure(outcome.ok ? undefined : outcome.failure))
-      .finally(() => setAsking(undefined));
-  };
-  const restart = (
-    <Button variant="secondary" size="md" disabled={state.restarting} onClick={() => dispatch({ type: "restart" })}>
-      {state.restarting ? "Restarting…" : "Restart the node"}
-    </Button>
-  );
-  if (view.kind === "starting") {
-    return (
-      <>
-        <Head
-          title={state.resumed === true ? "Checking this Mac" : "Starting the node"}
-          line={
-            view.late
-              ? "The node hasn't reported its checks yet. Restart it; if that doesn't help, log out of this Mac and back in, or start over with a new code."
-              : state.resumed === true
-                ? `This Mac is ${state.found.machineId}, ${state.found.hubName}'s agents' Mac, already. Its node is running its checks.`
-                : "It checks this Mac as it starts: a few seconds."
-          }
-        />
-        <div className={s.waiting}>
-          <StateGlyph state="working" size="sm" />
-          <Text size="sm" tone="quiet">
-            Waiting for its first checks…
-          </Text>
-        </div>
-        {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
-        {view.late ? (
-          <div className={s.actions}>
-            {restart}
-            {/* A node that never reports (refused by its hub, say): a new code joins this Mac again, replacing it. */}
-            <Button variant="ghost" size="md" disabled={state.restarting} onClick={() => dispatch({ type: "startOver" })}>
-              Start over with a new code
-            </Button>
-          </div>
-        ) : null}
-      </>
-    );
-  }
-  if (view.kind === "grants") {
-    return (
-      <>
-        <Head title="Let agents use this Mac's screen" line="Allow each: macOS asks, then turn on fleetd in the list it opens. This screen sees each switch as you flip it." />
-        <ul className={s.grants}>
-          {view.grants.map((grant) => (
-            <li key={grant.id} className={s.grant} data-granted={grant.granted}>
-              <span className={s.stepText}>
-                <Text size="md" strong>
-                  {grant.title}
-                </Text>
-                <Text size="xs" tone="quiet">
-                  {grant.lost === undefined ? `${grant.why.charAt(0).toUpperCase()}${grant.why.slice(1)}.` : `${grant.lost} Allow, then turn fleetd off and on again in the list.`}
-                </Text>
-              </span>
-              {grant.granted ? (
-                <span className={s.allowed}>
-                  <Check size={14} strokeWidth={2.5} aria-hidden />
-                  Allowed
-                </span>
-              ) : (
-                <Button size="md" variant={view.grants.find((g) => !g.granted)?.id === grant.id ? "primary" : "secondary"} disabled={asking !== undefined} onClick={() => allow(grant.id)}>
-                  {asking === grant.id ? "Asking macOS…" : "Allow"}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-        {askFailure === undefined ? null : (
-          <>
-            <Failure failure={askFailure} />
-            <div className={s.actions}>{restart}</div>
-          </>
-        )}
-        {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
-      </>
-    );
-  }
-  const hub: CheckRow = {
-    id: "reaches_hub",
-    state: view.hubAnswers ? "ok" : "fail",
-    message: view.hubAnswers ? `${state.found.hubUrl} answers.` : `${state.found.hubUrl} doesn't answer from this Mac.`,
-    ...(view.hubAnswers ? {} : { fix: "Check this Mac is on the hub's tailnet or network, and that the hub is running." }),
-  };
-  const rows = [hub, ...view.checks];
-  const open = rows.filter((c) => !passes(c));
-  // Not holding setup up, but each says what to do: listed with the failing ones, after them.
-  const waiting = rows.filter(waits);
-  const passed = rows.filter((c) => passes(c) && !waits(c));
+  const rows = setupRows(state, now);
+  const green = rows.at(-1)?.state === "done";
+  const needs = rows.filter((r) => r.state === "needs_you" || r.state === "failed").length;
   return (
     <>
       <Head
-        face={view.green ? "ready" : undefined}
-        title={view.green ? "This Mac is ready" : "Testing"}
-        line={
-          view.green
-            ? `${state.found.machineId} is ${state.found.hubName}'s agents' Mac. Agents reach it with mac and agent-device, and you can watch its screen from the app.`
-            : open.length > 0
-              ? `${String(open.length)} ${open.length === 1 ? "check needs" : "checks need"} you. Each one says what to do, and turns green here as you do it.`
-              : "The node runs every check once more with both permissions on: a few seconds."
-        }
+        face={green ? "ready" : undefined}
+        title={green ? "This Mac is ready" : `Setting up ${state.found.machineId}`}
+        line={green ? undefined : needs > 0 ? `${String(needs)} ${needs === 1 ? "step needs" : "steps need"} you` : undefined}
       />
-      {open.length + waiting.length === 0 ? null : (
-        <ul className={s.checks}>
-          {[...open, ...waiting].map((row) => (
-            <CheckLine key={row.id} row={row} />
-          ))}
-        </ul>
-      )}
-      <ul className={s.passed} aria-label="Checks that pass">
-        {passed.map((row) => (
-          <li key={row.id} className={s.passedRow} data-state={row.state} title={row.message}>
-            {row.state === "ok" ? <Check size={13} strokeWidth={2.5} aria-hidden /> : <CircleDashed size={13} strokeWidth={2.5} aria-hidden />}
-            <span className={s.passedText}>
-              <Text size="sm">{checkTitle(row.id)}</Text>
-              {row.state === "ok" ? null : (
-                <Text size="xs" tone="quiet">
-                  {row.message}
-                </Text>
+      <ol className={s.rows} aria-label="Checks">
+        {rows.map((row) => (
+          <li key={row.id} className={s.row} data-state={row.state} data-check={row.id}>
+            <span className={s.rowIcon}>
+              {row.state === "done" ? (
+                <span className={s.rowDone} role="img" aria-label={ROW_WORD.done}>
+                  <Check size={14} strokeWidth={2.5} aria-hidden />
+                </span>
+              ) : (
+                <StateGlyph state={ROW_GLYPH[row.state]} size="sm" label={ROW_WORD[row.state]} />
               )}
             </span>
+            <span className={s.rowText}>
+              <Text size="sm" strong={row.state === "needs_you" || row.state === "failed"}>
+                {row.title}
+              </Text>
+              <Text size="xs" tone={row.state === "failed" ? "danger" : "quiet"} className={s.clamp}>
+                {row.line}
+              </Text>
+            </span>
+            <span className={s.rowAction}>{row.action === undefined ? null : <RowButton action={row.action} state={state} dispatch={dispatch} />}</span>
           </li>
         ))}
-      </ul>
+      </ol>
       {state.restartFailure === undefined ? null : <Failure failure={state.restartFailure} />}
       {state.read === undefined || state.read.hubBehind === null ? null : <HubBehindLine behind={state.read.hubBehind} hubUrl={state.found.hubUrl} />}
-      <div className={s.actions}>
-        {view.green ? (
-          <Button variant="primary" size="md" onClick={() => window.close()}>
+      {green ? (
+        <div className={s.actions}>
+          <Button variant="primary" size="md" autoFocus onClick={() => dispatch({ type: "finish" })}>
             Done
           </Button>
-        ) : open.length > 0 ? (
-          restart
-        ) : (
-          <StateGlyph state="working" size="sm" label="Testing" />
-        )}
-      </div>
+        </div>
+      ) : null}
     </>
   );
 }

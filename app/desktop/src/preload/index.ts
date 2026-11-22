@@ -7,7 +7,7 @@ import type { HubEntry, HubId } from "../shared/hubs";
 import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
-import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
+import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacLeaveOutcome, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
 import type { KeyStore, PairOutcome, PairStart, Probe, SetupOutcome } from "../shared/pairing";
 import type { UpdatesState } from "../shared/updates";
 import type { FleetdApi } from "./api";
@@ -190,6 +190,8 @@ const api: FleetdApi = {
     status: () => ipcRenderer.invoke(IPC.macSetupStatus) as Promise<MacSetupStatus>,
     cancel: () => ipcRenderer.invoke(IPC.macSetupCancel) as Promise<void>,
     updateHub: (hub) => ipcRenderer.invoke(IPC.macSetupUpdateHub, hub) as Promise<MacHubUpdateOutcome>,
+    leave: () => ipcRenderer.invoke(IPC.macSetupLeave) as Promise<MacLeaveOutcome>,
+    exit: () => ipcRenderer.invoke(IPC.macSetupExit) as Promise<void>,
   },
   menuBar: {
     read: () => ipcRenderer.invoke(IPC.menuBarRead) as Promise<MacMenuBarRead | null>,

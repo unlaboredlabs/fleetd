@@ -74,6 +74,11 @@
   background: var(--hover);
 }
 
+/* The third way sits right under the second, one quiet row after another. */
+.third {
+  margin-top: var(--space-1);
+}
+
 .secondName {
   display: inline-flex;
   align-items: center;

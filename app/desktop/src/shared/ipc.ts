@@ -450,6 +450,8 @@ export const REQUESTS = {
   [IPC.macSetupStatus]: none,
   [IPC.macSetupCancel]: none,
   [IPC.macSetupUpdateHub]: z.tuple([z.string().max(2048)]),
+  [IPC.macSetupLeave]: none,
+  [IPC.macSetupExit]: none,
   [IPC.menuBarRead]: none,
   [IPC.menuBarFit]: z.tuple([z.number().int().min(80).max(4000)]),
   [IPC.menuBarHide]: none,

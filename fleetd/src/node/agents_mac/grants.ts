@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { VERSION } from "../../shared/version.ts";
 import { spawnOutside } from "../../update/service.ts";
 import { grant as grantCheck, lostGrant, pane } from "./checks.ts";
-import { GRANTS, type MacCheckId, type MacHealth, toolsDir } from "./common.ts";
+import { ASKABLE, GRANTS, type MacCheckId, type MacHealth, toolsDir } from "./common.ts";
 import { tcc } from "./tcc.ts";
 import { selfArgv } from "../util.ts";
 
@@ -131,7 +131,7 @@ export function request(home: string, id: MacCheckId): void {
 }
 
 /** The grant the ask file names, if it names one. */
-export const asked = (text: string): MacCheckId | undefined => GRANTS.find((id) => id === text.trim());
+export const asked = (text: string): MacCheckId | undefined => ASKABLE.find((id) => id === text.trim());
 
 /** The node's half: asks macOS for the grant setup asked for, if it did, and removes the ask. */
 export function answer(home: string, ask: (id: MacCheckId) => void = (id) => tcc.ask(id)): void {
@@ -219,7 +219,8 @@ function restartNode(): void {
 /** How long setup waits for the node to ask macOS for a grant: within 2 s while it runs. */
 export const ASK_WAIT = 30_000;
 
-const grantName = (id: MacCheckId) => (id === "screen_recording" ? "Screen Recording" : "Accessibility");
+const grantName = (id: MacCheckId) =>
+  id === "screen_recording" ? "Screen Recording" : id === "screen_capture" ? "Screen & System Audio Recording" : "Accessibility";
 
 /** Has the node at `home` ask macOS for the grant and waits up to `waitMs` for it to; whether it did. */
 export async function askNode(home: string, id: MacCheckId, waitMs: number): Promise<boolean> {
@@ -261,7 +262,7 @@ export async function grantsCommand(
   }
   const id = asked(args.ask);
   if (!id) {
-    err("fleetd: --ask takes accessibility or screen_recording\n");
+    err("fleetd: --ask takes accessibility, screen_recording or screen_capture\n");
     return 2;
   }
   let waitMs = ASK_WAIT;
@@ -275,6 +276,10 @@ export async function grantsCommand(
   const did = await askNode(args.home, id, waitMs);
   openPane(id);
   const name = grantName(id);
+  if (did && id === "screen_capture") {
+    out("macOS asks now whether fleetd may capture the screen directly: press Allow\n");
+    return 0;
+  }
   if (did) {
     out(`macOS asks for ${name} now: turn on fleetd in System Settings › Privacy & Security › ${name}\n`);
     return 0;

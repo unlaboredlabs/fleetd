@@ -55,7 +55,7 @@ export function useMacRead(): MacMenuBarRead | null | undefined {
 const NO_NAMES: ReadonlyMap<string, string> = new Map();
 
 /** The Mac's screen and the names, from the hub. The screen a person has comes first, then one asking, then the oldest. */
-function useHubInput(): HubInput {
+export function useHubInput(): HubInput {
   const screens = useScreens();
   const agents = useData(selectLiveAgents);
   const projects = useData(selectProjects);
@@ -107,29 +107,33 @@ export function MenuBarWindow() {
 }
 
 function WithHub({ read }: { read: MacMenuBarRead }) {
+  const { hub, onScreen } = useScreenActions(() => void window.fleetd.menuBar.hide());
+  return <Popover read={read} hub={hub} onScreen={onScreen} />;
+}
+
+/** The hub's side of the Mac (its screen, the names) and what the Screen line's buttons do: `opened` once a window
+ * of the screen opened. Inside the hub's HubScope. */
+export function useScreenActions(opened: () => void): { hub: HubInput; onScreen: (screen: ScreenInput, action: ScreenAction) => Promise<void> } {
   const layer = useDataLayer();
   const hub = useHubInput();
   const take = async (screen: ScreenInput, to: "human" | "agent") => {
     if (!(await setControl(layer, screen.id, to))) return;
     if (to === "human") {
       showWindow(screen.project, screen.id, layer.hub);
-      void window.fleetd.menuBar.hide();
+      opened();
     }
   };
-  return (
-    <Popover
-      read={read}
-      hub={hub}
-      onScreen={(screen, action) => {
-        if (action === "open") {
-          showWindow(screen.project, screen.id, layer.hub);
-          void window.fleetd.menuBar.hide();
-          return Promise.resolve();
-        }
-        return take(screen, action === "takeOver" ? "human" : "agent");
-      }}
-    />
-  );
+  return {
+    hub,
+    onScreen: (screen, action) => {
+      if (action === "open") {
+        showWindow(screen.project, screen.id, layer.hub);
+        opened();
+        return Promise.resolve();
+      }
+      return take(screen, action === "takeOver" ? "human" : "agent");
+    },
+  };
 }
 
 /** The popover's frame: it tells main its height as it lays out, so the window fits what it shows. */
@@ -173,12 +177,11 @@ function NotJoined() {
   );
 }
 
-type ScreenAction = "takeOver" | "handBack" | "open";
+export type ScreenAction = "takeOver" | "handBack" | "open";
 
 /** The popover itself, from main's read (its clock too) and the hub's side when there is one. */
 export function Popover({ read, hub, onScreen }: { read: MacMenuBarRead; hub: HubInput | null; onScreen?: (screen: ScreenInput, action: ScreenAction) => Promise<void> }) {
   const view: View = menuBarView(read, hub, read.health.now);
-  const idle = view.screen.kind !== "held" && view.simulators.length === 0 && view.builds.length === 0;
   return (
     <Frame screen="menu-bar">
       <header className={s.head}>
@@ -190,7 +193,17 @@ export function Popover({ read, hub, onScreen }: { read: MacMenuBarRead; hub: Hu
         </div>
         <Button variant="quiet" size="sm" iconOnly icon={<Ellipsis aria-hidden />} aria-label="More" onClick={() => void window.fleetd.menuBar.menu()} />
       </header>
+      <MacSections view={view} read={read} onScreen={onScreen} />
+    </Frame>
+  );
+}
 
+/** What agents do on the Mac now, its health with a fix each, and Update while it is behind: the popover's and the
+ * agents' Mac's own window's. */
+export function MacSections({ view, read, onScreen }: { view: View; read: MacMenuBarRead; onScreen: ((screen: ScreenInput, action: ScreenAction) => Promise<void>) | undefined }) {
+  const idle = view.screen.kind !== "held" && view.simulators.length === 0 && view.builds.length === 0;
+  return (
+    <>
       <section className={s.section} aria-label="Now">
         <h2 className={s.heading}>Now</h2>
         <ScreenLine view={view.screen} onScreen={onScreen} />
@@ -217,7 +230,7 @@ export function Popover({ read, hub, onScreen }: { read: MacMenuBarRead; hub: Hu
       </section>
 
       {view.update === null ? null : <UpdateSection update={view.update} hubUrl={read.found.hubUrl} />}
-    </Frame>
+    </>
   );
 }
 
