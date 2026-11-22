@@ -10901,6 +10901,14 @@
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "projects": {
+          "description": "A global server's bots: their sessions get it, no other's. Absent: every bot's; empty: none. A project's own server ignores it.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array",
+          "maxItems": 500
         }
       },
       "required": [
@@ -10992,6 +11000,14 @@
         },
         "transport": {
           "$ref": "#/$defs/McpTransport"
+        },
+        "projects": {
+          "description": "A global server's bots: their sessions get it, no other's. Absent: every bot's; empty: none. A project's own server ignores it.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array",
+          "maxItems": 500
         }
       },
       "required": [
@@ -11160,6 +11176,11 @@
             "$ref": "#/$defs/McpToolInfo"
           },
           "type": "array"
+        },
+        "via": {
+          "const": "tailnet",
+          "description": "The server is on the team's tailnet and was reached through Tailscale.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -12988,7 +13009,7 @@
       "description": "One env variable or header as the hub keeps it: a plain one's value, or the machines a secret's node holds it on.",
       "properties": {
         "kind": {
-          "$ref": "#/$defs/EnvVarKind"
+          "$ref": "#/$defs/McpValueKind"
         },
         "name": {
           "$ref": "#/$defs/McpValueName"
@@ -13003,6 +13024,27 @@
         "value": {
           "$ref": "#/$defs/EnvValue",
           "description": "A plain value."
+        },
+        "itemId": {
+          "$ref": "#/$defs/VaultItemId",
+          "description": "kind vault: the item."
+        },
+        "field": {
+          "$ref": "#/$defs/McpVaultField",
+          "description": "kind vault: which value; absent, a login's password or a variable's value."
+        },
+        "prefix": {
+          "description": "kind vault: put before the value, e.g. `Bearer `.",
+          "maxLength": 64,
+          "type": "string"
+        },
+        "label": {
+          "description": "kind vault: the item's label when the server was saved.",
+          "type": "string"
+        },
+        "problem": {
+          "description": "kind vault: why agents go without it, in plain words (the item was deleted, or isn't one this server may use).",
+          "type": "string"
         }
       },
       "required": [
@@ -13010,6 +13052,26 @@
         "kind"
       ],
       "type": "object"
+    },
+    "McpValueKind": {
+      "description": "How a server's value is kept: plain, a secret sealed by the app, or a vault item the hub seals to the machines.",
+      "oneOf": [
+        {
+          "const": "plain",
+          "description": "Shown in the app and kept by the hub.",
+          "type": "string"
+        },
+        {
+          "const": "secret",
+          "description": "Write-only: only the node holds the value; the hub and the app see its fingerprint.",
+          "type": "string"
+        },
+        {
+          "const": "vault",
+          "description": "A vault item's value, which the hub seals to each machine that runs the server, again whenever it changes.",
+          "type": "string"
+        }
+      ]
     },
     "McpValueName": {
       "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$",
@@ -13078,8 +13140,44 @@
             "name"
           ],
           "type": "object"
+        },
+        {
+          "description": "A vault item's value: the hub opens it and seals it to each machine that runs the server, logging each use. A\nglobal server takes a team login; a project's own server also that project's variables.",
+          "properties": {
+            "kind": {
+              "const": "vault",
+              "type": "string"
+            },
+            "name": {
+              "$ref": "#/$defs/McpValueName"
+            },
+            "itemId": {
+              "$ref": "#/$defs/VaultItemId"
+            },
+            "field": {
+              "$ref": "#/$defs/McpVaultField"
+            },
+            "prefix": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "itemId"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "McpVaultField": {
+      "description": "Which of a vault item's values: a login's password, or a variable's value.",
+      "enum": [
+        "password",
+        "value"
+      ],
+      "type": "string"
     },
     "MemoryCaps": {
       "description": "What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap\nstays as it is until it is next written.",

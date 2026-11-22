@@ -4631,6 +4631,8 @@ export type McpServer = {
    * `Authorization` header. None: a key or nothing.
    */
   oauth?: McpOauth;
+  /** A global server's bots: their sessions get it, no other's. Absent: every bot's; empty: none. A project's own server ignores it. */
+  projects?: ProjectRef[];
   roles: McpRoles;
   scope: McpScope;
   transport: McpTransport;
@@ -4660,6 +4662,8 @@ export type McpServerSetInput = {
   /** The tools the person marked as only reading, for the hub's tool policy. */
   integration?: McpIntegration;
   name: McpServerName;
+  /** A global server's bots: their sessions get it, no other's. Absent: every bot's; empty: none. A project's own server ignores it. */
+  projects?: ProjectRef[];
   /**
    * "Agents get it too": writers or reviewers gives it to the lead and every agent, else the lead alone (an older
    * app's other picks are saved as that).
@@ -4730,6 +4734,8 @@ export type McpTestResult = {
   /** The server wants the person to sign in (OAuth), not a key: the app offers Sign in. */
   signIn?: boolean;
   tools?: McpToolInfo[];
+  /** The server is on the team's tailnet and was reached through Tailscale. */
+  via?: "tailnet";
 };
 
 /** One tool a server lists. */
@@ -4761,13 +4767,26 @@ export type McpUrl = string;
 
 /** One env variable or header as the hub keeps it: a plain one's value, or the machines a secret's node holds it on. */
 export type McpValue = {
-  kind: EnvVarKind;
+  /** kind vault: which value; absent, a login's password or a variable's value. */
+  field?: McpVaultField;
+  /** kind vault: the item. */
+  itemId?: VaultItemId;
+  kind: McpValueKind;
+  /** kind vault: the item's label when the server was saved. */
+  label?: string;
   name: McpValueName;
+  /** kind vault: put before the value, e.g. `Bearer `. */
+  prefix?: string;
+  /** kind vault: why agents go without it, in plain words (the item was deleted, or isn't one this server may use). */
+  problem?: string;
   /** A secret's: each machine whose node holds it. A project server's, its machine. */
   sealedOn?: McpSealedOn[];
   /** A plain value. */
   value?: EnvValue;
 };
+
+/** How a server's value is kept: plain, a secret sealed by the app, or a vault item the hub seals to the machines. */
+export type McpValueKind = "plain" | "secret" | "vault";
 
 export type McpValueName = string;
 
@@ -4783,7 +4802,16 @@ export type McpValueSet = {
 } | {
   kind: "keep";
   name: McpValueName;
+} | {
+  field?: McpVaultField;
+  itemId: VaultItemId;
+  kind: "vault";
+  name: McpValueName;
+  prefix?: string;
 };
+
+/** Which of a vault item's values: a login's password, or a variable's value. */
+export type McpVaultField = "password" | "value";
 
 /**
  * What memory writes are held to, in characters. A write past a cap is refused; a file already past a lowered cap
