@@ -79,7 +79,7 @@ describe.if(linux)("on Linux", () => {
     const kept = await leftover({ TMPDIR: other }, "", [join(scratch, "out.log")]);
     const adopted = await leftover({ TMPDIR: scratch }, "");
     try {
-      const found = await killOrphans(home.dir, new Set([adopted.child.pid, adopted.sleep]));
+      const found = await killOrphans(home.dir, { hosts: [adopted.child.pid], sessions: new Set() });
       // The three, and the sleeps that inherited the scratch TMPDIR.
       expect(found).toBe(5);
       await Promise.all([byEnv.child.exited, byArg.child.exited]);
@@ -93,6 +93,44 @@ describe.if(linux)("on Linux", () => {
         l.child.kill("SIGKILL");
         process.kill(l.sleep, "SIGKILL");
       }
+      home.done();
+    }
+  });
+
+  /** On Nov 22 a node's start took a CLI a test had just started (66 ms old) and a box's bootstrap for orphans, and
+   * SIGTERM'd them: the node had read what each re-adopted session ran as it re-adopted it, before the sweep looked. */
+  test("a re-adopted session's processes are spared as the sweep finds them: one started after its re-adoption, and one of its marker", async () => {
+    const home = tempHome();
+    const scratch = join(home.dir, "tmp", "0a1b");
+    mkdirSync(scratch, { recursive: true });
+    // A session host re-adopted with nothing under it yet, which starts a process before the sweep runs.
+    const host = Bun.spawn(["sh", "-c", "read go; sleep 30 & echo $!; wait"], {
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", TMPDIR: scratch },
+      stdin: "pipe",
+      stdout: "pipe",
+    });
+    const reader = host.stdout.getReader();
+    host.stdin.write("go\n");
+    host.stdin.flush();
+    let out = "";
+    while (!out.includes("\n")) out += new TextDecoder().decode((await reader.read()).value);
+    const late = Number(out.trim());
+    // A process of a re-adopted session outside its host's tree (a double fork's), and one of a session gone.
+    const marked = await leftover({ TMPDIR: scratch, FLEETD_RUNNER_SESSION: marker("s-adopted") }, "");
+    const gone = await leftover({ TMPDIR: scratch, FLEETD_RUNNER_SESSION: marker("s-gone") }, "");
+    try {
+      expect(await killOrphans(home.dir, { hosts: [host.pid], sessions: new Set(["s-adopted"]) })).toBe(2);
+      await gone.child.exited;
+      expect(gone.child.signalCode).toBe("SIGTERM");
+      for (const p of [host.pid, late, marked.child.pid, marked.sleep]) expect(alive(p)).toBe(true);
+    } finally {
+      host.kill("SIGKILL");
+      for (const p of [late, marked.sleep, gone.sleep]) {
+        try {
+          process.kill(p, "SIGKILL");
+        } catch {}
+      }
+      marked.child.kill("SIGKILL");
       home.done();
     }
   });

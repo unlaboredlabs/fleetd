@@ -31,7 +31,6 @@ import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "
 import { type HostedStep, startStep, stepNow, stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
-import { descendants, table } from "../runner/procs.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
 import { buildJobsHere } from "../load/index.ts";
 import { removePartials } from "../repos/index.ts";
@@ -455,8 +454,9 @@ export class SessionService {
     const service = new SessionService(new NodeStore(join(config.home, "sessions.sqlite")), config);
     const hosts = join(config.home, "hosts");
     const adopted = new Set<string>();
-    // The processes of re-adopted sessions: their hosts and everything under them, which the orphan sweep spares.
-    const protectedPids = new Set<number>();
+    // The hosts of re-adopted sessions: the orphan sweep spares them, everything under them and every process carrying
+    // their sessions' markers, as it finds them then.
+    const adoptedHosts: number[] = [];
     // Sessions whose claude went with the last node while a Monitor of theirs was kept: woken once the sweep below is
     // done, or it would stop the host each wake starts.
     const lost: string[] = [];
@@ -474,7 +474,7 @@ export class SessionService {
             service.#adopt(row, link);
             adopted.add(id);
             const host = readRegistration(dir)?.hostPid;
-            if (host) for (const pid of [host, ...descendants(table(), host).map((p) => p.pid)]) protectedPids.add(pid);
+            if (host) adoptedHosts.push(host);
             console.log(`${nowIso()} INFO re-adopted a session that ran on through the restart {"sessionId":"${id}","pid":${link.pid}}`);
             continue;
           }
@@ -502,7 +502,7 @@ export class SessionService {
     // The rest of what the VMs left (their tools, disks and homes), now that each one's transcript is back here.
     const vmLeft = sweepVm(config.home);
     if (vmLeft) console.log(`${nowIso()} INFO removed what local VMs left on this machine {"entries":${vmLeft}}`);
-    const killed = await killOrphans(config.home, protectedPids);
+    const killed = await killOrphans(config.home, { hosts: adoptedHosts, sessions: adopted });
     if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
     // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept).
     const keep = scratchKept(service.store.sessions(), adopted, Date.now());

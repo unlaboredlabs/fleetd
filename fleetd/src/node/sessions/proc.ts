@@ -32,15 +32,32 @@ export function orphaned(args: string[], env: string[], roots: string[]): boolea
 /** Stops what sessions and screens of a node that went away left running, with everything they started: as the node
  * starts, before any session of its own runs, no live session owns them (the Oct 26 headless Chrome, its profile
  * under a session's scratch dir, ran on for days). SIGTERM first, SIGKILL to those still there after the grace. Never
- * one of `keep`: the processes of sessions the node re-adopted. How many it found. Linux only: elsewhere a process's
- * environment can't be read here. */
-export async function killOrphans(home: string, keep: Set<number>, graceMs = ORPHAN_GRACE_MS): Promise<number> {
+ * a process of a session the node re-adopted (`adopted`): one under its host, or one carrying its marker. Both are read
+ * from the same look at the process table the orphans come from: re-adopted sessions run on while the node starts, and
+ * a process one started after an earlier look (a test's CLI, a box's bootstrap, on Nov 22) was taken for an orphan and
+ * got SIGTERM. How many it found. Linux only: elsewhere a process's environment can't be read here. */
+export async function killOrphans(
+  home: string,
+  adopted: { hosts: number[]; sessions: Set<string> },
+  graceMs = ORPHAN_GRACE_MS,
+): Promise<number> {
   if (process.platform !== "linux") return 0;
   const roots = orphanRoots(home);
   const procs = table();
-  const found = procs.filter((p) => p.pid !== process.pid && !p.zombie && !keep.has(p.pid) && orphaned(...argsAndEnv(p.pid), roots));
+  const hosts = new Set(adopted.hosts.flatMap((h) => [h, ...descendants(procs, h).map((p) => p.pid)]));
+  const prefix = `${SESSION_MARKER}=`;
+  const spared = (p: Proc, env: string[]) => {
+    if (p.pid === process.pid || hosts.has(p.pid)) return true;
+    const marker = env.find((v) => v.startsWith(prefix));
+    return marker !== undefined && adopted.sessions.has(markerSession(marker.slice(prefix.length)) ?? "");
+  };
+  const found = procs.filter((p) => {
+    if (p.zombie) return false;
+    const [args, env] = argsAndEnv(p.pid);
+    return !spared(p, env) && orphaned(args, env, roots);
+  });
   const count = found.length;
-  const all = dedupe([...found, ...found.flatMap((p) => descendants(procs, p.pid))]).filter((p) => p.pid !== process.pid && !keep.has(p.pid));
+  const all = dedupe([...found, ...found.flatMap((p) => descendants(procs, p.pid))]).filter((p) => !spared(p, argsAndEnv(p.pid)[1]));
   if (!all.length) return 0;
   signal(all, "SIGTERM");
   if (!(await gone(all, graceMs))) signal(all, "SIGKILL");
