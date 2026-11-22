@@ -5,7 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { chat } from "../src/hub/chat/index.ts";
-import { leads } from "../src/hub/leads/index.ts";
+import { leads, STARTED_AGAIN } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
 import { profiles } from "../src/hub/projects/profiles.ts";
@@ -269,4 +269,6 @@ test("a lead that switches profile starts on the chat it carries on, not on the 
   expect(prompts[0]).toContain("## Recent chat\nYour session started fresh");
   expect(prompts[0]).toMatch(/^Human \([^)]*\): retry the Tern import$/m);
   expect(prompts[0]).toMatch(/^You \([^)]*\): Retrying it now\.$/m);
+  // It ends saying nothing new waits, not on a turn-shaped line that invites the next one.
+  expect(prompts[0]!.trimEnd().endsWith(`Retrying it now.\n\n${STARTED_AGAIN}`)).toBe(true);
 });

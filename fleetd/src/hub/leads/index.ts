@@ -41,6 +41,12 @@ const RECENT_CHAT = 12;
 const RECENT_CHAT_CHARS = 500;
 /** The most of a file's name a recap line carries. */
 const RECENT_CHAT_NAME = 80;
+/**
+ * The last line of a session started again with no wake behind it (a profile switch, `lead_start {fresh: true}`): its
+ * recent chat ends on turn-shaped lines, which invite a model to write the next one itself.
+ */
+export const STARTED_AGAIN =
+  "Nothing new is waiting: this is your session starting again, and every message above was already seen and handled. Act only on a wake or on a person's new message, and never write one for them.";
 
 export class Leads {
   readonly records: LeadRecords;
@@ -195,7 +201,7 @@ export class Leads {
     return this.locked(async () => {
       const existing = this.records.leadGet(r);
       if (!existing) throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no lead to restart.`, "Call lead_start first.");
-      return this.launch(r, this.projectOf(r), existing.sessionGeneration + 1, this.recentChat(r));
+      return this.launch(r, this.projectOf(r), existing.sessionGeneration + 1, this.startedAgain(r));
     });
   }
 
@@ -340,7 +346,7 @@ export class Leads {
       const idle = this.idle(r);
       // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
       // nothing to answer, and it made up a message from the person (W787).
-      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1, this.recentChat(r)) : undefined;
+      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1, this.startedAgain(r)) : undefined;
     });
   }
 
@@ -400,6 +406,12 @@ export class Leads {
       .filter((w) => w.brief === undefined && w.source.text.trim() !== w.title.trim())
       .map((w) => ({ kind: "intent" as const, workstreamId: w.workstreamId, text: w.source.text }));
     return triggers.length === 0 ? undefined : `Orders waiting for you:\n${triggerLines(triggers).join("\n")}`;
+  }
+
+  /** A session started again with no wake behind it: its recent chat, then that nothing new waits (STARTED_AGAIN). */
+  private startedAgain(r: ProjectRef): string {
+    const chatTail = this.recentChat(r);
+    return chatTail === undefined ? STARTED_AGAIN : `${chatTail}\n\n${STARTED_AGAIN}`;
   }
 
   /** The project's last few chat messages between the human, the lead and agents, for a fresh lead session. */

@@ -1,7 +1,7 @@
 // The leads area's reads (`lead_state`), and what a fresh lead session is told of the chat before it.
 import { expect, test } from "bun:test";
 import { chat } from "../src/hub/chat/index.ts";
-import { LEAD_FRESH_AFTER_MS, leadProfile, leads } from "../src/hub/leads/index.ts";
+import { LEAD_FRESH_AFTER_MS, leadProfile, leads, STARTED_AGAIN } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -76,6 +76,8 @@ test("a message to a lead whose thread is gone starts it fresh, however recently
   const fresh = await leads(hub).freshIfDue(PROJECT, "Human: continue");
   expect(fresh?.threadId).toBe("lead-2");
   expect(prompts[1]).toContain("Human: continue");
+  // A wake follows its recent chat: it never says nothing new waits.
+  expect(prompts[1]).not.toContain(STARTED_AGAIN);
   hub.shutdown.abort();
   done();
 });
@@ -131,6 +133,7 @@ test("a lead restarted fresh starts on the chat it carries on, not on the digest
   chat(hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
   await leads(hub).restart(PROJECT);
   expect(prompts[1]).toMatch(/^Human \([^)]*\): is the docs page gone\?$/m);
+  expect(prompts[1]!.trimEnd().endsWith(`is the docs page gone?\n\n${STARTED_AGAIN}`)).toBe(true);
   hub.shutdown.abort();
   done();
 });

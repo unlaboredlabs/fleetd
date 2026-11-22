@@ -933,9 +933,9 @@ To move every lead to it at once, an admin clicks **Restart hub…** on the hub'
 [Settings › Hubs & devices](/docs/several-hubs#restart). Once the hub is back, each lead whose profile changed since it started
 (another profile picked, or its model, effort or fast mode edited) starts again on the current one, as
 `lead_start {fresh: true}` does: it keeps its chat, memory and open orders, and its first turn reads the last few
-chat messages. A lead in the middle of a turn switches when the turn ends, and one whose machine is offline when it
-comes back. Leads already on the current profile carry on as they were. Only that button does this: the hub's restart
-for an update switches no lead.
+chat messages, marked as already handled. A lead in the middle of a turn switches when the turn ends, and one whose
+machine is offline when it comes back. Leads already on the current profile carry on as they were. Only that button
+does this: the hub's restart for an update switches no lead.
 
 ```text
 $ fleetd project profile lead --model claude-opus-5-5 --effort xhigh --lead --key-file ~/.fleetd/human.key
