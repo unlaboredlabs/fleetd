@@ -2,10 +2,10 @@
 // current patch and green on its own head by its fast set and by the checks the batch's CI skips, up to `BATCH_MAX`
 // in queue order, merged together after one CI run. The train builds the batch on GitHub: its scratch branch at the
 // base, each member's head merged into it in order, and one PR for it. Green, the train posts `fleetd/train` on that
-// head and squash-merges the batch PR pinned to it; each member is then closed with a link. Red, timed out or refused,
+// head and squash-merges the batch PR pinned to it; each member is then closed with a link and the `merged` label. Red, timed out or refused,
 // every member goes alone. The next pass's sweep deletes the scratch branch, which closes a batch PR left open.
 import type { Change, ChangeState } from "../../shared/contracts.ts";
-import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, NEXT_LABEL, type Pull } from "./github.ts";
+import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, MERGED_LABEL, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { DRAFT, errorText } from "./records.ts";
@@ -27,6 +27,9 @@ const NO_CI_HELD = "held: this repo has no CI";
 export const NO_CI_ALONE = "this repo has no CI, so each PR merges alone once its review approves it";
 const MEMBER_LEFT = "a PR left the batch while it formed; the next pass forms it again";
 const NOT_CLOSED = "landed, but its PR is not closed yet";
+/** GitHub's own colour for a merged PR. */
+const MERGED_COLOR = "8250df";
+const MERGED_ABOUT = "Merged by the fleetd merge train in a batch commit";
 /** The trailer that names a Change on the squash that lands it (contracts `metrics::CHANGE_TRAILER`). */
 export const CHANGE_TRAILER = "Fleetd-Change";
 
@@ -775,7 +778,7 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
   }
 }
 
-/** Merged in `landed`: recorded as merged with the batch's squash, and its own PR closed with a link to it. */
+/** Merged in `landed`: recorded as merged with the batch's squash, and its own PR closed and marked merged. */
 export async function finishBatchMember(t: Train, change: Change, landed: Landed): Promise<void> {
   let pull: Pull;
   try {
@@ -791,20 +794,24 @@ export async function finishBatchMember(t: Train, change: Change, landed: Landed
     return;
   }
   // Recorded as not closed with the merge itself: a hub gone between the two (a restart) leaves reconcile the close.
-  const open = pull.state === "open";
-  await t.finishMerged(change, landed.mergedSha, landed, open ? NOT_CLOSED : undefined);
-  if (open) await closeMember(t, change, landed);
+  // One a person closed meanwhile is marked merged all the same.
+  await t.finishMerged(change, landed.mergedSha, landed, NOT_CLOSED);
+  await closeMember(t, change, landed);
 }
 
 /**
- * Closes a landed member's PR with a link to its batch, its comment once however often it is tried; a failure stays
- * on the Change for reconcile to retry.
+ * Closes a landed member's PR as merged: the `merged` label and a comment naming the batch's commit, since GitHub
+ * shows it Closed. Its comment goes out once however often it is tried; a failure stays on the Change for reconcile.
  */
 async function closeMember(t: Train, change: Change, landed: Landed): Promise<void> {
   const others = landed.members.filter((n) => n !== change.prNumber).map((n) => `#${n}`);
-  const comment = `Landed in #${landed.prNumber} (${short(landed.mergedSha)}) by the fleetd merge train: merged together with ${others.join(", ")} after one CI run on the batch.`;
+  const comment =
+    `Merged by the train in ${short(landed.mergedSha)}: the fleetd merge train landed it in batch #${landed.prNumber} together with ` +
+    `${others.join(", ")} after one CI run on the batch, so GitHub shows it Closed, not Merged.`;
   let failure: string | undefined;
   try {
+    await t.github.createLabel(change.repo, MERGED_LABEL, MERGED_COLOR, MERGED_ABOUT);
+    await t.github.addLabel(change.repo, change.prNumber, MERGED_LABEL);
     await t.github.close(change.repo, change.prNumber, comment, true);
   } catch (error) {
     failure = (error as Error).message;
