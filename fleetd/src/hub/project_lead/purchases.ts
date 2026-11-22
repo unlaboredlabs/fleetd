@@ -171,7 +171,7 @@ export function register(tools: Registry): void {
         : [],
     );
     const next = !paysWith
-      ? "No card yet: pick a card from the vault (Settings › Payments, then project_card_set) so the bot can " +
+      ? "No card yet: pick a card from the vault (the bot's Settings › Payments, then project_card_set) so the bot can " +
         "pay; each purchase is recorded, with no ask."
       : list.length === 0
         ? "No purchases yet."

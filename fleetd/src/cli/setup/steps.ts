@@ -90,14 +90,14 @@ export function unowned(checks: any[], steps: any[]): any[] {
 
 function placeWords(place: string): string {
   if (place === "claude") {
-    return "Settings › Hub › Setup › Claude for the hub's API key; Settings › Your accounts › Claude for your own subscription";
+    return "Settings › Hub › Setup › Claude for the hub's API key; Settings › Accounts › Claude for your own subscription";
   }
   const names: Record<string, string> = {
     github: "Hub › Setup › GitHub",
     invites: "Hub › People",
     people: "Hub › People",
     machines: "Hub › Machines",
-    onepassword: "Your accounts › 1Password",
+    onepassword: "Accounts › 1Password",
   };
   return `Settings › ${names[place] ?? place}`;
 }

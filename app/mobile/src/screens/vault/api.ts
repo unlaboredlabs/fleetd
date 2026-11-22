@@ -216,7 +216,7 @@ export const touchesVault = (event: { readonly type: string }): boolean => event
 /** The hub's reasons a vault call failed, in the person's words. */
 export const vaultErrorWords = (e: HubError): string | undefined => {
   const reason = e.reason;
-  if (reason === "vault_locked") return "The vault is locked. An owner unlocks it in the desktop app, under Settings › You › Vault.";
+  if (reason === "vault_locked") return "The vault is locked. An owner unlocks it in the desktop app, under Settings › Vault.";
   if (reason === "vault_rate_limited") return "Too many reveals in the last hour. Try again later.";
   if (reason === "vault_key_missing") return "The vault's key is missing on the hub. An owner restores it with the recovery code.";
   if (reason === "vault_update_app") return "This app is older than the hub. Update it to add vault items.";

@@ -32,7 +32,7 @@ export interface StartActions {
   readonly onHostedRetry?: () => void;
   readonly onClaudeLogin?: () => void;
   readonly onClaudeCode?: (code: string) => void;
-  /** Settings › Your accounts › Claude: the account hosted sandboxes' agents run on. */
+  /** Settings › Accounts › Claude: the account hosted sandboxes' agents run on. */
   readonly onClaudeAccount?: () => void;
   /** The hub's API key, sealed to every machine, with the endpoint the hub keeps (none for Anthropic's own). */
   readonly onClaudeKey?: (endpoint: string | undefined, key: string) => void;

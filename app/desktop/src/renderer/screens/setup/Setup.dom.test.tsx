@@ -258,7 +258,7 @@ describe("setup", () => {
     expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Hub › Setup › Claude")).toBe(false);
     // Done, so its guide folds under the controls.
     await click(button("Show the guide"));
-    await click(button("Open Your accounts"));
+    await click(button("Open Accounts"));
     expect(window.location.hash).toContain("settings/accounts");
   });
 
@@ -393,7 +393,7 @@ describe("Settings › Hub › Setup", () => {
     expect(pane()?.textContent).toContain("Create the App");
     // Not done yet, so its guide is open under them; the hub's side is this page, so only yours is a button.
     expect(pane()?.textContent).toContain("fleetd github-app create");
-    expect([...(pane()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith("Open "))).toEqual(["Open Your accounts"]);
+    expect([...(pane()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith("Open "))).toEqual(["Open Accounts"]);
     await click(button("Test"));
     expect(calls.filter((c) => c.tool === "setup_test")).toEqual([{ tool: "setup_test", input: { step: "github" } }]);
     expect(pane()?.textContent).toContain("is installed on acme (2 repositories), and its tokens work.");
@@ -475,7 +475,7 @@ describe("Settings › Hub › Setup", () => {
     // checks for Claude.
     await click(button("Show the guide"));
     expect(pane()?.textContent).toContain("Give the hub an API key");
-    expect([...(pane()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith("Open "))).toEqual(["Open Your accounts"]);
+    expect([...(pane()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith("Open "))).toEqual(["Open Accounts"]);
     expect(tests()).toHaveLength(2);
     await click(tests()[1] as HTMLElement);
     expect(calls.filter((c) => c.tool === "setup_test").map((c) => c.input)).toEqual([{ step: "claude" }]);

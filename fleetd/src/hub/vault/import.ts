@@ -39,7 +39,7 @@ function holder(hub: Hub, person: string, want?: string): string | undefined {
 
 const noToken = (hub: Hub, person: string) =>
   token(hub.db, person) === undefined
-    ? "No 1Password token is saved: add one in Settings › You › Your accounts › 1Password to import from it."
+    ? "No 1Password token is saved: add one in Settings › Accounts › 1Password to import from it."
     : "No machine holding the 1Password token is online with a node new enough to read it.";
 
 /** The items already imported from each `op://` reference, among those `person` sees. */

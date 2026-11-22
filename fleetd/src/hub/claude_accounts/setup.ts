@@ -35,7 +35,7 @@ const accountText = (a: ClaudeAccount) => (a.kind === "hub" ? "The hub's API key
 const connectText = (a: ClaudeAccount) =>
   a.kind === "hub"
     ? "Save the hub's API key on the Hub pages of the app's Settings"
-    : "Connect the subscription in Settings › Your accounts › Claude";
+    : "Connect the subscription in Settings › Accounts › Claude";
 
 /** The hub's Claude setup at one moment: what a launch's account is decided from. */
 export class Setup {
@@ -105,14 +105,14 @@ export class Setup {
   /** What someone with no way to run does, in their own settings. */
   private connectFix(person: string): string {
     const subscribe =
-      "connect your subscription in Settings › Your accounts › Claude (paste the token `claude setup-token` prints)";
+      "connect your subscription in Settings › Accounts › Claude (paste the token `claude setup-token` prints)";
     const choice = this.choices.get(person);
     if (choice === "hub_api" && this.hubApi === undefined) {
       return `The hub has no API key yet: ${subscribe}, or ask an admin to add one on the Hub pages of the app's Settings.`;
     }
     if (choice === "hub_api") return `Members may not use the hub's API on this hub: ${subscribe}, or ask an admin.`;
     if (this.hubApi !== undefined && !this.mayUseHubApi(person)) return `Members may not use the hub's API on this hub: ${subscribe}.`;
-    return `Open Settings › Your accounts › Claude and ${subscribe}.`;
+    return `Open Settings › Accounts › Claude and ${subscribe}.`;
   }
 
   /** A person's setup as the tools show it. */

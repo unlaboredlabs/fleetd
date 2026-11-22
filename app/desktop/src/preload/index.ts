@@ -169,7 +169,7 @@ const api: FleetdApi = {
     billingCap: (hub, capCents) => ipcRenderer.invoke(IPC.cloudBillingCap, hub, capCents) as Promise<BillingCapOutcome>,
     // Get started is the web app's: the desktop lists repos and connects GitHub from New bot and Settings.
     githubRepos: () => Promise.resolve<GithubReposOutcome>({ ok: false, failure: { code: "desktop", message: "The desktop app lists repositories in New bot." } }),
-    connectGithub: () => Promise.resolve<ConnectGithubOutcome>({ ok: false, failure: { code: "desktop", message: "Connect GitHub in Settings › Your accounts › GitHub." } }),
+    connectGithub: () => Promise.resolve<ConnectGithubOutcome>({ ok: false, failure: { code: "desktop", message: "Connect GitHub in Settings › Accounts › GitHub." } }),
   },
   system: {
     hostName: () => ipcRenderer.invoke(IPC.systemHostName) as Promise<string>,

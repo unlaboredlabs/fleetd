@@ -105,7 +105,7 @@ configuration**. They can switch at any time.
 
 In the app:
 
-- **Settings › Your accounts › Claude** is each person's own. *In use* says what your orders run on now, or "Connect
+- **Settings › Accounts › Claude** is each person's own. *In use* says what your orders run on now, or "Connect
   your Claude to start orders" with what to do. *Runs on* picks your subscription or the hub's API key, and shows only
   when the hub's key is yours to pick. *Your subscription* takes the token: paste it and press Connect and test. The
   app seals it on your computer to every machine and never shows it again. Test, Replace and Disconnect are beside it.
@@ -121,13 +121,13 @@ The hub's tools are `claude_accounts_get`, `claude_hub_api_set`, `claude_hub_api
 `claude_subscription_set`, `claude_subscription_remove`, `claude_choice_set` and `claude_account_test`. See
 [Security](/docs/security#claude) for how keys and tokens are kept.
 
-**Settings › You › Vault** is the hub's one team vault ([Vault](/docs/vault)): every login, card and address, listed for
+**Settings › Vault** is the hub's one team vault ([Vault](/docs/vault)): every login, card and address, listed for
 everyone and filled by every bot's agents. Anyone adds one; its creator or an owner or admin shows, changes or
 deletes it. A person removed from the hub leaves theirs behind for admins to manage. Variables are each bot's. The
 only items that are a person's alone are those the [upgrade to one team vault](/docs/vault#team-vault) set aside on a
 hub with several people: nobody else lists them, admins included, and they go with their person when removed.
 
-**Settings › Your accounts › 1Password** is optional: a 1Password service account token to [import from into the
+**Settings › Accounts › 1Password** is optional: a 1Password service account token to [import from into the
 vault](/docs/vault#import) (see [Logins from 1Password](/docs/browser-sessions#1password)). Its tools are
 `onepassword_get`, `onepassword_set`, `onepassword_remove` and `onepassword_test`.
 

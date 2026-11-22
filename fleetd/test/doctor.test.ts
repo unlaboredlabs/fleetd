@@ -248,7 +248,7 @@ test("the 1Password check passes on one vault and says what to do on more", () =
   );
   expect(fix.label.startsWith("Bob makes a service account for only fleetd's vault")).toBe(true);
   expect(fix.label).toContain("(https://start.1password.com/developer-tools/active)");
-  expect(fix.label).toContain("Settings › Your accounts › 1Password and revokes the old one");
+  expect(fix.label).toContain("Settings › Accounts › 1Password and revokes the old one");
   expect(at([["Ann", t([])]])![0]).toBe("warn");
   // Two as bad: both named.
   const both = at([["Ann", t(["A", "B"])], ["Bob", t(["C", "D"])]])![1] as string;

@@ -94,7 +94,7 @@ export type End =
  * machine's own login): where it is reconnected, and that the lead then carries on by itself. */
 export function signedOutLine(account: ClaudeAccount | undefined): string {
   if (account?.kind === "hub") return "The hub's Claude API key stopped working for this bot: an admin replaces it in Settings › Hub › Setup › Claude. The lead carries on by itself once it is.";
-  if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Your accounts › Claude. The lead carries on by itself once it is.";
+  if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is.";
   return "Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message.";
 }
 

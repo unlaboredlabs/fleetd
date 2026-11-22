@@ -16,9 +16,9 @@ export interface SettingsOption {
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   general: "General",
-  accounts: "Your accounts",
+  accounts: "Accounts",
   vault: "Vault",
-  "your-memory": "Your memory",
+  "your-memory": "Memory",
   devices: "Your devices",
   hubs: "Hubs & devices",
   projects: "Bot",

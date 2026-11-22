@@ -24,6 +24,8 @@ paths=(
   package.json app/desktop/src/shared/hub.ts app/desktop/src/shared/hubs.ts app/desktop/src/shared/pairing.ts
   app/desktop/src/shared/accounts.ts app/mobile/src/hub/pairLink.ts app/mobile/src/pushPayload.ts app/mobile/src/bytes.ts
   app/mobile/src/projectKey.ts
+  # The Settings pages the hub's paths for a person must name (fleetd/test/settings_paths.test.ts).
+  app/desktop/src/shared/settingsPages.ts
 )
 
 run=true

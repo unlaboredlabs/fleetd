@@ -51,7 +51,7 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.accounts",
-    title: "Your accounts",
+    title: "Accounts",
     detail: "The Claude account and GitHub your work runs on",
     group: "settings",
     keywords: ["claude", "github", "account", "subscription", "connections"],
@@ -59,7 +59,7 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.your-memory",
-    title: "Your memory",
+    title: "Memory",
     detail: "How you work, as the leads remember it: yours alone",
     group: "settings",
     keywords: ["memory", "remember", "forget", "preferences"],

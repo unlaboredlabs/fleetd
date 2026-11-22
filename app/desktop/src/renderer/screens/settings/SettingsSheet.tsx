@@ -32,6 +32,7 @@ import { Button, cx, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
 import { useBillingShown } from "../admin/Billing";
+import { HUB_PAGES as HUB_PAGES_SHOWN, YOU_PAGES } from "../../../shared/settingsPages";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
@@ -55,11 +56,11 @@ import n from "./sheet.module.css";
 
 /** You's pages, by their short names in the index. */
 const YOU: ReadonlyArray<{ tab: Tab; label: string; icon: ReactNode }> = [
-  { tab: "general", label: "General", icon: <SlidersHorizontal /> },
-  { tab: "accounts", label: "Accounts", icon: <UserRound /> },
-  { tab: "vault", label: "Vault", icon: <LockKeyhole /> },
-  { tab: "your-memory", label: "Memory", icon: <Brain /> },
-  { tab: "hubs", label: "Hubs & devices", icon: <MonitorSmartphone /> },
+  { tab: "general", label: YOU_PAGES.general, icon: <SlidersHorizontal /> },
+  { tab: "accounts", label: YOU_PAGES.accounts, icon: <UserRound /> },
+  { tab: "vault", label: YOU_PAGES.vault, icon: <LockKeyhole /> },
+  { tab: "your-memory", label: YOU_PAGES.memory, icon: <Brain /> },
+  { tab: "hubs", label: YOU_PAGES.hubs, icon: <MonitorSmartphone /> },
 ];
 
 /** The Hub group's pages; Every bot opens on its first tab. */
@@ -68,11 +69,11 @@ const HUB_PAGES: ReadonlyArray<{
   label: string;
   icon: ReactNode;
 }> = [
-  { tab: "hub.people", label: "People", icon: <Users /> },
-  { tab: "hub.machines", label: "Machines", icon: <Server /> },
-  { tab: "hub.billing", label: "Billing", icon: <CreditCard /> },
-  { tab: "hub.profiles", label: "Every bot", icon: <Layers /> },
-  { tab: "hub.setup", label: "Setup", icon: <ListChecks /> },
+  { tab: "hub.people", label: HUB_PAGES_SHOWN.people, icon: <Users /> },
+  { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
+  { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
+  { tab: "hub.profiles", label: HUB_PAGES_SHOWN.everyBot, icon: <Layers /> },
+  { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];
 
 /** The bots the index lists by name; past them, All bots has the rest. */

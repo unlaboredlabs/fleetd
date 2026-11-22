@@ -76,7 +76,7 @@ export class Credentials {
       throw new ToolError(
         "failed",
         `There is no 1Password service account token for this work (${TOKEN_ENV}).`,
-        "ask your lead: the person whose order this is saves a service account token that can read the item's vault in the app's Settings › Your accounts › 1Password, or a person enters one with request_secret as a bot or order variable",
+        "ask your lead: the person whose order this is saves a service account token that can read the item's vault in the app's Settings › Accounts › 1Password, or a person enters one with request_secret as a bot or order variable",
       );
     }
     const vault = { vault: this.vaultFor(token), cache: new Cache() };

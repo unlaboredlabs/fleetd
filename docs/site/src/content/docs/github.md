@@ -79,7 +79,7 @@ Work the hub does on GitHub then appears as the App, `fleetd-on-devbox[bot]`.
 
 ## Your own GitHub {#connect}
 
-In **Settings › Your accounts › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
+In **Settings › Accounts › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
 answer on this computer (`127.0.0.1`), and the hub keeps your token sealed and renews it. You never see it, and
 nobody else's work uses it.
 
@@ -109,7 +109,7 @@ that same value: it is told so in its first message, and its token reaches its n
 GitHub answers (every 5 minutes). Each repo the order works in gets its own: the App's token for that repo's owner,
 and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
 
-If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Your accounts › GitHub says so, with
+If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Accounts › GitHub says so, with
 **Connect again**. **Disconnect** revokes the token at GitHub and forgets it. Your open orders' agents then hold a
 value GitHub refuses, so their `gh` fails (never falling back to the machine's login) and the order's lead asks you to
 connect again; they get your token back at their next command once you do. GitHub lapsing your connection, or your

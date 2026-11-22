@@ -376,7 +376,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
               Cancel
             </Button>
             <Button variant="primary" onClick={() => (onClose(), navigate({ id: "settings", tab: "accounts" }))}>
-              Open Your accounts
+              Open Accounts
             </Button>
           </>
         ) : (
@@ -392,7 +392,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       }
     >
       {noToken ? (
-        <Text size="sm">Importing reads your 1Password with your service account token, which isn&apos;t saved yet. Add it under Settings › You › Your accounts › 1Password, then come back.</Text>
+        <Text size="sm">Importing reads your 1Password with your service account token, which isn&apos;t saved yet. Add it under Settings › Accounts › 1Password, then come back.</Text>
       ) : (
         <div className={v.form}>
           <form

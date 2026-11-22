@@ -134,7 +134,7 @@ export function register(tools: Registry): void {
         throw new ToolError(
           "not_found",
           "You have no 1Password token saved.",
-          "Paste a service account token in Settings › Your accounts › 1Password first.",
+          "Paste a service account token in Settings › Accounts › 1Password first.",
         );
       }
       machineId = holding(hub, held.sealedOn, input.machineId);
@@ -155,7 +155,7 @@ export function register(tools: Registry): void {
     const cards = error === undefined && Array.isArray(out.cards) ? (out.cards as OnePasswordCard[]) : [];
     const next =
       error !== undefined
-        ? "Check the token in Settings › Your accounts › 1Password, then try again."
+        ? "Check the token in Settings › Accounts › 1Password, then try again."
         : cards.length === 0
           ? "This token reads no Credit Card item: add the card to a vault it reads in 1Password, then try again."
           : undefined;
@@ -170,7 +170,7 @@ const me = (hub: Hub, caller: Caller) =>
     new ToolError(
       "forbidden",
       "Only a person keeps a 1Password token, from one of their own devices.",
-      "Pair the app as yourself, then open Settings › Your accounts › 1Password.",
+      "Pair the app as yourself, then open Settings › Accounts › 1Password.",
     ),
   );
 

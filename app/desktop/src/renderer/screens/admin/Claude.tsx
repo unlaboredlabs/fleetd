@@ -3,7 +3,7 @@
 // own prefilled; one on the tailnet says beside it when Tailscale isn't connected, with Connect),
 // with Test, and a line under it on what leads and automations run on (the key, else the hub owner's own
 // subscription); whether members may run their work on it (on by default). Each person's account, with any usage
-// pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Your accounts ›
+// pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Accounts ›
 // Claude.
 import { useState, type ReactNode } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, UsageStatus } from "../../../shared/contracts";
@@ -276,11 +276,11 @@ function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutp
       {you ? (
         <span>
           <Button size="sm" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "accounts" }))}>
-            {sub === undefined ? "Connect yours in Settings" : "Open Your accounts › Claude"}
+            {sub === undefined ? "Connect yours in Settings" : "Open Accounts › Claude"}
           </Button>
         </span>
       ) : sub === undefined ? (
-        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Your accounts › Claude.`}</Text>
+        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Accounts › Claude.`}</Text>
       ) : null}
     </div>
   );

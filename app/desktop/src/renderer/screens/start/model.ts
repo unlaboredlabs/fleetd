@@ -12,7 +12,7 @@
 //   - Claude: the hub's API key with its endpoint (Anthropic's own prefilled; one on the tailnet wants Tailscale), or
 //     the way in each place has of its own: a computer's login (machine_claude_login: its sign-in page, then the code it
 //     shows; until then the hub has the machine degraded, "claude is not logged in"), the hosted sandboxes' the
-//     person's subscription (Settings › Your accounts › Claude);
+//     person's subscription (Settings › Accounts › Claude);
 //   - GitHub, for a bot from a repo: the person's own connection through fleetd's App and the App installed on the
 //     repos (D517), one trip to GitHub; an empty bot needs neither;
 //   - a bot: picking a repository clones it onto the computer and opens its chat with the lead.

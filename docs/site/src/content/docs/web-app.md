@@ -28,10 +28,10 @@ bot's lead. The one step still to do is open; each one done keeps a line saying 
    Claude Console; **Save** seals it on your device to every machine. An endpoint on your tailnet says so while
    Tailscale isn't connected, with **Connect Tailscale** beside it. Or, on a computer, **Claude login** (**Log in to
    Claude** opens Claude's sign-in page; paste the code it shows); for hosted sandboxes, **Subscription**, which opens
-   Settings › Your accounts › Claude.
+   Settings › Accounts › Claude.
 4. **Connect GitHub.** One trip to GitHub: you sign in, then choose the repositories fleetd's GitHub App may work on,
    and GitHub sends you back to the page. An organization member who can't install apps there asks an owner from
-   GitHub's page. **Skip** goes on without GitHub; connect later from Settings › Your accounts › GitHub.
+   GitHub's page. **Skip** goes on without GitHub; connect later from Settings › Accounts › GitHub.
 5. **Start a bot.** Pick a repository: fleetd clones it onto the computer (or for hosted sandboxes, onto the hub) and
    opens the bot's chat. **Empty bot** makes one with no repository.
 

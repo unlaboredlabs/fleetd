@@ -396,7 +396,7 @@ test.skipIf(!chrome)("without a token a fill says where a person saves one, and 
   await bare.call("session_start", { purpose: "Sign in" });
   const refused = await bare.call("fill_credential", { ref: PASSWORD_REF, target: "#pw" });
   expect(refused.error?.message).toBe("There is no 1Password service account token for this work (OP_SERVICE_ACCOUNT_TOKEN).");
-  expect(refused.error?.fix).toContain("Settings › Your accounts › 1Password");
+  expect(refused.error?.fix).toContain("Settings › Accounts › 1Password");
 
   const r = await rig();
   cleanups.push(r.done);

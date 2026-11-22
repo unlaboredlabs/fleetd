@@ -102,7 +102,7 @@
               "url": "https://console.anthropic.com/settings/keys"
             }
           ],
-          "note": "Bots' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › Your accounts › Claude. Machines need no login of their own.",
+          "note": "Bots' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › Accounts › Claude. Machines need no login of their own.",
           "title": "Give the hub an API key",
           "values": [
             {
@@ -118,7 +118,7 @@
         },
         {
           "links": [],
-          "note": "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in Settings › Your accounts › Claude; the app seals it on your device.",
+          "note": "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in Settings › Accounts › Claude; the app seals it on your device.",
           "title": "Or connect your own subscription",
           "values": [
             {
@@ -190,7 +190,7 @@
         },
         {
           "links": [],
-          "note": "Then each person connects their own GitHub in Settings › Your accounts › GitHub, so the PRs of their orders open as them.",
+          "note": "Then each person connects their own GitHub in Settings › Accounts › GitHub, so the PRs of their orders open as them.",
           "title": "Install it on the repositories fleetd works on",
           "values": []
         }
@@ -217,7 +217,7 @@
     },
     {
       "fields": [],
-      "fieldsNote": "Each person pastes their own token (it starts with ops_) in Settings › Your accounts › 1Password; the app seals it on their device to every machine. Test there lists the vaults it reads.",
+      "fieldsNote": "Each person pastes their own token (it starts with ops_) in Settings › Accounts › 1Password; the app seals it on their device to every machine. Test there lists the vaults it reads.",
       "group": "accounts",
       "id": "onepassword",
       "need": {
@@ -796,7 +796,7 @@
         "failing": false,
         "fix": {
           "kind": "manual",
-          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Your accounts › 1Password and revokes the old one"
+          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Accounts › 1Password and revokes the old one"
         },
         "said": "Sam's 1Password token reads 2 vaults (Agents, Shared logins): an agent on a machine holding it could read every item in each. Keep it to one vault with only what fleetd needs.",
         "status": "look"
@@ -833,7 +833,7 @@
         "failing": false,
         "fix": {
           "kind": "manual",
-          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Your accounts › 1Password and revokes the old one"
+          "label": "Sam makes a service account for only fleetd's vault (https://start.1password.com/developer-tools/active), pastes its token in Settings › Accounts › 1Password and revokes the old one"
         },
         "said": "Sam's 1Password token reads 2 vaults (Agents, Shared logins): an agent on a machine holding it could read every item in each. Keep it to one vault with only what fleetd needs.",
         "status": "look"

@@ -142,7 +142,7 @@ export type Limit = { provider: KnownSandboxProvider; max: number };
 export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): string => `${isProvider(p.kind) ? NAMES[p.kind] : p.kind} · ${sizeText(p)}`;
 
 /** Why a bot's agents can't have a hosted sandbox: they'd run on their machine's own Claude login, which never leaves it. */
-export const NO_ACCOUNT_HOSTED = `hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Your accounts › Claude`;
+export const NO_ACCOUNT_HOSTED = `hosted sandboxes take only agents on a Claude account, and this bot's run on its machine's own login: connect one in Settings › Accounts › Claude`;
 
 /** The bot's machine as fleetd cloud still passes it to `computerChoices` until its W760 pin move: no choice reads it. */
 export type ComputerMachine = { name: string; sandbox?: SlotSandbox; host?: { cpus: number; memGb?: number; vmGb?: number }; cap?: number };

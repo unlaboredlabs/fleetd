@@ -156,7 +156,7 @@ export async function userToken(
     if (!k) return undefined;
     if (k.account.lapsed === true) {
       return fail(
-        `GitHub no longer takes ${k.account.login}'s connection: connect GitHub again in Settings › Your accounts › GitHub`,
+        `GitHub no longer takes ${k.account.login}'s connection: connect GitHub again in Settings › Accounts › GitHub`,
       );
     }
     const open = (sealed: Uint8Array) =>
@@ -181,7 +181,7 @@ export async function userToken(
       const lapsed: GithubAccount = { ...k.account, lapsed: true };
       apps.hub.db.conn.query("UPDATE github_accounts SET data = ? WHERE person_id = ?").run(JSON.stringify(lapsed), person);
       return fail(
-        `GitHub no longer takes ${k.account.login}'s connection (${e}): connect GitHub again in Settings › Your accounts › GitHub`,
+        `GitHub no longer takes ${k.account.login}'s connection (${e}): connect GitHub again in Settings › Accounts › GitHub`,
       );
     }
     putAccount(apps, person, k.account, pair);
