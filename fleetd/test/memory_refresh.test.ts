@@ -416,7 +416,7 @@ test("automation_list carries the refresh's row for a bot the hub knows", async 
   const { hub } = setup();
   const tools = new Map<string, (hub: Hub, c: unknown, input: unknown) => unknown>();
   registerAutomationTools({ add: (n: string, h: never) => tools.set(n, h) } as unknown as Registry);
-  const listed = (r: typeof PROJECT) => tools.get("automation_list")!(hub, caller("read", true), { projectRef: r }) as Record<string, unknown>;
-  expect(listed(PROJECT).memoryRefresh).toMatchObject({ on: true, at: "04:00", tz: "UTC", nextRunAt: "2026-10-28T04:00:00.000Z" });
-  expect(listed({ ...PROJECT, projectId: "gone" }).memoryRefresh).toBeUndefined();
+  const listed = async (r: typeof PROJECT) => (await tools.get("automation_list")!(hub, caller("read", true), { projectRef: r })) as Record<string, unknown>;
+  expect((await listed(PROJECT)).memoryRefresh).toMatchObject({ on: true, at: "04:00", tz: "UTC", nextRunAt: "2026-10-28T04:00:00.000Z" });
+  expect((await listed({ ...PROJECT, projectId: "gone" })).memoryRefresh).toBeUndefined();
 });

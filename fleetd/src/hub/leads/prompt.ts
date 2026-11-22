@@ -7,7 +7,7 @@ import type { PromptSet } from "../prompts/set.ts";
 
 /** An automation's order, and the tools that manage them. */
 const AUTOMATIONS =
-  '## Automations\nAn order that says "From automation" is a run of one of this bot\'s automations: start its work without asking the human first; reviews, the train and approvals still apply. For recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` (which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`.';
+  '## Automations\nAn order that says "From automation" is a run of one of this bot\'s automations: start its work without asking the human first; reviews, the train and approvals still apply. For recurring or triggered work the human asks for, use `automation_create`, `automation_list`, `automation_update` (which also pauses and resumes one), `automation_delete`, `automation_run` and `automation_runs`. A watcher (`automation_create` with watch) looks at one thing about the person\'s own software on a schedule and says one line in the chat only when something is off: main_ci, deploys (only once the repo has GitHub deployments), or other with one plain sentence that the bot\'s connections can check. Add one only when the person asks; the first time, propose two or three from what the repo and connections show (its workflows, deployments, connected services), each with how often (15m, hour or day), and let them pick. Never a watcher for fleetd\'s own merge train, machines or spend.';
 
 /** The lead's lines while its project's chat tags are on (a trial; artifact threads-design), under "When to speak". */
 export const TAG_LINES = [

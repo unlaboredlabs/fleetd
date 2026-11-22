@@ -90,6 +90,9 @@ export type ChatInfoParams = {
   Profiles: { key: Key };
   /** The profile its lead starts on, and Restart Lead while it runs on another (LeadModel.tsx). */
   LeadModel: { key: Key };
+  /** Its watchers (Watching.tsx), and one to add or change. */
+  Watching: { key: Key };
+  Watcher: { key: Key; automationId?: string };
   /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
   Approvals: { key: Key };
   /** All that ran without asking, read in pages as it scrolls (ApprovedLog.tsx). */

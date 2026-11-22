@@ -890,6 +890,13 @@ export type Automation = {
   /** Absent: no schedule. */
   schedule?: AutomationSchedule;
   updatedAt: Timestamp;
+  /**
+   * A watcher: its runs are a read-only look at one thing about the bot's software, in no order, that says one line in
+   * the chat only when something is off. Its prompt is what it watches; the hub keeps its schedule to `every`.
+   */
+  watch?: AutomationWatch;
+  /** A watcher's runs over the last 24 hours: how many, how many spoke up, and what they cost. */
+  lastDay?: AutomationUsage;
   /** Whether it has a webhook URL. The URL holds a secret, shown once when it is made or rotated. */
   webhook: boolean;
 };
@@ -900,6 +907,8 @@ export type AutomationCreateInput = {
   projectRef: ProjectRef;
   prompt: string;
   schedule?: AutomationSchedule;
+  /** Make it a watcher: the hub sets its schedule from `every` (any `schedule` given is ignored), and it has no webhook. */
+  watch?: AutomationWatch;
   /** Give it a webhook URL. */
   webhook?: boolean;
 };
@@ -934,6 +943,8 @@ export type AutomationListOutput = {
   memoryRefresh?: MemoryRefreshJob;
   next?: string;
   truncated?: boolean;
+  /** The watcher presets this bot can have now (`deploys` only when its GitHub repo has deployments); absent from older hubs. */
+  watchable?: WatchKind[];
 };
 
 export type AutomationPauseInput = {
@@ -963,12 +974,16 @@ export type AutomationRun = {
   automationId: AutomationId;
   /** Who pressed Run now: a keyId, "human" or "lead:<machineId>/<projectId>". */
   by?: string;
+  /** A watcher's run: what it cost, in US dollars, as its runner reported it. */
+  costUsd?: number;
   endedAt?: Timestamp;
   /** A scheduled run the hub was down for, run once on its return: by how many minutes. */
   lateMin?: number;
   /** A webhook run: the size of the body it carried. The body itself is in automation_runs only. */
   payloadBytes?: number;
   runId: AutomationRunId;
+  /** A watcher's run that spoke up: the line it posted in the chat. */
+  said?: string;
   /** A scheduled run: the time it was due. */
   scheduledAt?: Timestamp;
   state: AutomationRunState;
@@ -1033,6 +1048,8 @@ export type AutomationUpdateInput = {
   /** true: take its schedule off. */
   removeSchedule?: boolean;
   schedule?: AutomationSchedule;
+  /** A watcher's new frequency or profile; its kind stays. */
+  watch?: AutomationWatch;
   /** true adds a webhook URL (kept if it has one); false removes it. */
   webhook?: boolean;
 };
@@ -1043,6 +1060,20 @@ export type AutomationUpdateOutput = {
   truncated?: boolean;
   /** Only when this update made its webhook URL. */
   webhookUrl?: string;
+};
+
+/** A watcher's runs over a stretch: how many ran, how many spoke up, and their cost in US dollars. */
+export type AutomationUsage = {
+  costUsd: number;
+  runs: number;
+  spoke: number;
+};
+
+/** What a watcher watches and how often; its runs use `profile`, or the bot's default. */
+export type AutomationWatch = {
+  every: WatchEvery;
+  kind: WatchKind;
+  profile?: ProfileName;
 };
 
 /** The square of a picture to keep, in its pixels as it shows (EXIF orientation applied): its top-left corner and side. */
@@ -10898,3 +10929,16 @@ export interface HubEventDataMap {
   "workstream.running": WorkstreamEventData;
   "workstream.state": WorkstreamEventData;
 }
+
+/**
+ * What a watcher watches: `main_ci` the checks on the default branch of the bot's GitHub repo, `deploys` its GitHub
+ * deployments' statuses, `other` the one plain sentence in its prompt, through the bot's connections.
+ */
+export type KnownWatchKind = "main_ci" | "deploys" | "other";
+/** KnownWatchKind, or a value from a newer hub. */
+export type WatchKind = KnownWatchKind | (string & {});
+
+/** How often a watcher looks: every 15 minutes, every hour on the hour, or once a day at 09:00 in the person's zone. */
+export type KnownWatchEvery = "15m" | "hour" | "day";
+/** KnownWatchEvery, or a value from a newer hub. */
+export type WatchEvery = KnownWatchEvery | (string & {});

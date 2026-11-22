@@ -5191,8 +5191,9 @@ export const screens: readonly Screen[] = [
       await part.scrollIntoViewIfNeeded();
     },
   },
-  // Automations: one project's schedule, webhook and paused automations, the nightly memory refresh's built-in row, a
-  // run history with its orders, and the editor.
+  // Automations: one project's watchers at the top (Main's CI and one sentence, each with how often, its profile and its
+  // cost), then its schedule, webhook and paused automations, a run history with its orders, the editor, and a
+  // watcher's runs and the new-watcher editor.
   { id: "settings.automations", route: "#/settings/automations", fixtures: ["empty", "hub-unreachable"] },
   { id: "settings.automations", route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22", fixtures: ["typical", "long-text"] },
   {
@@ -5212,6 +5213,23 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Weekday dependency check" }).getByRole("button", { name: "Weekday dependency check: more" }).click();
       await page.getByRole("menuitem", { name: "Edit" }).click();
     },
+  },
+  {
+    id: "settings.automations",
+    route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "watcher-runs",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Main's CI: more" }).click();
+      await page.getByRole("menuitem", { name: "Runs" }).click();
+    },
+  },
+  {
+    id: "settings.automations",
+    route: "#/settings/automations?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["typical"],
+    variant: "new-watcher",
+    open: (page) => page.getByRole("button", { name: "New watcher" }).click(),
   },
   // Skills: a project's (the first one, then storefront's): its repo's .agents/skills and .claude/skills, its own (one
   // outranked by the repo's of the same name) and a read-only line naming the hub-wide ones; a project skill open to

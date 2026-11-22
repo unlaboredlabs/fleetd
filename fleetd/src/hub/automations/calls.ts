@@ -5,7 +5,7 @@
 // No lead call marks an automation `confirmed` (the person's go-ahead on its runs): only the person does, in the app or
 // on the card `automation_confirm` brings them, which approvals files and settles. A lead's change to what it runs or
 // when unsets the mark.
-import type { ProjectRef } from "../../shared/contracts.ts";
+import type { AutomationWatch, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { hubZone, POLICY_TZ_KEY, zone } from "../attention/index.ts";
@@ -85,13 +85,18 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
         name: call.name as string,
         prompt: call.prompt as string,
         ...(schedule === undefined ? {} : { schedule: fromCall(schedule, personZone) }),
+        ...(call.watch === undefined ? {} : { watch: call.watch as AutomationWatch, schedule: { tz: schedule?.tz ?? personZone() } }),
         webhook: false,
         by,
         confirmed: false,
       });
       const s = automation.schedule;
       let next: string;
-      if (automation.nextRunAt !== undefined && s?.at !== undefined) {
+      if (automation.watch !== undefined) {
+        next =
+          `It first looks at ${automation.nextRunAt ?? "its next run"} and opens no order: it says one line in the chat only when ` +
+          "something is off, and its row in the person's Automations shows what its looks cost.";
+      } else if (automation.nextRunAt !== undefined && s?.at !== undefined) {
         next =
           `It runs once, at ${s.at} ${s.tz}, and opens an order for you then; it shows in the person's automations list ` +
           "until it has run. automation_delete cancels it.";
@@ -122,6 +127,7 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
         ...(call.name === undefined ? {} : { name: call.name as string }),
         ...(call.prompt === undefined ? {} : { prompt: call.prompt as string }),
         ...(schedule === undefined ? {} : { schedule }),
+        ...(call.watch === undefined ? {} : { watch: call.watch as AutomationWatch }),
         ...(changesRun ? { confirmed: false } : {}),
       };
       let [automation] = a.update(id, edit, by);
@@ -145,7 +151,14 @@ export async function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Prom
     case "automation_run": {
       a.own(r, id);
       const run = await a.run(id, { kind: "manual", by });
-      const next = run.workstreamId !== undefined ? `It opened ${run.workstreamId}; it reaches you as a new order.` : run.why !== undefined ? `Not run: ${run.why}.` : "";
+      const next =
+        run.workstreamId !== undefined
+          ? `It opened ${run.workstreamId}; it reaches you as a new order.`
+          : run.state === "running"
+            ? "A watcher: it looks now and says one line in the chat only if something is off."
+            : run.why !== undefined
+              ? `Not run: ${run.why}.`
+              : "";
       return { run, next };
     }
     case "automation_runs": {
