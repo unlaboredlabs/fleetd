@@ -63,7 +63,8 @@ export function expiresLine(expiresAt: string, nowMs: number): string {
   const h = Math.floor(left / 3_600_000);
   if (h < 1) return "Expires within the hour";
   if (h < 48) return `Expires in ${String(h)} h`;
-  return `Expires in ${String(Math.floor(h / 24))} days`;
+  // To the nearest day: a 7-day invite just sent reads 7 days, never 6.
+  return `Expires in ${String(Math.round(left / 86_400_000))} days`;
 }
 
 /** "2 devices", "1 device", "No device yet". */

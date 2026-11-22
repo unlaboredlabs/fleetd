@@ -86,6 +86,9 @@ describe("invites and words", () => {
   it("says when an invite runs out", () => {
     const now = Date.parse(AT);
     expect(expiresLine("2026-10-26T10:00:00.000Z", now)).toBe("Expires in 7 days");
+    // Sent a minute ago, for 7 days: 7 days, never 6.
+    expect(expiresLine(new Date(now + 7 * 86_400_000 - 60_000).toISOString(), now)).toBe("Expires in 7 days");
+    expect(expiresLine(new Date(now + 3 * 86_400_000 + 13 * 3_600_000).toISOString(), now)).toBe("Expires in 4 days");
     expect(expiresLine("2026-10-19T15:30:00.000Z", now)).toBe("Expires in 5 h");
     expect(expiresLine("2026-10-19T10:20:00.000Z", now)).toBe("Expires within the hour");
     expect(expiresLine("2026-10-19T09:00:00.000Z", now)).toBe("Expired");
