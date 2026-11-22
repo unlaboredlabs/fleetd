@@ -18,6 +18,8 @@ export type Row =
    */
   | { readonly kind: "top"; readonly key: "top"; readonly state: TopState }
   | { readonly kind: "day"; readonly key: string; readonly label: string }
+  /** The bot in the reply's place while its computer starts (WakeRow.tsx), after the rows; `writing`: the reply streams. */
+  | { readonly kind: "wake"; readonly key: "wake"; readonly writing: boolean }
   /** The clock time over a message that comes after a long pause on the same day. */
   | { readonly kind: "time"; readonly key: string; readonly label: string }
   /**

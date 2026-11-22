@@ -690,10 +690,10 @@ export class Chat {
   }
 
   /**
-   * The project's chat state; `leadWorking` is the lead's own (the flow reads it off its thread). What it takes from
+   * The project's chat state; `leadWorking` and `leadAsleep` are the lead's own (the flow reads them off its thread). What it takes from
    * the messages is read once per change to them: every bot's state is asked for on each status and connect.
    */
-  state(r: ProjectRef, leadWorking: boolean): ProjectChatState {
+  state(r: ProjectRef, leadWorking: boolean, leadAsleep = false): ProjectChatState {
     const k = key(r);
     const version = this.versionOf(r);
     let parts = this.states.get(k);
@@ -718,6 +718,7 @@ export class Chat {
       needsYou: waits.needsYou,
       ...(waits.for ? { needsYouFor: waits.for } : {}),
       leadWorking,
+      ...(leadAsleep ? { leadAsleep: true } : {}),
       lastSeq: last?.seq ?? 0,
       ...(last ? { lastMessageAt: last.createdAt } : {}),
       ...(openItems.length > 0 ? { openItems } : {}),
@@ -798,12 +799,13 @@ export class Chat {
     );
   }
 
-  /** Announces `chat.waiting` when the needs-you or working state, open items or waiting nudges changed. */
+  /** Announces `chat.waiting` when the needs-you, working or asleep state, open items or waiting nudges changed. */
   tellState(state: ProjectChatState): void {
     const now = JSON.stringify([
       state.needsYou,
       state.needsYouFor ?? null,
       state.leadWorking,
+      state.leadAsleep ?? false,
       (state.openItems ?? []).map((i) => i.messageId),
       (state.nudges ?? []).map((n) => n.messageId),
     ]);

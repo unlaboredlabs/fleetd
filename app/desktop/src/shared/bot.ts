@@ -3,7 +3,7 @@
 // in grey, or the color a person picked for its bot (BOT_PAINT), with two eyes and no mouth, standing free
 // with no circle behind it (Pebble, from the avatar-no-circle report, without its contact shadow). It comes in five
 // bodies (BOT_BODIES: Pebble, Ghost, Kitty, Bunny, Toast), the face and motion the same on each. Its motion says what
-// it is doing: idle, thinking, working, needs you, done, or an error.
+// it is doing: idle, thinking, working, needs you, done, an error, or asleep and waking with its computer (shared/wake.ts).
 //
 // It is all here, pure, so both apps draw and move it alike. One rig: every frame is drawn from a few channels (the
 // lids, the eyes' size and look, the body's squash, lift and lean, the eyes' glow and dim). Each channel is a damped
@@ -23,8 +23,8 @@
 import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type KnownBotColor, type KnownBotShape } from "./contracts";
 
 /** What a bot shows, from the app's own words (projects/botState.ts). */
-export type BotState = "idle" | "thinking" | "working" | "needs" | "done" | "error";
-export const BOT_STATES: readonly BotState[] = ["idle", "thinking", "working", "needs", "done", "error"];
+export type BotState = "idle" | "thinking" | "working" | "needs" | "done" | "error" | "asleep" | "waking";
+export const BOT_STATES: readonly BotState[] = ["idle", "thinking", "working", "needs", "done", "error", "asleep", "waking"];
 
 /** What the app knows of a project, for its bot. */
 export interface BotIn {
@@ -38,16 +38,23 @@ export interface BotIn {
   readonly doing: string | undefined;
   /** It has something new for you: a reply not yet seen, or a turn that just ended. */
   readonly done: boolean;
+  /** Its lead's computer sleeps (fleetd cloud: the chat state's leadAsleep). */
+  readonly asleep?: boolean | undefined;
+  /** Its lead's computer starts now, or its last try failed (shared/wake.ts). */
+  readonly start?: "waking" | "failed" | undefined;
 }
 
-/** A project's bot: it needs you, else it's blocked (an error), else its agents or lead work (the lead thinking or
- * planning alone: thinking), else it has a new reply for you (done), else idle. */
-export const botStateOf = ({ needs, blocked, running, doing, done }: BotIn): BotState => {
+/** A project's bot: it needs you, else it's blocked or its computer didn't start (an error), else it wakes while its
+ * computer starts, else its agents or lead work (the lead thinking or planning alone: thinking), else it has a new reply
+ * for you (done), else it sleeps with its computer, else idle. */
+export const botStateOf = ({ needs, blocked, running, doing, done, asleep, start }: BotIn): BotState => {
   if (needs) return "needs";
-  if (blocked) return "error";
+  if (blocked || start === "failed") return "error";
+  if (start === "waking") return "waking";
   if (doing === "thinking" || doing === "planning") return running > 0 ? "working" : "thinking";
   if (doing !== undefined || running > 0) return "working";
-  return done ? "done" : "idle";
+  if (done) return "done";
+  return asleep === true ? "asleep" : "idle";
 };
 
 /** OKLCH to "#rrggbb". */
@@ -329,6 +336,10 @@ export const MOODS: { readonly [S in BotState]: Mood } = {
   done: { pose: channels({ low: 0.68, up: 0.04, squash: 0.03, lift: -0.6 }), loops: amps({ breath: 1.35, sway: 1 }), blink: null, twice: 0, slow: false, kick: kicks({ squash: 0.6 }) },
   // Lids drop, lower at the outer corners; looks down, sinks and slumps; dimmer eyes; a sigh every 6 s. A slump.
   error: { pose: channels({ up: 0.42, slope: 0.6, gy: 0.72, gx: 0.16, squash: 0.065, lift: -2.8, lean: -3.8, dim: 1, eyes: 0.96 }), loops: amps({ sigh: 1 }), blink: [4, 7], twice: 0, slow: true, kick: kicks({ lift: -9, squash: 0.35 }) },
+  // Its computer sleeps (W792): lids shut to soft lines, settled a touch low, a slow deep breath, a little dim.
+  asleep: { pose: channels({ up: 0.97, gy: 0.3, squash: 0.045, lift: -1.4, lean: -1.2, dim: 0.3 }), loops: amps({ breath: 1.7 }), blink: null, twice: 0, slow: true, kick: kicks({}) },
+  // Its computer starts: heavy lids half open, slow blinks that often come twice, a look about. Arrives with a stir.
+  waking: { pose: channels({ up: 0.5, gy: 0.12, squash: 0.02, lift: -0.5, dim: 0.12 }), loops: amps({ breath: 1.2, glance: 0.7 }), blink: [1.1, 2.4], twice: 0.6, slow: true, kick: kicks({ lift: 5, squash: -0.2 }) },
 };
 
 // ---- One bot's rig

@@ -2,7 +2,7 @@
 // error (link/node_errors.ts).
 import type { MachineId, ThreadId } from "../../shared/contracts.ts";
 
-export type NodeOperation = "launch" | "send" | "interrupt" | "stop" | "answer" | "read" | "project";
+export type NodeOperation = "launch" | "send" | "interrupt" | "start_now" | "stop" | "answer" | "read" | "project";
 
 /** Why a node request produced no answer (executor/mod.rs `ExecutorError`). */
 export class ExecutorError extends Error {

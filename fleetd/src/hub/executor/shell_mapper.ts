@@ -45,6 +45,8 @@ export type Summary = {
   watchingUntil?: string;
   /** What they watch (the node's `watching`). */
   watching?: string[];
+  /** Its computer is off with no start under way (the node's `asleep`). */
+  asleep?: boolean;
   stale: boolean;
   asOf: string;
 };
@@ -70,6 +72,7 @@ function ordered(s: Summary): Summary {
   if (s.effort !== undefined) out.effort = s.effort;
   if (s.watchingUntil !== undefined) out.watchingUntil = s.watchingUntil;
   if (s.watching !== undefined) out.watching = s.watching;
+  if (s.asleep === true) out.asleep = true;
   out.stale = s.stale;
   out.asOf = s.asOf;
   return out as Summary;
@@ -256,6 +259,7 @@ export function toThreadSummary(machineId: string, s: SessionSummary, prev: Summ
     effort: s.effort,
     ...(s.watchingUntil !== undefined ? { watchingUntil: normalizeIso(s.watchingUntil) } : {}),
     ...(s.watchingUntil !== undefined && s.watching !== undefined ? { watching: s.watching } : {}),
+    ...(s.asleep === true ? { asleep: true } : {}),
     stale: false,
     asOf: now,
   };

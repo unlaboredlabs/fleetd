@@ -341,7 +341,14 @@ export function activityOf(kind: ItemKind, root: string | undefined): Activity |
     case "compaction":
       return { kind: "compacting" };
     case "starting":
-      return { kind: "starting", text: clip(kind.text) };
+      // What the apps draw the start from rides along: its step, when it began, a failed try's reason and retry.
+      return {
+        kind: "starting",
+        text: clip(kind.text),
+        ...(kind.step !== undefined ? { step: kind.step } : {}),
+        ...(kind.startedAt !== undefined ? { startedAt: kind.startedAt } : {}),
+        ...(kind.failed !== undefined ? { failed: { reason: clip(kind.failed.reason), ...(kind.failed.retryAt !== undefined ? { retryAt: kind.failed.retryAt } : {}) } } : {}),
+      };
     case "api_retry":
     case "node_retry":
       return retryOf(kind);

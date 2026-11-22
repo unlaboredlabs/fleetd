@@ -28,7 +28,9 @@ import type { Caller } from "../api/registry.ts";
 import { approvals, openRequests, projectOf } from "../approvals/index.ts";
 import { chatItem } from "../approvals/outcome.ts";
 import { activity } from "../executor/activity.ts";
+import { ExecutorError } from "../executor/error.ts";
 import { executors } from "../executor/index.ts";
+import { fromExecutor, READ_TIMEOUT_MS } from "../executor/rules.ts";
 import { interruptNow } from "../executor/projects.ts";
 import * as attachments from "../intake/attachments.ts";
 import { leads } from "../leads/index.ts";
@@ -107,9 +109,15 @@ export const leadWorking = (hub: Hub, r: ProjectRef) => {
   return thread !== undefined && midTurn(hub, thread);
 };
 
+/** Whether the project's lead's computer is asleep (a hosted lead's, as its thread last said), and so not mid-turn. */
+export const leadAsleep = (hub: Hub, r: ProjectRef) => {
+  const thread = leadThread(hub, r);
+  return thread !== undefined && store(hub).threadGet(thread)?.thread.asleep === true && !midTurn(hub, thread);
+};
+
 /** The project's chat state, announced as `chat.waiting` when it changed. */
 export function state(hub: Hub, r: ProjectRef): ProjectChatState {
-  const s = chat(hub).state(r, leadWorking(hub, r));
+  const s = chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r));
   chat(hub).tellState(s);
   return s;
 }
@@ -528,6 +536,22 @@ function stopCaller(caller: Caller, tool: string, r: ProjectRef): void {
   requireRole(caller, "operate", r.machineId);
 }
 
+/**
+ * The chat's Try again while the lead's computer starts: a start waiting between tries (a hosted lead's) tries again
+ * now. False when none waited: the node has no start waiting for the lead's session (a self-hosted lead never does).
+ */
+export async function startNow(hub: Hub, r: ProjectRef): Promise<boolean> {
+  const thread = leadThread(hub, r);
+  if (!thread) return false;
+  try {
+    await executors(hub).call(r.machineId, "start_now", { op: "start_now", sessionId: thread.threadId }, READ_TIMEOUT_MS);
+    return true;
+  } catch (error) {
+    if (error instanceof ExecutorError && error.kind === "thread_not_found") return false;
+    throw error instanceof ExecutorError ? fromExecutor(error) : error;
+  }
+}
+
 /** Interrupts the lead's turn now, also one held on a permission prompt. True when it had one. */
 export async function stopLead(hub: Hub, r: ProjectRef): Promise<boolean> {
   const thread = leadThread(hub, r);
@@ -860,7 +884,7 @@ export function states(hub: Hub): ProjectChatState[] {
   return projects.flatMap((p) => {
     const r = { machineId: p.machineId, projectId: p.projectId };
     try {
-      return [chat(hub).state(r, leadWorking(hub, r))];
+      return [chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r))];
     } catch {
       return [];
     }

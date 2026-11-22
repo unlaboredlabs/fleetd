@@ -33,7 +33,7 @@ import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
-import { chatItems, holds, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
+import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { onHome } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
@@ -86,6 +86,8 @@ import type { SkillSaved } from "./manage/skillsModel";
 import { setupLine } from "./setupChanged";
 import { SetupChangedLine } from "./SetupChangedLine";
 import { TURN_LINE_HEIGHT, TurnLine } from "./TurnLine";
+import { WakeRow } from "./WakeRow";
+import { wakeIn } from "../wake";
 import { useNow } from "./time";
 
 /**
@@ -172,6 +174,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const canPin = findPinsShown(state.hub);
   const [pinsOpen, setPinsOpen] = useState(false);
   const working = chatState?.leadWorking === true;
+  // A cloud bot waking: shown from its start until its reply's first words do (wake.ts).
+  const newest = items.at(-1);
+  const writing = newest?.state === "streaming";
+  const waking = wakeIn(state, chatKey, writing);
+  const wake = win === undefined && wakeShown(waking) && !(writing && newest !== undefined && partBubbles(newest).length > 0) ? waking : undefined;
   const live = state.hub.phase === "live";
   // What was read when the chat opened: the unread bar stays there while it's open, as chat apps' does.
   // What was unread is what had come by then: a reply that comes while you look isn't.
@@ -743,6 +750,8 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               ListHeaderComponent={
                 <View>
                   {win?.hasNewer === true ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
+                  {/* A cloud bot waking: its bot in the reply's place, under the newest message, until its words show. */}
+                  {wake === undefined ? null : <WakeRow chatKey={chatKey} wake={wake} title={title} picture={project} />}
                   <ScreenCards chatKey={chatKey} />
                   {/* The composer's room and the turn line's over it, always: the thread never moves for the line. */}
                   <View style={{ height: composerHeight + TURN_BAND }} />

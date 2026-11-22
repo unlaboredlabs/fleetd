@@ -3,6 +3,7 @@
 // sessions (../sessions/index.ts) watch them for the run's progress line, which the chat shows under the lead's
 // "working" and the agents panel on the agent.
 import type { ProviderId } from "../../sandbox/providers/index.ts";
+import type { StartStep } from "../../shared/contracts.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 
 /** `computer`: its box is being made; `template`: and the provider's template is built first (the account has none
@@ -33,6 +34,22 @@ export function stepped(session: string, step: HostedStep): void {
 
 /** The step `session`'s start said last, if it said any. */
 export const stepNow = (session: string): HostedStep | undefined => latest.get(session);
+
+/** The step as the apps draw it (the contracts' StartStep): its computer starting, its files going in, getting ready. */
+export function startStep(step: HostedStep): StartStep {
+  if (typeof step === "object") return "box";
+  switch (step) {
+    case "computer":
+    case "template":
+    case "again":
+      return "box";
+    case "clone":
+    case "files":
+      return "files";
+    case "setup":
+      return "session";
+  }
+}
 
 /** The step in a person's words. */
 export function stepWords(step: HostedStep, provider: ProviderId): string {

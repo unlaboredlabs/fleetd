@@ -28,7 +28,7 @@ import { memoryHook, noteFile } from "../runner/host/memory.ts";
 import { reapLeaked, sweepVm } from "../place/left_vm.ts";
 import { hostDir, isRunner, pick, placeAt, runnerProvider, sweep } from "../place/index.ts";
 import { boxEnd, boxPlaces, BoxNotReady, checkpoint, hasBox, HostedDown } from "../place/hosted.ts";
-import { type HostedStep, stepNow, stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
+import { type HostedStep, startStep, stepNow, stepped, stepWords, watchSteps } from "../place/hosted_steps.ts";
 import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { descendants, table } from "../runner/procs.ts";
@@ -873,6 +873,9 @@ export class SessionService {
         return this.#withdraw(c.sessionId, c.runId);
       case "interrupt":
         return this.#interrupt(c.sessionId, c.runId, c.reason);
+      case "start_now":
+        // A hosted start here tries its box again at once, by itself, never waiting between tries: none waits now.
+        throw notFound(`no start waits for session ${c.sessionId}`);
       case "stop":
         return c.idle ? this.#stopIdle(c.sessionId) : this.#stop(c.sessionId, !!c.removeWorktree);
       case "answer":
@@ -1359,7 +1362,7 @@ export class SessionService {
   #hostedProgress(id: string, runId: string, provider: ProviderId, at?: HostedStep): (started: boolean) => void {
     const itemId = `starting-${runId}`;
     const startedAt = nowIso();
-    const put = (text: string, status: "running" | "completed" | "failed") => {
+    const put = (text: string, step: HostedStep, status: "running" | "completed" | "failed") => {
       try {
         this.update(id, (c) =>
           this.#putItem(c, {
@@ -1370,23 +1373,25 @@ export class SessionService {
             startedAt,
             ...(status === "running" ? {} : { completedAt: c.at }),
             updatedAt: c.at,
-            kind: { type: "starting", text },
+            kind: { type: "starting", text, step: startStep(step), startedAt },
           }),
         );
       } catch {}
     };
-    let text = stepWords(at ?? "computer", provider);
-    put(text, "running");
+    let now: HostedStep = at ?? "computer";
+    let text = stepWords(now, provider);
+    put(text, now, "running");
     const unwatch = watchSteps(id, (step) => {
+      now = step;
       text = stepWords(step, provider);
-      put(text, "running");
+      put(text, step, "running");
     });
     let ended = false;
     return (started) => {
       if (ended) return;
       ended = true;
       unwatch();
-      put(text, started ? "completed" : "failed");
+      put(text, now, started ? "completed" : "failed");
     };
   }
 

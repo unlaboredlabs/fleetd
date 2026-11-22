@@ -10,7 +10,7 @@ import { executorHooks } from "../executor/hooks.ts";
 import { found } from "../project_lead/bridge.ts";
 import { registerLeadCalls } from "./calls.ts";
 import { fill } from "./find.ts";
-import { run, states } from "./flow.ts";
+import { leadThread, run, state, states } from "./flow.ts";
 import { chat, chatState, sendAsAgent } from "./index.ts";
 
 /** Each connection's running chat subscription, which a new `chat` replaces. */
@@ -22,6 +22,11 @@ export function start(hub: Hub): void {
   // fleetd_status (and so the app's snapshot) carries each readable project's chat state.
   executorHooks(hub).extendStatus((h, caller) => {
     return { chats: states(h).filter((s) => allows(caller, "read", s.projectRef.machineId)) };
+  });
+  // A lead's computer that went to sleep or woke: its chat state says so (the sidebar's and the chat's bot).
+  executorHooks(hub).onAsleep((t) => {
+    const r = { machineId: t.machineId, projectId: t.projectId };
+    if (leadThread(hub, r)?.threadId === t.threadId) state(hub, r);
   });
   // The search index of the messages from before it, filled in small steps while the hub runs.
   void fill(hub);

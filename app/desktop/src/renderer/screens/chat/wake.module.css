@@ -1,0 +1,99 @@
+/* The bot in the reply's place while its computer starts (WakeRow.tsx): at a bubble's left edge, one quiet word
+   beside it. */
+.row {
+  max-width: calc(var(--measure) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: 10px var(--pad) 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fadeIn 360ms var(--ease-out) both;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+.bot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+}
+.words {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: 20px;
+  color: var(--quiet);
+}
+.count {
+  margin-left: 6px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.act {
+  all: unset;
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.act:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.act:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.act:disabled {
+  cursor: default;
+  color: var(--quiet);
+}
+
+/* Words giving way to the next: the old rise out, the new rise in, on the spring. */
+.swap {
+  position: relative;
+  display: inline-grid;
+  min-width: 0;
+}
+.swap > span {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.in {
+  animation: riseIn 420ms var(--ease-spring) both;
+}
+.out {
+  animation: riseOut 300ms var(--ease-out) both;
+}
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+    filter: blur(2px);
+  }
+}
+@keyframes riseOut {
+  to {
+    opacity: 0;
+    transform: translateY(-7px);
+    filter: blur(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .in {
+    animation: none;
+  }
+  .out {
+    display: none;
+  }
+}

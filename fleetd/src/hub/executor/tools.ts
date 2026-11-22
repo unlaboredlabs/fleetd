@@ -11,7 +11,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import { chat } from "../chat/index.ts";
-import { leadWorking } from "../chat/flow.ts";
+import { leadAsleep, leadWorking } from "../chat/flow.ts";
 import { slots } from "../slots/index.ts";
 import { executorHooks } from "./hooks.ts";
 import { executors } from "./index.ts";
@@ -73,7 +73,7 @@ function chatStates(hub: Hub, caller: Caller): ProjectChatState[] {
     const r = { machineId: p.machineId, projectId: p.projectId };
     if (!readable(caller, r.machineId)) continue;
     try {
-      out.push(chat(hub).state(r, leadWorking(hub, r)));
+      out.push(chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r)));
     } catch (error) {
       console.warn(`chat state of ${r.projectId} not read: ${(error as Error).message}`);
     }

@@ -122,6 +122,20 @@ test("a hosted start's progress line is what the thread does until it ends, over
   expect(t.now(T0 + 80)?.activity).toEqual({ kind: "thinking" });
 });
 
+test("a hosted start's step, when it began and a failed try's reason and retry reach the apps", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  const startedAt = "2026-10-18T10:00:00.000Z";
+  t.apply(item("start-r1", "running", { type: "starting", text: "Starting its computer at boat.dev", step: "box", startedAt }), T0 + 10);
+  expect(t.now(T0 + 20)?.activity).toEqual({ kind: "starting", text: "Starting its computer at boat.dev", step: "box", startedAt });
+  const failed = { reason: "No computer was free", retryAt: "2026-10-18T10:00:19.000Z" };
+  t.apply(item("start-r1", "running", { type: "starting", text: "Starting its computer at boat.dev: no free computers. Trying again in 10 s, by itself.", step: "box", startedAt, failed }), T0 + 30);
+  expect(t.now(T0 + 40)?.activity).toMatchObject({ kind: "starting", step: "box", startedAt, failed });
+  // A billing hold: the reason alone, with no retry of its own.
+  t.apply(item("start-r1", "running", { type: "starting", text: "Held", step: "box", startedAt, failed: { reason: "Your team is out of credits." } }), T0 + 50);
+  expect(t.now(T0 + 60)?.activity).toMatchObject({ failed: { reason: "Your team is out of credits." } });
+});
+
 test("live usage counts until the run reports its own", () => {
   const t = new ActivityTracker();
   t.apply(run("running"), T0);

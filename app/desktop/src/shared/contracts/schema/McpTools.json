@@ -290,9 +290,21 @@
         {
           "description": "A hosted agent's computer starting: \"Starting its computer at boat.dev\", \"Cloning the repo\", \"Running setup\".",
           "properties": {
+            "failed": {
+              "$ref": "#/$defs/StartFailed",
+              "description": "Its last try failed: why, and when it is tried again by itself."
+            },
             "kind": {
               "const": "starting",
               "type": "string"
+            },
+            "startedAt": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When the whole start began, so how long it has taken counts from there on every device."
+            },
+            "step": {
+              "$ref": "#/$defs/StartStep",
+              "description": "Its start's step; absent from older hubs and starts that don't say it."
             },
             "text": {
               "maxLength": 120,
@@ -4399,6 +4411,35 @@
       },
       "required": [
         "message"
+      ],
+      "type": "object"
+    },
+    "ChatStartNowInput": {
+      "properties": {
+        "projectRef": {
+          "$ref": "#/$defs/ProjectRef"
+        }
+      },
+      "required": [
+        "projectRef"
+      ],
+      "type": "object"
+    },
+    "ChatStartNowOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "started": {
+          "description": "A start that waited between tries runs now; false when none waited.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "started"
       ],
       "type": "object"
     },
@@ -11165,6 +11206,12 @@
         "chat_send.output": {
           "$ref": "#/$defs/ChatSendOutput"
         },
+        "chat_start_now.input": {
+          "$ref": "#/$defs/ChatStartNowInput"
+        },
+        "chat_start_now.output": {
+          "$ref": "#/$defs/ChatStartNowOutput"
+        },
         "chat_stop.input": {
           "$ref": "#/$defs/ChatStopInput"
         },
@@ -12287,6 +12334,8 @@
         "chat_sections_set.output",
         "chat_send.input",
         "chat_send.output",
+        "chat_start_now.input",
+        "chat_start_now.output",
         "chat_stop.input",
         "chat_stop.output",
         "checklist_get.input",
@@ -16436,6 +16485,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "leadAsleep": {
+          "description": "The lead's computer is asleep (fleetd cloud): the next message starts it before the lead reads it. Absent: awake,\nor a hub whose leads never sleep.",
+          "type": "boolean"
         },
         "leadWorking": {
           "description": "The lead is mid-turn.",
@@ -21892,6 +21945,35 @@
       ],
       "type": "string"
     },
+    "StartFailed": {
+      "description": "Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on\nsomething else, such as the team's billing).",
+      "properties": {
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "StartStep": {
+      "description": "A hosted session's start, step by step: its computer's image ready, its computer started, its files put in, the\nagent started there, the message handed to it.",
+      "enum": [
+        "image",
+        "box",
+        "files",
+        "session",
+        "message"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "StatusCounts": {
       "description": "A project's items per group. Complete: the rows' `items` may stop at a cap; these never do.",
       "properties": {
@@ -23199,6 +23281,10 @@
     },
     "ThreadSummary": {
       "properties": {
+        "asleep": {
+          "description": "Its computer is off with no start under way (a hosted session); the next run starts it first. Absent: awake.",
+          "type": "boolean"
+        },
         "asOf": {
           "$ref": "#/$defs/Timestamp"
         },
