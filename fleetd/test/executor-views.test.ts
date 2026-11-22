@@ -124,6 +124,29 @@ test("an active session is followed at once, and released when it stops", async 
   expect(w?.pinned).toBe(false);
 });
 
+test("a session that ran on through a dropped link is followed again once the new link's replay is in", async () => {
+  const { ex, calls, reply } = await node();
+  const r = { machineId: "devbox", threadId: "s1" };
+  ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "session_updated", ...session("s1", { status: "running", activeRunId: "r2" }) } });
+  await settle();
+  expect(calls.shift()?.call).toEqual({ op: "follow", sessionId: "s1" });
+  ex.detachLink("devbox", 1);
+  expect(ex.views.isFollowed(r)).toBe(false);
+  // Back: the run streamed text only while the link was down, so the replay after the cursor holds nothing of s1.
+  ex.attach("devbox", { linkId: 2, send: (f) => void calls.push(f) });
+  await settle();
+  const subscribe = calls.shift()!;
+  expect(subscribe.call).toMatchObject({ op: "subscribe", after: 2 });
+  reply(subscribe, { kind: "done" });
+  await ex.awaitLive("devbox");
+  expect(calls).toEqual([]);
+  ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "caught_up" } });
+  await settle();
+  expect(calls.shift()?.call).toEqual({ op: "follow", sessionId: "s1" });
+  expect(ex.views.isFollowed(r)).toBe(true);
+  expect(calls).toEqual([]);
+});
+
 function followed() {
   const view = newView();
   const event = (e: ThreadEvent) => applyThreadEvent(view, e);
