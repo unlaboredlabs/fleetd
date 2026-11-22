@@ -25,9 +25,9 @@
 })();
 </script>
 <title>Pricing · fleetd</title>
-<meta name="description" content="fleetd is free on your own machines. On fleetd cloud, a plan from $20 a month pays for fleetd's computers. Plans, credits, computer time, and self-hosted or cloud side by side.">
+<meta name="description" content="fleetd is open source and free to run yourself. On fleetd cloud you pay only for the computers we run, from $20 a month. Plans, pay as you go, and self-hosted or cloud side by side.">
 <meta property="og:title" content="Pricing · fleetd">
-<meta property="og:description" content="Free on your own machines. On fleetd cloud, plans from $20 a month pay for fleetd's computers.">
+<meta property="og:description" content="Open source and free to run yourself. On fleetd cloud you pay only for the computers we run. No seats and no tokens.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -80,12 +80,13 @@ p,h1,h2,h3,table{margin:0}
 .theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
 .theme button:hover{color:var(--ink)}
 .theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
+.nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
+.nav .up:hover{color:var(--paper);opacity:.88}
 
 /* the headline: the page's one idea, set big */
 .head{padding-top:clamp(40px,6vw,96px);padding-bottom:clamp(40px,5vw,72px)}
-h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
-h1 .rest{color:var(--faint)}
-.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:30em;text-wrap:balance}
+h1{font-weight:600;letter-spacing:-.04em;line-height:1.23;font-size:clamp(34px,4.24vw,61px);text-wrap:balance;max-width:899px}
+.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:590px;text-wrap:balance}
 
 /* blocks: a small label on the left, its content on the right, a hairline above each */
 .blk{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:20px clamp(32px,4.4vw,72px);padding-top:clamp(36px,4vw,56px);padding-bottom:clamp(36px,4vw,56px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
@@ -93,6 +94,7 @@ h1 .rest{color:var(--faint)}
 .blk>div:first-child p{margin-top:10px;font-size:15px;color:var(--grey);max-width:20em;text-wrap:pretty}
 .after{margin-top:18px;font-size:14px;color:var(--grey);max-width:44em;text-wrap:pretty}
 .after a{color:var(--ink)}
+.after.wide{max-width:720px}
 
 /* the plans: three columns between hairlines, the price the biggest thing in each */
 .plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
@@ -123,7 +125,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 .vs thead th{font-size:15px;color:var(--ink);font-weight:600}
 .vs thead th>span{display:block;font-weight:400;font-size:13px;color:var(--grey);margin-top:2px}
 .vs td{width:39%;text-wrap:pretty}
-.vs td>span{color:var(--grey)}
+.vs td>span:not([data-f]){color:var(--grey)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
 .foot nav{display:flex;gap:20px}
@@ -136,7 +138,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 }
 @media (max-width:640px){
   .nav{gap:14px}
-  .nav .gh{display:none}
+  .nav .gh,.nav .in{display:none}
   .plans{grid-template-columns:minmax(0,1fr);border-bottom:0}
   .plan,.plan+.plan{padding:18px 0 20px;border-left:0;border-bottom:1px solid var(--rule)}
   .plan ul{display:flex;flex-direction:column}
@@ -147,6 +149,10 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   .vs thead th{padding-right:0}
   .vs tbody th[scope="row"]{grid-column:1/-1;width:auto;padding:14px 0 2px;border-bottom:0;font-size:13px}
   .vs td{width:auto;padding:2px 0 14px}
+}
+/* The narrowest phones: Docs stays in the footer and under the install line. */
+@media (max-width:400px){
+  .nav .docs{display:none}
 }
 @media (prefers-reduced-motion:no-preference){
   .nav a,a,.theme button{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
@@ -159,25 +165,27 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   <a class="mark" href="/">fleetd</a>
   <nav class="nav" aria-label="Site">
     <a href="/pricing" aria-current="page">Pricing</a>
-    <a href="/docs">Docs</a>
+    <a class="docs" href="/docs">Docs</a>
     <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <div class="theme" role="group" aria-label="Colour theme">
       <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
       <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
     </div>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
   </nav>
 </header>
 
 <main>
 <section class="w head" aria-labelledby="h">
-  <h1 id="h">Free on your machines. <span class="rest">Pay for ours.</span></h1>
-  <p class="sub">The hub is open source and runs on your own machines at no cost. On fleetd cloud, a plan pays for fleetd’s computers; your own machines cost nothing there either.</p>
+  <h1 id="h">fleetd cloud is ready to orchestrate thousands of agents.</h1>
+  <p class="sub">fleetd is open source and free to run yourself. On fleetd cloud you pay only for the computers we run. No seats and no tokens.</p>
 </section>
 
 <section class="w blk" id="plans" aria-labelledby="plans-h">
   <div>
     <h2 id="plans-h">fleetd cloud</h2>
-    <p>Each plan is a month of computer time and how many agents run at once on fleetd’s computers.</p>
+    <p>For agents that run on our computers. Every plan covers the whole team.</p>
   </div>
   <div>
     <div class="plans">
@@ -185,7 +193,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Solo</h3>
         <p class="price"><b data-f="price">$20</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$30</span> of computer time <span>included</span></li>
+          <li><span data-f="hours">500 hours</span> <span>of computer time</span></li>
           <li><span data-f="agents">3</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
@@ -194,7 +202,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Team</h3>
         <p class="price"><b data-f="price">$50</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$60</span> of computer time <span>included</span></li>
+          <li><span data-f="hours">1,000 hours</span> <span>of computer time</span></li>
           <li><span data-f="agents">10</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
@@ -203,20 +211,20 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <h3 data-f="name">Scale</h3>
         <p class="price"><b data-f="price">$200</b><span>a month</span></p>
         <ul>
-          <li><span data-f="included">$260</span> of computer time <span>included</span></li>
+          <li><span data-f="hours">4,300 hours</span> <span>of computer time</span></li>
           <li><span data-f="agents">40</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
       </div>
     </div>
-    <p class="after">There is no free tier of fleetd’s computers. A plan’s included time ends with its month, and a change applies from the next one. Leads never count toward agents at once. Prices are before VAT. Sign in at app.fleetd.dev and pick a plan in Settings › Hub › Billing; <a href="/docs/billing">Billing</a> has the details.</p>
+    <p class="after wide">Hours are for the smallest computer. Unused time doesn’t roll over. Prices exclude VAT. <a href="/docs/billing">Billing details</a></p>
   </div>
 </section>
 
 <section class="w blk" id="usage" aria-labelledby="usage-h">
   <div>
-    <h2 id="usage-h">Computer time and credits</h2>
-    <p>What runs past a plan’s time, or without a plan.</p>
+    <h2 id="usage-h">Pay as you go</h2>
+    <p>Extra time beyond a plan, or no plan at all.</p>
   </div>
   <div class="duo">
     <div>
@@ -229,12 +237,12 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
           <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:12px">Charged to the millisecond, while a computer runs.</p>
+      <p style="margin-top:12px">Billed only while a computer is running.</p>
     </div>
     <div>
       <h3>Credits</h3>
-      <p>Computer time paid ahead, at face value: $10 buys $10 of time. Buy them from <span data-f="credits-min">$10</span>, with or without a plan.</p>
-      <p>A plan’s time is used first. Credits last <span data-f="credits-months">12</span> months, and with credits and no plan, <span data-f="credits-agents">3</span> agents run at once.</p>
+      <p>Prepaid computer time, from <span data-f="credits-min">$10</span>, valid for <span data-f="credits-months">12</span> months.</p>
+      <p>Without a plan, credits run up to <span data-f="credits-agents">3</span> agents at once.</p>
     </div>
   </div>
 </section>
@@ -242,7 +250,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 <section class="w blk" id="compare" aria-labelledby="compare-h">
   <div>
     <h2 id="compare-h">Self-hosted or cloud</h2>
-    <p>The same app and the same agents. What differs is who runs the hub, and where the agents run.</p>
+    <p>The same product either way. The difference is who runs it.</p>
   </div>
   <div>
     <table class="vs">
@@ -250,15 +258,15 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <tr><th scope="col"><span class="sr">&nbsp;</span></th><th scope="col">Self-hosted <span>Free, open source</span></th><th scope="col">fleetd cloud <span>From <span data-f="from">$20</span> a month</span></th></tr>
       </thead>
       <tbody>
-        <tr><th scope="row">The hub</th><td>You run it, on a machine of yours.</td><td>fleetd runs it for your team, in the EU.</td></tr>
-        <tr><th scope="row">Agents run on</th><td>Your own machines, directly, with no VM.</td><td>fleetd’s computers, or your own machines.</td></tr>
-        <tr><th scope="row">Signing in</th><td>Pair the desktop and phone apps with your hub.</td><td>Google, GitHub or a code by email, in the apps or a browser.</td></tr>
-        <tr><th scope="row">Claude and GitHub</th><td>Your own logins, through guided, sealed steps.</td><td>Your own Claude; GitHub in one trip to fleetd’s GitHub App.</td></tr>
-        <tr><th scope="row">Depends on fleetd</th><td>No: nothing fleetd runs is needed.</td><td>Yes: fleetd runs the service.</td></tr>
-        <tr><th scope="row">Costs</th><td>Nothing.</td><td>A plan or credits for fleetd’s computers. <span>Your own machines are free.</span></td></tr>
+        <tr><th scope="row">Who runs it</th><td>You, on your own machine.</td><td>We do, in the EU.</td></tr>
+        <tr><th scope="row">Agents run on</th><td>Your own machines.</td><td>Our computers, or your own.</td></tr>
+        <tr><th scope="row">Apps</th><td>Desktop and phone.</td><td>Desktop, phone and web.</td></tr>
+        <tr><th scope="row">Models and GitHub</th><td>Your own accounts.</td><td>Your own accounts.</td></tr>
+        <tr><th scope="row">Runs without us</th><td>Yes.</td><td>No.</td></tr>
+        <tr><th scope="row">Costs</th><td>Free.</td><td>From <span data-f="from">$20</span> a month. <span>Agents on your own machines stay free.</span></td></tr>
       </tbody>
     </table>
-    <p class="after">A self-hosted hub moves to the cloud from the app, with its bots, history and machines: <a href="/docs/moving-a-hub#cloud">Moving a hub</a>. To start on your own machines, <a href="/docs/install">install fleetd</a>.</p>
+    <p class="after">Start self-hosted and <a href="/docs/moving-a-hub#cloud">move to cloud</a> later; your projects and history come with you. <a href="/docs/install">Install fleetd</a></p>
   </div>
 </section>
 </main>
@@ -284,8 +292,16 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   const size = (s) => s.cpu + " CPU, " + s.memGb + " GB";
   const sized = (s) => s && int(s.cpu) && int(s.memGb);
   const put = (root, f, text) => root.querySelectorAll('[data-f="' + f + '"]').forEach((el) => { el.textContent = text; });
+  // A plan's time as hours of the smallest computer, rounded down to two figures: 500, 1,000, 4,300.
+  const hours = (cents, rate) => {
+    const h = cents / rate;
+    const step = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(h, 1))) - 1);
+    return (Math.floor(h / step) * step).toLocaleString("en-US") + " hours";
+  };
   const fill = (d) => {
     if (!d || d.currency !== "usd") return;
+    const sizes = Array.isArray(d.sizes) ? d.sizes.filter((s) => sized(s) && int(s.centsPerHour) && s.centsPerHour > 0) : [];
+    const smallest = sizes.length ? Math.min(...sizes.map((s) => s.centsPerHour)) : 6;
     const plans = Array.isArray(d.plans) ? d.plans.filter((p) => p && typeof p.key === "string") : [];
     // A plan's largest size shows only when the plans differ in it; the same for all, the sizes table says it.
     const largest = new Set(plans.filter((p) => sized(p.largest)).map((p) => size(p.largest)));
@@ -294,7 +310,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
       if (!el) continue;
       if (typeof p.name === "string" && p.name) put(el, "name", p.name);
       if (int(p.priceCents)) put(el, "price", dollars(p.priceCents));
-      if (int(p.includedCents)) put(el, "included", dollars(p.includedCents));
+      if (int(p.includedCents)) put(el, "hours", hours(p.includedCents, smallest));
       if (int(p.agentsAtOnce)) put(el, "agents", String(p.agentsAtOnce));
       const li = el.querySelector('[data-f="largest"]');
       if (li && largest.size > 1 && sized(p.largest)) {
@@ -310,7 +326,6 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     if (int(c.minCents)) put(document, "credits-min", dollars(c.minCents));
     if (int(c.months)) put(document, "credits-months", String(c.months));
     if (int(c.agentsAtOnce)) put(document, "credits-agents", String(c.agentsAtOnce));
-    const sizes = Array.isArray(d.sizes) ? d.sizes.filter((s) => sized(s) && int(s.centsPerHour)) : [];
     if (sizes.length) {
       const rows = sizes.map((s) => {
         const tr = document.createElement("tr");
