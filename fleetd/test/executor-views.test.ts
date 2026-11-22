@@ -153,6 +153,7 @@ function followed() {
       it("p1", 4, "completed", { type: "permission", requestId: "q1", toolName: "Bash", summary: "rm" }),
       it("i4", 5, "completed", { type: "api_retry", attempt: 2, maxRetries: 10, errorStatus: 529, error: "overloaded" }),
       it("c1", 6, "completed", { type: "compaction", trigger: "auto" }),
+      it("s1", 7, "running", { type: "starting", text: "Starting its computer: boat.dev refused the box. Trying again in 30 s, by itself." }),
     ] as never,
   });
   return view;
@@ -162,17 +163,19 @@ test("actions are the agent's work, newest first; the tail mixes messages and ac
   const view = followed();
   const actions = actionsOf(view, 10, false);
   // The permission prompt and the compaction are bookkeeping, not work.
-  expect(actions.map(([id]) => id)).toEqual(["i4", "i3", "i2", "i1"]);
-  expect(actions[0]?.[1]).toMatchObject({ kind: "other", summary: "API retry 2/10: 529 overloaded", failed: false });
-  expect(actions[2]?.[1]).toMatchObject({ kind: "command", status: "completed", exitCode: 1, failed: true });
-  expect(actions[1]?.[1].summary).toBe("src/a.ts");
+  expect(actions.map(([id]) => id)).toEqual(["s1", "i4", "i3", "i2", "i1"]);
+  // A start that keeps failing is a step of its own, running, with why and when it goes again.
+  expect(actions[0]?.[1]).toMatchObject({ kind: "other", status: "running", summary: "Starting its computer: boat.dev refused the box. Trying again in 30 s, by itself.", failed: false });
+  expect(actions[1]?.[1]).toMatchObject({ kind: "other", summary: "API retry 2/10: 529 overloaded", failed: false });
+  expect(actions[3]?.[1]).toMatchObject({ kind: "command", status: "completed", exitCode: 1, failed: true });
+  expect(actions[2]?.[1].summary).toBe("src/a.ts");
   expect(actionsOf(view, 10, true).map(([id]) => id)).toEqual(["i2"]);
   const [rows, truncated] = tailOf(view, 3, undefined);
   expect(truncated).toBe(false);
   expect(rows.map(([id, r]) => [id, r.kind])).toEqual([
     ["m2", "message"],
+    ["s1", "action"],
     ["i4", "action"],
-    ["i3", "action"],
   ]);
   const [messages] = tailOf(view, 10, ["message"]);
   expect(messages.length).toBe(2);
