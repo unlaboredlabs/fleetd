@@ -8,8 +8,8 @@ interface Clip {
   readonly scene: string;
   readonly from: number;
   readonly to: number;
-  /** [ms, the list's offset, the beside list's, moving 1/0] a frame the page drew. */
-  readonly frames: ReadonlyArray<readonly [number, number, number, number]>;
+  /** [ms, the list's offset, the beside list's, moving 1/0, wheel events handled by then] a frame the page drew. */
+  readonly frames: ReadonlyArray<readonly [number, number, number, number, number?]>;
   /** [its ms, handled ms, dx, dy, cancelable, momentum] a wheel event. */
   readonly wheels: ReadonlyArray<readonly [number, number, number, number, number, number]>;
   readonly longs: ReadonlyArray<readonly [number, number]>;
@@ -21,12 +21,19 @@ const FRAME = 1000 / 60;
 export interface Numbers {
   readonly scene: string;
   readonly hubs: string;
-  /** Frames drawn from the first wheel event until it was still, and the ones missed among them. */
+  /**
+   * Frames drawn from the first wheel event until it was still, the ones missed among them while the list moved, and
+   * the longest one then (ms). Apart, the frame it landed on another hub in (ms): the list in its place already, the
+   * new hub's sidebar and chat drawn.
+   */
   readonly frames: number;
   readonly dropped: number;
   readonly worst: number;
-  /** While the fingers moved: how far the list was behind them (px), at most. */
+  readonly landing: number;
+  /** Toward a hub, while the fingers moved: how far the list was off them (px), at most. */
   readonly behind: number;
+  /** How long before the fingers' last event the list let go of them and went its own way (ms; 0: never). */
+  readonly early: number;
   /** After the last finger event: until the list began moving toward where it settles, and until it was still (ms). */
   readonly hold: number;
   readonly settle: number;
@@ -47,20 +54,36 @@ export const numbers = (c: Clip): Numbers => {
     if (t > first && (m === 1 || pm === 1 || x !== px || (b !== pb && !Number.isNaN(b)))) end = t;
   }
   const during = c.frames.filter(([t]) => t >= first && t <= end);
+  const reach = Math.max(...during.map(([, x]) => Math.abs(x)), 0);
   let dropped = 0;
   let worst = 0;
+  let landing = 0;
   for (let i = 1; i < during.length; i++) {
-    const dt = (during[i]?.[0] ?? 0) - (during[i - 1]?.[0] ?? 0);
+    const [t, x] = during[i] ?? [0, 0];
+    const [pt, px] = during[i - 1] ?? [0, 0];
+    const dt = t - pt;
+    // The one that draws the new hub's list in place, its slide's list a step from the end before it.
+    if (c.from !== c.to && x === 0 && Math.abs(px) > reach - 4) {
+      landing = Math.round(dt);
+      continue;
+    }
     worst = Math.max(worst, dt);
     dropped += Math.max(0, Math.round(dt / FRAME) - 1);
   }
-  // Where the fingers had the list at each frame: their travel so far, the list moving the other way.
+  // Where the fingers had the list at each frame: their travel so far, the list moving the other way. Toward a hub
+  // there, 1:1; toward an end, stretched, so only whether it turned back while they still went out.
+  const edge = c.scene.startsWith("edge");
   let behind = 0;
-  for (const [t, x] of during) {
-    if (t > lift + FRAME) break;
-    const travel = -fingers.filter((w) => w[0] <= t).reduce((s, w) => s + w[2], 0);
-    // Toward a hub there, 1:1; toward an end, any give at all is following.
-    if (c.from !== c.to || Math.abs(travel) < 40) behind = Math.max(behind, Math.abs(travel - x));
+  let early = 0;
+  let out = 0;
+  for (const [t, x, , , seen] of during) {
+    if (t > lift) break;
+    // The fingers' events handled by the time the frame was drawn.
+    const handled = seen === undefined ? c.wheels.filter((w) => w[1] <= t) : c.wheels.slice(0, seen);
+    const travel = -handled.filter((w) => w[5] === 0).reduce((s, w) => s + w[2], 0);
+    if (!edge) behind = Math.max(behind, Math.abs(travel - x));
+    if (Math.abs(x) < out - 0.5 && early === 0) early = lift - t;
+    out = Math.max(out, Math.abs(x));
   }
   const after = c.frames.filter(([t]) => t > lift);
   let hold = 0;
@@ -80,19 +103,24 @@ export const numbers = (c: Clip): Numbers => {
     frames: during.length,
     dropped,
     worst: Math.round(worst),
+    landing,
     behind: Math.round(behind),
+    early: Math.round(early),
     hold: Math.max(0, Math.round(hold)),
     settle: Math.max(0, Math.round(end - lift)),
-    reach: Math.round(Math.max(...during.map(([, x]) => Math.abs(x)), 0)),
+    reach: Math.round(reach),
     longs: c.longs.filter(([t]) => t >= first && t <= end).length,
   };
 };
 
 export const table = (rows: readonly Numbers[]): string =>
   [
-    "| scene | hubs | frames | dropped | worst gap (ms) | list behind fingers (px) | still after lift (ms) | lift → settled (ms) | reach (px) | long frames |",
-    "|---|---|---|---|---|---|---|---|---|---|",
-    ...rows.map((r) => `| ${r.scene} | ${r.hubs} | ${String(r.frames)} | ${String(r.dropped)} | ${String(r.worst)} | ${String(r.behind)} | ${String(r.hold)} | ${String(r.settle)} | ${String(r.reach)} | ${String(r.longs)} |`),
+    "| scene | hubs | frames | dropped | longest frame (ms) | landing frame (ms) | off the fingers (px) | let go before the lift (ms) | still after the lift (ms) | lift → still (ms) | furthest (px) | long frames |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ...rows.map(
+      (r) =>
+        `| ${r.scene} | ${r.hubs} | ${String(r.frames)} | ${String(r.dropped)} | ${String(r.worst)} | ${r.landing === 0 ? "–" : String(r.landing)} | ${r.scene.startsWith("edge") ? "–" : String(r.behind)} | ${String(r.early)} | ${String(r.hold)} | ${String(r.settle)} | ${String(r.reach)} | ${String(r.longs)} |`,
+    ),
   ].join("\n");
 
 if (import.meta.main) {
