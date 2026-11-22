@@ -111,6 +111,8 @@ export const MACHINE_KEEPS = [
   // What its agents wrote to each other: the person's audit, kept with the tasks it names.
   "agent_messages",
   "changes",
+  // Which GitHub issue opened which order, kept with the orders: its labelling never opens a second one (hub/issues).
+  "issue_orders",
   "project_erases",
   "pair_codes",
   // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
