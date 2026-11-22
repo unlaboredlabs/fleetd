@@ -38,6 +38,7 @@ import {
   HEARTBEAT_TIMEOUT_SECS,
   HUB_CAP_LINK_DEFLATE,
   HUB_CAP_SESSION_ROUTE,
+  LINK_BULK_BYTES,
   type HubFrame,
   type NodeBusy,
   type NodeFrame,
@@ -412,6 +413,9 @@ export class Link {
   private write(ws: Socket, state: LinkSocket, frame: HubFrame | Record<string, unknown>): boolean {
     if (state.phase === "closed") return false;
     const text = JSON.stringify(frame);
+    // The node hears a frame only once it is whole, and one this big may take seconds on a slow link: told first, it
+    // waits for it rather than take the silence for a dead link.
+    if (text.length >= LINK_BULK_BYTES) this.write(ws, state, { t: "hb", at: this.nowIso(), bulk: text.length });
     const deflater = state.deflater;
     if (!deflater) return ws.send(text) >= 0;
     // Once compressed, every frame goes through the queue, so a short Text one never overtakes a deflating one.

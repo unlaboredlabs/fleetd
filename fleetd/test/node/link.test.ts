@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { createPublicKey, verify } from "node:crypto";
 import { Deflater, Inflater } from "../../src/node/link/deflate.ts";
-import { compresses, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
+import { BULK_BYTES, BULK_DEAD_MS, compresses, QUIET_DEAD_MS, QUIET_PROBE_MS, linkUrl, reconnectDelay, Redial, RESTART_REDIAL_MS, runNode, sizeAllowed, type LinkContext } from "../../src/node/link/index.ts";
 import { loadOrCreateIdentity } from "../../src/node/identity.ts";
 import { CapsArea } from "../../src/node/api.ts";
 import type { HubFrame } from "../../src/node/wire.ts";
@@ -329,4 +329,121 @@ test("deflate keeps its window across messages, and garbage ends the stream", as
     (e: Error) => e.message,
   );
   expect(why).toContain("does not inflate");
+});
+
+/** A TCP hop between the node and its hub that can go dark: while `dark`, every byte either way is dropped and the
+ * connections stay open, as on a network cut under them (a switch, wifi that drops). */
+function hop(target: number) {
+  const state = { dark: false };
+  const pairs = new Set<{ up?: Bun.Socket<unknown>; down: Bun.Socket<unknown> }>();
+  const server = Bun.listen<{ up?: Bun.Socket<unknown>; held: Uint8Array[] }>({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open(down) {
+        down.data = { held: [] };
+        const pair: { up?: Bun.Socket<unknown>; down: Bun.Socket<unknown> } = { down };
+        pairs.add(pair);
+        void Bun.connect({
+          hostname: "127.0.0.1",
+          port: target,
+          socket: {
+            open(up) {
+              pair.up = up;
+              down.data.up = up;
+              for (const c of down.data.held.splice(0)) up.write(c);
+            },
+            data: (_up, chunk) => void (!state.dark && down.write(new Uint8Array(chunk))),
+            close: () => void down.end(),
+            error: () => void down.end(),
+          },
+        });
+      },
+      data(down, chunk) {
+        if (state.dark) return;
+        const copy = new Uint8Array(chunk);
+        if (down.data.up) down.data.up.write(copy);
+        else down.data.held.push(copy);
+      },
+      close: (down) => void down.data.up?.end(),
+      error() {},
+    },
+  });
+  return { url: `http://127.0.0.1:${server.port}`, state, stop: () => server.stop(true) };
+}
+
+/** A node behind a hop to a fake hub, its losses logged with when they came. */
+function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }) {
+  const hub = fakeHub({ deflate: false });
+  const h = hop(hub.server.port!);
+  const stop = new AbortController();
+  const lost: { at: number; why: string }[] = [];
+  const links: LinkContext[] = [];
+  const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
+    if (msg === "hub link lost; reconnecting until it is back") lost.push({ at: Date.now(), why: String(fields?.why) });
+  };
+  void runNode(options(h.url, home, { attach: (l) => (links.push(l), () => {}), log, quiet, signal: stop.signal }));
+  const done = () => (stop.abort(), h.stop(), hub.server.stop(true));
+  return { hub, hop: h, lost, links, done };
+}
+
+const QUIET = { probeMs: 100, deadMs: 400, bulkMs: 2500 };
+
+test("a link cut under the node is found dead within the quiet bound, not at the next heartbeats, and dialled again", async () => {
+  // On a real link: pinged after 5 s of quiet, given up 7 s later; 30 s while a big frame may still be crossing.
+  expect([QUIET_PROBE_MS, QUIET_DEAD_MS, BULK_DEAD_MS]).toEqual([5000, 12_000, 30_000]);
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  // Quiet but alive: the hub's pongs keep it.
+  await Bun.sleep(600);
+  expect(n.lost).toEqual([]);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 2000);
+  expect(n.lost[0]!.at - cut).toBeLessThan(QUIET.bulkMs);
+  expect(n.lost[0]!.why).toBe("nothing from the hub for 0 s, and no answer to a ping");
+  n.hop.state.dark = false;
+  await until("the link back", () => n.links.length === 2, 3000);
+  n.done();
+  home.done();
+});
+
+test("after a big frame of its own the node waits the heartbeats' time, until the ping behind it is answered", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  const big = { t: "cmd_result", id: "c1", exitCode: 0, outputTail: "x".repeat(BULK_BYTES), timedOut: false } as const;
+  // Through, and its ping answered: a cut after it is found as quickly as any.
+  n.links[0]!.send(big);
+  await until("the frame", () => n.hub.conns[0]!.frames.some((f) => f.id === "c1"));
+  await Bun.sleep(200);
+  let cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the first loss", () => n.lost.length === 1, 2000);
+  expect(n.lost[0]!.at - cut).toBeLessThan(QUIET.bulkMs);
+  n.hop.state.dark = false;
+  await until("the link back", () => n.links.length === 2, 3000);
+  // Cut while it may still be crossing: no pong, and the node waits the longer bound before it gives the link up.
+  n.hop.state.dark = true;
+  cut = Date.now();
+  n.links[1]!.send({ ...big, id: "c2" });
+  await until("the second loss", () => n.lost.length === 2, 5000);
+  expect(n.lost[1]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
+});
+
+test("a heartbeat that says a big frame comes keeps the longer bound until a frame arrives", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  n.hub.conns[0]!.ws.send(JSON.stringify({ t: "hb", at: "2026-11-08T10:00:00Z", bulk: 5 << 20 }));
+  await Bun.sleep(50);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 5000);
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
 });

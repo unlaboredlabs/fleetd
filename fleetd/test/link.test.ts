@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { link, NodeCommandError } from "../src/hub/link/index.ts";
-import { closeReason } from "../src/shared/node_link.ts";
+import { closeReason, LINK_BULK_BYTES } from "../src/shared/node_link.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -181,6 +181,26 @@ test("a link_deflate node gets compressed frames and its own compressed frames a
   expect(asked.binary).toBe(true);
   node.send({ t: "node_action_result", id: asked.id, ok: true, message: "m".repeat(300) });
   expect((await long).message).toBe("m".repeat(300));
+  node.close();
+  await node.closed;
+});
+
+test("a frame big enough to take seconds on a slow link is announced by a heartbeat with its length right before it", async () => {
+  const node = await linked("worker-bulk");
+  await until(() => types().includes("machine.online worker-bulk"));
+  const small = links.request("worker-bulk", { t: "node_action", action: "probe" });
+  const asked = await node.next((f) => f.t === "node_action");
+  node.send({ t: "node_action_result", id: asked.id, ok: true, message: "ok" });
+  await small;
+  const big = links.request("worker-bulk", { t: "node_action", action: "probe", padding: "p".repeat(LINK_BULK_BYTES) });
+  const bigAsked = await node.next((f) => f.t === "node_action" && f.id !== asked.id);
+  const at = node.frames.indexOf(bigAsked);
+  const { binary: _binary, ...sent } = bigAsked as Record<string, unknown>;
+  expect(node.frames[at - 1]).toMatchObject({ t: "hb", bulk: JSON.stringify(sent).length });
+  // Only the big one: the small request came with no heartbeat before it.
+  expect(node.frames.filter((f) => f.t === "hb" && "bulk" in f)).toHaveLength(1);
+  node.send({ t: "node_action_result", id: bigAsked.id, ok: true, message: "ok" });
+  await big;
   node.close();
   await node.closed;
 });

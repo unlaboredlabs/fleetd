@@ -1,11 +1,14 @@
 // The hub link: challenge, signed hello, welcome, then heartbeats and the hub's
 // requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20%
 // jitter, reset by each welcome), and only gives up when the hub refuses the node. A quiet link is pinged before it is
-// given up on (QUIET_PROBE, QUIET_DEAD). With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).
+// given up on (QUIET_PROBE, QUIET_DEAD): a link cut under it (a network switch, wifi that drops) is found dead within
+// seconds, not at the next heartbeats. With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).
 //
 // Unlike the Rust node, silence is timed from the last whole message or pong, not the last byte read: Bun's client
-// WebSocket doesn't surface partial frames. A large frame still arriving over a slow link counts as silence after
-// QUIET_DEAD (30 s), where the Rust node waits for it.
+// WebSocket doesn't surface partial frames. So while a big frame may still be crossing a slow link (one the node sent,
+// until the ping behind it is answered; one the hub said is coming, until it arrives), the bound is BULK_DEAD (30 s),
+// heartbeats from the other side keeping it alive. A large frame that takes longer than that to arrive still counts
+// as silence, where the Rust node waits for it.
 import { HUB_TO_NODE } from "../../shared/wire_tags.ts";
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import { systemClock, type Clock } from "../../shared/clock.ts";
@@ -22,6 +25,7 @@ import {
   type HubFrame,
   type NodeFrame,
 } from "../wire.ts";
+import { LINK_BULK_BYTES } from "../../shared/node_link.ts";
 import { Deflater, Inflater, MIN_DEFLATE_BYTES } from "./deflate.ts";
 import { BadFrames, knownBy, readHubFrame, refusal } from "./frames.ts";
 
@@ -30,10 +34,15 @@ const SILENCE_TIMEOUT_MS = HEARTBEAT_TIMEOUT_SECS * 1000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 /** The dial and the upgrade: a hub that takes the connection but never answers it is as gone as a silent one. */
 export const CONNECT_TIMEOUT_MS = SILENCE_TIMEOUT_MS;
-/** Nothing heard for this long, a hub heartbeat 5 s late: the node pings, and any hub answers with a pong. */
-export const QUIET_PROBE_MS = (HEARTBEAT_INTERVAL_SECS + 5) * 1000;
-/** Nothing heard for this long, the ping unanswered for 10 s: the link is gone. */
-export const QUIET_DEAD_MS = (HEARTBEAT_INTERVAL_SECS + 15) * 1000;
+/** Nothing heard for this long: the node pings, and any hub answers with a pong. */
+export const QUIET_PROBE_MS = 5_000;
+/** Nothing heard for this long, the ping unanswered for 7 s (a satellite link answers in under one): the link is gone. */
+export const QUIET_DEAD_MS = 12_000;
+/** The bound instead while a big frame may still be crossing the link: pongs queue behind it, and only the hub's
+ * heartbeats (every 15 s) come through meanwhile. */
+export const BULK_DEAD_MS = (HEARTBEAT_INTERVAL_SECS + 15) * 1000;
+/** A frame this big (as it goes on the wire) may take seconds on a slow link. */
+export const BULK_BYTES = LINK_BULK_BYTES;
 /** The largest frame the node takes from its hub: an attachment's put_file with room to spare. */
 export const LINK_MAX_FRAME_BYTES = 64 << 20;
 /** The largest frame of any other kind. */
@@ -155,7 +164,7 @@ export type RunNodeOptions = {
   /** The upgrade proof's time; tests pass their own. */
   clock?: Clock;
   /** Bounds, for tests. */
-  quiet?: { probeMs: number; deadMs: number };
+  quiet?: { probeMs: number; deadMs: number; bulkMs?: number };
   heartbeatMs?: number;
   /** Ends the loop (the node's shutdown): run resolves with undefined. */
   signal?: AbortSignal;
@@ -221,7 +230,7 @@ function runLinkOnce(
   enrollToken: string | undefined,
   onWelcome: (hubId: string, machineId: string) => void,
 ): Promise<LinkEnd> {
-  const quiet = options.quiet ?? { probeMs: QUIET_PROBE_MS, deadMs: QUIET_DEAD_MS };
+  const quiet = { probeMs: QUIET_PROBE_MS, deadMs: QUIET_DEAD_MS, bulkMs: BULK_DEAD_MS, ...options.quiet };
   return new Promise<LinkEnd>((resolve) => {
     let url: string;
     try {
@@ -251,6 +260,11 @@ function runLinkOnce(
     let detach: (() => void) | undefined;
     let heard = Date.now();
     let pinged: number | undefined;
+    // A big frame may still be crossing: the ping written behind the node's own, until its pong; or one the hub said
+    // is coming (its heartbeat's `bulk`), until the next frame arrives.
+    let bulkPing: string | undefined;
+    let bulkPings = 0;
+    let inbound = false;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let writes: Promise<void> = Promise.resolve();
     // Frames in arrival order, each decoded (inflated) before the next is handled.
@@ -285,10 +299,17 @@ function runLinkOnce(
       const text = JSON.stringify(frame);
       writes = writes.then(async () => {
         if (ended) return;
+        let bytes = text.length;
         if (deflate && text.length >= MIN_DEFLATE_BYTES) {
           const data = await deflater.deflate(text);
-          if (!ended) ws.send(data);
+          if (ended) return;
+          ws.send(data);
+          bytes = data.byteLength;
         } else ws.send(text);
+        if (bytes >= BULK_BYTES) {
+          bulkPing = `bulk-${++bulkPings}`;
+          ws.ping(bulkPing);
+        }
       });
       writes = writes.catch((error) => finish({ kind: "lost", why: `writing to the hub: ${(error as Error).message}` }));
     };
@@ -318,15 +339,16 @@ function runLinkOnce(
     const watchQuiet = () => {
       if (ended) return;
       const now = Date.now();
-      if (now >= heard + quiet.deadMs)
-        return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(quiet.deadMs / 1000)} s, and no answer to a ping` });
+      const deadMs = bulkPing !== undefined || inbound ? quiet.bulkMs : quiet.deadMs;
+      if (now >= heard + deadMs)
+        return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
       if (now >= heard + quiet.probeMs && pinged !== heard) {
         pinged = heard;
         try {
           ws.ping();
         } catch {}
       }
-      const wake = pinged === heard ? heard + quiet.deadMs : heard + quiet.probeMs;
+      const wake = pinged === heard ? heard + deadMs : heard + quiet.probeMs;
       after(Math.max(10, wake - now), watchQuiet);
     };
 
@@ -374,6 +396,7 @@ function runLinkOnce(
           return;
         }
         case "live":
+          inbound = frame.t === "hb" && typeof frame.bulk === "number";
           if (frame.t === "challenge" || frame.t === "welcome" || frame.t === "hb") return;
           try {
             options.handle(frame, live!);
@@ -408,8 +431,10 @@ function runLinkOnce(
       heard = Date.now();
       waitFor("challenge");
     });
-    ws.addEventListener("pong", () => {
+    ws.addEventListener("pong", (event) => {
       heard = Date.now();
+      const data = (event as MessageEvent).data;
+      if (bulkPing !== undefined && data instanceof ArrayBuffer && new TextDecoder().decode(data) === bulkPing) bulkPing = undefined;
     });
     ws.addEventListener("message", (event) => {
       heard = Date.now();

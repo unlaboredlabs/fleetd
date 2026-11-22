@@ -39,6 +39,12 @@ export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: it
 export const HEARTBEAT_INTERVAL_SECS = 15;
 /** A link silent this long is offline. */
 export const HEARTBEAT_TIMEOUT_SECS = 45;
+/**
+ * A frame this big (as JSON) may take seconds on a slow link: 2 s at 256 kbit/s. The hub sends a heartbeat with `bulk`
+ * (its length) before one, so the node, which hears a frame only once it is whole, gives it the heartbeats' time to
+ * arrive instead of taking the wait for a dead link.
+ */
+export const LINK_BULK_BYTES = 64 * 1024;
 
 // What a node lists in its hello's `capabilities`: calls it understands beyond the protocol's base set.
 export const CAP_REPOS = "repos";
@@ -126,8 +132,9 @@ export type HubChallenge = { nonce: string };
  * none). */
 export type HubWelcome = { hubId: string; protocol: number; nonce?: string; capabilities?: string[]; machineId?: string };
 
-/** Both directions every 15 s; `load`, `steps` and `busy` are node -> hub only. */
-export type Heartbeat = { at: Timestamp; load?: NodeLoad; steps?: unknown[]; busy?: NodeBusy };
+/** Both directions every 15 s; `load`, `steps` and `busy` are node -> hub only, `bulk` hub -> node only, right before
+ * a frame of that many bytes (LINK_BULK_BYTES). */
+export type Heartbeat = { at: Timestamp; load?: NodeLoad; steps?: unknown[]; busy?: NodeBusy; bulk?: number };
 
 /** What keeps a machine busy, as its node counts it at each heartbeat. */
 export type NodeBusy = { threads: number; screens: number; uploads: number; hosted: number };
