@@ -28,6 +28,8 @@ const LINK_WAIT_MS = 5_000;
 const RELINK_WAIT_MS = 30_000;
 const RECENT_DROP_MS = 60_000;
 const ANSWER_TIMEOUT_MS = 30_000;
+/** A box's `mac_where` and `mac_send`: past the hub's own wait for the Mac (hub/mac_tool SEND_WAIT, 170 s). */
+const MAC_WAIT_MS = 180_000;
 const MAX_FRAME_BYTES = 256 * 1024;
 export const MAX_BROWSER_FRAME_BYTES = 8 << 20;
 
@@ -38,6 +40,10 @@ export const NODE_OPS = [
   "secure_input_open", "secure_input_claim", "secure_input_filled", "vault_fill", "vault_filled", "session_route", "session_step", "mac_where",
   "mac_send", "mcp_oauth_renew",
 ];
+
+/** The node's own calls a box's session sends itself: in a hosted box, the node's half of `fleetd mac` runs in the box,
+ * where the worktree is (cli/mac_tool.ts). Each goes out as the box's session, sealed to the Mac, never masked. */
+export const BOX_MAC_OPS = ["mac_where", "mac_send"];
 
 export type McpToolError = { code: string; message: string; fix?: string };
 /** `resent`: the caller sends it again after a cut before its answer (../../shared/lead_once.ts). */
@@ -190,7 +196,9 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
   const call = frame as unknown as LeadCallFrame;
   if (typeof call.id !== "string" || typeof call.call?.op !== "string") return bad("not a lead_call frame: it has no id or call");
   const op = call.call.op;
-  if (line.length > MAX_FRAME_BYTES && !(op === "artifact_publish" && line.length <= MAX_BROWSER_FRAME_BYTES))
+  const boxMac = typeof caller === "object" && BOX_MAC_OPS.includes(op);
+  // A push's piece is up to 2 MB, sealed.
+  if (line.length > MAX_FRAME_BYTES && !((op === "artifact_publish" || boxMac) && line.length <= MAX_BROWSER_FRAME_BYTES))
     return bad(`frame is larger than ${MAX_FRAME_BYTES} bytes (${line.length} for lead_call ${call.id})`);
   const reply = (r: LeadResultFrame) => ({ t: "lead_result", ...r });
   if (hooks.relay.toolOnly)
@@ -223,7 +231,7 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
         : { id: call.id, result: answered.result },
     );
   }
-  if (NODE_OPS.includes(op))
+  if (NODE_OPS.includes(op) && !boxMac)
     return reply(
       errorFrame(call.id, {
         code: "forbidden",
@@ -234,6 +242,8 @@ export async function answerLine(line: string, caller: Caller, hooks: LeadSocket
   const attributed = attribute(call, peer());
   if (isResult(attributed)) return reply(attributed);
   if (attributed.threadId === undefined) return reply(await hooks.relay.call(attributed));
+  // The step names the box's session, as the Mac checks its envelope against: never another's.
+  if (boxMac) return reply(await hooks.relay.call(op === "mac_send" ? { ...attributed, call: { ...attributed.call, threadId: attributed.threadId } } : attributed, MAC_WAIT_MS));
   // No masker, no call: a session's call goes out masked or not at all.
   let masker: Masker;
   try {
