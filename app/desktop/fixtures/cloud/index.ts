@@ -6,11 +6,12 @@
 // over SSH, setup steps, creating a GitHub App) gone, as hub_info's leftOut says; and `cloud-github-*`, its GitHub step
 // with fleetd's one App: to install, installed, the person's own GitHub to connect first, and a service without the
 // App; and `cloud-billing-*`, Settings › Hub › Billing in each state (src/shared/billing.samples.ts): no plan, a plan
-// with credits, a declined card, the cap reached, fleetd's computers not on yet, and the service not answering.
+// with credits, a declined card, the cap reached, and the service not answering; and fleetd's computers not on yet for
+// the team, beside a self-hosted hub, where no Billing shows at all.
 // Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { BILLING_SAMPLES, type BillingSample } from "../../src/shared/billing.samples.ts";
-import { Fixture, PROTOCOL } from "../kit/fixture.ts";
+import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
 
@@ -199,7 +200,13 @@ export default defineGroup({
     billing(base("typical"), "plan", "Billing on the Team plan with credits left, $10 lapsing within 30 days, two sizes used and a cap."),
     billing(base("typical"), "failed", "Billing after the Team plan's card was declined: one line with Update card, and the plan ends."),
     billing(base("typical"), "cap", "Billing with this month's spend cap reached: one line with Raise cap."),
-    billing(base("typical"), "off", "Billing before fleetd's computers are on for teams: one line, nothing to buy."),
+    (() => {
+      const f = billing(base("typical"), "off", "Settings on a team before fleetd's computers are on for it, beside a self-hosted hub: no Billing anywhere.");
+      const own = answerHub(Fixture.from(base("typical"), "cloud-billing-off-devbox", "devbox, a self-hosted hub Sam owns"));
+      own.state = { phase: "live", hub: HUB, protocol: PROTOCOL };
+      f.hubs = [{ label: "devbox", color: "blue", fixture: own }];
+      return f;
+    })(),
     admin(base("typical"), "cloud-billing-unreachable", "Billing when the team doesn't answer: why, and Try again.", {
       billingFailure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." },
     }),

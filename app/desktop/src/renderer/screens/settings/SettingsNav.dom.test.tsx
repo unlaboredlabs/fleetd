@@ -288,13 +288,13 @@ it.each(OLD_LINKS)("opens %s on %s, at %s, with %s current in the sidebar", asyn
   expect(document.activeElement).toBe(el);
 });
 
-// Billing is a fleetd cloud team's alone: on this self-hosted hub its link opens a page that says so, and no row of the
-// sidebar names it (the cloud's page is shot in QA, settings.hub.billing).
-it("opens a Billing link on a self-hosted hub with why it isn't here, and no Billing row", async () => {
+// Billing is a fleetd cloud team's alone: on this self-hosted hub its link lands on People, with no page that only says
+// it isn't here, and no row of the sidebar names it (the cloud's page is shot in QA, settings.hub.billing).
+it("lands a Billing link on a self-hosted hub on People, and lists no Billing row", async () => {
   await render("#/settings/hub/billing", true, true, ["vault"]);
-  expect(screen()).toBe("settings.hub.billing");
-  expect(host.textContent).toContain("Billing is for fleetd cloud teams.");
-  expect(current()).toEqual([]);
+  expect(screen()).toBe("settings.hub.people");
+  expect(window.location.hash).toBe("#/settings/hub/people");
+  expect(host.textContent).not.toContain("Billing is for fleetd cloud teams.");
   expect([...host.querySelectorAll("nav button")].some((b) => b.textContent === "Billing")).toBe(false);
 });
 

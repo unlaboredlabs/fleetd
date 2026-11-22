@@ -47,6 +47,7 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "speak-when-it-matters", label: "no message on routine wakes; writes only when the human must act or decide, when what they asked about lands, fails or is blocked, when main stays red, or to answer them", needle: "No message on routine wakes", enforced: "prompt" },
       { id: "batch-landings", label: "batches what lands in a wake into one short line, never one message per PR; always posts when an order the human asked for finishes", needle: "Batch landings into one short line", enforced: "prompt" },
       { id: "no-status-only", label: "never posts a status-only or \"nothing needs you\" message; a turn with nothing to say replies `(quiet)`, which fleetd never posts", needle: "Never post a status-only message", enforced: "prompt" },
+      { id: "answers-the-person", label: "`(quiet)` never answers the person's own message: a turn their message came into that posts nothing for them wakes the lead once to answer it, then the chat says it didn't", needle: "is never an answer to the person's own message", enforced: "code" },
       { id: "nudge-sparingly", label: "flags a message for the human's look (`nudge`) only for a showcase, something to try or a risk, never routine news", needle: "then call `nudge`", enforced: "prompt" },
       { id: "plain-words", label: "no fleetd ids, tool names, paths or process words unless asked", needle: "No tool names, file paths", enforced: "prompt" },
       { id: "no-time", label: "never estimates time", needle: "Never estimate time", enforced: "prompt" },

@@ -29,7 +29,7 @@ import { HubSkills } from "../settings/Skills";
 import { HubVault } from "../settings/Vault";
 import { navigate } from "../shell/navigation";
 import { parseHash, toHash, type HubTab } from "../shell/routes";
-import { Billing } from "./Billing";
+import { Billing, useBillingShown } from "./Billing";
 import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
 import { MachinePage } from "./MachinePage";
 import { People } from "./People";
@@ -43,10 +43,14 @@ import a from "./admin.module.css";
 export const HubMark = ({ hub }: { hub: HubView }) =>
   hub.color === undefined ? null : <span className={a.hubMark} style={{ background: HUB_COLOR[hub.color] }} aria-hidden />;
 
-/** A hub to manage: listed when this person administers it there (and the one managed now, whatever its answer). */
-function HubChoice({ hub, current, onPick }: { hub: HubView; current: boolean; onPick: () => void }) {
+/**
+ * A hub to manage: listed when this person administers it there (and the one managed now, whatever its answer); on
+ * Billing, only a hub that has it, so no choice leads to a page that isn't there.
+ */
+function HubChoice({ hub, tab, current, onPick }: { hub: HubView; tab: HubTab; current: boolean; onPick: () => void }) {
   const administers = useAdministers();
-  if (!administers && !current) return null;
+  const billing = useBillingShown(tab === "hub.billing" && !current);
+  if (!current && (!administers || (tab === "hub.billing" && !billing))) return null;
   return (
     <button type="button" className={a.hubChoice} aria-current={current ? "page" : undefined} data-admin-hub={hub.id} onClick={onPick}>
       <HubMark hub={hub} />
@@ -89,7 +93,7 @@ function Managing({ tab }: { tab: HubTab }) {
         <div className={a.hubChoices} role="group" aria-label="Hub to manage">
           {hubs.map((h) => (
             <HubScope key={h.id} hub={h}>
-              <HubChoice hub={h} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
+              <HubChoice hub={h} tab={tab} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
             </HubScope>
           ))}
         </div>

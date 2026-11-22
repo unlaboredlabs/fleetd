@@ -39,7 +39,7 @@ function useSteerSends() {
 
 type SteerSends = ReturnType<typeof useSteerSends>;
 
-/** Under an agent's box: the person's steers to task `taskId` of order `workstreamId`, newest first. */
+/** In an agent's box, over the words: the person's steers to task `taskId` of order `workstreamId`, newest first. */
 function SteerReceipts({ workstreamId, taskId, steers }: { workstreamId: string; taskId: string; steers: SteerSends }) {
   const order = useToolQuery("order_get", { workstreamId });
   const [unwithdrawn, setUnwithdrawn] = useState<string>();
@@ -139,10 +139,19 @@ export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskI
     send(mode);
   };
 
+  // One glass pill, as the chat's composer (chat/composer.module.css): your steers and a refusal on rows over the
+  // words, Send beside them. How to stop its step lives in Send's tooltip, not in a line under the box.
   return (
     <div className={s.steer} data-steer-box>
-      <SteerReceipts workstreamId={workstreamId} taskId={taskId} steers={steers} />
       <div className={s.box}>
+        <SteerReceipts workstreamId={workstreamId} taskId={taskId} steers={steers} />
+        <div role="status" className={s.note}>
+          {error !== undefined ? (
+            <Text size="xs" tone="danger">
+              {error}
+            </Text>
+          ) : null}
+        </div>
         <textarea
           ref={input}
           className={s.input}
@@ -156,22 +165,13 @@ export function SteerBox({ workstreamId, taskId }: { workstreamId: string; taskI
           }}
           onKeyDown={onKeyDown}
         />
-        <Tooltip content="Send at its next step">
-          <Button variant="primary" size="sm" iconOnly round aria-label="Send the steer" disabled={text.trim() === "" || busy} onClick={() => send("queue")}>
-            <ArrowUp />
-          </Button>
-        </Tooltip>
-      </div>
-      <div role="status" className={s.note}>
-        {error !== undefined ? (
-          <Text size="xs" tone="danger">
-            {error}
-          </Text>
-        ) : (
-          <Text size="xs" tone="faint">
-            {`Goes straight to this agent, and its lead is told. ${nowKeys()} stops its current step.`}
-          </Text>
-        )}
+        <span className={s.tools}>
+          <Tooltip content={`Send at its next step · ${nowKeys()} stops its current step`}>
+            <Button variant="primary" size="sm" iconOnly aria-label="Send the steer" disabled={text.trim() === "" || busy} onClick={() => send("queue")}>
+              <ArrowUp />
+            </Button>
+          </Tooltip>
+        </span>
       </div>
     </div>
   );

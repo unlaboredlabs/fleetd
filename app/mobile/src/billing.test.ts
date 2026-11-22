@@ -2,7 +2,7 @@
 // and the shared words in each state as Hermes runs them (no Array.prototype.toSorted).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BILLING_SAMPLES, SAMPLE_NOW } from "../../desktop/src/shared/billing.samples";
-import { billingPage, billingShown, failureWords, readTeamBilling, setTeamCap, topLine, usageRows } from "./billing";
+import { billingPage, billingShown, failureWords, readBilling, readTeamBilling, setTeamCap, topLine, usageRows } from "./billing";
 
 const HUB = { hub: "https://acme.fleetd.dev/", key: "fk_phone_key", hubName: "acme" };
 
@@ -20,10 +20,15 @@ const standIn = (answer: (s: Sent) => { status: number; body: unknown }) => {
 };
 
 describe("Billing on the phone", () => {
-  it("shows only for an admin of a hub that came with the account", () => {
-    expect(billingShown({ cloud: true }, true)).toBe(true);
-    expect(billingShown({ cloud: true }, false)).toBe(false);
-    expect(billingShown({}, true)).toBe(false);
+  it("shows only for an admin of a hub that came with the account, once fleetd's computers are on for it", () => {
+    const on = readBilling(BILLING_SAMPLES.plan);
+    const off = readBilling(BILLING_SAMPLES.off);
+    expect(billingShown({ cloud: true }, true, on)).toBe(true);
+    expect(billingShown({ cloud: true }, false, on)).toBe(false);
+    expect(billingShown({}, true, on)).toBe(false);
+    // Not on yet, or not read yet: no row for a screen that would only say there is nothing to buy.
+    expect(billingShown({ cloud: true }, true, off)).toBe(false);
+    expect(billingShown({ cloud: true }, true, null)).toBe(false);
   });
 
   it("reads the team's billing with the phone's key", async () => {
@@ -80,7 +85,7 @@ describe("Billing's words on Hermes", () => {
     expect(topLine(await read(BILLING_SAMPLES.failed))?.fix).toBe("portal");
     expect(topLine(await read(BILLING_SAMPLES.none))?.fix).toBe("buy");
     expect(topLine(await read(BILLING_SAMPLES.cap))?.fix).toBe("cap");
-    expect(topLine(await read(BILLING_SAMPLES.off))).toMatchObject({ tone: "warning", fix: null });
+    expect(topLine(await read(BILLING_SAMPLES.off))).toBeNull();
     expect(usageRows(await read(BILLING_SAMPLES.cap)).map((r) => r.cpu)).toEqual([16, 8, 2]);
     expect(SAMPLE_NOW).toBeGreaterThan(0);
   });
