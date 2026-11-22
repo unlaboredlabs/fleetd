@@ -15,8 +15,9 @@ paths=(
   # endpoint the CLI's setup imports; the desktop's package manager a test matches the sandbox image to.
   app/desktop/src/shared/contracts app/desktop/fixtures/setup site/install.sh app/desktop/src/shared/claudeEndpoint.ts
   app/desktop/package.json
-  # The lab scenarios; the two-team cases a test proves (fleetd/test/compare).
-  tests/lab tests/compare
+  # The lab scenarios; the two-team cases a test proves (fleetd/test/compare); the bad-network proxy they and
+  # fleetd/test/netem.test.ts run.
+  tests/lab tests/compare scripts/netem.ts
   # The docs pages generated from the code.
   docs/site/src/content/docs/reference/cli.md docs/site/src/content/docs/reference/agent-tools.md
   docs/site/src/content/docs/what-agents-are-told.md
