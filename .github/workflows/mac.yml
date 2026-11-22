@@ -280,8 +280,8 @@ jobs:
   ios-screens:
     # The phone app's screens on iOS simulators, by hand (only: screens), for judging a phone change while no agents'
     # Mac is joined: app/mobile/scripts/screens.sh pairs each simulator with a phone lab on the runner and takes Chats, a
-    # chat and its Info on an ordinary iPhone and on the iPhone Duo in each pose. The branch's app beside main's, whose
-    # ordinary iPhone shows what it looked like before. The xcode-27 image is the one with the iPhone Duo simulator.
+    # chat and its Info on an ordinary iPhone and on the iPhone Duo in each pose. The branch's app beside main's on the ordinary
+    # iPhone, which shows what it looked like before. The xcode-27 image is the one with the iPhone Duo simulator.
     name: ios screens (${{ matrix.app }})
     if: ${{ inputs.only == 'screens' }}
     strategy:
@@ -291,12 +291,9 @@ jobs:
           - app: branch
             devices: phone duo
           - app: main
-            devices: phone duo
+            devices: phone
     runs-on: xcode-27
     timeout-minutes: 120
-    env:
-      # 27.2, not the image's default 27.1: agent-device folds the iPhone Duo through its devicectl's display table.
-      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
         with:

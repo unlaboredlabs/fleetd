@@ -31,6 +31,11 @@ say() { echo "$*" | tee -a "$LOG"; }
 version=$(sed -n 's/^export const AGENT_DEVICE_VERSION = "\(.*\)";$/\1/p' "$REPO/fleetd/src/node/device/pins.ts")
 npm i --prefix "$WORK/tools" --no-audit --no-fund --silent "agent-device@$version"
 AD=$WORK/tools/node_modules/.bin/agent-device
+# The hinge: agent-device's own fold helper, run straight in the simulator. agent-device's fold first reads the
+# panels from devicectl, which this image's doesn't report, and gives up before sending anything.
+FOLD=$WORK/tools/fold-helper
+xcrun --sdk iphonesimulator clang -mios-simulator-version-min=15.0 -fobjc-arc -framework Foundation -framework IOKit \
+  "$WORK/tools/node_modules/agent-device/apple/fold-helper/Fold.m" -o "$FOLD"
 
 # The lab, on the runner's loopback, which its simulators share.
 FLEETD_BIN=$FLEETD_BIN node "$REPO/tests/lab/phoneLab.ts" "$LAB" 127.0.0.1 >"$OUT/lab.log" 2>&1 &
@@ -85,23 +90,24 @@ start() {
   UDID=${found%% *}
   say "$device: $found"
   try ad boot --timeout 900000
-  # agent-device's XCTest runner, built and started once, before any wait counts on it.
-  try ad prepare --timeout 900000
   try ad install "$APP"
+  # agent-device's XCTest runner, built and started once, before any wait counts on it.
+  try ad prepare ios-runner --timeout 900000
   try ad open sh.fleetd.app --timeout 900000
   try ad open "$(pair_link "$device")"
-  # iOS's "Open in “fleetd”?", then the app's own "Connect" to the hub.
-  if ad alert wait 30000 >>"$LOG" 2>&1; then try ad alert accept; fi
+  # iOS's "Open in “fleetd”?" (Open), then the app's own "Connect" to the hub, then notifications (Don't Allow).
+  if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert accept; fi
   try ad wait 'label="Connect"' 120000
   try ad press 'label="Connect"'
-  # Notifications, asked once paired: declined.
-  if ad alert wait 30000 >>"$LOG" 2>&1; then try ad alert dismiss; fi
+  if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert dismiss; fi
   try ad wait text "inventory" 180000
 }
 
 open_chat() { try ad find "inventory" click --first; try ad wait text "Low-stock alerts" 30000; }
 open_info() { try ad press 'label="Info"'; try ad wait text "Agents" 30000; }
 back() { try ad back; sleep 1; }
+# closed or open; the app's window follows a few seconds later.
+fold() { xcrun simctl spawn "$UDID" "$FOLD" "$1" >>"$LOG" 2>&1 || say "  failed: fold $1"; sleep 8; }
 # From Chats: Settings (a pushed stack), then New Bot (a sheet), each shot and closed again.
 others() {
   try ad find "Settings," click --first
@@ -128,7 +134,7 @@ for device in "$@"; do
       ;;
     duo)
       start "iPhone Duo" || continue
-      try ad fold open
+      fold open
       try ad orientation portrait
       shot duo-open-portrait-chats
       open_chat
@@ -142,7 +148,7 @@ for device in "$@"; do
       shot duo-open-landscape-info
       back
       try ad orientation portrait
-      try ad fold closed
+      fold closed
       shot duo-closed-portrait-chat
       open_info
       shot duo-closed-portrait-info
@@ -157,7 +163,7 @@ for device in "$@"; do
       back
       try ad orientation portrait
       # Unfolded under the running app: its window grows from the outer panel's to the inner one's.
-      try ad fold open
+      fold open
       shot duo-reopened-chats
       open_chat
       shot duo-reopened-chat
