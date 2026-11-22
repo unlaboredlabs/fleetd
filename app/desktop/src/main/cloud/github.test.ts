@@ -91,15 +91,18 @@ describe("fleetd's GitHub App on a cloud team", () => {
     });
   });
 
-  it("asks only a hub that came with the account, with that hub's own key", async () => {
+  it("asks only a hub at a team address, with that hub's own key", async () => {
     const dir = mkdtempSync(join(tmpdir(), "github-install-"));
     try {
       fake.githubConnected.add("acme sam@acme.example");
-      const cloudHub = { id: "hub", label: "acme", service: { keyed: () => ({ url, key: fake.keyFor("acme", "sam@acme.example") }) } as unknown as HubService };
-      const hubs = { cloudHubs: () => [cloudHub] } as unknown as Hubs;
+      const services: Record<string, HubService> = {
+        hub: { keyed: () => ({ url, key: fake.keyFor("acme", "sam@acme.example") }) } as unknown as HubService,
+        own: { keyed: () => ({ url: "http://devbox:4790", key: "fld_own" }) } as unknown as HubService,
+      };
+      const hubs = { get: (id: string) => services[id], list: () => [{ id: "hub", label: "acme" }] } as unknown as Hubs;
       const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, open);
       expect(await cloud.installGithub("hub")).toEqual({ ok: true });
-      // A self-hosted hub (not one of the account's): refused here, the team never asked.
+      // A self-hosted hub (not at a team address): refused here, the team never asked.
       expect(await cloud.installGithub("own")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
       expect(fake.installs).toEqual(["acme sam@acme.example"]);
       expect(opened).toHaveLength(1);

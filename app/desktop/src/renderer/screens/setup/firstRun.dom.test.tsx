@@ -2,7 +2,8 @@
 // The first run on a team of fleetd cloud with nothing to run agents on yet: its owners and admins land on Where agents
 // run, unless this device joined the team by an invitation (decision hosted.invites-need-accept); hosted sandboxes
 // connected there ask for Claude until an account reaches them, and say why, with Try again, once they don't get ready
-// within the wait.
+// within the wait. A team paired with a code (no sign-in's word on it, only its hub_info's) opens there for its owner
+// alone.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
@@ -20,6 +21,8 @@ let host: HTMLDivElement;
 let root: Root;
 let send: (frame: HubFrame) => void = () => undefined;
 let calls: string[] = [];
+/** The person hub_info says this app acts as; absent: it names nobody. */
+let me: { role: "owner" | "admin" | "member" } | undefined;
 
 const render = async (entry: { cloud?: true; invited?: true }) => {
   host = document.createElement("div");
@@ -32,7 +35,14 @@ const render = async (entry: { cloud?: true; invited?: true }) => {
         ok: true,
         output:
           tool === "hub_info"
-            ? { version: "0.9.0", protocol: 1, busy: [], admin: true, leftOut: ["setup_list", "setup_test"] }
+            ? {
+                version: "0.9.0",
+                protocol: 1,
+                busy: [],
+                admin: true,
+                leftOut: ["setup_list", "setup_test"],
+                ...(me === undefined ? {} : { me: { personId: "p_sam", name: "Sam", createdAt: "2026-11-01T00:00:00Z", role: me.role } }),
+              }
             : tool === "machine_join"
               ? { hubUrl: "https://acme.fleetd.dev", code: "fje_x", expiresAt: "2099-01-01T00:00:00Z", line: "curl -fsSL https://fleetd.sh | sh" }
               : tool === "sandbox_get"
@@ -71,6 +81,7 @@ const screen = () => host.querySelector("[data-screen]")?.getAttribute("data-scr
 beforeEach(() => {
   resetServes();
   calls = [];
+  me = undefined;
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -87,6 +98,20 @@ it("a team this device joined by invitation never opens on Connect a computer: G
   const stop = await render({ cloud: true, invited: true });
   expect(screen()).not.toBe("setup.machine");
   expect(host.textContent).not.toContain("Connect this computer");
+  expect(host.textContent).toContain("Add a bot");
+  stop();
+});
+
+it("a team paired with a code opens on Connect a computer for its owner alone: an admin who didn't make it gets Get started", async () => {
+  me = { role: "owner" };
+  let stop = await render({});
+  expect(screen()).toBe("setup.machine");
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  me = { role: "admin" };
+  stop = await render({});
+  expect(screen()).not.toBe("setup.machine");
   expect(host.textContent).toContain("Add a bot");
   stop();
 });

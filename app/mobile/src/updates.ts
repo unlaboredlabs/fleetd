@@ -3,7 +3,7 @@
 // didn't update or is behind. An admin reads it and presses its button; a member reads only how the hub's last update
 // ended, as the hub told everyone. The phone updates over the air, so the desktop's "this app" is left out. Pure, so
 // tested.
-import { CLOUD_UPDATES, updateStatus, versionLabel, type Auto, type Flow, type HubState, type HubUpdateData, type Status, type UpdateRun } from "./desktop";
+import { updateStatus, versionLabel, type Auto, type Flow, type HubState, type HubUpdateData, type Status, type UpdateRun } from "./desktop";
 import { FAILED_FOR_MS, UPDATED_FOR_MS } from "./hubWord";
 import type { Machine, Restart } from "./store";
 
@@ -45,11 +45,13 @@ const told = (hub: HubState, restart: Restart | null, update: HubUpdateData | un
   return { kind: "current", title: "Updated", ...(to === undefined ? {} : { detail: `fleetd ${versionLabel(to)}` }), rows: [], updatedAt: at };
 };
 
-/** What Settings › Update shows; null when there is nothing to show (a member with no news, a hub that isn't there). */
+/**
+ * What Settings › Update shows; null when there is nothing to show (a member with no news, a hub that isn't there, and
+ * fleetd cloud, which updates itself: the phone's own update is App update's).
+ */
 export const updateSection = ({ admin, hub, machines, run, flow, ready, auto, restart, update, updates = true, now = Date.now() }: UpdateInput): Status | null => {
   if (admin !== true || hub.phase !== "live") return told(hub, restart, update, now);
-  // Where an admin of a self-run hub finds Update, one line says why there is none.
-  if (!updates) return { kind: "current", title: CLOUD_UPDATES, rows: [] };
+  if (!updates) return null;
   const status = updateStatus({
     app: null,
     hub: { url: hub.hub, version: hub.version },

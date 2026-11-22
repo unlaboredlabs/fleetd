@@ -38,6 +38,7 @@ import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
 import { navigate } from "../shell/navigation";
+import { onWeb } from "../../src/web";
 import type { HubTab } from "../shell/routes";
 import { HeadSlot, useProjects } from "./parts";
 import {
@@ -195,6 +196,9 @@ function useEntries() {
   // nothing to buy yet, has no such page, not even a row that says so.
   const billing = useBillingShown(administers);
   const steps = useServes("setup_list");
+  // General's Version, as General shows it: not in the web app on fleetd cloud, which updates itself.
+  const updates = useServes("hub_update");
+  const version = !onWeb() || updates;
   const setup = useToolQuery("setup_list", noInput, {
     enabled: steps && administers,
   });
@@ -248,7 +252,7 @@ function useEntries() {
         go: () => navigate({ id: "settings", tab: p.tab, at: id }),
       }))
     : null;
-  return { you, bots, hub, administers, vault, billing };
+  return { you, bots, hub, administers, vault, billing, version };
 }
 
 function Item({ entry }: { entry: Entry }) {
@@ -296,13 +300,13 @@ function Group({
 
 /** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
-  const { you, bots, hub, administers, vault, billing } = useEntries();
+  const { you, bots, hub, administers, vault, billing, version } = useEntries();
   // A fleetd cloud team is a team to the person, never a hub.
   const cloud = useHub().cloud === true;
   const deletes = useDeletesTeam();
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
-  const results = searchSettings(query, optionsFor(administers, vault, billing));
+  const results = searchSettings(query, optionsFor(administers, vault, billing, version));
   return (
     <nav className={n.index} aria-label="Settings">
       <div className={n.indexHead}>

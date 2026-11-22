@@ -7,6 +7,8 @@ import { bindHub, createDataLayer, nextFrame, type DataLayer } from "./queries";
 
 export interface HubView extends HubEntry {
   readonly layer: DataLayer;
+  /** `cloud` by its hub_info's word alone (react.tsx HubScope): a team paired with a code, not one the account brought. */
+  readonly codePaired?: true | undefined;
 }
 
 export interface HubSet {

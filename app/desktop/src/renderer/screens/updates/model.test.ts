@@ -61,8 +61,8 @@ describe("fleetd cloud, which updates itself (updates: false)", () => {
     expect(status(cloud)).toEqual(status({ updates: false, version: "4f2a91c" }));
     expect(status(cloud).action).toBeUndefined();
     expect(status({ ...cloud, app: { kind: "ready", version: NEXT } }).action).toEqual({ label: "Restart to update", act: "app" });
-    // With nothing from this app to say (the phone), the one line why.
-    expect(status({ updates: false, app: null })).toEqual({ kind: "current", title: "Up to date", detail: "fleetd cloud updates itself.", rows: [] });
+    // With nothing from this app to say, only that: General leaves it out (General.tsx Versions).
+    expect(status({ updates: false, app: null })).toEqual({ kind: "current", title: "Up to date", rows: [] });
     // A self-run hub, which serves hub_update, as before.
     expect(status({ updates: true, cli: NEXT }).action).toEqual({ label: "Update", act: "update" });
   });

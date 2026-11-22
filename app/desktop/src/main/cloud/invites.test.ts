@@ -91,17 +91,21 @@ describe("a cloud team's invites by email", () => {
     expect(await listInvites(fetch, team)).toEqual({ ok: false, failure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." } });
   });
 
-  it("asks only a hub that came with the account, with that hub's own key", async () => {
+  it("asks only a hub at a team address, with that hub's own key: one of the account's or one paired with a code", async () => {
     const dir = mkdtempSync(join(tmpdir(), "invites-"));
     try {
-      const keyed = (id: string, hubUrl: string, key: string) =>
-        ({ id, label: "acme", service: { keyed: () => ({ url: hubUrl, key }) } as unknown as HubService }) as const;
-      const cloudHub = keyed("hub", url, fake.keyFor("acme", "sam@acme.example"));
-      const hubs = { cloudHubs: () => [cloudHub] } as unknown as Hubs;
+      const services: Record<string, HubService> = {
+        hub: { keyed: () => ({ url, key: fake.keyFor("acme", "sam@acme.example") }) } as unknown as HubService,
+        // Paired with a code: no sign-in marked it, its address says it is a team.
+        coded: { keyed: () => ({ url, key: fake.keyFor("acme", "sam@acme.example") }) } as unknown as HubService,
+        own: { keyed: () => ({ url: "http://devbox:4790", key: "fld_own" }) } as unknown as HubService,
+      };
+      const hubs = { get: (id: string) => services[id], list: () => Object.keys(services).map((id) => ({ id, label: "acme" })) } as unknown as Hubs;
       const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, () => Promise.resolve());
       expect(await cloud.invite("hub", { email: "eve@example.com", role: "member" })).toMatchObject({ ok: true });
       expect(await cloud.invites("hub")).toMatchObject({ ok: true, invites: [{ email: "eve@example.com" }] });
-      // A self-hosted hub (not one of the account's): refused here, the team never asked.
+      expect(await cloud.invites("coded")).toMatchObject({ ok: true, invites: [{ email: "eve@example.com" }] });
+      // A self-hosted hub (not at a team address): refused here, the team never asked.
       expect(await cloud.invite("own", { email: "finn@example.com", role: "member" })).toEqual({
         ok: false,
         failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." },
@@ -132,8 +136,8 @@ describe("a cloud team's invites by email", () => {
     const dir = mkdtempSync(join(tmpdir(), "fleetd-cloud-"));
     try {
       const removed: string[] = [];
-      const cloudHub = { id: "hub", label: "acme", service: { keyed: () => ({ url, key: sam.key }) } as unknown as HubService };
-      const hubs = { cloudHubs: () => [cloudHub], remove: (id: string) => removed.push(id) } as unknown as Hubs;
+      const service = { keyed: () => ({ url, key: sam.key }) } as unknown as HubService;
+      const hubs = { get: (id: string) => (id === "hub" ? service : undefined), list: () => [{ id: "hub", label: "acme" }], remove: (id: string) => removed.push(id) } as unknown as Hubs;
       const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, () => Promise.resolve());
       expect(await cloud.deleteTeam("hub", "nope")).toMatchObject({ ok: false, failure: { code: "wrong_name" } });
       expect(removed).toEqual([]);

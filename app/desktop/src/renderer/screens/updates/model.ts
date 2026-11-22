@@ -222,9 +222,6 @@ const going = (run: UpdateRun, flow: Flow, now: number, timeZone: string | undef
   };
 };
 
-/** Why fleetd cloud has no Update: said where an admin of a self-run hub finds it. */
-export const CLOUD_UPDATES = "fleetd cloud updates itself.";
-
 const count = (n: number): string => (n === 1 ? "1 machine" : `${String(n)} machines`);
 
 export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true, updates = true, withApp = true }: StatusInput): Status => {
@@ -240,7 +237,7 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
   // fleetd cloud updates itself: only this app's own update is said, whatever the hub's build, run or machines.
   if (!updates) {
     if (flow.phase === "app" && app?.app.kind !== "failed") return { ...appUpdating(app), rows: [] };
-    return { ...(own ?? { kind: "current", title: "Up to date", detail: CLOUD_UPDATES }), rows: [] };
+    return { ...(own ?? { kind: "current", title: "Up to date" }), rows: [] };
   }
   if (flow.phase === "refused") return { kind: "failed", title: "The update didn't start", detail: sentence(flow.message), action: TRY_AGAIN, rows: [] };
   if (flow.phase === "starting") return { kind: "updating", title: "Updating the hub…", ...(newest === null ? {} : { detail: named(newest) }), rows: [] };
