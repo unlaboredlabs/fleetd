@@ -88,11 +88,15 @@
   align-items: center;
   gap: var(--space-1);
 }
-/* Send: one solid accent key, round, always there; with nothing to send it is the same key, faded, never an outline. */
-.tools > button {
+/* The keys are 32 px squares, a line of words tall: both sides set here, over Button's md (36 px wide), or Stop's circle
+   is an oval and Send's square a bar. */
+.box .lead > button,
+.box .tools > button {
   width: 32px;
   height: 32px;
 }
+/* Send: one solid accent key, a square with a control's corners, always there; with nothing to send it is the same key,
+   faded, never an outline. Stop beside it is a circle (Button's round). */
 .tools > button:disabled {
   border-color: transparent;
   background: var(--selected);
@@ -106,8 +110,6 @@
   height: 16px;
 }
 .lead > button {
-  width: 32px;
-  height: 32px;
   border-radius: var(--radius-sm);
   color: var(--quiet);
 }
