@@ -33,7 +33,7 @@ import {
   tidyMemory,
   tidyPrompt,
 } from "./tidy_rules.ts";
-import { botKey, getTidy, putLineSnapshot, putTidy, type Tidy } from "./tidy_store.ts";
+import { botKey, getTidy, putLineSnapshot, putTidy, reserveMessageId, type Tidy } from "./tidy_store.ts";
 
 /** The chat rows of one bot a tidy looks at. */
 const CHAT_ROWS = 2_000;
@@ -99,7 +99,8 @@ export async function tick(hub: Hub, launcher: Launcher = refreshPorts(hub).laun
       continue;
     }
     if (t.dueMs !== undefined) {
-      const last = t.lastRun?.state === "skipped" || t.lastRun === undefined ? undefined : Date.parse(t.lastRun.at);
+      // Only a tidy that started counts: tries that couldn't (no machine up) don't push the next one out.
+      const last = t.lastStartedMs;
       if (now < t.dueMs + TIDY_DEBOUNCE_MS || (last !== undefined && now < last + TIDY_GAP_MS)) continue;
       if (!Memory.of(hub).overCap(person)) {
         delete t.dueMs;
@@ -264,7 +265,7 @@ async function start(hub: Hub, launcher: Launcher, person: PersonId, t: Tidy, bo
   }
   // Taken once the session is known, in the same step as its row: a write while it launched is in it, not lost to Undo.
   const before = memory.snapshot(person);
-  Object.assign(t, { host: on.r, threadId, startedMs: now, trigger, readTo, items: [], before, outside: false });
+  Object.assign(t, { host: on.r, threadId, startedMs: now, lastStartedMs: now, trigger, readTo, items: [], before, outside: false });
   t.lastRun = outcome(now, trigger, "running", []);
   putTidy(hub.db, person, t);
   return true;
@@ -288,7 +289,7 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
       id = chat(hub).add(t.host, { author: "system", text, memoryRefreshed: listed(items) }).message.messageId;
       delete t.line;
     } else {
-      id = `${PAGE_LINE}${person}:${started}`;
+      id = reserveMessageId(hub.db);
       const at = isoMs(hub.clock.now());
       t.line = { messageId: id, projectRef: t.host, seq: 0, author: "system", text, createdAt: at, state: "final", memoryRefreshed: listed(items) } as ChatMessage;
     }
@@ -309,9 +310,6 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
   putTidy(hub.db, person, t);
 }
 
-/** A tidy line's id when only its person's Memory page shows it, not a chat. */
-export const PAGE_LINE = "tidy:";
-
 /** `person`'s last tidy's line, for the top of their Memory page: a chat's, or the page's own. */
 export function lastTidied(hub: Hub, person: PersonId): ChatMessage | undefined {
   const t = getTidy(hub.db, person);
@@ -321,8 +319,8 @@ export function lastTidied(hub: Hub, person: PersonId): ChatMessage | undefined 
 
 /** The line only `person`'s Memory page shows, by its id; undefined for any other. */
 export function pageLine(hub: Hub, id: string): { person: PersonId; line: ChatMessage } | undefined {
-  if (!id.startsWith(PAGE_LINE)) return undefined;
-  const person = id.slice(PAGE_LINE.length).split(":")[0] as string;
+  const person = hub.db.all<{ person_id: string }>("SELECT person_id FROM memory_tidies WHERE json_extract(line, '$.messageId') = ?", [id])[0]?.person_id;
+  if (person === undefined) return undefined;
   const line = getTidy(hub.db, person).line;
   return line?.messageId === id ? { person, line } : undefined;
 }

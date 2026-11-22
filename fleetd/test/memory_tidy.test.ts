@@ -13,6 +13,7 @@ import { tick } from "../src/hub/memory/tidy.ts";
 import { TIDY_DEBOUNCE_MS, tidyChatLine } from "../src/hub/memory/tidy_rules.ts";
 import { getTidy } from "../src/hub/memory/tidy_store.ts";
 import { register } from "../src/hub/memory/tools.ts";
+import { Registry as ToolRegistry } from "../src/hub/api/registry.ts";
 import { checkCall } from "../src/hub/lead_calls/policy.ts";
 import type { LaunchInput } from "../src/hub/executor/sessions.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
@@ -225,11 +226,16 @@ test("the night's tidy runs after the bots' refreshes, in the person's own bot, 
   const ben = caller("operate", true, BEN);
   const page = tool("memory_get", {}, ben).tidied as ChatMessage;
   expect(page.text).toBe("Memory refreshed: ~1");
-  expect(page.messageId.startsWith("tidy:")).toBe(true);
-  // Ada sees none of it, and can't undo it; Ben's Undo all needs no grant on the bot's machine.
+  // An id of the chat's own shape, which memory_undo's input takes, and no chat message has.
+  expect(page.messageId).toMatch(/^m[1-9][0-9]*$/);
+  expect(chat(hub).byId(page.messageId)).toBeUndefined();
+  // Ada sees none of it, and can't undo it.
   expect((tool("memory_get", {}).tidied as ChatMessage | undefined)?.messageId).not.toBe(page.messageId);
   expect(() => tool("memory_undo", { projectRef: page.projectRef, messageId: page.messageId })).toThrow("only they read and edit it");
-  tool("memory_undo", { projectRef: page.projectRef, messageId: page.messageId }, caller("read", true, BEN));
+  // Through the registry, as the apps call it: its input decodes, and Undo all runs.
+  const decoded = new ToolRegistry();
+  register(decoded);
+  expect(await decoded.call(hub, caller("operate", true, BEN), "memory_undo", { projectRef: page.projectRef, messageId: page.messageId })).toEqual({ output: { ok: true } });
   expect(Memory.of(hub).read(userTarget(BEN.personId))).toBe("- Use npm.\n");
   expect((tool("memory_get", {}, ben).tidied as ChatMessage).memoryRefreshed!.items.every((i) => i.undone === true)).toBe(true);
 });
@@ -334,4 +340,24 @@ test("tidyChatLine keeps the person's words, and the lead's only where nobody el
   // A message from before people is the one person's on a hub with only them.
   expect(tidyChatLine(m("human"), ADA.personId, true, true)).toBe("Human: hi");
   expect(tidyChatLine(m("human"), ADA.personId, false, true)).toBeUndefined();
+});
+
+test("a tidy a write asks for while no machine is up starts once one is, not an hour later", async () => {
+  const { hub, clock, launches } = setup();
+  hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('user', 1000)").run();
+  clock.ms = NIGHT_MS + 8 * 3_600_000;
+  says(hub, ADA, "Hi.");
+  Object.assign(refreshPorts(hub), { can: () => false, lacks: () => false });
+  put(hub, `- ${"An older rule. ".repeat(70).trim()}\n`);
+  clock.ms += TIDY_DEBOUNCE_MS;
+  await tick(hub);
+  clock.ms += 60_000;
+  await tick(hub);
+  expect(launches).toEqual([]);
+  expect(getTidy(hub.db, ADA.personId).lastRun?.state).toBe("failed");
+  // The machine is back a few minutes later: the tidy starts then, the tries that couldn't start counting for nothing.
+  Object.assign(refreshPorts(hub), { can: (_m: string, cap: string) => cap === CAP_ALLOWED_ONLY, lacks: () => false });
+  clock.ms += 3 * 60_000;
+  await tick(hub);
+  expect(launches.map((l) => l.title)).toEqual(["fleetd memory tidy: Ada"]);
 });
