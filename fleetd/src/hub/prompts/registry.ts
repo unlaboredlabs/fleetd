@@ -18,6 +18,7 @@ import d11 from "./defaults/task.brief.read.md" with { type: "text" };
 import d12 from "./defaults/task.brief.review.md" with { type: "text" };
 import d13 from "./defaults/review.reviewer.md" with { type: "text" };
 import d14 from "./defaults/review.delta.md" with { type: "text" };
+import dReviewUnsure from "./defaults/review.unsure.md" with { type: "text" };
 import d15 from "./defaults/review.conflicts.md" with { type: "text" };
 import d16 from "./defaults/review.unreported.md" with { type: "text" };
 import d17 from "./defaults/pr.fix.md" with { type: "text" };
@@ -259,6 +260,17 @@ export const ENTRIES: RegistryEntry[] = [
     sentWhen: "after Reviewer, when an earlier round reviewed another head of the PR",
     default: d14,
     placeholders: "reviewedSha!=the head reviewed before; headSha!=the head to review",
+    rules: [],
+  },
+  {
+    id: "review.unsure",
+    kind: "start",
+    group: "reviews_and_checks",
+    audience: "task",
+    title: "Reviewer: what the author wasn't sure about",
+    sentWhen: "after Reviewer, when the PR's description has an `Unsure:` line that names a doubt",
+    default: dReviewUnsure,
+    placeholders: "unsure!=the author's `Unsure:` line, without the label, on one line",
     rules: [],
   },
   {
