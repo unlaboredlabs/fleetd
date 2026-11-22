@@ -74,6 +74,9 @@ export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 /** A team's invites by email, on the team's own address (not the accounts service's), with an owner's or admin's device key: GET lists, POST makes one, `<this>/<inviteId>/revoke` (POST) takes one back. */
 export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
 
+/** A team deleted for good by its owner, on the team's own address with an owner's device key (and as `/t/<team>/accounts/v1/team/delete` with the web app's session): POST `{ name }`, the team's name typed again. */
+export const ACCOUNTS_TEAM_DELETE_PATH = "/accounts/v1/team/delete";
+
 /** fleetd cloud's GitHub App installed on a team (decision hosted.github-app), on the team's own address, with an owner's or admin's device key: POST answers `{ url }`, GitHub's install page to open, whose `state` only that person of that team can finish; 409 while the person's own GitHub isn't connected. */
 export const GITHUB_INSTALL_PATH = "/github/v1/install";
 
@@ -199,6 +202,16 @@ export type AccountsTeam = {
   pairingCode: string;
   /** The team's hub address, an https origin with no path (http only on 127.0.0.1, for tests). */
   url: string;
+};
+
+/** POST /accounts/v1/team/delete on the team's own address, with an owner's device key: the team deleted for good, its name typed again (what people call it, or its address's name). Refused `forbidden` for anyone but an owner, `wrong_name` and `running` while any of its agents runs. */
+export type AccountsTeamDeleteInput = {
+  name: string;
+};
+
+/** 200: the team is deleted; the name it went by. */
+export type AccountsTeamDeleteOutput = {
+  deleted: string;
 };
 
 /** POST /v1/app/team: a team of the person's own, by the make value the sign-in answered. No auth header. */

@@ -66,6 +66,13 @@ signing out clears them, as does another account signing in, so nothing stays on
 signed out. When the browser's storage is full, a team's copy is left out rather than anything failing.
 The web app shows up in [Devices](/docs/mobile#devices) as **Web browser**, where you can sign it out from elsewhere.
 
+## Deleting a team {#delete-team}
+
+A team's owner deletes it at the bottom of Settings › Team › **Delete team**, in the web app, the desktop app or the
+phone, by typing the team's name. Its bots, chats, memory and vault go for good, for everyone in it. While agents run,
+or while a paid plan still renews, the team says so and stays: stop them, or cancel the plan in Billing › Manage
+billing, then delete it.
+
 ## How it fits together {#contract}
 
 The web app is `app/desktop`'s renderer built with the browser's shell in place of Electron's (`pnpm build:web`, in

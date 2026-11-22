@@ -25,7 +25,7 @@ import { readFile } from "../shared/transfer";
 import type { UpdatesState } from "../shared/updates";
 import { openBilling, readTeamBilling, setBillingCap } from "../main/cloud/billing";
 import { connectGithub, githubRepos, installGithub } from "../main/cloud/github";
-import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
+import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
 import { externalUrl } from "../main/external";
 import type { Transport } from "../main/hub/link";
 import { submitClaudeAccount, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSandboxKey, submitSecret } from "../main/secret";
@@ -378,6 +378,17 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       revokeInvite: (hub, inviteId) => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : revokeInvite(teamFetch, team, inviteId);
+      },
+      // Gone, the team leaves this page: the web app's start lists the teams left, or makes one.
+      deleteTeam: async (hub, name) => {
+        const team = keyed(hub);
+        if (team === null) return notTeam;
+        const out = await deleteTeam(teamFetch, team, name);
+        if (out.ok) {
+          cache.clear();
+          deps.go("/");
+        }
+        return out;
       },
       installGithub: (hub): Promise<InstallGithubOutcome> => {
         const team = keyed(hub);

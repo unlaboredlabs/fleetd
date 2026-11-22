@@ -149,6 +149,10 @@
   box-shadow: var(--settings-chip);
   font-weight: var(--weight-medium);
 }
+/* Delete team, the Team group's last row. */
+.item.danger {
+  color: var(--danger);
+}
 .item:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: -2px;

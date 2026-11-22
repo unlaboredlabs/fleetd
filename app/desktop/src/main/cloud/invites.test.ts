@@ -12,7 +12,7 @@ import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
 import { cloudConfig } from "./config";
 import { realCloud } from "./index";
-import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 // The stand-in's clock, so nothing here reads today's date.
 const NOW = Date.parse("2026-10-19T10:30:00.000Z");
@@ -115,7 +115,39 @@ describe("a cloud team's invites by email", () => {
     }
   });
 
+  it("deletes the team for its owner alone, the name typed again, never while an agent runs; then the app forgets it", async () => {
+    const forbidden = { ok: false, failure: { code: "forbidden", message: "Only the team's owner deletes the team.", fix: "Ask an owner of this team." } };
+    expect(await deleteTeam(fetch, as("alice@acme.example"), "acme")).toEqual(forbidden);
+    expect(await deleteTeam(fetch, as("bob@acme.example"), "acme")).toEqual(forbidden);
+    const sam = as("sam@acme.example");
+    expect(await deleteTeam(fetch, sam, "acne")).toEqual({ ok: false, failure: { code: "wrong_name", message: "That isn't this team's name.", fix: "Type acme to delete it." } });
+    fake.setRunning("acme", 2);
+    expect(await deleteTeam(fetch, sam, "acme")).toEqual({
+      ok: false,
+      failure: { code: "running", message: "2 agents are running in this team.", fix: "Stop them, then delete the team." },
+    });
+    fake.setRunning("acme", 0);
+    expect(fake.deleted).toEqual([]);
+    // Through main: the team deleted, and its hub gone from the app; a refusal keeps it.
+    const dir = mkdtempSync(join(tmpdir(), "fleetd-cloud-"));
+    try {
+      const removed: string[] = [];
+      const cloudHub = { id: "hub", label: "acme", service: { keyed: () => ({ url, key: sam.key }) } as unknown as HubService };
+      const hubs = { cloudHubs: () => [cloudHub], remove: (id: string) => removed.push(id) } as unknown as Hubs;
+      const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, () => Promise.resolve());
+      expect(await cloud.deleteTeam("hub", "nope")).toMatchObject({ ok: false, failure: { code: "wrong_name" } });
+      expect(removed).toEqual([]);
+      expect(await cloud.deleteTeam("hub", " acme ")).toEqual({ ok: true });
+      expect([fake.deleted, removed]).toEqual([["acme"], ["hub"]]);
+      expect(await cloud.deleteTeam("own", "acme")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("takes only a hub id, an email and a role, and an invite id, from the page", () => {
+    expect(parseRequest(IPC.cloudDeleteTeam, ["hub", "acme"]).ok).toBe(true);
+    expect(parseRequest(IPC.cloudDeleteTeam, ["hub", "x".repeat(201)]).ok).toBe(false);
     expect(parseRequest(IPC.cloudInvites, ["hub"]).ok).toBe(true);
     expect(parseRequest(IPC.cloudInvite, ["hub", { email: "eve@example.com", role: "admin" }]).ok).toBe(true);
     expect(parseRequest(IPC.cloudInvite, ["hub", { email: "eve@example.com", role: "owner" }]).ok).toBe(false);
