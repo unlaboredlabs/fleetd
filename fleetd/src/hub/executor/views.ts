@@ -3,7 +3,7 @@
 // session on its node (`follow`), keeps the node's snapshot plus the live events after it, and releases it once
 // nobody has read it for a minute (a pinned follow stays until released).
 import type { MachineId, ThreadRef } from "../../shared/contracts.ts";
-import type { ThreadEventFrame, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
+import type { RunInfo, ThreadEventFrame, ThreadItem, ThreadMessage } from "../../shared/sessions.ts";
 import { clip } from "../api/refusals.ts";
 import { store } from "../store/hub_store.ts";
 import type { ExecutorError as ExecutorErrorType, Executors } from "./index.ts";
@@ -295,6 +295,13 @@ export class Views {
     this.summaryOf(r);
     const w = await this.view(r);
     return [...w.view.messages.values()].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** The session's runs as its view holds them, every one its node keeps, each with how it is or ended. */
+  async runs(r: ThreadRef): Promise<RunInfo[]> {
+    this.summaryOf(r);
+    const w = await this.view(r);
+    return [...w.view.runs.values()];
   }
 
   /** What the session read lately: its newest tool calls and commands, each with its call and whole output. */

@@ -48,7 +48,7 @@ fleetd chat devbox/storefront "fix the checkout button" --follow --key-file ~/.f
 fleetd chat history storefront --key-file ~/.fleetd/human.key
 ```
 
-`--wait` prints the lead's reply when its turn ends; `--follow` streams it as it is written. The key says who writes:
+`--wait` or `--follow` prints the lead's reply when its turn ends. The key says who writes:
 with your [human key](/docs/glossary#human-key) it writes as you. Make one once with
 `fleetd hub key create --human --name terminal --out ~/.fleetd/human.key`. Each message says where you wrote it:
 "You · app" or "You · cli".

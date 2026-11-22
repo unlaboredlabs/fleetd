@@ -14,7 +14,7 @@ import type { RunnerInfo } from "../sessions/types.ts";
 
 export { RECORDED, SUPPORTED, TESTED } from "./claude_pins.ts";
 export {
-  MODEL, profileModel, profileOf, ALWAYS_DISALLOWED, roleDisallowed, roleAllowed, roleAsk, SUBAGENTS_OFF_ENV, subagentsOffSettingsEnv, ORDER_ENV_FILE_ENV, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, HEAVY_LSP_PLUGINS, heavyLspOn, DEFAULT_ENV, WORKER_ENV, roleEnv, PROMPT_CACHE_TTL_VARS, defaultCacheTtl, HELPER_MODEL_ENV, SESSION_ENV, FLEETD_ENV_SOURCE, SESSION_MARKER, runtimeTools, disallowedTools, args, spawnEnv,
+  MODEL, profileModel, profileOf, ALWAYS_DISALLOWED, roleDisallowed, roleAllowed, roleAsk, SUBAGENTS_OFF_ENV, subagentsOffSettingsEnv, ORDER_ENV_FILE_ENV, AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, HEAVY_LSP_PLUGINS, heavyLspOn, DEFAULT_ENV, WORKER_ENV, LEAD_ENV, roleEnv, PROMPT_CACHE_TTL_VARS, defaultCacheTtl, HELPER_MODEL_ENV, SESSION_ENV, FLEETD_ENV_SOURCE, SESSION_MARKER, runtimeTools, disallowedTools, args, spawnEnv,
   type SessionSpec,
 } from "./claude_spec.ts";
 

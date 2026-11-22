@@ -642,7 +642,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Flag the chat message you just wrote for the human's look, with reason in a few words (\"the Machines page redesign\"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a bot keeps only a few, a newer one clearing the oldest. Write the message first, then call it. No notification goes out.",
+   "description": "Flag the message you end this turn with for the human's look, with reason in a few words (\"the Machines page redesign\"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. Only for a showcase, something to try or a risk, never routine news; a bot keeps only a few, a newer one clearing the oldest. Call it, then write the message last, after every tool call: text before a tool call is never posted. No notification goes out.",
    "inputSchema": {
     "properties": {
      "reason": {
