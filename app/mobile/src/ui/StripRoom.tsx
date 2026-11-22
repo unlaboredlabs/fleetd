@@ -3,9 +3,10 @@
 // screen added later keeps out of it too. The screen's ground still runs under the strip, edge to edge, and its native
 // bar spans the window, so iOS moves the bar's Back and buttons into the column over that ground, not over a row. A
 // screen that holds a navigator of its own (whose screens keep out themselves), or keeps out of the strip itself (the
-// chat, with its buttons there), opts out with ownRoom.
+// chat, with its buttons there), opts out with ownRoom. A sheet keeps out by its own safe area instead (sheetRoom).
 import type { ReactElement } from "react";
 import { StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useStrip } from "./pane";
 
 export function StripRoom({ children }: { children: ReactElement }) {
@@ -19,6 +20,19 @@ export const stripRoom = ({ children }: { children: ReactElement }): ReactElemen
 
 /** A screen's layout that leaves it as it is: it keeps out of the strip itself, or holds a navigator that does. */
 export const ownRoom = ({ children }: { children: ReactElement }): ReactElement => children;
+
+/**
+ * A sheet's layout: its content kept out of the strip by the sheet's own left and right safe area, not the window's.
+ * Folded, a sheet as wide as the screen runs under the strip and keeps out of it; a card centred on a wide window
+ * touches neither side and stays centred. On a phone, held upright, those are none.
+ */
+export const sheetRoom = ({ children }: { children: ReactElement }): ReactElement => (
+  <SafeAreaView edges={SIDES} style={styles.fill}>
+    {children}
+  </SafeAreaView>
+);
+
+const SIDES = ["left", "right"] as const;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },

@@ -23,6 +23,14 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
     expect(own).toEqual(["Home", "Settings", "Chat", "ChatInfo"]);
   });
 
+  it("is the sheet's own safe area for a sheet, so a card centred on the unfolded Duo stays centred", () => {
+    const sheets = [...app.matchAll(/<\w+\.Screen name="(\w+)"[^\n]*?options=\{[^\n]*?sheet\(t/gu), ...manage.matchAll(/<\w+\.Screen name="(\w+)"[^\n]*?options=\{[^\n]*?sheet\(t/gu)];
+    expect(sheets.map((m) => m[1])).toEqual(["VaultEdit", "VaultImport", "VaultMove", "NewProject", "NewScreen", "Icon", "SkillEdit", "VaultEdit", "VaultImport", "VaultMove"]);
+    for (const m of sheets) expect(m[0]).toContain("layout={sheetRoom}");
+    expect(room).toMatch(/export const sheetRoom = [^]*?<SafeAreaView edges=\{SIDES\} style=\{styles\.fill\}>/u);
+    expect(room).toContain('const SIDES = ["left", "right"] as const;');
+  });
+
   it("pads the content by the strip the pane touches, its ground still under the strip", () => {
     expect(room).toContain("const strip = useStrip();");
     expect(room).toContain("<View style={[styles.fill, { paddingLeft: strip.left, paddingRight: strip.right }]}>{children}</View>");

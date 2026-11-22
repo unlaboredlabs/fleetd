@@ -62,7 +62,7 @@ import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
-import { ownRoom, stripRoom } from "./src/ui/StripRoom";
+import { ownRoom, sheetRoom, stripRoom } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -657,9 +657,9 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultEdit" component={VaultEdit} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultImport" component={VaultImport} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultMove" component={VaultMove} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultEdit" component={VaultEdit} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultImport" component={VaultImport} layout={sheetRoom} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultMove" component={VaultMove} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }
