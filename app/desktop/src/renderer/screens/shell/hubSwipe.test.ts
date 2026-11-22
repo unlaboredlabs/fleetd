@@ -3,7 +3,7 @@
 // on a Mac: its first event the only cancelable one) or by the deltas alone (Linux, Safari, Firefox), on the same Mac
 // trackpad sequences. And the spring that settles it never passing its target.
 import { describe, expect, it } from "vitest";
-import { IDLE, rest, settleOn, shown, spring, stepHub, unshown, wheel, type Gesture, type Step } from "./hubSwipe";
+import { IDLE, rest, settleOn, settleSpeed, shown, spring, stepHub, unshown, wheel, type Gesture, type Step } from "./hubSwipe";
 import { FINGERS, fingers, MOMENTUM, momentum, scrollDown, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 
 /**
@@ -272,6 +272,40 @@ describe("spring", () => {
     }
     expect(t).toBeGreaterThan(150);
     expect(t).toBeLessThan(450);
+  });
+});
+
+describe("settleSpeed", () => {
+  /** A spring's frames from `x` at `v` back to 0, 16 ms apart, until it is still. */
+  const frames = (x: number, v: number) => {
+    const out: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      const s = spring(x, v, 0, 16);
+      x = s.x;
+      v = s.v;
+      out.push(x);
+      if (s.done) break;
+    }
+    return out;
+  };
+
+  it("brings a stretch past an end straight back, fastest at once, and still within a quarter of a second", () => {
+    // 50 px past the first hub, let go still, and let go still moving out.
+    for (const v of [0, 0.3]) {
+      const back = frames(50, settleSpeed(50, v, false, true));
+      const fromRest = frames(50, v);
+      expect(back[0]).toBeLessThan(fromRest[0] ?? 0);
+      expect(50 - (back[0] ?? 50)).toBeGreaterThan(v === 0 ? 8 : 4);
+      expect(back.length * 16).toBeLessThanOrEqual(250);
+      // Never past its place.
+      expect(Math.min(...back)).toBe(0);
+    }
+    expect(settleSpeed(-50, 0, true, false)).toBeGreaterThan(0);
+  });
+
+  it("leaves a list let go of toward a hub that is there at its own speed", () => {
+    expect(settleSpeed(-100, -0.4, true, true)).toBe(-0.4);
+    expect(settleSpeed(100, 0, true, false)).toBe(0);
   });
 });
 

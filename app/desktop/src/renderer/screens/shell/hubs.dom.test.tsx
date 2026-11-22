@@ -16,7 +16,7 @@ import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
-import { resetHubSwipe } from "./hubSwipe";
+import { resetHubSwipe, REST_MS } from "./hubSwipe";
 import { FINGERS, fingers, JITTERY_MAC_SWIPE, MOMENTUM, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 import { resetFolded, resetSidebarView, showHub } from "./sidebarLayout";
 
@@ -1289,9 +1289,9 @@ describe("a Mac trackpad's swipe, told where the fingers lift (W813)", () => {
     try {
       replay(pull.slice(0, -1), true);
       const stretched = offset();
-      wait(100);
+      wait(REST_MS - 20);
       expect(offset()).toBe(stretched);
-      wait(80);
+      wait(40);
       expect(offset()).toBeLessThan(stretched);
       lift();
       inPlace();
