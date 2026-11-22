@@ -34,6 +34,16 @@ export const BUILTIN_MODELS: [string, string][] = [
   ["claude-opus-4-8", "Claude Opus 4.8"],
 ];
 
+/** Google Antigravity's models: a profile on one runs its agents on `agy acp` (node/runner/antigravity.ts). Any other
+ * model Antigravity offers its account runs too, named `antigravity/<model>`. */
+export const ANTIGRAVITY_MODELS: [string, string][] = [
+  ["gemini-4-neon", "Gemini 4 Neon (Antigravity)"],
+  ["gemini-4-argon", "Gemini 4 Argon (Antigravity)"],
+  ["gemini-4-hydrogen", "Gemini 4 Hydrogen (Antigravity)"],
+  ["gemini-3.8-flash", "Gemini 3.8 Flash (Antigravity)"],
+];
+const antigravityModels = (): ProfileModel[] => ANTIGRAVITY_MODELS.map(([id, name]) => ({ id, displayName: name, fast: false }) as ProfileModel);
+
 /** The models Claude Code offers fast mode on. */
 export const FAST_MODELS = ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"];
 export const hasFast = (model: string) => FAST_MODELS.includes(model);
@@ -301,13 +311,19 @@ const modelCaches = new WeakMap<Hub, ModelCache>();
 
 const builtinModels = (): Listed => [BUILTIN_MODELS.map(([id, name]) => ({ id, displayName: name, fast: hasFast(id) }) as ProfileModel), "builtin"];
 
+/** The models a profile may pick: Claude's (`claudeModels`), then Antigravity's. */
+export async function models(hub: Hub): Promise<Listed> {
+  const [claude, from] = await claudeModels(hub);
+  return [[...claude, ...antigravityModels()], from];
+}
+
 /**
- * The models a profile may pick: what the Models API lists on the hub's API key, else fleetd's own list. The API is
+ * Claude's models: what the Models API lists on the hub's API key, else fleetd's own list. The API is
  * asked through a machine holding the key at most once per MODELS_FRESH_MS (MODELS_RETRY_MS after it couldn't list),
  * again at once when the key changes, and never waited on past MODELS_WAIT_MS: an endpoint that didn't answer kept
  * every profiles_list waiting 10 s.
  */
-export async function models(hub: Hub): Promise<Listed> {
+async function claudeModels(hub: Hub): Promise<Listed> {
   const api = apiMachine(hub);
   if (api?.machine === undefined) return builtinModels();
   const machine = api.machine;
@@ -382,7 +398,7 @@ const unknown = (id: number) => new ToolError("not_found", `No profile has id ${
 async function checkModel(hub: Hub, model: string | undefined, kept: string | undefined, fast: boolean): Promise<void> {
   if (model !== undefined && model !== kept) {
     const [offered] = await models(hub);
-    if (!offered.some((m) => m.id === model)) {
+    if (!offered.some((m) => m.id === model) && !/^antigravity\/\S+$/.test(model)) {
       throw new ToolError("invalid", `${model} is not among the models this hub offers.`, `Pick one of: ${offered.map((m) => m.id).join(", ")}.`);
     }
   }

@@ -2221,7 +2221,8 @@
       "properties": {
        "domain": {
         "description": "The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its\npayment provider's frames.",
-        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
+        "maxLength": 253,
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
         "type": "string"
        },
        "name": {
@@ -2312,7 +2313,8 @@
       "properties": {
        "domain": {
         "description": "The page's host: `passport.gov.example`. The value fills only on it (and its subdomains).",
-        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$",
+        "maxLength": 253,
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$",
         "type": "string"
        },
        "name": {
@@ -3211,7 +3213,7 @@
    },
    "/shop/domain": {
     "expected": "a string",
-    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$, got {got}"
+    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$, got {got}"
    },
    "/shop/name": {
     "expected": "a string"
@@ -3255,7 +3257,7 @@
    },
    "/site/domain": {
     "expected": "a string",
-    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,20}$, got {got}"
+    "pattern": "expected a string matching ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$, got {got}"
    },
    "/site/name": {
     "expected": "a string"

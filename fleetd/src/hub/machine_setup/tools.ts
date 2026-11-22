@@ -175,6 +175,37 @@ export function register(tools: Registry): void {
     }
     return { next: `claude on ${m} is logged in: its sessions can start.`, machineId: m, loggedIn: true, message: answer.message };
   });
+
+  // Antigravity's sign-in, as Claude's: the code goes to the node and nowhere else, and the sign-in stays on the machine.
+  tools.add("machine_antigravity_login", async (hub, caller, input) => {
+    admin(caller);
+    const m = input.machineId;
+    if (store(hub).machineGet(m) === undefined) throw new ToolError("not_found", `${m} is not one of this hub's machines.`);
+    const code = input.code?.trim();
+    if (code === "") throw new ToolError("invalid", "The code is empty: paste the one the sign-in page shows.");
+    let answer;
+    try {
+      answer = await machineSetup(hub).ports.antigravityLogin(hub, m, code);
+    } catch (e) {
+      const [message, fix] = splitFix(e instanceof Error ? e.message : String(e));
+      throw new ToolError("failed", message, fix);
+    }
+    if (!answer.ok) {
+      throw new ToolError("failed", answer.message, code === undefined ? `Check that ${m} is online, then try again.` : "Start the sign-in again: each sign-in page's code works once.");
+    }
+    if (answer.signedIn !== undefined) {
+      return { next: `Antigravity on ${m} is signed in: its agents on Antigravity can start.`, machineId: m, signedIn: answer.signedIn, message: answer.message };
+    }
+    if (answer.loginUrl !== undefined && code === undefined) {
+      return {
+        next: `Open loginUrl and sign in with Google; then call machine_antigravity_login again with machineId ${m} and the code the page shows. The sign-in waits 10 minutes.`,
+        machineId: m,
+        loginUrl: answer.loginUrl,
+        message: answer.message,
+      };
+    }
+    return { next: `Antigravity on ${m} is signed in.`, machineId: m, message: answer.message };
+  });
 }
 
 const SOURCE: Record<Found, MachineHostSource> = { here: "hub", set_up: "set_up", ssh_config: "ssh_config", tailnet: "tailnet" };

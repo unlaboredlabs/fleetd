@@ -16,6 +16,7 @@ import { useProviderRows } from "./Providers";
 import { KINDS, LINUX, LINUX_NONE, linuxChoices, linuxValue, MAC, MAC_NONE, machinesRun, NONE, YOURS } from "../../../shared/providers";
 import { SECTION_HINT } from "./sandboxModel";
 import { Recordings } from "./Screens";
+import { AntigravityRow } from "../admin/MachinePage";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -66,9 +67,13 @@ export function WhatRunsWhere() {
       <Plain key="linux" kind="linux" label={LINUX} value={choices[0]?.label ?? linuxValue(providers, ours)} hint={choices.length === 0 && !ours ? LINUX_NONE : undefined} line={capLine} />
     );
   const mac = machines === undefined || machinesRun("mac", machines);
+  // Agents on fleetd's computers sign Antigravity in on the hub's runner, which has no page of its own: once it says
+  // it can.
+  const runner = machines?.find((m) => team[m.machineId]?.runner === true && m.antigravityLogin === true);
   return (
     <SettingsSection title="What runs where" reveal="hub.where" hint={WHERE_HINT} data={{ "data-where": "" }}>
       {linux}
+      {runner === undefined ? null : <AntigravityRow machineId={runner.machineId} />}
       <Plain kind="mac" label={MAC} value={mac ? YOURS : NONE} hint={mac ? undefined : MAC_NONE} />
       <Recordings />
     </SettingsSection>
