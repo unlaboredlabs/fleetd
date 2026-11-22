@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { readBilling, type BillingState } from "../../shared/billing";
-import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -118,6 +118,14 @@ export class FixtureCloud implements Cloud {
   signOut(): Promise<SignOutOutcome> {
     this.#email = null;
     return Promise.resolve({ kept: [] });
+  }
+
+  moveTargets(): MoveTarget[] {
+    return [];
+  }
+
+  move(): Promise<MoveOutcome> {
+    return Promise.resolve({ ok: false, message: "Sample data, not connected: nothing moves." });
   }
 
   connectComputer(): Promise<ConnectComputerOutcome> {

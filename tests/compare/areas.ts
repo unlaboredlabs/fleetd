@@ -207,6 +207,7 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   skill_update: "not called: it fetches from outside, and only a skill installed from outside, which no run can install, has a source to fetch",
   vault_move: "not called: it moves an item set aside at the upgrade, which no tool makes",
   hub_restart: "not called: it restarts the hub the run is calling, which drops every connection the run holds",
+  hub_move_start: "not called: it moves the hub into a fleetd cloud team, which a run doesn't reach, and pauses the hub the run is calling",
 };
 
 /**

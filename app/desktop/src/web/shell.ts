@@ -364,6 +364,9 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         return { kept: [] };
       },
       connectComputer: () => Promise.resolve({ ok: false, message: "Run the line below in a terminal on the computer." }),
+      // A hub moves to the cloud from the desktop app, which is where a self-hosted hub is.
+      moveTargets: () => Promise.resolve([]),
+      move: () => Promise.resolve({ ok: false, message: NEEDS_DESKTOP }),
       invites: (hub): Promise<InvitesOutcome> => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : listInvites(teamFetch, team);

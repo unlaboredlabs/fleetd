@@ -2,6 +2,7 @@
 // and WorkOS client id offers it; any other build is the self-hosted app alone, with nothing of this on screen.
 import type { AccountsInvite } from "./contracts";
 import type { BillingBuy, BillingState } from "./billing";
+import type { HubId } from "./hubs";
 import type { PairFailure } from "./pairing";
 
 export interface CloudState {
@@ -51,6 +52,15 @@ export interface SignOutOutcome {
   /** The web app's sign-out didn't reach fleetd cloud: the session goes on, and the person is told why. */
   readonly failure?: PairFailure;
 }
+
+/** A team a Move to the cloud may go into: one the person owns that holds no data, connected to this app. */
+export interface MoveTarget {
+  readonly hub: HubId;
+  readonly name: string;
+}
+
+/** The move handed to the hub that moves (it does the rest), or why not. */
+export type MoveOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** Connect this computer: a terminal opened with the join line, or why not and the line to run. */
 export type ConnectComputerOutcome = { readonly ok: true; readonly terminal: string } | { readonly ok: false; readonly message: string };
