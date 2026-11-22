@@ -83,7 +83,7 @@ test("a PR that conflicts with its base goes back to its writer as needs_rebase"
   expect(k.host.eventsOf("change.needs_rebase")).toMatchObject([{ changeId: c.changeId }]);
 });
 
-test("two ready PRs green on their own heads land as one batch, each closed with a link", async () => {
+test("two ready PRs green on their own heads land as one batch, each closed as merged in the batch's commit", async () => {
   const k = kit();
   k.pr(11, "fleetd/T11-one", { "one.md": "1\n" });
   k.pr(12, "fleetd/T12-two", { "two.md": "2\n" });
@@ -97,8 +97,19 @@ test("two ready PRs green on their own heads land as one batch, each closed with
   expect(pull.title).toBe("batch: PR 11 (#11); PR 12 (#12)");
   expect(batchHeads(pull.body).map(([x]) => x)).toEqual([11, 12]);
   expect(k.gh.log).toContain(`merge #${n}`);
-  expect(k.gh.pulls.get(11)!.comments[0]).toStartWith(`Landed in #${n} (`);
-  expect(k.gh.pulls.get(11)!.state).toBe("closed");
+  // GitHub shows a member Closed: its label and the train's comment say it merged, and in which commit.
+  const sha = k.change(11).mergedSha!.slice(0, 12);
+  for (const [m, other] of [
+    [11, 12],
+    [12, 11],
+  ] as const) {
+    const member = k.gh.pulls.get(m)!;
+    expect(member.state).toBe("closed");
+    expect(member.labels).toEqual(["merged"]);
+    expect(member.comments).toHaveLength(1);
+    expect(member.comments[0]).toStartWith(`Merged by the train in ${sha}: the fleetd merge train landed it in batch #${n} together with #${other} `);
+  }
+  expect(k.gh.labels).toContain("merged");
   expect(k.host.eventsOf("pr.merged").map((e) => [e.prNumber, e.batchPr])).toEqual([
     [11, n],
     [12, n],
