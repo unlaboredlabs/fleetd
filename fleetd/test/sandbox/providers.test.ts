@@ -225,8 +225,8 @@ describe("boat.dev's waits end", () => {
     // The program a hosted start runs is the one every template's recipe puts there, and its check names.
     // (Read off its declaration: other tests point BOX_CLAUDE at a stand-in in this process.)
     expect(readFileSync(join(import.meta.dir, "../../src/node/place/hosted.ts"), "utf8")).toContain("export const BOX_CLAUDE = { path: CLAUDE_PATH };");
-    expect(hosted(DOCKERFILE, { claude: TESTED })).toContain(`ln -sf /opt/claude/claude-${TESTED} ${CLAUDE_PATH}`);
-    expect(hostedCheck()).toContain(`test -x ${CLAUDE_PATH}`);
+    expect(hosted(DOCKERFILE, { claude: TESTED })).toContain(`ln -sf '/opt/claude/claude-${TESTED}' '${CLAUDE_PATH}'`);
+    expect(hostedCheck()).toContain(`test -x '${CLAUDE_PATH}'`);
   });
 
   test("a build whose steps and save answer in time is unchanged by the deadlines", async () => {

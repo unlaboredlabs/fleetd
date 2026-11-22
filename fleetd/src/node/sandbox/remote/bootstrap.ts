@@ -10,6 +10,7 @@
 // The script's text holds no value: the secret is its environment's, given at start, never at create.
 import type { Duplex as WebDuplex } from "../../../sandbox/providers/index.ts";
 import { FLEETD_PATH, GUEST_PORT, SECRET_HEADER } from "../../../sandbox/providers/index.ts";
+import { noQuery, shq } from "../../../sandbox/providers/shell.ts";
 import boot from "./boot.mjs" with { type: "text" };
 
 /** Where the box keeps fleetd and the guest's files: the box user's own, outside any path the node mirrors. */
@@ -18,8 +19,6 @@ export const BOX_DIR = "/tmp/.fleetd-box";
 /** The script, run under the template's Bun with `bun -e`: in ./boot.mjs, a text file, so this module holds no in-box
  * code of its own (it's box side: docs/CONTRIBUTING.md "The package"). */
 const SCRIPT = `\n${boot.replaceAll("{{SECRET_HEADER}}", SECRET_HEADER)}`;
-
-const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
 /** The box's first command and its environment besides the secret. It first makes `dirs` (outermost first) the box
  * user's, with sudo where the user can't: the machine's paths the session's files take, the node.sock's among them,
@@ -53,27 +52,36 @@ export async function firstWord(link: WebDuplex): Promise<"bootstrap" | "guest" 
   }
 }
 
-/** Hands the bootstrap on `link` this node's fleetd; resolves once the box checked it and starts the guest. */
-export async function deliver(link: WebDuplex, source: Source): Promise<void> {
+/** How fleetd really reached the box (`deliver`): the template's own build, started where it is (`template`), fetched
+ * by the box itself at the release asset's address (`address`), or its bytes sent over the link (`link`). `cause`,
+ * only on `link` after the box's own fetch failed: why it failed, in the box's words, any URL's query left out. */
+export type Delivered = { way: "template" | "address" | "link"; cause?: string };
+
+/** Hands the bootstrap on `link` this node's fleetd; resolves once the box checked it and starts the guest, with the
+ * way it got there. */
+export async function deliver(link: WebDuplex, source: Source): Promise<Delivered> {
   const reader = link.readable.getReader();
   const writer = link.writable.getWriter();
-  const answer = async (): Promise<{ ok?: boolean; error?: string }> => {
+  const answer = async (): Promise<{ ok?: boolean; error?: string; way?: string }> => {
     const { value, done } = await Promise.race([reader.read(), Bun.sleep(180_000).then(() => ({ value: undefined, done: true }))]);
     if (done || !value) throw new Error("the box didn't say whether it took fleetd");
-    return JSON.parse(new TextDecoder().decode(value)) as { ok?: boolean; error?: string };
+    return JSON.parse(new TextDecoder().decode(value)) as { ok?: boolean; error?: string; way?: string };
   };
   try {
+    let cause: string | undefined;
     if (source.url) {
       await sendText(link, writer, { url: source.url, sha256: source.sha256 });
       const a = await answer();
-      if (a.ok) return;
+      if (a.ok) return { way: a.way === "template" ? "template" : "address" };
+      cause = noQuery(a.error ?? "no reason given");
     }
     const plain = await source.bytes();
     const packed = Bun.gzipSync(plain as Uint8Array<ArrayBuffer>, { level: 1 });
     await sendText(link, writer, { size: packed.length, sha256: source.sha256, gzip: true });
     for (let at = 0; at < packed.length; at += PIECE) await writer.write(packed.subarray(at, at + PIECE));
     const a = await answer();
-    if (!a.ok) throw new Error(`the box didn't take fleetd: ${a.error ?? "no reason given"}`);
+    if (!a.ok) throw new Error(`the box didn't take fleetd: ${noQuery(a.error ?? "no reason given")}`);
+    return { way: a.way === "template" ? "template" : "link", ...(cause ? { cause } : {}) };
   } finally {
     reader.releaseLock();
     writer.releaseLock();

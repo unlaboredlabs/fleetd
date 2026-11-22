@@ -14,6 +14,7 @@ import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
 import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
 import { bakedName, hostedCheck, hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
+import { noQuery } from "../../../sandbox/providers/shell.ts";
 import { Stages } from "../../../shared/stages.ts";
 import { selfArgv, nowIso } from "../../util.ts";
 import { baseUrl, channelOf, cliAsset, fileSha256Hex, pinnedName } from "../../../update/index.ts";
@@ -291,7 +292,7 @@ export class Boxes {
       if (ok) this.#bakedMemo = { url: s.url, sha256: s.sha256 };
       else {
         this.#missedAt = now();
-        console.log(`${nowIso()} INFO this machine's fleetd isn't a published release (yet): its hosted template holds none, asked again in ${PROBE_AGAIN_MS / 60_000} minutes {"url":${JSON.stringify(s.url)}}`);
+        console.log(`${nowIso()} INFO this machine's fleetd isn't a published release (yet): its hosted template holds none, asked again in ${PROBE_AGAIN_MS / 60_000} minutes {"url":${JSON.stringify(noQuery(s.url))}}`);
       }
     })());
   }
@@ -452,8 +453,9 @@ export class Boxes {
           word = await firstWord(link);
           if (word === "bootstrap") {
             stages.done("bootstrap up");
-            await deliver(link, this.source());
-            stages.done("fleetd");
+            const got = await deliver(link, this.source());
+            if (got.cause) console.warn(`${nowIso()} WARN the box couldn't fetch fleetd itself: its bytes went over the link {"session":${JSON.stringify(session)},"cause":${JSON.stringify(got.cause)}}`);
+            stages.done(`fleetd (${got.way})`);
           }
         } finally {
           link.close();

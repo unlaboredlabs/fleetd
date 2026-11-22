@@ -7,6 +7,7 @@
 // with a build API would take them as its steps.
 import base from "../image/Dockerfile" with { type: "text" };
 import { TESTED } from "../../node/runner/claude_pins.ts";
+import { noQuery, shq } from "./shell.ts";
 
 export type Step = { op: "RUN" | "ENV" | "WORKDIR" | "USER"; args: string[] };
 export type Recipe = { from: string; steps: Step[] };
@@ -105,7 +106,25 @@ export const CLAUDE_PATH = "/opt/claude/.local/bin/claude";
  * at `claude`'s version, and the Bun a box's bootstrap runs under. A build that fails it saves nothing, so a template
  * a start couldn't run in is never one to start from (W756: one without CLAUDE_PATH was, on 2026-11-20). */
 export function templateCheck(claude: string): string {
-  return `test -x ${CLAUDE_PATH} && ${CLAUDE_PATH} --version | grep -q '^${claude.replaceAll(".", "\\.")} ' && bun --version >/dev/null`;
+  return `test -x ${word(CLAUDE_PATH)} && ${word(CLAUDE_PATH)} --version | grep -q ${versionLine(claude)} && bun --version >/dev/null`;
+}
+
+/** `v` as one word of a recipe's shell line, quoted for sh: every value a line here takes (a URL, a path, a version)
+ * goes through it. Refused when it can't be quoted safely: a control character, a newline among them, would end the
+ * Dockerfile's line and start an instruction of its own. The error leaves out a URL's query (a signed link's). */
+export function word(v: string): string {
+  if (/[\x00-\x1f\x7f]/.test(v)) throw new Error(`the recipe can't take ${JSON.stringify(noQuery(v))}: it has a control character, a newline or a tab`);
+  return shq(v);
+}
+
+/** grep's pattern, quoted, for `claude --version`'s line at version `v`. */
+const versionLine = (v: string) => word(`^${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} `);
+
+/** The shell line that fetches `url` to `path`, checks its SHA-256 and makes it executable, each value quoted. */
+export function fetched(url: string, sha256: string, path: string): string {
+  return `curl -fsSL ${word(url)} -o ${word(path)} \\
+ && echo ${word(`${sha256}  ${path}`)} | sha256sum -c - \\
+ && chmod 755 ${word(path)}`;
 }
 
 /** Where a hosted template holds fleetd (`HostedPins.fleetd`), which a box's bootstrap looks at first. */
@@ -127,25 +146,19 @@ export function hosted(base: string, pins: HostedPins): string {
   if (!claudeSha) throw new Error(`claude ${pins.claude} has no pinned SHA-256 in CLAUDE_LINUX_X64 (sandbox/providers/recipe.ts)`);
   const f = pins.fleetd;
   if (f && !/^[0-9a-f]{64}$/.test(f.sha256)) throw new Error("fleetd's pin needs its SHA-256 in hex");
-  if (f && !/^https:\/\/[^\s'"]+$/.test(f.url)) throw new Error("fleetd's pin needs an https URL");
+  // Quoted (`word`), a signed link's `&`s stay in its URL: unquoted, sh cut it at each and ran the rest as commands.
+  if (f && !/^https:\/\/\S+$/.test(f.url)) throw new Error("fleetd's pin needs an https URL with no space in it");
   parse(base);
-  const fleetd = f
-    ? `RUN curl -fsSL ${f.url} -o ${FLEETD_PATH} \\
- && echo '${f.sha256}  ${FLEETD_PATH}' | sha256sum -c - \\
- && chmod 755 ${FLEETD_PATH}
-`
-    : "";
+  const claude = `/opt/claude/claude-${pins.claude}`;
+  const fleetd = f ? `RUN ${fetched(f.url, f.sha256, FLEETD_PATH)}\n` : "";
   return `${base.trimEnd()}
 
 # Hosted boxes only: Claude Code, the tailnet's tunnel${f ? " and fleetd" : ""}, pinned and checked (sandbox/providers/recipe.ts).
-RUN mkdir -p ${CLAUDE_PATH.slice(0, CLAUDE_PATH.lastIndexOf("/"))} && curl -fsSL ${CLAUDE_DOWNLOADS}/${pins.claude}/linux-x64/claude -o /opt/claude/claude-${pins.claude} \\
- && echo '${claudeSha}  /opt/claude/claude-${pins.claude}' | sha256sum -c - \\
- && chmod 755 /opt/claude/claude-${pins.claude} \\
- && ln -sf /opt/claude/claude-${pins.claude} ${CLAUDE_PATH} && ln -sf /opt/claude/claude-${pins.claude} /usr/local/bin/claude \\
- && chmod -R a+rX /opt/claude && ${CLAUDE_PATH} --version | grep -q '^${pins.claude.replaceAll(".", "\\.")} '
-RUN curl -fsSL ${TUNNEL.url} -o ${TUNNEL.path} \\
- && echo '${TUNNEL.sha256}  ${TUNNEL.path}' | sha256sum -c - \\
- && chmod 755 ${TUNNEL.path}
+RUN mkdir -p ${word(CLAUDE_PATH.slice(0, CLAUDE_PATH.lastIndexOf("/")))} \\
+ && ${fetched(`${CLAUDE_DOWNLOADS}/${pins.claude}/linux-x64/claude`, claudeSha, claude)} \\
+ && ln -sf ${word(claude)} ${word(CLAUDE_PATH)} && ln -sf ${word(claude)} ${word("/usr/local/bin/claude")} \\
+ && chmod -R a+rX ${word("/opt/claude")} && ${word(CLAUDE_PATH)} --version | grep -q ${versionLine(pins.claude)}
+RUN ${fetched(TUNNEL.url, TUNNEL.sha256, TUNNEL.path)}
 ${fleetd}ENV DISABLE_AUTOUPDATER=1
 `;
 }
