@@ -46,9 +46,11 @@ import {
   originOf,
   parseCommit,
   prUrl,
+  LOCK_RETRY_MS,
   rewriteKey,
   SCAN_EVERY_MS,
   SCAN_MAX,
+  scanFailedLine,
   wakeLine,
 } from "./landing_rules.ts";
 import { hasLanding, landingsSince, projectsIn, rewriteOf, sameScope, taskOnBranch, type WorkScope } from "./store.ts";
@@ -91,6 +93,8 @@ export type LandingPorts = NodeGit & {
   mergedPulls(repo: string): Promise<MergedPull[] | undefined>;
   /** The merged PRs the commit came from; undefined when they could not be read. */
   mergedPullsOf(repo: string, sha: string): Promise<MergedPull[] | undefined>;
+  /** Waits before git runs again after a lock race. */
+  sleep(ms: number): Promise<void>;
 };
 
 /** The hub's own: git over the node link, GitHub through `gh`, as the train reads it. */
@@ -98,6 +102,7 @@ export function hubLandingPorts(hub: Hub): LandingPorts {
   const github = new TrainGitHub(systemGh, fresh(hub), () => hub.clock.now(), Bun.sleep);
   return {
     ...nodeGit(hub),
+    sleep: (ms) => Bun.sleep(ms),
     async mergedPulls(repo) {
       try {
         return await github.mergedPulls(repo, hub.clock.now() - MERGED_LOOKBACK_MS);
@@ -237,7 +242,7 @@ class Scanner {
   /** False when the node didn't answer (another project's root may). */
   async scan(): Promise<boolean> {
     const baseRef = `refs/heads/${this.scope.base}`;
-    const remote = await this.git(["ls-remote", "origin", baseRef]);
+    const remote = await this.settled(["ls-remote", "origin", baseRef]);
     if (!remote) return false;
     if (!gitOk(remote)) {
       this.unreachable(remote);
@@ -257,7 +262,7 @@ class Scanner {
       w.scanOk(this.project);
       return true;
     }
-    const fetched = await this.git(["fetch", "--no-tags", "--quiet", "origin", `+${baseRef}:refs/remotes/origin/${this.scope.base}`]);
+    const fetched = await this.settled(["fetch", "--no-tags", "--quiet", "origin", `+${baseRef}:refs/remotes/origin/${this.scope.base}`]);
     if (!fetched) return false;
     if (!gitOk(fetched)) {
       this.unreachable(fetched);
@@ -290,16 +295,24 @@ class Scanner {
     return true;
   }
 
-  /** Git on this project's machine can't reach the remote: its lead is told once, with why. */
+  /** `git`, run again after each of LOCK_RETRY_MS while another git in the checkout holds a lock it needs. */
+  private async settled(args: string[]): Promise<GitOut | undefined> {
+    let out = await this.git(args);
+    for (const ms of LOCK_RETRY_MS) {
+      if (!out || gitOk(out) || fetchError(out.out).kind !== "busy") return out;
+      await this.ports.sleep(ms);
+      out = await this.git(args);
+    }
+    return out;
+  }
+
+  /** Git on this project's machine can't read the remote's base: its lead is told once, with why. */
   private unreachable(out: GitOut): void {
     const error = fetchError(out.out);
     if (error.kind === "offline") this.reached(false);
     console.warn(`landings: the base was not read repo=${this.scope.repoKey} project=${this.project.projectId}: ${error.why}`);
     if (!work(this.hub).scanFailed(this.project, error.why)) return;
-    const line =
-      `fleetd can't see what lands on ${this.scope.base} of ${this.scope.repoKey}: git on ${this.project.machineId} can't reach origin from ${this.root} ` +
-      `(fetch failed: ${error.why}). Merges and pushes made outside fleetd stay unseen until it can (an SSH key in ssh-agent, or a credential helper).`;
-    leadWakes(this.hub).trigger(this.project, trainLine(line));
+    leadWakes(this.hub).trigger(this.project, trainLine(scanFailedLine(this.scope, this.project.machineId, this.root, error)));
   }
 
   /** Notes whether git on this project's machine reached GitHub, for a scope there. */
