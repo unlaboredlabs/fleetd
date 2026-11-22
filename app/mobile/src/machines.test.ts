@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  tailnetValue,
   tailnetWaiting,
   canWords,
   daysChoices,
@@ -120,23 +119,6 @@ describe("what runs where", () => {
 });
 
 describe("Tailscale", () => {
-  it("says it's connected with the tailnet's name, and only what the person needs now otherwise", () => {
-    expect(tailnetValue({ status: "off" })).toEqual({ text: "Not connected", problem: false });
-    expect(tailnetValue({ status: "connected", tailnet: "example.com", device: "fleetd" })).toEqual({ text: "Connected", detail: "example.com · as fleetd", problem: false });
-    expect(tailnetValue({ status: "login", loginUrl: "https://login.tailscale.com/a/x" }).text).toBe("Sign in");
-    expect(tailnetValue({ status: "failed", problem: "it ended" })).toEqual({ text: "Not working", detail: "it ended", problem: true });
-    expect(tailnetValue({ status: "off", problem: "Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64)" })).toEqual({
-      text: "Not available",
-      detail: "Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64).",
-      problem: false,
-    });
-  });
-
-  it("says what to do when it's connected but its sign-in can't be kept (a locked vault)", () => {
-    const v = tailnetValue({ status: "connected", tailnet: "example.com", device: "fleetd", problem: "Connected, but its sign-in isn't kept: the vault is locked" });
-    expect(v).toEqual({ text: "Connected", detail: "example.com · as fleetd. Connected, but its sign-in isn't kept: the vault is locked.", problem: false });
-  });
-
   it("reads again only while it waits on a sign-in or an approval", () => {
     expect(tailnetWaiting({ status: "login" })).toBe(true);
     expect(tailnetWaiting({ status: "approve" })).toBe(true);

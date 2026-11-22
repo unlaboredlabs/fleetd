@@ -1,6 +1,7 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
-// (how the link is, its address and version), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
+// (how the link is, its address and version), Connections (Connections.tsx: Paper, Notion, Tailscale and custom
+// MCPs), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
 // (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
 // hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
@@ -158,6 +159,7 @@ export function Settings() {
         ) : null}
       </ListSection>
       <ListSection>
+        <ListRow title="Connections" onPress={() => navigation.navigate("Connections")} />
         <ListRow title="Devices" onPress={() => navigation.navigate("Devices")} />
       </ListSection>
       <CloudSettings />

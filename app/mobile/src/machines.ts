@@ -108,28 +108,6 @@ export const providerFooter = (p: ProviderState, runner?: HostedRunner): { text:
 /** How long recordings are kept: its choices, and the one set when it isn't among them. */
 export const daysChoices = (current: number): number[] => [...new Set([7, 14, 30, 60, 90, 180, 365, current])].sort((a, b) => a - b);
 
-/** Tailscale's row: its value, a line under it only when the person needs one, and `problem` when it isn't working. */
-export const tailnetValue = (s: TailnetState): { text: string; detail?: string; problem: boolean } => {
-  switch (s.status) {
-    case "connected": {
-      const where = s.tailnet === undefined ? undefined : s.device === undefined ? s.tailnet : `${s.tailnet} · as ${s.device}`;
-      // Connected, but not kept across a restart (a locked vault): what to do, under the row.
-      if (s.problem !== undefined) return { text: "Connected", detail: `${where === undefined ? "" : `${where}. `}${s.problem}.`, problem: false };
-      return { text: "Connected", ...(where === undefined ? {} : { detail: where }), problem: false };
-    }
-    case "login":
-      return { text: "Sign in", detail: "Waiting for you to sign in to Tailscale and approve the device.", problem: false };
-    case "approve":
-      return { text: "Approve", detail: "Signed in. An admin of your tailnet approves the device in Tailscale's admin console.", problem: false };
-    case "starting":
-      return { text: "Starting…", problem: false };
-    case "failed":
-      return { text: "Not working", detail: s.problem ?? "Tailscale isn't working on the hub.", problem: true };
-    default:
-      return { text: s.problem === undefined ? "Not connected" : "Not available", ...(s.problem === undefined ? {} : { detail: `${s.problem}.` }), problem: false };
-  }
-};
-
 /** How long Connect may take on the hub: a first one downloads Tailscale (2 min at most), starts it (15 s) and waits for
  * its sign-in page (30 s). */
 export const CONNECT_WAIT_MS = 180_000;
