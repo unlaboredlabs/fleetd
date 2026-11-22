@@ -6,7 +6,10 @@
 #
 # - phone: an ordinary iPhone, on Chats, a chat and the chat's Info, Settings and New Bot.
 # - duo: the iPhone Duo unfolded each way up, folded each way up, and unfolded again under the running app, on Chats,
-#   a chat and its Info in each, and folded on Settings and New Bot too.
+#   a chat and its Info in each, and folded on Settings and New Bot too. On GitHub's runner it doesn't pair (Nov 2026):
+#   there agent-device's runner can't answer a system prompt on the Duo (a pairing link's "Open in fleetd?"), and
+#   typing the code fills both fields but its press misses Connect. Rotation times out too. So its shots stop at the
+#   signed-out screens, folded and unfolded (the fold itself takes), and its failed steps are expected, not a regression.
 #
 #   app/mobile/scripts/screens.sh <fleetd.app> <out dir> <prefix> phone|duo...
 #

@@ -285,8 +285,9 @@ jobs:
   ios-screens:
     # The phone app's screens on iOS simulators, by hand (only: screens), for judging a phone change while no agents'
     # Mac is joined: app/mobile/scripts/screens.sh pairs each simulator with a phone lab on the runner and takes Chats, a
-    # chat and its Info on an ordinary iPhone and on the iPhone Duo in each pose. The branch's app beside main's on the ordinary
-    # iPhone, which shows what it looked like before. The xcode-27 image is the one with the iPhone Duo simulator.
+    # chat and its Info on an ordinary iPhone, the branch's app beside main's, which shows what it looked like before. The
+    # iPhone Duo (the xcode-27 image has its simulator) folds and unfolds, but doesn't pair on the runner, so its shots
+    # stop at the signed-out screens (the script's header says why).
     name: ios screens (${{ matrix.app }}, ${{ matrix.devices }})
     if: ${{ inputs.only == 'screens' }}
     strategy:
