@@ -1,9 +1,10 @@
 // fleetd-frames' side in the node (src/node/screen/mac_frames.ts): its frames read off stdout however the chunks cut
 // them, and the helper built once with a stand-in swiftc. The Swift itself runs only on a Mac (bench/screens/mac.ts).
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ensureHelper, FrameReader, helperPath, type MacFrame, MacFrames } from "../src/node/screen/mac_frames.ts";
+import { ensureHelper, FrameReader, helperPath, type MacFrame, MacFrames, stream } from "../src/node/screen/mac_frames.ts";
+import type { StreamFrame } from "../src/node/screen/live.ts";
 import { tempHome } from "./helpers.ts";
 
 const cleanups: (() => void)[] = [];
@@ -12,7 +13,7 @@ afterEach(() => {
 });
 
 /** One frame as fleetd-frames writes it. */
-function framed(kind: 1 | 2, key: boolean, screen: [number, number], picture: [number, number], seq: number, data: number[]): Uint8Array {
+function framed(kind: 1 | 2 | 3, key: boolean, screen: [number, number], picture: [number, number], seq: number, data: number[]): Uint8Array {
   const out = new Uint8Array(28 + data.length);
   const v = new DataView(out.buffer);
   out[0] = kind;
@@ -89,4 +90,42 @@ printf '#!/bin/sh\\nread line\\nprintf "\\\\001\\\\001\\\\000\\\\000\\\\002\\\\0
   writeFileSync(broken, "#!/bin/sh\necho 'frames.swift:3:1: error: cannot find SCStream' >&2\nexit 1\n");
   chmodSync(broken, 0o755);
   await expect(ensureHelper(join(home.dir, "other"), [broken])).rejects.toThrow("did not build: frames.swift:3:1: error: cannot find SCStream");
+});
+
+test("a simulator's stream takes input once the helper says so, and its words are no frames", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const dir = join(home.dir, "frames");
+  // The helper as built: a stand-in at its path, which says `input`, sends a JPEG, says `noinput`, and logs what it's told.
+  const out = (bytes: Uint8Array) => [...bytes].map((b) => `\\${b.toString(8).padStart(3, "0")}`).join("");
+  const word = (w: string) => framed(3, false, [0, 0], [0, 0], 1, [...Buffer.from(w)]);
+  const told = join(home.dir, "told");
+  const bin = helperPath(dir);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    bin,
+    `#!/bin/sh
+read line; echo "$line" >> "${told}"
+printf '${out(word("input"))}${out(framed(1, true, [1206, 2622], [588, 1280], 2, [0xff, 0xd8]))}'
+read line; echo "$line" >> "${told}"
+printf '${out(word("noinput dtuhidd's connection ended"))}'
+read line; echo "$line" >> "${told}"
+`,
+  );
+  chmodSync(bin, 0o755);
+  const frames: StreamFrame[] = [];
+  const run = await stream(dir, ["sim", "set", "U1"], (f) => frames.push(f));
+  const until = async (ok: () => boolean) => {
+    const deadline = Date.now() + 5_000;
+    while (!ok() && Date.now() < deadline) await Bun.sleep(5);
+  };
+  await until(() => frames.length > 0);
+  expect(frames.map((f) => [f.kind, f.screen])).toEqual([["jpeg", [1206, 2622]]]);
+  expect(run.input?.()).toBe(true);
+  run.tell("touch down 600 1300 0");
+  await until(() => run.input?.() === false);
+  expect(run.input?.()).toBe(false);
+  run.tell("still");
+  await run.ended;
+  expect(readFileSync(told, "utf8").trim().split("\n")).toEqual(["fps 20", "touch down 600 1300 0", "still"]);
 });

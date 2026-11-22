@@ -9,9 +9,9 @@ import source from "./frames.swift" with { type: "file" };
 import type { Command, StreamFrame, StreamRun } from "./live.ts";
 
 /** One frame as the helper sends it. `screen` is the screen's own size (input coordinates are in it); `picture` the
- * frame's, which may be smaller. */
+ * frame's, which may be smaller. A `word` is the helper speaking (`input`, `noinput <why>`), its text in `data`. */
 export type MacFrame = {
-  kind: "jpeg" | "h264";
+  kind: "jpeg" | "h264" | "word";
   key: boolean;
   screen: [number, number];
   picture: [number, number];
@@ -39,9 +39,9 @@ export class FrameReader {
       if (this.have < HEAD + length) return;
       const all = this.take(HEAD + length);
       const kind = all[0];
-      if (kind !== 1 && kind !== 2) throw new Error(`fleetd-frames sent a frame of kind ${kind}`);
+      if (kind !== 1 && kind !== 2 && kind !== 3) throw new Error(`fleetd-frames sent a frame of kind ${kind}`);
       this.onFrame({
-        kind: kind === 1 ? "jpeg" : "h264",
+        kind: kind === 1 ? "jpeg" : kind === 2 ? "h264" : "word",
         key: all[1] === 1,
         screen: [v.getUint32(4, true), v.getUint32(8, true)],
         picture: [v.getUint32(12, true), v.getUint32(16, true)],
@@ -160,12 +160,20 @@ export const H264_FPS = 30;
 
 /**
  * A screen as frames, one as it changes, JPEG until told `h264`, each with the screen's own size: `args` say which
- * screen (`sim <set> <udid>`, `screen`). The helper is built into `dir` first if it isn't there.
+ * screen (`sim <set> <udid>`, `screen`). The helper is built into `dir` first if it isn't there. A simulator's also
+ * takes a person's input once the helper says it can (`input`).
  */
 export async function stream(dir: string, args: string[], onFrame: (frame: StreamFrame) => void): Promise<StreamRun> {
-  const helper = new MacFrames(await ensureHelper(dir), args, onFrame);
+  let input = false;
+  const helper = new MacFrames(await ensureHelper(dir), args, (frame) => {
+    if (frame.kind !== "word") return onFrame(frame as StreamFrame);
+    const word = new TextDecoder().decode(frame.data);
+    input = word === "input";
+    if (word.startsWith("noinput")) console.warn(`iOS input through agent-device: ${word.slice("noinput ".length)}`);
+  });
   helper.tell(`fps ${JPEG_FPS}`);
   return {
+    input: () => input,
     still: () => helper.tell("still"),
     tell: (command: Command) => {
       helper.tell(command);

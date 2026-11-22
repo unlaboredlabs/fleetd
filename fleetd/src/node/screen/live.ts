@@ -4,16 +4,28 @@
 // the package exports import it, and the node's own entry points make the encoders and streams.
 
 /** A command to a screen's stream: frames as JPEG or H.264, a keyframe next, a still now, the H.264 bit rate, the
- * frame rate, the picture's longer side. */
-export type Command = "jpeg" | "h264" | "key" | "still" | `kbps ${number}` | `fps ${number}` | `side ${number}`;
+ * frame rate, the picture's longer side; and on a stream that takes input (StreamRun `input`), a person's: a finger in
+ * the screen's pixels (`edge` 0, or the edge it starts at: 1 top, 2 left, 3 bottom, 4 right), a key by its USB HID
+ * usage, the home button. */
+export type Command =
+  | "jpeg"
+  | "h264"
+  | "key"
+  | "still"
+  | `kbps ${number}`
+  | `fps ${number}`
+  | `side ${number}`
+  | `touch ${"down" | "move" | "up"} ${number} ${number} ${number}`
+  | `keyboard ${number} ${"down" | "up"}`
+  | "button home";
 
 /** A frame of a screen's stream. `screen` is the screen's own size (input coordinates are in it); the picture may be
  * smaller. */
 export type StreamFrame = { kind: "jpeg" | "h264"; key: boolean; screen: [number, number]; data: Uint8Array };
 
 /** A running stream: `still` asks for the screen now (a JPEG), changed or not; `tell` gives it a command; `ended`
- * says why it stopped by itself. */
-export type StreamRun = { still(): void; tell(command: Command): void; stop(): void; ended: Promise<string | undefined> };
+ * says why it stopped by itself; `input` whether it takes a person's input itself now. */
+export type StreamRun = { still(): void; tell(command: Command): void; stop(): void; ended: Promise<string | undefined>; input?: () => boolean };
 
 /** One encoded frame: an access unit in Annex B, its parameter sets first on a keyframe. */
 export type Encoded = { data: Uint8Array; key: boolean };
