@@ -57,12 +57,12 @@ export class CpuSpan {
     // Each screen process with everything it started (a browser's renderers, a terminal's shell).
     return [...new Set(this.pids().flatMap(tree))].reduce((n, p) => n + (cpuOf(p) ?? 0), 0);
   }
-  /** `{ node, screen }`: % of a core for this process and what it started besides the screen (an encoder: the node's
-   * part), and for the screen's own processes. */
-  end(): { node: number; screen: number } {
+  /** `{ node, encoder, screen }`: % of a core for this process and what it started besides the screen (an encoder:
+   * the node's part), of that what it started, and for the screen's own processes. */
+  end(): { node: number; encoder: number; screen: number } {
     const ms = Math.max(performance.now() - this.from, 1);
     const children = this.children() - this.kids;
-    return { node: ((selfCpu() - this.self + children) / ms) * 100, screen: ((this.sum() - this.others) / ms) * 100 };
+    return { node: ((selfCpu() - this.self + children) / ms) * 100, encoder: (children / ms) * 100, screen: ((this.sum() - this.others) / ms) * 100 };
   }
   /** CPU of this process's children that aren't the screen's. */
   private children(): number {

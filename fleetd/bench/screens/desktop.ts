@@ -1,7 +1,8 @@
 // A Linux desktop screen measured on this machine: the node's real display (an Xvfb of its own, src/node/desktop/
 // display.ts), its real session and capture loop (session.ts, x11.ts), and each frame through the link and the hub as
 // fleetd carries it (./wire.ts). Prints one JSON line: startup by phase, fps, bytes a second and CPU idle and while a
-// terminal scrolls, a person's takeover, and input-to-pixel for typing, clicks and drags.
+// terminal scrolls (watched, then with nobody watching: the recording alone), a person's takeover, and input-to-pixel for
+// typing, clicks and drags.
 //
 //   bun bench/screens/desktop.ts [--video <ffmpeg>] [--record <ffmpeg>]   (needs Xvfb and xterm on the PATH)
 //
@@ -62,6 +63,8 @@ const session = new Session(display, x, {
 session.open();
 
 const frames: Seen[] = [];
+/** When the node sent each frame, before the link and the hub carry it. */
+const sentAt: number[] = [];
 const wire = new Wire();
 let shown: BrowserFrame | undefined;
 let carrying = Promise.resolve();
@@ -69,6 +72,7 @@ session.setWatcher({
   kbps: undefined,
   video: ffmpeg !== undefined,
   send: (f) => {
+    sentAt.push(performance.now());
     // In order, as the links carry them; each counted where the app has it.
     carrying = carrying.then(async () => {
       const { frame, hops } = await wire.carry(f);
@@ -123,13 +127,19 @@ const timed = async (go: () => void): Promise<number> => {
 input({ kind: "mouse", action: "pressed", x: 200, y: 100, button: "left", clickCount: 1 });
 input({ kind: "mouse", action: "released", x: 200, y: 100, button: "left", clickCount: 1 });
 const typing: number[] = [];
+const typingNode: number[] = [];
 for (const ch of "fleetd screens") {
+  const n = sentAt.length;
   typing.push(
     await timed(() => {
       input({ kind: "key", action: "down", key: ch, text: ch });
       input({ kind: "key", action: "up", key: ch });
     }),
   );
+  // The same key, to the node's send: what the link and the hub add is the rest.
+  const at = performance.now() - typing.at(-1)!;
+  const sent = sentAt.slice(n).find((t) => t >= at);
+  typingNode.push(sent === undefined ? Number.NaN : sent - at);
 }
 // A click that selects a word (a double click), and a drag that selects a line: xterm highlights each.
 const clicks: number[] = [];
@@ -187,6 +197,16 @@ session.setControl("handing_back", "bench");
 await nextFrame(frames, 1_000);
 const handbackMs = performance.now() - hb0;
 
+// Nobody watches, a terminal scrolls: the node's work for the recording alone, an agent's desktop as it mostly is.
+session.setWatcher(undefined);
+const scroller2 = await display.launch("xterm -geometry 100x20+0+420 -e sh -c 'while :; do date +%s.%N; done'", root);
+pids.push(scroller2.pid);
+await Bun.sleep(500);
+span = new CpuSpan(() => pids);
+await Bun.sleep(ACTIVE_MS);
+const unwatched = span.end();
+process.kill(-scroller2.pid, "SIGTERM");
+
 await carrying;
 const hops = wire.totals;
 const per = (n: number) => round(n / Math.max(wire.frames, 1), 2);
@@ -207,10 +227,13 @@ console.log(
       fps: round(active.fps, 1),
       kbPerFrame: round(active.meanBytes / 1024, 1),
       bytesPerSec: round(active.wirePerSec),
-      cpu: { node: round(active.cpu.node, 1), screen: round(active.cpu.screen, 1) },
+      cpu: { node: round(active.cpu.node, 1), encoder: round(active.cpu.encoder, 1), screen: round(active.cpu.screen, 1) },
+      // The node's CPU for each frame the watcher got, in ms: what the frame rate doesn't hide.
+      cpuMsPerFrame: round((active.cpu.node * 10) / Math.max(active.fps, 0.1), 2),
     },
+    unwatched: { cpu: { node: round(unwatched.node, 1), encoder: round(unwatched.encoder, 1), screen: round(unwatched.screen, 1) } },
     takeover: { nodeMs: round(takeoverMs, 1), handbackNodeMs: round(handbackMs, 1), firstTap: spread(firstTap) },
-    inputToPixel: { typing: spread(typing), click: spread(clicks), drag: spread(drags) },
+    inputToPixel: { typing: spread(typing), typingAtNode: spread(typingNode), click: spread(clicks), drag: spread(drags) },
     hopsPerFrameMs: { node: per(hops.nodeMs), hub: per(hops.hubMs), app: per(hops.appMs) },
   }),
 );

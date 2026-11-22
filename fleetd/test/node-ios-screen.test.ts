@@ -276,7 +276,8 @@ test("with every watcher decoding H.264 the stream sends it, the screen anew whe
   shooter.want(true, undefined);
   shooter.run();
   await until(() => told.length > 0);
-  expect(told).toEqual(["h264", "kbps 2500"]);
+  // VideoToolbox's 60 frames a second; a slow link (560 kbit/s of H.264) 10.
+  expect(told).toEqual(["h264", "kbps 2500", "fps 60"]);
   onFrame({ kind: "jpeg", key: true, screen: [1206, 2622], data: jpeg(1) });
   onFrame({ kind: "h264", key: true, screen: [1206, 2622], data: new Uint8Array(900) });
   onFrame({ kind: "h264", key: false, screen: [1206, 2622], data: new Uint8Array(40) });
@@ -293,7 +294,7 @@ test("with every watcher decoding H.264 the stream sends it, the screen anew whe
   // A slow watcher's link (800 kbit/s): the video takes 70% of it. One that can't decode H.264: JPEG again.
   shooter.want(true, 800);
   shooter.want(false, undefined);
-  expect(told).toEqual(["still", "h264", "kbps 560", "jpeg", "kbps 2500"]);
+  expect(told).toEqual(["still", "h264", "kbps 560", "fps 10", "jpeg", "kbps 2500"]);
   watching = false;
   shooter.stop();
 });

@@ -7,7 +7,9 @@ import { SCRCPY_VERSION } from "./pins.ts";
 export const SERVER_PATH = "/data/local/tmp/scrcpy-server.jar";
 /** The longer side of the stream: a 720×1600 screen comes as 576×1280. */
 export const MAX_SIZE = 1280;
-export const MAX_FPS = 30;
+/** Frames a second the device's encoder may make: the emulator's own H.264 makes ~26–31 of them while the screen moves
+ * at no more emulator CPU than at 30 (its encoder, not the cap, is the bound), so the cap is 60. */
+export const MAX_FPS = 60;
 /** scrcpy refuses longer text in one message. */
 const TEXT_MAX_BYTES = 300;
 

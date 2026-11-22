@@ -1,10 +1,11 @@
 // H.264 for a live view where the machine has no hardware encoder at hand (a Linux desktop's grabs, a browser's
-// screencast JPEGs): x264 in the static ffmpeg the node pins for Android (../device/pins.ts), fetched the first time a
-// screen needs it. It runs while someone watches with H.264, and for a Linux desktop's recording all along (its
-// frames are the video's too: one encode for both), one frame in, one frame out at once (`zerolatency`, no B-frames,
-// a keyframe each KEY_EVERY frames so a recording seeks without decoding from its start), and comes out as FLV: its
-// tags say their length, so each frame is whole as soon as it is written (raw Annex B would be whole only once the
-// next one starts). A keyframe on demand is a new encoder: ~90 ms.
+// screencast JPEGs): x264 in the static ffmpeg the node pins for Android (../device/pins.ts), fetched as the node
+// starts where it has screens, or the first time a screen needs it. A desktop's grabs come as NV12 (./nv12.ts), only
+// their changed part converted, so ffmpeg only encodes: ≈ 2.6 ms of CPU a 1280×800 frame, from 7.6 with its own
+// conversion. It runs while someone watches with H.264, and for a Linux desktop's recording all along, one frame in,
+// one frame out at once (`zerolatency`, no B-frames, a keyframe each KEY_EVERY frames so a recording seeks without
+// decoding from its start), and comes out as FLV: its tags say their length, so each frame is whole as soon as it is
+// written (raw Annex B would be whole only once the next one starts). A keyframe on demand is a new encoder: ~90 ms.
 
 import { type Encoded, type Input, kbpsFor, type LiveEncoding, type MakeEncoder } from "./live.ts";
 
@@ -83,16 +84,28 @@ export function paramSets(record: Uint8Array): Uint8Array[] {
  * 1280×800), and a screen that moves costs one more keyframe each 5 s of motion; a still one makes no frames at all. */
 export const KEY_EVERY = 150;
 
-/** ffmpeg's arguments for `input` at `kbps` at most. */
-export function encoderArgs(input: Input, kbps: number): string[] {
-  const from = "raw" in input ? ["-f", "rawvideo", "-pix_fmt", "bgra", "-s", `${input.raw[0]}x${input.raw[1]}`, "-framerate", "30"] : ["-f", "mjpeg", "-framerate", "30"];
+/** Pixels past which x264 takes a second thread, where the machine has cores to spare: one encodes 1280×800 in
+ * ~2.3 ms (≈ 2.6 ms of CPU), two in ~1.7 ms for ≈ 13% more CPU, worth it only where a frame would take long alone. */
+export const ONE_THREAD_PIXELS = 2_100_000;
+
+/** x264's threads for a picture of `pixels` on a machine of `cores`. */
+export const threadsFor = (pixels: number, cores: number) => (pixels > ONE_THREAD_PIXELS && cores > 2 ? 2 : 1);
+
+/** ffmpeg's arguments for `input` at `kbps` at most, on a machine of `cores`. NV12 goes in as it is (no conversion in
+ * ffmpeg); BGRA is converted there, and JPEGs decoded and converted. */
+export function encoderArgs(input: Input, kbps: number, cores = navigator.hardwareConcurrency): string[] {
+  const [w, h] = "raw" in input ? input.raw : "nv12" in input ? input.nv12 : input.jpeg;
+  const from =
+    "jpeg" in input
+      ? ["-f", "mjpeg", "-framerate", "30"]
+      : ["-f", "rawvideo", "-pix_fmt", "raw" in input ? "bgra" : "nv12", "-s", `${w}x${h}`, "-framerate", "30"];
   return [
     "-hide_banner", "-loglevel", "error", ...from, "-i", "pipe:0", "-an",
-    "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
-    // Even sizes, as 4:2:0 needs them.
-    "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency",
+    // Even sizes, as 4:2:0 needs them: NV12 is made so.
+    ...("nv12" in input ? [] : ["-pix_fmt", "yuv420p", "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2"]),
     "-g", String(KEY_EVERY), "-bf", "0", "-crf", "26", "-maxrate", `${kbps}k`, "-bufsize", `${Math.max(Math.round(kbps / 2), 50)}k`,
-    "-threads", "2", "-flush_packets", "1", "-f", "flv", "pipe:1",
+    "-threads", String(threadsFor(w * h, cores)), "-flush_packets", "1", "-f", "flv", "pipe:1",
   ];
 }
 

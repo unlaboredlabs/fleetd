@@ -47,6 +47,7 @@ import { DiskDesktopRecordings } from "./disk_recordings.ts";
 import { hasBox, hostedBox } from "../place/hosted.ts";
 import { BOX_NO_DESKTOP_LAUNCH, inBox as agentInBox } from "../place/index.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { machineLoad } from "../screen/load.ts";
 import { liveEncoder } from "../screen/x264.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
@@ -277,6 +278,7 @@ export class Desktops extends DesktopSessions implements Screens {
       inBox: (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined),
       recordings: disk,
       encoder: liveEncoder(() => ensureFfmpeg(node.home)),
+      load: machineLoad,
     });
     late.d = this;
     this.disk = disk;
@@ -310,6 +312,8 @@ export class Desktops extends DesktopSessions implements Screens {
       void installAgentDesktop(this.node.home).catch((e: Error) => console.warn(`agent-desktop not installed yet: ${e.message}`));
     }
     if (enabled(this.config)) {
+      // The encoder's ffmpeg now (~40 MB, once), so the first desktop's first frame doesn't wait for it.
+      if (process.arch === "x64") void ensureFfmpeg(this.node.home).catch((e: Error) => console.warn(`ffmpeg for desktop video not fetched yet: ${e.message}`));
       // Ask the runtime now, so the next link's hello knows whether containers work.
       const { runtime } = choose(this.config, this.node.home);
       void (runtime ? runtimeAnswers(runtime, true) : Promise.resolve()).then(() => this.refreshCaps());
