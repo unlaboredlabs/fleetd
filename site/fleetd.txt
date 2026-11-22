@@ -49,8 +49,12 @@ showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
 
 BRING THE MODELS YOU ALREADY PAY FOR
 fleetd sells no tokens. Agents run on your own subscription or API key.
-Supported now: Claude subscriptions, Anthropic API, Antigravity subscriptions,
-Gemini API. Coming soon: ChatGPT subscriptions, OpenAI API.
+                 Subscription    API key
+  Anthropic      Claude          Anthropic API
+  Google         Antigravity     Gemini API
+  OpenAI         ChatGPT         OpenAI API       (coming soon)
+Your agents run on what you connect. A subscription keeps its own usage
+limits; a key is billed by its provider. fleetd adds nothing on top.
 
 
 RUN IT YOURSELF, OR ON FLEETD CLOUD
@@ -74,12 +78,18 @@ Hours are for the smallest computer. Unused time doesn't roll over. Prices
 exclude VAT. Billing details: https://fleetd.sh/docs/billing
 
 Pay as you go, for extra time beyond a plan or no plan at all. Billed only
-while a computer is running:
+while a computer is running (a month is 730 hours):
   2 CPU, 4 GB    $0.06 an hour
   4 CPU, 8 GB    $0.12 an hour
   8 CPU, 16 GB   $0.24 an hour
 Credits: prepaid computer time, from $10, valid for 12 months. Without a plan,
 credits run up to 3 agents at once.
+
+Estimate a month on https://fleetd.sh/pricing: pick a computer size, how many
+agents run at once, the hours each works a day and the days a month. Agents
+sleep when they're idle, so a computer is billed only while its agent works.
+For example, 25 agents at once on 2 CPU, 4 GB, 3 hours a day for 22 days, is
+1,650 hours ($99) of computer time: the Scale plan, $200 a month, covers it.
 
 
 SELF-HOSTED OR CLOUD
