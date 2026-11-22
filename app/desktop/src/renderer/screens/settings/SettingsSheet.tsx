@@ -3,12 +3,13 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left; on a fleetd cloud team, called Team, its owner's Delete team last, in red. Vault shows
+// and admins only: People, Machines, Providers (what agents run on), Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left; on a fleetd cloud team, called Team, its owner's Delete team last, in red. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
   Brain,
   CreditCard,
+  KeyRound,
   Layers,
   LayoutGrid,
   ListChecks,
@@ -73,6 +74,7 @@ const HUB_PAGES: ReadonlyArray<{
 }> = [
   { tab: "hub.people", label: HUB_PAGES_SHOWN.people, icon: <Users /> },
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
+  { tab: "hub.providers", label: HUB_PAGES_SHOWN.providers, icon: <KeyRound /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
   { tab: "hub.profiles", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },

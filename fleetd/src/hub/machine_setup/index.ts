@@ -39,6 +39,9 @@ export interface SetupPorts {
   claudeLogin(hub: Hub, machine: string, code?: string): Promise<{ ok: boolean; message: string; loginUrl?: string }>;
   /** The machine's node runs `agy acp --login` the same way; one already signed in answers its plan (`signedIn`). */
   antigravityLogin(hub: Hub, machine: string, code?: string): Promise<{ ok: boolean; message: string; loginUrl?: string; signedIn?: string }>;
+  /** Whether the machine's Antigravity is signed in, starting nothing: undefined for a machine that can't sign it in
+   * from the app; `checked` false when its node didn't say (offline, or a fleetd too old to). */
+  antigravityStatus(hub: Hub, machine: string): Promise<{ checked: boolean; signedIn?: string } | undefined>;
 }
 
 /** A Host line's hosts from an ssh_config (detect.rs `parse_ssh_hosts`): no patterns, no duplicates. */
@@ -116,6 +119,15 @@ export const realPorts: SetupPorts = {
       throw new Error(e instanceof Error ? e.message : String(e));
     }
     return { ok: r.ok, message: r.message, ...(r.login_url !== undefined ? { loginUrl: r.login_url } : {}), ...(r.signed_in !== undefined ? { signedIn: r.signed_in } : {}) };
+  },
+  async antigravityStatus(hub, machine) {
+    if (!link(hub).can(machine, CAP_ANTIGRAVITY_LOGIN)) return undefined;
+    try {
+      const r = (await link(hub).commands.antigravityStatus(machine)) as unknown as NodeActionResult;
+      return r.ok ? { checked: true, ...(r.signed_in !== undefined ? { signedIn: r.signed_in } : {}) } : { checked: false };
+    } catch {
+      return { checked: false };
+    }
   },
 };
 

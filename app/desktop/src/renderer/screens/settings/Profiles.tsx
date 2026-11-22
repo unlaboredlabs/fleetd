@@ -6,7 +6,9 @@ import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef, ProjectSetInput } from "../../../shared/contracts";
 import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
 import { useCloudTeam, useToolQuery } from "../../src/data/react";
-import { useServes } from "../admin/role";
+import { useAdministers, useServes } from "../admin/role";
+import { modelShort, profileNameFor, providerOf } from "../../../shared/agentProviders";
+import { GoogleConnect } from "./GoogleSignIn";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   allowedAfter,
@@ -15,7 +17,10 @@ import {
   draftOf,
   EFFORT_WORD,
   hasFast,
+  byProviderOf,
   leadOf,
+  leadChoices,
+  MODEL_CHOICE,
   modelChoices,
   newDraft,
   NOTE_MAX,
@@ -125,7 +130,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
           aria-label="Lead runs on"
           value={lead?.name ?? ""}
           disabled={busy}
-          options={view.profiles.map((p) => ({
+          options={byProviderOf(view.profiles).map(({ profile: p, group }) => ({
             value: p.name,
             label: (
               <>
@@ -134,6 +139,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
               </>
             ),
             textValue: p.name,
+            group,
           }))}
           onValueChange={pick}
         />
@@ -209,7 +215,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
           <Select
             aria-label="Model"
             value={draft.model}
-            options={modelChoices(view.models, saved?.model).map((m) => ({ value: m.id, label: m.displayName ?? m.id, textValue: m.displayName ?? m.id }))}
+            options={modelChoices(view.models, saved?.model).map((m) => ({ value: m.id, label: modelShort(m), textValue: m.displayName ?? m.id, group: providerOf(m.id).name }))}
             onValueChange={(model) => set({ model })}
           />
         </Field>
@@ -217,6 +223,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
           <Select<Effort> aria-label="Reasoning" value={draft.effort} options={view.efforts.map((e) => ({ value: e, label: EFFORT_WORD[e] }))} onValueChange={(effort) => set({ effort })} />
         </Field>
       </div>
+      {providerOf(draft.model).id === "google" ? <GoogleConnect flush /> : null}
       <Switch
         label="Fast mode"
         description={fast ? "Faster answers at a higher price per token." : "This model has no fast mode."}
@@ -287,6 +294,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const cloud = useCloudTeam();
+  const admin = useAdministers();
   const live = useLive();
   const call = useHubCall();
   const refetch = useRefetch();
@@ -309,8 +317,24 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const toggle = (name: ProfileName, on: boolean) => set(name, { profiles: allowedAfter(allowed, defaultName, name, on) });
   const pickLead = (name: string) => {
     if (name === (view.leadProfile ?? HUB_LEAD)) return;
+    if (name.startsWith(MODEL_CHOICE)) {
+      startOn(name.slice(MODEL_CHOICE.length));
+      return;
+    }
     set("lead", name === HUB_LEAD ? { leadDefault: true } : { leadProfile: name });
   };
+  // A model no profile runs on: a profile is made on it (named for it, at high effort), and the lead starts on that.
+  const startOn = (model: string) => {
+    const name = profileNameFor(model, view.profiles);
+    setBusy("lead");
+    setError(undefined);
+    call("profile_create", { name, note: "", model, effort: "high", fast: false })
+      .then(() => call("project_set", { ...projectRef, leadProfile: name }))
+      .then(() => refetch(["profiles_list", "project_get"]))
+      .catch((e: unknown) => setError(errorText(e)))
+      .finally(() => setBusy(undefined));
+  };
+  const leadModel = view.profiles.find((p) => p.name === (view.leadProfile ?? lead?.name))?.model;
   const restart = () => set("lead", { leadRestart: true });
   return (
     <SettingsSection
@@ -363,17 +387,28 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
                 disabled={!live || busy !== undefined}
                 options={[
                   { value: HUB_LEAD, label: `Hub default (${lead.name})`, textValue: `Hub default (${lead.name})` },
-                  ...view.profiles.map((p) => ({
-                    value: p.name,
-                    label: (
-                      <>
-                        <Text mono>{p.name}</Text>
-                        <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}`}</Text>
-                      </>
-                    ),
-                    textValue: p.name,
-                    ...(p.refused === undefined ? {} : { disabled: true, title: p.refused }),
-                  })),
+                  ...leadChoices(view.profiles, view.models).map((c) =>
+                    c.kind === "profile"
+                      ? {
+                          value: c.profile.name,
+                          label: (
+                            <>
+                              <Text mono>{c.profile.name}</Text>
+                              <Text size="xs" tone="quiet">{` ${runsLine(view.models, c.profile)}`}</Text>
+                            </>
+                          ),
+                          textValue: c.profile.name,
+                          group: c.group,
+                          ...(c.profile.refused === undefined ? {} : { disabled: true, title: c.profile.refused }),
+                        }
+                      : {
+                          value: `${MODEL_CHOICE}${c.model.id}`,
+                          label: modelShort(c.model),
+                          textValue: modelShort(c.model),
+                          group: c.group,
+                          ...(admin ? {} : { disabled: true, title: `An owner or admin starts a profile on it in ${adminGroup(cloud)} › Bot defaults › Agents.` }),
+                        },
+                  ),
                 ]}
                 onValueChange={pickLead}
               />
@@ -381,6 +416,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           }
         />
       )}
+      {leadModel !== undefined && providerOf(leadModel).id === "google" ? <GoogleConnect project={projectRef} /> : null}
       {error === undefined ? null : <Notice tone="danger">{`Not changed: ${error}`}</Notice>}
     </SettingsSection>
   );

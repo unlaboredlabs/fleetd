@@ -1,6 +1,6 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, leadOf, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { deleteWords as eraseWords, leadChoices, leadOf, MODEL_CHOICE, modelShort, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** A machine by its name; on a fleetd cloud team, its hosted runner is fleetd's computers, not a machine of the team's. */
@@ -164,15 +164,37 @@ export interface LeadLine {
   readonly disabled: boolean;
   /** Why it can't be picked: what claude said when it refused its model. */
   readonly why?: string;
+  /** Its provider's name, which its section is headed by; none for Hub default. */
+  readonly group?: string;
 }
 
-/** Its lead's model: the hub's lead profile first, then each of the hub's, checked on the one its lead starts on. */
-export const leadLines = (view: ProfilesListOutput): LeadLine[] => {
+/**
+ * Its lead's model: the hub's lead profile first, then each of the hub's by provider, checked on the one its lead
+ * starts on; for an admin, each of Google's models no profile runs on too (`model:<id>`), which a profile is made on.
+ */
+export const leadLines = (view: ProfilesListOutput, admin = false): LeadLine[] => {
   const pick = view.leadProfile ?? LEAD_HUB;
   return [
     { value: LEAD_HUB, title: `Hub default (${leadOf(view.profiles)?.name ?? ""})`, checked: pick === LEAD_HUB, disabled: false },
-    ...view.profiles.map((p) => ({ value: p.name, title: p.name, checked: pick === p.name, disabled: p.refused !== undefined, ...(p.refused === undefined ? {} : { why: p.refused }) })),
+    ...leadChoices(view.profiles, view.models).flatMap((c): LeadLine[] =>
+      c.kind === "profile"
+        ? [{ value: c.profile.name, title: c.profile.name, checked: pick === c.profile.name, disabled: c.profile.refused !== undefined, ...(c.profile.refused === undefined ? {} : { why: c.profile.refused }), group: c.group }]
+        : admin
+          ? [{ value: `${MODEL_CHOICE}${c.model.id}`, title: modelShort(c.model), checked: false, disabled: false, group: c.group }]
+          : [],
+    ),
   ];
+};
+
+/** The lines in runs of one group each, in order: Hub default's alone, then a provider's each. */
+export const leadSections = (lines: ReadonlyArray<LeadLine>): { group: string | undefined; lines: LeadLine[] }[] => {
+  const runs: { group: string | undefined; lines: LeadLine[] }[] = [];
+  for (const l of lines) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.group === l.group) last.lines.push(l);
+    else runs.push({ group: l.group, lines: [l] });
+  }
+  return runs;
 };
 
 /** The value on its Lead Model row. */

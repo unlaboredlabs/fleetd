@@ -20,6 +20,8 @@ const LOGIN_WAIT_SEC = 90;
 const REJOIN_WAIT_SEC = 90;
 /** Antigravity's sign-in may install agy first (about 280 MB). */
 const AGY_LOGIN_WAIT_SEC = 600;
+/** The node's own check waits 30 s for agy to answer. */
+const AGY_STATUS_WAIT_SEC = 40;
 /** How long the hub waits for a node to write a secret. */
 const SECRET_REPLY_SEC = 30;
 /** A session call's default wait, as the executor's READ_TIMEOUT. */
@@ -234,6 +236,11 @@ export class NodeCommands {
     return code === undefined ? this.runAction(machineId, "antigravity_login") : this.runAction(machineId, "antigravity_login_code", { code });
   }
 
+  /** Whether the machine's Antigravity is signed in (`signed_in`), starting nothing. */
+  antigravityStatus(machineId: string) {
+    return this.runAction(machineId, "antigravity_status");
+  }
+
   screens(machineId: string, screens: unknown) {
     return this.runAction(machineId, "screens", { screens });
   }
@@ -299,6 +306,8 @@ function defaultWait(frame: HubFrame): number {
           return LOGIN_WAIT_SEC;
         case "antigravity_login":
           return AGY_LOGIN_WAIT_SEC;
+        case "antigravity_status":
+          return AGY_STATUS_WAIT_SEC;
         case "update":
           return UPDATE_WAIT_SEC;
         case "rejoin":

@@ -48,6 +48,7 @@ let tools: Registry;
 let ran: Ran[];
 let fail: string | undefined;
 let logins: (string | undefined)[];
+let statusAsked: string[];
 let otherOs: boolean;
 let hasBuild: boolean;
 let missing: boolean;
@@ -112,6 +113,13 @@ const ports: SetupPorts = {
     if (code === undefined) return { ok: true, message: "sign in at the URL, then give the code it shows", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" };
     return code === "g#1" ? { ok: true, message: "Antigravity is signed in (Google AI Pro)", signedIn: "Google AI Pro" } : { ok: false, message: "agy acp --login failed: invalid code" };
   },
+  // `signed` is signed in, `lab` isn't, `old`'s node can't say, and `mac` can't sign Antigravity in at all.
+  async antigravityStatus(_hub, m) {
+    statusAsked.push(m);
+    if (m === "mac") return undefined;
+    if (m === "old") return { checked: false };
+    return m === "signed" ? { checked: true, signedIn: "Google AI Pro" } : { checked: true };
+  },
 };
 
 beforeEach(() => {
@@ -132,6 +140,7 @@ beforeEach(() => {
   ran = [];
   fail = undefined;
   logins = [];
+  statusAsked = [];
   otherOs = false;
   hasBuild = false;
   missing = false;
@@ -388,6 +397,36 @@ test("Antigravity signs in on a machine through its node: one signed in already 
   await expect(call("machine_antigravity_login", { machineId: "lab", code: " " })).rejects.toMatchObject({ code: "invalid" });
   expect(logins).toEqual([undefined, undefined, "g#1", "nope"]);
   expect(JSON.stringify(events(t.hub).page(0).events)).not.toContain("g#1");
+});
+
+test("antigravity_status says where Google is connected: each machine's sign-in, asked once a minute, and the bots with a key", async () => {
+  for (const id of ["lab", "signed", "old", "mac"]) store(t.hub).machineUpsert({ machineId: id, name: id, tags: [], status: "online", lastSeenAt: new Date().toISOString(), nodeVersion: "1" } as never);
+  t.hub.db.conn
+    .query(
+      `INSERT INTO vault_items (item_id, kind, scope, machine_id, project_id, env_name, label, meta, sealed, key_id, version, created_ms, created_by, updated_ms, updated_by)
+         VALUES (?, 'env', 'project', 'lab', ?, ?, ?, '{}', x'00', 'k', 1, 0, 'ada', 0, 'ada')`,
+    )
+    .run("v1", "web", "GEMINI_API_KEY", "GEMINI_API_KEY");
+  t.hub.db.conn
+    .query(
+      `INSERT INTO vault_items (item_id, kind, scope, machine_id, project_id, env_name, label, meta, sealed, key_id, version, created_ms, created_by, updated_ms, updated_by)
+         VALUES (?, 'env', 'project', 'lab', ?, ?, ?, '{}', x'00', 'k', 1, 0, 'ada', 0, 'ada')`,
+    )
+    .run("v2", "api", "OTHER_KEY", "OTHER_KEY");
+  const out = await call("antigravity_status", {}, caller("read", true));
+  expect(out.machines.sort((a: { machineId: string }, b: { machineId: string }) => a.machineId.localeCompare(b.machineId))).toEqual([
+    { machineId: "lab", checked: true },
+    { machineId: "old", checked: false },
+    { machineId: "signed", checked: true, signedIn: "Google AI Pro" },
+  ]);
+  expect(out.keyIn).toEqual([{ machineId: "lab", projectId: "web" }]);
+  // Within the minute, only the machine that couldn't say is asked again; a sign-in from the app is known at once.
+  statusAsked = [];
+  await call("machine_antigravity_login", { machineId: "lab" });
+  await call("machine_antigravity_login", { machineId: "lab", code: "g#1" });
+  const again = await call("antigravity_status", {});
+  expect(statusAsked.sort()).toEqual(["mac", "old"]);
+  expect(again.machines.find((m: { machineId: string }) => m.machineId === "lab")).toEqual({ machineId: "lab", checked: true, signedIn: "Google AI Pro" });
 });
 
 test("a login on a machine the hub doesn't know, or with an empty code, asks nothing of a node", async () => {
