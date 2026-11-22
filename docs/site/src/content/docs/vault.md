@@ -24,7 +24,7 @@ fill; and **variables**, kept per bot, plus an order's own variables while it ru
 | Settings › Vault | The team vault: every login, card and address on the hub | Its creator, or an owner or admin |
 | Settings › Vault › Integrations | The services the team signed in to once, such as Paper, which every bot's agents use ([Integrations](/docs/integrations#sign-in)) | Anyone connects one and signs in again; its connector, or an owner or admin, disconnects it |
 | Settings › Bots › *bot* › Vault | The bot's variables, and its orders' (tagged with the order) | Anyone who may operate on the bot |
-| Settings › Hub › Every bot › Vault | The vault key | Owners and admins |
+| Settings › Hub › Bot defaults › Vault | The vault key | Owners and admins |
 
 The phone has the same lists under Settings › Vault and a bot's Info › Vault. The Vault rows show only on a hub
 that serves the vault (fleetd's Bun build); an older hub has none.
@@ -127,7 +127,7 @@ falls back to 1Password and proposes importing it. In the release after, `op://`
 ## The vault key {#key}
 
 Every value is encrypted at rest with AES-256-GCM under a data key of its own, wrapped by the vault's root key. The
-root key isn't in the hub's database: a copy of the database alone opens nothing. Settings › Hub › Every bot › Vault says where it
+root key isn't in the hub's database: a copy of the database alone opens nothing. Settings › Hub › Bot defaults › Vault says where it
 is and offers **Rotate…**.
 
 | Kept in | After a restart | How (on the hub; fleetd vault --help lists them) |
@@ -151,7 +151,7 @@ on the hub's machine as the same OS user ([why](/docs/security#vault)).
 On the first start of a hub with the vault, its bot variables, order variables and stored `request_secret` answers
 move into the vault, losing nothing. Each machine hands over the secrets it holds, sealed to the hub. fleetd's own
 `GH_TOKEN` order variables stay where they are. A machine that's offline, or still runs fleetd's Rust build, keeps its
-secrets working where they are, and they move in once it's back on the Bun build: Settings › Hub › Every bot › Vault lists what is
+secrets working where they are, and they move in once it's back on the Bun build: Settings › Hub › Bot defaults › Vault lists what is
 still waiting. A card picked from 1Password for [Payments](/docs/projects#purchases) is imported once a machine with the
 token is online.
 

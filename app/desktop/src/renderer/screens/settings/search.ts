@@ -48,7 +48,7 @@ export const pagePath = (tab: Tab): string => {
   const on = pageOf(tab);
   if (on === "project-vault") return "Bot › Vault";
   if (!isHubTab(on)) return PAGE_LABEL[on];
-  return `${isEveryProject(on) ? "Every bot" : "Hub"} › ${PAGE_LABEL[on]}`;
+  return `${isEveryProject(on) ? "Bot defaults" : "Hub"} › ${PAGE_LABEL[on]}`;
 };
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
@@ -130,7 +130,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
-  { key: "hub.profiles", label: "Agents for every bot", tab: "hub.profiles", keywords: ["every bot", "hub-wide"] },
+  { key: "hub.profiles", label: "Agents for every bot", tab: "hub.profiles", keywords: ["bot defaults", "defaults", "every bot", "hub-wide"] },
   { key: "hub.task-profiles", label: "Profiles", tab: "hub.profiles", keywords: ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every bot"] },
   { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
   { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.profiles", keywords: ["every bot", "hub-wide", "global"] },

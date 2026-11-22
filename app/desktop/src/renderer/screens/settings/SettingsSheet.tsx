@@ -3,7 +3,7 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Every bot and Setup, which says how many required steps are left. Vault shows
+// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
@@ -63,7 +63,7 @@ const YOU: ReadonlyArray<{ tab: Tab; label: string; icon: ReactNode }> = [
   { tab: "hubs", label: YOU_PAGES.hubs, icon: <MonitorSmartphone /> },
 ];
 
-/** The Hub group's pages; Every bot opens on its first tab. */
+/** The Hub group's pages; Bot defaults opens on its first tab. */
 const HUB_PAGES: ReadonlyArray<{
   tab: HubTab;
   label: string;
@@ -72,7 +72,7 @@ const HUB_PAGES: ReadonlyArray<{
   { tab: "hub.people", label: HUB_PAGES_SHOWN.people, icon: <Users /> },
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
-  { tab: "hub.profiles", label: HUB_PAGES_SHOWN.everyBot, icon: <Layers /> },
+  { tab: "hub.profiles", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];
 

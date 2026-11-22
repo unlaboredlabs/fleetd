@@ -27,13 +27,13 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
     throw new ToolError(
       "forbidden",
       "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
-      "Ask an owner or admin (Settings › Hub › Every bot › Agents), or add the server to one bot in its settings.",
+      "Ask an owner or admin (Settings › Hub › Bot defaults › Agents), or add the server to one bot in its settings.",
     );
   }
   throw new ToolError(
     "forbidden",
     "Only a person changes the MCP servers agents get, with operate on every machine they reach.",
-    "Change them in the desktop app: Settings › Hub › Every bot › Agents, or the bot's settings.",
+    "Change them in the desktop app: Settings › Hub › Bot defaults › Agents, or the bot's settings.",
   );
 }
 

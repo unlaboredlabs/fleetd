@@ -361,7 +361,7 @@ it("lists an older hub's items as one list, the person's own among them, with no
   expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
 });
 
-it("keeps only the vault key on Hub › Every bot › Vault", async () => {
+it("keeps only the vault key on Hub › Bot defaults › Vault", async () => {
   await render("#/settings/hub/vault", TEAM, <HubVault />);
   expect(host.querySelector("[data-screen='settings.hub.vault']")).not.toBeNull();
   expect(host.textContent).toContain("Recovery code");

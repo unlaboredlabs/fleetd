@@ -57,7 +57,7 @@ export function EveryProjectFrame({ tab, children }: { tab: SettingsTab; childre
   const vault = useData((st) => vaultServed(st.features));
   const tabs = vault ? EVERY_PROJECT : EVERY_PROJECT.filter((t) => t !== "hub.vault");
   return (
-    <PageFrame.Provider value={{ title: "Every bot", tabs: <PageTabs label="Every bot" tabs={tabs} current={pageOf(tab)} onOpen={(t) => navigate({ id: "settings", tab: t, at: id })} /> }}>
+    <PageFrame.Provider value={{ title: "Bot defaults", tabs: <PageTabs label="Bot defaults" tabs={tabs} current={pageOf(tab)} onOpen={(t) => navigate({ id: "settings", tab: t, at: id })} /> }}>
       {children}
     </PageFrame.Provider>
   );

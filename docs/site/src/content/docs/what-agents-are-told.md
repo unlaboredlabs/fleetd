@@ -237,7 +237,7 @@ The [table below](#prompts) marks prompt-only rules.
 ## Edit a prompt {#edit}
 
 In the app: Settings › a bot › Instructions & memory, then **Built-in prompts** at the foot of the page, for one bot's own
-texts. Hub › Every bot › Instructions has the same row for the hub-wide ones (owners and admins only: the hub refuses
+texts. Hub › Bot defaults › Instructions has the same row for the hub-wide ones (owners and admins only: the hub refuses
 anyone else). Most changes belong in the instructions above that row. The list shows your edits first and the rest behind their
 groups: open a prompt, edit it and Save. "Reset to the built-in" drops your edit.
 
@@ -271,7 +271,7 @@ Saving never refuses text that isn't empty, but it warns:
 
 ## Your own instructions {#instructions}
 
-In the app: Settings › a bot › Instructions & memory for one bot's, and Settings › Hub › Every bot › Instructions for every bot's (owners
+In the app: Settings › a bot › Instructions & memory for one bot's, and Settings › Hub › Bot defaults › Instructions for every bot's (owners
 and admins only). On the hub machine:
 
 ```sh

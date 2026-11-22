@@ -203,20 +203,20 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   window.location.hash = "#/settings/hub/people";
   await render(admin);
   const rows = [...(nav()?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim());
-  expect(rows).toEqual(["People", "Machines", "Every bot", "Setup2 left"]);
+  expect(rows).toEqual(["People", "Machines", "Bot defaults", "Setup2 left"]);
   // Nothing nested and nothing to pick in the sidebar.
   expect(nav()?.querySelector("[role='group']")).toBeNull();
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
 
-  await click(button("Every bot", nav() ?? document));
+  await click(button("Bot defaults", nav() ?? document));
   expect(window.location.hash).toBe("#/settings/hub/profiles");
   expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
-  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
-  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Every bot']");
+  expect(button("Bot defaults", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Bot defaults']");
   expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Agents", "Instructions"]);
   await tab(tabs, "Instructions");
   expect(window.location.hash).toBe("#/settings/hub/instructions");
-  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Bot defaults", nav() ?? document).getAttribute("aria-current")).toBe("page");
 });
 
 it("keeps Machines a list (each machine's role, screens and caps on its own page), and the hub's Claude and GitHub each a row of Setup that opens its controls", async () => {
@@ -299,7 +299,7 @@ it("opens the hub-wide built-in prompts from the row under the instructions for 
   // A page of its own, with no tabs: Every project stays the sidebar's page, and the way back is its Instructions.
   const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.prompts']");
   expect(host.querySelector("[role='tablist']")).toBeNull();
-  expect(button("Every bot", nav() ?? document).getAttribute("aria-current")).toBe("page");
+  expect(button("Bot defaults", nav() ?? document).getAttribute("aria-current")).toBe("page");
   // The edited prompt first, the rest folded behind its group.
   const lists = [...(page?.querySelectorAll<HTMLElement>("[role='list']") ?? [])].map((l) => [l.getAttribute("aria-label"), [...l.querySelectorAll("button")].map((b) => b.textContent)]);
   expect(lists).toEqual([
@@ -379,7 +379,7 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Hub › Every bot › Instructions.");
+  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Hub › Bot defaults › Instructions.");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });

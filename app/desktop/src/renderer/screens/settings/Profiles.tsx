@@ -309,7 +309,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
     <SettingsSection
       title="Allowed profiles"
       reveal="agents.profiles"
-      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every bot › Agents."
+      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Bot defaults › Agents."
     >
       {view.profiles.map((p) => (
         <SettingsRow

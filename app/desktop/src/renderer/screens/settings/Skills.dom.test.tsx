@@ -132,7 +132,7 @@ it("shows a member a bot's skills and only names the hub-wide ones", async () =>
   expect(rowNamed("standup")).toBeUndefined();
   const line = document.querySelector("[aria-label='Hub-wide skills']");
   expect(line?.textContent).toContain("pr-review, standup");
-  expect(texts()).not.toContain("Hub-wide skills in Every bot");
+  expect(texts()).not.toContain("Hub-wide skills in Bot defaults");
   expect(texts()).not.toContain("Update");
   expect(document.body.textContent).not.toMatch(/Global/u);
 });
@@ -168,10 +168,10 @@ it("writes a member's install into the bot, never hub-wide", async () => {
   expect(sent("skill_install")).toEqual([{ scope: "project", projectRef: storefront, source: "acme/agent-skills" }]);
 });
 
-it("gives an admin on a bot's page only the way to Every bot", async () => {
+it("gives an admin on a bot's page only the way to Bot defaults", async () => {
   await render("settings", true);
   expect(rowNamed("pr-review")).toBeUndefined();
-  expect(texts()).toContain("Hub-wide skills in Every bot");
+  expect(texts()).toContain("Hub-wide skills in Bot defaults");
 });
 
 it("keeps Every bot's skills from a member, and reads none of it", async () => {
@@ -181,7 +181,7 @@ it("keeps Every bot's skills from a member, and reads none of it", async () => {
   expect(texts()).not.toContain("Install from a source…");
 });
 
-it("lets an admin install, update and remove hub-wide skills on Every bot › Agents", async () => {
+it("lets an admin install, update and remove hub-wide skills on Bot defaults › Agents", async () => {
   await render("admin", true);
   expect(document.querySelector("[data-screen='settings.hub.tools']")).not.toBeNull();
   expect(sent("skills_list")).toEqual([{}]);

@@ -247,12 +247,12 @@ const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']"
 it("has the Hub group for an admin only, and Vault only on a hub with the vault", async () => {
   const bots = ["All bots", "docs", "storefront"];
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Bot defaults", "Setup"]);
   expect(groups()).toEqual(["You", "Bots", "Hub"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Bot defaults", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
@@ -283,11 +283,11 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/hub/people", "settings.hub.people", null, "People"],
   ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
   ["#/settings/hub/updates", "settings.hub.machines", "settings.hub.updates", "Machines"],
-  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Every bot"],
-  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Every bot"],
-  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every bot"],
-  ["#/settings/hub/vault", "settings.hub.vault", null, "Every bot"],
-  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every bot"],
+  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Bot defaults"],
+  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Bot defaults"],
+  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Bot defaults"],
+  ["#/settings/hub/vault", "settings.hub.vault", null, "Bot defaults"],
+  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Bot defaults"],
   ["#/settings/hub/accounts", "settings.hub.setup", "settings.hub.accounts", "Setup"],
   ["#/settings/hub/setup", "settings.hub.setup", null, "Setup"],
 ];
