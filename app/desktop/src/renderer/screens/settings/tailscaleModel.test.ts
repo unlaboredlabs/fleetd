@@ -5,7 +5,7 @@ describe("Tailscale's row", () => {
   it("says nothing at rest, the tailnet once connected, and what it waits on", () => {
     expect(wordOf({ status: "off" })).toBeNull();
     expect(lineOf({ status: "off" }, true)).toBeNull();
-    expect(wordOf({ status: "connected", tailnet: "example.com", device: "fleetd" })).toEqual({ text: "example.com", tone: "quiet" });
+    expect(wordOf({ status: "connected", tailnet: "example.com", device: "fleetd" })).toEqual({ text: "Connected", tone: "quiet", hint: "example.com" });
     expect(lineOf({ status: "connected", tailnet: "example.com" }, true)).toBeNull();
     expect(wordOf({ status: "login", loginUrl: "https://login.tailscale.com/a/x" })).toEqual({ text: "Waiting for sign-in", tone: "warning" });
     expect(lineOf({ status: "approve" }, true)?.text).toBe("An admin of your tailnet approves the device in Tailscale's admin console.");

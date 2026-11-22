@@ -62,7 +62,7 @@ const storefront = (f: Fixture, two = false): Ref => {
   };
   first["repos"] = two ? [own, api] : [own];
   projectSections(f, ref);
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
   return ref;
 };
 

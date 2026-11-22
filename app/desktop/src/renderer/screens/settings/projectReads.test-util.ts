@@ -4,7 +4,7 @@ import { PROJECT_TOOLS } from "../projects/model";
 
 const EMPTY: Readonly<Record<string, unknown>> = {
   [PROJECT_TOOLS.approvals]: { approvals: { mode: "checker", model: "claude-sonnet-5-5", effort: "medium", defaults: true }, log: [] },
-  mcp_servers_get: { global: [], project: [], userServers: true },
+  mcp_servers_get: { global: [], project: [] },
   [PROJECT_TOOLS.purchases]: { purchases: [] },
 };
 

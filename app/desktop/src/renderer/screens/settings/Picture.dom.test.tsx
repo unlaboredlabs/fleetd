@@ -101,7 +101,7 @@ const render = async (avatar: string | undefined, icon: { face: string; color: s
       if (tool === "project_avatar_get") return Promise.resolve({ ok: true, output: { avatar: AVATAR, mime: "image/jpeg", dataB64: "/9j/AA==" } });
       if (tool === "attachment_put") return Promise.resolve({ ok: true, output: { attachmentId: "F7", bytes: 4, sha256: "x".repeat(64) } });
       if (tool === "project_avatar_set") return Promise.resolve({ ok: true, output: { project: {} } });
-      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [] } });
       const section = sectionRead(tool);
       if (section !== undefined) return Promise.resolve(section);
       return Promise.resolve({ ok: true, output: { settings } });
