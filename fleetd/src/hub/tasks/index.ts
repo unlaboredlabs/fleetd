@@ -2168,7 +2168,7 @@ export class Tasks {
     const tasks = this.tryDb(() => TaskRecords.forDigest(this.db, r, since, limit, now));
     if (!tasks) return [];
     // Other agents' messages an ended agent reads only if its lead continues it.
-    const unread = this.tryDb(() => unreadLines(this.hub.db, r)) ?? [];
+    const unread = this.tryDb(() => unreadLines(this.hub.db, r, this.now())) ?? [];
     return [...taskDigestLines(tasks, since, now, (m) => offline.get(m), (t) => openWaits.get(t) ?? [], (t) => monitors.get(t)), ...unread];
   }
 

@@ -149,25 +149,32 @@ export function askAnswered(db: HubDb, asker: string, peer: string, before: stri
   return open.get(asker);
 }
 
-/** The lead digest's lines for agents that ended waiting on nothing with other agents' messages unread: they read them
- * only if their lead continues them. */
-export function unreadLines(db: HubDb, r: ProjectRef): string[] {
+/** The most agents `unreadLines` lists; the rest are counted in one line. */
+export const UNREAD_SHOWN = 5;
+
+/** The lead digest's lines for agents of open orders that ended waiting on nothing with other agents' messages of the
+ * last day unread: they read them only if their lead continues them. One of a closed order never runs again, and an
+ * older message is left to `agent_messages`. */
+export function unreadLines(db: HubDb, r: ProjectRef, now: number): string[] {
   const rows = db.conn
-    .query<{ task_id: string; n: number; from_task: string }, [string, string]>(
+    .query<{ task_id: string; n: number; from_task: string }, [string, string, number]>(
       `SELECT t.task_id, m.n, m.from_task FROM agent_message_to t
          JOIN agent_messages m ON m.n = t.message_n
          JOIN steers s ON s.n = t.steer_n
          JOIN tasks k ON k.n = CAST(substr(t.task_id, 2) AS INTEGER)
-       WHERE m.machine_id = ? AND m.project_id = ? AND t.outcome = 'not_woken' AND s.held = 1 AND s.stage = 'queued'
-         AND k.state IN ('done', 'failed')
+         JOIN workstreams w ON w.n = CAST(substr(k.workstream_id, 2) AS INTEGER)
+       WHERE m.machine_id = ? AND m.project_id = ? AND m.sent_ms > ? AND t.outcome = 'not_woken'
+         AND s.held = 1 AND s.stage = 'queued' AND k.state IN ('done', 'failed') AND w.state = 'open'
        ORDER BY t.task_id, m.n`,
     )
-    .all(r.machineId, r.projectId);
+    .all(r.machineId, r.projectId, now - NOTE_MS);
   const by = new Map<string, string[]>();
   for (const row of rows) by.set(row.task_id, [...(by.get(row.task_id) ?? []), `M${row.n} from ${row.from_task}`]);
-  return [...by].map(
+  const lines = [...by].map(
     ([taskId, ms]) => `- ${taskId} ended waiting on nothing, with ${ms.length === 1 ? "a message" : `${ms.length} messages`} unread (${ms.join(", ")}): it reads them only if you continue it (message_agent)`,
   );
+  if (lines.length <= UNREAD_SHOWN) return lines;
+  return [...lines.slice(0, UNREAD_SHOWN), `- ${lines.length - UNREAD_SHOWN} more ended agents have messages unread (agent_messages lists them)`];
 }
 
 /** A note is one line of at most NOTE_MAX characters, to the bot alone, from an agent that isn't a review. */

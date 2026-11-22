@@ -7,7 +7,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { pollCiWaits } from "../src/hub/tasks/ci_wait.ts";
-import { askAnswered, list, NOTE_MS, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
+import { askAnswered, list, NOTE_MS, PER_MINUTE, sendMessage, UNREAD_SHOWN, unreadLines } from "../src/hub/steer/dm.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
 import { rehold, send, sendRunId, steerTasks, takeHeld } from "../src/hub/steer/index.ts";
 import * as steers from "../src/hub/steer/store.ts";
@@ -324,6 +324,31 @@ test("a message from an agent it never asked doesn't continue it, and the lead's
   await k.t.message({ projectRef: P, by: "lead:lab-a/p1" }, "T1", "Go on.");
   await until(() => k.ports.sends.some((s) => s.message.includes("'I renamed upload_limit'")));
   expect(k.t.digestLines(P, undefined, 50).some((l) => l.includes("unread"))).toBe(false);
+  k.hub.shutdown.abort();
+});
+
+test("the digest's unread lines leave out closed orders and messages over a day old, and list a few agents at most", async () => {
+  const k = await setup();
+  await k.ended();
+  const sent = await k.dm(["T1"], "I renamed upload_limit");
+  const db = k.hub.db;
+  expect(unreadLines(db, P, k.clock.ms)).toHaveLength(1);
+  // A day on, it is left to agent_messages.
+  expect(unreadLines(db, P, k.clock.ms + NOTE_MS + 1)).toEqual([]);
+  // Its order closed: it never runs again, so the lead isn't told to continue it.
+  k.hub.db.conn.query("UPDATE workstreams SET state = 'done', data = json_set(data, '$.state', 'done') WHERE n = 1").run();
+  expect(unreadLines(db, P, k.clock.ms)).toEqual([]);
+  expect(k.t.digestLines(P, undefined, 50).some((l) => l.includes(sent.messageId))).toBe(false);
+  k.hub.db.conn.query("UPDATE workstreams SET state = 'open', data = json_set(data, '$.state', 'open') WHERE n = 1").run();
+  // Many ended agents with messages unread: a few lines, and a count for the rest.
+  const steer = db.conn.query("SELECT steer_n AS n FROM agent_message_to WHERE message_n = ?").get(Number(sent.messageId.slice(1))) as { n: number };
+  for (let i = 0; i < UNREAD_SHOWN + 2; i++) {
+    const task = Number(db.conn.query("INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) SELECT machine_id, project_id, workstream_id, 'done', data FROM tasks WHERE n = 1").run().lastInsertRowid);
+    db.conn.query("INSERT INTO agent_message_to (message_n, pos, task_id, steer_n, outcome) VALUES (?, ?, ?, ?, 'not_woken')").run(Number(sent.messageId.slice(1)), i + 1, `T${task}`, steer.n);
+  }
+  const lines = unreadLines(db, P, k.clock.ms);
+  expect(lines).toHaveLength(UNREAD_SHOWN + 1);
+  expect(lines.at(-1)).toBe("- 3 more ended agents have messages unread (agent_messages lists them)");
   k.hub.shutdown.abort();
 });
 
