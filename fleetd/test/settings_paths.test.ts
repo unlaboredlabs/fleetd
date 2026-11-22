@@ -47,3 +47,13 @@ test("on fleetd cloud, the lines fleetd builds name Settings › Team, never Set
   expect(lines().flatMap(settingsPathProblems)).toEqual([]);
 });
 
+test("fleetd cloud sets the flavour through the package's export, and fleetd's lines then name Team", async () => {
+  // The cloud's way in: the root package.json's export, which must be the very module every line above reads.
+  const root = join(import.meta.dir, "..", "..");
+  const exported = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { exports: Record<string, string> }).exports["./shared/settings_path"];
+  expect(exported).toBe("./fleetd/src/shared/settings_path.ts");
+  const pkg = (await import(join(root, exported ?? ""))) as typeof import("../src/shared/settings_path.ts");
+  pkg.setSettingsFlavour("team");
+  expect(signedOutLine({ kind: "hub" })).toContain("Settings › Team › Setup › Claude");
+  expect(settingsPath("Machines")).toBe("Settings › Team › Machines");
+});

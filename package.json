@@ -92,6 +92,7 @@
     "./shared/screens_wire": "./fleetd/src/shared/screens_wire.ts",
     "./shared/sealed_box_core": "./fleetd/src/shared/sealed_box_core.ts",
     "./shared/sessions": "./fleetd/src/shared/sessions.ts",
+    "./shared/settings_path": "./fleetd/src/shared/settings_path.ts",
     "./shared/text": "./fleetd/src/shared/text.ts",
     "./shared/tiles": "./fleetd/src/shared/tiles.ts",
     "./shared/upgrade_proof": "./fleetd/src/shared/upgrade_proof.ts",
