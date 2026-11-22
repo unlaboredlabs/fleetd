@@ -35,8 +35,6 @@ import { useAnnounce } from "../ui/announce";
 import { Avatar, type Pictured } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
 import { useBeside } from "../ui/pane";
-import { sideStrip } from "../split";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Glass, GlassGroup, liquidGlass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -104,10 +102,6 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const own = useNavigation<NavigationProp<RootParams>>();
   // Beside the chat, the list is a navigation tree of its own: its chats, Settings and + go to the root stack beside it.
   const beside = useBeside();
-  // The Duo's side strip (src/split.ts) holds the bars' buttons; the rows stay out of it. Beside the chat, the list touches
-  // neither the strip's edge nor its status.
-  const insets = useSafeAreaInsets();
-  const strip = Platform.OS === "ios" && beside === null ? sideStrip(insets) : undefined;
   const root = useMemo(() => ({ settings: beside?.settings ?? (() => own.navigate("Settings")), newChat: beside?.newChat ?? (() => own.navigate("NewProject")) }), [beside, own]);
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -313,7 +307,6 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <Animated.FlatList
         data={lines}
         keyExtractor={(l) => l.key}
-        {...(strip === undefined ? {} : { style: { marginLeft: strip.left, marginRight: strip.right } })}
         contentInsetAdjustmentBehavior="automatic"
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"

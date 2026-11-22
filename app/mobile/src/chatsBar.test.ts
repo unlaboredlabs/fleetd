@@ -76,7 +76,7 @@ describe("the avatar that opens Settings", () => {
     // The root stack's Settings, from the list beside the chat (its own navigation tree) as from the list alone.
     expect(chats).toContain('settings: beside?.settings ?? (() => own.navigate("Settings"))');
     expect(app).toContain('settings: () => nav.navigate("Settings")');
-    expect(app).toContain('<RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />');
+    expect(app).toContain('<RootStack.Screen name="Settings" component={SettingsScreens} layout={ownRoom} options={{ headerShown: false }} />');
     expect(app).toContain("options={backTo(t, () => root.goBack())}");
     expect(app).not.toMatch(/TabBar|bottom-tabs/u);
   });

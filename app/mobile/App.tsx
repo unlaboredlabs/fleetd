@@ -61,7 +61,8 @@ import { onHome, openChatKey, splitOf } from "./src/split";
 import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
-import { BesideContext, PaneWidth, useBeside, type Beside } from "./src/ui/pane";
+import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
+import { ownRoom, stripRoom } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -262,7 +263,7 @@ const PairStack = createNativeStackNavigator<PairParams>();
 function Pairing({ note, onPaired, onSignedIn }: { note: string | undefined; onPaired: (p: KeptHub) => Promise<void>; onSignedIn: OnSignedIn }) {
   const t = useTheme();
   return (
-    <PairStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
+    <PairStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={note} onSignedIn={onSignedIn} />}
       </PairStack.Screen>
@@ -499,6 +500,8 @@ function Root() {
     askBeside = setAsked;
     return () => {
       askBeside = null;
+      // Taken by the list it was for: one beside the chat again later starts on All.
+      setAsked(undefined);
     };
   }, [wide]);
   const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey, asked } : null), [wide, openKey, asked]);
@@ -508,23 +511,29 @@ function Root() {
         {split === undefined ? null : (
           <View style={[styles.list, { width: split.list, borderRightColor: t.separator }]}>
             <PaneWidth.Provider value={split.list}>
-              <ChatsBeside />
+              <PaneSide.Provider value="list">
+                <ChatsBeside />
+              </PaneSide.Provider>
             </PaneWidth.Provider>
           </View>
         )}
         <View style={styles.fill}>
           <PaneWidth.Provider value={split?.chat}>
+            <PaneSide.Provider value={split === undefined ? undefined : "chat"}>
             {/* A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed
                 reply changes the state with every word. */}
-            <RootStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
-              <RootStack.Screen name="Home" component={Home} options={{ headerShown: false, title: "Chats" }} />
-              <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
+            {/* Each screen keeps out of the iPhone Duo's side strip (ui/StripRoom.tsx), but those holding a stack of their
+                own, whose screens keep out themselves, and the chat, which puts its buttons in the strip. */}
+            <RootStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
+              <RootStack.Screen name="Home" component={Home} layout={ownRoom} options={{ headerShown: false, title: "Chats" }} />
+              <RootStack.Screen name="Settings" component={SettingsScreens} layout={ownRoom} options={{ headerShown: false }} />
               {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place.
                   Beside the list, one picked there takes the open one's place at once, as Messages' on an iPad, and one
                   straight on Home has nothing behind it to swipe back to. */}
               <RootStack.Screen
                 name="Chat"
                 component={Chat}
+                layout={ownRoom}
                 getId={({ params }) => params.key}
                 options={({ route, navigation }) => ({
                   ...chatOptions(t),
@@ -535,6 +544,7 @@ function Root() {
               <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
               {manageScreens(RootStack, t)}
             </RootStack.Navigator>
+            </PaneSide.Provider>
           </PaneWidth.Provider>
         </View>
       </View>
@@ -583,8 +593,10 @@ function Home() {
 /** The chat's pane with no chat in it, as Messages' on an iPad: its own ground, and one quiet line. */
 function NoChatOpen() {
   const t = useTheme();
+  // Centred in the room the iPhone Duo's side strip leaves (ui/StripRoom.tsx), its ground under the strip too.
+  const strip = useStrip();
   return (
-    <View style={[styles.fill, styles.center, { backgroundColor: t.thread }]}>
+    <View style={[styles.fill, styles.center, { backgroundColor: t.thread, paddingLeft: strip?.left ?? 0, paddingRight: strip?.right ?? 0 }]}>
       <Text style={[type.subhead, { color: t.tertiary }]}>No chat selected</Text>
     </View>
   );
@@ -618,7 +630,7 @@ function ChatsHome() {
       {/* A touch on the screen away from the rows closes the open one: the list's space, and the native bars' avatar,
           +, filters button and search field, which only a view around the navigator hears. */}
       <View style={styles.fill} onTouchStart={swiped.touched}>
-        <ChatsStack.Navigator screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
+        <ChatsStack.Navigator screenLayout={stripRoom} screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
           <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, () => nav.navigate("NewProject")) }} />
         </ChatsStack.Navigator>
       </View>
@@ -635,7 +647,7 @@ function SettingsScreens() {
   const t = useTheme();
   const root = useNavigation();
   return (
-    <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
+    <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />

@@ -62,5 +62,22 @@ interface InsetsLike {
  * another app. Undefined elsewhere: a phone's status is across its top. Content stays out of it; the chat's Back and
  * Info stand in it, as iOS puts its own bars' buttons there.
  */
-export const sideStrip = (insets: InsetsLike): { readonly left: number; readonly right: number } | undefined =>
+export const sideStrip = (insets: InsetsLike): Strip | undefined =>
   insets.top > 0 || (insets.left <= 0 && insets.right <= 0) ? undefined : { left: Math.max(insets.left, 0), right: Math.max(insets.right, 0) };
+
+/** How far a screen's content keeps from each side for the strip. */
+export interface Strip {
+  readonly left: number;
+  readonly right: number;
+}
+
+/**
+ * The part of the window's `strip` a pane touches: the list's (`list`) only the window's left edge, the chat's
+ * (`chat`) only its right; the whole window (undefined) both. Undefined where it touches none.
+ */
+export const paneStrip = (strip: Strip | undefined, side: "list" | "chat" | undefined): Strip | undefined => {
+  if (strip === undefined) return undefined;
+  const left = side === "chat" ? 0 : strip.left;
+  const right = side === "list" ? 0 : strip.right;
+  return left > 0 || right > 0 ? { left, right } : undefined;
+};

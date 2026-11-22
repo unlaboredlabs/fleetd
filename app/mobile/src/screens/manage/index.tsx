@@ -38,6 +38,7 @@ import { VaultEdit } from "../vault/VaultEdit";
 import { VaultImport } from "../vault/VaultImport";
 import { VaultItem } from "../vault/VaultItem";
 import { VaultMove } from "../vault/VaultMove";
+import { ownRoom, stripRoom } from "../../ui/StripRoom";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -69,7 +70,7 @@ export const manageScreens = (Stack: RootStack, t: Palette) => (
   <Stack.Group>
     <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Bot")} />
     <Stack.Screen name="NewScreen" component={NewScreen} options={sheet(t, "New Screen")} />
-    <Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />
+    <Stack.Screen name="ChatInfo" component={ChatInfo} layout={ownRoom} options={{ headerShown: false }} />
     <Stack.Screen name="Icon" component={IconPicker} options={sheet(t, "Icon")} />
     <Stack.Screen name="Photo" component={Photo} options={{ presentation: "fullScreenModal", animation: "fade", headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000000" } }} />
   </Stack.Group>
@@ -120,7 +121,7 @@ function ChatInfo() {
   const t = useTheme();
   const root = useNavigation();
   return (
-    <InfoStack.Navigator>
+    <InfoStack.Navigator screenLayout={stripRoom}>
       <InfoStack.Screen name="Info" component={Info} options={{ ...pushed(t, "Info"), ...backTo(t, () => root.goBack()) }} />
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />

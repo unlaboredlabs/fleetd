@@ -35,8 +35,8 @@ import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, t
 import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
-import { onHome, sideStrip } from "../split";
-import { useBeside } from "../ui/pane";
+import { onHome } from "../split";
+import { useBeside, useStrip } from "../ui/pane";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
 import { useCanStop } from "../stopProbe";
@@ -104,8 +104,6 @@ const BAR_BUTTON = 44;
  * native bars' there (measured).
  */
 const BAR_TOP_BARE = 26;
-/** How far down the Duo's side strip its first button stands, under the status: where iOS puts a bar's own there (measured). */
-const STRIP_TOP = 124;
 
 /** Scrolled up further than this from the newest, the button down shows. */
 const AWAY = 280;
@@ -202,12 +200,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // The iPhone Duo unfolded has no top inset (its status is a column at the right, `insets.right`), yet iOS lays its
   // own bars, the list's beside the chat among them, a status bar's height down: the chat's bar lines up with them.
   const barTop = insets.top > 0 ? insets.top : BAR_TOP_BARE;
-  // Where the Duo has its control strip at the side (src/split.ts), the thread and composer stay out of it and Back and
-  // Info stand in it, as iOS moves its own bars' buttons there. Beside the list, the chat touches only the right edge.
-  const strip = Platform.OS === "ios" ? sideStrip(insets) : undefined;
-  const stripLeft = strip === undefined || beside !== null ? 0 : strip.left;
+  // Where the Duo has its control strip at the side (src/split.ts, ui/pane.ts useStrip), the thread and composer stay
+  // out of it, and Back and Info go to iOS's own bar, which puts them in the strip under the status, where it puts every
+  // bar's buttons in that pose: how far down the status reaches differs between poses, and only iOS knows it. Beside
+  // the list, the chat touches only the right edge.
+  const strip = useStrip();
+  const stripLeft = strip?.left ?? 0;
   const stripRight = strip?.right ?? 0;
-  const inStrip = stripLeft > 0 || stripRight > 0;
+  const inStrip = strip !== undefined;
   const goBack = besideList ? undefined : () => navigation.goBack();
   // Where the thread starts under the bar (iOS draws it over the thread; Android's stack draws it above), and the pins'
   // and a lens's capsules under it.
@@ -267,6 +267,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Its bot: done a moment after the lead's turn ends, as the desktop's chat title.
   const bot = useBot(chatKey, useJustDone(working));
   const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);
+  // iOS's bar, in the Duo's side-strip poses only: its Back and Info in the strip, the title in it as on Android.
+  useLayoutEffect(() => {
+    if (Platform.OS !== "ios") return;
+    navigation.setOptions(inStrip ? stripBar(t, () => <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />, openInfo) : { headerShown: false });
+  }, [navigation, inStrip, t, title, status, working, link, project?.avatar, bot, openInfo]);
   // Android's stack draws the bar.
   useEffect(() => {
     if (Platform.OS === "ios") return;
@@ -773,9 +778,11 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
             style={[styles.topEdge, { height: top }]}
             fallback={<LinearGradient pointerEvents="none" colors={[t.thread, withOpacity(t.thread, 0.85), withOpacity(t.thread, 0)]} locations={[0, 0.55, 1]} style={[styles.topFade, { height: top + space.lg }]} />}
           >
-            <ChatBar top={barTop} onBack={goBack} onInfo={openInfo} inStrip={inStrip}>
-              <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
-            </ChatBar>
+            {inStrip ? null : (
+              <ChatBar top={barTop} onBack={goBack} onInfo={openInfo}>
+                <ChatTitle picture={project} bot={bot} title={title} status={status} busy={working && link === undefined} onPress={openInfo} />
+              </ChatBar>
+            )}
           </EdgeEffect>
         ) : null}
         {capsule === undefined ? null : (
@@ -841,7 +848,6 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
           </EdgeEffect>
         </KeyboardStickyView>
       </View>
-      {Platform.OS === "ios" && inStrip ? <StripButtons side={stripRight > 0 ? "right" : "left"} width={stripRight > 0 ? stripRight : stripLeft} onBack={goBack} onInfo={openInfo} /> : null}
       {focused ? <StatusBarTap onTap={olderByAScreen} /> : null}
       <SelectText text={selecting} onClose={() => setSelecting(null)} />
       <PinnedSheet
@@ -914,16 +920,9 @@ function EmptyThread({ picture, title, code, onPick }: { picture: Pictured | und
 /**
  * iOS's bar over the thread (chatOptions): glass back and Info buttons either side of the title, as the stack's own.
  * No `onBack` beside the list (src/split.ts), where the chat has nothing behind it: its room stays, the title centred.
- * `inStrip`: the Duo's side strip holds Back and Info (StripButtons), and the bar is the title alone.
+ * Not in the Duo's side-strip poses, where iOS's own bar holds them (stripBar).
  */
-function ChatBar({ top, onBack, onInfo, inStrip, children }: { top: number; onBack: (() => void) | undefined; onInfo: () => void; inStrip: boolean; children: ReactNode }) {
-  if (inStrip) {
-    return (
-      <View style={[styles.bar, styles.barAlone, { top }]} pointerEvents="box-none">
-        {children}
-      </View>
-    );
-  }
+function ChatBar({ top, onBack, onInfo, children }: { top: number; onBack: (() => void) | undefined; onInfo: () => void; children: ReactNode }) {
   return (
     <View style={[styles.bar, { top }]} pointerEvents="box-none">
       {onBack === undefined ? <View style={styles.barButton} /> : <BarButton label="Back" symbol="chevron.left" onPress={onBack} />}
@@ -934,17 +933,18 @@ function ChatBar({ top, onBack, onInfo, inStrip, children }: { top: number; onBa
 }
 
 /**
- * Back over Info in the Duo's side strip, under its status, as iOS puts a bar's buttons there: the top of the column for
- * a bar's top, in reach of the thumb. No Back beside the list, where the chat has nothing behind it.
+ * The chat's bar in the Duo's side-strip poses: iOS's own, see-through over the thread, the title capsule in it, its
+ * Back and an Info button, which iOS stands in the strip under the status. Beside the list, App.tsx hides its Back.
  */
-function StripButtons({ side, width, onBack, onInfo }: { side: "left" | "right"; width: number; onBack: (() => void) | undefined; onInfo: () => void }) {
-  return (
-    <View style={[styles.strip, { width, top: STRIP_TOP }, side === "right" ? styles.stripRight : styles.stripLeft]} pointerEvents="box-none">
-      {onBack === undefined ? null : <BarButton label="Back" symbol="chevron.left" onPress={onBack} />}
-      <BarButton label="Info" symbol="info.circle" onPress={onInfo} />
-    </View>
-  );
-}
+export const stripBar = (t: Palette, headerTitle: () => ReactNode, onInfo: () => void): NativeStackNavigationOptions => ({
+  headerShown: true,
+  headerTransparent: true,
+  headerShadowVisible: false,
+  headerTintColor: t.label,
+  headerBackButtonDisplayMode: "minimal",
+  headerTitle,
+  unstable_headerRightItems: () => [{ type: "button", label: "Info", icon: { type: "sfSymbol", name: "info.circle" }, accessibilityLabel: "Info", onPress: onInfo }],
+});
 
 /** One of the bar's glass buttons. */
 function BarButton({ label, symbol, onPress }: { label: string; symbol: "chevron.left" | "info.circle"; onPress: () => void }) {
@@ -1731,10 +1731,6 @@ const styles = StyleSheet.create({
   error: { position: "absolute", left: 0, right: 0, paddingHorizontal: space.lg, paddingVertical: space.xs, textAlign: "center" },
   bar: { position: "absolute", left: 12, right: 12, height: BAR_BUTTON, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 22 - BAR_BUTTON / 2 },
   barButton: { width: BAR_BUTTON, height: BAR_BUTTON, borderRadius: BAR_BUTTON / 2 },
-  barAlone: { justifyContent: "center" },
-  strip: { position: "absolute", alignItems: "center", gap: space.sm },
-  stripRight: { right: 0 },
-  stripLeft: { left: 0 },
   barHit: { flex: 1, alignItems: "center", justifyContent: "center" },
   titleGlass: { borderRadius: 22, borderCurve: "continuous" },
   title: { flexDirection: "row", alignItems: "center", gap: space.sm, maxWidth: 240, paddingLeft: 6, paddingRight: space.lg, paddingVertical: 5 },

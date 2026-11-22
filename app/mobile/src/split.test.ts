@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { onHome, openChatKey, sideStrip, splitOf, SPLIT_LEAST } from "./split";
+import { onHome, openChatKey, paneStrip, sideStrip, splitOf, SPLIT_LEAST } from "./split";
 
 describe("splitOf", () => {
   it("keeps a phone, and the Duo folded, to one screen at a time", () => {
@@ -57,5 +57,24 @@ describe("sideStrip", () => {
     expect(sideStrip({ top: 62, left: 0, right: 0 })).toBeUndefined();
     expect(sideStrip({ top: 24, left: 0, right: 0 })).toBeUndefined();
     expect(sideStrip({ top: 0, left: 0, right: 0 })).toBeUndefined();
+  });
+});
+
+describe("paneStrip", () => {
+  const strip = { left: 0, right: 84 };
+
+  it("is the whole strip for a screen with the window to itself", () => {
+    expect(paneStrip(strip, undefined)).toEqual(strip);
+  });
+
+  it("is the right edge's for the chat's pane and none for the list's, where the strip is at the right", () => {
+    expect(paneStrip(strip, "chat")).toEqual({ left: 0, right: 84 });
+    expect(paneStrip(strip, "list")).toBeUndefined();
+    expect(paneStrip({ left: 84, right: 0 }, "list")).toEqual({ left: 84, right: 0 });
+    expect(paneStrip({ left: 84, right: 0 }, "chat")).toBeUndefined();
+  });
+
+  it("is none where there is no strip", () => {
+    expect(paneStrip(undefined, undefined)).toBeUndefined();
   });
 });
