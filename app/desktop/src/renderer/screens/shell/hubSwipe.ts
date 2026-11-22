@@ -540,6 +540,17 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swip
     },
     [],
   );
+  // A slide this sidebar was running ends with it: a switch that mounts the next one on the slide's own hub (picked in the
+  // switcher mid-slide) would otherwise find it still on its way there, with nothing left to land it, and the list
+  // frozen part-way. Before the next one's layout effects, which then draw it in place.
+  useLayoutEffect(
+    () => () => {
+      if (settling.current === null) return;
+      settling.current = null;
+      cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
 
   // The list doesn't take the pointer while it moves (nothing lights up under the fingers), so a press then lands on its
   // frame: the slide lands first, and the click goes on to the row, the switcher or whatever is there now.

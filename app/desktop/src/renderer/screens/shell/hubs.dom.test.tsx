@@ -1225,6 +1225,23 @@ it("keeps a hub picked in the switcher while a slide is on its way to another", 
   }
 });
 
+it("draws the list in place when the hub a slide is on its way to opens another way before it lands", async () => {
+  await twoHubs();
+  const { lift, done } = swiping();
+  try {
+    act(() => void runCommand("hub.next"));
+    act(() => void vi.advanceTimersByTime(60));
+    // Picked in the switcher mid-slide: the screen and the list go to Acme at once, a new frame without the slide.
+    pickHub("Acme");
+    lift();
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    expect(currentRoute().at).toBe("a1b2");
+    inPlace();
+  } finally {
+    done();
+  }
+});
+
 it("lands a slide at once on a press over the list, the list back under the pointer", async () => {
   await twoHubs();
   const { done } = swiping();
