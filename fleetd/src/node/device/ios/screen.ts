@@ -1,7 +1,8 @@
 // What a person watching an agent's iOS simulator sees, and what they do to
-// it (the Rust node's ios/screen.rs, ported). `simctl io` records video files but can't stream, so the live view is a
-// loop of `simctl io screenshot` JPEGs, run only while someone watches, at most one every MIN_GAP. They are the same
-// Frames an Android screen gives, in the screen's pixels.
+// it (the Rust node's ios/screen.rs, ported). `simctl io` records video files but can't stream, so the live view is
+// fleetd-frames' stream of the simulator's framebuffer (../../screen/mac_frames.ts: a JPEG as soon as the screen
+// changes), run only while someone watches; where that can't run, a loop of `simctl io screenshot` JPEGs, at most one
+// every MIN_GAP (each takes ~0.5 s). They are the same Frames an Android screen gives, sized in the screen's pixels.
 //
 // A person's input goes through agent-device on the agent's own home, so through its daemon and the XCTest runner it
 // already started: a tap is `press`, a drag `swipe`, a held tap `longpress`, the wheel a `swipe`, typing `type`, and
@@ -15,6 +16,8 @@ import { jpegSize } from "../../browser/fit.ts";
 
 /** The live view's frames come no closer together than this. */
 export const MIN_GAP = 100;
+/** How often a stream looks whether someone still watches: it stops this long after the last one left. */
+const WATCHED_EVERY = 250;
 /** After a failed screenshot, the next comes this much later. */
 const FAILED_GAP = 1_000;
 /** A touch held this long without moving is a long press. */
@@ -37,6 +40,13 @@ export const inSession = (args: string[], session: string | undefined) => (sessi
 /** Takes one screenshot of the simulator as JPEG. */
 export type Shoot = () => Promise<Uint8Array>;
 
+/** A running stream of the simulator's screen: `still` asks for its picture now, changed or not; `ended` says why it
+ * stopped by itself. */
+export type LiveRun = { still(): void; stop(): void; ended: Promise<string | undefined> };
+/** Starts a stream of the simulator's screen (../../screen/mac_frames.ts): each change a JPEG, sized in the screen's
+ * own pixels (the picture may be smaller). */
+export type Live = (onFrame: (jpeg: Uint8Array, width: number, height: number) => void) => Promise<LiveRun>;
+
 /**
  * The screenshot loop for one simulator: it runs while `wanted` says someone watches, a new frame to `onFrame` only
  * when the screen changed. `run` starts it, once; it stops by itself when nobody watches, or for good on `stop`.
@@ -46,6 +56,10 @@ export class Shooter {
   private stopped = false;
   private seq = 0;
   private last: bigint | number | undefined;
+  /** The stream while it runs. */
+  private streaming: LiveRun | undefined;
+  /** Why the stream failed, once it has: screenshots from then on. */
+  private liveFailed: string | undefined;
 
   constructor(
     private readonly shoot: Shoot,
@@ -54,16 +68,52 @@ export class Shooter {
     private readonly wanted: () => boolean,
     private readonly onFrame: (frame: Frame) => void,
     private readonly sleep: (ms: number) => Promise<unknown> = Bun.sleep,
+    /** The screen as a stream, where the Mac can: a frame as it changes, not a screenshot each MIN_GAP at most. */
+    private readonly live?: Live,
   ) {}
 
+  /** Runs while someone watches; a new watcher meanwhile gets the screen at once. */
   run(): void {
-    if (this.looping || this.stopped) return;
+    if (this.stopped) return;
+    if (this.looping) return this.streaming?.still();
     this.looping = true;
-    void this.loop().finally(() => (this.looping = false));
+    void (this.live && this.liveFailed === undefined ? this.stream(this.live) : this.loop()).finally(() => (this.looping = false));
   }
 
   stop(): void {
     this.stopped = true;
+    this.streaming?.stop();
+  }
+
+  /** The stream, until nobody watches; screenshots instead if it can't start or stops by itself. */
+  private async stream(live: Live): Promise<void> {
+    let run: LiveRun;
+    // A watcher that comes back gets the screen at once, changed or not.
+    this.last = undefined;
+    try {
+      run = await live((jpeg, width, height) => {
+        // A still asked for on an unchanged screen is the same picture: the watchers have it.
+        const hash = Bun.hash(jpeg);
+        if (this.stopped || hash === this.last) return;
+        this.last = hash;
+        this.onFrame({ seq: ++this.seq, jpeg, width, height, atMs: Math.round(performance.now() - this.start) });
+      });
+    } catch (e) {
+      this.liveFailed = (e as Error).message;
+      console.warn(`iOS live view: screenshots instead of a stream: ${this.liveFailed}`);
+      return this.loop();
+    }
+    this.streaming = run;
+    let ended: string | undefined;
+    void run.ended.then((why) => (ended = why ?? "it stopped"));
+    while (this.wanted() && !this.stopped && ended === undefined) await this.sleep(WATCHED_EVERY);
+    this.streaming = undefined;
+    run.stop();
+    if (ended !== undefined && !this.stopped) {
+      this.liveFailed = ended;
+      console.warn(`iOS live view: screenshots instead of a stream: ${ended}`);
+      return this.loop();
+    }
   }
 
   private async loop(): Promise<void> {
