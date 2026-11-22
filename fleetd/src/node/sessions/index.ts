@@ -22,6 +22,8 @@ import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
+import * as antigravity from "../runner/antigravity.ts";
+import { ACP_ENV } from "../runner/host/session.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { memoryHook, noteFile } from "../runner/host/memory.ts";
@@ -1459,9 +1461,11 @@ export class SessionService {
     if (this.#stopping) throw new Refusal("runner_unavailable", "the node is stopping");
     const row = this.#session(id);
     const env = runnerEnv(this.config);
-    let resume: boolean;
+    // A profile on an Antigravity model runs `agy acp`; its conversation resumes from the id its host keeps.
+    const agy = antigravity.agyModel(row.summary.model) !== undefined;
+    let resume = false;
     try {
-      resume = state.startMode(row.local, claude.configDir(env), id, existsSync);
+      if (!agy) resume = state.startMode(row.local, claude.configDir(env), id, existsSync);
     } catch (error) {
       throw new Refusal("runner_unavailable", (error as Error).message);
     }
@@ -1481,22 +1485,24 @@ export class SessionService {
       delete spec.systemPrompt;
       note = note ? `${row.local.systemPrompt.trimEnd()}\n\n${note}` : row.local.systemPrompt.trimEnd();
     }
-    const file = claude.sessionFile(claude.configDir(spec.env), spec.cwd, id);
+    const file = agy ? undefined : claude.sessionFile(claude.configDir(spec.env), spec.cwd, id);
     if (file) spec.resume = existsSync(file);
     stages.done("spec");
     const mark = marker(id);
     const provider = hostedOf(row.local.hosted);
+    if (agy && provider !== undefined) throw new Refusal("runner_unavailable", "Antigravity agents run on this hub's own machines, not in hosted sandboxes yet");
+    const agent = agy ? await this.#antigravity(row, spec, mark) : undefined;
     const place = pick({ sessionId: id, dir: spec.hostDir!, role: row.local.role ?? "plain", account: !!row.local.claudeAccount, ...(provider ? { hosted: provider } : {}), ...(row.local.size ? { size: row.local.size } : {}) });
     const launch = {
       fleetd: this.config.fleetd,
       dir: spec.hostDir!,
       sessionId: id,
-      program: this.config.claudeBin,
-      args: claude.args(spec),
+      program: agent?.program ?? this.config.claudeBin,
+      args: agent?.args ?? claude.args(spec),
       cwd: spec.cwd,
-      env: { ...claude.spawnEnv(spec, mark) },
+      env: agent?.env ?? { ...claude.spawnEnv(spec, mark) },
       // A binary that isn't there is reported as missing below, not as a scope that failed to start it.
-      ...(existsSync(this.config.claudeBin) ? { scope: await currentScope() } : {}),
+      ...(existsSync(agent?.program ?? this.config.claudeBin) ? { scope: await currentScope() } : {}),
     };
     // A hosted box that came up but where the session couldn't start (Claude out of its reach, fleetd's host not up in
     // it, the box gone meanwhile): a lead tries once more in a new box after a while; a task's recovery does that.
@@ -1537,6 +1543,37 @@ export class SessionService {
       return [live, undefined];
     }
     return [live, note];
+  }
+
+  /** An Antigravity session's launch: agy (installed first when the machine has none), signed in as the machine's agy
+   * is or on the project's Gemini key, and the ACP spec its host drives it with (runner/host/acp.ts). */
+  async #antigravity(row: SessionRow, spec: claude.SessionSpec, mark: string): Promise<{ program: string; args: string[]; env: Env }> {
+    let program: string;
+    try {
+      program = await antigravity.ensure();
+    } catch (error) {
+      throw new Refusal("runner_unavailable", (error as Error).message);
+    }
+    const dir = join(this.home, "sessions", row.summary.sessionId);
+    const auth = antigravity.authOf(spec.env);
+    const acp = antigravity.spec({
+      cwd: spec.cwd,
+      addDirs: spec.addDirs,
+      mcpConfig: readFileSync(spec.mcpConfig!, "utf8"),
+      ...(row.local.systemPrompt ? { systemPrompt: row.local.systemPrompt } : {}),
+      model: spec.model,
+      effort: spec.effort,
+      auth,
+      approval: spec.runtimeMode === "approval-required",
+      deny: spec.disallowedTools,
+      stateFile: join(dir, "agy-session"),
+    });
+    // It holds the MCP servers' secrets, as mcp.json does.
+    writeAtomic(join(dir, "acp.json"), JSON.stringify(acp));
+    const env = antigravity.spawnEnv(spec.env, auth);
+    env[claude.SESSION_MARKER] = mark;
+    env[ACP_ENV] = join(dir, "acp.json");
+    return { program, args: antigravity.args(auth, join(dir, "agy")), env };
   }
 
   /** Writes the session's files and builds its spec (sessions/mod.rs `spec`): MCP config, settings overlay, system

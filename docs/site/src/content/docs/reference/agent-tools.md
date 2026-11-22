@@ -1328,7 +1328,7 @@ A lead's call: record a payment at the checkout open in your browser session, wi
 | `items[].name` | string | yes | What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`. At most 200 characters. |
 | `items[].quantity` | integer | no | How many; absent: 1. 1 to 10000. |
 | `shop` | object | yes | The shop the lead buys from. |
-| `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. |
+| `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. At most 253 characters. |
 | `shop.name` | string | yes | Its name, as the shop calls itself: `Hotel Adlon`. At most 120 characters. |
 | `total` | object | yes | The total the checkout shows, with everything in it (taxes, fees, shipping). |
 | `total.amount` | string | yes | Matches `^(0\|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$`. |
@@ -1387,7 +1387,7 @@ A lead's call: when a page needs something only the person may give and you must
 | `label` | string | yes | What it is, in the person's words: `Passport number`, `The code texted to you`. At most 120 characters. |
 | `ref` | string | no | Fill it from this 1Password field instead (an Identity, Passport, Driver License or Social Security item's): the person approves, then call secure_input_fill. Absent: the person types it. |
 | `site` | object | yes | The site the field is on. |
-| `site.domain` | string | yes | The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). |
+| `site.domain` | string | yes | The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). At most 253 characters. |
 | `site.name` | string | yes | Its name, as it calls itself. At most 120 characters. |
 | `target` | string | yes | The field: a CSS selector on the page or one of its frames (`input[name=passport]`, `#otp`). At most 500 characters. |
 | `why` | string | yes | Why the page needs it, in one line. At most 300 characters. |
