@@ -16,6 +16,7 @@ import { resetBillingReturn } from "./Billing";
 import { AT, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { Shell } from "../shell/Shell";
+import { SettingsSheet } from "../shell/screens";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -149,8 +150,13 @@ const mount = async (entries: HubEntry[]) => {
     up("a1b2", "https://hub.acme.example");
     up("c3d4", "http://club-hub:4790");
   });
-  // Settings' pages and sidebar load in a chunk of their own.
-  await act(() => import("../settings/SettingsScreen"));
+  // What opens loads in chunks of its own, each waited for here so nothing suspends past the settles below: the hub's
+  // home, its first bot's chat, opens its panel with lazy panes and counts, and Settings opens its pages in its sheet
+  // (preloaded, the one the Shell renders, so it opens without suspending). A chunk still loading (a cold module,
+  // transformed then) held Settings' page back, and its late render landed after the test.
+  await act(() =>
+    Promise.all([import("../panel/ProjectPanel"), import("../panel/panes"), import("../panel/counts"), import("../settings/SettingsScreen"), SettingsSheet.preload()]),
+  );
   await settle();
   await settle();
 };
