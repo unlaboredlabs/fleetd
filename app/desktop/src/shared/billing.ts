@@ -250,6 +250,21 @@ export const topLine = (state: BillingState): { tone: "danger" | "warning"; mess
   return null;
 };
 
+/**
+ * This period's computer time against what the plan includes: "12 h · $4.20 of $20 included", or with no plan its
+ * hours and cost alone.
+ */
+export const usedWord = (state: BillingState): string => {
+  const used = `${hours(state.usage.seconds)} · ${money(state.usage.cents, state.currency)}`;
+  return state.plan === null ? used : `${used} of ${money(state.plan.creditsCents, state.currency)} included`;
+};
+
+/**
+ * Why fleetd's computers run nothing now, where they are listed (Machines): the page's own top line for its reason
+ * (the cap reached, no credits, a declined card), so the fix said is the one that holds.
+ */
+export const heldLine = (state: BillingState): string => topLine(state)?.message ?? "Nothing runs on fleetd's computers right now: Billing says why.";
+
 /** The cap's quiet line: this month's spend against it. */
 export const capLine = (state: BillingState): string | null =>
   state.credits.capCents === null ? null : `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;

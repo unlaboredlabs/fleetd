@@ -9,7 +9,7 @@ import { useCallback, useState } from "react";
 import { Button, Select, Textarea } from "../../ui";
 import type { ComputerImage, ProjectSettings as Settings, RepoName } from "../../../shared/contracts";
 import { useNow } from "../live";
-import { useData, useToolQuery } from "../../src/data/react";
+import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
@@ -131,11 +131,12 @@ function RunsOnRow({ settings }: { settings: Settings }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const machineName = useData((d) => d.machines[settings.machineId]?.name ?? settings.machineId);
-  const options = pickOptions(settings);
+  const cloud = useHub().cloud === true;
+  const options = pickOptions(settings, cloud);
   if (options === null) return null;
   const value = pickValue(settings.computer);
   const current = options.find((o) => o.value === value);
-  const hint = runsOnHint(settings.machineId, machineName);
+  const hint = runsOnHint(settings.machineId, machineName, cloud);
   const pick = (next: string) => {
     if (next === value) return;
     const chosen = options.find((o) => o.value === next);

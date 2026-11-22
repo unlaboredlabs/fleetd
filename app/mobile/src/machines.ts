@@ -8,7 +8,24 @@ import { specOf } from "../../desktop/src/shared/providers";
 
 export { runnerOf, type HostedAction, type HostedRunner } from "../../desktop/src/shared/hostedRow";
 
-export { canWords, LINUX, linuxChoices, linuxValue, MAC, machinesRun, NONE, specOf, YOURS } from "../../desktop/src/shared/providers";
+export {
+  atOnceWord,
+  canWords,
+  computerStateWord,
+  FLEETD,
+  LINUX,
+  linuxChoices,
+  linuxValue,
+  MAC,
+  MAC_OWN_ONLY,
+  machinesRun,
+  NONE,
+  providedChoices,
+  providedValue,
+  RUNNER_ID,
+  specOf,
+  YOURS,
+} from "../../desktop/src/shared/providers";
 
 /** A provider's name as people know it; one a newer hub has is shown as it names it. */
 export const providerName = (p: string): string => specOf(p).name;
