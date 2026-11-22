@@ -11,7 +11,7 @@ import type { HubMove, HubMoveMachine } from "../../../shared/contracts";
 import type { MoveTarget } from "../../../shared/cloud";
 import { useDataLayer, useHub, useHubs } from "../../src/data/react";
 import { Button, Dialog, Text } from "../../ui";
-import { useCloud } from "../onboarding/cloud";
+import { refreshCloud, useCloud } from "../onboarding/cloud";
 import { SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { errorText, useHubCall } from "../settings/hub";
 import { switchHub } from "../shell/hubSwipe";
@@ -120,6 +120,8 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
     // Invitations are another team's: the move goes into the person's own.
     const finished = await window.fleetd.cloud.finish([]);
     if (!finished.ok) return setLocal({ at: "refused", message: `${finished.failure.message}${finished.failure.fix ? ` ${finished.failure.fix}` : ""}` });
+    // Signed in now: Settings › Hubs & devices and the rest read it, as after the first screen's sign-in.
+    void refreshCloud();
     const targets = await window.fleetd.cloud.moveTargets();
     const first = targets[0];
     if (first === undefined) return setLocal({ at: "refused", message: "Every team of yours on fleetd cloud already has bots, and a hub moves only into an empty team. Sign in with another account." });
@@ -204,8 +206,9 @@ export function MoveSheet({ onClose }: { onClose: () => void }) {
         <Button variant="primary" disabled={team === undefined} onClick={() => team !== undefined && (onClose(), switchHub(team.id))}>
           {`Open ${team?.label ?? move.team ?? "the team"}`}
         </Button>
-      ) : (
-        <Button variant="ghost" disabled={move.phase === "loading"} onClick={stop}>
+      ) : move.phase === "loading" ? null : (
+        // While the cloud loads it, all or nothing, there is nothing to stop: no button at all.
+        <Button variant="ghost" onClick={stop}>
           Stop
         </Button>
       );

@@ -25,6 +25,7 @@ let calls: string[];
 let move: HubMove;
 let moved: Array<[string, string]>;
 let available: boolean;
+let states: number;
 
 beforeEach(() => {
   resetServes();
@@ -32,12 +33,13 @@ beforeEach(() => {
   calls = [];
   moved = [];
   available = true;
+  states = 0;
   move = { phase: "idle", machines: [{ machineId: "devbox", name: "devbox", state: "waiting" }] };
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
     cloud: {
-      state: () => Promise.resolve({ available, email: null, domain: "fleetd.dev" }),
+      state: () => (states++, Promise.resolve({ available, email: null, domain: "fleetd.dev" })),
       signIn: () => Promise.resolve({ ok: true, arrival: { email: "sam@acme.example", invitations: [] } }),
       finish: () => Promise.resolve({ ok: true, email: "sam@acme.example", teams: [{ name: "acme", ok: true }] }),
       moveTargets: () => Promise.resolve([{ hub: "h2", name: "acme" }]),
@@ -120,6 +122,8 @@ it("the sheet signs in, names the team and its machines, moves, and a move that 
   await render(<MoveSheet onClose={() => undefined} />);
   await click("Sign in to fleetd cloud");
   expect(document.body.textContent).toContain("Into acme");
+  // The app's own sign-in state is read again, so Settings says who is signed in.
+  expect(states).toBeGreaterThan(0);
   expect(document.querySelector("[data-machine='devbox']")?.textContent).toBe("devboxComes along");
   await click("Move");
   expect(moved.map(([, to]) => to)).toEqual(["h2"]);
