@@ -107,9 +107,8 @@ start() {
   try ad wait 'role=text-field label="Hub address"' 30000
   try ad fill 'role=text-field label="Hub address"' "$(pair_field "Hub address")"
   try ad fill 'role=text-field label="Pairing code"' "$(pair_field "Pairing code")"
-  try ad press 'role=button label="Connect"'
-  # Notifications, asked once paired (the runner can't grant them first): its button by label, then as an alert.
-  if ad wait 'label="Allow"' 60000 >>"$LOG" 2>&1; then try ad press 'label="Allow"'; else try ad alert accept; fi
+  # The app built for this run never asks for notifications (EXPO_PUBLIC_FLEETD_SCREENS, src/notifications.ts).
+  try ad press 'label="Connect"'
   try ad wait text "inventory" 120000
 }
 

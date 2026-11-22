@@ -318,6 +318,10 @@ jobs:
         working-directory: tests/lab
       - name: Build
         working-directory: app/mobile
+        env:
+          # The app never asks for notifications (src/notifications.ts): a system prompt the screens' driver can't
+          # answer on the iPhone Duo simulator. Only this job's build sets it.
+          EXPO_PUBLIC_FLEETD_SCREENS: "1"
         run: |
           set -o pipefail
           npm ci --no-audit --no-fund
