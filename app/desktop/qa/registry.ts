@@ -1242,7 +1242,8 @@ export const screens: readonly Screen[] = [
   { id: "shell", route: "#/", fixtures: ["sidebar-hubs", "sidebar-hubs-offline"], variant: "hubs" },
   // W772: two fingers across the sidebar switch hubs (screens/shell/hubSwipe.ts), as wheel events with a horizontal
   // delta. A scroll up and down the list never does; a swipe left goes to the next hub, once however far it goes, and
-  // the marks at the foot follow. QA runs with reduced motion, so the hub switches without the slide.
+  // the marks at the foot follow. QA runs with reduced motion, so the hub switches without the slide. The screen goes
+  // with it (W794): Acme's own chat, never Personal's left open beside Acme's list.
   {
     id: "shell",
     route: "#/",
@@ -1261,6 +1262,7 @@ export const screens: readonly Screen[] = [
       await page.mouse.wheel(90, 0);
       await expect(on).toHaveAttribute("aria-label", "Acme");
       await expect(page.locator("[data-opens='hubs']")).toContainText("Acme");
+      await expect.poll(() => page.evaluate(() => window.location.hash)).toMatch(/^#\/project\/.*\?at=h2$/);
       await page.mouse.move(600, 400);
     },
   },

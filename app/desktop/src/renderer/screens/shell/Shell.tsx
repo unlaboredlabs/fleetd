@@ -47,12 +47,30 @@ const FirstRun = lazy(() => import("../setup/FirstRun").then((m) => ({ default: 
 
 /** The project `#/` opens, kept across launches: the app opens where you left it. */
 const LAST_PROJECT = "fleetd.lastProject";
-const readLast = (): string | null => {
+/** Each hub's last chat, kept across launches: a hub's home, which switching to it opens (W794). */
+const LAST_CHATS = "fleetd.lastChats";
+const lastChats = (): Record<string, unknown> => {
+  const v: unknown = JSON.parse(window.localStorage.getItem(LAST_CHATS) ?? "{}");
+  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+};
+/** The last chat opened (its row key): on `hub`, else on any; a hub with none kept yet has the last one, if it is its. */
+const readLast = (hub?: HubId): string | null => {
   try {
-    return window.localStorage.getItem(LAST_PROJECT);
+    const own = hub === undefined ? undefined : lastChats()[hub];
+    return typeof own === "string" ? own : window.localStorage.getItem(LAST_PROJECT);
   } catch {
     return null;
   }
+};
+const keepLast = (hub: HubId, key: string): void => {
+  window.localStorage.setItem(LAST_PROJECT, key);
+  let kept: Record<string, unknown> = {};
+  try {
+    kept = lastChats();
+  } catch {
+    // Unreadable: started again.
+  }
+  window.localStorage.setItem(LAST_CHATS, JSON.stringify({ ...kept, [hub]: key }));
 };
 
 /** A sidebar row with its hub: its key is the hub's (hubKey), so rows of two hubs never collide. */
@@ -70,7 +88,7 @@ export function Shell() {
   const named = useNamesHub();
   const placed = usePlaced(hubs, route.at);
   const homes = named ? placed?.filter((p) => p.hub === route.at) : placed;
-  const homeRow = route.id === "home" && homes !== undefined ? homeProject(homes, readLast()) : null;
+  const homeRow = route.id === "home" && homes !== undefined ? homeProject(homes, readLast(named ? route.at : undefined)) : null;
   const at = homeRow?.hub ?? route.at;
   // Under Settings the app stays on the hub it was on, whichever hub the sheet is on (it has that hub's scope): a
   // switch of the hub a Hub page manages never remounts the frame, and the sheet in it, as the other hub's.
@@ -171,7 +189,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const beneath = away.at === undefined || away.at === route.at ? away : HOME;
   const base = sheet ? { ...beneath, at: route.at } : route;
   const named = useNamesHub();
-  const homeRow = base.id === "home" && projects !== undefined ? homeProject(sheet || named ? projects.filter((p) => p.hub === route.at) : projects, readLast()) : null;
+  const own = sheet || named;
+  const homeRow = base.id === "home" && projects !== undefined ? homeProject(own ? projects.filter((p) => p.hub === route.at) : projects, readLast(own ? route.at : undefined)) : null;
   const home: Screen | null = homeRow === null ? null : { id: "project", project: routeOf(homeRow), message: null, at: homeRow.hub };
   const screen: Screen = useMemo(
     () =>
@@ -209,18 +228,18 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   }, [layer, chatKey]);
   useEffect(() => () => layer.chat.close(), [layer]);
   // The palette's Agents and Pull requests: the project on screen, else the one `#/` opens on this hub.
-  const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast());
+  const homeHere = projects === undefined ? null : homeProject(projects.filter((p) => p.hub === route.at), readLast(route.at));
   const panelProject = open ?? (homeHere === null ? null : routeOf(homeHere));
   const panel = useProjectPanel(screen);
   // What shows under the Settings sheet isn't a chat you opened: it never becomes the one `#/` opens.
   useEffect(() => {
     if (openKey === null || sheet) return;
     try {
-      window.localStorage.setItem(LAST_PROJECT, openKey);
+      keepLast(route.at, openKey);
     } catch {
       // Without storage the app opens on the first project instead; nothing else depends on it.
     }
-  }, [openKey, sheet]);
+  }, [openKey, sheet, route.at]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself. With several hubs, only when none of them can be used: one with a
@@ -337,7 +356,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
         translucent
         topBar={top}
         under={under}
-        sidebarTop={<SidebarTop go={go} hub={viewHub} projects={projects} />}
+        sidebarTop={<SidebarTop go={go} hub={viewHub} />}
         sidebarOpen={!sidebar.hidden}
         sidebarEdge={<SidebarEdge root={root} width={sidebarPx} onSet={setSidebarPx} />}
         sidebar={

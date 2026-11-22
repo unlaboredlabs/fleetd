@@ -20,10 +20,11 @@
 // Past the first or the last hub the list gives a little and springs back; with one hub nothing happens at all. With
 // reduced motion the list stays still and the hub switches once the swipe has gone far enough. The marks at the
 // sidebar's foot and ⇧⌘[ / ⇧⌘] switch on the same slide (switchHub); the hub switcher's pick shows the hub at once, as
-// it always has, a slide on its way included.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
+// it always has, a slide on its way included. Whichever way, landing on a hub opens it (sidebarLayout.ts openHub): the
+// screen changes with the list, to that hub's last chat.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type MouseEvent, type RefObject } from "react";
 import { flushSync } from "react-dom";
-import { showHub } from "./sidebarLayout";
+import { openHub } from "./sidebarLayout";
 
 /** A pause this long between wheel events lets a swipe go, and without the platform's word ends a gesture. */
 export const GAP_MS = 100;
@@ -258,13 +259,13 @@ const reduced = (): boolean => typeof window.matchMedia === "function" && window
 let slide: { readonly to: (hub: string) => void; readonly by: (by: 1 | -1) => void } | null = null;
 
 /** Show `hub`, on the sidebar's slide while it shows. */
-export const switchHub = (hub: string): void => (slide === null ? showHub(hub) : slide.to(hub));
+export const switchHub = (hub: string): void => (slide === null ? openHub(hub) : slide.to(hub));
 
 /** Show the hub `by` from `at` among `ids` (stepHub), on the sidebar's slide while it shows: from the one it is on its way to. */
 export const switchHubBy = (ids: readonly string[], at: string, by: 1 | -1): void => {
   if (slide !== null) return slide.by(by);
   const to = stepHub(ids, at, by);
-  if (to !== null) showHub(to);
+  if (to !== null) openHub(to);
 };
 
 /** The hub beside the one on show while a swipe or a slide brings it: its place among the hubs, and its side (+1 right). */
@@ -287,7 +288,7 @@ export interface SwipeOptions {
 
 /**
  * The swipe over `area`: what it draws beside the list (null while nothing slides) and whether a swipe or a slide is
- * under way. Settling on a hub shows it (sidebarLayout.ts showHub), as the switcher does.
+ * under way. Settling on a hub opens it (sidebarLayout.ts openHub), as the switcher does.
  */
 export interface Swipe {
   readonly beside: Beside | null;
@@ -296,24 +297,56 @@ export interface Swipe {
   readonly press: { readonly onPointerDownCapture: () => void; readonly onClickCapture: (e: MouseEvent<HTMLElement>) => void };
 }
 
+/**
+ * The window's swipe, kept outside the sidebar: landing on another hub opens that hub's screen, which Shell.tsx mounts
+ * afresh, the sidebar with it, so a gesture, its glide still arriving and a slide on its way go on in the new sidebar
+ * as they were. `view` is the mounted sidebar's own state: what it draws beside the list and whether it moves.
+ */
+const g: { current: Gesture } = { current: IDLE };
+const offset = { current: 0 };
+const width = { current: 0 };
+// The hub the swipe stands on: the one switched to as soon as it is, before the sidebar has drawn it.
+const here = { current: 0 };
+const near = { current: null as Beside | null };
+const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined };
+const frame = { current: 0 };
+// A settle on the way: where to, and the hub it lands on there (null: back where it was).
+const settling = { current: null as { to: number; hub: number | null; v: number; t: number } | null };
+// `at` is the hub the sidebar has drawn, which the layout effect below keeps in step.
+const live = { current: { hubs: [] as readonly string[], paint: ((): void => undefined) as SwipeOptions["paint"], at: 0 } };
+const view = { current: { beside: null as Beside | null, moving: false, show: (_: Beside | null): void => undefined, move: (_: boolean): void => undefined } };
+const pressed = { current: false };
+
+const setBeside = (b: Beside | null): void => {
+  view.current.beside = b;
+  view.current.show(b);
+};
+const setMoving = (m: boolean): void => {
+  view.current.moving = m;
+  view.current.move(m);
+};
+
+/** For tests: a window with no swipe yet. */
+export const resetHubSwipe = (): void => {
+  clearTimeout(timer.current);
+  cancelAnimationFrame(frame.current);
+  g.current = IDLE;
+  offset.current = 0;
+  near.current = null;
+  settling.current = null;
+  pressed.current = false;
+  view.current = { ...view.current, beside: null, moving: false };
+};
+
 export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swipe {
-  const [beside, setBeside] = useState<Beside | null>(null);
-  const [moving, setMoving] = useState(false);
-  const g = useRef<Gesture>(IDLE);
-  const offset = useRef(0);
-  const width = useRef(0);
-  // The hub the swipe stands on: the one switched to as soon as it is, before the sidebar has drawn it.
-  const here = useRef(at);
-  const near = useRef<Beside | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const frame = useRef(0);
-  // A settle on the way: where to, and the hub it lands on there (null: back where it was).
-  const settling = useRef<{ to: number; hub: number | null; v: number; t: number } | null>(null);
-  // `at` is the hub the sidebar has drawn, which the layout effect below keeps in step.
-  const live = useRef({ hubs, paint, at });
+  const [beside, show] = useState<Beside | null>(view.current.beside);
+  const [moving, move] = useState(view.current.moving);
   useLayoutEffect(() => {
     live.current = { hubs, paint, at };
   });
+  useLayoutEffect(() => {
+    view.current = { ...view.current, show, move };
+  }, []);
 
   const draw = useCallback(() => live.current.paint(offset.current, near.current, width.current), []);
   const place = useCallback((b: Beside | null) => {
@@ -334,7 +367,7 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swip
       const id = hub === null ? undefined : live.current.hubs[hub];
       if (id !== undefined) {
         here.current = hub ?? here.current;
-        showHub(id);
+        openHub(id);
       }
       if (id !== undefined && hub !== live.current.at) return;
       offset.current = 0;
@@ -510,7 +543,6 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swip
 
   // The list doesn't take the pointer while it moves (nothing lights up under the fingers), so a press then lands on its
   // frame: the slide lands first, and the click goes on to the row, the switcher or whatever is there now.
-  const pressed = useRef(false);
   const press = useMemo(
     () => ({
       onPointerDownCapture: () => {

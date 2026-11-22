@@ -42,15 +42,15 @@ import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
 import { HubText } from "../projects/HubText";
 import { projectId, routeOf, type SidebarProject } from "./model";
-import { currentRoute, navigate, type Routed } from "./navigation";
+import type { Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
-import { HOME, sameProject, type ProjectKey, type Screen } from "./routes";
+import { sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { holdRows } from "./sidebarState";
-import { setListView, showHub, shownRows, SORTS, sortRows, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
+import { openHub, setListView, shownRows, SORTS, sortRows, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
 import { PlaceIcons, useHubsMark, You } from "./You";
@@ -135,11 +135,11 @@ function ListMenu({ go }: { go: (screen: Screen) => void }) {
  * The sidebar's top, a line of its own under the window's traffic lights (on the web, its first line): the hub on show,
  * which picks another, and the list's ⋯; under it search, as a field, and New bot, a plus at its end.
  */
-export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void; hub: string; projects: ReadonlyArray<Placed> | undefined }) {
+export function SidebarTop({ go, hub }: { go: (screen: Screen) => void; hub: string }) {
   return (
     <div className={s.sideHead}>
       <div className={s.hubRow}>
-        <HubSwitcher hub={hub} projects={projects} />
+        <HubSwitcher hub={hub} />
         <ListMenu go={go} />
       </div>
       <div className={s.topTools}>
@@ -154,8 +154,8 @@ export function SidebarTop({ go, hub, projects }: { go: (screen: Screen) => void
   );
 }
 
-/** How many of a hub's bots want you. */
-const wantingOn = (projects: ReadonlyArray<Placed> | undefined, hub: string): number => projects?.filter((p) => p.hub === hub && p.want !== undefined).length ?? 0;
+/** How many of a hub's bots want you: from its own rows, there whether or not the screen's hub has loaded its own. */
+const wantingOn = (rows: ReturnType<typeof useHubRows>, hub: string): number => rows.get(hub)?.projects?.filter((p) => p.want !== undefined).length ?? 0;
 
 /** A hub's mark: its first letter on its colour, a small square (the hub's own shape; a bot's is round). */
 export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "color">; size?: number }) {
@@ -172,25 +172,16 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
  * setup left) with the one thing to do (HubStatus.tsx HubLines). Hubs live here, not in the menu under your name. Add
  * a hub at its foot (the desktop app's; the web app's teams come with the sign-in).
  */
-/**
- * Another hub picked in the switcher: its list. In the web app, where each is a team of the account, its home too in
- * place of what was open, so no chat or page of the team just left stays on screen to be written to (W791). The
- * desktop keeps the chat on screen beside another hub's list.
- */
-const pickHub = (hub: string): void => {
-  showHub(hub);
-  if (onWeb() && currentRoute().at !== hub) navigate({ ...HOME, at: hub });
-};
-
-function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArray<Placed> | undefined }) {
+function HubSwitcher({ hub: id }: { hub: string }) {
   const hubs = useHubs();
+  const rows = useHubRows();
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
   // without opening.
   const off = useHubsMark();
   const update = useHubUpdate();
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
-  const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(projects, h.id) > 0);
+  const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(rows, h.id) > 0);
   // Only fleetd cloud teams here: they are the person's teams, not hubs.
   const teams = hubs.every((h) => h.cloud === true);
   return (
@@ -209,7 +200,7 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
         <MenuLabel>{teams ? "Teams" : "Hubs"}</MenuLabel>
         {hubs.map((h) => (
           <HubScope key={h.id} hub={h}>
-            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => pickHub(h.id)}>
+            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(rows, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => openHub(h.id)}>
               {h.label}
             </MenuItem>
             <HubLines />

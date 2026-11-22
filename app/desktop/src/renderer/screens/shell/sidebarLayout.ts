@@ -2,8 +2,11 @@
 // your sections under quiet labels. The list's ⋯ orders the bots (newest first, by name, or the ones that want you
 // first) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
 // another hub shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows). A computer that kept the
-// old List or Rail layout (fleetd.sidebarLayout) just shows this.
+// old List or Rail layout (fleetd.sidebarLayout) just shows this. Switching to another hub (its switcher, the swipe,
+// the marks, ⇧⌘[ / ⇧⌘]) takes the screen with it (openHub).
 import { useSyncExternalStore } from "react";
+import { currentRoute, navigate } from "./navigation";
+import { HOME } from "./routes";
 
 /** How the hub's bots are ordered under the pins, in each section: newest first, by name, or the ones that want you first. */
 export type SidebarSort = "recent" | "name" | "needs";
@@ -60,6 +63,16 @@ export const setListView = (next: Partial<Pick<SidebarView, "sort" | "compact">>
 
 /** Show `hub`. */
 export const showHub = (hub: string): void => set({ hub });
+
+/**
+ * Switch to `hub`: its list, and on screen its home, which is its last chat (Shell.tsx readLast), else its first, else
+ * Get started (W794). So the chat on screen is always the sidebar's hub's, never one of the hub just left to write
+ * into. The route goes first, so the render the sidebar's change starts draws the new hub's screen beside it.
+ */
+export const openHub = (hub: string): void => {
+  if (currentRoute().at !== hub) navigate({ ...HOME, at: hub });
+  showHub(hub);
+};
 
 export const useSidebarView = (): SidebarView =>
   useSyncExternalStore(

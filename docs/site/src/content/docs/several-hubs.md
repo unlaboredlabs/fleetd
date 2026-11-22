@@ -63,6 +63,10 @@ most. At the bottom of the sidebar, a small square for each hub shows which one 
 and ⇧⌘[ (Ctrl+Shift+] and Ctrl+Shift+[ on Linux) go to the next and previous hub, and View › Next Hub and Previous Hub
 do the same. With reduced motion turned on in your system, the hub switches without the slide.
 
+Whichever way you switch, the chat goes with the sidebar: the hub opens on the chat you last had open there, kept
+across restarts, or on its first bot if that one is gone (or Get started, if it has none). The chat on screen is always
+one of the hub you see.
+
 Opening a bot from elsewhere (a notification, ⌘K) shows its hub. ⌘1 to ⌘9 count the rows you can see, in order.
 
 ## Everything that needs you {#attention}
