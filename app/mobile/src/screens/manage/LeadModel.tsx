@@ -1,6 +1,6 @@
 // Lead Model, pushed from a project's screen, as the desktop's Lead model on its Agents page: the profile its lead
 // starts on, the hub's lead profile until it picks its own (project_set leadProfile), and Restart Lead while its lead
-// runs on another (leadRestart). A profile claude refused can't be picked, and says why.
+// runs on another (leadRestart), waiting on its turn once asked mid-turn (leadRestarting). A profile claude refused can't be picked, and says why.
 import { useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
 import type { HubError } from "../../desktop";
@@ -58,7 +58,11 @@ export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
           ))
         )}
       </ListSection>
-      {view?.leadRestart === true ? (
+      {view?.leadRestarting === true ? (
+        <ListSection>
+          <ListRow title="Restart Lead" value="After its turn" />
+        </ListSection>
+      ) : view?.leadRestart === true ? (
         <ListSection>
           <ListRow
             title="Restart Lead"

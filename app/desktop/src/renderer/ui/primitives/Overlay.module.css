@@ -63,6 +63,10 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A disabled item's label with its reason in a hover: it takes the pointer the item gives up, so the hover shows. */
+.itemWhy {
+  pointer-events: auto;
+}
 /* A shortcut at the row's end, quiet and a step smaller, its keys spaced a hair; or a mark (an out arrow), centred on
    the row's line rather than sitting on the small words' baseline. */
 .itemHint {

@@ -440,11 +440,14 @@ export function register(tools: Registry): void {
     const s = profiles(hub);
     const [offered, modelsFrom] = await models(hub);
     const pick = r && s.leadPick(r);
+    // Asked to restart (leadRestart) but mid-turn: it starts again once the turn ends, so the button waits with it.
+    const restart = r && leads(hub).profileChanged(r) ? (leads(hub).records.leadSwitchDue(r) ? "due" : "now") : undefined;
     return {
       profiles: s.list().slice(0, PROFILES_MAX),
       ...(r ? { allowed: s.allowed(r) } : {}),
       ...(pick ? { leadProfile: pick.name } : {}),
-      ...(r && leads(hub).profileChanged(r) ? { leadRestart: true } : {}),
+      ...(restart === "now" ? { leadRestart: true } : {}),
+      ...(restart === "due" ? { leadRestarting: true } : {}),
       models: offered.slice(0, 200),
       modelsFrom,
       efforts: EFFORTS,

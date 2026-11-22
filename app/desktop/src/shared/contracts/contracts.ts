@@ -6198,6 +6198,8 @@ export type ProfilesListOutput = {
   leadProfile?: ProfileName;
   /** With projectRef: its lead runs on another profile, or an edited one, than it would start on now. */
   leadRestart?: boolean;
+  /** With projectRef: its lead was asked to restart (`project_set` leadRestart) and does once its turn ends. */
+  leadRestarting?: boolean;
   /** The models a profile may pick. */
   models: ProfileModel[];
   modelsFrom: ModelSource;

@@ -348,7 +348,11 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
           data={{ "data-lead-profile": view.leadProfile ?? lead.name }}
           control={
             <span className={s.leadControl}>
-              {view.leadRestart ? (
+              {view.leadRestarting ? (
+                <Text size="sm" tone="quiet">
+                  Restarts after its turn
+                </Text>
+              ) : view.leadRestart ? (
                 <Button size="sm" variant="ghost" disabled={!live || busy !== undefined} onClick={restart}>
                   Restart lead
                 </Button>

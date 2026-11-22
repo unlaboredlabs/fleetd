@@ -10,7 +10,7 @@ export interface SelectOption<V extends string> {
   /** The trigger shows this text when the option's label is rich. */
   textValue?: string;
   disabled?: boolean;
-  /** Its hover: why a disabled one can't be picked. */
+  /** Its hover: why a disabled one can't be picked (on its label, which takes the pointer while the item doesn't). */
   title?: string;
   /** Words under the option, not part of it: why it and the disabled ones above it can't be picked, said once. */
   note?: ReactNode;
@@ -61,14 +61,13 @@ export function Select<V extends string>(props: SelectProps<V>) {
                   className={s.item}
                   {...(o.textValue ? { textValue: o.textValue } : {})}
                   {...(o.disabled ? { disabled: true } : {})}
-                  {...(o.title ? { title: o.title } : {})}
                 >
                   <span className={s.indicator}>
                     <S.ItemIndicator>
                       <Check />
                     </S.ItemIndicator>
                   </span>
-                  <span className={s.itemLabel} data-text="wrap">
+                  <span className={cx(s.itemLabel, o.title ? s.itemWhy : undefined)} data-text="wrap" {...(o.title ? { title: o.title } : {})}>
                     <S.ItemText>{o.label}</S.ItemText>
                   </span>
                 </S.Item>

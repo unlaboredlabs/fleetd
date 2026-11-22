@@ -146,10 +146,15 @@ test("a lead mid-turn asked to restart starts on its new profile once its turn e
   await t.call("project_set", { ...PROJECT, leadProfile: "sonnet", leadRestart: true });
   await settle();
   expect(t.launched.length).toBe(1);
+  // The apps show it waiting on the turn, not Restart lead again.
+  expect(await view(t)).toMatchObject({ leadRestarting: true });
+  expect((await view(t)).leadRestart).toBeUndefined();
   const threadId = threadIs(t.hub, "idle");
   events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
   await until(() => t.launched.length === 2);
   expect(t.launched[1]).toBe("sonnet");
+  const after = await view(t);
+  expect([after.leadRestart, after.leadRestarting]).toEqual([undefined, undefined]);
 });
 
 test("a restart asked of a lead already on its profile starts nothing", async () => {

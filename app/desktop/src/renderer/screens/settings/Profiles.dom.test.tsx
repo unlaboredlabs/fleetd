@@ -44,6 +44,9 @@ let allowed: string[];
 /** The bot's own lead profile, and whether its lead runs on another, as profiles_list says them. */
 let leadPick: string | undefined;
 let leadRestart: boolean;
+/** Its lead is mid-turn: a restart waits for the turn to end. */
+let midTurn: boolean;
+let leadRestarting: boolean;
 /** hub_info's person: undefined for a hub from before it (the app lets them try). */
 let me: { name: string; role: string } | undefined;
 /** The writes, in turn; the page's reads aside. */
@@ -59,6 +62,8 @@ beforeEach(() => {
   allowed = ["high", "medium"];
   leadPick = undefined;
   leadRestart = false;
+  midTurn = false;
+  leadRestarting = false;
   me = undefined;
   calls = [];
   host = document.createElement("div");
@@ -78,7 +83,7 @@ const render = async (page: "editor" | "project") => {
       const input = raw as Record<string, unknown>;
       if (tool === "profiles_list") {
         const list = { profiles, models: MODELS, modelsFrom: "builtin", efforts: ["low", "medium", "high", "xhigh", "max"] };
-        const bot = { ...list, allowed, ...(leadPick === undefined ? {} : { leadProfile: leadPick }), ...(leadRestart ? { leadRestart } : {}) };
+        const bot = { ...list, allowed, ...(leadPick === undefined ? {} : { leadProfile: leadPick }), ...(leadRestart ? { leadRestart } : {}), ...(leadRestarting ? { leadRestarting } : {}) };
         return Promise.resolve({ ok: true, output: input["projectRef"] === undefined ? list : bot });
       }
       if (tool === "hub_info" && me !== undefined) return Promise.resolve({ ok: true, output: { me, admin: false } });
@@ -115,7 +120,10 @@ const render = async (page: "editor" | "project") => {
           leadPick = input["leadProfile"] as string | undefined;
           leadRestart = true;
         }
-        if (input["leadRestart"] === true) leadRestart = false;
+        if (input["leadRestart"] === true) {
+          leadRestart = false;
+          leadRestarting = midTurn;
+        }
         return Promise.resolve({ ok: true, output: { profiles: allowed, ...(leadPick === undefined ? {} : { leadProfile: leadPick }) } });
       }
       return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
@@ -292,7 +300,9 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   // A profile claude refused can't be picked, and its hover says why.
   const wide = (await openPicker("Lead model")).find((o) => o.textContent.startsWith("wide"));
   expect(wide?.getAttribute("aria-disabled")).toBe("true");
-  expect(wide?.getAttribute("title")).toBe("claude refused claude-sonnet-5-5 on devbox");
+  // On its label, which takes the pointer the disabled item gives up (Overlay.module.css .itemWhy).
+  expect(wide?.querySelector("[title]")?.getAttribute("title")).toBe("claude refused claude-sonnet-5-5 on devbox");
+  expect(wide?.querySelector("[title]")?.className).toMatch(/itemWhy/u);
   await act(async () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await Promise.resolve();
@@ -304,6 +314,12 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   // Its lead still runs on the one before: Restart lead moves it now.
   await click(button("Restart lead"));
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadRestart: true } });
+  expect(host.textContent).not.toContain("Restart lead");
+  // Mid-turn, it waits for the turn to end, and says so instead of offering the button again.
+  midTurn = true;
+  await pickLead("medium", "Lead model");
+  await click(button("Restart lead"));
+  expect(host.textContent).toContain("Restarts after its turn");
   expect(host.textContent).not.toContain("Restart lead");
   await pickLead("Hub default", "Lead model");
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadDefault: true } });

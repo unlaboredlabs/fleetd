@@ -108,6 +108,8 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // Only the open panel's project has its checklist mounted.
   if (type === "checklist.changed") out.push({ tool: "checklist_get" });
   if (type === "skills.changed") out.push({ tool: "skills_list" });
+  // A bot's Lead model: Restart lead goes once its lead started again, and a pick shows on every device.
+  if (type === "lead.started" || type === "project.settings") out.push({ tool: "profiles_list" });
   // A vault item made, changed, moved or deleted, or used (an audit row): the Vault's lists, the open item and its
   // activity; a card's label shows in Payments too.
   if (type === "vault.changed" || type === "vault.used") out.push({ tool: "vault_list" }, { tool: "vault_get" }, { tool: "vault_audit" });
