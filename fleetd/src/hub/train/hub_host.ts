@@ -9,7 +9,7 @@ import { leadWakes, trainLine } from "../api/leads.ts";
 import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { time as timeArea } from "../time/index.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "./host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
 import * as seams from "./seams.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { TRAIN_BY } from "./service.ts";
@@ -120,6 +120,21 @@ export class HubHost implements TrainHost {
       }
     }
     return writers;
+  }
+
+  /** The write tasks of the project's open orders that are queued, running or idle, each with its title and prompt. */
+  tasksUnderWay(r: ProjectRef): WorkView[] {
+    const out: WorkView[] = [];
+    try {
+      for (const workstreamId of seams.openWorkstreams(this.hub.db.conn, r, WRITERS_MAX)) {
+        for (const t of seams.tasks<Task>(this.hub.db.conn, { projectRef: r, workstreamId, limit: WRITERS_MAX })) {
+          if (t.kind === "write" && ["queued", "running", "idle"].includes(t.state)) out.push({ taskId: t.taskId, workstreamId, text: `${t.title}\n${t.prompt}` });
+        }
+      }
+    } catch (error) {
+      console.warn(`train: tasks under way not read: ${error}`);
+    }
+    return out;
   }
 
   private tasks(): TasksPort {

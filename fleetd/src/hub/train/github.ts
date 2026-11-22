@@ -142,7 +142,7 @@ function supersedes(next: CheckRun, seen: CheckRun): boolean {
 }
 
 /** An open PR as the list answers it. */
-export type OpenPull = { number: number; draft: boolean; head: PullHead };
+export type OpenPull = { number: number; draft: boolean; head: PullHead; title: string; body: string };
 
 /**
  * GitHub's squash message from the repo's settings and the PR's commit messages, oldest first. One commit gives its
@@ -1006,7 +1006,9 @@ export class TrainGitHub {
   /** The repo's open PRs, newest first (one page). */
   openPulls(repo: string): Promise<OpenPull[]> {
     return this.json("GET", `repos/${repo}/pulls?state=open&sort=created&direction=desc&per_page=100`, [], (v) =>
-      Array.isArray(v) ? (v as any[]).map((p) => ({ number: p.number, draft: p.draft === true, head: p.head })) : undefined,
+      Array.isArray(v)
+        ? (v as any[]).map((p) => ({ number: p.number, draft: p.draft === true, head: p.head, title: String(p.title ?? ""), body: String(p.body ?? "") }))
+        : undefined,
     );
   }
 

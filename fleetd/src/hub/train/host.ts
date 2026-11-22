@@ -18,6 +18,9 @@ export type TaskView = {
   resultTail?: string;
 };
 
+/** A write task under way (queued, running or idle) as the watch reads it: what it was asked, its title and prompt. */
+export type WorkView = { taskId: string; workstreamId: string; text: string };
+
 export type WorkstreamView = {
   workstreamId: string;
   projectRef: ProjectRef;
@@ -85,6 +88,8 @@ export interface TrainHost {
   landingsWatched(repo: string, base: string): boolean;
   /** Where the train's state and CI spans go; none in tests. */
   time(): TimeSink | undefined;
+  /** The write tasks under way in the project's open orders. Absent: none. */
+  tasksUnderWay?(projectRef: ProjectRef): WorkView[];
 }
 
 /** The defaults the Rust trait gives, for hosts that leave them out. */
