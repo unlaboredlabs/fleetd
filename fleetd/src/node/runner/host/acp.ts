@@ -14,29 +14,9 @@ import { headUtf16, tailUtf16 } from "../../util.ts";
 import type { ExitInfo, RunOutcome, RunnerEvent } from "./events.ts";
 import { evidence, type FailureEvidence } from "./failure.ts";
 import type { Now } from "./mapper.ts";
+import type { AcpSpec } from "../antigravity_spec.ts";
 
-/** What the node gives an ACP session's host, as JSON in the file `FLEETD_ACP` names (../antigravity.ts writes it). */
-export type AcpSpec = {
-  cwd: string;
-  addDirs: string[];
-  /** ACP `mcpServers`: fleetd's own server and the project's of the session's role. */
-  mcpServers: unknown[];
-  /** Appended to the agent's own system prompt. */
-  systemPrompt?: string;
-  model: string;
-  /** The thinking level option's value (`low` … `max`). */
-  effort: string;
-  /** The `authenticate` method (`gemini-api-key`); none runs on the sign-in agy already has. */
-  authMethod?: string;
-  /** Every permission request goes to the hub (a lead in approval mode); else fleetd allows what isn't fenced. */
-  approval: boolean;
-  /** The role's fenced tools, in Claude's rule words (`Bash(git push *--no-verify*)`, `mcp__fleetd__x`, `Edit`). */
-  deny: string[];
-  /** What runs unasked in approval mode too, in the same words: a lead's own tools (`mcp__fleetd`, `Read`, …). */
-  allow: string[];
-  /** Where the agent's own session id is kept, for the next start's resume. */
-  stateFile: string;
-};
+export type { AcpSpec };
 
 /** What one line or command produced: events, and the lines to write to the agent. */
 export type AcpOut = { events: RunnerEvent[]; replies: unknown[] };

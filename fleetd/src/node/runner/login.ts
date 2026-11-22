@@ -6,6 +6,9 @@
 // after 10 minutes.
 import { basename } from "node:path";
 import type { Env } from "../util.ts";
+import { CSI, signInUrl } from "./sign_in_url.ts";
+
+export { signInUrl };
 
 const URL_WAIT_MS = 30_000;
 const CODE_WAIT_MS = 60_000;
@@ -14,15 +17,6 @@ const OUTPUT_MAX = 64 * 1024;
 /** Between the code and its Enter, as a person types them: a raw-mode terminal app takes one write as a paste. */
 const ENTER_AFTER_MS = 300;
 
-const CSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-const URL = /https:\/\/[^\s\x07\x1b"'<>]+/g;
-
-/** The URL to sign in at: the first that names OAuth, else the first; only a whole one, with something after it. */
-export function signInUrl(output: string): string | undefined {
-  const text = output.replace(CSI, "");
-  const urls = [...text.matchAll(URL)].filter((m) => m.index! + m[0].length < text.length).map((m) => m[0]);
-  return urls.find((u) => u.includes("oauth")) ?? urls[0];
-}
 
 /** Its last line with words, without terminal sequences. */
 export function lastWords(output: string): string {

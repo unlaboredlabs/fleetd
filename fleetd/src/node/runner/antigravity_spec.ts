@@ -3,11 +3,33 @@
 // it with (./host/acp.ts), and the sign-in's command. Box side (docs/CONTRIBUTING.md "The package"): what reads this
 // machine (the installed agy, its install, whether it is signed in) is ./antigravity.ts.
 import type { Effort } from "../../shared/contracts.ts";
-import type { AcpSpec } from "./host/acp.ts";
-
-export { signInUrl } from "./login.ts";
+export { signInUrl } from "./sign_in_url.ts";
 
 type Env = Record<string, string>;
+
+/** What the node gives an ACP session's host, as JSON in the file `FLEETD_ACP` names (`spec` writes it). */
+export type AcpSpec = {
+  cwd: string;
+  addDirs: string[];
+  /** ACP `mcpServers`: fleetd's own server and the project's of the session's role. */
+  mcpServers: unknown[];
+  /** Appended to the agent's own system prompt. */
+  systemPrompt?: string;
+  model: string;
+  /** The thinking level option's value (`low` … `max`). */
+  effort: string;
+  /** The `authenticate` method (`gemini-api-key`); none runs on the sign-in agy already has. */
+  authMethod?: string;
+  /** Every permission request goes to the hub (a lead in approval mode); else fleetd allows what isn't fenced. */
+  approval: boolean;
+  /** The role's fenced tools, in Claude's rule words (`Bash(git push *--no-verify*)`, `mcp__fleetd__x`, `Edit`). */
+  deny: string[];
+  /** What runs unasked in approval mode too, in the same words: a lead's own tools (`mcp__fleetd`, `Read`, …). */
+  allow: string[];
+  /** Where the agent's own session id is kept, for the next start's resume. */
+  stateFile: string;
+};
+
 
 /** The variable naming a session's ACP spec file (host/acp.ts `AcpSpec`): set, the session's host speaks ACP to its
  * agent instead of Claude's stream-json. */
