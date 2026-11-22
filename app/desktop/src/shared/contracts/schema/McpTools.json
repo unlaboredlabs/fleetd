@@ -12421,6 +12421,12 @@
         "task_get.output": {
           "$ref": "#/$defs/TaskGetOutput"
         },
+        "task_stop.input": {
+          "$ref": "#/$defs/TaskStopInput"
+        },
+        "task_stop.output": {
+          "$ref": "#/$defs/TaskStopOutput"
+        },
         "tasks_list.input": {
           "$ref": "#/$defs/TasksListInput"
         },
@@ -12963,6 +12969,8 @@
         "tailnet_get.output",
         "task_get.input",
         "task_get.output",
+        "task_stop.input",
+        "task_stop.output",
         "tasks_list.input",
         "tasks_list.output",
         "thread_tail.input",
@@ -23307,6 +23315,32 @@
     "TaskId": {
       "pattern": "^T[1-9][0-9]*$",
       "type": "string"
+    },
+    "TaskStopInput": {
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "type": "object"
+    },
+    "TaskStopOutput": {
+      "description": "The task, stopped: cancelled, its slot free.",
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "task": {
+          "$ref": "#/$defs/Task"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "type": "object"
     },
     "TaskKind": {
       "description": "Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached.",

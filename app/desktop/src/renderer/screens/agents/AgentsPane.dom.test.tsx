@@ -51,6 +51,19 @@ const answer = (tool: string): unknown => {
       return { at: AT, agents: AGENTS };
     case "browser_sessions":
       return { sessions: [], waits: [], retention: { retentionDays: 30, maxGbPerProject: 20 } };
+    case "steer_send":
+      return {
+        id: "S1",
+        by: { kind: "human", keyName: "desk" },
+        mode: "now",
+        queuedAt: AT,
+        runId: "r1",
+        stage: "queued",
+        target: { taskId: "T1" },
+        text: "use the store's zone",
+        thread: { machineId: "devbox", threadId: "s-T1" },
+        workstreamId: "W1",
+      };
     case "work_list":
       return { scope: { repoKey: "github.com/acme/storefront", base: "main" }, items: elsewhere, recentLandings: [] };
     default:
@@ -87,6 +100,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   elsewhere = [];
+  calls = [];
   act(() => root?.unmount());
   root = undefined;
   host.remove();
@@ -111,10 +125,15 @@ function Harness() {
 
 /** The hub's frames to the mounted pane. */
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
+/** The tools the pane called, with their input. */
+let calls: { tool: string; input: unknown }[] = [];
 
 const mount = async (features?: readonly string[]) => {
   const hub: HubApi = {
-    call: (tool) => Promise.resolve({ ok: true, output: answer(tool) }),
+    call: (tool, input) => {
+      calls.push({ tool, input });
+      return Promise.resolve({ ok: true, output: answer(tool) });
+    },
     subscribe: (l) => ((send = l), () => undefined),
     resync: () => Promise.resolve(),
     focus: () => Promise.resolve(),
@@ -233,6 +252,48 @@ it("a row's right-click menu opens the agent, copies its branch, and Steer opens
   expect(window.location.hash).toBe(href);
   await go(href);
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Steer this agent");
+});
+
+it("steers in one pill with no line under it, ⌘↩ in Send's hover, and Stop ends the agent at once", async () => {
+  const go = await mount();
+  await go(toHash(panelRoute(project, { tab: "agents", agent: "T1" })));
+  const work = host.querySelector("[data-screen='agents.work']");
+  const box = work?.querySelector<HTMLTextAreaElement>("textarea[aria-label='Steer this agent']");
+  if (!box) throw new Error("no steer box");
+  // The box is all there is: no sentence under it on how steering works.
+  expect(work?.textContent).not.toMatch(/Goes straight|lead is told|stops its current step/u);
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(box, "use the store's zone");
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const sendKey = work?.querySelector<HTMLButtonElement>("button[aria-label='Send the steer']");
+  act(() => sendKey?.focus());
+  await settle();
+  expect(document.querySelector("[role='tooltip']")?.textContent).toBe("Send at its next step · ⌘↩ stops its current step");
+  // ⌘Enter still sends it now, stopping its step.
+  act(() => {
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+  });
+  await settle();
+  expect(calls.find((c) => c.tool === "steer_send")?.input).toMatchObject({ target: { taskId: "T1" }, text: "use the store's zone", mode: "now" });
+
+  // Stop: no ask, the agent shows stopped at once.
+  const stop = [...(work?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Stop");
+  act(() => stop?.click());
+  await settle();
+  expect(calls.filter((c) => c.tool === "task_stop").map((c) => c.input)).toEqual([{ taskId: "T1" }]);
+  expect(document.querySelector("[role='dialog'], [role='alertdialog']")).toBeNull();
+  expect(host.querySelector("[data-screen='agents.work'] h2")?.textContent).toBe("Stopped");
+});
+
+it("stops an agent with no thread yet too: Stop needs no steer box", async () => {
+  const go = await mount();
+  await go(toHash(panelRoute(project, { tab: "agents", agent: "T2" })));
+  expect(host.querySelector("textarea[aria-label='Steer this agent']")).toBeNull();
+  const stop = [...host.querySelectorAll<HTMLButtonElement>("[data-screen='agents.work'] button")].find((b) => b.textContent === "Stop");
+  act(() => stop?.click());
+  await settle();
+  expect(calls.filter((c) => c.tool === "task_stop").map((c) => c.input)).toEqual([{ taskId: "T2" }]);
 });
 
 it("a row with no steer box yet has no Steer, so no box takes the cursor later", async () => {
