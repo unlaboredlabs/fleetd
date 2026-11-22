@@ -212,6 +212,11 @@ export class Simulators {
     this.onReady?.();
   }
 
+  /** Whether the Mac is making its golden (a start found none for its agent-device, and makes one again). */
+  preparing(): boolean {
+    return this.prep.at === "preparing";
+  }
+
   usable(): boolean {
     return this.prep.at === "ready";
   }

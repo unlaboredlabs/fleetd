@@ -241,7 +241,9 @@ export class MacSims {
       const lent = new Lent(k.udid, k.home, this.simulators.simctl);
       lent.runner = k.runner;
       lent.scale = k.scale;
-      this.held.set(k.agent, { lent, device: k.device, project: k.project, sinceMs: k.sinceMs, used: k.used });
+      // Its idle time starts again: a step's touch isn't kept on disk, so a node that died without its stop left `used`
+      // as old as the last lend, and the first sweep would end a simulator its agent is busy with.
+      this.held.set(k.agent, { lent, device: k.device, project: k.project, sinceMs: k.sinceMs, used: Math.max(k.used, Date.now()) });
       if (k.screen) {
         this.screens?.resume(
           {
@@ -269,7 +271,9 @@ export class MacSims {
     for (const k of adopted) {
       if (this.held.get(k.agent)?.lent.udid !== k.udid) continue;
       const why = !left.has(k.udid)
-        ? "the Mac made its golden simulator again"
+        ? this.simulators.preparing()
+          ? "the Mac is making its golden simulator again"
+          : "this Mac isn't set up for iOS simulators any more"
         : typeof booted === "string"
           ? booted
           : !booted.has(k.udid)
