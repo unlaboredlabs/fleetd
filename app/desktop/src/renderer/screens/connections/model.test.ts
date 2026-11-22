@@ -206,6 +206,17 @@ describe("Connections", () => {
     });
   });
 
+  it("takes an Authorization key from the vault only, never typed as plain text, keeping one saved plain before", () => {
+    const typed = { ...emptyDraft(), url: "https://a.example/mcp", values: [{ name: "Authorization", itemId: "", prefix: "Bearer ", plain: "tok" }] };
+    expect(toInput(typed, null, [])).toEqual({ ok: false, problem: "Authorization is a key: pick it from the vault." });
+    const old = server("a", "https://a.example/mcp", { headers: [{ kind: "plain", name: "Authorization", value: "Bearer tok" }] });
+    const kept = toInput(draftOf(old), old, ["a"]);
+    expect(kept.ok && kept.input.headers).toEqual([{ kind: "plain", name: "Authorization", value: "Bearer tok" }]);
+    expect(toInput({ ...draftOf(old), values: [{ name: "Authorization", itemId: "", prefix: "", plain: "other" }] }, old, ["a"]).ok).toBe(false);
+    const vault = toInput({ ...typed, values: [{ name: "Authorization", itemId: "V1", prefix: "Bearer " }] }, null, []);
+    expect(vault.ok && vault.input.headers).toEqual([{ kind: "vault", name: "Authorization", itemId: "V1", prefix: "Bearer " }]);
+  });
+
   it("keeps an edited server's on or off and who gets it: a lead-only one stays the lead's", () => {
     const lead = { lead: true, writers: false, reviewers: false };
     const saved = server("mail", "https://mail.example/mcp", { enabled: false, roles: lead, integration: { readTools: ["list"] } });

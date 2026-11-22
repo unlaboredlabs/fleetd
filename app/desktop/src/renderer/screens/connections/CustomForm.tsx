@@ -14,7 +14,7 @@ import { Button, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuSeparato
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import type { Tailnet } from "../settings/Tailscale";
 import { TailscaleMark } from "./marks";
-import { draftOf, emptyDraft, isTailnetHost, nameOf, needsSignIn, pickedText, suggestedName, testLine, toggleBot, toInput, type Draft, type DraftValue, type Tested } from "./model";
+import { draftOf, emptyDraft, isKeyHeader, isTailnetHost, nameOf, needsSignIn, pickedText, suggestedName, testLine, toggleBot, toInput, type Draft, type DraftValue, type Tested } from "./model";
 import { Problem, SignInDialog } from "./SignIn";
 import { requestOf } from "./signInModel";
 import c from "./connections.module.css";
@@ -121,7 +121,9 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
     putValue(ix, source === PLAIN ? { ...rest, itemId: "", plain: "" } : { ...rest, itemId: source });
   };
   const addValue = () => change({ values: [...draft.values, { name: command ? "" : draft.values.length === 0 ? "Authorization" : "", itemId: "", prefix: command || draft.values.length > 0 ? "" : "Bearer " }] });
-  const options = [{ value: PLAIN, label: "Plain value" }, ...items.map((i) => ({ value: i.itemId, label: i.kind === "env" ? (i.envName ?? i.label) : i.label }))];
+  const vaultOptions = items.map((i) => ({ value: i.itemId, label: i.kind === "env" ? (i.envName ?? i.label) : i.label }));
+  // A key (Authorization) comes from the vault, with its prefix; any other value may be plain text too.
+  const optionsFor = (v: DraftValue) => (!command && isKeyHeader(v.name) && v.plain === undefined ? vaultOptions : [{ value: PLAIN, label: "Plain value" }, ...vaultOptions]);
 
   return (
     <>
@@ -159,15 +161,16 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
               {draft.values.map((v, ix) => (
                 <div key={ix} className={c.value}>
                   <Input mono aria-label={command ? "Variable" : "Header"} placeholder={command ? "API_TOKEN" : "Authorization"} value={v.name} onChange={(e) => setValue(ix, { name: e.target.value })} />
-                  {!command && v.name.trim().toLowerCase() === "authorization" ? (
+                  {!command && isKeyHeader(v.name) && v.plain === undefined ? (
                     <Select aria-label="Prefix" className={c.prefix} options={PREFIXES} value={v.prefix === "" ? "none" : "bearer"} onValueChange={(p) => setValue(ix, { prefix: p === "bearer" ? "Bearer " : "" })} />
                   ) : null}
                   <Select
                     aria-label={`${v.name || "Value"}'s value`}
                     className={c.item}
-                    options={options}
+                    options={optionsFor(v)}
                     value={v.plain !== undefined ? PLAIN : v.itemId === "" ? undefined : v.itemId}
-                    placeholder={v.keep === true ? "Saved key" : "From the vault"}
+                    placeholder={v.keep === true ? "Saved key" : optionsFor(v).length === 0 ? "No vault items yet" : "From the vault"}
+                    disabled={optionsFor(v).length === 0}
                     onValueChange={(source) => setSource(ix, v, source)}
                   />
                   {v.plain === undefined ? null : (

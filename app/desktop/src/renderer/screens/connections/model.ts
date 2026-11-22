@@ -277,6 +277,9 @@ export const toInput = (
     seen.add(n.toLowerCase());
     if (v.plain !== undefined) {
       if (v.plain.includes("\0") || (!command && /[\r\n]/u.test(v.plain))) return { ok: false, problem: `${n}'s value can't hold a line break or NUL.` };
+      // A key in plain text would sit in the hub's list for anyone to read, and without its Bearer: it comes from the
+      // vault. One a server was saved with before is kept as it is.
+      if (!command && isKeyHeader(n) && !savedPlain(editing, n, v.plain)) return { ok: false, problem: `${n} is a key: pick it from the vault.` };
       values.push({ kind: "plain", name: n, value: v.plain });
     } else if (v.itemId !== "") values.push({ kind: "vault", name: n, itemId: v.itemId, ...(v.prefix === "" ? {} : { prefix: v.prefix }) });
     else if (v.keep === true) values.push({ kind: "keep", name: n });
@@ -311,6 +314,13 @@ export const toInput = (
     },
   };
 };
+
+/** Whether a header carries a key: Authorization, whose value comes from the vault with its prefix. */
+export const isKeyHeader = (name: string): boolean => name.trim().toLowerCase() === "authorization";
+
+/** Whether `editing` already holds this header as this plain value: one saved before the vault, sent back as it was. */
+const savedPlain = (editing: McpServer | null, name: string, value: string): boolean =>
+  (editing?.headers ?? []).some((h) => h.kind === "plain" && h.name.toLowerCase() === name.toLowerCase() && (h.value ?? "") === value);
 
 /** A saved server with only its bots changed: everything else sent again as it is. */
 export const withBots = (server: McpServer, bots: ReadonlyArray<ProjectRef> | undefined): McpServerSetInput => {
