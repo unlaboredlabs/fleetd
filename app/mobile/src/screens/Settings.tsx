@@ -1,6 +1,6 @@
 // Settings, behind the person's avatar on Chats, as calm grouped cards: the person on top (their picture or initials,
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
-// (how the link is, its address and version), Connections (Connections.tsx: Paper, Notion, Tailscale and custom
+// (how the link is, its address and version; on a fleetd cloud team, its owner's Delete Team), Connections (Connections.tsx: Paper, Notion, Tailscale and custom
 // MCPs), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
 // (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
@@ -32,6 +32,7 @@ import { vaultShown } from "./vault/model";
 import { machinesShown } from "../machines";
 import { billingShown, readTeamBilling, type BillingState } from "../billing";
 import { claudeShown } from "../claude";
+import { deleteTeam, deleteTeamShown } from "../team";
 
 /** What the running JavaScript is: the build's own, or an update over the air and when it was made. */
 const updateWords = (): string => {
@@ -45,7 +46,7 @@ const roleWord = (role: HubRole): string => (role === "owner" ? "Owner" : role =
 
 export function Settings() {
   const t = useTheme();
-  const { paired, state, session, disconnect } = useHub();
+  const { paired, state, session, disconnect, forget } = useHub();
   const navigation = useNavigation<NavigationProp<SettingsParams & RootParams>>();
   const [notifications, setNotifications] = useState<string | undefined>(undefined);
   // Read again each time it shows, and each time the app comes back to the front on it: the person may have changed it
@@ -119,6 +120,38 @@ export function Settings() {
       Alert.alert("Your photo", undefined, [{ text: "Choose Photo", onPress: choosePhoto }, ...(has ? [{ text: "Remove Photo", style: "destructive" as const, onPress: removePhoto }] : []), { text: "Cancel", style: "cancel" }]);
     }
   };
+  // One confirm: the team's name typed again, which the team checks too. Gone, the phone forgets it.
+  const [deleting, setDeleting] = useState(false);
+  const onDeleteTeam = () => {
+    const remove = (typed?: string) => {
+      if (typed === undefined || typed.trim() === "") return;
+      setDeleting(true);
+      void deleteTeam(paired, typed)
+        .then((out) => {
+          if (!out.ok) {
+            haptics.warning();
+            Alert.alert("The team wasn't deleted", `${out.failure.message} ${out.failure.fix ?? ""}`.trim());
+            return;
+          }
+          haptics.success();
+          forget();
+        })
+        .finally(() => setDeleting(false));
+    };
+    if (Platform.OS === "ios") {
+      Alert.prompt(
+        `Delete ${paired.hubName}?`,
+        `Its bots, chats, memory and vault are erased for good. Type ${paired.hubName} to confirm.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: remove },
+        ],
+        "plain-text",
+      );
+    } else {
+      Alert.alert("Delete Team", "Delete the team on the desktop app or the web app.");
+    }
+  };
   const picture = <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />;
 
   return (
@@ -157,6 +190,7 @@ export function Settings() {
             chevron={false}
           />
         ) : null}
+        {deleteTeamShown(paired, state.meRole) ? <ListRow title={deleting ? "Deleting…" : "Delete Team"} destructive {...(deleting ? {} : { onPress: onDeleteTeam })} chevron={false} /> : null}
       </ListSection>
       <ListSection>
         <ListRow title="Connections" onPress={() => navigation.navigate("Connections")} />

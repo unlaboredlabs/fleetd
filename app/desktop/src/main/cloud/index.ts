@@ -5,7 +5,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { cloudDomain, teamOrigin } from "../../shared/accounts";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -17,7 +17,7 @@ import type { CloudConfig } from "./config";
 import { openBilling, readTeamBilling, setBillingCap } from "./billing";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
-import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 export interface Cloud {
   state(): CloudState;
@@ -34,6 +34,7 @@ export interface Cloud {
   invites(hub: HubId): Promise<InvitesOutcome>;
   invite(hub: HubId, request: InviteRequest): Promise<InviteOutcome>;
   revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
+  deleteTeam(hub: HubId, name: string): Promise<DeleteTeamOutcome>;
   installGithub(hub: HubId): Promise<InstallGithubOutcome>;
   billing(hub: HubId): Promise<BillingOutcome>;
   billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
@@ -136,6 +137,14 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     revokeInvite: async (id, inviteId) => {
       const t = team(id);
       return t === null ? NOT_CLOUD : revokeInvite(fetch, t, inviteId);
+    },
+    deleteTeam: async (id, name) => {
+      const t = team(id);
+      if (t === null) return NOT_CLOUD;
+      const out = await deleteTeam(fetch, t, name);
+      // Gone from the cloud: its key opens nothing now, so the app forgets it as signing out would.
+      if (out.ok) hubs.remove(id);
+      return out;
     },
     installGithub: async (id) => {
       const t = team(id);

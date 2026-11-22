@@ -324,6 +324,34 @@
       ],
       "type": "object"
     },
+    "AccountsTeamDeleteInput": {
+      "additionalProperties": false,
+      "description": "POST /accounts/v1/team/delete on the team's own address, with an owner's device key: the team deleted for good, its name typed again (what people call it, or its address's name). Refused `forbidden` for anyone but an owner, `wrong_name` and `running` while any of its agents runs.",
+      "properties": {
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "AccountsTeamDeleteOutput": {
+      "description": "200: the team is deleted; the name it went by.",
+      "properties": {
+        "deleted": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "type": "object"
+    },
     "AccountsTeamInput": {
       "additionalProperties": false,
       "description": "POST /v1/app/team: a team of the person's own, by the make value the sign-in answered. No auth header.",

@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { readBilling, type BillingState } from "../../shared/billing";
-import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -167,6 +167,12 @@ export class FixtureCloud implements Cloud {
   revokeInvite(_hub: string, inviteId: string): Promise<RevokeInviteOutcome> {
     this.#invites = this.#invites.filter((i) => i.inviteId !== inviteId);
     return Promise.resolve({ ok: true });
+  }
+
+  // A fixture's team stays: the shot shows the sheet's refusal or its press, never the app without it.
+  deleteTeam(_hub: string, name: string): Promise<DeleteTeamOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    return Promise.resolve(name.trim() === "" ? failed({ code: "invalid", message: "The team's name is missing.", fix: "Type the team's name to delete it." }) : { ok: true });
   }
 
   billing(): Promise<BillingOutcome> {

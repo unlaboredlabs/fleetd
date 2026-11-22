@@ -1,10 +1,11 @@
 // A fleetd cloud team's invites by email (contracts: Accounts.json, ACCOUNTS_INVITES_PATH): three plain HTTP calls to
-// the team's own address with this device's key, as an owner or admin. The team answers who may and what it refuses
+// the team's own address with this device's key, as an owner or admin; and the owner's delete of the team
+// (ACCOUNTS_TEAM_DELETE_PATH). The team answers who may and what it refuses
 // (not an email, someone already on the team or invited, the team at its limit of people); its words are shown as
 // written. Main makes them for a hub that came with the account only, so a self-hosted hub is never asked.
 import { z } from "zod";
-import type { InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome } from "../../shared/cloud";
-import { ACCOUNTS_INVITES_PATH } from "../../shared/contracts";
+import type { DeleteTeamOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome } from "../../shared/cloud";
+import { ACCOUNTS_INVITES_PATH, ACCOUNTS_TEAM_DELETE_PATH } from "../../shared/contracts";
 import type { PairFailure } from "../../shared/pairing";
 import type { Fetch } from "../pairing/hubHttp";
 
@@ -84,5 +85,11 @@ export const sendInvite = async (fetch: Fetch, team: KeyedTeam, request: InviteR
 
 export const revokeInvite = async (fetch: Fetch, team: KeyedTeam, inviteId: string): Promise<RevokeInviteOutcome> => {
   const answer = await call(fetch, team, "POST", `${ACCOUNTS_INVITES_PATH}/${encodeURIComponent(inviteId)}/revoke`);
+  return answer.ok ? { ok: true } : { ok: false, failure: answer.failure };
+};
+
+/** The owner's delete of the team, for good: `name` its name typed again, which the team checks. */
+export const deleteTeam = async (fetch: Fetch, team: KeyedTeam, name: string): Promise<DeleteTeamOutcome> => {
+  const answer = await call(fetch, team, "POST", ACCOUNTS_TEAM_DELETE_PATH, { name: name.trim() });
   return answer.ok ? { ok: true } : { ok: false, failure: answer.failure };
 };

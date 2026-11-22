@@ -370,6 +370,21 @@ describe("the web shell", () => {
     expect(calls[0]?.init?.credentials).toBe("same-origin");
   });
 
+  it("deletes a team for its owner on this origin with the cookie, then goes to the start; a refusal stays, in the team's words", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const refused = setup(() => json({ code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." }, 409));
+    expect(await refused.api.cloud.deleteTeam(ACME, "acme")).toEqual({
+      ok: false,
+      failure: { code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." },
+    });
+    expect(refused.went).toEqual([]);
+    const { api, calls, went } = setup(() => json({ deleted: "acme" }));
+    expect(await api.cloud.deleteTeam(ACME, " acme ")).toEqual({ ok: true });
+    expect(calls[0]).toMatchObject({ path: `/t/${team}/accounts/v1/team/delete`, init: { method: "POST", body: JSON.stringify({ name: "acme" }) } });
+    expect(header(calls[0]?.init, "authorization")).toBeNull();
+    expect(went).toEqual(["/"]);
+  });
+
   it("says a sign-out that didn't reach the cloud failed, and stays", async () => {
     const t = setup(() => json({ code: "failed", message: "Something broke." }, 503));
     expect(await t.api.cloud.signOut()).toEqual({ kept: [], failure: { code: "failed", message: "Not signed out: Something broke." } });
