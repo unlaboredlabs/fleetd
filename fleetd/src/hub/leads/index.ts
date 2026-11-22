@@ -187,12 +187,15 @@ export class Leads {
     }
   }
 
-  /** A fresh lead thread from the current digest; bumps `sessionGeneration`. The old thread stays on the node. */
+  /**
+   * A fresh lead thread from the current digest and the chat's tail; bumps `sessionGeneration`. The old thread stays
+   * on the node.
+   */
   restart(r: ProjectRef): Promise<Lead> {
     return this.locked(async () => {
       const existing = this.records.leadGet(r);
       if (!existing) throw new ToolError("not_found", `Bot ${r.projectId} on ${r.machineId} has no lead to restart.`, "Call lead_start first.");
-      return this.launch(r, this.projectOf(r), existing.sessionGeneration + 1);
+      return this.launch(r, this.projectOf(r), existing.sessionGeneration + 1, this.recentChat(r));
     });
   }
 
@@ -335,7 +338,9 @@ export class Leads {
         return undefined;
       }
       const idle = this.idle(r);
-      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1) : undefined;
+      // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
+      // nothing to answer, and it made up a message from the person (W787).
+      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1, this.recentChat(r)) : undefined;
     });
   }
 
