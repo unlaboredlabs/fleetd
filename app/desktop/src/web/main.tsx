@@ -8,7 +8,7 @@ import { browserDeps } from "./browser";
 import { clearWebCache } from "./cache";
 import type { GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
-import { readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
+import { NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -66,16 +66,21 @@ const show = async (view: GateView) => {
             },
             makeTeam: async (): Promise<WebFailure | null> => {
               const out = await webCall(window.fetch.bind(window), "POST", "/web/team", { json: {} });
-              if (out.ok) {
-                joinedTeam = teamOf(out.body) ?? joinedTeam;
-                void boot();
-                return null;
-              }
-              if (out.signedOut === true) {
+              if (out.ok) joinedTeam = teamOf(out.body) ?? joinedTeam;
+              if (!out.ok && out.signedOut === true) {
                 window.location.assign(signInPath(here()));
                 return null;
               }
-              return out.failure;
+              // Made now, or by an earlier press whose team wasn't listed yet: open it once the session lists it.
+              if (!out.ok && out.failure.code !== "already_own") return out.failure;
+              const listed = await untilListed(() => readSession(window.fetch.bind(window)), (ms) => new Promise((r) => setTimeout(r, ms)));
+              if (listed === "signed_out") {
+                window.location.assign(signInPath(here()));
+                return null;
+              }
+              if (listed === "not_yet") return NOT_LISTED_YET;
+              void boot();
+              return null;
             },
             signOut: () => {
               clearWebCache(window.localStorage);

@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, removedLine, removedNotice, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
+import { NOT_LISTED_YET, readSession, removedLine, removedNotice, signInPath, teamFromAddress, teamHubId, teamHubIds, untilListed, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -101,5 +101,32 @@ describe("teamFromAddress", () => {
   it("leaves the screen alone for a team that isn't the account's, and an address naming none", () => {
     expect(teamFromAddress({ search: "?team=someone-else", hash: "#/settings/hub/billing" }, hubs)).toEqual({ search: "", hash: "#/settings/hub/billing" });
     expect(teamFromAddress({ search: "?github=connected", hash: "#/" }, hubs)).toBeNull();
+  });
+});
+
+describe("after Make a team", () => {
+  const session = (teams: number) => ({ ok: true as const, session: { email: "lee@example.com", teams: Array.from({ length: teams }, (_, i) => ({ id: `t${String(i)}`, name: "lee", url: "https://lee.fleetd.dev" })), invitations: [], removed: [] } });
+  const reads = (answers: Array<Awaited<ReturnType<typeof readSession>>>) => {
+    let i = 0;
+    return () => {
+      const next = answers[Math.min(i++, answers.length - 1)];
+      if (next === undefined) throw new Error("no answer");
+      return Promise.resolve(next);
+    };
+  };
+
+  it("reads again with a short backoff until the session lists the team", async () => {
+    const waited: number[] = [];
+    const out = await untilListed(reads([session(0), session(0), session(1)]), (ms) => (waited.push(ms), Promise.resolve()));
+    expect(out).toBe("listed");
+    expect(waited).toEqual([500, 1000]);
+  });
+
+  it("gives up after about 7.5 s with a line that turns the button back on, or follows a sign-out", async () => {
+    const waited: number[] = [];
+    expect(await untilListed(reads([session(0)]), (ms) => (waited.push(ms), Promise.resolve()))).toBe("not_yet");
+    expect(waited).toEqual([500, 1000, 2000, 4000]);
+    expect(NOT_LISTED_YET.message).toBe("Your team is made, but fleetd cloud isn't showing it yet.");
+    expect(await untilListed(reads([session(0), { ok: false, signedOut: true }]), () => Promise.resolve())).toBe("signed_out");
   });
 });

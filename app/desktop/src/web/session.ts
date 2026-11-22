@@ -98,6 +98,28 @@ export const readSession = async (fetch: Fetch): Promise<SessionRead> => {
   return { ok: true, session: { email: got.data.email, teams: got.data.teams, invitations: got.data.invitations ?? [], removed: got.data.removed ?? [] } };
 };
 
+/** How long after a team is made its session is read again, while it doesn't list a team yet: about 7.5 s in all. */
+export const MADE_READS_MS = [500, 1000, 2000, 4000] as const;
+
+/** A team made, and not listed yet by the session read this many times: said in place of No team yet's line. */
+export const NOT_LISTED_YET: WebFailure = { code: "not_listed_yet", message: "Your team is made, but fleetd cloud isn't showing it yet.", fix: "Press Make a team again in a moment to open it." };
+
+/**
+ * After Make a team: the session read again (`read`), at MADE_READS_MS apart, until it lists a team; true once it
+ * does. Signed out on the way is said as such; a read that fails is tried again like one that lists none.
+ */
+export const untilListed = async (read: () => Promise<SessionRead>, wait: (ms: number) => Promise<void>): Promise<"listed" | "signed_out" | "not_yet"> => {
+  for (const ms of MADE_READS_MS) {
+    const got = await read();
+    if (got.ok && got.session.teams.length > 0) return "listed";
+    if (!got.ok && got.signedOut === true) return "signed_out";
+    await wait(ms);
+  }
+  const last = await read();
+  if (last.ok && last.session.teams.length > 0) return "listed";
+  return !last.ok && last.signedOut === true ? "signed_out" : "not_yet";
+};
+
 /** Where Sign in goes: WorkOS's page, then back to `back` (this page's path and route), only ever a path of this origin. */
 export const signInPath = (back: string): string => {
   const path = back.startsWith("/") && !back.startsWith("//") ? back : "/";
