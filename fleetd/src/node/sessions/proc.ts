@@ -71,35 +71,43 @@ export function markerSession(marker: string): string | undefined {
   return fields.length > 3 ? fields.slice(0, -3).join(".") : undefined;
 }
 
-/** The live processes whose marker names `session`. */
-function spawnedFor(procs: Proc[], session: string): Proc[] {
+/** The variable each spawn's environment names its node by: the node's socket (sessions/index.ts sets it). */
+const NODE_SOCK = "FLEETD_NODE_SOCK=";
+
+/** The live processes whose marker names `session`, spawned by the node at `nodeSock`. A session id is only its hub's:
+ * another node on the machine (a second hub's, a test's) may run a session of the same id, whose processes are never
+ * this node's to stop. One with no node named (a spawn from before nodes named themselves) counts as this node's. */
+function spawnedFor(procs: Proc[], session: string, nodeSock: string): Proc[] {
   const prefix = `${SESSION_MARKER}=`;
   return procs.filter((p) => {
     if (p.pid === process.pid || p.zombie) return false;
-    const marker = argsAndEnv(p.pid)[1].find((v) => v.startsWith(prefix));
-    return marker !== undefined && markerSession(marker.slice(prefix.length)) === session;
+    const env = argsAndEnv(p.pid)[1];
+    const marker = env.find((v) => v.startsWith(prefix));
+    const node = env.find((v) => v.startsWith(NODE_SOCK));
+    return marker !== undefined && markerSession(marker.slice(prefix.length)) === session && (node === undefined || node === `${NODE_SOCK}${nodeSock}`);
   });
 }
 
 /** What session `session` left: claude's descendants while claude (`root`) is still the recorded process, and every
- * process carrying a marker of any of the session's spawns, which also finds tool children orphaned when claude died. */
-function sweep(root: number | undefined, session: string): Proc[] {
+ * process carrying a marker of any of the session's spawns by the node at `nodeSock`, which also finds tool children
+ * orphaned when claude died. */
+function sweep(root: number | undefined, session: string, nodeSock: string): Proc[] {
   const procs = table();
-  return dedupe([...(root ? descendants(procs, root) : []), ...spawnedFor(procs, session).filter((p) => p.pid !== root)]);
+  return dedupe([...(root ? descendants(procs, root) : []), ...spawnedFor(procs, session, nodeSock).filter((p) => p.pid !== root)]);
 }
 
-/** Stops what session `session` left running when the node went away: SIGTERM to claude's process group (claude
+/** Stops what session `session` left running when the node at `nodeSock` went away: SIGTERM to claude's process group (claude
  * kills its tool children on SIGTERM), SIGKILL after `graceMs`, then SIGKILL to every swept process and group. The
  * sweep comes before each signal, because once claude is gone its children can no longer be found by ppid. claude
  * itself is signalled only while `pid` still has the recorded start time. */
-export async function killRecorded(pid: number, started: string, session: string, graceMs: number): Promise<void> {
+export async function killRecorded(pid: number, started: string, session: string, nodeSock: string, graceMs: number): Promise<void> {
   if (process.platform !== "linux") return;
   const alive = () => {
     const p = statOf(pid);
     return p !== undefined && !p.zombie && String(p.start) === started;
   };
   const root = pid > 1 && alive() ? pid : undefined;
-  let swept = sweep(root, session);
+  let swept = sweep(root, session, nodeSock);
   if (root === undefined && !swept.length) return;
   console.warn(`${new Date().toISOString()} WARN stopping claude processes left from before the node restarted {"pid":${pid},"sessionId":"${session}","leftover":${swept.length}}`);
   if (root !== undefined) {
@@ -111,7 +119,7 @@ export async function killRecorded(pid: number, started: string, session: string
     kill("SIGTERM");
     const until = Date.now() + graceMs;
     while (alive() && Date.now() < until) await Bun.sleep(100);
-    swept = dedupe([...swept, ...sweep(alive() ? root : undefined, session)]);
+    swept = dedupe([...swept, ...sweep(alive() ? root : undefined, session, nodeSock)]);
     if (alive()) kill("SIGKILL");
   }
   signal(swept, "SIGKILL");

@@ -5,7 +5,7 @@
 // an agent's agent-browser does. The last test runs the box's real launcher (sh, socat) on a real Chrome, where this
 // machine has both.
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -15,7 +15,8 @@ import { Proxy } from "../src/node/browser/cdp_proxy.ts";
 import { seal } from "../src/node/browser/credentials.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import type { Scrub } from "../src/node/mask.ts";
-import { boxChrome, reattachChrome, type ScreenBox, timing } from "../src/node/place/box_chrome.ts";
+import { ADB_SERVER_PORT } from "../src/node/device/pins.ts";
+import { boxChrome, port, reattachChrome, type ScreenBox, timing } from "../src/node/place/box_chrome.ts";
 import { pluginFiles } from "../src/node/browser/agent_browser_plugin.ts";
 import { chrome as realChrome } from "./browser_rig.ts";
 
@@ -392,7 +393,7 @@ test.skipIf(!realChrome || !hasSocat)("a box's Chrome outlives its dropped conne
         s.once("connect", () => resolve(s)).once("error", reject);
       }),
   };
-  const first = await boxChrome(here, [], { chrome: realChrome! });
+  const first = await boxChrome(here, [], { chrome: realChrome!, dir: join(root, "chrome") });
   const handle = first.handle!;
   cleanups.push(() => first.close?.());
   const { targetInfos } = (await first.cdp.call(undefined, "Target.getTargets")) as { targetInfos: { targetId: string }[] };
@@ -401,9 +402,25 @@ test.skipIf(!realChrome || !hasSocat)("a box's Chrome outlives its dropped conne
   const after = (await second.cdp.call(undefined, "Target.getTargets")) as { targetInfos: { targetId: string }[] };
   expect(after.targetInfos.map((t) => t.targetId)).toEqual(targetInfos.map((t) => t.targetId));
   second.cdp.shut();
-  await Bun.sleep(timing.graceMs + 2_500);
+  const letGo = Date.now();
+  // No connection within its grace: its launcher's whole session goes, Chrome with it. Waited for, however long a loaded
+  // machine takes to get there, never before the grace is out.
+  const launcher = Number(readFileSync(join(handle.dir, "session.pid"), "utf8"));
+  const alive = () => {
+    try {
+      process.kill(launcher, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const end = Date.now() + 10 * timing.graceMs; alive() && Date.now() < end; ) await Bun.sleep(50);
+  expect(alive()).toBe(false);
+  expect(Date.now() - letGo).toBeGreaterThanOrEqual(timing.graceMs);
   await expect(reattachChrome(here, handle, 400_000_001, 500)).rejects.toThrow();
 }, 30_000);
+
+test("a box screen's port is never the node's own adb server's", () => expect(port(ADB_SERVER_PORT - 10_000)).toBe(ADB_SERVER_PORT + 1));
 
 test("the proxy signs with a key nobody can guess: a host's own, else a random one, and never an empty or short one", async () => {
   expect(() => Proxy.serve("", { live: () => undefined })).toThrow("64 hex characters");

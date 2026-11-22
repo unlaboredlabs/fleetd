@@ -12,9 +12,11 @@ import { stopAreas } from "../src/node/areas.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
 import { canHold, dropHeld, heldRoot, launchHeld, leftHeld, localBox, NotItsOwn, proven } from "../src/node/browser/held.ts";
 import { Broker, start } from "../src/node/browser/index.ts";
+import { ports } from "../src/node/place/box_chrome.ts";
 import { playwrightDirs } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
 import { type TestNode, testNode } from "./node_helpers.ts";
+import { heldPort } from "./ports.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
@@ -169,4 +171,25 @@ test.skipIf(!chrome || !canHold())("a real held Chrome dialled on another held C
   expect(again.cdp.isClosed()).toBe(false);
   await again.close!();
   await b.close!();
+}, 60_000);
+
+test.skipIf(!chrome || !canHold())("a held Chrome whose port another holds starts on another port, its sandbox not blamed", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  cleanups.push(() => {
+    for (const { dir } of leftHeld(home.dir)) dropHeld(dir);
+  });
+  // On a busy machine an outgoing connection's end, or another listener, holds the port the launcher picked.
+  const { port: taken, release } = heldPort();
+  cleanups.push(release);
+  const next = ports.next;
+  cleanups.push(() => void (ports.next = next));
+  let picks = 0;
+  ports.next = () => (++picks === 1 ? taken : next());
+  const held = await launchHeld(home.dir, chrome!, false);
+  expect(picks).toBe(2);
+  expect(held.handle!.port).not.toBe(taken);
+  expect(held.cdp.isClosed()).toBe(false);
+  await held.close!();
+  expect(leftHeld(home.dir)).toEqual([]);
 }, 60_000);

@@ -23,7 +23,7 @@ import { connect } from "node:net";
 import { basename, dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import { agentSpawn } from "../oom.ts";
-import { boxChrome, hex, type KeptBox } from "../place/box_chrome.ts";
+import { boxChrome, hex, type KeptBox, portTaken } from "../place/box_chrome.ts";
 import { current as currentScope, hostScope, spawnScoped } from "../runner/scope.ts";
 import type { Ended } from "./broker.ts";
 import type { Launched } from "./launch_args.ts";
@@ -80,7 +80,7 @@ export async function launchHeld(home: string, chrome: string, sandboxed: boolea
     try {
       return await launchOnce(home, chrome, sandboxed, extra);
     } catch (e) {
-      if (!(e instanceof NotItsOwn) || tries >= 3) throw e;
+      if (!(e instanceof NotItsOwn || e instanceof PortTaken) || tries >= 3) throw e;
     }
   }
 }
@@ -89,25 +89,34 @@ async function launchOnce(home: string, chrome: string, sandboxed: boolean, extr
   const dir = join(heldRoot(home), `chrome-${hex(6)}`);
   mkdirSync(join(dir, "tmp"), { recursive: true, mode: 0o700 });
   // A Chrome that exits at once (its sandbox refused here) takes its launcher with it: said now, not after the dial's
-  // wait, so the pool goes on without the sandbox.
+  // wait, so the pool goes on without the sandbox. So does a port something else holds, which is no word on the
+  // sandbox: the launch tries again on another port.
   let exited = () => {};
   const gone = new Promise<never>((_, reject) => {
     exited = () => {
-      let said = "";
-      try {
-        said = readFileSync(join(dir, "chrome.log"), "utf8").trim().slice(-600);
-      } catch {}
+      const read = (name: string) => {
+        try {
+          return readFileSync(join(dir, name), "utf8").trim();
+        } catch {
+          return "";
+        }
+      };
+      if (portTaken(read("accepts.log"))) return reject(new PortTaken());
+      const said = read("chrome.log").slice(-600);
       reject(new Error(`Chrome exited as it started${said ? `: ${said}` : ""}`));
     };
   });
   gone.catch(() => {});
   const start = async (script: string, pidFile: string) => void (await startOutside(script, pidFile)).once("exit", () => exited());
   const launched = boxChrome(localBox, extra, { dir, chrome, sandboxed, graceMs: GRACE_MS, start });
-  launched.catch(() => {});
+  let failed = false;
+  // One that answers after its launch failed (another's socat, on the port it couldn't take) is let go at once.
+  launched.then((l) => failed && l.cdp.shut(), () => {});
   // A launch that failed leaves no folder behind (one with no snapshot would be a held Chrome to the next node).
   try {
     return await proven(await Promise.race([launched, gone]), dir);
   } catch (e) {
+    failed = true;
     dropHeld(dir);
     throw e;
   }
@@ -117,6 +126,13 @@ async function launchOnce(home: string, chrome: string, sandboxed: boolean, extr
 export class NotItsOwn extends Error {
   constructor() {
     super("another browser answered on its port");
+  }
+}
+
+/** A launch whose port something else held as its socat listened. */
+export class PortTaken extends Error {
+  constructor() {
+    super("its port was taken");
   }
 }
 
