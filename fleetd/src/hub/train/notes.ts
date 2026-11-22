@@ -9,6 +9,8 @@ export const CHECKS_START_WAIT_MS = 15 * 60_000;
 export const CI_RUNNING_TIMEOUT_MS = 45 * 60_000;
 export const CI_QUEUE_CEILING_MS = 2 * 60 * 60_000;
 export const BLOCKED_WAKE_MS = 30 * 60_000;
+/** How long a PR back with its writer goes with no push before the lead's digest flags it (back.ts). */
+export const BACK_IDLE_MS = 30 * 60_000;
 export const NEVER_RAN_WAIT_MS = 5 * 60_000;
 
 /** The start of `lastError` on a Change whose CI timed out rather than went red. */

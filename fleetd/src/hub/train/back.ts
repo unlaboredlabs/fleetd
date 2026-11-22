@@ -3,7 +3,7 @@
 // so that wait's wake carries it instead of a second one. A writer whose turn then ends with no push and nothing armed
 // is continued once more by the train's next pass; one that can't be (cancelled) is the lead's. Once per send-back:
 // the Change's `back` wait, at its head, says whether its writer was continued for it yet. Its start is when the PR
-// went back, which the lead's digest reads for a PR left with no push (`BACK_IDLE_MS`).
+// went back, which the lead's digest reads for a PR left with no push (notes.ts `BACK_IDLE_MS`).
 import type { Change } from "../../shared/contracts.ts";
 import { openBlocking } from "../reviews/read.ts";
 import { oneLine, prNote } from "./events.ts";
@@ -12,8 +12,6 @@ import { fixYourPr } from "./prompts.ts";
 import { type ChangeRecords, WAIT_BACK } from "./records.ts";
 import { TRAIN_BY, type Train } from "./service.ts";
 
-/** How long a sent-back PR goes with no push before the lead's digest flags it. */
-export const BACK_IDLE_MS = 30 * 60_000;
 /** The `back` wait's states: its writer was told and may still end without a push, or was continued for it. */
 const TOLD = "told";
 const WOKEN = "woken";
@@ -23,11 +21,12 @@ export function isBack(c: Change): boolean {
   return c.state === "needs_rebase" || c.state === "ci_failed" || (c.state === "reviewing" && c.lastError?.startsWith(BLOCKED_PREFIX) === true);
 }
 
-/** Records the send-back of `change`, as stored now, as `state`; a send-back at the head it was at keeps its start. */
+/** Records the send-back of `change`, as stored now, as `state`: each send-back starts its own, at now. */
 function mark(t: Train, change: Change, state: string): void {
   const c = t.records.get(change.changeId) ?? change;
   if (!isBack(c)) return;
-  if (!t.records.startWait(c, WAIT_BACK, c.headSha, t.nowMs(), state)) t.records.setWait(c.changeId, WAIT_BACK, c.headSha, state);
+  t.records.endWait(c.changeId, WAIT_BACK);
+  t.records.startWait(c, WAIT_BACK, c.headSha, t.nowMs(), state);
 }
 
 /** `text` from `by` to the writer `taskId` of `change`; why it could not take it, else undefined. */

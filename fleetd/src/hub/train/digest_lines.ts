@@ -5,7 +5,7 @@ import type { Change, TrainState } from "../../shared/contracts.ts";
 import { TOOLS_FAILED } from "../reviews/rules.ts";
 import { parseMs } from "../store/time.ts";
 import { WAITING_FOR_RUNNERS } from "./next_rules.ts";
-import { APPROVAL, BLOCKED_PREFIX, HELD, LEFT_OUT, timedOut } from "./notes.ts";
+import { APPROVAL, BACK_IDLE_MS, BLOCKED_PREFIX, HELD, LEFT_OUT, timedOut } from "./notes.ts";
 import { DRAFT, isDraft } from "./states.ts";
 
 export type TrainFacts = {
@@ -19,8 +19,6 @@ export type TrainFacts = {
   writer?: (taskId: string) => string | undefined;
 };
 
-/** How long a sent-back PR goes with no push before the lead's digest flags it (back.ts `BACK_IDLE_MS`). */
-const BACK_IDLE_MS = 30 * 60_000;
 
 const PARKED = ["needs_rebase", "ci_failed"];
 
