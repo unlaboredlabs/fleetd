@@ -1,7 +1,9 @@
 <!doctype html>
 <!-- fleetd.sh/pricing: what fleetd cloud costs, and how it differs from a hub you run yourself. The same page as home.html
-     in type, colour and header, set denser: plain tables you read at a glance. The prices are fleetd-cloud's
-     (src/billing/stripe/prices.ts and src/billing/rates.ts) and the docs' Billing page: change all three together. -->
+     in type, colour and header, set denser: plain tables you read at a glance. The plans, agents at once, sizes and
+     credits are read at load from fleetd cloud's public plans (accounts.fleetd.dev/v1/plans), which ops sets; the
+     values written here are today's, shown until it answers and whenever it doesn't. Keep them in step with
+     fleetd-cloud (src/billing/stripe/prices.ts, src/billing/rates.ts) and the docs' Billing page. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -102,7 +104,7 @@ h1 .rest{color:var(--faint)}
 .price span{color:var(--grey);font-size:15px}
 .plan ul{list-style:none;margin:20px 0 0;padding:0;font-size:15px}
 .plan li{padding:7px 0;border-top:1px solid var(--rule)}
-.plan li span{color:var(--grey)}
+.plan li span:not([data-f]){color:var(--grey)}
 
 /* tables: plain rows, numbers right-aligned in the price tables */
 table{width:100%;border-collapse:collapse;font-size:15px}
@@ -179,28 +181,31 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   </div>
   <div>
     <div class="plans">
-      <div class="plan">
-        <h3>Solo</h3>
-        <p class="price"><b>$20</b><span>a month</span></p>
+      <div class="plan" data-plan="solo">
+        <h3 data-f="name">Solo</h3>
+        <p class="price"><b data-f="price">$20</b><span>a month</span></p>
         <ul>
-          <li>$30 of computer time <span>included</span></li>
-          <li>3 agents <span>at once</span></li>
+          <li><span data-f="included">$30</span> of computer time <span>included</span></li>
+          <li><span data-f="agents">3</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
         </ul>
       </div>
-      <div class="plan">
-        <h3>Team</h3>
-        <p class="price"><b>$50</b><span>a month</span></p>
+      <div class="plan" data-plan="team">
+        <h3 data-f="name">Team</h3>
+        <p class="price"><b data-f="price">$50</b><span>a month</span></p>
         <ul>
-          <li>$60 of computer time <span>included</span></li>
-          <li>10 agents <span>at once</span></li>
+          <li><span data-f="included">$60</span> of computer time <span>included</span></li>
+          <li><span data-f="agents">10</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
         </ul>
       </div>
-      <div class="plan">
-        <h3>Scale</h3>
-        <p class="price"><b>$200</b><span>a month</span></p>
+      <div class="plan" data-plan="scale">
+        <h3 data-f="name">Scale</h3>
+        <p class="price"><b data-f="price">$200</b><span>a month</span></p>
         <ul>
-          <li>$260 of computer time <span>included</span></li>
-          <li>40 agents <span>at once</span></li>
+          <li><span data-f="included">$260</span> of computer time <span>included</span></li>
+          <li><span data-f="agents">40</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
         </ul>
       </div>
     </div>
@@ -218,7 +223,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
       <h3>Computer time</h3>
       <table>
         <thead><tr><th scope="col">Size</th><th scope="col" class="num">Per hour</th></tr></thead>
-        <tbody>
+        <tbody id="sizes">
           <tr><th scope="row">2 CPU, 4 GB</th><td class="num">$0.06</td></tr>
           <tr><th scope="row">4 CPU, 8 GB</th><td class="num">$0.12</td></tr>
           <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
@@ -228,8 +233,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     </div>
     <div>
       <h3>Credits</h3>
-      <p>Computer time paid ahead, at face value: $10 buys $10 of time. Buy them from $10, with or without a plan.</p>
-      <p>A plan’s time is used first. Credits last 12 months, and with credits and no plan, 3 agents run at once.</p>
+      <p>Computer time paid ahead, at face value: $10 buys $10 of time. Buy them from <span data-f="credits-min">$10</span>, with or without a plan.</p>
+      <p>A plan’s time is used first. Credits last <span data-f="credits-months">12</span> months, and with credits and no plan, <span data-f="credits-agents">3</span> agents run at once.</p>
     </div>
   </div>
 </section>
@@ -242,7 +247,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   <div>
     <table class="vs">
       <thead>
-        <tr><th scope="col"><span class="sr">&nbsp;</span></th><th scope="col">Self-hosted <span>Free, open source</span></th><th scope="col">fleetd cloud <span>From $20 a month</span></th></tr>
+        <tr><th scope="col"><span class="sr">&nbsp;</span></th><th scope="col">Self-hosted <span>Free, open source</span></th><th scope="col">fleetd cloud <span>From <span data-f="from">$20</span> a month</span></th></tr>
       </thead>
       <tbody>
         <tr><th scope="row">The hub</th><td>You run it, on a machine of yours.</td><td>fleetd runs it for your team, in the EU.</td></tr>
@@ -269,6 +274,66 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 
 <script>
 "use strict";
+// The plans as ops sets them: fleetd cloud's public plans (no sign-in), read at load. The HTML above holds today's
+// values, so the page never shows blank: a field the answer lacks, an answer that never comes (4 s), or one that
+// isn't what this page expects leaves what is there.
+(() => {
+  const PLANS_URL = "https://accounts.fleetd.dev/v1/plans";
+  const int = (n) => Number.isSafeInteger(n) && n >= 0;
+  const dollars = (cents) => "$" + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
+  const size = (s) => s.cpu + " CPU, " + s.memGb + " GB";
+  const sized = (s) => s && int(s.cpu) && int(s.memGb);
+  const put = (root, f, text) => root.querySelectorAll('[data-f="' + f + '"]').forEach((el) => { el.textContent = text; });
+  const fill = (d) => {
+    if (!d || d.currency !== "usd") return;
+    const plans = Array.isArray(d.plans) ? d.plans.filter((p) => p && typeof p.key === "string") : [];
+    // A plan's largest size shows only when the plans differ in it; the same for all, the sizes table says it.
+    const largest = new Set(plans.filter((p) => sized(p.largest)).map((p) => size(p.largest)));
+    for (const p of plans) {
+      const el = document.querySelector('[data-plan="' + p.key + '"]');
+      if (!el) continue;
+      if (typeof p.name === "string" && p.name) put(el, "name", p.name);
+      if (int(p.priceCents)) put(el, "price", dollars(p.priceCents));
+      if (int(p.includedCents)) put(el, "included", dollars(p.includedCents));
+      if (int(p.agentsAtOnce)) put(el, "agents", String(p.agentsAtOnce));
+      const li = el.querySelector('[data-f="largest"]');
+      if (li && largest.size > 1 && sized(p.largest)) {
+        const words = document.createElement("span");
+        words.textContent = "Computers up to ";
+        li.replaceChildren(words, size(p.largest));
+        li.hidden = false;
+      }
+    }
+    const prices = plans.map((p) => p.priceCents).filter(int);
+    if (prices.length) put(document, "from", dollars(Math.min(...prices)));
+    const c = d.credits || {};
+    if (int(c.minCents)) put(document, "credits-min", dollars(c.minCents));
+    if (int(c.months)) put(document, "credits-months", String(c.months));
+    if (int(c.agentsAtOnce)) put(document, "credits-agents", String(c.agentsAtOnce));
+    const sizes = Array.isArray(d.sizes) ? d.sizes.filter((s) => sized(s) && int(s.centsPerHour)) : [];
+    if (sizes.length) {
+      const rows = sizes.map((s) => {
+        const tr = document.createElement("tr");
+        const th = document.createElement("th");
+        th.scope = "row";
+        th.textContent = size(s);
+        const td = document.createElement("td");
+        td.className = "num";
+        td.textContent = "$" + (s.centsPerHour / 100).toFixed(2);
+        tr.append(th, td);
+        return tr;
+      });
+      document.getElementById("sizes").replaceChildren(...rows);
+    }
+  };
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 4000);
+  fetch(PLANS_URL, { signal: stop.signal, credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then(fill, () => {})
+    .catch(() => {});
+})();
+
 (() => {
   const buttons = [...document.querySelectorAll("[data-theme-set]")];
   const show = () => { const t = fleetdTheme.get(); buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
