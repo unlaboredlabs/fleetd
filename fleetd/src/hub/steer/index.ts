@@ -60,8 +60,12 @@ export type SteerTasks = {
   askedAt(taskId: string): number | undefined;
   /** Its lead or a person wrote to it: that answers its question. */
   answered(taskId: string): void;
-  /** Whether the task keeps a wait_ci open. */
-  hasCiWait(taskId: string): boolean;
+  /** An ended task that still waits (its wait_ci, a Monitor) is woken by other agents' messages, batched: a wake is
+   * due for it (if one isn't yet), and this says what it waits on and in how many ms the wake goes. Undefined: it
+   * waits on nothing, and isn't woken (tasks `waitingOn`, `wakeHeld`). */
+  wakeWaiting(taskId: string): { on: string; inMs: number } | undefined;
+  /** Whether a message wake is due for the task. */
+  wakeDue(taskId: string): boolean;
   /** Why the ended task can't run again (its order closed): the line and its fix (tasks `closedOrder`). */
   closedOrder(taskId: string): [string, string] | undefined;
 };
@@ -78,7 +82,8 @@ export const steerTasks = (hub: Hub) =>
     },
     askedAt: () => undefined,
     answered: () => {},
-    hasCiWait: () => false,
+    wakeWaiting: () => undefined,
+    wakeDue: () => false,
     closedOrder: () => undefined,
   }));
 
@@ -202,20 +207,22 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
   if (by.kind === "human" && to.task) tellLead(hub, steer, to.task);
   const body = message(hub, steer, to, by, req);
   steers.keepMessage(hub.db, steer.id, body);
-  // An agent never starts another's run: one that has ended keeps the message for a run something else starts (a
-  // Monitor or wait_ci of its own, its lead), unless it waits for an answer, which this may be.
+  // An agent never starts the run of one that has ended for good: it keeps the message for a run something else starts
+  // (its lead), unless it waits for an answer, which this may be. One that still waits (a wait_ci or Monitor of its
+  // own) is woken with it, together with whatever else agents send it within the wake's batch.
   const seam = steerTasks(hub);
   if (by.kind === "agent" && to.task && ["done", "failed", "idle"].includes(to.task.state) && seam.askedAt(to.task.taskId) === undefined) {
     const id = to.task.taskId;
-    steer = {
-      ...steer,
-      detail: seam.hasCiWait(id)
-        ? `${id} has finished and waits on wait_ci: it gets this when that wakes it`
-        : `${id} has finished and isn't waiting on ${by.from.taskId}: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it`,
-    };
-    steers.put(hub.db, steer);
     steers.hold(hub.db, steer.id, body);
     await seam.holdMessage(id, body);
+    const wake = seam.wakeWaiting(id);
+    steer = {
+      ...steer,
+      detail: wake
+        ? `${id} has finished but waits on ${wake.on}: this wakes it within ${Math.ceil(wake.inMs / 1000)} s, together with what else is sent to it by then, and its wait stays armed`
+        : `${id} has finished and waits on nothing: it gets this only if its lead continues it`,
+    };
+    steers.put(hub.db, steer);
     return steers.get(hub.db, steer.id)?.steer ?? steer;
   }
   // A task that is not running gets it with its next run: held until then, and sent tagged with that run.
