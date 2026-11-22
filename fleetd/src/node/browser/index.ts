@@ -23,7 +23,7 @@
 // A session on a fresh profile outlives the node where the machine can hold its Chrome (held.ts): as the node stops
 // (an update, a restart) it lets go of it, and the next node takes it over from its snapshot, the agent's browser as
 // it was. A lead's, on its project's kept profile, runs on the node's own pipe and ends with the node, as one that
-// can't be held does; the agent is told why at its next command.
+// can't be held does; the agent is told why at its next command, by the next node too (`browser/ended.json`).
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
@@ -40,7 +40,7 @@ import {
   writePolicyText,
 } from "./agent_browser.ts";
 import { type BrokerHost, BrowserBroker, type BrowserSnapshot } from "./broker.ts";
-import { canHold, dropHeld, heldRoot, keepSnapshot, launchHeld, leftHeld, localBox } from "./held.ts";
+import { canHold, dropHeld, heldRoot, keepSnapshot, launchHeld, leftHeld, localBox, proven, readEnded, writeEnded } from "./held.ts";
 import type { ScreenBox } from "../place/box_chrome.ts";
 import { vaultFor } from "./onepassword.ts";
 import { loadOrCreateBoxKey, type NodeBoxKey } from "../identity.ts";
@@ -120,6 +120,22 @@ export class Broker extends BrowserBroker {
     if (launcher) this.install = { kind: "ready", pool: new Pool((_sandboxed, kept, extra) => launcher(kept, extra), options.warm ?? 0) };
     // The hub's runner launches no Chrome of its own: its agents' browsers run in their boxes.
     this.warmSize = options.warm ?? (node.config.runner === true ? 0 : 1);
+    // A held Chrome dialled again counts only once it proves it is its folder's own (held.ts `proven`).
+    const reattach = this.reattach;
+    this.reattach = async (box, handle, firstId, ms) => {
+      const again = await reattach(box, handle, firstId, ms);
+      return this.isHeld(handle.dir) ? proven(again, handle.dir) : again;
+    };
+    for (const [thread, e] of readEnded(this.home)) this.endedFor.set(thread, e);
+  }
+
+  private isHeld(dir: string): boolean {
+    return dir.startsWith(`${heldRoot(this.home)}/`);
+  }
+
+  /** Why each agent session's last browser session ended under it, kept on disk: the next node tells the agent too. */
+  protected override endedChanged(): void {
+    writeEnded(this.home, this.endedFor);
   }
 
   /** The Chrome node.json names (`browser.chrome`, `FLEETD_CHROME`), else the node's pinned install's. */
@@ -283,7 +299,7 @@ export class Broker extends BrowserBroker {
 
   /** A browser held past the node is reached on this machine's loopback, as a box's is in its box. */
   protected override boxOf(browser: Launched): ScreenBox | undefined {
-    return browser.handle?.dir.startsWith(`${heldRoot(this.home)}/`) ? localBox : undefined;
+    return browser.handle && this.isHeld(browser.handle.dir) ? localBox : undefined;
   }
 
   /** Keeps the snapshot of the agent session's held browser session beside its Chrome, sealed to this node's box key,
@@ -304,7 +320,9 @@ export class Broker extends BrowserBroker {
    * gone meanwhile, ends with a plain note the agent is told. What no session holds goes.
    */
   async resumeHeld(): Promise<void> {
-    // Listed now, before the pool's first launch (prepare) puts a Chrome of this node's there.
+    // Listed now, before the pool's first launch (prepare) puts a Chrome of this node's there; and each agent whose
+    // session is to be taken over is told so meanwhile, rather than to start a new one.
+    const left: { dir: string; thread: string; snapshot: BrowserSnapshot }[] = [];
     for (const { dir, sealed } of leftHeld(this.home)) {
       const opened = sealed && this.boxKey().open(sealed);
       let snapshot: BrowserSnapshot | undefined;
@@ -312,17 +330,25 @@ export class Broker extends BrowserBroker {
         snapshot = opened ? (JSON.parse(new TextDecoder().decode(opened)) as BrowserSnapshot) : undefined;
       } catch {}
       const thread = snapshot?.session?.threadId;
-      if (!snapshot || !thread || snapshot.handle?.dir !== dir) {
-        dropHeld(dir);
-        continue;
+      if (!snapshot || !thread || snapshot.handle?.dir !== dir) dropHeld(dir);
+      else {
+        left.push({ dir, thread, snapshot });
+        this.takingOver.add(thread);
       }
+    }
+    for (const { dir, thread, snapshot } of left) {
+      let why: string;
       try {
         const taken = await this.adopt(thread, snapshot, localBox);
         if (taken.adopted) continue;
-        console.warn(`${new Date().toISOString()} WARN a browser session didn't outlive the node's restart {"sessionId":${JSON.stringify(snapshot.session.id)},"why":${JSON.stringify(taken.note)}}`);
+        why = taken.note;
       } catch (e) {
-        console.warn(`${new Date().toISOString()} WARN a browser session wasn't taken over {"sessionId":${JSON.stringify(snapshot.session.id)},"error":${JSON.stringify((e as Error).message)}}`);
+        why = `it wasn't taken over after the node restarted: ${(e as Error).message}`;
+        this.setEnded(thread, { sessionId: snapshot.session.id, at: new Date().toISOString(), why });
+      } finally {
+        this.takingOver.delete(thread);
       }
+      console.warn(`${new Date().toISOString()} WARN a browser session didn't outlive the node's restart {"sessionId":${JSON.stringify(snapshot.session.id)},"why":${JSON.stringify(why)}}`);
       dropHeld(dir);
     }
   }

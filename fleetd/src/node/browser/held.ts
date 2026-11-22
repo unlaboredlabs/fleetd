@@ -9,6 +9,11 @@
 // browser, signed in as it was. One no node dials again within GRACE_MS goes by itself, its launcher's whole session
 // with it; the next node clears what it left.
 //
+// The port is on the machine's shared loopback, where another held Chrome's socat may wait for its next node, or
+// anything else may listen. So a connection counts only once the Chrome that answers proves it is the folder's own:
+// its browser process runs in the process session of that folder's launcher (`proven`). Anything else is dropped before
+// a command of the session's goes to it, and a launch that met one tries again on another port.
+//
 // Where socat or mkfifo is missing (a Mac, a bare Linux), the node's Chrome runs on its own pipe as before, and its
 // sessions end as the node stops, the agent told why.
 import { type ChildProcess, spawn } from "node:child_process";
@@ -19,6 +24,7 @@ import type { Duplex } from "node:stream";
 import { agentSpawn } from "../oom.ts";
 import { boxChrome, hex, type KeptBox } from "../place/box_chrome.ts";
 import { current as currentScope, hostScope, spawnScoped } from "../runner/scope.ts";
+import type { Ended } from "./broker.ts";
 import type { Launched } from "./launch_args.ts";
 
 /** How long a held Chrome waits for the next node once the last one let go: a restart takes some 15 s. */
@@ -69,6 +75,16 @@ async function startOutside(script: string, pidFile: string): Promise<ChildProce
 /** A fresh Chrome held past the node, on a throwaway profile in its folder under `home`, with Chrome's sandbox when
  * `sandboxed`, and `extra` flags. */
 export async function launchHeld(home: string, chrome: string, sandboxed: boolean, extra: string[] = []): Promise<Launched> {
+  for (let tries = 1; ; tries++) {
+    try {
+      return await launchOnce(home, chrome, sandboxed, extra);
+    } catch (e) {
+      if (!(e instanceof NotItsOwn) || tries >= 3) throw e;
+    }
+  }
+}
+
+async function launchOnce(home: string, chrome: string, sandboxed: boolean, extra: string[]): Promise<Launched> {
   const dir = join(heldRoot(home), `chrome-${hex(6)}`);
   mkdirSync(join(dir, "tmp"), { recursive: true, mode: 0o700 });
   // A Chrome that exits at once (its sandbox refused here) takes its launcher with it: said now, not after the dial's
@@ -87,7 +103,53 @@ export async function launchHeld(home: string, chrome: string, sandboxed: boolea
   const start = async (script: string, pidFile: string) => void (await startOutside(script, pidFile)).once("exit", () => exited());
   const launched = boxChrome(localBox, extra, { dir, chrome, sandboxed, graceMs: GRACE_MS, start });
   launched.catch(() => {});
-  return Promise.race([launched, gone]);
+  const up = await Promise.race([launched, gone]);
+  try {
+    return await proven(up, dir);
+  } catch (e) {
+    dropHeld(dir);
+    throw e;
+  }
+}
+
+/** A connection that reached a Chrome other than its folder's own. */
+export class NotItsOwn extends Error {
+  constructor() {
+    super("another browser answered on its port");
+  }
+}
+
+/** The process session of process `pid`, from `/proc` (Linux) or `ps`; undefined where it can't be read. */
+function sessionOf(pid: number): number | undefined {
+  try {
+    if (process.platform === "linux") {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      // `pid (comm) state ppid pgrp session …`, and comm may hold a `)`.
+      return Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[3]);
+    }
+    const out = Bun.spawnSync(["ps", "-o", "sess=", "-p", String(pid)]).stdout.toString().trim();
+    return out ? Number(out) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `launched`, once the Chrome that answered on it proves it is the one held at `dir`: its browser process in the process
+ * session of `dir`'s launcher. Any other (another agent's held Chrome, signed in, or anything listening on that port)
+ * is dropped before a command of the session's goes to it, and `NotItsOwn` thrown.
+ */
+export async function proven(launched: Launched, dir: string): Promise<Launched> {
+  let browser: number | undefined;
+  let launcher = 0;
+  try {
+    const info = (await launched.cdp.call(undefined, "SystemInfo.getProcessInfo")) as { processInfo?: { type: string; id: number }[] };
+    browser = info.processInfo?.find((p) => p.type === "browser")?.id;
+    launcher = Number(readFileSync(join(dir, "session.pid"), "utf8").trim());
+  } catch {}
+  if (browser !== undefined && launcher > 1 && sessionOf(browser) === launcher) return launched;
+  launched.cdp.shut();
+  throw new NotItsOwn();
 }
 
 /** Keeps the snapshot of the session whose Chrome is held at `dir`, sealed, for the next node. */
@@ -126,4 +188,32 @@ export function dropHeld(dir: string): void {
     if (Number.isInteger(pid) && pid > 1 && ours) process.kill(-pid, "SIGKILL");
   } catch {}
   rmSync(dir, { recursive: true, force: true });
+}
+
+/** How long the next node keeps telling an agent why its session ended. */
+const ENDED_KEPT_MS = 24 * 60 * 60_000;
+const endedPath = (home: string) => join(home, "browser", "ended.json");
+
+/** Why each agent session's last browser session ended under it, as a node before kept it, a day at most. */
+export function readEnded(home: string, now = Date.now()): [string, Ended][] {
+  try {
+    const kept = JSON.parse(readFileSync(endedPath(home), "utf8")) as Record<string, Ended>;
+    return Object.entries(kept).filter(([, e]) => typeof e?.why === "string" && now - Date.parse(e.at) < ENDED_KEPT_MS);
+  } catch {
+    return [];
+  }
+}
+
+/** Keeps `ended` for the next node. */
+export function writeEnded(home: string, ended: Map<string, Ended>): void {
+  try {
+    const path = endedPath(home);
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const now = Date.now();
+    const kept = [...ended].filter(([, e]) => now - Date.parse(e.at) < ENDED_KEPT_MS);
+    writeFileSync(`${path}.next`, JSON.stringify(Object.fromEntries(kept)), { mode: 0o600 });
+    renameSync(`${path}.next`, path);
+  } catch (e) {
+    console.warn(`${new Date().toISOString()} WARN why browser sessions ended was not kept {"error":${JSON.stringify((e as Error).message)}}`);
+  }
 }

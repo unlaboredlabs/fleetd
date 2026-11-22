@@ -3,10 +3,14 @@
 // it was, and the agent's driver reaches it at the same address. Two nodes on one home stand in for the node before
 // and after the restart.
 import { afterEach, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Cdp, type Transport } from "../src/node/browser/cdp.ts";
 import { stopAreas } from "../src/node/areas.ts";
 import { findChrome } from "../src/node/browser/chrome.ts";
-import { canHold, dropHeld, heldRoot, leftHeld } from "../src/node/browser/held.ts";
+import { canHold, dropHeld, heldRoot, launchHeld, leftHeld, localBox, NotItsOwn, proven } from "../src/node/browser/held.ts";
 import { Broker, start } from "../src/node/browser/index.ts";
 import { playwrightDirs } from "./browser_rig.ts";
 import { tempHome } from "./helpers.ts";
@@ -100,3 +104,61 @@ test.skipIf(!chrome || !canHold())(
   },
   60_000,
 );
+
+/** A browser that answers SystemInfo.getProcessInfo with `pid` as its browser process, and is shut or not. */
+function answering(pid: number): { cdp: Cdp; shut: () => boolean } {
+  let deliver: (text: string) => void = () => {};
+  let closed = false;
+  const transport: Transport = {
+    send(text) {
+      const m = JSON.parse(text) as { id: number };
+      queueMicrotask(() => deliver(JSON.stringify({ id: m.id, result: { processInfo: [{ type: "renderer", id: 1 }, { type: "browser", id: pid }] } })));
+      return true;
+    },
+    onMessage: (fn) => (deliver = fn),
+    onClose: () => {},
+    close: () => void (closed = true),
+  };
+  return { cdp: new Cdp(transport), shut: () => closed };
+}
+
+test("a held Chrome's connection counts only once the Chrome proves it is its folder's own, never another's on the port", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "held-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  // Its launcher: a process session of its own, as held.ts starts one, and a process in it standing in for Chrome.
+  const launcher = spawn("/bin/sh", ["-c", "sleep 30 & echo $! > child.pid; wait"], { cwd: dir, detached: true, stdio: "ignore" });
+  cleanups.push(() => void process.kill(-launcher.pid!, "SIGKILL"));
+  writeFileSync(join(dir, "session.pid"), `${launcher.pid}\n`);
+  for (const end = Date.now() + 5_000; !existsSync(join(dir, "child.pid")) && Date.now() < end; ) await Bun.sleep(10);
+  const ownChrome = Number(await Bun.file(join(dir, "child.pid")).text());
+
+  const own = answering(ownChrome);
+  expect(await proven({ cdp: own.cdp }, dir)).toMatchObject({ cdp: own.cdp });
+  expect(own.shut()).toBe(false);
+  // Another Chrome answered on the port (another agent's, waiting for its next node; this test's own process here):
+  // dropped before anything of the session's goes to it.
+  const other = answering(process.pid);
+  await expect(proven({ cdp: other.cdp }, dir)).rejects.toBeInstanceOf(NotItsOwn);
+  expect(other.shut()).toBe(true);
+  // One that won't say which process it is counts as another.
+  const silent = answering(0);
+  await expect(proven({ cdp: silent.cdp }, dir)).rejects.toBeInstanceOf(NotItsOwn);
+});
+
+test.skipIf(!chrome || !canHold())("a real held Chrome dialled on another held Chrome's port is refused; on its own, taken", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  cleanups.push(() => {
+    for (const { dir } of leftHeld(home.dir)) dropHeld(dir);
+  });
+  const { broker } = nodeOn(home.dir);
+  const a = await launchHeld(home.dir, chrome!, false);
+  const b = await launchHeld(home.dir, chrome!, false);
+  // A lets go, as a node stops: its socat waits on its port for the next connection.
+  a.cdp.shut();
+  await expect(broker.reattach(localBox, { dir: b.handle!.dir, port: a.handle!.port }, 1_000)).rejects.toThrow("another browser answered on its port");
+  const again = await broker.reattach(localBox, a.handle!, 2_000);
+  expect(again.cdp.isClosed()).toBe(false);
+  await again.close!();
+  await b.close!();
+}, 60_000);

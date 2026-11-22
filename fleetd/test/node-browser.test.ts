@@ -6,6 +6,7 @@ import { findChrome } from "../src/node/browser/chrome.ts";
 import { AGENT_BROWSER_METHODS, cssPlain, refusal, revealingSelector } from "../src/node/browser/guard.ts";
 import { Broker, start } from "../src/node/browser/index.ts";
 import { findFfmpeg, readMeta, recordingsDir, VideoSink } from "../src/node/browser/record.ts";
+import { TAKING_OVER } from "../src/node/browser/broker.ts";
 import { NO_SESSION } from "../src/node/browser/cdp_proxy.ts";
 import { Proxy } from "../src/node/browser/proxy.ts";
 import { PAUSED, cdpInput } from "../src/node/browser/session.ts";
@@ -393,14 +394,40 @@ test("any agent-browser command keeps a session from idling out, however it ran;
   await expect(local.call("session_end", {}, "t7")).rejects.toThrow(/^No browser session is open\.$/);
 });
 
-test("stopping a node whose browsers run on its own pipe tells each agent why its session ended", async () => {
+test("a node that stops with browsers on its own pipe: the next node tells each agent why its session ended", async () => {
   const { stopAreas } = await import("../src/node/areas.ts");
   const t = testNode();
-  const broker = start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
   cleanups.push(t.done);
-  await t.local.call("session_start", { purpose: "look" }, "t8");
+  start(t.node, new Broker(t.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  const started = (await t.local.call("session_start", { purpose: "look" }, "t8")) as { sessionId: string; cdp: string };
   await stopAreas(t.node);
-  await expect(broker.call("t8", { id: "1", cwd: "/", call: { op: "session_end" } as never })).rejects.toThrow("UTC: this machine's fleetd node stopped.");
+  // The node after the restart, on the same home: a process that never saw the session.
+  const next = testNode("devbox", {}, t.node.home);
+  const broker = start(next.node, new Broker(next.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(() => broker.shutdown());
+  const why = `Your browser session ${started.sessionId} ended at `;
+  const d = await driver(started.cdp);
+  const told = (await d.call(1, "Target.setDiscoverTargets", { discover: true })) as { error: { message: string } };
+  expect(told.error.message).toStartWith(why);
+  expect(told.error.message).toEndWith(" UTC: this machine's fleetd node stopped. Start a new one with session_start.");
+  await expect(next.local.call("session_end", {}, "t8")).rejects.toThrow(why);
+  // A new session clears it, for this node and the next.
+  await next.local.call("session_start", { purpose: "look again" }, "t8");
+  await next.local.call("session_end", {}, "t8");
+  await expect(next.local.call("session_end", {}, "t8")).rejects.toThrow(/^No browser session is open\.$/);
+  const third = testNode("devbox", {}, t.node.home);
+  const after = start(third.node, new Broker(third.node, async () => ({ cdp: new Cdp(fakeBrowser()) })));
+  cleanups.push(() => after.shutdown());
+  await expect(third.local.call("session_end", {}, "t8")).rejects.toThrow(/^No browser session is open\.$/);
+});
+
+test("while a restarted node takes a session over, the agent is told to try again in a moment, not to start another", async () => {
+  const { broker, local } = nodeWith(async () => ({ cdp: new Cdp(fakeBrowser()) }));
+  (broker as unknown as { takingOver: Set<string> }).takingOver.add("t10");
+  const d = await driver(broker.proxy.url("t10"));
+  expect(await d.call(1, "Target.setDiscoverTargets", { discover: true })).toMatchObject({ error: { message: TAKING_OVER } });
+  await expect(local.call("session_start", { purpose: "look" }, "t10")).rejects.toThrow(TAKING_OVER);
+  await expect(local.call("session_end", {}, "t10")).rejects.toThrow(TAKING_OVER);
 });
 
 

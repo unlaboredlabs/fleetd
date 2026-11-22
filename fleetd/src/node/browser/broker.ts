@@ -140,7 +140,10 @@ export const goneNote = (why: string) => `the browser in the box went: ${why}`;
 const heldGoneNote = (why: string) => `the browser went: ${why}`;
 
 /** How a session ended other than by its agent's session_end: when, and why in plain words. */
-type Ended = { sessionId: string; at: string; why: string };
+export type Ended = { sessionId: string; at: string; why: string };
+
+/** What the agent is told while its session is being taken over (a restarted node's, from the node before). */
+export const TAKING_OVER = "Your browser session is being taken over after this machine's fleetd node restarted: try again in a moment.";
 
 /** What the agent is told of a session that ended under it: at its next browser command, or its session_end. */
 export const endedNote = (e: Ended) =>
@@ -200,6 +203,7 @@ export class BrowserBroker {
       remote: (thread) => this.remote?.(thread),
       gone: (thread) => this.gone?.(thread),
       ended: (thread) => {
+        if (this.takingOver.has(thread)) return TAKING_OVER;
         const e = this.endedFor.get(thread);
         return e && endedNote(e);
       },
@@ -265,9 +269,10 @@ export class BrowserBroker {
         "use it, or end it with session_end before starting another",
       );
     }
+    if (this.takingOver.has(thread)) throw new ToolError("invalid", TAKING_OVER, "use it in a moment, with no session_start");
     if (this.starting.has(thread)) throw new ToolError("invalid", "Your browser session is starting already.", "wait for it");
     this.starting.add(thread);
-    this.endedFor.delete(thread);
+    this.setEnded(thread, undefined);
     try {
       const boxed = this.boxed?.(thread);
       if (boxed === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
@@ -452,8 +457,7 @@ export class BrowserBroker {
     if (!open) throw this.noSession(thread);
     this.sessions.delete(thread);
     const { session } = open;
-    if (note) this.endedFor.set(thread, { sessionId: session.id, at: new Date().toISOString(), why: note });
-    else this.endedFor.delete(thread);
+    this.setEnded(thread, note ? { sessionId: session.id, at: new Date().toISOString(), why: note } : undefined);
     // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until it is.
     this.ending.add(session.id);
     try {
@@ -468,16 +472,31 @@ export class BrowserBroker {
    * over: not yet a recording to send, nor one a stopped node left. */
   private readonly ending = new Set<string>();
 
-  /** The last session of each agent session that ended under it (`end`'s note), until its next session_start. */
-  private readonly endedFor = new Map<string, Ended>();
+  /** The last session of each agent session that ended under it (`end`'s note), until its next session_start: kept
+   * where the broker runs says (`endedChanged`), so a node that restarts still tells the agent. */
+  protected readonly endedFor = new Map<string, Ended>();
+
+  /** The agent sessions whose browser session is about to be taken over (a restarted node's, from the node before). */
+  protected readonly takingOver = new Set<string>();
+
+  protected setEnded(thread: string, e: Ended | undefined): void {
+    if (e) this.endedFor.set(thread, e);
+    else if (!this.endedFor.delete(thread)) return;
+    this.endedChanged();
+  }
+
+  /** `endedFor` changed: the node keeps it on disk. */
+  protected endedChanged(): void {}
 
   /** The refusal of a browser call with no session open: why the last one ended, when one ended under the agent. */
   noSession(thread: string): ToolError {
     return this.endedRefusal(thread) ?? new ToolError("not_found", "No browser session is open.", "start one with session_start");
   }
 
-  /** Why the agent session's last browser session ended under it, as a browser call's refusal; none if none did. */
+  /** Why the agent session's last browser session ended under it, as a browser call's refusal (or that it is being
+   * taken over); none if none did. */
   endedRefusal(thread: string): ToolError | undefined {
+    if (this.takingOver.has(thread)) return new ToolError("invalid", TAKING_OVER, "try again in a moment");
     const e = this.endedFor.get(thread);
     return e && new ToolError("not_found", endedNote(e), "start a new one with session_start");
   }
@@ -646,7 +665,7 @@ export class BrowserBroker {
     if (!open) return;
     open.session.stepAt("agent_session_ended", {}, true, undefined, 0);
     void this.end(thread, "its agent's session ended").catch(() => {});
-    this.endedFor.delete(thread);
+    this.setEnded(thread, undefined);
   }
 
   private housekeepingNow = false;
@@ -837,7 +856,7 @@ export class BrowserBroker {
       session.recording = { to: recording, steps: this.steps_ };
       session.stepAt("browser_gone", { why }, false, undefined, 0);
       await recording.end({ endedAt: new Date().toISOString(), credentialsFilled: session.credentialsFilled, note }, session.scrub(), session.offsetMs());
-      this.endedFor.set(thread, { sessionId: session.id, at: new Date().toISOString(), why: note });
+      this.setEnded(thread, { sessionId: session.id, at: new Date().toISOString(), why: note });
       this.host.changed?.(thread);
       return { adopted: false, note };
     }
