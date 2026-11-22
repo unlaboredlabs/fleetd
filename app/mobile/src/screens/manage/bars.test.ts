@@ -1,7 +1,7 @@
-// A pushed page's or a sheet's bar on iOS 26 has no ground of its own: the grouped page runs under it and iOS's edge
-// effect blurs what scrolls there. An opaque bar took the system's white ground, a white band over every small-title
-// page and sheet's grey (Info, Devices, New Bot, Icon, New Screen), seen on the agents' Mac's simulator (W801). So each
-// such screen keeps its scroll view clear of the bar by its automatic insets, or takes an opaque bar on its own ground.
+// A pushed page's or a sheet's bar stands on the page's own ground, on iOS too. Left to iOS, an opaque bar took the
+// system's white: a white band over every small-title page and sheet's grey (Info, Devices, New Bot, Icon, New
+// Screen), seen on the agents' Mac's simulator (W801). A bar with no ground instead would lay each page out under it,
+// where a page's spinner, error or web view, in no scroll view kept clear of it, would hide.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -12,32 +12,22 @@ const files = (dir: string): string[] =>
 const sources = [join(ROOT, "App.tsx"), ...files(join(ROOT, "src"))].map((path) => readFileSync(path, "utf8"));
 const bars = readFileSync(join(import.meta.dirname, "index.tsx"), "utf8");
 
-/** Each `<X.Screen name=… component={C} … options=… pushed(…)|sheet(…) …>` line: its component and its options. */
-const barred = sources.flatMap((src) =>
-  [...src.matchAll(/<\w+\.Screen name="\w+" component=\{(\w+)\}[^\n]*?options=([^\n]*)/gu)]
-    .filter((m) => /\b(pushed|sheet)\(t,/u.test(m[2]!))
-    .map((m) => ({ component: m[1]!, options: m[2]! })),
-);
-const sourceOf = (component: string): string | undefined => sources.find((src) => new RegExp(`export function ${component}\\(`, "u").test(src));
+/** Each `<X.Screen … options=… pushed(…)|sheet(…) …>` line's options. */
+const barred = sources.flatMap((src) => [...src.matchAll(/<\w+\.Screen name="\w+"[^\n]*?options=([^\n]*)/gu)].map((m) => m[1]!).filter((o) => /\b(pushed|sheet)\(t,/u.test(o)));
 
-describe("a pushed page's and a sheet's bar on iOS", () => {
-  it("has no ground of its own", () => {
+describe("a pushed page's and a sheet's bar", () => {
+  it("stands on the page's own ground on every platform, its large title's too", () => {
     for (const name of ["sheet", "pushed"]) {
       const body = new RegExp(`export const ${name} = [^]*?\\n\\}\\);`, "u").exec(bars)?.[0] ?? "";
-      expect(body).toContain('Platform.OS === "ios" ? { headerTransparent: true }');
+      expect(body).toContain("headerStyle: { backgroundColor: t.grouped },");
+      expect(body).toContain("headerLargeStyle: { backgroundColor: t.grouped },");
+      expect(body).not.toMatch(/Platform\.OS|headerTransparent/u);
     }
   });
 
-  it("never covers a screen: each keeps its scroll view clear by its automatic insets, or takes an opaque bar on its ground", () => {
+  it("never lays a page out under it", () => {
     expect(barred.length).toBeGreaterThan(30);
-    for (const { component, options } of barred) {
-      const src = sourceOf(component);
-      expect(src, component).toBeDefined();
-      const clear = src!.includes('contentInsetAdjustmentBehavior="automatic"');
-      const opaque = /headerTransparent: false, headerStyle: \{ backgroundColor: t\.grouped \}/u.test(options);
-      expect(clear || opaque, component).toBe(true);
-    }
-    expect(barred.find((b) => b.component === "SkillEdit")?.options).toContain("headerTransparent: false");
+    for (const options of barred) expect(options).not.toContain("headerTransparent: true");
   });
 });
 

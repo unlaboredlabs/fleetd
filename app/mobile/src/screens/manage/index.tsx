@@ -47,10 +47,12 @@ export const sheet = (t: Palette, title: string): NativeStackNavigationOptions =
   headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
-  // iOS 26's bar has no ground of its own: the page runs under it, its scroll view kept clear by its automatic insets,
-  // and what scrolls under it is blurred by iOS's own edge effect. An opaque bar took the system's white ground, a
-  // white band over the grey page. Its glyphs in the label's ink; elsewhere, the page's ground.
-  ...(Platform.OS === "ios" ? { headerTransparent: true } : { headerStyle: { backgroundColor: t.grouped } }),
+  // The bar on the page's own ground, on iOS too: left to iOS, an opaque bar takes the system's white, a white band
+  // over the grey page (seen on the agents' Mac's simulator). A bar with no ground would lay every page out under it,
+  // and a page's spinner, error or web view isn't in a scroll view that keeps clear of it. Its glyphs in the label's ink.
+  headerStyle: { backgroundColor: t.grouped },
+  // The large title's too, which iOS draws from the scroll edge's look while the title is expanded.
+  headerLargeStyle: { backgroundColor: t.grouped },
   contentStyle: { backgroundColor: t.grouped },
 });
 
@@ -62,7 +64,8 @@ export const pushed = (t: Palette, title: string): NativeStackNavigationOptions 
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
   // The bar as a sheet's.
-  ...(Platform.OS === "ios" ? { headerTransparent: true } : { headerStyle: { backgroundColor: t.grouped } }),
+  headerStyle: { backgroundColor: t.grouped },
+  headerLargeStyle: { backgroundColor: t.grouped },
   contentStyle: { backgroundColor: t.grouped },
 });
 
@@ -132,8 +135,7 @@ function ChatInfo() {
       <InfoStack.Screen name="Payments" component={Payments} options={pushed(t, "Payments")} />
       <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />
       <InfoStack.Screen name="Skill" component={Skill} options={pushed(t, "")} />
-      {/* It doesn't scroll, so nothing would keep it out from under a bar with no ground: the bar takes the page's. */}
-      <InfoStack.Screen name="SkillEdit" component={SkillEdit} layout={sheetRoom} options={({ route }) => ({ ...sheet(t, route.params.name), headerTransparent: false, headerStyle: { backgroundColor: t.grouped } })} />
+      <InfoStack.Screen name="SkillEdit" component={SkillEdit} layout={sheetRoom} options={({ route }) => sheet(t, route.params.name)} />
       <InfoStack.Screen name="SkillHistory" component={SkillHistory} options={pushed(t, "History")} />
       <InfoStack.Screen name="SkillVersion" component={SkillVersion} options={({ route }) => pushed(t, `Version ${String(route.params.version)}`)} />
       <InfoStack.Screen name="Artifacts" component={Artifacts} options={pushed(t, "Artifacts")} />
