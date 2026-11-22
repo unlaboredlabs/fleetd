@@ -74,14 +74,14 @@ test("the login prints its sign-in URL, takes the code it showed, and answers it
       process.stdin.on("data", (d) => { got += d.toString(); if (got.includes("\\r")) { const code = got.trim();
         process.stdout.write(code === "good-code" ? "\\nLogin successful for good-code.\\n" : "\\nInvalid code\\n"); process.exit(code === "good-code" ? 0 : 1); } });`,
     );
-    const bin = join(home.dir, "fake-login");
+    const bin = join(home.dir, "claude");
     writeFileSync(bin, `#!/bin/sh\n[ "$1 $2" = "auth login" ] || exit 2\nexec '${process.execPath}' '${script}'\n`);
     chmodSync(bin, 0o755);
     const logins = new Logins(10_000);
-    const url = await logins.start(bin, { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home.dir });
+    const url = await logins.start([bin, "auth", "login"], { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home.dir });
     expect(url).toBe("https://claude.ai/oauth/authorize?code=true&x=1");
     expect(await logins.finish("good-code")).toBe("Login successful for .");
-    await logins.start(bin, { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home.dir });
+    await logins.start([bin, "auth", "login"], { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home.dir });
     const failed = await logins.finish("bad").then(
       () => "ok",
       (e: Error) => e.message,

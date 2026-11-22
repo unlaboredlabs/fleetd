@@ -26,9 +26,9 @@ import { StreamMapper, systemNow, type Now } from "./mapper.ts";
 import { decodeLine } from "./protocol.ts";
 import { AcpDriver, type AcpSpec } from "./acp.ts";
 import { reap, SESSION_MARKER, sweep, sweepMarked, track, untrack } from "./reaper.ts";
+import { ACP_ENV } from "../antigravity_spec.ts";
 
-/** The file of an ACP session's spec (./acp.ts `AcpSpec`): set, the host speaks ACP to its agent. */
-export const ACP_ENV = "FLEETD_ACP";
+export { ACP_ENV };
 
 /** From SIGTERM to SIGKILL. */
 export const TERM_GRACE_MS = 5_000;
@@ -139,8 +139,8 @@ function acpDriver(specFile: string): Driver {
   return {
     start: () => acp.start(),
     line: (raw, now) => acp.line(raw, now),
-    send: (runId, text, mode) => acp.send(runId, text, mode),
-    stop: () => acp.stop(),
+    send: (runId, text, mode) => acp.send(runId, text, mode, systemNow()),
+    stop: () => acp.stop(systemNow()),
     withdraw: (runId) => acp.withdraw(runId),
     answer: (requestId, decision) => acp.answer(requestId, decision),
     hasOpenRun: () => acp.hasOpenRun(),

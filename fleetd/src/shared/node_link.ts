@@ -68,6 +68,8 @@ export const CAP_SESSION_DESKTOP = "session_linux_desktop";
 export const CAP_SELF_UPDATE = "self_update";
 export const CAP_CLAUDE_INSTALL = "claude_install";
 export const CAP_CLAUDE_LOGIN = "claude_login";
+/** `antigravity_login`: the node signs Antigravity in from the app (`agy acp --login`), and says whether it is. */
+export const CAP_ANTIGRAVITY_LOGIN = "antigravity_login";
 export const CAP_UPDATE_FETCH = "update_fetch";
 export const CAP_UPDATE_HOLD = "update_hold";
 export const CAP_SESSION_HOST = "session_host";
@@ -268,6 +270,8 @@ export type NodeActionKind =
   | "claude"
   | "claude_login"
   | "claude_login_code"
+  | "antigravity_login"
+  | "antigravity_login_code"
   | "hold"
   | "sandbox_check"
   | "sandbox_limits"
@@ -332,6 +336,8 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
+  /** `antigravity_login`, `antigravity_login_code`: the machine's Antigravity is signed in, on this plan ("Google AI Pro"). */
+  signed_in?: string;
   /** `sandbox_check` that failed: why, as SandboxCheck's `reason`. */
   reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */

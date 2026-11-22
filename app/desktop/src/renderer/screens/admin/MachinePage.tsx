@@ -40,6 +40,147 @@ const noInput = {};
 
 const toList = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
 
+/** A sign-in started on a machine: the page to open on this device (Open, Copy), and the code it shows. */
+function SignInForm(props: {
+  url: string;
+  /** Whose account to sign in with: `the Claude account lab should use`. */
+  account: string;
+  code: string;
+  onCode: (code: string) => void;
+  finishing: boolean;
+  live: boolean;
+  /** The submit's words, at rest and while it runs. */
+  verb: [string, string];
+  onSubmit: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <form
+      className={a.loginForm}
+      aria-label="Sign in"
+      onSubmit={(e) => {
+        e.preventDefault();
+        props.onSubmit();
+      }}
+    >
+      <Text size="sm">{`Open this page and sign in with ${props.account}.`}</Text>
+      <div className={a.link}>
+        {/* An address, not words: held to the code rule, not the text one. */}
+        <span className={a.url} data-text="code">
+          <Truncate mono size="sm">
+            {props.url}
+          </Truncate>
+        </span>
+        <Button size="sm" onClick={() => openExternal(props.url)}>
+          Open
+        </Button>
+        <Button size="sm" variant="quiet" onClick={() => void copyText(props.url).then(setCopied)}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </div>
+      <Field label="The code the page shows">
+        <Input value={props.code} mono autoComplete="off" placeholder="Code" onChange={(e) => props.onCode(e.target.value)} disabled={props.finishing} />
+      </Field>
+      <span>
+        <Button type="submit" size="sm" variant="primary" disabled={props.code.trim() === "" || props.finishing || !props.live}>
+          {props.finishing ? props.verb[1] : props.verb[0]}
+        </Button>
+      </span>
+    </form>
+  );
+}
+
+type AgySignIn =
+  | { readonly step: "idle" }
+  | { readonly step: "starting" }
+  | { readonly step: "url"; readonly url: string }
+  | { readonly step: "finishing"; readonly url: string }
+  | { readonly step: "signed"; readonly plan: string };
+
+/**
+ * Google Antigravity's sign-in, for agents on Antigravity profiles: Sign in asks the machine (machine_antigravity_login),
+ * which says the plan it is signed in on, or starts `agy acp --login` (installing agy first where there is none) and
+ * answers the Google page to sign in at. The person opens it on this device and pastes the code it shows; only that
+ * code passes through the hub, once, and the sign-in stays on the machine.
+ */
+function AntigravityRow({ machineId }: { machineId: string }) {
+  const call = useHubCall();
+  const live = useLive();
+  const [sign, setSign] = useState<AgySignIn>({ step: "idle" });
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string>();
+
+  const start = () => {
+    setError(undefined);
+    setCode("");
+    setSign({ step: "starting" });
+    call("machine_antigravity_login", { machineId }, { timeoutMs: AGY_SIGN_IN_WAIT_MS }).then(
+      (out) => setSign(out.signedIn !== undefined ? { step: "signed", plan: out.signedIn } : out.loginUrl !== undefined ? { step: "url", url: out.loginUrl } : { step: "idle" }),
+      (e: unknown) => {
+        setError(errorText(e));
+        setSign({ step: "idle" });
+      },
+    );
+  };
+  const finish = (url: string) => {
+    if (code.trim() === "") return;
+    setError(undefined);
+    setSign({ step: "finishing", url });
+    call("machine_antigravity_login", { machineId, code: code.trim() }, { timeoutMs: MACHINE_WAIT_MS }).then(
+      (out) => {
+        setCode("");
+        setSign({ step: "signed", plan: out.signedIn ?? "Google" });
+      },
+      (e: unknown) => {
+        setError(errorText(e));
+        // A used or wrong code is spent: the sign-in has ended, so it starts again.
+        setSign({ step: "idle" });
+      },
+    );
+  };
+
+  const waiting = sign.step === "idle" || sign.step === "starting";
+  return (
+    <SettingsRow
+      title="Google Antigravity"
+      line={
+        error !== undefined ? (
+          <span role="alert">{error}</span>
+        ) : sign.step === "signed" ? (
+          `Signed in · ${sign.plan}`
+        ) : !live && waiting ? (
+          "Not connected to the hub."
+        ) : undefined
+      }
+      lineTone={error === undefined ? "quiet" : "danger"}
+      control={
+        waiting ? (
+          <Button size="sm" disabled={!live || sign.step === "starting"} onClick={start}>
+            {sign.step === "starting" ? "Checking…" : error === undefined ? "Sign in…" : "Try again"}
+          </Button>
+        ) : undefined
+      }
+      data={{ "data-row": "antigravity" }}
+    >
+      {sign.step === "url" || sign.step === "finishing" ? (
+        <SignInForm
+          url={sign.url}
+          account={`the Google account ${machineId}'s agents on Antigravity should use`}
+          code={code}
+          onCode={setCode}
+          finishing={sign.step === "finishing"}
+          live={live}
+          verb={["Sign in", "Signing in…"]}
+          onSubmit={() => finish(sign.url)}
+        />
+      ) : null}
+    </SettingsRow>
+  );
+}
+
+/** A first sign-in may install agy on the machine first. */
+const AGY_SIGN_IN_WAIT_MS = 600_000;
+
 export function MachinePage({ machineId }: { machineId: string }) {
   const known = useData((d) => d.machines[machineId]);
   // The feed's status is newer than the snapshot's when it has one, as the list reads it.
@@ -169,6 +310,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
           {machine === undefined || roles?.mac !== undefined || (roles !== undefined && !roles.roles.includes("agents")) ? null : (
             <SettingsSection title="Agents" reveal="hub.caps">
               <MachineCap machineId={machineId} />
+              <AntigravityRow machineId={machineId} />
             </SettingsSection>
           )}
           {machine !== undefined && roles !== undefined && (roles.mac !== undefined || roles.roles.includes("sessions")) ? (
@@ -251,7 +393,6 @@ function LoginRow({ problem, machineId, onLoggedIn }: { problem: Problem; machin
   const [login, setLogin] = useState<Login>({ step: "idle" });
   const [code, setCode] = useState("");
   const [error, setError] = useState<string>();
-  const [copied, setCopied] = useState(false);
 
   const start = () => {
     setError(undefined);
@@ -310,38 +451,16 @@ function LoginRow({ problem, machineId, onLoggedIn }: { problem: Problem; machin
       data={marks(problem)}
     >
       {login.step === "url" || login.step === "finishing" ? (
-        <form
-          className={a.loginForm}
-          aria-label="Sign in"
-          onSubmit={(e) => {
-            e.preventDefault();
-            finish(login.url);
-          }}
-        >
-          <Text size="sm">{`Open this page and sign in with the Claude account ${machineId} should use.`}</Text>
-          <div className={a.link}>
-            {/* An address, not words: held to the code rule, not the text one. */}
-            <span className={a.url} data-text="code">
-              <Truncate mono size="sm">
-                {login.url}
-              </Truncate>
-            </span>
-            <Button size="sm" onClick={() => openExternal(login.url)}>
-              Open
-            </Button>
-            <Button size="sm" variant="quiet" onClick={() => void copyText(login.url).then(setCopied)}>
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <Field label="The code the page shows">
-            <Input value={code} mono autoComplete="off" placeholder="Code" onChange={(e) => setCode(e.target.value)} disabled={login.step === "finishing"} />
-          </Field>
-          <span>
-            <Button type="submit" size="sm" variant="primary" disabled={code.trim() === "" || login.step === "finishing" || !live}>
-              {login.step === "finishing" ? "Logging in…" : "Log in"}
-            </Button>
-          </span>
-        </form>
+        <SignInForm
+          url={login.url}
+          account={`the Claude account ${machineId} should use`}
+          code={code}
+          onCode={setCode}
+          finishing={login.step === "finishing"}
+          live={live}
+          verb={["Log in", "Logging in…"]}
+          onSubmit={() => finish(login.url)}
+        />
       ) : null}
     </SettingsRow>
   );

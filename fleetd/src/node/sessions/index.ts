@@ -23,7 +23,6 @@ import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
 import * as claude from "../runner/claude.ts";
 import * as antigravity from "../runner/antigravity.ts";
-import { ACP_ENV } from "../runner/host/session.ts";
 import { current as currentScope } from "../runner/scope.ts";
 import { type HostLink, LaunchError, marker, readRegistration, shutdown, startOf, type SessionCommand } from "../runner/host.ts";
 import { memoryHook, noteFile } from "../runner/host/memory.ts";
@@ -1481,7 +1480,8 @@ export class SessionService {
     // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
     // without the system prompt file, its rules.
     let note = rebuilt;
-    if (this.#noPromptFile && row.local.systemPrompt) {
+    // Antigravity takes the system prompt in its session/new, never in a note.
+    if (this.#noPromptFile && row.local.systemPrompt && !agy) {
       delete spec.systemPrompt;
       note = note ? `${row.local.systemPrompt.trimEnd()}\n\n${note}` : row.local.systemPrompt.trimEnd();
     }
@@ -1517,7 +1517,7 @@ export class SessionService {
         return place.start(launch);
       });
     } catch (error) {
-      if (error instanceof LaunchError && error.refused?.missing && !existsSync(this.config.claudeBin))
+      if (!agent && error instanceof LaunchError && error.refused?.missing && !existsSync(this.config.claudeBin))
         throw new Refusal("runner_unavailable", `${this.config.claudeBin} was not found on PATH`, `install Claude Code: curl -fsSL https://claude.ai/install.sh | bash`);
       // Hosted: the provider's or the box's own words, which never name this machine's claude or paths; recovery starts
       // a run whose box didn't come up again, wherever the slot board then puts it.
@@ -1526,7 +1526,7 @@ export class SessionService {
         if (!(error instanceof LaunchError)) console.warn(`${nowIso()} WARN a hosted session didn't start in its box {"sessionId":"${id}","error":${JSON.stringify((error as Error).message)}}`);
         throw new Refusal("runner_unavailable", said, undefined, error instanceof HostedDown || notReady(error) ? "sandbox" : undefined);
       }
-      throw new Refusal("runner_unavailable", `could not start ${this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`);
+      throw new Refusal("runner_unavailable", `could not start ${agent?.program ?? this.config.claudeBin}: ${(error as Error).message} (cwd ${spec.cwd})`);
     }
     stages.done("session host");
     row.local.started = true;
@@ -1566,13 +1566,14 @@ export class SessionService {
       auth,
       approval: spec.runtimeMode === "approval-required",
       deny: spec.disallowedTools,
+      allow: spec.allowedTools,
       stateFile: join(dir, "agy-session"),
     });
     // It holds the MCP servers' secrets, as mcp.json does.
     writeAtomic(join(dir, "acp.json"), JSON.stringify(acp));
     const env = antigravity.spawnEnv(spec.env, auth);
     env[claude.SESSION_MARKER] = mark;
-    env[ACP_ENV] = join(dir, "acp.json");
+    env[antigravity.ACP_ENV] = join(dir, "acp.json");
     return { program, args: antigravity.args(auth, join(dir, "agy")), env };
   }
 

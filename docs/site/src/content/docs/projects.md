@@ -940,11 +940,12 @@ It signs in one of two ways:
 
 | Mode | How |
 |---|---|
-| The machine's sign-in | Antigravity as it is signed in on that machine. Sign it in once there with `agy acp --login`: it prints a Google link and takes the code the page shows. fleetd never reads its credentials. |
+| The machine's sign-in | Antigravity as it is signed in on that machine. Sign it in from the app: **Settings › Hub › Machines**, the machine, then **Google Antigravity › Sign in…** under Agents. A machine already signed in shows its plan; otherwise the app shows a Google page to open on your device, then takes the code that page shows (the machine runs `agy acp --login`, installing `agy` first where it has none). fleetd never reads the sign-in. |
 | Endpoint and API key | A Gemini API key in the bot's [Vault](/docs/vault) as `GEMINI_API_KEY`, and `GOOGLE_GEMINI_BASE_URL` for an endpoint of its own. The bot's agents then run on the key, each in an Antigravity home of its own, so the machine's own `agy` keeps its sign-in and settings. |
 
 What differs from Claude: a role's fenced tools (a lead's file edits, `git push --no-verify`) are denied when
-Antigravity asks to run them; the edits it makes inside the workspace without asking aren't fenced. Antigravity's own
+Antigravity asks to run them, and a lead's own tools (fleetd's, its allowed commands) run without asking in approval
+mode too; the edits it makes inside the workspace without asking aren't fenced. Antigravity's own
 subagents stay on. Usage counts tokens, with no cost. Agents on Antigravity run on your own machines, not in hosted
 sandboxes.
 

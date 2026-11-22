@@ -4291,6 +4291,24 @@ export type MachineAddStepData = {
   state: MachineAddState;
 };
 
+export type MachineAntigravityLoginInput = {
+  /** Absent: check the sign-in, and start one when there is none. The code the sign-in page showed: finish it. */
+  code?: string;
+  machineId: MachineId;
+};
+
+export type MachineAntigravityLoginOutput = {
+  /** A sign-in that started: where to sign in with Google. */
+  loginUrl?: string;
+  machineId: MachineId;
+  /** The node's words: what happened, or why not. */
+  message: string;
+  next?: string;
+  /** Antigravity on the machine is signed in, on this plan ("Google AI Pro"): already, or once the code ended it. */
+  signedIn?: string;
+  truncated?: boolean;
+};
+
 export type MachineClaudeLoginInput = {
   /** Absent: start the login, which answers its sign-in URL. The code the sign-in page showed: finish it. */
   code?: string;
@@ -10336,6 +10354,7 @@ export interface ToolMap {
   machine_add: { input: MachineAddInput; output: MachineAddOutput };
   machine_add_plan: { input: MachineAddPlanInput; output: MachineAddPlanOutput };
   machine_add_status: { input: MachineAddStatusInput; output: MachineAddStatusOutput };
+  machine_antigravity_login: { input: MachineAntigravityLoginInput; output: MachineAntigravityLoginOutput };
   machine_claude_login: { input: MachineClaudeLoginInput; output: MachineClaudeLoginOutput };
   machine_hosts: { input: MachineHostsInput; output: MachineHostsOutput };
   machine_join: { input: MachineJoinInput; output: MachineJoinOutput };

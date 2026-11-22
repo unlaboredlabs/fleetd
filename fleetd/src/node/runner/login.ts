@@ -1,8 +1,10 @@
-// Claude Code's login from the app: `node_action` `claude_login` starts its
-// `auth login` on a terminal of its own (Bun's PTY), with the runner's environment so the login lands where sessions
-// read it, and answers with the sign-in URL it prints. `claude_login_code` types the code the page showed into the
-// waiting login. Claude Code keeps its token here: nothing of it is read or sent. One login at a time: a new one ends
-// the last, and one nobody finishes ends after 10 minutes.
+// An agent's login from the app: `node_action` `claude_login` starts Claude Code's `auth login` (and
+// `antigravity_login` Antigravity's `agy acp --login`) on a terminal of its own (Bun's PTY), with the runner's
+// environment so the login lands where sessions read it, and answers with the sign-in URL it prints. `claude_login_code`
+// (`antigravity_login_code`) types the code the page showed into the waiting login. The agent keeps its token here:
+// nothing of it is read or sent. One login of each at a time: a new one ends the last, and one nobody finishes ends
+// after 10 minutes.
+import { basename } from "node:path";
 import type { Env } from "../util.ts";
 
 const URL_WAIT_MS = 30_000;
@@ -32,7 +34,7 @@ export function lastWords(output: string): string {
   return [...(lines[lines.length - 1] ?? "it printed nothing")].slice(0, 300).join("");
 }
 
-type Waiting = { proc: Bun.Subprocess; terminal: Bun.Terminal; output: { text: string }; started: number; exited: boolean };
+type Waiting = { proc: Bun.Subprocess; name: string; terminal: Bun.Terminal; output: { text: string }; started: number; exited: boolean };
 
 export class Logins {
   #waiting: Waiting | undefined;
@@ -54,14 +56,16 @@ export class Logins {
     } catch {}
   }
 
-  /** Starts `<binary> auth login` and answers the URL it prints; the last login, if any, ends. */
-  async start(binary: string, env: Env): Promise<string> {
+  /** Starts `argv` (`claude auth login`, `agy acp --login`) and answers the URL it prints; the last login, if any,
+   * ends. */
+  async start(argv: string[], env: Env): Promise<string> {
+    const name = [basename(argv[0] ?? ""), ...argv.slice(1)].join(" ");
     this.#end();
     const output = { text: "" };
     const decoder = new TextDecoder();
     let proc: Bun.Subprocess;
     try {
-      proc = Bun.spawn([binary, "auth", "login"], {
+      proc = Bun.spawn(argv, {
         env: { ...env, BROWSER: "true", TERM: "dumb", NO_COLOR: "1" },
         terminal: {
           cols: 2000,
@@ -72,9 +76,9 @@ export class Logins {
         },
       });
     } catch (error) {
-      throw new Error(`couldn't start ${binary} auth login: ${(error as Error).message}`);
+      throw new Error(`couldn't start ${name}: ${(error as Error).message}`);
     }
-    const waiting: Waiting = { proc, terminal: proc.terminal!, output, started: Date.now(), exited: false };
+    const waiting: Waiting = { proc, name, terminal: proc.terminal!, output, started: Date.now(), exited: false };
     void proc.exited.then(() => (waiting.exited = true));
     this.#waiting = waiting;
     const until = Date.now() + URL_WAIT_MS;
@@ -87,8 +91,8 @@ export class Logins {
         if (this.#waiting === waiting) this.#end();
         throw new Error(
           ended
-            ? `claude auth login ended without a sign-in URL: ${lastWords(output.text)}`
-            : `claude auth login printed no sign-in URL in 30 s: ${lastWords(output.text)}`,
+            ? `${name} ended without a sign-in URL: ${lastWords(output.text)}`
+            : `${name} printed no sign-in URL in 30 s: ${lastWords(output.text)}`,
         );
       }
       await Bun.sleep(100);
@@ -122,17 +126,18 @@ export class Logins {
         const words = said();
         this.#end();
         if (exit === 0) return words;
-        throw new Error(`claude auth login failed: ${words}`);
+        throw new Error(`${w.name} failed: ${words}`);
       }
       if (Date.now() >= until) {
         const words = said();
         this.#end();
-        throw new Error(`claude auth login didn't end within ${Math.round(this.codeWaitMs / 1000)} s of its code: ${words}`);
+        throw new Error(`${w.name} didn't end within ${Math.round(this.codeWaitMs / 1000)} s of its code: ${words}`);
       }
       await Bun.sleep(100);
     }
   }
 }
 
-/** The node's one login. */
+/** The node's one Claude login, and its one Antigravity sign-in. */
 export const LOGINS = new Logins();
+export const AGY_LOGINS = new Logins();

@@ -32,6 +32,8 @@ export type AcpSpec = {
   approval: boolean;
   /** The role's fenced tools, in Claude's rule words (`Bash(git push *--no-verify*)`, `mcp__fleetd__x`, `Edit`). */
   deny: string[];
+  /** What runs unasked in approval mode too, in the same words: a lead's own tools (`mcp__fleetd`, `Read`, …). */
+  allow: string[];
   /** Where the agent's own session id is kept, for the next start's resume. */
   stateFile: string;
 };
@@ -50,7 +52,7 @@ type Pending =
   | { what: "initialize" | "authenticate" | "resume" | "new" | "config" }
   | { what: "prompt"; runId: string };
 type Tool = { runId: string; title: string; startedAt: string; kind: ItemKind; toolName: string };
-type Ask = { rpcId: string | number; allow: string; deny: string };
+type Ask = { rpcId: string | number; allow: string; deny: string; toolName: string; summary: string };
 
 const emptyUsage = (): RunUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
 const rec = (v: unknown): Record<string, any> | undefined => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : undefined);
@@ -75,12 +77,13 @@ export function ruleName(call: Record<string, any>): [string, string | undefined
   return [name, undefined];
 }
 
-/** True when one of `rules` fences the call. */
+/** True when one of `rules` names the call, as Claude reads them: `Edit`, `Bash(git *)`, and `mcp__fleetd` for every
+ * tool of the server. */
 export function fenced(rules: string[], call: Record<string, any>): boolean {
   const [name, target] = ruleName(call);
   return rules.some((rule) => {
     const open = rule.indexOf("(");
-    if (open < 0) return rule === name;
+    if (open < 0) return rule === name || (rule.startsWith("mcp__") && !rule.slice(5).includes("__") && name.startsWith(`${rule}__`));
     return rule.slice(0, open) === name && target !== undefined && rule.endsWith(")") && glob(rule.slice(open + 1, -1), target);
   });
 }
@@ -161,7 +164,7 @@ export class AcpDriver {
     };
   }
 
-  send(runId: string, text: string, mode: SendMode): AcpOut {
+  send(runId: string, text: string, mode: SendMode, now?: Now): AcpOut {
     const out: AcpOut = { events: [], replies: [] };
     this.#open.push(runId);
     this.#waiting.push({ runId, text });
@@ -169,7 +172,7 @@ export class AcpDriver {
       out.events.push({ Queued: { run_id: runId } });
       if (mode === "now" && !this.#cancelled) {
         this.#superseding = runId;
-        out.replies.push(this.#cancel());
+        this.#cancel(out, now);
         out.events.push({ SendNow: { run_id: runId, outcome: "stopped", stopped_tool: this.#runningTool() ?? null } });
       }
       return out;
@@ -188,20 +191,22 @@ export class AcpDriver {
   }
 
   /** A person's stop: the running turn is cancelled, and what waited on it ends withdrawn. */
-  stop(): AcpOut {
+  stop(now?: Now): AcpOut {
     const out: AcpOut = { events: [], replies: [] };
     for (const w of this.#waiting.splice(0)) {
       this.#open = this.#open.filter((r) => r !== w.runId);
       out.events.push({ Withdrawn: { run_id: w.runId, cancelled: true, by_stop: true } });
     }
     this.#superseding = undefined;
-    if (this.#active !== undefined && !this.#cancelled) out.replies.push(this.#cancel());
+    if (this.#active !== undefined && !this.#cancelled) this.#cancel(out, now);
     return out;
   }
 
   /** The cancel a shutdown writes before it closes stdin. */
   interrupt(): unknown[] {
-    return this.#active !== undefined && !this.#cancelled ? [this.#cancel()] : [];
+    const out: AcpOut = { events: [], replies: [] };
+    if (this.#active !== undefined && !this.#cancelled) this.#cancel(out);
+    return out.replies;
   }
 
   /** The answer to a permission the agent still waits for; undefined once it doesn't. */
@@ -273,9 +278,19 @@ export class AcpDriver {
     return { jsonrpc: "2.0", id, method, params };
   }
 
-  #cancel(): unknown {
+  /** `session/cancel`, and every permission the agent still waits for answered `cancelled`, as ACP has the client do:
+   * the agent may wait on them before it ends the turn. Their cards close with them. */
+  #cancel(out: AcpOut, now?: Now): void {
     this.#cancelled = true;
-    return { jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.#sessionId } };
+    out.replies.push({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.#sessionId } });
+    for (const [requestId, ask] of this.#asks) {
+      out.replies.push({ jsonrpc: "2.0", id: ask.rpcId, result: { outcome: { outcome: "cancelled" } } });
+      if (now) {
+        const kind: ItemKind = { type: "permission", requestId, toolName: ask.toolName, summary: ask.summary };
+        out.events.push({ Item: this.#item(requestId, "cancelled", `${ask.toolName} ${ask.summary}`, now.at, now, kind) });
+      }
+    }
+    this.#asks.clear();
   }
 
   #selected(rpcId: string | number, optionId: string): unknown {
@@ -537,7 +552,7 @@ export class AcpDriver {
       out.replies.push(this.#selected(rpcId, deny));
       return;
     }
-    if (!this.spec.approval) {
+    if (!this.spec.approval || fenced(this.spec.allow, call)) {
       out.replies.push(this.#selected(rpcId, allow));
       return;
     }
@@ -546,7 +561,7 @@ export class AcpDriver {
     const requestId = `acp-${String(rpcId)}`;
     const input = call.rawInput ?? null;
     const summary = target ?? str(call.title) ?? "";
-    this.#asks.set(requestId, { rpcId, allow, deny });
+    this.#asks.set(requestId, { rpcId, allow, deny, toolName, summary });
     out.events.push({ PermissionRequest: { request_id: requestId, tool_use_id: str(call.toolCallId) ?? "", tool_name: toolName, input, summary } });
   }
 

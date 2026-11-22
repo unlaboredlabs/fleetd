@@ -1,8 +1,25 @@
 // A stand-in for `agy acp`: just enough of Antigravity's ACP server for the runner's tests, with no Google behind it.
 // Every request it gets goes to $AGY_LOG, one JSON line each. A prompt's text picks what the turn does:
-// `hang` waits for session/cancel; `cmd <command>` runs a command after asking permission; anything else thinks,
-// streams "hello" and ends. Without GEMINI_API_KEY, `authenticate` and a `session/new` with $AGY_SIGNED_OUT refuse.
-import { appendFileSync } from "node:fs";
+// `hang` waits for session/cancel; `cmd <command>` runs a command after asking permission (and `mcp <server> <tool>`
+// calls an MCP tool so), and a cancel answers that permission `cancelled`; anything else thinks,
+// streams "hello" and ends. `authenticate` takes GEMINI_API_KEY, or `oauth-personal` once $AGY_SIGNIN exists;
+// `session/new` with $AGY_SIGNED_OUT refuses. `acp --login` plays Antigravity's sign-in: a Google link, then the code
+// `good-code` creates $AGY_SIGNIN.
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+
+if (process.argv.includes("--login")) {
+  process.stdout.write("Open this link in a browser to log in with Google:\n\n  https://accounts.google.com/o/oauth2/auth?state=fake\n\nThen paste the authorization code, or the full URL of the page you land on, and press Enter:\n");
+  let got = "";
+  process.stdin.setRawMode?.(true);
+  process.stdin.on("data", (d: Buffer) => {
+    got += d.toString();
+    if (!got.includes("\r")) return;
+    const ok = got.trim() === "good-code";
+    if (ok && process.env.AGY_SIGNIN) writeFileSync(process.env.AGY_SIGNIN, "");
+    process.stdout.write(ok ? "\nSigned in.\n" : "\nThat code didn't work.\n");
+    process.exit(ok ? 0 : 1);
+  });
+}
 
 const log = process.env.AGY_LOG;
 const write = (m: unknown) => process.stdout.write(`${JSON.stringify(m)}\n`);
@@ -25,13 +42,18 @@ async function prompt(id: unknown, sessionId: string, text: string): Promise<voi
     reply(id, { stopReason: "cancelled" });
     return;
   }
-  if (text.startsWith("cmd ")) {
+  if (text.startsWith("cmd ") || text.startsWith("mcp ")) {
     const command = text.slice(4);
-    const call = { toolCallId: "call-1", name: "run_command", kind: "execute", title: command, rawInput: { CommandLine: command } };
+    const [server, tool] = command.split(" ");
+    const call = text.startsWith("cmd ")
+      ? { toolCallId: "call-1", name: "run_command", kind: "execute", title: command, rawInput: { CommandLine: command } }
+      : { toolCallId: "call-1", name: "mcp_tool", kind: "other", title: `Run mcp_${server}_${tool}`, rawInput: { ServerName: server, ToolName: tool } };
     update(sessionId, { sessionUpdate: "tool_call", status: "pending", ...call });
     const rpc = `perm-${++asked}`;
     write({ jsonrpc: "2.0", id: rpc, method: "session/request_permission", params: { sessionId, toolCall: call, options: [{ optionId: "allow", kind: "allow_once" }, { optionId: "deny", kind: "reject_once" }] } });
     const chosen = await new Promise<string>((resolve) => answers.set(rpc, resolve));
+    // A cancelled turn's permission comes back cancelled: the turn ends so.
+    if (chosen === "cancelled") return void reply(id, { stopReason: "cancelled" });
     if (chosen === "allow") update(sessionId, { sessionUpdate: "tool_call_update", status: "completed", ...call, rawOutput: { output: "ran", exit_code: 0 } });
     else update(sessionId, { sessionUpdate: "tool_call_update", status: "failed", ...call, rawOutput: { output: "denied" } });
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: chosen } });
@@ -46,7 +68,7 @@ async function prompt(id: unknown, sessionId: string, text: string): Promise<voi
 }
 
 let buf = "";
-process.stdin.on("data", (chunk: Buffer) => {
+if (!process.argv.includes("--login")) process.stdin.on("data", (chunk: Buffer) => {
   buf += chunk.toString();
   let nl: number;
   while ((nl = buf.indexOf("\n")) >= 0) {
@@ -57,7 +79,7 @@ process.stdin.on("data", (chunk: Buffer) => {
     const m = JSON.parse(line);
     const p = m.params ?? {};
     if (m.method === undefined) {
-      answers.get(m.id)?.(m.result?.outcome?.optionId);
+      answers.get(m.id)?.(m.result?.outcome?.optionId ?? m.result?.outcome?.outcome);
       continue;
     }
     switch (m.method) {
@@ -65,7 +87,8 @@ process.stdin.on("data", (chunk: Buffer) => {
         reply(m.id, { protocolVersion: 1, agentInfo: { name: "Antigravity ACP Server", version: "1.5.14" }, agentCapabilities: { loadSession: true, sessionCapabilities: { resume: {} } } });
         break;
       case "authenticate":
-        if (process.env.GEMINI_API_KEY) reply(m.id, {});
+        if (p.methodId === "oauth-personal" && process.env.AGY_SIGNIN && existsSync(process.env.AGY_SIGNIN)) reply(m.id, { _meta: { antigravity: { tier: { name: "Google AI Pro" } } } });
+        else if (p.methodId === "gemini-api-key" && process.env.GEMINI_API_KEY) reply(m.id, {});
         else refuse(m.id, -32000, "Authentication required");
         break;
       case "session/new":
@@ -90,4 +113,4 @@ process.stdin.on("data", (chunk: Buffer) => {
     }
   }
 });
-process.stdin.on("end", () => process.exit(0));
+if (!process.argv.includes("--login")) process.stdin.on("end", () => process.exit(0));

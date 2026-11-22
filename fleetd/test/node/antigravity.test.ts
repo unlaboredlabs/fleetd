@@ -3,12 +3,14 @@
 // prompt passed, the profile's model and thinking level set, permissions fenced or asked, a stop, a resume, and the
 // sign-in and key failures.
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as agy from "../../src/node/runner/antigravity.ts";
 import { fenced, type AcpSpec } from "../../src/node/runner/host/acp.ts";
 import type { RunnerEvent } from "../../src/node/runner/host/events.ts";
 import { ACP_ENV, startSession, type Session } from "../../src/node/runner/host/session.ts";
+import { runNodeAction } from "../../src/node/actions/index.ts";
+import { Logins } from "../../src/node/runner/login.ts";
 
 const FAKE = join(import.meta.dir, "fake-agy.ts");
 const root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-agy-"));
@@ -45,6 +47,7 @@ class Run {
       effort: "medium",
       approval: false,
       deny: [],
+      allow: [],
       stateFile: join(this.dir, "agy-session"),
       ...over,
     };
@@ -95,7 +98,7 @@ test("agy starts on its own sign-in or the project's key, with no Google credent
   expect(agy.spawnEnv(env, auth)).toEqual({ PATH: "/bin", GEMINI_API_KEY: "project-key", GOOGLE_GEMINI_BASE_URL: "https://gemini.devbox.example", AGY_CLI_DISABLE_AUTO_UPDATE: "1" });
   expect(agy.args({ kind: "signin" }, "/s/agy")).toEqual(["acp"]);
   expect(agy.args(auth, "/s/agy")).toEqual(["acp", "--gemini-dir", "/s/agy"]);
-  expect(agy.spec({ cwd: "/w", addDirs: [], mcpConfig: '{"mcpServers":{}}', model: "gemini-4-neon", effort: "high", auth, approval: false, deny: [], stateFile: "/s/x" }).authMethod).toBe("gemini-api-key");
+  expect(agy.spec({ cwd: "/w", addDirs: [], mcpConfig: '{"mcpServers":{}}', model: "gemini-4-neon", effort: "high", auth, approval: false, deny: [], allow: [], stateFile: "/s/x" }).authMethod).toBe("gemini-api-key");
 });
 
 test("MCP servers reach ACP as its lists: stdio with env, http with headers", () => {
@@ -114,6 +117,9 @@ test("a role's fences match Antigravity's tool calls in Claude's rule words", ()
   expect(fenced(rules, { name: "mcp_tool", rawInput: { ServerName: "fleetd", ToolName: "spawn_agent" } })).toBe(true);
   expect(fenced(rules, { name: "replace_file_content", kind: "edit", rawInput: { TargetFile: "/w/a" } })).toBe(true);
   expect(fenced(rules, { name: "view_file", kind: "read", rawInput: { Path: "/w/a" } })).toBe(false);
+  // A server's name alone is every tool of it, as a lead's `mcp__fleetd` is; another server's tool isn't.
+  expect(fenced(["mcp__fleetd"], { name: "mcp_tool", rawInput: { ServerName: "fleetd", ToolName: "spawn_agent" } })).toBe(true);
+  expect(fenced(["mcp__fleetd"], { name: "mcp_tool", rawInput: { ServerName: "fleetdx", ToolName: "spawn_agent" } })).toBe(false);
 });
 
 test("a turn streams and ends with its reply; MCP servers, the system prompt, model and thinking level reach the agent", async () => {
@@ -265,4 +271,56 @@ test("every agent-mcp tool's patterns compile in RE2, as Antigravity reads tool 
   }
   expect(repeats("^([a-z]{0,61}){1,20}$")).toBe(1220);
   expect(repeats("^(a(b{0,9})?){1,20}$")).toBe(180);
+});
+
+test("the app signs Antigravity in through the node: it checks the sign-in, runs agy acp --login, and takes the code", async () => {
+  const dir = join(root, "signin");
+  mkdirSync(dir);
+  const bin = join(dir, "agy");
+  writeFileSync(bin, `#!/bin/sh\nexec '${process.execPath}' '${FAKE}' "$@"\n`);
+  chmodSync(bin, 0o755);
+  const signin = join(dir, "signed-in");
+  const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, AGY_SIGNIN: signin, DISPLAY: ":0" };
+  const hooks = { antigravity: { binary: async () => bin, env: () => env, logins: new Logins(10_000) } };
+  const started = await runNodeAction({ id: "a1", action: "antigravity_login" }, hooks);
+  expect([started.ok, started.login_url, started.signed_in]).toEqual([true, "https://accounts.google.com/o/oauth2/auth?state=fake", undefined]);
+  const bad = await runNodeAction({ id: "a2", action: "antigravity_login_code", code: "nope" }, hooks);
+  expect([bad.ok, bad.message]).toEqual([false, "agy acp --login failed: That code didn't work."]);
+  await runNodeAction({ id: "a3", action: "antigravity_login" }, hooks);
+  const done = await runNodeAction({ id: "a4", action: "antigravity_login_code", code: "good-code" }, hooks);
+  expect([done.ok, done.signed_in]).toEqual([true, "Google AI Pro"]);
+  // Signed in now: a new ask starts nothing and says so.
+  const again = await runNodeAction({ id: "a5", action: "antigravity_login" }, hooks);
+  expect([again.ok, again.signed_in, again.login_url]).toEqual([true, "Google AI Pro", undefined]);
+  // The login never opens a browser of the machine's own, and tells agy it runs over SSH.
+  expect(agy.loginEnv(env)).toMatchObject({ BROWSER: "true", SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0" });
+  expect(agy.loginEnv(env).DISPLAY).toBeUndefined();
+});
+
+test("in approval mode a lead's own tools run unasked (fleetd's MCP server, its allowed commands); anything else asks", async () => {
+  const run = await Run.fresh({ approval: true, allow: ["mcp__fleetd", "Bash(agent-device *)"] });
+  expect((await run.turn("r1", "mcp fleetd spawn_agent")).outcome).toEqual({ Completed: { text: "allow" } });
+  expect((await run.turn("r2", "cmd agent-device snapshot")).outcome).toEqual({ Completed: { text: "allow" } });
+  expect(of(run.events, "PermissionRequest")).toEqual([]);
+  run.session.command({ Send: { run_id: "r3", text: "mcp docs search", mode: "plain" } });
+  await until(() => of(run.events, "PermissionRequest").length > 0, "another server's tool asks");
+  expect(of(run.events, "PermissionRequest")[0]!.PermissionRequest.tool_name).toBe("mcp__docs__search");
+  await run.end();
+});
+
+test("a stop while a permission waits answers it cancelled, so the turn ends, and its card closes", async () => {
+  const run = await Run.fresh({ approval: true });
+  run.session.command({ Send: { run_id: "r1", text: "cmd ls", mode: "plain" } });
+  await until(() => of(run.events, "PermissionRequest").length > 0, "the hub is asked");
+  const asked = of(run.events, "PermissionRequest")[0]!.PermissionRequest;
+  run.session.command("Interrupt");
+  await until(() => run.ended("r1") !== undefined, "r1 ends");
+  expect((run.ended("r1") as any).RunEnded.outcome).toBe("Interrupted");
+  const card = of(run.events, "Item").find((e) => e.Item.id === asked.request_id)!.Item;
+  expect([card.status, card.kind.type]).toEqual(["cancelled", "permission"]);
+  expect(run.requests().find((m) => m.id === "perm-1" && m.method === undefined)?.result).toEqual({ outcome: { outcome: "cancelled" } });
+  // Its answer, late, finds nothing waiting.
+  run.session.command({ Answer: { request_id: asked.request_id, decision: { behavior: "allow" }, by: "human" } });
+  expect((await run.turn("r2", "hi")).outcome).toEqual({ Completed: { text: "hello" } });
+  await run.end();
 });

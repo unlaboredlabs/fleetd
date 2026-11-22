@@ -2,40 +2,19 @@
 // Client Protocol server, in place of claude; the session's host speaks ACP to it (./host/acp.ts). It runs signed in as
 // the machine's Antigravity is (its own sign-in, which fleetd never reads), or on a Gemini API key: the project's
 // `GEMINI_API_KEY` Vault variable, with `GOOGLE_GEMINI_BASE_URL` for an endpoint of its own. A machine without agy gets
-// it from Google's release channel, its checksum checked, at the first session that needs it.
+// it from Google's release channel, its checksum checked, at the first session that needs it. The launch itself, which
+// a box shares, is ./antigravity_spec.ts.
 import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { Effort } from "../../shared/contracts.ts";
 import { homeDir, type Env } from "../util.ts";
-import type { AcpSpec } from "./host/acp.ts";
+import { AUTOUPDATE_OFF, loginEnv } from "./antigravity_spec.ts";
 
-export const RUNNER = "antigravity";
-/** The agy fleetd was tested with, and the oldest it runs: ACP's resume, steering and `_meta` system prompt. */
-export const TESTED = "1.5.14";
+export * from "./antigravity_spec.ts";
+
+/** The oldest agy fleetd runs: ACP's resume, steering and `_meta` system prompt. */
 const OLDEST = [1, 5, 0];
-
-/** A profile's model that runs any model Antigravity offers (hub/projects/profiles.ts ANTIGRAVITY_MODELS lists the
- * Gemini ones): `antigravity/claude-opus-5-5`. */
-export const PREFIX = "antigravity/";
-
-/** The model `agy` takes for a profile's model; undefined when it runs on Claude. */
-export function agyModel(model: string): string | undefined {
-  if (model.startsWith(PREFIX)) return model.slice(PREFIX.length) || undefined;
-  return model.startsWith("gemini-") ? model : undefined;
-}
-
-/** The thinking level of a profile's effort: Antigravity's highest is `xhigh`. */
-export const thinking = (effort: Effort) => (effort === "max" ? "xhigh" : effort);
-
-export const KEY_ENV = "GEMINI_API_KEY";
-export const ENDPOINT_ENV = "GOOGLE_GEMINI_BASE_URL";
-/** Google credentials a session never takes from the machine's environment: the sign-in mode runs on agy's own sign-in,
- * the key mode on the project's key alone. */
-const GOOGLE_VARS = [KEY_ENV, ENDPOINT_ENV, "GOOGLE_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_GENAI_USE_VERTEXAI", "AGY_ADC_AUTH", "GEMINI_HOME"];
-/** Updates come from fleetd (`install`), never under a running agent. */
-export const AUTOUPDATE_OFF: [string, string] = ["AGY_CLI_DISABLE_AUTO_UPDATE", "1"];
 
 /** FLEETD_AGY_BIN (a stand-in for tests), else `agy` from PATH, else `~/.local/bin/agy` (where Google's installer and
  * fleetd's put it). */
@@ -45,65 +24,6 @@ export function agyBinary(): string {
   return localBinary();
 }
 const localBinary = () => join(homeDir(), ".local/bin/agy");
-
-/** How a session signs in: the project's key when it has one, else the machine's own Antigravity sign-in. */
-export type Auth = { kind: "signin" } | { kind: "key"; key: string; endpoint?: string };
-export const authOf = (vars: Env): Auth =>
-  vars[KEY_ENV] ? { kind: "key", key: vars[KEY_ENV]!, ...(vars[ENDPOINT_ENV] ? { endpoint: vars[ENDPOINT_ENV] } : {}) } : { kind: "signin" };
-
-/** agy's argv: a key session keeps its conversations in an Antigravity home of its own (`home`), so the person's own
- * agy keeps its sign-in and settings. */
-export const args = (auth: Auth, home: string): string[] => (auth.kind === "key" ? ["acp", "--gemini-dir", home] : ["acp"]);
-
-/** The environment agy starts with: `env` without Google credentials, then the key's and fleetd's own. */
-export function spawnEnv(env: Env, auth: Auth): Env {
-  const out: Env = {};
-  for (const [k, v] of Object.entries(env)) if (!GOOGLE_VARS.includes(k)) out[k] = v;
-  if (auth.kind === "key") {
-    out[KEY_ENV] = auth.key;
-    if (auth.endpoint) out[ENDPOINT_ENV] = auth.endpoint;
-  }
-  out[AUTOUPDATE_OFF[0]] = AUTOUPDATE_OFF[1];
-  return out;
-}
-
-/** Claude's `--mcp-config` servers as ACP's `mcpServers`: stdio ones with `env`, http ones with `headers`, each a list. */
-export function mcpServers(config: string): unknown[] {
-  const servers = (JSON.parse(config) as { mcpServers?: Record<string, Record<string, any>> }).mcpServers ?? {};
-  const pairs = (o: unknown) => Object.entries((o ?? {}) as Record<string, string>).map(([name, value]) => ({ name, value: String(value) }));
-  return Object.entries(servers).map(([name, s]) =>
-    s.type === "http" || s.type === "sse"
-      ? { type: s.type, name, url: s.url, headers: pairs(s.headers) }
-      : { name, command: s.command, args: s.args ?? [], env: pairs(s.env) },
-  );
-}
-
-/** What the host's ACP driver runs the session with (./host/acp.ts). */
-export function spec(o: {
-  cwd: string;
-  addDirs: string[];
-  mcpConfig: string;
-  systemPrompt?: string;
-  model: string;
-  effort: Effort;
-  auth: Auth;
-  approval: boolean;
-  deny: string[];
-  stateFile: string;
-}): AcpSpec {
-  return {
-    cwd: o.cwd,
-    addDirs: o.addDirs,
-    mcpServers: mcpServers(o.mcpConfig),
-    ...(o.systemPrompt ? { systemPrompt: o.systemPrompt } : {}),
-    model: agyModel(o.model) ?? o.model,
-    effort: thinking(o.effort),
-    ...(o.auth.kind === "key" ? { authMethod: "gemini-api-key" } : {}),
-    approval: o.approval,
-    deny: o.deny,
-    stateFile: o.stateFile,
-  };
-}
 
 /** `x.y.z` at or past OLDEST. */
 export function versionOk(printed: string): boolean {
@@ -176,14 +96,60 @@ let checked: string | undefined;
 
 /** The agy a session runs: the one found, else a fresh install. Throws, in a person's words, when neither works. */
 export async function ensure(get?: Fetch): Promise<string> {
-  const found = agyBinary();
-  if (found === checked) return found;
-  const printed = await version(found);
-  if (printed !== undefined && versionOk(printed)) return (checked = found);
-  if (process.env.FLEETD_AGY_BIN) throw new Error(`${found} doesn't run as agy ${OLDEST.join(".")} or newer`);
+  if (checked !== undefined && existsSync(checked)) return checked;
+  // The agy found first, then fleetd's own: an older one ahead on PATH doesn't send every start to an install.
+  for (const candidate of process.env.FLEETD_AGY_BIN ? [agyBinary()] : new Set([agyBinary(), localBinary()])) {
+    const printed = await version(candidate);
+    if (printed !== undefined && versionOk(printed)) return (checked = candidate);
+  }
+  if (process.env.FLEETD_AGY_BIN) throw new Error(`${process.env.FLEETD_AGY_BIN} doesn't run as agy ${OLDEST.join(".")} or newer`);
   try {
     return (checked = await install(get));
   } catch (error) {
     throw new Error(`Antigravity isn't installed here and fleetd couldn't install it: ${(error as Error).message}`);
+  }
+}
+
+const SIGNED_IN_WAIT_MS = 30_000;
+
+/** Whether the machine's agy is signed in: its plan's name ("Google AI Pro"), or undefined when it isn't. Asks
+ * Antigravity's own `authenticate`, which reads the stored sign-in and calls no model; in the login's environment, so a
+ * machine that isn't signed in never opens a browser of its own. Throws when agy doesn't answer. */
+export async function signedIn(binary: string, env: Env): Promise<string | undefined> {
+  const proc = Bun.spawn([binary, "acp"], { env: loginEnv(env), cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore" });
+  const timer = setTimeout(() => proc.kill("SIGKILL"), SIGNED_IN_WAIT_MS);
+  try {
+    const ask = (id: number, method: string, params: unknown) => proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    ask(1, "initialize", { protocolVersion: 1, clientInfo: { name: "fleetd", version: "1" }, clientCapabilities: {} });
+    ask(2, "authenticate", { methodId: "oauth-personal" });
+    proc.stdin.flush();
+    const reader = proc.stdout.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("agy exited before it said whether it is signed in");
+      buf += value;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        let m: Record<string, any>;
+        try {
+          m = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (m.id !== 2) continue;
+        if (m.error) return undefined;
+        const tier = m.result?._meta?.antigravity?.tier?.name;
+        return typeof tier === "string" && tier ? tier : "Google";
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    try {
+      proc.stdin.end();
+    } catch {}
+    proc.kill();
   }
 }

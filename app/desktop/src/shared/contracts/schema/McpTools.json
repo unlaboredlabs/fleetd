@@ -10115,6 +10115,51 @@
       ],
       "type": "object"
     },
+    "MachineAntigravityLoginInput": {
+      "properties": {
+        "code": {
+          "description": "Absent: check the sign-in, and start one when there is none. The code the sign-in page showed: finish it.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineAntigravityLoginOutput": {
+      "properties": {
+        "loginUrl": {
+          "description": "A sign-in that started: where to sign in with Google.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "The node's words: what happened, or why not.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "signedIn": {
+          "description": "Antigravity on the machine is signed in, on this plan (\"Google AI Pro\"): already, or once the code ended it.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "message"
+      ],
+      "type": "object"
+    },
     "MachineClaudeLoginInput": {
       "properties": {
         "code": {
@@ -11678,6 +11723,12 @@
         },
         "machine_add_status.output": {
           "$ref": "#/$defs/MachineAddStatusOutput"
+        },
+        "machine_antigravity_login.input": {
+          "$ref": "#/$defs/MachineAntigravityLoginInput"
+        },
+        "machine_antigravity_login.output": {
+          "$ref": "#/$defs/MachineAntigravityLoginOutput"
         },
         "machine_claude_login.input": {
           "$ref": "#/$defs/MachineClaudeLoginInput"

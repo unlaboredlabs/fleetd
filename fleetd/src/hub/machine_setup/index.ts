@@ -11,7 +11,7 @@ import { currentExe } from "../../cli/setup/shared.ts";
 import { type Begin, type Builds, execute, type HubSide, type Peer, prepare, type Progress, type Resolved, releases, type Runner, ssh, Stop, tail } from "../../cli/setup/machine.ts";
 import type { Hub } from "../api/hub.ts";
 import { link } from "../link/index.ts";
-import type { NodeActionResult } from "../../shared/node_link.ts";
+import { CAP_ANTIGRAVITY_LOGIN, type NodeActionResult } from "../../shared/node_link.ts";
 import { type NewEvent, events } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
 
@@ -37,6 +37,8 @@ export interface SetupPorts {
   hosts(): Promise<[string[], Peer[]]>;
   /** The machine's node runs `claude auth login`: without `code` it starts, with the code it ends. */
   claudeLogin(hub: Hub, machine: string, code?: string): Promise<{ ok: boolean; message: string; loginUrl?: string }>;
+  /** The machine's node runs `agy acp --login` the same way; one already signed in answers its plan (`signedIn`). */
+  antigravityLogin(hub: Hub, machine: string, code?: string): Promise<{ ok: boolean; message: string; loginUrl?: string; signedIn?: string }>;
 }
 
 /** A Host line's hosts from an ssh_config (detect.rs `parse_ssh_hosts`): no patterns, no duplicates. */
@@ -102,6 +104,18 @@ export const realPorts: SetupPorts = {
       throw new Error(e instanceof Error ? e.message : String(e));
     }
     return { ok: r.ok, message: r.message, ...(r.login_url !== undefined ? { loginUrl: r.login_url } : {}) };
+  },
+  async antigravityLogin(hub, machine, code) {
+    if (!link(hub).can(machine, CAP_ANTIGRAVITY_LOGIN)) {
+      throw new Error(`${machine} isn't connected, or its fleetd is too old to sign Antigravity in from here. Fix: update its fleetd, or run agy acp --login on ${machine}`);
+    }
+    let r: NodeActionResult;
+    try {
+      r = (await link(hub).commands.antigravityLogin(machine, code)) as unknown as NodeActionResult;
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : String(e));
+    }
+    return { ok: r.ok, message: r.message, ...(r.login_url !== undefined ? { loginUrl: r.login_url } : {}), ...(r.signed_in !== undefined ? { signedIn: r.signed_in } : {}) };
   },
 };
 
