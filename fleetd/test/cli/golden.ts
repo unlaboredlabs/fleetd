@@ -5,6 +5,7 @@
 // a live hub.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { listenPort } from "../ports.ts";
 
 export const RECORD = process.env.RECORD === "1";
 const SRC = join(import.meta.dir, "../../src/main.ts");
@@ -45,26 +46,33 @@ export class Fleet {
     return merged;
   }
 
-  /** Starts a hub on this home and writes the setup.json the CLI reads its address from. */
+  /** Starts a hub on this home and writes the setup.json the CLI reads its address from. Its port is one no other
+   * process was handed (../ports.ts), and the hub is this one once its own log says it listens there: a hub that
+   * couldn't take the port (another test run's took it first) is started again on another. */
   async startHub(): Promise<void> {
-    const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-    const port = probe.port;
-    await probe.stop(true);
-    const listen = `127.0.0.1:${port}`;
-    this.hubUrl = `http://${listen}`;
-    writeFileSync(join(this.hubHome, "setup.json"), `${JSON.stringify({ listen, url: this.hubUrl, machines: {} }, null, 2)}\n`);
-    this.hub = Bun.spawn([process.execPath, SRC, "hub", "start", "--home", this.hubHome, "--listen", listen], {
-      cwd: this.cwd,
-      env: this.env(),
-      stdout: "ignore",
-      stderr: Bun.file(join(this.home, "hub.log")),
-    });
-    for (let i = 0; i < 200; i++) {
-      const ok = await fetch(`${this.hubUrl}/healthz`).then((r) => r.ok, () => false);
-      if (ok) return;
-      await Bun.sleep(50);
+    const log = join(this.home, "hub.log");
+    for (let tries = 1; ; tries++) {
+      const listen = `127.0.0.1:${listenPort()}`;
+      this.hubUrl = `http://${listen}`;
+      writeFileSync(join(this.hubHome, "setup.json"), `${JSON.stringify({ listen, url: this.hubUrl, machines: {} }, null, 2)}\n`);
+      const hub = Bun.spawn([process.execPath, SRC, "hub", "start", "--home", this.hubHome, "--listen", listen], {
+        cwd: this.cwd,
+        env: this.env(),
+        stdout: "ignore",
+        stderr: Bun.file(log),
+      });
+      this.hub = hub;
+      const said = () => (existsSync(log) ? readFileSync(log, "utf8") : "");
+      for (let i = 0; i < 200 && hub.exitCode === null && !said().includes(`listening on ${listen}`); i++) await Bun.sleep(50);
+      if (hub.exitCode === null && said().includes(`listening on ${listen}`)) {
+        for (let i = 0; i < 200; i++) {
+          const ok = await fetch(`${this.hubUrl}/healthz`).then((r) => r.ok, () => false);
+          if (ok) return;
+          await Bun.sleep(50);
+        }
+      }
+      if (hub.exitCode === null || tries === 3 || !/EADDRINUSE|in use/i.test(said())) throw new Error(`the hub did not answer: ${said()}`);
     }
-    throw new Error(`the hub did not answer: ${readFileSync(join(this.home, "hub.log"), "utf8")}`);
   }
 
   async run(argv: string[], opts: { env?: Record<string, string>; stdin?: string; cwd?: string } = {}): Promise<Run> {

@@ -132,8 +132,9 @@ test("only Linux holds a Chrome past the node: a Mac's runs on the node's own pi
 test.skipIf(process.platform !== "linux")("a held Chrome's connection counts only once the Chrome proves it is its folder's own, never another's on the port", async () => {
   const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "held-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  // Its launcher: a process session of its own, as held.ts starts one, and a process in it standing in for Chrome.
-  const launcher = spawn("/bin/sh", ["-c", "sleep 30 & echo $! > child.pid; wait"], { cwd: dir, detached: true, stdio: "ignore" });
+  // Its launcher: a process session of its own, as held.ts starts one, and a process in it standing in for Chrome. Its
+  // pid file appears whole (renamed into place): one read as the shell opened it, empty, named no process.
+  const launcher = spawn("/bin/sh", ["-c", "sleep 30 & echo $! > child.pid.tmp; mv child.pid.tmp child.pid; wait"], { cwd: dir, detached: true, stdio: "ignore" });
   cleanups.push(() => void process.kill(-launcher.pid!, "SIGKILL"));
   writeFileSync(join(dir, "session.pid"), `${launcher.pid}\n`);
   for (const end = Date.now() + 5_000; !existsSync(join(dir, "child.pid")) && Date.now() < end; ) await Bun.sleep(10);

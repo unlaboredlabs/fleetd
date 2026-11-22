@@ -11,9 +11,10 @@ import { Fleet } from "./golden.ts";
 setDefaultTimeout(90_000);
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const fleets: Fleet[] = [];
+// Side by side: one after another, its hubs' stops ran past the hook's time and left their homes in $TMPDIR.
 afterAll(async () => {
-  for (const f of fleets) await f.stop();
-});
+  await Promise.all(fleets.map((f) => f.stop()));
+}, 30_000);
 
 const fleet = (name: string) => {
   const f = new Fleet(name);

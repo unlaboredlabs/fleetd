@@ -23,7 +23,7 @@ import { dial } from "./stream.ts";
 const NAME = "boat.dev";
 export const API = "https://boat.dev/api/v1";
 /** Where a detached command's output goes in the box. */
-const LOG = "/tmp/.fleetd-start.log";
+export const START_LOG = "/tmp/.fleetd-start.log";
 /** boat's sizes, smallest first (docs.boat.dev/machines). */
 export const TYPES: readonly { type: string; cpu: number; memGb: number }[] = [
   { type: "small", cpu: 2, memGb: 4 },
@@ -189,7 +189,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
         envAt = envPath();
         await onBox("PUT", `${box(id)}/files`, { body: { path: envAt, content: envFile(s.env) }, signal: s.signal });
       }
-      await run(id, launcher(s.argv, { envAt, cwd: s.cwd, log: LOG }), false, s.signal);
+      await run(id, launcher(s.argv, { envAt, cwd: s.cwd, log: START_LOG }), false, s.signal);
     },
 
     async connect(id, port, secret, c = {}) {

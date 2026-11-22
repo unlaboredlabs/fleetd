@@ -7,6 +7,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { boatStandIn, KEY, type StandIn } from "./stand_ins.ts";
+import { listenPort } from "../ports.ts";
 import { provider } from "../../src/sandbox/providers/index.ts";
 import { FLEETD_PATH, fetched, hosted, parse, word } from "../../src/sandbox/providers/recipe.ts";
 import { noQuery } from "../../src/sandbox/providers/shell.ts";
@@ -176,9 +177,7 @@ describe("deliver: which way fleetd reached the box", () => {
    * template holds at FLEETD_PATH. */
   async function box(baked?: Uint8Array) {
     const dir = fresh();
-    const free = Bun.serve({ port: 0, fetch: () => new Response() });
-    const port = free.port;
-    free.stop(true);
+    const port = listenPort();
     const at = join(dir, "baked-fleetd");
     if (baked) writeFileSync(at, baked);
     const { argv, env } = bootArgv();

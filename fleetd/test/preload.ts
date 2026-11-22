@@ -1,9 +1,13 @@
 // Run before every test file (bunfig.toml). A hub's doctor runs `gh auth status` through its default command runner:
 // this machine's own gh, which can answer after a test's wait on a busy runner, or ask GitHub where it is logged in.
 // A test hub gives its doctor stand-ins; one that doesn't fails at once, rather than now and then.
-import { mock } from "bun:test";
+import { afterAll, beforeAll, mock } from "bun:test";
 import * as sqlite from "bun:sqlite";
 import * as doctor from "../src/hub/doctor/index.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setBoxDir } from "../src/node/sandbox/remote/bootstrap.ts";
 
 const runCmd = doctor.runCmd;
 mock.module("../src/hub/doctor/index.ts", () => ({
@@ -26,3 +30,15 @@ class NoSync extends sqlite.Database {
   }
 }
 mock.module("bun:sqlite", () => ({ ...sqlite, Database: NoSync, default: NoSync }));
+
+// A stand-in box (test/sandbox/stand_ins.ts) runs here, and a box keeps its sessions' bundles in BOX_DIR: one /tmp
+// path for every test run on the machine, where one run's box sealing cleared another's bundle mid-clone. Each test
+// process takes its own.
+let boxDir: string | undefined;
+beforeAll(() => {
+  boxDir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "fleetd-box-"));
+  setBoxDir(boxDir);
+});
+afterAll(() => {
+  if (boxDir) rmSync(boxDir, { recursive: true, force: true });
+});
