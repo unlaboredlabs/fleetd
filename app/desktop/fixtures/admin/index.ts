@@ -198,7 +198,6 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
       },
     ],
     project: [],
-    userServers: true,
   });
   return f;
 }
@@ -211,7 +210,7 @@ function oldHub(from: Fixture): Fixture {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
   }
   // Its MCP servers are older than people: Every project shows them, none here.
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
   return f;
 }
 

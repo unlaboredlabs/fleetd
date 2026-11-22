@@ -85,6 +85,13 @@ export const botsText = (server: McpServer, bots: ReadonlyArray<Titled>): string
   return pickedText(list, bots);
 };
 
+/** Which bots use a server, beside its name on its row: none for every bot, else "Only storefront", "Only 3 bots" or
+ * "No bot", so a bot's name never stands there alone. */
+export const onlyText = (server: McpServer, bots: ReadonlyArray<Titled>): string | null => {
+  const text = botsText(server, bots);
+  return text === "Every bot" ? null : text === "No bot" ? text : `Only ${text}`;
+};
+
 /** A pick of bots in words, as the form's control shows it. */
 export const pickedText = (list: ReadonlyArray<ProjectRef> | undefined, bots: ReadonlyArray<Titled>): string => {
   if (list === undefined) return "Every bot";

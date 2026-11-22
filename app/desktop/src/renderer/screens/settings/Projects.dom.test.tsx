@@ -147,7 +147,7 @@ const render = async (page: "project" | "instructions" = "project") => {
         return Promise.resolve(own ? { ok: true, output: { settings: own } } : { ok: false, error: { code: "not_found", message: `Bot p1 on devbox has no repo ${repo}.` } });
       }
       const now = (tool === "project_settings_get" && answers.length > 1 ? answers.shift() : answers[0]) ?? settings;
-      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [] } });
       if (tool === "automation_list") return Promise.resolve({ ok: true, output: { automations: [], memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin", lastRun: { at: AT, trigger: "schedule", state: "done", added: 2, replaced: 0, removed: 1 } } } });
       if (tool === "memory_refresh_run") return Promise.resolve({ ok: true, output: { memoryRefresh: { on: true, at: "04:00", tz: "Europe/Berlin" }, why: "Nothing new since the last refresh." } });
       if (tool === PROJECT_TOOLS.approvals && approvalsFail > 0) {
