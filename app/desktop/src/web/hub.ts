@@ -87,7 +87,7 @@ export class WebHub {
     this.#onState = onState;
     // The client dials the address it is given; this one dials the team's socket on this origin instead.
     const here: Transport = (_url, events, headers) => transport(socket, events, headers);
-    this.#client = new HubClient({ hub: team, key: "", transport: here, emit: (frame) => this.#broadcast(frame) });
+    this.#client = new HubClient({ hub: team, key: "", transport: here, emit: (frame) => this.#broadcast(frame), video: typeof VideoDecoder !== "undefined" });
   }
 
   get state(): HubState {

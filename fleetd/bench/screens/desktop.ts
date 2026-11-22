@@ -3,13 +3,16 @@
 // fleetd carries it (./wire.ts). Prints one JSON line: startup by phase, fps, bytes a second and CPU idle and while a
 // terminal scrolls, a person's takeover, and input-to-pixel for typing, clicks and drags.
 //
-//   bun bench/screens/desktop.ts            (needs Xvfb and xterm on the PATH)
+//   bun bench/screens/desktop.ts [--video <ffmpeg>]   (needs Xvfb and xterm on the PATH)
+//
+// With --video, the watcher decodes H.264: the grabs go through x264 in the ffmpeg named (the node's pinned one).
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Display } from "../../src/node/desktop/display.ts";
 import { onPath } from "../../src/node/desktop/paths.ts";
 import { Session } from "../../src/node/desktop/session.ts";
+import { liveEncoder } from "../../src/node/screen/x264.ts";
 import type { BrowserFrame, BrowserInput } from "../../src/shared/contracts.ts";
 import { CpuSpan, nextFrame, rate, round, type Seen, settle, spread } from "./meter.ts";
 import { Wire } from "./wire.ts";
@@ -17,6 +20,8 @@ import { Wire } from "./wire.ts";
 const xvfb = onPath("Xvfb");
 if (!xvfb || !onPath("xterm")) throw new Error("needs Xvfb and xterm");
 const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "screens-desktop-"));
+const at = process.argv.indexOf("--video");
+const ffmpeg = at < 0 ? undefined : process.argv[at + 1];
 const IDLE_MS = 5_000;
 const ACTIVE_MS = 5_000;
 
@@ -27,7 +32,16 @@ const x = await display.connect();
 const tX = performance.now();
 const xvfbPid = Number(readFileSync(join(display.dir, "xvfb.pid"), "utf8").split(" ")[0]);
 const pids = [xvfbPid];
-const session = new Session(display, x, { id: "bench", thread: "t1", cwd: root, purpose: "bench", secrets: [], kind: "linux_desktop" });
+// The encoder (ffmpeg) is this process's child: counted with the node's part.
+const session = new Session(display, x, {
+  id: "bench",
+  thread: "t1",
+  cwd: root,
+  purpose: "bench",
+  secrets: [],
+  kind: "linux_desktop",
+  ...(ffmpeg ? { encoder: liveEncoder(async () => ffmpeg) } : {}),
+});
 session.open();
 
 const frames: Seen[] = [];
@@ -36,12 +50,13 @@ let shown: BrowserFrame | undefined;
 let carrying = Promise.resolve();
 session.setWatcher({
   kbps: undefined,
+  video: ffmpeg !== undefined,
   send: (f) => {
     // In order, as the links carry them; each counted where the app has it.
     carrying = carrying.then(async () => {
       const { frame, hops } = await wire.carry(f);
       shown = frame;
-      frames.push({ at: performance.now(), bytes: Math.floor((frame.jpegB64.length * 3) / 4), wire: hops.appBytes });
+      frames.push({ at: performance.now(), bytes: Math.floor(((frame.jpegB64 ?? frame.h264B64 ?? "").length * 3) / 4), wire: hops.appBytes });
     });
   },
 });
@@ -112,11 +127,41 @@ for (let i = 0; i < 6; i++) {
   input({ kind: "mouse", action: "released", x: 400, y: 300, button: "left", clickCount: 1 });
 }
 const drags: number[] = [];
+// Past xterm's multi-click time after the clicks, or the first drag selects by word.
+await Bun.sleep(600);
 for (let i = 0; i < 6; i++) {
   input({ kind: "mouse", action: "pressed", x: 5, y: 8, button: "left", clickCount: 1 });
   drags.push(await timed(() => input({ kind: "mouse", action: "moved", x: 60 + i * 30, y: 8, button: "left" })));
   input({ kind: "mouse", action: "released", x: 60 + i * 30, y: 8, button: "left", clickCount: 1 });
   // Past xterm's multi-click time, or the next press selects by word or line.
+  await Bun.sleep(600);
+}
+
+// Take over → the first tap's pixels: handed back, then taken over and tapped at once (a double click selects a word).
+const firstTap: number[] = [];
+// The first frame after `at` that isn't the same picture again (a change of who drives sends the last one anew).
+const changed = async (at: number): Promise<number> => {
+  const before = frames.at(-1)?.bytes;
+  const from = frames.length;
+  while (performance.now() - at < 2_000) {
+    const f = frames.slice(from).find((x) => x.bytes !== before);
+    if (f) return f.at - at;
+    await Bun.sleep(1);
+  }
+  return Number.NaN;
+};
+for (let i = 0; i < 5; i++) {
+  session.setControl("handing_back", "bench");
+  session.setControl("agent", "bench");
+  await Bun.sleep(600);
+  await settle(frames, 250, 3_000);
+  const at = performance.now();
+  session.setControl("human", "bench");
+  input({ kind: "mouse", action: "pressed", x: 30 + i * 40, y: 8, button: "left", clickCount: 2 });
+  input({ kind: "mouse", action: "released", x: 30 + i * 40, y: 8, button: "left", clickCount: 2 });
+  input({ kind: "mouse", action: "pressed", x: 30 + i * 40, y: 8, button: "left", clickCount: 2 });
+  input({ kind: "mouse", action: "released", x: 30 + i * 40, y: 8, button: "left", clickCount: 2 });
+  firstTap.push(await changed(at));
   await Bun.sleep(600);
 }
 
@@ -131,6 +176,7 @@ const per = (n: number) => round(n / Math.max(wire.frames, 1), 2);
 console.log(
   JSON.stringify({
     kind: "linux_desktop",
+    codec: ffmpeg ? "h264" : "jpeg",
     size: shown ? [shown.width, shown.height] : null,
     startup: {
       displayMs: round(tDisplay - t0),
@@ -146,7 +192,7 @@ console.log(
       bytesPerSec: round(active.wirePerSec),
       cpu: { node: round(active.cpu.node, 1), screen: round(active.cpu.screen, 1) },
     },
-    takeover: { nodeMs: round(takeoverMs, 1), handbackNodeMs: round(handbackMs, 1) },
+    takeover: { nodeMs: round(takeoverMs, 1), handbackNodeMs: round(handbackMs, 1), firstTap: spread(firstTap) },
     inputToPixel: { typing: spread(typing), click: spread(clicks), drag: spread(drags) },
     hopsPerFrameMs: { node: per(hops.nodeMs), hub: per(hops.hubMs), app: per(hops.appMs) },
   }),

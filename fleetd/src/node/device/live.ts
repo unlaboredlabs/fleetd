@@ -11,7 +11,9 @@ export function browserFrame(sessionId: string, frame: Frame, control: BrowserCo
   return {
     sessionId,
     seq: frame.seq,
-    jpegB64: Buffer.from(frame.jpeg).toString("base64"),
+    ...(frame.video
+      ? { h264B64: Buffer.from(frame.video.data).toString("base64"), key: frame.video.key }
+      : { jpegB64: Buffer.from(frame.jpeg).toString("base64") }),
     width: Math.max(frame.width, 1),
     height: Math.max(frame.height, 1),
     control,
@@ -55,7 +57,8 @@ export function deviceInput(input: BrowserInput, pressed: { down: boolean }): In
 
 /**
  * Sends each new frame to the hub, the newest at once, then each as the watcher's link has room for it (`kbps`, the
- * hub's word for its slowest viewer); the frames that come meanwhile wait, and only the newest of them goes.
+ * hub's word for its slowest viewer); the frames that come meanwhile wait, and only the newest of them goes. An H.264
+ * frame goes at once, in order: its encoder keeps to the budget, and one skipped would break the ones after it.
  */
 export class Pump {
   private readonly pacer = new Pacer();
@@ -72,6 +75,10 @@ export class Pump {
 
   offer(frame: Frame): void {
     if (this.stopped) return;
+    if (frame.video) {
+      this.next = undefined;
+      return this.send(browserFrame(this.sessionId, frame, this.control()));
+    }
     this.next = frame;
     if (!this.busy) void this.run();
   }

@@ -21,7 +21,7 @@ import {
   worktreeMount,
 } from "../src/node/desktop/index.ts";
 import { bmp, jpeg } from "../src/node/desktop/screen.ts";
-import { NO_VIDEO, Session } from "../src/node/desktop/session.ts";
+import { NO_VIDEO, Session, SETTLE } from "../src/node/desktop/session.ts";
 import { recordingsDir as iosSimRecordingsDir } from "../src/node/device/ios/sim_screen.ts";
 import { Masker } from "../src/node/mask.ts";
 import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
@@ -199,6 +199,18 @@ test("with DAMAGE a grab reads only what changed, patched into the screen before
   expect([...patched.data]).toEqual([...server.pixels]);
   expect(x.changed()).toBe(false);
 
+  // A window moved: no DamageNotify, but the root's structure changed, so the next grab reads it whole.
+  const moved = server.pixelsRead;
+  server.moveWindow(0, 255, 0, [30, 20, 6, 6]);
+  await until("the move", () => x.changed());
+  expect([...(await x.grabRaw()).data]).toEqual([...server.pixels]);
+  expect(server.pixelsRead - moved).toBe(64 * 40);
+  // An agent's screenshot reads the whole screen and leaves a change to the capture loop's next grab.
+  server.paint(7, 7, 7, [1, 1, 1, 1]);
+  await until("damage", () => x.changed());
+  await x.grab();
+  expect(x.changed()).toBe(true);
+  await x.grabRaw();
   // Nothing changed: no read at all, the same screen; and a wait runs out.
   const still = server.pixelsRead;
   expect([...(await x.grabRaw()).data]).toEqual([...server.pixels]);
@@ -237,6 +249,10 @@ test("a watched desktop sends a frame when its screen changes, read as only the 
   server.paint(255, 0, 0, [3, 4, 5, 6]);
   await until("the changed screen's frame", () => frames.length > still);
   expect(server.pixelsRead - read).toBe(5 * 6);
+  // Still SETTLE after that, it is read whole once (what DAMAGE doesn't tell shows then), and not again.
+  await until("the settle read", () => server.pixelsRead - read === 5 * 6 + 64 * 40);
+  await Bun.sleep(SETTLE + 100);
+  expect(server.pixelsRead - read).toBe(5 * 6 + 64 * 40);
 });
 
 test("without DAMAGE the screen counts as changed at every look", async () => {

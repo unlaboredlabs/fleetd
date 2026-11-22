@@ -1,7 +1,9 @@
 // The /app messages of live screens (crates/fleetd/src/hub/app_ws/mod.rs's browser arms): `browser_watch` (a new
 // watch replaces the running one; none stops it), `browser_frame_ack`, `browser_input` and `screen_thumbs`, and the
 // `browser_frame`s and `screen_thumb`s they bring. A watch's frames wait in a one-frame slot, replaced by any newer,
-// and go when the connection's pace has room: a slow link skips to the newest frame rather than queueing.
+// and go when the connection's pace has room: a slow link skips to the newest frame rather than queueing. An H.264
+// frame can't be skipped alone (the ones after it are made from it): one replaced unsent drops the stream for that
+// connection until the keyframe the node is asked for.
 import type { BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -11,7 +13,7 @@ import { Pace, PING } from "./pace.ts";
 import type { AppConn, AppWsArea } from "./app_seam.ts";
 import { forward } from "./thumbs.ts";
 
-type Outgoing = { text: string; seq: number; bytes: number };
+type Outgoing = { text: string; seq: number; bytes: number; h264: boolean };
 
 /** One app connection's live screens. */
 class Connection {
@@ -23,6 +25,8 @@ class Connection {
   thumbs: (() => void) | undefined;
   /** The last reason a person's input was refused, logged once until it changes. */
   inputRefused: string | undefined;
+  /** An H.264 frame went unsent: the next to go is a keyframe or a JPEG. */
+  needKey = false;
 
   constructor(
     private readonly hub: Hub,
@@ -35,6 +39,7 @@ class Connection {
     this.pace = undefined;
     this.slot = undefined;
     this.last = undefined;
+    this.needKey = false;
     clearTimeout(this.deferred);
     this.deferred = undefined;
   }
@@ -126,7 +131,7 @@ function refuse(hub: Hub, conn: AppConn, caller: Caller, e: unknown): void {
   appWs(hub).sendTo(conn, errorFrame(caller.kind === "human" ? e.forPerson() : e));
 }
 
-export function browserWatch(hub: Hub, conn: AppConn, msg: { session?: string; acks?: boolean; fps?: number }): void {
+export function browserWatch(hub: Hub, conn: AppConn, msg: { session?: string; acks?: boolean; fps?: number; video?: boolean }): void {
   const caller = conn.caller;
   if (!caller) return;
   const c = connection(hub, conn);
@@ -138,15 +143,28 @@ export function browserWatch(hub: Hub, conn: AppConn, msg: { session?: string; a
     // The node sends its newest frame again for each `on`: not again to a connection that has it.
     if (c.last === frame.seq) return;
     c.last = frame.seq;
+    const h264 = frame.h264B64 !== undefined;
+    // A stream that lost a frame starts again at a keyframe; a JPEG is a whole picture whatever came before.
+    if (h264 && !frame.key && c.needKey) return;
+    if (c.slot?.h264) {
+      c.needKey = true;
+      c.watch?.key();
+    }
+    if (!h264 || frame.key) c.needKey = false;
+    if (c.needKey) {
+      c.slot = undefined;
+      return;
+    }
     c.slot = {
       text: textOf(frame),
       seq: frame.seq,
-      bytes: Math.floor(frame.jpegB64.length / 4) * 3,
+      bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3,
+      h264,
     };
     c.pump();
   };
   try {
-    c.watch = startWatch(hub, caller, session, onFrame);
+    c.watch = startWatch(hub, caller, session, onFrame, msg.video === true);
     if (msg.acks) c.pace = new Pace(msg.fps);
   } catch (e) {
     refuse(hub, conn, caller, e);

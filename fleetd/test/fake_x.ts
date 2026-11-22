@@ -96,6 +96,24 @@ export class FakeX {
   /** How many pixels the clients' GetImage requests read, all told. */
   pixelsRead = 0;
 
+  /** A window moved (ConfigureNotify, to every client): its pixels change without DamageNotify, as on a real server. */
+  moveWindow(b: number, g: number, r: number, box: [number, number, number, number]): void {
+    const [bx, by, bw, bh] = box;
+    for (let y = by; y < by + bh; y++) {
+      for (let x = bx; x < bx + bw; x++) {
+        const i = (y * this.width + x) * 4;
+        this.pixels[i] = b;
+        this.pixels[i + 1] = g;
+        this.pixels[i + 2] = r;
+      }
+    }
+    for (const c of this.clients) {
+      const ev = Buffer.alloc(32);
+      ev[0] = 22;
+      c.socket.write(ev);
+    }
+  }
+
   private serve(socket: Socket): void {
     let buf = Buffer.alloc(0);
     let setUp = false;

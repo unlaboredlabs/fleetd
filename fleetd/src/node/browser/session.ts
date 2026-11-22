@@ -8,6 +8,7 @@ import { jpegSize, Pacer } from "./fit.ts";
 import { refusal as guardRefusal, type GuardSession } from "./guard.ts";
 import { hostOf } from "./logins.ts";
 import { Scrub } from "../mask.ts";
+import type { Encoded, Input, LiveEncoding, MakeEncoder } from "../screen/live.ts";
 import type { Recording, Steps } from "./recording.ts";
 
 export const WIDTH = 1280;
@@ -26,7 +27,8 @@ export const PAUSED =
   "A person has control of the browser now. You are told the moment they hand it back (carry on with other work meanwhile, or end your turn); your next command after that sees the page as they left it.";
 
 /** Where a watched session's frames go, and the budget the hub last named for it. */
-export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined };
+/** Where a watched session's frames go, the budget the hub last named for it, and whether every watcher decodes H.264. */
+export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean };
 
 /** The schemes of this machine's own files and browser pages, which a boxed session's page is closed on: a backstop only,
  * as Chrome's error page (chrome-error:) and an empty URL are left alone. */
@@ -106,6 +108,8 @@ export class Session implements GuardSession {
     this.start0 = startedAt === undefined ? performance.now() : performance.now() - Math.max(Date.now() - Date.parse(startedAt), 0);
   }
 
+  /** The live view's H.264 encoder, once the broker gave it one (encodeWith). */
+  private encoder: LiveEncoding | undefined;
   /** Where the driver's answers and events go (the proxy's socket), on this connection and the next. */
   private driver: ((message: Record<string, unknown>) => void) | undefined;
   /** Closes the driver's socket: at the session's end, so its next command connects again and hears why. */
@@ -419,14 +423,47 @@ export class Session implements GuardSession {
   /** Sends this session's frames to the hub from now on (a watcher), the newest at once, or no more. */
   setWatcher(watcher: Watcher | undefined): void {
     this.watcher = watcher;
+    this.encoder?.key();
+    if (!watcher) this.encoder?.stop();
     if (watcher && this.last) {
       // As things are now: a still page sends no new frame, so the newest says who drives and where it is.
       this.offer({ ...this.last, control: this.controlNow, ...this.frameUrl() });
     }
   }
 
-  setBudget(kbps: number | undefined): void {
-    if (this.watcher) this.watcher.kbps = kbps;
+  /** The watchers' budget and whether they all decode H.264, as the hub says it. A watch frame again may be a new
+   * watcher: with H.264 it gets the page now, as a lost frame does (`key`). */
+  setBudget(kbps: number | undefined, video = this.watcher?.video): void {
+    const w = this.watcher;
+    if (!w) return;
+    w.kbps = kbps;
+    w.video = video;
+    if (video) this.key();
+  }
+
+  /** A watcher lost an H.264 frame, or just came: the page now as a whole JPEG, then encoded anew from a keyframe,
+   * even if it doesn't change. */
+  key(): void {
+    if (!this.watcher?.video || !this.encoder || !this.last) return;
+    this.encoder.key();
+    this.offer({ ...this.last, control: this.controlNow, ...this.frameUrl() });
+    this.sendNewest();
+  }
+
+  /** Makes the live view's H.264 with `make` (x264, ../screen/x264.ts) for watchers that decode it. */
+  encodeWith(make: MakeEncoder): void {
+    this.encoder ??= make(
+      (f, input) => this.encoded(f, input),
+      (why) => console.warn(`browser ${this.id}: the live view stays JPEG: ${why}`),
+    );
+  }
+
+  private encoded(f: Encoded, input: Input): void {
+    const w = this.watcher;
+    if (!w?.video || !("jpeg" in input)) return;
+    const [width, height] = input.jpeg;
+    this.seq += 1;
+    w.send({ sessionId: this.id, seq: this.seq, width, height, control: this.controlNow, h264B64: Buffer.from(f.data).toString("base64"), key: f.key, ...this.frameUrl() });
   }
 
   watched(): boolean {
@@ -477,9 +514,17 @@ export class Session implements GuardSession {
   }
 
   private sendNewest(): void {
-    if (!this.watcher || !this.last) return;
-    this.offer(this.last);
-    this.sent = { at: performance.now(), seq: this.last.seq };
+    const w = this.watcher;
+    const last = this.last;
+    if (!w || !last) return;
+    // Chrome makes the screencast's JPEGs anyway: they go as they are while the watchers' links keep up. Once one is the
+    // bound (the hub named a budget), H.264, at a third of the bytes or less, for ~35% of a core more (Chrome's JPEGs
+    // decoded and encoded again); as JPEG while the encoder can't.
+    const encoded = w.video === true && w.kbps !== undefined && this.encoder !== undefined && last.jpegB64 !== undefined
+      && this.encoder.put({ jpeg: [last.width, last.height] }, Buffer.from(last.jpegB64, "base64"), w.kbps);
+    if (!encoded) this.encoder?.stop();
+    if (!encoded) this.offer(last);
+    this.sent = { at: performance.now(), seq: last.seq };
   }
 
   private async event(e: Event): Promise<void> {

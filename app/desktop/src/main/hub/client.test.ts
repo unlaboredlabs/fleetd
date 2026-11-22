@@ -79,11 +79,11 @@ class FakeHub {
 /** What every connection opens with: the auth, its opt-ins, and what every hub reads after it. */
 const AUTH = { t: "auth", key: "k1", features: ["deflate"] };
 
-const setup = () => {
+const setup = (video = false) => {
   const hub = new FakeHub();
   const frames: Array<HubFrame> = [];
   // No jitter, so delays read exactly.
-  const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: (f) => frames.push(f), random: () => 0.5 });
+  const client = new HubClient({ hub: "http://devbox:4790", key: "k1", transport: hub.transport, emit: (f) => frames.push(f), random: () => 0.5, video });
   const states = () => frames.flatMap((f) => (f.t === "state" ? [f.state.phase] : []));
   return { hub, frames, client, states };
 };
@@ -626,6 +626,35 @@ describe("HubClient", () => {
     hub.frame({ t: "browser_frame", ...frame, seq: 9, sessionId: "B9a63189230ff64d06936e60523503180" });
     expect(sent()).toEqual([{ t: "browser_watch", session, acks: true }, { t: "browser_frame_ack", seq: 8 }]);
     expect(frames.filter((f) => f.t === "browser_frame")).toHaveLength(2);
+  });
+
+  it("asks for H.264 only from a hub that sends it, and only when its window decodes it; its frames pass as the JPEGs do", () => {
+    const session = "B68722f97b065412024c7cda6c636fd9a";
+    const watches = (hub: FakeHub) => hub.sent.filter((m) => m["t"] === "browser_watch");
+    const ready = { t: "ready", protocol: 1, features: ["browser_sessions", "frame_acks", "h264_frames"] };
+    // A window without WebCodecs: never asked, even of a hub that sends it.
+    const plain = setup(false);
+    plain.client.watch(session);
+    plain.client.start();
+    plain.hub.open();
+    plain.hub.frame(ready);
+    expect(watches(plain.hub)).toEqual([{ t: "browser_watch", session, acks: true }]);
+
+    const { hub, frames, client } = setup(true);
+    client.watch(session);
+    client.start();
+    hub.open();
+    // An older hub: no H.264 asked.
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "frame_acks"] });
+    expect(watches(hub)).toEqual([{ t: "browser_watch", session, acks: true }]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame(ready);
+    expect(watches(hub).at(-1)).toEqual({ t: "browser_watch", session, acks: true, video: true });
+    hub.frame({ t: "browser_frame", sessionId: session, seq: 3, h264B64: "AAAAAWc=", key: true, width: 1206, height: 2622, control: "agent" });
+    expect(hub.sent.at(-1)).toEqual({ t: "browser_frame_ack", seq: 3 });
+    expect(frames.filter((f) => f.t === "browser_frame").map((f) => (f as { frame: { key?: boolean } }).frame.key)).toEqual([true]);
   });
 
   it("asks for the Screens page's pictures only from a hub that sends them, again on each connection, and drops them once off", () => {

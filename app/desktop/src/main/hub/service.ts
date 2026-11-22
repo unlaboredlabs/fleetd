@@ -282,7 +282,8 @@ export class HubService {
     this.#source?.stop();
     this.#held = null;
     this.#paired = { url: hub, key };
-    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
+    // The app's windows are Chromium's: WebCodecs decodes H.264 there.
+    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame), video: true });
     this.#source = client;
     client.chat(this.#chat);
     client.focus(this.#focus);

@@ -50,6 +50,8 @@ import { HEIGHT, WIDTH } from "./session.ts";
 import { hubCall, type Node, onHub, onLocal, toHub } from "./node.ts";
 import type { ScreenHooks, SessionsArea } from "../api.ts";
 import { CAP_VAULT_FILL } from "../../shared/node_link.ts";
+import { ensureFfmpeg } from "../device/sdk.ts";
+import { liveEncoder } from "../screen/x264.ts";
 
 export { type BoxedFor, drivesBrowser, type KeptInBox } from "./broker.ts";
 export { NO_VIDEO } from "./record.ts";
@@ -373,6 +375,7 @@ function nodeHost(node: Node, broker: () => Broker): BrokerHost {
   return {
     call: (op, args, opts) => hubCall(node, op, args, opts),
     send: (frame) => toHub(node, frame),
+    encoder: liveEncoder(() => ensureFfmpeg(home)),
     secrets: (thread) => broker().sessionsArea()?.secretsFor?.(thread) ?? [],
     boxKey: () => broker().boxKey(),
     recordings: new DiskRecordings(

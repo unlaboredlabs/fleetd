@@ -3,14 +3,15 @@
 // and hands it back with browser_control; while it is theirs, their mouse, keys and pastes in the frame go to the page
 // as browser_input, in the frame's own pixels. ⌘⇧↩ never does: the app's keymap catches it before the page's handlers.
 // A browser that is theirs takes their address bar too: an address to go to, back, forward and reload.
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
 import { toast } from "../../ui";
 import { screenMark } from "./timing";
 
-/** The newest frame of the last few sessions shown: a view that comes back shows its page at once, then live again. */
+/** The newest JPEG of the last few sessions shown: a view that comes back shows its page at once, then live again (an
+ * H.264 frame is no picture alone). */
 const shown = new Map<string, BrowserFrame>();
 const KEEP = 8;
 
@@ -33,12 +34,25 @@ export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | und
     if (first) screenMark("frame", sessionId);
   }, [first, sessionId]);
   useEffect(() => {
-    if (frame === undefined) return;
+    if (frame?.jpegB64 === undefined) return;
     shown.delete(sessionId);
     shown.set(sessionId, frame);
     for (const old of shown.keys()) if (shown.size > KEEP) shown.delete(old);
   }, [frame, sessionId]);
   return frame ?? (on ? shown.get(sessionId) : undefined);
+}
+
+/** The picture under `frame`: itself when it is a JPEG, else the session's newest JPEG, which its H.264 draws over. */
+export const pictureOf = (frame: BrowserFrame | undefined, sessionId: string): BrowserFrame | undefined =>
+  frame?.jpegB64 !== undefined ? frame : shown.get(sessionId);
+
+/** Watches the session anew (a JPEG of it, then an H.264 keyframe): for a decoder that lost its way. */
+export function useWatchAgain(sessionId: string): () => void {
+  const { hub } = useDataLayer();
+  return useCallback(() => {
+    void window.fleetd.hub.watch(hub, null);
+    void window.fleetd.hub.watch(hub, sessionId);
+  }, [hub, sessionId]);
 }
 
 /**

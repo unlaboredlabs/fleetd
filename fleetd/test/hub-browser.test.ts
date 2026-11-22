@@ -172,6 +172,47 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   expect(live(t.hub).watchers(S1)).toBe(0);
 });
 
+test("H.264 goes to a session's node only while every watch decodes it, and a watch that lost a frame of it waits for a keyframe the node is asked for", async () => {
+  setup();
+  await t.calls.call(agent("devbox", "p1"), report("live"));
+  const person = caller("read", { kind: "human" });
+  const app = fakeSocket();
+  const phone = fakeSocket();
+  const watches = () => t.link.sent("devbox").filter((f: { t: string }) => f.t === "browser_watch");
+  await t.app.deliver(as(app, person), { t: "browser_watch", session: S1, acks: true, video: true });
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true });
+  // The phone app doesn't decode it: JPEG while it watches, H.264 again once it's gone.
+  await t.app.deliver(as(phone, person), { t: "browser_watch", session: S1 });
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true });
+  t.app.close(phone);
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true });
+
+  const base = { t: "browser_frame", sessionId: S1, width: 1, height: 1, control: "agent" };
+  const still = (seq: number) => ({ ...base, seq, jpegB64: "AAAA" });
+  const h264 = (seq: number, key = false) => ({ ...base, seq, h264B64: "AAAB", ...(key ? { key: true } : {}) });
+  const seqs = () => app.sent.map((f) => (f as { seq: number }).seq);
+  t.link.deliver("devbox", still(1));
+  t.link.deliver("devbox", h264(2, true));
+  // Two in flight: the third waits in the slot, and the fourth would replace it unsent.
+  t.link.deliver("devbox", h264(3));
+  t.link.deliver("devbox", h264(4));
+  expect(seqs()).toEqual([1, 2]);
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true, key: true });
+  await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 2 });
+  // Nothing made from the lost frame goes; the keyframe does, and what follows it.
+  t.link.deliver("devbox", h264(5));
+  await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 1 });
+  expect(seqs()).toEqual([1, 2]);
+  t.link.deliver("devbox", h264(6, true));
+  t.link.deliver("devbox", h264(7));
+  expect(seqs()).toEqual([1, 2, 6, 7]);
+  // The last watch gone: the node stops.
+  const asked = watches().length;
+  t.app.close(app);
+  expect(watches().length).toBe(asked + 1);
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: false });
+});
+
 test("a watch of a session that ended, or with no node, is refused on the socket", async () => {
   setup();
   const person = caller("read", { kind: "human" });

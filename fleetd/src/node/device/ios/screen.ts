@@ -13,9 +13,13 @@
 // go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
 import { jpegSize } from "../../browser/fit.ts";
+import type { StreamFrame, StreamRun } from "../../screen/live.ts";
 
 /** The live view's frames come no closer together than this. */
 export const MIN_GAP = 100;
+/** The H.264 bit rate at most, in kbit/s, and the share of the watchers' links it takes when they are the bound. */
+const VIDEO_KBPS = 2_500;
+const VIDEO_SHARE = 0.7;
 /** How often a stream looks whether someone still watches: it stops this long after the last one left. */
 const WATCHED_EVERY = 250;
 /** After a failed screenshot, the next comes this much later. */
@@ -40,12 +44,11 @@ export const inSession = (args: string[], session: string | undefined) => (sessi
 /** Takes one screenshot of the simulator as JPEG. */
 export type Shoot = () => Promise<Uint8Array>;
 
-/** A running stream of the simulator's screen: `still` asks for its picture now, changed or not; `ended` says why it
- * stopped by itself. */
-export type LiveRun = { still(): void; stop(): void; ended: Promise<string | undefined> };
-/** Starts a stream of the simulator's screen (../../screen/mac_frames.ts): each change a JPEG, sized in the screen's
- * own pixels (the picture may be smaller). */
-export type Live = (onFrame: (jpeg: Uint8Array, width: number, height: number) => void) => Promise<LiveRun>;
+/** A running stream of the simulator's screen (../../screen/mac_frames.ts). */
+export type LiveRun = StreamRun;
+/** Starts a stream of the simulator's screen (../../screen/mac_frames.ts): each change a JPEG or H.264, sized in the
+ * screen's own pixels (the picture may be smaller). */
+export type Live = (onFrame: (frame: StreamFrame) => void) => Promise<LiveRun>;
 
 /**
  * The screenshot loop for one simulator: it runs while `wanted` says someone watches, a new frame to `onFrame` only
@@ -60,6 +63,8 @@ export class Shooter {
   private streaming: LiveRun | undefined;
   /** Why the stream failed, once it has: screenshots from then on. */
   private liveFailed: string | undefined;
+  /** What the watchers take: H.264 (every one decodes it), and their links' budget. */
+  private wants: { video: boolean; kbps: number | undefined } = { video: false, kbps: undefined };
 
   constructor(
     private readonly shoot: Shoot,
@@ -75,7 +80,11 @@ export class Shooter {
   /** Runs while someone watches; a new watcher meanwhile gets the screen at once. */
   run(): void {
     if (this.stopped) return;
-    if (this.looping) return this.streaming?.still();
+    if (this.looping) {
+      // The screen now, even unchanged: a new watcher hasn't seen it.
+      this.last = undefined;
+      return this.streaming?.still();
+    }
     this.looping = true;
     void (this.live && this.liveFailed === undefined ? this.stream(this.live) : this.loop()).finally(() => (this.looping = false));
   }
@@ -85,18 +94,43 @@ export class Shooter {
     this.streaming?.stop();
   }
 
+  /** H.264 from now on (every watcher decodes it), or JPEG; with H.264, `kbps` (undefined: the links keep up) is its
+   * bit rate's bound. Only a stream sends H.264: screenshots stay JPEG. */
+  want(video: boolean, kbps: number | undefined): void {
+    this.wants = { video, kbps };
+    this.tellWants();
+  }
+
+  /** A watcher lost an H.264 frame: the screen now as a JPEG (even unchanged), and the next H.264 frame a keyframe. */
+  key(): void {
+    this.last = undefined;
+    this.streaming?.still();
+  }
+
+  private tellWants(): void {
+    const run = this.streaming;
+    if (!run) return;
+    run.tell(this.wants.video ? "h264" : "jpeg");
+    const kbps = this.wants.kbps;
+    run.tell(`kbps ${kbps === undefined ? VIDEO_KBPS : Math.min(VIDEO_KBPS, Math.max(100, Math.round(kbps * VIDEO_SHARE)))}`);
+  }
+
   /** The stream, until nobody watches; screenshots instead if it can't start or stops by itself. */
   private async stream(live: Live): Promise<void> {
     let run: LiveRun;
     // A watcher that comes back gets the screen at once, changed or not.
     this.last = undefined;
     try {
-      run = await live((jpeg, width, height) => {
+      run = await live((f) => {
+        if (this.stopped) return;
+        const [width, height] = f.screen;
+        const atMs = Math.round(performance.now() - this.start);
+        if (f.kind === "h264") return this.onFrame({ seq: ++this.seq, jpeg: new Uint8Array(0), width, height, atMs, video: { data: f.data, key: f.key } });
         // A still asked for on an unchanged screen is the same picture: the watchers have it.
-        const hash = Bun.hash(jpeg);
-        if (this.stopped || hash === this.last) return;
+        const hash = Bun.hash(f.data);
+        if (hash === this.last) return;
         this.last = hash;
-        this.onFrame({ seq: ++this.seq, jpeg, width, height, atMs: Math.round(performance.now() - this.start) });
+        this.onFrame({ seq: ++this.seq, jpeg: f.data, width, height, atMs });
       });
     } catch (e) {
       this.liveFailed = (e as Error).message;
@@ -104,6 +138,7 @@ export class Shooter {
       return this.loop();
     }
     this.streaming = run;
+    this.tellWants();
     let ended: string | undefined;
     void run.ended.then((why) => (ended = why ?? "it stopped"));
     while (this.wanted() && !this.stopped && ended === undefined) await this.sleep(WATCHED_EVERY);

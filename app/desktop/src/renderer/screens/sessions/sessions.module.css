@@ -340,6 +340,18 @@
   height: 100%;
   user-select: none;
 }
+/* The live H.264 picture, over the JPEG under it once it has a newer one. */
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  visibility: hidden;
+  pointer-events: none;
+}
+.video[data-on] {
+  visibility: visible;
+}
 .screen:focus-visible {
   outline: none;
 }

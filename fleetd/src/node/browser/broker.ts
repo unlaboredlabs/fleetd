@@ -37,6 +37,7 @@ import { type Meta, type Recording, type RecordingStore, Steps } from "./recordi
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting, waitingKey } from "./secure_input.ts";
 import { Session, type SessionState } from "./session.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import type { MakeEncoder } from "../screen/live.ts";
 
 /** A session no step touched this long ends (BrokerHost `idleMinutes`, else 30). */
 const IDLE_MINUTES = 30;
@@ -85,6 +86,8 @@ export type KeptOwner = {
 
 /** What a broker needs of where it runs. */
 export type BrokerHost = {
+  /** What makes a watched page's H.264 (x264, ../screen/x264.ts); absent: JPEG only. */
+  encoder?: MakeEncoder;
   /** A lead call to the hub in a session's name: its result, or its refusal thrown (a ToolError). */
   call(op: string, args: Record<string, unknown>, opts: { threadId?: string; cwd?: string; waitMs?: number }): Promise<Record<string, unknown>>;
   /** A frame to the hub: a watched session's `browser_frame`. */
@@ -314,6 +317,7 @@ export class BrowserBroker {
       // The agent's agent-browser may connect to no other browser (agent_browser.rs `write_policy`).
       await this.policy(thread, false);
       const session = new Session(newId(), thread, browser.cdp, own);
+      if (this.host.encoder) session.encodeWith(this.host.encoder);
       const here = inside ? undefined : this.boxOf(browser);
       const entry: Open = {
         session,
@@ -745,9 +749,11 @@ export class BrowserBroker {
     const session = this.byId(frame.sessionId);
     if (!session) return;
     if (!frame.on) return session.setWatcher(undefined);
-    if (session.watched()) return session.setBudget(frame.kbps);
+    if (frame.key) return session.key();
+    if (session.watched()) return session.setBudget(frame.kbps, frame.video === true);
     session.setWatcher({
       kbps: frame.kbps,
+      video: frame.video === true,
       send: (f) => this.host.send({ t: "browser_frame", ...f }),
     });
   }

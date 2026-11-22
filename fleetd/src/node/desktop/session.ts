@@ -10,7 +10,8 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import { Pacer } from "../browser/fit.ts";
 import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
-import type { App, Launched, Lent, Screen, Target } from "./screen.ts";
+import { type Encoded, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, type StreamFrame, type StreamRun } from "../screen/live.ts";
+import type { App, Launched, Lent, Raw, Screen, Target } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
 /** What a session's recording says without an ffmpeg to encode its video. */
@@ -29,6 +30,9 @@ export const FRAME_GAP = 33;
 const WORK_SHARE = 1 / 3;
 /** The node reads the whole screen at least this often, whatever DAMAGE says. */
 const FULL_EVERY = 2_000;
+/** Once the screen is still this long after a read of only what changed, it is read whole: what DAMAGE doesn't tell
+ * (the X server's own cursor, a window manager's popup) shows a quarter second after things stop moving. */
+export const SETTLE = 250;
 
 /** `desktop`'s call (fleetd-contracts browser.rs `DesktopCall`): its fields as the agent's tool sends them. */
 export type DesktopCall = {
@@ -44,8 +48,8 @@ export type DesktopCall = {
 /** `DesktopDone`: what the action did, and the screen for a screenshot. */
 export type DesktopDone = { message: string; jpegB64?: string; width?: number; height?: number };
 
-/** Where a watched session's frames go, and the budget the hub last named for it. */
-export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined };
+/** Where a watched session's frames go, the budget the hub last named for it, and whether every watcher decodes H.264. */
+export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean };
 
 export type Opened = {
   id: string;
@@ -66,6 +70,8 @@ export type Opened = {
   launchRefusal?: () => string | undefined;
   /** It goes on from a holder before (DesktopSessions `adopt`): when it started, its steps so far, who drove it. */
   resumed?: { startedAt: string; seq: number; control: BrowserControl; note?: string };
+  /** What turns the grabs into H.264 for watchers that decode it (x264, ../screen/x264.ts); absent: JPEG only. */
+  encoder?: MakeEncoder;
 };
 
 export class Session {
@@ -82,6 +88,13 @@ export class Session {
   private lent: Lent | undefined;
   private controlNow: BrowserControl = "agent";
   private watcher: Watcher | undefined;
+  /** The screen's own stream (the Mac's, fleetd-frames) while someone watches: the live view's frames, not the grabs'. */
+  private streaming: StreamRun | undefined;
+  private starting = false;
+  /** Why the stream failed, once it has: the grabs' frames from then on. */
+  private streamFailed: string | undefined;
+  /** The grabs as H.264 while every watcher decodes it (a screen without a stream of its own); absent: JPEG only. */
+  private readonly encoder: LiveEncoding | undefined;
   private liveSeq = 0;
   private last: BrowserFrame | undefined;
   /** Whether `last` waits for the watcher's link. */
@@ -120,6 +133,10 @@ export class Session {
     this.recording = opened.recording;
     this.latest = opened.steps;
     this.launchRefusal = opened.launchRefusal;
+    this.encoder = opened.encoder?.(
+      (f, input) => this.encoded(f, input),
+      (why) => console.warn(`desktop ${this.id}: the live view stays JPEG: ${why}`),
+    );
     const resumed = opened.resumed;
     this.startedAt = resumed?.startedAt ?? new Date().toISOString();
     // A resumed session's offsets go on from its start, as its action log and video have them.
@@ -210,12 +227,112 @@ export class Session {
   /** Sends this session's frames to the hub from now on, the newest at once, or no more. */
   setWatcher(watcher: Watcher | undefined): void {
     this.watcher = watcher;
+    this.encoder?.key();
+    if (!watcher) {
+      this.streaming?.stop();
+      this.streaming = undefined;
+      this.encoder?.stop();
+      return;
+    }
+    if (this.streaming) {
+      // Another watcher: the screen now, then (with H.264) a keyframe.
+      this.tellStream();
+      return this.streaming.still();
+    }
     if (this.last) this.last = { ...this.last, control: this.controlNow };
+    this.sendLive(true);
+    void this.startStream();
+  }
+
+  /** The watchers' budget and whether they all decode H.264, as the hub says it. A watch frame again may be a new
+   * watcher: it gets the screen now, as a lost frame does (`key`). */
+  setBudget(kbps: number | undefined, video = this.watcher?.video): void {
+    if (!this.watcher) return;
+    this.watcher.kbps = kbps;
+    this.watcher.video = video;
+    this.tellStream();
+    this.key();
+  }
+
+  /** A watcher lost an H.264 frame, or just came: the screen now as a whole JPEG, and the next H.264 frame a keyframe
+   * (a new encoder) whether the screen changes or not. */
+  key(): void {
+    if (!this.watcher) return;
+    if (this.streaming) return this.streaming.still();
+    this.encoder?.key();
     this.sendLive(true);
   }
 
-  setBudget(kbps: number | undefined): void {
-    if (this.watcher) this.watcher.kbps = kbps;
+  /** A grab to the H.264 encoder, while every watcher decodes it: true if it went (the live view's frame comes from
+   * there); false for JPEG (none wanted, a stream of the screen's own, no BGRA grabs, or no encoder yet or at all). */
+  private toEncoder(raw: Raw): boolean {
+    const w = this.watcher;
+    if (!w?.video || this.streaming || !this.encoder || this.screen.bgra !== true) {
+      this.encoder?.stop();
+      return false;
+    }
+    return this.encoder.put({ raw: [raw.width, raw.height] }, raw.data, w.kbps);
+  }
+
+  private encoded(f: Encoded, input: Input): void {
+    const w = this.watcher;
+    if (this.closed || !w?.video || !("raw" in input)) return;
+    const [width, height] = input.raw;
+    w.send({ sessionId: this.id, seq: ++this.liveSeq, width, height, control: this.controlNow, h264B64: Buffer.from(f.data).toString("base64"), key: f.key });
+  }
+
+  /** The screen's stream, where it has one, for as long as someone watches; the grabs' frames if it can't run. */
+  private async startStream(): Promise<void> {
+    const open = this.screen.stream;
+    if (!open || this.streamFailed !== undefined || this.starting || this.closed) return;
+    this.starting = true;
+    let run: StreamRun;
+    try {
+      run = await open.call(this.screen, (f) => this.streamed(f));
+    } catch (e) {
+      this.streamFailed = (e as Error).message;
+      console.warn(`desktop ${this.id}: the live view reads the screen itself: ${this.streamFailed}`);
+      return;
+    } finally {
+      this.starting = false;
+    }
+    if (!this.watcher || this.closed) return run.stop();
+    this.streaming = run;
+    this.tellStream();
+    void run.ended.then((why) => {
+      if (this.streaming !== run) return;
+      this.streaming = undefined;
+      this.streamFailed = why ?? "it stopped";
+      console.warn(`desktop ${this.id}: the live view reads the screen itself: ${this.streamFailed}`);
+    });
+  }
+
+  private tellStream(): void {
+    const run = this.streaming;
+    const w = this.watcher;
+    if (!run || !w) return;
+    run.tell(w.video ? "h264" : "jpeg");
+    run.tell(`kbps ${kbpsFor(w.kbps)}`);
+  }
+
+  /** A frame of the stream, to the watcher: with H.264 every frame at once and in order (the JPEG still before a
+   * keyframe among them); JPEG alone as the grabs' go, fitted to the link. */
+  private streamed(f: StreamFrame): void {
+    const w = this.watcher;
+    if (this.closed || !w) return;
+    const [width, height] = f.screen;
+    const frame: BrowserFrame = {
+      sessionId: this.id,
+      seq: ++this.liveSeq,
+      width,
+      height,
+      control: this.controlNow,
+      ...(f.kind === "h264" ? { h264B64: Buffer.from(f.data).toString("base64"), key: f.key } : { jpegB64: Buffer.from(f.data).toString("base64") }),
+    };
+    if (f.kind === "h264" || w.video) return w.send(frame);
+    this.last = frame;
+    this.pending = true;
+    this.sendLive(false);
   }
 
   /** The newest frame to the watcher, if it waits and the link has room for it now (or `now` anyway). */
@@ -228,10 +345,12 @@ export class Session {
     void this.pacer.fit(watcher.kbps, last).then((fitted) => this.watcher?.send(fitted));
   }
 
-  /** A new screen: into the video (not while it only observes), and to the hub while it watches. */
-  private frame(jpeg: Uint8Array, width: number, height: number): void {
+  /** A new screen: into the video (not while it only observes), and to the hub while it watches (unless the screen's
+   * stream or the H.264 encoder sends the live view's frames: `live` false, kept only as the newest picture). */
+  private frame(jpeg: Uint8Array, width: number, height: number, live = true): void {
     if (this.closed) return;
     if (!this.observingNow) this.recording?.video?.frame(jpeg, this.offsetMs());
+    if (this.streaming) return;
     this.liveSeq++;
     this.last = {
       sessionId: this.id,
@@ -241,6 +360,7 @@ export class Session {
       height,
       control: this.controlNow,
     };
+    if (!live) return;
     this.pending = true;
     this.sendLive(false);
   }
@@ -249,22 +369,30 @@ export class Session {
   private async capture(): Promise<void> {
     let lastHash: bigint | undefined;
     let lastFull = performance.now() - FULL_EVERY;
+    // When a read of only what changed last came, until a whole read: its settle read is due SETTLE after.
+    let partial: number | undefined;
     while (!this.closed) {
-      // An observer reads the screen only for a person watching it.
-      if (this.observingNow && !this.watched()) {
+      // An observer reads the screen only for a person watching it, and not while the screen's stream shows it them.
+      if (this.observingNow && (!this.watched() || this.streaming)) {
         await Bun.sleep(FRAME_EVERY);
         continue;
       }
       const started = performance.now();
-      const full = started - lastFull >= FULL_EVERY;
+      const changed = this.screen.changed();
+      const full = started - lastFull >= FULL_EVERY || (!changed && partial !== undefined && started - partial >= SETTLE);
       try {
-        if (this.screen.changed() || full) {
+        if (changed || full) {
           const raw = await this.screen.serial(() => this.screen.grabRaw(full));
-          if (full) lastFull = performance.now();
+          if (full) {
+            lastFull = performance.now();
+            partial = undefined;
+          } else if (this.screen.nextChange) partial = performance.now();
           const hash = Bun.hash.xxHash64(raw.data) ^ BigInt(raw.width * 65536 + raw.height);
           if (hash !== lastHash && !this.closed) {
             lastHash = hash;
-            this.frame(await this.screen.encode(raw), raw.width, raw.height);
+            const encoded = this.toEncoder(raw);
+            // The JPEG still goes to the recording, and stands for the screen for a watcher that comes.
+            this.frame(await this.screen.encode(raw), raw.width, raw.height, !encoded);
           }
         }
       } catch (e) {
@@ -281,8 +409,10 @@ export class Session {
         continue;
       }
       await Bun.sleep(Math.max(0, FRAME_GAP - spent, spent / WORK_SHARE - spent));
-      // Then nothing until the screen changes, or its whole read is due.
-      if (!this.closed) await next.call(this.screen, Math.max(0, FULL_EVERY - (performance.now() - lastFull)));
+      // Then nothing until the screen changes, or a whole read is due (the settle read, or the one every FULL_EVERY).
+      const now = performance.now();
+      const due = Math.min(FULL_EVERY - (now - lastFull), partial === undefined ? FULL_EVERY : SETTLE - (now - partial));
+      if (!this.closed) await next.call(this.screen, Math.max(0, due));
     }
   }
 

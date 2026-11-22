@@ -22,7 +22,7 @@ import { appendAction, files as recordedFiles, GIVE_UP_MS, giveUp, type HubCall,
 import { mkdirPrivate } from "../../config.ts";
 import { deviceInput, Pump } from "../live.ts";
 import type { Frame, Input } from "../scrcpy.ts";
-import { jpegStream } from "../../screen/mac_frames.ts";
+import { ensureHelper, stream } from "../../screen/mac_frames.ts";
 import { Hands, type Live, type Ran, type Runner, Shooter, type Shoot } from "./screen.ts";
 import { recordingStarted, type Simctl } from "./simctl.ts";
 import { iosDir } from "./wrapper.ts";
@@ -162,8 +162,13 @@ function recordingOf(pid: number, path: string, started: () => boolean, gone: ()
 /** The tools on the Mac's own simulators: fleetd-frames' stream (built beside `shots`), simctl's screenshot (through a
  * file in `shots`) and recordVideo. */
 export function simctlTools(simctl: Simctl, shots: string): SimTools {
+  const frames = join(dirname(shots), "frames");
+  // Built as the Mac's node starts (~10 s, once per source), not as the first person watches.
+  if (process.platform === "darwin") {
+    void ensureHelper(frames).catch((e: Error) => console.warn(`iOS live view: screenshots until fleetd-frames builds: ${e.message}`));
+  }
   return {
-    live: (udid) => (onFrame) => jpegStream(join(dirname(shots), "frames"), ["sim", simctl.set, udid], onFrame),
+    live: (udid) => (onFrame) => stream(frames, ["sim", simctl.set, udid], onFrame),
     async shoot(udid) {
       mkdirSync(shots, { recursive: true });
       const to = join(shots, `${udid}.jpg`);
@@ -298,8 +303,24 @@ export class SimScreen {
 
   private frame(frame: Frame): void {
     if (this.closed) return;
-    this.newest = frame;
+    // A new watcher starts from a whole picture: an H.264 frame alone is none.
+    if (!frame.video) this.newest = frame;
     for (const watcher of this.watchers) watcher(frame);
+  }
+
+  /** H.264 from now on (every watcher decodes it) within `kbps`, or JPEG. */
+  want(video: boolean, kbps: number | undefined): void {
+    this.shooter.want(video, kbps);
+  }
+
+  /** A watcher lost an H.264 frame: the screen now as a JPEG, then H.264 from a keyframe. */
+  key(): void {
+    this.shooter.key();
+  }
+
+  /** The screen now, for a watcher that just came: a JPEG, then (with H.264) a keyframe. */
+  fresh(): void {
+    this.shooter.run();
   }
 
   /**
@@ -574,11 +595,14 @@ export class SimScreens {
     const screen = this.byId(frame.sessionId);
     if (!screen) return;
     if (!frame.on) return this.unwatch(screen.id);
+    if (frame.key) return screen.key();
+    screen.want(frame.video === true, frame.kbps);
     const on = this.pumps.get(screen.id);
     if (on) {
-      // Another viewer: it gets the newest frame too.
       on.pump.kbps = frame.kbps;
+      // Another viewer: it gets the newest picture too, and with H.264 a keyframe after it.
       if (screen.newest) on.pump.offer(screen.newest);
+      if (frame.video) screen.fresh();
       return;
     }
     const pump = new Pump(screen.id, () => screen.control(), (f) => this.link.send({ t: "browser_frame", ...f }), frame.kbps);

@@ -261,6 +261,13 @@ function connectSocket(path: string): Promise<Duplex> {
 /** A screen's changed part: its left, top, right and bottom edges (right and bottom exclusive). */
 type Box = [number, number, number, number];
 
+/** DAMAGE on the root window. */
+type Damage = { major: number; event: number; id: number };
+
+/** The root's structure events (SubstructureNotify): a window destroyed, unmapped, mapped, reparented, configured,
+ * moved by gravity or restacked. Each reads the whole screen next. */
+const STRUCTURE = new Set([17, 18, 19, 21, 22, 24, 26]);
+
 export class X implements Screen {
   /** What changed since the last grab, as DAMAGE's bounding boxes add up: undefined for nothing, "all" before any. */
   private dirty: Box | "all" | undefined = "all";
@@ -276,7 +283,7 @@ export class X implements Screen {
     private readonly setup: Setup,
     keys: Keymap,
     private readonly xtest: number,
-    private readonly damage: { major: number; event: number; id: number } | undefined,
+    private readonly damage: Damage | undefined,
   ) {
     this.keys = keys;
     wire.onEvent = (event) => this.event(event);
@@ -298,7 +305,7 @@ export class X implements Screen {
       };
       const xtest = await ext("XTEST").catch((e) => Promise.reject(new Error(xErr(e))));
       if (!xtest) throw new Error("the X display has no XTEST extension");
-      let damage: { major: number; event: number; id: number } | undefined;
+      let damage: Damage | undefined;
       try {
         const found = await ext("DAMAGE");
         if (found) {
@@ -307,6 +314,9 @@ export class X implements Screen {
           // ReportLevel BoundingBox: a notify each time the changed part grows, with its box, until the node subtracts.
           wire.send(request(found.major, 1, body(12, (b) => (b.writeUInt32LE(id, 0), b.writeUInt32LE(setup.root, 4), (b[8] = 2)))));
           damage = { ...found, id };
+          // A window moved, shown, hidden or restacked: the server copies its pixels without counting them as the
+          // root's damage, so the node hears of it as the root's structure changing (SubstructureNotify) instead.
+          wire.send(request(2, 0, body(12, (b) => (b.writeUInt32LE(setup.root, 0), b.writeUInt32LE(1 << 11, 4), b.writeUInt32LE(1 << 19, 8)))));
         }
       } catch {
         damage = undefined;
@@ -321,8 +331,9 @@ export class X implements Screen {
 
   private event(event: Buffer): void {
     const code = event[0]! & 0x7f;
-    if (this.damage && code === this.damage.event) {
-      this.damagedAt(event);
+    if (this.damage && (code === this.damage.event || STRUCTURE.has(code))) {
+      if (code === this.damage.event) this.damagedAt(event);
+      else this.dirty = "all";
       this.wake?.();
       this.wake = undefined;
     } else if (code === MAPPING_NOTIFY) {
@@ -355,6 +366,10 @@ export class X implements Screen {
     if (box[2] <= box[0] || box[3] <= box[1] || this.dirty === "all") return;
     const d = this.dirty;
     this.dirty = d ? [Math.min(d[0], box[0]), Math.min(d[1], box[1]), Math.max(d[2], box[2]), Math.max(d[3], box[3])] : box;
+  }
+
+  get bgra(): boolean {
+    return this.setup.lsbFirst;
   }
 
   /** Whether the screen may have changed since the last grab: always without DAMAGE. */
@@ -415,9 +430,7 @@ export class X implements Screen {
     if (this.damage) {
       // What changes from here on is the next grab's: told before this one reads, so nothing falls between.
       this.dirty = undefined;
-      try {
-        this.wire.send(request(this.damage.major, 3, body(12, (b) => b.writeUInt32LE(this.damage!.id, 0))));
-      } catch {}
+      this.subtract();
     }
     try {
       if (!this.damage || whole || dirty === "all" || !kept || kept.length !== width * height * 4) {
@@ -440,6 +453,13 @@ export class X implements Screen {
     }
   }
 
+  /** Empties the server's record of what changed (DamageSubtract): what changes from here on is the next grab's. */
+  private subtract(): void {
+    try {
+      this.wire.send(request(this.damage!.major, 3, body(12, (b) => b.writeUInt32LE(this.damage!.id, 0))));
+    } catch {}
+  }
+
   /** A raw grab as a JPEG. */
   encode(raw: Raw): Promise<Uint8Array> {
     if (this.setup.lsbFirst) return jpeg(raw.data, raw.width, raw.height);
@@ -454,9 +474,12 @@ export class X implements Screen {
     return jpeg(flipped, raw.width, raw.height);
   }
 
+  /** The whole screen as a JPEG (an agent's screenshot): read whole, leaving what changed to the capture loop's next
+   * grab, which would otherwise miss it until its next whole read. */
   async grab(): Promise<{ jpeg: Uint8Array; width: number; height: number }> {
-    const raw = await this.grabRaw();
-    return { jpeg: await this.encode(raw), width: raw.width, height: raw.height };
+    const [width, height] = this.size();
+    const raw = { data: await this.getImage(0, 0, width, height), width, height };
+    return { jpeg: await this.encode(raw), width, height };
   }
 
   private fake(type: number, detail: number, x = 0, y = 0): void {

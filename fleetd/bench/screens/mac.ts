@@ -46,7 +46,7 @@ for(let i=0;i<12;i++)c.fillRect((t/4+i*37)%400,(i*61+t/7)%800,50,50);requestAnim
     ),
 });
 
-/** Something moving on the screen for `ms`: on a simulator, the moving page, then Settings (still) again. */
+/** Something moving on the screen for `ms`: on a simulator, the moving page (its callers open Settings, still, after). */
 async function motion(ms: number): Promise<void> {
   if (which !== "sim") return void (await Bun.sleep(ms));
   await simctl("openurl", sim!, `http://127.0.0.1:${page.port}/`);

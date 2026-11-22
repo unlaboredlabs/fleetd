@@ -88,7 +88,9 @@ export type BrowserResultFrame = {
 export type ScreenStep = { sessionId: BrowserSessionId; step: BrowserAction };
 
 // ---- hub -> node ----
-export type BrowserWatchFrame = { sessionId: BrowserSessionId; on: boolean; kbps?: number };
+/** `video`: every watcher decodes H.264, so the screen may send it (a JPEG first); `key`: a watcher lost an H.264 frame,
+ * so the next is a keyframe. */
+export type BrowserWatchFrame = { sessionId: BrowserSessionId; on: boolean; kbps?: number; video?: boolean; key?: boolean };
 export type BrowserInputFrame = { sessionId: BrowserSessionId; input: BrowserInput };
 export type BrowserControlFrame = { sessionId: BrowserSessionId; control: BrowserControlTo; by: string };
 export type SessionHostFrame = {
