@@ -21,9 +21,12 @@ import { blocksSimulators } from "../../agents_mac/checks.ts";
 import { writeAtomic } from "../../secrets/files.ts";
 import { simWaiting, type Simulators } from "./index.ts";
 import { Lent } from "./pool.ts";
-import type { Runner } from "./screen.ts";
+import { type Runner, runCommand } from "./screen.ts";
 import type { KeptScreen, SimScreens } from "./sim_screen.ts";
 import { binDir, iosDir, iosEnv, setDir, writeConfig } from "./wrapper.ts";
+import { foldable, Helpers, SimDevice, simctlControls, type DeviceState, type Shot } from "./controls.ts";
+import { isPlainIphone, type Runtime } from "./simctl.ts";
+import type { ScreenControl, SimModel, SimModels } from "../../../shared/contracts.ts";
 
 /** A simulator nobody sent a step for this long goes. */
 export const SIM_IDLE = 30 * 60_000;
@@ -31,7 +34,8 @@ export const SIM_IDLE = 30 * 60_000;
 /** What an agent's simulator goes by in agent-device's wrapper (its config, under the node's `sessions/`). */
 export const simKey = (agent: string) => `mac-${agent}`;
 
-type Held = { lent: Lent; device: string; project: string; sinceMs: number; used: number };
+/** `label`: the person a person's own simulator is for, its screen named for them. */
+type Held = { lent: Lent; device: string; project: string; sinceMs: number; used: number; dev: SimDevice; label?: string };
 
 /** A held simulator as `<ios dir>/held.json` keeps it for the next node: its clone, holder and screen. */
 type Kept = {
@@ -46,6 +50,9 @@ type Kept = {
   sinceMs: number;
   used: number;
   screen?: KeptScreen;
+  /** Its device as fleetd last set it (controls.ts): a Duo's fold, the turn, light or dark. */
+  state?: DeviceState;
+  label?: string;
 };
 
 export const heldPath = (home: string) => join(iosDir(home), "held.json");
@@ -72,8 +79,14 @@ export function memBytes(): number {
   return 16 * 2 ** 30;
 }
 
+/** What a start is for beyond an agent's own: a person's simulator (`label`, "Ada"), ahead of agents in line, and the
+ * runtime picked for it. */
+export type StartFor = { person?: string; runtime?: string };
+
 export class MacSims {
   readonly held = new Map<string, Held>();
+  /** The device controls' helpers (controls.ts), built at their first use. */
+  private readonly helpers: Helpers;
   /** The agents waiting for one, in the order they asked. */
   readonly queue = new Queue();
   /** The simulators' screens, where the Mac shows them (its link to the hub). */
@@ -86,7 +99,9 @@ export class MacSims {
     /** node.json's `mac.simulators`: how many agents may hold one at once; absent, from the Mac's memory. */
     private readonly setting: number | undefined,
     private readonly mem: () => number = memBytes,
-  ) {}
+  ) {
+    this.helpers = new Helpers(home);
+  }
 
   /** How many simulators agents may hold at once: the setting, else from the Mac's memory; at least 1. */
   budget(): number {
@@ -100,7 +115,7 @@ export class MacSims {
    * wait is told why there is none, as before the line. A simulator lent now is the `screen` the hub made for this
    * step, when it made one.
    */
-  async start(agent: { name: string; project: string }, device?: string, wait = false, screen?: SimScreenKey): Promise<Started | Queued> {
+  async start(agent: { name: string; project: string }, device?: string, wait = false, screen?: SimScreenKey, as: StartFor = {}): Promise<Started | Queued> {
     // Developer Mode off: the clone's XCTest runner would wait on a password prompt at the Mac's screen.
     const blocked = blocksSimulators(this.home);
     if (blocked) {
@@ -118,7 +133,7 @@ export class MacSims {
     }
     const budget = this.budget();
     const inUse = this.held.size;
-    const turn = this.queue.turn(agent.name, wait, inUse, budget, Date.now());
+    const turn = this.queue.turn(agent.name, wait, inUse, budget, Date.now(), as.person !== undefined);
     if (!turn.now) {
       const { place, full } = turn;
       if (!wait && full) throw new ToolError("failed", `All ${budget} of the Mac's iOS simulators are in use by other agents.`, WAIT_FIX);
@@ -133,7 +148,10 @@ export class MacSims {
     }
     let taken: Awaited<ReturnType<Simulators["lendType"]>>;
     try {
-      taken = device !== undefined ? await this.simulators.lendType(device) : this.simulators.lendOrWait();
+      taken =
+        device !== undefined || as.runtime !== undefined
+          ? await this.simulators.lendType(device ?? (await this.simulators.plainType()), as.runtime)
+          : this.simulators.lendOrWait();
     } catch (e) {
       this.queue.leave(agent.name);
       throw e;
@@ -168,16 +186,31 @@ export class MacSims {
       throw new ToolError("failed", `agent-device wasn't pointed at the simulator: ${(e as Error).message}`);
     }
     rmSync(endedPath(this.home, agent.name), { force: true });
-    this.held.set(agent.name, { lent, device: named, project: agent.project, sinceMs: Date.now(), used: Date.now() });
-    if (screen) {
+    const runner = this.runner(agent.name, lent.udid);
+    const dev = this.device(lent.udid, named, runner);
+    this.held.set(agent.name, {
+      lent,
+      device: named,
+      project: agent.project,
+      sinceMs: Date.now(),
+      used: Date.now(),
+      dev,
+      ...(as.person !== undefined ? { label: as.person } : {}),
+    });
+    // Its appearance read, and a foldable put in the pose fleetd keeps for it, before anyone sees it.
+    await dev.settle();
+    // Ended meanwhile (mac sim end, or its idle end): it has no screen to show.
+    if (screen && this.held.get(agent.name)?.dev === dev) {
       this.screens?.open({
         screen,
         agent: agent.name,
         udid: lent.udid,
         device: named,
         scale: lent.scale,
-        runner: this.runner(agent.name, lent.udid),
+        runner,
         controlFile: controlPath(this.home, key),
+        dev,
+        ...(as.person !== undefined ? { label: as.person } : {}),
       });
     }
     this.save();
@@ -201,6 +234,13 @@ export class MacSims {
     return true;
   }
 
+  /** A simulator's device controls, as fleetd last set them (`state`) when the node before held it. */
+  private device(udid: string, device: string, runner: Runner, state?: DeviceState): SimDevice {
+    const dev = new SimDevice(udid, device, simctlControls(this.simulators.simctl, this.helpers, (args) => runCommand(runner, args), join(iosDir(this.home), "shots")));
+    if (state) dev.state = state;
+    return dev;
+  }
+
   /** Writes who holds which simulator, and their screens, for the next node (`adopt`). */
   save(): void {
     const screens = this.screens?.kept() ?? new Map<string, KeptScreen>();
@@ -215,6 +255,8 @@ export class MacSims {
       sinceMs: h.sinceMs,
       used: h.used,
       ...(screens.has(agent) ? { screen: screens.get(agent)! } : {}),
+      state: h.dev.state,
+      ...(h.label !== undefined ? { label: h.label } : {}),
     }));
     try {
       mkdirSync(iosDir(this.home), { recursive: true });
@@ -241,7 +283,9 @@ export class MacSims {
       const lent = new Lent(k.udid, k.home, this.simulators.simctl);
       lent.runner = k.runner;
       lent.scale = k.scale;
-      this.held.set(k.agent, { lent, device: k.device, project: k.project, sinceMs: k.sinceMs, used: k.used });
+      const runner = this.runner(k.agent, k.udid);
+      const dev = this.device(k.udid, k.device, runner, k.state);
+      this.held.set(k.agent, { lent, device: k.device, project: k.project, sinceMs: k.sinceMs, used: k.used, dev, ...(k.label !== undefined ? { label: k.label } : {}) });
       if (k.screen) {
         this.screens?.resume(
           {
@@ -250,8 +294,10 @@ export class MacSims {
             udid: k.udid,
             device: k.device,
             scale: k.scale,
-            runner: this.runner(k.agent, k.udid),
+            runner,
             controlFile: controlPath(this.home, simKey(k.agent)),
+            dev,
+            ...(k.label !== undefined ? { label: k.label } : {}),
           },
           k.screen,
         );
@@ -312,6 +358,38 @@ export class MacSims {
     return { wrapper: join(binDir(this.home), "agent-device"), env, udid };
   }
 
+  /**
+   * A device control on the agent's simulator (`mac sim <control>`): refused while a person has control of its screen;
+   * a screenshot comes back as its PNG.
+   */
+  async control(agent: string, control: ScreenControl, value?: string): Promise<{ shot?: Shot; device: string }> {
+    const held = this.held.get(agent);
+    if (!held) throw new ToolError("invalid", "You hold no simulator on the Mac.", "mac sim start first");
+    held.used = Date.now();
+    if (this.screens?.of(agent)?.control() === "human") {
+      throw new ToolError(
+        "invalid",
+        "A person has control of your simulator now.",
+        "carry on with other work, or end your turn: you are told the moment they hand it back",
+      );
+    }
+    const started = performance.now();
+    try {
+      const shot = await held.dev.apply(control, value);
+      this.save();
+      this.screens?.controlled(agent, control, true, undefined, Math.round(performance.now() - started));
+      return { ...(shot ? { shot } : {}), device: held.device };
+    } catch (e) {
+      this.screens?.controlled(agent, control, false, (e as Error).message, Math.round(performance.now() - started));
+      throw e;
+    }
+  }
+
+  /** The models a person may start here, and how many of the budget are booted (the Mac's `ios` host check). */
+  async models(): Promise<SimModels> {
+    return { models: modelsOf(await this.simulators.simctl.runtimes()), live: this.held.size, max: this.budget() };
+  }
+
   /** An agent's job on the Mac ended (its screen's log). */
   ran(agent: string, command: string, ok: boolean, durationMs: number): void {
     this.screens?.ran(agent, command, ok, durationMs);
@@ -368,6 +446,29 @@ export class MacSims {
     for (const agent of [...this.held.keys()]) this.end(agent);
     await this.simulators.shutdown();
   }
+}
+
+/**
+ * The iPhones and iPads Xcode's runtimes run, each with its runtimes newest first: plain iPhones first (the newest
+ * number first), then the rest of the iPhones, the foldables and the iPads, as simctl lists them.
+ */
+export function modelsOf(runtimes: Runtime[]): SimModel[] {
+  const byId = new Map<string, SimModel>();
+  for (const r of [...runtimes].reverse()) {
+    for (const t of r.supportedDeviceTypes) {
+      const family = t.productFamily === "iPad" ? "ipad" : t.productFamily === "iPhone" ? (foldable(t.name) ? "foldable" : "iphone") : undefined;
+      if (!family) continue;
+      const m = byId.get(t.identifier) ?? { id: t.identifier, name: t.name, family, runtimes: [] };
+      m.runtimes.push({ id: r.identifier, name: r.name });
+      byId.set(t.identifier, m);
+    }
+  }
+  const order = (m: SimModel) => (m.family === "iphone" ? (isPlainIphone(m.name) ? 0 : 1) : m.family === "foldable" ? 2 : 3);
+  const number = (m: SimModel) => Number(/\d+/.exec(m.name)?.[0] ?? 0);
+  return [...byId.values()]
+    .map((m, i) => [m, i] as const)
+    .sort(([a, i], [b, j]) => order(a) - order(b) || (order(a) === 0 ? number(b) - number(a) : 0) || i - j)
+    .map(([m]) => m);
 }
 
 /** The simulator the agent holds, asked for again: the same one, unless it named another device type. */

@@ -336,6 +336,15 @@ export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's s
                                    until they hand it back); it never uses the Mac's own screen. In
                                    mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
                                    simctl needs: xcrun simctl --set "$FLEETD_MAC_SIM_SET" <command> "$FLEETD_MAC_SIM"
+  mac sim rotate left|right        turns it a quarter (the UI turns; screenshots keep the panel's shape)
+  mac sim shake | home | lock      shakes it (an app's shake-to-undo), presses Home, presses the side button
+  mac sim appearance [light|dark]  sets light or dark (no word: the other one)
+  mac sim location <lat>,<lon>     moves its location (48.8584,2.2945)
+  mac sim fold closed|half-open|open
+                                   an iPhone Duo's pose: closed lights the outer panel, half-open and open the inner;
+                                   take a new agent-device snapshot after it (refs and coordinates change)
+  mac sim screenshot [to]          the lit panel's PNG, into your worktree (an iPhone Duo's too, which agent-device
+                                   screenshot can't pick)
   mac sim end                      ends it, or leaves the line (30 minutes with no mac command ends it too)
 
 Your folder there is $FLEETD_MAC_DIR, the pushed worktree $FLEETD_MAC_REPO; xcodebuild builds into your own

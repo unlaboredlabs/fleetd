@@ -216,9 +216,10 @@ export class Simctl {
     }
   }
 
-  /** One screenshot of the simulator's screen, as JPEG, into `to` (the live view's, screen.ts). */
-  async screenshot(udid: string, to: string): Promise<void> {
-    await this.run(["io", udid, "screenshot", "--type=jpeg", to], SHOT);
+  /** One screenshot of the simulator's screen, as JPEG, into `to` (the live view's, screen.ts); `display` names the
+   * panel of a simulator with two (an iPhone Duo's), where simctl won't pick one. */
+  async screenshot(udid: string, to: string, display?: string): Promise<void> {
+    await this.run(["io", udid, "screenshot", "--type=jpeg", ...(display ? [`--display=${display}`] : []), to], SHOT);
   }
 
   async delete(udid: string): Promise<void> {

@@ -276,7 +276,21 @@ export class Host {
             "do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines",
           );
         }
-        return [await this.sims.start(agent, step.device, step.wait ?? false, screen), none];
+        return [
+          await this.sims.start(agent, step.device, step.wait ?? false, screen, {
+            ...(step.person === undefined ? {} : { person: step.person }),
+            ...(step.runtime === undefined ? {} : { runtime: step.runtime }),
+          }),
+          none,
+        ];
+      case "sim_control": {
+        if (!this.sims) throw new ToolError("invalid", "You hold no simulator on the Mac.", "mac sim start first");
+        const { shot, device } = await this.sims.control(agent.name, step.control, step.value);
+        if (!shot) return [{ step: "sim_control", device }, none];
+        const path = join(agent.dir, "out", `sim-${new Date(this.clock()).toISOString().replace(/[:.]/g, "-")}.png`);
+        writeFileSync(path, shot.png);
+        return [{ step: "sim_control", device, path, width: shot.width, height: shot.height }, none];
+      }
       case "sim_end":
         return [{ step: "sim_end", ended: this.sims?.end(agent.name) ?? false }, none];
       default:

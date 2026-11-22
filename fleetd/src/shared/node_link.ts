@@ -377,6 +377,7 @@ export const REPLY_OF = {
   session_call: "session_reply",
   session_host: "session_host_result",
   mac_call: "mac_result",
+  screen_control: "screen_control_result",
 } as const satisfies Partial<Record<HubToNodeTag, NodeToHubTag>>;
 export type RequestTag = keyof typeof REPLY_OF;
 export type ReplyTag = (typeof REPLY_OF)[RequestTag];

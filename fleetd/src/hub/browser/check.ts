@@ -70,7 +70,23 @@ export function sessionCall(call: Record<string, unknown>): BrowserSessionCall {
       count(e, "bytes");
     }
   }
+  if (call.device !== undefined) device(call.device);
   return call as unknown as BrowserSessionCall;
+}
+
+/** A phone screen's device: its controls and folds short lists of short words, the rest one word each. */
+function device(d: unknown): void {
+  if (typeof d !== "object" || d === null || Array.isArray(d)) throw invalid("device", "an object", d);
+  const o = d as Record<string, unknown>;
+  const words = (field: string, max: number, optional: boolean) => {
+    const v = o[field];
+    if (v === undefined && optional) return;
+    if (!Array.isArray(v) || v.length > max) throw invalid(`device.${field}`, `a list of at most ${max} words`, v);
+    v.forEach((_, i) => text(v as unknown as Record<string, unknown>, String(i), 1, 32));
+  };
+  words("controls", 16, false);
+  words("folds", 8, true);
+  for (const field of ["orientation", "fold", "appearance"]) text(o, field, 1, 32, true);
 }
 
 /** A `browser_recording_part` as the contract has it. */

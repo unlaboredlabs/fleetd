@@ -113,7 +113,8 @@ You can open a screen of your own: **New screen**, the plus beside **Screens** i
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the bot on screen. On the phone, **New Screen** is on a bot's
 ⓘ page ([Phone app](/docs/mobile#screens)).
 
-1. **Pick the kind**: a browser, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
+1. **Pick the kind**: a browser, an Android emulator, an iPhone (a simulator on the agents' Mac: pick its model and
+   iOS, [below](#ios)), a Linux desktop or the agents' Mac. A kind no machine can host
    says why under its name (`Needs a Mac`, `Installing`, `Offline`, `Needs an update`). Pick it for the reason in
    full, from the machines' nodes, and its one fix: an owner or admin gets a button to the part of Settings › Hub ›
    Machines that fixes it; anyone else is told whom to ask.
@@ -407,16 +408,26 @@ without a tap or key.
 
 ## iOS simulators {#ios}
 
-iOS simulators aren't a kind of screen you open (decision `mac.shared-mac`, D298). An agent starts one of its own on
-[the agents' Mac](/docs/agents-mac#sim) with `mac sim start` and drives it with
-[agent-device](https://github.com/callstack/agent-device), and while it holds it the simulator is that agent's screen:
-it lists as "iPhone 17 · T12", in an iPhone bezel, and you watch it live, take it over and hand it back as you do an
-Android screen ([simulator screens](/docs/agents-mac#sim-screens)). New screen offers no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its
-fix while none is set up.
+iOS simulators run on [the agents' Mac](/docs/agents-mac#sim) (decision `mac.shared-mac`, D298). An agent starts one of its own
+with `mac sim start` and drives it with [agent-device](https://github.com/callstack/agent-device), and while it holds
+it the simulator is that agent's screen: it lists as "iPhone 17 · T12", in an iPhone bezel, and you watch it live,
+take it over and hand it back as you do an Android screen ([simulator screens](/docs/agents-mac#sim-screens)).
+
+You start one of your own from New screen › **iPhone** while an agents' Mac is connected (D652): pick the model
+(iPhone 17, iPhone Duo, an iPad) and its iOS, and it opens with you in control
+([a person's own iPhone](/docs/agents-mac#sim-people)). It counts in the Mac's simulator budget and goes ahead of
+agents'. With no Mac connected, the kind says so with its fix.
+
+### Phone controls {#phone-controls}
+
+A phone screen you have control of has a slim strip of device controls: on an iPhone, rotate left and right, shake,
+Home, lock, light/dark, a screenshot (a PNG at the device's full size), a location, and on an iPhone Duo its fold
+(closed, half-open, open); on Android, rotate, Home, Back and a screenshot. Only the controls the screen's machine
+checked are shown ([how each runs](/docs/agents-mac#sim-controls)). MCP clients use `screen_control`; agents run `mac sim
+<control>`.
 
 `session_start` with `kind` `ios` answers with the way to `mac sim start`, or, while the team has no Mac online for
-agents, how an admin adds one (Settings › Hub › Machines, the plus, **A Mac for agents**). The hub answers an older app
-asking for an iOS screen (`screen_open`) the same way; nothing starts.
+agents, how an admin adds one (Settings › Hub › Machines, the plus, **A Mac for agents**).
 Past iOS screens still list, and their recordings still play.
 
 ## Linux desktop screens {#desktop}

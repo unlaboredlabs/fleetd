@@ -268,16 +268,17 @@ export class Simulators {
 
   /** `lendOrWait` of the device type `wanted` (`mac sim start --device`): the golden's type is a warm clone, any other
    * a simulator made and booted for this agent alone. */
-  async lendType(wanted: string): Promise<{ lent: [Lent, string] } | { waiting: Waiting }> {
+  async lendType(wanted: string, runtime?: string): Promise<{ lent: [Lent, string] } | { waiting: Waiting }> {
     let pool: Pool;
     try {
       pool = this.pool();
     } catch (e) {
       throw e instanceof ToolError ? simWords(e) : e;
     }
-    if (wanted === pool.golden.deviceTypeName || wanted === pool.golden.deviceType) return this.lendOrWait();
+    const golden = (wanted === pool.golden.deviceTypeName || wanted === pool.golden.deviceType) && (runtime === undefined || runtime === pool.golden.runtime);
+    if (golden) return this.lendOrWait();
     try {
-      return { lent: await pool.make(wanted) };
+      return { lent: await pool.make(wanted, runtime) };
     } catch (e) {
       throw new ToolError(
         "failed",
@@ -285,6 +286,12 @@ export class Simulators {
         "check the name against xcrun simctl list devicetypes (mac run), or use mac sim start without --device for the Mac's iPhone",
       );
     }
+  }
+
+  /** The device type a start that names none gets: the golden's, else the plain iPhone `pick` chooses. */
+  async plainType(): Promise<string> {
+    if (this.prep.at === "ready") return this.prep.pool.golden.deviceType;
+    return pick(await this.simctl.runtimes())[1].identifier;
   }
 
   /** About how long until the `nth` clone from now is ready (Pool.readyIn); undefined while there is no pool. */
