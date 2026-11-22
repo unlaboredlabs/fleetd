@@ -413,6 +413,20 @@ describe("HubClient", () => {
     expect(client.state.phase).toBe("retrying");
   });
 
+  it("leaves a link with a file's piece on its way to the steady ping: the piece can hold the ping behind it", async () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(QUIET_PING_MS);
+    hub.answers = false;
+    const piece = client.call({ tool: "attachment_part", input: {}, timeoutMs: 120_000 });
+    hub.frame({ t: "event", seq: 11, type: "x" });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
+    expect(client.state.phase).toBe("live");
+    hub.frame({ t: "result", id: hub.sent.at(-1)?.["id"], output: {} });
+    await expect(piece).resolves.toMatchObject({ ok: true });
+  });
+
   it("checks the link when a window comes to the front: kept when it answers, given up when it doesn't", () => {
     const { hub, client } = setup();
     client.start();

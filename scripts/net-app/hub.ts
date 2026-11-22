@@ -39,9 +39,13 @@ const project = { machineId, projectId };
 hub.db.conn
   .query("INSERT INTO machines (machine_id, data) VALUES (?, ?)")
   .run(machineId, JSON.stringify({ machineId, name: machineId, nodeVersion: "1.0.0", status: "online", lastSeenAt: new Date(0).toISOString() }));
-hub.db.conn
-  .query("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, '', '', ?)")
-  .run(machineId, projectId, JSON.stringify({ machineId, projectId, title: "Lab project" }));
+// --projects N: more bots beside the first, each with a chat of its own (the sidebar reads every one's newest line).
+const others = Array.from({ length: Math.max(0, Number(flag("projects") ?? 1) - 1) }, (_, i) => ({ machineId, projectId: `p${i + 2}` }));
+for (const [i, r] of [project, ...others].entries()) {
+  hub.db.conn
+    .query("INSERT INTO projects (machine_id, project_id, search, last_activity_at, data) VALUES (?, ?, '', '', ?)")
+    .run(r.machineId, r.projectId, JSON.stringify({ ...r, title: i === 0 ? "Lab project" : `Lab bot ${i + 1}` }));
+}
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
 const key = `fld_${[...crypto.getRandomValues(new Uint8Array(52))].map((b) => BASE32[b % 32]).join("")}`;
@@ -68,6 +72,13 @@ for (let i = 0; i < history; i++) {
   else {
     const m = chat(hub).add(project, { author: "lead", streaming: true, source: `l${i}` }).message;
     chat(hub).finish(m, prose(300 + (i % 5) * 400));
+  }
+}
+
+for (const r of others) {
+  for (let i = 0; i < 12; i++) {
+    if (i % 2 === 0) chat(hub).add(r, { author: "human", text: prose(80 + (i % 7) * 30), source: `h${i}` });
+    else chat(hub).finish(chat(hub).add(r, { author: "lead", streaming: true, source: `l${i}` }).message, prose(300 + (i % 5) * 400));
   }
 }
 

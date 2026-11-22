@@ -100,6 +100,8 @@ export interface HubClientOptions {
 interface Pending {
   readonly resolve: (outcome: CallOutcome) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+  /** Given longer than DEFAULT_CALL_TIMEOUT_MS (a file's piece, a machine's login): its frames take seconds. */
+  readonly long: boolean;
 }
 
 const fail = (code: string, message: string, fix?: string): CallOutcome => ({ ok: false, error: { code, message, fix } });
@@ -247,9 +249,16 @@ export class HubClient implements HubSource {
     if (this.#checkTimer !== null) clearTimeout(this.#checkTimer);
     this.#checkTimer = setTimeout(() => {
       this.#checkTimer = null;
-      if (this.#ready && this.#heardAt < pingAt) this.#abandon(explainAbandon(this.#options.hub, "silent"));
+      // A long call's frame (an upload's piece) can hold the ping behind it for seconds: the steady ping's longer
+      // wait judges the link then.
+      if (this.#ready && this.#heardAt < pingAt && !this.#longCall()) this.#abandon(explainAbandon(this.#options.hub, "silent"));
     }, QUIET_PONG_MS);
     this.#connection?.ping();
+  }
+
+  #longCall(): boolean {
+    for (const p of this.#pending.values()) if (p.long) return true;
+    return false;
   }
 
   /** A frame came or a call went: once the link has been quiet QUIET_PING_MS after it, one ping. */
@@ -312,9 +321,10 @@ export class HubClient implements HubSource {
       const timer = setTimeout(() => {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
-      this.#pending.set(id, { resolve, timer });
+      const long = timeoutMs > DEFAULT_CALL_TIMEOUT_MS;
+      this.#pending.set(id, { resolve, timer, long });
       this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
-      this.#active();
+      if (!long) this.#active();
     });
   }
 
