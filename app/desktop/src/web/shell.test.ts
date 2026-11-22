@@ -212,6 +212,20 @@ describe("the web shell", () => {
     expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [SESSION.teams[0]?.id ?? ""]: { label: "Acme Inc", color: "green" } });
   });
 
+  it("renames the team itself for an owner or admin, the address the same; anyone else's name stays in this browser", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const { api, stored, calls } = setup((path, init) =>
+      path === `/t/${team}/accounts/v1/team` && init?.method === "POST"
+        ? Response.json({ name: (JSON.parse(init.body as string) as { name: string }).name, address: "acme.fleetd.dev", canRename: true })
+        : new Response(null, { status: 404 }),
+    );
+    expect(await api.hubs.update(ACME, { label: "Acme Inc", color: "green" })).toEqual({ ok: true });
+    expect(calls.some((c) => c.path === `/t/${team}/accounts/v1/team`)).toBe(true);
+    expect((await api.hubs.list())[0]).toEqual({ id: ACME, label: "Acme Inc", cloud: true, color: "green" });
+    // The name is the team's now: this browser keeps only its colour.
+    expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [team]: { color: "green" } });
+  });
+
   it("keeps two teams whose ids begin alike as two hubs, each with its own socket", () => {
     const twins: WebSession = {
       ...SESSION,

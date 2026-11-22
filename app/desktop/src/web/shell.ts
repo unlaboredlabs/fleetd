@@ -277,17 +277,25 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         listListeners.add(listener);
         return () => listListeners.delete(listener);
       },
-      update: (hub, change) => {
+      update: async (hub, change) => {
         const team = teams.get(hub);
         const label = cleanLabel(change.label);
-        if (team === undefined) return Promise.resolve({ ok: false, message: "That team isn't in this account." });
-        if (label === null) return Promise.resolve({ ok: false, message: "Give it a name." });
-        if (change.color !== null && !HUB_COLORS.includes(change.color)) return Promise.resolve({ ok: false, message: "Pick one of the colours." });
-        names = { ...names, [team.id]: { label, ...(change.color === null ? {} : { color: change.color }) } };
+        if (team === undefined) return { ok: false, message: "That team isn't in this account." };
+        if (label === null) return { ok: false, message: "Give it a name." };
+        if (change.color !== null && !HUB_COLORS.includes(change.color)) return { ok: false, message: "Pick one of the colours." };
+        const color = change.color === null ? {} : { color: change.color };
+        // An owner's or admin's new name is the team's own, for everyone (its address stays); anyone else's is what
+        // this browser calls it.
+        const renamed = label === team.name ? null : await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/team"), { json: { name: label } });
+        const named = renamed?.ok === true ? (renamed.body as { name?: unknown }).name : undefined;
+        if (typeof named === "string") {
+          teams.set(hub, { ...team, name: named });
+          names = { ...names, [team.id]: color };
+        } else names = { ...names, [team.id]: { label, ...color } };
         saveNames(deps.storage, names);
         const list = entries();
         for (const listener of listListeners) listener(list);
-        return Promise.resolve({ ok: true });
+        return { ok: true };
       },
     },
     hub: {
