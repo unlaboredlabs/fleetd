@@ -29,6 +29,7 @@ const MODULES = [
   "auth/node_rules",
   "executor/activity_tracker",
   "executor/rules",
+  "issues/rules",
   "ledger/rules",
   "link/duration",
   "mcp/rpc",
@@ -41,6 +42,7 @@ const MODULES = [
   "train/digest_lines",
   "vault/card_rules",
   "watchdog/rules",
+  "watchers/rules",
 ];
 
 test("each module the cloud copied from is the package's, with no hub behind it", () => {
