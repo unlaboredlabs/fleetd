@@ -459,6 +459,19 @@ test("GitHub's own Actions runs on main (Pages, Dependabot) are no CI: with no w
   expect(k.host.told).toEqual([`PR #46 in ${REPO} merged on its review alone: the repo has no CI.`]);
 });
 
+test("a PR that adds the repo's first workflow waits for its own CI, and red goes back to its author: never merged on review alone", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  const actions = { slug: "github-actions" };
+  k.gh.runs = () => [{ id: 9, name: "ci", status: "completed", conclusion: "failure", app: actions, html_url: `https://github.com/${REPO}/actions/runs/9/job/9` }];
+  k.pr(47, "fleetd/T47-ci", { ".github/workflows/ci.yml": "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: false\n" });
+  await k.enqueue(47);
+  await k.settle();
+  expect(k.change(47).state).toBe("ci_failed");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
+});
+
 test("a provider that reported only on the default branch's recent commits is CI: the PR waits for it", async () => {
   const k = kit();
   k.gh.noCi = true;

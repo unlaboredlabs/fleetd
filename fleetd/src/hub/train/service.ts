@@ -981,16 +981,17 @@ export class Train {
   }
 
   /**
-   * Whether PRs into `base` get CI: `base` requires a check other than the train's own, its workflow files have a job,
-   * or some CI reports, a check run (not GitHub Actions') or a commit status of any provider but the train, on one of
-   * `heads` (a PR's, earlier ones too) or on one of the default branch's last `CI_HISTORY` commits (the cloud's rule
-   * too). Throws while one of those can't be read.
+   * Whether PRs into `base` get CI: `base` requires a check other than the train's own, its workflow files or those of
+   * `heads[0]` (the PR's head) have a job, or some CI reports, a check run (not GitHub Actions') or a commit status of
+   * any provider but the train, on one of `heads` (a PR's, earlier ones too) or on one of the default branch's last
+   * `CI_HISTORY` commits (the cloud's rule too). Throws while one of those can't be read.
    */
   async hasCi(repo: string, base: string, heads: string[] = []): Promise<boolean> {
     const ci = await this.ciConfig(repo, base);
     if (ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
-    // A job in `base`'s own workflow files, not the repo's list of workflows, which has GitHub's Pages and Dependabot.
-    if (next.jobChecks(await this.github.workflowFiles(repo, base)).length > 0) return true;
+    // A job in `base`'s own workflow files, not the repo's list of workflows, which has GitHub's Pages and Dependabot;
+    // or in the PR's own (`heads[0]`), as a PR that adds the repo's first workflow is tested by it.
+    for (const at of [base, ...heads.slice(0, 1)]) if (next.jobChecks(await this.github.workflowFiles(repo, at)).length > 0) return true;
     for (const head of heads) if (await this.reported(repo, head)) return true;
     const known = this.ciHistory.get(repo);
     if (known && this.nowMs() - known[0] < CI_CONFIG_TTL_MS) return known[1];
