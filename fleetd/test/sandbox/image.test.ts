@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { PLAYWRIGHT_VERSION } from "../../src/node/browser/chrome.ts";
 import { hosted } from "../../src/sandbox/providers/recipe.ts";
 import { TESTED } from "../../src/node/runner/claude.ts";
+import { BOX_FFMPEG } from "../../src/node/desktop/box_frames.ts";
+import { PACKAGES } from "../../src/node/device/pins.ts";
 
 const DOCKERFILE = readFileSync(join(import.meta.dir, "../../src/sandbox/image/Dockerfile"), "utf8");
 const pin = (re: RegExp): string => {
@@ -63,6 +65,13 @@ test("every download into an image is checked against its pinned SHA-256, and ap
 });
 
 // scripts/check.sh desktop and site, which every writer runs before a push, pass in a box as on its machine.
+test("a box's desktop encodes with the node's own ffmpeg, where box-frames looks for it", () => {
+  const ffmpeg = PACKAGES.find((p) => p.dest === "ffmpeg")!;
+  expect(DOCKERFILE).toContain(ffmpeg.url);
+  expect(DOCKERFILE).toContain(`${ffmpeg.sha256}  /tmp/ffmpeg.txz`);
+  expect(DOCKERFILE).toContain(`install -m 0755 /tmp/ffmpeg/ffmpeg ${BOX_FFMPEG}`);
+});
+
 test("a box has what the pre-push checks need: GTK for Electron, and CHROME naming the headless shell", () => {
   expect(DOCKERFILE).toContain("install -y --no-install-recommends dbus-x11 libgtk-3-0t64 ");
   const chrome = /^ENV CHROME=(\S+)$/mu.exec(DOCKERFILE)?.[1];

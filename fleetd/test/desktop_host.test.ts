@@ -2,8 +2,10 @@
 // hub's calls and frames, the secrets, the box, a recording store), as fleetd cloud gives it. The display runs in a
 // stand-in box: its Xvfb is test/fake_x.ts, made with the cookie BoxDisplay writes there and listening on a socket
 // under $TMPDIR, which the box's dial reaches as socat would. It outlives a dropped holder, as a box's display does.
+// Its picture is read "in the box" as fleetd's `box-frames` reads it there (src/node/desktop/box_frames.ts `serve`),
+// started in this process when the holder writes its script, on a socket of its own.
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -11,7 +13,10 @@ import type { BrowserCallFrame } from "../src/shared/screens_wire.ts";
 import type { Meta, Recording, RecordingStore } from "../src/node/browser/recording.ts";
 import { type DesktopHost, DesktopSessions, type DesktopSnapshot } from "../src/node/desktop/desktops.ts";
 import type { Scrub } from "../src/node/mask.ts";
-import { BoxDisplay, type ScreenBox } from "../src/node/place/box_screens.ts";
+import { serve } from "../src/node/desktop/box_frames.ts";
+import { openPicture } from "../src/node/desktop/picture_link.ts";
+import type { LiveFrame, VideoFrame } from "../src/node/desktop/screen.ts";
+import { BoxDisplay, type ScreenBox, timing } from "../src/node/place/box_screens.ts";
 import { FakeX } from "./fake_x.ts";
 
 const THREAD = "t-cloud";
@@ -29,16 +34,21 @@ const until = async (what: string, ok: () => boolean, ms = 10_000) => {
   }
 };
 
-/** A box whose display is a FakeX: made when the box gets the display's cookie, reached by any dial. `lacks`: what its
- * `command -v` check says is missing. */
-function standInBox(o: { lacks?: string[] } = {}) {
+/** A box whose display is a FakeX: made when the box gets the display's cookie, reached by any dial but a picture's.
+ * `lacks`: what its `command -v` check says is missing; `frames: false`, a box whose fleetd serves no picture (its
+ * port answers nothing). `fromDisplay` counts what the holder's own connections to the display read. */
+function standInBox(o: { lacks?: string[]; frames?: boolean } = {}) {
   const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "desktop-host-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   const runs: string[] = [];
   const dials: number[] = [];
   // The newest display's: each one listens on a socket of its own.
-  const at = { x: undefined as FakeX | undefined, socket: "" };
+  const at = { x: undefined as FakeX | undefined, socket: "", cookie: new Uint8Array(0), fromDisplay: 0 };
   let made = 0;
+  // The pictures' sockets by the port the holder dials, and each one's serve.
+  const pictures = new Map<number, string>();
+  const served: Promise<void>[] = [];
+  cleanups.push(() => Promise.all(served).then(() => {}));
   const box: ScreenBox = {
     run: async (r) => {
       const script = r.argv.join(" ");
@@ -47,8 +57,21 @@ function standInBox(o: { lacks?: string[] } = {}) {
       return { exitCode: 0, outputTail: said, timedOut: false };
     },
     write: async (path, bytes) => {
+      const frames = /\/frames-[0-9a-f]+\.sh$/.test(path) && /--port (\d+) --video (\w+)/.exec(new TextDecoder().decode(bytes));
+      if (frames) {
+        const port = Number(frames[1]);
+        pictures.set(port, "");
+        if (o.frames === false) return;
+        const listen = join(dir, `F${port}`);
+        served.push(serve({ socket: at.socket, cookie: at.cookie, listen, video: frames[2] as "jpeg", waitMs: 5_000 }));
+        // Listening once its serve took the socket.
+        await until("the picture to listen", () => existsSync(listen));
+        pictures.set(port, listen);
+        return;
+      }
       if (!path.endsWith("/xauth")) return;
-      const x = new FakeX(bytes.slice(-16), 64, 40);
+      at.cookie = bytes.slice(-16);
+      const x = new FakeX(at.cookie, 64, 40);
       const socket = join(dir, `X${++made}`);
       await x.listen(socket);
       at.x = x;
@@ -59,7 +82,10 @@ function standInBox(o: { lacks?: string[] } = {}) {
       new Promise<Duplex>((resolve, reject) => {
         dials.push(port);
         if (!at.x) return reject(new Error("ECONNREFUSED"));
-        const s = connect(at.socket);
+        const picture = pictures.get(port);
+        if (picture === "") return reject(new Error("ECONNREFUSED"));
+        const s = connect(picture ?? at.socket);
+        if (picture === undefined) s.on("data", (chunk: Buffer) => void (at.fromDisplay += chunk.length));
         s.once("connect", () => resolve(s)).once("error", reject);
       }),
   };
@@ -123,7 +149,7 @@ const call = (op: string, args: Record<string, unknown> = {}): BrowserCallFrame 
 const sessions = (calls: { op: string; args: Record<string, unknown> }[]) => calls.filter((c) => c.op === "browser_session").map((c) => c.args);
 
 test("a desktop with no node: its display runs in the box, its recording and reports go where its host says", async () => {
-  const { box, runs } = standInBox();
+  const { box, runs, at } = standInBox();
   const { store, recordings } = memoryStore();
   const { h, calls, frames, changed } = host(box, store);
   const d = new DesktopSessions(h);
@@ -141,6 +167,15 @@ test("a desktop with no node: its display runs in the box, its recording and rep
   expect(d.watch({ t: "browser_watch", sessionId: id, on: true } as never)).toBe(true);
   await until("a frame", () => frames.some((f) => f.t === "browser_frame" && f.sessionId === id));
   await until("a video frame", () => (recordings[0]?.frames ?? 0) > 0);
+  // The picture is read in the box: the holder's own connection to the display carries input, never a screen.
+  const before = at.fromDisplay;
+  for (const blue of [40, 80, 120]) {
+    const seen = frames.length;
+    at.x!.paint(blue, 20, 30);
+    await until("the change's frame", () => frames.length > seen);
+  }
+  expect(frames.at(-1)).toMatchObject({ t: "browser_frame", sessionId: id, control: "agent", width: 64, height: 40 });
+  expect(at.fromDisplay - before).toBeLessThan(64 * 40 * 4);
   expect(d.watch({ t: "browser_watch", sessionId: "Bnope", on: true } as never)).toBe(false);
   expect(d.steps()[0]).toMatchObject({ sessionId: id });
 
@@ -156,6 +191,70 @@ test("a desktop with no node: its display runs in the box, its recording and rep
   expect(runs.at(-1)).toContain("rm -rf '/tmp/fleetd-desktop-");
   expect(d.count()).toBe(0);
 });
+
+test("a box whose fleetd serves no picture: the holder reads the screen itself, and the person still sees it", async () => {
+  const upMs = timing.upMs;
+  timing.upMs = 300;
+  cleanups.push(() => void (timing.upMs = upMs));
+  const { box, at } = standInBox({ frames: false });
+  const { store, recordings } = memoryStore();
+  const { h, frames } = host(box, store);
+  const d = new DesktopSessions(h);
+  cleanups.push(() => d.shutdown());
+  const id = String((await d.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }))).sessionId);
+  d.watch({ t: "browser_watch", sessionId: id, on: true } as never);
+  await until("a frame", () => frames.some((f) => f.t === "browser_frame" && f.sessionId === id));
+  await until("a video frame", () => (recordings[0]?.frames ?? 0) > 0);
+  expect(at.fromDisplay).toBeGreaterThanOrEqual(64 * 40 * 4);
+  expect(await d.handle(THREAD, call("desktop", { action: "screenshot" }))).toMatchObject({ width: 64, height: 40 });
+});
+
+test("box-frames serves only a holder with the display's cookie, answers screenshots and ends with its connection", async () => {
+  const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "box-frames-"));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  const cookie = new Uint8Array(16).fill(7);
+  const x = new FakeX(cookie, 32, 24);
+  await x.listen(join(dir, "X"));
+  cleanups.push(() => x.close());
+  const reach = (listen: string) =>
+    new Promise<Duplex>((resolve, reject) => {
+      const s = connect(listen);
+      s.once("connect", () => resolve(s)).once("error", reject);
+    });
+  // Another cookie: refused before anything of the display's goes.
+  const refused = join(dir, "F1");
+  // It goes on waiting for the holder's, until its wait is up.
+  const one = serve({ socket: join(dir, "X"), cookie, listen: refused, video: "none", waitMs: 500 });
+  await until("it to listen", () => existsSync(refused));
+  await expect(openPicture(await reach(refused), new Uint8Array(16).fill(8), { live: () => {}, video: () => {} })).rejects.toThrow("the box's picture stopped");
+  await one;
+
+  const at = join(dir, "F2");
+  const served = serve({ socket: join(dir, "X"), cookie, listen: at, video: "jpeg" });
+  await until("it to listen", () => existsSync(at));
+  const live: LiveFrame[] = [];
+  const video: VideoFrame[] = [];
+  const run = await openPicture(await reach(at), cookie, { live: (f) => void live.push(f), video: (f) => void video.push(f) });
+  run.watch({ kbps: undefined, video: false });
+  x.paint(200, 10, 10);
+  await until("a live frame", () => live.some((f) => f.jpegB64 !== undefined && f.width === 32));
+  await until("a video frame", () => video.some((f) => f.kind === "jpeg"));
+  const shot = await run.shot();
+  expect(shot).toMatchObject({ width: 32, height: 24 });
+  expect([shot.jpeg[0], shot.jpeg[1]]).toEqual([0xff, 0xd8]);
+  // Nobody watches: no live frame from then on, the video's go on.
+  run.watch(undefined);
+  await Bun.sleep(100);
+  const seen = live.length;
+  x.paint(10, 200, 10);
+  const videos = video.length;
+  await until("the change in the video", () => video.length > videos);
+  expect(live.length).toBe(seen);
+  // The holder goes: so does it.
+  run.stop();
+  expect(await run.ended).toBeUndefined();
+  await served;
+}, 20_000);
 
 test("a box without Xvfb, openbox or socat says so at once, and nothing waits on it", async () => {
   const { box, dials } = standInBox({ lacks: ["openbox", "socat"] });

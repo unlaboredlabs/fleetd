@@ -202,6 +202,8 @@ the share sheet. MCP clients use `screen_control`; agents run `mac sim <control>
 - **An agent in a hosted sandbox gets a screen in its sandbox.** Its browser (a fresh Chrome on a throwaway profile),
   its Linux desktop (an X display of its own) and its Android emulator run in the sandbox, beside its files and on its network; the machine
   drives, records and shows them over the sandbox's link, and takeover works as anywhere. On fleetd's cloud only.
+  A Linux desktop's picture is read and encoded in the sandbox itself, by its own fleetd, as a node reads one: only
+  frames cross the link, and your keys and clicks land as fast as on a machine of your own.
   Ending the screen kills it and what was launched on it.
 
 Agents aren't sandboxed on their machine (see [Security](/docs/security#keys)). These measures keep screens apart and
