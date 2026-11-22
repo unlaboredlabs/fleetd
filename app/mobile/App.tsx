@@ -27,7 +27,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import { afterSignIn, endSession, revokeDropped, revokeOver, shownAfterSignIn, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { afterSignIn, endSession, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { cloudDomain } from "./src/desktop";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
@@ -397,6 +397,8 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
 
   // Signing out of the hub shown: its key is revoked on purpose, so the hub refusing it is no news to say.
   const leaving = useRef(false);
+  // The screens' hub: a cloud team paired with a code is a team to them once its hub_info says so.
+  const shown = useMemo(() => shownHub(paired, state.leftOut), [paired, state.leftOut]);
   const value = useMemo((): HubContextValue => {
     const signOut = () =>
       void session.signOut().then((r) => {
@@ -454,8 +456,8 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
           resolve,
         ),
       );
-    return { session, state, paired, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud };
-  }, [session, state, paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut]);
+    return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud };
+  }, [session, state, paired, shown, hubs, account, onForget, onShow, onSignedIn, onSignedOut]);
 
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;
