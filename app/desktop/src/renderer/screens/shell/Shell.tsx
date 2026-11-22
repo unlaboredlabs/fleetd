@@ -9,7 +9,7 @@
 // the panel too. ⌘K, not a button, opens the palette.
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { HubId } from "../../../shared/hubs";
-import { AppFrame, TopBar } from "../../ui";
+import { AppFrame, preloadable, preloadWhenIdle, TopBar, useShownYet } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
 import { NewBot, ProjectsHost } from "../projects";
 import { ConnectionsHost } from "../connections/ConnectionsHost";
@@ -27,7 +27,6 @@ import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
-import { MovedBanner } from "../admin/MoveToCloud";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { preloadScreens, ScreenHost, screenPart, SettingsSheet } from "./screens";
@@ -41,6 +40,14 @@ import { arranged } from "./pins";
 import { useAdministers } from "../admin/role";
 import s from "./shell.module.css";
 import { onWeb } from "../../src/web";
+
+// The banner over a hub that moved to fleetd cloud (rare): it brings the move's sheet and Settings' parts, so it is a
+// chunk of its own, asked for at once on the desktop and once the first chat has shown on the web.
+const MovedBanner = preloadable(() => import("../admin/MoveToCloud").then((m) => m.MovedBanner));
+if (onWeb()) preloadWhenIdle(MovedBanner);
+else MovedBanner.preload().catch(() => undefined);
+/** On the web, the banner mounts once the first chat has shown (or this long), so it never shares the first load. */
+const MOVED_AFTER_CHAT_MAX_MS = 30_000;
 
 const JUMPS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
@@ -270,6 +277,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   const onboarding = blocked || screen.id === "onboarding" || screen.id === "start";
   const shown: Screen = blocked && screen.id !== "onboarding" ? { id: "onboarding", hub: null, code: null } : screen;
   const chrome = !onboarding;
+  const movedBanner = useShownYet(MOVED_AFTER_CHAT_MAX_MS) || !onWeb();
   // Settings opens over Get started too, which links to it (Connect Claude): it has the window to itself, not the sheet.
   const settings = sheet && (chrome || screen.id === "start");
 
@@ -398,7 +406,11 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
             ) : null}
             {chrome ? <RestartLine /> : null}
             {chrome ? <ConnectionBanner /> : null}
-            {chrome ? <MovedBanner /> : null}
+            {chrome && movedBanner ? (
+              <Suspense fallback={null}>
+                <MovedBanner />
+              </Suspense>
+            ) : null}
           </div>
           <div className={s.screen} data-held={held || undefined}>
             {shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (
