@@ -6,8 +6,8 @@
 
 export type SettingsFlavour = "hub" | "team";
 
-// A fleetd the cloud starts elsewhere (in a box) is told by its environment.
-let flavour: SettingsFlavour = typeof process !== "undefined" && process.env.FLEETD_SETTINGS_FLAVOUR === "team" ? "team" : "hub";
+// Pure: no environment read, so every module of the package that names a page stays pure (test/pkg/purity.test.ts).
+let flavour: SettingsFlavour = "hub";
 
 /** fleetd cloud's: every team it serves is a team. Set before it serves anyone. */
 export const setSettingsFlavour = (to: SettingsFlavour): void => {

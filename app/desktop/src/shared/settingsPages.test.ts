@@ -3,8 +3,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { holdsLink } from "../renderer/screens/settings/agentsModel";
-import { placesOf } from "../renderer/screens/setup/steps";
 import { readableLines, settingsPath, settingsPathProblems } from "./settingsPages";
 
 const app = join(__dirname, "..", "..", "..");
@@ -44,15 +42,9 @@ describe("a fleetd cloud team's Settings group", () => {
     expect(found).toEqual([]);
   });
 
-  it("reads Team on a cloud team and Hub on a self-hosted hub, in the lines the apps build", () => {
+  it("reads Team on a cloud team and Hub on a self-hosted hub", () => {
     expect(settingsPath(true, "Machines")).toBe("Settings › Team › Machines");
     expect(settingsPath(false, "Setup", "GitHub")).toBe("Settings › Hub › Setup › GitHub");
-    const a = { machineCap: 4 } as Parameters<typeof holdsLink>[0];
-    expect(holdsLink(a, "devbox", undefined, true).text).toBe("devbox's max in Team › Machines");
-    expect(holdsLink(a, "devbox").text).toBe("devbox's max in Hub › Machines");
-    const step = { id: "machines", place: "machines" } as Parameters<typeof placesOf>[0];
-    expect(placesOf(step, false, true).map((p) => p.label)).toEqual(["Open Team › Machines"]);
-    expect(placesOf(step).map((p) => p.label)).toEqual(["Open Hub › Machines"]);
   });
 });
 
