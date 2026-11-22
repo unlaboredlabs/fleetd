@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
+import { readSession, removedLine, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -12,8 +12,13 @@ const answering =
 describe("readSession", () => {
   it("reads who is signed in, their teams and invitations", async () => {
     const body = { email: "lea@example.com", teams: [{ id: "t1", name: "acme", url: "https://acme.fleetd.dev" }], invitations: [{ name: "side", invitedBy: "sam@example.com", role: "member", accept: "a1" }] };
-    expect(await readSession(answering(() => Response.json(body)))).toEqual({ ok: true, session: body });
-    expect(await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [] })))).toEqual({ ok: true, session: { email: "lea@example.com", teams: [], invitations: [] } });
+    expect(await readSession(answering(() => Response.json(body)))).toEqual({ ok: true, session: { ...body, removed: [] } });
+    expect(await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [] })))).toEqual({ ok: true, session: { email: "lea@example.com", teams: [], invitations: [], removed: [] } });
+    // Removed from teams since the last sign-in: read, for one plain line.
+    const removed = await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [], removed: ["acme", "side"] })));
+    expect(removed.ok && removed.session.removed).toEqual(["acme", "side"]);
+    expect(removedLine(["acme"])).toBe("You were removed from acme.");
+    expect(removedLine(["acme", "side"])).toBe("You were removed from acme, side.");
   });
 
   it("is signed out on a 401, and says what went wrong otherwise, never a bare fetch error", async () => {

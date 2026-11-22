@@ -21,11 +21,18 @@ const Team = z.object({ id: z.string().min(1).max(64), name: z.string().min(1).m
 export type WebTeam = z.infer<typeof Team>;
 const Invitation = z.object({ name: z.string().min(1).max(100), invitedBy: z.string().max(320), role: z.string().max(32), accept: z.string().min(1).max(200) });
 export type WebInvitation = z.infer<typeof Invitation>;
-const Session = z.object({ email: z.string().min(1).max(320), teams: z.array(Team).max(100), invitations: z.array(Invitation).max(100).optional() });
+const Session = z.object({
+  email: z.string().min(1).max(320),
+  teams: z.array(Team).max(100),
+  invitations: z.array(Invitation).max(100).optional(),
+  removed: z.array(z.string().min(1).max(100)).max(50).optional(),
+});
 export interface WebSession {
   readonly email: string;
   readonly teams: readonly WebTeam[];
   readonly invitations: readonly WebInvitation[];
+  /** The teams the person was removed from since their last sign-in: said once, on the first page after it. */
+  readonly removed: readonly string[];
 }
 
 /** A refusal or failure as the screens show one: what happened and what to do. */
@@ -88,7 +95,7 @@ export const readSession = async (fetch: Fetch): Promise<SessionRead> => {
   if (!answer.ok) return answer;
   const got = Session.safeParse(answer.body);
   if (!got.success) return { ok: false, failure: { code: "", message: "fleetd cloud answered in a way this page doesn't read.", fix: "Reload the page." } };
-  return { ok: true, session: { email: got.data.email, teams: got.data.teams, invitations: got.data.invitations ?? [] } };
+  return { ok: true, session: { email: got.data.email, teams: got.data.teams, invitations: got.data.invitations ?? [], removed: got.data.removed ?? [] } };
 };
 
 /** Where Sign in goes: WorkOS's page, then back to `back` (this page's path and route), only ever a path of this origin. */
@@ -140,3 +147,6 @@ export const teamFromAddress = (address: { readonly search: string; readonly has
   if (hub === undefined) return { search, hash: address.hash };
   return { search, hash: toHash({ ...parseHash(address.hash), at: hub }) };
 };
+
+/** The one line a person removed from teams reads at their next sign-in. */
+export const removedLine = (teams: readonly string[]): string => `You were removed from ${teams.join(", ")}.`;

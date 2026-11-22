@@ -23,6 +23,8 @@ export interface GateActions {
   readonly join: (invitation: WebInvitation) => Promise<WebFailure | null>;
   /** On to the app, with the invitations left for another time. */
   readonly later: () => void;
+  /** A team of the person's own (someone who came by an invitation has none); its refusal, or null once made. */
+  readonly makeTeam: () => Promise<WebFailure | null>;
   readonly signOut: () => void;
 }
 
@@ -72,19 +74,7 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
       </Stage>
     );
   }
-  if (view.at === "no-team") {
-    return (
-      <Stage id="web.no-team" bot="idle" title="No team yet">
-        <Text strong>{`${view.email} isn't in a fleetd team`}</Text>
-        <Text tone="quiet">Ask a teammate to invite this email, then sign in again.</Text>
-        <div className={st.actions}>
-          <Button size="md" onClick={actions.signOut}>
-            Sign out
-          </Button>
-        </div>
-      </Stage>
-    );
-  }
+  if (view.at === "no-team") return <NoTeam email={view.email} actions={actions} />;
   return <Invitations view={view} actions={actions} />;
 }
 
@@ -125,6 +115,30 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
         </Button>
         <Button size="md" variant="quiet" disabled={busy} onClick={next}>
           Not now
+        </Button>
+      </div>
+    </Stage>
+  );
+}
+
+/** In no team (one who came by an invitation and said Not now): a team of their own, or a teammate's invite. */
+function NoTeam({ email, actions }: { email: string; actions: GateActions }) {
+  // Undefined while it is being made; a refusal says why in place of the line.
+  const [refused, setRefused] = useState<WebFailure | null | undefined>(null);
+  const make = () => {
+    setRefused(undefined);
+    void actions.makeTeam().then(setRefused);
+  };
+  return (
+    <Stage id="web.no-team" bot="idle" title="No team yet">
+      <Text strong>{`${email} isn't in a fleetd team`}</Text>
+      <Text tone="quiet">{refused ? `${refused.message} ${refused.fix ?? ""}`.trim() : "Make one of your own, or ask a teammate to invite this email."}</Text>
+      <div className={st.actions}>
+        <Button variant="primary" size="md" disabled={refused === undefined} onClick={make}>
+          Make a team
+        </Button>
+        <Button size="md" onClick={actions.signOut}>
+          Sign out
         </Button>
       </div>
     </Stage>

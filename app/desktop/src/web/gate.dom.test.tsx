@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UiProvider } from "../renderer/ui";
 import { Gate, type GateActions, type GateView } from "./Gate";
+import type { WebFailure } from "./session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -16,6 +17,7 @@ const actions = {
   retry: vi.fn(),
   join: vi.fn(),
   later: vi.fn(),
+  makeTeam: vi.fn(() => Promise.resolve<WebFailure | null>(null)),
   signOut: vi.fn(),
 } satisfies GateActions;
 
@@ -80,9 +82,15 @@ it("each invitation in turn: Join, a refusal said in the box, then Not now goes 
   expect(actions.later).toHaveBeenCalledOnce();
 });
 
-it("no team, and a failure, each with its one way on", async () => {
+it("no team (one who came by an invitation and passed), and a failure, each with its way on", async () => {
   await show({ at: "no-team", email: "lee@example.com" });
   expect(host.textContent).toContain("lee@example.com isn't in a fleetd team");
+  // A team of their own, on asking; a refusal says why, in place.
+  await press("Make a team");
+  expect(actions.makeTeam).toHaveBeenCalledOnce();
+  actions.makeTeam.mockResolvedValueOnce({ code: "rate_limited", message: "fleetd cloud is taking in too many new teams right now.", fix: "Try again in an hour." });
+  await press("Make a team");
+  expect(host.textContent).toContain("fleetd cloud is taking in too many new teams right now. Try again in an hour.");
   await press("Sign out");
   expect(actions.signOut).toHaveBeenCalledOnce();
   await show({
