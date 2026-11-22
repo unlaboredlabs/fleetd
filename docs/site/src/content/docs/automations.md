@@ -1,6 +1,6 @@
 ---
 title: Automations
-description: Run a stored prompt on a schedule, from a webhook, or with Run now. Each run becomes an order the bot's lead starts on its own.
+description: Run a stored prompt on a schedule, from a webhook, or with Run now. Each run becomes an order the bot's lead starts on its own. Watchers look at your software on a schedule and speak up only when something is off.
 ---
 
 An automation is a prompt you keep for a bot, plus what starts it:
@@ -20,6 +20,52 @@ run starts one.
 The nightly [memory refresh](/docs/what-agents-are-told#memory-refresh) is built in, not an automation: it opens
 no order, and it is on the bot's Instructions & memory, beside the memory it tidies (see
 [below](#the-nightly-memory-refresh)).
+
+## Watchers {#watchers}
+
+A watcher keeps an eye on one thing about your software and speaks up in the bot's chat only when something is off.
+It is an automation that opens no order: each run is one read-only look, and a quiet look posts nothing.
+
+Pick what it watches:
+
+- **Main's CI**: the check runs and commit statuses on the latest commit of the bot's GitHub repo's default branch.
+  It speaks up for a failed, timed-out or cancelled check, a failing status, a check running or waiting for over an
+  hour, or a commit an hour old with no checks.
+- **Deploys**: the latest status of each GitHub deployment environment (up to 8) of the bot's repo. It speaks up for a
+  failed or errored deployment, one queued or in progress for over 30 minutes, or one with no status an hour after it
+  was made. It is offered only once the repo has GitHub deployments.
+- **Something else**: one plain sentence, such as "watch the checkout errors in Sentry" or "check that shop.example is
+  up". Its look has WebFetch, WebSearch and the read tools of the bot's [connections](/docs/integrations#policy) (the tools
+  you marked as reading), and nothing that writes.
+
+Then pick how often it looks (every 15 minutes, every hour, or once a day at 09:00 in your zone) and its
+[profile](/docs/glossary#task-profile), which sets the model. For Main's CI and Deploys, fleetd reads GitHub itself and gives
+the evidence to a look with no tools at all. When nothing changed since the last look (same commit, same states), no
+look starts and the run costs nothing.
+
+When something is off, one line goes in the bot's chat, named for the watcher: "Main's CI: test (linux) failed on
+main at 09:50 UTC: https://github.com/…". The line comes once per change: the same failure seen again stays quiet
+until something about it changes.
+
+### Their cost
+
+Each watcher's row shows its last 24 hours: how many looks, how many spoke up, and what they cost, as Claude Code
+reports each look's cost. The day after you add one, the chat gets one line with its first day's looks and cost.
+A look still going after 10 minutes is stopped, and its run fails. A look that can't start (GitHub can't be read, the
+machine is offline) fails, and posts nothing.
+
+### Add one
+
+On the bot's **Automations** tab, the **Watching** group is at the top: press **+**, pick a preset or write the
+sentence, then how often and the profile. On the phone it is the bot's **Watching** row. Or ask the lead ("keep an eye
+on our deploys"). The first time, the lead suggests a few from what it sees in the repo and its connections, and you
+pick. A watcher's **Run now**, **Pause**, **Runs** and **Delete** work as an automation's. You can change how often it
+looks and its profile; a Main's CI or Deploys watcher can't be renamed, and a bot has at most one of each.
+
+From the lead's tools and an MCP client, `automation_create` takes `watch: { "kind": "main_ci" | "deploys" | "other",
+"every": "15m" | "hour" | "day", "profile": … }`; for `other` the prompt is the sentence. `automation_list` lists which
+presets the bot can have as `watchable`, and each watcher's last day as `lastDay`; each run has its `costUsd` and the
+line it posted as `said`.
 
 ## Manage them in the app
 

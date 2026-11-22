@@ -491,7 +491,7 @@ Flag the message you end this turn with for the human's look, with reason in a f
 
 ### automation_create
 
-Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.
+Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own. A watcher (watch) is different: a read-only look at the bot's own software on a schedule (every 15m, hour or day) that opens no order and posts one line in the chat only when something is off; add one only when the person asks, with their pick of kind, every and profile.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -501,6 +501,10 @@ Make an automation for this bot: a name, the prompt each run gives you as a new 
 | `schedule.at` | string | no | One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once. At most 40 characters. |
 | `schedule.cron` | string | no | Standard 5-field cron (or @daily, @hourly…), for a recurring run. At most 100 characters. |
 | `schedule.tz` | string | no | An IANA zone; leave it out for the person's own. |
+| `watch` | object | no | Make it a watcher (a person asked for one): `kind` main_ci or deploys, or other with the one sentence of what to watch as the prompt; `every` sets its schedule, so leave schedule out. |
+| `watch.every` | string | yes | How often a watcher looks. One of `15m` (Every 15 minutes), `hour` (Every hour, on the hour), `day` (Once a day, at 09:00 in the person's zone). |
+| `watch.kind` | string | yes | What a watcher watches. One of `main_ci` (The checks on the default branch of the bot's GitHub repo), `deploys` (The statuses of its GitHub repo's deployments), `other` (The one plain sentence in its prompt, through the bot's connections). |
+| `watch.profile` | string | no | Matches `^[a-z0-9][a-z0-9._-]{0,31}$`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
@@ -548,6 +552,10 @@ Change an automation's name, prompt or schedule (removeSchedule: true takes it o
 | `schedule.at` | string | no | One time, for a reminder or follow-up: a date and time such as 2026-11-03T18:00 in `tz`. It runs once. At most 40 characters. |
 | `schedule.cron` | string | no | Standard 5-field cron (or @daily, @hourly…), for a recurring run. At most 100 characters. |
 | `schedule.tz` | string | no | An IANA zone; leave it out for the person's own. |
+| `watch` | object | no | A watcher's new frequency or profile; its kind stays. |
+| `watch.every` | string | yes | How often a watcher looks. One of `15m` (Every 15 minutes), `hour` (Every hour, on the hour), `day` (Once a day, at 09:00 in the person's zone). |
+| `watch.kind` | string | yes | What a watcher watches. One of `main_ci` (The checks on the default branch of the bot's GitHub repo), `deploys` (The statuses of its GitHub repo's deployments), `other` (The one plain sentence in its prompt, through the bot's connections). |
+| `watch.profile` | string | no | Matches `^[a-z0-9][a-z0-9._-]{0,31}$`. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 

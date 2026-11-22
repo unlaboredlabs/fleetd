@@ -212,6 +212,10 @@
         "schedule": {
           "$ref": "#/$defs/AutomationScheduleCall",
           "description": "Absent: it runs only on Run now (and a webhook, once a person adds one)."
+        },
+        "watch": {
+          "$ref": "#/$defs/AutomationWatch",
+          "description": "Make it a watcher (a person asked for one): `kind` main_ci or deploys, or other with the one sentence of what to watch as\nthe prompt; `every` sets its schedule, so leave schedule out."
         }
       },
       "required": [
@@ -321,10 +325,33 @@
         },
         "schedule": {
           "$ref": "#/$defs/AutomationScheduleCall"
+        },
+        "watch": {
+          "$ref": "#/$defs/AutomationWatch",
+          "description": "A watcher's new frequency or profile; its kind stays."
         }
       },
       "required": [
         "automationId"
+      ],
+      "type": "object"
+    },
+    "AutomationWatch": {
+      "description": "What a watcher watches and how often; its runs use `profile`, or the bot's default.",
+      "properties": {
+        "every": {
+          "$ref": "#/$defs/WatchEvery"
+        },
+        "kind": {
+          "$ref": "#/$defs/WatchKind"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileName"
+        }
+      },
+      "required": [
+        "kind",
+        "every"
       ],
       "type": "object"
     },
@@ -4458,6 +4485,48 @@
         "url"
       ],
       "type": "object"
+    },
+    "WatchEvery": {
+      "description": "How often a watcher looks.",
+      "oneOf": [
+        {
+          "const": "15m",
+          "description": "Every 15 minutes.",
+          "type": "string"
+        },
+        {
+          "const": "hour",
+          "description": "Every hour, on the hour.",
+          "type": "string"
+        },
+        {
+          "const": "day",
+          "description": "Once a day, at 09:00 in the person's zone.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "WatchKind": {
+      "description": "What a watcher watches.",
+      "oneOf": [
+        {
+          "const": "main_ci",
+          "description": "The checks on the default branch of the bot's GitHub repo.",
+          "type": "string"
+        },
+        {
+          "const": "deploys",
+          "description": "The statuses of its GitHub repo's deployments.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "The one plain sentence in its prompt, through the bot's connections.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "WorkstreamId": {
       "pattern": "^W[1-9][0-9]*$",

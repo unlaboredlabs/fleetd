@@ -188,6 +188,7 @@ import m184 from "../hub/store/migrations/202611221500_memory_tidies.sql" with {
 import m185 from "../hub/store/migrations/202611222000_metric_pipeline.sql" with { type: "text" };
 import m186 from "../hub/store/migrations/202611222021_lead_profile_per_bot.sql" with { type: "text" };
 import m187 from "../hub/store/migrations/202611222100_issue_orders.sql" with { type: "text" };
+import m188 from "../hub/store/migrations/202611222156_watcher_runs.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -378,4 +379,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611222000_metric_pipeline", sql: m185 },
   { name: "202611222021_lead_profile_per_bot", sql: m186 },
   { name: "202611222100_issue_orders", sql: m187 },
+  { name: "202611222156_watcher_runs", sql: m188 },
 ];
