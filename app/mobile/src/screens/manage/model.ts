@@ -1,6 +1,6 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { deleteWords as eraseWords, leadOf, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** A machine by its name; on a fleetd cloud team, its hosted runner is fleetd's computers, not a machine of the team's. */
@@ -153,6 +153,30 @@ export const profilesValue = (view: ProfilesListOutput): string => {
   const on = profileLines(view).filter((p) => p.checked);
   return on.length <= 2 ? on.map((p) => p.name).join(", ") : `${String(on.length)} allowed`;
 };
+
+/** The Lead Model line that follows the hub's lead profile: no profile can be named it. */
+export const LEAD_HUB = "@hub";
+
+export interface LeadLine {
+  readonly value: string;
+  readonly title: string;
+  readonly checked: boolean;
+  readonly disabled: boolean;
+  /** Why it can't be picked: what claude said when it refused its model. */
+  readonly why?: string;
+}
+
+/** Its lead's model: the hub's lead profile first, then each of the hub's, checked on the one its lead starts on. */
+export const leadLines = (view: ProfilesListOutput): LeadLine[] => {
+  const pick = view.leadProfile ?? LEAD_HUB;
+  return [
+    { value: LEAD_HUB, title: `Hub default (${leadOf(view.profiles)?.name ?? ""})`, checked: pick === LEAD_HUB, disabled: false },
+    ...view.profiles.map((p) => ({ value: p.name, title: p.name, checked: pick === p.name, disabled: p.refused !== undefined, ...(p.refused === undefined ? {} : { why: p.refused }) })),
+  ];
+};
+
+/** The value on its Lead Model row. */
+export const leadValue = (view: ProfilesListOutput): string => view.leadProfile ?? "Hub default";
 
 export interface DeleteWords {
   readonly title: string;

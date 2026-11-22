@@ -34,6 +34,11 @@ describe("event effects", () => {
     expect(thread.invalidate).toContainEqual({ tool: "project_get", where: { machineId: "devbox", projectId: "storefront" } });
   });
 
+  it("a lead starting again, or a bot's settings, refetch its Lead model", () => {
+    for (const type of ["lead.started", "project.settings"]) expect(tools(e(type, undefined, { machineId: "devbox", projectId: "storefront" }))).toContain("profiles_list");
+    expect(tools(e("lead.woken"))).not.toContain("profiles_list");
+  });
+
   it("what moves a PR refetches the PR reads; only a new head its files and diff", () => {
     for (const type of ["change.state", "pr.merged", "review.verdict", "task.completed"]) {
       expect(tools(e(type))).toEqual(expect.arrayContaining(["pr_list", "pr_get"]));

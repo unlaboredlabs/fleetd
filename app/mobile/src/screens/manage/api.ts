@@ -152,6 +152,18 @@ export const setProfile = async (hub: Hub, p: ProjectRef, view: ProfilesListOutp
   return r.ok ? { ok: true, value: r.output.profiles } : r;
 };
 
+/** Picks the profile its lead starts on from its next start; undefined: the hub's lead profile again. */
+export const setLeadProfile = async (hub: Hub, p: ProjectRef, name: string | undefined): Promise<Result<null>> => {
+  const r = await hub.call("project_set", { ...ref(p), ...(name === undefined ? { leadDefault: true } : { leadProfile: name }) });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Starts its lead again on its lead profile now, or once its turn ends. */
+export const restartLead = async (hub: Hub, p: ProjectRef): Promise<Result<null>> => {
+  const r = await hub.call("project_set", { ...ref(p), leadRestart: true });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
 export const forgetSignins = async (hub: Hub, p: ProjectRef): Promise<Result<null>> => {
   const r = await hub.call(PROJECT_TOOLS.signinsForget, ref(p), FORGET_MS);
   return r.ok ? { ok: true, value: null } : r;

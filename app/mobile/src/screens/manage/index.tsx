@@ -1,5 +1,5 @@
 // Making and managing bots from the phone: their screens in the root stack (New Bot as a sheet; New Screen, a
-// screen of your own, as one too; a project's screen, Rename, Agent Profiles, its Computer, Approvals, Payments,
+// screen of your own, as one too; a project's screen, Rename, Agent Profiles, Lead Model, its Computer, Approvals, Payments,
 // Skills, the chat's Artifacts and one artifact, its agents' DMs and one DM, its Vault (screens/vault), pushed over its chat, in a stack of their own, its icon as a
 // sheet, and Move and Scale for its picture over everything), and the two ways in: the Chats list's + and a chat's
 // bar. App.tsx adds these to its
@@ -19,6 +19,7 @@ import { NewProject } from "./NewProject";
 import { NewScreen } from "./NewScreen";
 import { Payments } from "./Payments";
 import { Photo } from "./Photo";
+import { LeadModel } from "./LeadModel";
 import { Profiles } from "./Profiles";
 import { Rename } from "./Rename";
 import { Skill } from "./Skill";
@@ -115,7 +116,7 @@ export const newChatOptions = (t: Palette, open: () => void): NativeStackNavigat
 const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 
 /**
- * A project's screen, Rename, Agent Profiles, Approvals, Payments and Skills (a skill's editor a sheet),
+ * A project's screen, Rename, Agent Profiles, Lead Model, Approvals, Payments and Skills (a skill's editor a sheet),
  * pushed over its chat as one screen of the root stack, with a bar of their own that slides in and out with them. The root stack's bar stays
  * hidden over the chat and these, as over the chats list: one it shows and hides again on the way back stood over the
  * screen sliding in, then slid off late (Chat's chatOptions). Info, first in this stack, has a back button of its own
@@ -130,6 +131,7 @@ function ChatInfo() {
       <InfoStack.Screen name="Info" component={Info} options={{ ...pushed(t, "Info"), ...backTo(t, () => root.goBack()) }} />
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
+      <InfoStack.Screen name="LeadModel" component={LeadModel} options={pushed(t, "Lead Model")} />
       <InfoStack.Screen name="Approvals" component={Approvals} options={pushed(t, "Approvals")} />
       <InfoStack.Screen name="ApprovedLog" component={ApprovedLog} options={pushed(t, "Ran Without Asking")} />
       <InfoStack.Screen name="Payments" component={Payments} options={pushed(t, "Payments")} />

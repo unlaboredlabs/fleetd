@@ -2,8 +2,8 @@
 // Settings › Hub › Every project › Agents: the hub's profiles listed with the default marked, one created with fast
 // mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; Lead
 // runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
-// page, where the default is checked for good and another is allowed with project_set, and which profile leads run on,
-// with who to ask for a member.
+// page, where the default is checked for good and another is allowed with project_set, and its Lead model: the hub's
+// lead profile until the bot picks its own (project_set leadProfile), with Restart lead while its lead runs on another.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -41,6 +41,12 @@ let host: HTMLDivElement;
 let root: Root;
 let profiles: Profile[];
 let allowed: string[];
+/** The bot's own lead profile, and whether its lead runs on another, as profiles_list says them. */
+let leadPick: string | undefined;
+let leadRestart: boolean;
+/** Its lead is mid-turn: a restart waits for the turn to end. */
+let midTurn: boolean;
+let leadRestarting: boolean;
 /** hub_info's person: undefined for a hub from before it (the app lets them try). */
 let me: { name: string; role: string } | undefined;
 /** The writes, in turn; the page's reads aside. */
@@ -54,6 +60,10 @@ beforeEach(() => {
     profile(3, "wide", { model: "claude-sonnet-5-5", effort: "xhigh" }),
   ];
   allowed = ["high", "medium"];
+  leadPick = undefined;
+  leadRestart = false;
+  midTurn = false;
+  leadRestarting = false;
   me = undefined;
   calls = [];
   host = document.createElement("div");
@@ -73,7 +83,8 @@ const render = async (page: "editor" | "project") => {
       const input = raw as Record<string, unknown>;
       if (tool === "profiles_list") {
         const list = { profiles, models: MODELS, modelsFrom: "builtin", efforts: ["low", "medium", "high", "xhigh", "max"] };
-        return Promise.resolve({ ok: true, output: input["projectRef"] === undefined ? list : { ...list, allowed } });
+        const bot = { ...list, allowed, ...(leadPick === undefined ? {} : { leadProfile: leadPick }), ...(leadRestart ? { leadRestart } : {}), ...(leadRestarting ? { leadRestarting } : {}) };
+        return Promise.resolve({ ok: true, output: input["projectRef"] === undefined ? list : bot });
       }
       if (tool === "hub_info" && me !== undefined) return Promise.resolve({ ok: true, output: { me, admin: false } });
       if (tool === "people_list") {
@@ -103,8 +114,17 @@ const render = async (page: "editor" | "project") => {
         return Promise.resolve({ ok: true, output: { ok: true, next: "medium is gone." } });
       }
       if (tool === "project_set") {
-        allowed = ["high", ...(input["profiles"] as string[])];
-        return Promise.resolve({ ok: true, output: { profiles: allowed } });
+        if (input["profiles"] !== undefined) allowed = ["high", ...(input["profiles"] as string[])];
+        // As the hub keeps it: a pick (or the hub's again) is the lead's at its next start, a restart moves it now.
+        if (input["leadProfile"] !== undefined || input["leadDefault"] === true) {
+          leadPick = input["leadProfile"] as string | undefined;
+          leadRestart = true;
+        }
+        if (input["leadRestart"] === true) {
+          leadRestart = false;
+          leadRestarting = midTurn;
+        }
+        return Promise.resolve({ ok: true, output: { profiles: allowed, ...(leadPick === undefined ? {} : { leadProfile: leadPick }) } });
       }
       return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
     },
@@ -230,19 +250,22 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
 });
 
 /** The Lead runs on picker's trigger, and the option for `name` once it is open. */
-const leadPicker = () => {
-  const trigger = host.querySelector<HTMLButtonElement>("[aria-label='Lead runs on'][role='combobox']");
-  if (trigger === null) throw new Error("no Lead runs on picker");
+const leadPicker = (label = "Lead runs on") => {
+  const trigger = host.querySelector<HTMLButtonElement>(`[aria-label='${label}'][role='combobox']`);
+  if (trigger === null) throw new Error(`no ${label} picker`);
   return trigger;
 };
-const pickLead = async (name: string) => {
+const openPicker = async (label = "Lead runs on") => {
   await act(async () => {
-    leadPicker().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
-    leadPicker().click();
+    leadPicker(label).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }));
+    leadPicker(label).click();
     await Promise.resolve();
   });
   await settle();
-  const option = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent.startsWith(name));
+  return [...document.querySelectorAll<HTMLElement>("[role='option']")];
+};
+const pickLead = async (name: string, label = "Lead runs on") => {
+  const option = (await openPicker(label)).find((o) => o.textContent.startsWith(name));
   if (option === undefined) throw new Error(`no option ${name}`);
   await click(option);
 };
@@ -266,19 +289,41 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   expect(rows()[0]).toMatch(/^highdefault · lead/u);
 });
 
-it("tells a bot which profile leads run on: an admin the way to change it, a member who to ask", async () => {
-  profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p));
+it("picks a bot's own lead model, the hub's lead profile first, and restarts its lead on it", async () => {
+  profiles = profiles.map((p) => (p.name === "medium" ? { ...p, lead: true } : p.name === "wide" ? { ...p, refused: "claude refused claude-sonnet-5-5 on devbox" } : p));
   await render("project");
-  // An admin's profile name is the way to change it: Hub › Profiles.
-  const lead = host.querySelector("[data-lead-profile]");
-  expect(lead?.querySelector("button")?.textContent).toBe("medium");
-  act(() => root.unmount());
-  root = createRoot(host);
-  me = { name: "Sam", role: "member" };
-  await render("project");
-  expect(host.querySelector("[data-lead-profile] button")).toBeNull();
-  expect(host.querySelector("[data-lead-profile]")?.textContent).toContain("medium");
-  expect(host.querySelector("[data-lead-profile] [data-hint]")?.textContent).toBe("Ask Ada to change it.");
+  // At rest: the hub's lead profile, named, and no words under it.
+  expect(leadPicker("Lead model").textContent).toBe("Hub default (medium)");
+  const row = leadPicker("Lead model").closest("section");
+  expect(row?.querySelector("[data-hint]")).toBeNull();
+  expect(host.textContent).not.toContain("Restart lead");
+  // A profile claude refused can't be picked, and its hover says why.
+  const wide = (await openPicker("Lead model")).find((o) => o.textContent.startsWith("wide"));
+  expect(wide?.getAttribute("aria-disabled")).toBe("true");
+  // On its label, which takes the pointer the disabled item gives up (Overlay.module.css .itemWhy).
+  expect(wide?.querySelector("[title]")?.getAttribute("title")).toBe("claude refused claude-sonnet-5-5 on devbox");
+  expect(wide?.querySelector("[title]")?.className).toMatch(/itemWhy/u);
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await Promise.resolve();
+  });
+  await settle();
+  await pickLead("high", "Lead model");
+  expect(calls).toEqual([{ tool: "project_set", input: { ...storefront, leadProfile: "high" } }]);
+  expect(leadPicker("Lead model").textContent).toMatch(/^high/u);
+  // Its lead still runs on the one before: Restart lead moves it now.
+  await click(button("Restart lead"));
+  expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadRestart: true } });
+  expect(host.textContent).not.toContain("Restart lead");
+  // Mid-turn, it waits for the turn to end, and says so instead of offering the button again.
+  midTurn = true;
+  await pickLead("medium", "Lead model");
+  await click(button("Restart lead"));
+  expect(host.textContent).toContain("Restarts after its turn");
+  expect(host.textContent).not.toContain("Restart lead");
+  await pickLead("Hub default", "Lead model");
+  expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadDefault: true } });
+  expect(leadPicker("Lead model").textContent).toBe("Hub default (medium)");
 });
 
 it("offers fast mode only on a model that has it", async () => {
