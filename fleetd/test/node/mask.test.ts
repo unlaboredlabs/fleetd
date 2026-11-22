@@ -112,3 +112,37 @@ test("live text streamed in small pieces never cuts a secret in two, even where 
     }
   }
 });
+
+test("a private key is hidden however a tool prints its lines: numbered, indented, grepped or joined by spaces", () => {
+  const body = Buffer.from("made-up filler for the shapes test, not a key: ".repeat(5)).toString("base64").match(/.{1,64}/g)!;
+  const lines = ["-----BEGIN PRIVATE KEY-----", ...body, "-----END PRIVATE KEY-----"];
+  const shapes: Record<string, string> = {
+    read: lines.map((l, i) => `${String(i + 1).padStart(6)}→${l}`).join("\n"),
+    "cat -n": lines.map((l, i) => `${String(i + 1).padStart(6)}\t${l}`).join("\n"),
+    "grep -n": lines.map((l, i) => `${i + 1}:${l}`).join("\n"),
+    "grep -rn": lines.map((l, i) => `keys/app.pem:${i + 1}:${l}`).join("\n"),
+    yaml: `data:\n  key: |\n${lines.map((l) => `    ${l}`).join("\n")}\nkind: Secret`,
+    echo: lines.join(" "),
+    crlf: lines.join("\r\n"),
+  };
+  const m = new Masker();
+  const leaked = (text: string) => body.filter((l) => text.includes(l.slice(0, 16)));
+  for (const [shape, text] of Object.entries(shapes)) {
+    for (const shown of [m.text(text), JSON.parse(m.text(JSON.stringify(text))) as string]) {
+      expect({ shape, leaked: leaked(shown) }).toEqual({ shape, leaked: [] });
+      expect(shown).toContain(HIDDEN);
+    }
+    // Streamed in small pieces as live text.
+    let out = "";
+    let buffered = "";
+    for (const piece of text.match(/[\s\S]{1,6}/g)!) {
+      buffered += piece;
+      const keep = m.held(buffered);
+      out += m.text(buffered.slice(0, buffered.length - keep));
+      buffered = buffered.slice(buffered.length - keep);
+    }
+    out += m.text(buffered);
+    expect({ shape, leaked: leaked(out) }).toEqual({ shape, leaked: [] });
+  }
+  expect(m.text(shapes.yaml!)).toBe(`data:\n  key: |\n    ${HIDDEN}\nkind: Secret`);
+});

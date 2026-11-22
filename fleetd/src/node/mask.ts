@@ -10,16 +10,27 @@ export const HIDDEN = "[secret hidden]";
 const pemArmor = (line: string) => (line.startsWith("-----BEGIN ") || line.startsWith("-----END ")) && line.endsWith("-----");
 // A line break as printed, or as JSON escapes it.
 const NL = String.raw`(?:\r?\n|(?:\\r)?\\n)`;
+// What a tool may print before each line: indentation (a YAML block), a line number (`cat -n`, claude's Read with its
+// arrow, `grep -n`), a file's name and line (`grep -rn`).
+const PREFIX = String.raw`(?:[ \t]|\\t)*(?:\d+(?:→|\t|\\t|:)|[^\s:"\\]+:\d+[:-])?(?:[ \t]|\\t)*`;
+const B64 = "[A-Za-z0-9+/=]";
 /** A private key's PEM block: its header, the base64 lines after it (the first of 16 characters or more, so prose
- * that names the header isn't one), and its END line if the text has it. */
+ * that names the header isn't one), each after a line break and what a tool prints before it, or after spaces where
+ * `echo $KEY` joined them (16 characters or more there, or the last before the END line), and its END line if the
+ * text has it. */
 const PRIVATE_KEY = new RegExp(
-  String.raw`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:\s|\\[rn])+[A-Za-z0-9+/=]{16,}(?:${NL}[A-Za-z0-9+/=]+)*(?:${NL}-----END [A-Z0-9 ]*PRIVATE KEY-----)?`,
+  [
+    String.raw`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[ \t]+|${NL}${PREFIX})${B64}{16,}`,
+    String.raw`(?:${NL}${PREFIX}${B64}+|[ \t]+${B64}{16,}|[ \t]+${B64}+(?=[ \t]+-----END ))*`,
+    String.raw`(?:(?:${NL}${PREFIX}|[ \t]+)-----END [A-Z0-9 ]*PRIVATE KEY-----)?`,
+  ].join(""),
   "g",
 );
-/** What could still become a private key's block as more text comes: its header so far, or the header and base64
- * lines only, to the end of the text. */
+/** What could still become a private key's block as more text comes: its header so far, or the header with no END
+ * after it and, after it, nothing yet, a line's prefix or a base64 run reaching the text's end, or a base64 run of 16
+ * characters or more. */
 const OPENING = new RegExp(
-  String.raw`^-----BEGIN (?:[A-Z0-9 ]*-{0,5}|[A-Z0-9 ]*PRIVATE KEY-----(?:\s|\\[rn])*(?:[A-Za-z0-9+/=]+(?:${NL}[A-Za-z0-9+/=]*)*)?(?:${NL}-{0,5}[A-Z0-9 ]*-{0,4})?)$`,
+  String.raw`^-----BEGIN (?:[A-Z0-9 ]*-{0,5}|[A-Z0-9 ]*PRIVATE KEY-----(?![\s\S]*-----END [A-Z0-9 ]*PRIVATE KEY-----)(?:\s|\\[rnt])*(?:(?:${PREFIX})?(?:${B64}{16,}[\s\S]*|${B64}*)|(?:[ \t]|\\t)*[^\s:"\\]+(?::\d*)?)\\?)$`,
 );
 const BEGIN = "-----BEGIN ";
 const utf8 = (s: string) => Buffer.from(s, "utf8");
