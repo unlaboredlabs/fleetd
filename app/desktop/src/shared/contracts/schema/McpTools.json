@@ -2466,8 +2466,20 @@
     "BrowserSession": {
       "description": "One session as the hub keeps it.",
       "properties": {
+        "appearance": {
+          "$ref": "#/$defs/ScreenAppearance",
+          "description": "Light or dark, on a phone screen whose device has the setting (an iOS simulator's); absent where it can't."
+        },
         "control": {
           "$ref": "#/$defs/BrowserControl"
+        },
+        "controls": {
+          "description": "The device controls a phone screen takes (`screen_control`, an agent's `mac sim <control>`), only those its machine\nchecked work there. Absent on other screens and from older nodes.",
+          "items": {
+            "$ref": "#/$defs/ScreenControl"
+          },
+          "maxItems": 16,
+          "type": "array"
         },
         "credentialsFilled": {
           "default": 0,
@@ -2488,6 +2500,24 @@
           "maxItems": 3,
           "type": "array"
         },
+        "fold": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "A foldable's state now, one of `folds`."
+        },
+        "folds": {
+          "description": "A foldable's states, in the order a picker shows them (\"folded\", \"open\"); absent on any other device.",
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "pattern": "^[^\\r\\n]*$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
         "kind": {
           "$ref": "#/$defs/SessionKind",
           "default": "browser"
@@ -2504,6 +2534,10 @@
         "openedBy": {
           "$ref": "#/$defs/PersonRef",
           "description": "The person who opened it themselves (`screen_open`): a person's screen, theirs to drive from its start. Absent\nfor an agent's."
+        },
+        "orientation": {
+          "$ref": "#/$defs/ScreenOrientation",
+          "description": "Which way the phone is turned, as its machine last set it. A hint: the live frames' own size flips a moment after\nit does."
         },
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
@@ -7599,6 +7633,10 @@
         },
         "ready": {
           "type": "boolean"
+        },
+        "sims": {
+          "$ref": "#/$defs/SimModels",
+          "description": "`ios` on the agents' Mac: the simulators a person may start there (`screen_open` kind ios), and its budget."
         }
       },
       "required": [
@@ -12165,6 +12203,12 @@
         "sandbox_where_set.output": {
           "$ref": "#/$defs/SandboxState"
         },
+        "screen_control.input": {
+          "$ref": "#/$defs/ScreenControlInput"
+        },
+        "screen_control.output": {
+          "$ref": "#/$defs/ScreenControlOutput"
+        },
         "screen_end.input": {
           "$ref": "#/$defs/ScreenEndInput"
         },
@@ -12809,6 +12853,8 @@
         "sandbox_test.output",
         "sandbox_where_set.input",
         "sandbox_where_set.output",
+        "screen_control.input",
+        "screen_control.output",
         "screen_end.input",
         "screen_end.output",
         "screen_open.input",
@@ -19750,6 +19796,73 @@
       ],
       "type": "object"
     },
+    "ScreenAppearance": {
+      "description": "A phone screen's light or dark appearance.",
+      "enum": [
+        "light",
+        "dark"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "ScreenControl": {
+      "description": "A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or\ndark (`value`), take a screenshot, set its location (`value` \"lat,lon\"), fold it (`value`, one of the session's\n`folds`), or go back (Android).",
+      "enum": [
+        "rotate_left",
+        "rotate_right",
+        "shake",
+        "home",
+        "lock",
+        "appearance",
+        "screenshot",
+        "location",
+        "fold",
+        "back"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "ScreenControlInput": {
+      "properties": {
+        "control": {
+          "$ref": "#/$defs/ScreenControl"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/BrowserSessionId"
+        },
+        "value": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "`appearance`: light or dark; `location`: \"lat,lon\"; `fold`: one of the session's `folds`."
+        }
+      },
+      "required": [
+        "sessionId",
+        "control"
+      ],
+      "type": "object"
+    },
+    "ScreenControlOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "screenshot": {
+          "$ref": "#/$defs/ScreenShot",
+          "description": "`screenshot`: the screen's own picture, at the device's full size."
+        },
+        "session": {
+          "$ref": "#/$defs/BrowserSession",
+          "description": "The screen after it, its orientation, fold and appearance as they are now."
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "ScreenEndInput": {
       "properties": {
         "sessionId": {
@@ -19792,6 +19905,10 @@
         "projectRef": {
           "$ref": "#/$defs/ProjectRef"
         },
+        "sim": {
+          "$ref": "#/$defs/ScreenSim",
+          "description": "Kind ios: which simulator, from the Mac's `sims`; absent, a plain iPhone on the newest iOS."
+        },
         "wait": {
           "default": false,
           "type": "boolean"
@@ -19822,6 +19939,17 @@
       },
       "type": "object"
     },
+    "ScreenOrientation": {
+      "description": "Which way a phone screen is turned: upright, or a quarter turn with its top to the left or the right.",
+      "enum": [
+        "portrait",
+        "landscape_left",
+        "landscape_right",
+        "portrait_upside_down"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "ScreenPr": {
       "description": "A PR of the project's for a person's screen (`screen_open`): its CI build is installed in an iOS or Android screen\nbefore the person gets it. The build is the newest artifact of a CI run on the PR's head whose name says `ios` (a\nzipped simulator `.app`) or `android`/`apk` (an `.apk`).",
       "properties": {
@@ -19837,6 +19965,61 @@
       "required": [
         "repo",
         "number"
+      ],
+      "type": "object"
+    },
+    "ScreenShot": {
+      "description": "A screenshot of a phone screen (`screen_control` screenshot).",
+      "properties": {
+        "dataB64": {
+          "type": "string"
+        },
+        "height": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mime": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "\"image/png\"."
+        },
+        "width": {
+          "maximum": 16384,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mime",
+        "dataB64",
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "ScreenSim": {
+      "description": "The simulator a person's iOS screen starts (`screen_open` kind ios).",
+      "properties": {
+        "model": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "A SimModel's `id`."
+        },
+        "runtime": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "One of the model's runtimes' `id`; absent, its newest."
+        }
+      },
+      "required": [
+        "model"
       ],
       "type": "object"
     },
@@ -20811,6 +20994,107 @@
       },
       "required": [
         "order"
+      ],
+      "type": "object"
+    },
+    "SimFamily": {
+      "description": "What kind of device a simulator model is.",
+      "enum": [
+        "iphone",
+        "ipad",
+        "foldable"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SimModel": {
+      "description": "A simulator model the agents' Mac can start, from its Xcode's device types.",
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/SimFamily"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "simctl's device type id: `com.apple.CoreSimulator.SimDeviceType.iPhone-17`."
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "\"iPhone 17\", \"iPhone Duo\"."
+        },
+        "runtimes": {
+          "description": "The OS versions it runs on that Mac, newest first.",
+          "items": {
+            "$ref": "#/$defs/SimRuntime"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "family",
+        "runtimes"
+      ],
+      "type": "object"
+    },
+    "SimModels": {
+      "description": "The agents' Mac's simulators for people: the models it offers, and how many of its budget are booted.",
+      "properties": {
+        "live": {
+          "description": "Simulators booted now, people's and agents'.",
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max": {
+          "description": "The most booted at once.",
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/SimModel"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "models",
+        "live",
+        "max"
+      ],
+      "type": "object"
+    },
+    "SimRuntime": {
+      "description": "An OS a simulator model runs.",
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "simctl's runtime id: `com.apple.CoreSimulator.SimRuntime.iOS-27-2`."
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "\"iOS 27.2\"."
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ],
       "type": "object"
     },
