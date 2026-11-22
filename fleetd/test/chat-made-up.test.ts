@@ -2,9 +2,10 @@
 // it (W787). The shape replayed is the lead's on 2026-11-22: a fresh session's first reply was that turn alone.
 import { expect, test } from "bun:test";
 import { quiet, type Trigger } from "../src/hub/api/lead_lines.ts";
-import { type LiveParts, streamPass } from "../src/hub/chat/flow.ts";
+import { type LiveParts, mirror, streamPass } from "../src/hub/chat/flow.ts";
 import { leadMessages, leadText, madeUpLine, said } from "../src/hub/chat/history.ts";
 import { chat } from "../src/hub/chat/index.ts";
+import { executors } from "../src/hub/executor/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -109,5 +110,33 @@ test("a reply whose lines only start like a turn marker streams whole once its w
   streamPass(hub, sent, () => ({ done: [{ messageId: "a", text: full }], runActive: false }));
   expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "final", text: full });
   expect(woken).toEqual([]);
+  done();
+});
+
+test("a made-up turn the mirror lands once its run ended wakes the lead once, and a hub back later tells it no more", async () => {
+  const { hub, clock, done, woken } = await lead();
+  const sent = new Map<string, number>();
+  const thread = { machineId: PROJECT.machineId, threadId: "lead-1" };
+  // It streamed while the run was on; the run ended with it, and the tracker dropped its done texts, so only the mirror
+  // reads it, off the lead's session.
+  streamPass(hub, sent, () => streaming(FAKE, FAKE.length));
+  streamPass(hub, sent, () => ({ done: [], runActive: false }));
+  expect(woken).toEqual([]);
+  clock.ms += 1000;
+  const reply = { id: "a", role: "assistant", text: FAKE, createdAt: new Date(clock.ms).toISOString() };
+  Object.assign(executors(hub).views, { messages: async () => [reply] });
+  await mirror(hub, PROJECT, thread);
+  await mirror(hub, PROJECT, thread);
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toBeUndefined();
+  expect(woken.map((t) => (t.kind === "line" ? t.line : t.kind))).toEqual(["made_up"]);
+  // The wake went out after the reply; a hub that comes up later reads the session again and wakes nobody for it.
+  clock.ms += 1000;
+  const later = await lead();
+  later.hub.db.conn.run("UPDATE leads SET last_wake_at = ?1", [new Date(clock.ms).toISOString()]);
+  later.clock.ms = clock.ms + 1000;
+  Object.assign(executors(later.hub).views, { messages: async () => [reply] });
+  await mirror(later.hub, PROJECT, thread);
+  expect(later.woken).toEqual([]);
+  later.done();
   done();
 });
