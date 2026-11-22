@@ -16,8 +16,9 @@ afterAll(async () => {
   await Promise.all(fleets.map((f) => f.stop()));
 }, 30_000);
 
+// Every fleet with the stand-ins a real node starts: its joins and runs install nothing and check no real claude.
 const fleet = (name: string) => {
-  const f = new Fleet(name);
+  const f = new Fleet(name, { tools: true });
   fleets.push(f);
   return f;
 };

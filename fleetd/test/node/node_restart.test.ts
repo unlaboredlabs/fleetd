@@ -6,6 +6,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tempHome } from "../helpers.ts";
+import { standInTools } from "../tools.ts";
 
 setDefaultTimeout(90_000);
 
@@ -14,7 +15,9 @@ const MAIN = join(import.meta.dir, "../../src/main.ts");
 /** `fleetd node run` on `root`'s node home, and a wait for a line of its log with each of `words`. */
 function node(root: string) {
   const child = Bun.spawn([process.execPath, MAIN, "node", "run", "--home", join(root, "node")], {
-    env: { ...process.env, HOME: join(root, "user"), FLEETD_HOME: join(root, "fleet"), FLEETD_LOG: undefined, CLAUDE_CONFIG_DIR: undefined },
+    // Its npm and claude are stand-ins (../tools.ts): the real ones went on installing agent-browser and checking a login
+    // in its home after the test ended.
+    env: { ...process.env, ...standInTools(root), HOME: join(root, "user"), FLEETD_HOME: join(root, "fleet"), FLEETD_LOG: undefined, CLAUDE_CONFIG_DIR: undefined },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

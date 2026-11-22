@@ -6,6 +6,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { listenPort } from "../ports.ts";
+import { standInTools } from "../tools.ts";
 
 export const RECORD = process.env.RECORD === "1";
 const SRC = join(import.meta.dir, "../../src/main.ts");
@@ -23,13 +24,16 @@ export class Fleet {
   readonly cwd: string;
   hubUrl = "";
   private hub: ReturnType<typeof Bun.spawn> | undefined;
+  /** `tools`: the stand-ins a real node starts (../tools.ts), first on every call's PATH. */
+  private readonly tools: Record<string, string> = {};
 
-  constructor(name: string) {
+  constructor(name: string, o: { tools?: boolean } = {}) {
     this.home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", `fleetd-golden-${name}-`));
     this.hubHome = join(this.home, "hub");
     this.cwd = join(this.home, "cwd");
     mkdirSync(this.cwd, { recursive: true });
     mkdirSync(this.hubHome, { recursive: true, mode: 0o700 });
+    if (o.tools) this.tools = standInTools(this.home);
   }
 
   env(extra: Record<string, string> = {}): Record<string, string> {
@@ -40,7 +44,7 @@ export class Fleet {
     delete env.FLEETD_THREAD_ID;
     // Units go under the scratch home: `uninstall` never finds the machine's own.
     delete env.XDG_RUNTIME_DIR;
-    const merged: Record<string, string> = { ...env, FLEETD_HOME: this.home, HOME: this.home, XDG_CONFIG_HOME: join(this.home, ".config"), TZ: "UTC", NO_COLOR: "1", FLEETD_VERSION: SAME_VERSION, ...extra };
+    const merged: Record<string, string> = { ...env, FLEETD_HOME: this.home, HOME: this.home, XDG_CONFIG_HOME: join(this.home, ".config"), TZ: "UTC", NO_COLOR: "1", FLEETD_VERSION: SAME_VERSION, ...this.tools, ...extra };
     // A case gives UNSET to leave a variable out: `NO_COLOR: UNSET` runs as a person's shell does.
     for (const [k, v] of Object.entries(merged)) if (v === UNSET) delete merged[k];
     return merged;
