@@ -3,25 +3,50 @@
 // wake, and what is parked with its author.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
+import { backSince } from "./back.ts";
 import { leadTrainLines, type TrainFacts } from "./digest_lines.ts";
+import type { TrainHost } from "./host.ts";
+import { HubHost } from "./hub_host.ts";
 import { changeRecords } from "./index.ts";
 import type { ChangeRecords } from "./records.ts";
 
 export { leadTrainLines, type TrainFacts } from "./digest_lines.ts";
 
-/** Trains whose project passes `shown` and their 50 newest Changes. */
-export function trainFacts(records: ChangeRecords, shown: (r: ProjectRef) => boolean): TrainFacts {
+/**
+ * Trains whose project passes `shown` and their 50 newest Changes; with `now`, when each parked one went back to its
+ * author and its writer's state, for those left with no push.
+ */
+export function trainFacts(records: ChangeRecords, shown: (r: ProjectRef) => boolean, now?: Pick<TrainFacts, "nowMs" | "writer">): TrainFacts {
   const trains = records.trains().filter((t) => shown(t.projectRef));
   const changes = records
     .list({ limit: 200 })
     .filter((c) => shown(c.projectRef))
     .slice(0, 50);
-  return { trains: trains.slice(0, 10).map((t) => records.trainState(t.repo)), changes };
+  const facts: TrainFacts = { trains: trains.slice(0, 10).map((t) => records.trainState(t.repo)), changes };
+  return now ? { ...facts, ...now, backSince: backSince(records, changes) } : facts;
+}
+
+/** A writer task's state in words, as the digest shows it beside a PR it left with no push. */
+export function writerState(host: Pick<TrainHost, "task" | "waitingOn">, taskId: string): string | undefined {
+  const task = host.task(taskId);
+  if (!task) return undefined;
+  switch (task.state) {
+    case "done": {
+      const wait = host.waitingOn?.(taskId);
+      return `ended, waiting on ${wait ?? "nothing"}`;
+    }
+    case "cancelled":
+      return "was cancelled";
+    default:
+      return `is ${task.state}`;
+  }
 }
 
 /** The digest's train lines for the project; undefined when it has no train and no Change: the section is left out. */
 export function trainDigest(hub: Hub, r: ProjectRef, since?: string): string[] | undefined {
-  const facts = trainFacts(changeRecords(hub), (x) => x.machineId === r.machineId && x.projectId === r.projectId);
+  const host = new HubHost(hub);
+  const now = { nowMs: hub.clock.now(), writer: (taskId: string) => writerState(host, taskId) };
+  const facts = trainFacts(changeRecords(hub), (x) => x.machineId === r.machineId && x.projectId === r.projectId, now);
   if (facts.trains.length === 0 && facts.changes.length === 0) return undefined;
   return leadTrainLines(facts, since);
 }

@@ -6,6 +6,7 @@ import { withReviews } from "../src/hub/reviews/service.ts";
 import { compare } from "../src/hub/reviews/rebase.ts";
 import { limitStop } from "../src/hub/reviews/endings.ts";
 import { gate, reviewTitle, toolsFailed } from "../src/hub/reviews/rules.ts";
+import { leadTrainLines, trainFacts } from "../src/hub/train/digest.ts";
 import { Kit, PROJECT } from "./train_kit.ts";
 
 // The train's kit merges and pushes through a real git origin, a git process each: a loaded machine (CI, or a busy
@@ -77,6 +78,42 @@ test("blocking findings go back to the author, and the Change waits for a new he
   await verdict("T51", moved.headSha, 0);
   await k.settle();
   expect(k.change(8).state).toBe("merged");
+});
+
+test("a writer that ends after blocking findings with no push is continued once, and the digest flags it at 30 min", async () => {
+  const { k, verdict } = lab();
+  k.pr(8, "fleetd/T8-a", { "a.md": "a\n" });
+  k.host.tasks.get("T8")!.state = "running";
+  const change = await k.enqueue(8);
+  await verdict("T50", change.headSha, 2, "a.md:1 leaks the key");
+  const sent = () => k.host.sends.filter(([to]) => to === "T8").map(([, m]) => m);
+  expect(sent()).toHaveLength(1);
+  await k.settle();
+  expect(sent()).toHaveLength(1);
+  // Its turn ends with no push and nothing armed: continued once, with why.
+  k.host.tasks.get("T8")!.state = "done";
+  await k.settle();
+  expect(sent()).toHaveLength(2);
+  expect(sent()[1]).toContain("still back with you");
+  expect(sent()[1]).toContain("T50 found 2 blocking");
+  await k.settle();
+  expect(sent()).toHaveLength(2);
+  const writer = (id: string) => (k.host.tasks.get(id)?.state === "done" ? "ended, waiting on nothing" : undefined);
+  const digest = () => leadTrainLines(trainFacts(k.train.records, () => true, { nowMs: k.clock.ms, writer })).join("\n");
+  k.clock.ms += 31 * 60_000;
+  expect(digest()).toMatch(/- X1 reviewing: acme\/storefront#8, by T8; waiting for a new head: T50 found 2 blocking.*No push for 3\d min; its writer T8 ended, waiting on nothing/);
+});
+
+test("blocking findings to a writer with an armed wait are held for that wait, not a second wake", async () => {
+  const { k, verdict } = lab();
+  k.pr(8, "fleetd/T8-a", { "a.md": "a\n" });
+  k.host.waits.set("T8", "a Monitor");
+  const change = await k.enqueue(8);
+  await verdict("T50", change.headSha, 2, "a.md:1 leaks the key");
+  expect(k.host.sends.filter(([to]) => to === "T8")).toEqual([]);
+  expect(k.host.held.map(([to]) => to)).toEqual(["T8"]);
+  await k.settle();
+  expect(k.host.sends.filter(([to]) => to === "T8")).toEqual([]);
 });
 
 test("a reviewer that ends without a verdict is asked once, then replaced, and the lead hears; then no more", async () => {

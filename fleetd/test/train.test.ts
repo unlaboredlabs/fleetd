@@ -11,6 +11,7 @@ import { failedTest } from "../src/hub/train/flaky.ts";
 import { batchHeads, squashText } from "../src/hub/train/github.ts";
 import { earlyMigrations, parseRegenerate } from "../src/hub/train/regen.ts";
 import { counted, deliberate, undone } from "../src/hub/train/reverts.ts";
+import { leadTrainLines, trainFacts } from "../src/hub/train/digest.ts";
 import { parse as parseRepoChecks } from "../src/hub/train/repo_checks.ts";
 
 let kits: Kit[] = [];
@@ -81,6 +82,91 @@ test("a PR that conflicts with its base goes back to its writer as needs_rebase"
   expect(c.lastError).toBe("conflicts with main");
   expect(k.host.sends.at(-1)![1]).toContain("the merge train could not rebase it: it conflicts with main");
   expect(k.host.eventsOf("change.needs_rebase")).toMatchObject([{ changeId: c.changeId }]);
+});
+
+/** PR 10 conflicting with PR 9, merged first: PR 10 goes back to T10 as needs_rebase, T10 in `state` then. */
+async function sentBack(state: string, wait?: string): Promise<Kit> {
+  const k = kit();
+  k.pr(9, "fleetd/T9-a", { "shared.md": "nine\n" });
+  k.pr(10, "fleetd/T10-b", { "shared.md": "ten\n" });
+  await k.enqueue(9);
+  await k.settle();
+  k.host.tasks.get("T10")!.state = state;
+  if (wait !== undefined) k.host.waits.set("T10", wait);
+  await k.enqueue(10);
+  await k.settle();
+  expect(k.change(10).state).toBe("needs_rebase");
+  return k;
+}
+const sentTo = (k: Kit, taskId: string) => k.host.sends.filter(([to]) => to === taskId).map(([, m]) => m);
+
+test("a writer whose turn ends with its PR still sent back and nothing armed is continued once, with why", async () => {
+  // Sent back while it runs: the message steers its turn.
+  const k = await sentBack("running");
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  // Its turn ends with no push and no wait: the train's next pass continues it with the reason and the PR.
+  k.host.tasks.get("T10")!.state = "done";
+  await k.settle();
+  const told = sentTo(k, "T10");
+  expect(told).toHaveLength(2);
+  expect(told[1]).toContain(`https://github.com/${REPO}/pull/10 (X2)`);
+  expect(told[1]).toContain("still back with you");
+  expect(told[1]).toContain("conflicts with main");
+  // Once per send-back: it ends again with no push, and nothing more comes.
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(2);
+  expect(k.host.wakes.filter((w) => w.includes("X2"))).toEqual([]);
+});
+
+test("an ended writer is continued at the send-back, and never again for the same one", async () => {
+  const k = await sentBack("done");
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  expect(sentTo(k, "T10")[0]).toContain("the merge train could not rebase it: it conflicts with main");
+  // The continued turn ends again with no push: it was woken for this send-back already.
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+});
+
+test("a writer with an armed wait gets the send-back held for that wait, not a second wake", async () => {
+  const k = await sentBack("done", `wait_ci on https://github.com/${REPO}/pull/10`);
+  expect(sentTo(k, "T10")).toEqual([]);
+  expect(k.host.held.map(([to]) => to)).toEqual(["T10"]);
+  expect(k.host.held[0]![1]).toContain("the merge train could not rebase it: it conflicts with main");
+  await k.settle();
+  expect(sentTo(k, "T10")).toEqual([]);
+  // Its wait is gone and it still hasn't pushed: continued once.
+  k.host.waits.delete("T10");
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+});
+
+test("a sent-back PR whose writer was cancelled goes to the lead, once, and the writer is not messaged", async () => {
+  const k = await sentBack("running");
+  k.host.tasks.get("T10")!.state = "cancelled";
+  await k.settle();
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  const wakes = k.host.wakes.filter((w) => w.includes("X2"));
+  expect(wakes).toHaveLength(1);
+  expect(wakes[0]).toContain("T10 was cancelled");
+});
+
+test("the lead digest flags a sent-back PR with no push for 30 min, with its writer's state", async () => {
+  const k = await sentBack("done", "a Monitor (pre-push check)");
+  const writer = (id: string) => (k.host.waitingOn(id) !== undefined ? `ended, waiting on ${k.host.waitingOn(id)}` : "ended, waiting on nothing");
+  const digest = () => leadTrainLines(trainFacts(k.train.records, () => true, { nowMs: k.clock.ms, writer })).join("\n");
+  expect(digest()).not.toContain("No push");
+  k.clock.ms += 31 * 60_000;
+  expect(digest()).toContain("X2 needs_rebase");
+  expect(digest()).toMatch(/No push for 3\d min; its writer T10 ended, waiting on a Monitor \(pre-push check\)/);
+  // A push takes it off the list.
+  k.pr(10, "fleetd/T10-b", { "rebased.md": "ten\n" });
+  await k.settle();
+  expect(digest()).not.toContain("No push");
 });
 
 test("two ready PRs green on their own heads land as one batch, each closed as merged in the batch's commit", async () => {

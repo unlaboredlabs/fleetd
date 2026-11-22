@@ -226,6 +226,23 @@ test("a finished task its own Monitor wakes is running again, and says so for th
   k.hub.shutdown.abort();
 });
 
+test("a message held for a finished task its own Monitor wakes goes to that run, held steer or not", async () => {
+  const k = tasksKit();
+  void k.t.run();
+  await k.spawn("Deploy", "read");
+  k.thread("thread.completed", "s1", { runId: "r1", endCause: "completed" });
+  await until(() => k.t.get("T1")?.state === "done");
+  // The train keeps its send-back for the wait the task armed, with no steer row behind it.
+  await k.t.holdMessage("T1", "Fix your PR: it conflicts with main.");
+  const sent = k.ports.sends.length;
+  k.threadRow("s1", "running");
+  k.thread("thread.started", "s1", { runId: "t1-woke-1" });
+  await until(() => k.ports.sends.length > sent);
+  expect(k.ports.sends.at(-1)?.message).toBe("Fix your PR: it conflicts with main.");
+  await until(() => k.t.get("T1")?.state === "running");
+  k.hub.shutdown.abort();
+});
+
 test("a person stops an agent from its panel: cancelled at once, its slot free, its lead told in a quiet line", async () => {
   const k = tasksKit();
   // The tool reaches this kit's tasks area, as the hub's own.

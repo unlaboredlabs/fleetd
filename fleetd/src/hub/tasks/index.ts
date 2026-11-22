@@ -1428,11 +1428,9 @@ export class Tasks {
           console.info(`recovering task continued in its thread; its note is not sent (${task.taskId})`);
           delete next.queuedReason;
         }
-        // Or what other agents sent it while it was ended: a Monitor of its own woke it, and this run carries it.
-        const peers =
-          !recovering &&
-          this.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued'").get(task.taskId)!.n > 0;
-        const held = recovering || peers ? stored.pendingMessage : undefined;
+        // Or what was kept for it while it was ended (other agents' messages, the train's send-back held for this very
+        // wait): a Monitor of its own woke it, and this run carries it, held steer behind it or not.
+        const held = stored.pendingMessage;
         // A person continued it, not fleetd: the digest no longer says it was resumed automatically.
         if ((recovering || task.parked === undefined) && next.recovery) {
           const { nextAt: _n, resumedAt: _r, ...kept } = next.recovery;
