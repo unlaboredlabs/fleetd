@@ -1,8 +1,8 @@
 // An agent's iOS simulator as a screen of its own, on the agents' Mac: a
 // simulator `mac sim start` lends shows in Screens as "iPhone 17 · T12", for the agent's project, and a person watches
 // it live, takes it over and hands it back there, as they do an Android screen. It never touches the Mac's shared
-// desktop and takes no desktop lease: its frames are the simulator's own screenshots (screen.ts), and a person's input
-// goes through the agent's own agent-device daemon.
+// desktop and takes no desktop lease: its frames are the simulator's framebuffer (screen.ts), and a person's input goes
+// straight into the simulator's HID service, or else through the agent's own agent-device daemon.
 //
 // The hub made the screen with the step that lent the simulator (hub/mac_tool: a place on the Mac in the agent's name,
 // its key and session id in the `mac_call`). The Mac reports it under that key, as a machine reports a session it
@@ -258,7 +258,16 @@ export class SimScreen {
     this.writeMeta();
     const shoot: Shoot = () => tools.shoot(this.udid);
     this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, tools.live?.(this.udid));
-    this.hands = new Hands(opened.runner, opened.scale, (args, ran) => this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms), tools.run);
+    this.hands = new Hands(
+      opened.runner,
+      opened.scale,
+      (args, ran, direct) =>
+        direct
+          ? this.step("input", { command: args.join(" "), by: "person" }, true, undefined, 0)
+          : this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms),
+      tools.run,
+      () => this.shooter.direct(),
+    );
   }
 
   offsetMs(): number {

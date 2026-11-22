@@ -4,16 +4,19 @@
 // changes), run only while someone watches; where that can't run, a loop of `simctl io screenshot` JPEGs, at most one
 // every MIN_GAP (each takes ~0.5 s). They are the same Frames an Android screen gives, sized in the screen's pixels.
 //
-// A person's input goes through agent-device on the agent's own home, so through its daemon and the XCTest runner it
-// already started: a tap is `press`, a drag `swipe`, a held tap `longpress`, the wheel a `swipe`, typing `type`, and
-// Enter, Home and Back their own commands. Inputs queue and run one at a time; scrolls and typing that pile up behind a
-// slow command go as one. agent-device runs them only in a session, and keeps its sessions per working folder: the
+// A person's input goes straight into the simulator's HID service while the stream runs and its helper says it can
+// (./hid.ts: a finger, keys, the home button, as Simulator.app's own input, landing within a frame or two). Otherwise,
+// and for what that can't carry (Back, text with no key on a US keyboard), it goes through agent-device on the agent's
+// own home, so through its daemon and the XCTest runner it already started (0.4-0.9 s a gesture): a tap is `press`, a
+// drag `swipe`, a held tap `longpress`, the wheel a `swipe`, typing `type`, and Enter, Home and Back their own
+// commands. Inputs queue and run one at a time; scrolls and typing that pile up behind a slow command go as one. agent-device runs them only in a session, and keeps its sessions per working folder: the
 // agent's is its job folder's, never the node's. So the first input it refuses opens one (`open`, no app): refused as
 // the agent's session holds the simulator, the inputs go to that session by name (`--session`); opened, the inputs
 // go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
 import { jpegSize } from "../../browser/fit.ts";
 import type { StreamFrame, StreamRun } from "../../screen/live.ts";
+import { type Direct, Touches } from "./hid.ts";
 
 /** The live view's frames come no closer together than this. */
 export const MIN_GAP = 100;
@@ -65,6 +68,8 @@ export class Shooter {
   private liveFailed: string | undefined;
   /** What the watchers take: H.264 (every one decodes it), and their links' budget. */
   private wants: { video: boolean; kbps: number | undefined } = { video: false, kbps: undefined };
+  /** The screen's size in pixels, as the stream's last frame said. */
+  private screen: [number, number] | undefined;
 
   constructor(
     private readonly shoot: Shoot,
@@ -103,6 +108,13 @@ export class Shooter {
     return switched;
   }
 
+  /** Where a person's input goes straight into the simulator, while the stream takes it. */
+  direct(): Direct | undefined {
+    const run = this.streaming;
+    if (!run?.input?.() || !this.screen) return undefined;
+    return { tell: (command) => run.tell(command), screen: this.screen };
+  }
+
   /** A watcher lost an H.264 frame: the screen now as a JPEG (even unchanged), and the next H.264 frame a keyframe. */
   key(): void {
     this.last = undefined;
@@ -126,6 +138,7 @@ export class Shooter {
       run = await live((f) => {
         if (this.stopped) return;
         const [width, height] = f.screen;
+        this.screen = f.screen;
         const atMs = Math.round(performance.now() - this.start);
         if (f.kind === "h264") return this.onFrame({ seq: ++this.seq, jpeg: new Uint8Array(0), width, height, atMs, video: { data: f.data, key: f.key } });
         // A still asked for on an unchanged screen is the same picture: the watchers have it.
@@ -285,12 +298,18 @@ export async function runCommand(runner: Runner, args: string[], within = COMMAN
 }
 
 /**
- * A screen's queue of a person's inputs, run in order through agent-device. `onRan` hears each command that ran (the
- * screen's action log); `stop` drops what is still queued.
+ * A screen's queue of a person's inputs, run in order: straight into the simulator while `direct` says where, else
+ * through agent-device. `onRan` hears each gesture (the screen's action log: agent-device's commands, and the same
+ * words for one that went straight, `direct`); `stop` drops what is still queued.
  */
 export class Hands {
   private readonly queue: Input[] = [];
   private readonly gestures: Gestures;
+  private readonly touches = new Touches();
+  /** The gestures that went straight, as agent-device would have run them: the action log's words. */
+  private readonly logged: Gestures;
+  /** Which way the finger down now went: its moves and lift go the same way. */
+  private finger: "direct" | "agent-device" | undefined;
   private working = false;
   private stopped = false;
   /** The agent's session the inputs go to, by name, once an `open` was refused for it. */
@@ -302,10 +321,12 @@ export class Hands {
   constructor(
     private readonly runner: Runner,
     scale: number,
-    private readonly onRan: (args: string[], ran: Ran) => void = () => {},
+    private readonly onRan: (args: string[], ran: Ran, direct?: boolean) => void = () => {},
     private readonly run: (runner: Runner, args: string[]) => Promise<Ran> = runCommand,
+    private readonly direct: () => Direct | undefined = () => undefined,
   ) {
     this.gestures = new Gestures(scale);
+    this.logged = new Gestures(scale);
   }
 
   send(input: Input): boolean {
@@ -318,11 +339,13 @@ export class Hands {
   stop(): void {
     this.stopped = true;
     this.queue.length = 0;
+    this.touches.liftWheel();
   }
 
   /** The person handed the simulator back: after what is queued, a session the inputs opened is closed. */
   release(): void {
     if (this.stopped) return;
+    this.touches.liftWheel();
     this.releasing = true;
     if (!this.working) void this.work();
   }
@@ -338,6 +361,7 @@ export class Hands {
       while (this.queue.length > 0 && !this.stopped) {
         for (const input of coalesce(this.queue.splice(0))) {
           if (this.stopped) return;
+          if (this.straight(input)) continue;
           const args = this.gestures.feed(input, performance.now());
           if (!args) continue;
           let ran = await this.run(this.runner, inSession(args, this.session));
@@ -358,6 +382,20 @@ export class Hands {
     } finally {
       this.working = false;
     }
+  }
+
+  /** Sends `input` straight into the simulator if it can go that way now: whether it went. */
+  private straight(input: Input): boolean {
+    const touch = input.kind === "touch" ? input.action : undefined;
+    // A finger that went down through agent-device ends there, and one that went straight ends straight.
+    const to = touch && touch !== "down" && this.finger === "agent-device" ? undefined : this.direct();
+    if (touch === "down") this.finger = to ? "direct" : "agent-device";
+    if (!to || !this.touches.feed(input, to)) return false;
+    if (touch === "up") this.finger = undefined;
+    // The action log's line: what agent-device would have run (no line for each turn of the wheel).
+    const words = input.kind === "scroll" ? undefined : this.logged.feed(input, performance.now());
+    if (words) this.onRan(words, { ok: true, said: "", ms: 0 }, true);
+    return true;
   }
 
   /**
