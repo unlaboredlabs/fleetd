@@ -14,8 +14,9 @@
 // its browser process runs in the process session of that folder's launcher (`proven`). Anything else is dropped before
 // a command of the session's goes to it, and a launch that met one tries again on another port.
 //
-// Where socat or mkfifo is missing (a Mac, a bare Linux), the node's Chrome runs on its own pipe as before, and its
-// sessions end as the node stops, the agent told why.
+// Linux only, where socat and mkfifo are on the PATH: the proof reads a process's session from /proc, and systemd's
+// scope is what keeps the launcher past the node's stop. Elsewhere (a Mac, a bare Linux), the node's Chrome runs on its
+// own pipe as before, and its sessions end as the node stops, the agent told why.
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
@@ -34,8 +35,8 @@ const SNAPSHOT = "snapshot.sealed";
 
 export const heldRoot = (home: string) => join(home, "browser", "held");
 
-/** Whether this machine can hold a Chrome past the node: socat and mkfifo on its PATH. */
-export const canHold = () => process.platform !== "win32" && Bun.which("socat") !== null && Bun.which("mkfifo") !== null;
+/** Whether this machine can hold a Chrome past the node: Linux, with socat and mkfifo on its PATH. */
+export const canHold = (platform: string = process.platform) => platform === "linux" && Bun.which("socat") !== null && Bun.which("mkfifo") !== null;
 
 /** This machine as a box (box_chrome.ts's): its commands, files and loopback. */
 export const localBox: KeptBox = {
@@ -119,16 +120,13 @@ export class NotItsOwn extends Error {
   }
 }
 
-/** The process session of process `pid`, from `/proc` (Linux) or `ps`; undefined where it can't be read. */
+/** The process session of process `pid`, from `/proc`; undefined where it can't be read (nothing holds a Chrome
+ * off Linux: `canHold`). */
 function sessionOf(pid: number): number | undefined {
   try {
-    if (process.platform === "linux") {
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      // `pid (comm) state ppid pgrp session …`, and comm may hold a `)`.
-      return Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[3]);
-    }
-    const out = Bun.spawnSync(["ps", "-o", "sess=", "-p", String(pid)]).stdout.toString().trim();
-    return out ? Number(out) : undefined;
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // `pid (comm) state ppid pgrp session …`, and comm may hold a `)`.
+    return Number(stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[3]);
   } catch {
     return undefined;
   }
@@ -184,7 +182,7 @@ export function dropHeld(dir: string): void {
   try {
     const pid = Number(readFileSync(join(dir, "session.pid"), "utf8").trim());
     // Only this launcher's own session, never an empty or zero id, nor a pid the kernel has since given another.
-    const ours = process.platform !== "linux" || readFileSync(`/proc/${pid}/cmdline`, "utf8").includes(dir);
+    const ours = readFileSync(`/proc/${pid}/cmdline`, "utf8").includes(dir);
     if (Number.isInteger(pid) && pid > 1 && ours) process.kill(-pid, "SIGKILL");
   } catch {}
   rmSync(dir, { recursive: true, force: true });

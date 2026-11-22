@@ -122,7 +122,12 @@ function answering(pid: number): { cdp: Cdp; shut: () => boolean } {
   return { cdp: new Cdp(transport), shut: () => closed };
 }
 
-test("a held Chrome's connection counts only once the Chrome proves it is its folder's own, never another's on the port", async () => {
+test("only Linux holds a Chrome past the node: a Mac's runs on the node's own pipe", () => {
+  expect(canHold("darwin")).toBe(false);
+  expect(canHold("win32")).toBe(false);
+});
+
+test.skipIf(process.platform !== "linux")("a held Chrome's connection counts only once the Chrome proves it is its folder's own, never another's on the port", async () => {
   const dir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "held-"));
   cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
   // Its launcher: a process session of its own, as held.ts starts one, and a process in it standing in for Chrome.

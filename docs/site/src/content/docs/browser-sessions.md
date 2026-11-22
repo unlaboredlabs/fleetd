@@ -60,7 +60,7 @@ within them picks the screen up. Any `agent-browser` command counts as use, incl
 starts, it kills any Chrome or other process an earlier session left running in its scratch folder.
 
 A screen outlives a node restart (an update): its Chrome runs outside the node, and the next node takes it over, the
-agent's browser as it was, signed in, at the same address. This needs `socat` on the machine; without it, and for a
+agent's browser as it was, signed in, at the same address. This needs Linux with `socat`; elsewhere, and for a
 lead's screen on its bot's profile, the screen ends with the node. When a screen ends under an agent, its next
 `agent-browser` command or `session_end` says when and why, and it starts a new one with `session_start`.
 
