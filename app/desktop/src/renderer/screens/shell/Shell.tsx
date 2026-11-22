@@ -26,6 +26,7 @@ import { PANEL_TABS, served } from "../panel/tabs";
 import { HOME, listView, panelRoute, toHash, type ProjectKey, type Screen } from "./routes";
 import { PanelHandleProvider, PanelSlot, useProjectPanel } from "./panel";
 import { ConnectionBanner, needsOnboarding } from "../onboarding";
+import { MovedBanner } from "../admin/MoveToCloud";
 import { RestartLine, UpdatesHost } from "../updates";
 import { Boundary } from "../../src/Boundary";
 import { preloadScreens, ScreenHost, screenPart, SettingsSheet } from "./screens";
@@ -396,6 +397,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
             ) : null}
             {chrome ? <RestartLine /> : null}
             {chrome ? <ConnectionBanner /> : null}
+            {chrome ? <MovedBanner /> : null}
           </div>
           <div className={s.screen} data-held={held || undefined}>
             {shown.id === "home" && projects !== undefined && !projects.some((p) => p.hub === route.at) ? (

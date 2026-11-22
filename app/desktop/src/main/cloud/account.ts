@@ -93,6 +93,8 @@ interface Held {
   readonly config: CloudConfig;
   readonly answer: SignedIn;
   readonly deviceName: string;
+  /** A sign-in for Move to the cloud: its answer says which owned teams are empty. */
+  readonly move: boolean;
 }
 
 type Answer = { kind: "code"; code: string } | { kind: "refused"; error: string } | { kind: "cancelled" } | { kind: "timeout" };
@@ -133,6 +135,8 @@ export class CloudAccount {
   #pending: { readonly end: (answer: Answer) => void; url: string | null } | null = null;
   #account: SavedAccount | null;
   #held: Held | null = null;
+  /** The empty teams of the last sign-in for a move, by their address, once connected. */
+  #empty: ReadonlyArray<{ readonly origin: string; readonly name: string }> = [];
 
   constructor(ports: CloudPorts) {
     this.#ports = ports;
@@ -165,7 +169,8 @@ export class CloudAccount {
     this.#pending?.end({ kind: "cancelled" });
   }
 
-  async signIn(): Promise<SignInOutcome> {
+  /** `move`: Move to the cloud's sign-in (AccountsSignInInput.move), whose answer says which owned teams are empty. */
+  async signIn(move = false): Promise<SignInOutcome> {
     const config = this.#ports.config;
     if (config === null) return failed("", "This app isn't set up to sign in to fleetd.");
     this.cancel();
@@ -233,7 +238,7 @@ export class CloudAccount {
         finish("Not signed in", "You can close this tab and go back to fleetd.");
         return failed("refused", "The browser came back without signing you in.", "Nothing was changed. Sign in again.");
       }
-      const out = await this.#exchange(config, { code: a.code, codeVerifier: verifier, redirectUri: redirect, deviceName: this.#ports.deviceName() });
+      const out = await this.#exchange(config, { code: a.code, codeVerifier: verifier, redirectUri: redirect, deviceName: this.#ports.deviceName(), ...(move ? { move: true } : {}) });
       if (out.ok) finish("Signed in to fleetd", "You can close this tab and go back to fleetd to finish.");
       else if (!out.cancelled) finish("Not signed in", `${out.failure.message} Go back to fleetd to try again.`);
       return out;
@@ -247,7 +252,7 @@ export class CloudAccount {
   }
 
   /** The accounts service's answer, held for finish: nothing is connected yet. */
-  async #exchange(config: CloudConfig, body: { code: string; codeVerifier: string; redirectUri: string; deviceName: string }): Promise<SignInOutcome> {
+  async #exchange(config: CloudConfig, body: { code: string; codeVerifier: string; redirectUri: string; deviceName: string; move?: true }): Promise<SignInOutcome> {
     let response: Response;
     try {
       response = await this.#post(config, ACCOUNTS_SIGN_IN_PATH, body);
@@ -262,7 +267,7 @@ export class CloudAccount {
       void this.#endSession(config, answer.sessionId);
       return failed("", "No team of this account could be connected.");
     }
-    this.#held = { config, answer, deviceName: body.deviceName };
+    this.#held = { config, answer, deviceName: body.deviceName, move: body.move === true };
     return {
       ok: true,
       arrival: {
@@ -282,7 +287,7 @@ export class CloudAccount {
     const held = this.#held;
     this.#held = null;
     if (held === null) return failed("", "That sign-in isn't waiting any more.", "Sign in again.");
-    const { config, answer, deviceName } = held;
+    const { config, answer, deviceName, move } = held;
     const outcomes: TeamOutcome[] = [];
     const paired = new Set<string>();
     const pairOne = async (team: AccountsTeam, accepted: boolean) => {
@@ -310,6 +315,12 @@ export class CloudAccount {
       if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
       return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
     }
+    this.#empty = move
+      ? answer.teams.flatMap((t) => {
+          const origin = t.empty === true ? teamOrigin(t.url, config.accountsUrl, this.#ports.local) : null;
+          return origin !== null && paired.has(origin) ? [{ origin, name: cleanLabel(t.name) ?? "fleetd" }] : [];
+        })
+      : [];
     const before = this.#account;
     this.#account = { email: answer.email, sessionId: answer.sessionId };
     this.#ports.save(this.#account);
@@ -326,6 +337,14 @@ export class CloudAccount {
       );
     }
     return { ok: true, email: answer.email, teams: outcomes };
+  }
+
+  /** The empty teams the last sign-in for a move connected: the hubs a hub may move into. */
+  moveTargets(): ReadonlyArray<{ readonly hub: CloudHub; readonly name: string }> {
+    return this.#empty.flatMap(({ origin, name }) => {
+      const hub = this.#ports.heldAt(origin);
+      return hub === null ? [] : [{ hub, name: hub.label || name }];
+    });
   }
 
   /** The service joins an invitation the person chose (accept) or makes their own team (team), and answers the team with its pairing code. */

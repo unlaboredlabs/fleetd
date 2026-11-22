@@ -1,11 +1,33 @@
 ---
 title: Moving a hub
-description: Take a hub's data to another hub as one file with fleetd export and fleetd import, and see what the file carries and what it leaves behind.
+description: Move a self-hosted hub to fleetd cloud from the app, or take its data to another hub as one file with fleetd export and fleetd import, and see what moves and what stays behind.
 ---
 
 `fleetd export` writes everything a [hub](/docs/glossary#hub) knows into one file, and `fleetd import` loads that file
 into a fresh hub, on another machine or after a reinstall. Both commands run on the hub machine and work on the hub's
 home (`~/.fleetd/hub`, or `FLEETD_HOME`).
+
+## Move to the cloud {#cloud}
+
+To move a self-hosted hub into fleetd cloud, use the app instead of the two commands: **Settings › Hub › Setup ›
+Move to the cloud**. You need Admin on every machine.
+
+1. Sign in to fleetd cloud. The move goes into an empty team of yours, and a new team is made when you have none.
+2. Press **Move**. The hub pauses its leads, agents and automations, uploads its data, and the cloud loads it. The
+   sheet shows how far it is. A dropped connection is waited out, and the upload carries on where it stopped.
+3. Each machine then rejoins the team by itself, over its own connection to the hub. A machine that is offline
+   rejoins when it is next online. One running an older fleetd is updated first.
+4. The app opens the team, and the bots answer there with their history.
+
+The secrets travel under a passphrase the hub makes and never shows. Everything is carried as with an export, and
+the machines come along.
+
+The old hub keeps all its data and stays paused, with a banner. **Undo** on the banner runs its bots there again.
+Machines that already rejoined the cloud stay there until they join the old hub again.
+
+If the move stops (the connection is out too long, the team already has data, the hub is too big, the cloud runs an
+older fleetd, or your sign-in ends), nothing changes on either side. The pause lifts, and the sheet says why and
+what to do next.
 
 ## Export {#export}
 

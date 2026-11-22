@@ -40,6 +40,7 @@ import { register as r38 } from "../tasks/tools.ts";
 import { register as r39 } from "../time/tools.ts";
 import { register as r40 } from "../train/tools.ts";
 import { register as r41 } from "../update/tools.ts";
+import { register as r47 } from "../transfer/tools.ts";
 import { register as r42 } from "../usage/tools.ts";
 import { register as r43 } from "../vault/tools.ts";
 import { register as r44 } from "../wakes/tools.ts";
@@ -93,4 +94,5 @@ export function registerAll(tools: Registry): void {
   r44(tools); // hub/wakes
   r45(tools); // hub/work
   r46(tools); // hub/chat_sections
+  r47(tools); // hub/transfer
 }
