@@ -4,6 +4,7 @@
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
+import type { BrowserControl } from "../../shared/contracts.ts";
 import type { StreamFrame, StreamRun } from "../screen/live.ts";
 
 /** The screen every session gets, in pixels. */
@@ -103,6 +104,34 @@ export interface Screen {
 /** What `launch` saw of an app in its first moments: exited already, its code and the end of what it printed. */
 export type Launched = { pid: number; exited?: { code: number | null; output: string } };
 
+/** What a display that reads itself where it runs sends a session (a box's, ./box_frames.ts): a frame for the
+ * watchers, as the hub takes it but for whose session it is, its seq and who drives; or one for the video, JPEG or
+ * H.264 (an access unit, Annex B). */
+export type LiveFrame = { width: number; height: number; jpegB64?: string; h264B64?: string; key?: boolean };
+export type VideoFrame = { kind: "jpeg"; data: Uint8Array } | { kind: "h264"; key: boolean; size: [number, number]; data: Uint8Array };
+
+/** What the watchers asked for, as a session tells its picture (undefined: nobody watches). */
+export type Watching = { kbps: number | undefined; video?: boolean; fps?: number } | undefined;
+
+/** A display's picture, read and encoded where the display runs while the session lives: `ended` says why it stopped
+ * by itself. */
+export type PictureRun = {
+  watch(watching: Watching): void;
+  /** The screen now to the watchers, then (with H.264) a keyframe. */
+  key(): void;
+  /** Who drives now: the watchers' next frame says so. */
+  control(control: BrowserControl): void;
+  /** The video takes JPEG from now on (it started as JPEG). */
+  videoJpeg(): void;
+  /** The whole screen, as a JPEG (an agent's screenshot). */
+  shot(): Promise<Shot>;
+  stop(): void;
+  ended: Promise<string | undefined>;
+};
+
+/** What the session's video takes from a picture: H.264 where it can, JPEG, or nothing (it keeps none). */
+export type VideoKind = "h264" | "jpeg" | "none";
+
 /** What a session was lent to put its screen on: a display of its own, thrown away by `drop`, or the Mac's lease. */
 export interface Lent {
   /** It runs in the agent's own box (../place/box_screens.ts), so what it launches runs beside the agent's files. */
@@ -114,6 +143,9 @@ export interface Lent {
   agentDesktop?(args: string): Promise<string>;
   /** The app an agent-desktop command names, as the Mac's app claims know it: the agents' Mac's only. */
   appOf?(target: Target): Promise<App | undefined>;
+  /** The display's picture read and encoded where it runs, so only frames cross (a box's display: ./box_frames.ts);
+   * absent where the session reads the screen itself. */
+  picture?(video: VideoKind, on: { live(frame: LiveFrame): void; video(frame: VideoFrame): void }): Promise<PictureRun>;
   /** Throws it away with everything on it. */
   drop(): Promise<void>;
 }

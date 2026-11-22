@@ -93,3 +93,11 @@ RUN curl -fsSL -o /tmp/node.txz https://nodejs.org/dist/v24.22.3/node-v24.22.3-l
 # Xvfb, openbox and xterm: a hosted agent's Linux desktop runs in its box (fleetd/src/node/place/box_screens.ts).
 RUN apt-get update && apt-get install -y --no-install-recommends dbus-x11 libgtk-3-0t64 openbox xterm xvfb \
  && rm -rf /usr/share/icons/* /var/lib/apt/lists/*
+
+# An ffmpeg with x264 at the node's own pin (fleetd/src/node/device/pins.ts): a desktop's live view and video are
+# encoded in its box (fleetd/src/node/desktop/box_frames.ts, BOX_FFMPEG); without it they are JPEG.
+RUN curl -fsSL -o /tmp/ffmpeg.txz https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-6.0.1-amd64-static.tar.xz \
+ && echo "28268bf402f1083833ea269331587f60a242848880073be8016501d864bd07a5  /tmp/ffmpeg.txz" | sha256sum -c - \
+ && mkdir -p /tmp/ffmpeg && tar -xJf /tmp/ffmpeg.txz -C /tmp/ffmpeg --strip-components=1 \
+ && install -m 0755 /tmp/ffmpeg/ffmpeg /usr/local/bin/fleetd-ffmpeg \
+ && rm -rf /tmp/ffmpeg /tmp/ffmpeg.txz

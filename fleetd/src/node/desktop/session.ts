@@ -15,6 +15,10 @@
 // screen is still. Two frames are kept in reserve (../screen/live.ts Pace): a change that comes alone, a key's echo,
 // goes at once, and only a run of changes is paced.
 //
+// A display that reads itself where it runs (a box's: ./box_frames.ts, `Lent.picture`) does all of that there, with
+// this very code: the session then sends its frames on, to the watchers and the video, and asks it for screenshots.
+// Only input and the action log stay here. If it can't start or stops, the session reads the screen itself.
+//
 // A Mac screen session that holds neither the Mac's lease nor an app's claim only observes: it reads the screen only
 // while a person watches it, and records no video meanwhile.
 import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
@@ -23,7 +27,7 @@ import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
 import { type Encoded, fpsFor, HARDWARE_FPS, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, MAX_KBPS, Pace, type StreamFrame, type StreamRun } from "../screen/live.ts";
 import { Nv12 } from "../screen/nv12.ts";
-import type { App, Launched, Lent, Raw, Screen, Target } from "./screen.ts";
+import type { App, Launched, Lent, LiveFrame, PictureRun, Raw, Screen, Target, VideoFrame, VideoKind, Watching } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
 /** What a session's recording says without an ffmpeg to encode its video. */
@@ -112,6 +116,8 @@ export class Session {
   private starting = false;
   /** Why the stream failed, once it has: the grabs' frames from then on. */
   private streamFailed: string | undefined;
+  /** The display's picture where it runs (Lent `picture`), while it serves: the live view's frames and the video's. */
+  private picture: PictureRun | undefined;
   /** The grabs as H.264 for the video where it takes them, and for watchers that decode it (a screen without a
    * stream of its own) while their link carries the video's rate; absent: JPEG only. */
   private readonly encoder: LiveEncoding | undefined;
@@ -195,7 +201,7 @@ export class Session {
 
   /** Starts reading the screen, and keeps a still screen's frame showing in the video. */
   open(): void {
-    this.capturing = this.capture();
+    this.capturing = this.lent?.picture ? this.readPicture() : this.capture();
     this.ticker = setInterval(() => {
       this.recording?.video?.tick(this.offsetMs());
       // The machine's load moves the stream's frame rate too.
@@ -265,6 +271,7 @@ export class Session {
     const before = this.controlNow;
     if (before === control) return;
     this.controlNow = control;
+    this.picture?.control(control);
     if (control === "human") this.logStep("takeover", { by }, true);
     else if (before === "human") this.logStep("handback", { by }, true);
     // The watcher's next frame says who drives now.
@@ -275,6 +282,7 @@ export class Session {
   /** Sends this session's frames to the hub from now on, the newest at once, or no more. */
   setWatcher(watcher: Watcher | undefined): void {
     this.watcher = watcher;
+    if (this.picture) return this.picture.watch(this.watching());
     this.liveEncoder()?.key();
     if (!watcher) {
       this.streaming?.stop();
@@ -303,6 +311,7 @@ export class Session {
     w.kbps = kbps;
     w.video = video;
     w.fps = fps;
+    if (this.picture) return this.picture.watch(this.watching());
     if (!this.slowLink()) this.stopSlow();
     this.tellStream();
     if (switched) this.key();
@@ -312,6 +321,7 @@ export class Session {
    * than any frame sent, and the next H.264 frame a keyframe (a new encoder) whether the screen changes or not. */
   key(): void {
     if (!this.watcher) return;
+    if (this.picture) return this.picture.key();
     if (this.streaming) return this.streaming.still();
     this.liveEncoder()?.key();
     if (this.last) this.last = { ...this.last, seq: ++this.liveSeq, control: this.controlNow };
@@ -531,6 +541,53 @@ export class Session {
     this.sendLive(false);
   }
 
+  /** What the watchers ask for now, as the picture takes it. */
+  private watching(): Watching {
+    const w = this.watcher;
+    return w && { kbps: w.kbps, video: w.video === true, ...(w.fps !== undefined ? { fps: w.fps } : {}) };
+  }
+
+  /** The display's picture, read where it runs, while the session lives; the session reads the screen itself if it
+   * can't start, or once it stopped by itself. */
+  private async readPicture(): Promise<void> {
+    const video = this.recording?.video;
+    const kind: VideoKind = !video ? "none" : video.h264 ? "h264" : "jpeg";
+    let run: PictureRun;
+    try {
+      run = await this.lent!.picture!(kind, { live: (f) => this.pictured(f), video: (f) => this.videoFrame(f) });
+    } catch (e) {
+      if (this.closed) return;
+      console.warn(`desktop ${this.id}: the screen is read from here: ${(e as Error).message}`);
+      return this.capture();
+    }
+    if (this.closed) return run.stop();
+    this.picture = run;
+    run.control(this.controlNow);
+    run.watch(this.watching());
+    const why = await run.ended;
+    this.picture = undefined;
+    if (this.closed || why === undefined) return;
+    console.warn(`desktop ${this.id}: the screen is read from here: ${why}`);
+    return this.capture();
+  }
+
+  /** A frame of the picture's, to the watchers: as this session's, under its seq and who drives. */
+  private pictured(f: LiveFrame): void {
+    const w = this.watcher;
+    if (this.closed || !w) return;
+    w.send({ ...f, sessionId: this.id, seq: ++this.liveSeq, control: this.controlNow });
+  }
+
+  /** A frame of the picture's, into the video (not while the session only observes). */
+  private videoFrame(f: VideoFrame): void {
+    const video = this.recording?.video;
+    if (this.closed || this.observingNow || !video) return;
+    const at = this.offsetMs();
+    if (f.kind === "jpeg") return video.frame(f.data, at);
+    // A video that started as JPEG can't take it: from then on it is JPEG's.
+    if (video.h264?.(f.data, f.key, f.size, at) !== true) this.picture?.videoJpeg();
+  }
+
   /** Reads the screen while the session lives: a new frame whenever it changed. */
   private async capture(): Promise<void> {
     // The video is H.264 from its first frame on when the encoder can make it: known before the first grab (at once
@@ -655,7 +712,7 @@ export class Session {
           ? await this.launchApp(call)
           : call.action === "agent_desktop"
             ? await this.agentDesktop(call)
-            : await this.screen.serial(() => act(this.screen, call));
+            : await this.screen.serial(() => act(this.screen, call, this.picture));
     } catch (e) {
       const why = (e as Error).message;
       this.logStep("desktop", call, false, why, Math.round(performance.now() - started));
@@ -708,6 +765,7 @@ export class Session {
     this.closed = true;
     this.watcher = undefined;
     clearInterval(this.ticker);
+    this.picture?.stop();
     await this.capturing;
     this.encoder?.stop();
     this.stopSlow();
@@ -724,6 +782,7 @@ export class Session {
     this.closed = true;
     this.watcher = undefined;
     clearInterval(this.ticker);
+    this.picture?.stop();
     await this.capturing;
     this.encoder?.stop();
     this.stopSlow();
@@ -747,8 +806,8 @@ export class Session {
 
 const point = (c: [number, number] | undefined) => (c ? ([c[0], c[1]] as [number, number]) : undefined);
 
-/** One `desktop` action on the screen. */
-export async function act(x: Screen, call: DesktopCall): Promise<DesktopDone> {
+/** One `desktop` action on the screen; a screenshot from `picture` where the display reads itself. */
+export async function act(x: Screen, call: DesktopCall, picture?: Pick<PictureRun, "shot">): Promise<DesktopDone> {
   const said = (message: string): DesktopDone => ({ message });
   const needText = () => {
     if (!call.text) throw new Error(`${call.action} needs text`);
@@ -765,8 +824,9 @@ export async function act(x: Screen, call: DesktopCall): Promise<DesktopDone> {
   };
   switch (call.action) {
     case "screenshot": {
+      // Everything sent before it lands first.
       await x.sync();
-      const shot = await x.grab();
+      const shot = picture ? await picture.shot() : await x.grab();
       return {
         message: `The screen, ${shot.width}x${shot.height}.`,
         jpegB64: Buffer.from(shot.jpeg).toString("base64"),
