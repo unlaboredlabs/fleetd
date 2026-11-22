@@ -137,6 +137,8 @@ export {
   suggestedName,
   testLine as connectionTestLine,
   whereOf,
+  freeName,
+  withEnabled,
   type StripItem,
   type Tested,
 } from "../../desktop/src/renderer/screens/connections/model";
