@@ -393,13 +393,17 @@ describe("Session", () => {
     expect(pages()).toHaveLength(1);
   });
 
-  it("checks a live link when the network changes, and dials at once one that waits out its backoff", () => {
+  it("checks a live link when the network changes while it dials one beside it, and dials at once one that waits out its backoff", () => {
     const { hub, session } = setup();
     vi.advanceTimersByTime(1000);
+    const first = hub.link;
     session.networkChanged();
-    expect(hub.sentOf("call").filter((c) => c.tool === "hub_info")).toHaveLength(2);
-    // Nothing back: the link was on the network left behind.
+    // The old link is asked, and a fresh one dialled on the new network at once, not after the probe's wait.
+    expect(first.sent.filter((c) => c.t === "call" && c.tool === "hub_info")).toHaveLength(2);
+    expect(hub.links).toHaveLength(2);
+    // Nothing back: the link was on the network left behind, and the fresh one is the link.
     vi.advanceTimersByTime(2500);
+    expect(first.closed).toBe(true);
     expect(hub.links).toHaveLength(2);
     hub.link.close(1006);
     expect(session.state.hub.phase).toBe("retrying");
