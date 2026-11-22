@@ -114,3 +114,23 @@ test("a fresh lead session's Recent chat names a message's files by id and name"
   hub.shutdown.abort();
   done();
 });
+
+test("a lead restarted fresh starts on the chat it carries on, not on the digest alone", async () => {
+  const { hub, done } = testHub();
+  start(hub);
+  const prompts: string[] = [];
+  Object.assign(leadWiring(hub).ports, {
+    launch: async (_machineId: string, input: { prompt: string }) => {
+      prompts.push(input.prompt);
+      return `lead-${prompts.length}`;
+    },
+    send: async () => false,
+  });
+  await leads(hub).start(PROJECT);
+  expect(prompts[0]).not.toContain("## Recent chat");
+  chat(hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
+  await leads(hub).restart(PROJECT);
+  expect(prompts[1]).toMatch(/^Human \([^)]*\): is the docs page gone\?$/m);
+  hub.shutdown.abort();
+  done();
+});

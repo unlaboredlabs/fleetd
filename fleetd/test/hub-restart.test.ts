@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
+import { chat } from "../src/hub/chat/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
@@ -245,4 +246,27 @@ test("a lead from before fleetd kept what it was launched with: changed when its
   switchModel(t.hub);
   expect(leads(t.hub).profileChanged(PROJECT)).toBe(true);
   expect(await t.restart()).toMatchObject({ leads: 1 });
+});
+
+test("a lead that switches profile starts on the chat it carries on, not on the digest alone", async () => {
+  const t = await withLead();
+  chat(t.hub).add(PROJECT, { author: "human", text: "retry the Tern import" });
+  chat(t.hub).add(PROJECT, { author: "lead", text: "Retrying it now." });
+  switchModel(t.hub);
+  await t.restart();
+  const hub = t.next();
+  start(hub);
+  const prompts: string[] = [];
+  Object.assign(leadWiring(hub).ports, {
+    launch: async (_machineId: string, input: { prompt: string }) => {
+      prompts.push(input.prompt);
+      return `lead-${++threads}`;
+    },
+    send: async () => false,
+  });
+  await until(() => prompts.length === 1);
+  // A first turn with the digest alone gave a lead nothing to answer, and it made up a message from the person (W787).
+  expect(prompts[0]).toContain("## Recent chat\nYour session started fresh");
+  expect(prompts[0]).toMatch(/^Human \([^)]*\): retry the Tern import$/m);
+  expect(prompts[0]).toMatch(/^You \([^)]*\): Retrying it now\.$/m);
 });
