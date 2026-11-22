@@ -99,7 +99,8 @@ describe("the hub client over the browser's WebSocket", () => {
     const frames: HubFrame[] = [];
     const client = new HubClient({ hub: "https://t1.fleetd.dev", key: "", transport: transport, emit: (f) => frames.push(f), random: () => 0.5 });
     client.start();
-    const socket = FakeSocket.made[0]!;
+    const socket = FakeSocket.made[0];
+    if (socket === undefined) throw new Error("no socket made");
     const hub = (frame: Record<string, unknown>) => socket.onmessage?.({ data: JSON.stringify(frame) });
     socket.open();
     hub({ t: "ready", protocol: 1 });
@@ -122,13 +123,13 @@ describe("the hub client over the browser's WebSocket", () => {
   });
 
   it("still gives a link up within seconds when it goes quiet with nothing due, and a call's answer is waited for", () => {
-    const { client, hub } = live();
+    const { client, socket, hub } = live();
     hub({ t: "snapshot", cursor: 41, machines: [] });
     // A call's answer due: the steady ping judges the link, not the quiet ping.
     const answer = client.call({ tool: "chat_history", input: {} });
     vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
     expect(client.state.phase).toBe("live");
-    const asked = JSON.parse(FakeSocket.made[0]!.sent.filter((t) => t.includes("chat_history")).at(-1)!) as { id: string };
+    const asked = JSON.parse(socket.sent.find((t) => t.includes("chat_history")) ?? "{}") as { id: string };
     hub({ t: "result", id: asked.id, output: {} });
     void answer;
     // Nothing due, and the link goes dead after traffic: found in the quiet ping's seconds, before the steady ping.
