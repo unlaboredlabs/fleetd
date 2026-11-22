@@ -89,6 +89,8 @@ type Paused = { text: string; guard: boolean; brake: boolean };
 type LinkSocket = {
   nonce: string;
   phase: "hello" | "linked" | "closed";
+  /** `unlink` ran for this link. */
+  unlinked?: boolean;
   machineId?: string;
   id?: number;
   helloTimer?: Timer;
@@ -1072,6 +1074,9 @@ export class Link {
 
   /** The link `id` ended: commands on it fail as lost, and what its hello listed is forgotten unless a newer took over. */
   private unlink(machineId: string, id: number, state: LinkSocket): void {
+    // Once per link: one let go before its socket closes (a machine that left, a revoked key) isn't let go again.
+    if (state.unlinked === true) return;
+    state.unlinked = true;
     clearInterval(state.heartbeat);
     const detach = state.detach;
     state.detach = undefined;

@@ -40,7 +40,8 @@ export const billingShown = (hub: Pick<KeptHub, "cloud">, admin: boolean | undef
 
 const record = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
-const call = async (fetch: Fetch, hub: Pick<KeptHub, "hub" | "key" | "hubName">, method: "GET" | "POST", path: string, body?: unknown): Promise<Got<unknown>> => {
+/** One call to the team's own address with this phone's key; its refusal in the team's words. */
+export const call = async (fetch: Fetch, hub: Pick<KeptHub, "hub" | "key" | "hubName">, method: "GET" | "POST", path: string, body?: unknown): Promise<Got<unknown>> => {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), CALL_TIMEOUT_MS);
   let response: Response;

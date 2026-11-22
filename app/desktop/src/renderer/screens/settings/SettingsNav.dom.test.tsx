@@ -42,9 +42,12 @@ const snapshot: HubFrame = {
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: Record<string, unknown> }>;
+/** An admin's role, when it isn't the owner's. */
+let adminRole: "owner" | "admin" = "owner";
 
 beforeEach(() => {
   calls = [];
+  adminRole = "owner";
   vi.stubGlobal("fleetd", {
     platform: "linux",
     fixture: null,
@@ -91,7 +94,7 @@ const render = async (hash: string, admin: boolean, live = true, features: Reado
       calls.push({ tool, input: input as Record<string, unknown> });
       const output =
         tool === "hub_info"
-          ? { version: "0.9.0", protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
+          ? { version: "0.9.0", protocol: 1, busy: [], admin, me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? adminRole : "member", createdAt: AT } }
           : tool === "people_list"
             ? { people: [{ personId: "p_bbbbbbbb", name: "Ana", role: "owner", createdAt: AT }], devices: [], invites: [] }
             : tool === "setup_list"
@@ -262,6 +265,56 @@ it("has the Hub group for an admin only, and Vault only on a hub with the vault"
 it("names the admin group Team on a fleetd cloud team, never Hub", async () => {
   await render("#/settings/general", true, true, ["vault"], true);
   expect(groups()).toEqual(["You", "Bots", "Team"]);
+});
+
+it("ends a fleetd cloud team's Team group with its owner's Delete team: one confirm, the name typed, the team's refusal shown", async () => {
+  const deleteTeam = vi.fn((_hub: string, _name: string) =>
+    Promise.resolve(
+      deleteTeam.mock.calls.length === 1
+        ? { ok: false, failure: { code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." } }
+        : { ok: true },
+    ),
+  );
+  (window.fleetd as unknown as { cloud: unknown }).cloud = { deleteTeam, billing: () => new Promise(() => undefined) };
+  await render("#/settings/general", true, true, [], true);
+  expect(rows().slice(-2)).toEqual(["Setup", "Delete team"]);
+  await click(button("Delete team", nav() as HTMLElement));
+  // The confirm opens over the sheet, itself a dialog.
+  const dialog = () => [...document.querySelectorAll<HTMLElement>("[role='dialog']")].find((d) => d.textContent.includes("Type acme to confirm")) ?? null;
+  expect(dialog()?.textContent).toContain("Delete acme?");
+  const go = () => button("Delete team", dialog() as HTMLElement);
+  // Nothing is asked of the team until a name is typed; the team, not this app, says whether it is its name.
+  expect(go().disabled).toBe(true);
+  const type = async (text: string) => {
+    const input = dialog()?.querySelector("input") as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+  };
+  await type("  ");
+  expect(go().disabled).toBe(true);
+  // Its name for everyone, which this computer's own label (acme) needn't be.
+  await type(" Acme Inc ");
+  expect(go().disabled).toBe(false);
+  await click(go());
+  // The team's refusal, in its words, and the dialog stays.
+  expect(dialog()?.querySelector("[role='alert']")?.textContent).toBe("An agent is running in this team.Stop them, then delete the team.");
+  await click(go());
+  expect(deleteTeam.mock.calls.map((c) => c[1])).toEqual([" Acme Inc ", " Acme Inc "]);
+  expect(dialog()).toBeNull();
+});
+
+it("has no Delete team for an admin who isn't the owner, nor on a self-hosted hub", async () => {
+  adminRole = "admin";
+  await render("#/settings/general", true, true, [], true);
+  expect(rows()).not.toContain("Delete team");
+  act(() => root.unmount());
+  root = createRoot(host);
+  adminRole = "owner";
+  await render("#/settings/general", true);
+  expect(rows()).not.toContain("Delete team");
 });
 
 // Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of

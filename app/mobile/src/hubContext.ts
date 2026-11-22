@@ -18,6 +18,8 @@ export interface HubContextValue {
   readonly paired: KeptHub;
   /** Asks first, then signs this phone out on the hub and forgets it. */
   readonly disconnect: () => void;
+  /** Forgets the hub shown with no sign-out: a team deleted, whose key opens nothing now. */
+  readonly forget: () => void;
   /** Every hub this phone keeps a key for, the one shown among them. */
   readonly hubs: readonly KeptHub[];
   /** Who is signed in to fleetd cloud, or null. */

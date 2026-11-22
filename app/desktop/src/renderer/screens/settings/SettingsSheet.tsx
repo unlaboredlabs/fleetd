@@ -3,7 +3,7 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left. Vault shows
+// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left; on a fleetd cloud team, called Team, its owner's Delete team last, in red. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
@@ -33,6 +33,7 @@ import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
 import { useBillingShown } from "../admin/billingQuery";
 import { HUB_PAGES as HUB_PAGES_SHOWN, YOU_PAGES } from "../../../shared/settingsPages";
+import { DeleteTeamItem, useDeletesTeam } from "../admin/DeleteTeam";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
@@ -273,10 +274,12 @@ function Group({
   id,
   label,
   entries,
+  children,
 }: {
   id: string;
   label: string;
   entries: ReadonlyArray<Entry>;
+  children?: ReactNode;
 }) {
   return (
     <div className={n.group} role="group" aria-labelledby={id}>
@@ -286,6 +289,7 @@ function Group({
       {entries.map((e) => (
         <Item key={e.key} entry={e} />
       ))}
+      {children}
     </div>
   );
 }
@@ -295,6 +299,7 @@ function Index() {
   const { you, bots, hub, administers, vault, billing } = useEntries();
   // A fleetd cloud team is a team to the person, never a hub.
   const cloud = useHub().cloud === true;
+  const deletes = useDeletesTeam();
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
   const results = searchSettings(query, optionsFor(administers, vault, billing));
@@ -331,7 +336,9 @@ function Index() {
           <Group id="settings-you" label="You" entries={you} />
           <Group id="settings-bots" label="Bots" entries={bots} />
           {hub === null ? null : (
-            <Group id="settings-hub" label={cloud ? "Team" : "Hub"} entries={hub} />
+            <Group id="settings-hub" label={cloud ? "Team" : "Hub"} entries={hub}>
+              {deletes ? <DeleteTeamItem className={cx(n.item, n.danger)} iconClassName={n.itemIcon} labelClassName={n.itemLabel} /> : null}
+            </Group>
           )}
         </>
       )}

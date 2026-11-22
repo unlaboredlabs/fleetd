@@ -17,7 +17,7 @@ export type Tone = "ok" | "warn" | "fail" | "quiet";
 export type Fix =
   | { readonly kind: "restart" }
   | { readonly kind: "grant"; readonly pane: "accessibility" | "screen_recording" | "screen_capture" }
-  | { readonly kind: "open"; readonly pane: Extract<MacPane, "app_store"> }
+  | { readonly kind: "open"; readonly pane: Extract<MacPane, "app_store" | "energy" | "lock_screen"> }
   | { readonly kind: "command"; readonly where: string; readonly command: string }
   | { readonly kind: "say"; readonly text: string };
 
@@ -116,7 +116,7 @@ export const DISK_FULL = 10e9;
 export const DISK_COMMAND = "xcrun simctl delete unavailable";
 
 /** The checks the rows stand for; any other shows only while it isn't green. */
-const ROWED = new Set(["accessibility", "screen_recording", "xcode", "ios_runtime", "tools"]);
+const ROWED = new Set(["accessibility", "screen_recording", "screen_capture", "xcode", "ios_runtime", "tools", "keep_awake", "screen_lock"]);
 
 const toneOf = (check: MacCheck | undefined): Tone => {
   const state: string | undefined = check?.state;
@@ -128,6 +128,8 @@ const WORD: Readonly<Record<Tone, string>> = { ok: "Ready", warn: "Not ready", f
 /** A check's own fix: the App Store's button for Xcode's page, else its words and command, else its words. */
 const fixOf = (check: MacCheck): Fix | undefined => {
   if (check.command?.startsWith('open "macappstore:') === true) return { kind: "open", pane: "app_store" };
+  if (check.command?.startsWith('open "x-apple.systempreferences:com.apple.Energy') === true) return { kind: "open", pane: "energy" };
+  if (check.command?.startsWith('open "x-apple.systempreferences:com.apple.Lock-Screen') === true) return { kind: "open", pane: "lock_screen" };
   if (check.command !== undefined && check.command !== "") return { kind: "command", where: check.fix ?? "In Terminal at the Mac", command: check.command };
   return check.fix === undefined || check.fix === "" ? undefined : { kind: "say", text: check.fix };
 };
@@ -194,6 +196,21 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
   const pods = /CocoaPods (\d[\w.]*)/u.exec(tools?.message ?? "")?.[1];
   const podsRow = checkRow("cocoapods", "CocoaPods", tools, pods?.replace(/\.$/u, ""));
   rows.push(toneOf(tools) === "quiet" && tools !== undefined ? { ...podsRow, word: "Installing…" } : podsRow);
+
+  // Sleep: an agents' Mac that sleeps drops off its hub. Its node holds it awake, and the Mac's own setting should too.
+  const awake = find("keep_awake");
+  const sleepRow = checkRow("sleep", "Sleep", awake, "Never");
+  const after = /after (\d+) min/u.exec(awake?.message ?? "")?.[1];
+  rows.push(toneOf(awake) === "warn" ? { ...sleepRow, word: after === undefined ? "On" : `After ${after} min` } : sleepRow);
+
+  // The lock screen: while it shows, apps' windows don't and agents' clicks land on it. An older node doesn't say.
+  const lock = find("screen_lock");
+  if (lock !== undefined) {
+    const lockRow = checkRow("screen_lock", "Screen lock", lock, "Never");
+    const lockAfter = /locks (\d+) min after/u.exec(lock.message)?.[1];
+    const lockWord = toneOf(lock) === "fail" ? "Locked" : toneOf(lock) === "warn" ? (lockAfter === undefined ? "At once" : `After ${lockAfter} min`) : lockRow.word;
+    rows.push({ ...lockRow, word: lockWord });
+  }
 
   // The disk this Mac's fleetd is on.
   const disk = read.disk;

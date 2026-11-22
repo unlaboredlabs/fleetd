@@ -121,5 +121,8 @@ export type BillingOpenOutcome = { readonly ok: true } | { readonly ok: false; r
 /** The spend cap as the team keeps it now (cents a month, null: none), or why it wasn't set. */
 export type BillingCapOutcome = { readonly ok: true; readonly capCents: number | null } | { readonly ok: false; readonly failure: PairFailure };
 
+/** The team deleted for good, and gone from this app; or the team's refusal in its words (not the owner, the name typed isn't its name, agents running). */
+export type DeleteTeamOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };
+
 /** An invite taken back, or why not. */
 export type RevokeInviteOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: PairFailure };

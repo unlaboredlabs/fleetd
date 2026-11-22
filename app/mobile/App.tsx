@@ -412,6 +412,10 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
         leaving.current = true;
         signOut();
       });
+    const forgetHub = () => {
+      leaving.current = true;
+      onForget();
+    };
     // This hub's notifications stop before another's start: each hub shown gets its own key pair.
     const switchTo = (hub: KeptHub) => {
       haptics.select();
@@ -450,7 +454,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
           resolve,
         ),
       );
-    return { session, state, paired, disconnect, hubs, account, switchTo, signedIn, signOutCloud };
+    return { session, state, paired, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud };
   }, [session, state, paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut]);
 
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.

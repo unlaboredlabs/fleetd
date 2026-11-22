@@ -366,7 +366,7 @@ function FixLine({ fix }: { fix: Fix }) {
   return (
     <div className={s.actions}>
       <Button size="sm" variant="secondary" disabled={busy} onClick={run}>
-        {busy && fix.kind === "restart" ? "Restarting…" : FIX_LABEL[fix.kind]}
+        {busy && fix.kind === "restart" ? "Restarting…" : fix.kind === "open" && fix.pane === "energy" ? "Open Energy settings" : fix.kind === "open" && fix.pane === "lock_screen" ? "Open Lock Screen settings" : FIX_LABEL[fix.kind]}
       </Button>
       {failure === null ? null : (
         <div role="alert">

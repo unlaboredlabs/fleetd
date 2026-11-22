@@ -12,7 +12,9 @@
 // first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't. Each team's
 // origin also answers POST GITHUB_INSTALL_PATH as fleetd-cloud's src/github/install.ts does: an owner's or admin's key
 // whose person connected their own GitHub (`githubConnected`) gets GitHub's install page for fleetd's App with a state
-// made for them; one who didn't, 409; with `githubSetUp` false, 503.
+// made for them; one who didn't, 409; with `githubSetUp` false, 503. And POST ACCOUNTS_TEAM_DELETE_PATH as fleetd-cloud's
+// accounts area does: an owner's key with the team's name typed again deletes it (its keys open nothing then); anyone
+// else is refused, as are a wrong name and agents running (`running`).
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -20,6 +22,7 @@ import {
   ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
+  ACCOUNTS_TEAM_DELETE_PATH,
   ACCOUNTS_TEAM_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   GITHUB_INSTALL_PATH,
@@ -40,6 +43,8 @@ export type FakeTeamOptions = {
   peopleLimit?: number;
   /** It holds bots or other data: a sign-in for a move answers it not empty. */
   hasData?: boolean;
+  /** Agents running in it: an owner's delete is refused while any is. */
+  running?: number;
 };
 
 type Team = {
@@ -58,6 +63,7 @@ type Team = {
   maker: string | undefined;
   limit: number;
   hasData: boolean;
+  running: number;
 };
 
 /** A key one of the teams' /pair handed out. */
@@ -140,6 +146,8 @@ export class FakeAccounts {
   readonly #accepts = new Map<string, { team: string; inviteId: string; email: string }>();
   /** Each make value a sign-in answered: whose; gone once used. */
   readonly #makes = new Map<string, string>();
+  /** Each team deleted by its owner (POST ACCOUNTS_TEAM_DELETE_PATH), by name. */
+  readonly deleted: string[] = [];
   /** Each team made on asking (POST ACCOUNTS_TEAM_PATH), as `<team> <email>`. */
   readonly madeOnAsking: string[] = [];
 
@@ -171,6 +179,7 @@ export class FakeAccounts {
       maker: emails[0],
       limit: options.peopleLimit ?? 50,
       hasData: options.hasData === true,
+      running: options.running ?? 0,
     });
     for (const email of emails) this.#people.set(email, [...(this.#people.get(email) ?? []), name]);
     return url;
@@ -378,7 +387,31 @@ export class FakeAccounts {
     if (req.method === "POST" && path === "/pair") return this.#pair(name, req, res);
     if (path === ACCOUNTS_INVITES_PATH || path.startsWith(`${ACCOUNTS_INVITES_PATH}/`)) return this.#invites(name, path, req, res);
     if (req.method === "POST" && path === GITHUB_INSTALL_PATH) return this.#githubInstall(name, req, res);
+    if (req.method === "POST" && path === ACCOUNTS_TEAM_DELETE_PATH) return this.#deleteTeam(name, req, res);
     fail(res, 404, { code: "not_found", message: "Nothing here." });
+  }
+
+  /** POST ACCOUNTS_TEAM_DELETE_PATH, in fleetd-cloud's words (src/accounts/accounts.ts `deleteTeam`). */
+  async #deleteTeam(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const team = this.#teams.get(name)!;
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    if (caller === undefined || this.deleted.includes(name)) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    if (team.roles.get(caller.email) !== "owner") return fail(res, 403, { code: "forbidden", message: "Only the team's owner deletes the team.", fix: "Ask an owner of this team." });
+    const typed = str(await readBody(req), "name")?.replace(/\s+/gu, " ").trim();
+    if (typed === undefined || typed === "") return fail(res, 400, { code: "invalid", message: "The team's name is missing.", fix: "Type the team's name to delete it." });
+    if (typed !== name) return fail(res, 400, { code: "wrong_name", message: "That isn't this team's name.", fix: `Type ${name} to delete it.` });
+    if (team.running > 0) {
+      const agents = team.running === 1 ? "An agent is" : `${String(team.running)} agents are`;
+      return fail(res, 409, { code: "running", message: `${agents} running in this team.`, fix: "Stop them, then delete the team." });
+    }
+    this.deleted.push(name);
+    send(res, 200, { deleted: name });
+  }
+
+  /** Agents running in a team now: its owner's delete is refused while any is. */
+  setRunning(name: string, running: number): void {
+    this.#teams.get(name)!.running = running;
   }
 
   /** POST GITHUB_INSTALL_PATH, in fleetd-cloud's words (src/github/install.ts `begin`). */

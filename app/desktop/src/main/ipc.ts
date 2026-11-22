@@ -253,6 +253,7 @@ export const registerIpc = (
   handle(IPC.cloudInvites, (_event, id) => cloud.invites(id));
   handle(IPC.cloudInvite, (_event, id, request) => cloud.invite(id, request));
   handle(IPC.cloudRevokeInvite, (_event, id, inviteId) => cloud.revokeInvite(id, inviteId));
+  handle(IPC.cloudDeleteTeam, (_event, id, name) => cloud.deleteTeam(id, name));
   handle(IPC.cloudInstallGithub, (_event, id) => cloud.installGithub(id));
   handle(IPC.cloudBilling, (_event, id) => cloud.billing(id));
   handle(IPC.cloudBillingOpen, (_event, id, what) => cloud.billingOpen(id, what));

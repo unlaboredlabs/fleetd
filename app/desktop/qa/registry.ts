@@ -210,6 +210,10 @@ export const fixtures = [
   "cloud-billing-cap",
   "cloud-billing-off",
   "cloud-billing-unreachable",
+  // Hub › Machines on fleetd's computers: no machine of the team's own, one beside them, and a cloud before the pick.
+  "cloud-fleetd-only",
+  "cloud-fleetd-own",
+  "cloud-fleetd-older",
   "projects-errors",
   // E3b's eight-project mix (all four words, stale, a ~120-character name).
   "status-rows",
@@ -3327,6 +3331,22 @@ export const screens: readonly Screen[] = [
   // only the team's accounts.
   { id: "settings.hubs", route: "#/settings/hubs", fixtures: ["cloud-admin"], variant: "cloud-admin" },
   { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["cloud-admin"], variant: "cloud" },
+  // Once fleetd's computers are on for the team: no provider row; Linux machine reads fleetd's computers, or picks
+  // between them and the team's own machine; Mac machine says Macs are the team's own; then fleetd's computers, each
+  // bot asleep or awake with its size, how many at once of the plan's and this period's computer time. And the pick
+  // open, its three choices.
+  { id: "settings.hub.machines", route: "#/settings/hub/machines", fixtures: ["cloud-fleetd-only", "cloud-fleetd-own", "cloud-fleetd-older"], variant: "fleetd" },
+  {
+    id: "settings.hub.machines",
+    route: "#/settings/hub/machines",
+    fixtures: ["cloud-fleetd-own"],
+    variant: "fleetd-pick",
+    sizes: ["medium"],
+    open: async (page) => {
+      await page.getByRole("combobox", { name: "Where agents and their Linux screens run" }).click();
+      await page.getByRole("option", { name: "fleetd's computers only" }).waitFor();
+    },
+  },
   {
     id: "settings.hub.machines",
     route: "#/settings/hub/machines",

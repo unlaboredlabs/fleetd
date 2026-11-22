@@ -75,7 +75,8 @@ export function run(probe: Probe): MacHealth {
     grant("screen_recording", probe.screenRecording()),
     guiSession(who, probe.consoleUser()),
     tools(probe.tools(), probe.pods()),
-    keepAwake(probe.awake()),
+    keepAwake(probe.awake(), sleepMinutes(probe.run("pmset", ["-g"]))),
+    screenLock(lockDelay(probe.run("sysadminctl", ["-screenLock", "status"])), consoleLocked(probe.run("ioreg", ["-n", "Root", "-d1", "-a"]))),
   ]);
 }
 
@@ -285,11 +286,71 @@ function cocoapods(versions: string, pods: Pods): MacCheck {
   );
 }
 
-export function keepAwake(why: string | undefined): MacCheck {
-  if (why === undefined) {
-    return check("keep_awake", "ok", "fleetd keeps the Mac from sleeping while it is idle (a closed laptop lid still sleeps).");
+/** System Settings › Lock Screen, where "Require password after screen saver begins or display is turned off" is. */
+export const LOCK_PANE = "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension";
+
+/** `sysadminctl -screenLock status`: the seconds before macOS asks for the password once the display is off (0: at
+ * once), null when it never does, undefined unread. */
+export function lockDelay(ran: Ran): number | null | undefined {
+  if (/screenLock is off/u.test(ran.out)) return null;
+  const m = /screenLock delay is (\d+) seconds/u.exec(ran.out);
+  if (m) return Number(m[1]);
+  return /screenLock (delay )?is immediate/u.test(ran.out) ? 0 : undefined;
+}
+
+/** Whether the Mac's screen is locked now, from `ioreg -n Root -d1 -a` (IOConsoleLocked); undefined unread. */
+export function consoleLocked(ran: Ran): boolean | undefined {
+  const m = /<key>IOConsoleLocked<\/key>\s*<(true|false)\/>/u.exec(ran.out);
+  return m ? m[1] === "true" : undefined;
+}
+
+/**
+ * The lock screen: while it shows, apps' new windows don't, and agents' clicks and keys land on it (Nov 22, the Mac
+ * mini locked 5 min after its display went off). Locked now, it fails until someone unlocks it; a password asked
+ * after the display goes off warns, with the one switch that stops it.
+ */
+export function screenLock(delay: number | null | undefined, locked: boolean | undefined): MacCheck {
+  if (locked === true) {
+    return check("screen_lock", "fail", "The Mac's screen is locked, so apps' windows don't show and agents' clicks land on the lock screen.", {
+      label: "Unlock it at the Mac or over Screen Sharing, then set Require password to Never in System Settings › Lock Screen",
+    });
   }
-  return check("keep_awake", "fail", `fleetd can't keep the Mac awake: ${why}.`, yours("sudo pmset -a sleep 0"));
+  if (delay !== null && delay !== undefined) {
+    const when = delay === 0 ? "as soon as" : `${String(Math.round(delay / 60))} min after`;
+    return check("screen_lock", "warn", `The screen locks ${when} the display turns off, and agents' windows and clicks stop at the lock screen.`, {
+      label: "Set Require password after screen saver begins or display is turned off to Never in System Settings › Lock Screen",
+      command: `open "${LOCK_PANE}"`,
+    });
+  }
+  if (delay === null) return check("screen_lock", "ok", "The screen never locks by itself.");
+  return check("screen_lock", "unknown", "The node couldn't read the lock screen's setting.");
+}
+
+/** System Settings › Energy, where a desktop Mac's "Prevent automatic sleeping" is. */
+export const ENERGY_PANE = "x-apple.systempreferences:com.apple.Energy-Settings.extension";
+
+/** The minutes of idle before the system sleeps, as `pmset -g` says them (`sleep 0`: never); undefined unread. */
+export function sleepMinutes(ran: Ran): number | undefined {
+  const m = /^\s*sleep\s+(\d+)/mu.exec(ran.out);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * The node's power assertion (`caffeinate -i -s`, held while the node runs) and the Mac's own sleep setting: an agents'
+ * Mac that slept dropped off its hub (Nov 22), and the assertion goes with the node at each update or restart, so the
+ * setting must be off too.
+ */
+export function keepAwake(why: string | undefined, sleep?: number): MacCheck {
+  if (why !== undefined) return check("keep_awake", "fail", `fleetd can't keep the Mac awake: ${why}.`, yours("sudo pmset -a sleep 0"));
+  if (sleep !== undefined && sleep > 0) {
+    return check(
+      "keep_awake",
+      "warn",
+      `The Mac sleeps after ${String(sleep)} min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.`,
+      { label: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy", command: `open "${ENERGY_PANE}"` },
+    );
+  }
+  return check("keep_awake", "ok", sleep === 0 ? "The Mac never sleeps, and fleetd's node holds it awake too." : "fleetd's node holds the Mac awake.");
 }
 
 /** How long one command of the checks may run before it is stopped: a wedged xcrun or simctl answers nothing. */
@@ -367,6 +428,8 @@ export async function readMac(held: string | undefined, tools: ToolsState): Prom
   };
   const has = (name: string) => HOMEBREW_BINS.map((bin) => `${bin}/${name}`).find((p) => existsSync(p));
   const pod = has("pod");
+  // The Mac's sleep and lock settings and whether it is locked now, read back by their checks from the recorded runs.
+  const settings = Promise.all([go("pmset", ["-g"]), go("sysadminctl", ["-screenLock", "status"]), go("ioreg", ["-n", "Root", "-d1", "-a"])]);
   const [selected, , , console, podRan] = await Promise.all([
     go("xcode-select", ["-p"]),
     go("dseditgroup", ["-o", "checkmember", "-m", who, "_developer"]),
@@ -375,6 +438,7 @@ export async function readMac(held: string | undefined, tools: ToolsState): Prom
     // CocoaPods refuses to run outside UTF-8, and a launchd service gets no LANG.
     pod ? ran(pod, ["--version"], { ...process.env, LANG: "en_US.UTF-8" }) : Promise.resolve(undefined),
   ]);
+  await settings;
   const xcodes = inApplications("/Applications");
   const dirs = new Set<string>();
   const path = ok(selected) ? selected.out.trim() : undefined;

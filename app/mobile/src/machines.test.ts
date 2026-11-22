@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  atOnceWord,
+  computerStateWord,
+  FLEETD,
+  MAC_OWN_ONLY,
+  providedChoices,
+  providedValue,
   tailnetWaiting,
   canWords,
   daysChoices,
@@ -124,5 +130,21 @@ describe("Tailscale", () => {
     expect(tailnetWaiting({ status: "approve" })).toBe(true);
     expect(tailnetWaiting({ status: "connected" })).toBe(false);
     expect(tailnetWaiting(undefined)).toBe(false);
+  });
+});
+
+describe("fleetd's computers on the phone, from the desktop's one model", () => {
+  it("offers the team's own machines and fleetd's computers, and says Macs are the team's own", () => {
+    expect(providedChoices("boat", true).map((c) => c.label)).toEqual(["Your machines", "Your machines first, then fleetd's computers", "fleetd's computers only"]);
+    expect(providedChoices("boat", false)).toEqual([{ value: "boat", label: FLEETD }]);
+    expect(providedValue(true)).toBe("Your machines and fleetd's computers");
+    expect(MAC_OWN_ONLY).toBe("fleetd's computers don't run Macs");
+  });
+
+  it("counts what runs at once of the plan's, and says a bot's computer asleep or awake", () => {
+    expect(atOnceWord([{ limit: 10, running: 2 }])).toBe("2 of 10 at once");
+    expect(atOnceWord([{ limit: 0, running: 0 }])).toBeNull();
+    expect(computerStateWord(true)).toBe("Asleep");
+    expect(computerStateWord(false, 2)).toBe("Awake · 2 agents");
   });
 });
