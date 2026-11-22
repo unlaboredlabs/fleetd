@@ -14,13 +14,14 @@ export const FIRST_ROWS = 100;
 
 const COLUMNS: readonly { key: SortKey; label: string; width: string; num?: boolean }[] = [
   { key: "date", label: "Merged", width: "11%" },
-  { key: "change", label: "Change", width: "27%" },
-  { key: "route", label: "Route", width: "15%" },
-  { key: "order", label: "Order", width: "13%" },
+  { key: "change", label: "Change", width: "25%" },
+  { key: "route", label: "Route", width: "14%" },
+  { key: "order", label: "Order", width: "12%" },
   { key: "toMerged", label: "Order to merged", width: "9%", num: true },
   { key: "prOpen", label: "PR open to merged", width: "9%", num: true },
-  { key: "lines", label: "Lines", width: "9%", num: true },
-  { key: "touches", label: "Your acts", width: "7%", num: true },
+  { key: "ci", label: "CI", width: "7%", num: true },
+  { key: "lines", label: "Lines", width: "7%", num: true },
+  { key: "touches", label: "Your acts", width: "6%", num: true },
 ];
 
 export interface MergeListProps {
@@ -111,6 +112,21 @@ export function MergeList({ merges, total, coverage, sort, onSort, narrowed, onS
   );
 }
 
+/** A row's CI cell on hover: its runs, runner time, reviews and trips back to its writer. */
+const ciHint = (m: MetricsMerge): string | undefined => {
+  const p = m.pipeline;
+  if (p === undefined) return undefined;
+  const back = p.sentBack.conflicts + p.sentBack.redCi;
+  return [
+    p.runnerMs === undefined ? undefined : `${fmtMs(p.runnerMs)} runner time`,
+    `${p.ciRuns} CI ${p.ciRuns === 1 ? "run" : "runs"}${p.redRuns > 0 ? `, ${p.redRuns} red` : ""}`,
+    `${p.reviews} ${p.reviews === 1 ? "review" : "reviews"}, ${p.blocking} blocking ${p.blocking === 1 ? "finding" : "findings"}`,
+    back > 0 ? `sent back ${back === 1 ? "once" : `${back} times`}` : undefined,
+  ]
+    .filter((x) => x !== undefined)
+    .join(" · ");
+};
+
 function Row({ m, coverage, orderTitle, orderHref }: { m: MetricsMerge } & Pick<MergeListProps, "coverage" | "orderTitle" | "orderHref">) {
   const route = knownRoute(m.route);
   const href = orderHref(m);
@@ -161,6 +177,11 @@ function Row({ m, coverage, orderTitle, orderHref }: { m: MetricsMerge } & Pick<
       <td className={cx(s.num)}>
         <Text size="xs" tabular>
           {m.prOpenToMergedMs === undefined ? "—" : fmtMs(m.prOpenToMergedMs)}
+        </Text>
+      </td>
+      <td className={cx(s.num)} title={ciHint(m)}>
+        <Text size="xs" tabular>
+          {m.pipeline?.ciWallMs === undefined ? "—" : fmtMs(m.pipeline.ciWallMs)}
         </Text>
       </td>
       <td className={cx(s.num)}>

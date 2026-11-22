@@ -1,7 +1,8 @@
 // Factory (#/factory, D33): what came out of the projects and what it cost you, its Output tab. Status is "now", its
 // Agent time tab (time/) is "where agent time went"; this is merges and the person's minutes, kept apart from agent minutes on purpose. One filter row
-// scopes everything below it: four tiles, three charts on one shared day axis (merged by route, order to merged,
-// your minutes by source), then the projects table and the merge list, which hold every number the charts draw.
+// scopes everything below it: the tiles, the charts on one shared day axis (merged by route, order to merged, CI time
+// per PR with the slowest jobs, time in the train by stage, your minutes by source), then the projects table and the
+// merge list, which hold every number the charts draw. The train's tiles and charts show once the hub reports them.
 // Every figure is the hub's (metrics_get); a repo the hub can't read says so and since when, never a silent zero.
 import { useMemo, useState, type ReactNode } from "react";
 import type { MetricsGetOutput, MetricsMerge, ProjectRef } from "../../../shared/contracts";
@@ -12,10 +13,12 @@ import { useCommands } from "../palette";
 import { toHash, type ProjectKey } from "../shell/routes";
 import { errorText } from "../time/data";
 import { CallError } from "../../src/data/queries";
+import { CiChart } from "./charts/Ci";
 import { LeadChart } from "./charts/Lead";
 import { MergedChart } from "./charts/Merged";
 import { MinutesChart } from "./charts/Minutes";
 import { HoverCard, type Hover } from "./charts/parts";
+import { StagesChart } from "./charts/Stages";
 import { FilterRow } from "./FilterRow";
 import { inRange, loadFilters, previousWords, queryOf, saveFilters, type Filters } from "./filters";
 import { MergeList } from "./MergeList";
@@ -247,6 +250,10 @@ function Figures(p: FiguresProps) {
             orderTitle={p.orderTitle}
             onHover={p.onHover}
           />
+          {data.tiles.pipeline !== undefined && data.tiles.pipeline.ci.n > 0 ? (
+            <CiChart merges={data.merges} days={data.days} tile={data.tiles.pipeline.ci} jobs={data.ciJobs ?? []} coverage={coverage} onHover={p.onHover} />
+          ) : null}
+          {columns.some((c) => (c.pipeline?.n ?? 0) > 0) ? <StagesChart columns={columns} previous={previous} weekly={weekly} onHover={p.onHover} /> : null}
           <MinutesChart columns={columns} previous={previous} weekly={weekly} noReviews={noReviews} onHover={p.onHover} />
         </>
       )}
