@@ -37,6 +37,7 @@ import type { NodeConfig } from "../config.ts";
 import { grant, readMac, run as runChecks, screenCapture } from "./checks.ts";
 import { checkedFile, health, type MacHealth, type MacLink, user, writeHealth, writeLink } from "./common.ts";
 import { tcc } from "./tcc.ts";
+import { spawnOutside } from "../../update/service.ts";
 import { answer, CHECK_EVERY, every, type Fresh, overlay, takeUp } from "./grants.ts";
 import { Installing } from "./tools.ts";
 
@@ -93,13 +94,13 @@ export const sessionCallAllowed = (call: { op?: unknown }) => call.op === "runne
 /** What a person runs in the node's account to restart it, which grants.ts runs itself for a new grant. */
 export const RESTART_NODE = "launchctl kickstart -k gui/$(id -u)/sh.fleetd.node";
 
-/** The keep-awake hold: `caffeinate -i` (PreventUserIdleSystemSleep, as the Rust node's IOPMAssertion) on macOS, a
- * logind idle:sleep block elsewhere, both for as long as this process lives. Released by `release`; why not, when it
- * can't be had. */
-export async function keepAwake(why: string): Promise<{ release: () => void } | string> {
+/** The keep-awake hold: `caffeinate -i -s` on macOS (PreventUserIdleSystemSleep and PreventSystemSleep, the latter on
+ * power, which a Mac mini always is), a logind idle:sleep block elsewhere, both for as long as this process lives, a
+ * child the node owns. Released by `release`; `ended` resolves if it ends by itself; why not, when it can't be had. */
+export async function keepAwake(why: string): Promise<{ release: () => void; ended: Promise<unknown> } | string> {
   const argv =
     process.platform === "darwin"
-      ? ["caffeinate", "-i", "-w", String(process.pid)]
+      ? ["caffeinate", "-i", "-s", "-w", String(process.pid)]
       : ["systemd-inhibit", "--what=idle:sleep", "--who=fleetd", `--why=${why}`, "--mode=block", "sleep", "infinity"];
   let proc: Bun.Subprocess<"ignore", "ignore", "pipe">;
   try {
@@ -113,7 +114,18 @@ export async function keepAwake(why: string): Promise<{ release: () => void } | 
     const said = (await new Response(proc.stderr).text()).trim();
     return `${argv[0]} exited at once${said ? `: ${said.slice(0, 200)}` : ""}`;
   }
-  return { release: () => proc.kill() };
+  return { release: () => proc.kill(), ended: proc.exited };
+}
+
+/** How soon a hold that ended by itself is taken again. */
+export const REHOLD_MS = 2_000;
+
+/** How long the hold across a restart lasts: the next node takes its own within seconds, an update's in about one. */
+export const BRIDGE_SECS = 120;
+
+/** A keep-awake hold outside the node's process group, so its service's stop doesn't end it; it ends by itself. */
+function bridgeRestart(): void {
+  if (process.platform === "darwin") spawnOutside("caffeinate", ["-i", "-s", "-t", String(BRIDGE_SECS)], "awake");
 }
 
 /** The Mac's setup as last checked, for the heartbeat, and what the node holds for it while it runs. */
@@ -183,9 +195,7 @@ export class AgentsMac {
     if (process.platform === "darwin" && this.last === undefined) {
       this.publish(health(user(), [grant("accessibility", tcc.accessibility()), grant("screen_recording", tcc.screenRecording())]));
     }
-    const held = await keepAwake("fleetd: the agents' Mac stays awake");
-    if (typeof held === "string") console.warn(`the agents' Mac can't hold its keep-awake assertion: ${held}`);
-    else this.awake = held;
+    const held = await this.hold();
     if (process.platform === "darwin") {
       const grants = async () => {
         if (this.stopped) return;
@@ -214,9 +224,36 @@ export class AgentsMac {
     void check();
   }
 
-  stop(): void {
+  /** Takes the keep-awake hold, and takes it again whenever it ends by itself while the node runs (a killed caffeinate
+   * would otherwise let the Mac sleep and drop off its hub). Why not, when it can't be had. */
+  async hold(take: typeof keepAwake = keepAwake): Promise<{ release: () => void } | string> {
+    const held = await take("fleetd: the agents' Mac stays awake");
+    if (typeof held === "string") {
+      console.warn(`the agents' Mac can't hold its keep-awake assertion: ${held}`);
+      return held;
+    }
+    this.awake = held;
+    void held.ended.then(() => {
+      if (this.stopped || this.awake !== held) return;
+      console.warn("the agents' Mac's keep-awake assertion ended by itself; it takes it again");
+      this.awake = undefined;
+      this.timers.push(setTimeout(() => void this.hold(take), REHOLD_MS));
+    });
+    return held;
+  }
+
+  stop(bridge: () => void = bridgeRestart): void {
     this.stopped = true;
     for (const t of this.timers.splice(0)) clearTimeout(t);
+    // The hold goes with this node: until the next one takes its own, one outside it keeps the Mac up (Nov 22, an
+    // update's restart let a Mac set to sleep after 1 min idle sleep 5 s later and drop off its hub).
+    if (this.awake !== undefined) {
+      try {
+        bridge();
+      } catch (e) {
+        console.warn(`the agents' Mac couldn't hold itself awake across the node's restart: ${(e as Error).message}`);
+      }
+    }
     this.awake?.release();
   }
 }
@@ -234,14 +271,20 @@ export function withCapture(h: MacHealth, captured: true | string | undefined): 
   return { ...h, checks };
 }
 
-/** One capture of a corner of the main display, through the screen kind's own ScreenCaptureKit path. */
+/** One capture of a corner of the main display, through the screen kind's own ScreenCaptureKit path. Its filter and
+ * configuration are let go after, as the next try makes its own. */
 async function captureOnce(): Promise<string | undefined> {
+  let capture: { close(): void } | undefined;
   try {
     const { Capture } = await import("../desktop/mac/capture.ts");
-    await new Capture().grab([64, 40]);
+    const made = new Capture();
+    capture = made;
+    await made.grab([64, 40]);
     return undefined;
   } catch (error) {
     return (error as Error).message.slice(0, 200);
+  } finally {
+    capture?.close();
   }
 }
 

@@ -41,6 +41,10 @@ export const PANE_URLS: Readonly<Record<MacPane, string>> = {
   screen_capture: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
   // The node's Xcode check gives the same link (agents_mac/xcode.rs).
   app_store: "macappstore://apps.apple.com/app/id497799835",
+  // Prevent automatic sleeping when the display is off (agents_mac/checks.ts ENERGY_PANE).
+  energy: "x-apple.systempreferences:com.apple.Energy-Settings.extension",
+  // Require password after screen saver begins or display is turned off (agents_mac/checks.ts LOCK_PANE).
+  lock_screen: "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension",
 };
 
 export interface MacSetupPorts extends Pick<JoinPorts, "download" | "run" | "fleetdDir" | "fingerprint" | "baseOverride" | "platform" | "arch"> {

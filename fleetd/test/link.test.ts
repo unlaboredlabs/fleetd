@@ -576,8 +576,14 @@ test("the hub links a node that proves itself in its upgrade, a stale proof alik
 
 test("the agents' Mac that leaves is removed: its key revoked, its machine forgotten, its link closed as removed", async () => {
   const node = await linked("mac-leaves", { capabilities: ["agents_mac"] });
+  const unlinked: string[] = [];
+  const off = links.onUnlinked((machineId) => unlinked.push(machineId));
   node.send({ t: "leave" });
   expect(await node.closed).toEqual({ code: 4001, reason: "mac-leaves was removed from this hub: its node key is revoked" });
+  await Bun.sleep(50);
+  off();
+  // Let go once, as it left: its socket's close doesn't let it go again.
+  expect(unlinked.filter((m) => m === "mac-leaves")).toHaveLength(1);
   expect(hub.auth.nodes.nodePubKey("mac-leaves")).toBeUndefined();
   expect(store(hub).machineGet("mac-leaves")).toBeUndefined();
   expect(types()).toContain("machine.removed mac-leaves");

@@ -17,6 +17,7 @@ export type MacCheckId =
   | "gui_session"
   | "tools"
   | "keep_awake"
+  | "screen_lock"
   | "standard_user"
   | "other_homes"
   | "no_apple_id"
