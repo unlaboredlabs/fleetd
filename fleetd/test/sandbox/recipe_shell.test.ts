@@ -174,13 +174,13 @@ describe("deliver: which way fleetd reached the box", () => {
   });
 
   /** The box's bootstrap script, run here as a box runs it (bootArgv), on a port of its own; `baked`: what the
-   * template holds at FLEETD_PATH. */
-  async function box(baked?: Uint8Array) {
+   * template holds at FLEETD_PATH; `keep`: the directory on its kept disk (bootArgv's `keep`). */
+  async function box(baked?: Uint8Array, keep?: string) {
     const dir = fresh();
     const port = listenPort();
     const at = join(dir, "baked-fleetd");
     if (baked) writeFileSync(at, baked);
-    const { argv, env } = bootArgv();
+    const { argv, env } = bootArgv([], keep);
     const p = Bun.spawn(argv, {
       env: { ...env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, FLEETD_BOX_SECRET: SECRET, FLEETD_BOOT_PORT: String(port), FLEETD_BOOT_DIR: join(dir, "box"), FLEETD_BOOT_BAKED: at },
       stdout: "ignore",
@@ -234,5 +234,39 @@ describe("deliver: which way fleetd reached the box", () => {
     const t = await box(FLEETD);
     expect(await deliver(t.link, { sha256: sha, url: `${host(500)}/fleetd?X-Amz-Signature=madeup`, bytes: async () => FLEETD })).toEqual({ way: "template" });
     t.link.close();
+  });
+
+  test("a build it took is kept on the kept disk, and a box woken from that disk starts it with nothing sent", async () => {
+    const keep = join(fresh(), "kept");
+    const first = await box(undefined, keep);
+    expect(await deliver(first.link, { sha256: sha, url: `${host(200)}/fleetd`, bytes: async () => FLEETD })).toEqual({ way: "address" });
+    first.link.close();
+    // Kept once the guest is on its way: the script's own log says when.
+    for (let i = 0; !first.log().includes("kept fleetd on the kept disk"); i++) {
+      if (i > 100) throw new Error(`never kept: ${first.log()}`);
+      await Bun.sleep(50);
+    }
+    expect(readFileSync(join(keep, "fleetd"))).toEqual(Buffer.from(FLEETD));
+    // The next box on the same disk: neither its address (which would fail) nor its bytes are taken.
+    const woken = await box(undefined, keep);
+    let sent = false;
+    expect(await deliver(woken.link, { sha256: sha, url: `${host(500)}/fleetd`, bytes: async () => ((sent = true), FLEETD) })).toEqual({ way: "kept" });
+    expect(sent).toBe(false);
+    woken.link.close();
+  });
+
+  test("a kept build of another release isn't started: this one is taken, and kept in its place", async () => {
+    const keep = join(fresh(), "kept");
+    mkdirSync(keep, { recursive: true });
+    writeFileSync(join(keep, "fleetd"), "#!/bin/sh\nexit 1\n");
+    const b = await box(undefined, keep);
+    expect(await deliver(b.link, { sha256: sha, bytes: async () => FLEETD })).toEqual({ way: "link" });
+    b.link.close();
+    for (let i = 0; !b.log().includes("kept fleetd on the kept disk"); i++) {
+      if (i > 100) throw new Error(`never kept: ${b.log()}`);
+      await Bun.sleep(50);
+    }
+    expect(b.log()).toContain("the kept fleetd is another build");
+    expect(readFileSync(join(keep, "fleetd"))).toEqual(Buffer.from(FLEETD));
   });
 });

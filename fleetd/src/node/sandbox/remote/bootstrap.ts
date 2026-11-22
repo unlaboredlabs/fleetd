@@ -28,14 +28,16 @@ const SCRIPT = `\n${boot.replaceAll("{{SECRET_HEADER}}", SECRET_HEADER)}`;
 
 /** The box's first command and its environment besides the secret. It first makes `dirs` (outermost first) the box
  * user's, with sudo where the user can't: the machine's paths the session's files take, the node.sock's among them,
- * which the guest listens at as soon as the node dials. */
-export function bootArgv(dirs: string[] = []): { argv: string[]; env: Record<string, string> } {
+ * which the guest listens at as soon as the node dials. `keep`: a directory on the disk the provider keeps across a
+ * stop (BOX_DIR, in /tmp, isn't), where the script keeps the last build it took and starts it again when it is the one
+ * asked for (`kept`): a box woken from its disk on a new machine takes no fleetd again. */
+export function bootArgv(dirs: string[] = [], keep?: string): { argv: string[]; env: Record<string, string> } {
   const make = [...new Set(dirs.filter((d) => d.startsWith("/") && d !== "/"))]
     .sort((a, b) => a.length - b.length)
     .map((d) => `d=${shq(d)}; [ -d "$d" ] || mkdir -p "$d" 2>/dev/null || sudo -n mkdir -p "$d"; [ -w "$d" ] || sudo -n chown "$(id -u):$(id -g)" "$d"`);
   return {
     argv: ["sh", "-c", [...make, `exec bun -e ${shq(SCRIPT)}`].join("; ")],
-    env: { FLEETD_BOOT_PORT: String(GUEST_PORT), FLEETD_BOOT_DIR: BOX_DIR, FLEETD_BOOT_BAKED: FLEETD_PATH },
+    env: { FLEETD_BOOT_PORT: String(GUEST_PORT), FLEETD_BOOT_DIR: BOX_DIR, FLEETD_BOOT_BAKED: FLEETD_PATH, ...(keep ? { FLEETD_BOOT_KEEP: keep } : {}) },
   };
 }
 
@@ -58,10 +60,11 @@ export async function firstWord(link: WebDuplex): Promise<"bootstrap" | "guest" 
   }
 }
 
-/** How fleetd really reached the box (`deliver`): the template's own build, started where it is (`template`), fetched
- * by the box itself at the release asset's address (`address`), or its bytes sent over the link (`link`). `cause`,
+/** How fleetd really reached the box (`deliver`): the template's own build, started where it is (`template`), the
+ * build kept on the box's kept disk by an earlier start (`kept`, bootArgv's `keep`), fetched by the box itself at the
+ * release asset's address (`address`), or its bytes sent over the link (`link`). `cause`,
  * only on `link` after the box's own fetch failed: why it failed, in the box's words, any URL's query left out. */
-export type Delivered = { way: "template" | "address" | "link"; cause?: string };
+export type Delivered = { way: "template" | "kept" | "address" | "link"; cause?: string };
 
 /** Hands the bootstrap on `link` this node's fleetd; resolves once the box checked it and starts the guest, with the
  * way it got there. */
@@ -78,7 +81,7 @@ export async function deliver(link: WebDuplex, source: Source): Promise<Delivere
     if (source.url) {
       await sendText(link, writer, { url: source.url, sha256: source.sha256 });
       const a = await answer();
-      if (a.ok) return { way: a.way === "template" ? "template" : "address" };
+      if (a.ok) return { way: a.way === "template" || a.way === "kept" ? a.way : "address" };
       cause = noQuery(a.error ?? "no reason given");
     }
     const plain = await source.bytes();
@@ -87,7 +90,7 @@ export async function deliver(link: WebDuplex, source: Source): Promise<Delivere
     for (let at = 0; at < packed.length; at += PIECE) await writer.write(packed.subarray(at, at + PIECE));
     const a = await answer();
     if (!a.ok) throw new Error(`the box didn't take fleetd: ${noQuery(a.error ?? "no reason given")}`);
-    return { way: a.way === "template" ? "template" : "link", ...(cause ? { cause } : {}) };
+    return { way: a.way === "template" || a.way === "kept" ? a.way : "link", ...(cause ? { cause } : {}) };
   } finally {
     reader.releaseLock();
     writer.releaseLock();

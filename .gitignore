@@ -18,3 +18,5 @@ GEMINI.md
 /site/docs/
 # The phone app's over-the-air updates: the Vercel build of site/ unpacks them from the releases (site/mobile-updates.sh).
 /site/updates/
+# A bun install at the root writes a lockfile nothing uses: the root package.json is the package fleetd's cloud pins, and the runtime's own lock is fleetd/bun.lock.
+/bun.lock
