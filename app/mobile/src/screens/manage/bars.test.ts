@@ -31,6 +31,18 @@ describe("a pushed page's and a sheet's bar", () => {
   });
 });
 
+describe("a page pushed with a large title of its own", () => {
+  // iOS 26 draws a large title invisible over a bar with a ground of its own: Connections, Machines, Memory, Billing
+  // and the Vault showed a blank gap where their title stood (W822), while the Settings page, its bar with none, showed its.
+  const app = sources[0]!;
+  it("has the Settings page's bar on iOS, with no ground of a pushed page's", () => {
+    expect(app).toContain('...(Platform.OS === "ios" ? { headerStyle: {}, headerLargeStyle: {}, ...stripBars } : {}),');
+    const large = [...app.matchAll(/<SettingsStack\.Screen name="(\w+)"[^\n]*options=\{large\("\1"\)\}/gu)].map((m) => m[1]);
+    expect(large).toEqual(["Memory", "Connections", "Machines", "Billing", "Vault"]);
+    expect(sources.join("\n")).not.toMatch(/(pushed|sheet)\(t, [^)]*\), headerLargeTitleEnabled: true/u);
+  });
+});
+
 describe("New Screen", () => {
   const sheet = readFileSync(join(import.meta.dirname, "NewScreen.tsx"), "utf8");
   it("reads at a glance, as the desktop's: no explaining line under the kinds, the browser's row says its profile", () => {
