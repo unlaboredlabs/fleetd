@@ -27,6 +27,7 @@
 import { randomBytes } from "node:crypto";
 import type { Duplex } from "node:stream";
 import { Cdp, type Transport } from "../browser/cdp.ts";
+import { ADB_SERVER_PORT } from "../device/pins.ts";
 import { args as chromeArgs, type ChromeHandle, KEPT_PREFS, type Launched, merge, NOT_KEPT } from "../browser/launch_args.ts";
 import type { Box } from "../sandbox/box.ts";
 
@@ -53,8 +54,13 @@ export const enc = (s: string) => new TextEncoder().encode(s);
 /** A port on the box's loopback for one screen's stream: a random one, which a box's few screens rarely share. Under
  * every kernel's ephemeral range (Linux's from 32768, macOS's from 49152), where a busy machine's own connections each
  * take a port at random: one held a held Chrome's port as its socat first listened, or between two of its listens, and
- * the launcher went, Chrome with it. */
-export const port = () => 10_000 + (randomBytes(2).readUInt16LE(0) % 10_000);
+ * the launcher went, Chrome with it. Never a port fleetd itself listens on there (`FIXED`). */
+export const port = (draw = randomBytes(2).readUInt16LE(0)): number => {
+  const at = 10_000 + (draw % 10_000);
+  return FIXED.has(at) ? port(draw + 1) : at;
+};
+/** The fixed ports in `port`'s range that fleetd listens on in a box, or on this machine: the node's own adb server's. */
+const FIXED = new Set([ADB_SERVER_PORT]);
 /** Whether a launcher's socat log (`accepts.log` in its folder) says its port was taken: the launcher went at once. */
 export const portTaken = (log: string) => log.includes("Address already in use");
 /** Where a box's Chrome listens: `port`'s pick, or a test's own. */
