@@ -75,6 +75,7 @@ export function start(hub: Hub): void {
       return { on, inMs: t.wakeInMs(taskId) };
     },
     wakeDue: (taskId: string) => t.wakeDue(taskId),
+    waitingOn: (taskId: string) => t.waitingOn(taskId),
     closedOrder: (taskId: string) => {
       const task = t.get(taskId);
       return task ? t.closedOrder(task) : undefined;

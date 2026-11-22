@@ -33,6 +33,7 @@ import { archived } from "../project_lead/store.ts";
 import { prompts } from "../prompts/store.ts";
 import * as repos from "../repos/store.ts";
 import { type Grant, priorityOf, type SlotRequest, slots } from "../slots/index.ts";
+import { unreadLines } from "../steer/dm.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
@@ -2164,7 +2165,9 @@ export class Tasks {
     const monitors = this.tryDb(() => TaskRecords.monitorWaits(this.db, r, now)) ?? new Map();
     const tasks = this.tryDb(() => TaskRecords.forDigest(this.db, r, since, limit, now));
     if (!tasks) return [];
-    return taskDigestLines(tasks, since, now, (m) => offline.get(m), (t) => openWaits.get(t) ?? [], (t) => monitors.get(t));
+    // Other agents' messages an ended agent reads only if its lead continues it.
+    const unread = this.tryDb(() => unreadLines(this.hub.db, r, this.now())) ?? [];
+    return [...taskDigestLines(tasks, since, now, (m) => offline.get(m), (t) => openWaits.get(t) ?? [], (t) => monitors.get(t)), ...unread];
   }
 
   /** Every offline machine, with when its offline spell started. */
