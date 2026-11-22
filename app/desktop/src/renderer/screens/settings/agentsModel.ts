@@ -50,7 +50,18 @@ export interface ProviderLimit {
 export interface Hold {
   readonly pinned?: ProviderLimit;
   readonly spill: ReadonlyArray<ProviderLimit>;
+  /** fleetd's computers on a cloud team: the team's plan holds its agents (fleetd-cloud README "Billing"). */
+  readonly provided?: true;
 }
+
+/**
+ * On a fleetd cloud team whose hub has no sandbox_get (fleetd's computers are on for it): what its plan runs at once,
+ * as the slot board's hosted limits say it (none while its credits or cap hold its computers).
+ */
+export const providedHold = (slots: SlotState): Hold => ({
+  provided: true,
+  spill: [{ name: "fleetd's computers", limit: (slots.hosted ?? []).reduce((n, h) => n + h.limit, 0) }],
+});
 
 const NO_HOLD: Hold = { spill: [] };
 
@@ -93,6 +104,7 @@ export function sourceLine(slots: SlotState, a: ProjectAgents, machineId?: strin
   if (a.own) return `Set for this bot. The default is ${a.cap}.`;
   const fleet = slots.fleetCap !== undefined && slots.fleetCap <= a.cap;
   if (fleet) return "Follows the default: the hub's fleet cap.";
+  if (hold.provided) return "Follows the default: the team's plan.";
   const provider = providerHolding(machineId, hold);
   return provider !== undefined ? `Follows the default: ${provider}'s limit.` : "Follows the default: its machine's cap.";
 }
@@ -108,6 +120,11 @@ const providerHolding = (machineId: string | undefined, hold: Hold): string | un
 export function machineHolds(a: ProjectAgents, value: number, machineId: string, hold: Hold = NO_HOLD): string | null {
   if (value <= a.machineCap) return null;
   const n = a.machineCap;
+  if (hold.provided) {
+    return n === 0
+      ? "No agent runs until the team has credits or a plan: an admin adds them in Billing."
+      : `This team's plan runs ${n} agents at once, so this bot runs ${n} until an admin picks a bigger plan in Billing.`;
+  }
   const provider = providerHolding(machineId, hold);
   if (provider !== undefined) return `${provider} runs at most ${n} agents at once, so this bot runs ${n} until an admin raises ${provider}'s limit.`;
   if (hold.spill.length > 0) {
@@ -118,7 +135,8 @@ export function machineHolds(a: ProjectAgents, value: number, machineId: string,
 }
 
 /** The admin's way from machineHolds to what holds it: the provider's limit on its row, or the machine's max. */
-export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_HOLD): { text: string; provider: boolean } => {
+export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_HOLD): { text: string; provider: boolean; billing?: true } => {
+  if (hold.provided) return { text: "Plans in Billing", provider: true, billing: true };
   const provider = providerHolding(machineId, hold);
   return provider !== undefined
     ? { text: `${provider}'s limit (${a.machineCap}) in Hub › Machines`, provider: true }
