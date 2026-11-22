@@ -47,7 +47,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { leadMessages, leadSource, order, question, QUIET, said, steer } from "./history.ts";
+import { leadMessages, leadSource, order, question, QUIET, said, steer, unquiet } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
@@ -650,7 +650,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
   if (runOver(hub, thread)) {
     for (const cut of c.streamingFrom(r, leadSource(thread.threadId, ""))) {
       try {
-        c.finish(cut, cut.text.trim());
+        c.finish(cut, unquiet(cut.text));
       } catch (error) {
         console.warn("chat: cut-off reply not finished:", error);
       }
@@ -710,7 +710,7 @@ function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts
   for (const done of parts.done) {
     const source = leadSource(lead.threadId, done.messageId);
     live.add(source);
-    if (sent.get(source) !== LANDED && land(hub, r, source, done.text.trim())) sent.set(source, LANDED);
+    if (sent.get(source) !== LANDED && land(hub, r, source, unquiet(done.text))) sent.set(source, LANDED);
   }
   const text = parts.runActive ? parts.text : undefined;
   if (!text) return;
@@ -718,10 +718,13 @@ function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts
   live.add(source);
   const done = sent.get(source) ?? 0;
   if (text.total <= done) return;
-  const append = since(text, done);
+  const streamed = since(text, done);
+  // A last line that can still turn out to be QUIET waits for the next words (or the reply landing without it).
+  const append = streamed.slice(0, streamed.length - maybeQuiet(streamed).length);
   // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply has
   // words in it that can't still turn out to be QUIET.
   if (done === 0 && QUIET.startsWith(append.trim())) return;
+  if (!append) return;
   let message: ChatMessage | undefined;
   try {
     message = c.bySource(r, source) ?? c.add(r, { author: "lead", streaming: true, source }).message;
@@ -738,7 +741,15 @@ function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts
     console.warn("chat: streamed text not kept:", error);
     return;
   }
-  sent.set(source, text.total);
+  sent.set(source, text.total - [...streamed].length + [...append].length);
+}
+
+/** The end of streamed text from the start of its last line, when that line is so far QUIET or the start of it; else "". */
+export function maybeQuiet(streamed: string): string {
+  const end = streamed.trimEnd();
+  const start = end.lastIndexOf("\n") + 1;
+  const line = end.slice(start).trim();
+  return line !== "" && QUIET.startsWith(line) ? streamed.slice(start) : "";
 }
 
 /** A complete reply in the chat: its streaming message finished, or a final one added. False when the store failed, to try again. */
