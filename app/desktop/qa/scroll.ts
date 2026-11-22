@@ -45,12 +45,27 @@ export const watchScroll = (page: Page) =>
       const real = el[name].bind(el) as (...a: unknown[]) => void;
       el[name] = (...a: unknown[]) => written(() => real(...a));
     }
+    // Each row's height as a ResizeObserver last had it, which it delivers in a frame's rendering, before the paint.
+    // The task posted from a frame can run after another that changed a row unpainted (a picture's size known once
+    // its first bytes decode): reading then sees the rows moved, and the list's observer, which puts them back before
+    // the next paint, still to run (W826). That frame is read with the next one instead.
+    const painted = new WeakMap<Element, number>();
+    const sizes = new ResizeObserver((entries) => {
+      for (const e of entries) painted.set(e.target, e.borderBoxSize[0]?.blockSize ?? Number.NaN);
+    });
+    const observeRows = () => {
+      for (const row of el.querySelectorAll("[data-index]")) sizes.observe(row);
+    };
+    observeRows();
+    new MutationObserver(observeRows).observe(el, { childList: true, subtree: true });
+    const unpainted = () => [...el.querySelectorAll("[data-index]")].some((row) => !(Math.abs((painted.get(row) ?? Number.NaN) - row.getBoundingClientRect().height) < 0.5));
     let anchor: Element | null = null;
     let anchorTop = 0;
     let box = el.getBoundingClientRect();
     let was = el.scrollTop;
     const after = new MessageChannel();
     after.port1.onmessage = () => {
+      if (unpainted()) return;
       const r = el.getBoundingClientRect();
       if (Math.abs(r.top - box.top) >= 2 || Math.abs(r.height - box.height) >= 2) moves.push(`the list's box moved: top ${String(box.top)} -> ${String(r.top)}, height ${String(box.height)} -> ${String(r.height)}`);
       box = r;

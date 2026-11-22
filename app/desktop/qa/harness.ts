@@ -195,7 +195,12 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
       nativeTheme.themeSource = v.theme;
       const win = BrowserWindow.getAllWindows()[0];
       if (!win) throw new Error("the app opened no window");
-      if (!win.isVisible()) await new Promise((shown) => win.once("show", () => shown(null)));
+      // Looked at, not waited for as an event: one that came between two looks, or never comes, can't hold the test
+      // until its timeout. A window the app never shows (W826: ready-to-show that never came) fails here, saying so.
+      for (const until = Date.now() + 30_000; !win.isVisible(); ) {
+        if (Date.now() > until) throw new Error(`the app's window never showed (${win.getBounds().width}×${win.getBounds().height}, page loading: ${String(win.webContents.isLoading())})`);
+        await new Promise((tick) => setTimeout(tick, 20));
+      }
       const area = screen.getDisplayMatching(win.getBounds()).workAreaSize;
       const [frameW = 0, frameH = 0] = win.getSize();
       const [contentW = 0, contentH = 0] = win.getContentSize();
@@ -233,7 +238,11 @@ export async function setNativeView(app: ElectronApplication, page: Page, size: 
       nativeTheme.themeSource = v.theme;
       const win = BrowserWindow.getAllWindows()[0];
       if (!win) throw new Error("the app opened no window");
-      if (!win.isVisible()) await new Promise((shown) => win.once("show", () => shown(null)));
+      // As in setView.
+      for (const until = Date.now() + 30_000; !win.isVisible(); ) {
+        if (Date.now() > until) throw new Error(`the app's window never showed (${win.getBounds().width}×${win.getBounds().height}, page loading: ${String(win.webContents.isLoading())})`);
+        await new Promise((tick) => setTimeout(tick, 20));
+      }
       win.setContentSize(v.width, v.height);
       for (let i = 0; i < 25; i++) {
         await new Promise((tick) => setTimeout(tick, 20));
