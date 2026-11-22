@@ -1,16 +1,23 @@
 // An Android screen measured on this machine with the node's own pieces (src/node/device): the pinned SDK installed
 // into a home of the bench's own (the first run downloads ~1.5 GB and makes the snapshot: the cold start), an emulator
-// booted from that snapshot (the warm start), scrcpy's H.264 stream decoded into JPEGs as the live view gets them, and
-// a person's touches through scrcpy's control socket. Prints one JSON line.
+// booted from that snapshot (the warm start), the node's session on it (session.ts: scrcpy's stream, the recording and
+// the live view's frames, JPEG or with --video H.264 as the desktop and web apps take it), and a person's touches
+// through scrcpy's control socket. Prints one JSON line.
 //
-//   bun bench/screens/android.ts <home>      (Linux x86_64 with KVM; <home> is kept between runs)
+//   bun bench/screens/android.ts <home> [--video]      (Linux x86_64 with KVM; <home> is kept between runs)
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { Steps } from "../../src/node/browser/record.ts";
+import type { Frame } from "../../src/node/device/scrcpy.ts";
+import { Session } from "../../src/node/device/session.ts";
 import { adb, install, sdkAt } from "../../src/node/device/sdk.ts";
 import { spawnEmulator, waitBooted } from "../../src/node/device/emulator.ts";
 import { Stream } from "../../src/node/device/scrcpy.ts";
 import { CpuSpan, nextFrame, rate, round, type Seen, settle, spread } from "./meter.ts";
 
 const home = process.argv[2];
-if (!home) throw new Error("usage: bun bench/screens/android.ts <home>");
+if (!home) throw new Error("usage: bun bench/screens/android.ts <home> [--video]");
+const withVideo = process.argv.includes("--video");
 const t0 = performance.now();
 await install(home);
 const installMs = performance.now() - t0;
@@ -30,17 +37,38 @@ const bootMs = performance.now() - tBoot;
 const frames: Seen[] = [];
 let h264 = 0;
 const tStream = performance.now();
-const stream = await Stream.start(sdk, emulator.serial, false, sdk.ffmpeg, tStream, (f) => frames.push({ at: performance.now(), bytes: f.jpeg.length, wire: f.jpeg.length }));
-// The H.264 that comes off the device, as a passthrough would send it.
-const video = (stream as unknown as { video: { data: { onData: (c: Uint8Array) => void } } }).video;
-const write = video.data.onData;
-video.data.onData = (c) => {
-  h264 += c.length;
-  write(c);
-};
+const dir = mkdtempSync(join(home, "bench-session-"));
+let started: Stream | undefined;
+const session = Session.open(
+  { emulator: { serial: emulator.serial, pushed: false }, release: () => {} },
+  sdk,
+  { id: "bench", thread: "t1", cwd: dir, purpose: "bench", dir, home: dir, secrets: [], steps: new Steps() },
+  async (...args) => {
+    const stream = await Stream.start(...args);
+    started = stream;
+    // The H.264 that comes off the device.
+    const video = (stream as unknown as { video: { data: { onData: (c: Uint8Array) => void } } }).video;
+    const write = video.data.onData;
+    video.data.onData = (c) => {
+      h264 += c.length;
+      write(c);
+    };
+    return stream;
+  },
+);
+// What the live view is sent: H.264 for a watcher that decodes it (a session that can), else JPEG.
+const live = session as unknown as { want?: (video: boolean, kbps: number | undefined) => boolean; key?: () => void };
+if (withVideo) live.want?.(true, undefined);
+session.watch((f: Frame) => {
+  const bytes = f.video ? f.video.data.length : f.jpeg.length;
+  frames.push({ at: performance.now(), bytes, wire: bytes });
+});
+if (withVideo) live.key?.();
+session.setControl("human", "bench");
 await nextFrame(frames, 30_000);
 const firstFrameMs = performance.now() - tStream;
-const [w, h] = stream.size() ?? [720, 1600];
+const stream = started!;
+const [w, h] = stream.size() ?? [576, 1280];
 
 await settle(frames, 1000, 10_000);
 let span = new CpuSpan(() => pids);
@@ -86,6 +114,7 @@ for (let i = 0; i < 6; i++) {
 console.log(
   JSON.stringify({
     kind: "android",
+    codec: withVideo ? "h264" : "jpeg",
     size: [w, h],
     startup: { installMs: round(installMs), bootMs: round(bootMs), firstFrameMs: round(firstFrameMs) },
     idle: { fps: round(idle.fps, 1), bytesPerSec: round(idle.bytesPerSec), h264PerSec: round(idle.h264PerSec), cpu: { node: round(idle.cpu.node, 1), screen: round(idle.cpu.screen, 1) } },
@@ -99,7 +128,9 @@ console.log(
     inputToPixel: { swipe: spread(taps) },
   }),
 );
-stream.stop();
+const recorded = await session.close();
+console.log(JSON.stringify({ recorded }));
+rmSync(dir, { recursive: true, force: true });
 emulator.kill();
 // The bench's own adb server goes with it (started on its own port, never a node's).
 await adb(sdk, emulator.serial, ["kill-server"]).catch(() => undefined);

@@ -193,6 +193,7 @@ recorded. They can't stop an agent that sets out to get around them, for example
 | File | Holds |
 |---|---|
 | `video` | A WebM (VP9, 1280×800, 25 frames a second), made from the node's own screencast of the page the agent is on. |
+| `video_mp4` | In place of `video` for an Android, Linux desktop or iOS simulator screen: the screen's own H.264 in an MP4. |
 | `actions` | One JSON line per step: `session_start`, each `agent-browser` command with the start of its output, how long it took and when in the video it ran, each `fill_credential` with its reference, and `session_end`. A step that clicked or typed names the element it acted on: the agent's ref for it (`@e3`), a CSS selector, and its box in the video's pixels. A person's takeover and handback are steps too. |
 | `dom` | The page's HTML after each step that changed it, with its URL and title, and that step's element. |
 
@@ -377,8 +378,9 @@ control, the agent's `agent-device` commands answer that a person has control.
   next screen, with scrcpy's server already on it, and boots another behind it, so `session_start` takes well under a
   second and the stream starts without a copy.
 - **Recorded through scrcpy.** The node runs [scrcpy](https://github.com/Genymobile/scrcpy)'s server on the emulator
-  and decodes its screen stream itself. The recording is an `actions` file as a browser screen's, and a `video` (a
-  WebM, VP9, 576×1280). There's no `dom` file.
+  and reads its H.264 stream itself. The recording is an `actions` file as a browser screen's, and a `video_mp4` (the
+  emulator's own H.264, 576×1280, copied in without encoding it again). There's no `dom` file. The desktop and web apps
+  get the same H.264 live; the phone app, and a link too slow for it, get JPEGs the node decodes from it.
 
 Emulators are kept apart from each other, not from the agents on their machine: an agent with adb can reach another
 screen's emulator by its serial. Run agents that mustn't see each other's devices on different machines.
@@ -444,9 +446,10 @@ action log, the hub's storage and its limits are the same as a browser screen's.
   listens on its socket file alone. The node does the agent's actions itself over its own X11 connection: it reads the
   screen and types and clicks through XTEST, as xdotool does. So while you have control, the agent's `desktop` actions
   answer that a person has control, and after you hand back, its next action takes control again.
-- **Recorded from the screen.** The node reads the screen ten times a second while anything on it changes. The
-  recording is an `actions` file as a browser screen's (each `desktop` action with its arguments, scrubbed of the
-  screen's secrets) and a `video` (a WebM, VP9, 1280×800). There's no `dom` file.
+- **Recorded from the screen.** The node reads the screen as soon as anything on it changes, up to 30 times a second,
+  and encodes it once, as H.264: the recording is an `actions` file as a browser screen's (each `desktop` action with
+  its arguments, scrubbed of the screen's secrets) and a `video_mp4` (1280×800), and the desktop and web apps watch
+  the same frames. There's no `dom` file.
 
 Apps launched in a container run on its Debian, so a binary built on a newer machine may need the Xvfb backend
 (`"backend": "xvfb"`).
