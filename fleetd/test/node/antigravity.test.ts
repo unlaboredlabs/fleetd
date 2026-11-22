@@ -324,3 +324,12 @@ test("a stop while a permission waits answers it cancelled, so the turn ends, an
   expect((await run.turn("r2", "hi")).outcome).toEqual({ Completed: { text: "hello" } });
   await run.end();
 });
+
+test("the sign-in check reads agy's authenticate answer: the plan when signed in, null when not, nothing else", () => {
+  expect(agy.SIGNED_IN_ASK.map((l) => JSON.parse(l).method)).toEqual(["initialize", "authenticate"]);
+  expect(agy.planOf('{"jsonrpc":"2.0","id":2,"result":{"_meta":{"antigravity":{"tier":{"name":"Google AI Pro"}}}}}')).toBe("Google AI Pro");
+  expect(agy.planOf('{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"Authentication required"}}')).toBeNull();
+  expect(agy.planOf('{"jsonrpc":"2.0","id":1,"result":{}}')).toBeUndefined();
+  expect(agy.planOf("not json")).toBeUndefined();
+  expect(agy.signInUrl("Open this link:\n\n  https://accounts.google.com/o/oauth2/auth?state=x\n\nThen paste")).toBe("https://accounts.google.com/o/oauth2/auth?state=x");
+});

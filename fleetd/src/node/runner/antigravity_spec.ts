@@ -5,6 +5,8 @@
 import type { Effort } from "../../shared/contracts.ts";
 import type { AcpSpec } from "./host/acp.ts";
 
+export { signInUrl } from "./login.ts";
+
 type Env = Record<string, string>;
 
 /** The variable naming a session's ACP spec file (host/acp.ts `AcpSpec`): set, the session's host speaks ACP to its
@@ -111,4 +113,26 @@ export function loginEnv(env: Env): Env {
   out.SSH_CONNECTION ||= "127.0.0.1 0 127.0.0.1 0";
   out.BROWSER = "true";
   return out;
+}
+
+/** The sign-in check's lines to `agy acp`'s stdin: ACP's `initialize`, then `authenticate` on the stored Google sign-in,
+ * which reads it and calls no model. */
+export const SIGNED_IN_ASK = [
+  JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientInfo: { name: "fleetd", version: "1" }, clientCapabilities: {} } }),
+  JSON.stringify({ jsonrpc: "2.0", id: 2, method: "authenticate", params: { methodId: "oauth-personal" } }),
+];
+
+/** What one stdout line says of the check: the plan's name ("Google AI Pro") when signed in, null when not, and
+ * undefined for any other line (keep reading). */
+export function planOf(line: string): string | null | undefined {
+  let m: Record<string, any>;
+  try {
+    m = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (m?.id !== 2) return undefined;
+  if (m.error) return null;
+  const tier = m.result?._meta?.antigravity?.tier?.name;
+  return typeof tier === "string" && tier ? tier : "Google";
 }

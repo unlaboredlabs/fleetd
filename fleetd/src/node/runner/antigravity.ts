@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { homeDir, type Env } from "../util.ts";
-import { AUTOUPDATE_OFF, loginEnv } from "./antigravity_spec.ts";
+import { AUTOUPDATE_OFF, loginEnv, planOf, SIGNED_IN_ASK } from "./antigravity_spec.ts";
 
 export * from "./antigravity_spec.ts";
 
@@ -119,9 +119,7 @@ export async function signedIn(binary: string, env: Env): Promise<string | undef
   const proc = Bun.spawn([binary, "acp"], { env: loginEnv(env), cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore" });
   const timer = setTimeout(() => proc.kill("SIGKILL"), SIGNED_IN_WAIT_MS);
   try {
-    const ask = (id: number, method: string, params: unknown) => proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    ask(1, "initialize", { protocolVersion: 1, clientInfo: { name: "fleetd", version: "1" }, clientCapabilities: {} });
-    ask(2, "authenticate", { methodId: "oauth-personal" });
+    for (const line of SIGNED_IN_ASK) proc.stdin.write(`${line}\n`);
     proc.stdin.flush();
     const reader = proc.stdout.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
@@ -131,18 +129,9 @@ export async function signedIn(binary: string, env: Env): Promise<string | undef
       buf += value;
       let nl: number;
       while ((nl = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, nl);
+        const plan = planOf(buf.slice(0, nl));
         buf = buf.slice(nl + 1);
-        let m: Record<string, any>;
-        try {
-          m = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (m.id !== 2) continue;
-        if (m.error) return undefined;
-        const tier = m.result?._meta?.antigravity?.tier?.name;
-        return typeof tier === "string" && tier ? tier : "Google";
+        if (plan !== undefined) return plan ?? undefined;
       }
     }
   } finally {

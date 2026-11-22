@@ -98,12 +98,13 @@ type AgySignIn =
   | { readonly step: "signed"; readonly plan: string };
 
 /**
- * Google Antigravity's sign-in, for agents on Antigravity profiles: Sign in asks the machine (machine_antigravity_login),
+ * Google Antigravity's sign-in, for agents on Antigravity profiles, on a machine's page and, for a team on fleetd's
+ * computers, under What runs where (machineId the hub's runner): Sign in asks the machine (machine_antigravity_login),
  * which says the plan it is signed in on, or starts `agy acp --login` (installing agy first where there is none) and
  * answers the Google page to sign in at. The person opens it on this device and pastes the code it shows; only that
  * code passes through the hub, once, and the sign-in stays on the machine.
  */
-function AntigravityRow({ machineId }: { machineId: string }) {
+export function AntigravityRow({ machineId }: { machineId: string }) {
   const call = useHubCall();
   const live = useLive();
   const [sign, setSign] = useState<AgySignIn>({ step: "idle" });
