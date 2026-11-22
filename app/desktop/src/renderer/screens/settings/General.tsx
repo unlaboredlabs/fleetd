@@ -4,6 +4,7 @@
 // things stand.
 import { useEffect, useState } from "react";
 import { canSeeThrough, Segmented, THEME_MODES, useSeeThrough, useTheme } from "../../ui";
+import { useServes } from "../admin/role";
 import { useUpdateStatus } from "../updates/hooks";
 import { UpdateStatus } from "../updates/UpdateStatus";
 import { YourName } from "./Name";
@@ -37,9 +38,14 @@ export function General() {
   );
 }
 
-/** Where updates stand, in the same words as Hub › Machines › Updates: an admin updates everything from either. */
+/**
+ * Where updates stand, in the same words as Hub › Machines › Updates: an admin updates everything from either. On the
+ * web on fleetd cloud, nothing: the team updates itself and the page has no update of its own.
+ */
 function Versions() {
   const status = useUpdateStatus();
+  const updates = useServes("hub_update");
+  if (onWeb() && !updates) return null;
   return (
     <SettingsSection title="Version" reveal="general.updates">
       <UpdateStatus status={status} />

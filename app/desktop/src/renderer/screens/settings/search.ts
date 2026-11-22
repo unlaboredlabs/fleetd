@@ -182,13 +182,15 @@ const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];
 /**
  * What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. The Vault's
  * pages only on a hub that serves it (`vault`); Billing only on a fleetd cloud team (`billing`), where Machines holds
- * fleetd's computers in place of the providers a team connects with its own key (admin/Provided.tsx).
+ * fleetd's computers in place of the providers a team connects with its own key (admin/Provided.tsx). General's
+ * Version only where it shows (`version`): never in the web app on fleetd cloud, which updates itself (General.tsx).
  */
-export const optionsFor = (administers: boolean, vault = true, billing = false): ReadonlyArray<SettingsOption> =>
+export const optionsFor = (administers: boolean, vault = true, billing = false, version = true): ReadonlyArray<SettingsOption> =>
   OPTIONS.filter(
     (o) =>
       (administers || !isHubTab(o.tab)) &&
       (vault || !VAULT_TABS.includes(o.tab)) &&
+      (version || o.key !== "general.updates") &&
       (billing || o.tab !== "hub.billing") &&
       o.key !== (billing ? "hub.sandboxes" : "hub.provided"),
   );

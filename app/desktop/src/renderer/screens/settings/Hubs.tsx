@@ -136,6 +136,8 @@ function RestartHubDialog({ open, onOpenChange, onRestart, only }: { open: boole
 
 function HubSetting({ only }: { only: boolean }) {
   const self = useHub();
+  // A team paired with a code is cloud's too (HubScope), but it didn't come with the account: signing out keeps it.
+  const account = self.cloud === true && self.codePaired !== true;
   const state = useData((st) => st.hub);
   const store = useKeyStore();
   const administers = useSettledAdministers();
@@ -157,7 +159,7 @@ function HubSetting({ only }: { only: boolean }) {
       reveal={only ? "hubs.hub" : `hubs.${self.id}`}
       // A team on the web goes by its name, one or several.
       title={self.label}
-      hint={self.cloud === true ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
+      hint={account ? "Hosted by fleetd. It came with your fleetd account, and signing out takes it off this app." : undefined}
       // The hub's fix may name a command in backticks: shown as code.
       line={
         <>

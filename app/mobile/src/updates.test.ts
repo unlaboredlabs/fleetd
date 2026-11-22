@@ -58,9 +58,9 @@ describe("updateSection", () => {
     expect(updateSection(input({ hub: { phase: "retrying", hub: HUB.hub, reason: "gone", retryAt: NOW } }))).toBeNull();
   });
 
-  it("says to an admin of fleetd cloud, which updates itself, only that: no button, whatever the hub's version", () => {
-    expect(updateSection(input({ updates: false }))).toEqual({ kind: "current", title: "fleetd cloud updates itself.", rows: [] });
-    expect(updateSection(input({ updates: false, ready: "0.9.1", machines: [machine("devbox", "0.8.0")] }))).toEqual({ kind: "current", title: "fleetd cloud updates itself.", rows: [] });
+  it("shows nothing on fleetd cloud, which updates itself: no section that only says so, whatever the hub's version", () => {
+    expect(updateSection(input({ updates: false }))).toBeNull();
+    expect(updateSection(input({ updates: false, ready: "0.9.1", machines: [machine("devbox", "0.8.0")] }))).toBeNull();
     expect(updateSection(input({ updates: false, admin: false }))).toBeNull();
     // A self-run hub, which serves hub_update, as before.
     expect(updateSection(input({ updates: true, ready: "0.9.1" }))?.action).toEqual({ label: "Update", act: "update" });

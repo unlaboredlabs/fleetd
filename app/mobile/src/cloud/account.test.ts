@@ -218,6 +218,13 @@ describe("Sign In", () => {
     const empty = { projects: {}, machines: [] };
     expect(needsComputer(own, empty)).toBe(true);
     expect(needsComputer(joined, empty)).toBe(false);
+    // Its hub saying they own it changes nothing; a team marked cloud with no sign-in's word (one paired with a code), only
+    // its owner is told to connect one: a member sees No Chats Yet.
+    expect(needsComputer(own, { ...empty, meRole: "owner" })).toBe(true);
+    const coded = { hub: "https://acme.fleetd.dev", key: "fld_code", hubName: "acme", cloud: true as const };
+    expect(needsComputer(coded, { ...empty, meRole: "member" })).toBe(false);
+    expect(needsComputer(coded, { ...empty, meRole: "admin" })).toBe(false);
+    expect(needsComputer(coded, { ...empty, meRole: "owner" })).toBe(true);
     // A later sign-in brings it among the person's teams, and the service still says they didn't make it.
     const third = await signInAsking(ports("ada@example.com"), answering());
     expect(third.ok && third.teams.map((t) => t.ok && [t.name, t.hub.invited])).toEqual([["ada", undefined], ["acme", true]]);

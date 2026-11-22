@@ -351,6 +351,16 @@ export const revokeOver = async (link: HubLink): Promise<boolean> => {
 /**
  * A team of fleetd cloud with nothing to run agents on yet, which the chats list says how to set up: no computer, and no
  * hosted provider (whose runner would be a machine of the hub's). A phone runs no join line or key field: a desktop job.
+ * Only for the person who made it: never a team they were invited to, nor one whose hub says they aren't its owner (a
+ * member paired with a code, which no sign-in marked `invited`), who see No Chats Yet.
  */
-export const needsComputer = (hub: KeptHub, s: { readonly projects: Readonly<Record<string, unknown>> | undefined; readonly machines: readonly unknown[] }): boolean =>
-  hub.cloud === true && hub.invited !== true && s.projects !== undefined && Object.keys(s.projects).length === 0 && s.machines.length === 0;
+export const needsComputer = (
+  hub: KeptHub,
+  s: { readonly projects: Readonly<Record<string, unknown>> | undefined; readonly machines: readonly unknown[]; readonly meRole?: string | undefined },
+): boolean =>
+  hub.cloud === true &&
+  hub.invited !== true &&
+  (s.meRole === undefined || s.meRole === "owner") &&
+  s.projects !== undefined &&
+  Object.keys(s.projects).length === 0 &&
+  s.machines.length === 0;
