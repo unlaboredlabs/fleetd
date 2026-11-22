@@ -332,9 +332,11 @@ test("deflate keeps its window across messages, and garbage ends the stream", as
 });
 
 /** A TCP hop between the node and its hub that can go dark: while `dark`, every byte either way is dropped and the
- * connections stay open, as on a network cut under them (a switch, wifi that drops). */
+ * connections stay open, as on a network cut under them (a switch, wifi that drops). While `held`, what the node
+ * sends waits in the hop, as on a slow uplink, until `release`. */
 function hop(target: number) {
-  const state = { dark: false };
+  const state = { dark: false, held: false };
+  const waiting: [Bun.Socket<unknown>, Uint8Array][] = [];
   const pairs = new Set<{ up?: Bun.Socket<unknown>; down: Bun.Socket<unknown> }>();
   const server = Bun.listen<{ up?: Bun.Socket<unknown>; held: Uint8Array[] }>({
     hostname: "127.0.0.1",
@@ -362,14 +364,19 @@ function hop(target: number) {
       data(down, chunk) {
         if (state.dark) return;
         const copy = new Uint8Array(chunk);
-        if (down.data.up) down.data.up.write(copy);
+        if (state.held && down.data.up) waiting.push([down.data.up, copy]);
+        else if (down.data.up) down.data.up.write(copy);
         else down.data.held.push(copy);
       },
       close: (down) => void down.data.up?.end(),
       error() {},
     },
   });
-  return { url: `http://127.0.0.1:${server.port}`, state, stop: () => server.stop(true) };
+  const release = () => {
+    state.held = false;
+    for (const [up, chunk] of waiting.splice(0)) up.write(chunk);
+  };
+  return { url: `http://127.0.0.1:${server.port}`, state, release, stop: () => server.stop(true) };
 }
 
 /** A node behind a hop to a fake hub, its losses logged with when they came. */
@@ -444,6 +451,29 @@ test("a heartbeat that says a big frame comes keeps the longer bound until a fra
   n.hop.state.dark = true;
   await until("the loss", () => n.lost.length === 1, 5000);
   expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
+});
+
+test("a watched screen's frames go one at a time, the newest next, and never queue ahead of the rest", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, { probeMs: 5000, deadMs: 10_000, bulkMs: 10_000 });
+  await until("the welcome", () => n.links.length === 1);
+  const frame = (sessionId: string, seq: number) => ({ t: "browser_frame", sessionId, seq, jpegB64: "AAAA", width: 1, height: 1 }) as const;
+  // A slow uplink: nothing the node writes has crossed yet.
+  n.hop.state.held = true;
+  const link = n.links[0]!;
+  link.send(frame("b", 1));
+  link.send(frame("b", 2));
+  link.send(frame("b", 3));
+  link.send(frame("c", 1));
+  link.send({ t: "cmd_result", id: "c1", exitCode: 0, outputTail: "done", timedOut: false });
+  await Bun.sleep(100);
+  n.hop.release();
+  const got = () => n.hub.conns[0]!.frames.filter((f) => f.t !== "hello").map((f) => (f.t === "browser_frame" ? `${f.sessionId}${f.seq}` : f.t));
+  await until("the newest frame", () => got().includes("b3"));
+  // b2 was made while b1 crossed and b3 after it: only the newest went. The other screen and the result didn't wait.
+  expect(got()).toEqual(["b1", "c1", "cmd_result", "b3"]);
   n.done();
   home.done();
 });

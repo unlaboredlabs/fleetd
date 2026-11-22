@@ -8,7 +8,8 @@
 // WebSocket doesn't surface partial frames. So while a big frame may still be crossing a slow link (one the node sent,
 // until the ping behind it is answered; one the hub said is coming, until it arrives), the bound is BULK_DEAD (30 s),
 // heartbeats from the other side keeping it alive. A large frame that takes longer than that to arrive still counts
-// as silence, where the Rust node waits for it.
+// as silence, where the Rust node waits for it. A watched screen's frames go one at a time, each once the one before
+// it has crossed, so a screen faster than the machine's uplink never queues up ahead of its agents' output.
 import { HUB_TO_NODE } from "../../shared/wire_tags.ts";
 import { PROTOCOL_VERSION } from "../../shared/contracts.ts";
 import { systemClock, type Clock } from "../../shared/clock.ts";
@@ -43,6 +44,9 @@ export const QUIET_DEAD_MS = 12_000;
 export const BULK_DEAD_MS = (HEARTBEAT_INTERVAL_SECS + 15) * 1000;
 /** A frame this big (as it goes on the wire) may take seconds on a slow link. */
 export const BULK_BYTES = LINK_BULK_BYTES;
+/** A watched screen's frames on the link at once: the next, the newest made meanwhile, goes once this one has crossed.
+ * Two would show a 3G or satellite screen at 1.4-1.7 fps instead of 0.9, and keep the rest waiting twice as long. */
+export const SCREEN_IN_FLIGHT = 1;
 /** The largest frame the node takes from its hub: an attachment's put_file with room to spare. */
 export const LINK_MAX_FRAME_BYTES = 64 << 20;
 /** The largest frame of any other kind. */
@@ -264,11 +268,15 @@ function runLinkOnce(
     let detach: (() => void) | undefined;
     let heard = Date.now();
     let pinged: number | undefined;
-    // A big frame may still be crossing: the ping written behind the node's own, until its pong; or one the hub said
-    // is coming (its heartbeat's `bulk`), until the next frame arrives.
-    let bulkPing: string | undefined;
-    let bulkPings = 0;
+    // A big frame may still be crossing: one of the node's own, until the ping written behind it is answered; or one the
+    // hub said is coming (its heartbeat's `bulk`), until the next frame arrives.
+    let bulkOut = 0;
     let inbound = false;
+    // What runs once the hub answered the ping written behind a frame: that frame has crossed the link.
+    const crossed = new Map<string, () => void>();
+    let pings = 0;
+    // Each watched screen's frames on the link (SCREEN_IN_FLIGHT at most), and the newest waiting for room.
+    const screens = new Map<string, { flying: number; next?: string }>();
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let writes: Promise<void> = Promise.resolve();
     // Frames in arrival order, each decoded (inflated) before the next is handled.
@@ -298,9 +306,36 @@ function runLinkOnce(
       return t;
     };
 
+    /** Runs `fn` once everything written before now has crossed the link. */
+    const afterCrossing = (fn: () => void) => {
+      const id = `crossed-${++pings}`;
+      crossed.set(id, fn);
+      try {
+        ws.ping(id);
+      } catch {}
+    };
     const send = (frame: NodeFrame) => {
       if (ended) return;
       const text = JSON.stringify(frame);
+      if (frame.t === "browser_frame") return screen(String(frame.sessionId), text);
+      write(text);
+    };
+    // A screen's frames go only as fast as the link carries them, the newest of those made meanwhile next: a watched
+    // screen faster than the machine's uplink would otherwise queue up ahead of everything else on it.
+    const screen = (id: string, text: string) => {
+      const lane = screens.get(id) ?? { flying: 0 };
+      screens.set(id, lane);
+      if (lane.flying >= SCREEN_IN_FLIGHT) return void (lane.next = text);
+      lane.flying++;
+      write(text, () => {
+        lane.flying--;
+        const next = lane.next;
+        lane.next = undefined;
+        if (next !== undefined) screen(id, next);
+        else if (lane.flying === 0) screens.delete(id);
+      });
+    };
+    const write = (text: string, onCrossed?: () => void) => {
       writes = writes.then(async () => {
         if (ended) return;
         let bytes = text.length;
@@ -310,10 +345,13 @@ function runLinkOnce(
           ws.send(data);
           bytes = data.byteLength;
         } else ws.send(text);
-        if (bytes >= BULK_BYTES) {
-          bulkPing = `bulk-${++bulkPings}`;
-          ws.ping(bulkPing);
-        }
+        const bulk = bytes >= BULK_BYTES;
+        if (bulk) bulkOut++;
+        if (bulk || onCrossed)
+          afterCrossing(() => {
+            if (bulk) bulkOut--;
+            onCrossed?.();
+          });
       });
       writes = writes.catch((error) => finish({ kind: "lost", why: `writing to the hub: ${(error as Error).message}` }));
     };
@@ -343,7 +381,7 @@ function runLinkOnce(
     const watchQuiet = () => {
       if (ended) return;
       const now = Date.now();
-      const deadMs = bulkPing !== undefined || inbound ? quiet.bulkMs : quiet.deadMs;
+      const deadMs = bulkOut > 0 || inbound ? quiet.bulkMs : quiet.deadMs;
       if (now >= heard + deadMs)
         return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
       if (now >= heard + quiet.probeMs && pinged !== heard) {
@@ -438,7 +476,12 @@ function runLinkOnce(
     ws.addEventListener("pong", (event) => {
       heard = Date.now();
       const data = (event as MessageEvent).data;
-      if (bulkPing !== undefined && data instanceof ArrayBuffer && new TextDecoder().decode(data) === bulkPing) bulkPing = undefined;
+      const id = data instanceof ArrayBuffer && data.byteLength ? new TextDecoder().decode(data) : undefined;
+      const fn = id === undefined ? undefined : crossed.get(id);
+      if (fn) {
+        crossed.delete(id!);
+        fn();
+      }
     });
     ws.addEventListener("message", (event) => {
       heard = Date.now();
