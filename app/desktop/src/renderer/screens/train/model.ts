@@ -42,7 +42,12 @@ export interface Moving {
   readonly prs: readonly TrainPr[];
   /** When it entered this stage. */
   readonly since: string;
+  /** Its CI passed and it waits for the batch behind it to land with it: the hub's note ("passed, waiting up to …"). */
+  readonly waiting?: string;
 }
+
+/** The start of the hub's note on a batch that passed CI and waits for the one behind it (its train's notes.ts). */
+const PASSED_WAITING = "passed, waiting up to ";
 
 const STAGES: readonly Stage[] = ["rebasing", "ci", "merging"];
 const isStage = (s: string): s is Stage => (STAGES as readonly string[]).includes(s);
@@ -74,6 +79,7 @@ export const movingNow = (changes: readonly Change[], prs: readonly PrRow[] | un
   return [...byRepo.values()]
     .map((of) => {
       const inFlight = of.toSorted(byPosition);
+      const waiting = inFlight.find((c) => c.state === "ci" && c.lastError?.startsWith(PASSED_WAITING))?.lastError;
       return {
         repo: inFlight[0]?.repo ?? "",
         moving: {
@@ -81,17 +87,21 @@ export const movingNow = (changes: readonly Change[], prs: readonly PrRow[] | un
           stage: STAGES.find((s) => inFlight.some((c) => c.state === s)) ?? "rebasing",
           prs: inFlight.map(trainPr),
           since: inFlight.map((c) => c.updatedAt).toSorted().at(-1) ?? "",
+          ...(waiting === undefined ? {} : { waiting }),
         },
       };
     })
     .toSorted((a, b) => b.moving.prs.length - a.moving.prs.length || a.repo.localeCompare(b.repo));
 };
 
-export const STAGE_WORD: Readonly<Record<Stage, string>> = {
+const STAGE_WORD: Readonly<Record<Stage, string>> = {
   rebasing: "Rebasing",
   ci: "Running CI",
   merging: "Merging",
 };
+
+/** The stage's word: a batch whose CI passed and that waits for the one behind it says so, not "Running CI". */
+export const stageWord = (m: Moving): string => (m.stage === "ci" && m.waiting !== undefined ? "CI passed" : STAGE_WORD[m.stage]);
 
 /** One line under the stage: what the train is doing at it. */
 export const stageLine = (m: Moving): string => {
@@ -100,6 +110,7 @@ export const stageLine = (m: Moving): string => {
     case "rebasing":
       return one ? "Bringing it up to date with the base." : `Building one branch from ${m.prs.length} PRs on the base.`;
     case "ci":
+      if (m.waiting !== undefined) return `CI passed; ${m.waiting.slice("passed, ".length)}, so they land together.`;
       return one ? "CI runs on it as it would land." : `One CI run for all ${m.prs.length}; green, they land together.`;
     case "merging":
       return one ? "CI passed; it is landing now." : `CI passed; all ${m.prs.length} land as one commit.`;

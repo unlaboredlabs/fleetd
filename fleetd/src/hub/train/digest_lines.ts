@@ -5,7 +5,7 @@ import type { Change, TrainState } from "../../shared/contracts.ts";
 import { TOOLS_FAILED } from "../reviews/rules.ts";
 import { parseMs } from "../store/time.ts";
 import { WAITING_FOR_RUNNERS } from "./next_rules.ts";
-import { APPROVAL, BACK_IDLE_MS, BLOCKED_PREFIX, HELD, LEFT_OUT, timedOut } from "./notes.ts";
+import { APPROVAL, BACK_IDLE_MS, BLOCKED_PREFIX, HELD, LEFT_OUT, PASSED_WAITING, timedOut } from "./notes.ts";
 import { DRAFT, isDraft } from "./states.ts";
 
 export type TrainFacts = {
@@ -60,7 +60,8 @@ function stateOf(changes: Change[], train: TrainState): string {
     let state = "";
     if (c) {
       const waiting = c.state === "ci" && c.lastError?.startsWith(WAITING_FOR_RUNNERS) ? `: ${c.lastError}` : "";
-      state = ` (${c.state})${waiting}`;
+      // A batch that passed and holds for the one behind it isn't in CI any more.
+      state = c.state === "ci" && c.lastError?.startsWith(PASSED_WAITING) ? ` (${c.lastError})` : ` (${c.state})${waiting}`;
     }
     parts.push(`now ${train.head}${state}`);
   }
