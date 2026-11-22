@@ -987,6 +987,14 @@ export class TrainGitHub {
     return issues.filter((i) => i.pull_request != null).map((i) => i.number);
   }
 
+  /** The newest `n` commits on `branch`, newest first. */
+  async recentCommits(repo: string, branch: string, n: number): Promise<string[]> {
+    const list = await this.json<{ sha: string }[]>("GET", `repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=${n}`, [], (v) =>
+      Array.isArray(v) && v.every((c) => typeof (c as any)?.sha === "string") ? (v as { sha: string }[]) : undefined,
+    );
+    return list.map((c) => c.sha.toLowerCase());
+  }
+
   /** The repo's default branch. */
   async defaultBranch(repo: string): Promise<string> {
     const r = await this.json<{ default_branch: string }>("GET", `repos/${repo}`, [], (v) =>

@@ -82,18 +82,6 @@ export function ghAuth(outcome: CmdOutcome): DoctorCheck {
     : hubEntry("gh_auth", "ok", "gh is logged in on the hub.");
 }
 
-/** Repos whose ready PRs wait because they have no CI: fleetd merges only on green CI, so they wait until it exists. */
-export function repoCi(withoutCi: string[]): DoctorCheck {
-  if (withoutCi.length === 0) return hubEntry("repo_ci", "ok", "Every repo with a PR ready to merge has CI.");
-  const repos = withoutCi.join(", ");
-  return hubEntry(
-    "repo_ci",
-    "fail",
-    `No CI on ${repos}: fleetd merges only on green CI, so their ready PRs wait.`,
-    manual(`Add a GitHub Actions workflow that runs on pull requests to ${repos}`),
-  );
-}
-
 /** What the hub keeps of its optional setup: each check below is there only once its step is set up. */
 export type SetupFacts = {
   /** Who joined after the hub's first person, by name. */

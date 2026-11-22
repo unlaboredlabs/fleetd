@@ -104,7 +104,7 @@ test("says what the lead will need", () => {
     rulesets: [],
     workflows: { workflows: [] },
   });
-  expect(bare(none).leadNeeds).toBe("no CI found: the merge train holds its PRs until the repo has CI");
+  expect(bare(none).leadNeeds).toBe("no CI found: the merge train merges its PRs on their review alone until the repo has CI");
   expect(bare(answers({ repo: { default_branch: "main", allow_squash_merge: false } })).leadNeeds).toStartWith(
     "squash merges are off on acme/storefront",
   );

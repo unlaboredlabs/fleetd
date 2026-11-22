@@ -27,6 +27,9 @@ const lines = (head: string, rest: string[] = []) => [head, ...rest].join("\n");
 export const prMerged = (change: string, prUrl: string, sha: string, by?: string) =>
   lines(`- ${prLabel(prUrl)} merged${sha}: ${prUrl} (${change}${by !== undefined ? `, by ${by}` : ""})`);
 
+/** The person's line in the bot's chat when a PR in a repo with no CI merged on its review alone (D642). */
+export const noCiMerged = (prUrl: string, repo: string) => `${prLabel(prUrl)} in ${repo} merged on its review alone: the repo has no CI.`;
+
 export const prLeft = (change: string, prUrl: string, why: string) => lines(`- ${prLabel(prUrl)} left the train: ${why} (${change}, ${prUrl})`);
 
 export const prGaveUp = (change: string, prUrl: string, why: string, tries: number) =>

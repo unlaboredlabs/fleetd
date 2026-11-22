@@ -143,7 +143,6 @@ export class Doctor {
       checks.hubReachable(`${own}/healthz`, reachable, restartCommand("hub", hubSetup)),
       checks.ghAuth(gh),
       checks.httpsReachable(config, problem, port, https),
-      checks.repoCi(this.sources.reposWithoutCi()),
     ];
     const manager = checks.serviceManager("hub", "hub", this.manager());
     if (manager) out.push(manager);

@@ -34,9 +34,12 @@ GitHub runs no CI on it") without waiting for its turn, unless the train can [re
 checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
 lead, once per commit, and keeps its place.
 
-fleetd merges only on green CI. A ready PR on a repo with no CI (no GitHub Actions workflow, no required check but
-`fleetd/train`, and nothing [another CI](#providers) reports on its commit) waits, and its queue entry and
-`fleetd doctor` say to add one. It goes on by itself once there is one.
+fleetd merges on green CI. A repo with no CI at all has nothing to wait for: no GitHub Actions workflow, no required
+check but `fleetd/train`, and no check or status from anyone but `fleetd/train` ([another CI](#providers) counts) on
+the PR's commit or on the default branch's last 10 commits. Each of its PRs merges alone once its review approves it,
+and the bot's chat says it merged on review alone. When the train can't read one of those, it waits as for CI. Once
+the repo gets CI, its PRs wait for it again. A repo whose checks exist but haven't started on a PR still waits, flagged
+after 15 minutes as above.
 
 To keep a PR off the train, [hold it](#hold).
 

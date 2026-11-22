@@ -96,8 +96,9 @@ The lead is also told to:
   rerun the checks CI just passed. The reviews' non-blocking findings are listed in that message; they become new
   work only if your order or you ask for it.
 - Ask for secrets with `request_secret` and run risky commands with `gated_run`, which you approve.
-- Leave merging to the merge train, which merges only after its own review and green CI. The lead adds no review of
-  its own, and doesn't relay blocking findings, conflicts or red CI: those reach the writer by themselves.
+- Leave merging to the merge train, which merges only after its own review and green CI (in a repo with no CI, on its
+  review alone). The lead adds no review of its own, and doesn't relay blocking findings, conflicts or red CI: those
+  reach the writer by themselves.
 - Start the writers first, largest part first, and plan while they work. Writers read what they need, with no survey
   agent ahead of them. A part's docs and tests go to that part's writer, not to a writer of their own. Parts that edit the same file go to one writer. Writers run up to the
   [Max agents](/docs/projects#max-agents) cap; a spawn past it queues and starts by itself.

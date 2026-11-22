@@ -16874,7 +16874,7 @@
           "type": "string"
         },
         "leadNeeds": {
-          "description": "One line for a person, e.g. \"no CI found: the merge train holds its PRs until the repo has CI\".",
+          "description": "One line for a person, e.g. \"no CI found: the merge train merges its PRs on their review alone until the repo has CI\".",
           "maxLength": 300,
           "minLength": 1,
           "type": "string"

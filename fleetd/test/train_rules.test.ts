@@ -415,14 +415,68 @@ test("a repo with workflows whose head gets only an unnamed commit status: it is
   expect(k.change(36).state).toBe("merged");
 });
 
-test("a repo with no CI of any provider is still held for having none", async () => {
+test("a repo with no CI of any provider merges each PR alone on its review; once it gains CI, PRs wait for it again", async () => {
   const k = kit();
   k.gh.noCi = true;
   k.pr(35, "fleetd/T35-x", { "x.md": "x\n" });
+  k.pr(37, "fleetd/T37-y", { "y.md": "y\n" });
   await k.enqueue(35);
+  await k.enqueue(37);
+  await k.settle(12);
+  expect(k.change(35).state).toBe("merged");
+  expect(k.change(37).state).toBe("merged");
+  // No batch: each merged as itself, and the chat heard once of each.
+  expect(merges(k)).toEqual(["merge #35", "merge #37"]);
+  expect(k.host.told).toEqual([`PR #35 in ${REPO} merged on its review alone: the repo has no CI.`, `PR #37 in ${REPO} merged on its review alone: the repo has no CI.`]);
+  // The repo gains a workflow, whose checks haven't started on the next PR: it waits for them, as in any repo.
+  k.gh.noCi = false;
+  k.gh.runs = () => [];
+  k.pr(38, "fleetd/T38-z", { "z.md": "z\n" });
+  await k.enqueue(38);
   await passes(k, 3);
-  expect(k.change(35).state).toBe("ready");
-  expect(k.change(35).lastError).toStartWith("held: this repo has no CI");
+  expect(k.change(38).state).not.toBe("merged");
+  expect(merges(k)).toEqual(["merge #35", "merge #37"]);
+  // Its checks start and pass: it merges on green CI, with nothing more in the chat.
+  k.gh.runs = undefined;
+  await k.settle();
+  expect(k.change(38).state).toBe("merged");
+  expect(k.host.told.length).toBe(2);
+});
+
+test("a provider that reported only on the default branch's recent commits is CI: the PR waits for it", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.gh.mainProvider = [["vercel", "success"]];
+  k.pr(43, "fleetd/T43-x", { "x.md": "x\n" });
+  await k.enqueue(43);
+  await passes(k, 3);
+  expect(k.change(43).state).not.toBe("merged");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
+});
+
+test("a required check is CI even with no workflow and nothing reported yet: the PR waits for it", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.gh.required = ["build"];
+  k.pr(44, "fleetd/T44-x", { "x.md": "x\n" });
+  await k.enqueue(44);
+  await passes(k, 3);
+  expect(k.change(44).state).not.toBe("merged");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
+});
+
+test("a repo whose CI can't be read is never taken for one with no CI", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.gh.unreadable = ["workflows"];
+  k.pr(39, "fleetd/T39-x", { "x.md": "x\n" });
+  await k.enqueue(39);
+  await passes(k, 3);
+  expect(k.change(39).state).not.toBe("merged");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
 });
 
 // A person merges: the `hold` label.

@@ -71,6 +71,8 @@ export interface TrainHost {
   nodeRun(checkout: ProjectRef, cwd: string, argv: string[], timeoutSec: number): Promise<NodeRun>;
   /** LeadWakes.trigger(ref, { kind: "train", line }). */
   wakeLead(projectRef: ProjectRef, line: string): Promise<void>;
+  /** One author=system line in the project's chat (Chat.systemLine); never throws. Absent: the chat gets none. */
+  tellPerson?(projectRef: ProjectRef, text: string): void;
   /** The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); undefined when unreadable now. */
   branchPrefix(projectRef: ProjectRef): Promise<string | undefined>;
   /** Opens an order for the project's lead (channel `train`) with `text`; the same `requestId` finds the first. */

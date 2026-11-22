@@ -201,14 +201,18 @@ test("the hold label keeps a ready PR off the train until it is gone", async () 
   expect(k.change(19).state).toBe("merged");
 });
 
-test("a repo with no CI holds its ready PRs and says so", async () => {
+test("a repo with no CI merges a reviewed PR on its review alone, and the chat says so once", async () => {
   const k = kit();
   k.gh.noCi = true;
   k.pr(20, "fleetd/T20-x", { "x.md": "x\n" });
   await k.enqueue(20);
   await k.settle();
-  expect(k.change(20).lastError).toStartWith("held: this repo has no CI");
-  expect(k.train.reposWithoutCi()).toEqual([REPO]);
+  expect(k.change(20).state).toBe("merged");
+  expect(k.change(20).lastError).toBeUndefined();
+  expect(k.gh.log).toContain(`status fleetd/train success ${k.change(20).headSha}`);
+  expect(k.host.told).toEqual([`PR #20 in ${REPO} merged on its review alone: the repo has no CI.`]);
+  await k.settle();
+  expect(k.host.told.length).toBe(1);
 });
 
 test("a merge GitHub refuses goes back to ready, and after three the lead hears the train gave up", async () => {

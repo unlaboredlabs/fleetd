@@ -160,7 +160,7 @@ export function leadNeeds(i: ProjectInspect, ghOk: boolean, unread: string[]): s
     return `${branch} needs ${reviews} approving review${s}: the train's merges wait for a person to approve`;
   }
   if (i.ci.workflows.length === 0 && i.ci.requiredChecks.length === 0) {
-    return "no CI found: the merge train holds its PRs until the repo has CI";
+    return "no CI found: the merge train merges its PRs on their review alone until the repo has CI";
   }
   if (i.ci.requiredChecks.length === 0) {
     const n = i.ci.workflows.length;

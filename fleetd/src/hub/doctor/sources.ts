@@ -15,7 +15,6 @@ import { vaultFacts } from "../vault/index.ts";
 import { active, people } from "../people/store.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { changeRecords } from "../train/index.ts";
 import { readLogin, usage } from "../usage/wire.ts";
 import type {
   ClaudeSetupView,
@@ -26,10 +25,6 @@ import type {
   UnownedSession,
   UsageBreaker,
 } from "./checks.ts";
-
-/** Why a Change waits for CI that doesn't exist (hub/train/batch.rs NO_CI). */
-export const NO_CI =
-  "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions workflow that runs on pull requests; it goes on by itself once one exists.";
 
 export type DoctorSources = {
   machines(): MachineView[];
@@ -44,7 +39,6 @@ export type DoctorSources = {
   paused(machineId: string): string | undefined;
   /** The other machines whose nodes run on the same computer as this one's. */
   sameComputer(machineId: string): string[];
-  reposWithoutCi(): string[];
   setupFacts(): SetupFacts;
   /** Each project's latest worktree base on the machine, by the project's title. */
   bases(machineId: string): [string, WorktreeBase][];
@@ -118,15 +112,6 @@ export function hubSources(hub: Hub): DoctorSources {
           .sort(),
       );
     },
-    reposWithoutCi: () =>
-      logged("the trains", [], () => {
-        const records = changeRecords(hub);
-        return records
-          .trains()
-          .map((t) => t.repo)
-          .filter((repo) => records.inTrain(repo, ["ready"]).some((c) => c.lastError === NO_CI))
-          .sort();
-      }),
     setupFacts: () => ({
       joined: logged("people", [], () => people(hub).joined()),
       ...optional("githubApp", logged("the GitHub App", undefined, () => githubApps(hub).get())),

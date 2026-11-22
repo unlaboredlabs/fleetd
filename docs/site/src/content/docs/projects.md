@@ -25,7 +25,7 @@ one for taxes. Every bot has the same abilities: memory, [automations](/docs/aut
      resolving
      inspecting
    ✓ ~/src/storefront cloned and added on devbox
-   Lead needs: no CI found: the merge train holds its PRs until the repo has CI
+   Lead needs: no CI found: the merge train merges its PRs on their review alone until the repo has CI
    Default branch: main
    CI: none; required checks: none
    Merge: unprotected, squash allowed
