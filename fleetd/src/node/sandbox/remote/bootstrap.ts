@@ -14,7 +14,13 @@ import { noQuery, shq } from "../../../sandbox/providers/shell.ts";
 import boot from "./boot.mjs" with { type: "text" };
 
 /** Where the box keeps fleetd and the guest's files: the box user's own, outside any path the node mirrors. */
-export const BOX_DIR = "/tmp/.fleetd-box";
+export let BOX_DIR = "/tmp/.fleetd-box";
+
+/** Tests: a stand-in box runs on the test's machine, where test runs side by side would share one BOX_DIR (its
+ * sessions' bundles, which a box's sealing clears by a glob): each test process takes its own (test/preload.ts). */
+export function setBoxDir(dir: string): void {
+  BOX_DIR = dir;
+}
 
 /** The script, run under the template's Bun with `bun -e`: in ./boot.mjs, a text file, so this module holds no in-box
  * code of its own (it's box side: docs/CONTRIBUTING.md "The package"). */

@@ -3,6 +3,7 @@
 // (an agent's FLEETD_NODE_SOCK, say), so nothing reaches a real hub or node.
 import { chmodSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { listenPort } from "../ports.ts";
 
 /** The binary under test, or undefined when FLEETD_BIN isn't set: the tests that run it are skipped then. */
 export const BIN = process.env.FLEETD_BIN ? resolve(process.env.FLEETD_BIN) : undefined;
@@ -34,13 +35,8 @@ export async function run(argv: string[], env: Record<string, string>, stdout?: 
   return { code: child.exitCode, signal: child.signalCode === null ? null : String(child.signalCode), stdout: out, stderr: err };
 }
 
-/** A port nothing listens on, for a hub's `--listen`. */
-export function freePort(): number {
-  const server = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const port = server.port;
-  server.stop(true);
-  return port;
-}
+/** A port nothing listens on, for a hub's `--listen` (../ports.ts). */
+export const freePort = listenPort;
 
 /** Writes an executable `#!/bin/sh` script. */
 export function script(path: string, body: string): void {

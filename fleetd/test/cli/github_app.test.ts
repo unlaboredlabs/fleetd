@@ -3,12 +3,11 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { listenPort } from "../ports.ts";
 
 test("the manifest page and its landing", async () => {
   const home = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-ghapp-"));
-  const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = probe.port;
-  await probe.stop(true);
+  const port = listenPort();
   const proc = Bun.spawn([process.execPath, join(import.meta.dir, "../../src/main.ts"), "github-app", "create", "--port", String(port), "--name", "fleetd on devbox"], {
     env: { ...process.env, FLEETD_HOME: home, HOME: home, PATH: "/usr/bin:/bin", DISPLAY: "" },
     stdout: "pipe",
