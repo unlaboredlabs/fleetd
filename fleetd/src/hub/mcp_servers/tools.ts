@@ -22,6 +22,7 @@ import {
   mcpServers,
   OAUTH_HEADER,
   oneSwitch,
+  onTailnet,
   secretScope,
   secretsMissingOn,
   signedIn,
@@ -378,13 +379,19 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   let result = await mcpTest(hub, machineId, projectId, session);
   if (result.error?.includes("401")) result = await turnedAway(hub, server, machineId, projectId, session, result);
   for (const tool of result.tools ?? []) tool.policy = toolPolicy(server, tool.name);
-  if (session.tailnet) result = result.error === undefined ? { ...result, via: "tailnet" } : { ...result, error: tailnetHint(result.error, machineId) };
+  if (onTailnet(server, tailnetSuffix(hub))) {
+    result = result.error === undefined ? { ...result, via: "tailnet" } : { ...result, error: tailnetHint(result.error, machineId, server.scope.kind === "global") };
+  }
   return { machineId, result };
 }
 
 /** A tailnet server the machine couldn't reach: the fix, when the words don't name one already. */
-export const tailnetHint = (error: string, m: string) =>
-  /tailscale/iu.test(error) ? error : `${error}. It's on your tailnet: put ${m} on it, or connect Tailscale in Connections so fleetd reaches it for ${m}.`;
+export const tailnetHint = (error: string, m: string, team = true) =>
+  /tailscale/iu.test(error)
+    ? error
+    : team
+      ? `${error}. It's on your tailnet: put ${m} on it, or connect Tailscale in Connections so fleetd reaches it for ${m}.`
+      : `${error}. It's on your tailnet, and a server added to one bot reaches the tailnet only from a machine on it: put ${m} on the tailnet, or add the server in Connections for the team with this bot picked.`;
 
 async function mcpTest(hub: Hub, m: string, projectId: string | undefined, server: McpSessionServer): Promise<McpTestResult> {
   const out = await sessionCall(hub, m, { op: "mcp_test", ...(projectId !== undefined ? { projectId } : {}), server });

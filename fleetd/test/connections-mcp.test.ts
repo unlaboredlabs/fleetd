@@ -165,15 +165,15 @@ test("a URL that signs in is saved signed out with its issuer, before any Test, 
   expect(keyed.server.oauth).toBeUndefined();
 });
 
-test("a tailnet server's Test says it went through Tailscale, and a failed one names the fix", async () => {
-  const scope = { kind: "project", ...PROJECT } as const;
+test("a team tailnet server's Test says it went through Tailscale, and a failed one names the fix", async () => {
+  const scope = team;
   const out = await set({ scope, name: "tiny", transport: { type: "http", url: "http://100.101.102.103:8765/mcp" }, headers: [{ kind: "plain", name: "X-Who", value: "fleetd" }] });
   expect(forSession(out.server, M)?.tailnet).toBe(true);
-  const ok = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny" });
+  const ok = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny", machineId: M });
   expect(ok.result.via).toBe("tailnet");
   expect((calls.at(-1)!.server as { tailnet?: boolean }).tailnet).toBe(true);
   testAnswer = { tools: [], error: "connection refused" };
-  const failed = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny" });
+  const failed = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny", machineId: M });
   expect(failed.result.via).toBeUndefined();
   expect(failed.result.error).toBe(`connection refused. It's on your tailnet: put ${M} on it, or connect Tailscale in Connections so fleetd reaches it for ${M}.`);
   // A server elsewhere isn't a tailnet one.
@@ -190,14 +190,34 @@ test("tailnet hosts: its addresses and MagicDNS names, short ones too once the s
   expect(["devbox.tail1234.ts.net", "devbox", "100.63.0.1", "100.128.0.1", "example.com", "1.100.in-addr.arpa"].map((h) => isTailnetHost(h))).toEqual([true, false, false, false, false, false]);
 });
 
-test("a short MagicDNS name is a tailnet server once the hub's Tailscale route is on", async () => {
+test("a bot's own tailnet server is reached directly, and its failed Test with the route on says how to reach it", async () => {
+  k.hub.area("tailnet.host", () => async () => ({ running: true, suffix: "tail1234.ts.net" }));
+  await k.call(k.ownerDevice, "tailnet_connect");
   const scope = { kind: "project", ...PROJECT } as const;
+  const out = await set({ scope, name: "nas", transport: { type: "http", url: "http://nas.tail1234.ts.net:8765/mcp" }, headers: [{ kind: "plain", name: "X-Who", value: "fleetd" }] });
+  // Not routed through the hub: the node writes its URL as it is.
+  expect(forSession(out.server, M, "tail1234.ts.net")?.tailnet).toBeUndefined();
+  expect(mcpServers(k.hub).sessionConfig(PROJECT).servers.find((s) => s.name === "nas")?.tailnet).toBeUndefined();
+  // From a machine on the tailnet it works, and says so.
+  const ok = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "nas" });
+  expect(ok.result.via).toBe("tailnet");
+  expect((calls.at(-1)!.server as { tailnet?: boolean }).tailnet).toBeUndefined();
+  // From one off it, the Test says what reaches it, not to connect what is connected.
+  testAnswer = { tools: [], error: "nas.tail1234.ts.net can't be found" };
+  const failed = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "nas" });
+  expect(failed.result.error).toBe(
+    `nas.tail1234.ts.net can't be found. It's on your tailnet, and a server added to one bot reaches the tailnet only from a machine on it: put ${M} on the tailnet, or add the server in Connections for the team with this bot picked.`,
+  );
+});
+
+test("a short MagicDNS name is a tailnet server once the hub's Tailscale route is on", async () => {
+  const scope = team;
   const out = await set({ scope, name: "tiny", transport: { type: "http", url: "http://devbox:8765/mcp" }, headers: [{ kind: "plain", name: "X-Who", value: "fleetd" }] });
   expect(forSession(out.server, M)?.tailnet).toBeUndefined();
   expect(forSession(out.server, M, "tail1234.ts.net")?.tailnet).toBe(true);
   k.hub.area("tailnet.host", () => async () => ({ running: true, suffix: "tail1234.ts.net" }));
   await k.call(k.ownerDevice, "tailnet_connect");
   expect(mcpServers(k.hub).sessionConfig(PROJECT).servers[0]!.tailnet).toBe(true);
-  const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny" });
+  const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny", machineId: M });
   expect(tested.result.via).toBe("tailnet");
 });

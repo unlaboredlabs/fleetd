@@ -142,7 +142,9 @@ export function forSession(s: McpServer, machineId: string, suffix?: string): Mc
     env: values(s.env),
     headers: values(s.headers),
     ...(s.oauth !== undefined ? { oauth: true as const } : {}),
-    ...(onTailnet(s, suffix) ? { tailnet: true as const } : {}),
+    // A team server only: the hub's Tailscale route lends the tailnet to those alone (`tailnetTargets`), so a bot's own
+    // is reached directly, from a machine on the tailnet.
+    ...(s.scope.kind === "global" && onTailnet(s, suffix) ? { tailnet: true as const } : {}),
   };
 }
 
