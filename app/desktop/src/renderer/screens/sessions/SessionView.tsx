@@ -11,7 +11,7 @@
 // its moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its
 // value is never on the hub to show, nor in a snapshot.
 import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
@@ -47,6 +47,8 @@ import { addressOf, NAVIGATE, pageNav, pictureOf, setControl, useFrameInput, use
 import { useVideo } from "./video";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
+import { ControlStrip } from "./ControlStrip";
+import { keyframesOf, moveOf, MOVE_MS, turnBetween, type Box } from "./turn";
 import s from "./sessions.module.css";
 
 /** How long an empty page stays without words before it says what it waits for. */
@@ -277,6 +279,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   // What the agent does while it has the screen; nothing while you do, which the line says.
   const doing = (x.state === "running" && !own) || x.state === "handingBack" ? nowLine(x) : undefined;
   const phone = x.kind === "ios" || x.kind === "android";
+  // A phone's control strip (D652), beside it while it's yours here: only what its machine says works.
+  const strip = phone && takes && x.device !== undefined ? <ControlStrip sessionId={x.id} device={x.device} name={x.kind === "ios" ? "iPhone" : "Android"} /> : undefined;
   return (
     <>
       <Head session={x} windowed={windowed} back={back} controls={controls} />
@@ -306,6 +310,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             input={input}
             caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
             {...(nav === undefined ? {} : { nav })}
+            {...(strip === undefined ? {} : { beside: strip })}
+            {...(x.device?.orientation === undefined ? {} : { orientation: x.device.orientation })}
           />
           {doing === undefined ? null : (
             <span className={s.doing}>
@@ -319,6 +325,62 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
     </>
   );
 }
+
+/**
+ * A phone in its bezel, its control strip (if it has one) beside it. When its frame changes shape (the device turned,
+ * a Duo folded or opened) it moves there from where it stood rather than jumping: turned the way its orientation says,
+ * or grown or shrunk to the new shape (turn.ts).
+ */
+function Phone({
+  kind,
+  aspect,
+  shape,
+  beside,
+  orientation,
+  children,
+}: {
+  kind: "ios" | "android";
+  aspect: number;
+  shape: Record<string, string | undefined>;
+  beside: ReactNode;
+  orientation: string | undefined;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const last = useRef<{ box: Box; orientation: string | undefined } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    const box = { width: el.offsetWidth, height: el.offsetHeight };
+    const was = last.current;
+    // The orientation comes a moment before the frame: the turn is read when the frame's shape changes.
+    last.current = { box, orientation: was !== null && was.box.width === box.width && was.box.height === box.height ? was.orientation : orientation };
+    if (was === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const move = moveOf(was.box, box, turnBetween(was.orientation, orientation));
+    if (move !== null) el.animate(keyframesOf(move), { duration: MOVE_MS, easing: EASE });
+  }, [aspect, orientation]);
+  // The bezel and corners go by the panel's short side: a wide one (an open Duo's, a phone on its side) is no heavier.
+  const short = Math.min(1, 1 / aspect);
+  // An iPhone on its side has its island along the edge its top turned to.
+  const island = kind === "ios" && aspect > 1 ? (orientation === "landscape_left" ? "left" : orientation === "landscape_right" ? "right" : undefined) : undefined;
+  return (
+    <div
+      className={s.phoneAt}
+      data-strip={beside === undefined ? undefined : ""}
+      style={{ "--aspect": String(aspect), "--b": String(BEZEL[kind] * short), "--short": String(short) } as CSSProperties}
+    >
+      <div ref={ref} className={s.phone} data-kind={kind} data-wide={aspect > 1 ? "" : undefined} data-island={island} {...shape}>
+        {children}
+        <span className={s.camera} aria-hidden />
+      </div>
+      {beside}
+    </div>
+  );
+}
+
+/** The phone's move: tokens.css --ease-spring, a critically damped spring, sampled (WAAPI takes no var()). */
+const EASE =
+  "linear(0, 0.056 5%, 0.177 10%, 0.316 15%, 0.449 20%, 0.566 25%, 0.665 30%, 0.744 35%, 0.807 40%, 0.855 45%, 0.893 50%, 0.921 55%, 0.942 60%, 0.958 65%, 0.969 70%, 0.978 75%, 0.984 80%, 0.988 85%, 0.992 90%, 0.994 95%, 1)";
 
 /** A phone's bezel, as its share of the phone's width all round. */
 const BEZEL = { ios: 0.034, android: 0.03 } as const;
@@ -344,6 +406,8 @@ function Frame({
   nav,
   videoCanvas,
   videoOn = false,
+  beside,
+  orientation,
 }: {
   /** Where the live screen's H.264 is drawn (video.ts), over `image` while `videoOn` (it has a newer picture). */
   videoCanvas?: (el: HTMLCanvasElement | null) => void;
@@ -366,6 +430,10 @@ function Frame({
   pageRef?: RefObject<HTMLDivElement | null>;
   /** The page is yours, a browser's: the bar is its address bar. */
   nav?: PageNav;
+  /** A phone's control strip, beside it. */
+  beside?: ReactNode;
+  /** Which way a phone's device is turned, as its machine says: which way the phone turns when its frame flips. */
+  orientation?: string;
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
@@ -415,10 +483,9 @@ function Frame({
   } as const;
   if (phone) {
     return (
-      <div className={s.phone} data-kind={kind} {...shape} style={{ "--aspect": String(aspect), "--b": String(BEZEL[kind]) } as CSSProperties}>
+      <Phone kind={kind} aspect={aspect} shape={shape} beside={beside} orientation={orientation}>
         {screen}
-        <span className={s.camera} aria-hidden />
-      </div>
+      </Phone>
     );
   }
   const where = kind === "linux_desktop" ? "Linux desktop" : kind === "mac" ? "" : url === undefined || url === "about:blank" ? "" : url;

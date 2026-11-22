@@ -10,6 +10,7 @@ import {
   type BrowserSessionCall,
   type BrowserTakeoverCall,
   type RecordingFileName,
+  type ScreenDevice,
 } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
 import { opener } from "../machine_roles/screens.ts";
@@ -100,6 +101,7 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
     credentialsFilled: call.credentialsFilled ?? 0,
     ...(call.note === undefined ? {} : { note: call.note }),
     ...(openedBy === undefined ? {} : { openedBy }),
+    ...deviceOf(call.device),
   };
   // Read, checked and written in one transaction: the node's reports race (its end report and its upload's), and one
   // that read the row before another made it final must not undo it.
@@ -119,7 +121,8 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
       !now ||
       now.state !== next.state ||
       now.control !== next.control ||
-      (now.credentialsFilled ?? 0) !== (next.credentialsFilled ?? 0);
+      (now.credentialsFilled ?? 0) !== (next.credentialsFilled ?? 0) ||
+      JSON.stringify(deviceOf(deviceIn(now))) !== JSON.stringify(deviceOf(call.device));
     return { kind: "done", changed, aside };
   });
   if (written.kind === "final") return { sessionId: next.sessionId, state: written.state };
@@ -134,6 +137,24 @@ async function session(hub: Hub, caller: LeadCaller, call: BrowserSessionCall) {
   if (written.changed) announce(hub, next);
   return { sessionId: next.sessionId, state: next.state };
 }
+
+/** A phone screen's device as its session keeps it: only the fields its node reported. */
+export function deviceOf(d: ScreenDevice | undefined): Partial<BrowserSession> {
+  if (!d) return {};
+  return {
+    controls: d.controls,
+    ...(d.orientation === undefined ? {} : { orientation: d.orientation }),
+    ...(d.fold === undefined ? {} : { fold: d.fold }),
+    ...(d.folds === undefined ? {} : { folds: d.folds }),
+    ...(d.appearance === undefined ? {} : { appearance: d.appearance }),
+  };
+}
+
+/** The device a stored session holds, as its node reported it. */
+const deviceIn = (s: BrowserSession): ScreenDevice | undefined =>
+  s.controls === undefined
+    ? undefined
+    : { controls: s.controls, orientation: s.orientation, fold: s.fold, folds: s.folds, appearance: s.appearance };
 
 function part(hub: Hub, caller: LeadCaller, call: BrowserRecordingPartCall) {
   const id = call.sessionId;

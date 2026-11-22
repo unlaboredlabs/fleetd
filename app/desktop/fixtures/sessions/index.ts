@@ -3,8 +3,10 @@
 // ended ones recorded (with a video, without one), being saved, lost and expired, and an iOS simulator of Ada's, live
 // and hers. Taking over and handing back answer
 // as the hub does, the row changing hands. New screen (D239) answers too: a browser of your own opens on devbox, in your
-// control, and an iOS simulator on the Mac, whose two are in use, waits for a slot until you cancel; an Android screen
-// offers storefront's open PRs, whose build it would install. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
+// control, and the agents' Mac's screen, its one in use, waits for a slot until you cancel; an Android screen
+// offers storefront's open PRs, whose build it would install; an iPhone Duo (D652) opens closed on the Mac, and its
+// control strip opens it; Ada's iPhone 17 turns left from its strip. Their frames are the real Mac's (media/duo*.jpg,
+// iphone17*.jpg). Ada's own Android on devbox has its strip too. Its pages, frames and video: pages.ts, html.ts, script.ts and media/
 // (media.ts).
 import fs from "node:fs";
 import path from "node:path";
@@ -34,6 +36,14 @@ const findLane = (v: JsonValue, laneId: string): JsonObject | undefined => {
 };
 
 const ASKS = "take over its browser; the sign-in sends a code to a phone";
+/** An iOS simulator's controls as the Mac reports them (a Duo adds fold). */
+const IOS_CONTROLS = ["rotate_left", "rotate_right", "home", "lock", "shake", "appearance", "location", "screenshot"];
+/** The simulator models New screen picks from: simctl's device type ids, and the Duo's own runtime. */
+const SIM = {
+  iphone: "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+  duo: "com.apple.CoreSimulator.SimDeviceType.iPhone-Duo",
+  duoRuntime: "com.apple.CoreSimulator.SimRuntime.iOS-27-2-24B91016s",
+} as const;
 const REASON = "The sign-in sends a code to a phone, and I can’t read it. Enter the code, then hand back.";
 const STOREFRONT = { machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" };
 const MEDIA = path.join(import.meta.dirname, "media");
@@ -218,14 +228,46 @@ const preview = (base: Fixture): Fixture => {
     sessionId: SESSION.phone,
     projectRef: STOREFRONT,
     threadId: "screen-3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3d",
-    purpose: "iOS simulator opened by Ada",
+    purpose: "iPhone 17 · Ada",
     kind: "ios",
     state: "live",
     control: "human",
     startedAt: iso(34_000),
     openedBy: { personId: "p_adaadaad", name: "Ada" },
+    controls: IOS_CONTROLS,
+    orientation: "portrait",
+    appearance: "light",
   };
-  rows.unshift(mine, ended, phone);
+  // Ada's iPhone 17 turned left: its frame comes on its side.
+  const phoneLeft: JsonObject = { ...phone, orientation: "landscape_left" };
+  // The iPhone Duo New screen opens, closed, and open.
+  const duo: JsonObject = {
+    ...phone,
+    sessionId: SESSION.duo,
+    threadId: "screen-8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c",
+    purpose: "iPhone Duo · Ada",
+    startedAt: iso(0),
+    controls: [...IOS_CONTROLS, "fold"],
+    fold: "closed",
+    folds: ["closed", "half-open", "open"],
+  };
+  const duoOpen: JsonObject = { ...duo, fold: "open" };
+  // Ada's own Android on devbox: its strip has an Android's controls.
+  const android: JsonObject = {
+    sessionId: SESSION.android,
+    projectRef: STOREFRONT,
+    threadId: "screen-2a4c6e8f0b2d4a6c8e0f2b4d6a8c0e2f",
+    purpose: "Android · Ada",
+    kind: "android",
+    machineId: "devbox",
+    state: "live",
+    control: "human",
+    startedAt: iso(12_000),
+    openedBy: { personId: "p_adaadaad", name: "Ada" },
+    controls: ["rotate_left", "rotate_right", "home", "back", "screenshot"],
+    orientation: "portrait",
+  };
+  rows.unshift(mine, ended, duo, duoOpen, android, phone, phoneLeft);
   // An Android emulator on devbox with #14's build, past its wait: its build going in.
   const installing: JsonObject = {
     waitId: "W7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
@@ -243,7 +285,9 @@ const preview = (base: Fixture): Fixture => {
   const mineAs = (state: string) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: SESSION.mine, state } });
   const waiting = { tool: "browser_sessions", field: "waits", where: { waitId: asText(wait["waitId"]) } };
   const building = { tool: "browser_sessions", field: "waits", where: { waitId: asText(installing["waitId"]) } };
-  f.hidden.push(building, where(yours(checkout)), where(yours(payouts)), where(handing(payouts)), mineAs("live"), mineAs("uploading"), waiting);
+  const phoneAs = (r: JsonObject) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: SESSION.phone, orientation: asText(r["orientation"]) } });
+  const duoAs = (r: JsonObject) => ({ tool: "browser_sessions", field: "sessions", where: { sessionId: SESSION.duo, orientation: asText(r["orientation"]), fold: asText(r["fold"]) } });
+  f.hidden.push(building, where(yours(checkout)), where(yours(payouts)), where(handing(payouts)), mineAs("live"), mineAs("uploading"), waiting, duoAs(duo), duoAs(duoOpen), phoneAs(phoneLeft));
   const check = (host: string, ready: boolean) => ({ host, ready, detail: ready ? "ready" : "not set up here" });
   const machine = (machineId: string, ready: readonly string[], live: number, max: number): JsonObject => ({
     machineId,
@@ -256,8 +300,29 @@ const preview = (base: Fixture): Fixture => {
     hostsOthers: true,
     hosts: ["browser", "android", "desktop", "mac"].map((h) => check(h, ready.includes(h))),
   });
+  // The agents' Mac: its own screen, one at a time and in use, and iPhones from its simulators, one of its two booted.
+  const runtime = (v: string) => ({ id: `com.apple.CoreSimulator.SimRuntime.iOS-${v.replace(".", "-")}`, name: `iOS ${v}` });
+  const mac: JsonObject = {
+    ...machine("mac", ["mac"], 1, 1),
+    mac: { on: true, ready: true },
+    hosts: [
+      check("mac", true),
+      {
+        ...check("ios", true),
+        sims: {
+          live: 1,
+          max: 2,
+          models: [
+            { id: SIM.iphone, name: "iPhone 17", family: "iphone", runtimes: [runtime("27.2"), runtime("26.4")] },
+            { id: SIM.duo, name: "iPhone Duo", family: "foldable", runtimes: [{ id: SIM.duoRuntime, name: "iOS 27.2" }] },
+            { id: "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5", name: "iPad Pro 13-inch (M5)", family: "ipad", runtimes: [runtime("27.2")] },
+          ],
+        },
+      },
+    ],
+  };
   f.drop("machine_roles");
-  f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), machine("mac", ["mac"], 1, 1)] });
+  f.answer("machine_roles", undefined, { machines: [machine("devbox", ["browser", "android", "desktop"], 2, 8), mac] });
   // The open PRs an Android screen can take the build of.
   const pr = (number: number, title: string, state: string): JsonObject => ({
     repo: "acme/storefront",
@@ -287,6 +352,31 @@ const preview = (base: Fixture): Fixture => {
   f.answer("screen_open", withPr, { waiting: installing });
   f.then("screen_open", withPr, { show: [building], frames: [] });
   f.then("screen_open", opened("mac", "mac", true), { show: [waiting], frames: [sessionEvent("live")] });
+  // An iPhone Duo, opened from New screen: closed, on the Mac.
+  const iphone = { ...opened("ios", "mac", false), sim: { model: SIM.duo, runtime: SIM.duoRuntime } };
+  const duoEvent = (r: JsonObject, ms: number) => ({
+    ms,
+    kind: "event" as const,
+    payload: { seq: 0, at: iso(0), type: "browser.session", summary: "screen live", ...STOREFRONT, data: { projectRef: STOREFRONT, sessionId: SESSION.duo, state: "live", control: asText(r["control"]) } },
+  });
+  const duoFrame = (seq: number, image: string, width: number, height: number) => ({ sessionId: SESSION.duo, seq, jpegB64: b64(image), width, height, control: "human" });
+  f.answer("screen_open", iphone, { session: duo });
+  f.then("screen_open", iphone, { show: [duoAs(duo)], frames: [duoEvent(duo, 50), { ms: 300, kind: "browser_frame", payload: duoFrame(1, "duoFolded.jpg", 600, 873) }] });
+  // Its strip opens it: the inner panel, wide.
+  const fold = { sessionId: SESSION.duo, control: "fold", value: "open" };
+  f.answer("screen_control", fold, { session: duoOpen });
+  f.then("screen_control", fold, { hide: [duoAs(duo)], show: [duoAs(duoOpen)], frames: [duoEvent(duoOpen, 50), { ms: 250, kind: "browser_frame", payload: duoFrame(2, "duoOpen.jpg", 1000, 703) }] });
+  // Ada's iPhone 17 turned left from its strip: the orientation first, then its frame on its side.
+  const left = { sessionId: SESSION.phone, control: "rotate_left" };
+  f.answer("screen_control", left, { session: phoneLeft });
+  f.then("screen_control", left, {
+    hide: [phoneAs(phone)],
+    show: [phoneAs(phoneLeft)],
+    frames: [
+      { ms: 50, kind: "event", payload: { seq: 0, at: iso(0), type: "browser.session", summary: "screen live", ...STOREFRONT, data: { projectRef: STOREFRONT, sessionId: SESSION.phone, state: "live", control: "human" } } },
+      { ms: 300, kind: "browser_frame", payload: { sessionId: SESSION.phone, seq: 2, jpegB64: b64("iphone17Left.jpg"), width: 1200, height: 552, control: "human" } },
+    ],
+  });
   f.answer("screen_end", { waitId: asText(wait["waitId"]) }, {});
   f.then("screen_end", { waitId: asText(wait["waitId"]) }, { hide: [waiting], frames: [sessionEvent("live")] });
   f.answer("screen_end", { sessionId: SESSION.mine }, { session: ended });
@@ -306,7 +396,8 @@ const preview = (base: Fixture): Fixture => {
   const PAY = "https://dashboard.pay.example.com";
   const [code, dashboard, downloaded] = PAYOUTS_FRAMES;
   f.later(0, "browser_frame", frame(SESSION.payouts, 1, code, `${PAY}/login/verify`, "agent"));
-  f.later(0, "browser_frame", { sessionId: SESSION.phone, seq: 1, jpegB64: b64("shopApp.jpg"), width: 603, height: 1311, control: "human" });
+  f.later(0, "browser_frame", { sessionId: SESSION.phone, seq: 1, jpegB64: b64("iphone17.jpg"), width: 552, height: 1200, control: "human" });
+  f.later(0, "browser_frame", { sessionId: SESSION.android, seq: 1, jpegB64: b64("androidInvoices.jpg"), width: 412, height: 915, control: "human" });
   // Shot once its first pages are in, not after the whole run.
   f.settleAt(2_500);
 

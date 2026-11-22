@@ -58,7 +58,7 @@ export const screensPage = (preview: Fixture): Fixture => {
   // Each on devbox, where storefront runs; its agent at checkout last typed the code.
   const typed = step("agent-browser", { command: "agent-browser fill @e12 SAVE10" }, iso(6_000));
   const kept = answered["sessions"]
-    .filter((r): r is JsonObject => isObject(r) && ![SESSION.phone, SESSION.mine].includes(asText(r["sessionId"]) as never))
+    .filter((r): r is JsonObject => isObject(r) && ![SESSION.phone, SESSION.mine, SESSION.duo, SESSION.android].includes(asText(r["sessionId"]) as never))
     .map((r) => ({ ...r, machineId: "devbox", ...(asText(r["sessionId"]) === SESSION.checkout && r["state"] === "live" ? { step: typed } : {}) }));
   const row = (project: JsonObject, id: string, thread: string, purpose: string, startedAgoMs: number, more: JsonObject): JsonObject => ({
     sessionId: id,
@@ -143,7 +143,7 @@ export const screensPage = (preview: Fixture): Fixture => {
   // The sidebar's Screens row: six live across the hub, one asking for you.
   f.answer("screens_count", undefined, { live: 6, asking: 1 });
 
-  // The machines' screens: devbox 3 of 8, buildbox 2 of 4, the agents' Mac leased to one agent at a time.
+  // The machines' screens: devbox 3 of 8, buildbox 2 of 4, the agents' Mac leased to one agent at a time, and its iPhones.
   const check = (host: string, ready: boolean) => ({ host, ready, detail: ready ? "ready" : "not set up here" });
   const machine = (machineId: string, ready: readonly string[], live: number, max: number): JsonObject => ({
     machineId,
@@ -156,9 +156,21 @@ export const screensPage = (preview: Fixture): Fixture => {
     hostsOthers: true,
     hosts: ["browser", "android", "desktop", "mac"].map((h) => check(h, ready.includes(h))),
   });
+  // The agents' Mac also starts iPhones: one of its two simulators booted.
+  const agentsMac: JsonObject = {
+    ...machine("mac", ["mac"], 1, 1),
+    mac: { on: true, ready: true },
+    hosts: [
+      check("mac", true),
+      {
+        ...check("ios", true),
+        sims: { live: 1, max: 2, models: [{ id: "com.apple.CoreSimulator.SimDeviceType.iPhone-17", name: "iPhone 17", family: "iphone", runtimes: [{ id: "com.apple.CoreSimulator.SimRuntime.iOS-27-2", name: "iOS 27.2" }] }] },
+      },
+    ],
+  };
   f.drop("machine_roles");
   f.answer("machine_roles", undefined, {
-    machines: [machine("devbox", ["browser", "android", "desktop"], 3, 8), machine("buildbox", ["browser", "android", "desktop"], 2, 4), machine("mac", ["mac"], 1, 1)],
+    machines: [machine("devbox", ["browser", "android", "desktop"], 3, 8), machine("buildbox", ["browser", "android", "desktop"], 2, 4), agentsMac],
   });
   return f;
 };

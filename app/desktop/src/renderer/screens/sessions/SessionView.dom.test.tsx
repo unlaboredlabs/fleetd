@@ -24,11 +24,18 @@ const row = (sessionId: string, more: Record<string, unknown>) => ({
   startedAt: AT,
   ...more,
 });
+const DUO_CONTROLS = ["rotate_left", "rotate_right", "home", "lock", "shake", "appearance", "location", "screenshot", "fold"];
+/** The device controls pressed (screen_control), in order. */
+let pressed: unknown[] = [];
 const SESSIONS = [
   row("bs-live", {}),
   row("bs-yours", { control: "human" }),
   row("bs-ios-yours", { kind: "ios", control: "human" }),
   row("bs-ios", { kind: "ios" }),
+  // A person's own iPhone Duo, its strip's controls as the Mac reports them; one on its side.
+  row("bs-duo", { kind: "ios", control: "human", openedBy: { personId: "p_adaadaad", name: "Ada" }, controls: DUO_CONTROLS, orientation: "portrait", fold: "closed", folds: ["closed", "half-open", "open"], appearance: "light" }),
+  row("bs-duo-left", { kind: "ios", control: "human", openedBy: { personId: "p_adaadaad", name: "Ada" }, controls: DUO_CONTROLS, orientation: "landscape_left", fold: "closed", folds: ["closed", "open"] }),
+  row("bs-duo-agent", { kind: "ios", controls: DUO_CONTROLS, orientation: "portrait" }),
   row("bs-ended", { state: "recorded", endedAt: "2026-10-19T10:00:09.000Z", files: [{ file: "actions", bytes: 1 }], note: "no video: this machine has no ffmpeg" }),
 ];
 // Its steps, as actions.jsonl has them.
@@ -82,6 +89,10 @@ const mount = async (id: string, features: readonly string[] = ["browser_session
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions: SESSIONS, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
+      if (tool === "screen_control") {
+        pressed.push(input);
+        return Promise.resolve({ ok: true, output: {} });
+      }
       if (tool === "browser_recording_get") {
         // A byte a piece, so every character past ASCII is split between two pieces.
         const offset = (input as { offset?: number }).offset ?? 0;
@@ -277,4 +288,38 @@ it("puts a phone in its bezel, the island over its screen, and its page takes yo
   // No browser bar on a device, and nothing in the line but its words and its one control.
   expect(host.querySelector("input[aria-label='Address']")).toBeNull();
   expect(host.textContent).not.toContain("started");
+});
+
+const strip = () => host.querySelector("[role='toolbar'][aria-label='Device']");
+
+it("gives a phone of yours a slim strip of the controls its machine says work, each press one screen_control", async () => {
+  pressed = [];
+  await mount("bs-duo");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-duo", seq: 1, jpegB64: "AAAA", width: 1398, height: 2034, control: "human" } }));
+  await settle();
+  // Icons only, named by their tooltips: no words in the strip.
+  const buttons = [...(strip()?.querySelectorAll("button") ?? [])];
+  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Rotate left", "Rotate right", "Fold", "Home", "Lock", "Shake", "Dark appearance", "Location", "Screenshot"]);
+  expect(strip()?.textContent).toBe("");
+  act(() => buttons[0]?.click());
+  act(() => buttons.find((b) => b.getAttribute("aria-label") === "Dark appearance")?.click());
+  await settle();
+  expect(pressed).toEqual([
+    { sessionId: "bs-duo", control: "rotate_left" },
+    { sessionId: "bs-duo", control: "appearance", value: "dark" },
+  ]);
+});
+
+it("shows a phone's frame at its own shape, its island along the edge its top turned to, and no strip on a screen the agent drives", async () => {
+  await mount("bs-duo-left");
+  // A turned iPhone's frame comes on its side: nothing turns it again.
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-duo-left", seq: 1, jpegB64: "AAAA", width: 2622, height: 1206, control: "human" } }));
+  await settle();
+  const phone = host.querySelector<HTMLElement>("[data-kind='ios']");
+  expect(phone?.style.transform ?? "").toBe("");
+  expect(phone?.dataset["island"]).toBe("left");
+  act(() => root?.unmount());
+  root = undefined;
+  await mount("bs-duo-agent");
+  expect(strip()).toBeNull();
 });

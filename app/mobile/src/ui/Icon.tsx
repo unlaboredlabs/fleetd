@@ -97,6 +97,16 @@ const SYMBOLS = {
   noSection: ["folder.badge.minus", "folder_off"],
   // A tagged chat's About…: which order a message is about.
   tag: ["tag", "label"],
+  // A phone screen's control strip (DeviceStrip).
+  rotateLeft: ["rotate.left", "rotate_left"],
+  rotateRight: ["rotate.right", "rotate_right"],
+  fold: ["arrow.right.and.line.vertical.and.arrow.left", "unfold_less"],
+  home: ["house", "home"],
+  shake: ["iphone.radiowaves.left.and.right", "vibration"],
+  location: ["location", "location_on"],
+  screenshot: ["camera.viewfinder", "screenshot"],
+  darkMode: ["moon", "dark_mode"],
+  lightMode: ["sun.max", "light_mode"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;
 
 export type IconName = keyof typeof SYMBOLS;
