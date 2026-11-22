@@ -137,3 +137,29 @@ test("a lead restarted fresh starts on the chat it carries on, not on the digest
   hub.shutdown.abort();
   done();
 });
+
+test("a lead restarted fresh with an order waiting reads the order as still to do, not that nothing waits", async () => {
+  const { hub, done } = testHub();
+  start(hub);
+  const prompts: string[] = [];
+  Object.assign(leadWiring(hub).ports, {
+    launch: async (_machineId: string, input: { prompt: string }) => {
+      prompts.push(input.prompt);
+      return `lead-${prompts.length}`;
+    },
+    send: async () => false,
+  });
+  await leads(hub).start(PROJECT);
+  chat(hub).add(PROJECT, { author: "human", text: "and add dark mode, with a toggle in Settings" });
+  // A draft with no brief yet: the lead has an order to start, whatever the chat before it says.
+  leads(hub).records.workstreamCreate({ projectRef: PROJECT, title: "Dark mode", text: "and add dark mode, with a toggle in Settings", channel: "app", by: "human", at: "2026-11-08T10:00:00.000Z" });
+  await leads(hub).restart(PROJECT);
+  const prompt = prompts[1]!;
+  expect(prompt).toContain("Orders waiting for you:\n- new order W1");
+  expect(prompt.indexOf("Orders waiting for you:")).toBeLessThan(prompt.indexOf(STARTED_AGAIN));
+  expect(prompt.trimEnd().endsWith(STARTED_AGAIN)).toBe(true);
+  expect(STARTED_AGAIN).toContain("orders waiting above still stand");
+  expect(prompt).not.toContain("Nothing new is waiting");
+  hub.shutdown.abort();
+  done();
+});

@@ -43,10 +43,11 @@ const RECENT_CHAT_CHARS = 500;
 const RECENT_CHAT_NAME = 80;
 /**
  * The last line of a session started again with no wake behind it (a profile switch, `lead_start {fresh: true}`): its
- * recent chat ends on turn-shaped lines, which invite a model to write the next one itself.
+ * recent chat ends on turn-shaped lines, which invite a model to write the next one itself. It speaks for the chat
+ * alone: the state and the orders waiting above it still stand.
  */
 export const STARTED_AGAIN =
-  "Nothing new is waiting: this is your session starting again, and every message above was already seen and handled. Act only on a wake or on a person's new message, and never write one for them.";
+  "This is your session starting again: the chat messages above were already seen and handled. The state and any orders waiting above still stand: act on them, on a wake or on a person's new message, and never write a message for them.";
 
 export class Leads {
   readonly records: LeadRecords;
