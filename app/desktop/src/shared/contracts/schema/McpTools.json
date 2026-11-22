@@ -10444,6 +10444,10 @@
     "MachineRolesEntry": {
       "description": "A machine as Settings › Hub › Machines shows it: its roles, its session slots and what it can host.",
       "properties": {
+        "antigravityLogin": {
+          "description": "Its node signs Google Antigravity in from the app (machine_antigravity_login); absent from older nodes.",
+          "type": "boolean"
+        },
         "hosts": {
           "default": [],
           "description": "What it can host, as its node last reported; empty until it reports.",

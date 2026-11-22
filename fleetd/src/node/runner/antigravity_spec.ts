@@ -26,6 +26,9 @@ export type AcpSpec = {
   deny: string[];
   /** What runs unasked in approval mode too, in the same words: a lead's own tools (`mcp__fleetd`, `Read`, …). */
   allow: string[];
+  /** What always goes to the hub, above `allow`, as Claude ranks its ask rules: a lead's final Confirm on a site
+   * (`mcp__fleetd__confirm_step`), a bot's proposal, an automation's, a fetch of a site the person didn't give. */
+  ask: string[];
   /** Where the agent's own session id is kept, for the next start's resume. */
   stateFile: string;
 };
@@ -107,6 +110,7 @@ export function spec(o: {
   approval: boolean;
   deny: string[];
   allow: string[];
+  ask: string[];
   stateFile: string;
 }): AcpSpec {
   return {
@@ -120,6 +124,7 @@ export function spec(o: {
     approval: o.approval,
     deny: o.deny,
     allow: o.allow,
+    ask: o.ask,
     stateFile: o.stateFile,
   };
 }

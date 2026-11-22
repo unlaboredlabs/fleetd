@@ -4446,6 +4446,8 @@ export type MachineRole = "agents" | "sessions";
 
 /** A machine as Settings › Hub › Machines shows it: its roles, its session slots and what it can host. */
 export type MachineRolesEntry = {
+  /** Its node signs Google Antigravity in from the app (machine_antigravity_login); absent from older nodes. */
+  antigravityLogin?: boolean;
   /** What it can host, as its node last reported; empty until it reports. */
   hosts?: HostCheck[];
   /** Its node hosts sessions for agents on other machines (newer nodes). */

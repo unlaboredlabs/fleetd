@@ -10,6 +10,7 @@ import { fenced, type AcpSpec } from "../../src/node/runner/host/acp.ts";
 import type { RunnerEvent } from "../../src/node/runner/host/events.ts";
 import { ACP_ENV, startSession, type Session } from "../../src/node/runner/host/session.ts";
 import { runNodeAction } from "../../src/node/actions/index.ts";
+import { roleAsk } from "../../src/node/runner/claude_spec.ts";
 import { Logins } from "../../src/node/runner/login.ts";
 
 const FAKE = join(import.meta.dir, "fake-agy.ts");
@@ -48,6 +49,7 @@ class Run {
       approval: false,
       deny: [],
       allow: [],
+      ask: [],
       stateFile: join(this.dir, "agy-session"),
       ...over,
     };
@@ -98,7 +100,7 @@ test("agy starts on its own sign-in or the project's key, with no Google credent
   expect(agy.spawnEnv(env, auth)).toEqual({ PATH: "/bin", GEMINI_API_KEY: "project-key", GOOGLE_GEMINI_BASE_URL: "https://gemini.devbox.example", AGY_CLI_DISABLE_AUTO_UPDATE: "1" });
   expect(agy.args({ kind: "signin" }, "/s/agy")).toEqual(["acp"]);
   expect(agy.args(auth, "/s/agy")).toEqual(["acp", "--gemini-dir", "/s/agy"]);
-  expect(agy.spec({ cwd: "/w", addDirs: [], mcpConfig: '{"mcpServers":{}}', model: "gemini-4-neon", effort: "high", auth, approval: false, deny: [], allow: [], stateFile: "/s/x" }).authMethod).toBe("gemini-api-key");
+  expect(agy.spec({ cwd: "/w", addDirs: [], mcpConfig: '{"mcpServers":{}}', model: "gemini-4-neon", effort: "high", auth, approval: false, deny: [], allow: [], ask: [], stateFile: "/s/x" }).authMethod).toBe("gemini-api-key");
 });
 
 test("MCP servers reach ACP as its lists: stdio with env, http with headers", () => {
@@ -305,6 +307,21 @@ test("in approval mode a lead's own tools run unasked (fleetd's MCP server, its 
   run.session.command({ Send: { run_id: "r3", text: "mcp docs search", mode: "plain" } });
   await until(() => of(run.events, "PermissionRequest").length > 0, "another server's tool asks");
   expect(of(run.events, "PermissionRequest")[0]!.PermissionRequest.tool_name).toBe("mcp__docs__search");
+  await run.end();
+});
+
+test("a lead's ask rules rank above its allowed ones, as on Claude: a final Confirm goes to the hub though fleetd's tools run unasked", async () => {
+  const run = await Run.fresh({ approval: true, allow: ["mcp__fleetd"], ask: ["mcp__fleetd__confirm_step", "mcp__fleetd__project_propose"] });
+  expect((await run.turn("r1", "mcp fleetd spawn_agent")).outcome).toEqual({ Completed: { text: "allow" } });
+  run.session.command({ Send: { run_id: "r2", text: "mcp fleetd confirm_step", mode: "plain" } });
+  await until(() => of(run.events, "PermissionRequest").length > 0, "the confirm asks");
+  const asked = of(run.events, "PermissionRequest")[0]!.PermissionRequest;
+  expect(asked.tool_name).toBe("mcp__fleetd__confirm_step");
+  run.session.command({ Answer: { request_id: asked.request_id, decision: { behavior: "deny", message: "not yet" }, by: "human" } });
+  await until(() => run.ended("r2") !== undefined, "r2 ends");
+  expect((run.ended("r2") as any).RunEnded.outcome).toEqual({ Completed: { text: "deny" } });
+  // And a lead's ask list reaches the spec the node writes: the role's, in approval mode.
+  expect(agy.spec({ cwd: "/w", addDirs: [], mcpConfig: '{"mcpServers":{}}', model: "gemini-4-neon", effort: "high", auth: { kind: "signin" }, approval: true, deny: [], allow: ["mcp__fleetd"], ask: roleAsk("lead", "approval-required"), stateFile: "/s/x" }).ask).toContain("mcp__fleetd__confirm_step");
   await run.end();
 });
 

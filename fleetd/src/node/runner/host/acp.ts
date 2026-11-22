@@ -532,7 +532,8 @@ export class AcpDriver {
       out.replies.push(this.#selected(rpcId, deny));
       return;
     }
-    if (!this.spec.approval || fenced(this.spec.allow, call)) {
+    // Claude's order: deny, then ask, then allow.
+    if (!fenced(this.spec.ask, call) && (!this.spec.approval || fenced(this.spec.allow, call))) {
       out.replies.push(this.#selected(rpcId, allow));
       return;
     }

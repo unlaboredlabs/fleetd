@@ -59,8 +59,9 @@ const ROLES: MachineRolesEntry[] = [
     sessionsLive: 0,
     hostsOthers: true,
     hosts: [{ host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 30 }],
+    antigravityLogin: true,
   },
-  { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false },
+  { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false, antigravityLogin: true },
 ];
 const LOGIN_URL = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c&state=s1";
 const AGY_URL = "https://accounts.google.com/o/oauth2/auth?state=g1";
@@ -458,6 +459,22 @@ it("shows a machine's Antigravity sign-in under Agents: one signed in already sa
   await click(button("Sign in…"));
   expect(row?.textContent).toContain("Signed in · Google AI Pro");
   expect(host.querySelector("form[aria-label='Sign in']")).toBeNull();
+});
+
+it("has no Antigravity row on a machine whose fleetd can't sign it in", async () => {
+  const at = ROLES.findIndex((r) => r.machineId === "builder-1");
+  const kept = ROLES[at];
+  if (kept === undefined) throw new Error("no builder-1");
+  const { antigravityLogin: _, ...without } = kept;
+  ROLES[at] = without;
+  try {
+    checks = checksOf("builder-1");
+    await render(<MachinePage machineId="builder-1" />);
+    expect(host.textContent).toContain("Agents");
+    expect(host.querySelector("[data-row='antigravity']")).toBeNull();
+  } finally {
+    ROLES[at] = kept;
+  }
 });
 
 it("signs Antigravity in from the app: the Google page to sign in at, then the code, once", async () => {

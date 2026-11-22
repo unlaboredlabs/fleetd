@@ -1567,6 +1567,7 @@ export class SessionService {
       approval: spec.runtimeMode === "approval-required",
       deny: spec.disallowedTools,
       allow: spec.allowedTools,
+      ask: row.local.allowedOnly ? [] : claude.roleAsk(row.local.role ?? "plain", spec.runtimeMode),
       stateFile: join(dir, "agy-session"),
     });
     // It holds the MCP servers' secrets, as mcp.json does.
