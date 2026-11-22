@@ -60,7 +60,7 @@ export function cardLabel(reference: string): string {
 export function leadSession(broker: Broker, thread: string): Session {
   if (!broker.hasKept(thread)) throw new ToolError("forbidden", "Only a bot's lead pays at a checkout.", "leave the payment to the person and say so");
   const session = broker.live(thread);
-  if (!session) throw new ToolError("not_found", "No browser session is open.", "open the shop's checkout in a browser session (session_start) first");
+  if (!session) throw broker.endedRefusal(thread) ?? new ToolError("not_found", "No browser session is open.", "open the shop's checkout in a browser session (session_start) first");
   if (session.control() === "human") throw new ToolError("invalid", PAUSED, "try again once they hand it back");
   return session;
 }

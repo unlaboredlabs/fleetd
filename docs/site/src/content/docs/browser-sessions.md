@@ -56,8 +56,15 @@ stopped or it went idle), or after 30 minutes without an `agent-browser` command
 once the task is cancelled (its order closed, say), or has stayed done or failed for 30 minutes with nothing waking it,
 the hub ends any screen it left open and the node kills it, wherever it runs. A task waiting between turns (on
 `wait_ci`, or a message from its lead) keeps its screen, and its claude, for the screen's 30 minutes: a next turn
-within them picks the screen up. When a node starts, it kills any Chrome or other process an earlier session left
-running in its scratch folder. When the agent needs a person (a
+within them picks the screen up. Any `agent-browser` command counts as use, including one a script runs. When a node
+starts, it kills any Chrome or other process an earlier session left running in its scratch folder.
+
+A screen outlives a node restart (an update): its Chrome runs outside the node, and the next node takes it over, the
+agent's browser as it was, signed in, at the same address. This needs `socat` on the machine; without it, and for a
+lead's screen on its bot's profile, the screen ends with the node. When a screen ends under an agent, its next
+`agent-browser` command or `session_end` says when and why, and it starts a new one with `session_start`.
+
+When the agent needs a person (a
 captcha, a confirmation only you can give), it calls **`request_takeover`** with what you should do. The tools are on
 the [Agent tools](/docs/reference/agent-tools#session_start) page.
 The hub decides which machine a screen runs on, by the machines' [roles](/docs/machines#roles): the agent's own when it

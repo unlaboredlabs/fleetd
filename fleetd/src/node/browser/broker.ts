@@ -59,6 +59,8 @@ type Open = {
   gen: number;
   /** The bot whose kept profile it runs on in its box, while it does. */
   kept?: string;
+  /** Its Chrome runs on this machine, held past the node (held.ts), rather than in an agent's box. */
+  here?: boolean;
 };
 
 /** Where an agent session's hosted box is, for its browser, which runs in it (../place/box_chrome.ts), or `starting`
@@ -134,6 +136,15 @@ export const firstIdFor = (gen: number) => (gen % 10) * 200_000_000 + 1;
 
 /** Why a session that reached its box's Chrome no more ends, in the agent's and the person's words. */
 export const goneNote = (why: string) => `the browser in the box went: ${why}`;
+/** And one whose Chrome ran on this machine, held past the node. */
+const heldGoneNote = (why: string) => `the browser went: ${why}`;
+
+/** How a session ended other than by its agent's session_end: when, and why in plain words. */
+type Ended = { sessionId: string; at: string; why: string };
+
+/** What the agent is told of a session that ended under it: at its next browser command, or its session_end. */
+export const endedNote = (e: Ended) =>
+  `Your browser session ${e.sessionId} ended at ${e.at.slice(11, 16)} UTC: ${e.why}. Start a new one with session_start.`;
 
 const noBrowserHere = () => new ToolError("failed", "This browser runs only in an agent's box, and this session has none.", "say so in your result: a person can check the bot's computer");
 
@@ -188,6 +199,10 @@ export class BrowserBroker {
       live: (thread) => this.live(thread),
       remote: (thread) => this.remote?.(thread),
       gone: (thread) => this.gone?.(thread),
+      ended: (thread) => {
+        const e = this.endedFor.get(thread);
+        return e && endedNote(e);
+      },
       writeRefusal: (session, command) => this.writeRefusal(session, command),
     };
     // No key given: a random one, never one an agent could compute a token with.
@@ -226,6 +241,11 @@ export class BrowserBroker {
     await this.host.policy(thread, agentBrowserPolicy(credentials));
   }
 
+  /** The machine as a box, for a browser of its own held past it (held.ts): the node's; none elsewhere. */
+  protected boxOf(_browser: Launched): ScreenBox | undefined {
+    return undefined;
+  }
+
   /** A browser for an agent session that runs in no box: the node's own (./index.ts); a broker with no machine of its
    * own has none. */
   protected launchHere(_thread: string): Promise<Launched> {
@@ -247,6 +267,7 @@ export class BrowserBroker {
     }
     if (this.starting.has(thread)) throw new ToolError("invalid", "Your browser session is starting already.", "wait for it");
     this.starting.add(thread);
+    this.endedFor.delete(thread);
     try {
       const boxed = this.boxed?.(thread);
       if (boxed === "starting") throw new ToolError("invalid", "Your sandbox is still starting.", "try session_start again in a moment");
@@ -287,12 +308,13 @@ export class BrowserBroker {
       // The agent's agent-browser may connect to no other browser (agent_browser.rs `write_policy`).
       await this.policy(thread, false);
       const session = new Session(newId(), thread, browser.cdp, own);
+      const here = inside ? undefined : this.boxOf(browser);
       const entry: Open = {
         session,
         browser,
         purpose,
         gen: 0,
-        ...(inside ? { box: inside } : {}),
+        ...(inside ? { box: inside } : here ? { box: here, here: true } : {}),
         ...(kept ? { kept: kept.project, release: kept.release } : {}),
       };
       let recording: Recording;
@@ -419,16 +441,19 @@ export class BrowserBroker {
     }
     if (this.lettingGo || this.sessions.get(thread) !== entry) return;
     entry.session.stepAt("browser_gone", { why }, false, undefined, 0);
-    await this.end(thread, goneNote(why)).catch(() => {});
+    await this.end(thread, entry.here ? heldGoneNote(why) : goneNote(why)).catch(() => {});
   }
 
-  /** The agent's `session_end`, or the hub's: closes the browser and reports the session ended. `note`: why it ended
-   * when it didn't by itself (its box's Chrome went). */
+  /** The agent's `session_end`, or the end of a session under it: closes the browser and reports the session ended.
+   * `note`: why it ended when the agent didn't end it (idle, its Chrome went, the node stopped), which the agent is
+   * told at its next browser command (the proxy's answer) or session_end. */
   async end(thread: string, note?: string): Promise<{ sessionId: string; kind: "browser"; files: { file: string; bytes: number }[]; note?: string }> {
     const open = this.sessions.get(thread);
-    if (!open) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
+    if (!open) throw this.noSession(thread);
     this.sessions.delete(thread);
     const { session } = open;
+    if (note) this.endedFor.set(thread, { sessionId: session.id, at: new Date().toISOString(), why: note });
+    else this.endedFor.delete(thread);
     // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until it is.
     this.ending.add(session.id);
     try {
@@ -439,9 +464,36 @@ export class BrowserBroker {
     }
   }
 
-  /** Sessions out of the map whose end is still under way (their video, their DOM captures): not yet a recording to
-   * send, nor one a stopped node left. */
+  /** Sessions out of the map whose end is still under way (their video, their DOM captures), and those being taken
+   * over: not yet a recording to send, nor one a stopped node left. */
   private readonly ending = new Set<string>();
+
+  /** The last session of each agent session that ended under it (`end`'s note), until its next session_start. */
+  private readonly endedFor = new Map<string, Ended>();
+
+  /** The refusal of a browser call with no session open: why the last one ended, when one ended under the agent. */
+  noSession(thread: string): ToolError {
+    return this.endedRefusal(thread) ?? new ToolError("not_found", "No browser session is open.", "start one with session_start");
+  }
+
+  /** Why the agent session's last browser session ended under it, as a browser call's refusal; none if none did. */
+  endedRefusal(thread: string): ToolError | undefined {
+    const e = this.endedFor.get(thread);
+    return e && new ToolError("not_found", endedNote(e), "start a new one with session_start");
+  }
+
+  /**
+   * Lets go of the agent session's browser session without ending it (the node stops, and the next one takes it over
+   * from its snapshot): its connection to Chrome drops, which waits for the next holder; nothing is reported or
+   * recorded.
+   */
+  keep(thread: string): void {
+    const open = this.sessions.get(thread);
+    if (!open) return;
+    this.sessions.delete(thread);
+    open.session.end();
+    open.session.cdp.shut();
+  }
 
   private async close(open: Open, why?: string): Promise<{ sessionId: string; kind: "browser"; files: { file: string; bytes: number }[]; note?: string }> {
     const { session } = open;
@@ -529,7 +581,7 @@ export class BrowserBroker {
   /** An agent's `request_takeover`: the hub lists it under "waiting on you". */
   private async requestTakeover(thread: string, reason: string): Promise<{ message: string }> {
     const session = this.live(thread);
-    if (!session) throw new ToolError("not_found", "No browser session is open.", "start one with session_start");
+    if (!session) throw this.noSession(thread);
     await this.inTurn(session, "browser_takeover", { sessionId: session.id, reason });
     // A person may take a while (a bank's confirmation, a captcha): the session waits for them, and a held fare or room
     // with it.
@@ -593,7 +645,8 @@ export class BrowserBroker {
     const open = this.sessions.get(thread);
     if (!open) return;
     open.session.stepAt("agent_session_ended", {}, true, undefined, 0);
-    void this.end(thread).catch(() => {});
+    void this.end(thread, "its agent's session ended").catch(() => {});
+    this.endedFor.delete(thread);
   }
 
   private housekeepingNow = false;
@@ -614,9 +667,10 @@ export class BrowserBroker {
   }
 
   private async housekeepOnce(now: number): Promise<void> {
-    const idle = (this.host.idleMinutes?.() ?? IDLE_MINUTES) * 60_000;
+    const minutes = this.host.idleMinutes?.() ?? IDLE_MINUTES;
     for (const [thread, open] of this.sessions) {
-      if (open.session.control() !== "human" && open.session.idleFor(now) >= idle) await this.end(thread).catch(() => {});
+      if (open.session.control() === "human" || open.session.idleFor(now) < minutes * 60_000) continue;
+      await this.end(thread, `no browser command for ${minutes} minutes`).catch(() => {});
     }
     const live = [...this.sessions.values()].map((o) => o.session.id).concat([...this.ending]);
     await this.host.recordings.sweep?.(live, now);
@@ -705,7 +759,7 @@ export class BrowserBroker {
    * still its project's lead, for its next session_start. */
   sessionEnd(frame: SessionEndFrame): void {
     const open = this.sessions.get(frame.threadId);
-    if (open?.session.id === frame.sessionId) void this.end(frame.threadId).catch(() => {});
+    if (open?.session.id === frame.sessionId) void this.end(frame.threadId, "fleetd ended it, as its task ended").catch(() => {});
   }
 
   /** Each live session's latest step, for the heartbeat. */
@@ -742,24 +796,28 @@ export class BrowserBroker {
    * reported ended, so control never stays with a person on a session nobody drives. Throws for a snapshot it can't read, and when the recording store refuses to go on (its
    * Chrome then waits on in its grace, for a try again).
    */
-  async adopt(thread: string, snapshot: BrowserSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
+  async adopt(thread: string, snapshot: BrowserSnapshot, here?: ScreenBox): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
     if (snapshot?.v !== 1 || snapshot.session?.threadId !== thread || !snapshot.handle) throw new Error("not a browser session's snapshot for this agent session");
     if (this.sessions.has(thread)) return { adopted: true, sessionId: this.sessions.get(thread)!.session.id };
     if (this.starting.has(thread)) throw new Error("a browser of this agent session is starting or being taken over here already");
-    // Held until the session is in the map (or ended): a session_start meanwhile can't open a second browser.
+    // Held until the session is in the map (or ended): a session_start meanwhile can't open a second browser. Its
+    // recording, meanwhile, is no stopped node's to end.
     this.starting.add(thread);
+    this.ending.add(snapshot.session.id);
     try {
-      return await this.adoptHeld(thread, snapshot);
+      return await this.adoptHeld(thread, snapshot, here);
     } finally {
       this.starting.delete(thread);
+      this.ending.delete(snapshot.session.id);
     }
   }
 
-  /** `adopt`, with the agent session held. */
-  private async adoptHeld(thread: string, snapshot: BrowserSnapshot): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
+  /** `adopt`, with the agent session held; `here`: its Chrome is this machine's, held past the node before. */
+  private async adoptHeld(thread: string, snapshot: BrowserSnapshot, here?: ScreenBox): Promise<{ adopted: true; sessionId: string } | { adopted: false; note: string }> {
     for (const [ref, value] of snapshot.filled) this.credentials.filled(thread, ref, value);
-    const boxed = this.boxed?.(thread);
-    const box = boxed && boxed !== "starting" ? boxed.box : undefined;
+    const boxed = here ? undefined : this.boxed?.(thread);
+    const box = here ?? (boxed && boxed !== "starting" ? boxed.box : undefined);
+    const gone = (why: string) => (here ? heldGoneNote(`${why}, while the node restarted`) : goneNote(`${why}, while it moved to another server`));
     let browser: Launched | undefined;
     let why = "its box is gone";
     if (box) {
@@ -774,17 +832,18 @@ export class BrowserBroker {
       // A Chrome that isn't there to drive: its session ends now, recorded as far as it went.
       // No connection: it records its end and nothing more.
       const session = Session.restore(state, undefined as never);
-      const note = goneNote(`${why}, while it moved to another server`);
+      const note = gone(why);
       const recording = await this.host.recordings.open(this.meta(session, snapshot.purpose, true));
       session.recording = { to: recording, steps: this.steps_ };
       session.stepAt("browser_gone", { why }, false, undefined, 0);
       await recording.end({ endedAt: new Date().toISOString(), credentialsFilled: session.credentialsFilled, note }, session.scrub(), session.offsetMs());
+      this.endedFor.set(thread, { sessionId: session.id, at: new Date().toISOString(), why: note });
       this.host.changed?.(thread);
       return { adopted: false, note };
     }
     browser.cdp.adoptOwned(snapshot.owned);
     const session = Session.restore(state, browser.cdp);
-    const entry: Open = { session, browser: { ...browser, handle: snapshot.handle }, purpose: snapshot.purpose, gen: snapshot.gen + 1, box };
+    const entry: Open = { session, browser: { ...browser, handle: snapshot.handle }, purpose: snapshot.purpose, gen: snapshot.gen + 1, box, ...(here ? { here: true } : {}) };
     if (snapshot.note) entry.note = snapshot.note;
     if (snapshot.kept) {
       const kept = await this.keptFor(thread, snapshot.handle.profile).catch(() => undefined);
@@ -807,8 +866,8 @@ export class BrowserBroker {
     try {
       await session.resume();
     } catch (e) {
-      await this.end(thread, goneNote(`${(e as Error).message}, while it moved to another server`)).catch(() => {});
-      return { adopted: false, note: goneNote((e as Error).message) };
+      await this.end(thread, gone((e as Error).message)).catch(() => {});
+      return { adopted: false, note: gone((e as Error).message) };
     }
     session.stepAt("browser_adopted", {}, true, undefined, 0);
     await this.report(session, "live");
@@ -833,7 +892,7 @@ export class BrowserBroker {
 
   async shutdown(): Promise<void> {
     clearInterval(this.housekeeping);
-    for (const thread of [...this.sessions.keys()]) await this.end(thread).catch(() => {});
+    for (const thread of [...this.sessions.keys()]) await this.end(thread, "this machine's fleetd node stopped").catch(() => {});
     this.proxy.stop();
   }
 }

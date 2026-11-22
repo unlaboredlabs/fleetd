@@ -134,7 +134,7 @@ export async function fillCredential(broker: Broker, thread: string, call: FillC
   const target = String(call.target ?? "");
   const submit = call.submit !== false;
   const session = broker.live(thread);
-  if (!session) throw new ToolError("not_found", "No browser session is open.", "start one with session_start, open the site's login page, then fill");
+  if (!session) throw broker.endedRefusal(thread) ?? new ToolError("not_found", "No browser session is open.", "start one with session_start, open the site's login page, then fill");
   if (session.control() === "human") throw new ToolError("invalid", PAUSED, "fill once they hand it back");
   const args = item !== undefined ? { item, field, target, submit } : { ref: reference, target, submit };
   const failed = (error: ToolError) => {

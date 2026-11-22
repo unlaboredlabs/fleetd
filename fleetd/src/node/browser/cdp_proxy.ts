@@ -3,7 +3,10 @@
 // debugging port; its pipe is the broker's (cdp.ts). The proxy forwards the driver's commands under ids of its own,
 // sends back their answers and the events the driver may see, and answers itself instead when the command isn't one
 // agent-browser sends, or the agent may not drive now (guard.ts, session.ts). Once the session filled a value,
-// everything the driver hears is scrubbed of it, and a write to a field it filled is refused (credentials.ts).
+// everything the driver hears is scrubbed of it, and a write to a field it filled is refused (credentials.ts). Each
+// command the driver sends is use of the session, which keeps it from idling out, whatever ran agent-browser (a shell
+// command, a script). With no session open, every command is answered with why (the last one ended under the agent,
+// or none was started), then the socket closes: agent-browser shows a CDP error's words, not an HTTP refusal's.
 // Sockets only: the node keeps its port and key across restarts (./proxy.ts), and a service with no node passes its
 // own key, so a new holder signs the same tokens.
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -23,6 +26,8 @@ export interface Sessions {
   remote?(thread: string): { url: string; key: Uint8Array } | undefined;
   /** The relay says the session there ended: forget it here. */
   gone?(thread: string): void;
+  /** What the agent is told of its last session, when it ended under it (idle, the node stopped). */
+  ended?(thread: string): string | undefined;
   /** Why a sealed session refuses the driver's DOM write (credentials.ts `filledFieldRefusal`, the default). */
   writeRefusal?(session: Session, command: Message): Promise<string | undefined>;
   /** Carries the driver to a session hosted elsewhere, sealed, through its relay (the node's: ./proxy.ts). */
@@ -45,8 +50,12 @@ export type DriverEnd = {
 type Server<D> = { port?: number; upgrade(req: Request, options: { data: D }): boolean; stop(closeActive?: boolean): unknown };
 type ServerWebSocket<D> = { data: D; send(message: string | Uint8Array): unknown; close(): void };
 
+/** What the driver is told with no session open, after none was started. */
+export const NO_SESSION = "No browser session is open: start one with session_start.";
+
 type Data =
   | { session: Session; queue?: Promise<void> }
+  | { ended: string }
   | { relay: { url: string; key: Uint8Array }; thread: string; message?: (m: Frame) => void; closed?: () => void };
 
 export class Proxy {
@@ -104,8 +113,7 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
       else {
         // On another machine: the hub's relay carries the driver there, sealed.
         const relay = sessions.pipe ? sessions.remote?.(thread) : undefined;
-        if (!relay) return new Response("No browser session is open: call session_start first.", { status: 409 });
-        data = { relay, thread };
+        data = relay ? { relay, thread } : { ended: sessions.ended?.(thread) ?? NO_SESSION };
       }
       return server.upgrade(req, { data }) ? undefined : new Response("Expected a WebSocket upgrade", { status: 426 });
     },
@@ -113,8 +121,10 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
       maxPayloadLength: MAX_MESSAGE,
       open(ws: ServerWebSocket<Data>) {
         const d = ws.data;
+        if ("ended" in d) return;
         if ("session" in d) {
-          d.session.proxyTo((message) => ws.send(JSON.stringify(d.session.outgoing(message))));
+          // Its end closes the socket: the driver's next command connects again, and is told why.
+          d.session.proxyTo((message) => ws.send(JSON.stringify(d.session.outgoing(message))), () => ws.close());
           return;
         }
         // The driver's side of the channel: piped sealed to the session's relay on the hub.
@@ -130,6 +140,16 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
       },
       message(ws: ServerWebSocket<Data>, raw: string | Buffer) {
         const d = ws.data;
+        if ("ended" in d) {
+          let id: unknown = null;
+          let on: unknown;
+          try {
+            ({ id = null, sessionId: on } = JSON.parse(raw.toString()) as Message);
+          } catch {}
+          ws.send(JSON.stringify({ ...refused(id, d.ended), ...(typeof on === "string" ? { sessionId: on } : {}) }));
+          ws.close();
+          return;
+        }
         if (!("session" in d)) return void d.message?.(raw);
         let command: Message;
         try {
@@ -138,6 +158,7 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
           return;
         }
         const session = d.session;
+        session.used();
         const commandIn = (filled: string | undefined) => {
           const why = filled ?? session.refusal(command);
           if (why) {
@@ -164,6 +185,7 @@ function handlers(sessions: Sessions, proxy: () => Proxy) {
       },
       close(ws: ServerWebSocket<Data>) {
         const d = ws.data;
+        if ("ended" in d) return;
         if ("session" in d) d.session.proxyTo(undefined);
         else d.closed?.();
       },
