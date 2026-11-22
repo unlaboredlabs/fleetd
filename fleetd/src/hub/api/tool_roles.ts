@@ -1,5 +1,5 @@
 // Every MCP tool's least role and the module that registers it. typecheck fails while a tool in the contracts' ToolMap
-// has no line here. A tool only fleetd's cloud serves (CLOUD: hosted sandboxes, their tailnet, computer images) keeps
+// has no line here. A tool only fleetd's cloud serves (CLOUD: hosted sandboxes, computer images) keeps
 // the module it had, which fleetd cloud's port map names, and isn't registered here: this hub answers that it has no
 // such tool, which is how the apps know to show none of it.
 import type { Role, ToolMap } from "../../shared/contracts.ts";

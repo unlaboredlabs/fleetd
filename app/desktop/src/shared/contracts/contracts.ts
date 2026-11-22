@@ -7289,7 +7289,11 @@ export type KnownTailnetStatus = "off" | "starting" | "login" | "approve" | "con
 /** KnownTailnetStatus, or a value from a newer hub. */
 export type TailnetStatus = KnownTailnetStatus | (string & {});
 
-/** The team's Tailscale connection: one gateway device the hub runs, through which hosted sandboxes reach the tailnet. */
+/**
+ * The team's Tailscale connection. fleetd's cloud: one gateway device it runs, through which its computers reach the
+ * tailnet. A self-hosted hub: its own computer's Tailscale, through which machines not on the tailnet reach tailnet MCP
+ * servers (`off` until Connect; `failed` when Tailscale isn't running there).
+ */
 export type TailnetState = {
   /** `connected`: the gateway's name on the tailnet. */
   device?: string;

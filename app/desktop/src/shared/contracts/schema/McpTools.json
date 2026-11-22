@@ -23093,7 +23093,7 @@
       "type": "object"
     },
     "TailnetState": {
-      "description": "The team's Tailscale connection: one gateway device the hub runs, through which hosted sandboxes reach the tailnet.",
+      "description": "The team's Tailscale connection. fleetd's cloud: one gateway device it runs, through which its computers reach the\ntailnet. A self-hosted hub: its own computer's Tailscale, through which machines not on the tailnet reach tailnet MCP\nservers (`off` until Connect; `failed` when Tailscale isn't running there).",
       "properties": {
         "device": {
           "description": "`connected`: the gateway's name on the tailnet.",
