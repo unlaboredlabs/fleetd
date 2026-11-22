@@ -96,7 +96,13 @@ export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, fro
         detail = steer.detail;
       } else if (before !== undefined && before.state !== "running") {
         outcome = "woke";
-        detail = asked === undefined ? `it answers what ${taskId} asked` : `it answers what ${taskId} asked at ${hhmm(asked)}`;
+        const ask = asked === undefined ? askAnswered(hub.db, taskId, from.taskId, id) : undefined;
+        detail =
+          asked !== undefined
+            ? `it answers what ${taskId} asked at ${hhmm(asked)}`
+            : ask !== undefined
+              ? `it answers what ${taskId} asked you in M${ask}`
+              : `it answers what ${taskId} asked`;
       } else {
         outcome = "delivered";
         at = undefined;
@@ -119,6 +125,49 @@ export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, fro
   emit(hub, "agent.messaged", r, id, from.taskId, recipients, text);
   tellLead(hub, r, id, from.taskId, recipients, text);
   return { messageId: id, to: recipients, next: next(id, recipients) };
+}
+
+/** The message of `asker`'s to `peer` that message `before` from `peer` answers, if it answers one. Their exchange
+ * is read in order: a message to one that asked the sender something is a reply, which settles that ask and asks
+ * nothing; any other is an ask. Two agents' thanks so can't wake each other in turns. A refused one counts for neither. */
+export function askAnswered(db: HubDb, asker: string, peer: string, before: string): number | undefined {
+  const until = messageN(before);
+  if (until === undefined) return undefined;
+  const rows = db.conn
+    .query<{ n: number; from_task: string }, [string, string, number]>(
+      `SELECT DISTINCT m.n, m.from_task FROM agent_messages m JOIN agent_message_to t ON t.message_n = m.n
+       WHERE m.n < ?3 AND m.to_bot = 0 AND t.outcome != 'refused'
+         AND ((m.from_task = ?1 AND t.task_id = ?2) OR (m.from_task = ?2 AND t.task_id = ?1))
+       ORDER BY m.n`,
+    )
+    .all(asker, peer, until);
+  const open = new Map<string, number>();
+  for (const row of rows) {
+    const to = row.from_task === asker ? peer : asker;
+    if (!open.delete(to)) open.set(row.from_task, row.n);
+  }
+  return open.get(asker);
+}
+
+/** The lead digest's lines for agents that ended waiting on nothing with other agents' messages unread: they read them
+ * only if their lead continues them. */
+export function unreadLines(db: HubDb, r: ProjectRef): string[] {
+  const rows = db.conn
+    .query<{ task_id: string; n: number; from_task: string }, [string, string]>(
+      `SELECT t.task_id, m.n, m.from_task FROM agent_message_to t
+         JOIN agent_messages m ON m.n = t.message_n
+         JOIN steers s ON s.n = t.steer_n
+         JOIN tasks k ON k.n = CAST(substr(t.task_id, 2) AS INTEGER)
+       WHERE m.machine_id = ? AND m.project_id = ? AND t.outcome = 'not_woken' AND s.held = 1 AND s.stage = 'queued'
+         AND k.state IN ('done', 'failed')
+       ORDER BY t.task_id, m.n`,
+    )
+    .all(r.machineId, r.projectId);
+  const by = new Map<string, string[]>();
+  for (const row of rows) by.set(row.task_id, [...(by.get(row.task_id) ?? []), `M${row.n} from ${row.from_task}`]);
+  return [...by].map(
+    ([taskId, ms]) => `- ${taskId} ended waiting on nothing, with ${ms.length === 1 ? "a message" : `${ms.length} messages`} unread (${ms.join(", ")}): it reads them only if you continue it (message_agent)`,
+  );
 }
 
 /** A note is one line of at most NOTE_MAX characters, to the bot alone, from an agent that isn't a review. */

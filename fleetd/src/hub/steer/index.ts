@@ -23,7 +23,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { onSteer } from "./dm.ts";
+import { askAnswered, onSteer } from "./dm.ts";
 import * as steers from "./store.ts";
 
 export const STEER_TEXT_MAX = 20_000;
@@ -64,6 +64,8 @@ export type SteerTasks = {
    * due for it (if one isn't yet), and this says what it waits on and in how many ms the wake goes. Undefined: it
    * waits on nothing, and isn't woken (tasks `waitingOn`, `wakeHeld`). */
   wakeWaiting(taskId: string): { on: string; inMs: number } | undefined;
+  /** What the ended task still waits on, which wakes it by itself (its wait_ci, a Monitor); undefined: nothing. */
+  waitingOn(taskId: string): string | undefined;
   /** Whether a message wake is due for the task. */
   wakeDue(taskId: string): boolean;
   /** Why the ended task can't run again (its order closed): the line and its fix (tasks `closedOrder`). */
@@ -83,6 +85,7 @@ export const steerTasks = (hub: Hub) =>
     askedAt: () => undefined,
     answered: () => {},
     wakeWaiting: () => undefined,
+    waitingOn: () => undefined,
     wakeDue: () => false,
     closedOrder: () => undefined,
   }));
@@ -208,10 +211,12 @@ export async function send(hub: Hub, by: By, req: SteerRequest): Promise<Steer> 
   const body = message(hub, steer, to, by, req);
   steers.keepMessage(hub.db, steer.id, body);
   // An agent never starts the run of one that has ended for good: it keeps the message for a run something else starts
-  // (its lead), unless it waits for an answer, which this may be. One that still waits (a wait_ci or Monitor of its
-  // own) is woken with it, together with whatever else agents send it within the wake's batch.
+  // (its lead), unless it waits for an answer, which this may be: its ask_lead question, or what it asked this agent.
+  // One that still waits (a wait_ci or Monitor of its own) is woken with it, together with whatever else agents send it
+  // within the wake's batch, and so is a reply to it: that wait wakes it once, not twice.
   const seam = steerTasks(hub);
-  if (by.kind === "agent" && to.task && ["done", "failed", "idle"].includes(to.task.state) && seam.askedAt(to.task.taskId) === undefined) {
+  const answers = (id: string) => by.kind === "agent" && askAnswered(hub.db, id, by.from.taskId, by.message) !== undefined && seam.waitingOn(id) === undefined;
+  if (by.kind === "agent" && to.task && ["done", "failed", "idle"].includes(to.task.state) && seam.askedAt(to.task.taskId) === undefined && !answers(to.task.taskId)) {
     const id = to.task.taskId;
     steers.hold(hub.db, steer.id, body);
     await seam.holdMessage(id, body);

@@ -7,7 +7,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
 import { pollCiWaits } from "../src/hub/tasks/ci_wait.ts";
-import { list, NOTE_MS, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
+import { askAnswered, list, NOTE_MS, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
 import { rehold, send, sendRunId, steerTasks, takeHeld } from "../src/hub/steer/index.ts";
 import * as steers from "../src/hub/steer/store.ts";
@@ -35,6 +35,7 @@ async function setup() {
       return { on, inMs: k.t.wakeInMs(taskId) };
     },
     wakeDue: (taskId: string) => k.t.wakeDue(taskId),
+    waitingOn: (taskId: string) => k.t.waitingOn(taskId),
     closedOrder: (taskId: string) => {
       const task = k.t.get(taskId);
       return task ? k.t.closedOrder(task) : undefined;
@@ -61,12 +62,13 @@ async function setup() {
   void k.t.run();
   await k.spawn("Dark mode");
   const from = (await k.spawn("Light mode")) as Task;
-  const dm = (to: string[], text: string) =>
+  /** A message from `sender` (T2 unless named). */
+  const dm = (to: string[], text: string, sender: Task = from) =>
     sendMessage(
       k.hub,
       (sender, message, taskId, body, crid) => send(k.hub, { kind: "agent", from: sender, message }, { target: { taskId }, text: body, mode: "queue", refs: [], attached: [], clientRequestId: crid }),
       (id) => k.t.askedAt(id),
-      from,
+      sender,
       to,
       text,
     );
@@ -275,6 +277,101 @@ test("a question its lead answered mid-run no longer lets a message restart it",
   const sent = await k.dm(["T1"], "SocketRocket rejects 1012 too");
   expect(sent.to[0]?.outcome).toBe("not_woken");
   expect(k.t.get("T1")?.attempt).toBe(1);
+  k.hub.shutdown.abort();
+});
+
+// T4995 asked T4860 by agent_message and ended its turn; T4860's answer was "not woken", and T4995 sat until its lead
+// relayed it by hand.
+test("a peer's reply continues an agent that ended waiting on nothing for it, once per reply", async () => {
+  const k = await setup();
+  const asked = await k.dm(["T2"], "How do you get the emailed code?", k.t.get("T1")!);
+  expect(asked.to[0]?.outcome).toBe("delivered");
+  await k.ended();
+  const reply = await k.dm(["T1"], "Read it from the test inbox's API");
+  expect(reply.to[0]?.outcome).toBe("woke");
+  expect(reply.to[0]?.detail).toBe(`it answers what T1 asked you in ${asked.messageId}`);
+  expect(reply.next).toContain("T1 was waiting for an answer, and this continues it.");
+  await until(() => k.ports.sends.some((s) => s.message.includes("'Read it from the test inbox's API'")));
+  expect(k.ports.sends.length).toBe(1);
+  expect(k.ports.sends[0]!.thread.threadId).toBe("s1");
+  expect(k.t.get("T1")).toMatchObject({ state: "running", attempt: 2 });
+  expect(steers.heldForTask(k.hub.db, "T1")).toEqual([]);
+  // It ends again without asking anything more: the next word from T2 answers nothing, and is held as before.
+  k.threadRow("s1", "completed", "done");
+  k.thread("thread.completed", "s1", { runId: sendRunId(k.ports.sends[0]!.thread, k.ports.sends[0]!.id), endCause: "completed" });
+  await until(() => k.t.get("T1")?.state === "done");
+  const more = await k.dm(["T1"], "Also: the code lasts 10 min");
+  expect(more.to[0]?.outcome).toBe("not_woken");
+  await Bun.sleep(80);
+  expect(k.ports.sends.length).toBe(1);
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 2 });
+  k.hub.shutdown.abort();
+});
+
+test("a message from an agent it never asked doesn't continue it, and the lead's digest shows it unread", async () => {
+  const k = await setup();
+  // T1 asked someone else; T2's message answers nothing of T1's.
+  await k.spawn("Sepia mode");
+  await k.dm(["T3"], "Which palette?", k.t.get("T1")!);
+  await k.ended();
+  const sent = await k.dm(["T1"], "I renamed upload_limit");
+  expect(sent.to[0]?.outcome).toBe("not_woken");
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
+  expect(k.t.digestLines(P, undefined, 50)).toContain(
+    `- T1 ended waiting on nothing, with a message unread (${sent.messageId} from T2): it reads them only if you continue it (message_agent)`,
+  );
+  // Its lead continues it: the message goes in, and the line is gone.
+  await k.t.message({ projectRef: P, by: "lead:lab-a/p1" }, "T1", "Go on.");
+  await until(() => k.ports.sends.some((s) => s.message.includes("'I renamed upload_limit'")));
+  expect(k.t.digestLines(P, undefined, 50).some((l) => l.includes("unread"))).toBe(false);
+  k.hub.shutdown.abort();
+});
+
+test("a reply to an agent whose wait is armed wakes it once, with that wait's wake", async () => {
+  const k = await setup();
+  await k.dm(["T2"], "Is #42 your seam?", k.t.get("T1")!);
+  await k.ended();
+  waitOn(k);
+  const reply = await k.dm(["T1"], "Yes, #42");
+  expect(reply.to[0]?.outcome).toBe("woke");
+  expect(reply.to[0]?.detail).toStartWith(`T1 has finished but waits on wait_ci on ${CI}`);
+  await until(() => k.ports.sends.length > 0);
+  await Bun.sleep(120);
+  expect(k.ports.sends.length).toBe(1);
+  expect(k.ports.sends[0]!.message).toContain("'Yes, #42'");
+  expect(k.t.get("T1")?.attempt).toBe(2);
+  expect(waits(k)).toEqual([{ url: CI }]);
+  k.hub.shutdown.abort();
+});
+
+test("a reply to an agent whose order closed is refused, and never continues it", async () => {
+  const k = await setup();
+  await k.dm(["T2"], "Is #42 your seam?", k.t.get("T1")!);
+  await k.ended();
+  k.hub.db.conn.query("UPDATE workstreams SET state = 'done', data = json_set(data, '$.state', 'done') WHERE n = 1").run();
+  const reply = await k.dm(["T1"], "Yes, #42");
+  expect(reply.to[0]?.outcome).toBe("refused");
+  expect(reply.to[0]?.detail).toContain("its order W1 is done");
+  await Bun.sleep(80);
+  expect(k.ports.sends).toEqual([]);
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
+  k.hub.shutdown.abort();
+});
+
+test("a reply settles the ask and asks nothing, so two agents' thanks can't wake each other in turns", async () => {
+  const k = await setup();
+  const t1 = k.t.get("T1")!;
+  const ask = await k.dm(["T2"], "Which port?", t1);
+  const reply = await k.dm(["T1"], "4790");
+  const thanks = await k.dm(["T2"], "Thanks!", t1);
+  const db = k.hub.db;
+  // T2's reply answers T1's ask; T1's thanks answers nothing of T2's, which asked nothing.
+  expect(askAnswered(db, "T1", "T2", reply.messageId)).toBe(Number(ask.messageId.slice(1)));
+  expect(askAnswered(db, "T2", "T1", thanks.messageId)).toBeUndefined();
+  // The thanks is a new ask of T1's, which T2's next message answers; one refused counts for nothing.
+  expect(askAnswered(db, "T1", "T2", "M99")).toBe(Number(thanks.messageId.slice(1)));
+  db.conn.query("UPDATE agent_message_to SET outcome = 'refused' WHERE message_n = ?").run(Number(thanks.messageId.slice(1)));
+  expect(askAnswered(db, "T1", "T2", "M99")).toBeUndefined();
   k.hub.shutdown.abort();
 });
 
