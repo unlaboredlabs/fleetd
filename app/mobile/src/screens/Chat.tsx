@@ -37,6 +37,7 @@ import { chatItems, holds, type AttachmentRef, type ChatMessagePin, type BotStat
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { onHome } from "../split";
 import { useBeside, useStrip } from "../ui/pane";
+import { SheetRoom } from "../ui/StripRoom";
 import { linkStatus } from "../link";
 import { useHubWord } from "./linkHeader";
 import { useCanStop } from "../stopProbe";
@@ -1698,7 +1699,7 @@ function SelectText({ text, onClose }: { text: string | null; onClose: () => voi
   if (text === null) return null;
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.fill, { backgroundColor: t.bg }]} onAccessibilityEscape={onClose}>
+      <SheetRoom style={[styles.fill, { backgroundColor: t.bg }]} onAccessibilityEscape={onClose}>
         <View style={styles.sheetHead}>
           <Text style={[type.headline, { color: t.label }]}>Select Text</Text>
           <Button label="Done" kind="plain" onPress={onClose} />
@@ -1713,7 +1714,7 @@ function SelectText({ text, onClose }: { text: string | null; onClose: () => voi
           style={[type.body, styles.selectable, { color: t.label }]}
           accessibilityLabel="Message text"
         />
-      </View>
+      </SheetRoom>
     </Modal>
   );
 }

@@ -31,6 +31,7 @@ import { haptics } from "../ui/haptics";
 import { HoldMenu } from "../ui/HoldMenu";
 import { Icon, type IconName } from "../ui/Icon";
 import { Menu, type MenuItem, type Rect } from "../ui/Menu";
+import { useStrip } from "../ui/pane";
 
 /** A name being asked for: a new section's, or a rename (`except`: the section renamed, whose own name is no clash). */
 interface Naming {
@@ -158,6 +159,8 @@ const MENU_WIDTH = 250;
 /** Android's stand-in for iOS's prompt: a card with one field, which says why a name won't do under it. */
 function NamePrompt({ ask, problemOf, onClose }: { ask: Naming; problemOf: (name: string) => string | undefined; onClose: () => void }) {
   const t = useTheme();
+  // Centred in the room the iPhone Duo's side strip leaves; the dim covers the strip too.
+  const strip = useStrip();
   const [typed, setTyped] = useState(ask.value);
   const [problem, setProblem] = useState<string>();
   const done = () => {
@@ -173,7 +176,7 @@ function NamePrompt({ ask, problemOf, onClose }: { ask: Naming; problemOf: (name
   return (
     <Modal transparent visible animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={[StyleSheet.absoluteFill, styles.dim]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
-      <View style={styles.promptAt} pointerEvents="box-none">
+      <View style={[styles.promptAt, { marginLeft: strip?.left ?? 0, marginRight: strip?.right ?? 0 }]} pointerEvents="box-none">
         <View style={[styles.prompt, { backgroundColor: t.cell }]} accessibilityViewIsModal>
           <Text style={[type.headline, { color: t.label }]}>{ask.title}</Text>
           {ask.message === undefined ? null : <Text style={[type.footnote, { color: t.secondary }]}>{ask.message}</Text>}

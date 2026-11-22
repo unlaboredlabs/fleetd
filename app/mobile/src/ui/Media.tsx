@@ -19,6 +19,7 @@ import { haptics } from "./haptics";
 import { Icon, type IconName } from "./Icon";
 import { usePaneWidth } from "./pane";
 import { SkeletonBlock } from "./Skeleton";
+import { useStrip } from "./pane";
 
 /**
  * A picture's preview for its bubble, read from the hub or the disk: undefined while it comes, else the preview or why
@@ -179,6 +180,8 @@ const FILE_WIDTH = 288;
 export function ImageViewer({ image: opened, onClose }: { image: OpenedImage | null; onClose: () => void }) {
   const screen = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  // Its buttons keep out of the iPhone Duo's side strip; the picture fills the screen under it.
+  const strip = useStrip();
   const session = useSession();
   const [chrome, setChrome] = useState(true);
   const [full, setFull] = useState<AttachmentGetOutput | null>(null);
@@ -212,7 +215,7 @@ export function ImageViewer({ image: opened, onClose }: { image: OpenedImage | n
           </Pressable>
         </ScrollView>
         {chrome ? (
-          <View style={[styles.viewerBar, { top: insets.top + space.sm }]}>
+          <View style={[styles.viewerBar, { top: insets.top + space.sm, left: space.lg + (strip?.left ?? 0), right: space.lg + (strip?.right ?? 0) }]}>
             <Glass interactive style={styles.viewerButton}>
               <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} style={styles.viewerHit}>
                 <Icon name="close" size={17} color="#FFFFFF" weight="semibold" />

@@ -12,6 +12,7 @@ import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { Icon, type IconName } from "./Icon";
 import { dur, ease, useReduceMotion } from "./motion";
+import { useStrip } from "./pane";
 
 export interface MenuItem {
   readonly label: string;
@@ -39,14 +40,21 @@ const ROW = 46;
 const GAP = 8;
 
 /** Where the lifted view and the menu go: the view stays where it was when it can, moved up or cut short when the menu wouldn't fit. */
-const placeMenu = (at: Rect, rows: number, screen: { width: number; height: number }, insets: { top: number; bottom: number }, align: "left" | "right") => {
+/** `sides`: how far the iPhone Duo's side strip reaches in from each edge (pane.ts useStrip), which the menu keeps out of. */
+const placeMenu = (at: Rect, rows: number, screen: { width: number; height: number }, insets: { top: number; bottom: number }, sides: { left: number; right: number }, align: "left" | "right") => {
   const top = insets.top + GAP;
   const bottom = screen.height - insets.bottom - GAP;
   const menuH = Math.min(rows * ROW, bottom - top - GAP);
   const height = Math.max(0, Math.min(at.height, bottom - top - menuH - GAP));
   const y = Math.max(top, Math.min(at.y, bottom - menuH - GAP - height));
-  const left = align === "left" ? Math.max(space.md, at.x) : Math.min(screen.width - space.md - WIDTH, at.x + at.width - WIDTH);
-  return { preview: { x: at.x, y, width: at.width, height }, menu: { x: Math.max(space.md, left), y: y + height + GAP, height: menuH } };
+  return { preview: { x: at.x, y, width: at.width, height }, menu: { x: menuX(at, screen, sides, align), y: y + height + GAP, height: menuH } };
+};
+
+/** The menu's left edge: under the pressed view's edge it aligns to, kept on screen and out of the side strip. */
+const menuX = (at: Rect, screen: { width: number }, sides: { left: number; right: number }, align: "left" | "right"): number => {
+  const least = sides.left + space.md;
+  const most = screen.width - sides.right - space.md - WIDTH;
+  return Math.max(least, Math.min(most, align === "left" ? at.x : at.x + at.width - WIDTH));
 };
 
 export function Menu({
@@ -73,13 +81,15 @@ export function Menu({
   const t = useTheme();
   const screen = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const strip = useStrip();
   const reduce = useReduceMotion();
   useEffect(() => {
     if (at !== null) haptics.firm();
   }, [at]);
   if (at === null) return null;
   const rows = items.length + (title === undefined ? 0 : 1);
-  const place = above ? { preview: at, menu: { x: Math.max(space.md, at.x), y: at.y - rows * ROW - GAP, height: rows * ROW } } : placeMenu(at, rows, screen, insets, align);
+  const sides = { left: strip?.left ?? 0, right: strip?.right ?? 0 };
+  const place = above ? { preview: at, menu: { x: menuX(at, screen, sides, "left"), y: at.y - rows * ROW - GAP, height: rows * ROW } } : placeMenu(at, rows, screen, insets, sides, align);
   const fade = FadeIn.duration(reduce ? 0 : dur.fast).easing(ease.out);
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose} statusBarTranslucent>

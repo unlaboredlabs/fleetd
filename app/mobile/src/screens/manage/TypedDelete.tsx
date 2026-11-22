@@ -5,6 +5,7 @@ import { Modal, Platform, ScrollView, StyleSheet, Switch, Text, View } from "rea
 import { space, type, useTheme } from "../../theme";
 import { Button } from "../../ui/Button";
 import { ListRow, ListSection } from "../../ui/List";
+import { SheetRoom } from "../../ui/StripRoom";
 import { deleteConfirmed, type DeleteWords } from "./model";
 import { FieldRow, Symbol } from "./parts";
 
@@ -42,7 +43,8 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
       }}
     >
       {words === null ? null : (
-        <ScrollView style={{ backgroundColor: t.grouped }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={() => close(false)}>
+        <SheetRoom style={{ flex: 1, backgroundColor: t.grouped }}>
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={() => close(false)}>
           <View style={styles.head}>
             <Symbol ios="exclamationmark.triangle.fill" android="warning" size={40} color={t.danger} />
             <Text style={[type.title3, styles.center, { color: t.label }]}>{words.title}</Text>
@@ -71,6 +73,7 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
             <Button label="Cancel" kind="plain" size="large" onPress={() => close(false)} />
           </View>
         </ScrollView>
+        </SheetRoom>
       )}
     </Modal>
   );

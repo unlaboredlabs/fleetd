@@ -5,7 +5,7 @@
 // screen that holds a navigator of its own (whose screens keep out themselves), or keeps out of the strip itself (the
 // chat, with its buttons there), opts out with ownRoom. A sheet keeps out by its own safe area instead (sheetRoom).
 import type { ReactElement } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, type ViewProps } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useStrip } from "./pane";
 
@@ -26,11 +26,12 @@ export const ownRoom = ({ children }: { children: ReactElement }): ReactElement 
  * Folded, a sheet as wide as the screen runs under the strip and keeps out of it; a card centred on a wide window
  * touches neither side and stays centred. On a phone, held upright, those are none.
  */
-export const sheetRoom = ({ children }: { children: ReactElement }): ReactElement => (
-  <SafeAreaView edges={SIDES} style={styles.fill}>
-    {children}
-  </SafeAreaView>
-);
+export const sheetRoom = ({ children }: { children: ReactElement }): ReactElement => <SheetRoom style={styles.fill}>{children}</SheetRoom>;
+
+/** A sheet's ground, its content kept out of the strip by the sheet's own safe area: a Modal's sheet starts with it. */
+export function SheetRoom(props: ViewProps) {
+  return <SafeAreaView edges={SIDES} {...props} />;
+}
 
 const SIDES = ["left", "right"] as const;
 
