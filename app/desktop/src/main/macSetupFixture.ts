@@ -4,12 +4,13 @@
 // rest of the checks are green from the start. Two codes play a version difference: 111111, an Edge hub the edge
 // release has moved on past, which this app is signed in to as an admin (Update brings it level a moment later); and
 // 222222, a hub newer than this app, whose answer it can't read. 333333 joins a Mac with no Xcode yet, 444444 one whose
-// Xcode-beta.app isn't selected, and 555555 one whose node never reports its checks (one its hub refuses, say).
+// Xcode-beta.app isn't selected, 555555 one whose node never reports its checks (one its hub refuses, say), and 666666
+// an older node whose hub stops answering once it joined.
 //
 // FLEETD_FIXTURE_MAC opens on a Mac joined already, for the menu bar's popover (menuBar.ts): `busy`, every check green
 // and agents at work on storefront (two simulators and a build, beside the sessions-page fixture's Mac screen); or
-// `attention`, Screen Recording lost with an update, no Xcode, no CocoaPods, a nearly full disk and a node behind the
-// hub, with nothing running.
+// `attention`, Screen Recording lost with an update, no Xcode, no CocoaPods, a Mac set to sleep and locked now, a nearly
+// full disk and a node behind the hub, with nothing running.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,6 +86,19 @@ const busyActivity = (at: number): MacActivity => ({
 const ATTENTION: ReadonlyArray<object> = [
   ...(XCODE_WAITS["333333"] ?? []),
   {
+    id: "keep_awake",
+    state: "warn",
+    message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.",
+    fix: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy",
+    command: 'open "x-apple.systempreferences:com.apple.Energy-Settings.extension"',
+  },
+  {
+    id: "screen_lock",
+    state: "fail",
+    message: "The Mac's screen is locked, so apps' windows don't show and agents' clicks land on the lock screen.",
+    fix: "Unlock it at the Mac or over Screen Sharing, then set Require password to Never in System Settings › Lock Screen",
+  },
+  {
     id: "screen_recording",
     state: "fail",
     message: "macOS stopped counting fleetd's Screen Recording with the update to 0.9.2, so you and agents can't see the Mac's screen.",
@@ -114,6 +128,8 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
   let xcodeWaits: ReadonlyArray<object> | undefined;
   /** 555555: the node joins, but never writes its checks. */
   let silent = false;
+  /** 666666: an older node (no mac-link.json) whose hub stops answering once it joined. */
+  let unreached = false;
   const asked = new Map<MacPane, number>(opened === undefined ? [] : [["accessibility", started - 3_600_000], ...(opened === "busy" ? [["screen_recording", started - 3_600_000] as const, ["screen_capture", started - 3_600_000] as const] : [])]);
   if (opened === "attention") hubVersion = "0.9.2";
   const granted = (pane: MacPane) => {
@@ -153,6 +169,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
   return {
     fetch: (url, init) => {
       if (!url.startsWith(HUB)) return Promise.reject(new TypeError("fetch failed"));
+      if (url.endsWith("/healthz") && unreached && joinedAt !== undefined) return Promise.reject(new TypeError("fetch failed"));
       if (url.endsWith("/healthz")) return Promise.resolve(json(200, { ok: true, version: hubVersion, protocol: 1 }));
       const { code } = JSON.parse(init.body as string) as { code: string };
       behind = code === "111111";
@@ -160,6 +177,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       const answer = { hubUrl: HUB, hubName: "devbox", machineId: "mac", token: "fle_fixture", expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), version: hubVersion, existing: false };
       xcodeWaits = XCODE_WAITS[code];
       silent = code === "555555";
+      unreached = code === "666666";
       return later(
         600,
         code === "000000"
@@ -211,6 +229,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
         return Promise.resolve({ text: JSON.stringify({ enrolled: true, agentsMac: true, machineId: "mac", hub: HUB }), writtenAt: joinedAt });
       }
       if (silent) return Promise.resolve(undefined);
+      if (file.endsWith("mac-link.json") && unreached) return Promise.resolve(undefined);
       if (file.endsWith("mac-link.json")) return Promise.resolve({ text: JSON.stringify({ state: "linked", since: joinedAt + 1500 }), writtenAt: joinedAt + 1500 });
       if (file.endsWith("mac-activity.json")) {
         return Promise.resolve({ text: JSON.stringify(opened === "busy" ? busyActivity(started) : { simulators: [], jobs: [] }), writtenAt: Date.now() });

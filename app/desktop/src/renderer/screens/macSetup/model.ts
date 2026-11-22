@@ -236,6 +236,8 @@ const rowOf = (check: MacCheck): CheckRow => ({
   ...(check.fix ? { fix: check.fix } : {}),
   ...(check.command ? { command: check.command } : {}),
   ...(check.command?.startsWith('open "macappstore:') === true ? { opens: "app_store" as const } : {}),
+  ...(check.command?.startsWith('open "x-apple.systempreferences:com.apple.Energy') === true ? { opens: "energy" as const } : {}),
+  ...(check.command?.startsWith('open "x-apple.systempreferences:com.apple.Lock-Screen') === true ? { opens: "lock_screen" as const } : {}),
 });
 
 /** A check's name as the screen lists it. */
@@ -253,6 +255,7 @@ export const checkTitle = (id: string): string =>
     screen_capture: "Screen capture",
     gui_session: "Login on screen",
     keep_awake: "Stays awake",
+    screen_lock: "Screen lock",
     tools: "Agent tools",
     reaches_hub: "Reaches the hub",
   })[id] ?? id.replace(/_/gu, " ").replace(/^./u, (c) => c.toUpperCase());
@@ -280,7 +283,8 @@ export function checkView(state: Extract<State, { step: "check" }>, now: number)
   if (grants.some((g) => !g.granted)) return { kind: "grants", grants };
   const rows = checks.map(rowOf);
   const settled = state.grantedAt !== undefined && read.checkedAt > state.grantedAt;
-  const green = settled && read.hubAnswers && rows.every(passes);
+  // The node's own link to the hub counts as much as this app's look at it: either says the hub answers.
+  const green = settled && (read.hubAnswers || read.link?.state === "linked") && rows.every(passes);
   return { kind: "test", checks: rows, hubAnswers: read.hubAnswers, settled, green };
 }
 
@@ -306,7 +310,7 @@ export type RowAction =
   | { readonly kind: "grant"; readonly pane: "accessibility" | "screen_recording" | "screen_capture" }
   | { readonly kind: "restart" }
   | { readonly kind: "newCode" }
-  | { readonly kind: "open"; readonly pane: "app_store" };
+  | { readonly kind: "open"; readonly pane: "app_store" | "energy" | "lock_screen" };
 
 export interface SetupRow {
   readonly id: string;
@@ -348,7 +352,16 @@ export function setupRows(state: Extract<State, { step: "check" }>, now: number)
 
   const linkTitle = `Linked to ${hub}`;
   if (!started) rows.push({ id: "link", title: linkTitle, ...waitsNode });
-  else if (link === null) rows.push({ id: "link", title: linkTitle, ...(read.hubAnswers ? { state: "done", line: "Linked" } : { state: "running", line: `Reaching ${hub}` }) });
+  // An older node writes no link: whether the hub answers this app stands in, and says so past its limit.
+  else if (link === null) {
+    rows.push(
+      read.hubAnswers
+        ? { id: "link", title: linkTitle, state: "done", line: "Linked" }
+        : now - from > STALL_MS
+          ? { id: "link", title: linkTitle, state: "failed", line: `${hub} isn't answering this Mac.`, action: { kind: "restart" } }
+          : { id: "link", title: linkTitle, state: "running", line: `Reaching ${hub}` },
+    );
+  }
   else if (link.state === "linked") rows.push({ id: "link", title: linkTitle, state: "done", line: "Linked" });
   else if (link.state === "refused") rows.push({ id: "link", title: linkTitle, state: "failed", line: `${hub} refused this Mac: ${link.why ?? "it gave no reason"}`, action: { kind: "newCode" } });
   else if (now - link.since > STALL_MS) rows.push({ id: "link", title: linkTitle, state: "failed", line: `${hub} isn't answering this Mac.`, action: { kind: "restart" } });
@@ -379,7 +392,7 @@ export function setupRows(state: Extract<State, { step: "check" }>, now: number)
     );
   } else {
     for (const c of others.map(rowOf)) {
-      const opens = c.opens === "app_store" ? { action: { kind: "open", pane: "app_store" } as const } : {};
+      const opens = c.opens === "app_store" || c.opens === "energy" || c.opens === "lock_screen" ? { action: { kind: "open", pane: c.opens } as const } : {};
       if (c.state === "ok") rows.push({ id: c.id, title: checkTitle(c.id), state: "done", line: c.message });
       else if (c.state === "fail") rows.push({ id: c.id, title: checkTitle(c.id), state: "failed", line: c.fix ?? c.message, ...opens });
       else if (waits(c)) rows.push({ id: c.id, title: checkTitle(c.id), state: "needs_you", line: c.message, ...opens });
@@ -391,13 +404,13 @@ export function setupRows(state: Extract<State, { step: "check" }>, now: number)
   // Every row but a warning's (Xcode still to install) done: the Test is what runs now.
   const before = rows.every((r) => r.state === "done" || (r.state !== "failed" && others.some((c) => c.id === r.id)));
   const view = checkView(state, now);
-  rows.push(
-    view.kind === "test" && view.green
-      ? { id: "test", title: "Test", state: "done", line: "Every check passes" }
-      : before
-        ? { id: "test", title: "Test", state: "running", line: "Running every check once more" }
-        : { id: "test", title: "Test", state: "waiting", line: "Waits for the steps above" },
-  );
+  const test = (row: Omit<SetupRow, "id" | "title">): SetupRow => ({ id: "test", title: "Test", ...row });
+  if (view.kind === "test" && view.green) rows.push(test({ state: "done", line: "Every check passes" }));
+  else if (!before) rows.push(test({ state: "waiting", line: "Waits for the steps above" }));
+  // Every check ran since the permissions came on and passes: only the hub can be left, unreached by node and app.
+  else if (view.kind === "test" && view.settled) rows.push(test({ state: "failed", line: `${hub} doesn't answer this Mac.`, action: { kind: "restart" } }));
+  else if (now - (state.grantedAt ?? from) > CHECKS_STALL_MS) rows.push(test({ state: "failed", line: "The node hasn't run its checks again.", action: { kind: "restart" } }));
+  else rows.push(test({ state: "running", line: "Running every check once more" }));
   return rows;
 }
 
@@ -412,6 +425,8 @@ export function statusLine(read: MacMenuBarRead, now: number): { readonly text: 
   if (!running) return { text: "Not connected: fleetd’s node on this Mac isn’t running", tone: "warn" };
   const link = h.link ?? null;
   if (link === null) return h.hubAnswers ? { text: `Connected to ${hub}`, tone: "ok" } : { text: `Not connected: ${hub} isn’t answering`, tone: "warn" };
+  // Locked, the Mac is linked but agents' windows and clicks stop at its lock screen: said first.
+  if (h.health.checks.some((c) => c.id === "screen_lock" && c.state === "fail")) return { text: "Screen locked", tone: "warn" };
   if (link.state === "linked" || now - link.since < STALL_MS) return { text: `Connected to ${hub}`, tone: "ok" };
   return { text: link.state === "refused" ? `Not connected: ${hub} refused this Mac` : `Not connected: ${hub} isn’t answering`, tone: "warn" };
 }

@@ -354,6 +354,8 @@ const ROW_GLYPH: Readonly<Record<RowState, "done" | "failed" | "working" | "queu
   failed: "failed",
 };
 
+const OPEN_LABEL = { app_store: "Open the App Store", energy: "Open Energy settings", lock_screen: "Open Lock Screen settings" } as const;
+
 const ROW_WORD: Readonly<Record<RowState, string>> = { waiting: "Waiting", running: "Running", done: "Done", needs_you: "Needs you", failed: "Failed" };
 
 /** A row's one way forward. */
@@ -375,7 +377,7 @@ function RowButton({ action, state, dispatch }: { action: RowAction; state: Extr
       </Button>
     ) : action.kind === "open" ? (
       <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => window.fleetd.macSetup.openPane(action.pane))}>
-        Open the App Store
+        {OPEN_LABEL[action.pane]}
       </Button>
     ) : action.kind === "newCode" ? (
       <Button size="sm" variant="primary" onClick={() => dispatch({ type: "startOver" })}>

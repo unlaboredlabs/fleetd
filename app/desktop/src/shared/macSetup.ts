@@ -101,7 +101,7 @@ export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; 
 
 /** What setup opens on the Mac: a System Settings pane (screen_capture: macOS's prompt whether fleetd may capture the
  * screen directly, shown again, beside the Screen Recording pane), or Xcode's page in the App Store. */
-export const MAC_PANES = ["accessibility", "screen_recording", "screen_capture", "app_store"] as const;
+export const MAC_PANES = ["accessibility", "screen_recording", "screen_capture", "app_store", "energy", "lock_screen"] as const;
 export type MacPane = (typeof MAC_PANES)[number];
 
 export type MacRestartOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };

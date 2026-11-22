@@ -10,6 +10,27 @@ export const STALL_MS = 20_000;
 
 const IN_APP = "In the fleetd app on this Mac, press Allow next to it";
 
+/** What only the person does, in the app's setup window: the two grants and macOS's screen capture prompt. */
+const PERSON = new Set(["accessibility", "screen_recording", "screen_capture"]);
+
+/** Each check's name as the app's setup window shows it (app/desktop/src/renderer/screens/macSetup/model.ts checkTitle). */
+const TITLES: Readonly<Record<string, string>> = {
+  standard_user: "Account",
+  other_homes: "Other users' files",
+  no_apple_id: "Apple ID",
+  no_secure_token: "FileVault",
+  developer: "Developer tools access",
+  xcode: "Xcode",
+  ios_runtime: "iOS simulator runtime",
+  accessibility: "Accessibility",
+  screen_recording: "Screen Recording",
+  screen_capture: "Screen capture",
+  gui_session: "Login on screen",
+  keep_awake: "Stays awake",
+  screen_lock: "Screen lock",
+  tools: "Agent tools",
+};
+
 /** The rows for the node at `home`: the hub link first, then each check the node ran. */
 export function setupRows(home: string, hubName: string, now = Date.now()): Row[] {
   const link = readLink(home);
@@ -32,10 +53,13 @@ export function setupRows(home: string, hubName: string, now = Date.now()): Row[
     });
   } else rows.push({ title: `Linked to ${hubName}`, state: "waiting", detail: "linking" });
   for (const check of readHealth(home)?.health.checks ?? []) {
-    const grant = check.id === "accessibility" || check.id === "screen_recording";
-    if (check.state === "ok") rows.push({ title: check.id, state: "done", detail: check.message });
-    else if (grant) rows.push({ title: check.id, state: "needs_you", detail: check.message, fix: IN_APP });
-    else rows.push({ title: check.id, state: check.state === "fail" ? "failed" : "waiting", detail: check.message, ...(check.fix ? { fix: check.fix } : {}) });
+    const title = TITLES[check.id] ?? check.id.replace(/_/gu, " ").replace(/^./u, (c) => c.toUpperCase());
+    if (check.state === "ok") rows.push({ title, state: "done", detail: check.message });
+    else if (PERSON.has(check.id)) {
+      // Screen capture waits for Screen Recording until that's on: nothing to do for it yet.
+      if (check.state === "unknown") rows.push({ title, state: "waiting", detail: check.message });
+      else rows.push({ title, state: "needs_you", detail: check.message, fix: IN_APP });
+    } else rows.push({ title, state: check.state === "fail" ? "failed" : "waiting", detail: check.message, ...(check.fix ? { fix: check.fix } : {}) });
   }
   return rows;
 }

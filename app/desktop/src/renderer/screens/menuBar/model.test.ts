@@ -85,12 +85,13 @@ describe("what agents do on the Mac", () => {
 describe("the Mac's health", () => {
   const words = (rows: ReturnType<typeof healthRows>) => rows.map((r) => [r.id, r.tone, r.word]);
 
-  it("is five rows, each a word, while all is well", () => {
+  it("is six rows, each a word, while all is well", () => {
     expect(words(healthRows(read(), NOW))).toEqual([
       ["node", "ok", "Running"],
       ["permissions", "ok", "Allowed"],
       ["xcode", "ok", "Ready"],
       ["cocoapods", "ok", "1.16.2"],
+      ["sleep", "ok", "Never"],
       ["disk", "ok", "182 GB free"],
     ]);
     expect(healthRows(read(), NOW).every((r) => r.fix === undefined && r.detail === undefined)).toBe(true);
@@ -129,9 +130,35 @@ describe("the Mac's health", () => {
   });
 
   it("warns on a disk filling up and fails on a full one, with the command that frees the most", () => {
-    expect(healthRows(read({ disk: { freeBytes: 24e9, totalBytes: 494e9 } }), NOW)[4]).toMatchObject({ tone: "warn", word: "24 GB free", fix: { kind: "command", command: DISK_COMMAND } });
-    expect(healthRows(read({ disk: { freeBytes: 9.4e9, totalBytes: 494e9 } }), NOW)[4]).toMatchObject({ tone: "fail", word: "9.4 GB free" });
-    expect(healthRows(read({ disk: null }), NOW)[4]).toMatchObject({ tone: "quiet", word: "Unknown" });
+    expect(healthRows(read({ disk: { freeBytes: 24e9, totalBytes: 494e9 } }), NOW)[5]).toMatchObject({ tone: "warn", word: "24 GB free", fix: { kind: "command", command: DISK_COMMAND } });
+    expect(healthRows(read({ disk: { freeBytes: 9.4e9, totalBytes: 494e9 } }), NOW)[5]).toMatchObject({ tone: "fail", word: "9.4 GB free" });
+    expect(healthRows(read({ disk: null }), NOW)[5]).toMatchObject({ tone: "quiet", word: "Unknown" });
+  });
+
+  it("says the Mac's sleep setting: Never, or after how long, with Energy's settings to turn it off", () => {
+    const sleeps: MacCheck = {
+      id: "keep_awake",
+      state: "warn",
+      message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.",
+      fix: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy",
+      command: 'open "x-apple.systempreferences:com.apple.Energy-Settings.extension"',
+    };
+    const row = healthRows(read({}, [...GREEN.filter((c) => c.id !== "keep_awake"), sleeps]), NOW).find((r) => r.id === "sleep");
+    expect(row).toMatchObject({ tone: "warn", word: "After 1 min", fix: { kind: "open", pane: "energy" } });
+  });
+
+  it("says the lock screen: Never, after how long with Lock Screen's settings, or Locked now", () => {
+    const lock = (state: string, message: string, more: Partial<MacCheck> = {}) =>
+      healthRows(read({}, [...GREEN, { id: "screen_lock", state, message, ...more }]), NOW).find((r) => r.id === "screen_lock");
+    expect(lock("ok", "The screen never locks by itself.")).toMatchObject({ tone: "ok", word: "Never" });
+    expect(lock("warn", "The screen locks 5 min after the display turns off, and agents' windows and clicks stop at the lock screen.", { command: 'open "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"' })).toMatchObject({
+      tone: "warn",
+      word: "After 5 min",
+      fix: { kind: "open", pane: "lock_screen" },
+    });
+    expect(lock("fail", "The Mac's screen is locked, so apps' windows don't show and agents' clicks land on the lock screen.")).toMatchObject({ tone: "fail", word: "Locked" });
+    // An older node says nothing of it: no row.
+    expect(healthRows(read(), NOW).map((r) => r.id)).not.toContain("screen_lock");
   });
 
   it("shows any other setup check only while it isn't green", () => {
