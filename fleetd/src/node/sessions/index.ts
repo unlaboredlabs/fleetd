@@ -34,6 +34,7 @@ import { type HostedStep, startStep, stepNow, stepped, stepWords, watchSteps } f
 import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
+import * as checkSlots from "../check_slots.ts";
 import { buildJobsHere } from "../load/index.ts";
 import { removePartials } from "../repos/index.ts";
 import { applyProjectEnv, copyProjectEnv, forgetOrderVars, forgetProjectEnv, orderEnvFile, orderVarsForSpawn, projectSecrets, projectVars } from "../secrets/env.ts";
@@ -1286,7 +1287,8 @@ export class SessionService {
   #machineNote(): string {
     const n = buildJobsHere();
     const slots = slotsHere(this.home);
-    return briefNote(jobsEnv(runnerEnv(this.config), n), n) + (slots === undefined ? "" : briefLine(slots));
+    const checks = checkSlots.slotsHere(this.home);
+    return briefNote(jobsEnv(runnerEnv(this.config), n), n) + (slots === undefined ? "" : briefLine(slots)) + (checks === undefined ? "" : checkSlots.briefLine(checks));
   }
 
   /** Records a run and its user message; false when it was recorded before (a retry). */
@@ -1659,10 +1661,15 @@ export class SessionService {
         console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
     }
-    // Its builds and test runners held to its share of the CPUs, and its cargo builds taking turns for the machine's
-    // build slots.
+    // Its builds and test runners held to its share of the CPUs, its cargo builds taking turns for the machine's
+    // build slots and its repo's full pre-push check for the check slots.
     for (const [k, v] of jobsEnv(env, buildJobsHere())) env[k] = v;
     addToPath(this.home, selfArgv(), env);
+    try {
+      checkSlots.install(this.home, selfArgv());
+    } catch (error) {
+      console.warn(`${nowIso()} WARN pre-push checks won't take turns: the check wrapper was not written: ${(error as Error).message}`);
+    }
     const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;

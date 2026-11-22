@@ -18,6 +18,8 @@ paths=(
   # The lab scenarios; the two-team cases a test proves (fleetd/test/compare); the bad-network proxy they and
   # fleetd/test/netem.test.ts run.
   tests/lab tests/compare scripts/netem.ts
+  # The pre-push check, which runs itself under fleetd's check slot (fleetd/test/node/check_slots.test.ts).
+  scripts/check.sh
   # The docs pages generated from the code.
   docs/site/src/content/docs/reference/cli.md docs/site/src/content/docs/reference/agent-tools.md
   docs/site/src/content/docs/what-agents-are-told.md
