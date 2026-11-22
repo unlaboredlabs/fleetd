@@ -42,6 +42,13 @@ const CALL_TIMEOUT_MS = 20_000;
  */
 export type KeptHub = Paired & { readonly cloud?: true; readonly invited?: true };
 
+/**
+ * The hub shown as it says it is: a fleetd cloud team paired with a code is the cloud's too, as its hub_info's `leftOut`
+ * says (only fleetd cloud leaves tools out), so its Team header, Billing and fleetd's computers show as on a team that
+ * came with the account. The hubs kept stay as they are: signing in or out never drops a key the account didn't bring.
+ */
+export const shownHub = (hub: KeptHub, leftOut: readonly string[]): KeptHub => (hub.cloud === true || leftOut.length === 0 ? hub : { ...hub, cloud: true });
+
 /** What the app keeps of a sign-in. */
 export interface SavedAccount {
   readonly email: string;

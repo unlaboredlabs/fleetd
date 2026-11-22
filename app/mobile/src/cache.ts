@@ -40,6 +40,8 @@ export interface Cached {
   readonly meName: string | undefined;
   readonly meAvatar?: string | undefined;
   readonly meRole?: HubRole | undefined;
+  /** hub_info's `leftOut`, so a cloud team paired with a code opens as a team before the hub answers again. */
+  readonly leftOut?: readonly string[] | undefined;
   readonly open?: OpenChat | undefined;
 }
 
@@ -69,6 +71,7 @@ export const cachedOf = (hub: string, s: State, open?: { readonly key: Key; read
   meName: s.meName,
   meAvatar: s.meAvatar,
   meRole: s.meRole,
+  leftOut: s.leftOut,
   open: open === undefined || s.chats[open.key] === undefined ? undefined : openChatOf(open.key, s.chats[open.key]!, open.at),
 });
 
@@ -88,6 +91,7 @@ export const withCached = (s: State, c: Cached): State => ({
   meName: c.meName,
   meAvatar: c.meAvatar,
   meRole: c.meRole,
+  leftOut: c.leftOut ?? s.leftOut,
   chats: c.open === undefined ? s.chats : { ...s.chats, [c.open.key]: { ...emptyChat, messages: c.open.messages, hasOlder: c.open.hasOlder, cached: true } },
 });
 
@@ -114,6 +118,7 @@ export const parseCached = (raw: unknown, hub: string): Cached | null => {
     meName: typeof o.meName === "string" ? o.meName : undefined,
     meAvatar: typeof o.meAvatar === "string" ? o.meAvatar : undefined,
     meRole: o.meRole === "owner" || o.meRole === "admin" || o.meRole === "member" ? o.meRole : undefined,
+    leftOut: Array.isArray(o.leftOut) ? o.leftOut.filter((t): t is string => typeof t === "string") : undefined,
     open: openOf(o.open),
   };
 };

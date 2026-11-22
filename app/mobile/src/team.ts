@@ -7,7 +7,7 @@ import type { KeptHub } from "./cloud/account";
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** Delete Team shows for the owner of a team that came with the account, and nowhere else. */
+/** Delete Team shows for the owner of a fleetd cloud team (cloud/account.ts shownHub), and nowhere else. */
 export const deleteTeamShown = (hub: Pick<KeptHub, "cloud">, role: string | undefined): boolean => hub.cloud === true && role === "owner";
 
 export const deleteTeam = async (hub: Pick<KeptHub, "hub" | "key" | "hubName">, name: string, fetch: Fetch = globalThis.fetch): Promise<Got<null>> => {

@@ -82,7 +82,8 @@ export interface State {
   readonly meRole: HubRole | undefined;
   /**
    * The tools the hub doesn't serve (hub_info's `leftOut`): on fleetd cloud, its self-update and restart, whose rows
-   * Settings leaves out. Empty until read, and on a self-run hub.
+   * Settings leaves out. Empty until read (or kept from the last launch), and on a self-run hub: one with any is a
+   * fleetd cloud team however it was paired (cloud/account.ts shownHub).
    */
   readonly leftOut: readonly string[];
   readonly chats: Readonly<Record<Key, Chat>>;
@@ -305,7 +306,7 @@ export const reduce = (s: State, a: Action): State => {
       const leftOut = a.leftOut ?? [];
       return s.admin === a.admin && s.me === a.me && s.meName === a.meName && s.meAvatar === a.meAvatar && s.meRole === a.meRole && s.leftOut.join() === leftOut.join()
         ? s
-        : { ...s, admin: a.admin, me: a.me, meName: a.meName, meAvatar: a.meAvatar, meRole: a.meRole, leftOut };
+        : { ...s, admin: a.admin, me: a.me, meName: a.meName, meAvatar: a.meAvatar, meRole: a.meRole, leftOut: s.leftOut.join() === leftOut.join() ? s.leftOut : leftOut };
     }
     case "send": {
       const sends = upsertSend(s.sends[a.key] ?? [], a.row);
