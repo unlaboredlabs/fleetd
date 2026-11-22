@@ -14,6 +14,9 @@ describe("Claude accounts in words", () => {
     expect(accountWords({ kind: "person", personId: sam.personId }, [sam, bob], bob.personId)).toBe("Sam Rivera's subscription");
     expect(accountWords({ kind: "person", personId: bob.personId }, [sam, bob], bob.personId)).toBe("your subscription");
     expect(runsOnLine({ kind: "machine_login" }, [])).toBe("Each machine's own Claude login.");
+    // A team with no machine of its own (a fleetd cloud team before its first computer): a machine's login is nothing.
+    expect(runsOnLine({ kind: "machine_login" }, [], undefined, true)).toBe("Not connected.");
+    expect(theirRunsOn({ kind: "machine_login" }, true)).toBe("Not connected");
     expect(runsOnLine({ kind: "account", account: { kind: "person", personId: sam.personId } }, [sam])).toBe("Sam Rivera's subscription.");
     expect(theirRunsOn({ kind: "refused", message: "Connect your Claude to start this order.", fix: "" })).toBe("Nothing to run on");
   });

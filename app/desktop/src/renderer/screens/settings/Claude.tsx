@@ -11,7 +11,7 @@ import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { Button, Field, InlineCode, Input, Segmented, Text } from "../../ui";
 import { CONNECT, runsOnLine, sealedLine, SETUP_TOKEN, shownChoice, TOKEN_PLACEHOLDER } from "./claudeModel";
-import { ConfirmRemove, MissingOn, Problem, TestResult, useMachines, useSave, useTest, type Tried } from "./claudeParts";
+import { ConfirmRemove, MissingOn, Problem, TestResult, useMachines, useNoMachine, useSave, useTest, type Tried } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { Notice, RowMenu, SettingsRow } from "./parts";
 import s from "./settings.module.css";
@@ -39,6 +39,7 @@ export function ClaudeSettings() {
  */
 function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude }) {
   const machines = useMachines();
+  const noMachine = useNoMachine();
   const save = useSave();
   const test = useTest();
   const hubCall = useHubCall();
@@ -52,6 +53,8 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
   const nowMs = useNow(true, 60_000);
   const sub = me.subscription;
   const refused = me.runsOn.kind === "refused" ? me.runsOn : null;
+  // Nothing to run on: refused, or a machine's own login on a team with no machine.
+  const none = refused !== null || (me.runsOn.kind === "machine_login" && noMachine);
   // Runs on shows only when there is a choice; without one, the hint says why the hub's key isn't offered.
   const offer = me.mayUseHubApi || me.choice === "hub_api";
   const connect = () => {
@@ -108,12 +111,12 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
   return (
     <SettingsRow
       reveal="claude"
-      mark={refused !== null ? "needs" : "ready"}
-      markLabel={refused !== null ? CONNECT : "Claude: in use"}
+      mark={none ? "needs" : "ready"}
+      markLabel={none ? CONNECT : "Claude: in use"}
       title="Claude"
       hint={hint}
-      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
-      lineTone={refused === null ? "quiet" : "warning"}
+      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId, noMachine)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
+      lineTone={none ? "warning" : "quiet"}
       control={
         sub === undefined ? (
           connecting ? undefined : (

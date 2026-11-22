@@ -23,6 +23,9 @@ export function useMachines(): { boxes: ClaudeAccountRequest["boxes"]; ids: stri
   return { boxes: boxesOf(machines), ids: Object.keys(machines).sort() };
 }
 
+/** The team has no machine of its own (hosted sandboxes' runner is none): a machine's own Claude login is nothing. */
+export const useNoMachine = (): boolean => useData((d) => d.fresh && Object.values(d.machines).every((m) => m.runner === true));
+
 /** Tests an account; the verdict, or why it couldn't be tried. The hub records it as the account's last Test. */
 export function useTest() {
   const hubCall = useHubCall();
