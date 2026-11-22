@@ -64,10 +64,34 @@ export const leadSource = (threadId: string, messageId: string) => `lead:${threa
 /** A lead reply that says nothing to the person: a wake with no news ends with exactly this. */
 export const QUIET = "(quiet)";
 
-/** The lead's reply has words for the person: not blank, not QUIET. */
+/**
+ * The lead's reply as the person reads it: without a QUIET that stands as a line of its own, outside a code fence, nor
+ * the blank line it leaves. A reply can end with one after words it wrote first ("Still running.\n\n(quiet)"), which
+ * would otherwise show as a bubble of its own. QUIET in a sentence or a fence is the lead quoting it, and stays.
+ */
+export function unquiet(text: string): string {
+  const out: string[] = [];
+  let fence: string | undefined;
+  let dropped = false;
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    const mark = /^(`{3,}|~{3,})/.exec(t)?.[1];
+    if (fence === undefined && mark !== undefined) fence = mark;
+    else if (fence !== undefined && mark !== undefined && mark[0] === fence[0] && mark.length >= fence.length && t === mark) fence = undefined;
+    else if (fence === undefined && t === QUIET) {
+      dropped = true;
+      continue;
+    }
+    if (dropped && t === "" && (out.length === 0 || out[out.length - 1]!.trim() === "")) continue;
+    dropped = false;
+    out.push(line);
+  }
+  return out.join("\n").trim();
+}
+
+/** The lead's reply has words for the person: not blank once its QUIET lines are out. */
 export function said(text: string): boolean {
-  const t = text.trim();
-  return t !== "" && t !== QUIET;
+  return unquiet(text) !== "";
 }
 
 export type ThreadMessage = { id: string; role: string; text: string; createdAt: string };
@@ -76,4 +100,4 @@ export type ThreadMessage = { id: string; role: string; text: string; createdAt:
 export const leadMessages = (threadId: string, messages: ThreadMessage[]): NewMessage[] =>
   messages
     .filter((m) => m.role === "assistant" && said(m.text))
-    .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), m.text.trim(), parseMs(m.createdAt) ?? 0));
+    .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), unquiet(m.text), parseMs(m.createdAt) ?? 0));
