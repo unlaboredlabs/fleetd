@@ -8,7 +8,7 @@ import type { Change, ChangeState } from "../../shared/contracts.ts";
 import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, MERGED_LABEL, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
-import { DRAFT, errorText } from "./records.ts";
+import { DRAFT, errorText, WAIT_OWN_RED } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Between, Train } from "./service.ts";
@@ -362,19 +362,19 @@ export async function ownCiRed(t: Train, repo: string, change: Change, base: str
     if (stale) return { why: stale.why, red: verdict.red };
   }
   // Green: a later red head is told again (`tellOwnRed`).
-  if (verdict.why === undefined) t.ownRedTold.delete(change.changeId);
+  if (verdict.why === undefined) t.records.endWait(change.changeId, WAIT_OWN_RED);
   return verdict;
 }
 
 /**
  * Tells the author of a ready Change left out of the batch for its own head's red checks (`red`, each with its log):
- * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, in memory, so a
- * restart may tell one again. `what` when it is out of the line for another reason.
+ * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, kept in the
+ * hub's database (`train_waits` kind `own_red`), so a restart never tells one again. `what` when it is out of the line
+ * for another reason.
  */
 export async function tellOwnRed(t: Train, change: Change, red: Red[], what = "the merge train leaves it out of every batch"): Promise<void> {
   const head = change.headSha;
-  if (t.ownRedTold.get(change.changeId) === head) return;
-  t.ownRedTold.set(change.changeId, head);
+  if (!t.records.startWait(change, WAIT_OWN_RED, head, t.nowMs(), "told")) return;
   const url = red.find((r) => r.url)?.url;
   const log = url ? ` (log: ${url})` : "";
   const names = named(red.map((r) => r.name));

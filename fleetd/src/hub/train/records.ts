@@ -20,6 +20,7 @@ export {
   type Wait,
   WAIT_BACK,
   WAIT_BLOCKED,
+  WAIT_OWN_RED,
   WAIT_PERSON,
   WAIT_REGEN,
   WAIT_UNSTARTED,
