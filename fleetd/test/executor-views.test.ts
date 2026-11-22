@@ -147,6 +147,42 @@ test("a session that ran on through a dropped link is followed again once the ne
   expect(calls).toEqual([]);
 });
 
+test("a follow again after a dropped link asks only for what changed since its copy, and puts that onto it", async () => {
+  const { ex, calls, reply } = await node();
+  const r = { machineId: "devbox", threadId: "s1" };
+  const msg = (id: string, minute: number) => ({ id, runId: "r2", role: "assistant" as const, text: id, createdAt: `2026-10-17T10:0${minute}:00.000Z` });
+  ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "session_updated", ...session("s1", { status: "running", activeRunId: "r2" }) } });
+  await settle();
+  const first = calls.shift()!;
+  expect(first.call).toEqual({ op: "follow", sessionId: "s1" });
+  reply(first, { kind: "done" });
+  const snapshot = (messages: ReturnType<typeof msg>[], since?: string) =>
+    ex.handleFrame("devbox", {
+      t: "thread_event",
+      sessionId: "s1",
+      at: AT,
+      event: { type: "snapshot", summary: session("s1"), truncated: false, runs: [{ id: "r2", status: "running", ordinal: 2 }], messages, items: [], ...(since ? { since } : {}) },
+    });
+  snapshot([msg("m1", 1), msg("m2", 2)]);
+  await settle();
+  ex.detachLink("devbox", 1);
+  ex.attach("devbox", { linkId: 2, send: (f) => void calls.push(f) });
+  await settle();
+  reply(calls.shift()!, { kind: "done" });
+  await ex.awaitLive("devbox");
+  ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: { type: "caught_up" } });
+  await settle();
+  // A minute before the newest it holds, so a step of the node's clock loses nothing.
+  const again = calls.shift()!;
+  expect(again.call).toEqual({ op: "follow", sessionId: "s1", since: "2026-10-17T10:01:00.000Z" });
+  reply(again, { kind: "done" });
+  snapshot([msg("m2", 2), msg("m3", 3)], "2026-10-17T10:01:00.000Z");
+  await settle();
+  const w = (ex.views as unknown as { watches: Map<string, { view: { messages: Map<string, unknown> } }> }).watches.get("devbox\u0000s1")!;
+  expect([...w.view.messages.keys()]).toEqual(["m1", "m2", "m3"]);
+  expect(ex.views.progress(r)).toBeDefined();
+});
+
 function followed() {
   const view = newView();
   const event = (e: ThreadEvent) => applyThreadEvent(view, e);

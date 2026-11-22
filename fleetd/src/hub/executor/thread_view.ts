@@ -36,9 +36,15 @@ export type OpenTool = { statedTimeoutMs?: number; unstated: boolean };
 export function applyThreadEvent(view: ThreadView, event: ThreadEvent): void {
   switch (event.type) {
     case "snapshot":
-      view.messages = new Map(event.messages.map((m) => [m.id, m]));
-      view.items = new Map(event.items.map((i) => [i.id, i]));
-      view.runs = new Map(event.runs.map((r) => [r.id, r]));
+      // With `since`, only what changed since the copy this view kept through a dropped link: onto it.
+      if (event.since === undefined) {
+        view.messages = new Map();
+        view.items = new Map();
+        view.runs = new Map();
+      }
+      for (const m of event.messages) view.messages.set(m.id, m);
+      for (const i of event.items) view.items.set(i.id, i);
+      for (const r of event.runs) view.runs.set(r.id, r);
       view.ready = true;
       return;
     case "message": {

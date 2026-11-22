@@ -880,7 +880,7 @@ export class SessionService {
       case "subscribe":
         return this.#subscribe(c.after, c.spansAfter, !!c.caughtUp);
       case "follow": {
-        const snapshot = this.#snapshot(c.sessionId);
+        const snapshot = this.#snapshot(c.sessionId, c.since);
         this.#followed.add(c.sessionId);
         this.#thread(c.sessionId, { type: "snapshot", ...snapshot });
         return { kind: "done" };
@@ -2473,11 +2473,20 @@ export class SessionService {
     }
   }
 
-  #snapshot(id: string) {
+  /** The thread's newest window; with `since`, only what changed in it from then (and what a live view needs whatever
+   * its age: the running items, the active run and its messages). */
+  #snapshot(id: string, since?: string) {
     const row = this.#session(id);
-    const [messages, olderMessages] = this.store.newestMessages(id, SNAPSHOT_WINDOW);
-    const [items, olderItems] = this.store.newestItems(id, SNAPSHOT_WINDOW);
-    return { summary: row.summary, messages, items: items.map(state.bounded), runs: this.store.runs(id), truncated: olderMessages || olderItems };
+    let [messages, olderMessages] = this.store.newestMessages(id, SNAPSHOT_WINDOW);
+    let [items, olderItems] = this.store.newestItems(id, SNAPSHOT_WINDOW);
+    let runs = this.store.runs(id);
+    const truncated = olderMessages || olderItems;
+    if (since === undefined) return { summary: row.summary, messages, items: items.map(state.bounded), runs, truncated };
+    const active = row.summary.activeRunId;
+    messages = messages.filter((m) => m.createdAt >= since || (active !== undefined && m.runId === active));
+    items = items.filter((i) => i.updatedAt >= since || i.status === "running");
+    runs = runs.filter((r) => r.id === active || r.status === "running" || r.status === "queued" || [r.queuedAt, r.startedAt, r.endedAt].some((at) => at !== undefined && at >= since));
+    return { summary: row.summary, messages, items: items.map(state.bounded), runs, truncated, since };
   }
 
   /** `runner_info`: the last probe, unless the next one is due (Health.nextProbeIn). */
