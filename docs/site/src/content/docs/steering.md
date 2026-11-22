@@ -65,9 +65,9 @@ back. Past that time it is **expired**.
 
 ## Steer one agent {#agents}
 
-Open an agent from **Agents** (or the island above its bot's message box) and type in the box under its work. Enter
-sends at its next step; ⌘Enter stops its current step. Your recent steers to it show above the box with their
-receipts. From a terminal, `fleetd steer T88 "…"` does the same.
+Open an agent from **Agents** (or the island above its bot's message box) and type in the box at the end of its work.
+Enter sends at its next step; ⌘Enter stops its current step (Send's hover says so). Your recent steers to it show in
+the box, over your words, with their receipts. From a terminal, `fleetd steer T88 "…"` does the same.
 
 Its lead is told at its next wake: what you said, to whom, and that the agent now works to it. The lead is never
 interrupted for this.
@@ -76,7 +76,13 @@ interrupted for this.
 |---|---|
 | is working | Arrives at its next step, or at once with ⌘Enter (`--now`). |
 | has finished | Continues its conversation. |
-| hasn't started yet | Is refused: "T88 has not started yet." Wait for it to start, or cancel it and spawn it with the new prompt. |
+| hasn't started yet | Is refused: "T88 has not started yet." Wait for it to start, or stop it and spawn it with the new prompt. |
+
+## Stop one agent {#stop}
+
+**Stop**, at the top of an agent's panel, ends it there and then, with nothing to confirm: its run stops, it ends
+cancelled and its slot frees for the next. Its lead hears it at its next wake. To stop a bot's lead and all its agents,
+use the chat's Stop instead.
 
 ## Take a steer back {#withdraw}
 

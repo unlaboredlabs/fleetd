@@ -12,6 +12,7 @@ import { PortError } from "../src/hub/tasks/ports.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import type { HubEventType, Task } from "../src/shared/contracts.ts";
 import { P, tasksKit, until } from "./tasks-kit.ts";
+import { key } from "./work-kit.ts";
 
 const typesOf = (k: ReturnType<typeof tasksKit>, type: HubEventType) => events(k.hub).page(0, [type]).events;
 
@@ -223,6 +224,29 @@ test("a finished task its own Monitor wakes is running again, and says so for th
   expect(typesOf(k, "task.started").at(-1)?.summary).toBe("T1 continued in its own thread (attempt 1): Deploy");
   expect(typesOf(k, "task.started").at(-1)?.data).toMatchObject({ taskId: "T1" });
   k.hub.shutdown.abort();
+});
+
+test("a person stops an agent from its panel: cancelled at once, its slot free, its lead told in a quiet line", async () => {
+  const k = tasksKit();
+  // The tool reaches this kit's tasks area, as the hub's own.
+  k.hub.area("tasks", () => k.t);
+  await k.spawn("Stuck");
+  expect(slots(k.hub).agents(P).running).toBe(1);
+  // An agent key can't: stopping speaks for the person.
+  expect(await k.refused(key("operate"), "task_stop", { taskId: "T1" })).toBe("forbidden");
+  expect(await k.refused(key("read", { human: true }), "task_stop", { taskId: "T1" })).toBe("forbidden");
+  expect(await k.refused(key("operate", { human: true, machines: ["laptop"] }), "task_stop", { taskId: "T1" })).toBe("not_found");
+  const out = await k.ok(key("operate", { human: true }), "task_stop", { taskId: "T1" });
+  expect(out.task.state).toBe("cancelled");
+  expect(out.task.result?.tail).toBe("Stopped by the human.");
+  expect(k.t.get("T1")?.state).toBe("cancelled");
+  expect(k.ports.stops.at(-1)).toEqual({ machineId: "lab-a", threadId: "s1" });
+  expect(slots(k.hub).agents(P).running).toBe(0);
+  expect(k.wakes).toEqual([{ kind: "line", line: "quiet", text: "- T1 stopped by the human: Stuck; its slot is free. Start it again only if they ask." }]);
+  // Again: it is already stopped, and the lead hears it once.
+  expect((await k.ok(key("operate", { human: true }), "task_stop", { taskId: "T1" })).task.state).toBe("cancelled");
+  expect(k.wakes).toHaveLength(1);
+  expect(await k.refused(key("operate", { human: true }), "task_stop", { taskId: "T9" })).toBe("not_found");
 });
 
 test("a cancel the node can't carry out keeps the task and its slot", async () => {
