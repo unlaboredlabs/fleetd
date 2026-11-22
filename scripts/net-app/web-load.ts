@@ -57,7 +57,8 @@ for (const profile of profiles) {
     const n = await startNetem({ target: rig.web, profile, seed: i + 1 });
     // A page on another origin first, so the next navigation starts from nothing of this one.
     await browser("open", "about:blank");
-    const url = `${n.url}/`;
+    // --path: a route to open (the measured chat's, `#/project/lab-a/p1`, on a rig with many bots).
+    const url = `${n.url}/${flag("path") ?? ""}`;
     const cold = await load(url);
     await Bun.sleep(3000);
     const coldBytes = n.stats();
