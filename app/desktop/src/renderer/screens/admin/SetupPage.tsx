@@ -95,9 +95,10 @@ export function SetupPage({ me }: { me: Person | undefined }) {
               {all.map((st) => (
                 <StepRow key={st.id} step={st} account={accounts.includes(st)} onOpen={() => setOpen(st.id)} />
               ))}
-              {/* The hub's own accounts keep their row, and so their controls, whatever the hub's steps say or don't. */}
+              {/* The hub's own accounts keep their row, and so their controls, whatever the hub's steps say or don't. With
+                  no step to say where one stands (fleetd cloud), the row claims nothing: its page says it. */}
               {HUB_ACCOUNTS.filter(([id]) => !list.some((st) => st.id === id)).map(([id, title]) => (
-                <SettingsListRow key={id} name={title} label={title} icon={<StepGlyph status="done" />} open={{ onClick: () => setOpen(id) }} data={{ "data-step": id }} />
+                <SettingsListRow key={id} name={title} label={title} open={{ onClick: () => setOpen(id) }} data={{ "data-step": id }} />
               ))}
             </SettingsList>
           </SettingsSection>

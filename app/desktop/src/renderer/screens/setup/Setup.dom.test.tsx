@@ -328,6 +328,8 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     expect(rows("Steps")).toEqual(["claude:Claude", "github:GitHub"]);
     expect(settings()?.textContent).toBe("SetupClaudeGitHub");
+    // Nothing says where they stand, so neither is marked done (a fresh team has neither set up).
+    expect(settings()?.querySelector("[data-step-glyph]")).toBeNull();
     expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
     // The first run goes on to Get started, with no welcome to steps it has none of.
     await render(<FirstRun onAddProject={() => undefined} />);
