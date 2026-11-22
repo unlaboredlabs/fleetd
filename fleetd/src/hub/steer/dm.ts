@@ -13,6 +13,7 @@ import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
+import { steerTasks } from "./index.ts";
 
 /** The most recipients one agent's messages reach in a minute: room for any real exchange, a stop for a loop. */
 export const PER_MINUTE = 20;
@@ -90,7 +91,8 @@ export async function sendMessage(hub: Hub, deliver: Send, askedAt: AskedAt, fro
       const steer = await deliver(from, id, taskId, text, `${id}:${taskId}`);
       steerN = Number(steer.id.slice(1));
       if (steer.held === true) {
-        outcome = before?.state === "queued" ? "held" : "not_woken";
+        // Ended but still waiting (a wait_ci or Monitor of its own), it is woken with this soon.
+        outcome = before?.state === "queued" ? "held" : steerTasks(hub).wakeDue(taskId) ? "woke" : "not_woken";
         detail = steer.detail;
       } else if (before !== undefined && before.state !== "running") {
         outcome = "woke";
@@ -142,9 +144,9 @@ function next(id: string, to: AgentMessageRecipient[]): string {
       case "held":
         return `${t} hasn't started yet, and gets it when it does.`;
       case "woke":
-        return `${t} was waiting for an answer, and this continues it.`;
+        return r.detail === undefined || r.detail.startsWith("it answers") ? `${t} was waiting for an answer, and this continues it.` : `${r.detail}.`;
       case "not_woken":
-        return `${t} has finished, and an agent can't restart a finished agent: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it. If you need ${t} now, ask your lead with ask_lead.`;
+        return `${t} has finished and waits on nothing, and an agent can't restart a finished agent: it gets this only if its lead continues it. If you need ${t} now, ask your lead with ask_lead.`;
       default:
         return `${t} didn't get it: ${r.detail ?? "refused"}`;
     }

@@ -1,14 +1,15 @@
 // Agents write to each other: a running agent takes a message at its next
-// tool boundary, one that has finished keeps it for the turn something else starts (a Monitor of its own, its wait_ci,
-// its lead), and only a question it waits on lets another agent continue it. A note to the bot wakes nobody: its agents
+// tool boundary, one that has finished but still waits (a wait_ci or Monitor of its own) is woken with it, batched, its
+// wait kept armed, and one that waits on nothing keeps it for the turn its lead starts, unless it waits for an answer. A note to the bot wakes nobody: its agents
 // read it at the top of `agents`.
 import { expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Registry } from "../src/hub/api/registry.ts";
 import { type SendOpts, WriteQueue } from "../src/hub/queue/index.ts";
+import { pollCiWaits } from "../src/hub/tasks/ci_wait.ts";
 import { list, NOTE_MS, PER_MINUTE, sendMessage } from "../src/hub/steer/dm.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
-import { rehold, send, steerTasks, takeHeld } from "../src/hub/steer/index.ts";
+import { rehold, send, sendRunId, steerTasks, takeHeld } from "../src/hub/steer/index.ts";
 import * as steers from "../src/hub/steer/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import type { Task } from "../src/shared/contracts.ts";
@@ -27,7 +28,13 @@ async function setup() {
     holdMessage: (taskId: string, text: string) => k.t.holdMessage(taskId, text),
     askedAt: (taskId: string) => k.t.askedAt(taskId),
     answered: (taskId: string) => k.t.answered(taskId),
-    hasCiWait: () => false,
+    wakeWaiting: (taskId: string) => {
+      const on = k.t.waitingOn(taskId);
+      if (on === undefined) return undefined;
+      k.t.wakeHeld(taskId);
+      return { on, inMs: k.t.wakeInMs(taskId) };
+    },
+    wakeDue: (taskId: string) => k.t.wakeDue(taskId),
     closedOrder: (taskId: string) => {
       const task = k.t.get(taskId);
       return task ? k.t.closedOrder(task) : undefined;
@@ -49,6 +56,8 @@ async function setup() {
         },
       }),
   );
+  // A message wake's batch, short for the tests.
+  k.t.wakeBatchMs = 40;
   void k.t.run();
   await k.spawn("Dark mode");
   const from = (await k.spawn("Light mode")) as Task;
@@ -104,7 +113,7 @@ test("a message to a finished agent never restarts it, and goes in when its Moni
   await k.ended();
   const sent = await k.dm(["T1"], "Use 1001, not 1012");
   expect(sent.to[0]?.outcome).toBe("not_woken");
-  expect(sent.to[0]?.detail).toStartWith("T1 has finished and isn't waiting on T2");
+  expect(sent.to[0]?.detail).toBe("T1 has finished and waits on nothing: it gets this only if its lead continues it");
   expect(sent.next).toContain("ask your lead");
   expect(k.ports.sends).toEqual([]);
   expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
@@ -116,6 +125,106 @@ test("a message to a finished agent never restarts it, and goes in when its Moni
   expect(k.t.get("T1")?.state).toBe("running");
   expect(steerOf(k as never, sent.messageId).held).toBeUndefined();
   expect(steers.heldForTask(k.hub.db, "T1")).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
+const CI = "https://github.com/acme/shop/actions/runs/42";
+const waitOn = (k: { hub: { db: { conn: any } }; clock: { ms: number } }) =>
+  k.hub.db.conn.query("INSERT INTO ci_waits (task_id, url, created_ms) VALUES ('T1', ?, ?)").run(CI, k.clock.ms);
+const waits = (k: { hub: { db: { conn: any } } }) => k.hub.db.conn.query("SELECT url FROM ci_waits WHERE task_id = 'T1'").all() as { url: string }[];
+
+test("a message to a finished agent that waits on wait_ci wakes it once, and its wait still fires later", async () => {
+  const k = await setup();
+  await k.ended();
+  waitOn(k);
+  const sent = await k.dm(["T1"], "Pin sha is 9f38ac6");
+  expect(sent.to[0]?.outcome).toBe("woke");
+  expect(sent.to[0]?.detail).toBe(
+    `T1 has finished but waits on wait_ci on ${CI}: this wakes it within 1 s, together with what else is sent to it by then, and its wait stays armed`,
+  );
+  expect(sent.next).toContain("this wakes it within 1 s");
+  // The batch's window: nothing yet.
+  expect(k.ports.sends).toEqual([]);
+  await until(() => k.ports.sends.length > 0);
+  expect(k.ports.sends.length).toBe(1);
+  expect(k.ports.sends[0]!.message).toContain("'Pin sha is 9f38ac6'");
+  expect(k.ports.sends[0]!.thread.threadId).toBe("s1");
+  expect(k.t.get("T1")?.attempt).toBe(2);
+  expect(steers.heldForTask(k.hub.db, "T1")).toEqual([]);
+  expect(list(k.hub.db, P, undefined, undefined, 50).messages[0]?.to[0]?.outcome).toBe("woke");
+  // Its wait is still armed, and wakes it when the run finishes.
+  expect(waits(k)).toEqual([{ url: CI }]);
+  await Bun.sleep(80);
+  expect(k.ports.sends.length).toBe(1);
+  const reads = { read: async () => ({ kind: "finished" as const, conclusion: "success", label: "ci", failing: [], total: 3 }), merge: async () => ({ kind: "pending" as const }) };
+  expect(await pollCiWaits(k.t, k.hub.db.conn, k.clock.ms, reads)).toBe(1);
+  expect(k.ports.sends.at(-1)?.message).toStartWith(`CI you waited on (wait_ci) finished: ${CI}`);
+  expect(waits(k)).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
+test("a burst of messages to a waiting finished agent wakes it once, with all of them in order", async () => {
+  const k = await setup();
+  await k.ended();
+  waitOn(k);
+  const texts = ["First: #1908", "Second: rebase onto it", "Third: hold your PR"];
+  for (const text of texts) expect((await k.dm(["T1"], text)).to[0]?.outcome).toBe("woke");
+  await until(() => k.ports.sends.length > 0);
+  await Bun.sleep(120);
+  expect(k.ports.sends.length).toBe(1);
+  const text = k.ports.sends[0]!.message;
+  const at = texts.map((t) => text.indexOf(`'${t}'`));
+  expect(at.every((i) => i >= 0)).toBe(true);
+  expect([...at].sort((a, b) => a - b)).toEqual(at);
+  expect(k.t.get("T1")?.attempt).toBe(2);
+  k.hub.shutdown.abort();
+});
+
+test("a waiting agent woken by a message waits its gap before the next message wakes it", async () => {
+  const k = await setup();
+  await k.ended();
+  waitOn(k);
+  k.t.wakeGapMs = 60_000;
+  await k.dm(["T1"], "One");
+  await until(() => k.ports.sends.length > 0);
+  // It ends again, its wait still open: the next message is held until the gap is over.
+  k.threadRow("s1", "completed", "done");
+  k.thread("thread.completed", "s1", { runId: sendRunId(k.ports.sends[0]!.thread, k.ports.sends[0]!.id), endCause: "completed" });
+  await until(() => k.t.get("T1")?.state === "done");
+  const again = await k.dm(["T1"], "Two");
+  expect(again.to[0]?.outcome).toBe("woke");
+  expect(again.to[0]?.detail).toContain("this wakes it within 60 s");
+  await Bun.sleep(120);
+  expect(k.ports.sends.length).toBe(1);
+  k.hub.shutdown.abort();
+});
+
+test("a message to a finished agent whose Monitor is armed wakes it in its own thread", async () => {
+  const k = await setup();
+  await k.ended();
+  k.threadRow("s1", "completed", "done", { watchingUntil: new Date(k.clock.ms + 600_000).toISOString(), watching: ["the full check"] });
+  const sent = await k.dm(["T1"], "#1908 merged");
+  expect(sent.to[0]?.outcome).toBe("woke");
+  expect(sent.to[0]?.detail).toStartWith("T1 has finished but waits on a Monitor (the full check): this wakes it");
+  await until(() => k.ports.sends.length > 0);
+  expect(k.ports.sends[0]!.thread.threadId).toBe("s1");
+  expect(k.ports.sends[0]!.message).toContain("'#1908 merged'");
+  // Its Monitor lives in that thread's claude, which the wake left as it was.
+  expect(k.ports.stops).toEqual([]);
+  k.hub.shutdown.abort();
+});
+
+test("a message to a finished agent that waits on nothing never wakes it, even after the batch", async () => {
+  const k = await setup();
+  await k.ended();
+  // A Monitor whose time ran out wakes nothing.
+  k.threadRow("s1", "completed", "done", { watchingUntil: new Date(k.clock.ms - 1_000).toISOString() });
+  const sent = await k.dm(["T1"], "Use 1001");
+  expect(sent.to[0]?.outcome).toBe("not_woken");
+  await Bun.sleep(120);
+  expect(k.ports.sends).toEqual([]);
+  expect(k.t.get("T1")).toMatchObject({ state: "done", attempt: 1 });
+  expect(steers.heldForTask(k.hub.db, "T1").length).toBe(1);
   k.hub.shutdown.abort();
 });
 
