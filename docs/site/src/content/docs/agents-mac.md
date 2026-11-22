@@ -145,7 +145,8 @@ The Mac keeps a folder per agent, `~/work/<task>` in the home of the account its
 - `repo/`: the worktree as the agent's last `mac push` left it. Files git ignores there (builds, `node_modules`, Pods)
   stay between pushes.
 - `DerivedData/`: `xcodebuild`'s build folder for this agent alone. The `xcodebuild` on a job's PATH passes it to
-  build, test and archive unless the command names its own `-derivedDataPath`.
+  every build (an action-less `xcodebuild -workspace … -scheme …`, as `expo run:ios` runs it, included), test and
+  archive unless the command names its own `-derivedDataPath`.
 - `tmp/` (a job's `TMPDIR`) and `jobs/` (each run's output).
 
 A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE` (`~/work/.cache`),
@@ -153,7 +154,14 @@ a folder every agent shares (the account's own caches, such as Swift packages', 
 Homebrew's commands (`pod` among them) at the end of its `PATH`; an agent that needs another tool installs it under its
 own folder. A job runs in UTF-8 (`LANG=en_US.UTF-8`) unless the node has a `LANG` of its own.
 
-A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restart or an update ends them.
+A task's folder goes within minutes of the task ending for good (cancelled, or its worktree removed: a reviewer's at
+once, a writer's when its PR merges), unless it still runs a job or holds a simulator there. Any folder nothing touched
+for 3 days goes too, and so does a build in Xcode's own DerivedData that nothing wrote to for 3 days. Below 30 GB free
+the Mac frees build caches, least recently used first, until it has 50 GB: Xcode's own DerivedData builds, then the
+`DerivedData/` of agents idle for an hour (their next build starts cold); an agent's `repo/` stays. The doctor's
+`<mac>/disk` warns below 30 GB free and fails below 10 GB, where builds and new simulators fail.
+
+Jobs end with the Mac's node: a restart or an update ends them.
 
 ## What crosses {#security}
 

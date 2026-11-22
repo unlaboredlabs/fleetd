@@ -5,8 +5,9 @@
 //
 // iOS simulators (`sim_start`, `sim_end`) are node/device/ios's (sims.ts), set here as `sims` where the Mac has them;
 // a `sim_start`'s frame carries the screen the hub made for the simulator it lends (sim_screen.ts).
-// What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts); a folder nothing touched for FOLDER_DAYS
-// goes, with its snapshot in the mirror (`sweep`).
+// What agents do on the Mac goes to the menu bar (`activity`, ./activity.ts). A task's folder goes, with its snapshot
+// in the mirror, once the hub says the task ended for good (`ended`), else once nothing touched it for FOLDER_DAYS
+// (`sweep`); build caches go while the disk is short (`relieve`).
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -15,14 +16,16 @@ import {
   ftruncateSync,
   mkdirSync,
   openSync,
+  readFileSync,
   readSync,
   realpathSync,
   rmSync,
+  statfsSync,
   statSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { dirname, basename, isAbsolute, join } from "node:path";
 import type { Subprocess } from "bun";
 import { ToolError } from "../../shared/errors.ts";
@@ -48,8 +51,14 @@ import {
 } from "./protocol.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
-/** An agent's folder nothing touched for this many days goes. */
+/** An agent's folder nothing touched for this many days goes, and so does a build of Xcode's own DerivedData. */
 export const FOLDER_DAYS = 3;
+/** Below this much free space the Mac frees build caches, oldest first (the Mac's menu bar warns below it too). */
+export const LOW_FREE = 30e9;
+/** ...until it has this much free again, so one freed cache doesn't leave it at the edge for the next build. */
+export const ROOM_FREE = 50e9;
+/** A cache touched within this long may be a build's that runs now: it is never freed for room. */
+export const CACHE_IDLE = 3600_000;
 /** A foreground job nobody followed for this long ends: its agent stopped waiting for it. */
 export const FOREGROUND_IDLE = 60_000;
 /** How long `logs` waits for output while the job runs. */
@@ -62,18 +71,24 @@ const HAVE_MAX = 50;
 const KEPT = ["HOME", "USER", "LOGNAME", "SHELL", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "DEVELOPER_DIR"];
 const HOMEBREW_BINS = ["/opt/homebrew/bin", "/usr/local/bin"];
 
-/** Each agent's builds keep their own DerivedData on the agents' Mac. */
-const XCODEBUILD = `#!/bin/sh
+/**
+ * Each agent's builds keep their own DerivedData on the agents' Mac, which goes with its folder. A build with no
+ * action named (`xcodebuild -workspace … -scheme …`, as `expo run:ios` runs it) builds too: before it counted, those
+ * filled Xcode's own DerivedData, which nothing swept (24 GB on Nov 22). Only a line that reads or exports, never
+ * builds, goes on as it was.
+ */
+export const XCODEBUILD = `#!/bin/sh
 # fleetd: each agent's builds keep their own DerivedData on the agents' Mac ($FLEETD_MAC_DERIVED_DATA).
-for a in "$@"; do
-  case "$a" in -derivedDataPath) exec /usr/bin/xcodebuild "$@" ;; esac
-done
+builds=
 for a in "$@"; do
   case "$a" in
-    build|build-for-testing|test|test-without-building|analyze|archive|clean|docbuild|-resolvePackageDependencies|-showBuildSettings)
-      exec /usr/bin/xcodebuild "$@" -derivedDataPath "$FLEETD_MAC_DERIVED_DATA" ;;
+    -derivedDataPath|-list|-version|-showsdks|-showdestinations|-showTestPlans|-license|-checkFirstLaunchStatus|-runFirstLaunch|-downloadPlatform|-downloadAllPlatforms|-importPlatform|-exportArchive|-exportNotarizedApp|-exportLocalizations|-importLocalizations|-create-xcframework|-find-executable|-find-library|-usage|-help|-h)
+      exec /usr/bin/xcodebuild "$@" ;;
+    build|build-for-testing|test|test-without-building|analyze|archive|clean|docbuild|-resolvePackageDependencies|-showBuildSettings|-workspace|-project|-scheme|-target|-alltargets)
+      builds=1 ;;
   esac
 done
+[ -n "$builds" ] && exec /usr/bin/xcodebuild "$@" -derivedDataPath "$FLEETD_MAC_DERIVED_DATA"
 exec /usr/bin/xcodebuild "$@"
 `;
 
@@ -149,6 +164,13 @@ export class Host {
   private readonly jobs = new Map<string, { project: string; next: number; jobs: Map<number, Job> }>();
   /** The Mac's iOS simulators, where it has them (node/device/ios). */
   sims: MacSims | undefined;
+  /** Xcode's own DerivedData (`~/Library/Developer/Xcode/DerivedData`), for the builds that went past an agent's. */
+  xcodeData: string | undefined;
+  /** The free bytes on the disk that holds `path`. */
+  freeBytes: (path: string) => number = (path) => {
+    const s = statfsSync(path);
+    return s.bavail * s.bsize;
+  };
 
   constructor(
     /** `~/work`: each agent's folder, and `.mirrors/` of each project's snapshots. */
@@ -222,7 +244,8 @@ export class Host {
     try {
       for (const sub of ["jobs", "in", "out", "tmp", "bin", "DerivedData"]) mkdirSync(join(dir, sub), { recursive: true });
       const shim = join(dir, "bin", "xcodebuild");
-      if (!existsSync(shim)) writeFileSync(shim, XCODEBUILD, { mode: 0o755 });
+      // A folder from an older node gets this one's: its builds went past it.
+      if (!existsSync(shim) || readFileSync(shim, "utf8") !== XCODEBUILD) writeFileSync(shim, XCODEBUILD, { mode: 0o755 });
       // Touched by every step: what the sweep goes by.
       writeFileSync(join(dir, ".used"), "");
     } catch (e) {
@@ -408,36 +431,72 @@ export class Host {
     return { simulators, jobs };
   }
 
+  /** The agents with a job running or a simulator held: their folders never go. */
+  busy(): Set<string> {
+    const { simulators, jobs } = this.activity();
+    return new Set([...simulators.map((s) => s.agent), ...jobs.map((j) => j.agent)]);
+  }
+
+  /** The hub's word that these tasks ended for good (`node_action` mac_ended): their folders go, with their snapshots,
+   * unless the agent still runs a job or holds a simulator there (the next word takes those). */
+  async ended(tasks: string[]): Promise<string[]> {
+    const busy = this.busy();
+    const names = tasks.filter((t) => safePart(t) === t && !busy.has(t) && existsSync(join(this.root, t)));
+    return removeFolders(this.root, names);
+  }
+
+  /** The Mac's upkeep: folders nothing touched for FOLDER_DAYS and old builds in Xcode's own DerivedData go, then
+   * caches while the disk is short of LOW_FREE. What went, by name. */
+  async housekeep(now = Date.now()): Promise<string[]> {
+    const busy = this.busy();
+    const gone = await sweep(this.root, FOLDER_DAYS, now, busy);
+    if (this.xcodeData) gone.push(...(await sweepXcode(this.xcodeData, FOLDER_DAYS, now)));
+    gone.push(...(await relieve(this.root, this.xcodeData, busy, this.freeBytes, now)));
+    return gone;
+  }
+
   /** Every job ends with the node. */
   stop(): void {
     for (const [agent, mine] of this.jobs) for (const job of mine.jobs.keys()) this.kill(agent, job);
   }
 }
 
-/** Removes the agents' folders under `root` nothing touched for `days` (by their `.used`), with their snapshots in the
- * mirrors; folders whose names start with a dot (the mirrors, the shared cache) stay. Off the event loop throughout
- * (Rust runs it in `spawn_blocking`): a big folder's removal or a mirror's `git gc` never stalls the node's link. */
-export async function sweep(root: string, days: number, now = Date.now()): Promise<string[]> {
+/** The agents' folders under `root` (never a dot's: the mirrors, the shared cache), each with when a step last
+ * touched it (its `.used`; one without is left alone), least recently first. */
+async function folders(root: string): Promise<{ name: string; used: number }[]> {
   let names: string[];
   try {
     names = await readdir(root);
   } catch {
     return [];
   }
-  const old = now - days * 86_400_000;
-  const gone: string[] = [];
+  const out: { name: string; used: number }[] = [];
   for (const name of names) {
     if (name.startsWith(".")) continue;
-    let used: number;
     try {
-      used = (await stat(join(root, name, ".used"))).mtimeMs;
-    } catch {
-      continue;
-    }
-    if (used < old) {
-      await rm(join(root, name), { recursive: true, force: true });
-      gone.push(name);
-    }
+      out.push({ name, used: (await stat(join(root, name, ".used"))).mtimeMs });
+    } catch {}
+  }
+  return out.sort((a, b) => a.used - b.used);
+}
+
+/** Removes the agents' folders under `root` nothing touched for `days` (by their `.used`), with their snapshots in the
+ * mirrors, but none of `busy`'s. Off the event loop throughout (Rust runs it in `spawn_blocking`): a big folder's
+ * removal or a mirror's `git gc` never stalls the node's link. */
+export async function sweep(root: string, days: number, now = Date.now(), busy: Set<string> = new Set()): Promise<string[]> {
+  const old = now - days * 86_400_000;
+  return removeFolders(
+    root,
+    (await folders(root)).filter((f) => f.used < old && !busy.has(f.name)).map((f) => f.name),
+  );
+}
+
+/** Removes the agents' folders `names` under `root`, with their snapshots in the mirrors. */
+export async function removeFolders(root: string, names: string[]): Promise<string[]> {
+  const gone: string[] = [];
+  for (const name of names) {
+    await rm(join(root, name), { recursive: true, force: true });
+    gone.push(name);
   }
   if (gone.length === 0) return gone;
   let mirrors: string[];
@@ -452,6 +511,82 @@ export async function sweep(root: string, days: number, now = Date.now()): Promi
     for (const name of gone) await run(["update-ref", "-d", `refs/fleetd/${name}`]);
     await run(["worktree", "prune"]);
     await run(["gc", "--auto", "--quiet"]);
+  }
+  return gone;
+}
+
+/** When a build last wrote to `dir`, one of Xcode's DerivedData folders: the folder, its build logs or its build. */
+async function builtAt(dir: string): Promise<number> {
+  let at = 0;
+  for (const sub of ["", "Logs/Build", "Build/Intermediates.noindex", "Build/Products"]) {
+    try {
+      at = Math.max(at, (await stat(join(dir, sub))).mtimeMs);
+    } catch {}
+  }
+  return at;
+}
+
+/** Xcode's own DerivedData folders under `dir`, each with when a build last wrote to it, least recently first. */
+async function xcodeBuilds(dir: string): Promise<{ name: string; at: number }[]> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const out: { name: string; at: number }[] = [];
+  for (const name of names) out.push({ name, at: await builtAt(join(dir, name)) });
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/** Removes the builds in Xcode's own DerivedData `dir` no build wrote to for `days`: Xcode keeps them for ever. */
+export async function sweepXcode(dir: string, days: number, now = Date.now()): Promise<string[]> {
+  const old = now - days * 86_400_000;
+  const gone: string[] = [];
+  for (const b of await xcodeBuilds(dir)) {
+    if (b.at >= old) continue;
+    await rm(join(dir, b.name), { recursive: true, force: true });
+    gone.push(`DerivedData/${b.name}`);
+  }
+  return gone;
+}
+
+/**
+ * While the disk holding `root` has less than LOW_FREE free, frees build caches until it has ROOM_FREE, least recently
+ * used first and none touched within CACHE_IDLE: Xcode's own DerivedData builds, then each idle agent's DerivedData (its
+ * next build starts cold). `busy`'s are never touched, and an agent's pushed repo stays. What went, by name.
+ */
+export async function relieve(
+  root: string,
+  xcodeData: string | undefined,
+  busy: Set<string>,
+  freeBytes: (path: string) => number,
+  now = Date.now(),
+): Promise<string[]> {
+  const free = () => {
+    try {
+      return freeBytes(root);
+    } catch {
+      return Number.POSITIVE_INFINITY;
+    }
+  };
+  if (free() >= LOW_FREE) return [];
+  const idle = now - CACHE_IDLE;
+  const gone: string[] = [];
+  for (const b of xcodeData ? await xcodeBuilds(xcodeData) : []) {
+    if (free() >= ROOM_FREE) return gone;
+    if (b.at >= idle) continue;
+    await rm(join(xcodeData!, b.name), { recursive: true, force: true });
+    gone.push(`DerivedData/${b.name}`);
+  }
+  const agents = (await folders(root)).filter((f) => f.used < idle && !busy.has(f.name));
+  for (const f of agents) {
+    if (free() >= ROOM_FREE) return gone;
+    const data = join(root, f.name, "DerivedData");
+    if ((await readdir(data).catch(() => [])).length === 0) continue;
+    await rm(data, { recursive: true, force: true });
+    await mkdir(data, { recursive: true });
+    gone.push(`${f.name}/DerivedData`);
   }
   return gone;
 }
