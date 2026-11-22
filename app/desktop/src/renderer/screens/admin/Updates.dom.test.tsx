@@ -135,7 +135,7 @@ it("shows a member no switch", async () => {
   expect(document.querySelector("[role='switch']")).toBeNull();
 });
 
-it("says on fleetd cloud, which leaves its update out, only that it updates itself: no button, no switch, nothing asked", async () => {
+it("shows nothing on fleetd cloud, which leaves its update out and updates itself: no section, nothing asked", async () => {
   // The app knows the hub's answer before it opens the page (Settings' Hub group waits for hub_info): a first mount
   // learns it, and the page that opens next asks nothing left out.
   await render(<Updates />, true, ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart"]);
@@ -143,9 +143,7 @@ it("says on fleetd cloud, which leaves its update out, only that it updates itse
   root = createRoot(host);
   calls = [];
   await render(<Updates />, true, ["hub_update", "hub_update_settings", "hub_update_status", "hub_restart"]);
-  const page = host.querySelector<HTMLElement>("[data-screen='settings.hub.updates']");
-  expect(page?.querySelector("[data-updates='cloud']")?.textContent).toBe("Updatesfleetd cloud updates itself.");
-  expect(page?.querySelector("button")).toBeNull();
-  expect(page?.querySelector("[role='switch']")).toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.updates']")).toBeNull();
+  expect(host.textContent).not.toContain("Updates");
   expect(calls.filter((c) => c.tool.startsWith("hub_update"))).toEqual([]);
 });

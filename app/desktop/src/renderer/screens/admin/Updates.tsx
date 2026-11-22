@@ -1,10 +1,9 @@
 // Hub › Machines' Updates (a page of its own once: a link to Hub › Machines › Updates lands here): the one status of updates
 // (which fleetd everything runs, a newer one with its Update button, how an update goes, a machine that didn't update
-// and why), and the Update automatically switch. Nothing else to read.
+// and why), and the Update automatically switch. Nothing else to read. Not on fleetd cloud, which updates itself.
 import { useEffect } from "react";
 import { Part } from "../settings/Frames";
-import { GroupNote, SettingsSection } from "../settings/parts";
-import { CLOUD_UPDATES } from "../updates/model";
+import { SettingsSection } from "../settings/parts";
 import { useServes } from "./role";
 import { AutoUpdates } from "../updates/AutoUpdates";
 import { loadRun } from "../updates/flow";
@@ -19,16 +18,8 @@ export function Updates() {
   useEffect(() => {
     if (updates) void loadRun(deps);
   }, [deps, updates]);
-  // fleetd cloud: no Update and no switch, one line where they would be.
-  if (!updates) {
-    return (
-      <Part reveal="hub.updates" screen="settings.hub.updates">
-        <SettingsSection title="Updates" data={{ "data-screen": "updates", "data-updates": "cloud" }}>
-          <GroupNote>{CLOUD_UPDATES}</GroupNote>
-        </SettingsSection>
-      </Part>
-    );
-  }
+  // fleetd cloud leaves its update out: it updates itself, as General says, so Machines has no Updates at all.
+  if (!updates) return null;
   return (
     <Part reveal="hub.updates" screen="settings.hub.updates">
       <SettingsSection title="Updates" data={{ "data-screen": "updates" }}>
