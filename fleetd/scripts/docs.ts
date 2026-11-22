@@ -17,11 +17,11 @@ import { ENTRIES } from "../src/hub/prompts/registry.ts";
 import { INSTRUCTIONS, safetyRules } from "../src/hub/prompts/entry.ts";
 import { settingsOverlay } from "../src/node/sessions/index.ts";
 import {
-  AUTO_MEMORY_OFF_ENV, HELPER_MODEL_ENV, MODEL, PROMPT_CACHE_TTL_VARS, RECORDED, TESTED, WORKER_ENV,
+  AUTO_MEMORY_OFF_ENV, HELPER_MODEL_ENV, MODEL, LEAD_ENV, PROMPT_CACHE_TTL_VARS, RECORDED, TESTED, WORKER_ENV,
 } from "../src/node/runner/claude.ts";
 import {
   AGENT_DISALLOWED_WHY, AUTO_MEMORY_OFF_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, HELPER_MODEL_WHY, LEAD_ALLOWED_WHY,
-  LEAD_ASK_WHY, LEAD_DISALLOWED_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
+  LEAD_ASK_WHY, LEAD_DISALLOWED_WHY, LEAD_ENV_WHY, NESTING_VARS_WHY, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY,
   SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY, WORKER_ENV_WHY,
 } from "../src/node/runner/claude/explained.ts";
 import type { AgentRole, PromptGroup, TaskKind } from "../src/shared/contracts.ts";
@@ -837,7 +837,7 @@ const CACHE_WHO: Record<SessionRole, string> = {
 
 function switches(): string {
   const all = "Every claude fleetd starts";
-  const cacheEnv = Object.fromEntries([...PROMPT_CACHE_TTL_VARS, ...WORKER_ENV.map(([k]) => k)].map((k) => [k, ""]));
+  const cacheEnv = Object.fromEntries([...PROMPT_CACHE_TTL_VARS, ...[...WORKER_ENV, ...LEAD_ENV].map(([k]) => k)].map((k) => [k, ""]));
   const overlayEnv: Record<string, string> = JSON.parse(settingsOverlay(cacheEnv, {}, MODEL, [], false, false, "")).env;
   let md =
     "## Settings fleetd forces\n\nSet in the claude process's environment. \"In settings\" marks the ones also in fleetd's " +
@@ -868,6 +868,7 @@ function switches(): string {
   for (const [[name, value], why] of WORKER_ENV_WHY) {
     rows(named(name, why), `\`${value}\` unless your environment or \`claude.env\` sets it`, "Task agents");
   }
+  for (const [[name, value], why] of LEAD_ENV_WHY) rows(named(name, why), `\`${value}\``, "Leads");
   rows(ticked(NESTING_VARS_WHY), "removed", "Sessions");
   return `${md}\n`;
 }

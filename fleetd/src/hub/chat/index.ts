@@ -887,20 +887,31 @@ export class Chat {
     return true;
   }
 
-  /** Flags the message `source` names once it lands, for a reply the lead nudged before the chat had it. */
+  /**
+   * Flags the message `source` names once it lands, for a reply the lead nudged before the chat had it. A lead's thread
+   * (`leadSource(thread, "")`) names its turn's message, the next of that thread's to land.
+   */
   nudgeOnLanding(source: string, reason: string): void {
     const now = this.now();
     for (const [k, [, at]] of this.pendingNudges) if (now - at >= PENDING_MS) this.pendingNudges.delete(k);
     this.pendingNudges.set(source, [reason, now]);
   }
 
+  /** A nudge waiting on `source` that will never land. */
+  dropNudge(source: string): void {
+    this.pendingNudges.delete(source);
+  }
+
   /** A new message's nudge, its own or one that waited for its source: set on it before it is announced. */
   private landed(source: string | undefined, nudge: string | undefined, message: ChatMessage): void {
     const now = this.now();
     let waited: string | undefined;
-    if (source !== undefined) {
-      const pending = this.pendingNudges.get(source);
-      this.pendingNudges.delete(source);
+    // A lead's message (`lead:<thread>:<message>`) takes its own nudge, else its turn's, waiting on its thread.
+    const turn = source?.startsWith("lead:") ? source.slice(0, source.indexOf(":", 5) + 1) : undefined;
+    for (const key of [source, turn]) {
+      if (key === undefined || waited !== undefined) continue;
+      const pending = this.pendingNudges.get(key);
+      this.pendingNudges.delete(key);
       if (pending && now - pending[1] < PENDING_MS) waited = pending[0];
     }
     const reason = nudge ?? waited;

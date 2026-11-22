@@ -2,7 +2,7 @@
 // it (W787). The shape replayed is the lead's on 2026-11-22: a fresh session's first reply was that turn alone.
 import { expect, test } from "bun:test";
 import { quiet, type Trigger } from "../src/hub/api/lead_lines.ts";
-import { type LiveParts, mirror, streamPass } from "../src/hub/chat/flow.ts";
+import { mirror } from "../src/hub/chat/flow.ts";
 import { leadMessages, leadText, madeUpLine, said } from "../src/hub/chat/history.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { executors } from "../src/hub/executor/index.ts";
@@ -60,16 +60,19 @@ async function lead() {
   return { ...t, woken, appended };
 }
 
-/** The reply as it streams: the first `n` characters of `text`, then each later pass a little more. */
-const streaming = (text: string, n: number): LiveParts => ({ text: { messageId: "a", tail: text.slice(0, n), total: n }, done: [], runActive: true });
+/** The lead's session holding `text` as its turn's reply, said now, and the mirror that lands it. */
+function holds(t: Awaited<ReturnType<typeof lead>>, text: string) {
+  const reply = { id: "a", role: "assistant", text, createdAt: new Date(t.clock.ms).toISOString() };
+  Object.assign(executors(t.hub).views, { messages: async () => [reply] });
+  return () => mirror(t.hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
+}
 
-test("a reply that is only a made-up turn posts nothing while it streams or lands, and the lead's next wake says so", async () => {
-  const { hub, done, woken, appended } = await lead();
-  const sent = new Map<string, number>();
-  for (const n of [1, 3, 6, 12, FAKE.length]) streamPass(hub, sent, () => streaming(FAKE, n));
-  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toBeUndefined();
-  streamPass(hub, sent, () => ({ done: [{ messageId: "a", text: FAKE }], runActive: false }));
-  streamPass(hub, sent, () => ({ done: [{ messageId: "a", text: FAKE }], runActive: false }));
+test("a reply that is only a made-up turn posts nothing, and the lead's next wake says so", async () => {
+  const t = await lead();
+  const { hub, done, woken, appended } = t;
+  const land = holds(t, FAKE);
+  await land();
+  await land();
   expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toBeUndefined();
   expect(appended.join("")).not.toContain("Human:");
   expect(chat(hub).page(PROJECT, undefined, undefined, 50).messages.some((m) => m.text.includes("Human:"))).toBe(false);
@@ -83,47 +86,29 @@ test("a reply that is only a made-up turn posts nothing while it streams or land
   done();
 });
 
-test("words then a made-up turn stream and land as the words alone", async () => {
-  const { hub, done, woken, appended } = await lead();
-  const sent = new Map<string, number>();
+test("words then a made-up turn land as the words alone", async () => {
+  const t = await lead();
+  const { hub, done, woken } = t;
   const words = "Checked: there's no such page.";
-  const full = `${words}\n\n${FAKE}\n\nAssistant: Let me look.`;
-  for (const n of [words.length + 3, words.length + 9, full.length]) streamPass(hub, sent, () => streaming(full, n));
-  const source = "lead:lead-1:a";
-  expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "streaming", text: `${words}\n\n` });
-  streamPass(hub, sent, () => ({ done: [{ messageId: "a", text: full }], runActive: false }));
-  expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "final", text: words });
-  expect(appended.join("")).toBe(`${words}\n\n`);
+  await holds(t, `${words}\n\n${FAKE}\n\nAssistant: Let me look.`)();
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toMatchObject({ state: "final", text: words });
   expect(woken.map((t) => (t.kind === "line" ? t.line : t.kind))).toEqual(["made_up"]);
   done();
 });
 
-test("a reply whose lines only start like a turn marker streams whole once its words tell, and wakes nobody", async () => {
-  const { hub, done, woken } = await lead();
-  const sent = new Map<string, number>();
+test("a reply whose lines only start like a turn marker lands whole, and wakes nobody", async () => {
+  const t = await lead();
+  const { hub, done, woken } = t;
   const full = `Here's the plan.\nHumans read it first.\n${FENCE}\nHuman: quoted\n${FENCE}\nAssistants too.`;
-  const source = "lead:lead-1:a";
-  streamPass(hub, sent, () => streaming(full, 1));
-  expect(chat(hub).bySource(PROJECT, source)).toBeUndefined();
-  streamPass(hub, sent, () => streaming(full, 22));
-  expect(chat(hub).bySource(PROJECT, source)?.text).toBe("Here's the plan.\n");
-  streamPass(hub, sent, () => streaming(full, full.length));
-  expect(chat(hub).bySource(PROJECT, source)?.text).toBe(full);
-  streamPass(hub, sent, () => ({ done: [{ messageId: "a", text: full }], runActive: false }));
-  expect(chat(hub).bySource(PROJECT, source)).toMatchObject({ state: "final", text: full });
+  await holds(t, full)();
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toMatchObject({ state: "final", text: full });
   expect(woken).toEqual([]);
   done();
 });
 
 test("a made-up turn the mirror lands once its run ended wakes the lead once, and a hub back later tells it no more", async () => {
   const { hub, clock, done, woken } = await lead();
-  const sent = new Map<string, number>();
   const thread = { machineId: PROJECT.machineId, threadId: "lead-1" };
-  // It streamed while the run was on; the run ended with it, and the tracker dropped its done texts, so only the mirror
-  // reads it, off the lead's session.
-  streamPass(hub, sent, () => streaming(FAKE, FAKE.length));
-  streamPass(hub, sent, () => ({ done: [], runActive: false }));
-  expect(woken).toEqual([]);
   clock.ms += 1000;
   const reply = { id: "a", role: "assistant", text: FAKE, createdAt: new Date(clock.ms).toISOString() };
   Object.assign(executors(hub).views, { messages: async () => [reply] });

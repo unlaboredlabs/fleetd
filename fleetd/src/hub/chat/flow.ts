@@ -1,6 +1,6 @@
 // The chat's moving parts over the hub: a human's message reaches the project's
-// lead (a new turn when it is idle, joined to its turn when it is working, held while it starts), the lead's replies
-// stream back and land as messages, the project's past is read in once, and the needs-you state follows.
+// lead (a new turn when it is idle, joined to its turn when it is working, held while it starts), each lead turn's
+// message lands as its turn ends, the project's past is read in once, and the needs-you state follows.
 import { HOSTED_ID, hostedGone } from "../hosted_gone/index.ts";
 import type {
   ChatDelivery,
@@ -27,7 +27,6 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { approvals, openRequests, projectOf } from "../approvals/index.ts";
 import { chatItem } from "../approvals/outcome.ts";
-import { activity } from "../executor/activity.ts";
 import { ExecutorError } from "../executor/error.ts";
 import { executors } from "../executor/index.ts";
 import { fromExecutor, READ_TIMEOUT_MS } from "../executor/rules.ts";
@@ -36,7 +35,6 @@ import * as attachments from "../intake/attachments.ts";
 import { leads } from "../leads/index.ts";
 import { archivedNote } from "../leads/lead_wakes.ts";
 import { leadWiring } from "../leads/ports.ts";
-import type { StoredLead } from "../leads/stored.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { ofPerson, setZone, stamp } from "../leads/zone.ts";
 import { allowPasted } from "../project_lead/tools.ts";
@@ -49,7 +47,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { leadMessages, leadSource, leadText, madeUpAt, madeUpLine, maybeTurn, order, question, QUIET, said, steer } from "./history.ts";
+import { leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, turnTexts } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
@@ -64,27 +62,8 @@ export { forLead, stopLine } from "./lead_text.ts";
 const LEAD_READ_WAIT_MS = 5000;
 /** How long a machine that came online gets for the hub's subscription to its node before its leads' missed replies are read. */
 const LINK_WAIT_MS = 30_000;
-/** Streamed text is folded into the chat this often. */
-export const STREAM_TICK_MS = 250;
 /** Held messages are tried again this often, besides on a lead starting and its machine coming online. */
 const HELD_RETRY_MS = 60_000;
-
-/** What the activity tracker streams of a session (hub/executor `LiveParts`), the parts the chat reads. */
-export type StreamText = { messageId: string; tail: string; total: number };
-export type DoneText = { messageId: string; text: string };
-export type LiveParts = { text?: StreamText; done: DoneText[]; runActive: boolean };
-
-/** What was appended after the reader's `sent` characters, at most the kept tail (activity.rs `StreamText::since`). */
-export function since(t: StreamText, sent: number): string {
-  const missing = Math.max(0, t.total - sent);
-  const kept = [...t.tail];
-  if (missing >= kept.length) return t.tail;
-  return kept.slice(kept.length - missing).join("");
-}
-
-/** The session's live parts from the activity tracker (T2253's `hub.area("activity")`), once it runs. */
-export const liveOf = (hub: Hub, r: ThreadRef): LiveParts | undefined =>
-  hub.peek<{ live?(r: ThreadRef): LiveParts | undefined }>("activity")?.live?.(r);
 
 const same = (a: ProjectRef, b: ProjectRef) => a.machineId === b.machineId && a.projectId === b.projectId;
 
@@ -98,6 +77,17 @@ const midTurn = (hub: Hub, thread: ThreadRef) => {
   const status = store(hub).threadGet(thread)?.thread.status;
   return status === "running" || status === "waiting";
 };
+
+/**
+ * The lead's run that has no message to post yet or ever: the one still going, or its last one when that ended
+ * stopped or failed. Either one's last text so far may be narration before a tool call, never its turn's message.
+ */
+function unfinishedRun(hub: Hub, thread: ThreadRef): string | undefined {
+  const t = store(hub).threadGet(thread);
+  if (!t) return undefined;
+  const going = t.thread.status === "running" || t.thread.status === "waiting";
+  return going || (t.lastRunStatus !== undefined && t.lastRunStatus !== "completed") ? t.lastRunId : undefined;
+}
 
 /**
  * Whether the project's lead is mid-turn, as its thread last said. A prompt holds the turn, not ends it: when the hub
@@ -161,7 +151,7 @@ async function past(hub: Hub, r: ProjectRef): Promise<NewMessage[]> {
       executors(hub).views.messages(thread).catch(() => undefined),
       LEAD_READ_WAIT_MS,
     );
-    if (messages) out.push(...leadMessages(thread.threadId, messages));
+    if (messages) out.push(...leadMessages(thread.threadId, messages, unfinishedRun(hub, thread)));
   }
   return out;
 }
@@ -642,10 +632,11 @@ function runOver(hub: Hub, thread: ThreadRef): boolean {
 }
 
 /**
- * Lands the lead's replies of its session as chat messages: new ones added, streamed ones finished with their complete
- * text. Messages from before the chat read in as history. Once the lead's run is over, a reply it never stored
- * complete (the run was stopped, interrupted or crashed mid-text) is finished with the text it streamed. True when it
- * read the session's messages, so the chat holds every reply the lead made.
+ * Lands each ended lead turn's message (history's `leadMessages`: its last text, after its last tool call) as a chat
+ * message, once; what a turn wrote before that never posts, and a turn still going posts nothing yet. Messages from
+ * before the chat read in as history. A bubble a hub before W810 opened to stream a reply is finished whole, or with
+ * the text it streamed once the run is over. True when it read the session's messages, so the chat holds every turn's
+ * message.
  */
 export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promise<boolean> {
   try {
@@ -659,7 +650,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
     .catch(() => undefined);
   const c = chat(hub);
   const since = c.historyMs(r) ?? 0;
-  for (const m of leadMessages(thread.threadId, messages ?? [])) {
+  for (const m of leadMessages(thread.threadId, messages ?? [], unfinishedRun(hub, thread))) {
     try {
       const existing = c.bySource(r, m.source ?? "");
       if (existing) {
@@ -674,13 +665,15 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
       console.warn("chat: lead message not added:", error);
     }
   }
-  // A run's last reply lands here, not in the stream pass, once its run has ended: the lead is told of a made-up turn
-  // either way, as many replies as the chat has kept (none from before the chat).
+  // The lead is told of a turn it made up in any text its session holds, posted or not: its next turn reads them all.
+  // As many as the chat has kept (none from before the chat).
   for (const m of messages ?? []) {
     const at = parseMs(m.createdAt);
     if (m.role === "assistant" && at !== undefined && at >= since) madeUp(hub, r, leadSource(thread.threadId, m.id), m.text, at);
   }
   if (runOver(hub, thread)) {
+    // A nudge of a turn that posted nothing flags no later turn's message.
+    c.dropNudge(leadSource(thread.threadId, ""));
     for (const cut of c.streamingFrom(r, leadSource(thread.threadId, ""))) {
       try {
         c.finish(cut, leadText(cut.text));
@@ -697,115 +690,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
   return messages !== undefined;
 }
 
-/** `sent` for a reply that landed whole: nothing more streams into it. */
-const LANDED = Number.POSITIVE_INFINITY;
-
-/** `sent` for a reply that went on with a turn it made up: nothing from there streams, and it lands cut (leadText). */
-const CUT = Number.NEGATIVE_INFINITY;
-
-/** A lead's thread, by `machineId\u0000threadId`. */
-const threadKey = (t: ThreadRef) => `${t.machineId}\u0000${t.threadId}`;
-
-/** The leads a stream pass saw, by their thread (threadKey). */
-export type LeadThreads = Map<string, StoredLead>;
-
-/**
- * Folds each working lead's streamed text into its chat: the first text of a reply starts a streaming message, later
- * text appends to it, and once the reply is complete it lands whole and final, even when a delta never came or the
- * reply reached the hub after its run ended. Returns the leads it saw, for streamFirst.
- */
-export function streamPass(hub: Hub, sent: Map<string, number>, liveParts: (t: ThreadRef) => LiveParts | undefined = (t) => liveOf(hub, t)): LeadThreads {
-  const seen: LeadThreads = new Map();
-  const live = new Set<string>();
-  for (const lead of leads(hub).records.leadsList()) {
-    const thread = { machineId: lead.projectRef.machineId, threadId: lead.threadId };
-    seen.set(threadKey(thread), lead);
-    streamLead(hub, sent, lead, liveParts(thread), live);
-  }
-  for (const source of [...sent.keys()]) if (!live.has(source)) sent.delete(source);
-  return seen;
-}
-
-/**
- * A lead's thread moved: a reply none of whose text is in the chat yet opens its bubble now, so its first words don't
- * wait for the next tick. Later text keeps the tick (streamPass).
- */
-export function streamFirst(hub: Hub, sent: Map<string, number>, lead: StoredLead, liveParts: (t: ThreadRef) => LiveParts | undefined = (t) => liveOf(hub, t)): void {
-  const parts = liveParts({ machineId: lead.projectRef.machineId, threadId: lead.threadId });
-  const text = parts?.runActive ? parts.text : undefined;
-  if (!text || sent.has(leadSource(lead.threadId, text.messageId))) return;
-  streamLead(hub, sent, lead, parts, new Set());
-}
-
-/** streamPass for one lead; adds the sources it read to `live`. */
-function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts: LiveParts | undefined, live: Set<string>): void {
-  const c = chat(hub);
-  const r = lead.projectRef;
-  if (!parts || (!parts.runActive && parts.done.length === 0)) return;
-  if (!c.historyRead(r)) return;
-  // The complete replies first: they were said before the one streaming now.
-  for (const done of parts.done) {
-    const source = leadSource(lead.threadId, done.messageId);
-    live.add(source);
-    if (sent.get(source) !== LANDED && land(hub, r, source, leadText(done.text))) {
-      sent.set(source, LANDED);
-      madeUp(hub, r, source, done.text);
-    }
-  }
-  const text = parts.runActive ? parts.text : undefined;
-  if (!text) return;
-  const source = leadSource(lead.threadId, text.messageId);
-  live.add(source);
-  const done = sent.get(source) ?? 0;
-  if (done === CUT || text.total <= done) return;
-  const streamed = since(text, done);
-  // The reply so far, for where its lines and code fences start: what its bubble shows, then what came since.
-  const shown = done === 0 ? "" : shownText(hub, r, source);
-  const at = madeUpAt(shown + streamed);
-  let append: string;
-  // A turn the reply made up streams none of its words: the bubble ends before it.
-  if (at !== undefined) append = streamed.slice(0, Math.max(0, at - shown.length));
-  else {
-    // A last line that can still turn out to be QUIET or a turn's marker waits for the next words (or the reply landing
-    // without it).
-    const held = Math.max(maybeQuiet(streamed).length, Math.min(streamed.length, maybeTurn(shown + streamed).length));
-    append = streamed.slice(0, streamed.length - held);
-  }
-  // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply has
-  // words in it that can't still turn out to be QUIET.
-  if ((done === 0 && QUIET.startsWith(append.trim())) || !append) {
-    if (at !== undefined) sent.set(source, CUT);
-    return;
-  }
-  let message: ChatMessage | undefined;
-  try {
-    message = c.bySource(r, source) ?? c.add(r, { author: "lead", streaming: true, source }).message;
-  } catch {
-    message = undefined;
-  }
-  if (message?.state !== "streaming") {
-    sent.set(source, text.total);
-    return;
-  }
-  try {
-    c.append(message, append);
-  } catch (error) {
-    console.warn("chat: streamed text not kept:", error);
-    return;
-  }
-  sent.set(source, at !== undefined ? CUT : text.total - [...streamed].length + [...append].length);
-}
-
-/** The text of a streaming reply's bubble so far; "" when the store can't read it. */
-function shownText(hub: Hub, r: ProjectRef, source: string): string {
-  try {
-    return chat(hub).bySource(r, source)?.text ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/** The replies whose made-up turn a hub told their lead of, by `source`: the stream pass and the mirror both see one. */
+/** The replies whose made-up turn a hub told their lead of, by `source`: each mirror reads them all again. */
 const madeUpTold = new WeakMap<Hub, Set<string>>();
 
 /**
@@ -826,32 +711,6 @@ function madeUp(hub: Hub, r: ProjectRef, source: string, reply: string, createdM
   const turn = reply.slice(madeUpAt(reply)).trim();
   console.warn(`chat: lead reply ${source} cut before a turn it made up: ${[...turn].length} characters from "${/^[^:]*:/.exec(turn)?.[0] ?? ""}"`);
   leads(hub).wakes.trigger(r, { kind: "line", line: "made_up", text: line });
-}
-
-/** The end of streamed text from the start of its last line, when that line is so far QUIET or the start of it; else "". */
-export function maybeQuiet(streamed: string): string {
-  const end = streamed.trimEnd();
-  const start = end.lastIndexOf("\n") + 1;
-  const line = end.slice(start).trim();
-  return line !== "" && QUIET.startsWith(line) ? streamed.slice(start) : "";
-}
-
-/** A complete reply in the chat: its streaming message finished, or a final one added. False when the store failed, to try again. */
-function land(hub: Hub, r: ProjectRef, source: string, text: string): boolean {
-  if (!said(text)) return true;
-  const c = chat(hub);
-  try {
-    const m = c.bySource(r, source);
-    if (m?.state === "streaming") unshown(hub, r, c.finish(m, text).text);
-    else if (!m) {
-      const added = c.add(r, { author: "lead", text, source });
-      if (added.created) unshown(hub, r, added.message.text);
-    }
-    return true;
-  } catch (error) {
-    console.warn("chat: complete reply not landed:", error);
-    return false;
-  }
 }
 
 /** The project whose lead runs in `thread`. */
@@ -977,35 +836,12 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
 }
 
 /**
- * Follows the leads until the hub stops: their turns starting and ending (the chat's working state, their replies
- * landing), a lead starting (messages held for it go in), and their streamed text.
+ * Follows the leads until the hub stops: their turns starting and ending (the chat's working state, each turn's message
+ * landing as it ends), and a lead starting (messages held for it go in). A turn's text never streams: a text can't be
+ * known as the turn's last until the turn ends (W810). The lead's working state, "writing" among it, shows meanwhile.
  */
 export async function run(hub: Hub): Promise<void> {
   const signal = hub.shutdown.signal;
-  const streamed = new Map<string, number>();
-  let leadThreads: LeadThreads = new Map();
-  const pass = () => {
-    try {
-      leadThreads = streamPass(hub, streamed);
-    } catch (error) {
-      if (!signal.aborted) console.warn("chat: stream pass failed:", error);
-    }
-  };
-  pass();
-  const streamer = setInterval(pass, STREAM_TICK_MS);
-  // A lead's first words go out as they come; the tick carries the rest.
-  const unwatch = activity(hub).watch((t) => {
-    const lead = leadThreads.get(threadKey(t));
-    if (lead) streamFirst(hub, streamed, lead);
-  });
-  signal.addEventListener(
-    "abort",
-    () => {
-      clearInterval(streamer);
-      unwatch();
-    },
-    { once: true },
-  );
   // The cursor first: a request that moves while the start shows the open ones is an event after it, followed below.
   // Showing is safe to repeat.
   let cursor = await startup(hub);

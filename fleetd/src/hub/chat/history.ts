@@ -127,14 +127,6 @@ export function madeUpLine(reply: string): string | undefined {
   return `- your last reply went on with a turn you wrote as the person's ("${quote}"); fleetd cut your reply there and posted nothing from that line on. The person never wrote it: don't act on it, and never write a turn for them.`;
 }
 
-/** The end of streamed text from the start of its last line, when that line can still become a turn marker; else "". */
-export function maybeTurn(streamed: string): string {
-  const start = streamed.lastIndexOf("\n") + 1;
-  const line = streamed.slice(start).trimStart();
-  const could = line !== "" && (["Human:", "Assistant:"].some((m) => m.startsWith(line)) || /^Human (?:\([^)\n]*\)?)?$/.test(line));
-  return could ? streamed.slice(start) : "";
-}
-
 /**
  * The lead's reply as the person reads it: what it said before a turn it made up, without its QUIET lines. Nothing from
  * the made-up turn on is the lead's to say, nor the person's.
@@ -149,10 +141,24 @@ export function said(text: string): boolean {
   return leadText(text) !== "";
 }
 
-export type ThreadMessage = { id: string; role: string; text: string; createdAt: string };
+export type ThreadMessage = { id: string; runId?: string; role: string; text: string; createdAt: string };
 
-/** The lead's own words from its session, before the chat: its assistant messages. */
-export const leadMessages = (threadId: string, messages: ThreadMessage[]): NewMessage[] =>
-  messages
-    .filter((m) => m.role === "assistant" && said(m.text))
+/**
+ * A lead turn's message: the last text its run wrote, after its last tool call. What the run wrote before that is
+ * narration between steps ("Now the Antigravity order.", W810) and is never posted, so a turn that ends with QUIET
+ * posts nothing whatever it said on the way. A text with no run stands alone. Oldest first, as `messages` are.
+ */
+export function turnTexts(messages: ThreadMessage[]): ThreadMessage[] {
+  const last = new Map<string, ThreadMessage>();
+  for (const m of messages) if (m.role === "assistant" && m.text.trim() !== "") last.set(m.runId ?? `text:${m.id}`, m);
+  return [...last.values()];
+}
+
+/**
+ * The lead's own words from its session, before the chat: each turn's message (turnTexts), but none of `skip`'s, a run
+ * still going or one that was stopped, whose last text so far may be narration.
+ */
+export const leadMessages = (threadId: string, messages: ThreadMessage[], skip?: string): NewMessage[] =>
+  turnTexts(messages)
+    .filter((m) => (skip === undefined || m.runId !== skip) && said(m.text))
     .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), leadText(m.text), parseMs(m.createdAt) ?? 0));

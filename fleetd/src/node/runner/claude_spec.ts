@@ -4,7 +4,7 @@
 // box's claude exactly as the node does.
 import type { Effort } from "../../shared/contracts.ts";
 import {
-  AGENT_DISALLOWED_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, items, LEAD_ALLOWED_WHY, LEAD_ASK_WHY, LEAD_DISALLOWED_WHY,
+  AGENT_DISALLOWED_WHY, DEFAULT_ENV_WHY, DISALLOWED_WHY, items, LEAD_ALLOWED_WHY, LEAD_ASK_WHY, LEAD_DISALLOWED_WHY, LEAD_ENV_WHY,
   NESTING_VARS_WHY, pairs, PROMPT_CACHE_TTL_WHY, SESSION_ENV_WHY, SUBAGENTS_OFF_ENV_WHY, SUBAGENTS_ON_ENV_WHY, TASK_DISALLOWED_WHY,
   WORKER_ENV_WHY,
 } from "./claude/explained.ts";
@@ -64,8 +64,13 @@ export const HEAVY_LSP_PLUGINS = [
 export const heavyLspOn = (env: Env) => env.HEAVY_LANGUAGE_SERVERS?.trim() === "1";
 export const DEFAULT_ENV = pairs(DEFAULT_ENV_WHY);
 export const WORKER_ENV = pairs(WORKER_ENV_WHY);
+export const LEAD_ENV = pairs(LEAD_ENV_WHY);
 export const roleEnv = (role: SessionRole, env: Env): Env =>
-  role === "worker" ? Object.fromEntries(WORKER_ENV.filter(([k]) => !(k in env))) : {};
+  role === "worker"
+    ? Object.fromEntries(WORKER_ENV.filter(([k]) => !(k in env)))
+    : role === "lead" || role === "assistant"
+      ? Object.fromEntries(LEAD_ENV)
+      : {};
 export const PROMPT_CACHE_TTL_VARS = ["CLAUDE_CODE_PROMPT_CACHE_TTL", "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"];
 export const defaultCacheTtl = (role: SessionRole) => PROMPT_CACHE_TTL_WHY.find(([[r]]) => r === role)?.[0][1] ?? "1h";
 const NESTING_VARS = items(NESTING_VARS_WHY);
