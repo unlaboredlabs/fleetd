@@ -325,6 +325,32 @@ it("back from paying at Stripe, Billing says the payment arrived rather than tha
   resetBillingReturn();
 });
 
+it("Stripe's way back is said once, and only on the team that paid: not on another team's Billing, nor on a later visit", async () => {
+  fake.roles.set("a1b2", "owner").set("c3d4", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.none));
+  fake.billing.set("c3d4", readBilling(BILLING_SAMPLES.none));
+  resetBillingReturn();
+  window.history.replaceState(null, "", "/?billing=paid#/");
+  await mount([
+    { id: "a1b2", label: "Acme", color: "amber", cloud: true },
+    { id: "c3d4", label: "Club", cloud: true },
+  ]);
+  await go("#/settings/hub/billing?at=a1b2");
+  const page = () => host.querySelector('[data-screen="settings.hub.billing"]')?.textContent ?? "";
+  expect(page()).toContain("Payment received");
+  // Another team, in the same page load (a switch doesn't reload it): nothing was paid there.
+  await go("#/settings/hub/billing?at=c3d4");
+  expect(page()).not.toContain("Payment received");
+  expect(page()).not.toContain("Stripe hasn't confirmed");
+  // Back on the team that paid, a later visit: said already, so the page is as Billing reads.
+  await go("#/settings/hub/people?at=a1b2");
+  await go("#/settings/hub/billing?at=a1b2");
+  expect(page()).not.toContain("Payment received");
+  expect(page()).not.toContain("Stripe hasn't confirmed");
+  window.history.replaceState(null, "", "/#/");
+  resetBillingReturn();
+});
+
 it("with one hub, names none and offers no switch: the page is as it was", async () => {
   await mount([{ id: "hub", label: "devbox" }]);
   await go("#/settings/hub/people");

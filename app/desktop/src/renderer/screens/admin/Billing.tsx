@@ -48,20 +48,29 @@ import b from "./billing.module.css";
 
 const said = (f: PairFailure): string => (f.fix === undefined ? f.message : `${f.message} ${f.fix}`);
 
-let returned: { said: "paid" | "cancelled"; atMs: number } | null | undefined;
+type BillingReturn = { readonly said: "paid" | "cancelled"; readonly atMs: number; readonly hub: string };
+
+let returned: BillingReturn | null | undefined;
 
 /**
- * What Stripe's way back said (`?billing=paid` or `cancelled` on the web app's address), read once per page load and
- * cleaned from the address at once, so a reload doesn't say it again. Only the web app comes back this way.
+ * What Stripe's way back said (`?billing=paid` or `cancelled` on the web app's address), for `hub`: read from the
+ * address once per page load and cleaned from it at once, so a reload doesn't say it again. It belongs to the team the
+ * app opened on coming back (the address's `team=`, teamFromAddress), so another team's Billing never says it, and it is
+ * said once: `endBillingReturn` drops it once shown. Only the web app comes back this way.
  */
-const takeBillingReturn = (): { said: "paid" | "cancelled"; atMs: number } | null => {
-  if (returned !== undefined) return returned;
-  const said = billingReturnOf(window.location.search);
-  if (said !== null) {
-    window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutBillingReturn(window.location.search)}${window.location.hash}`);
+const takeBillingReturn = (hub: string): BillingReturn | null => {
+  if (returned === undefined) {
+    const said = billingReturnOf(window.location.search);
+    if (said !== null) {
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutBillingReturn(window.location.search)}${window.location.hash}`);
+    }
+    returned = said === null ? null : { said, atMs: Date.now(), hub };
   }
-  returned = said === null ? null : { said, atMs: Date.now() };
-  return returned;
+  return returned !== null && returned.hub === hub ? returned : null;
+};
+
+const endBillingReturn = (back: BillingReturn): void => {
+  if (returned === back) returned = null;
 };
 
 /** For tests: read the address again. */
@@ -88,13 +97,17 @@ function useOpen() {
 export function Billing() {
   const hub = useHub();
   const read = useBilling(hub.cloud === true);
-  const [back] = useState(takeBillingReturn);
+  const [taken] = useState(() => takeBillingReturn(hub.id));
+  // Kept for this visit only (the line waits on Stripe here), and only while the page is on the team that paid.
+  const back = taken !== null && taken.hub === hub.id ? taken : null;
   // Back from paying: read again until Stripe's word of it shows, for a minute at most.
   const waiting = back?.said === "paid" && (read.data === undefined || !showsPaid(read.data));
   const nowMs = useNow(true, waiting ? PAID_READ_EVERY_MS : 60_000);
   const { refetch } = read;
   useEffect(() => {
-    if (back !== null) toast({ title: back.said === "paid" ? "Payment received" : "Checkout cancelled: nothing was charged", tone: back.said === "paid" ? "success" : "neutral", key: "billing-return" });
+    if (back === null) return;
+    toast({ title: back.said === "paid" ? "Payment received" : "Checkout cancelled: nothing was charged", tone: back.said === "paid" ? "success" : "neutral", key: "billing-return" });
+    endBillingReturn(back);
   }, [back]);
   useEffect(() => {
     if (waiting && nowMs - back.atMs < PAID_WAIT_MS) void refetch();

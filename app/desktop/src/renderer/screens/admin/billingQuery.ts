@@ -30,7 +30,6 @@ export function useBilling(enabled: boolean) {
   });
 }
 
-
 /**
  * Whether the hub in scope has Billing: a fleetd cloud team whose answer says fleetd's computers are on for it. Read
  * only while `asked` (the Settings index, a Hub page's switch on Billing), sharing the page's own query.

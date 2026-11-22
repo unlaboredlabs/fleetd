@@ -295,9 +295,14 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         if (label === null) return { ok: false, message: "Give it a name." };
         if (change.color !== null && !HUB_COLORS.includes(change.color)) return { ok: false, message: "Pick one of the colours." };
         const color = change.color === null ? {} : { color: change.color };
-        // An owner's or admin's new name is the team's own, for everyone (its address stays); anyone else's is what
-        // this browser calls it.
+        // An owner's or admin's new name is the team's own, for everyone (its address stays); a member's, which the
+        // cloud refuses as forbidden, is what this browser calls it. Any other refusal or failure renames nothing and
+        // says so: the team keeps its name, never one only this browser knows.
         const renamed = label === team.name ? null : await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/team"), { json: { name: label } });
+        if (renamed !== null && !renamed.ok) {
+          if (renamed.signedOut === true) return { ok: false, message: "The team wasn't renamed: you're signed out. Sign in again, then rename it." };
+          if (renamed.failure.code !== "forbidden") return { ok: false, message: `The team wasn't renamed: ${renamed.failure.message}${renamed.failure.fix === undefined ? "" : ` ${renamed.failure.fix}`}` };
+        }
         const named = renamed?.ok === true ? (renamed.body as { name?: unknown }).name : undefined;
         if (typeof named === "string") {
           teams.set(hub, { ...team, name: named });
