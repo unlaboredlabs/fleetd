@@ -18,7 +18,7 @@ export type {
   NodeFrame,
   SecretResult,
 } from "../shared/node_link.ts";
-export { CLOSE, HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, protocolBehind, REMOVED } from "../shared/node_link.ts";
+export { CLOSE, HEARTBEAT_INTERVAL_SECS, HEARTBEAT_TIMEOUT_SECS, NOT_ENROLLED, protocolBehind, REMOVED } from "../shared/node_link.ts";
 
 export type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
 export type Obj = Record<string, unknown>;
@@ -39,7 +39,12 @@ export const CAP = {
   BUILD_RUST: link.CAP_BUILD_RUST, BUILD_BUN: link.CAP_BUILD_BUN, VAULT: link.CAP_VAULT, REJOIN: link.CAP_REJOIN,
   MCP_TAILNET: link.CAP_MCP_TAILNET,
 } as const;
-export const HUB_CAP = { SESSION_ROUTE: link.HUB_CAP_SESSION_ROUTE, LINK_DEFLATE: link.HUB_CAP_LINK_DEFLATE, LINK_BULK: link.HUB_CAP_LINK_BULK } as const;
+export const HUB_CAP = {
+  SESSION_ROUTE: link.HUB_CAP_SESSION_ROUTE,
+  LINK_DEFLATE: link.HUB_CAP_LINK_DEFLATE,
+  LINK_BULK: link.HUB_CAP_LINK_BULK,
+  MACHINE_LEAVE: link.HUB_CAP_MACHINE_LEAVE,
+} as const;
 
 /** `secret_deliver` as the node reads it: its sink is a string (SecretSink). */
 export type SecretDeliver = Omit<link.SecretDeliver, "sink"> & { sink: string };

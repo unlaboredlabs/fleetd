@@ -12,7 +12,7 @@ import { Mark } from "./Mark";
 import { CommandLine, Failure, Prose } from "./Prose";
 import { TAGLINE } from "./setup";
 import { useCloud } from "./cloud";
-import { AfterBrowser, BackToWays, useSignIn, Waiting, Ways } from "./SignIn";
+import { AfterBrowser, AgentsMacWay, BackToWays, useSignIn, Waiting, Ways } from "./SignIn";
 import s from "./onboarding.module.css";
 
 export interface OnboardingProps {
@@ -388,27 +388,9 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         </Text>
         {connect}
       </section>
-      {window.fleetd.platform === "darwin" ? <AgentsMac /> : null}
+      {/* Where there is no first screen of ways (no fleetd cloud in this build), the Mac's way in is here. */}
+      {window.fleetd.platform === "darwin" && !cloud.state.available ? <AgentsMacWay /> : null}
     </Welcome>
-  );
-}
-
-/** On a Mac: the other way in, for the Mac every project's agents use (D309). It opens its own small window. */
-function AgentsMac() {
-  return (
-    <section className={s.section} aria-labelledby="agents-mac">
-      <Text as="h2" id="agents-mac" size="md" strong>
-        Is this the Mac for your agents?
-      </Text>
-      <Text as="p" tone="quiet">
-        Agents use it for builds and iOS simulators. You need a 6-digit code from Add machine on your main machine.
-      </Text>
-      <div className={s.actions}>
-        <Button variant="secondary" size="md" onClick={() => void window.fleetd.macSetup.open()}>
-          Set up this Mac for agents
-        </Button>
-      </div>
-    </section>
   );
 }
 

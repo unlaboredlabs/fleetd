@@ -5,13 +5,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { JoinStep } from "../../../shared/joinHere";
-import type { MacHealthRead, MacJoin, MacRedeemOutcome, MacSetupStatus } from "../../../shared/macSetup";
+import type { MacMenuBarRead } from "../../../shared/macMenuBar";
+import type { MacHealthRead, MacJoin, MacLeaveOutcome, MacRedeemOutcome, MacSetupStatus } from "../../../shared/macSetup";
 import { UiProvider } from "../../ui";
 import { MacSetup } from "./MacSetup";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoisted(() => {
+const { listeners, joins, status, health, redeem, updateHub, appCheck, macRead, leave, exit, openPane } = vi.hoisted(() => {
   const listeners = new Set<(join: MacJoin) => void>();
   const joins: Array<(join: MacJoin) => void> = [];
   const status = vi.fn((): Promise<MacSetupStatus> => Promise.resolve({ kind: "fresh" }));
@@ -23,6 +24,10 @@ const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoi
   const redeem = vi.fn((): Promise<MacRedeemOutcome> => Promise.resolve(found));
   const updateHub = vi.fn(() => Promise.resolve({ ok: true as const }));
   const appCheck = vi.fn(() => Promise.resolve());
+  const macRead = vi.fn((): Promise<MacMenuBarRead | null> => Promise.resolve(null));
+  const leave = vi.fn((): Promise<MacLeaveOutcome> => Promise.resolve({ ok: true, told: "removed", hubName: "devbox", machineId: "mac" }));
+  const exit = vi.fn(() => Promise.resolve());
+  const openPane = vi.fn(() => Promise.resolve({ ok: true as const }));
   vi.stubGlobal("fleetd", {
     platform: "darwin",
     updates: {
@@ -39,14 +44,17 @@ const { listeners, joins, status, health, redeem, updateHub, appCheck } = vi.hoi
         return () => listeners.delete(listener);
       },
       health,
-      openPane: () => Promise.resolve({ ok: true }),
+      openPane,
       restart: () => Promise.resolve({ ok: true }),
       status,
       cancel: () => Promise.resolve(),
       updateHub,
+      leave,
+      exit,
     },
+    menuBar: { read: macRead, fit: () => Promise.resolve(), hide: () => Promise.resolve(), menu: () => Promise.resolve() },
   });
-  return { listeners, joins, status, health, redeem, updateHub, appCheck };
+  return { listeners, joins, status, health, redeem, updateHub, appCheck, macRead, leave, exit, openPane };
 });
 
 let host: HTMLDivElement;
@@ -63,6 +71,10 @@ beforeEach(() => {
   redeem.mockClear();
   updateHub.mockClear();
   appCheck.mockClear();
+  macRead.mockImplementation(() => Promise.resolve(null));
+  leave.mockClear();
+  exit.mockClear();
+  openPane.mockClear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -159,55 +171,123 @@ it("opened again after a cancel, says the code is spent and what to do", async (
   expect(host.querySelector("#mac-code")).not.toBeNull();
 });
 
-it("opened again on a joined Mac, reads its checks one at a time: a read still out skips the tick", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-  const found = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "none" as const } };
-  status.mockImplementation(() => Promise.resolve({ kind: "joined", found }));
-  let answer: (read: MacHealthRead) => void = () => undefined;
-  health.mockImplementation(() => new Promise((done) => (answer = done)));
-  await open();
-  expect(host.textContent).toContain("Checking this Mac");
-  expect(health).toHaveBeenCalledTimes(1);
-  // A hub slow to answer: three ticks pass with the first read still out, and none starts another.
-  await act(async () => {
-    vi.advanceTimersByTime(3500);
-    await Promise.resolve();
-  });
-  expect(health).toHaveBeenCalledTimes(1);
-  await act(async () => {
-    answer({ health: null, writtenAt: null, checkedAt: null, now: Date.now(), hubAnswers: false, hubBehind: null });
-    await Promise.resolve();
-  });
-  await settle();
-  await act(async () => {
-    vi.advanceTimersByTime(1000);
-    await Promise.resolve();
-  });
-  expect(health).toHaveBeenCalledTimes(2);
+const HUB = "http://devbox.example.ts.net:4790";
+const FOUND = { hubUrl: HUB, hubName: "devbox", machineId: "mac", existing: true, here: { kind: "node" as const, machineId: "mac", hub: HUB } };
+/** The Mac's read as the status window gets it: linked, every check green, two simulators lent. */
+const joinedRead = (over: Partial<MacHealthRead> = {}): MacMenuBarRead => ({
+  found: FOUND,
+  hubId: null,
+  health: {
+    health: { user: "ada", checks: ["accessibility", "screen_recording", "screen_capture", "xcode", "ios_runtime", "tools"].map((id) => ({ id, state: "ok", message: `${id} ok` })) },
+    writtenAt: Date.now(),
+    checkedAt: Date.now(),
+    now: Date.now(),
+    hubAnswers: true,
+    hubBehind: null,
+    macBehind: null,
+    link: { state: "linked", since: Date.now() - 60_000 },
+    ...over,
+  },
+  activity: { simulators: [{ agent: "T12", projectId: "p1", device: "iPhone 17 Pro", sinceMs: Date.now() - 6 * 60_000 }], jobs: [] },
+  disk: { freeBytes: 182e9, totalBytes: 994e9 },
+  macBehind: null,
 });
 
-it("opened again on a node that never reports its checks: Start over goes back to a new code", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
-  const found = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "node" as const, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } };
-  status.mockImplementation(() => Promise.resolve({ kind: "joined", found }));
+it("opened again on a joined Mac, it says it works as the agents' Mac, with what runs and no setup left over", async () => {
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found: FOUND }));
+  macRead.mockImplementation(() => Promise.resolve(joinedRead()));
   await open();
-  expect(host.textContent).toContain("Waiting for its first checks…");
-  expect(button("Start over with a new code")).toBeUndefined();
+  await settle();
+  expect(host.querySelector("[data-screen='mac-status']")).not.toBeNull();
+  expect(host.querySelector("h1")?.textContent).toBe("Working as devbox’s agents’ Mac");
+  expect(host.textContent).toContain("Connected to devbox");
+  expect(host.textContent).toContain("iPhone 17 Pro");
+  // Nothing of setup or Welcome: no steps, no code, no pairing.
+  expect(host.querySelector("[aria-label='Steps']")).toBeNull();
+  expect(host.querySelector("#mac-code")).toBeNull();
+  expect(host.textContent).not.toMatch(/Is this the Mac|fleetd pair|Pairing code/u);
+});
+
+it("Stop being the agents' Mac: one confirm says what happens, then the Mac leaves its hub and Continue goes to Welcome", async () => {
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found: FOUND }));
+  macRead.mockImplementation(() => Promise.resolve(joinedRead()));
+  await open();
+  await settle();
   await act(async () => {
-    vi.advanceTimersByTime(46_000);
+    button("Stop being the agents’ Mac")?.click();
     await Promise.resolve();
   });
-  expect(host.textContent).toContain("start over with a new code");
-  expect(button("Restart the node")).toBeDefined();
+  const confirm = host.querySelector("[role='alertdialog']");
+  expect(confirm?.textContent).toContain("mac leaves devbox, its node stops and its key is deleted.");
+  expect(leave).not.toHaveBeenCalled();
   await act(async () => {
-    button("Start over with a new code")?.click();
+    [...(confirm?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Stop being the agents’ Mac")?.click();
     await Promise.resolve();
   });
   await settle();
-  expect(host.querySelector("[data-step='code']")).not.toBeNull();
-  vi.useRealTimers();
+  expect(leave).toHaveBeenCalledTimes(1);
+  expect(host.querySelector("[data-screen='mac-left']")?.textContent).toContain("mac left devbox.");
+  await act(async () => {
+    button("Continue")?.click();
+    await Promise.resolve();
+  });
+  expect(exit).toHaveBeenCalledTimes(1);
+});
+
+it("Stop being the agents' Mac with the hub offline: the Mac is clean all the same, and says the hub shows it offline", async () => {
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found: FOUND }));
+  macRead.mockImplementation(() => Promise.resolve(joinedRead({ link: { state: "down", since: Date.now() - 120_000 } })));
+  leave.mockImplementationOnce(() => Promise.resolve({ ok: true, told: "unreached", hubName: "devbox", machineId: "mac" }));
+  await open();
+  await settle();
+  expect(host.textContent).toContain("Not connected: devbox isn’t answering");
+  await act(async () => {
+    button("Stop being the agents’ Mac")?.click();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    [...(host.querySelector("[role='alertdialog']")?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Stop being the agents’ Mac")?.click();
+    await Promise.resolve();
+  });
+  await settle();
+  expect(host.querySelector("[data-screen='mac-left']")?.getAttribute("data-told")).toBe("unreached");
+  expect(host.textContent).toContain("devbox wasn’t reached, so it shows mac offline until an admin removes it there.");
+});
+
+it("after the join, every check is a row as the node reports it, each permission with its own Allow", async () => {
+  await open();
   await typeCode();
-  expect(redeem).toHaveBeenCalledTimes(1);
+  const now = Date.now();
+  health.mockImplementation(() =>
+    Promise.resolve({
+      health: { user: "ada", checks: [{ id: "accessibility", state: "fail", message: "fleetd doesn't have Accessibility." }, { id: "screen_recording", state: "ok", message: "ok" }, { id: "screen_capture", state: "fail", message: "macOS hasn't let fleetd capture the screen directly yet." }] },
+      writtenAt: now + 500,
+      checkedAt: null,
+      now: now + 500,
+      hubAnswers: true,
+      hubBehind: null,
+      link: { state: "linked", since: now + 400 },
+    }),
+  );
+  await report({ state: "done", steps: steps(4) });
+  await act(async () => {
+    joins[0]?.({ state: "done", steps: steps(4) });
+    await Promise.resolve();
+  });
+  await settle();
+  await settle();
+  const row = (id: string) => host.querySelector(`[data-check='${id}']`);
+  expect(host.textContent).not.toContain("Waiting for its first checks");
+  expect(row("node")?.getAttribute("data-state")).toBe("done");
+  expect(row("link")?.getAttribute("data-state")).toBe("done");
+  expect(row("accessibility")?.getAttribute("data-state")).toBe("needs_you");
+  expect(row("screen_capture")?.getAttribute("data-state")).toBe("needs_you");
+  expect(row("checks")?.getAttribute("data-state")).toBe("running");
+  await act(async () => {
+    [...(row("screen_capture")?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Allow")?.click();
+    await Promise.resolve();
+  });
+  expect(openPane).toHaveBeenCalledWith("screen_capture");
 });
 
 const button = (label: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === label);
@@ -232,18 +312,8 @@ it("an app older than the hub says so in one line, with its Update button", asyn
 });
 
 const behindOn = async (who: "admin" | "member" | "unknown") => {
-  const found = { hubUrl: "http://devbox.example.ts.net:4790", hubName: "devbox", machineId: "mac", existing: true, here: { kind: "none" as const } };
-  status.mockImplementation(() => Promise.resolve({ kind: "joined", found }));
-  health.mockImplementation(() =>
-    Promise.resolve({
-      health: { user: "ada", checks: [{ id: "accessibility", state: "ok", message: "ok" }, { id: "screen_recording", state: "ok", message: "ok" }] },
-      writtenAt: Date.now(),
-      checkedAt: Date.now(),
-      now: Date.now(),
-      hubAnswers: true,
-      hubBehind: { hubVersion: "0.0.0-edge.202611071720+6d5a250", macVersion: "0.0.0-edge.202611071744+f893086", who },
-    }),
-  );
+  status.mockImplementation(() => Promise.resolve({ kind: "joined", found: FOUND }));
+  macRead.mockImplementation(() => Promise.resolve(joinedRead({ hubBehind: { hubVersion: "0.0.0-edge.202611071720+6d5a250", macVersion: "0.0.0-edge.202611071744+f893086", who } })));
   await open();
   await settle();
 };

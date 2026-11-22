@@ -3,12 +3,15 @@
 //            found to pick from: the code goes to one hub only);
 //   confirm → only when joining replaces a node: this Mac's own, or the hub's machine of that name; or, opened again
 //            after the hub took the code, whether to join now;
-// A window opening asks main where the setup stands (`resume`) and opens on that: the join running, the checks of a
-// node joined already, or what became of a code spent with nothing joined.
+// A window opening asks main where the setup stands (`resume`) and opens on that: the join running, the status of a
+// Mac joined already, or what became of a code spent with nothing joined.
 //   join   → install the hub's fleetd and join, each step as main reports it;
-//   check  → the node's own checks, read live: the two grants first, each with its System Settings pane, then every
-//            other check, until all are green and the hub answers: done.
+//   check  → every check a row, read live (setupRows): the node, its link to the hub, each permission with its button,
+//            the node's other checks and the Test, each waiting, running, done, needing the person or failed, and one
+//            still waiting past STALL_MS says why with one way forward;
+//   status → the agents' Mac at work (MacStatus): the window it opens on from then on, with Stop being the agents' Mac.
 import type { MacCheck, MacHealth } from "../../../shared/contracts";
+import type { MacMenuBarRead } from "../../../shared/macMenuBar";
 import type { MacFound, MacHealthRead, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupFailure, MacSetupStatus, MacPane } from "../../../shared/macSetup";
 
 export type State =
@@ -57,7 +60,8 @@ export type State =
       readonly waitFrom?: number;
       readonly restarting: boolean;
       readonly restartFailure?: MacSetupFailure | undefined;
-    };
+    }
+  | { readonly step: "status"; readonly found: MacFound };
 
 export type Event =
   | { readonly type: "code"; readonly value: string }
@@ -73,7 +77,8 @@ export type Event =
   | { readonly type: "retry" }
   | { readonly type: "health"; readonly read: MacHealthRead }
   | { readonly type: "restart" }
-  | { readonly type: "restarted"; readonly outcome: MacRestartOutcome; readonly at: number };
+  | { readonly type: "restarted"; readonly outcome: MacRestartOutcome; readonly at: number }
+  | { readonly type: "finish" };
 
 export const initial: State = { step: "code", code: "", hub: "", askHub: false, busy: false };
 
@@ -112,7 +117,7 @@ export function reduce(state: State, event: Event): State {
         case "joining":
           return { step: "join", found: status.found };
         case "joined":
-          return { step: "check", found: status.found, since: 0, restarting: false, resumed: true, waitFrom: event.at };
+          return { step: "status", found: status.found };
         case "spent":
           return { ...state, notice: status.failure };
       }
@@ -152,6 +157,8 @@ export function reduce(state: State, event: Event): State {
       return state.step === "join" && state.join?.state === "failed" && state.join.retry === true ? { step: "join", found: state.found } : state;
     case "health": {
       if (state.step !== "check") return state;
+      // The node stopped as this hub's machine (removed, or refused as one it doesn't know): a new code it is.
+      if (event.read.gone) return { step: "code", code: "", hub: "", askHub: false, busy: false, notice: event.read.gone };
       const grants = event.read.health?.checks.filter((c) => (c.id === "accessibility" || c.id === "screen_recording") && c.state === "ok").length ?? 0;
       const grantedAt = state.grantedAt ?? (grants === 2 && event.read.writtenAt !== null ? event.read.writtenAt : undefined);
       return { ...state, read: event.read, ...(grantedAt === undefined ? {} : { grantedAt }) };
@@ -160,7 +167,11 @@ export function reduce(state: State, event: Event): State {
       return state.step === "check" && !state.restarting ? { ...state, restarting: true, restartFailure: undefined } : state;
     case "restarted":
       if (state.step !== "check") return state;
-      return event.outcome.ok ? { ...state, restarting: false, since: event.at } : { ...state, restarting: false, restartFailure: event.outcome.failure };
+      return event.outcome.ok
+        ? { ...state, restarting: false, since: event.at, ...(state.waitFrom === undefined ? {} : { waitFrom: event.at }) }
+        : { ...state, restarting: false, restartFailure: event.outcome.failure };
+    case "finish":
+      return state.step === "check" ? { step: "status", found: state.found } : state;
   }
 }
 
@@ -239,6 +250,7 @@ export const checkTitle = (id: string): string =>
     ios_runtime: "iOS simulator runtime",
     accessibility: "Accessibility",
     screen_recording: "Screen Recording",
+    screen_capture: "Screen capture",
     gui_session: "Login on screen",
     keep_awake: "Stays awake",
     tools: "Agent tools",
@@ -276,8 +288,130 @@ export function checkView(state: Extract<State, { step: "check" }>, now: number)
 export function stepOf(state: State, now: number): StepName {
   if (state.step === "code" || state.step === "confirm") return "Code";
   if (state.step === "join") return "Join";
-  return checkView(state, now).kind === "test" ? "Test" : "Permissions";
+  if (state.step === "status") return "Test";
+  // Permissions until all three are on (the screen capture prompt comes after Screen Recording), then the Test.
+  const permissions = setupRows(state, now).filter((r) => PERMISSIONS.some((p) => p.id === r.id));
+  return checkView(state, now).kind === "test" && permissions.every((r) => r.state === "done") ? "Test" : "Permissions";
+}
+
+/** A check that has waited this long says why, with one way forward. */
+export const STALL_MS = 20_000;
+/** The node's run of every check (Xcode's commands among them) may take this long before it says so. */
+export const CHECKS_STALL_MS = 90_000;
+
+export type RowState = "waiting" | "running" | "done" | "needs_you" | "failed";
+
+/** The one way forward a row offers: a permission's Allow, the node's restart, a new code, or Xcode's page. */
+export type RowAction =
+  | { readonly kind: "grant"; readonly pane: "accessibility" | "screen_recording" | "screen_capture" }
+  | { readonly kind: "restart" }
+  | { readonly kind: "newCode" }
+  | { readonly kind: "open"; readonly pane: "app_store" };
+
+export interface SetupRow {
+  readonly id: string;
+  readonly title: string;
+  readonly state: RowState;
+  /** Where it stands, or what it waits on. */
+  readonly line: string;
+  readonly action?: RowAction;
+}
+
+const PERMISSIONS = [
+  { id: "accessibility", title: "Accessibility" },
+  { id: "screen_recording", title: "Screen Recording" },
+  { id: "screen_capture", title: "Screen capture" },
+] as const;
+
+/**
+ * Every check of the check step as a row, live from the node's files: the node, its link to the hub, the three
+ * permissions (each with its Allow), the node's other checks, and the Test. A row waits on the one before it says so;
+ * one running past STALL_MS (the node's whole run, CHECKS_STALL_MS) says why, with its one way forward.
+ */
+export function setupRows(state: Extract<State, { step: "check" }>, now: number): SetupRow[] {
+  const { read } = state;
+  const hub = state.found.hubName;
+  const from = state.waitFrom ?? state.since;
+  const rows: SetupRow[] = [];
+  const wrote = (at: number | null | undefined) => at !== null && at !== undefined && at > state.since;
+  const link = read?.link ?? null;
+  const started = read !== undefined && ((link !== null && (state.resumed === true || link.since > state.since)) || (read.health !== null && wrote(read.writtenAt)));
+  const waitsNode = { state: "waiting", line: "Waits for the node" } as const;
+
+  rows.push(
+    started
+      ? { id: "node", title: "Node", state: "done", line: "Running" }
+      : now - from > STALL_MS
+        ? { id: "node", title: "Node", state: "failed", line: "The node hasn't started.", action: { kind: "restart" } }
+        : { id: "node", title: "Node", state: "running", line: "Starting" },
+  );
+
+  const linkTitle = `Linked to ${hub}`;
+  if (!started) rows.push({ id: "link", title: linkTitle, ...waitsNode });
+  else if (link === null) rows.push({ id: "link", title: linkTitle, ...(read.hubAnswers ? { state: "done", line: "Linked" } : { state: "running", line: `Reaching ${hub}` }) });
+  else if (link.state === "linked") rows.push({ id: "link", title: linkTitle, state: "done", line: "Linked" });
+  else if (link.state === "refused") rows.push({ id: "link", title: linkTitle, state: "failed", line: `${hub} refused this Mac: ${link.why ?? "it gave no reason"}`, action: { kind: "newCode" } });
+  else if (now - link.since > STALL_MS) rows.push({ id: "link", title: linkTitle, state: "failed", line: `${hub} isn't answering this Mac.`, action: { kind: "restart" } });
+  else rows.push({ id: "link", title: linkTitle, state: "running", line: `Reaching ${hub}` });
+
+  const checks = started ? (read.health?.checks ?? []) : [];
+  const find = (id: string) => checks.find((c) => c.id === id);
+  for (const p of PERMISSIONS) {
+    const check = find(p.id);
+    // A node from before the screen capture check ran all its checks without it: nothing to wait for.
+    if (p.id === "screen_capture" && check === undefined && started && read.checkedAt !== null && find("screen_recording") !== undefined) continue;
+    if (!started) rows.push({ id: p.id, title: p.title, ...waitsNode });
+    else if (check?.state === "ok") rows.push({ id: p.id, title: p.title, state: "done", line: "Allowed" });
+    else if (check?.state === "fail") rows.push({ id: p.id, title: p.title, state: "needs_you", line: check.message, action: { kind: "grant", pane: p.id } });
+    else if (p.id === "screen_capture" && find("screen_recording")?.state !== "ok") rows.push({ id: p.id, title: p.title, state: "waiting", line: "Waits for Screen Recording" });
+    else rows.push({ id: p.id, title: p.title, state: "running", line: "Checking" });
+  }
+
+  // The node's other checks, once it ran them all since this wait began (its first write has the permissions alone).
+  const ran = started && read.checkedAt !== null && (state.resumed === true || read.checkedAt > state.since);
+  const others = checks.filter((c) => !PERMISSIONS.some((p) => p.id === c.id));
+  if (!started) rows.push({ id: "checks", title: "Xcode, simulators and tools", ...waitsNode });
+  else if (!ran || others.length === 0) {
+    rows.push(
+      now - from > CHECKS_STALL_MS
+        ? { id: "checks", title: "Xcode, simulators and tools", state: "failed", line: "The node's checks are taking long.", action: { kind: "restart" } }
+        : { id: "checks", title: "Xcode, simulators and tools", state: "running", line: "Checking" },
+    );
+  } else {
+    for (const c of others.map(rowOf)) {
+      const opens = c.opens === "app_store" ? { action: { kind: "open", pane: "app_store" } as const } : {};
+      if (c.state === "ok") rows.push({ id: c.id, title: checkTitle(c.id), state: "done", line: c.message });
+      else if (c.state === "fail") rows.push({ id: c.id, title: checkTitle(c.id), state: "failed", line: c.fix ?? c.message, ...opens });
+      else if (waits(c)) rows.push({ id: c.id, title: checkTitle(c.id), state: "needs_you", line: c.message, ...opens });
+      // Waits on another (the simulator runtime on Xcode), or the node is at it (an install): never holds setup up.
+      else rows.push({ id: c.id, title: checkTitle(c.id), state: c.state === "warn" ? "waiting" : "running", line: c.message });
+    }
+  }
+
+  // Every row but a warning's (Xcode still to install) done: the Test is what runs now.
+  const before = rows.every((r) => r.state === "done" || (r.state !== "failed" && others.some((c) => c.id === r.id)));
+  const view = checkView(state, now);
+  rows.push(
+    view.kind === "test" && view.green
+      ? { id: "test", title: "Test", state: "done", line: "Every check passes" }
+      : before
+        ? { id: "test", title: "Test", state: "running", line: "Running every check once more" }
+        : { id: "test", title: "Test", state: "waiting", line: "Waits for the steps above" },
+  );
+  return rows;
 }
 
 /** How often the check step reads the node's checks again. */
 export const READ_EVERY_MS = 1000;
+
+/** The status window's line under its title: linked to the hub, or not and why. */
+export function statusLine(read: MacMenuBarRead, now: number): { readonly text: string; readonly tone: "ok" | "warn" } {
+  const h = read.health;
+  const hub = read.found.hubName;
+  const running = h.health !== null && now - Math.max(h.checkedAt ?? 0, h.writtenAt ?? 0) < FRESH_MS;
+  if (!running) return { text: "Not connected: fleetd’s node on this Mac isn’t running", tone: "warn" };
+  const link = h.link ?? null;
+  if (link === null) return h.hubAnswers ? { text: `Connected to ${hub}`, tone: "ok" } : { text: `Not connected: ${hub} isn’t answering`, tone: "warn" };
+  if (link.state === "linked" || now - link.since < STALL_MS) return { text: `Connected to ${hub}`, tone: "ok" };
+  return { text: link.state === "refused" ? `Not connected: ${hub} refused this Mac` : `Not connected: ${hub} isn’t answering`, tone: "warn" };
+}

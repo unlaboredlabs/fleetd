@@ -22,7 +22,7 @@ import { z } from "zod";
 import type { MacHealth } from "../shared/contracts";
 import type { JoinStep, ThisComputer } from "../shared/joinHere";
 import { administers, serves, type CallOutcome } from "../shared/hub";
-import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
+import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacHealthRead, type MacHubUpdateOutcome, type MacJoin, type MacLeaveOutcome, type MacLink, type MacPane, type MacRedeemOutcome, type MacRedeemRequest, type MacRestartOutcome, type MacSetupFailure, type MacSetupStatus } from "../shared/macSetup";
 import type { MacActivity, MacBehind, MacDisk, MacMenuBarRead } from "../shared/macMenuBar";
 import { compareVersions, isEdge } from "../shared/pairing";
 import { assetFor, installBuild, thisComputer, type JoinPorts } from "./joinHere";
@@ -38,6 +38,7 @@ const MAX_PEERS = 48;
 export const PANE_URLS: Readonly<Record<MacPane, string>> = {
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
   screen_recording: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  screen_capture: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
   // The node's Xcode check gives the same link (agents_mac/xcode.rs).
   app_store: "macappstore://apps.apple.com/app/id497799835",
 };
@@ -314,11 +315,12 @@ const HEALTH = z.object({ user: z.string(), checks: z.array(CHECK) });
  */
 export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefined, role: (hubUrl: string) => Promise<HubBehind["who"]> = (hub) => ports.hubRole(hub)): Promise<MacHealthRead> {
   const node = path.join(ports.fleetdDir, "node");
-  const [file, checked, hub, up] = await Promise.all([
+  const [file, checked, hub, up, linkFile] = await Promise.all([
     ports.readFile(path.join(node, "mac-health.json")),
     ports.readFile(path.join(node, "mac-health.checked")),
     hubUrl === undefined ? Promise.resolve(undefined) : probe(ports.fetch, hubUrl, FIND_TIMEOUT_MS),
     ports.readFile(path.join(node, "update", "up")),
+    ports.readFile(path.join(node, "mac-link.json")),
   ]);
   const answers = hub?.answers === true;
   const macVersion = up?.text.trim() ?? "";
@@ -338,8 +340,22 @@ export async function readHealth(ports: MacSetupPorts, hubUrl: string | undefine
       // Half-written: the next read has it.
     }
   }
-  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind, macBehind };
+  return { health, writtenAt: file?.writtenAt ?? null, checkedAt: checked?.writtenAt ?? null, now: ports.now(), hubAnswers: answers, hubBehind, macBehind, link: parseLink(linkFile?.text) };
 }
+
+const LINK = z.object({ state: z.enum(["linking", "linked", "down", "refused"]), why: z.string().max(500).optional(), since: z.number() });
+
+/** The node's mac-link.json (node/agents_mac/common.ts), or null when it isn't there (an older node) or can't be read. */
+export const parseLink = (text: string | undefined): MacLink | null => {
+  if (text === undefined) return null;
+  try {
+    const parsed = LINK.safeParse(JSON.parse(text));
+    return parsed.success ? (parsed.data as MacLink) : null;
+  } catch {
+    // Half-written: the next read has it.
+    return null;
+  }
+};
 
 const SIM = z.object({ agent: z.string(), projectId: z.string(), device: z.string(), sinceMs: z.number() });
 const JOB = z.object({ agent: z.string(), projectId: z.string(), job: z.number(), command: z.string(), startedMs: z.number() });
@@ -364,7 +380,7 @@ export const ASK_WAIT_S = 5;
  * `fleetd node grants --ask <grant>`: the running node asks macOS for it within 2 s, and the pane opens either way.
  * A node that didn't take the ask in time isn't running: the page says so, with its Restart.
  */
-export async function askGrant(ports: MacSetupPorts, grant: "accessibility" | "screen_recording"): Promise<MacRestartOutcome> {
+export async function askGrant(ports: MacSetupPorts, grant: "accessibility" | "screen_recording" | "screen_capture"): Promise<MacRestartOutcome> {
   const ran = await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "grants", "--ask", grant, "--wait", String(ASK_WAIT_S), "--home", path.join(ports.fleetdDir, "node")]);
   if (ran.code === 0) return { ok: true };
   return { ok: false, failure: { message: cliFailure(ran.output).message, fix: "Restart the node: it asks macOS once it runs." } };
@@ -409,7 +425,31 @@ export async function joinedHere(ports: MacSetupPorts): Promise<MacFound | undef
 export async function removedHere(ports: MacSetupPorts): Promise<MacSetupFailure | undefined> {
   const node = await macNode(ports);
   if (node === undefined || node.enrolled === true || node.removed !== true) return undefined;
-  return { message: `${node.hubName} removed this Mac, so its agents can't use it now.`, fix: "To set it up again, type a new code from Add machine › A Mac for agents on your main machine." };
+  const fix = "To set it up again, type a new code from Add machine › A Mac for agents on your main machine.";
+  // Refused as a machine it holds no key for (forgotten before it kept removed keys, or a hub moved elsewhere).
+  const link = parseLink((await ports.readFile(path.join(ports.fleetdDir, "node", "mac-link.json")))?.text);
+  if (link?.state === "refused" && link.why?.includes(NOT_ENROLLED) === true) return { message: `${node.hubName} doesn't know this Mac any more.`, fix };
+  return { message: `${node.hubName} removed this Mac, so its agents can't use it now.`, fix };
+}
+
+/** How the hub says it holds no key for a node (fleetd/src/shared/node_link.ts NOT_ENROLLED). */
+const NOT_ENROLLED = "is not enrolled";
+
+/** `fleetd node leave`'s last line (fleetd/src/cli/node_leave.ts LEFT). */
+const LEFT = /^left: (removed|unreached|old|none)$/mu;
+
+/**
+ * Stop being the agents' Mac: `fleetd node leave` stops the node's service, has the hub remove this machine when it
+ * answers, and deletes the node's key and settings. The window then says whether the hub heard.
+ */
+export async function leaveMac(ports: MacSetupPorts): Promise<MacLeaveOutcome> {
+  const node = await macNode(ports);
+  const machineId = node?.machineId ?? "This Mac";
+  const hubName = node?.hubName ?? "your hub";
+  const ran = await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "leave", "--home", path.join(ports.fleetdDir, "node")]);
+  const told = LEFT.exec(ran.output)?.[1] as "removed" | "unreached" | "old" | "none" | undefined;
+  if (ran.code !== 0 || told === undefined) return { ok: false, failure: cliFailure(ran.output) };
+  return { ok: true, told, hubName, machineId };
 }
 
 /** How long "not signed in to the hub here" stands before it is asked again. */
@@ -495,7 +535,17 @@ export class MacSetup {
     return this.#ended === undefined ? { kind: "fresh" } : { kind: "spent", failure: this.#ended };
   }
 
-  health(hubUrl: string | undefined): Promise<MacHealthRead> {
+  async health(hubUrl: string | undefined): Promise<MacHealthRead> {
+    const [read, gone] = await Promise.all([this.#health(hubUrl), removedHere(this.#ports)]);
+    return { ...read, gone: gone ?? null };
+  }
+
+  /** Stop being the agents' Mac. */
+  leave(): Promise<MacLeaveOutcome> {
+    return leaveMac(this.#ports);
+  }
+
+  #health(hubUrl: string | undefined): Promise<MacHealthRead> {
     return readHealth(this.#ports, hubUrl, (hub) => {
       const now = this.#ports.now();
       let asked = this.#roles.get(hub);
@@ -534,7 +584,7 @@ export class MacSetup {
 
   /** A grant: the node asks macOS for it (its prompt, and fleetd in the list), then the CLI opens its pane. Else the link. */
   async openPane(pane: MacPane): Promise<MacRestartOutcome> {
-    if (pane === "accessibility" || pane === "screen_recording") return askGrant(this.#ports, pane);
+    if (pane === "accessibility" || pane === "screen_recording" || pane === "screen_capture") return askGrant(this.#ports, pane);
     await this.#ports.openPane(PANE_URLS[pane]);
     return { ok: true };
   }

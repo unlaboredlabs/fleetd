@@ -38,6 +38,7 @@ import {
   HEARTBEAT_TIMEOUT_SECS,
   HUB_CAP_LINK_BULK,
   HUB_CAP_LINK_DEFLATE,
+  HUB_CAP_MACHINE_LEAVE,
   HUB_CAP_SESSION_ROUTE,
   LINK_BULK_BYTES,
   type HubFrame,
@@ -45,6 +46,7 @@ import {
   type NodeFrame,
   type NodeHello,
   type NodeLoad,
+  notEnrolledReason,
   protocolBehind,
   removedReason,
   REPLY_OF,
@@ -542,7 +544,7 @@ export class Link {
     if (key === undefined) {
       // A removed machine's node stops as enrolled (src/node/index.ts); any other waits for the hub to know it.
       if (nodes.removedKey(machineId, hello.pubKey)) throw new Refused(CLOSE.UNAUTHORIZED, removedReason(machineId));
-      throw new Refused(CLOSE.UNAUTHORIZED, `${machineId} is not enrolled: run fleetd pair --worker ${machineId} on the hub`);
+      throw new Refused(CLOSE.UNAUTHORIZED, notEnrolledReason(machineId));
     }
     if (key !== hello.pubKey) throw new Refused(CLOSE.UNAUTHORIZED, `key does not match the key enrolled for ${machineId}`);
     // A node enrolled before fingerprints: its first hello since records its computer.
@@ -608,7 +610,7 @@ export class Link {
       hubId: this.hubId,
       machineId,
       protocol: PROTOCOL_VERSION,
-      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE, LEAD_CALL_ONCE, HUB_CAP_LINK_BULK],
+      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE, LEAD_CALL_ONCE, HUB_CAP_LINK_BULK, HUB_CAP_MACHINE_LEAVE],
     });
     // Compressed both ways from here on, for a node that asked.
     if (caps.includes(CAP_LINK_DEFLATE)) {
@@ -698,6 +700,9 @@ export class Link {
       case "slept":
         this.slept(machineId, frame);
         break;
+      case "leave":
+        this.leave(machineId, id);
+        throw new Refused(CLOSE.UNAUTHORIZED, removedReason(machineId));
       case "machine_event": {
         const event = frame.event as { type?: string } | undefined;
         // The runner the node pushes (a probe, a login that expired or came back) while the link lives.
@@ -1012,6 +1017,34 @@ export class Link {
       this.close(live.ws, live.state, CLOSE.HEARTBEAT_TIMEOUT, `no frame for ${seconds} s`);
     }
     console.info(`node link: machine offline machine_id=${machineId}`);
+  }
+
+  /**
+   * The agents' Mac left the hub (Stop being the agents' Mac, on it): the hub removes it as machine_remove does. It runs
+   * no bot, so nothing else goes with it; its link closes as removed. Any other machine is removed from the app.
+   */
+  private leave(machineId: string, id: number): void {
+    // Its hello's word alone isn't enough: a machine that holds bots is removed from the app, which erases them.
+    let bots = 0;
+    try {
+      bots = store(this.hub).projectsList(machineId).length;
+    } catch (error) {
+      console.error("node link: a leaving machine's bots weren't read:", error);
+      bots = 1;
+    }
+    if (this.capabilities.get(machineId)?.has(CAP_AGENTS_MAC) !== true || bots > 0) {
+      throw new Refused(CLOSE.BAD_FRAME, "only the agents' Mac leaves by itself: remove this machine from the app");
+    }
+    const live = this.links.get(machineId);
+    if (live?.id === id) this.unlink(machineId, id, live.state);
+    this.hub.auth.nodes.revokeNode(machineId);
+    try {
+      store(this.hub).machineRemove(machineId);
+    } catch (error) {
+      console.error("node link: the machine that left wasn't forgotten:", error);
+    }
+    this.append("machine.removed", machineId, `${machineId} left the hub: it isn't the agents' Mac any more`);
+    console.info(`node link: ${machineId} left the hub`);
   }
 
   /**

@@ -12,6 +12,7 @@ import * as tty from "../tty.ts";
 import { Checklist } from "./checklist.ts";
 import { asOwner, claudeKey } from "./connect_steps.ts";
 import { type Added, Stop, join as joinHubAs, localArgs } from "./machine.ts";
+import { setupRows } from "../../node/agents_mac/rows.ts";
 import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
 import { runAttached, runSsh } from "./ssh.ts";
@@ -115,7 +116,7 @@ export function initRole(hubSetup: boolean, joined: [string, string] | undefined
   return joined ? "repair_worker" : "ask";
 }
 
-export type Joined = { hub: string; machineId: string; identity?: GitIdentity };
+export type Joined = { hub: string; machineId: string; identity?: GitIdentity; agentsMac?: boolean };
 
 /** The commit identity in a node unit `machine add` wrote (systemd or launchd); undefined for any other file. */
 export function nodeUnitFacts(fileName: string, text: string): { identity?: GitIdentity } | undefined {
@@ -169,7 +170,7 @@ export function joinedHere(): Joined | undefined {
     }
     if (identity !== undefined) break;
   }
-  return { hub: node.hub, machineId: node.machineId, ...(identity ? { identity } : {}) };
+  return { hub: node.hub, machineId: node.machineId, ...(identity ? { identity } : {}), ...(node.agentsMac === true ? { agentsMac: true } : {}) };
 }
 
 // ---- the run ----
@@ -339,10 +340,8 @@ async function joinHub(opts: InitOptions, ui: Ui, list: Checklist): Promise<numb
   nodeLine(list, added.machineId, added, `joined ${hub.trim()}`);
   notes(list, said);
   if (opts.mac) {
-    // At a terminal too, until the grants' own prompts (src/node/agents_mac) are here to walk through: the same note.
-    list.note(
-      "This is the agents' Mac now. Last, at this Mac: run fleetd node grants --ask accessibility, then fleetd node grants --ask screen_recording, and turn on fleetd in each pane they open; the node restarts itself to take up each. Settings › Hub › Setup › A Mac for agents in the app shows each check.",
-    );
+    // The node's own checks as they stand, the app's setup window's rows: the permissions are allowed there.
+    macRows(list, hubNameOf(hub.trim()));
     return workerEnd(list, "This Mac is the agents' Mac now.", true);
   }
   await workerClaude(ui, list, added);
@@ -363,6 +362,7 @@ async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: 
       ...localArgs(joined.machineId, opts.withService),
       ...(identity ? { gitIdentity: identity } : {}),
       ...(opts.claudeConfigDir === undefined ? {} : { claudeConfigDir: opts.claudeConfigDir }),
+      mac: joined.agentsMac === true,
     });
   } catch (error) {
     if (!(error instanceof Stop)) {
@@ -373,12 +373,36 @@ async function repairWorker(opts: InitOptions, ui: Ui, list: Checklist, joined: 
   }
   const said = release();
   if (added === undefined) failedWithLog(list, title, "check stopped", said, "fix the cause above, then run fleetd init again");
-  else {
+  else if (joined.agentsMac === true) {
+    // The agents' Mac runs no claude: its node's own checks, as the app's setup window shows them.
+    nodeLine(list, title, added, `the agents' Mac of ${joined.hub}`);
+    notes(list, said);
+    macRows(list, hubNameOf(joined.hub));
+    return workerEnd(list, "This Mac is the agents' Mac.", true);
+  } else {
     nodeLine(list, title, added, `enrolled with ${joined.hub}`);
     notes(list, said);
     await workerClaude(ui, list, added);
   }
   return workerEnd(list, "This machine is a worker.", true);
+}
+
+/** The hub's host, as the rows name it. */
+const hubNameOf = (hub: string) => {
+  try {
+    return new URL(hub).hostname.split(".")[0] || hub;
+  } catch {
+    return hub;
+  }
+};
+
+/** The agents' Mac's node's own checks (node/agents_mac/rows.ts), one line each. */
+export function macRows(list: Checklist, hubName: string, home = join(fleetdDir(), "node")) {
+  for (const row of setupRows(home, hubName)) {
+    if (row.state === "done") list.done(row.title, row.detail);
+    else if (row.state === "failed") list.failed(row.title, row.detail, row.fix ?? "run fleetd init again");
+    else list.warn(row.title, row.detail, row.fix);
+  }
 }
 
 /** The tail of what a captured step printed, as its ✗ line with its own fix where it gave one. */

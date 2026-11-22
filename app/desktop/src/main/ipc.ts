@@ -59,7 +59,7 @@ export const registerIpc = (
     presence: PresenceSetting;
     sessionWindows: SessionWindows;
     /** Set up this Mac for agents' own window. */
-    macSetupWindow: { show(): void };
+    macSetupWindow: { show(): void; exit(): void };
     /** The agents' Mac's menu bar icon and its popover. */
     menuBar: Pick<MenuBar, "look" | "fit" | "hide" | "showMenu">;
   },
@@ -218,6 +218,13 @@ export const registerIpc = (
   handle(IPC.macSetupStatus, () => macSetup.status());
   handle(IPC.macSetupCancel, () => macSetup.cancel());
   handle(IPC.macSetupUpdateHub, (_event, hub) => macSetup.updateHub(hub));
+  handle(IPC.macSetupLeave, async () => {
+    const left = await macSetup.leave();
+    // Gone: the menu bar's icon goes with it.
+    if (left.ok) void frame.menuBar.look();
+    return left;
+  });
+  handle(IPC.macSetupExit, () => frame.macSetupWindow.exit());
   handle(IPC.menuBarRead, () => macSetup.menuBar(hubIdFor));
   handle(IPC.menuBarFit, (_event, height) => frame.menuBar.fit(height));
   handle(IPC.menuBarHide, () => frame.menuBar.hide());

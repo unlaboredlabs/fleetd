@@ -34,13 +34,14 @@ import {
 } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
 import type { NodeConfig } from "../config.ts";
-import { readMac, run as runChecks } from "./checks.ts";
-import { checkedFile, type MacHealth, writeHealth } from "./common.ts";
+import { grant, readMac, run as runChecks, screenCapture } from "./checks.ts";
+import { checkedFile, health, type MacHealth, type MacLink, user, writeHealth, writeLink } from "./common.ts";
+import { tcc } from "./tcc.ts";
 import { answer, CHECK_EVERY, every, type Fresh, overlay, takeUp } from "./grants.ts";
 import { Installing } from "./tools.ts";
 
 export { blocksSimulators, HOMEBREW_BINS } from "./checks.ts";
-export { checkedFile, GRANTS, healthFile, lastFullCheck, readHealth, toolsDir, user } from "./common.ts";
+export { checkedFile, GRANTS, healthFile, lastFullCheck, linkFile, readHealth, readLink, toolsDir, user } from "./common.ts";
 export { ASK_WAIT, askFile, askNode, asked, CHECK_EVERY, grantsCommand, line, notAsked, openPane, own, parse, request } from "./grants.ts";
 
 /** What the agents' Mac answers the hub for everything it doesn't do: it is a tool, never a runner. */
@@ -124,11 +125,17 @@ export class AgentsMac {
   private awake: { release: () => void } | undefined;
   private readonly timers: Timer[] = [];
   private stopped = false;
+  private linkState: MacLink | undefined;
+  /** The last try at capturing the screen (checks.ts screenCapture): true, its error, or undefined before one. */
+  private captured: true | string | undefined;
+  private capturedAt = 0;
 
   constructor(
     readonly home: string,
     /** Its tool is on, as the node found at its start: its hello lists `mac_tool`. */
     readonly tool: boolean,
+    /** One small capture of the screen: undefined when it came back, else why not. Tests pass their own. */
+    private readonly capture: () => Promise<string | undefined> = captureOnce,
   ) {}
 
   health(): MacHealth | undefined {
@@ -137,9 +144,33 @@ export class AgentsMac {
 
   /** Holds `h`, with the grants a fresh process found, for the heartbeat and in the health file for setup. */
   publish(h: MacHealth): void {
-    const shown = this.fresh ? overlay(h, this.fresh) : h;
+    const granted = this.fresh ? overlay(h, this.fresh) : h;
+    const shown = process.platform === "darwin" || this.captured !== undefined ? withCapture(granted, this.captured) : granted;
     writeHealth(this.home, shown);
     this.last = shown;
+  }
+
+  /**
+   * Tries one capture once Screen Recording is on: on macOS 15 and later the first one puts up macOS's prompt whether
+   * fleetd may capture the screen directly, and until the person allows it each try fails, so this says when they did.
+   * Tried again every CAPTURE_RETRY while it fails, else every CHECK_EVERY, or at once when setup asks (`now`).
+   */
+  async probeCapture(recording: boolean | undefined, now = false, at = Date.now()): Promise<void> {
+    const due = now || (this.captured === true ? at - this.capturedAt >= CHECK_EVERY : at - this.capturedAt >= CAPTURE_RETRY);
+    const before = this.captured;
+    if (recording !== true) this.captured = undefined;
+    else if (due) {
+      this.capturedAt = at;
+      this.captured = (await this.capture()) ?? true;
+    }
+    if (this.captured !== before && this.last) this.publish(this.last);
+  }
+
+  /** How the link to the hub stands, written for setup as it changes: `why` is the hub's refusal, or why it's lost. */
+  link(state: MacLink["state"], why?: string, now = Date.now()): void {
+    if (this.linkState?.state === state && this.linkState.why === why) return;
+    this.linkState = { state, ...(why === undefined ? {} : { why }), since: now };
+    writeLink(this.home, this.linkState);
   }
 
   /** Holds the keep-awake assertion, installs the pinned tools, and checks the setup every CHECK_EVERY until stopped.
@@ -147,18 +178,25 @@ export class AgentsMac {
    * lacks. */
   async start(): Promise<void> {
     mkdirSync(this.home, { recursive: true });
+    this.link("linking");
+    // The grants first, read in a moment: setup shows them while the slower checks (Xcode's) still run.
+    if (process.platform === "darwin" && this.last === undefined) {
+      this.publish(health(user(), [grant("accessibility", tcc.accessibility()), grant("screen_recording", tcc.screenRecording())]));
+    }
     const held = await keepAwake("fleetd: the agents' Mac stays awake");
     if (typeof held === "string") console.warn(`the agents' Mac can't hold its keep-awake assertion: ${held}`);
     else this.awake = held;
     if (process.platform === "darwin") {
       const grants = async () => {
         if (this.stopped) return;
-        answer(this.home);
+        let askedCapture = false;
+        answer(this.home, (id) => (id === "screen_capture" ? (askedCapture = true) : tcc.ask(id)));
         const found = await takeUp(this.home);
         if (found) {
           this.fresh = found;
           if (this.last) this.publish(this.last);
         }
+        await this.probeCapture(this.fresh?.grants.screenRecording ?? tcc.screenRecording(), askedCapture);
         if (!this.stopped) this.timers.push(setTimeout(() => void grants(), every(found?.grants)));
       };
       void grants();
@@ -180,6 +218,30 @@ export class AgentsMac {
     this.stopped = true;
     for (const t of this.timers.splice(0)) clearTimeout(t);
     this.awake?.release();
+  }
+}
+
+/** How soon a failed capture is tried again: often enough to see the person's Allow within seconds, seldom enough not
+ * to stack macOS's prompts. */
+export const CAPTURE_RETRY = 5_000;
+
+/** `h` with the screen capture check as last tried, after Screen Recording's. */
+export function withCapture(h: MacHealth, captured: true | string | undefined): MacHealth {
+  const row = screenCapture(captured);
+  const checks = h.checks.filter((c) => c.id !== "screen_capture");
+  const at = checks.findIndex((c) => c.id === "screen_recording");
+  checks.splice(at < 0 ? checks.length : at + 1, 0, row);
+  return { ...h, checks };
+}
+
+/** One capture of a corner of the main display, through the screen kind's own ScreenCaptureKit path. */
+async function captureOnce(): Promise<string | undefined> {
+  try {
+    const { Capture } = await import("../desktop/mac/capture.ts");
+    await new Capture().grab([64, 40]);
+    return undefined;
+  } catch (error) {
+    return (error as Error).message.slice(0, 200);
   }
 }
 
