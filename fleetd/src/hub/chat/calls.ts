@@ -1,13 +1,13 @@
 // The chat's lead calls: the lead's `nudge`, and a project reading back through its
 // own chat with `chat_search` and `chat_read`. The search reads the chats' index (find.ts), as a person's does: each
 // word from the start of a word; the chat is always the caller's own project's, so another chat is never read.
-import type { ChatAuthor, ChatMessage, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
+import type { ChatAuthor, ChatMessage, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadCalls, type LeadCaller } from "../leads/seams.ts";
 import { mayUse } from "../project_lead/bridge.ts";
 import { parseMs } from "../store/time.ts";
-import { type LiveParts, leadThread, liveOf, state } from "./flow.ts";
+import { leadThread } from "./flow.ts";
 import { leadSource } from "./history.ts";
 import { chat } from "./index.ts";
 
@@ -25,48 +25,24 @@ export type RecalledMessage = { messageId: string; at: string; author: ChatAutho
 
 export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);
-  calls.register("nudge", (caller, call) => nudge(hub, caller, call, (t) => liveOf(hub, t)));
+  calls.register("nudge", (caller, call) => nudge(hub, caller, call));
   for (const op of ["chat_search", "chat_read"]) calls.register(op, (caller, call) => recall(hub, caller, call));
 }
 
 /**
- * The source of the lead's newest reply of its run, from what its node streamed: the text streaming now when the node
- * hasn't stored it complete yet, else the last one it stored. Streamed text the chat already holds final is an earlier
- * run's.
+ * The lead's `nudge`: flags the message its turn ends with, which posts as the turn ends (history's `leadMessages`):
+ * nothing of a turn is in the chat while it runs. A turn that ends with QUIET flags nothing (flow's `mirror`).
  */
-function newestReply(hub: Hub, r: ProjectRef, parts: LiveParts, thread: ThreadRef): string | undefined {
-  const source = (id: string) => leadSource(thread.threadId, id);
-  const text = parts.text;
-  if (text && parts.runActive && !parts.done.some((d) => d.messageId === text.messageId)) {
-    const s = source(text.messageId);
-    if (chat(hub).bySource(r, s)?.state !== "final") return s;
-  }
-  const last = parts.done[parts.done.length - 1];
-  return last ? source(last.messageId) : undefined;
-}
-
-/** The lead's `nudge`: flags its reply of this turn, the one it just wrote. A reply the chat doesn't have yet is flagged as it lands. */
-export function nudge(hub: Hub, caller: LeadCaller, call: Record<string, unknown>, live: (t: ThreadRef) => LiveParts | undefined) {
+export function nudge(hub: Hub, caller: LeadCaller, call: Record<string, unknown>) {
   if (caller.agent.kind !== "lead") throw new ToolError("forbidden", "Only a bot's lead nudges, and only its own messages.");
   const reason = typeof call.reason === "string" ? call.reason : "";
   if ([...reason].length < 1 || [...reason].length > 200 || /[\r\n]/.test(reason)) {
     throw new ToolError("invalid", "reason: give what to look at in a few words, on one line, at most 200 characters.");
   }
-  const r = caller.projectRef;
-  const thread = leadThread(hub, r);
-  const parts = thread ? live(thread) : undefined;
-  const source = thread && parts ? newestReply(hub, r, parts, thread) : undefined;
-  if (source === undefined) {
-    throw new ToolError("invalid", "You haven't written anything this turn to flag.", "Write the message in the chat first, then call nudge.");
-  }
-  const found = chat(hub).bySource(r, source);
-  if (!found || found.author !== "lead") {
-    chat(hub).nudgeOnLanding(source, reason);
-    return { next: "Flagged: the person sees it as something to look at once it is in the chat." };
-  }
-  const message = chat(hub).nudge(found, reason);
-  state(hub, r);
-  return { messageId: message.messageId, next: "Flagged: the person sees it as something to look at until they have seen it." };
+  const thread = leadThread(hub, caller.projectRef);
+  if (!thread) throw new ToolError("invalid", "Your bot has no lead session to flag a message of.");
+  chat(hub).nudgeOnLanding(leadSource(thread.threadId, ""), reason);
+  return { next: "Flagged: the message you end this turn with shows as something to look at once it is in the chat. Write it last, after every tool call." };
 }
 
 function recall(hub: Hub, caller: LeadCaller, call: Record<string, unknown> & { op: string }) {
