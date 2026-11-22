@@ -8,7 +8,6 @@
 // `Step`, each other command (a template build's) ends as it says, so a test stands in for what boat's base image does.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { stop as stopHost } from "../../src/node/runner/host.ts";
 
@@ -281,7 +280,7 @@ export function localRunner(dir: string, boxDir: string): { runner: Runner; trac
     track: (s) => {
       const set = s.boxes.set.bind(s.boxes);
       s.boxes.set = (k: string, v: unknown) => {
-        if (!ports.has(k)) void freePort().then((p) => ports.set(k, p));
+        if (!ports.has(k)) ports.set(k, freePort());
         return set(k, v);
       };
     },
@@ -299,10 +298,22 @@ export function localRunner(dir: string, boxDir: string): { runner: Runner; trac
   };
 }
 
-const freePort = () =>
-  new Promise<number>((resolve) => {
-    const s = createServer().listen(0, "127.0.0.1", () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => resolve(port));
-    });
-  });
+/** Ports a box of this process was given: never given twice, since its bootstrap lets go of it before the guest takes
+ * it. */
+const given = new Set<number>();
+/** A port for a box, free on every address (the bootstrap listens on 0.0.0.0). It is held by nothing until the box
+ * listens, so it is never one the kernel hands out by itself (Linux's from 32768, macOS's from 49152): a port 0 picks
+ * comes from that range, and under load another socket's connection or listener took it before the box did. */
+function freePort(): number {
+  for (;;) {
+    const port = 20_000 + Math.floor(Math.random() * 12_000);
+    if (given.has(port)) continue;
+    try {
+      Bun.listen({ hostname: "0.0.0.0", port, socket: { data() {} } }).stop(true);
+    } catch {
+      continue;
+    }
+    given.add(port);
+    return port;
+  }
+}

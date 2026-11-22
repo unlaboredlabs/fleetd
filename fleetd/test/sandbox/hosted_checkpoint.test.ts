@@ -30,14 +30,18 @@ const MAIN = join(import.meta.dir, "../../src/main.ts");
 const tmp = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-hosted-checkpoint-"));
 const keepAliveBefore = { ...KEEP_ALIVE };
 const keptBefore = { ...KEPT };
-let server: StandIn | undefined;
+// Every world a test started goes after it, not only its last: a test that starts a second one left the first's guest
+// running, and its stand-in.
+const servers: StandIn[] = [];
+const cleanups: (() => Promise<void>)[] = [];
+/** The last world's boxes, which a test ends itself. */
 let cleanup = async () => {};
 afterEach(async () => {
   Object.assign(KEEP_ALIVE, keepAliveBefore);
   Object.assign(KEPT, keptBefore);
   delete boxWork.said;
-  server?.stop();
-  await cleanup();
+  for (const s of servers.splice(0)) s.stop();
+  for (const c of cleanups.splice(0)) await c();
 });
 afterAll(() => {
   setBoxes(undefined);
@@ -128,8 +132,9 @@ exec cat > /dev/null
   hostedProbe.probe = async () => {};
   const local = localRunner(join(base, "boxes"), BOX_DIR);
   const s = boatStandIn(local.runner);
-  server = s;
+  servers.push(s);
   local.track(s);
+  cleanups.push(local.cleanup);
   cleanup = local.cleanup;
   const boxes = new Boxes(home, "devbox", { open: (b) => b }, {
     provider: (p, auth) => provider(p, auth, { urls: { api: `${s.url}/api/v1`, sandbox: (box, port) => `${s.url}/box/${box}/${port}` }, pollMs: 5 }),
