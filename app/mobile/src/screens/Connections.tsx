@@ -6,7 +6,7 @@
 // from the vault are the desktop's to add. Replaces the Vault's Integrations and Machines' Network.
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import type { TailnetState } from "../../../desktop/src/shared/contracts";
 import {
@@ -81,6 +81,12 @@ export function Connections() {
     const timer = setInterval(rereadTailnet, 2_000);
     return () => clearInterval(timer);
   }, [waitingOn, rereadTailnet]);
+  // What the last Test of each custom MCP found, by name: an Add's lands under its new row.
+  const [said, setSaid] = useState<Readonly<Record<string, Line>>>({});
+  const tell = (name: string, line: Line | null) => setSaid((all) => {
+    const { [name]: _gone, ...rest } = all;
+    return line === null ? rest : { ...rest, [name]: line };
+  });
   const strip = connectedOf(team, [], ts);
   const custom = customOf(team, []);
   const admin = state.admin === true;
@@ -100,9 +106,9 @@ export function Connections() {
       {servers.value?.ok === true ? (
         <ListSection header="Custom MCP">
           {custom.map((s) => (
-            <CustomRow key={s.name} server={s} reload={servers.reload} />
+            <CustomRow key={s.name} server={s} line={said[s.name] ?? null} tell={(l) => tell(s.name, l)} reload={servers.reload} />
           ))}
-          <AddRow taken={team.map((s) => s.name)} reload={servers.reload} />
+          <AddRow taken={team.map((s) => s.name)} tell={tell} reload={servers.reload} />
         </ListSection>
       ) : null}
     </ScrollView>
@@ -193,11 +199,13 @@ function TailscaleRow({ state, admin, reload }: { state: TailnetState; admin: bo
 }
 
 /** A custom MCP: where it stands, a tap offering Test, Sign In when it wants one, and Disconnect. */
-function CustomRow({ server, reload }: { server: McpServer; reload: () => void }) {
+type Line = { readonly text: string; readonly tone: "success" | "warning" | "danger" };
+
+function CustomRow({ server, line, tell, reload }: { server: McpServer; line: Line | null; tell: (line: Line | null) => void; reload: () => void }) {
   const t = useTheme();
   const { session, state: hub } = useHub();
   const [busy, setBusy] = useState(false);
-  const [line, setLine] = useState<{ text: string; tone: "success" | "warning" | "danger" } | null>(null);
+  const setLine = tell;
   const said = customState(server);
   const signIn = needsSignIn(server);
   const runTest = async () => {
@@ -241,12 +249,19 @@ function CustomRow({ server, reload }: { server: McpServer; reload: () => void }
   const press = () => {
     haptics.tap();
     const labels = signIn ? ["Sign In", "Test", "Disconnect"] : ["Test", "Disconnect"];
-    pick(server.name, labels, (i) => {
-      const label = labels[i];
+    const act = (label: string | undefined) => {
       if (label === "Sign In") signInNow();
       else if (label === "Test") go(runTest);
       else if (label === "Disconnect") remove();
-    });
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: server.name, options: [...labels, "Cancel"], destructiveButtonIndex: labels.length - 1, cancelButtonIndex: labels.length },
+        (i) => act(labels[i]),
+      );
+      return;
+    }
+    pick(server.name, labels, (i) => act(labels[i]));
   };
   const detail = line?.text ?? (signIn ? server.oauth?.problem?.replace(/`/gu, "") : undefined) ?? whereOf(server);
   const tone = said === null ? t.secondary : said.tone === "danger" ? t.danger : said.tone === "warning" ? t.warning : t.secondary;
@@ -265,7 +280,7 @@ function CustomRow({ server, reload }: { server: McpServer; reload: () => void }
 }
 
 /** Add Custom MCP: a URL, saved for every bot by the name it suggests; signed in when it offers OAuth, else tested. */
-function AddRow({ taken, reload }: { taken: string[]; reload: () => void }) {
+function AddRow({ taken, tell, reload }: { taken: string[]; tell: (name: string, line: Line | null) => void; reload: () => void }) {
   const t = useTheme();
   const { session, state: hub } = useHub();
   const [busy, setBusy] = useState(false);
@@ -295,8 +310,10 @@ function AddRow({ taken, reload }: { taken: string[]; reload: () => void }) {
         return;
       }
       const tested = await test(session, server);
-      setLine(tested.ok ? connectionTestLine(tested.value, machineName(hub.machines, tested.value.machineId)).text : `Test failed: ${errorWords(tested.error)}`);
-      haptics.success();
+      const l: Line = tested.ok ? connectionTestLine(tested.value, machineName(hub.machines, tested.value.machineId)) : { text: `Test failed: ${errorWords(tested.error)}`, tone: "danger" };
+      tell(free, l);
+      if (l.tone === "success") haptics.success();
+      else haptics.warning();
     })().finally(() => {
       setBusy(false);
       reload();

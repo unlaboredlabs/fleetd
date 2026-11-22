@@ -97,9 +97,13 @@ export default defineGroup({
       f.answer("mcp_server_set", { scope: TEAM, name: "docs" }, { server: saved });
       return f;
     };
+    const some = connections(typical, "connections-some", "Connections with Paper and Tailscale connected and three custom MCPs, one on the tailnet.", { team: SOME, tailnet: TAILNET_ON });
+    // ...and one more on the tailnet to add from the form: saved, then tested through Tailscale.
+    some.answer("mcp_server_set", { scope: TEAM, name: "wiki" }, { server: server("wiki", { type: "http", url: "http://wiki:8080/mcp" }) });
+    some.answer("mcp_server_test", { scope: TEAM, name: "wiki" }, { machineId: "devbox", result: { server: "wiki 2.1.0", via: "tailnet", tools: [{ name: "search" }, { name: "page" }, { name: "recent" }] } });
     return [
       connections(typical, "connections-empty", "Connections with nothing connected: Paper, Notion and Tailscale to connect, and Add a custom MCP.", { team: [], tailnet: TAILNET_OFF }),
-      connections(typical, "connections-some", "Connections with Paper and Tailscale connected and three custom MCPs, one on the tailnet.", { team: SOME, tailnet: TAILNET_ON }),
+      some,
       failing,
       oauth,
       added(connections(typical, "connections-tailnet", "A custom MCP on the tailnet, added and tested through the Tailscale connection.", { team: [paper], tailnet: TAILNET_ON })),
