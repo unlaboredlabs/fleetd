@@ -11,11 +11,12 @@ import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/c
 
 export type ScreenKind = "browser" | "android" | "linux_desktop" | "mac";
 
+/** Each kind's name and, under it, one short line: the tiles read at a glance, so it fits on one line. */
 export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string; readonly line: string }[] = [
-  { kind: "browser", label: "Browser", line: "A fresh Chrome" },
-  { kind: "android", label: "Android", line: "An Android emulator" },
-  { kind: "linux_desktop", label: "Linux desktop", line: "A desktop with a terminal" },
-  { kind: "mac", label: "Agents’ Mac", line: "The Mac agents share, one at a time" },
+  { kind: "browser", label: "Browser", line: "Saved sign-ins" },
+  { kind: "android", label: "Android", line: "Emulator" },
+  { kind: "linux_desktop", label: "Linux desktop", line: "With a terminal" },
+  { kind: "mac", label: "Agents’ Mac", line: "One at a time" },
 ];
 
 /** A kind's word in machine_roles' host checks. */
