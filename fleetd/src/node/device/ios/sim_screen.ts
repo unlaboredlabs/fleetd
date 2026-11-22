@@ -280,9 +280,9 @@ export class SimScreen {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.writeMeta();
     const shoot: Shoot = () => tools.shoot(this.udid, this.dev?.display());
-    // A foldable's lit panel changes as it folds, which the framebuffer stream can't pick: its screenshots follow it.
-    const live = this.dev?.display() === undefined ? tools.live?.(this.udid) : undefined;
-    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, live);
+    // The stream follows a foldable's lit panel by itself (fleetd-frames shows the panel whose framebuffer changed last);
+    // a screenshot names it.
+    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, tools.live?.(this.udid));
     this.hands = new Hands(opened.runner, opened.scale, (args, ran) => this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms), tools.run);
   }
 
