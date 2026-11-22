@@ -19,6 +19,7 @@ import { FirstRun } from "./FirstRun";
 import { SetupScreen } from "./SetupScreen";
 import type { SetupStep } from "./steps";
 import { resetServes } from "../admin/role";
+import { resetReturn } from "../start/kept";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -380,6 +381,22 @@ describe("Settings › Hub › Setup", () => {
     expect([...document.querySelectorAll("[role='list']")].map((l) => l.getAttribute("aria-label"))).toEqual(["Steps"]);
     expect(rows("Steps").slice(0, 3)).toEqual(["claude:ClaudeUses the hub's API key", "github:GitHubUses the hub's GitHub App", "onepassword:1PasswordDone"]);
     expect(rows("Steps").slice(3).map((r) => r.slice(0, r.indexOf(":")))).toEqual(["address", "machines", "people", "mac"]);
+  });
+
+  it("opens GitHub's page when GitHub's trip came back to it, once", async () => {
+    window.history.replaceState(null, "", "/?github=failed&why=Cancelled.#/settings/hub/setup");
+    resetReturn();
+    try {
+      await render(page);
+      expect(pane()?.getAttribute("data-step")).toBe("github");
+      expect(window.location.search).toBe("");
+      // Seen: the page opened again is the list.
+      await render(page);
+      expect(settings()).not.toBeNull();
+    } finally {
+      window.history.replaceState(null, "", "/");
+      resetReturn();
+    }
   });
 
   it("opens an account in place: its controls, then its guide with its paste values and Test, and the way back", async () => {

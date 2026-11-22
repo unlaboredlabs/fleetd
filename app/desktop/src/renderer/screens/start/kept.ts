@@ -59,23 +59,40 @@ export const startScreen = (hub: string): Screen => ({
   at: hub,
 });
 
-let returned: GithubReturn | null | undefined;
+let returned: { readonly said: GithubReturn; readonly to: Screen } | null | undefined;
+let setupSeen = false;
 
-/**
- * What GitHub's trip ended on, read once per page load from the address it came back to, which is cleaned of it at
- * once whatever screen that is (Get started, or Settings' Connect GitHub): the web app's boot calls this before the
- * app starts. Only a trip that came back to Get started is Get started's to show; one back on Settings is read there
- * from GitHub's state itself.
- */
-export const takeGithubReturn = (): GithubReturn | null => {
+/** GitHub's words in the address, once per page load, and the screen they came back to; the address cleaned of them. */
+const readReturn = () => {
   if (returned !== undefined) return returned;
   const said = githubReturnOf(window.location.search);
   if (said !== null) window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutGithubReturn(window.location.search)}${window.location.hash}`);
-  returned = said !== null && parseHash(window.location.hash).id === "start" ? said : null;
+  returned = said === null ? null : { said, to: parseHash(window.location.hash) };
   return returned;
+};
+
+/**
+ * What GitHub's trip ended on, read once per page load from the address it came back to, which is cleaned of it at
+ * once whatever screen that is (Get started, or Settings › Hub › Setup's Connect GitHub): the web app's boot calls
+ * this before the app starts. Only a trip that came back to Get started is Get started's to show.
+ */
+export const takeGithubReturn = (): GithubReturn | null => {
+  const back = readReturn();
+  return back !== null && back.to.id === "start" ? back.said : null;
+};
+
+/** A trip that came back to Settings › Hub › Setup, until its GitHub page has shown it (sawSetupReturn). */
+export const setupGithubReturn = (): GithubReturn | null => {
+  const back = readReturn();
+  return back !== null && !setupSeen && back.to.id === "settings" && back.to.tab === "hub.setup" ? back.said : null;
+};
+
+export const sawSetupReturn = (): void => {
+  setupSeen = true;
 };
 
 /** For tests: read the address again. */
 export const resetReturn = (): void => {
   returned = undefined;
+  setupSeen = false;
 };

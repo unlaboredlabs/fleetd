@@ -19,6 +19,7 @@ import { revealNext, useWanted } from "../settings/reveal";
 import { StepGuide, useSetupSteps } from "../setup/SetupScreen";
 import { doneWords, needWords, requiredLeft, setupLayout, type SetupStep } from "../setup/steps";
 import { stepControls } from "../setup/accounts";
+import { setupGithubReturn } from "../start/kept";
 import { MoveRow } from "./MoveToCloud";
 import s from "../settings/settings.module.css";
 
@@ -34,7 +35,8 @@ const HOLDS: Readonly<Record<string, string>> = { "admin.claude": "claude", "adm
 
 export function SetupPage({ me }: { me: Person | undefined }) {
   const steps = useSetupSteps();
-  const [open, setOpen] = useState<string | null>(null);
+  // Back from GitHub's trip (Connect GitHub, in the web app): its page, which says how it ended.
+  const [open, setOpen] = useState<string | null>(() => (setupGithubReturn() === null ? null : "github"));
   const back = useCallback(() => {
     // An option its account's page never showed (a hub that doesn't serve it) stops waiting, or it would open the
     // account again.
