@@ -82,6 +82,8 @@ export interface TrainHost {
   tellPerson?(projectRef: ProjectRef, text: string): void;
   /** The project's branch prefix (its policy's `branchPrefix`, default `fleetd/`); undefined when unreadable now. */
   branchPrefix(projectRef: ProjectRef): Promise<string | undefined>;
+  /** The `Fixes` line a PR of `workstreamId` in `repo` lands with, when the order is a GitHub issue's (hub/issues). */
+  issueFixes?(workstreamId: string, repo: string): string | undefined;
   /** Opens an order for the project's lead (channel `train`) with `text`; the same `requestId` finds the first. */
   openOrder(projectRef: ProjectRef, text: string, requestId: string): Promise<string>;
   /** Whether the work ledger's landing scanner watches `repo`'s `base`. */

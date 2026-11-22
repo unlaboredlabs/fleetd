@@ -27,7 +27,9 @@ export type LineKind =
   /** The lead's reply went on with a turn it made up for the person (`Human: …`): cut there, and the lead told (chat/flow). */
   | "made_up"
   /** Work a project asked another project for opened, closed, merged or failed (hub/project_lead/bridge.rs). */
-  | "factory";
+  | "factory"
+  /** A GitHub issue whose order is open was closed before anything of it landed (hub/issues). */
+  | "issue";
 
 /** Why a lead wakes: a person's order, or a line the area that raises it renders itself. */
 export type Trigger =

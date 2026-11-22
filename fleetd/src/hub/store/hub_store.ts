@@ -111,6 +111,8 @@ export const MACHINE_KEEPS = [
   // What its agents wrote to each other: the person's audit, kept with the tasks it names.
   "agent_messages",
   "changes",
+  // Which GitHub issue opened which order, kept with the orders: its labelling never opens a second one (hub/issues).
+  "issue_orders",
   "project_erases",
   "pair_codes",
   // Every use of the vault: the person's audit, pruned after a year (vault.rs AUDIT_DAYS).
@@ -182,6 +184,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     avatarColor: _avatarColor,
     avatarShape: _avatarShape,
     chatTags: _chatTags,
+    issueOrders: _issueOrders,
     icon: _icon,
     ...project
   } = stored;
@@ -194,6 +197,8 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
   if (kept.avatarShape !== undefined) out.avatarShape = kept.avatarShape;
   if (kept.chatTags) out.chatTags = true;
+  // Its issues-as-orders switch, shown once it has a repo on GitHub to watch.
+  if (held.some((x) => x.repoKey?.startsWith("github.com/"))) out.issueOrders = kept.issueOrdersOff !== true;
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
   out.icon = icon.of(conn, r);
@@ -210,6 +215,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     avatarColor: _avatarColor,
     avatarShape: _avatarShape,
     chatTags: _chatTags,
+    issueOrders: _issueOrders,
     icon: _icon,
     ...row
   } = project;
