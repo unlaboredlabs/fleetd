@@ -225,7 +225,15 @@ export const githubReturnOf = (search: string): GithubReturn | null => {
   if (said === "failed")
     return {
       at: "failed",
-      why: (query.get("why") ?? "").trim().slice(0, 300) || "GitHub didn't finish connecting.",
+      // Words only: an address in them (GitHub's own, say) is never shown raw.
+      why:
+        (query.get("why") ?? "")
+          .replace(/\s*\((?:https?:\/\/|www\.)[^)]*\)/giu, "")
+          .replace(/\b(?:https?:\/\/|www\.)\S*?(?=[.,;:!?)]?(?:\s|$))/giu, "")
+          .replace(/\s+([.,:;])/gu, "$1")
+          .replace(/\s+/gu, " ")
+          .trim()
+          .slice(0, 300) || "GitHub didn't finish connecting.",
     };
   return null;
 };
