@@ -2,18 +2,23 @@
 // the team connects with its own key, one list (Providers.tsx), each with what it can run. What runs where: two rows.
 // Linux machine is where agents run and their Linux screens with them (an agent's browser, Linux desktop and Android
 // run where it runs): your machines, your machines first then the connected providers, or one provider only,
-// which the hub keeps (sandbox_where_set) and places by. Mac machine is where Mac screens and iOS simulators run: the
-// agents' Mac, a plain value. A row with nothing to choose is a plain value, or None yet with how to add one in its
-// hover. Then how long recordings are kept.
+// which the hub keeps (sandbox_where_set) and places by. On a fleetd cloud team the provider is fleetd's computers
+// (sandbox_get's `provided`): Your machines, Your machines first then fleetd's computers, or fleetd's computers only,
+// and fleetd's computers alone while the team has no machine of its own that runs agents; a cloud that doesn't answer
+// the pick yet still says they run there, from Billing. Mac machine is where Mac screens and iOS simulators run: the
+// agents' Mac, a plain value, and on a cloud team the team's own only, as its line says. A row with nothing to choose
+// is a plain value, or None yet with how to add one in its hover. Then how long recordings are kept.
 import { useCallback, useState, type ReactNode } from "react";
 import type { SlotState } from "../../../shared/contracts";
-import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { useData, useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Select, Text } from "../../ui";
 import { fleetCapLine } from "./agentsModel";
 import { errorText, useHubCall, useLive } from "./hub";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { useProviderRows } from "./Providers";
 import { KINDS, LINUX, LINUX_NONE, linuxChoices, linuxValue, MAC, MAC_NONE, machinesRun, NONE, YOURS } from "../../../shared/providers";
+import { FLEETD, MAC_OWN_ONLY, providedChoices, providedValue } from "../../../shared/provided";
+import { useBillingShown } from "../admin/billingQuery";
 import { SECTION_HINT } from "./sandboxModel";
 import { Recordings } from "./Screens";
 import { AntigravityRow } from "../admin/MachinePage";
@@ -59,10 +64,17 @@ export function WhatRunsWhere() {
   const ours = machines === undefined || machinesRun("agents", machines.filter((m) => team[m.machineId]?.runner !== true));
   const providers = sandboxes?.providers ?? [];
   const current = sandboxes?.linux ?? "ours_first";
-  const choices = linuxChoices(providers, ours, current);
+  // fleetd's computers: the cloud's pick, or (a cloud that doesn't answer it yet) Billing's word that they are on.
+  const cloud = useHub().cloud === true;
+  const provided = sandboxes?.provided === true;
+  const billed = useBillingShown(cloud && live && !provided);
+  const fleetd = provided || (cloud && billed);
+  const choices = provided ? providedChoices(providers[0]?.provider ?? "boat", ours) : linuxChoices(providers, ours, current);
   const linux =
     sandboxes !== undefined && choices.length > 1 ? (
       <LinuxRow key="linux" current={current} choices={choices} line={capLine} />
+    ) : fleetd ? (
+      <Plain key="linux" kind="linux" label={LINUX} value={provided ? FLEETD : providedValue(ours)} line={capLine} />
     ) : (
       <Plain key="linux" kind="linux" label={LINUX} value={choices[0]?.label ?? linuxValue(providers, ours)} hint={choices.length === 0 && !ours ? LINUX_NONE : undefined} line={capLine} />
     );
@@ -74,7 +86,7 @@ export function WhatRunsWhere() {
     <SettingsSection title="What runs where" reveal="hub.where" hint={WHERE_HINT} data={{ "data-where": "" }}>
       {linux}
       {runner === undefined ? null : <AntigravityRow machineId={runner.machineId} />}
-      <Plain kind="mac" label={MAC} value={mac ? YOURS : NONE} hint={mac ? undefined : MAC_NONE} />
+      <Plain kind="mac" label={MAC} value={mac ? YOURS : NONE} hint={mac ? undefined : MAC_NONE} line={fleetd ? MAC_OWN_ONLY : undefined} />
       <Recordings />
     </SettingsSection>
   );

@@ -23,6 +23,8 @@ const missing = (error: unknown): boolean => error instanceof CallError && lacks
 export function useProviderRows(what: ReadonlyArray<Capability>): ReactNode {
   const live = useLive();
   const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: live });
+  // fleetd's computers on a cloud team: no key of the team's to connect, test or remove (Places.tsx says where they run).
+  if (sandboxes.data?.provided === true) return null;
   const rows = new Map<string, ReactNode>();
   const failed: string[] = [];
   for (const p of sandboxes.data?.providers ?? []) {

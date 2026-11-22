@@ -23,6 +23,7 @@ import {
   usageRows,
   type BillingState,
 } from "./billing";
+import { heldLine, usedWord } from "./provided";
 import { BILLING_SAMPLES, SAMPLE_NOW, type BillingSample } from "./billing.samples";
 
 const state = (name: BillingSample): BillingState => {
@@ -131,6 +132,31 @@ describe("the page's figures", () => {
 
   it("writes hours plainly", () => {
     expect([hours(0), hours(300), hours(9000), hours(36_000), hours(460_800)]).toEqual(["0 h", "0 h", "2.5 h", "10 h", "128 h"]);
+  });
+
+  it("writes this period's computer time against what the plan includes, or alone with no plan", () => {
+    const read = (s: unknown): BillingState => {
+      const b = readBilling(s);
+      if (b === null) throw new Error("sample doesn't read");
+      return b;
+    };
+    const used = (b: BillingState): BillingState => ({ ...b, usage: { ...b.usage, seconds: 12 * 3600, cents: 4_20 } });
+    expect(usedWord(used(read(BILLING_SAMPLES.plan)))).toBe("12 h · $4.20 of $60 included");
+    expect(usedWord(used({ ...read(BILLING_SAMPLES.plan), plan: null }))).toBe("12 h · $4.20");
+  });
+
+  it("says why fleetd's computers are held in the reason's own words: the cap reached is not a lack of credits", () => {
+    const read = (s: unknown): BillingState => {
+      const b = readBilling(s);
+      if (b === null) throw new Error("sample doesn't read");
+      return b;
+    };
+    expect(heldLine(read(BILLING_SAMPLES.cap))).toContain("spend cap");
+    expect(heldLine(read(BILLING_SAMPLES.cap))).not.toContain("credits");
+    expect(heldLine(read(BILLING_SAMPLES.none))).toBe("This team has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
+    expect(heldLine({ ...read(BILLING_SAMPLES.plan), notice: null, held: "empty", credits: { ...read(BILLING_SAMPLES.plan).credits, leftCents: 0 } })).toBe(
+      "No credits left, so bots on fleetd's computers wait. Add credits or pick a plan.",
+    );
   });
 
   it("reads the cap as typed", () => {
