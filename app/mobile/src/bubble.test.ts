@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bubble, bubbleMax, fitWidth, jumbo, photoSize } from "./bubble";
+import { bubble, bubbleMax, fitKey, fitWidth, jumbo, photoSize } from "./bubble";
 
 describe("bubble", () => {
   // Measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots), on Body's 22 pt leading
@@ -24,6 +24,15 @@ describe("bubble", () => {
     expect(bubble.lineHeight + 2 * bubble.padY).toBe(42);
     expect(bubble.lineHeight + 2 * bubble.padY).toBe(2 * bubble.radius);
     expect(3 * bubble.lineHeight + 2 * bubble.padY).toBe(86);
+  });
+
+  it("measures fitted words again when their room changes, as on folding an iPhone Duo closed", () => {
+    const words = "So I'm changing it: switching hubs by swipe, menu or keyboard will open that hub's last open chat.";
+    // The Duo's inner panel beside the list, then folded: the words fitted to the first don't fit the second's bubble.
+    expect(fitKey(1, 556, words)).not.toBe(fitKey(1, 402, words));
+    expect(fitKey(1, 402, words)).not.toBe(fitKey(1.2, 402, words));
+    expect(fitKey(1, 402, words)).not.toBe(fitKey(1, 402, `${words}!`));
+    expect(fitKey(1, 402, words)).toBe(fitKey(1, 402, words));
   });
 
   it("caps a bubble's width at a share of the screen", () => {

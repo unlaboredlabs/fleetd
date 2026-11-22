@@ -35,6 +35,13 @@ export const bubble = {
  */
 export const fitWidth = (lines: readonly number[], scale: number): number => Math.max(0, Math.ceil(Math.max(0, ...lines) * scale - 0.01)) / scale;
 
+/**
+ * What a bubble's fitted words were measured for: the text size, the room it had (its pane's width) and the words. Any
+ * of them changing measures the words again: folding an iPhone Duo closed narrows the room, and words kept at the
+ * width they fit unfolded ran out past their narrower bubble.
+ */
+export const fitKey = (fontScale: number, room: number, text: string): string => `${String(fontScale)}:${String(room)}:${text}`;
+
 /** The widest a bubble draws on a screen `width` points wide. */
 export const bubbleMax = (width: number): number => Math.round(width * bubble.maxShare);
 
