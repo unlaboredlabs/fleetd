@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
+import { answer, here, UNAVAILABLE } from "../src/cli/mac_tool.ts";
+import { hubCall } from "../src/node/browser/node.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
 import { self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
@@ -41,7 +43,8 @@ function setup() {
   writeFileSync(join(wt, "app.txt"), "v1\n");
   writeFileSync(join(wt, ".gitignore"), "build/\n");
   cleanups.push(macHome.done, agent.done, work.done, () => host.stop());
-  return { host, client: new MacClient(agent.node, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller, sent };
+  const side = { home: agent.node.home, call: (op: string, args: Record<string, unknown>, opts: { threadId: string; cwd: string; waitMs: number }) => hubCall(agent.node, op, args, opts) };
+  return { host, client: new MacClient(side, () => ["/pinned/fleetd-bun-1"]), wt, macRoot: join(macHome.dir, "mac"), secret, caller, sent, agentHome: agent.node.home };
 }
 
 test("push, run, logs and pull: the agent's worktree on the Mac, its job's output, and its files back", async () => {
@@ -119,8 +122,7 @@ test("a step's absent fields may come as null, as the Rust client sends them", a
 }, 30_000);
 
 test("mac sim start puts the forwarding agent-device first on the session's PATH, and mac sim end takes it off", async () => {
-  const { host, client, wt, sent } = setup();
-  const agentHome = (client as unknown as { node: { home: string } }).node.home;
+  const { host, client, wt, sent, agentHome } = setup();
   host.sims = {
     held: new Map(),
     touch: () => {},
@@ -248,3 +250,36 @@ test("mac from a session's scratch dir works on the worktree its record names, a
   cleanups.push(bare.done);
   expect(startedIn(bare.node, "t2")).toBeUndefined();
 });
+
+
+test("in a hosted box, fleetd mac is its own node's half: the worktree pushed and run from the box, only mac_where and mac_send sent up its node.sock", async () => {
+  const { host, wt, secret, caller, macRoot } = setup();
+  const box = tempHome();
+  cleanups.push(box.done);
+  // What reaches the box's node.sock: each hub call, as the session's.
+  const sent: { op: unknown; threadId: unknown }[] = [];
+  const send = async (call: Record<string, unknown>) => {
+    sent.push({ op: call.op, threadId: call.threadId });
+    if (call.op === "mac_where") return { result: { machineId: "mac1", boxPubKey: Buffer.from(publicKeyOf(secret)).toString("base64") } };
+    const answer = await host.answer({ id: "c1", caller, sealed: String(call.sealed) });
+    return answer.error ? { error: answer.error } : { result: { sealed: answer.sealed } };
+  };
+  const pushed = (await here(box.dir, { step: "push" }, "t1", join(wt, "."), send)) as { result: { op: string; step: string; folder: string } };
+  expect(pushed.result).toMatchObject({ op: "mac", step: "push", folder: join(macRoot, "T7", "repo") });
+  expect(readFileSync(join(pushed.result.folder, "app.txt"), "utf8")).toBe("v1\n");
+  expect(new Set(sent.map((s) => s.op))).toEqual(new Set(["mac_where", "mac_send"]));
+  expect(sent.filter((s) => s.op === "mac_send").every((s) => s.threadId === "t1")).toBe(true);
+  // Its scratch files stay in the box's folder for it.
+  expect(existsSync(join(box.dir, "tmp"))).toBe(true);
+  // A step the Mac refuses comes back as the node's error frame would; none without a session.
+  host.sims = undefined;
+  expect(((await here(box.dir, { step: "sim_start" }, "t1", wt, send)) as { error: { code: string } }).error.code).toBeString();
+  expect(await here(box.dir, { step: "ps" }, undefined, wt, send)).toMatchObject({ error: { code: "forbidden" } });
+  // node.sock not reached (the box's link moving, sendToNode's thrown words): the reason said, as the hub away is.
+  const away = async (): Promise<Record<string, unknown>> => {
+    throw "fleetd is restarting; try again";
+  };
+  const answered = (await here(box.dir, { step: "ps" }, "t1", wt, away)) as { error: { code: string; message: string } };
+  expect(answered.error).toMatchObject({ code: "machine_offline", message: "fleetd is restarting; try again" });
+  expect(answer(answered)).toEqual({ text: "mac: fleetd is restarting; try again\nmac: try again shortly\n", code: UNAVAILABLE });
+}, 30_000);
