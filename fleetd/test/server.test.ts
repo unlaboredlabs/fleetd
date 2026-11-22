@@ -5,6 +5,7 @@ import { PROTOCOL_VERSION } from "../src/shared/contracts.ts";
 import { internalError } from "../src/shared/errors.ts";
 import { lowest, score } from "../src/node/oom.ts";
 import { hubHome, insertKey } from "./helpers.ts";
+import { listenPort } from "./ports.ts";
 
 const home = hubHome();
 const { hub, tools } = build(home.dir, { host: "127.0.0.1", port: 0 });
@@ -89,10 +90,8 @@ test.if(score() !== undefined)("hub start lowers its own OOM score as far as the
   // What this test's process may go down to is what the hub, its child, may: the first of the ladder a shell takes.
   const before = score() ?? 0;
   const floor = lowest(before, (adj) => Bun.spawnSync(["/bin/sh", "-c", `echo ${adj} > /proc/self/oom_score_adj`]).exitCode === 0);
-  // `--listen` takes no port 0: one free a moment ago.
-  const free = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const port = free.port;
-  free.stop(true);
+  // `--listen` takes no port 0: one no other process was handed (./ports.ts).
+  const port = listenPort();
   const child = Bun.spawn([process.execPath, `${import.meta.dir}/../src/main.ts`, "hub", "start", "--home", `${dir.dir}/hub`, "--listen", `127.0.0.1:${port}`], {
     env: { ...process.env, HOME: dir.dir, FLEETD_HOME: dir.dir },
     stdout: "pipe",

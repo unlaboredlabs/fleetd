@@ -11,6 +11,7 @@ import { liveHubToolRefusal } from "../../src/cli/mcp_client.ts";
 import { createKey, ensureOwner, listKeys, openHub } from "../../src/cli/store.ts";
 import { hubKey } from "../../src/cli/hub_key.ts";
 import { Fleet } from "./golden.ts";
+import { seedHubDb } from "../helpers.ts";
 
 const CASE_MS = 30_000;
 const said = (text: string) => {
@@ -166,7 +167,8 @@ describe("which hub is the live one", () => {
     root = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-live-hub-"));
     liveHome = join(root, "live", "hub");
     otherHome = join(root, "other", "hub");
-    for (const home of [liveHome, otherHome]) HubDb.open(home).close();
+    // Already migrated (seedHubDb): two fresh migrations took past the hook's 5 s on a loaded machine.
+    for (const home of [liveHome, otherHome]) HubDb.open(seedHubDb(home)).close();
     writeFileSync(join(liveHome, "setup.json"), JSON.stringify({ listen: "0.0.0.0:4790", url: "http://devbox.example:4790", machines: {} }));
     mkdirSync(join(root, "live", "node"), { recursive: true });
     writeFileSync(join(root, "live", "node", "node.json"), JSON.stringify({ hub: "http://hub.example:4791", machineId: "devbox", name: "devbox", enrolled: true }));

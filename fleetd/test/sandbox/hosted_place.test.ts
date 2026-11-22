@@ -17,7 +17,7 @@ import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
 import { pick, placeAt } from "../../src/node/place/index.ts";
 import { LeadRelay } from "../../src/node/lead/index.ts";
 import { Masker } from "../../src/node/mask.ts";
-import { stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
+import { marker, stop as stopHost, type RunnerEvent } from "../../src/node/runner/host.ts";
 import { accountSettingsEnv } from "../../src/node/actions/accounts.ts";
 import { settingsOverlay } from "../../src/node/sessions/index.ts";
 import { notStartedLine } from "../../src/hub/leads/cut_off.ts";
@@ -120,7 +120,7 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
     program: "claude",
     args: [],
     cwd,
-    env: { ...env, CLAUDE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: "s1.mark", AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
+    env: { ...env, CLAUDE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", FLEETD_RUNNER_SESSION: marker("s1"), AGENT_BROWSER_CDP: `ws://127.0.0.1:${cdp}/devtools/browser/x` },
   });
   expect(mirroredIn("s1")).toContain(order);
   expect(readRecord(dir)!.tcp).toEqual([cdp]);
@@ -223,7 +223,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
       program: "claude",
       args: ["-p"],
       cwd,
-      env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
+      env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: marker(id) },
     });
   const link = await start("s-tail");
   expect(checked).toEqual(["http://100.104.249.49:8317"]);
@@ -345,7 +345,7 @@ test("a box checks the Claude account's endpoint, not the gateway on the machine
       program: "claude",
       args: ["-p", "--settings", overlay],
       cwd,
-      env: { ...env, ANTHROPIC_API_KEY: "hub-key-0123", ANTHROPIC_BASE_URL: "http://100.104.249.49:8317", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: `${id}.mark` },
+      env: { ...env, ANTHROPIC_API_KEY: "hub-key-0123", ANTHROPIC_BASE_URL: "http://100.104.249.49:8317", CLAUDE_CONFIG_DIR: cfg, FLEETD_RUNNER_SESSION: marker(id) },
     });
     expect(checked).toEqual(["http://100.104.249.49:8317"]);
     expect(JSON.stringify(await next(link))).toContain("m1");

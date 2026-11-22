@@ -56,7 +56,14 @@ async function standIn() {
     stdio: ["ignore", "ignore", "inherit"],
   });
   guests.push({ proc, dir });
-  for (let i = 0; !existsSync(sock); i++) {
+  // Until it takes a connection: its socket file is there from the bind, a moment before the guest listens, and a dial
+  // then is refused.
+  const accepts = () =>
+    new Promise<boolean>((resolve) => {
+      const s = connect(sock);
+      s.once("connect", () => (s.destroy(), resolve(true))).once("error", () => resolve(false));
+    });
+  for (let i = 0; !(await accepts()); i++) {
     if (i > 500) throw new Error("the guest didn't listen");
     await Bun.sleep(10);
   }

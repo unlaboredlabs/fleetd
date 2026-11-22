@@ -4,8 +4,8 @@
 // own. With --no-service nothing goes to systemd or launchd; `machine add --local` copies the binary into its own
 // scratch home.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { localHostName, machineIdFromHost } from "../../src/cli/project.ts";
 import { createEnrollToken, openHub } from "../../src/cli/store.ts";
 import { TESTED } from "../../src/node/runner/claude.ts";
@@ -21,9 +21,12 @@ beforeAll(async () => {
   );
   if (built.exitCode !== 0) throw new Error(built.stderr.toString());
 });
+// Its hubs stop side by side: one after another they ran past the hook's time, and the homes left (a worker's holds
+// its own fleetd, 167 MB) stayed in $TMPDIR. So does the build, unless it goes too.
 afterAll(async () => {
-  for (const f of fleets) await f.stop();
-});
+  await Promise.all(fleets.map((f) => f.stop()));
+  rmSync(dirname(bunBin), { recursive: true, force: true });
+}, 30_000);
 
 /** A code `fleetd pair --worker builder-1` prints. */
 async function named(fleet: Fleet): Promise<string> {

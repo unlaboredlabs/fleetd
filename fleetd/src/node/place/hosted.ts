@@ -958,7 +958,7 @@ export async function buildSnapshot(home: string, provider: ProviderId, j: Job, 
     const where = [HOME, ...(git ? [git] : [])].map(shq).join(" ");
     const sealed = await box.run({
       argv: ["sh", "-c", [
-        `rm -rf ${shq(`${HOME}/.bash_history`)} ${shq(`${HOME}/.claude`)} ${shq(`${BOX_DIR}`)}/in-*.bundle`,
+        `rm -rf ${shq(`${HOME}/.bash_history`)} ${shq(`${HOME}/.claude`)} ${shq(`${BOX_DIR}/in-${session}.bundle`)}`,
         git ? `git -C ${shq(git)} worktree remove --force ${shq(j.cwd)} 2>/dev/null; rm -rf ${shq(j.cwd)}` : ":",
         'if [ -n "$FLEETD_SECRETS" ]; then',
         '  f=$(mktemp); printf "%s\\n" "$FLEETD_SECRETS" > "$f"',
