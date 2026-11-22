@@ -9,6 +9,7 @@ import {
   elsewhere,
   landedHow,
   nextExpiry,
+  nowLine,
   otherProjects,
   projectAgents,
   projectGroups,
@@ -256,5 +257,20 @@ describe("work elsewhere on the repo", () => {
     expect(rest).toEqual([]);
     expect(landedHow(landing("d", "pr_outside"), "develop")).toBe("merged outside fleetd");
     expect(landedHow(landing("d", "direct_push"), "develop")).toBe("pushed straight to develop");
+  });
+});
+
+describe("the Now line", () => {
+  const thinking = { words: "thinking", tone: "quiet", thinking: true } as const;
+  const step = (status: "running" | "completed", summary: string) => ({ kind: "action", id: "s1", at: "2026-10-17T10:00:00.000Z", action: { at: "2026-10-17T10:00:00.000Z", kind: "other", status, summary, failed: false } }) as const;
+  it("says where a start that keeps failing is, not thinking", () => {
+    const retrying = "Starting its computer: boat.dev refused the box. Trying again in 30 s, by itself.";
+    expect(nowLine(thinking, [step("running", retrying)])).toEqual({ words: retrying, tone: "quiet", thinking: false });
+  });
+  it("keeps thinking once that step is done, and the lane's own words over any step", () => {
+    expect(nowLine(thinking, [step("completed", "Started its computer")])).toBe(thinking);
+    const running = { words: "running", machine: "npm test", tone: "loud", thinking: false } as const;
+    expect(nowLine(running, [step("running", "Starting its computer")])).toBe(running);
+    expect(nowLine(thinking, undefined)).toBe(thinking);
   });
 });

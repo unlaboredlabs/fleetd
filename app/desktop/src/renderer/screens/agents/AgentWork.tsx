@@ -20,7 +20,7 @@ import { withDms, type AgentMessage } from "../dms/model";
 import { describe } from "../live/words";
 import { navigate } from "../shell/navigation";
 import { panelRoute } from "../shell/routes";
-import { actionLine, agentState, STATE_WORD, workPlace } from "./model";
+import { actionLine, agentState, nowLine, STATE_WORD, workPlace } from "./model";
 import { RolePill, StateDot, WorkPlaceTag } from "./parts";
 import s from "./agents.module.css";
 
@@ -161,7 +161,7 @@ export function AgentWork({ id }: { id: string }) {
           <Text size="xs" tone="faint">
             Now
           </Text>
-          <SteadyActivityLine line={describe(row)} />
+          <SteadyActivityLine line={nowLine(describe(row), work.steps)} />
         </div>
         <AgentSession project={row.projectRef} laneId={row.laneId} />
       </div>
