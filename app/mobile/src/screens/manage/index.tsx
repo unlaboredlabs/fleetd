@@ -38,7 +38,7 @@ import { VaultEdit } from "../vault/VaultEdit";
 import { VaultImport } from "../vault/VaultImport";
 import { VaultItem } from "../vault/VaultItem";
 import { VaultMove } from "../vault/VaultMove";
-import { ownRoom, sheetRoom, stripRoom } from "../../ui/StripRoom";
+import { ownRoom, sheetRoom, stripRoom, useStripBars } from "../../ui/StripRoom";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -120,8 +120,9 @@ const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 function ChatInfo() {
   const t = useTheme();
   const root = useNavigation();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <InfoStack.Navigator screenLayout={stripRoom}>
+    <InfoStack.Navigator screenLayout={stripRoom} screenOptions={stripBars}>
       <InfoStack.Screen name="Info" component={Info} options={{ ...pushed(t, "Info"), ...backTo(t, () => root.goBack()) }} />
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />

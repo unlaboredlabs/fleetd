@@ -62,7 +62,7 @@ import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
 import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
 import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
-import { ownRoom, sheetRoom, stripRoom } from "./src/ui/StripRoom";
+import { ownRoom, sheetRoom, stripRoom, useStripBars } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -262,8 +262,9 @@ const PairStack = createNativeStackNavigator<PairParams>();
 
 function Pairing({ note, onPaired, onSignedIn }: { note: string | undefined; onPaired: (p: KeptHub) => Promise<void>; onSignedIn: OnSignedIn }) {
   const t = useTheme();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <PairStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
+    <PairStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={note} onSignedIn={onSignedIn} />}
       </PairStack.Screen>
@@ -646,8 +647,9 @@ function ChatsHome() {
 function SettingsScreens() {
   const t = useTheme();
   const root = useNavigation();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
+    <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
