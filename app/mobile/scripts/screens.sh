@@ -84,14 +84,18 @@ start() {
   found=$(udid_of "$device") || { say "no $device simulator on this image"; return 1; }
   UDID=${found%% *}
   say "$device: $found"
-  ad boot --timeout 900000 >>"$LOG" 2>&1
-  ad install "$APP" >>"$LOG" 2>&1
-  ad open sh.fleetd.app --timeout 900000 >>"$LOG" 2>&1
+  try ad boot --timeout 900000
+  # agent-device's XCTest runner, built and started once, before any wait counts on it.
+  try ad prepare --timeout 900000
+  try ad install "$APP"
+  try ad open sh.fleetd.app --timeout 900000
   try ad open "$(pair_link "$device")"
-  try ad wait 'label="Connect"' 30000
+  # iOS's "Open in “fleetd”?", then the app's own "Connect" to the hub.
+  if ad alert wait 30000 >>"$LOG" 2>&1; then try ad alert accept; fi
+  try ad wait 'label="Connect"' 120000
   try ad press 'label="Connect"'
-  # Notifications: asked once paired.
-  if ad alert wait 20000 >>"$LOG" 2>&1; then try ad alert dismiss; fi
+  # Notifications, asked once paired: declined.
+  if ad alert wait 30000 >>"$LOG" 2>&1; then try ad alert dismiss; fi
   try ad wait text "inventory" 180000
 }
 
