@@ -65,7 +65,7 @@ do the same. With reduced motion turned on in your system, the hub switches with
 
 Whichever way you switch, the chat goes with the sidebar: the hub opens on the chat you last had open there, kept
 across restarts, or on its first bot if that one is gone (or Get started, if it has none). The chat on screen is always
-one of the hub you see.
+one of the hub you see. Switching hubs while Settings is open closes Settings.
 
 Opening a bot from elsewhere (a notification, ⌘K) shows its hub. ⌘1 to ⌘9 count the rows you can see, in order.
 
