@@ -3,21 +3,19 @@ https://fleetd.sh
 
 Software factories, reinvented as fast as the models improve.
 
-You set the direction. Agents build, review and ship it while you sleep.
-
   curl -fsSL https://fleetd.sh | sh
 
 macOS or Linux x64. Open source, MIT.
 Install:     https://fleetd.sh/docs/install
 Quick start: https://fleetd.sh/docs/quick-start
+Pricing:     https://fleetd.sh/pricing
 GitHub:      https://github.com/unlaboredlabs/fleetd
 
 
-SOFTWARE ISN'T AN ASSET. IT'S A DOZEN EXPERIMENTS. KEEP ONE. DROP THE REST.
-Agents made building cheap, so stop polishing one bet for months. Ship a dozen
-experiments tonight, see what people actually use, and drop the rest without
-regret. fleetd is built for that pace: a lead plans the work, agents build it
-in parallel, and every change is reviewed before it lands.
+OTHER TOOLS GIVE DEVELOPERS MORE THREADS. FLEETD GIVES THE WHOLE TEAM ONE LEAD AGENT.
+fleetd puts one lead on each project. It orchestrates thousands of agents,
+lands changes autonomously and learns from all requests, retaining all context
+of your work.
 
 
 ASK THE LEAD; IT LANDS THE PRS
@@ -47,6 +45,68 @@ Agents test in a real browser or iPhone simulator while you watch. When one
 needs a code or a login, take over, then hand back.
 Clip: showcase-screens-dark.webm, showcase-screens-light.webm. Still:
 showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
+
+
+BRING THE MODELS YOU ALREADY PAY FOR
+fleetd sells no tokens. Agents run on your own subscription or API key.
+                 Subscription    API key
+  Anthropic      Claude          Anthropic API
+  Google         Antigravity     Gemini API
+  OpenAI         ChatGPT         OpenAI API       (coming soon)
+Your agents run on what you connect. A subscription keeps its own usage
+limits; a key is billed by its provider. fleetd adds nothing on top.
+
+
+RUN IT YOURSELF, OR ON FLEETD CLOUD
+Self-hosted, free and open source: the hub and its agents run on your own
+machines, with your own Claude and GitHub. Nothing fleetd runs is needed.
+fleetd cloud, from $20 a month: fleetd runs the hub for your team, in the
+EU. Agents run on fleetd's computers, or on your own machines at no cost.
+More: https://fleetd.sh/pricing
+
+
+PRICING (FLEETD CLOUD)
+fleetd cloud is ready to orchestrate thousands of agents. fleetd is open source
+and free to run yourself. On fleetd cloud you pay only for the computers we
+run. No seats and no tokens. Every plan covers the whole team.
+
+  Solo    $20 a month      500 hours of computer time    3 agents at once
+  Team    $50 a month    1,000 hours of computer time   10 agents at once
+  Scale  $200 a month    4,300 hours of computer time   40 agents at once
+
+Hours are for the smallest computer. Unused time doesn't roll over. Prices
+exclude VAT. Billing details: https://fleetd.sh/docs/billing
+
+Pay as you go, for extra time beyond a plan or no plan at all. Metered to the
+millisecond, only while a computer is running (a month is 730 hours; a second
+of the smallest size is $0.0000167):
+  2 CPU, 4 GB    $0.06 an hour
+  4 CPU, 8 GB    $0.12 an hour
+  8 CPU, 16 GB   $0.24 an hour
+Credits: prepaid computer time, from $10, valid for 12 months. Without a plan,
+credits run up to 3 agents at once.
+
+Estimate a month on https://fleetd.sh/pricing: pick a computer size, how many
+agents run at once, the hours each works a day and the days a month. Agents
+sleep when they're idle, so a computer is billed only while its agent works.
+For example, 25 agents at once on 2 CPU, 4 GB, 3 hours a day for 22 days, is
+1,650 hours ($99) of computer time: the Scale plan, $200 a month, covers it.
+
+
+SELF-HOSTED OR CLOUD
+The same product either way. The difference is who runs it.
+                     Self-hosted                     fleetd cloud
+Who runs it          You, on your own machine        We do, in the EU
+Agents run on        Your own machines               Our computers, or your own
+Apps                 Desktop and phone               Desktop, phone and web
+Models and GitHub    Your own accounts               Your own accounts
+Runs without us      Yes                             No
+Costs                Free                            From $20 a month; agents on
+                                                     your own machines stay free
+
+Start self-hosted and move to cloud later; your projects and history come with
+you: https://fleetd.sh/docs/moving-a-hub#cloud
+Sign in or sign up: https://app.fleetd.dev
 
 
 Each clip and still is the fleetd app on sample data, with the waits cut short.

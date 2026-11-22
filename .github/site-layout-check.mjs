@@ -1,7 +1,7 @@
-// fleetd.sh's landing page fits every width. Run by CI's `site` job from the repo root:
+// fleetd.sh's pages fit every width. Run by CI's `site` job from the repo root:
 //   node .github/site-layout-check.mjs
-// Renders site/home.html in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
-// fails, one line per width, when the page scrolls sideways: something on it is wider than the viewport.
+// Renders each of PAGES (site/home.html, site/pricing.html) in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
+// fails, one line per page and width, when the page scrolls sideways: something on it is wider than the viewport.
 // It talks to Chrome over the DevTools protocol on node's own WebSocket, so it needs no npm install. The page names its
 // fonts and images from the site root (/fonts/...), which a file:// page would look for at the filesystem root, so
 // those requests are answered from site/: the text wraps as it does on fleetd.sh.
@@ -13,7 +13,7 @@ import path from "node:path";
 const WIDTHS = [320, 390, 768, 1001, 1180, 1280, 1366, 1440, 1600, 1920];
 const HEIGHT = 900;
 const SITE = path.resolve("site");
-const PAGE = `file://${SITE}/home.html`;
+const PAGES = ["home.html", "pricing.html"];
 const TYPES = { ".js": "text/javascript", ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".webm": "video/webm", ".json": "application/json" };
 
 function chromePath() {
@@ -120,16 +120,16 @@ const MEASURE = `(async () => {
 
 const problems = [];
 try {
-  for (const width of WIDTHS) {
+  for (const page of PAGES) for (const width of WIDTHS) {
     await send("Emulation.setDeviceMetricsOverride", { width, height: HEIGHT, deviceScaleFactor: 1, mobile: false });
     const loaded = new Promise((resolve) => listeners.set("Page.loadEventFired", resolve));
-    await send("Page.navigate", { url: PAGE });
+    await send("Page.navigate", { url: `file://${SITE}/${page}` });
     await loaded;
     const { result, exceptionDetails } = await send("Runtime.evaluate", { expression: MEASURE, awaitPromise: true, returnByValue: true });
-    if (exceptionDetails) throw new Error(`measuring at ${width}px: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
+    if (exceptionDetails) throw new Error(`measuring ${page} at ${width}px: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`);
     const { viewport, scroll, fonts, wide } = result.value;
-    if (!fonts.some((f) => f.startsWith("Plex"))) throw new Error(`at ${width}px the page's Plex font didn't load, so its text wouldn't wrap as on fleetd.sh`);
-    if (scroll > viewport) problems.push(`${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport; first past the edge: ${wide.join(", ")}`);
+    if (!fonts.some((f) => f.startsWith("Plex"))) throw new Error(`at ${width}px ${page}'s Plex font didn't load, so its text wouldn't wrap as on fleetd.sh`);
+    if (scroll > viewport) problems.push(`${page} at ${width}px: the page is ${scroll}px wide, wider than the ${viewport}px viewport; first past the edge: ${wide.join(", ")}`);
   }
 } finally {
   ws.close();
@@ -138,7 +138,7 @@ try {
 
 if (problems.length > 0) {
   for (const p of problems) console.error(p);
-  console.error(`site/home.html: ${problems.length} layout problem${problems.length === 1 ? "" : "s"}`);
+  console.error(`site: ${problems.length} layout problem${problems.length === 1 ? "" : "s"}`);
   process.exit(1);
 }
-console.log(`site/home.html: nothing is wider than the viewport at ${WIDTHS.join(", ")}px`);
+console.log(`site/${PAGES.join(", site/")}: nothing is wider than the viewport at ${WIDTHS.join(", ")}px`);
