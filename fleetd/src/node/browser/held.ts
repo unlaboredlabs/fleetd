@@ -104,9 +104,9 @@ async function launchOnce(home: string, chrome: string, sandboxed: boolean, extr
   const start = async (script: string, pidFile: string) => void (await startOutside(script, pidFile)).once("exit", () => exited());
   const launched = boxChrome(localBox, extra, { dir, chrome, sandboxed, graceMs: GRACE_MS, start });
   launched.catch(() => {});
-  const up = await Promise.race([launched, gone]);
+  // A launch that failed leaves no folder behind (one with no snapshot would be a held Chrome to the next node).
   try {
-    return await proven(up, dir);
+    return await proven(await Promise.race([launched, gone]), dir);
   } catch (e) {
     dropHeld(dir);
     throw e;

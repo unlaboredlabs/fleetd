@@ -81,7 +81,9 @@ test.skipIf(!chrome || !canHold())(
     // The node stops, as an update stops it: the session isn't ended, and its Chrome waits for the next node.
     await stopAreas(before.t.node);
     expect(before.t.link.calls.filter((c) => c.op === "browser_session").map((c) => c.args.state)).toEqual(["live"]);
-    const [held] = leftHeld(home.dir);
+    // Its Chrome's folder alone: a launch that failed on the way (Chrome's sandbox refused here) left none.
+    const [held, ...more] = leftHeld(home.dir);
+    expect(more).toEqual([]);
     expect(held?.sealed).toBeDefined();
     // Sealed to the node's box key: the filled values a snapshot carries never lie on disk in the clear.
     expect(Buffer.from(held!.sealed!).toString()).not.toContain(THREAD);
