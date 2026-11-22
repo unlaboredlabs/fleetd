@@ -243,7 +243,7 @@ const adaSettings = (f: Fixture): void => {
   f.answer("project_settings_get", { ...ADA }, {
     settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", env: [], setup: { commands: [], inputs: [] } },
   });
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
 };
 
 /** Ada's settings page, whole, for the screens that open it. */

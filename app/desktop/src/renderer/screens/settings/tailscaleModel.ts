@@ -8,11 +8,12 @@ type Tone = "quiet" | "warning" | "danger";
 /** Whether the hub waits on the person (a sign-in, an approval) or on itself: the row reads its state again meanwhile. */
 export const waiting = (s: TailnetState | undefined): boolean => s?.status === "login" || s?.status === "approve" || s?.status === "starting";
 
-/** The word beside its name: the tailnet's name once connected, what it waits on, or that it isn't working. None when off. */
-export function wordOf(s: TailnetState): { text: string; tone: Tone } | null {
+/** The word beside its name: Connected (the tailnet's name in its hover), what it waits on, or that it isn't working.
+ * None when off. */
+export function wordOf(s: TailnetState): { text: string; tone: Tone; hint?: string } | null {
   switch (s.status) {
     case "connected":
-      return { text: s.tailnet ?? "Connected", tone: "quiet" };
+      return { text: "Connected", tone: "quiet", ...(s.tailnet === undefined ? {} : { hint: s.tailnet }) };
     case "login":
       return { text: "Waiting for sign-in", tone: "warning" };
     case "approve":
