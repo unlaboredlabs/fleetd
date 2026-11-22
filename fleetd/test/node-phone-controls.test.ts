@@ -142,11 +142,50 @@ test("a simulator nobody opened an agent-device session on gets one for its turn
       ["agent-device", "orientation", "landscape-right"],
       ["agent-device", "open"],
       ["agent-device", "orientation", "landscape-right"],
+      // Closed again at once: the agent's own open is never refused for it.
+      ["agent-device", "close"],
     ]);
     expect(dev.state.orientation).toBe("landscape_right");
     // An iPhone's screenshot names no panel.
     await dev.apply("screenshot");
     expect(ran.at(-1)!.slice(0, 5)).toEqual(["simctl", "io", UDID, "screenshot", `${t.shots}/${UDID}-control.png`]);
+  } finally {
+    done();
+  }
+});
+
+test("a simulator the agent's agent-device session holds is turned in that session, by name", async () => {
+  const { t, done } = tools();
+  const ran: string[][] = [];
+  try {
+    const dev = new SimDevice(UDID, IPHONE, {
+      ...t,
+      async agentDevice(args) {
+        ran.push(args);
+        if (args[0] === "open") return { ok: false, said: 'Device is already in use by workspace session "cwd:98c15ef49d81c4f9:ios".', ms: 1 };
+        return args.includes("--session") ? { ok: true, said: "", ms: 1 } : { ok: false, said: "SESSION_NOT_FOUND", ms: 1 };
+      },
+    });
+    await dev.apply("rotate_left");
+    expect(ran).toEqual([["orientation", "landscape-left"], ["open"], ["orientation", "--session", "cwd:98c15ef49d81c4f9:ios", "landscape-left"]]);
+    expect(dev.state.orientation).toBe("landscape_left");
+  } finally {
+    done();
+  }
+});
+
+test("a runner still finishing an earlier command is given a moment, then the turn goes", async () => {
+  const { t, done } = tools();
+  let busy = 2;
+  try {
+    const dev = new SimDevice(
+      UDID,
+      IPHONE,
+      { ...t, agentDevice: async () => (busy-- > 0 ? { ok: false, said: "The iOS runner is still finishing a previous command", ms: 1 } : { ok: true, said: "", ms: 1 }) },
+      1,
+    );
+    await dev.apply("rotate_left");
+    expect(dev.state.orientation).toBe("landscape_left");
   } finally {
     done();
   }
