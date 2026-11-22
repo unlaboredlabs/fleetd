@@ -389,6 +389,62 @@ test("a stop with a steer in flight cancels the turn and withdraws the steer, ne
   expect(d.hasOpenRun()).toBe(false);
 });
 
+/** A driver up on session agy-1, fed lines as agy writes them; each run's RunEnded, in order, across every feed. */
+function driven() {
+  const now = { at: "2026-11-22T00:00:00.000Z", ms: 0 };
+  const d = new AcpDriver(new Run().spec(), undefined, () => undefined);
+  const events: RunnerEvent[] = [];
+  const take = (o: { events: RunnerEvent[] }) => (events.push(...o.events), o);
+  const feed = (m: unknown) => take(d.line(JSON.stringify({ jsonrpc: "2.0", ...(m as object) }), now)!);
+  d.start();
+  feed({ id: 1, result: { agentInfo: { version: "1.5.14" } } });
+  feed({ id: 2, result: { sessionId: "agy-1" } });
+  const update = (u: Record<string, unknown>) => feed({ method: "session/update", params: { sessionId: "agy-1", update: u } });
+  const ends = () => events.filter((e): e is Extract<RunnerEvent, { RunEnded: unknown }> => typeof e === "object" && "RunEnded" in e).map((e) => [e.RunEnded.run_id, e.RunEnded.outcome]);
+  return { d, now, events, feed, update, ends, send: (id: string, text: string, mode: "plain" | "boundary") => take(d.send(id, text, mode, now)) };
+}
+
+test("a steer agy refuses ends alone, and the turn it meant to steer runs on to its own end", () => {
+  const t = driven();
+  t.send("r1", "work", "plain");
+  t.send("r2", "and this", "boundary");
+  t.feed({ id: 4, error: { code: -32603, message: "busy" } });
+  expect(t.ends()).toEqual([["r2", { Failed: { class: "other", message: "busy", retries: 0 } }]]);
+  t.update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "done" } });
+  t.feed({ id: 3, result: { stopReason: "end_turn" } });
+  expect(t.ends()).toEqual([
+    ["r2", { Failed: { class: "other", message: "busy", retries: 0 } }],
+    ["r1", { Completed: { text: "done" } }],
+  ]);
+  expect(t.events.some((e) => typeof e === "object" && "RunStarted" in e && e.RunStarted.run_id.startsWith("woke"))).toBe(false);
+});
+
+test("a steer that answers before the turn it steered ends that turn once: its late answer ends nothing more", () => {
+  const t = driven();
+  t.send("r1", "work", "plain");
+  t.send("r2", "and this", "boundary");
+  t.update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "both" } });
+  t.feed({ id: 4, result: { stopReason: "end_turn" } });
+  t.feed({ id: 3, result: { stopReason: "end_turn" } });
+  expect(t.ends()).toEqual([
+    ["r1", { Superseded: { by: "r2" } }],
+    ["r2", { Completed: { text: "" } }],
+  ]);
+  expect(t.d.hasOpenRun()).toBe(false);
+});
+
+test("a boundary send while the agent runs a turn it woke into by itself waits for it, then runs as its own turn", () => {
+  const t = driven();
+  t.update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "a job ended" } });
+  const woke = t.events.find((e): e is Extract<RunnerEvent, { RunStarted: unknown }> => typeof e === "object" && "RunStarted" in e)!.RunStarted.run_id;
+  const sent = t.send("r1", "hi", "boundary");
+  expect(sent.events).toEqual([{ Queued: { run_id: "r1" } }]);
+  expect((sent as any).replies).toEqual([]);
+  t.update({ sessionUpdate: "usage_update", used: 1, size: 2 });
+  expect(t.ends()).toEqual([[woke, { Completed: { text: "a job ended" } }]]);
+  expect(t.events.filter((e) => typeof e === "object" && "RunStarted" in e).map((e: any) => e.RunStarted.run_id)).toEqual([woke, "r1"]);
+});
+
 test("agy's reads are Claude's Read, as a lead's allowed rules name it", () => {
   expect(fenced(["Read"], { name: "read_file", kind: "read", rawInput: { Path: "/w/a" } })).toBe(true);
   expect(fenced(["Read(/w/*)"], { name: "list_dir", kind: "read", rawInput: { DirectoryPath: "/w/src" } })).toBe(true);

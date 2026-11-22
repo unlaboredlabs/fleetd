@@ -159,7 +159,8 @@ export class AcpDriver {
     this.#waiting.push({ runId, text });
     if (this.#active !== undefined) {
       out.events.push({ Queued: { run_id: runId } });
-      if (mode === "boundary" && !this.#cancelled && this.#steering === undefined && this.#sessionId !== undefined) {
+      // A turn the agent woke into by itself has no prompt of fleetd's to steer: the send waits for it, as a plain one.
+      if (mode === "boundary" && !this.#cancelled && this.#steering === undefined && this.#sessionId !== undefined && this.#active !== this.#woken) {
         this.#waiting.pop();
         this.#steering = runId;
         out.replies.push(this.#prompt(runId, text));
@@ -406,8 +407,19 @@ export class AcpDriver {
       if (this.#active === undefined) this.#next(out);
       return;
     }
-    // The steer answered before the turn it steered: that one ends first.
-    if (runId === this.#steering && this.#active !== undefined) this.#promptEnded(this.#active, { stopReason: "end_turn" }, undefined, now, out);
+    if (runId === this.#steering && this.#active !== undefined) {
+      // A steer agy refused ends alone, and the turn it meant to steer runs on.
+      if (failed) {
+        this.#steering = undefined;
+        this.#end(runId, { Failed: this.#failure(evidence({ isError: true, text: failed, nowMs: now.ms })) }, undefined, now, out);
+        return;
+      }
+      // The steer answered before the turn it steered: that one ends first, and its own answer, when it comes, ends
+      // nothing more.
+      const steered = this.#active;
+      for (const [id, p] of this.#pending) if (p.what === "prompt" && p.runId === steered) this.#pending.delete(id);
+      this.#promptEnded(steered, { stopReason: "end_turn" }, undefined, now, out);
+    }
     this.#flush(now, out);
     const u = rec(result?.usage);
     const usage: RunUsage | undefined = u && {
