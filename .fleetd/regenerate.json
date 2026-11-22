@@ -3,10 +3,12 @@
     "docs/site/src/content/docs/reference/cli.md",
     "docs/site/src/content/docs/reference/agent-tools.md",
     "app/desktop/fixtures/setup/steps.json",
-    "fleetd/src/gen/"
+    "fleetd/src/gen/",
+    "site/pebble.js"
   ],
   "run": [
-    "cd fleetd && bun install --frozen-lockfile && bun run gen"
+    "cd fleetd && bun install --frozen-lockfile && bun run gen",
+    "cd app/desktop && pnpm install --frozen-lockfile --ignore-scripts --prefer-offline --store-dir \"$FLEETD_REGENERATE_CACHE/pnpm\" && pnpm site:pebble"
   ],
   "migrations": "fleetd/src/hub/store/migrations/",
   "timeoutMinutes": 30
