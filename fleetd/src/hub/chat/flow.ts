@@ -53,6 +53,7 @@ import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
 import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
+import { unanswered } from "./unanswered.ts";
 import { requestFor } from "./whom.ts";
 
 export { forLead, stopLine } from "./lead_text.ts";
@@ -619,20 +620,22 @@ function runOver(hub: Hub, thread: ThreadRef): boolean {
 /**
  * Lands the lead's replies of its session as chat messages: new ones added, streamed ones finished with their complete
  * text. Messages from before the chat read in as history. Once the lead's run is over, a reply it never stored
- * complete (the run was stopped, interrupted or crashed mid-text) is finished with the text it streamed.
+ * complete (the run was stopped, interrupted or crashed mid-text) is finished with the text it streamed. True when it
+ * read the session's messages, so the chat holds every reply the lead made.
  */
-export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promise<void> {
+export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promise<boolean> {
   try {
     await ensure(hub, r);
   } catch (error) {
-    return void console.warn("chat: history not read:", error);
+    console.warn("chat: history not read:", error);
+    return false;
   }
   const messages = await executors(hub)
     .views.messages(thread)
-    .catch(() => []);
+    .catch(() => undefined);
   const c = chat(hub);
   const since = c.historyMs(r) ?? 0;
-  for (const m of leadMessages(thread.threadId, messages)) {
+  for (const m of leadMessages(thread.threadId, messages ?? [])) {
     try {
       const existing = c.bySource(r, m.source ?? "");
       if (existing) {
@@ -667,6 +670,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
   } catch (error) {
     console.warn("chat: state not told:", error);
   }
+  return messages !== undefined;
 }
 
 /** `sent` for a reply that landed whole: nothing more streams into it. */
@@ -926,7 +930,16 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
   if (event.type === "lead.started") await sendHeld(hub, r);
   else if (event.type === "thread.started") state(hub, r);
   else {
-    await mirror(hub, r, thread);
+    const read = await mirror(hub, r, thread);
+    // A person's message the turn left with no reply asks the lead once, with every reply it made landed first; not
+    // while a next turn already runs, which may still answer it.
+    if (event.type === "thread.completed" && read && !leadWorking(hub, r)) {
+      try {
+        unanswered(hub, r, thread, event.seq);
+      } catch (error) {
+        console.warn("chat: an unanswered message not checked:", error);
+      }
+    }
     // Once per run, as its end comes: a later mirror (a node back, a request answered) must not tag again what a
     // person since moved to no order.
     if (RUN_ENDS.includes(event.type)) {

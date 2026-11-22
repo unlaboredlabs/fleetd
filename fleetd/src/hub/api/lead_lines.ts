@@ -8,6 +8,8 @@ export type LineKind =
   | "train"
   /** A person's words for the lead about an order (a steer, a stop). */
   | "human"
+  /** The lead's turn ended with no reply to a person's message (`chat/unanswered.ts`): it is asked once to answer. */
+  | "unanswered"
   /** A person raised the project's max agents (`tasks::cap`). */
   | "cap_raised"
   /** A secret or approval request settled, or came back open (`approvals`). */
