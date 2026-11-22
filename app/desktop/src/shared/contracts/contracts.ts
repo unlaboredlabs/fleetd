@@ -172,6 +172,8 @@ export type AccountsSignInOutput = {
   invitations?: AccountsInvitation[];
   /** Makes a team of the person's own when sent to POST /v1/app/team: offered only to someone in no team of their own (one who came by an invitation), one use, 15 minutes; each sign-in answers a fresh one. */
   make?: string;
+  /** The id of the team the person picked on the sign-in page, when they are in several (one of `teams`): the app opens it first. */
+  picked?: string;
   /** WorkOS's session id, which sign-out ends. The app keeps it and the email, nothing else of WorkOS. */
   sessionId: string;
   /** The person's own teams: never one they were only invited to. Empty only while an invitation is pending. */

@@ -16,6 +16,7 @@ import {
   revokeOver,
   signIn,
   signInAsking,
+  shownAfterSignIn,
   signOutAll,
   type AfterSignInAsk,
   type AuthResult,
@@ -68,6 +69,21 @@ const answering = (me = true, join: (name: string) => boolean = () => false): Af
     },
   };
 };
+
+describe("in several teams", () => {
+  it("shows the team picked on the sign-in page, not the first", async () => {
+    await fake.team("acme", ["ada@example.com"]);
+    const labUrl = await fake.team("lab", ["ada@example.com"]);
+    fake.pickNext = "lab";
+    const out = await signInAsking(ports("ada@example.com"), answering());
+    if (!out.ok) throw new Error("not signed in");
+    expect(out.picked).toBe(labUrl);
+    const { hubs } = afterSignIn([], out.teams);
+    expect(shownAfterSignIn(hubs, out.picked)?.hubName).toBe("lab");
+    // No pick: the first team, as before.
+    expect(shownAfterSignIn(hubs, undefined)?.hubName).toBe("acme");
+  });
+});
 
 describe("No team yet", () => {
   it("someone invited who passes on it: Make a Team makes one of their own and keeps it", async () => {

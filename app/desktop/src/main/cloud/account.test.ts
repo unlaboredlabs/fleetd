@@ -305,6 +305,19 @@ describe("signing in to fleetd cloud", () => {
     expect(fake.madeOnAsking).toEqual(["new new@acme.example"]);
   });
 
+  it("in several teams, the one picked on the sign-in page is the one the app shows first", async () => {
+    await fake.team("sam", ["sam@acme.example"]);
+    await fake.team("lab", ["sam@acme.example"]);
+    const { account, hubs } = setup(fake);
+    fake.pickNext = "lab";
+    const out = await signInAll(account);
+    expect(out.ok && out.teams.map((t) => t.name)).toEqual(["sam", "lab"]);
+    expect(out.ok && out.picked).toBe(hubs.find((h) => h.label === "lab")?.id);
+    // No pick: none named, the first shows as before.
+    const again = await signInAll(account);
+    expect(again.ok && again.picked).toBeUndefined();
+  });
+
   it("a team the person didn't make never opens on Connect a computer, even joined on another device", async () => {
     await fake.team("acme", ["eve@other.example"]);
     fake.invite("acme", "sam@acme.example", "eve@other.example");

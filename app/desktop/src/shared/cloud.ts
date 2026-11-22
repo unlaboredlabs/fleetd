@@ -43,7 +43,13 @@ export type SignInOutcome =
 
 /** How a sign-in ended once the person said it's them: the account's teams and the invitations joined, each connected or not. */
 export type FinishOutcome =
-  | { readonly ok: true; readonly email: string; readonly teams: ReadonlyArray<TeamOutcome> }
+  | {
+      readonly ok: true;
+      readonly email: string;
+      readonly teams: ReadonlyArray<TeamOutcome>;
+      /** The hub of the team picked on the sign-in page, which the app shows first. */
+      readonly picked?: HubId | undefined;
+    }
   | { readonly ok: false; readonly failure: PairFailure };
 
 /** Signed out. `kept` names each team whose hub couldn't be told to drop this device's key (it was offline). */

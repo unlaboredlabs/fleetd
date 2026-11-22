@@ -191,7 +191,7 @@ describe("New Bot's Create", () => {
 
 describe("a machine's name", () => {
   it("calls a fleetd cloud team's hosted runner fleetd's computers, never its id or name", () => {
-    const machines = [{ machineId: "hosted", name: "Hosted sandboxes" }, { machineId: "devbox", name: "devbox" }] as Parameters<typeof machineName>[0];
+    const machines = [{ machineId: "hosted", name: "Hosted sandboxes" }, { machineId: "devbox", name: "devbox" }] as unknown as Parameters<typeof machineName>[0];
     expect(machineName(machines, "hosted", true)).toBe("fleetd's computers");
     expect(machineName(machines, "devbox", true)).toBe("devbox");
     // A self-hosted hub's own hosted sandboxes keep their name.

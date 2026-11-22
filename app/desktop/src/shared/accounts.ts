@@ -13,6 +13,8 @@ export interface SignedIn {
   readonly invitations: AccountsInvitation[];
   /** Makes a team of the person's own (POST /v1/app/team), offered to someone in no team of their own. */
   readonly make?: string;
+  /** The team picked on the sign-in page (one of `teams`, by id): the app opens it first. */
+  readonly picked?: string;
 }
 
 const PAIRING_CODE = /^[A-Z0-9]{4}(?:-?[A-Z0-9]{4}){1,7}$/u;
@@ -52,7 +54,7 @@ const invitation = (v: unknown): AccountsInvitation | null => {
 export const readSignIn = (json: unknown): SignedIn | null => {
   const o = record(json);
   if (o === null) return null;
-  const { email, sessionId, teams, invitations, make } = o;
+  const { email, sessionId, teams, invitations, make, picked } = o;
   if (!text(email, 3, 320) || !text(sessionId, 1, 200) || !Array.isArray(teams) || teams.length > 50) return null;
   if (invitations !== undefined && (!Array.isArray(invitations) || invitations.length > 50)) return null;
   const outTeams: AccountsTeam[] = [];
@@ -63,7 +65,15 @@ export const readSignIn = (json: unknown): SignedIn | null => {
   }
   const outInvitations = ((invitations ?? []) as unknown[]).flatMap((i) => invitation(i) ?? []);
   // A make value that isn't one reads as absent: the person can still join or sign in again.
-  return { email, sessionId, teams: outTeams, invitations: outInvitations, ...(typeof make === "string" && ACCEPT.test(make) ? { make } : {}) };
+  return {
+    email,
+    sessionId,
+    teams: outTeams,
+    invitations: outInvitations,
+    ...(typeof make === "string" && ACCEPT.test(make) ? { make } : {}),
+    // A pick that names none of the teams reads as absent: the first opens.
+    ...(typeof picked === "string" && outTeams.some((t) => t.id === picked) ? { picked } : {}),
+  };
 };
 
 /** The accept's answer (and the team call's): the team joined or made, with its pairing code; null when it isn't one. */

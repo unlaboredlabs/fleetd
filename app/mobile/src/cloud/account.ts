@@ -70,7 +70,7 @@ export type Arrived = { readonly ok: true; readonly answer: SignedIn } | { reado
 
 /** How a sign-in ended. Cancelled ends quietly: the person closed the page, or said it wasn't them. */
 export type SignInOutcome =
-  | { readonly ok: true; readonly account: SavedAccount; readonly teams: readonly TeamOutcome[] }
+  | { readonly ok: true; readonly account: SavedAccount; readonly teams: readonly TeamOutcome[]; readonly picked?: string | undefined }
   | { readonly ok: false; readonly cancelled: true }
   | { readonly ok: false; readonly cancelled?: undefined; readonly failure: PairFailure };
 
@@ -248,7 +248,10 @@ export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonl
     if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
     return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
   }
-  return { ok: true, account: { email: answer.email, sessionId: answer.sessionId }, teams };
+  // The team picked on the sign-in page, by its hub's address: the app shows it first.
+  const pick = answer.picked === undefined ? undefined : answer.teams.find((t) => t.id === answer.picked);
+  const picked = pick === undefined ? null : teamOrigin(pick.url, ports.config.accountsUrl, ports.local);
+  return { ok: true, account: { email: answer.email, sessionId: answer.sessionId }, teams, ...(picked === null ? {} : { picked }) };
 };
 
 /** The service joins an invitation the person chose (accept) or makes their own team (team), and answers the team with its pairing code. */
@@ -291,6 +294,10 @@ export const endSession = async (fetch: Fetch, config: CloudConfig, sessionId: s
  * The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. `dropped`,
  * each hub whose key goes: a team's key a new one replaces, and the earlier teams this sign-in didn't bring.
  */
+/** The hub to show after a sign-in: the team picked on the sign-in page, else the first team. */
+export const shownAfterSignIn = (hubs: readonly KeptHub[], picked: string | undefined): KeptHub | null =>
+  (picked === undefined ? undefined : hubs.find((h) => h.cloud === true && h.hub === picked)) ?? hubs.find((h) => h.cloud === true) ?? null;
+
 export const afterSignIn = (kept: readonly KeptHub[], teams: readonly TeamOutcome[]): { hubs: KeptHub[]; dropped: KeptHub[] } => {
   const fresh = teams.flatMap((t) => (t.ok ? [t.hub] : []));
   const origins = new Set(fresh.map((h) => h.hub));

@@ -9,6 +9,7 @@ import { invitationLine, invitationTitle } from "../../../shared/accounts";
 import type { Arrival, FinishOutcome, Invitation, TeamOutcome } from "../../../shared/cloud";
 import type { PairFailure } from "../../../shared/pairing";
 import { Bot, Button, copyText, Text } from "../../ui";
+import { openHub } from "../shell/sidebarLayout";
 import { refreshCloud } from "./cloud";
 import s from "./signin.module.css";
 
@@ -99,6 +100,8 @@ export function useSignIn(onSignedIn?: (out: FinishOutcome & { ok: true }) => vo
         void refreshCloud();
         if (out.ok) {
           missed = out.teams.filter((t): t is TeamOutcome & { ok: false } => !t.ok);
+          // The team picked on the sign-in page is the one on screen, not the first listed.
+          if (out.picked !== undefined) openHub(out.picked);
           onSignedIn?.(out);
         }
         if (!mounted.current) return;
