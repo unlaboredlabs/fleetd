@@ -100,10 +100,13 @@ test("records the sidebar's swipe on a Mac trackpad, both ways and at both ends"
           const m = /translate3d\((-?[\d.]+)px/.exec((el as HTMLElement | null)?.style.transform ?? "");
           return m === null ? 0 : Number(m[1]);
         };
+        // Read once the frame's callbacks (the swipe's own spring among them) have run, as it is drawn.
         const tick = (now: number) => {
-          const lists = document.querySelectorAll("nav[aria-label='Sidebar'] [class*='list']");
-          const moving = document.querySelector("nav[aria-label='Sidebar'] [data-moving]") !== null;
-          w.__frames?.push([now, num(lists[0]), lists.length > 1 ? num(lists[1]) : NaN, moving ? 1 : 0]);
+          setTimeout(() => {
+            const lists = document.querySelectorAll("nav[aria-label='Sidebar'] [class*='list']");
+            const moving = document.querySelector("nav[aria-label='Sidebar'] [data-moving]") !== null;
+            w.__frames?.push([now, num(lists[0]), lists.length > 1 ? num(lists[1]) : NaN, moving ? 1 : 0, w.__wheels?.length ?? 0]);
+          }, 0);
           if (w.__frames !== undefined) requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
