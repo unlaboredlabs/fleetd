@@ -11,7 +11,7 @@ import type { ClaudeAccountsGetOutput, HubInfoOutput, PeopleListOutput, Person, 
 import type { HubFrame } from "../../../shared/hub";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { revealNext } from "../settings/reveal";
 import { SettingsScreen } from "../settings/SettingsScreen";
@@ -108,7 +108,18 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOutput> = { me: sam, admin: true }) => {
+/** The page on a fleetd cloud team, as the web app has it. */
+function OnCloud() {
+  const layer = useDataLayer();
+  return (
+    <HubScope hub={{ id: layer.hub, label: "acme", layer, cloud: true }}>
+      <SettingsScreen />
+    </HubScope>
+  );
+}
+
+/** `cloud`: a fleetd cloud team with no machine yet, so nothing takes a key. */
+const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOutput> = { me: sam, admin: true }, cloud = false) => {
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
     call: (tool, input) => {
@@ -152,9 +163,7 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
   await act(async () => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>
-          <SettingsScreen />
-        </DataProvider>
+        <DataProvider layer={createDataLayer(hub)}>{cloud ? <OnCloud /> : <SettingsScreen />}</DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
@@ -167,10 +176,12 @@ const render = async (accounts: ClaudeAccountsGetOutput, info: Partial<HubInfoOu
         cursor: 1,
         attention: [],
         projects: [],
-        machines: [
-          { machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [], boxPubKey: BOX },
-          { machineId: "buildbox", name: "buildbox", nodeVersion: "1", status: "offline", lastSeenAt: AT, tags: [], boxPubKey: BOX },
-        ],
+        machines: cloud
+          ? []
+          : [
+              { machineId: "devbox", name: "devbox", nodeVersion: "1", status: "online", lastSeenAt: AT, tags: [], boxPubKey: BOX },
+              { machineId: "buildbox", name: "buildbox", nodeVersion: "1", status: "offline", lastSeenAt: AT, tags: [], boxPubKey: BOX },
+            ],
       },
     });
     await new Promise((r) => setTimeout(r, 0));
@@ -231,6 +242,20 @@ it("saves the hub's key and endpoint sealed through main, tests it at once, and 
   ]);
   expect(sent("claude_account_test")).toEqual([{ account: "hub_api" }]);
   expect(host.textContent).not.toContain(KEY);
+});
+
+it("speaks of the team on a fleetd cloud team, and says plainly when it can't take a key yet", async () => {
+  await render(noKey, { me: sam, admin: true }, true);
+  const key = section("Team API key");
+  expect(key.textContent).toContain("Leads and automations run on the team's key, once it has one, else your subscription.");
+  expect(key.textContent).toContain("The team owner's subscription (yours) isn't connected.");
+  expect(host.textContent).toContain("Members may use the team's API key");
+  expect(host.textContent).not.toMatch(/the hub|Hub API key|hub owner/u);
+  await type("API key", KEY);
+  await click(button("Save and test"));
+  expect(sealed).toEqual([]);
+  expect(host.textContent).toContain("This team can't take a key yet: its computers aren't ready. Try again in a few minutes.");
+  expect(host.textContent).not.toContain("box key");
 });
 
 it("shows where the key is, the members switch and the owner's subscription; each person's account, with a pause and their GitHub, on People", async () => {

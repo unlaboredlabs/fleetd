@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { ClaudeSealedOn, ClaudeTest, ClaudeTestTarget } from "../../../shared/contracts";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
-import { useData, useDataLayer } from "../../src/data/react";
+import { useData, useDataLayer, useHub } from "../../src/data/react";
 import { Button, Dialog, Text } from "../../ui";
 import { HubText } from "../projects/HubText";
 import { boxesOf, missingOn, testLine } from "./claudeModel";
@@ -44,11 +44,16 @@ export function useTest() {
  * Saves through main, which seals the value to each machine, then tests it at once. The machines that didn't take it
  * (offline) come back to say so; the value itself never does.
  */
+/** A fleetd cloud team with nothing yet that takes a key (its computers not ready): said plainly, not as machines. */
+export const CLOUD_NOT_READY = "This team can't take a key yet: its computers aren't ready. Try again in a few minutes.";
+
 export function useSave() {
   const { hub } = useDataLayer();
+  const cloud = useHub().cloud === true;
   const refetch = useRefetch();
   const test = useTest();
   return async (request: ClaudeAccountRequest): Promise<{ ok: true; missing: string[]; tried: Tried | null } | { ok: false; problem: string }> => {
+    if (cloud && request.boxes.length === 0 && (request.account === "mine" || request.key !== undefined)) return { ok: false, problem: CLOUD_NOT_READY };
     const out = await window.fleetd.secret.claudeAccount(hub, request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     if (!out.ok) return { ok: false, problem: "problem" in out ? out.problem : errorText(new CallError(out.error)) };
     refetch(["claude_accounts_get", "setup_list"]);
