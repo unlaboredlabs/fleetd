@@ -1,7 +1,8 @@
 // H.264 for a live view where the machine has no hardware encoder at hand (a Linux desktop's grabs, a browser's
 // screencast JPEGs): x264 in the static ffmpeg the node pins for Android (../device/pins.ts), fetched the first time a
-// screen needs it. It runs while someone watches with H.264, one frame in, one frame out at once (`zerolatency`, no
-// B-frames, no keyframe but the first), and comes out as FLV: its tags say their length, so each frame is whole as
+// screen needs it. It runs while someone watches with H.264, and for a Linux desktop's recording all along (its
+// frames are the video's too: one encode for both), one frame in, one frame out at once (`zerolatency`, no B-frames,
+// no keyframe but the first), and comes out as FLV: its tags say their length, so each frame is whole as
 // soon as it is written (raw Annex B would be whole only once the next one starts). A keyframe on demand is a new
 // encoder: ~90 ms.
 
@@ -91,16 +92,19 @@ export function encoderArgs(input: Input, kbps: number): string[] {
   ];
 }
 
-/** One encoder: frames in with `put`, out to `onFrame` as they are made. `stop` ends it. */
+/** One encoder: frames in with `put`, out to `onFrame` as they are made, one for one and in order, each with the time
+ * it was put at. `stop` ends it. */
 export class X264 {
   private readonly proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
   private stopped = false;
+  /** The times of the frames put and not yet out. */
+  private readonly times: number[] = [];
   readonly ended: Promise<string | undefined>;
 
-  constructor(ffmpeg: string, input: Input, kbps: number, onFrame: (frame: Encoded) => void) {
+  constructor(ffmpeg: string, input: Input, kbps: number, onFrame: (frame: Encoded, atMs: number) => void) {
     const proc = Bun.spawn([ffmpeg, ...encoderArgs(input, kbps)], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
     this.proc = proc;
-    const reader = new FlvReader(onFrame);
+    const reader = new FlvReader((f) => onFrame(f, this.times.shift() ?? 0));
     const said = new Response(proc.stderr).text();
     this.ended = (async () => {
       try {
@@ -112,9 +116,10 @@ export class X264 {
     })();
   }
 
-  /** One frame of the screen: its pixels as the input says. */
-  put(frame: Uint8Array): void {
+  /** One frame of the screen: its pixels as the input says, `atMs` its time. */
+  put(frame: Uint8Array, atMs = 0): void {
     if (this.stopped) return;
+    this.times.push(atMs);
     try {
       this.proc.stdin.write(frame);
       void this.proc.stdin.flush();
@@ -139,13 +144,14 @@ export class X264 {
 export class LiveEncoder implements LiveEncoding {
   private x: { x: X264; input: string; kbps: number } | undefined;
   private path: string | undefined;
-  private asked = false;
   private keyNext = true;
   failed: string | undefined;
 
+  private fetching: Promise<boolean> | undefined;
+
   constructor(
     private readonly ffmpeg: () => Promise<string>,
-    private readonly onFrame: (frame: Encoded, input: Input) => void,
+    private readonly onFrame: (frame: Encoded, input: Input, atMs: number) => void,
     private readonly onFail: (why: string) => void,
   ) {}
 
@@ -154,17 +160,29 @@ export class LiveEncoder implements LiveEncoding {
     this.keyNext = true;
   }
 
-  /** One frame in, at `kbps` at most for the watchers' links: false when it didn't go (no encoder: send JPEG). */
-  put(input: Input, data: Uint8Array, kbps: number | undefined): boolean {
+  /** Whether it can encode: true once its ffmpeg is here (fetched the first time), false if it never will. */
+  ready(): Promise<boolean> {
+    if (this.failed !== undefined) return Promise.resolve(false);
+    if (this.path !== undefined) return Promise.resolve(true);
+    this.fetching ??= this.ffmpeg().then(
+      (path) => {
+        this.path = path;
+        return true;
+      },
+      (e: Error) => {
+        this.fail(`no ffmpeg for it: ${e.message}`);
+        return false;
+      },
+    );
+    return this.fetching;
+  }
+
+  /** One frame in, at `kbps` at most for the watchers' links, `atMs` its time: false when it didn't go (no encoder:
+   * send JPEG). */
+  put(input: Input, data: Uint8Array, kbps: number | undefined, atMs = 0): boolean {
     if (this.failed !== undefined) return false;
     if (this.path === undefined) {
-      if (!this.asked) {
-        this.asked = true;
-        void this.ffmpeg().then(
-          (path) => (this.path = path),
-          (e: Error) => this.fail(`no ffmpeg for it: ${e.message}`),
-        );
-      }
+      void this.ready();
       return false;
     }
     const rate = kbpsFor(kbps);
@@ -173,14 +191,14 @@ export class LiveEncoder implements LiveEncoding {
     if (!now || this.keyNext || now.input !== id || rate > now.kbps * 1.5 || rate < now.kbps / 1.5) {
       this.stop();
       this.keyNext = false;
-      const x = new X264(this.path, input, rate, (f) => this.onFrame(f, input));
+      const x = new X264(this.path, input, rate, (f, at) => this.onFrame(f, input, at));
       const made = { x, input: id, kbps: rate };
       this.x = made;
       void x.ended.then((why) => {
         if (why !== undefined && this.x === made) this.fail(why);
       });
     }
-    this.x!.x.put(data);
+    this.x!.x.put(data, atMs);
     return true;
   }
 

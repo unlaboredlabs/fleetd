@@ -1,13 +1,15 @@
 // One live android session: the emulator copy it was lent, scrcpy's stream
 // of its screen (the video, and the frames a person watches), and the action log, a line per tool call of the agent's
 // that drove the device (its `agent-device` commands, fleetd's session tools), kept as a browser session's is
-// (node/browser/record.ts).
+// (node/browser/record.ts). The video is the device's own H.264 copied into MP4 (`video_mp4`); the watchers get that
+// H.264 too while every one decodes it and their links carry it, else JPEGs decoded from it.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { BrowserAction, BrowserControl } from "../../shared/contracts.ts";
 import { RECORDING_FILES } from "../../shared/screens_wire.ts";
-import { appendAction, files as recordedFiles, type Meta, Scrub, type Steps, VideoSink, writeMeta } from "../browser/record.ts";
+import { appendAction, files as recordedFiles, type Meta, Mp4Sink, Scrub, type Steps, writeMeta } from "../browser/record.ts";
 import { mkdirPrivate } from "../config.ts";
+import { LINK_SHARE, MAX_KBPS } from "../screen/live.ts";
 import { controlPath, release } from "./agent_device.ts";
 import type { Lent } from "./emulator.ts";
 import { type Frame, type Input, Stream } from "./scrcpy.ts";
@@ -18,6 +20,11 @@ const RESULT_CHARS = 500;
 
 /** Where the node keeps device recordings until the hub has them. */
 export const recordingsDir = (home: string) => join(deviceDir(home), "recordings");
+
+/** The watchers' slowest link must carry this much (kbit/s, the hub's word) for the device's H.264 to go to them as it
+ * comes: its bit rate (scrcpy_wire.ts VIDEO_BIT_RATE) at the share of a link H.264 may take. A slower one gets JPEGs
+ * fitted to it. */
+export const PASSTHROUGH_KBPS = Math.ceil(MAX_KBPS / LINK_SHARE);
 
 export type Opened = {
   id: string;
@@ -32,8 +39,10 @@ export type Opened = {
   steps: Steps;
 };
 
-/** How a session's stream starts: scrcpy's, or a test's. */
-export type StreamStarter = typeof Stream.start;
+/** A session's running stream: scrcpy's, or a test's. */
+export type LiveStream = Pick<Stream, "send" | "stop" | "key" | "jpegs">;
+/** How a session's stream starts. */
+export type StreamStarter = (...args: Parameters<typeof Stream.start>) => Promise<LiveStream>;
 
 export class Session {
   readonly id: string;
@@ -45,9 +54,8 @@ export class Session {
   readonly start = performance.now();
   private readonly home: string;
   private lent: Lent | undefined;
-  private stream: Stream | undefined;
-  private video: VideoSink | undefined;
-  private ticker: Timer | undefined;
+  private stream: LiveStream | undefined;
+  private video: Mp4Sink | undefined;
   /** Set by close: a stream or frame that comes late starts nothing. */
   private closed = false;
   private noteText: string | undefined;
@@ -56,9 +64,11 @@ export class Session {
   private readonly scrub: Scrub;
   private readonly steps: Steps;
   private lastActive = Date.now();
-  /** The newest frame, and who wants each new one (live view). */
+  /** The newest JPEG, and who wants each new frame (live view). */
   newest: Frame | undefined;
   private readonly watchers = new Set<(frame: Frame) => void>();
+  /** Whether the watchers get the H.264 (every one decodes it and their links carry it), else JPEGs. */
+  private videoNow = false;
 
   private constructor(lent: Lent, opened: Opened) {
     this.id = opened.id;
@@ -74,7 +84,7 @@ export class Session {
 
   /**
    * Takes a lent emulator and starts recording it. The stream connects in the background (about a second): the
-   * agent's first command needn't wait for it, and the video starts with its first frame.
+   * agent's first command needn't wait for it, and the video starts with its first keyframe.
    */
   static open(lent: Lent, sdk: Sdk, opened: Opened, startStream: StreamStarter = Stream.start): Session {
     mkdirSync(opened.dir, { recursive: true, mode: 0o700 });
@@ -82,26 +92,31 @@ export class Session {
     session.writeMeta();
     const onFrame = (frame: Frame) => {
       if (session.closed) return;
-      if (!session.video && session.noteText === undefined) {
-        try {
-          session.video = new VideoSink(sdk.ffmpeg, join(session.dir, RECORDING_FILES.video.name), [frame.width, frame.height]);
-        } catch (e) {
-          session.noteText = `no video: ${(e as Error).message}`;
+      if (frame.video) {
+        if (!session.video && session.noteText === undefined) {
+          try {
+            session.video = new Mp4Sink(sdk.ffmpeg, join(session.dir, RECORDING_FILES.video_mp4.name));
+          } catch (e) {
+            session.noteText = `no video: ${(e as Error).message}`;
+          }
         }
-      }
-      session.video?.frame(frame.jpeg, frame.atMs);
-      session.newest = frame;
+        session.video?.frame(frame.video.data, frame.video.key, [frame.width, frame.height], frame.atMs);
+        // JPEG watchers get the decoder's frames instead.
+        if (!session.videoNow) return;
+      } else session.newest = frame;
       for (const watcher of session.watchers) watcher(frame);
     };
     void startStream(sdk, lent.emulator.serial, lent.emulator.pushed, sdk.ffmpeg, session.start, onFrame).then(
       (stream) => {
         if (session.closed) {
-          // The session ended while the stream connected: it goes, with the server and decoder.
+          // The session ended while the stream connected: it goes, with the server and any decoder.
           stream.stop();
           return;
         }
         session.stream = stream;
-        session.ticker = setInterval(() => session.video?.tick(session.offsetMs()), 1_000);
+        session.tellStream();
+        // A watcher that came first gets its first picture now.
+        if (session.videoNow && session.watchers.size) stream.key();
       },
       (e: Error) => {
         console.warn(`device ${session.id}: stream not started: ${e.message}`);
@@ -153,11 +168,43 @@ export class Session {
     }
   }
 
-  /** Each new frame of the screen to `fn` (the newest so far at once), until the returned function is called. */
+  /**
+   * Each new frame of the screen to `fn`, until the returned function is called: with JPEG the newest so far at once;
+   * with H.264 (`want`) the watcher's first picture comes from `key`.
+   */
   watch(fn: (frame: Frame) => void): () => void {
     this.watchers.add(fn);
-    if (this.newest) fn(this.newest);
-    return () => void this.watchers.delete(fn);
+    this.tellStream();
+    if (!this.videoNow && this.newest) fn(this.newest);
+    return () => {
+      this.watchers.delete(fn);
+      this.tellStream();
+    };
+  }
+
+  /** H.264 to the watchers from now on (every one decodes it, and `kbps`, their slowest link, carries it), or JPEG:
+   * whether that switched. A switch to H.264 then wants a `key`. */
+  want(video: boolean, kbps: number | undefined): boolean {
+    const now = video && (kbps === undefined || kbps >= PASSTHROUGH_KBPS);
+    const switched = now !== this.videoNow;
+    this.videoNow = now;
+    this.tellStream();
+    return switched;
+  }
+
+  /** Whether the watchers get H.264 now. */
+  wantsVideo(): boolean {
+    return this.videoNow;
+  }
+
+  /** A watcher came, or lost an H.264 frame: the screen now as a JPEG, then H.264 from a keyframe. */
+  key(): void {
+    this.stream?.key();
+  }
+
+  /** The decoder runs only while a watcher wants JPEGs. */
+  private tellStream(): void {
+    this.stream?.jpegs(this.watchers.size > 0 && !this.videoNow);
   }
 
   /** A person's input, while they have control: false when it can't go (no control, or no stream yet). */
@@ -226,12 +273,11 @@ export class Session {
     this.video = undefined;
     this.stream?.stop();
     this.stream = undefined;
-    clearInterval(this.ticker);
     this.watchers.clear();
     if (sink) {
       const why = await sink.finish(this.offsetMs());
       if (why) {
-        rmSync(join(this.dir, RECORDING_FILES.video.name), { force: true });
+        rmSync(join(this.dir, RECORDING_FILES.video_mp4.name), { force: true });
         this.setNote(`no video: ${why}`);
       }
     }

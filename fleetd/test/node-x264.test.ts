@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chmodSync, writeFileSync } from "node:fs";
 import { encoderArgs, FlvReader, kbpsFor, LiveEncoder, paramSets, X264, type Encoded } from "../src/node/screen/x264.ts";
+import { avcConfig, H264Video, mkvFrame, nalUnits } from "../src/node/browser/recording.ts";
+import { Mp4Sink } from "../src/node/browser/record.ts";
 import { tempHome } from "./helpers.ts";
 
 /** An FLV as ffmpeg writes it: header, then tags (11-byte header, data, previous tag size). */
@@ -114,5 +116,68 @@ test("a live view's encoder: JPEG until ffmpeg is here, a new encoder for a keyf
   for (let i = 0; i < 500 && !failed.length; i++) await Bun.sleep(5);
   expect(failed).toEqual(["Unknown encoder libx264"]);
   expect(broken.put(raw, frame, undefined)).toBe(false);
+  home.done();
+});
+
+test("a video of H.264 starts at a keyframe with its parameter sets as the track's, each frame shown until the next, the last until the end", async () => {
+  const sps = [0x67, 0x64, 0x00, 0x28, 0xac];
+  const pps = [0x68, 0xee, 0x3c];
+  expect(nalUnits(Uint8Array.from([0, 0, 0, 1, ...sps, 0, 0, 1, ...pps, 0, 0, 0, 1, 0x65, 0x88])).map((u) => [...u])).toEqual([sps, pps, [0x65, 0x88]]);
+  expect([...avcConfig(Uint8Array.from(sps), Uint8Array.from(pps))]).toEqual([1, 0x64, 0x00, 0x28, 0xff, 0xe1, 0, 5, ...sps, 1, 0, 3, ...pps]);
+  const written: Uint8Array[] = [];
+  let ended = false;
+  const v = new H264Video({ write: (b) => void written.push(Uint8Array.from(b)), end: async () => ((ended = true), undefined) });
+  const key = Uint8Array.from([0, 0, 0, 1, ...sps, 0, 0, 0, 1, ...pps, 0, 0, 0, 1, 0x65, 0x88]);
+  const delta = Uint8Array.from([0, 0, 0, 1, 0x41, 0x9a]);
+  // A frame before any keyframe can't be shown: nothing yet.
+  v.frame(delta, false, [64, 48], 0);
+  expect(written).toEqual([]);
+  v.frame(key, true, [64, 48], 100);
+  // The header, with the track's AVC record; the keyframe waits to know how long it shows.
+  expect(written.length).toBe(1);
+  expect(Buffer.from(written[0]!).includes(Buffer.from("V_MPEG4/ISO/AVC"))).toBe(true);
+  expect(Buffer.from(written[0]!).includes(Buffer.from(avcConfig(Uint8Array.from(sps), Uint8Array.from(pps))))).toBe(true);
+  v.frame(delta, false, [64, 48], 340);
+  // Same time again: a millisecond later, as each frame must be.
+  v.frame(delta, false, [64, 48], 340);
+  // Each frame as NAL units after their lengths, shown until the next.
+  expect(written.slice(1)).toEqual([mkvFrame(Uint8Array.from([0, 0, 0, 5, ...sps, 0, 0, 0, 3, ...pps, 0, 0, 0, 2, 0x65, 0x88]), 100, 240, true), mkvFrame(Uint8Array.from([0, 0, 0, 2, 0x41, 0x9a]), 340, 1, false)]);
+  expect(await v.finish(1_000)).toBeUndefined();
+  expect(ended).toBe(true);
+  expect(written.at(-1)).toEqual(mkvFrame(Uint8Array.from([0, 0, 0, 2, 0x41, 0x9a]), 341, 659, false));
+  // A frame that isn't a keyframe says it refers to one before it.
+  expect(Buffer.from(mkvFrame(Uint8Array.of(1), 0, 1, false)).includes(Buffer.from([0xfb, 0x81, 0xff]))).toBe(true);
+  expect(Buffer.from(mkvFrame(Uint8Array.of(1), 0, 1, true)).includes(Buffer.from([0xfb, 0x81, 0xff]))).toBe(false);
+  // One that never saw a keyframe has no video.
+  const none = new H264Video({ write: () => {}, end: async () => undefined });
+  none.frame(delta, false, [64, 48], 0);
+  expect(await none.finish(10)).toBe("the screen sent no keyframe");
+});
+
+test.skipIf(!existsSync(ffmpeg))("a real x264's frames copied into an MP4 play back whole, at the times they were put", async () => {
+  const home = tempHome();
+  const out = join(home.dir, "video.mp4");
+  const sink = new Mp4Sink(ffmpeg, out);
+  let n = 0;
+  const x = new X264(ffmpeg, { raw: [64, 48] }, 500, (f, atMs) => {
+    n++;
+    sink.frame(f.data, f.key, [64, 48], atMs);
+  });
+  const screen = new Uint8Array(64 * 48 * 4);
+  for (let i = 0; i < 6; i++) {
+    screen.fill(i * 40);
+    x.put(screen, i * 200);
+    const deadline = Date.now() + 5_000;
+    while (n <= i && Date.now() < deadline) await Bun.sleep(2);
+  }
+  x.stop();
+  expect(await sink.finish(2_000)).toBeUndefined();
+  // Decoded again: every frame, and the last shown until the end.
+  const probe = Bun.spawnSync([ffmpeg, "-v", "error", "-i", out, "-f", "framemd5", "-"], { stdout: "pipe" });
+  const lines = probe.stdout.toString().split("\n").filter((l) => /^0,/.test(l));
+  expect(lines.length).toBe(6);
+  const info = Bun.spawnSync([ffmpeg, "-i", out], { stderr: "pipe" }).stderr.toString();
+  expect(info).toContain("Video: h264");
+  expect(info).toMatch(/Duration: 00:00:02\.0/);
   home.done();
 });

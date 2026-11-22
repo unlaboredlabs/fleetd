@@ -23,11 +23,17 @@ export type Encoded = { data: Uint8Array; key: boolean };
 export type Input = { raw: [number, number] } | { jpeg: [number, number] };
 
 /** A live view's encoder over its life (x264.ts's LiveEncoder): `put` answers false when the frame didn't go (none
- * yet, or none at all: the screen sends JPEG). */
-export type LiveEncoding = { key(): void; put(input: Input, data: Uint8Array, kbps: number | undefined): boolean; stop(): void };
+ * yet, or none at all: the screen sends JPEG); `atMs`, the frame's time, comes back with what it is made into.
+ * `ready` says whether it can encode, once it knows (its ffmpeg fetched, or not). */
+export type LiveEncoding = {
+  key(): void;
+  put(input: Input, data: Uint8Array, kbps: number | undefined, atMs?: number): boolean;
+  stop(): void;
+  ready?(): Promise<boolean>;
+};
 
-/** Makes a session's encoder, its frames to `onFrame`; `onFail` once it can't encode. */
-export type MakeEncoder = (onFrame: (frame: Encoded, input: Input) => void, onFail: (why: string) => void) => LiveEncoding;
+/** Makes a session's encoder, its frames to `onFrame` with the time each was put at; `onFail` once it can't encode. */
+export type MakeEncoder = (onFrame: (frame: Encoded, input: Input, atMs: number) => void, onFail: (why: string) => void) => LiveEncoding;
 
 /** The H.264 bit rate at most, in kbit/s: 1280×800 at 30 fps, text sharp. */
 export const MAX_KBPS = 2_500;

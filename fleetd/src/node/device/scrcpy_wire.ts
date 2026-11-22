@@ -1,5 +1,5 @@
-// scrcpy's wire, with nothing of the machine's: the server's arguments, the decoder's, the JPEGs out of ffmpeg's
-// MJPEG and a person's input as scrcpy's control messages. The node's stream (./scrcpy.ts) and a hosted box's own
+// scrcpy's wire, with nothing of the machine's: the server's arguments, its packets, the decoder's arguments, the JPEGs
+// out of ffmpeg's MJPEG and a person's input as scrcpy's control messages. The node's stream (./scrcpy.ts) and a hosted box's own
 // part (../place/box_emulator.ts, ./android_part.mjs) speak it alike. Pure (docs/CONTRIBUTING.md "The package").
 import { SCRCPY_VERSION } from "./pins.ts";
 
@@ -12,7 +12,8 @@ export const MAX_FPS = 30;
 const TEXT_MAX_BYTES = 300;
 
 /** One frame of the screen, as JPEG: `seq` 1, 2, … per stream, `atMs` from the session's start. A screen that streams
- * H.264 (an iOS simulator's, ../screen/mac_frames.ts) sends it as `video`, its `jpeg` empty. */
+ * H.264 (an emulator's own, ./scrcpy.ts; an iOS simulator's, ../screen/mac_frames.ts) sends it as `video` (Annex B, a
+ * keyframe with its parameter sets first), its `jpeg` empty. */
 export type Frame = { seq: number; jpeg: Uint8Array; width: number; height: number; atMs: number; video?: { data: Uint8Array; key: boolean } };
 
 /**
@@ -27,8 +28,19 @@ export type Input =
   | { kind: "key"; down: boolean; key: string; modifiers: number }
   | { kind: "text"; text: string };
 
-/** The server's arguments, in order: `send_dummy_byte` after `raw_stream`, which turns it off. */
-export function serverArgs(scid: string): string[] {
+/** The H.264 bit rate the node's own stream asks of the device, in bit/s: what passes through to a watcher that
+ * decodes it (../screen/live.ts MAX_KBPS, as a Linux desktop's x264 has it) and goes into the recording. */
+export const VIDEO_BIT_RATE = 2_500_000;
+
+/**
+ * The server's arguments, in order: `send_dummy_byte` after `raw_stream`, which turns it off. `packets`: each packet
+ * comes with its header (`Packets` reads them) instead of as bare H.264, at VIDEO_BIT_RATE: what the node's own stream
+ * passes through. A hosted box's part decodes the bare stream (./android_part.mjs).
+ */
+export function serverArgs(scid: string, packets = false): string[] {
+  const stream = packets
+    ? [`video_bit_rate=${VIDEO_BIT_RATE}`, "send_device_meta=false", "send_stream_meta=true", "send_frame_meta=true"]
+    : ["raw_stream=true"];
   return [
     `CLASSPATH=${SERVER_PATH}`,
     "app_process",
@@ -43,9 +55,66 @@ export function serverArgs(scid: string): string[] {
     "video_codec=h264",
     `max_size=${MAX_SIZE}`,
     `max_fps=${MAX_FPS}`,
-    "raw_stream=true",
+    ...stream,
     "send_dummy_byte=true",
     "clipboard_autosync=false",
+  ];
+}
+
+/** What scrcpy's video socket says, packet by packet (with `serverArgs(…, true)`): the encoder's size each time it
+ * starts (the first time, after a reset, on a rotation), its parameter sets (`config`), and each frame, as Annex B. */
+export type Packet = { kind: "size"; width: number; height: number } | { kind: "config"; data: Uint8Array } | { kind: "frame"; data: Uint8Array; key: boolean };
+
+/**
+ * Splits the video socket into packets as it comes. First the codec's id (4 bytes); then a session header (12 bytes:
+ * a 32-bit word whose top bit is set, the width, the height) each time the encoder starts, and a frame header before
+ * each packet (12 bytes: 64 bits of presentation time, its top bits saying `config` (62) and `key` (61), then the
+ * length).
+ */
+export class Packets {
+  private buf: Uint8Array = new Uint8Array(0);
+  private codec = false;
+
+  push(chunk: Uint8Array): Packet[] {
+    // Its own copy: a socket may reuse the chunk's memory, and the packets point into it.
+    this.buf = this.buf.length ? Buffer.concat([this.buf, chunk]) : Uint8Array.from(chunk);
+    const out: Packet[] = [];
+    for (;;) {
+      const v = new DataView(this.buf.buffer, this.buf.byteOffset, this.buf.length);
+      if (!this.codec) {
+        if (this.buf.length < 4) return out;
+        if (v.getUint32(0) !== H264_ID) throw new Error(`scrcpy's stream is not H.264 (codec ${v.getUint32(0)})`);
+        this.codec = true;
+        this.buf = this.buf.subarray(4);
+        continue;
+      }
+      if (this.buf.length < 12) return out;
+      const word = v.getUint32(0);
+      if (word & 0x8000_0000) {
+        out.push({ kind: "size", width: v.getUint32(4), height: v.getUint32(8) });
+        this.buf = this.buf.subarray(12);
+        continue;
+      }
+      const length = v.getUint32(8);
+      if (this.buf.length < 12 + length) return out;
+      const data = this.buf.subarray(12, 12 + length);
+      out.push(word & 0x4000_0000 ? { kind: "config", data } : { kind: "frame", data, key: (word & 0x2000_0000) !== 0 });
+      this.buf = this.buf.subarray(12 + length);
+    }
+  }
+}
+/** scrcpy's id for H.264: "h264". */
+const H264_ID = 0x68_32_36_34;
+
+/** The control message that restarts the device's encoder: its size, parameter sets and a keyframe come next. */
+export const RESET_VIDEO = Uint8Array.of(17);
+
+/** ffmpeg's arguments for one picture: `frames` access units in, from a keyframe (with its parameter sets) on, the
+ * last one's JPEG out. */
+export function stillArgs(frames: number): string[] {
+  return [
+    ...["-loglevel", "error", "-f", "h264", "-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0"],
+    ...["-vf", `select=eq(n\\,${Math.max(frames - 1, 0)})`, "-fps_mode", "vfr", "-frames:v", "1", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"],
   ];
 }
 
@@ -60,6 +129,16 @@ const SKIP_REPEATS = "mpdecimate=hi=256:lo=128:frac=0.33:max=30";
 export const DECODER_ARGS = [
   ...["-loglevel", "error", "-f", "h264", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0"],
   ...["-vf", SKIP_REPEATS, "-fps_mode", "vfr", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"],
+];
+
+/**
+ * ffmpeg's arguments for the node's own decoder (./scrcpy.ts), fed from a keyframe: a JPEG per frame out. A frame
+ * scrcpy repeats on a still screen decodes to the same JPEG, which the stream drops; mpdecimate would drop it here, but
+ * it holds back the last frame until a different one comes, so a screen that stops would show late or never.
+ */
+export const JPEG_ARGS = [
+  ...["-loglevel", "error", "-f", "h264", "-flags", "low_delay", "-probesize", "32", "-analyzeduration", "0", "-i", "pipe:0"],
+  ...["-fps_mode", "passthrough", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"],
 ];
 
 /** Splits ffmpeg's MJPEG output into whole JPEGs (start FF D8, end FF D9; the data in between never holds FF D9). */

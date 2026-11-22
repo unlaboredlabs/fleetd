@@ -7774,7 +7774,7 @@ export type SessionHost = KnownSessionHost | (string & {});
  * screens' rows and recordings still read as it, and a
  * new one is refused with [`IOS_GONE`], since iOS simulators are the agents' Mac's (`mac sim`). Every kind shares the
  * session tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an
- * iOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability and
+ * iOS, Android or Linux desktop one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability and
  * desktop ones when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.
  */
 export type KnownSessionKind = "browser" | "android" | "ios" | "linux_desktop" | "mac";

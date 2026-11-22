@@ -267,7 +267,7 @@ test("a desktop's grabs go to its H.264 encoder for a watcher that decodes it; a
   const encoder: MakeEncoder = (onFrame) => ({
     key: () => void (asked.push("key"), (keyNext = true)),
     put: (input, data) => {
-      onFrame({ data: data.subarray(0, 4), key: keyNext }, input);
+      onFrame({ data: data.subarray(0, 4), key: keyNext }, input, 0);
       keyNext = false;
       return true;
     },
@@ -296,6 +296,71 @@ test("a desktop's grabs go to its H.264 encoder for a watcher that decodes it; a
   await until("the next H.264 frame", () => frames.slice(sent + 1).some((f) => f.h264));
   expect(frames.slice(sent + 1).find((f) => f.h264)).toMatchObject({ key: true });
   expect(asked).toEqual(["key", "key"]);
+});
+
+test("a Linux desktop encodes each grab once: its video is the encoder's H.264, and a JPEG is made only for a watcher that needs one", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  let jpegs = 0;
+  const encode = x.encode.bind(x);
+  x.encode = (raw) => (jpegs++, encode(raw));
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // A stand-in encoder that takes a moment to be ready (its ffmpeg fetched), then makes each grab a frame at once.
+  let keyNext = true;
+  const encoder: MakeEncoder = (onFrame) => ({
+    key: () => void (keyNext = true),
+    put: (input, data, _kbps, atMs) => {
+      onFrame({ data: data.subarray(0, 4), key: keyNext }, input, atMs ?? 0);
+      keyNext = false;
+      return true;
+    },
+    stop: () => {},
+    ready: () => Bun.sleep(30).then(() => true),
+  });
+  const recorded: { kind: "jpeg" | "h264"; key?: boolean; atMs: number }[] = [];
+  const recording = {
+    append: () => {},
+    filled: () => {},
+    end: async () => ({ files: [] }),
+    video: {
+      frame: (_jpeg: Uint8Array, atMs: number) => void recorded.push({ kind: "jpeg", atMs }),
+      h264: (_au: Uint8Array, key: boolean, _size: [number, number], atMs: number) => (recorded.push({ kind: "h264", key, atMs }), true),
+      tick: () => {},
+      finish: async () => undefined,
+    },
+  };
+  const session = new Session(lent, x, { id: "d3", thread: "t1", cwd: dir, purpose: "record", secrets: [], kind: "linux_desktop", encoder, recording });
+  cleanups.push(() => void session.close());
+  session.open();
+  // Nobody watches: the video gets H.264 from the first grab on, and nothing is made a JPEG.
+  await until("the first H.264 frame recorded", () => recorded.length > 0);
+  server.paint(255, 0, 0, [3, 4, 5, 6]);
+  await until("a second", () => recorded.length > 1);
+  expect(recorded.every((r) => r.kind === "h264")).toBe(true);
+  expect(recorded[0]!.key).toBe(true);
+  expect(recorded[1]!.atMs).toBeGreaterThan(recorded[0]!.atMs);
+  expect(jpegs).toBe(0);
+
+  // A watcher that decodes H.264: the screen now, made a JPEG of the last grab only now, then the same encoder's frames.
+  const frames: { seq: number; h264: boolean; key: boolean }[] = [];
+  session.setWatcher({ kbps: undefined, video: true, send: (f) => frames.push({ seq: f.seq, h264: f.h264B64 !== undefined, key: f.key === true }) });
+  await until("the screen now", () => frames.length > 0);
+  expect(frames[0]).toMatchObject({ h264: false });
+  expect(jpegs).toBe(1);
+  server.paint(0, 255, 0, [3, 4, 5, 6]);
+  await until("an H.264 frame", () => frames.some((f) => f.h264));
+  expect(frames.find((f) => f.h264)).toMatchObject({ key: true });
+  expect(jpegs).toBe(1);
+  const both = recorded.length;
+  expect(recorded.at(-1)!.kind).toBe("h264");
+
+  // A watcher that can't decode it: a JPEG for each change, and the video still the encoder's.
+  session.setBudget(undefined, false);
+  server.paint(0, 0, 255, [3, 4, 5, 6]);
+  await until("a JPEG", () => frames.at(-1)?.h264 === false && jpegs > 1);
+  await until("its frame recorded", () => recorded.length > both);
+  expect(recorded.every((r) => r.kind === "h264")).toBe(true);
 });
 
 test("without DAMAGE the screen counts as changed at every look", async () => {

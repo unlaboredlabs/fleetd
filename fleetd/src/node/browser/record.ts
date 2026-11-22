@@ -11,12 +11,13 @@ import type { Subprocess } from "bun";
 import type { BrowserAction } from "../../shared/contracts.ts";
 import type { Scrub } from "../mask.ts";
 import { RECORDING_FILES, RECORDING_PART_BYTES } from "../../shared/screens_wire.ts";
-import { FPS, GIVE_UP_MS, type HubCall, type Meta, MkvVideo, type Recording, type RecordingStore, report, Steps as KeptSteps, type VideoWriter } from "./recording.ts";
+import { FPS, GIVE_UP_MS, H264Video, type HubCall, type Meta, MkvVideo, type Recording, type RecordingStore, report, Steps as KeptSteps, type VideoWriter } from "./recording.ts";
 
 export {
   brief,
   FPS,
   GIVE_UP_MS,
+  H264Video,
   type HubCall,
   type Meta,
   MkvVideo,
@@ -114,20 +115,30 @@ export function findFfmpeg(root: string): string | undefined {
 /** The session's video into Playwright's ffmpeg, to VP9 in `out`. */
 export class VideoSink extends MkvVideo {
   constructor(ffmpeg: string, out: string, sizeOf: [number, number]) {
-    super(sizeOf, ffmpegWriter(ffmpeg, out, sizeOf));
+    const [w, h] = sizeOf;
+    super(
+      sizeOf,
+      ffmpegWriter(ffmpeg, [
+        ...["-i", "pipe:0", "-y", "-an", "-r", String(FPS), "-c:v", "libvpx-vp9"],
+        ...["-qmin", "0", "-qmax", "50", "-crf", "8", "-deadline", "realtime", "-speed", "8", "-b:v", "1M", "-threads", "1"],
+        ...["-lag-in-frames", "0", "-vf", `pad=${w}:${h}:0:0:gray,crop=${w}:${h}:0:0`, "-pix_fmt", "yuv420p", out],
+      ]),
+    );
   }
 }
 
-/** An ffmpeg making `out` of the Matroska stream on its stdin. */
-function ffmpegWriter(ffmpeg: string, out: string, [w, h]: [number, number]): VideoWriter {
+/** The session's own H.264 into an ffmpeg that copies it into MP4 at `out` (`video_mp4`), encoding nothing: fragmented,
+ * a fragment each keyframe and each 2 s, so a video cut short (the node stopped mid-session) plays up to there. */
+export class Mp4Sink extends H264Video {
+  constructor(ffmpeg: string, out: string) {
+    super(ffmpegWriter(ffmpeg, ["-i", "pipe:0", "-y", "-an", "-c:v", "copy", "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-frag_duration", "2000000", "-f", "mp4", out]));
+  }
+}
+
+/** An ffmpeg making its output (`args`, from its input on) of the Matroska stream on its stdin. */
+function ffmpegWriter(ffmpeg: string, args: string[]): VideoWriter {
   const child: Subprocess<"pipe", "ignore", "pipe"> = Bun.spawn(
-    [
-      ffmpeg,
-      ...["-loglevel", "error", "-f", "matroska", "-fpsprobesize", "0", "-probesize", "32", "-analyzeduration", "0"],
-      ...["-i", "pipe:0", "-y", "-an", "-r", String(FPS), "-c:v", "libvpx-vp9"],
-      ...["-qmin", "0", "-qmax", "50", "-crf", "8", "-deadline", "realtime", "-speed", "8", "-b:v", "1M", "-threads", "1"],
-      ...["-lag-in-frames", "0", "-vf", `pad=${w}:${h}:0:0:gray,crop=${w}:${h}:0:0`, "-pix_fmt", "yuv420p", out],
-    ],
+    [ffmpeg, ...["-loglevel", "error", "-f", "matroska", "-fpsprobesize", "0", "-probesize", "32", "-analyzeduration", "0"], ...args],
     { stdin: "pipe", stdout: "ignore", stderr: "pipe" },
   );
   return {
