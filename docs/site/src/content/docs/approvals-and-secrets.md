@@ -117,8 +117,7 @@ take only a human key. `requests_list` lists every secret and approval request w
 ## Approve a lead's tool call {#tool-approvals}
 
 A bot's lead runs with claude's permission prompts on, allowed unasked what a full-access lead does: a send
-through an integration, a first visit to a site, `project_message` to a bot on a linked hub, `confirm_step` and
-`automation_confirm` raise a prompt. The bot's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the bot's
+through an integration, a first visit to a site, `confirm_step` and `automation_confirm` raise a prompt. The bot's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the bot's
 chat as an approval with the tool and its input. Approve runs the tool with exactly that input; Deny tells the lead you
 said no, with your reason if you type one. A card the checker blocked says why, with **Approve anyway**. If the lead's
 run ends before you answer, the approval closes by itself.

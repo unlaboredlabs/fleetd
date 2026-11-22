@@ -50,7 +50,7 @@ describe("settings search", () => {
     expect(tabs("task profiles", true)).toContain("hub.profiles");
     // Memory is yours on You › Your memory, a project's on its Instructions & memory, with its nightly refresh (D212).
     expect([tabOf("instructions"), tabOf("memory"), tabOf("bot memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
-    expect([tabOf("setup commands"), tabOf("linked hubs"), tabOf("subscription")]).toEqual(["projects", "projects", "accounts"]);
+    expect([tabOf("setup commands"), tabOf("subscription")]).toEqual(["projects", "accounts"]);
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
     // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
     expect(labels("global")).toEqual([]);
@@ -78,10 +78,9 @@ describe("settings search", () => {
     expect(found.filter((k) => !marked.has(k)), "in search, marked on no page").toEqual([]);
   });
 
-  it("finds one place once: one result each for MCP, hub links, Claude and the hub's API key (W467)", () => {
+  it("finds one place once: one result each for MCP, Claude and the hub's API key (W467)", () => {
     const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
     expect(keys("mcp")).toEqual(["projects.mcp"]);
-    expect(keys("hub links")).toEqual(["hubs.links"]);
     expect(keys("claude").filter((k) => k.startsWith("claude"))).toEqual(["claude"]);
     expect(keys("hub api key", true)[0]).toBe("admin.claude");
     expect(keys("api key", true)).not.toContain("admin.claude.key");

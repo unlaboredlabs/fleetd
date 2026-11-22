@@ -79,7 +79,7 @@ Everything the hub keeps across its own restart:
 | Settings | The hub's settings, profiles, agent limits, approvals. |
 | Recordings | Browser and screen sessions that were recorded, with their files. |
 | History | The event log, time and metrics. |
-| Secrets | Vault items (logins, cards, addresses, variables) with their log, the GitHub App's keys, connected GitHub accounts, MCP sign-ins, links to other hubs, your own push relay's key. |
+| Secrets | Vault items (logins, cards, addresses, variables) with their log, the GitHub App's keys, connected GitHub accounts, MCP sign-ins, your own push relay's key. |
 
 Secrets never leave in the clear. Export opens each with the hub's own keys and seals it under a key made for that
 file, which is in the file only wrapped under your passphrase (scrypt, then AES-256-GCM). Import seals each again to
@@ -94,7 +94,6 @@ the new hub's own keys. The hub's own keys are never in the file.
 | Phones' push tokens | They belong to the sign-ins. | Each phone registers again when it signs in. |
 | Open pairing, invite and join codes | They are single use and short lived. | Print new ones. |
 | The hub's own keys | The box key and the vault's root key never leave the hub. | The new hub has its own; secrets are sealed to them on import. Save the new [recovery code](/docs/vault). |
-| Keys given to other hubs | They were this hub's to give. | Link the hubs again. |
 | Agent slots, session places, waits for a screen | They describe processes on the old hub's machines at that moment. | Agents claim slots again as they run. |
 | Unfinished uploads, recordings still being made | Half a file. | Send or record again. |
 | Builds, update downloads, the log, `setup.json` | Made again, or about this install's address. | `fleetd init` writes the new install's. |

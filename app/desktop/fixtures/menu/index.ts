@@ -172,7 +172,7 @@ export default defineGroup({
         f.appUpdate = { current: MINE, app: { kind: "ready", version: NEXT }, release: { cli: MINE, app: NEXT } };
         const team = hub("app-update-cloud", "The fleetd cloud team weishang, which updates itself: hub_info leaves the hub's update out.");
         team.state = { phase: "live", hub: "https://weishang.fleetd.dev", protocol: PROTOCOL, version: "0.9.0" };
-        team.drop("hub_info").answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, me: sam, people: 4, url: "https://weishang.fleetd.dev", leftOut: LEFT_OUT });
+        team.drop("hub_info").answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, me: sam, people: 4, leftOut: LEFT_OUT });
         f.hubs = [{ label: "weishang", color: "amber", fixture: team }];
       }),
       made("everything", "Everything at once, as Sam: an update that didn't go in, a machine offline, a setup step left.", (f) => {

@@ -2,7 +2,7 @@
 // (claude_accounts_get and github_app_get answer an admin with everyone's), any usage pause on their account included. An owner or admin changes a role in place
 // (person_set) or removes someone (person_remove, once confirmed: their devices are signed out at once). What a row
 // offers comes from model.ts; the hub checks it all again. Invite someone is the plus beside the page's line
-// (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke. Then every hub link minted here, which acts as its person (hubLinks/AllLinks.tsx). On a fleetd cloud team (a hub that
+// (Invites.tsx); someone invited who hasn't joined is one row, with their invite's Revoke. On a fleetd cloud team (a hub that
 // came with the account) the plus invites by email instead, and who is invited so is listed under People
 // (EmailInvites.tsx); a self-hosted hub's page is the one above, with nothing of the cloud on it.
 import { Mail } from "lucide-react";
@@ -15,7 +15,6 @@ import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { AddButton, Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import { openUpdates } from "../updates/state";
-import { AllLinks } from "../hubLinks/AllLinks";
 import { invitedBy, InviteSection, OpenInvite } from "./Invites";
 import { EmailInviteList, EmailInviteSection, useEmailInvites } from "./EmailInvites";
 import { useHub, useToolQuery } from "../../src/data/react";
@@ -79,7 +78,6 @@ export function People({ me }: { me: Person | undefined }) {
           <PeopleList list={read.data} me={me} />
         )}
         {live && byEmail ? <EmailInviteList read={emailInvites} /> : null}
-        <AllLinks />
       </div>
     </div>
   );

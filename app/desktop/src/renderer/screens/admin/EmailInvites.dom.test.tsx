@@ -110,11 +110,9 @@ const render = async (me: Person, cloud: boolean, list: () => PeopleListOutput =
             ? { version: "0.0.0", protocol: 1, busy: [], ...info }
             : tool === "people_list"
               ? list()
-              : tool === "hub_links_get"
-                ? { links: [], issued: [], boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }
-                : tool === "setup_list"
-                  ? { steps: [], requiredLeft: 0 }
-                  : {},
+              : tool === "setup_list"
+                ? { steps: [], requiredLeft: 0 }
+                : {},
       }),
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),

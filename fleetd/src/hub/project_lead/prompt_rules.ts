@@ -14,13 +14,6 @@ export const BRIDGE_TOOL = "mcp__fleetd__project_message";
 
 const pretty = (v: unknown) => JSON.stringify(sortedValue(v), null, 2);
 
-/** The card for a `project_message` prompt: whose lead it reaches, and the call whole (bridge.rs `preview`). */
-export function bridgePreview(input: unknown): ToolPreview | undefined {
-  const o = input !== null && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined;
-  if (!o || typeof o.project !== "string" || typeof o.text !== "string" || (o.hub != null && typeof o.hub !== "string")) return undefined;
-  const title = typeof o.hub === "string" ? `Message the lead of ${o.project} on ${o.hub}` : `Message the lead of ${o.project}`;
-  return { server: "fleetd", tool: "project_message", action: "send", title: clipUtf16(title, 200), input: pretty(input) };
-}
 
 /** The card for `automation_confirm`: the automation as the hub has it, never the project's words (automations calls.rs). */
 export function automationPreview(a: Automation): ToolPreview {
@@ -37,8 +30,8 @@ export function automationPreview(a: Automation): ToolPreview {
 /**
  * The project's rules on a prompt the integrations policy had no word on: its final confirm on a site (a payment is
  * refused, anything else is a risky action like a send), letting an automation run on its own, and its message to
- * another project's lead: to one on this hub it goes at once, the team's own bots texting (D580); to a linked hub's,
- * it is a risky action like a send. Undefined: no rule, so the approval mode decides.
+ * another project's lead, which goes at once, the team's own bots texting (D580). Undefined: no rule, so the approval
+ * mode decides.
  */
 export function promptVerdict(tool: string, input: unknown, automation: Automation | undefined): PromptVerdict | undefined {
   if (tool === confirm.TOOL) {
@@ -51,9 +44,9 @@ export function promptVerdict(tool: string, input: unknown, automation: Automati
     return automation ? { ask: automationPreview(automation) } : { deny: "Blocked by fleetd: this bot has no such automation. automation_list names them." };
   }
   if (tool === BRIDGE_TOOL) {
-    const card = bridgePreview(input);
-    if (!card) return { deny: "Blocked by fleetd: this project_message can't be read. Give project and text." };
-    return (input as { hub?: unknown }).hub == null ? { allow: true } : { ask: card };
+    const o = input !== null && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined;
+    const readable = o !== undefined && typeof o.project === "string" && typeof o.text === "string";
+    return readable ? { allow: true } : { deny: "Blocked by fleetd: this project_message can't be read. Give project and text." };
   }
   return undefined;
 }

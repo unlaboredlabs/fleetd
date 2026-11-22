@@ -15,7 +15,7 @@ import { MIGRATIONS } from "../src/gen/migrations.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { migrate } from "../src/hub/store/migrations.ts";
 import { TaskRecords } from "../src/hub/tasks/records.ts";
-import { TransferError } from "../src/hub/transfer/format.ts";
+import { tablePartPath, TransferError } from "../src/hub/transfer/format.ts";
 import { checkExport, importHub } from "../src/hub/transfer/import.ts";
 import { SECRET_TABLES } from "../src/hub/transfer/tables.ts";
 import { loadOrCreateBoxKey, openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
@@ -36,7 +36,6 @@ const CANARY = {
   appKey: "canary-app-private-key-Kk33",
   webhook: "canary-webhook-secret-Ww44",
   token: "canary-github-token-Tt55",
-  link: "canary-hub-link-key-Ll66",
   relay: "canary-push-relay-key-Rr77",
   oauth: "canary-mcp-client-secret-Oo88",
 };
@@ -137,7 +136,6 @@ async function fill(p: Place, k: Opened) {
     sealed(CANARY.webhook),
   );
   db.query("INSERT INTO github_accounts (person_id, data, sealed_access, access_expires_ms) VALUES (?, ?, ?, ?)").run(k.owner.personId, JSON.stringify({ login: "ada" }), sealed(CANARY.token), AT + 3600_000);
-  db.query("INSERT INTO hub_links (link_id, machine_id, project_id, label, url, sealed, cursor, state, created_ms) VALUES ('L1', ?, 'p1', 'Other hub', 'https://other.example', ?, 0, 'ok', ?)").run(M, sealed(CANARY.link), AT);
   db.query("INSERT INTO push_relay (id, url, key_sealed) VALUES (1, 'https://relay.example', ?)").run(b64(sealed(CANARY.relay)));
   db.query("INSERT INTO mcp_oauth (machine_id, project_id, name, data, state) VALUES (?, 'p1', 'linear', ?, NULL)").run(
     M,
@@ -253,7 +251,6 @@ describe("a hub's export into a fresh hub", () => {
     const app = row<{ sealed_key: Uint8Array; sealed_client_secret: null; sealed_webhook_secret: Uint8Array }>("SELECT * FROM github_app");
     expect([plain(app.sealed_key), app.sealed_client_secret, plain(app.sealed_webhook_secret)]).toEqual([CANARY.appKey, null, CANARY.webhook]);
     expect(plain(row<{ sealed_access: Uint8Array }>("SELECT sealed_access FROM github_accounts").sealed_access)).toBe(CANARY.token);
-    expect(plain(row<{ sealed: Uint8Array }>("SELECT sealed FROM hub_links").sealed)).toBe(CANARY.link);
     expect(plain(row<{ key_sealed: string }>("SELECT key_sealed FROM push_relay").key_sealed)).toBe(CANARY.relay);
     const oauth = JSON.parse(row<{ data: string }>("SELECT data FROM mcp_oauth").data) as { issuer: string; client: { id: string; sealedSecret: string } };
     expect([oauth.issuer, oauth.client.id, plain(oauth.client.sealedSecret)]).toEqual(["https://linear.example", "c1", CANARY.oauth]);
@@ -315,9 +312,9 @@ describe("a hub's export into a fresh hub", () => {
     await exportOf(from);
     const two = await fresh();
     const loaded = await importInto(two.p, from.file, { secrets: false });
-    expect(loaded).toMatchObject({ secrets: false, skipped: ["the secrets: vault items, the GitHub App's keys, connected accounts and hub links"] });
+    expect(loaded).toMatchObject({ secrets: false, skipped: ["the secrets: vault items, the GitHub App's keys and connected accounts"] });
     const b = await start(two.p);
-    expect(b.hub.db.all("SELECT 1 FROM vault_items UNION ALL SELECT 1 FROM github_app UNION ALL SELECT 1 FROM hub_links")).toEqual([]);
+    expect(b.hub.db.all("SELECT 1 FROM vault_items UNION ALL SELECT 1 FROM github_app")).toEqual([]);
     expect((await b.call(b.device().caller, "decisions_list", { projectRef: PROJECT })).decisions.map((d: { key: string }) => d.key)).toEqual(["db.engine"]);
     expect((await b.call(b.device().caller, "task_get", { taskId: f.task.taskId })).task.title).toBe("Dark mode: the settings screen");
   });
@@ -469,6 +466,26 @@ describe("an import that can't go through changes nothing", () => {
     expect(stateOf(to)).toEqual(before);
   });
 
+  test("an older export's table this fleetd dropped is left behind, its sealed rows unopened, and the rest loads", async () => {
+    const { from, to } = await pair();
+    // An export from before hub links were removed carried their table, its keys sealed: push_relay stands in for it.
+    const older = join(from.dir, "export-hub-links.tar");
+    await rewritten(from.file, older, {
+      manifest: (m) => {
+        const t = m.tables.find((x) => x.name === "push_relay")!;
+        t.name = "hub_links";
+        t.parts = t.parts.map((part, i) => ({ ...part, path: tablePartPath(t.name, i + 1) }));
+      },
+      path: (path) => path.replace("tables/push_relay/", "tables/hub_links/"),
+    });
+    const loaded = await importInto(to, older);
+    expect(loaded.skipped).toEqual(["1 row of hub_links, a table this fleetd no longer has"]);
+    const b = await start(to);
+    expect(b.hub.db.all("SELECT 1 FROM push_relay")).toEqual([]);
+    expect(b.hub.db.all<{ key: string }>("SELECT key FROM decisions").map((d) => d.key)).toContain("db.engine");
+    stop(b);
+  });
+
   test("a hub that already has data is refused, and says what it has", async () => {
     const { from, before } = await pair();
     // The hub the export came from, and a hub with one decision: neither is fresh.
@@ -513,7 +530,7 @@ test("every carried table's rows arrive as they left", async () => {
   const [was, is] = [rowsOf(from.home), rowsOf(to.home)];
   // What differs by design: the secrets (sealed again to the new hub's keys, checked above), the machine (offline, no
   // key), and what an export leaves out.
-  const differs = ["github_accounts", "github_app", "hub_links", "mcp_oauth", "push_relay", "vault_items", "machines", "vault_settings"];
+  const differs = ["github_accounts", "github_app", "mcp_oauth", "push_relay", "vault_items", "machines", "vault_settings"];
   // The chats' search index, which the new hub fills again from the messages as it runs.
   const left = ["agent_keys", "node_keys", "vault_keys", "migrations_applied", "chat_find"];
   for (const table of Object.keys(was)) {

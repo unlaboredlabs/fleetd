@@ -199,7 +199,6 @@ export function register(tools: Registry): void {
       if (owners) throw new ToolError("forbidden", "Only an owner signs out an owner's device.", "Ask an owner.");
     }
     try {
-      // Its hub links go with it (Auth.keys.revoke).
       hub.auth.keys.revoke(device.keyId);
     } catch (error) {
       console.error("device revoke:", error);

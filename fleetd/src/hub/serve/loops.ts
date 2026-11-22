@@ -4,7 +4,6 @@ import { start as s0 } from "../automations/loops.ts";
 import { start as s1 } from "../browser/loops.ts";
 import { start as s2 } from "../chat/loops.ts";
 import { start as s4 } from "../github_app/loops.ts";
-import { start as s5 } from "../hub_links/loops.ts";
 import { start as s6 } from "../intake/loops.ts";
 import { start as s7 } from "../leads/loops.ts";
 import { start as s8 } from "../link/loops.ts";
@@ -38,7 +37,6 @@ export function startAll(hub: Hub): void {
   s1(hub); // hub/browser
   s2(hub); // hub/chat
   s4(hub); // hub/github_app
-  s5(hub); // hub/hub_links
   s6(hub); // hub/intake
   s7(hub); // hub/leads
   s8(hub); // hub/link

@@ -33,7 +33,6 @@ export const CARRIED = [
   "github_accounts",
   "github_app",
   "github_order_tokens",
-  "hub_links",
   "landing_watch",
   "landings",
   "lead_mcp",
@@ -139,6 +138,14 @@ export const RETIRED: Record<string, string> = {
   vault_shares: "the bots a person's vault item was shared with: the one-team-vault migration makes those items the team's",
 };
 
+/**
+ * Tables a later migration drops with all they held. An older hub's export may carry one, its secrets sealed: import
+ * leaves it behind unopened, and says how many rows it left.
+ */
+export const DROPPED: Record<string, string> = {
+  hub_links: "hub links are gone (W789): the links a bot kept to other hubs, their keys sealed",
+};
+
 /** The tables import fills by itself, each with how. */
 export const REBUILT: Record<string, string> = {
   chat_find: "the chats' search index, filled again from the messages while the hub runs",
@@ -163,7 +170,6 @@ export const LEFT_OUT: Record<string, string> = {
   agent_keys: "keys and device sign-ins: people sign in again, agents get new keys",
   attachment_uploads: "uploads that hadn't finished; their pieces stay behind too",
   enroll_tokens: "open join codes for machines",
-  hub_links_issued: "keys this hub gave other hubs: they link again",
   hosted_removed: "which bots were told, once, that fleetd removed hosted sandboxes and local VMs",
   node_keys: "the machines' keys: each machine joins again",
   pair_codes: "open pairing and invite codes",
@@ -232,7 +238,6 @@ export type SealedColumns = {
 export const SEALED: Record<string, SealedColumns> = {
   github_accounts: { key: ["person_id"], blob: ["sealed_access", "sealed_refresh"] },
   github_app: { key: ["id"], blob: ["sealed_key", "sealed_client_secret", "sealed_webhook_secret"] },
-  hub_links: { key: ["link_id"], blob: ["sealed"] },
   mcp_oauth: {
     key: ["machine_id", "project_id", "name"],
     blob: ["sealed_access", "sealed_refresh"],

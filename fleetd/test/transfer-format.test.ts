@@ -281,7 +281,7 @@ describe("the export's secrets", () => {
     expect(Buffer.from(openValue(key, at, sealed)!).toString()).toBe("pem bytes");
     expect(openValue(key, { ...at, row: [2] }, sealed)).toBeNull();
     expect(openValue(key, { ...at, column: "sealed_client_secret" }, sealed)).toBeNull();
-    expect(openValue(key, { ...at, table: "hub_links" }, sealed)).toBeNull();
+    expect(openValue(key, { ...at, table: "push_relay" }, sealed)).toBeNull();
     expect(openValue(newKey(), at, sealed)).toBeNull();
     expect(openValue(key, at, `${sealed.slice(0, -4)}AAA=`)).toBeNull();
   });

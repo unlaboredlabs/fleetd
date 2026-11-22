@@ -14,7 +14,7 @@ import { refused as shellRefused } from "./shell_guard.ts";
 import { visit } from "./site_visit.ts";
 import * as kept from "./store.ts";
 
-export { automationPreview, bridgePreview, promptVerdict, visitCarriesData } from "./prompt_rules.ts";
+export { automationPreview, promptVerdict, visitCarriesData } from "./prompt_rules.ts";
 
 export type ProjectHooks = Pick<
   ApprovalHooks,

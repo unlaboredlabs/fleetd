@@ -1171,13 +1171,6 @@
     "FactoryStatusCall": {
       "description": "`factory_status`: the other projects in one read, or the one named.",
       "properties": {
-        "hub": {
-          "description": "A linked hub, by its label: its projects this project reaches through the link. Absent: this hub.",
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
         "project": {
           "description": "One project, by title or project id; absent, every project but this one.",
           "maxLength": 200,
@@ -2889,15 +2882,8 @@
       "type": "string"
     },
     "ProjectMessageCall": {
-      "description": "`project_message`: a project's lead texts another project's lead in its chat, as the agent named by its own project's\ntitle, never as the person; with `reply`, it answers a text it got. The lead reads it as input, never as the person's\nanswer or approval. A pair of leads trades at most 10 texts an hour; to a project on this hub it needs no approval.",
+      "description": "`project_message`: a project's lead texts another project's lead in its chat, as the agent named by its own project's\ntitle, never as the person; with `reply`, it answers a text it got. The lead reads it as input, never as the person's\nanswer or approval. A pair of leads trades at most 10 texts an hour; it needs no approval.",
       "properties": {
-        "hub": {
-          "description": "A linked hub, by its label: the project is there. Absent: this hub.",
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
         "project": {
           "description": "The project: its title, as factory_status names it, or its project id.",
           "maxLength": 200,
@@ -2945,7 +2931,7 @@
       "type": "object"
     },
     "ProjectSetupCall": {
-      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\nlinked hubs, delete) has no field here.",
+      "description": "`project_setup`: a lead sets up its own project. Each thing it changes is one quiet line in the chat, which a\nperson can undo. What guards people (approval mode, sites, profiles, the card, the vault, MCP servers, prompts,\ndelete) has no field here.",
       "properties": {
         "archive": {
           "description": "True archives the project: its chat leaves the list and its lead stops. A person brings it back.",

@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { digestOf, edited } from "../src/hub/checklist/list.ts";
 import { encodeWorkstream, titleOf } from "../src/hub/leads/stored.ts";
-import { askFooter } from "../src/hub/project_lead/asks.ts";
 import { BOARD_MAX_BYTES, trimmed } from "../src/hub/orders/board.ts";
 import { prRef } from "../src/hub/orders/cards.ts";
 
@@ -30,10 +29,9 @@ test("a checklist edit adds and sets items, and the digest lists what's not done
   expect(digestOf(empty, now, nothing)).toBeUndefined();
 });
 
-test("an order's title and row, a PR's ref, and an ask's footer", () => {
+test("an order's title and row, and a PR's ref", () => {
   expect(titleOf("  Fix the login\nand more  ")).toBe("Fix the login");
   const w = { workstreamId: "W1", projectRef: { machineId: "m", projectId: "p" }, title: "t", source: "s", state: "open", createdAt: "c", updatedAt: "u" };
   expect(Object.keys(JSON.parse(encodeWorkstream(w as never)))).toEqual(["workstreamId", "projectRef", "title", "source", "state", "createdAt", "updatedAt"]);
   expect(prRef({ repo: "acme/shop", prNumber: 4, prUrl: "https://github.com/acme/shop/pull/4", state: "queued" } as never)).toMatchObject({ number: 4 });
-  expect(askFooter("A7")).toContain('asked: "A7"');
 });

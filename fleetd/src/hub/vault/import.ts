@@ -13,7 +13,7 @@ import { leadWakes } from "../api/leads.ts";
 import { allows } from "../auth/index.ts";
 import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../lead_calls/index.ts";
 import { token } from "../onepassword/index.ts";
 import { cleanSites, FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";

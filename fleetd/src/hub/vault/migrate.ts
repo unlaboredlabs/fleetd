@@ -17,7 +17,7 @@ import { publicKeyOf } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
 import { linked, nodeCan, sessionCall } from "../link/node_port.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { token } from "../onepassword/index.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { parseMs } from "../store/time.ts";

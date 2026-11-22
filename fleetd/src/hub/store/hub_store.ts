@@ -74,7 +74,6 @@ export const MACHINE_TABLES = [
   "train_watches",
   "order_env",
   "github_order_tokens",
-  "hub_links",
   "mcp_servers",
   "mcp_oauth",
   "mcp_secret_forgets",

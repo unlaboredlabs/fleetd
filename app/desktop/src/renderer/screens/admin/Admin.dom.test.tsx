@@ -119,8 +119,6 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
                     ? { ok: true }
                     : tool === "setup_list"
                       ? { steps: [], requiredLeft: setupLeft }
-                      : tool === "hub_links_get"
-                      ? { links: [], issued: [], boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" }
                       : {};
       return Promise.resolve({ ok: true, output });
     },

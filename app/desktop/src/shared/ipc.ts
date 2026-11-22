@@ -198,18 +198,6 @@ export const McpOauthClientRequest = z.strictObject({
   clientSecret: z.string().max(4096),
 });
 export type McpOauthClientRequest = z.infer<typeof McpOauthClientRequest>;
-/**
- * A link key pasted into a project's Linked hubs (Settings › Projects): main seals `key` to `boxPubKey`, the hub's own key
- * from hub_links_get, and calls hub_link_add. The hub gets the box, never the key, and nothing returns it.
- */
-export const HubLinkRequest = z.strictObject({
-  project: z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) }),
-  label: z.string().trim().min(1).max(40),
-  url: z.string().trim().min(1).max(2048),
-  boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u),
-  key: z.string().trim().min(1).max(200),
-});
-export type HubLinkRequest = z.infer<typeof HubLinkRequest>;
 
 /**
  * The team's own key at a hosted sandbox provider (Settings › Hub › Machines › Providers): main seals `key` to
@@ -426,7 +414,6 @@ export const REQUESTS = {
   [IPC.secretSubmit]: z.tuple([HubId, SecretRequest]),
   [IPC.projectEnvSubmit]: z.tuple([HubId, ProjectEnvRequest]),
   [IPC.mcpServerSubmit]: z.tuple([HubId, McpServerRequest]),
-  [IPC.hubLinkSubmit]: z.tuple([HubId, HubLinkRequest]),
   [IPC.sandboxKeySubmit]: z.tuple([HubId, SandboxKeyRequest]),
   [IPC.mcpOauthClientSubmit]: z.tuple([HubId, McpOauthClientRequest]),
   [IPC.githubAppCreate]: z.tuple([HubId, GithubAppRequest]),

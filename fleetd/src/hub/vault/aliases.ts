@@ -12,7 +12,7 @@ import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { parseContractSink, secretEnvName } from "../approvals/sink.ts";
 import { nodeCan } from "../link/node_port.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries } from "./deliver.ts";
 import { BRAND_NAMES } from "./fields.ts";

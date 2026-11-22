@@ -93,8 +93,6 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
     // Its picture, read again only when it has one (project_avatar_set).
     if (type === "project.settings") out.push({ tool: "project_avatar_get", where: { machineId: event.machineId, projectId: event.projectId } });
   }
-  // A linked hub removed from a project: its settings pages read again.
-  if (type === "project.settings") out.push({ tool: "hub_links_get" });
   if (type === "prompt.changed" || type === "prompt.default_changed") {
     out.push({ tool: "prompt_get" }, { tool: "session_prompt_get" });
   }
@@ -124,10 +122,10 @@ export const effectsOf = (event: HubEvent, machines: Readonly<Record<string, unk
   // administers (the sidebar's entry).
   // Setup's People step reads it too.
   if (type === "people.changed") out.push({ tool: "people_list" }, { tool: "hub_info" }, { tool: "setup_list" });
-  // Someone's Claude subscription, 1Password token or GitHub connection removed, or a hub link of theirs revoked: their
-  // own pages, and People's line of each person's accounts.
+  // Someone's Claude subscription, 1Password token or GitHub connection removed: their own pages, and People's line
+  // of each person's accounts.
   if (type === "people.changed") {
-    out.push({ tool: "claude_accounts_get" }, { tool: "onepassword_get" }, { tool: "github_app_get" }, { tool: "hub_links_get" });
+    out.push({ tool: "claude_accounts_get" }, { tool: "onepassword_get" }, { tool: "github_app_get" });
   }
   // You pinned or unpinned a chat on another device: this sidebar follows (the hub sends it to your devices only).
   if (type === "chat.pins") out.push({ tool: "chat_pins_get" });

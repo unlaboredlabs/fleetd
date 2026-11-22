@@ -110,7 +110,7 @@ vaults fleetd's service account doesn't read.
 Every human key belongs to a [person](/docs/people) with a hub role: owner, admin or member. A device never holds
 more than its person's role allows: a member's device operates, even one paired with `admin`. Only owners and admins
 invite people, change roles and change hub-wide settings, and the hub always keeps an owner. Removing a person
-revokes all their devices at once, and with them the [hub links](#hub-links) they made.
+revokes all their devices at once.
 
 Chat messages, approvals, secrets, decisions and checklist changes record the person, next to the device as
 before. Every bot is open to everyone on the hub, so give a hub only to people you trust with every bot on it;
@@ -182,8 +182,7 @@ or Ask me about everything to be asked):
   server saved without `integration` runs every tool unasked, as it does for the bot's agents, who never get an
   integration.
 - A first fetch or browser visit to a site the person didn't give it (a link in their own message is given).
-- `project_message` to a bot on a linked hub (a text to another bot on this hub never asks), `confirm_step` and
-  `automation_confirm`.
+- `confirm_step` and `automation_confirm`. A text to another bot's lead (`project_message`) never asks.
 
 A command that would wipe the machine or your home (`rm -rf ~`, `mkfs`) is refused, whoever approves it. A bot
 that had a home of its own from an earlier fleetd still runs its lead's commands there (in the node's directory), with what it installed there first on their `PATH`; its agents use yours. A lead whose
@@ -205,24 +204,6 @@ own](/docs/agents-mac#own-user), which keeps agents out of your files and logins
 | No secrets sent | A Mac screen's start is sealed to the Mac with its relay key alone: none of the agent's secrets go to the Mac's node, which every agent there shares. |
 | DevTools stay on the Mac | An app agent-desktop launches with `--cdp` listens on the Mac's loopback only, and is closed when its session ends. |
 | Only while it can be seen | The node checks at every start that its session is on the Mac's screen and unlocked, so an agent never drives a screen nobody could watch. |
-
-## Hub links {#hub-links}
-
-A hub link lets a bot on one hub open and follow work in bots on another hub, for example from a personal
-hub into a team hub. You make it on the hub it reaches and add it to the bot on the other
-([how](/docs/projects#hub-links)).
-
-| Rule | Detail |
-|---|---|
-| It acts as you | A link key (`flk_…`) acts as you, at the lesser of your [role](/docs/people) on that hub and the grants of the device you made it on, never above operate, limited to the bots you pick or not. A read-only device can't make one. Removing you from the hub stops it. |
-| It goes with its device | Revoking a device (signing it out, or `fleetd hub key revoke`) revokes every link made on it in the same step, so a lost device leaves no link working behind it. The sign-out confirm says how many go. Links made on your other devices keep working. |
-| It does five things | List the bots it reaches, ask a bot's lead for work, read their status, follow its own asks, revoke itself. It can't use `/mcp` or the app's connection, so it reads no chat and answers no approval, question or secret. |
-| Its messages are never your answer | They go into the bot's chat as "*you* via *label*", an agent's input, like any message from another bot's lead. Approvals, secrets and merges still need you there. |
-| The other hub sees only the requests | Not the bot that asks, its chat or its title. |
-| The key stays sealed | The app seals it to the asking bot's hub, which opens it only to call the other hub. Nothing shows it again. |
-| A person names the host it calls | `hub_link_add` makes the bot's hub contact the URL that a person with operate gives it. Anyone who operates on the bot's machine adds or removes its links. |
-| Only the bot's hub calls out | It must reach the other hub over HTTPS or a tailnet; plain HTTP elsewhere is refused. When it can't reach it, the lead and the link say "Can't reach *label*" with the reason. |
-| Revoke from either side | Removing it on the bot's hub deletes the key at once and revokes it on the other hub when that answers. Revoking it on the other hub refuses its next call. A link unused for 90 days expires. |
 
 ## Software {#software}
 

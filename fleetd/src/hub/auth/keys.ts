@@ -80,19 +80,13 @@ export class Keys {
     return row ? info(row) : undefined;
   }
 
-  /**
-   * Idempotent: revoking a revoked key keeps its first `revokedAt`. The hub links minted from it go with it, in the
-   * same transaction (D337); returns how many of those were still live. Throws `keyNotFound` for an unknown key.
-   */
-  revoke(keyId: string): number {
+  /** Idempotent: revoking a revoked key keeps its first `revokedAt`. Throws `keyNotFound` for an unknown key. */
+  revoke(keyId: string): void {
     const now = this.clock.now();
-    const [changed, links] = this.db.transaction((c) => [
-      c.query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?").run(now, keyId).changes,
-      c.query("UPDATE hub_links_issued SET revoked_ms = ? WHERE key_id = ? AND revoked_ms IS NULL").run(now, keyId)
-        .changes,
-    ]);
+    const changed = this.db.conn
+      .query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?")
+      .run(now, keyId).changes;
     if (changed === 0) throw keyNotFound(keyId);
     this.revoked();
-    return links;
   }
 }

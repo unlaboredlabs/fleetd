@@ -9,7 +9,7 @@ import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { allows } from "../auth/index.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { store as hubStore } from "../store/hub_store.ts";
 import { deliveries } from "./deliver.ts";
 import { FIELDS, hostOf, type VaultKind, type VaultScope } from "./fields.ts";

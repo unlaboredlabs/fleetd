@@ -55,15 +55,14 @@ fleetd invite --person p_abcd2345
 | `fleetd people remove <personId>` | Removes a person and signs out every device of theirs |
 | `fleetd invite list` | Lists open invites |
 | `fleetd invite revoke <inviteId>` | Takes back an invite. A person it invited who never joined goes with it |
-| `fleetd hub key revoke <keyId>` | Signs out one device, and revokes the hub links made on it |
+| `fleetd hub key revoke <keyId>` | Signs out one device |
 
 You change your own name yourself, whatever your role: under Settings › You › General in the desktop app, or by
 tapping your name at the top of Settings on the phone. Every open app shows the new name at once, on the messages
 you wrote before too.
 
 A person signs out one of their other devices (a lost phone, an old computer) under Settings › You › Hubs & devices in
-the desktop app: **Sign out** on its row, then confirm, and its key stops working at once, and so does every
-[hub link](/docs/projects#hub-links) made on it (the confirm says how many). Owners and admins sign out
+the desktop app: **Sign out** on its row, then confirm, and its key stops working at once. Owners and admins sign out
 anyone's device with `fleetd hub key revoke`. A device signed out, or every device of a person removed, stops at
 once: an app it has open is disconnected, and its phone gets no more notifications. What a removed person did keeps their name, and
 their bots stay as they are, open to everyone on the hub.

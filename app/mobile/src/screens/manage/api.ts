@@ -2,11 +2,10 @@
 // create flow: project_add for the bot, project_repo_add for each of its repos), its screen's reads (agents_list, orders_board,
 // checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title),
 // Archive, its bot's shape and color (avatarShape, avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
-// and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, Linked hubs (hub_links_get,
-// hub_link_remove), its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
+// and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type HubLink, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -174,18 +173,6 @@ export const setApprovalMode = async (hub: Hub, p: ProjectRef, mode: ApprovalMod
 export const readApprovedPage = async (hub: Hub, p: ProjectRef, before?: number): Promise<Result<ApprovedPages>> => {
   const r = await hub.call(PROJECT_TOOLS.approvals, { ...ref(p), limit: APPROVED_PAGE, ...(before === undefined ? {} : { before }) });
   return r.ok ? { ok: true, value: { log: r.output.log, older: r.output.older } } : r;
-};
-
-/** The other hubs it reaches through hub links. */
-export const readLinks = async (hub: Hub, p: ProjectRef): Promise<Result<readonly HubLink[]>> => {
-  const r = await hub.call("hub_links_get", { project: ref(p) });
-  return r.ok ? { ok: true, value: r.output.links } : r;
-};
-
-/** A link removed here, and revoked on the other hub when it can be reached: the hub says which, and what's next. */
-export const removeLink = async (hub: Hub, linkId: string): Promise<Result<{ readonly revokedThere: boolean; readonly next?: string }>> => {
-  const r = await hub.call("hub_link_remove", { linkId });
-  return r.ok ? { ok: true, value: { revokedThere: r.output.revokedThere, ...(r.output.next === undefined ? {} : { next: r.output.next }) } } : r;
 };
 
 /** One repo's settings for its Computer: its setup and its image; the bot's own directory's without `repo`. */

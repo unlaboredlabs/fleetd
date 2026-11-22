@@ -81,11 +81,6 @@ it in the chat. See [Secrets & approvals](/docs/approvals-and-secrets).
 
 The coordinator of a fleet. It runs on one always-on machine and stores all state. See [Concepts](/docs/concepts).
 
-## Hub link {#hub-link}
-
-A key that lets a bot on one hub ask for work in bots on another hub, acting as you. See
-[Hub links](/docs/projects#hub-links).
-
 ## Human key {#human-key}
 
 A key that belongs to a person's device, such as the desktop app. Only a human key writes to a lead as you, approves

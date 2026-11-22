@@ -6,7 +6,7 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 export const BY_PROJECT = [
   "chat_messages", "chat_message_pins", "chat_projects", "checklists", "leads", "lead_mcp", "approval_checks", "memory_imports",
   "memory_refreshes", "memory_refresh_lines", "project_auto_approved", "project_approvals", "project_sites", "skill_versions",
-  "skill_uses", "browser_sessions", "screen_waits", "session_prompts", "tasks", "slot_claims", "workstreams", "hub_links",
+  "skill_uses", "browser_sessions", "screen_waits", "session_prompts", "tasks", "slot_claims", "workstreams",
 ];
 
 /** Tables with rows of the project's sessions, by `machine_id` and `thread_id`. */

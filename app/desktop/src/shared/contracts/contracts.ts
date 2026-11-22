@@ -3392,6 +3392,11 @@ export type HubInfoOutput = {
    * before this, which leaves an app to try.
    */
   admin?: boolean;
+  /**
+   * The hub's own X25519 key, standard base64: what a key the hub keeps (the push relay's) is sealed to
+   * (`crypto_box_seal`). Absent from older hubs.
+   */
+  boxPubKey?: string;
   /** Empty when nothing is in flight. A restart interrupts each item. */
   busy: HubBusyItem[];
   /** Absent for a local build. */
@@ -3415,107 +3420,8 @@ export type HubInfoOutput = {
   protocol: number;
   startedAt?: Timestamp;
   truncated?: boolean;
-  /**
-   * The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a
-   * tailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.
-   */
-  url?: string;
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
-};
-
-/** A link this hub keeps for one of its projects. The key stays sealed in the hub; nothing returns it. */
-export type HubLink = {
-  checkedAt?: Timestamp;
-  createdAt: Timestamp;
-  /** Why it is unreachable or revoked, in the words the person reads. */
-  error?: string;
-  label: string;
-  linkId: HubLinkId;
-  project: ProjectRef;
-  /** The projects it is limited to there, as the other hub last said; absent: every project its person reaches. */
-  projects?: LinkProject[];
-  state: HubLinkState;
-  /** The other hub's URL: https, or http over a tailnet or this machine. */
-  url: string;
-  /** The person it acts as there, as the other hub last said; absent until a hub that says has answered. */
-  who?: string;
-};
-
-export type HubLinkAddInput = {
-  label: string;
-  /** The project. */
-  project: ProjectRef;
-  /** The link key sealed to this hub's boxPubKey. */
-  sealed: SealedSecret;
-  /** The other hub's URL, as the app pairs with it: https, or http over a tailnet. */
-  url: string;
-};
-
-export type HubLinkAddOutput = {
-  link: HubLink;
-  next?: string;
-  /** What the project reaches there. */
-  projects: LinkProject[];
-  truncated?: boolean;
-};
-
-export type HubLinkId = string;
-
-export type HubLinkMintInput = {
-  /** What the person calls the hub the link is for. */
-  label: string;
-  /** The projects it reaches, each one the caller may operate; absent: every project the caller reaches. */
-  projects?: ProjectRef[];
-};
-
-export type HubLinkMintOutput = {
-  /** "flk_…": shown once, never stored; paste it into the other hub's project, Linked hubs, which seals it. */
-  key: string;
-  link: IssuedLink;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type HubLinkRemoveInput = {
-  linkId: HubLinkId;
-};
-
-export type HubLinkRemoveOutput = {
-  next?: string;
-  /** Whether the other hub revoked the key too; false when it couldn't be reached (the key is gone here anyway). */
-  revokedThere: boolean;
-  truncated?: boolean;
-};
-
-export type HubLinkRevokeInput = {
-  linkId: HubLinkId;
-};
-
-export type HubLinkRevokeOutput = {
-  link: IssuedLink;
-  next?: string;
-  truncated?: boolean;
-};
-
-export type KnownHubLinkState = "ok" | "unreachable" | "revoked";
-/** KnownHubLinkState, or a value from a newer hub. */
-export type HubLinkState = KnownHubLinkState | (string & {});
-
-export type HubLinksGetInput = {
-  /** The project. */
-  project?: ProjectRef;
-};
-
-export type HubLinksGetOutput = {
-  /** This hub's X25519 key, standard base64: what a link key is sealed to (`crypto_box_seal`) for hub_link_add. */
-  boxPubKey: string;
-  /** Links minted on this hub: the caller's own, or every one for an admin. */
-  issued: IssuedLink[];
-  /** The project's links to other hubs. */
-  links: HubLink[];
-  next?: string;
-  truncated?: boolean;
 };
 
 export type HubRestartInput = { [key: string]: unknown };
@@ -3886,29 +3792,6 @@ export type KnownIosState = "ready" | "wanted" | "preparing" | "unavailable";
 /** KnownIosState, or a value from a newer hub. */
 export type IosState = KnownIosState | (string & {});
 
-/** A link minted on this hub, as its person and the hub's admins see it. The key itself is shown once, at minting. */
-export type IssuedLink = {
-  createdAt: Timestamp;
-  device: string;
-  /**
-   * The device that minted it. The link acts as its person, at the lesser of their role and this device's grants
-   * when it was minted, never above operate, and stops when they leave the hub or this device is revoked (which
-   * revokes it too); a link from before people acts at this device's grants.
-   */
-  keyId: string;
-  /** What the person called the hub it is for; requests through it read "<person> via <label>". */
-  label: string;
-  lastUsedAt?: Timestamp;
-  linkId: HubLinkId;
-  /** Its person, on a hub with people. */
-  person?: PersonRef;
-  /** "flk_" plus the first 6 characters of the key's body. */
-  prefix: string;
-  /** The projects it reaches; absent: every project its person reaches. */
-  projects?: ProjectRef[];
-  revokedAt?: Timestamp;
-};
-
 export type KeptWorktree = {
   /** The machine it is on. */
   machineId: MachineId;
@@ -4003,12 +3886,6 @@ export type LeadStartOutput = {
 };
 
 export type LeadState = "starting" | "idle" | "working" | "stalled" | "stopped";
-
-/** One project a link reaches. */
-export type LinkProject = {
-  projectRef: ProjectRef;
-  title: string;
-};
 
 /**
  * Hub -> app on the live subscription. Board lanes at most 1/s, focus lanes and text at most 4/s; machines at most
@@ -5486,7 +5363,6 @@ export type KnownPeopleChange =
   | "removed"
   | "device_revoked"
   | "account_removed"
-  | "link_revoked"
   | "picture_changed";
 /** KnownPeopleChange, or a value from a newer hub. */
 export type PeopleChange = KnownPeopleChange | (string & {});
@@ -7047,7 +6923,7 @@ export type PushPlatform = "ios" | "android";
 
 export type PushRelaySetInput = {
   /**
-   * The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_links_get); the hub sends
+   * The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_info); the hub sends
    * it as a bearer token. Absent: the relay takes no key.
    */
   key?: SealedSecret;
@@ -10299,11 +10175,6 @@ export interface ToolMap {
   github_connect: { input: GithubConnectInput; output: GithubConnectOutput };
   github_disconnect: { input: GithubDisconnectInput; output: GithubDisconnectOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
-  hub_link_add: { input: HubLinkAddInput; output: HubLinkAddOutput };
-  hub_link_mint: { input: HubLinkMintInput; output: HubLinkMintOutput };
-  hub_link_remove: { input: HubLinkRemoveInput; output: HubLinkRemoveOutput };
-  hub_link_revoke: { input: HubLinkRevokeInput; output: HubLinkRevokeOutput };
-  hub_links_get: { input: HubLinksGetInput; output: HubLinksGetOutput };
   hub_restart: { input: HubRestartInput; output: HubRestartOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_settings: { input: HubUpdateSettingsInput; output: HubUpdateOutput };

@@ -155,8 +155,7 @@ export const HUB_KEY_USAGE = `  hub key create --name <name> --role <read|operat
              human's; role defaults to operate on every machine
   hub key list
   hub key revoke <keyId>
-             takes effect at once, also on a running hub; the hub links made on that device
-             are revoked with it
+             takes effect at once, also on a running hub
 `;
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>

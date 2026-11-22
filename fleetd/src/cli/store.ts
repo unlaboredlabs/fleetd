@@ -149,20 +149,13 @@ export function listKeys(db: HubDb): KeyInfo[] {
     .map(keyInfo);
 }
 
-/** Revokes a key and the hub links minted from it; how many links were still live. Throws when there is no key. */
-export function revokeKey(db: HubDb, keyId: string): number {
+/** Revokes a key. Throws when there is no key. */
+export function revokeKey(db: HubDb, keyId: string): void {
   writable(db, "Revoking a hub key");
-  const now = Date.now();
-  const [changed, links] = db.transaction((c) => {
-    const changed = c.query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?").run(now, keyId)
-      .changes;
-    const links = c
-      .query("UPDATE hub_links_issued SET revoked_ms = ? WHERE key_id = ? AND revoked_ms IS NULL")
-      .run(now, keyId).changes;
-    return [changed, links];
-  });
+  const changed = db.conn
+    .query("UPDATE agent_keys SET revoked_ms = COALESCE(revoked_ms, ?) WHERE key_id = ?")
+    .run(Date.now(), keyId).changes;
   if (changed === 0) throw new Error(`no agent key ${keyId}; run \`fleetd hub key list\` to see key ids`);
-  return links;
 }
 
 /** Whether `key` is a live key of this hub (hub/auth `verify`, without its last-used write). */

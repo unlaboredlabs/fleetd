@@ -10,10 +10,6 @@ export const ASKS_MAX = 100;
 export const PAIR_PER_HOUR = 10;
 export const HOUR_MS = 60 * 60 * 1000;
 
-/** What a project's lead is told at the end of an ask. */
-export const askFooter = (handle: string) =>
-  `(Ask ${handle}. If you open an order for it, pass asked: "${handle}" to brief, so the asker hears when it lands. If you fold it into an order already open, call brief with that workstreamId and asked: "${handle}".)`;
-
 /** What a lead is told at the end of another bot's lead's text: what it is, how to answer it, and how to open work for it. */
 export function leadFooter(from: string, lead: LeadText): string {
   const h = lead.handle;

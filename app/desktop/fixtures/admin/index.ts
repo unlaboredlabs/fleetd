@@ -166,27 +166,6 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   });
   for (const role of ["owner", "admin", "member"]) f.answer("person_set", { personId: "p_cccccccc", role }, { person: { ...bob, role } });
   f.answer("person_remove", undefined, { person: { ...bob, removedAt: f.now }, revoked: 1 });
-  // Hub links minted here (hubLinks/AllLinks): Sam's to home, Alice's limited to one project, Bob's revoked.
-  const link = (linkId: string, label: string, p: JsonObject, device: string, extra: JsonObject = {}): JsonObject => ({
-    linkId,
-    label,
-    prefix: `flk_${linkId.slice(3, 9)}`,
-    keyId: `fld_${linkId.slice(3, 9)}`,
-    device,
-    person: ref(p),
-    createdAt: "2026-10-15T09:30:00.000Z",
-    ...extra,
-  });
-  f.answer("hub_links_get", undefined, {
-    boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=",
-    links: [],
-    issued: [
-      link("hl_samhomea", "home", sam, "Sam's MacBook", { lastUsedAt: "2026-10-19T10:20:00.000Z" }),
-      link("hl_aliceaaa", "alice personal", alice, "Alice's ThinkPad", { projects: [{ machineId: "devbox", projectId: "storefront" }] }),
-      link("hl_bobaaaaa", "side project", bob, "Bob's iMac", { revokedAt: "2026-10-18T17:00:00.000Z" }),
-    ],
-  });
-  f.answer("hub_link_revoke", undefined, { link: link("hl_samhomea", "home", sam, "Sam's MacBook", { revokedAt: f.now }) });
   // Every project › Agents: the hub's task profiles.
   f.answer("profiles_list", {}, profilesList());
   // The hub's GitHub App, and everyone's connection through it, for People's rows: Sam's and Alice's connected,
@@ -228,7 +207,7 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 function oldHub(from: Fixture): Fixture {
   const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches the Hub group, and People and Invites ask for an update");
   f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
-  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove", "hub_links_get"]) {
+  for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove"]) {
     f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
   }
   // Its MCP servers are older than people: Every project shows them, none here.

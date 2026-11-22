@@ -1,7 +1,7 @@
 // Settings (⌘, or the app menu), one window in three groups (D211), its sidebar one flat list of pages. You: General
 // (appearance, time in the app, notifications, version), Your accounts (the Claude, GitHub and 1Password your work runs
 // on), Vault (the team's logins, cards and addresses, which every project's agents use), Your memory (and Import memory) and Hubs &
-// devices (this app's hubs, the devices signed in as you with Pair a phone, and the hub links). Projects: the list of
+// devices (this app's hubs, and the devices signed in as you with Pair a phone). Projects: the list of
 // projects, each opening its Project, Agents, Instructions & memory, Automations and Vault pages under tabs
 // (Frames.tsx), and its built-in prompts from the foot of its Instructions. Hub, for the hub's owners and admins only
 // (admin/HubPages.tsx): what reaches every teammate's work. The route picks the page (#/settings/<tab>,
@@ -15,7 +15,7 @@ import { ClaudeSettings } from "./Claude";
 import { DevicesSettings } from "./Devices";
 import { General } from "./General";
 import { GithubSettings } from "./Github";
-import { HubLinksSettings, HubsSettings } from "./Hubs";
+import { HubsSettings } from "./Hubs";
 import { CloudAccountSettings } from "./CloudAccount";
 import { ImportMemory } from "./ImportMemory";
 import { Instructions } from "./Instructions";
@@ -119,8 +119,8 @@ function YourMemoryPage() {
 }
 
 /**
- * The hubs this app is paired with, the devices signed in as you on them (and Pair a phone), and the hub links made
- * as you. Your devices was a page of its own: a link to it lands on its part.
+ * The hubs this app is paired with, and the devices signed in as you on them (and Pair a phone). Your devices was a page
+ * of its own: a link to it lands on its part.
  */
 function HubsAndDevices() {
   return (
@@ -132,7 +132,6 @@ function HubsAndDevices() {
         <Part reveal="devices" screen="settings.devices">
           <DevicesSettings />
         </Part>
-        <HubLinksSettings />
       </div>
     </div>
   );

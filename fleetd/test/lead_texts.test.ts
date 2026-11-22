@@ -1,6 +1,6 @@
-// Leads texting each other (D580): one bot's lead texts another's with project_message, with no card on this hub; the
+// Leads texting each other (D580): one bot's lead texts another's with project_message, with no card; the
 // other lead is woken once and answers with the same call; both chats show each text as a quiet line; a pair's texts
-// an hour are capped; a text is never the person's answer, approval or ring; a linked hub's bot still takes a card.
+// an hour are capped; a text is never the person's answer, approval or ring.
 import { expect, test } from "bun:test";
 import { approvals } from "../src/hub/approvals/index.ts";
 import { chat } from "../src/hub/chat/index.ts";
@@ -68,7 +68,7 @@ const text = (project: string, words: string, reply?: string) => ({ op: "project
 test("a lead texts another unasked, that lead is woken once and replies with the same call, and both chats show both", async () => {
   const { hub, sends, launches, texts, done } = twoBots();
   try {
-    // No person asked, and no card: a text to a bot on this hub goes at once.
+    // No person asked, and no card: a text to another bot goes at once.
     expect(promptVerdict("mcp__fleetd__project_message", { project: "Storefront", text: "Which API version do you ship?" }, undefined)).toEqual({ allow: true });
     const asked = (await answer(hub, HOME, text("Storefront", "Which API version do you ship?"))) as { handle: string; next: string };
     expect(asked.handle).toBe("N1");
@@ -199,19 +199,6 @@ test("a lead's text can't approve a command, answer the person's question or rin
     // The text as it landed and as its lead took it, and the sender's copy.
     expect(rang.length).toBe(3);
     expect(rang.every((n) => n === undefined)).toBe(true);
-  } finally {
-    done();
-  }
-});
-
-test("a text to a linked hub's bot is still a card, and reply answers only a text from this hub", async () => {
-  const { hub, done } = twoBots();
-  try {
-    const verdict = promptVerdict("mcp__fleetd__project_message", { project: "Billing", text: "Invoices, please.", hub: "Work" }, undefined);
-    expect(verdict && "ask" in verdict && [verdict.ask.action, verdict.ask.title]).toEqual(["send", "Message the lead of Billing on Work"]);
-    await expect(answer(hub, HOME, { op: "project_message", project: "Billing", text: "x", hub: "Work", reply: "N1" })).rejects.toThrow(
-      "reply answers a text from a bot on this hub.",
-    );
   } finally {
     done();
   }
