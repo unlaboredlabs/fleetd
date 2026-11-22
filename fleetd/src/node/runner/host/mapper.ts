@@ -98,6 +98,8 @@ export class StreamMapper {
   #withdrawsSent = 0;
   /** The run of a turn claude started by itself, for a background task's notice while no run of fleetd's was open. */
   #woken: string | undefined;
+  /** Background tasks whose end came after claude's last API request: their notice waits for the next one. */
+  #untold: string[] = [];
 
   constructor(
     readonly sessionId: string,
@@ -353,6 +355,8 @@ export class StreamMapper {
         break;
       }
       case "status": {
+        // Each request carries the notices claude queued before it.
+        if (system.status === "requesting") this.#untold = [];
         if (system.status === "requesting" && system.user_message_uuids?.length) events.push({ Seen: { run_ids: system.user_message_uuids } });
         const compacting = system.status === "compacting";
         if (compacting !== this.#compacting) {
@@ -365,8 +369,10 @@ export class StreamMapper {
       // A Monitor's end (it exited, failed, was stopped or ran out its time); its events in between name no tool call
       // and no status.
       case "task_notification":
-        if (["completed", "failed", "stopped", "killed"].includes(system.status ?? "") && system.tool_use_id !== undefined)
+        if (["completed", "failed", "stopped", "killed"].includes(system.status ?? "") && system.tool_use_id !== undefined) {
           events.push({ WatchEnded: { tool_use_id: system.tool_use_id } });
+          this.#untold.push(system.tool_use_id);
+        }
         break;
       case "compact_boundary": {
         this.#spans.compacting(false, now.ms);
@@ -669,7 +675,9 @@ export class StreamMapper {
     if (this.#woken === runId) this.#woken = undefined;
     this.#interrupt = undefined;
     this.#assistantError = undefined;
-    events.push({ RunEnded: { run_id: runId, outcome, usage: usage ?? null } });
+    // A Monitor that ended while claude wrote the turn's last answer: claude gives its notice in a turn of its own,
+    // which starts only after this one's `result`.
+    events.push({ RunEnded: { run_id: runId, outcome, usage: usage ?? null, ...(this.#untold.length ? { untold_watches: [...this.#untold] } : {}) } });
   }
 
   /** The classified failure. The classifier puts claude's stderr for the run under its text. */
