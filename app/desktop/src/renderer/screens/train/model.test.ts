@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Change, PrCheck } from "../../../shared/contracts";
 import { effectsOf } from "../../src/data/effects";
 import { trainFixture, TRAIN_REPO } from "./fixture";
-import { changesOf, checkLines, LINE_STATES, lineReads, movingNow, stageLine } from "./model";
+import { changesOf, checkLines, LINE_STATES, lineReads, movingNow, stageLine, stageWord } from "./model";
 
 const NOW = "2026-10-19T10:30:00.000Z";
 const PROJECT = { machineId: "devbox", projectId: "storefront" };
@@ -38,6 +38,18 @@ describe("what merges now", () => {
     const mixed = movingNow([change(1, "merging"), change(2, "ci")], undefined)[0]?.moving;
     expect(mixed?.stage).toBe("ci");
     expect(mixed?.since).toBe("2026-10-19T10:02:00.000Z");
+  });
+
+  it("says a batch that passed and waits for the one behind it is waiting, not running CI", () => {
+    const note = "passed, waiting up to 10 min for batch #9 behind it";
+    const moving = movingNow([change(1, "ci", { lastError: note }), change(2, "ci", { lastError: note }), change(3, "ci")], undefined)[0]?.moving;
+    expect(moving?.waiting).toBe(note);
+    expect(moving === undefined ? undefined : [stageWord(moving), stageLine(moving)]).toEqual([
+      "CI passed",
+      "CI passed; waiting up to 10 min for batch #9 behind it, so they land together.",
+    ]);
+    const running = movingNow([change(1, "ci", { lastError: "waiting for CI runners (2 queued)" })], undefined)[0]?.moving;
+    expect(running === undefined ? undefined : [running.waiting, stageWord(running)]).toEqual([undefined, "Running CI"]);
   });
 
   it("reads a PR by its branch when the PR list doesn't have it, and is nothing while none is in flight", () => {

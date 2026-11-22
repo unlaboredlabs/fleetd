@@ -17,7 +17,7 @@ import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
 
-import { HELD, LEFT_OUT } from "./notes.ts";
+import { HELD, LEFT_OUT, PASSED_WAITING, passedWaiting } from "./notes.ts";
 
 export { HELD, LEFT_OUT } from "./notes.ts";
 
@@ -602,6 +602,13 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
   const until = t.nowMs() + waitMs;
   let landing = 0;
   let failed: [number, Failed] | undefined;
+  const behind = chain[1];
+  if (behind) {
+    // Not "ci" any more: its CI passed, and it holds for the batch behind to land as one.
+    const note = passedWaiting(waitMs, behind.pr);
+    console.info(`train: batch #${chain[0]!.pr} of ${repo} ${note}`);
+    waitNote(t, chain[0]!, note);
+  }
   for (let i = 1; i < chain.length; i++) {
     const f = await stageCi(t, repo, base, chain[i]!, [until, waitMs]);
     if (!f) landing = i;
@@ -610,6 +617,7 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
       break;
     }
   }
+  if (behind) waitNote(t, chain[0]!, undefined);
   const lands = chain[landing]!;
   if (failed) {
     const [at, f] = failed;
@@ -665,6 +673,18 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
     if (failed) release(t, own(chain[failed[0]]!), landed.unlanded.why);
     if (landed.unlanded.kind === "refused") await alone(t, chain[landed.at]!.members, landed.unlanded.why);
     else release(t, chain[landed.at]!.members, landed.unlanded.why);
+  }
+}
+
+/** `note` on each of `stage`'s members still in CI; undefined takes a waiting note off. */
+function waitNote(t: Train, stage: Stage, note: string | undefined): void {
+  for (const m of stage.members) {
+    const shown = t.records.get(m.change.changeId)?.lastError;
+    if (note === undefined && !shown?.startsWith(PASSED_WAITING)) continue;
+    t.update(m.change.changeId, ["ci"], (c) => {
+      const { lastError: _, ...rest } = c;
+      return note === undefined ? rest : { ...rest, lastError: errorText(note) };
+    });
   }
 }
 

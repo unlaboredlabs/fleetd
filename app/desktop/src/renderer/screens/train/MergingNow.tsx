@@ -8,7 +8,7 @@ import { useToolQueries, useToolQuery } from "../../src/data/react";
 import { StateGlyph, Text, Tooltip, Truncate, useBeatRef, type GlyphState } from "../../ui";
 import { when } from "../prs/words";
 import { panelRoute, toHash } from "../shell/routes";
-import { changesOf, checkLines, lineReads, movingNow, STAGE_WORD, stageLine, type Moving, type TrainPr } from "./model";
+import { changesOf, checkLines, lineReads, movingNow, stageLine, stageWord, type Moving, type TrainPr } from "./model";
 import s from "./train.module.css";
 
 /** `reads`' answers as one list; undefined until every read answered. A failed read fails them all. */
@@ -69,7 +69,7 @@ export function MergingNow({ moving, repo, project, nowMs }: { moving: Moving; r
         <Tooltip content={stageLine(moving)} side="bottom">
           <span className={s.stage} tabIndex={0}>
             <StateGlyph state="working" size="sm" />
-            {STAGE_WORD[moving.stage]}
+            {stageWord(moving)}
           </span>
         </Tooltip>
         {moving.prs.length > 1 ? (
