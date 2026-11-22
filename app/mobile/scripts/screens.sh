@@ -107,8 +107,10 @@ start() {
   try ad wait 'role=text-field label="Hub address"' 30000
   try ad fill 'role=text-field label="Hub address"' "$(pair_field "Hub address")"
   try ad fill 'role=text-field label="Pairing code"' "$(pair_field "Pairing code")"
-  # The app built for this run never asks for notifications (EXPO_PUBLIC_FLEETD_SCREENS, src/notifications.ts).
   try ad press 'label="Connect"'
+  # Notifications: an app built without EXPO_PUBLIC_FLEETD_SCREENS (main's) asks once paired, declined here. The one
+  # built for this run never asks (src/notifications.ts), so this finds nothing within 20 seconds and goes on.
+  if ad alert wait 20000 >>"$LOG" 2>&1; then try ad alert dismiss; fi
   try ad wait text "inventory" 120000
 }
 
