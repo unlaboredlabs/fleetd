@@ -129,6 +129,8 @@ export type ChatInfoProps<T extends keyof ChatInfoParams> = CompositeScreenProps
 /** Settings, a stack of its own from the avatar on Chats (App.tsx SettingsScreens), and what it pushes. */
 export type SettingsParams = {
   Settings: undefined;
+  /** The person's own memory: the core, its topics and the last tidy's line. */
+  Memory: undefined;
   ImportMemory: undefined;
   Devices: undefined;
   /** The machines, the providers the team connects and what runs where, for admins (D550). */

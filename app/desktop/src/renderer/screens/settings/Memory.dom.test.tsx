@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 // You › Your memory against a hub that keeps the person's memory: a person edits an entry, deletes one and undoes the
-// delete from its toast, and edits the whole file as text, where a cap refusal shows as before. The same cards serve a
+// delete from its toast, and edits the whole file as text, past the cap too; topics open in place, and the last tidy's
+// line sits on top with its Undo. The same cards serve a
 // project's files and the hub's Shared memory (Memory.tsx).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MemoryFile, MemorySetInput } from "../../../shared/contracts";
+import type { ChatMessage, MemoryFile, MemoryGetOutput, MemorySetInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -31,8 +32,8 @@ afterEach(() => {
 const AT = "2026-10-19T10:21:00.000Z";
 
 /** A hub with user.md as `text`, a note for the line the lead wrote, and every memory_set kept. */
-async function mount(text: string, refuse?: HubError) {
-  const hub = { text, sets: [] as MemorySetInput[] };
+async function mount(text: string, refuse?: HubError, extra: Partial<MemoryGetOutput> = {}) {
+  const hub = { text, sets: [] as MemorySetInput[], calls: [] as { tool: string; input: unknown }[] };
   const user = (): MemoryFile => ({
     scope: "user",
     text: hub.text,
@@ -43,6 +44,7 @@ async function mount(text: string, refuse?: HubError) {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const api: HubApi = {
     call: (tool, input) => {
+      hub.calls.push({ tool, input });
       if (tool === "memory_set") {
         if (refuse) return Promise.resolve({ ok: false, error: refuse });
         const set = input as MemorySetInput;
@@ -55,7 +57,7 @@ async function mount(text: string, refuse?: HubError) {
           }, 0),
         );
       }
-      if (tool === "memory_get") return Promise.resolve({ ok: true, output: { user: user() } });
+      if (tool === "memory_get") return Promise.resolve({ ok: true, output: { user: user(), ...extra } });
       return Promise.resolve({ ok: true, output: {} });
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -186,20 +188,24 @@ it("an entry's right-click menu edits or deletes it", async () => {
   expect(hub.text).toBe(FILE);
 });
 
-it("edits the whole file as text, and a cap refusal shows as before", async () => {
-  const hub = await mount(FILE, { code: "invalid", message: "your memory would be 4001 characters, past its cap of 4000. Nothing was written." });
+it("edits the whole file as text, and past the cap it still saves: the hub tidies it", async () => {
+  const hub = await mount(FILE);
   await click("Edit as text");
   const field = textarea("All of your memory");
   expect(field.value).toBe(FILE);
-  // Past the cap the page stops the save itself.
-  type(field, "x".repeat(4001));
-  expect(document.body.textContent).toContain("Past the cap: merge or cut entries before saving.");
-  expect(button("Save").disabled).toBe(true);
-  // Within it the hub can still refuse, and says why.
-  type(field, "- Short.\n");
+  type(field, `- ${"x".repeat(4001)}\n`);
+  expect(document.body.textContent).not.toContain("Past the cap");
+  await click("Save");
+  expect(hub.sets.map((x) => x.text.length)).toEqual([4004]);
+});
+
+it("shows the hub's refusal of a save, and why", async () => {
+  const hub = await mount(FILE, { code: "invalid", message: "That looks like a secret, and memory never holds one." });
+  await click("Edit as text");
+  type(textarea("All of your memory"), "- Short.\n");
   await click("Save");
   expect(hub.sets).toEqual([]);
-  expect(document.body.textContent).toContain("past its cap of 4000. Nothing was written.");
+  expect(document.body.textContent).toContain("That looks like a secret");
 });
 
 it("shows the entry again after Undo, when the file reads exactly as it did before the delete", async () => {
@@ -242,4 +248,38 @@ it("keeps a file's section and its Edit as text when a search matches none of it
   expect(button("Edit as text").disabled).toBe(false);
   type(search, "npm");
   expect(cards()).toHaveLength(1);
+});
+
+it("lists your topics as rows that open in place, and edits one as its own file", async () => {
+  const topic: MemoryFile = { scope: "user", topic: "phone", text: "- Judge it on a real simulator.\n", chars: 32, cap: 32000, notes: [] };
+  const hub = await mount(`${FILE}- [phone](phone.md)\n`, undefined, { userFiles: [topic] });
+  // The core's topic line is the row, not a card.
+  expect(cards()).toHaveLength(4);
+  expect(document.body.textContent).not.toContain("Judge it on a real simulator.");
+  await click("phone");
+  expect(document.body.textContent).toContain("Judge it on a real simulator.");
+  await click("Delete “Judge it on a real simulator.”");
+  expect(hub.sets).toEqual([{ scope: "user", topic: "phone", text: "" }]);
+});
+
+it("puts the last tidy's line on top, with Undo all", async () => {
+  const tidied = {
+    messageId: "m40",
+    projectRef: project,
+    author: "system",
+    text: "Memory refreshed: +1 ~1 −1",
+    createdAt: AT,
+    memoryRefreshed: {
+      items: [
+        { scope: "user", text: "pnpm only.", replaced: "Use npm." },
+        { scope: "user", topic: "release", text: "Tag from main." },
+        { scope: "user", text: "Tag from main.", forgotten: true },
+      ],
+    },
+  } as unknown as ChatMessage;
+  const hub = await mount(FILE, undefined, { tidied });
+  const top = document.querySelector("[data-memory-tidied]");
+  expect(top?.textContent).toContain("Memory tidied: 1 added, 1 updated, 1 removed");
+  await click("Undo all");
+  expect(hub.calls.find((c) => c.tool === "memory_undo")?.input).toEqual({ projectRef: project, messageId: "m40" });
 });

@@ -523,7 +523,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.",
+   "description": "Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot. Each scope has a short core (user.md, MEMORY.md) every session reads, and topic files for detail that matters only for some work: put a long procedure, reference values or a narrow area's rules in a topic, and keep the core to what every turn needs. With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A project write past a file's cap is refused: merge or replace entries, then call again; user memory past its cap is tidied for you. The chat shows the human what you remembered, with Undo. Never a secret.",
    "inputSchema": {
     "properties": {
      "replaces": {
@@ -554,7 +554,7 @@
       "type": "string"
      },
      "topic": {
-      "description": "Project scope only: the topic file; absent, `MEMORY.md`.",
+      "description": "A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`).",
       "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
       "type": "string"
      }
@@ -603,7 +603,7 @@
       ]
      },
      "topic": {
-      "description": "Project scope only: the topic file; absent, `MEMORY.md`.",
+      "description": "A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`).",
       "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
       "type": "string"
      }
@@ -621,9 +621,23 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Read one of this bot's memory topic files (MEMORY.md lists them).",
+   "description": "Read one memory topic file: this bot's (MEMORY.md lists them), or with scope user one of the person's own (their user.md lists them).",
    "inputSchema": {
     "properties": {
+     "scope": {
+      "oneOf": [
+       {
+        "const": "user",
+        "description": "The person's own memory: how they work across every bot. One shared `user.md` on a hub from before\npeople.",
+        "type": "string"
+       },
+       {
+        "const": "project",
+        "description": "This bot's `MEMORY.md`, or one of its topic files.",
+        "type": "string"
+       }
+      ]
+     },
      "topic": {
       "description": "Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory",
       "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
@@ -2667,6 +2681,13 @@
    }
   },
   "memory_read": {
+   "/scope": {
+    "variants": [
+     "user",
+     "project"
+    ],
+    "expected": "string or map"
+   },
    "/topic": {
     "expected": "a string",
     "pattern": "expected a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory, got {got}"

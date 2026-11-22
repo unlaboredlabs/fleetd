@@ -1304,7 +1304,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "Project scope only: the topic file; absent, `MEMORY.md`."
+          "description": "A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`)."
         }
       },
       "required": [
@@ -2787,8 +2787,12 @@
       "type": "object"
     },
     "MemoryReadCall": {
-      "description": "`memory_read`: one of this project's topic files.",
+      "description": "`memory_read`: one topic file: this project's, or with scope user one of the person's own.",
       "properties": {
+        "scope": {
+          "$ref": "#/$defs/MemoryScope",
+          "description": "Whose topic: user for the person's own memory; absent, project."
+        },
         "topic": {
           "$ref": "#/$defs/MemoryTopic"
         }
@@ -3306,7 +3310,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "Project scope only: the topic file; absent, `MEMORY.md`."
+          "description": "A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`)."
         }
       },
       "required": [

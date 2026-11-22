@@ -178,8 +178,9 @@ describe("the screen", () => {
   const src = (f: string) => readFileSync(join(import.meta.dirname, f), "utf8");
   const screen = src("screens/ImportMemory.tsx");
 
-  it("is pushed from Settings, with a small title over the Settings stack", () => {
-    expect(src("screens/Settings.tsx")).toMatch(/<ListRow title="Import Memory"[^\n]*onPress=\{\(\) => navigation\.navigate\("ImportMemory"\)\}/u);
+  it("is pushed from Settings › Memory, with a small title over the Settings stack", () => {
+    expect(src("screens/Settings.tsx")).toMatch(/<ListRow title="Memory" onPress=\{\(\) => navigation\.navigate\("Memory"\)\}/u);
+    expect(src("screens/Memory.tsx")).toMatch(/<ListRow title="Import Memory" onPress=\{\(\) => navigation\.navigate\("ImportMemory"\)\}/u);
     expect(src("../App.tsx")).toMatch(/<SettingsStack\.Screen name="ImportMemory" component=\{ImportMemory\} options=\{\{ \.\.\.pushed\(t, "Import Memory"\), headerLargeTitleEnabled: false \}\}/u);
   });
 

@@ -26,7 +26,8 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
     keys/<name>.key      agent keys made with fleetd hub key create --agent
     prompts/<id>.md      your version of a prompt, hub-wide
     prompts/projects/<key>/<id>.md   the same for one bot
-    memory/people/<id>.md   what the agents remember about how one person works, theirs alone
+    memory/people/<id>.md   what the agents remember about how one person works, theirs alone: its core
+    memory/people/<id>/<topic>.md   that person's topic files
     memory/user.md       the shared memory of a hub with no people yet; once it has some, its owner got a copy
     memory/<machine>/<project>/MEMORY.md   one bot's memory, with its topic files beside it
   node/                  the node's home (every worker)
@@ -62,7 +63,8 @@ Where fleetd keeps everything, and the settings you can change. The [hub](/docs/
 ## Memory files {#memory}
 
 What the leads [remember](/docs/what-agents-are-told#memory) is plain markdown under `~/.fleetd/hub/memory`: each
-person's own in `people/<person id>.md` (one shared `user.md` on a hub from before people), and per bot a
+person's own in `people/<person id>.md` (its core, with one `- [topic](topic.md)` line per topic in
+`people/<person id>/`; one shared `user.md` on a hub from before people), and per bot a
 `MEMORY.md` (its always-on entries, then one `- [topic](topic.md)` line per topic) with its topic files beside it. Each remembered line is one `- ` entry.
 
 Settings › a bot › Instructions & memory (and Settings › Your memory for yours) lists each file as cards, one per entry, with a search across them and the file's length against

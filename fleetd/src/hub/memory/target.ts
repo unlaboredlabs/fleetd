@@ -16,13 +16,20 @@ export const isTopic = (s: string) => s !== "memory" && /^[a-z0-9][a-z0-9-]{0,47
 export type RememberCall = { scope: MemoryScope; topic?: string; text: string; replaces?: string };
 export type ForgetCall = { scope: MemoryScope; topic?: string; entry: string; reason?: string };
 
-/** One memory file: a person's own, the shared `user.md`, a project's `MEMORY.md` or one of its topics. */
+/** One memory file: a person's own core or one of its topics, the shared `user.md`, a project's `MEMORY.md` or one of its topics. */
 export type Target = { project?: ProjectRef; topic?: string; person?: PersonId };
 
-export const userTarget = (person?: PersonId): Target => (person === undefined ? {} : { person });
+export const userTarget = (person?: PersonId, topic?: string): Target => ({
+  ...(person === undefined ? {} : { person }),
+  ...(topic === undefined ? {} : { topic }),
+});
 export const projectTarget = (r: ProjectRef, topic?: string): Target => (topic === undefined ? { project: r } : { project: r, topic });
 export const scopeOf = (t: Target): MemoryScope => (t.project ? "project" : "user");
-export const nameOf = (t: Target) => (!t.project ? USER_FILE : t.topic === undefined ? INDEX_FILE : `${t.topic}.md`);
+export const nameOf = (t: Target) => (t.topic !== undefined ? `${t.topic}.md` : t.project ? INDEX_FILE : USER_FILE);
+/** The same file's core: a user topic's `user.md`, a project topic's `MEMORY.md`. */
+export const coreOf = (t: Target): Target => (t.project ? projectTarget(t.project) : userTarget(t.person));
+/** The folder of the shared `user.md`'s topics. */
+export const SHARED_TOPICS_DIR = "user";
 
 /** `<home>/memory`; a hub without a home keeps none. */
 /** A project's directory name: its id when that is a plain file name, else a hash of it. */

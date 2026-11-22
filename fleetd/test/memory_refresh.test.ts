@@ -340,7 +340,7 @@ test("an injected line is data between fences it cannot fake", async () => {
   expect(mine()).not.toContain("evil.example");
 });
 
-test("past the cap it keeps instructions and preferences, and says what was left out", async () => {
+test("past the cap an import still lands whole, the most lasting kinds first, and asks for a tidy", async () => {
   // Projects come first in the reply; instructions and preferences still go in first.
   const reply = JSON.stringify({
     entries: [
@@ -354,14 +354,11 @@ test("past the cap it keeps instructions and preferences, and says what was left
   hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('user', 1000)").run();
   Memory.of(hub).set(userTarget("pe_ada00001"), `- ${"Older note. ".repeat(60).trim()}\n`);
   const out = await imported("anything");
-  expect((out.added as { text: string }[]).map((a) => a.text)).toEqual(["Always answer in British English.", "Prefers tabs over spaces."]);
-  const full = (out.skipped as { why: string; text: string }[]).filter((s) => s.why === "full").map((s) => s.text);
-  expect(full.length).toBe(2);
-  expect(full[0]!.startsWith("Ledgerline") && full[1]!.startsWith("Harbor")).toBe(true);
-  expect(out.chars as number).toBeLessThanOrEqual(1000);
-  expect(out.next).toBe(
-    "Added 2 to your memory; 2 more didn't fit under its cap of 1000 characters (skipped, why full). Trim your memory, then import again to add them.",
-  );
+  expect((out.added as { text: string }[]).map((a) => a.text.split(":")[0])).toEqual(["Always answer in British English.", "Prefers tabs over spaces.", "Ledgerline", "Harbor"]);
+  expect(out.skipped).toEqual([]);
+  expect(out.chars as number).toBeGreaterThan(1000);
+  expect(out.next).toBe("Added 4 to your memory.");
+  expect(hub.db.all<{ due_ms: number }>("SELECT due_ms FROM memory_tidies WHERE person_id = 'pe_ada00001'")[0]?.due_ms).toBe(NIGHT_MS);
 });
 
 test("an answer that isn't entries adds nothing; a failed turn says so", async () => {

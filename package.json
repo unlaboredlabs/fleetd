@@ -178,6 +178,7 @@
     "./hub/memory/redact": "./fleetd/src/hub/memory/redact.ts",
     "./hub/memory/refresh_rules": "./fleetd/src/hub/memory/refresh_rules.ts",
     "./hub/memory/target": "./fleetd/src/hub/memory/target.ts",
+    "./hub/memory/tidy_rules": "./fleetd/src/hub/memory/tidy_rules.ts",
     "./hub/metrics/compute": "./fleetd/src/hub/metrics/compute.ts",
     "./hub/metrics/github": "./fleetd/src/hub/metrics/github.ts",
     "./hub/metrics/human": "./fleetd/src/hub/metrics/human.ts",
