@@ -179,8 +179,9 @@ export function runners(hub: Hub): RunnerRow[] {
       name: m.name,
       online: m.status !== "offline",
       sessions: roles.sessions,
-      // The agents' Mac offers only its own screen, whatever an older node of it still lists.
-      hosts: hosts && m.agentsMac === true ? hosts.filter((h) => h.host === "mac") : hosts,
+      // The agents' Mac offers its own screen, and a person's iPhone (its simulators, D652), whatever an older node of it
+      // still lists.
+      hosts: hosts && m.agentsMac === true ? hosts.filter((h) => h.host === "mac" || h.host === "ios") : hosts,
       hostsOthers: othersNote === undefined,
       othersNote,
       live: liveOn(c, m.machineId, now),

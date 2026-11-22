@@ -14,7 +14,16 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AndroidHealth, BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import {
+  type BrowserCallFrame,
+  type BrowserControlFrame,
+  type BrowserInputFrame,
+  type BrowserWatchFrame,
+  CAP_SCREEN_CONTROL,
+  type ScreenControlFrame,
+  type ScreenControlResult,
+} from "../../shared/screens_wire.ts";
+import { AndroidDevice, type Adb } from "./controls.ts";
 import { CAP_SESSION_ANDROID } from "../../shared/node_link.ts";
 import type { ThreadItem } from "../../shared/sessions.ts";
 import { GIVE_UP_MS, giveUp, readMeta, report, Steps, upload, waitingIn } from "../browser/record.ts";
@@ -26,7 +35,7 @@ import { killLeftovers, type Lent, Pool } from "./emulator.ts";
 import { deviceInput, Pump } from "./live.ts";
 import { type Answer, router, type Screens } from "./router.ts";
 import { Stream } from "./scrcpy.ts";
-import { deviceDir, findSdk, install as installSdk, installClient, kvm, type KvmCheck, PINS, type Sdk, sdkAt, supported } from "./sdk.ts";
+import { adb, deviceDir, findSdk, install as installSdk, installClient, kvm, type KvmCheck, PINS, type Sdk, sdkAt, sdkEnv, supported } from "./sdk.ts";
 import { type AndroidBox, type BoxedEmulator, startInBox } from "../place/box_android.ts";
 import { hasBox, hostedBox } from "../place/hosted.ts";
 import { boxes } from "../sandbox/remote/boxes.ts";
@@ -117,6 +126,8 @@ export class Devices implements Screens {
   private install: Install = { at: "wanted" };
   /** Live sessions by the agent session they belong to: one each. */
   private readonly sessions = new Map<string, Session>();
+  /** Each session's device controls (controls.ts), on emulators this node runs; none for one in a hosted box. */
+  private readonly devs = new Map<string, AndroidDevice>();
   /** Agent sessions whose `session_start` is under way: a second one is refused until it answers. */
   private readonly starting = new Set<string>();
   private readonly uploading = new Set<string>();
@@ -337,6 +348,7 @@ export class Devices implements Screens {
       throw new ToolError("failed", `The Android session did not start: ${(e as Error).message}.`, "try session_start again");
     }
     this.sessions.set(thread, session);
+    this.devs.set(id, new AndroidDevice(emulatorAdb(sdk, serial)));
     session.step("session_start", { purpose, kind: "android", serial }, true, undefined, 0);
     void this.report(session, "live");
     return { sessionId: session.id, serial, startMs: Math.round(performance.now() - started) };
@@ -408,6 +420,7 @@ export class Devices implements Screens {
   private async close(session: Session): Promise<Record<string, unknown>> {
     // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until its upload has started.
     this.ending.add(session.id);
+    this.devs.delete(session.id);
     try {
       this.unwatch(session.id);
       session.step("session_end", {}, true, undefined, 0);
@@ -450,8 +463,9 @@ export class Devices implements Screens {
   private async report(session: Session, state: BrowserSessionState): Promise<void> {
     // Past live, it ended now: the hub has its end from this report, whatever becomes of its upload.
     const meta = session.meta(state === "live" ? undefined : new Date().toISOString());
+    const device = state === "live" ? this.devs.get(session.id)?.report() : undefined;
     try {
-      await this.hub(session.thread, session.cwd, "browser_session", report(meta, state, session.control(), []));
+      await this.hub(session.thread, session.cwd, "browser_session", { ...report(meta, state, session.control(), []), ...(device ? { device } : {}) });
     } catch (e) {
       console.warn(`device ${session.id}: not reported to the hub: ${(e as Error).message}`);
     }
@@ -557,6 +571,31 @@ export class Devices implements Screens {
     else this.pressed.delete(session.id);
   }
 
+  /** A person's device control (`screen_control`) while they have control: a line in the session's log. */
+  async screenControl(frame: ScreenControlFrame): Promise<ScreenControlResult> {
+    const session = this.byId(frame.sessionId);
+    const dev = session && this.devs.get(session.id);
+    if (!session || !dev) return { id: frame.id, error: { code: "invalid", message: `Screen ${frame.sessionId} has no device controls here.` } };
+    if (session.control() !== "human") {
+      return { id: frame.id, error: { code: "invalid", message: "Take the screen over first: its controls are the person's in control." } };
+    }
+    const started = performance.now();
+    try {
+      const shot = await dev.apply(frame.control);
+      session.step("control", { control: frame.control, by: frame.by }, true, undefined, Math.round(performance.now() - started));
+      await this.report(session, "live");
+      return {
+        id: frame.id,
+        device: dev.report(),
+        ...(shot ? { screenshot: { pngB64: Buffer.from(shot.png).toString("base64"), width: shot.width, height: shot.height } } : {}),
+      };
+    } catch (e) {
+      const error = e instanceof ToolError ? e.toJSON() : { code: "failed" as const, message: (e as Error).message };
+      session.step("control", { control: frame.control, by: frame.by }, false, error.message, Math.round(performance.now() - started));
+      return { id: frame.id, error };
+    }
+  }
+
   /** A person takes the device, or hands it back; the hub waits to hear who drives, changed or not. */
   control(frame: BrowserControlFrame): void {
     const session = this.byId(frame.sessionId);
@@ -616,6 +655,13 @@ export function start(node: Node, options?: DevicesOptions): Devices | undefined
   before(node, "browser_watch", (f) => ours(f) && (d.watch(f as unknown as BrowserWatchFrame), true));
   before(node, "browser_input", (f) => ours(f) && (d.input(f as unknown as BrowserInputFrame), true));
   before(node, "browser_control", (f) => ours(f) && (d.control(f as unknown as BrowserControlFrame), true));
+  const earlier = node.area("link").handler("screen_control");
+  node.area("link").on("screen_control", (frame, ctx) => {
+    const f = frame as unknown as ScreenControlFrame;
+    if (ours(frame as Record<string, unknown>)) void d.screenControl(f).then((answer) => toHub(node, { t: "screen_control_result", ...answer }));
+    else if (earlier) earlier(frame, ctx);
+    else toHub(node, { t: "screen_control_result", id: f.id, error: { code: "not_found", message: `Screen ${f.sessionId} isn't live here any more.` } });
+  });
   node.area("items").on((thread, item) => d.item(thread, item));
   const kvmCheck = options?.kvm ?? kvm;
   // An agent's claude gets agent-device's wrapper first on its PATH, pointed at its emulator, and its skill.
@@ -623,7 +669,7 @@ export function start(node: Node, options?: DevicesOptions): Devices | undefined
   // Listed only while a start really answers here: the pool is made and KVM opens. An install that finishes later
   // links again with it.
   const caps = node.area("caps");
-  caps.contribute(() => (d.usable() ? [CAP_SESSION_ANDROID] : []));
+  caps.contribute(() => (d.usable() ? [CAP_SESSION_ANDROID, CAP_SCREEN_CONTROL] : []));
   d.onReady = () => caps.changed();
   node.area("hb").contribute((hb) => {
     hb.steps.push(...d.stepsNow());
@@ -639,3 +685,20 @@ export async function stop(node: Node): Promise<void> {
   await router(node).android?.shutdown();
 }
 
+/** adb on the node's emulator `serial`, with the node's SDK: screencap's PNG read as bytes. */
+export function emulatorAdb(sdk: Sdk, serial: string): Adb {
+  return {
+    run: (args) => adb(sdk, serial, args, 15_000),
+    async bytes(args) {
+      const child = Bun.spawn([sdk.adb, "-s", serial, ...args], { env: { ...process.env, ...sdkEnv(sdk) }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+      const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
+      try {
+        const [out, err, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited]);
+        if (code !== 0) throw new ToolError("failed", `The emulator's screenshot didn't go: ${err.trim().slice(0, 300)}`);
+        return new Uint8Array(out);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}

@@ -68,6 +68,7 @@ export function refusal(bad: Undecodable): NodeFrame | undefined {
     node_action: { t: "node_action_result", id, ok: false, message: why },
     session_call: { t: "session_reply", id, result: { err: { code: "invalid", message: why } } },
     mac_call: { t: "mac_result", id, error: { code: "invalid", message: why } },
+    screen_control: { t: "screen_control_result", id, error: { code: "invalid", message: why } },
   };
   return Object.hasOwn(answer, bad.tag) ? (answer[bad.tag] as NodeFrame) : undefined;
 }

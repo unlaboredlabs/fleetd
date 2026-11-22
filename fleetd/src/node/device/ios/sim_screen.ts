@@ -17,7 +17,16 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../../shared/contracts.ts";
-import { RECORDING_FILES, type BrowserControlFrame, type BrowserInputFrame, type BrowserWatchFrame, type SimScreen as SimScreenKey } from "../../../shared/screens_wire.ts";
+import {
+  RECORDING_FILES,
+  type BrowserControlFrame,
+  type BrowserInputFrame,
+  type BrowserWatchFrame,
+  type ScreenControlFrame,
+  type ScreenControlResult,
+  type SimScreen as SimScreenKey,
+} from "../../../shared/screens_wire.ts";
+import { ToolError } from "../../../shared/errors.ts";
 import { appendAction, files as recordedFiles, GIVE_UP_MS, giveUp, type HubCall, type Meta, readMeta, report, Scrub, Steps, upload, waitingIn, writeMeta } from "../../browser/record.ts";
 import { mkdirPrivate } from "../../config.ts";
 import { deviceInput, Pump } from "../live.ts";
@@ -25,6 +34,7 @@ import type { Frame, Input } from "../scrcpy.ts";
 import { ensureHelper, stream } from "../../screen/mac_frames.ts";
 import { Hands, type Live, type Ran, type Runner, Shooter, type Shoot } from "./screen.ts";
 import { recordingStarted, type Simctl } from "./simctl.ts";
+import type { SimDevice } from "./controls.ts";
 import { iosDir } from "./wrapper.ts";
 
 /** The start of a result's text the action log keeps. */
@@ -50,7 +60,8 @@ export type Recording = { finish(): Promise<string | undefined>; pid?: number };
 
 /** What a screen does to its simulator: a screenshot, a recording, an agent-device command. Simctl's, or a test's. */
 export type SimTools = {
-  shoot(udid: string): Promise<Uint8Array>;
+  /** `display`: the lit panel of a simulator with two (controls.ts `SimDevice.display`). */
+  shoot(udid: string, display?: string): Promise<Uint8Array>;
   /** The screen as a stream of frames, where the Mac can make one. */
   live?: (udid: string) => Live;
   record(udid: string, path: string): Recording;
@@ -169,10 +180,10 @@ export function simctlTools(simctl: Simctl, shots: string): SimTools {
   }
   return {
     live: (udid) => (onFrame) => stream(frames, ["sim", simctl.set, udid], onFrame),
-    async shoot(udid) {
+    async shoot(udid, display) {
       mkdirSync(shots, { recursive: true });
       const to = join(shots, `${udid}.jpg`);
-      await simctl.screenshot(udid, to);
+      await simctl.screenshot(udid, to, display);
       return new Uint8Array(await Bun.file(to).arrayBuffer());
     },
     record: (udid, path) => startRecording(simctl.argv(["io", udid, "recordVideo", "--codec=h264", "--force", path]), path, recordingStarted),
@@ -201,6 +212,10 @@ export type Opened = {
   changed?: () => void;
   /** A screen the node before left (SimScreens `resume`): when it started, and its video, still recording. */
   resumed?: { startedAt: string; recording?: Recording };
+  /** Its device controls (controls.ts), and its orientation, fold and appearance as they last went. */
+  dev?: SimDevice;
+  /** Who it is for in its name, when not the agent: a person's own simulator ("iPhone Duo · Ada"). */
+  label?: string;
 };
 
 /** What the next node needs to open a screen again (SimScreens `resume`), kept with its simulator (sims.ts). */
@@ -219,6 +234,7 @@ export class SimScreen {
   private readonly controlFile: string;
   private readonly steps: Steps;
   private readonly changed: () => void;
+  readonly dev: SimDevice | undefined;
   private readonly scrub = new Scrub([]);
   private readonly shooter: Shooter;
   private readonly hands: Hands;
@@ -239,7 +255,8 @@ export class SimScreen {
     this.hostKey = opened.screen.hostKey;
     this.agent = opened.agent;
     this.udid = opened.udid;
-    this.purpose = screenName(opened.device, opened.agent);
+    this.purpose = screenName(opened.device, opened.label ?? opened.agent);
+    this.dev = opened.dev;
     this.dir = join(recordingsDir(opened.home), this.id);
     this.controlFile = opened.controlFile;
     this.steps = opened.steps;
@@ -256,8 +273,10 @@ export class SimScreen {
     }
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.writeMeta();
-    const shoot: Shoot = () => tools.shoot(this.udid);
-    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, tools.live?.(this.udid));
+    const shoot: Shoot = () => tools.shoot(this.udid, this.dev?.display());
+    // A foldable's lit panel changes as it folds, which the framebuffer stream can't pick: its screenshots follow it.
+    const live = this.dev?.display() === undefined ? tools.live?.(this.udid) : undefined;
+    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, live);
     this.hands = new Hands(opened.runner, opened.scale, (args, ran) => this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms), tools.run);
   }
 
@@ -450,6 +469,8 @@ export class SimScreens {
   private readonly ending = new Set<string>();
   /** Told when what the next node needs to resume a screen changes (sims.ts keeps it). */
   changed: () => void = () => {};
+  /** A person used the agent's simulator (its input or a control): it isn't idle. */
+  used: ((agent: string) => void) | undefined;
 
   constructor(
     private readonly home: string,
@@ -552,10 +573,11 @@ export class SimScreens {
     }
   }
 
-  private async report(screen: SimScreen, state: BrowserSessionState): Promise<void> {
+  async report(screen: SimScreen, state: BrowserSessionState): Promise<void> {
     const meta = screen.meta(state === "live" ? undefined : new Date().toISOString());
+    const device = state === "live" ? screen.dev?.report() : undefined;
     try {
-      await this.link.hub(screen.hostKey, "/", "browser_session", report(meta, state, screen.control(), []));
+      await this.link.hub(screen.hostKey, "/", "browser_session", { ...report(meta, state, screen.control(), []), ...(device ? { device } : {}) });
     } catch (e) {
       console.warn(`iOS screen ${screen.id}: not reported to the hub: ${(e as Error).message}`);
     }
@@ -618,9 +640,47 @@ export class SimScreens {
     if (!screen) return;
     const pressed = { down: this.pressed.has(screen.id) };
     const input = deviceInput(frame.input as BrowserInput, pressed);
+    this.used?.(screen.agent);
     if (input && !screen.input(input)) console.debug(`iOS screen ${screen.id}: input not delivered`);
     if (pressed.down) this.pressed.add(screen.id);
     else this.pressed.delete(screen.id);
+  }
+
+  /**
+   * A person's device control (`screen_control`): it runs while they have control, is a line in the screen's log, and
+   * the hub hears the device after it.
+   */
+  async screenControl(frame: ScreenControlFrame): Promise<ScreenControlResult> {
+    const screen = this.byId(frame.sessionId);
+    const refused = (message: string, fix?: string): ScreenControlResult => ({ id: frame.id, error: { code: "invalid", message, ...(fix ? { fix } : {}) } });
+    if (!screen?.dev) return refused(`Screen ${frame.sessionId} has no device controls here.`);
+    if (screen.control() !== "human") return refused("Take the screen over first: its controls are the person's in control.");
+    this.used?.(screen.agent);
+    const started = performance.now();
+    try {
+      const shot = await screen.dev.apply(frame.control, frame.value);
+      screen.step("control", { control: frame.control, ...(frame.value === undefined ? {} : { value: frame.value }), by: frame.by }, true, undefined, Math.round(performance.now() - started));
+      // The device as it is now is kept for the next node (sims.ts).
+      this.changed();
+      await this.report(screen, "live");
+      return {
+        id: frame.id,
+        device: screen.dev.report(),
+        ...(shot ? { screenshot: { pngB64: Buffer.from(shot.png).toString("base64"), width: shot.width, height: shot.height } } : {}),
+      };
+    } catch (e) {
+      const error = e instanceof ToolError ? e.toJSON() : { code: "failed" as const, message: (e as Error).message };
+      screen.step("control", { control: frame.control, by: frame.by }, false, error.message, Math.round(performance.now() - started));
+      return { id: frame.id, error };
+    }
+  }
+
+  /** A device control an agent ran (`mac sim <control>`): a line in its screen's log, and the hub hears the device. */
+  controlled(agent: string, control: string, ok: boolean, why: string | undefined, durationMs: number): void {
+    const screen = this.screens.get(agent);
+    if (!screen) return;
+    screen.step("control", { control, by: "agent" }, ok, why, durationMs);
+    if (ok) void this.report(screen, "live");
   }
 
   /** A person takes the simulator, or hands it back; the hub waits to hear who drives, changed or not. */
