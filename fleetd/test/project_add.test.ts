@@ -150,6 +150,26 @@ test("a checkout on GitHub is inspected through gh, bound to its repo and base, 
   expect(await k.refused(operate, "project_add", { machineId: "devbox", path: "/nope" })).toBe("not_found");
 });
 
+test("a free account's private repo, whose rules GitHub refuses until an upgrade, is read as having none", async () => {
+  const k = kit();
+  const facts = { kind: "repo_facts" as const, exists: true, isGit: true, remote: "git@github.com:acme/shop.git", defaultBranch: "main", workflowFiles: [] };
+  await node(k, ["repos"], (call) => (call.op === "repo_inspect" && call.path === "/home/me/src/shop" ? { ok: facts } : undefined));
+  const upgrade: [number, string] = [403, "Upgrade to GitHub Pro or make this repository public to enable this feature."];
+  const answers = {
+    "repos/acme/shop": { default_branch: "main", allow_squash_merge: true, private: true },
+    "repos/acme/shop/branches/main": { protected: false },
+    "repos/acme/shop/actions/workflows": { workflows: [] },
+  };
+  gh(k, answers, { "repos/acme/shop/rules/branches/main": upgrade, "repos/acme/shop/rulesets": upgrade });
+  const dry = await k.ok(operate, "project_add", { machineId: "devbox", path: "/home/me/src/shop", dryRun: true });
+  expect(dry.inspect.leadNeeds).toBe("no CI found: the merge train merges its PRs on their review alone until the repo has CI");
+  expect(JSON.stringify(dry)).not.toContain("Upgrade to GitHub Pro");
+  // Refused for another reason, the rules stay unknown.
+  gh(k, answers, { "repos/acme/shop/rules/branches/main": [403, "Resource not accessible by integration"] });
+  const other = await k.ok(operate, "project_add", { machineId: "devbox", path: "/home/me/src/shop", dryRun: true });
+  expect(other.inspect.leadNeeds).toStartWith("CI and merge rules unknown");
+});
+
 test("a clone streams its progress, then lands as a bot with its addId", async () => {
   const k = kit();
   clones(k.hub);

@@ -57,12 +57,14 @@ export async function node(k: { hub: Hub }, caps: string[], answer: Answer = () 
   return { calls, made, event };
 }
 
-/** gh on the hub answering `paths` (404 for any other), and no `gh repo list`. */
-export function gh(k: { hub: Hub }, paths: Record<string, unknown>) {
+/** gh on the hub answering `paths` (404 for any other, `refused` with its status and message), and no `gh repo list`. */
+export function gh(k: { hub: Hub }, paths: Record<string, unknown>, refused: Record<string, [number, string]> = {}) {
   const noFresh = { expect() {}, forget() {}, touch() {}, fail() {} };
   const runner = {
     run: async (args: string[]) => {
       const path = args[args.length - 1] as string;
+      const no = refused[path];
+      if (no) return { exitCode: 1, stdout: JSON.stringify({ message: no[1] }), stderr: `gh: ${no[1]} (HTTP ${no[0]})` };
       return path in paths
         ? { exitCode: 0, stdout: JSON.stringify(paths[path]), stderr: "" }
         : { exitCode: 1, stdout: '{"message":"Not Found"}', stderr: "gh: Not Found (HTTP 404)" };
