@@ -121,19 +121,17 @@ export function fetchError(text: string): FetchError {
     return { kind: "offline", why: "offline" };
   }
   // Another git in the checkout is updating the same ref or index: a race, not access.
-  if (
-    has([
-      "incorrect old value provided",
-      "cannot lock ref",
-      "could not lock",
-      "unable to update local ref",
-      "some local refs could not be updated",
-      ".lock': File exists",
-      "Another git process seems to be running",
-    ])
-  ) {
-    return { kind: "busy", why: line };
-  }
+  const race = [
+    "incorrect old value provided",
+    "reference already exists",
+    "cannot lock ref",
+    "could not lock",
+    "unable to update local ref",
+    "some local refs could not be updated",
+    ".lock': File exists",
+    "Another git process seems to be running",
+  ];
+  if (has(race)) return { kind: "busy", why: (rest.split("\n").find((l) => race.some((n) => l.includes(n))) ?? line).trim() };
   if (has(["ssh: not found", "cannot run ssh", "ssh: No such file or directory"])) return { kind: "no_ssh", why: line };
   if (has(["Authentication failed", "Permission denied (publickey", "could not read Username", "could not read Password", "error: 403", "Host key verification failed"])) {
     return { kind: "auth", why: line };

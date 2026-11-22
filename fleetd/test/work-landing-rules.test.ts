@@ -41,12 +41,13 @@ test("why a fetch failed: a lock race is busy, and only auth's line gives SSH or
     kinds([
       "error: cannot lock ref 'refs/remotes/origin/main': is at 1111111 but expected 2222222",
       "fatal: incorrect old value provided",
+      "error: fetching ref refs/remotes/origin/main failed: reference already exists",
       "error: some local refs could not be updated; try running 'git remote prune origin'",
       " ! 1111111..2222222  main -> origin/main  (unable to update local ref)",
       "fatal: Unable to create '/w/shop/.git/index.lock': File exists.\n\nAnother git process seems to be running in this repository",
       "error: could not lock config file .git/config: File exists",
     ]),
-  ).toEqual(["busy", "busy", "busy", "busy", "busy", "busy"]);
+  ).toEqual(["busy", "busy", "busy", "busy", "busy", "busy", "busy"]);
   expect(
     kinds([
       "ssh: connect to host github.com port 22: Connection timed out\nfatal: Could not read from remote repository.",
