@@ -2,6 +2,7 @@
 // pane it draws in, and, beside the list, the way a chat picked there opens in the other pane.
 import { createContext, useContext } from "react";
 import { useWindowDimensions } from "react-native";
+import type { ChatsParams } from "../hubContext";
 import type { Key } from "../store";
 
 /** The width of the pane a screen draws in, where it's one of two; the window's otherwise. */
@@ -21,6 +22,8 @@ export interface Beside {
   readonly newChat: () => void;
   /** The chat open in the other pane, whose row the list marks. */
   readonly openKey: Key | undefined;
+  /** A link's filter for the list (Open Approvals: Needs You), as Chats' route params carry it where it's one screen. */
+  readonly asked: ChatsParams["Chats"];
 }
 
 export const BesideContext = createContext<Beside | null>(null);

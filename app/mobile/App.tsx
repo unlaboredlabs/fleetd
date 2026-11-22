@@ -297,6 +297,19 @@ const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "proj
   return true;
 };
 
+/** Where Open Approvals' link sets the list beside the chat's pane on Needs You, while it is there (Root). */
+let askBeside: ((asked: { filter: "needsYou"; at: number }) => void) | null = null;
+
+/**
+ * Open Approvals' link: Chats on Needs You. Beside the chat's pane, the list there, whatever the pane shows staying
+ * as it is; elsewhere, the root stack's Home.
+ */
+const openApprovals = (): void => {
+  const asked = { filter: "needsYou" as const, at: ++taps };
+  if (askBeside !== null) askBeside(asked);
+  else nav.navigate("Home", { screen: "Chats", params: asked });
+};
+
 /** Asks before a destructive step, as iOS does: an action sheet, or Android's alert. */
 const confirm = (title: string, message: string, action: string, onYes: () => void, onNo: () => void = () => undefined): void => {
   haptics.warning();
@@ -339,7 +352,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
     if (!nav.isReady()) return;
     if (approvals.current) {
       approvals.current = false;
-      nav.navigate("Home", { screen: "Chats", params: { filter: "needsYou", at: ++taps } });
+      openApprovals();
     }
     if (pending.current === null) return;
     if (go(pending.current, session.getState(), paired.hub)) pending.current = null;
@@ -480,7 +493,15 @@ function Root() {
   const split = splitOf(useWindowDimensions().width);
   const wide = split !== undefined;
   const openKey = useOpenChatKey(wide);
-  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey } : null), [wide, openKey]);
+  const [asked, setAsked] = useState<Beside["asked"]>(undefined);
+  useEffect(() => {
+    if (!wide) return;
+    askBeside = setAsked;
+    return () => {
+      askBeside = null;
+    };
+  }, [wide]);
+  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey, asked } : null), [wide, openKey, asked]);
   return (
     <BesideContext.Provider value={beside}>
       <View style={styles.panes}>

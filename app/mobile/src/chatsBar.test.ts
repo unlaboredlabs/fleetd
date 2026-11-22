@@ -81,3 +81,12 @@ describe("the avatar that opens Settings", () => {
     expect(app).not.toMatch(/TabBar|bottom-tabs/u);
   });
 });
+
+describe("Open Approvals' link", () => {
+  it("puts the list on Needs You, the one beside the chat's pane where there are two", () => {
+    // Beside the chat, the list is a navigation tree of its own: the root stack's Home has no Chats screen to take it.
+    expect(app).toMatch(/const openApprovals = \(\): void => \{[^]*?if \(askBeside !== null\) askBeside\(asked\);\s*else nav\.navigate\("Home", \{ screen: "Chats", params: asked \}\);/u);
+    expect(app).toContain("askBeside = setAsked;");
+    expect(chats).toContain("const asked = beside === null ? route.params : beside.asked;");
+  });
+});

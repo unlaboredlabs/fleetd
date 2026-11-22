@@ -112,7 +112,7 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   // A link's filter (Open Approvals: Needs You), each time it's opened.
-  const asked = route.params;
+  const asked = beside === null ? route.params : beside.asked;
   useEffect(() => {
     if (asked?.filter !== undefined) setFilter(asked.filter);
   }, [asked?.filter, asked?.at]);
