@@ -4,15 +4,11 @@
 // the screens show; pure, so it is tested on its own.
 import type { Machine, ProviderTrouble, SandboxCheck, SandboxProviderState, SandboxState, TailnetState } from "../../desktop/src/shared/contracts";
 import { hostedRow, type HostedAction, type HostedRunner, rowWords } from "../../desktop/src/shared/hostedRow";
-import { specOf } from "../../desktop/src/shared/providers";
 
 export { runnerOf, type HostedAction, type HostedRunner } from "../../desktop/src/shared/hostedRow";
 
-export { canWords, LINUX, linuxChoices, linuxValue, MAC, machinesRun, NONE, RUNNER_ID, specOf, YOURS } from "../../desktop/src/shared/providers";
+export { canWords, LINUX, linuxChoices, linuxValue, MAC, machinesRun, NONE, providerName, RUNNER_ID, specOf, YOURS } from "../../desktop/src/shared/providers";
 export { atOnceWord, computerStateWord, FLEETD, heldLine, MAC_OWN_ONLY, providedChoices, providedValue, usedWord } from "../../desktop/src/shared/provided";
-
-/** A provider's name as people know it; one a newer hub has is shown as it names it. */
-export const providerName = (p: string): string => specOf(p).name;
 
 
 /** The Settings row shows for an admin. */

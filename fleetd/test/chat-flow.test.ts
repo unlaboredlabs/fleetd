@@ -114,7 +114,7 @@ test("a lead whose hosted sandbox doesn't come up says so in the chat, once a ru
     summary: "failed",
     data: { runId, endCause: "failed", error: { class: "sandbox", message } },
   });
-  const boxless = "could not start /opt/claude/.local/bin/claude: no hosted sandbox came up at boat.dev: git rev-parse failed: fatal: not a git repository (cwd /srv/x)";
+  const boxless = "could not start /opt/claude/.local/bin/claude: no hosted sandbox came up at fleetd's computers: git rev-parse failed: fatal: not a git repository (cwd /srv/x)";
   const at = (ms: number) => new Date(ms).toISOString();
   events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r1", boxless) });
   events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r1", boxless) });
@@ -125,7 +125,7 @@ test("a lead whose hosted sandbox doesn't come up says so in the chat, once a ru
   };
   await until(async () => (await lines()).length === 1 && timers.asked.length === 1);
   expect(await lines()).toEqual([
-    "The lead couldn't start: no sandbox came up for it at boat.dev. It tries again by itself in about 10 minutes, and your message is kept for it. If it keeps failing, check boat.dev in Settings › Hub › Machines.",
+    "The lead couldn't start: no sandbox came up for it at fleetd's computers. It tries again by itself in about 10 minutes, and your message is kept for it. If it keeps failing, check fleetd's computers in Settings › Hub › Machines.",
   ]);
   // In the person's words: no path, no git, no clock time.
   expect((await lines())[0]).not.toMatch(/\/|git|\d:\d\d/);
@@ -144,9 +144,9 @@ test("a lead whose hosted sandbox doesn't come up says so in the chat, once a ru
   expect(sends.map((s) => s.text)).toEqual([expect.stringContaining("the message above never reached you until now")]);
 
   // It didn't come up again (the provider's template didn't build): twice as long, the node's UTC time gone.
-  events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r2", "boat.dev's sandbox template didn't build (try again in a minute); trying again at 19:20") });
+  events(hub).append({ at: at(clock.ms), type: "thread.failed", ...failed("r2", "the sandbox template at fleetd's computers didn't build (try again in a minute); trying again at 19:20") });
   await until(async () => (await lines()).length === 2 && timers.asked.length === 2);
-  expect((await lines())[1]).toBe("The lead couldn't start: boat.dev's sandbox template didn't build. It tries again by itself in about 20 minutes, and your message is kept for it.");
+  expect((await lines())[1]).toBe("The lead couldn't start: the sandbox template at fleetd's computers didn't build. It tries again by itself in about 20 minutes, and your message is kept for it.");
   expect(timers.asked[1]!.ms).toBe(1_230_000);
   // A completed turn ends the run of failed starts: the wait due then wakes nothing.
   events(hub).append({ at: at(clock.ms), type: "thread.completed", machineId: PROJECT.machineId, projectId: PROJECT.projectId, threadId: "lead-1", summary: "completed" });
@@ -171,7 +171,7 @@ test("a lead's start again is bounded: three, at 10, 20 and 40 minutes, then the
       projectId: PROJECT.projectId,
       threadId: "lead-1",
       summary: "failed",
-      data: { runId: `r${i}`, endCause: "failed", error: { class: "sandbox", message: "boat.dev's sandbox template didn't build" } },
+      data: { runId: `r${i}`, endCause: "failed", error: { class: "sandbox", message: "the sandbox template at fleetd's computers didn't build" } },
     });
     for (let j = 0; j < 200 && (await lines()).length < i; j++) await Bun.sleep(10);
     clock.ms += 60_000;
@@ -179,7 +179,7 @@ test("a lead's start again is bounded: three, at 10, 20 and 40 minutes, then the
   await Bun.sleep(30);
   expect(timers.asked.map((t) => t.ms)).toEqual([630_000, 1_230_000, 2_430_000]);
   expect((await lines()).at(-1)).toBe(
-    "The lead couldn't start: boat.dev's sandbox template didn't build. It was tried again 3 times by itself; your message is kept, and the lead tries again when you send another.",
+    "The lead couldn't start: the sandbox template at fleetd's computers didn't build. It was tried again 3 times by itself; your message is kept, and the lead tries again when you send another.",
   );
   done();
 }, 30_000);
@@ -195,7 +195,7 @@ test("after a hub restart, a lead's start again that was due keeps its time", as
     projectId: PROJECT.projectId,
     threadId: "lead-1",
     summary: "failed",
-    data: { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "boat.dev's sandbox template didn't build" } },
+    data: { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "the sandbox template at fleetd's computers didn't build" } },
   });
   // The hub restarts 4 minutes later: what it reads at its start (`start` again, as serve does).
   clock.ms += 240_000;

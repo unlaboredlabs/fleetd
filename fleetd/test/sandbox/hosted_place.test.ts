@@ -1,4 +1,4 @@
-// The hosted place (src/node/place/hosted.ts) end to end against boat.dev's stand-in server, its box running here as the
+// The hosted place (src/node/place/hosted.ts) end to end against fleetd's computers' stand-in server, its box running here as the
 // provider would run it: setup's command boots the box and runs in it, the session host starts there with a stand-in
 // claude and its lines come over the box's link, a node that lets go re-adopts it, a session on the machine's own
 // login is refused, the session's ports reach the machine though setup made the box, Claude's endpoint is the box's
@@ -173,7 +173,7 @@ test("setup boots the box and runs there; the session runs in it, is re-adopted,
 }, 60_000);
 
 test("a bot with no repo starts in a box: its plain folder goes in, and its work comes back at stop", async () => {
-  // Its lead's folder is no checkout, and the box's start failed on it: "no hosted sandbox came up at boat.dev: git
+  // Its lead's folder is no checkout, and the box's start failed on it: "no hosted sandbox came up at fleetd's computers: git
   // rev-parse failed: fatal: not a git repository" (W737).
   const { s, home, env } = await setup();
   const cwd = join(home, "projects", "email-client");
@@ -192,7 +192,7 @@ test("a bot with no repo starts in a box: its plain folder goes in, and its work
   expect(readFileSync(join(cwd, "reply.md"), "utf8")).toBe("from the box\n");
 });
 
-test("a session whose bot picked boat.dev · 4 vCPU / 8 GB gets a box of exactly that: boat's type of that size", async () => {
+test("a session whose bot picked fleetd's computers · 4 vCPU / 8 GB gets a box of exactly that: boat's type of that size", async () => {
   const { s, home, cwd, env } = await setup();
   const dir = join(home, "hosts", "s-big");
   const place = pick({ sessionId: "s-big", dir, role: "worker", account: true, hosted: "boat", size: { cpu: 4, memGb: 8 } });
@@ -240,7 +240,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   );
   expect(failure).toBeInstanceOf(BoxNotReady);
   const refused = failure!.message;
-  expect(refused).toContain("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49");
+  expect(refused).toContain("a sandbox at fleetd's computers couldn't reach the hub's Claude account at 100.104.249.49");
   expect(refused).not.toContain("settings.json");
   expect(refused).not.toContain("curl");
   expect(refused).toContain("Connect Tailscale in Connections");
@@ -282,7 +282,7 @@ test("a start that fails once its box exists deletes the box and its record, and
   };
   const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
   expect(failed).toBeInstanceOf(BoxNotReady);
-  expect((failed as Error).message).toContain("a boat.dev sandbox couldn't reach the hub's Claude account at ");
+  expect((failed as Error).message).toContain("a sandbox at fleetd's computers couldn't reach the hub's Claude account at ");
   expect((failed as Error).message).not.toContain("curl");
   // Claude never started: it fails as a box that didn't come up, so a lead's chat says why and its message is kept;
   // and the box came up, so the provider isn't set aside.
@@ -290,7 +290,7 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(boxes.usable()).toContain("boat");
   // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
   const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`, 1);
-  expect(line).toStartWith("The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at ");
+  expect(line).toStartWith("The lead couldn't start: a sandbox at fleetd's computers couldn't reach the hub's Claude account at ");
   expect(line).toEndWith("It tries again by itself in about 10 minutes, and your message is kept for it.");
   expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.
@@ -312,7 +312,7 @@ test("a start whose Claude Code isn't in the box says so, and a box no session r
   try {
     const failed = await hostedPlace("boat", "s-noclaude", dir).start({ fleetd: [], dir, sessionId: "s-noclaude", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
     expect(failed).toBeInstanceOf(BoxNotReady);
-    expect((failed as Error).message).toBe("its boat.dev sandbox came up, but fleetd didn't start in it");
+    expect((failed as Error).message).toBe("its sandbox at fleetd's computers came up, but fleetd didn't start in it");
   } finally {
     console.warn = warn;
   }
@@ -363,13 +363,13 @@ test("a template build step that fails says the template didn't build, its outpu
     .start({ fleetd: [], dir: join(home, "hosts", "s-tpl"), sessionId: "s-tpl", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } })
     .catch((e: Error) => e);
   expect(failed).toBeInstanceOf(HostedDown);
-  expect((failed as Error).message).toStartWith("boat.dev's sandbox template didn't build (try again in a minute); trying again at ");
-  expect(boxes.trouble()[0]?.why).toBe("boat.dev's sandbox template didn't build");
+  expect((failed as Error).message).toStartWith("the sandbox template at fleetd's computers didn't build (try again in a minute); trying again at ");
+  expect(boxes.trouble()[0]?.why).toBe("the sandbox template at fleetd's computers didn't build");
 }, 60_000);
 
-test("boat.dev refusing a box for billing sets it aside saying so: the heartbeat's trouble and the next start's words", async () => {
+test("fleetd's computers refusing a box for billing sets it aside saying so: the heartbeat's trouble and the next start's words", async () => {
   const { s, home, cwd, env, boxes } = await setup();
-  // boat.dev answers every create (the template's build box too) with its 402.
+  // fleetd's computers answers every create (the template's build box too) with its 402.
   s.fail({ path: /^POST \/api\/v1\/sandboxes$/, status: 402, body: { ok: false, code: "payment_required", message: "Payment required" }, times: 10 });
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
@@ -378,7 +378,7 @@ test("boat.dev refusing a box for billing sets it aside saying so: the heartbeat
   expect(trouble).toMatchObject({ provider: "boat", what: "start", reason: "billing", until: expect.any(Number) });
   expect(boxes.trouble()).toHaveLength(1);
   const second = await start("s-bill2").catch((e: Error) => e);
-  expect((second as Error).message).toMatch(/^boat\.dev refused: billing isn't set up on the account \(set up billing in boat\.dev's dashboard\); trying again at \d\d:\d\d$/);
+  expect((second as Error).message).toMatch(/^fleetd's computers refused: billing isn't set up on the account \(try again later\); trying again at \d\d:\d\d$/);
   // The hub's fresh word (a key that works again) offers it again at once.
   boxes.retry();
   expect(boxes.trouble()).toEqual([]);
@@ -394,7 +394,7 @@ test("a keep-alive that fails is reported until one works again", async () => {
 
 test("a keep-alive failure goes with Try again or a new key, and a while after the provider's last box went", async () => {
   const { boxes } = await setup();
-  const fail = () => boxes.keptAlive("boat", new ProviderError("unreachable", "boat.dev didn't answer"));
+  const fail = () => boxes.keptAlive("boat", new ProviderError("unreachable", "fleetd's computers didn't answer"));
   // Try again: the hub's fresh word reaches the node as its limits, which ask every provider again.
   fail();
   boxes.retry();
@@ -413,7 +413,7 @@ test("a keep-alive failure goes with Try again or a new key, and a while after t
 });
 
 test("one bot's own failure (its files didn't go in) fails its start alone: the provider stays offered, and another bot's box comes up", async () => {
-  // W756 W5: before, a bot whose repo or files didn't go in set boat.dev aside for 10 minutes for every bot of the team.
+  // W756 W5: before, a bot whose repo or files didn't go in set fleetd's computers aside for 10 minutes for every bot of the team.
   const { s, home, cwd, env, boxes } = await setup();
   const start = (id: string, at: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd: at, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });
@@ -423,10 +423,10 @@ test("one bot's own failure (its files didn't go in) fails its start alone: the 
   // It fails as a box that came up where the session couldn't start: a lead's chat says why and its message is kept.
   expect(first).toBeInstanceOf(BoxNotReady);
   // In plain words: what didn't work, never the tar's output or the machine's paths (the log keeps those), nor a time.
-  expect((first as Error).message).toBe("its boat.dev sandbox came up, but it couldn't get the bot's files");
+  expect((first as Error).message).toBe("its sandbox at fleetd's computers came up, but it couldn't get the bot's files");
   expect((first as Error).message).not.toContain(home);
   expect(notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(first as Error).message} (cwd ${cwd})`, 1)).toBe(
-    "The lead couldn't start: its boat.dev sandbox came up, but it couldn't get the bot's files. It tries again by itself in about 10 minutes, and your message is kept for it.",
+    "The lead couldn't start: its sandbox at fleetd's computers came up, but it couldn't get the bot's files. It tries again by itself in about 10 minutes, and your message is kept for it.",
   );
   // The box it made went, and so did its record; the provider is still offered, with no trouble on its row.
   expect(s.boxes.size).toBe(0);
@@ -445,7 +445,7 @@ test("one bot's own failure (its files didn't go in) fails its start alone: the 
 
 test("a provider's own refusal sets it aside, and the next start there is refused without another box", async () => {
   const { s, home, cwd, env, boxes } = await setup();
-  // boat.dev doesn't answer creates (its API is down): its own failure, not a bot's.
+  // fleetd's computers doesn't answer creates (its API is down): its own failure, not a bot's.
   s.fail({ path: /^POST \/api\/v1\/sandboxes$/, status: 503, body: { ok: false, code: "unavailable", message: "Service unavailable" }, times: 10 });
   const start = (id: string) =>
     hostedPlace("boat", id, join(home, "hosts", id)).start({ fleetd: [], dir: join(home, "hosts", id), sessionId: id, program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } });

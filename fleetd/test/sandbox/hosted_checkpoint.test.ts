@@ -1,4 +1,4 @@
-// A hosted box hands its work back after every turn (src/node/place/hosted.ts `checkpoint`), against boat.dev's stand-in
+// A hosted box hands its work back after every turn (src/node/place/hosted.ts `checkpoint`), against fleetd's computers' stand-in
 // server with its box running here. Unlike hosted_place.test.ts's box, this one keeps its own copy of the worktree,
 // the repo and HOME (under a root of its own, as a real box has them on its own disk), so a box that dies really
 // loses what only it held:
@@ -186,7 +186,7 @@ test("a box that dies mid-task leaves the commit and transcript of its last fini
   expect(s.boxes.size).toBe(0);
   expect(hasBox("s-lost")).toBe(false);
   const why = boxEnd("s-lost")!;
-  expect(why).toBe(`its sandbox stopped (boat.dev), so its work since ${since.slice(11, 16)} UTC was lost; it goes on from its work as of then`);
+  expect(why).toBe(`its sandbox at fleetd's computers stopped, so its work since ${since.slice(11, 16)} UTC was lost; it goes on from its work as of then`);
   expect(boxEnd("s-lost")).toBeUndefined();
   // That is the run's failure, as the task's recovery line reads it.
   expect(causeMessage({ kind: "exited", exit: { code: null, signal: null, stderr_tail: why, why } })).toBe(why);
@@ -194,7 +194,7 @@ test("a box that dies mid-task leaves the commit and transcript of its last fini
 
 test("a keep-alive that fails is reported, and the session ends with its work brought back before the box's time runs out", async () => {
   const reports: { provider: string; error?: string }[] = [];
-  // boat.dev refuses the key when the box's life is extended, a few seconds after it started (its first turn done by
+  // fleetd's computers refuses the key when the box's life is extended, a few seconds after it started (its first turn done by
   // then); and the box has less left than a session's end needs.
   const { boxes, s, cwd, root, dir } = await started("s-kept", (s) => {
     s.fail({ path: /^PATCH \/api\/v1\/sandboxes\//, status: 401, body: { code: 401, message: "authorization header is missing or invalid" }, times: 100 });
@@ -209,7 +209,7 @@ test("a keep-alive that fails is reported, and the session ends with its work br
   expect(reports[0]!.error).toContain("refused the key");
   // Its work came back, and it hears why in plain words.
   expect(log(cwd)).toBe("turn one\none");
-  expect(boxEnd("s-kept")).toBe("its sandbox at boat.dev couldn't be kept running (boat.dev refused the team's key), so it was ended with its work saved before its time ran out");
+  expect(boxEnd("s-kept")).toBe("its sandbox at fleetd's computers couldn't be kept running (fleetd's computers refused the team's key), so it was ended with its work saved before its time ran out");
 }, 90_000);
 
 test("disconnecting the key with a box live ends its session with its work brought back, then drops the key", async () => {
@@ -218,7 +218,7 @@ test("disconnecting the key with a box live ends its session with its work broug
   const box = hostedBox("s-key")!;
   expect((await box.run({ argv: ["sh", "-c", "echo late > late.txt"], cwd, env, timeoutSec: 30 })).exitCode).toBe(0);
   expect(existsSync(join(root + cwd, "late.txt"))).toBe(true);
-  // The hub sends the limits with no boat.dev key: the node answers at once and keeps the key until its box is gone.
+  // The hub sends the limits with no fleetd's computers key: the node answers at once and keeps the key until its box is gone.
   expect(sandboxes.setLimits({ id: "a1", action: "sandbox_limits", limits: [], keys: {} } as never)).toMatchObject({ ok: true });
   expect(boxes.connected()).toEqual(["boat"]);
   await until("the key to go", () => boxes.connected().length === 0);
@@ -226,7 +226,7 @@ test("disconnecting the key with a box live ends its session with its work broug
   expect(s.boxes.size).toBe(0);
   expect(log(cwd)).toBe("turn one\none");
   expect(readFileSync(join(cwd, "late.txt"), "utf8")).toBe("late\n");
-  expect(boxEnd("s-key")).toBe("the team's boat.dev key was disconnected, so its sandbox was ended with its work saved");
+  expect(boxEnd("s-key")).toBe("the team's key for fleetd's computers was disconnected, so its sandbox was ended with its work saved");
 }, 90_000);
 
 /** Something else holds the machine's index of `cwd`: git can't set its worktree, so a bring-back fails. */

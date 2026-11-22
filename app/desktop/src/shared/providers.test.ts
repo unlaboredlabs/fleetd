@@ -6,8 +6,8 @@ describe("the providers, as one model", () => {
   it("says what each runs, so each group lists the ones that serve it", () => {
     const agents = PROVIDERS.filter((p) => serves(p, ["agents"])).map((p) => p.name);
     const screens = PROVIDERS.filter((p) => serves(p, SCREEN_KINDS)).map((p) => p.name);
-    expect(agents).toEqual(["boat.dev"]);
-    expect(screens).toEqual(["boat.dev"]);
+    expect(agents).toEqual(["fleetd's computers"]);
+    expect(screens).toEqual(["fleetd's computers"]);
     // One that does both is in each.
     const both = { id: "x", name: "X", can: ["agents", "mac"] as const };
     expect(serves(both, ["agents"]) && serves(both, SCREEN_KINDS)).toBe(true);
@@ -50,17 +50,17 @@ describe("the Linux machine", () => {
   it("is a pick with a machine and a provider: machines, machines first, or the provider only", () => {
     expect(linuxChoices([p("boat", true)], true)).toEqual([
       { value: "ours_only", label: "Your machines" },
-      { value: "ours_first", label: "Your machines first, then boat.dev" },
-      { value: "boat", label: "boat.dev only" },
+      { value: "ours_first", label: "Your machines first, then fleetd's computers" },
+      { value: "boat", label: "fleetd's computers only" },
     ]);
   });
 
   it("is a plain value with nothing to choose: machines alone, one provider alone, or none yet", () => {
     expect(linuxChoices([p("boat", false)], true)).toEqual([{ value: "ours_only", label: "Your machines" }]);
-    expect(linuxChoices([p("boat", true)], false)).toEqual([{ value: "ours_first", label: "boat.dev" }]);
+    expect(linuxChoices([p("boat", true)], false)).toEqual([{ value: "ours_first", label: "fleetd's computers" }]);
     expect(linuxChoices([p("boat", false)], false)).toEqual([]);
     expect(linuxValue([p("boat", false)], false)).toBe("None yet");
-    expect(linuxValue([p("boat", true)], false)).toBe("boat.dev");
+    expect(linuxValue([p("boat", true)], false)).toBe("fleetd's computers");
     expect(linuxValue([], true)).toBe("Your machines");
   });
 
@@ -68,11 +68,11 @@ describe("the Linux machine", () => {
     // boat.dev only, then disconnected: still shown, beside what can be picked now.
     expect(linuxChoices([p("boat", false)], true, "boat")).toEqual([
       { value: "ours_only", label: "Your machines" },
-      { value: "boat", label: "boat.dev only" },
+      { value: "boat", label: "fleetd's computers only" },
     ]);
     // Your machines only, and the last machine went.
     expect(linuxChoices([p("boat", true)], false, "ours_only")).toEqual([
-      { value: "boat", label: "boat.dev only" },
+      { value: "boat", label: "fleetd's computers only" },
       { value: "ours_only", label: "Your machines" },
     ]);
   });

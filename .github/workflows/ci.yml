@@ -148,7 +148,8 @@ jobs:
     # of the installer), nothing from site/.stale-terms, and only `fleetd` commands that `fleetd help` lists, on the
     # landing page and in the docs' sources; every vercel.json rewrite lands on a file (under cleanUrls) and `/` is the
     # landing page for a browser and install.sh for curl; every link on the site and its built docs resolves; no tracked
-    # file names a maintainer's own machine, login or home directory; and the landing page fits every width.
+    # file names a maintainer's own machine, login or home directory; nothing a person reads names the supplier of
+    # fleetd's computers (.github/supplier-check.mjs); and the landing page fits every width.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -177,6 +178,8 @@ jobs:
       - run: node .github/site-check.mjs "$RUNNER_TEMP/fleetd-help.txt"
       - name: No personal identifiers
         run: node .github/personal-check.mjs
+      - name: No supplier name where a person reads it
+        run: node .github/supplier-check.mjs
       - name: Internal links and anchors
         run: node .github/docs-links.mjs
       - name: Landing page fits every width

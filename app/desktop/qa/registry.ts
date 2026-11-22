@@ -4231,7 +4231,7 @@ export const screens: readonly Screen[] = [
     variant: "places-connect",
     open: async (page) => {
       await page.locator('[data-sandbox="boat"]').getByRole("button", { name: "Connect" }).click();
-      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
+      await page.getByRole("textbox", { name: "fleetd's computers API key" }).waitFor();
     },
   },
   // W722, D653: Tailscale's row in Connections: Connect; waiting for the sign-in at Tailscale's page; connected with
@@ -4282,9 +4282,9 @@ export const screens: readonly Screen[] = [
       await where.scrollIntoViewIfNeeded();
       await expect(where.locator("[data-where-kind]")).toHaveCount(2);
       const linux = where.locator("[data-where-kind='linux']");
-      await expect(linux.getByRole("combobox", { name: "Where agents and their Linux screens run" })).toContainText("Your machines first, then boat.dev");
+      await expect(linux.getByRole("combobox", { name: "Where agents and their Linux screens run" })).toContainText("Your machines first, then fleetd's computers");
       await linux.getByRole("combobox").click();
-      await expect(page.getByRole("option", { name: "boat.dev only" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "fleetd's computers only" })).toBeVisible();
     },
   },
   // W743: boat.dev's row says its real state with the one button that fixes it: Starting… while the hub's runner comes
@@ -4319,7 +4319,7 @@ export const screens: readonly Screen[] = [
     variant: "sandboxes-connect",
     open: async (page) => {
       await page.locator('[data-sandbox="boat"]').getByRole("button", { name: "Connect" }).click();
-      await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
+      await page.getByRole("textbox", { name: "fleetd's computers API key" }).waitFor();
     },
   },
   // W743: a link to the hosted sandboxes' old machine page lands on Machines at boat.dev's row, never a machine page.
@@ -4895,11 +4895,11 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
       const pick = row.getByRole("combobox", { name: "Runs on" });
-      await expect(pick).toContainText("boat.dev · 4 vCPU / 8 GB");
+      await expect(pick).toContainText("fleetd's computers · 4 vCPU / 8 GB");
       await row.scrollIntoViewIfNeeded();
       await pick.click();
-      await expect(page.getByRole("option", { name: "boat.dev · 16 vCPU / 32 GB" })).toBeVisible();
-      await expect(page.getByRole("option", { name: "boat.dev · 2 vCPU / 4 GB" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "fleetd's computers · 16 vCPU / 32 GB" })).toBeVisible();
+      await expect(page.getByRole("option", { name: "fleetd's computers · 2 vCPU / 4 GB" })).toBeVisible();
     },
   },
   // ...its pick's provider disconnected: the pick stays, and the row says its agents wait and why.
@@ -4910,8 +4910,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["computer-runs-on-gone"],
     open: async (page) => {
       const row = page.getByRole("region", { name: "Computer", exact: true }).getByRole("region", { name: "Runs on" });
-      await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("boat.dev · 8 vCPU / 16 GB");
-      await expect(row).toContainText("Its agents wait: boat.dev isn't connected");
+      await expect(row.getByRole("combobox", { name: "Runs on" })).toContainText("fleetd's computers · 8 vCPU / 16 GB");
+      await expect(row).toContainText("Its agents wait: fleetd's computers aren't connected");
       await row.scrollIntoViewIfNeeded();
     },
   },

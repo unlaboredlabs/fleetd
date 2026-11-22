@@ -147,14 +147,15 @@ for (const id of ["boat"] as const) {
       expect(s.calls.some((c) => c.path === "/api/v1/saved-snapshots" && c.body.name === "fleetd-abc")).toBe(true);
       // The build's box goes once the snapshot is saved.
       expect(s.boxes.size).toBe(0);
-      expect(logs[0]).toContain("boat's own Ubuntu 24.04");
+      expect(logs[0]).toContain("their own Ubuntu 24.04");
     });
 
     test("a provider that can't be reached says so", async () => {
       const p = provider(id, { key: KEY }, { urls: { api: "http://127.0.0.1:1" } });
       const e = await p.list().catch((e) => e);
       expect(e.reason).toBe("unreachable");
-      expect(e.message).toContain("127.0.0.1:1");
+      expect(e.message).toBe("couldn't reach fleetd's computers");
+      expect(e.said).toContain("ECONNREFUSED");
     });
 
     test("a bad idempotency key is refused before any call", async () => {
@@ -181,7 +182,7 @@ describe("boat.dev's waits end", () => {
     const e = await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
     expect(e).toBeInstanceOf(ProviderError);
     expect(e.reason).toBe("unreachable");
-    expect(e.message).toBe(`a step of boat.dev's sandbox build didn't finish within ${STEP_MS / 60_000} minutes`);
+    expect(e.message).toBe(`a step of the sandbox build at fleetd's computers didn't finish within ${STEP_MS / 60_000} minutes`);
     // About a poll per minute of the step's deadline, not forever.
     const polls = s.calls.filter((c) => /\/commands\/\d+$/.test(c.path)).length;
     expect(polls).toBeLessThanOrEqual(STEP_MS / 60_000 + 1);
@@ -193,7 +194,7 @@ describe("boat.dev's waits end", () => {
     const s = boatStandIn();
     running.push(s);
     s.fail({ path: /^GET \/api\/v1\/saved-snapshots\/[^/]+$/, status: 200, body: { ok: true, snapshot: { name: "fleetd-abc", status: "saving" } }, times: 1_000 });
-    const words = `boat.dev didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`;
+    const words = `fleetd's computers didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`;
     const built = await clocked(s).build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
     expect(built.reason).toBe("unreachable");
     expect(built.message).toBe(words);
@@ -286,6 +287,27 @@ describe("refusals in plain words", () => {
     });
   }
 
+  // The supplier's own words go to the log (`said`), never into a message a person may read: not its name, its
+  // addresses or its raw text, in brackets or out, whatever the status and whether its code is known or not.
+  const supplier: [number, unknown][] = [
+    [402, { ok: false, code: "billing_required", message: "Pay at https://boat.dev/billing (boat.dev org acme-7)" }],
+    [429, { ok: false, code: "limit_reached", message: "boat.dev: acme-7 has 100 at once, see https://docs.boat.dev/limits" }],
+    [401, { ok: false, code: "unauthorized", message: "boat.dev key revoked for acme-7" }],
+    [409, { ok: false, code: "some_new_code", message: "boat's scheduler says acme-7 (https://boat.dev/x)" }],
+    [503, { ok: false, message: "boat.dev is down, see status.boat.dev for acme-7" }],
+  ];
+  for (const [status, body] of supplier) {
+    test(`no supplier text reaches a person: ${status}`, async () => {
+      const { s, p } = make("boat");
+      s.fail({ path: /POST \/(api\/v1\/)?(v2\/)?sandbox(es)?$/, status, body });
+      const e = await create(p).catch((e) => e);
+      expect(e).toBeInstanceOf(ProviderError);
+      expect(e.message).not.toMatch(/boat|https?:|acme-7|scheduler|\(\)/iu);
+      expect(e.message).toContain("fleetd's computers");
+      expect(e.said).toContain("acme-7");
+    });
+  }
+
   test("a key a provider echoes back is masked", async () => {
     const { s, p } = make("boat");
     s.fail({ path: /GET \/api\/v1\/sandboxes/, status: 401, body: { ok: false, code: "unauthorized", message: `key ${KEY} is revoked` } });
@@ -315,7 +337,8 @@ describe("each provider's own settings", () => {
     const { s, p } = make("boat");
     s.fail({ path: /GET \/api\/v1\/saved-snapshots\//, status: 500, body: { ok: false, code: "http_500", message: "save broke" } });
     const e = await p.build(DOCKERFILE, { name: "fleetd-abc" }).catch((e) => e);
-    expect(e.message).toContain("save broke");
+    expect(e.message).not.toContain("save broke");
+    expect(e.said).toContain("save broke");
     expect(s.boxes.size).toBe(0);
     expect(await p.build(DOCKERFILE, { name: "fleetd-abc" })).toBe("fleetd-abc");
     const keys = s.calls.filter((c) => c.path === "/api/v1/sandboxes" && c.method === "POST").map((c) => c.headers.get("idempotency-key"));
@@ -379,9 +402,9 @@ describe("exact sizes, never rounded", () => {
     // 2 vCPU / 6 GB once became "default" (4 vCPU / 8 GB): now no box is made at all.
     const { s, p } = make("boat");
     const e = await p.create({ template: "fleetd-abc", key: "k-2", labels: {}, lifetimeMs: 60_000, size: { cpu: 2, memGb: 6 } }).catch((e) => e);
-    expect(e.message).toBe("boat.dev comes in no 2 vCPU / 6 GB: its sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB");
+    expect(e.message).toBe("fleetd's computers come in no 2 vCPU / 6 GB: their sizes are 2 vCPU / 4 GB, 4 vCPU / 8 GB, 8 vCPU / 16 GB, 16 vCPU / 32 GB");
     expect(s.calls.some((c) => c.path === "/api/v1/sandboxes" && c.method === "POST")).toBe(false);
-    expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("comes in no 32 vCPU / 64 GB");
+    expect(() => typeFor({ cpu: 32, memGb: 64 })).toThrow("come in no 32 vCPU / 64 GB");
   });
 
 });

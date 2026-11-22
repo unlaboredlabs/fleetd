@@ -287,7 +287,7 @@ export type Activity = {
   of: number;
   reason: string;
 } | {
-  /** A hosted agent's computer starting: "Starting its computer at boat.dev", "Cloning the repo", "Running setup". */
+  /** A hosted agent's computer starting: "Starting its computer", "Cloning the repo", "Running setup". */
   kind: "starting";
   /** Its start's step; absent from older hubs and starts that don't say it. */
   step?: StartStep;
@@ -356,7 +356,7 @@ export type AgentLane = {
   /** What it runs on: a task's own profile; a lead the one leads start on. Absent from older hubs. */
   profile?: ProfileName;
   role: AgentRole;
-  /** The hosted sandbox provider it runs in ("boat.dev"); absent on its machine's own slots. */
+  /** The hosted sandbox provider it runs in ("fleetd's computers"); absent on its machine's own slots. */
   sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -435,7 +435,7 @@ export type AgentRow = {
   projectRef: ProjectRef;
   projectTitle: string;
   role: AgentRole;
-  /** The hosted sandbox provider it runs in ("boat.dev"); absent on its machine's own slots. */
+  /** The hosted sandbox provider it runs in ("fleetd's computers"); absent on its machine's own slots. */
   sandbox?: string;
   startedAt?: Timestamp;
   status: LaneStatus;
@@ -4232,7 +4232,7 @@ export type Machine = {
   name: string;
   nodeVersion: string;
   /**
-   * The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (boat.dev), none on
+   * The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (fleetd's computers), none on
    * the hub's machine. It is no computer of the team's. Absent on every other machine.
    */
   runner?: boolean;
@@ -7603,7 +7603,7 @@ export type ComputerChoice = {
   /** The command that makes it usable, run on its machine; only with `unavailable`. */
   fix?: string;
   kind: ComputerKind;
-  /** As a person reads it: "boat.dev · 4 vCPU / 8 GB". */
+  /** As a person reads it: "fleetd's computers · 4 vCPU / 8 GB". */
   label: string;
   memGb: number;
   /** Why it can't be used now; absent while it can. */
@@ -7641,7 +7641,7 @@ export type ProviderTroubleKind = KnownProviderTroubleKind | (string & {});
 export type ProviderTrouble = {
   /** What to do about it, in plain words. */
   fix?: string;
-  /** What is wrong: "boat.dev refused: billing isn't set up on the account". */
+  /** What is wrong: "fleetd's computers refused: billing isn't set up on the account". */
   message: string;
   reason: SandboxCheckReason;
   /** When its agents are tried there again by themselves; only for `start`. */

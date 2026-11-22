@@ -15,7 +15,7 @@ import type { ClientOptions, Provider, ProviderAuth, ProviderId } from "./common
 
 export * from "./common.ts";
 export type { Duplex } from "./stream.ts";
-export { ProviderError, type Reason } from "./http.ts";
+export { logWords, ProviderError, type Reason } from "./http.ts";
 export { bakedName, CLAUDE_PATH, FLEETD_PATH, hosted, hostedCheck, hostedDockerfile, templateCheck, templateName, type HostedPins } from "./recipe.ts";
 export { TESTED as CLAUDE_TESTED } from "../../node/runner/claude_pins.ts";
 

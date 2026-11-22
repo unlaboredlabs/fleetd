@@ -89,10 +89,10 @@ export function imageLine(image: ComputerImage | undefined, commands: number, no
 
 // Open: a newer hub may keep it somewhere this build has no words for.
 const WHERE: Partial<Record<string, string>> = {
-  boat: "a boat.dev snapshot",
+  boat: `a snapshot at ${FLEETD}`,
 };
 
-/** Where the image is kept, for the row's hover: "a boat.dev snapshot". */
+/** Where the image is kept, for the row's hover: "a snapshot at fleetd's computers". */
 export const whereOf = (image: ComputerImage | undefined): string | null => (image?.where === undefined ? null : (WHERE[image.where] ?? null));
 
 /** The pick's value in the Runs on select: AUTO for none, else `<kind>:<cpu>:<memGb>`. */

@@ -34,7 +34,6 @@ export type Dial = {
 export function dial(d: Dial): Promise<Duplex> {
   const WS = d.WebSocket ?? WebSocket;
   const url = d.url.replace(/^http/, "ws");
-  const shown = d.secrets.reduce((u, s) => scrub(u, s, 400), url.replace(/([?&]_token=)[^&]*/, "$1…"));
   return new Promise((resolve, reject) => {
     // Bun's client takes headers; the browser's constructor doesn't, which never runs here.
     const ws = new (WS as any)(url, { headers: d.headers }) as WebSocket;
@@ -47,14 +46,15 @@ export function dial(d: Dial): Promise<Duplex> {
     const abort = () => fail("cancelled");
     d.signal?.addEventListener("abort", abort, { once: true });
 
-    function fail(why: string) {
+    /** `why` in fleetd's own words; `said`, the far end's, for the log only. */
+    function fail(why: string, said?: string) {
       if (open) return;
       clearTimeout(timer);
       d.signal?.removeEventListener("abort", abort);
       try {
         ws.close();
       } catch {}
-      reject(new ProviderError("unreachable", `couldn't open ${d.name}'s link to the box (${shown}): ${why}`));
+      reject(new ProviderError("unreachable", `couldn't open the link to the box at ${d.name}: ${why}`, undefined, undefined, said));
     }
 
     ws.onopen = () => {
@@ -95,7 +95,7 @@ export function dial(d: Dial): Promise<Duplex> {
     };
     ws.onerror = () => fail("the provider refused it or the box isn't listening");
     ws.onclose = (e: CloseEvent) => {
-      if (!open) return fail(e.reason ? scrub(e.reason, d.secrets[0] ?? "", 160) : `closed with code ${e.code}`);
+      if (!open) return fail(`it closed with code ${e.code}`, e.reason ? scrub(e.reason, d.secrets[0] ?? "", 160) : undefined);
       try {
         pull?.close();
       } catch {}

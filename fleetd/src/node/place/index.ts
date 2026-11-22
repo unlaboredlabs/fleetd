@@ -13,6 +13,7 @@ import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
 import type { Box } from "../sandbox/box.ts";
 import { processPlace } from "./process.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { NAMES } from "../../shared/sandbox.ts";
 
 export type PlaceKind = "process" | "hosted";
 
@@ -67,7 +68,7 @@ export const runnerProvider = (): ProviderId | undefined => runner?.();
 
 /** What the hub's runner says when no provider of the team's takes its agents. */
 export const runnerNoProvider = (): string =>
-  `no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects boat.dev in ${settingsPath()} › Machines`;
+  `no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects ${NAMES.boat} in ${settingsPath()} › Machines`;
 
 /** The place the runner gives a session no provider takes: it never starts, and says why. */
 const noPlace: Place = {

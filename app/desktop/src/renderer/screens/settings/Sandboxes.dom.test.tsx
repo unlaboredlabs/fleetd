@@ -138,7 +138,7 @@ const fromMenu = async (p: string, label: string) => {
   await click(item);
 };
 const typeInto = async (label: string, text: string) => {
-  const input = host.querySelector<HTMLInputElement>(`input[aria-label='${label}']`);
+  const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
   if (input === null) throw new Error(`no field ${label}`);
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, text);
@@ -153,7 +153,7 @@ it("lists boat.dev with what it runs and Connect, and no stale line about agents
   await render();
   const rows = [...host.querySelectorAll<HTMLElement>("[data-sandbox]")].map((r) => r.getAttribute("data-sandbox"));
   expect(rows).toEqual(["boat"]);
-  expect(row("boat")?.textContent).toContain("boat.devAgents · Browser · Linux desktop · Android");
+  expect(row("boat")?.textContent).toContain("fleetd's computersAgents · Browser · Linux desktop · Android");
   expect(row("boat")?.querySelector("[role='alert'], [role='status']:not(:empty)")).toBeNull();
   expect(row("boat")?.querySelector("[data-mark='off']")).not.toBeNull();
   expect(button("Connect", within(row("boat")))).toBeDefined();
@@ -163,10 +163,10 @@ it("lists boat.dev with what it runs and Connect, and no stale line about agents
 it("connects boat.dev through a sealed field whose key goes to main only, then says it is ready", async () => {
   await render();
   await click(button("Connect", within(row("boat"))));
-  expect(host.querySelector("input[aria-label='boat.dev API key']")?.hasAttribute("data-secret")).toBe(true);
+  expect(host.querySelector("input[aria-label=\"fleetd's computers API key\"]")?.hasAttribute("data-secret")).toBe(true);
   expect(host.querySelector("input[aria-label*='domain']")).toBeNull();
   expect(button("Connect", within(row("boat")))?.disabled).toBe(true);
-  await typeInto("boat.dev API key", `  ${KEY}\n`);
+  await typeInto("fleetd's computers API key", `  ${KEY}\n`);
   await click(button("Connect", within(row("boat"))));
   expect(sealed).toEqual([{ boxPubKey: BOX, provider: "boat", key: KEY }]);
   expect(JSON.stringify(calls)).not.toContain(KEY);
@@ -179,13 +179,13 @@ it("connects boat.dev through a sealed field whose key goes to main only, then s
 
 it("says what a failed test found with its fix, and disconnects", async () => {
   state = boatOn;
-  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "boat.dev refused the key.", fix: "make a new key in boat.dev's dashboard and connect it again" } });
+  testAnswer = withRow(off, { provider: "boat", connected: true, limit: 5, check: { ok: false, at: AT, reason: "invalid_key", message: "fleetd's computers refused the key.", fix: "try again later" } });
   await render();
   expect(row("boat")?.querySelector("[role='alert']")).toBeNull();
   await fromMenu("boat", "Test");
   expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
   // No machine's name and no status code; Test again on the line itself.
-  expect(words()).toBe("boat.dev refused the key. Make a new key in boat.dev's dashboard and connect it again.");
+  expect(words()).toBe("fleetd's computers refused the key. Try again later.");
   expect(row("boat")?.querySelector("[data-mark='failed']")).not.toBeNull();
   calls = [];
   await click(button("Test again", within(row("boat"))));
@@ -208,8 +208,8 @@ const runner = (status: Machine["status"], more: Partial<Machine> = {}): Machine
 const billing: ProviderTrouble = {
   what: "start",
   reason: "billing",
-  message: "boat.dev refused: billing isn't set up on the account",
-  fix: "set up billing in boat.dev's dashboard",
+  message: "fleetd's computers refused: billing isn't set up on the account",
+  fix: "try again later",
   until: "2026-11-17T10:10:00.000Z",
 };
 const line = () => row("boat");
@@ -251,7 +251,7 @@ it("a refusal turns it red with the reason and its fix, and Try again asks again
   snap.machines = [runner("online")];
   await render();
   expect(row("boat")?.querySelector("[data-mark='failed']")).not.toBeNull();
-  expect(words()).toBe("Couldn't start: boat.dev refused: billing isn't set up on the account. Set up billing in boat.dev's dashboard.");
+  expect(words()).toBe("Couldn't start: fleetd's computers refused: billing isn't set up on the account. Try again later.");
   await click(button("Try again", line() ?? undefined));
   expect(calls.find((c) => c.tool === "sandbox_test")?.input).toEqual({ provider: "boat" });
   expect(row("boat")?.querySelector("[role='alert']")).toBeNull();
@@ -270,9 +270,9 @@ it("What runs where is two rows: the Linux machine a pick once boat.dev is conne
   state = { ...withRow(off, { provider: "boat", connected: true, limit: 20 }), linux: "boat" };
   await render();
   expect(row("boat")?.querySelector("button[role='combobox']")?.textContent).toContain("20 at once");
-  expect(where("linux")?.querySelector("button[role='combobox']")?.textContent).toContain("boat.dev only");
+  expect(where("linux")?.querySelector("button[role='combobox']")?.textContent).toContain("fleetd's computers only");
   // No explaining line under it at rest.
-  expect((where("linux")?.textContent ?? "").replace("Linux machine", "").replace("boat.dev only", "").trim()).toBe("");
+  expect((where("linux")?.textContent ?? "").replace("Linux machine", "").replace("fleetd's computers only", "").trim()).toBe("");
 });
 
 it("shows no sandbox provider on a hub too old for them, and the Linux machine as your machines", async () => {

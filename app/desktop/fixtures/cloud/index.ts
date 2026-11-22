@@ -192,7 +192,7 @@ const fleetd = (base: Fixture, name: string, note: string, own: boolean, older =
       ? { ...out, machines: own ? out["machines"].filter(isObject).filter((m) => m["machineId"] === "laptop").map((m) => ({ ...m, name: "laptop", roles: ["agents", "sessions"] })) : [] }
       : out,
   );
-  if (older) f.fail("sandbox_get", undefined, { code: "not_found", message: "fleetd provides the hosted computers here: no team brings a boat.dev key." });
+  if (older) f.fail("sandbox_get", undefined, { code: "not_found", message: "fleetd provides the hosted computers here: no team brings a key of its own." });
   else f.answer("sandbox_get", undefined, { boxPubKey: "", placing: true, provided: true, providers: [{ provider: "boat", connected: true, limit: 10, running: 2 }], linux: own ? "ours_first" : "boat" });
   return f;
 };
@@ -218,7 +218,7 @@ export default defineGroup({
     team(base("empty"), "connect", "Signed in, the team has no machine: Connect a computer, and a terminal opens.", { terminal: "a terminal" }),
     team(base("empty"), "connect-no-terminal", "Connect a computer where no terminal opens: the line is the way.", {}),
     (() => {
-      // W743: boat.dev connected, its sandboxes stuck coming up: past the wait (3 s in the QA build), why, the fix and
+      // W743: fleetd's computers connected, its sandboxes stuck coming up: past the wait (3 s in the QA build), why, the fix and
       // Try again.
       const f = team(base("empty"), "hosted-stuck", "Hosted sandboxes connected that never get ready: why, the fix and Try again.", { terminal: "a terminal" });
       f.answer("sandbox_get", undefined, {

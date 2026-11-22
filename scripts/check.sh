@@ -12,8 +12,9 @@
 #   migrations check (the worktree, untracked files too, merged onto origin/main, fetched fresh, as CI checks its merge
 #   commit), every migration on the oldest SQLite fleetd supports, the type check and the tests. CI's `fleetd` job also builds the binary and runs the black-box tests and
 #   the lab scenarios on it.
-# - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
-#   width. The identifier check runs on every call; it reads every tracked file, and the untracked ones not ignored.
+# - site: a build of docs/site, the site's pages and links, no personal identifiers, no supplier name of fleetd's
+#   computers where a person reads it, and the landing page fits every width. The identifier and supplier checks run on
+#   every call; they read every tracked file, and the untracked ones not ignored.
 # - desktop: app/desktop's case clashes, typecheck, lint, unit tests and the web app's bundle.
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
@@ -213,6 +214,7 @@ if $site_wanted; then
   step site node .github/site-layout-check.mjs
 fi
 step site node .github/personal-check.mjs --untracked
+step site node .github/supplier-check.mjs --untracked
 step reverts scripts/reverts.sh origin/main
 
 if wanted desktop app/desktop .github/workflows/ci.yml; then

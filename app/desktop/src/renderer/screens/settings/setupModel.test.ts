@@ -57,7 +57,7 @@ describe("the computer image's line", () => {
   });
 
   it("names where it is kept", () => {
-    expect(whereOf({ state: "ready", where: "boat" })).toBe("a boat.dev snapshot");
+    expect(whereOf({ state: "ready", where: "boat" })).toBe("a snapshot at fleetd's computers");
     expect(whereOf({ state: "ready" })).toBeNull();
   });
 });
@@ -65,7 +65,7 @@ describe("the computer image's line", () => {
 describe("Runs on", () => {
   it("says it is where the lead's agents run, and where the lead itself runs", () => {
     expect(runsOnHint("devbox", "devbox")).toBe("Where the agents the lead starts run. The lead itself runs on devbox.");
-    expect(runsOnHint("hosted", "Hosted sandboxes")).toBe("Where the agents the lead starts run. The lead itself runs in a boat.dev sandbox.");
+    expect(runsOnHint("hosted", "Hosted sandboxes")).toBe("Where the agents the lead starts run. The lead itself runs in a fleetd's computers sandbox.");
     expect(runsOnHint("hosted", "Hosted sandboxes", true)).toBe("Where the agents the lead starts run. The lead itself runs on fleetd's computers.");
   });
 
@@ -74,20 +74,20 @@ describe("Runs on", () => {
   });
 
   const choices = [
-    { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" },
-    { kind: "boat", cpu: 4, memGb: 8, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev's key failed its last test: refused" },
+    { kind: "boat", cpu: 2, memGb: 4, label: "fleetd's computers · 2 vCPU / 4 GB" },
+    { kind: "boat", cpu: 4, memGb: 8, label: "fleetd's computers · 4 vCPU / 8 GB", unavailable: "the key for fleetd's computers failed its last test: refused" },
   ];
 
   it("is Automatic, then each of the hub's choices in its order, provider and size together", () => {
     expect(pickOptions({ computers: choices })).toEqual([
       { value: AUTO, label: "Automatic" },
-      { value: "boat:2:4", label: "boat.dev · 2 vCPU / 4 GB", pick: { kind: "boat", cpu: 2, memGb: 4 } },
+      { value: "boat:2:4", label: "fleetd's computers · 2 vCPU / 4 GB", pick: { kind: "boat", cpu: 2, memGb: 4 } },
       {
         value: "boat:4:8",
-        label: "boat.dev · 4 vCPU / 8 GB",
-        why: "boat.dev's key failed its last test: refused",
+        label: "fleetd's computers · 4 vCPU / 8 GB",
+        why: "the key for fleetd's computers failed its last test: refused",
         pick: { kind: "boat", cpu: 4, memGb: 8 },
-        note: { why: "boat.dev's key failed its last test: refused" },
+        note: { why: "the key for fleetd's computers failed its last test: refused" },
       },
     ]);
     expect(pickValue(undefined)).toBe(AUTO);
@@ -95,15 +95,15 @@ describe("Runs on", () => {
   });
 
   it("says a reason the options side by side share once, under the last of them, with its fix", () => {
-    const why = "boat.dev's key failed its last test: refused";
-    const fix = "make a new key in boat.dev's dashboard";
-    const boat = (cpu: number, memGb: number) => ({ kind: "boat", cpu, memGb, label: `boat.dev · ${cpu} vCPU / ${memGb} GB`, unavailable: why, fix });
+    const why = "the key for fleetd's computers failed its last test: refused";
+    const fix = "try again later";
+    const boat = (cpu: number, memGb: number) => ({ kind: "boat", cpu, memGb, label: `fleetd's computers · ${cpu} vCPU / ${memGb} GB`, unavailable: why, fix });
     const options = pickOptions({ computers: [boat(2, 4), boat(4, 8), boat(8, 16)] });
     expect(options?.map((o) => [o.label, o.why !== undefined, o.note])).toEqual([
       ["Automatic", false, undefined],
-      ["boat.dev · 2 vCPU / 4 GB", true, undefined],
-      ["boat.dev · 4 vCPU / 8 GB", true, undefined],
-      ["boat.dev · 8 vCPU / 16 GB", true, { why, fix }],
+      ["fleetd's computers · 2 vCPU / 4 GB", true, undefined],
+      ["fleetd's computers · 4 vCPU / 8 GB", true, undefined],
+      ["fleetd's computers · 8 vCPU / 16 GB", true, { why, fix }],
     ]);
   });
 

@@ -64,7 +64,7 @@ export class Sandboxes {
       // A provider whose key goes ends its live sessions first, their work brought back, while the key still deletes
       // their boxes; it takes no new ones meanwhile, being out of the limits.
       const gone = (this.boxes?.connected() ?? []).filter((p) => !keys[p]);
-      const ending = gone.flatMap((p) => endHosted(p, `the team's ${NAMES[p]} key was disconnected, so its sandbox was ended with its work saved`));
+      const ending = gone.flatMap((p) => endHosted(p, `the team's key for ${NAMES[p]} was disconnected, so its sandbox was ended with its work saved`));
       if (ending.length === 0) this.boxes?.setKeys(keys);
       else void Promise.allSettled(ending).then(() => this.#sent === sent && this.boxes?.setKeys(keys));
     }

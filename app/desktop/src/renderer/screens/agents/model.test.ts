@@ -107,7 +107,7 @@ describe("an agent's state and where its work is", () => {
   it("says in a row's hover its role, an unusual profile and where its work is", () => {
     const pr = { changeId: "X1", number: 57, repo: "acme/shop", reviewsDone: 0, reviewsNeeded: 1, url: "https://github.com/acme/shop/pull/57", state: "ci" } as const;
     expect(agentDetail({ role: "reviewer", pr }, "reviewer")).toBe("reviewer · #57 in CI");
-    expect(agentDetail({ role: "implementer", sandbox: "boat.dev", branch: "fleetd/T1-receipt-dates" }, "writer")).toContain("writer · boat.dev · ");
+    expect(agentDetail({ role: "implementer", sandbox: "fleetd's computers", branch: "fleetd/T1-receipt-dates" }, "writer")).toContain("writer · fleetd's computers · ");
     expect(agentDetail({ role: "implementer", profile: "medium", branch: "fleetd/T1-receipt-dates" }, "writer")).toBe("writer · medium · receipt-dates");
     expect(agentDetail({ role: "reader" }, "reader")).toBe("reader");
   });
@@ -264,7 +264,7 @@ describe("the Now line", () => {
   const thinking = { words: "thinking", tone: "quiet", thinking: true } as const;
   const step = (status: "running" | "completed", summary: string) => ({ kind: "action", id: "s1", at: "2026-10-17T10:00:00.000Z", action: { at: "2026-10-17T10:00:00.000Z", kind: "other", status, summary, failed: false } }) as const;
   it("says where a start that keeps failing is, not thinking", () => {
-    const retrying = "Starting its computer: boat.dev refused the box. Trying again in 30 s, by itself.";
+    const retrying = "Starting its computer: fleetd's computers refused the box. Trying again in 30 s, by itself.";
     expect(nowLine(thinking, [step("running", retrying)])).toEqual({ words: retrying, tone: "quiet", thinking: false });
   });
   it("keeps thinking once that step is done, and the lane's own words over any step", () => {

@@ -15,6 +15,7 @@
     "app/desktop/src/shared/pairing.ts",
     "app/desktop/src/shared/accounts.ts",
     "app/desktop/src/shared/billing.ts",
+    "app/desktop/src/shared/providers.ts",
     "app/desktop/src/shared/artifactPage.ts",
     "app/desktop/src/shared/artifactLink.ts",
     "app/mobile/src/hub/pairLink.ts",

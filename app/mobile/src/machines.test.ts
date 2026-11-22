@@ -29,7 +29,7 @@ import {
 const at = "2026-11-17T09:00:00.000Z";
 const sb = (provider: string, connected: boolean, limit = connected ? 5 : 0) => ({ provider, connected, limit });
 const BOX = "box";
-const BILLING = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard" };
+const BILLING = { what: "start", reason: "billing", message: "fleetd's computers refused: billing isn't set up on the account", fix: "try again later" };
 
 describe("Settings › Machines", () => {
   it("lists the team's computers, never the hub's runner for hosted sandboxes", () => {
@@ -55,7 +55,7 @@ describe("its providers", () => {
   it("lists the sandbox providers, each named, with what it runs", () => {
     const list = providersOf({ boxPubKey: BOX, placing: true, providers: [sb("boat", true, 20)] });
     expect(list.map((p) => p.id)).toEqual(["boat"]);
-    expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
+    expect(["boat", "modal"].map(providerName)).toEqual(["fleetd's computers", "modal"]);
     expect(canWords(specOf("boat"))).toBe("Agents · Browser · Linux desktop · Android");
     // A hub without sandbox_get lists none.
     expect(providersOf(undefined)).toEqual([]);
@@ -92,15 +92,15 @@ describe("its providers", () => {
   it("puts a failed check with its fix on a provider's screen, else nothing", () => {
     expect(providerFooter({ id: "boat", connected: false })).toBeUndefined();
     expect(providerFooter({ id: "boat", connected: true, check: { ok: true, at } })).toBeUndefined();
-    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at, message: "boat.dev refused the key.", fix: "make a new key in boat.dev's dashboard and connect it again" } })).toEqual({
-      text: "boat.dev refused the key. Make a new key in boat.dev's dashboard and connect it again.",
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at, message: "fleetd's computers refused the key.", fix: "try again later" } })).toEqual({
+      text: "fleetd's computers refused the key. Try again later.",
       problem: true,
       action: "test",
     });
-    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "boat.dev didn't take the key.", problem: true, action: "test" });
+    expect(providerFooter({ id: "boat", connected: true, check: { ok: false, at } })).toEqual({ text: "fleetd's computers didn't take the key.", problem: true, action: "test" });
     // A refusal at boat.dev: why, its fix and Try again; no Claude account: Connect; starting or ready, nothing.
     expect(providerFooter({ id: "boat", connected: true, limit: 20, trouble: BILLING }, { status: "online" })).toEqual({
-      text: "Couldn't start: boat.dev refused: billing isn't set up on the account. Set up billing in boat.dev's dashboard.",
+      text: "Couldn't start: fleetd's computers refused: billing isn't set up on the account. Try again later.",
       problem: true,
       action: "retry",
     });
@@ -112,7 +112,7 @@ describe("its providers", () => {
 
 describe("what runs where", () => {
   it("is two rows: the Linux machine a pick once there is more than one place, the Mac machine a value", () => {
-    expect(linuxChoices([sb("boat", true)], true).map((c) => c.label)).toEqual(["Your machines", "Your machines first, then boat.dev", "boat.dev only"]);
+    expect(linuxChoices([sb("boat", true)], true).map((c) => c.label)).toEqual(["Your machines", "Your machines first, then fleetd's computers", "fleetd's computers only"]);
     expect(linuxChoices([sb("boat", false)], true)).toHaveLength(1);
     expect(linuxValue([sb("boat", false)], false)).toBe("None yet");
     expect([LINUX, MAC]).toEqual(["Linux machine", "Mac machine"]);

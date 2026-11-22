@@ -313,7 +313,7 @@ export default defineGroup({
     forBand(withLead(fromBase(base("typical"), 2)), "live-band-quiet", undefined, { kind: "writing" }),
     // W743: a lead's hosted computer starting for the first time, the line under its "working", and an agent's
     // cloning its repo into its own, on the agent in the panel.
-    starting(forBand(withLead(fromBase(base("typical"), 2)), "live-band-starting", undefined, { kind: "starting", text: "Starting its computer at boat.dev (first time: a few minutes)" })),
+    starting(forBand(withLead(fromBase(base("typical"), 2)), "live-band-starting", undefined, { kind: "starting", text: "Starting its computer (first time: a few minutes)" })),
     forBand(withLead(fromBase(base("typical"), 0, 1071)), "live-band-dms", undefined, { kind: "writing" }),
     forBand(withLead(fromBase(base("typical"), 20)), "live-band-crowded", LONG_RED, { kind: "read", path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }),
     forBand(withLead(fromBase(base("typical"), 20)), "live-band-long", LONG_RED, {
