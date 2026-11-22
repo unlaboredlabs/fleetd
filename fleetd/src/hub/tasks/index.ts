@@ -201,6 +201,14 @@ export class Tasks {
   /** Tasks whose `ask_lead` question no message has answered yet, with when they asked. Unlike `asking` it outlives the
    * run's end: a finished agent that waits on an answer is the one another agent's message may continue. */
   private readonly asked = new Map<TaskId, number>();
+  /** How long other agents' messages to an ended agent that still waits gather before one wake carries them all, and
+   * the least time between two such wakes of one agent: a chatty peer can't spin it. */
+  wakeBatchMs = 15_000;
+  wakeGapMs = 120_000;
+  /** Ended agents a message wake is due for. */
+  private readonly wakesDue = new Map<TaskId, ReturnType<typeof setTimeout>>();
+  /** When each agent's last message wake went. */
+  private readonly lastWake = new Map<TaskId, number>();
   /** Tasks continued in their thread whose new run the hub hasn't seen yet: that run's id and when it was sent. */
   private readonly continuing = new Map<TaskId, [string, number]>();
   /** Tasks a run's end ended whose claude the node is still stopping. */
@@ -259,6 +267,10 @@ export class Tasks {
     // Recoveries a restart cut short still go at their time, unless their machine's breaker holds them.
     this.restoreBreakers();
     for (const stored of this.tryDb(() => TaskRecords.queued(this.db)) ?? []) this.resumeAt(stored.task.recovery);
+    // Messages a restart cut the wake of still wake their agent, if it still waits.
+    for (const taskId of this.tryDb(() => this.db.query<{ id: string }, []>("SELECT DISTINCT task_id AS id FROM steers WHERE held = 1 AND stage = 'queued'").all()) ?? []) {
+      if (this.waitingOn(taskId.id) !== undefined) this.wakeHeld(taskId.id);
+    }
     const retry = async () => {
       while (!signal.aborted) {
         this.resumePrLookups(undefined);
@@ -1895,6 +1907,61 @@ export class Tasks {
       this.put({ task: stored.task, pendingMessage: stored.pendingMessage === undefined ? text : `${stored.pendingMessage}\n\n${text}` });
     } finally {
       if (!released) release();
+    }
+  }
+
+  /** What an ended task still waits on, which may wake it by itself: its wait_ci, or a Monitor its claude keeps
+   * armed. Undefined for one that isn't done, or waits on nothing. */
+  waitingOn(taskId: TaskId): string | undefined {
+    const task = this.tryDb(() => TaskRecords.get(this.db, taskId)?.task);
+    if (task?.state !== "done") return undefined;
+    const ci = openCiWaits(this.db).get(taskId);
+    if (ci?.length) return `wait_ci on ${ci.join(", ")}`;
+    const monitor = this.tryDb(() => TaskRecords.monitorWaits(this.db, task.projectRef, this.nowIso()).get(taskId));
+    if (!monitor) return undefined;
+    return monitor.watching.length > 0 ? `a Monitor (${monitor.watching.join(", ")})` : "a Monitor";
+  }
+
+  /** In how many ms a message wake for `taskId` would go, once one is due: what else is sent by then rides it. */
+  wakeInMs(taskId: TaskId): number {
+    const last = this.lastWake.get(taskId);
+    return Math.max(this.wakeBatchMs, last === undefined ? 0 : last + this.wakeGapMs - this.now());
+  }
+
+  /** Whether a message wake is due for `taskId`. */
+  wakeDue(taskId: TaskId): boolean {
+    return this.wakesDue.has(taskId);
+  }
+
+  /** Other agents' messages wait for an ended task that still waits (its wait_ci, a Monitor): one wake carries every
+   * one sent within `wakeBatchMs`, at most one per `wakeGapMs`. It continues the task in its own thread, as its lead
+   * does, and touches neither wait: its wait_ci stays open and its claude, with its Monitor, takes the turn. */
+  wakeHeld(taskId: TaskId): void {
+    if (this.wakesDue.has(taskId) || this.hub.shutdown.signal.aborted) return;
+    const timer = setTimeout(() => {
+      this.wakesDue.delete(taskId);
+      spawnInBackground("a message wake", this.wakeNow(taskId));
+    }, this.wakeInMs(taskId));
+    this.wakesDue.set(taskId, timer);
+    this.hub.shutdown.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+  }
+
+  private async wakeNow(taskId: TaskId): Promise<void> {
+    const release = await this.lockTask(taskId);
+    let handedOver = false;
+    try {
+      const stored = TaskRecords.get(this.db, taskId);
+      // Started meanwhile (its wait fired, its lead continued it), it took the messages with that run.
+      if (stored?.task.state !== "done" || stored.pendingMessage === undefined || this.closedOrder(stored.task)) return;
+      const held = this.db.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM steers WHERE task_id = ? AND held = 1 AND stage = 'queued'").get(taskId)?.n ?? 0;
+      if (held === 0) return;
+      this.lastWake.set(taskId, this.now());
+      handedOver = true;
+      await this.startNow(release, { task: { ...stored.task, attempt: stored.task.attempt + 1 }, pendingMessage: stored.pendingMessage }, false);
+    } catch (error) {
+      console.warn(`message wake failed (${taskId}):`, error);
+    } finally {
+      if (!handedOver) release();
     }
   }
 
