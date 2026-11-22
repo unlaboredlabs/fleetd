@@ -46,6 +46,17 @@ describe("the cache", () => {
     expect(withCached(initial(hub), kept)).toMatchObject({ meAvatar: "0123456789abcdef", meRole: "owner" });
   });
 
+  it("keeps the tools the hub leaves out, so a fleetd cloud team paired with a code opens as a team", () => {
+    const leftOut = ["hub_update", "hub_restart"];
+    const kept = parseCached(JSON.parse(JSON.stringify(cachedOf(HUB, { ...initial(hub), projects: {}, leftOut }))) as unknown, HUB);
+    if (kept === null) throw new Error("not read back");
+    expect(withCached(initial(hub), kept).leftOut).toEqual(leftOut);
+    // A cache from before it kept them, or with odd ones: the hub's next answer says.
+    const { leftOut: _gone, ...older } = kept;
+    expect(withCached(initial(hub), older).leftOut).toEqual([]);
+    expect(parseCached({ ...kept, leftOut: ["hub_restart", 3] }, HUB)?.leftOut).toEqual(["hub_restart"]);
+  });
+
   it("keeps the open chat, from a screen before what showed to its newest, and where it was scrolled to", () => {
     const m = (seq: number): ChatMessage => ({ messageId: `m${String(seq)}`, projectRef: REF, seq, author: "lead", text: `line ${String(seq)}`, attachments: [], createdAt: "2026-10-28T10:00:00Z", state: "final" });
     const chat = { ...emptyChat, messages: Array.from({ length: 200 }, (_, i) => m(i + 1)), loaded: true };
