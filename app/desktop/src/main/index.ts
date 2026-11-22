@@ -34,6 +34,7 @@ import { listenForLinks } from "./links";
 import { Opener } from "./opener";
 import { PresenceSetting, startPresence } from "./presence";
 import { FAILURES_IN_A_ROW, guardWindow } from "./recovery";
+import { revealWhenReady } from "./reveal";
 import { harden, isOwnPage, lockSession, pageUrl } from "./security";
 import { updates } from "./updater";
 import { SessionWindows } from "./sessionWindow";
@@ -187,7 +188,7 @@ const createWindow = (mode: HubsMode): BrowserWindow => {
       : {}),
     webPreferences: pagePreferences(mode),
   });
-  win.once("ready-to-show", () => {
+  revealWhenReady(win, () => {
     if (placement.maximized) win.maximize();
     if (placement.fullScreen) win.setFullScreen(true);
     win.show();
@@ -277,7 +278,7 @@ void app.whenReady().then(() => {
       ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: TRAFFIC_LIGHTS } : {}),
       webPreferences: pagePreferences(mode),
     });
-    win.once("ready-to-show", () => win.show());
+    revealWhenReady(win, () => win.show());
     void win.loadURL(`${pageUrl()}${hash}`);
     return win;
   });
