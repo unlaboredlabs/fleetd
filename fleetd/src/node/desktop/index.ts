@@ -30,7 +30,7 @@ import type { SessionsArea } from "../api.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
 import { findFfmpeg, Steps } from "../browser/record.ts";
 import { installDir as browserInstallDir } from "../browser/chrome.ts";
-import { sdkAt } from "../device/sdk.ts";
+import { ensureFfmpeg, sdkAt } from "../device/sdk.ts";
 import { router, type Screens } from "../device/router.ts";
 import { router as sessionRoute } from "../session_route/index.ts";
 import { homeDir } from "../util.ts";
@@ -47,6 +47,7 @@ import { DiskDesktopRecordings } from "./disk_recordings.ts";
 import { hasBox, hostedBox } from "../place/hosted.ts";
 import { BOX_NO_DESKTOP_LAUNCH, inBox as agentInBox } from "../place/index.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
+import { liveEncoder } from "../screen/x264.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
 export const CAP_SESSION_DESKTOP = "session_linux_desktop";
@@ -255,7 +256,7 @@ export class Desktops extends DesktopSessions implements Screens {
   /** What stands in the way of the Mac's screen now (mac/index.ts `blocked`; a test's own). */
   macGate: () => Blocked | undefined = macBlocked;
   /** The Mac's own screen, for a session to read and drive (a test's own). */
-  openMacScreen: (scratch: string) => Screen = () => MacScreen.open();
+  openMacScreen: (scratch: string) => Screen = (scratch) => MacScreen.open(join(scratch, "frames"));
 
   constructor(
     private readonly node: Node,
@@ -275,6 +276,7 @@ export class Desktops extends DesktopSessions implements Screens {
       secrets: (thread) => late.d!.hooks.secretsFor(thread),
       inBox: (thread) => hostedBox(thread) ?? (hasBox(thread) ? "starting" : undefined),
       recordings: disk,
+      encoder: liveEncoder(() => ensureFfmpeg(node.home)),
     });
     late.d = this;
     this.disk = disk;
@@ -436,7 +438,7 @@ export class Desktops extends DesktopSessions implements Screens {
         await display.drop();
         throw e;
       }
-      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, launchRefusal: this.launchRefusal(thread) });
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, launchRefusal: this.launchRefusal(thread), ...this.encodes() });
       this.sessions.set(thread, session);
       session.open();
       session.logStep("session_start", { purpose, kind: "linux_desktop", backend: display.backend, worktree: mount ?? null }, true);

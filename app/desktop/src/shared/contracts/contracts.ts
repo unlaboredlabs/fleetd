@@ -552,6 +552,11 @@ export type AppClientMessage = {
   fps?: number;
   session?: BrowserSessionId;
   t: "browser_watch";
+  /**
+   * Sent only to a hub whose `ready` names `h264_frames`. True: the client decodes H.264, and the node may send
+   * the session's frames as `h264B64` (a JPEG first).
+   */
+  video?: boolean;
 } | {
   seq: number;
   t: "browser_frame_ack";
@@ -1154,15 +1159,23 @@ export type BrowserControlTo = "human" | "agent";
  */
 export type BrowserFrame = {
   control: BrowserControl;
+  /**
+   * H.264, one access unit in Annex B, base64: only to a `browser_watch` with `video`. A decoder starts at a `key`
+   * frame; a JPEG or a gap before a frame means a keyframe comes next. Exactly one of this and `jpegB64`.
+   */
+  h264B64?: string;
   height: number;
-  /** A JPEG, base64. */
-  jpegB64: string;
+  /** A JPEG, base64: every frame but an H.264 one. */
+  jpegB64?: string;
+  /** An H.264 keyframe. */
+  key?: boolean;
   /** 1, 2, ... per watch; a frame older than one already shown is dropped. */
   seq: number;
   sessionId: BrowserSessionId;
   /** The page the frame shows, when the node knows it. */
   url?: string;
-  /** The image's size in pixels: `browser_input` coordinates are in it. */
+  /** The screen's size in pixels, which the picture is shown at (it may be smaller): `browser_input` coordinates are
+   * in it. */
   width: number;
 };
 

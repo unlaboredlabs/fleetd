@@ -95,6 +95,9 @@ export interface HubClientOptions {
   readonly emit: (frame: HubFrame) => void;
   /** Jitter source, 0 ≤ r < 1; tests pin it. */
   readonly random?: () => number;
+  /** The window that shows a live screen decodes H.264 (WebCodecs): the watch asks a hub that sends it
+   * (`h264_frames`). */
+  readonly video?: boolean;
 }
 
 interface Pending {
@@ -166,6 +169,10 @@ export class HubClient implements HubSource {
   #watch: string | null = null;
   /** The hub paces frames to their acks (ready's `frame_acks`): the watch asks for it, and each frame is acked. */
   #frameAcks = false;
+  /** The hub sends H.264 to a watch that asks (ready's `h264_frames`). */
+  #h264 = false;
+  /** The windows decode H.264: the option, until `setVideo` says otherwise. */
+  #video: boolean;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
   #thumbsServed = false;
   /** This connection's hub reads compressed frames from the app: its `ready` listed `deflate`. */
@@ -176,6 +183,7 @@ export class HubClient implements HubSource {
 
   constructor(options: HubClientOptions) {
     this.#options = options;
+    this.#video = options.video === true;
     this.#state = { phase: "connecting", hub: options.hub, attempt: 0 };
   }
 
@@ -376,6 +384,13 @@ export class HubClient implements HubSource {
     if (this.#ready && this.#browser) this.#sendWatch();
   }
 
+  setVideo(on: boolean): void {
+    if (this.#video === on) return;
+    this.#video = on;
+    // The watch again, asking or not: a JPEG at once, then H.264 from a keyframe or JPEG from then on.
+    if (this.#ready && this.#browser && this.#watch !== null) this.#sendWatch();
+  }
+
   thumbs(on: boolean): void {
     if (this.#thumbs === on) return;
     this.#thumbs = on;
@@ -488,6 +503,7 @@ export class HubClient implements HubSource {
         this.#presence = frame.features?.includes("presence") ?? false;
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
         this.#frameAcks = frame.features?.includes("frame_acks") ?? false;
+        this.#h264 = frame.features?.includes("h264_frames") ?? false;
         this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
         this.#deflateUp = frame.features?.includes("deflate") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
@@ -683,7 +699,16 @@ export class HubClient implements HubSource {
   }
 
   #sendWatch(): void {
-    this.#send(this.#watch === null ? { t: "browser_watch" } : { t: "browser_watch", session: this.#watch, ...(this.#frameAcks ? { acks: true as const } : {}) });
+    this.#send(
+      this.#watch === null
+        ? { t: "browser_watch" }
+        : {
+            t: "browser_watch",
+            session: this.#watch,
+            ...(this.#frameAcks ? { acks: true as const } : {}),
+            ...(this.#h264 && this.#video ? { video: true as const } : {}),
+          },
+    );
   }
 
   #sendChat(): void {

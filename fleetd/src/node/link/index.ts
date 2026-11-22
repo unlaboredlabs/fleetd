@@ -49,6 +49,12 @@ export const BULK_BYTES = LINK_BULK_BYTES;
 /** A watched screen's frames on the link at once: the next, the newest made meanwhile, goes once this one has crossed.
  * Two would show a 3G or satellite screen at 1.4-1.7 fps instead of 0.9, and keep the rest waiting twice as long. */
 export const SCREEN_IN_FLIGHT = 1;
+/** A screen's H.264 frames that wait for the link, in order, before its stream drops until a keyframe: a third of a
+ * second at 10 fps, so a short stall is ridden out and a slow link isn't queued ahead of the rest. */
+export const H264_WAITING = 3;
+
+/** A screen's frame as the link has it: its text, whether it is H.264, and a keyframe. */
+type Waiting = { text: string; h264: boolean; key: boolean };
 /** The largest frame the node takes from its hub: an attachment's put_file with room to spare. */
 export const LINK_MAX_FRAME_BYTES = 64 << 20;
 /** The largest frame of any other kind. */
@@ -281,8 +287,9 @@ function runLinkOnce(
     // What runs once the hub answered the ping written behind a frame: that frame has crossed the link.
     const crossed = new Map<string, () => void>();
     let pings = 0;
-    // Each watched screen's frames on the link (SCREEN_IN_FLIGHT at most), and the newest waiting for room.
-    const screens = new Map<string, { flying: number; next?: string }>();
+    // Each watched screen's frames on the link (SCREEN_IN_FLIGHT at most), and those waiting for room (the newest, or
+    // with H.264 a few in order); `lost`: an H.264 frame was dropped, so the stream waits for a keyframe.
+    const screens = new Map<string, { flying: number; waiting: Waiting[]; lost?: boolean }>();
     const timers = new Set<ReturnType<typeof setTimeout>>();
     let writes: Promise<void> = Promise.resolve();
     // Frames in arrival order, each decoded (inflated) before the next is handled.
@@ -323,20 +330,36 @@ function runLinkOnce(
     const send = (frame: NodeFrame) => {
       if (ended) return;
       const text = JSON.stringify(frame);
-      if (frame.t === "browser_frame") return screen(String(frame.sessionId), text);
+      if (frame.t === "browser_frame") return screen(String(frame.sessionId), { text, h264: frame.h264B64 !== undefined, key: frame.key === true });
       write(text);
     };
     // A screen's frames go only as fast as the link carries them, the newest of those made meanwhile next: a watched
-    // screen faster than the machine's uplink would otherwise queue up ahead of everything else on it.
-    const screen = (id: string, text: string) => {
-      const lane = screens.get(id) ?? { flying: 0 };
+    // screen faster than the machine's uplink would otherwise queue up ahead of everything else on it. An H.264 frame
+    // can't be skipped alone (the ones after it are made from it): a few wait in order instead (H264_WAITING), a
+    // keyframe or a JPEG replaces whatever waits, and past that the stream drops until a keyframe, which the screen
+    // is asked for as the hub asks when its own watcher loses one.
+    const screen = (id: string, frame: Waiting) => {
+      const lane = screens.get(id) ?? { flying: 0, waiting: [] };
       screens.set(id, lane);
-      if (lane.flying >= SCREEN_IN_FLIGHT) return void (lane.next = text);
+      if (frame.h264 && !frame.key && lane.lost) return;
+      if (lane.flying >= SCREEN_IN_FLIGHT) {
+        if (!frame.h264 || frame.key) {
+          // A whole picture: what waits isn't needed. Deltas after a JPEG that replaced some are made from those.
+          lane.lost = !frame.key && lane.waiting.some((w) => w.h264);
+          lane.waiting = [frame];
+        } else if (lane.waiting.length < H264_WAITING && !lane.waiting.some((w) => !w.h264)) {
+          lane.waiting.push(frame);
+        } else {
+          lane.lost = true;
+          if (live) options.handle({ t: "browser_watch", sessionId: id, on: true, video: true, key: true }, live);
+        }
+        return;
+      }
+      if (!frame.h264 || frame.key) lane.lost = false;
       lane.flying++;
-      write(text, () => {
+      write(frame.text, () => {
         lane.flying--;
-        const next = lane.next;
-        lane.next = undefined;
+        const next = lane.waiting.shift();
         if (next !== undefined) screen(id, next);
         else if (lane.flying === 0) screens.delete(id);
       });

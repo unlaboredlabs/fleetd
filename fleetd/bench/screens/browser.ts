@@ -4,11 +4,14 @@
 // bytes a second and CPU idle and while the page animates, a person's takeover, and input-to-pixel for typing,
 // clicks and drags.
 //
-//   bun bench/screens/browser.ts            (needs Playwright's Chrome: ~/.cache/ms-playwright)
+//   bun bench/screens/browser.ts [--video <ffmpeg>]   (needs Playwright's Chrome: ~/.cache/ms-playwright)
+//
+// With --video, the watcher decodes H.264: the screencast goes through x264 in the ffmpeg named (the node's pinned one).
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { findChrome, launch } from "../../src/node/browser/chrome.ts";
 import { Broker, start } from "../../src/node/browser/index.ts";
+import { liveEncoder } from "../../src/node/screen/x264.ts";
 import type { BrowserFrame, BrowserInput } from "../../src/shared/contracts.ts";
 import { tempHome } from "../../test/helpers.ts";
 import { testNode } from "../../test/node_helpers.ts";
@@ -17,6 +20,8 @@ import { Wire } from "./wire.ts";
 
 const chrome = findChrome(join(homedir(), ".cache", "ms-playwright"));
 if (!chrome) throw new Error("no Chrome under ~/.cache/ms-playwright");
+const at = process.argv.indexOf("--video");
+const ffmpeg = at < 0 ? undefined : process.argv[at + 1];
 const IDLE_MS = 5_000;
 const ACTIVE_MS = 5_000;
 
@@ -30,6 +35,8 @@ const frame=t=>{if(spin){c.fillStyle='#fff';c.fillRect(0,0,1280,380);c.fillStyle
 requestAnimationFrame(frame);window.setSpin=v=>{spin=v}</script>`)}`;
 
 const node = testNode();
+// The broker's encoder: the ffmpeg named, else none (JPEG).
+const fromHost = ffmpeg === undefined ? undefined : liveEncoder(async () => ffmpeg);
 const profiles = tempHome();
 const pids: number[] = [];
 const broker = start(
@@ -41,6 +48,8 @@ const broker = start(
     return b;
   }),
 );
+// Its encoder's ffmpeg is the one named, not one fetched into the throwaway home.
+(broker as unknown as { host: { encoder?: unknown } }).host.encoder = fromHost;
 // The node's reports to the hub: a takeover is live once the node says who drives now.
 const reports: { at: number; control: unknown }[] = [];
 node.link.answer = async (op, args) => {
@@ -69,7 +78,7 @@ sent.push = (...items: Record<string, unknown>[]) => {
     carrying = carrying.then(async () => {
       const { frame: atApp, hops } = await wire.carry(frame as unknown as BrowserFrame);
       shown = atApp;
-      frames.push({ at: performance.now(), bytes: Math.floor((atApp.jpegB64.length * 3) / 4), wire: hops.appBytes });
+      frames.push({ at: performance.now(), bytes: Math.floor(((atApp.jpegB64 ?? atApp.h264B64 ?? "").length * 3) / 4), wire: hops.appBytes });
     });
   }
   return 0;
@@ -79,7 +88,8 @@ const t0 = performance.now();
 const started = (await node.local.call("session_start", { purpose: "screens bench" }, "t1")) as { sessionId: string; cdp: string };
 const tStarted = performance.now();
 const id = started.sessionId;
-node.link.deliver({ t: "browser_watch", sessionId: id, on: true });
+// H.264 goes to a browser's watchers once their link is the bound: a budget, as the hub names one for a slow link.
+node.link.deliver({ t: "browser_watch", sessionId: id, on: true, ...(ffmpeg ? { video: true, kbps: 3000 } : {}) });
 await nextFrame(frames, 10_000);
 const tFirst = performance.now();
 
@@ -145,6 +155,32 @@ input({ kind: "mouse", action: "pressed", x: 100, y: 100, button: "left", clickC
 for (let i = 0; i < 8; i++) drags.push(await timed(() => input({ kind: "mouse", action: "moved", x: 120 + i * 20, y: 100, button: "left", modifiers: 0 })));
 input({ kind: "mouse", action: "released", x: 300, y: 100, button: "left", clickCount: 1, modifiers: 0 });
 
+// Take over → the first tap's pixels: handed back, then taken over and tapped at once (a press repaints the box).
+const firstTap: number[] = [];
+// The first frame after `at` that isn't the same picture again (a change of who drives sends the last one anew).
+const changed = async (at: number): Promise<number> => {
+  const before = frames.at(-1)?.bytes;
+  const from = frames.length;
+  while (performance.now() - at < 2_000) {
+    const f = frames.slice(from).find((x) => x.bytes !== before);
+    if (f) return f.at - at;
+    await Bun.sleep(1);
+  }
+  return Number.NaN;
+};
+for (let i = 0; i < 5; i++) {
+  node.link.deliver({ t: "browser_control", sessionId: id, control: "agent", by: "bench" });
+  await Bun.sleep(400);
+  await settle(frames, 250, 3_000);
+  const at = performance.now();
+  node.link.deliver({ t: "browser_control", sessionId: id, control: "human", by: "bench" });
+  input({ kind: "mouse", action: "pressed", x: 300, y: 100, button: "left", clickCount: 1, modifiers: 0 });
+  firstTap.push(await changed(at));
+  input({ kind: "mouse", action: "released", x: 300, y: 100, button: "left", clickCount: 1, modifiers: 0 });
+}
+node.link.deliver({ t: "browser_control", sessionId: id, control: "human", by: "bench" });
+await Bun.sleep(200);
+
 const hb0 = performance.now();
 reports.length = 0;
 node.link.deliver({ t: "browser_control", sessionId: id, control: "agent", by: "bench" });
@@ -155,6 +191,7 @@ const per = (n: number) => round(n / Math.max(wire.frames, 1), 2);
 console.log(
   JSON.stringify({
     kind: "browser",
+    codec: ffmpeg ? "h264" : "jpeg",
     size: shown ? [shown.width, shown.height] : null,
     startup: { sessionStartMs: round(tStarted - t0), firstFrameMs: round(tFirst - tStarted), totalMs: round(tFirst - t0), pageShownMs: round(tPage - tNav) },
     idle: { fps: round(idle.fps, 1), bytesPerSec: round(idle.wirePerSec), cpu: { node: round(idle.cpu.node, 1), screen: round(idle.cpu.screen, 1) } },
@@ -164,7 +201,7 @@ console.log(
       bytesPerSec: round(active.wirePerSec),
       cpu: { node: round(active.cpu.node, 1), screen: round(active.cpu.screen, 1) },
     },
-    takeover: { nodeMs: round(takeoverMs, 1), handbackNodeMs: round(handbackMs, 1) },
+    takeover: { nodeMs: round(takeoverMs, 1), handbackNodeMs: round(handbackMs, 1), firstTap: spread(firstTap) },
     inputToPixel: { typing: spread(typing), click: spread(clicks), drag: spread(drags) },
     hopsPerFrameMs: { node: per(wire.totals.nodeMs), hub: per(wire.totals.hubMs), app: per(wire.totals.appMs) },
   }),

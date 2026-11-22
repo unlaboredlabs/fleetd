@@ -20,7 +20,7 @@ function tier(perMs: number, full: number): number {
   return SIZES.length - 1;
 }
 
-const bytesOf = (f: BrowserFrame) => Math.floor(f.jpegB64.length / 4) * 3;
+const bytesOf = (f: BrowserFrame) => Math.floor((f.jpegB64 ?? f.h264B64 ?? "").length / 4) * 3;
 
 /** The frames that went to one watcher: how big the last was, when, and at which tier. */
 export class Pacer {
@@ -38,7 +38,8 @@ export class Pacer {
     const t = kbps !== undefined && this.last ? tier(rate(kbps), this.last.bytes / SIZES[this.last.tier]!) : 0;
     let out = frame;
     let used = 0;
-    if (t > 0) {
+    // An H.264 frame goes as it is: its encoder took the budget already (its bit rate and frame rate).
+    if (t > 0 && frame.jpegB64 !== undefined) {
       try {
         const jpeg = Buffer.from(frame.jpegB64, "base64");
         const smaller = await new Bun.Image(jpeg).jpeg({ quality: QUALITIES[t]! }).bytes();

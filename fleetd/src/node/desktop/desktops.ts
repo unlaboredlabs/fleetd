@@ -20,6 +20,7 @@ import { type Meta, type Recording, type RecordingStore, report, Steps } from ".
 import { Scrub } from "../mask.ts";
 import { BoxDisplay, type DisplayHandle, type ScreenBox } from "../place/box_screens.ts";
 import { type DesktopCall, Session } from "./session.ts";
+import type { MakeEncoder } from "../screen/live.ts";
 
 /** A session no step touched this long ends, while the agent drives it (DesktopHost `idleMinutes`, else 30). */
 export const IDLE_MINUTES = 30;
@@ -44,6 +45,8 @@ export type DesktopHost = {
   idleMinutes?: () => number;
   /** A session changed in what its `snapshot` holds (it started, changed hands, ended). */
   changed?: (thread: string) => void;
+  /** What makes a watched display's H.264 (x264, ../screen/x264.ts); absent: JPEG only. */
+  encoder?: MakeEncoder;
 };
 
 /** What carries a session to another holder (`snapshot`, `adopt`): plain JSON. The display's cookie opens only that
@@ -90,6 +93,11 @@ export class DesktopSessions {
   reattachDisplay: (box: ScreenBox, handle: DisplayHandle) => Promise<BoxDisplay> = (box, handle) => BoxDisplay.reattach(box, handle);
 
   constructor(protected readonly host: DesktopHost) {}
+
+  /** A display session's H.264 encoder, where the host has one. */
+  protected encodes(): { encoder?: MakeEncoder } {
+    return this.host.encoder ? { encoder: this.host.encoder } : {};
+  }
 
   count(): number {
     return this.sessions.size;
@@ -180,7 +188,7 @@ export class DesktopSessions {
         await display.drop();
         throw e;
       }
-      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest });
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, ...this.encodes() });
       this.sessions.set(thread, session);
       this.displays.set(thread, display);
       session.open();
@@ -315,8 +323,11 @@ export class DesktopSessions {
     const session = this.byId(frame.sessionId);
     if (!session) return false;
     if (!frame.on) session.setWatcher(undefined);
-    else if (session.watched()) session.setBudget(frame.kbps);
-    else session.setWatcher({ kbps: frame.kbps, send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+    else if (!session.watched()) session.setWatcher({ kbps: frame.kbps, video: frame.video === true, send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+    else {
+      session.setBudget(frame.kbps, frame.video === true);
+      if (frame.key) session.key();
+    }
     return true;
   }
 
@@ -491,6 +502,7 @@ export class DesktopSessions {
       recording,
       steps: this.latest,
       resumed: { startedAt: snapshot.startedAt, seq: snapshot.seq, control: snapshot.control, ...(snapshot.note !== undefined ? { note: snapshot.note } : {}) },
+      ...this.encodes(),
     });
     this.sessions.set(thread, session);
     this.displays.set(thread, display);

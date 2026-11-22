@@ -11,8 +11,9 @@ export const MAX_FPS = 30;
 /** scrcpy refuses longer text in one message. */
 const TEXT_MAX_BYTES = 300;
 
-/** One frame of the screen, as JPEG: `seq` 1, 2, … per stream, `atMs` from the session's start. */
-export type Frame = { seq: number; jpeg: Uint8Array; width: number; height: number; atMs: number };
+/** One frame of the screen, as JPEG: `seq` 1, 2, … per stream, `atMs` from the session's start. A screen that streams
+ * H.264 (an iOS simulator's, ../screen/mac_frames.ts) sends it as `video`, its `jpeg` empty. */
+export type Frame = { seq: number; jpeg: Uint8Array; width: number; height: number; atMs: number; video?: { data: Uint8Array; key: boolean } };
 
 /**
  * What a person does to a device, in the last frame's pixels. The app's mouse maps to one finger (a press is `down`, a

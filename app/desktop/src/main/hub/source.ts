@@ -37,6 +37,8 @@ export interface HubSource {
   presence(frame: PresenceFrame): void;
   /** The browser session whose frames to forward, or null for none; kept across reconnects. */
   watch(session: string | null): void;
+  /** Whether the watch asks for H.264 (the windows decode it): off for good once a window's decoder failed. */
+  setVideo?(on: boolean): void;
   /** Whether a window shows the Screens page: its pictures come while one does; kept across reconnects. */
   thumbs(on: boolean): void;
   /** A person's input to a session they have taken over; dropped while the link is down. */

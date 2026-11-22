@@ -46,19 +46,28 @@ export class CpuSpan {
   private readonly from: number;
   private readonly self: number;
   private readonly others: number;
+  private readonly kids: number;
   constructor(private readonly pids: () => number[]) {
     this.from = performance.now();
     this.self = selfCpu();
     this.others = this.sum();
+    this.kids = this.children();
   }
   private sum(): number {
     // Each screen process with everything it started (a browser's renderers, a terminal's shell).
     return [...new Set(this.pids().flatMap(tree))].reduce((n, p) => n + (cpuOf(p) ?? 0), 0);
   }
-  /** `{ node, screen }`: % of a core for this process (the node's part) and for the screen's own processes. */
+  /** `{ node, screen }`: % of a core for this process and what it started besides the screen (an encoder: the node's
+   * part), and for the screen's own processes. */
   end(): { node: number; screen: number } {
     const ms = Math.max(performance.now() - this.from, 1);
-    return { node: ((selfCpu() - this.self) / ms) * 100, screen: ((this.sum() - this.others) / ms) * 100 };
+    const children = this.children() - this.kids;
+    return { node: ((selfCpu() - this.self + children) / ms) * 100, screen: ((this.sum() - this.others) / ms) * 100 };
+  }
+  /** CPU of this process's children that aren't the screen's. */
+  private children(): number {
+    const screen = new Set(this.pids().flatMap(tree));
+    return tree(process.pid).filter((p) => p !== process.pid && !screen.has(p)).reduce((n, p) => n + (cpuOf(p) ?? 0), 0);
   }
 }
 

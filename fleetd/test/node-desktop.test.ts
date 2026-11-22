@@ -21,7 +21,8 @@ import {
   worktreeMount,
 } from "../src/node/desktop/index.ts";
 import { bmp, jpeg } from "../src/node/desktop/screen.ts";
-import { NO_VIDEO, Session } from "../src/node/desktop/session.ts";
+import { NO_VIDEO, Session, SETTLE } from "../src/node/desktop/session.ts";
+import type { MakeEncoder } from "../src/node/screen/live.ts";
 import { recordingsDir as iosSimRecordingsDir } from "../src/node/device/ios/sim_screen.ts";
 import { Masker } from "../src/node/mask.ts";
 import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
@@ -199,6 +200,18 @@ test("with DAMAGE a grab reads only what changed, patched into the screen before
   expect([...patched.data]).toEqual([...server.pixels]);
   expect(x.changed()).toBe(false);
 
+  // A window moved: no DamageNotify, but the root's structure changed, so the next grab reads it whole.
+  const moved = server.pixelsRead;
+  server.moveWindow(0, 255, 0, [30, 20, 6, 6]);
+  await until("the move", () => x.changed());
+  expect([...(await x.grabRaw()).data]).toEqual([...server.pixels]);
+  expect(server.pixelsRead - moved).toBe(64 * 40);
+  // An agent's screenshot reads the whole screen and leaves a change to the capture loop's next grab.
+  server.paint(7, 7, 7, [1, 1, 1, 1]);
+  await until("damage", () => x.changed());
+  await x.grab();
+  expect(x.changed()).toBe(true);
+  await x.grabRaw();
   // Nothing changed: no read at all, the same screen; and a wait runs out.
   const still = server.pixelsRead;
   expect([...(await x.grabRaw()).data]).toEqual([...server.pixels]);
@@ -237,6 +250,52 @@ test("a watched desktop sends a frame when its screen changes, read as only the 
   server.paint(255, 0, 0, [3, 4, 5, 6]);
   await until("the changed screen's frame", () => frames.length > still);
   expect(server.pixelsRead - read).toBe(5 * 6);
+  // Still SETTLE after that, it is read whole once (what DAMAGE doesn't tell shows then), and not again.
+  await until("the settle read", () => server.pixelsRead - read === 5 * 6 + 64 * 40);
+  await Bun.sleep(SETTLE + 100);
+  expect(server.pixelsRead - read).toBe(5 * 6 + 64 * 40);
+});
+
+test("a desktop's grabs go to its H.264 encoder for a watcher that decodes it; a key request sends the screen anew, newer than every frame, and a budget told again sends nothing", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // A stand-in encoder: each grab is a frame at once, the first after a key request a keyframe.
+  const asked: string[] = [];
+  let keyNext = true;
+  const encoder: MakeEncoder = (onFrame) => ({
+    key: () => void (asked.push("key"), (keyNext = true)),
+    put: (input, data) => {
+      onFrame({ data: data.subarray(0, 4), key: keyNext }, input);
+      keyNext = false;
+      return true;
+    },
+    stop: () => {},
+  });
+  const session = new Session(lent, x, { id: "d2", thread: "t1", cwd: dir, purpose: "watch", secrets: [], kind: "linux_desktop", encoder });
+  cleanups.push(() => void session.close());
+  const frames: { seq: number; h264: boolean; key: boolean }[] = [];
+  session.open();
+  session.setWatcher({ kbps: undefined, video: true, send: (f) => frames.push({ seq: f.seq, h264: f.h264B64 !== undefined, key: f.key === true }) });
+  await until("the first H.264 frame", () => frames.some((f) => f.h264));
+  server.paint(255, 0, 0, [3, 4, 5, 6]);
+  await until("a delta", () => frames.filter((f) => f.h264).length >= 2);
+  const sent = frames.length;
+  const newest = Math.max(...frames.map((f) => f.seq));
+  // A budget told again: nothing.
+  session.setBudget(5_000, true);
+  await Bun.sleep(100);
+  expect(frames.length).toBe(sent);
+  // A lost frame: the screen now as a JPEG, under a seq past every frame sent, and the next H.264 a keyframe.
+  session.key();
+  await until("the screen anew", () => frames.length > sent);
+  expect(frames[sent]).toMatchObject({ h264: false });
+  expect(frames[sent]!.seq).toBeGreaterThan(newest);
+  server.paint(0, 255, 0, [3, 4, 5, 6]);
+  await until("the next H.264 frame", () => frames.slice(sent + 1).some((f) => f.h264));
+  expect(frames.slice(sent + 1).find((f) => f.h264)).toMatchObject({ key: true });
+  expect(asked).toEqual(["key", "key"]);
 });
 
 test("without DAMAGE the screen counts as changed at every look", async () => {

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Input } from "../src/node/device/scrcpy.ts";
 import { coalesce, commandArgs, Gestures, Hands, heldBy, inSession, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
 import { fileGrowing, screenName, startRecording } from "../src/node/device/ios/sim_screen.ts";
+import type { StreamFrame } from "../src/node/screen/mac_frames.ts";
 import { recordingStarted } from "../src/node/device/ios/simctl.ts";
 import { tempHome } from "./helpers.ts";
 
@@ -207,7 +208,8 @@ test("the live view streams the simulator's frames while someone watches, a stil
   let shots = 0;
   const frames: { seq: number; width: number; height: number }[] = [];
   const asked: string[] = [];
-  let send: (jpeg: Uint8Array, w: number, h: number) => void = () => {};
+  let onFrame: (f: StreamFrame) => void = () => {};
+  const send = (data: Uint8Array, w: number, h: number) => onFrame({ kind: "jpeg", key: true, screen: [w, h], data });
   let end: (why: string) => void = () => {};
   let starts = 0;
   const shooter = new Shooter(
@@ -216,10 +218,10 @@ test("the live view streams the simulator's frames while someone watches, a stil
     () => watching,
     (f) => frames.push({ seq: f.seq, width: f.width, height: f.height }),
     (ms) => Bun.sleep(Math.min(ms, 5)),
-    async (onFrame) => {
+    async (fn) => {
       starts += 1;
-      send = onFrame;
-      return { still: () => asked.push("still"), stop: () => asked.push("stop"), ended: new Promise<string | undefined>((r) => (end = r)) };
+      onFrame = fn;
+      return { still: () => asked.push("still"), tell: () => {}, stop: () => asked.push("stop"), ended: new Promise<string | undefined>((r) => (end = r)) };
     },
   );
   shooter.run();
@@ -251,6 +253,48 @@ test("the live view streams the simulator's frames while someone watches, a stil
   shooter.run();
   await Bun.sleep(30);
   expect(starts).toBe(2);
+  shooter.stop();
+});
+
+test("with every watcher decoding H.264 the stream sends it, the screen anew when a frame was lost, its bit rate under the links' budget", async () => {
+  const told: string[] = [];
+  let onFrame: (f: StreamFrame) => void = () => {};
+  const frames: { seq: number; jpeg: number; video?: { key: boolean; bytes: number } }[] = [];
+  let watching = true;
+  const shooter = new Shooter(
+    async () => jpeg(1),
+    performance.now(),
+    () => watching,
+    (f) => frames.push({ seq: f.seq, jpeg: f.jpeg.length, ...(f.video ? { video: { key: f.video.key, bytes: f.video.data.length } } : {}) }),
+    (ms) => Bun.sleep(Math.min(ms, 5)),
+    async (fn) => {
+      onFrame = fn;
+      return { still: () => told.push("still"), tell: (c) => told.push(c), stop: () => {}, ended: new Promise<string | undefined>(() => {}) };
+    },
+  );
+  // Asked before the stream runs: told as it starts.
+  shooter.want(true, undefined);
+  shooter.run();
+  await until(() => told.length > 0);
+  expect(told).toEqual(["h264", "kbps 2500"]);
+  onFrame({ kind: "jpeg", key: true, screen: [1206, 2622], data: jpeg(1) });
+  onFrame({ kind: "h264", key: true, screen: [1206, 2622], data: new Uint8Array(900) });
+  onFrame({ kind: "h264", key: false, screen: [1206, 2622], data: new Uint8Array(40) });
+  // H.264 is never skipped as the same picture.
+  onFrame({ kind: "h264", key: false, screen: [1206, 2622], data: new Uint8Array(40) });
+  expect(frames).toEqual([
+    { seq: 1, jpeg: 24 },
+    { seq: 2, jpeg: 0, video: { key: true, bytes: 900 } },
+    { seq: 3, jpeg: 0, video: { key: false, bytes: 40 } },
+    { seq: 4, jpeg: 0, video: { key: false, bytes: 40 } },
+  ]);
+  told.length = 0;
+  shooter.key();
+  // A slow watcher's link (800 kbit/s): the video takes 70% of it. One that can't decode H.264: JPEG again.
+  shooter.want(true, 800);
+  shooter.want(false, undefined);
+  expect(told).toEqual(["still", "h264", "kbps 560", "jpeg", "kbps 2500"]);
+  watching = false;
   shooter.stop();
 });
 

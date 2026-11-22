@@ -11,7 +11,8 @@ import { parse, state } from "../src/node/desktop/mac/console.ts";
 import { blockedBy, MacLent, needs, observes } from "../src/node/desktop/mac/index.ts";
 import { COMMAND, ofSym, OPTION } from "../src/node/desktop/mac/keys.ts";
 import { jpeg, type Raw, type Screen } from "../src/node/desktop/screen.ts";
-import type { DesktopCall } from "../src/node/desktop/session.ts";
+import { type DesktopCall, Session } from "../src/node/desktop/session.ts";
+import type { StreamFrame } from "../src/node/screen/mac_frames.ts";
 import { parseChord } from "../src/node/desktop/x11.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
@@ -218,6 +219,59 @@ test("agent-desktop's archive is checked by digest before it is unpacked", async
   const home = scratch();
   const fake = (async () => new Response("not it")) as unknown as typeof fetch;
   await expect(install(home, fake, "arm64")).rejects.toThrow("is not the pinned one");
+});
+
+test("a watched Mac screen's live view is its own stream: H.264 to a watcher that decodes it, the grabs' frames once it fails", async () => {
+  const told: string[] = [];
+  let onFrame: (f: StreamFrame) => void = () => {};
+  let end: (why: string) => void = () => {};
+  let grabs = 0;
+  const screen = new FakeScreen();
+  screen.grabRaw = async () => (grabs++, { data: new Uint8Array(64).fill(grabs % 256), width: 4, height: 4 });
+  const streamed = Object.assign(screen, {
+    stream: async (fn: (f: StreamFrame) => void) => {
+      onFrame = fn;
+      return { still: () => told.push("still"), tell: (c: string) => told.push(c), stop: () => told.push("stop"), ended: new Promise<string | undefined>((r) => (end = r)) };
+    },
+  });
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // Observing: no recording, so the screen is read only for the live view.
+  const session = new Session(lent, streamed, { id: "m1", thread: "t1", cwd: "/", purpose: "watch", secrets: [], kind: "mac", observing: true });
+  const sent: { seq: number; jpeg: boolean; h264?: boolean; key?: boolean; width: number }[] = [];
+  session.open();
+  session.setWatcher({ kbps: undefined, video: true, send: (f) => sent.push({ seq: f.seq, jpeg: f.jpegB64 !== undefined, width: f.width, ...(f.h264B64 ? { h264: true, key: f.key === true } : {}) }) });
+  const deadline = Date.now() + 5_000;
+  while (!told.length && Date.now() < deadline) await Bun.sleep(2);
+  expect(told).toEqual(["h264", "kbps 2500"]);
+  // While the stream runs, the session doesn't read the screen itself.
+  await Bun.sleep(150);
+  const read = grabs;
+  onFrame({ kind: "jpeg", key: true, screen: [1920, 1080], data: await jpeg(new Uint8Array(64), 4, 4) });
+  onFrame({ kind: "h264", key: true, screen: [1920, 1080], data: new Uint8Array([0, 0, 0, 1, 0x65]) });
+  onFrame({ kind: "h264", key: false, screen: [1920, 1080], data: new Uint8Array([0, 0, 0, 1, 0x41]) });
+  await Bun.sleep(150);
+  expect(grabs).toBe(read);
+  expect(sent.slice(-3).map(({ jpeg, h264, key, width }) => ({ jpeg, h264, key, width }))).toEqual([
+    { jpeg: true, h264: undefined, key: undefined, width: 1920 },
+    { jpeg: false, h264: true, key: true, width: 1920 },
+    { jpeg: false, h264: true, key: false, width: 1920 },
+  ]);
+  // The hub again: a lost frame asks the screen now (a JPEG, then a keyframe); a slow link bounds the bit rate and costs
+  // nothing more; a switch to JPEG and back sends the screen anew.
+  told.length = 0;
+  session.key();
+  session.setBudget(1000, true);
+  expect(told).toEqual(["still", "h264", "kbps 700"]);
+  told.length = 0;
+  session.setBudget(1000, false);
+  session.setBudget(1000, true);
+  expect(told).toEqual(["jpeg", "kbps 700", "still", "h264", "kbps 700", "still"]);
+  // The stream ends by itself: the session reads the screen for the live view again.
+  end("fleetd-frames: the screen's capture stopped");
+  while (grabs === read && Date.now() < deadline) await Bun.sleep(5);
+  expect(grabs).toBeGreaterThan(read);
+  session.setWatcher(undefined);
+  await session.close();
 });
 
 /** A Mac screen that keeps what it was asked to do. */

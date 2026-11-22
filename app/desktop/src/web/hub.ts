@@ -6,6 +6,7 @@ import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, HubFrame, HubState } from "../shared/hub";
 import type { CallRequest, ChatScope, OrderFocus } from "../shared/ipc";
 import { HubClient } from "../main/hub/client";
+import { H264_CONFIG } from "../shared/h264";
 import type { Connection, ConnectionEvents, Transport } from "../main/hub/link";
 
 /** What the cloud answers on the web socket alone: a browser can't send a WebSocket ping, nor see one. */
@@ -88,6 +89,14 @@ export class WebHub {
     // The client dials the address it is given; this one dials the team's socket on this origin instead.
     const here: Transport = (_url, events, headers) => transport(socket, events, headers);
     this.#client = new HubClient({ hub: team, key: "", transport: here, emit: (frame) => this.#broadcast(frame) });
+    // H.264 only where this browser decodes the codec the nodes send: WebCodecs alone isn't enough (a Firefox on Linux
+    // without system codecs has it, and can't).
+    if (typeof VideoDecoder !== "undefined") {
+      void VideoDecoder.isConfigSupported(H264_CONFIG).then(
+        (r) => r.supported === true && this.#client.setVideo(true),
+        () => {},
+      );
+    }
   }
 
   get state(): HubState {
@@ -127,7 +136,9 @@ export class WebHub {
     this.#client.focus(workstreamId);
   }
 
-  watch(session: string | null): void {
+  /** `video` false: the page's decoder failed, so the watch asks for JPEG from now on. */
+  watch(session: string | null, video?: boolean): void {
+    if (video === false) this.#client.setVideo(false);
     this.#client.watch(session);
   }
 

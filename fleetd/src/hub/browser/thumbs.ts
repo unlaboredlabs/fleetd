@@ -79,6 +79,7 @@ export class Thumbs {
 /** A frame made small: at most THUMB_SIDE a side, as a JPEG. undefined for one that doesn't decode. */
 export async function shrink(frame: BrowserFrame): Promise<{ jpeg: Uint8Array; width: number; height: number } | undefined> {
   try {
+    if (frame.jpegB64 === undefined) return undefined;
     const image = new Bun.Image(Buffer.from(frame.jpegB64, "base64"));
     const jpeg = await image
       .resize(THUMB_SIDE, THUMB_SIDE, { fit: "inside", withoutEnlargement: true })

@@ -46,7 +46,7 @@ const Frame = z.discriminatedUnion("t", [
   // A browser session's page, replayed whatever is watched (the renderer shows the watched session's only).
   z.object({
     t: z.literal("browser_frame"),
-    frame: z.looseObject({ sessionId: z.string(), seq: z.int().min(0), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1), control: z.string() }),
+    frame: z.looseObject({ sessionId: z.string(), seq: z.int().min(0), jpegB64: z.string().optional(), h264B64: z.string().optional(), width: z.int().min(1), height: z.int().min(1), control: z.string() }),
     afterMs: delay,
   }),
   // A live screen's picture for the Screens page, sent while a window shows the page.
