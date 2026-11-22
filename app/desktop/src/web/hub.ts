@@ -150,6 +150,14 @@ export class WebHub {
     this.#client.input(session, input);
   }
 
+  rtc(session: string, peer: string, offer: string | null): void {
+    this.#client.rtc(session, peer, offer);
+  }
+
+  rtcWatch(session: string, peer: string | null): void {
+    this.#client.rtcWatch(session, peer);
+  }
+
   resync(): void {
     this.#client.resync();
   }

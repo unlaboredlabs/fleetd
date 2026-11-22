@@ -139,6 +139,13 @@ export interface FleetdApi {
     watch(hub: HubId, session: string | null, video?: boolean): Promise<void>;
     /** A person's input to a session they took over, in its last frame's pixels; dropped while offline. */
     input(hub: HubId, session: string, input: BrowserInput): Promise<void>;
+    /**
+     * A peer of this window's for the watched session's frames and input (renderer/screens/sessions/rtc.ts): its SDP
+     * offer, or null to close it. The node's answer, or why there is none, comes as a `browser_rtc` frame.
+     */
+    rtc(hub: HubId, session: string, peer: string, offer: string | null): Promise<void>;
+    /** The peer the watched session's frames come on now, or null: through the hub again. */
+    rtcWatch(hub: HubId, session: string, peer: string | null): Promise<void>;
     /** Whether this window shows the Screens page: each live screen's picture comes a few times a minute while one does. */
     thumbs(hub: HubId, on: boolean): Promise<void>;
     resync(hub: HubId): Promise<void>;

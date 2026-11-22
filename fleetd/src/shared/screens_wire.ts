@@ -94,8 +94,15 @@ export type ScreenStep = { sessionId: BrowserSessionId; step: BrowserAction };
 
 // ---- hub -> node ----
 /** `video`: every watcher decodes H.264, so the screen may send it (a JPEG first); `key`: a watcher lost an H.264 frame,
- * so the next is a keyframe; `fps`: the frames a second the watchers take at most (absent: what the screen makes). */
-export type BrowserWatchFrame = { sessionId: BrowserSessionId; on: boolean; kbps?: number; video?: boolean; key?: boolean; fps?: number };
+ * so the next is a keyframe; `fps`: the frames a second the watchers take at most (absent: what the screen makes);
+ * `relay` false: every watcher has the frames on a peer of its own (`browser_rtc`), so none go on the link. */
+export type BrowserWatchFrame = { sessionId: BrowserSessionId; on: boolean; kbps?: number; video?: boolean; key?: boolean; fps?: number; relay?: boolean };
+/**
+ * An app's peer for a session, made by the hub (`peer`, unique on the hub): its SDP offer for the node to answer, or
+ * without one, its close. `input`: the app's key is a person's with operate on the machine, so input on the peer
+ * goes to the screen while the person has control.
+ */
+export type BrowserRtcFrame = { sessionId: BrowserSessionId; peer: string; offer?: string; input?: boolean };
 export type BrowserInputFrame = { sessionId: BrowserSessionId; input: BrowserInput };
 export type BrowserControlFrame = { sessionId: BrowserSessionId; control: BrowserControlTo; by: string };
 export type SessionHostFrame = {
@@ -138,6 +145,12 @@ export type ScreenControlResult = {
   screenshot?: { pngB64: string; width: number; height: number };
   error?: McpToolError;
 };
+/**
+ * A peer's news (`browser_rtc`): the node's SDP answer; `error`, why there is none, or `closed`, that it ended; `input`,
+ * that a person's input came on it (at most every RTC_INPUT_EVERY_MS), for the hub's idle clock.
+ */
+export type BrowserRtcReport = { sessionId: BrowserSessionId; peer: string; answer?: string; error?: string; closed?: boolean; input?: boolean };
+export const RTC_INPUT_EVERY_MS = 10_000;
 
 
 /** The tagged frames, as they go on the link. */
@@ -151,6 +164,7 @@ export type HubToNodeFrame =
   | ({ t: "session_end" } & SessionEndFrame)
   | ({ t: "mac_call" } & MacCallFrame)
   | ({ t: "screen_control" } & ScreenControlFrame)
+  | ({ t: "browser_rtc" } & BrowserRtcFrame)
   | { t: string; [field: string]: unknown };
 
 export type NodeToHubFrame =
@@ -158,6 +172,7 @@ export type NodeToHubFrame =
   | ({ t: "session_host_result" } & SessionHostResult)
   | ({ t: "mac_result" } & MacResultFrame)
   | ({ t: "screen_control_result" } & ScreenControlResult)
+  | ({ t: "browser_rtc" } & BrowserRtcReport)
   | { t: string; [field: string]: unknown };
 
 // ---- lead calls (lead_calls.rs) the node makes for a session ----

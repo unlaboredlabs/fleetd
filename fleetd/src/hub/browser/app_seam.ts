@@ -5,7 +5,7 @@ import type { Caller } from "../api/registry.ts";
 import type { Socket } from "../http/route.ts";
 
 /** The part of #1186's AppConn this area reads. */
-export type AppConn = { caller: Caller | undefined; ws: Socket };
+export type AppConn = { caller: Caller | undefined; ws: Socket; key?: string | undefined };
 export type MessageHandler = (conn: AppConn, message: Record<string, unknown>) => unknown;
 
 export interface AppWsArea {

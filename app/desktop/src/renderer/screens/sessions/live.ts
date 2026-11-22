@@ -1,7 +1,8 @@
 // A live session as the hub streams it (contracts app.rs, browser.rs): the window watches one session at a time
 // (browser_watch, kept by main across reconnects) and shows its newest frame (browser_frame); a person takes it over
 // and hands it back with browser_control; while it is theirs, their mouse, keys and pastes in the frame go to the page
-// as browser_input, in the frame's own pixels. ⌘⇧↩ never does: the app's keymap catches it before the page's handlers.
+// as browser_input, in the frame's own pixels (on the window's peer while one is open: rtc.ts). ⌘⇧↩ never does: the
+// app's keymap catches it before the page's handlers.
 // A browser that is theirs takes their address bar too: an address to go to, back, forward and reload.
 import { useCallback, useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
@@ -9,6 +10,7 @@ import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
 import { toast } from "../../ui";
 import { screenMark } from "./timing";
+import { sendInput, watchPeer } from "./rtc";
 
 /** The newest JPEG of the last few sessions shown: a view that comes back shows its page at once, then live again (an
  * H.264 frame is no picture alone). */
@@ -20,14 +22,20 @@ const KEEP = 8;
  * live one comes, the last one this window showed of it, if any.
  */
 export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | undefined {
-  const { hub } = useDataLayer();
+  const layer = useDataLayer();
+  const { hub } = layer;
   useEffect(() => {
     if (!on) return undefined;
     screenMark("view", sessionId);
     void window.fleetd.hub.watch(hub, sessionId);
     screenMark("watch", sessionId);
-    return () => void window.fleetd.hub.watch(hub, null);
-  }, [hub, sessionId, on]);
+    // Its peer alongside: the frames and input go straight to the screen's machine once it opens.
+    const stopPeer = watchPeer(layer, sessionId);
+    return () => {
+      stopPeer();
+      void window.fleetd.hub.watch(hub, null);
+    };
+  }, [layer, hub, sessionId, on]);
   const frame = useData((st) => (on && st.browserFrame?.sessionId === sessionId ? st.browserFrame : undefined));
   const first = frame !== undefined;
   useEffect(() => {
@@ -100,7 +108,7 @@ export const addressOf = (typed: string): string | undefined => {
 
 /** The address bar's controls for `sessionId`, each sent as the person's input. */
 export const pageNav = (hub: string, sessionId: string): PageNav => {
-  const send = (input: BrowserInput) => void window.fleetd.hub.input(hub, sessionId, input);
+  const send = (input: BrowserInput) => sendInput(hub, sessionId, input);
   return {
     go: (url) => send({ kind: "navigate", url }),
     back: () => send({ kind: "back" }),
@@ -150,7 +158,7 @@ export function useFrameInput(sessionId: string, frame: { width: number; height:
   }, []);
   const { hub } = useDataLayer();
   if (!enabled || frame === undefined) return undefined;
-  const send = (input: BrowserInput) => void window.fleetd.hub.input(hub, sessionId, input);
+  const send = (input: BrowserInput) => sendInput(hub, sessionId, input);
   const at = (e: PointerEvent<HTMLElement> | WheelEvent<HTMLElement>) => framePoint(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), frame);
   const button = (n: number) => BUTTONS[n] ?? "none";
   return {

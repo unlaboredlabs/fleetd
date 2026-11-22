@@ -1,32 +1,44 @@
 // The /app messages of live screens (crates/fleetd/src/hub/app_ws/mod.rs's browser arms): `browser_watch` (a new
-// watch replaces the running one; none stops it), `browser_frame_ack`, `browser_input` and `screen_thumbs`, and the
-// `browser_frame`s and `screen_thumb`s they bring. A watch's frames wait in a one-frame slot, replaced by any newer,
-// and go when the connection's pace has room: a slow link skips to the newest frame rather than queueing. An H.264
-// frame can't be skipped alone (the ones after it are made from it): one replaced unsent drops the stream for that
-// connection until the keyframe the node is asked for.
+// watch replaces the running one; none stops it), `browser_frame_ack`, `browser_input`, `browser_rtc` and
+// `screen_thumbs`, and the `browser_frame`s and `screen_thumb`s they bring. A `browser_rtc` offer goes on to the
+// screen's node and its answer back (src/node/rtc): the frames and input then go peer to peer, and a watch whose
+// `rtc` names an open peer gets no frames here. The same watch again with `rtc` changed only moves it on or off its
+// peer: off it, the stream starts again at a whole picture. Each peer's key is checked again every RTC_RECHECK_MS and
+// on every revocation, as the socket checks its own on every frame: one that can no longer watch the screen, or no
+// longer drive it when its peer carries input, has its peer closed, and the app is back on the socket, where its
+// input is refused as any other's. A watch that acks its frames gets them through a
+// FrameSender (./flow.ts): as many on their way as the acks' round trip needs, none taken while a queue stands, and its
+// budget from the same acks. One that doesn't ack gets each frame as it comes.
 import type { BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
+import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
+import type { BrowserRtcReport } from "../../shared/screens_wire.ts";
+import { allows } from "../auth/index.ts";
+import { isHuman } from "../api/grants.ts";
+import { link } from "../link/index.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
-import { input, live, startWatch, type Watch } from "./live.ts";
-import { Pace, PING } from "./pace.ts";
+import { input, live, runsOn, startWatch, type Watch } from "./live.ts";
+import { get } from "./store.ts";
+import { FrameSender } from "./flow.ts";
 import type { AppConn, AppWsArea } from "./app_seam.ts";
 import { forward } from "./thumbs.ts";
-
-type Outgoing = { text: string; seq: number; bytes: number; h264: boolean };
 
 /** One app connection's live screens. */
 class Connection {
   watch: Watch | undefined;
-  pace: Pace | undefined;
-  slot: Outgoing | undefined;
+  /** What the running watch asked: the same again with another `rtc` only moves it on or off its peer. */
+  asked: { session: string; acks: boolean; fps: number | undefined; video: boolean } | undefined;
+  /** The app's peers, by its own id: the hub's id for each, the node's, and its session. */
+  readonly peers = new Map<string, { id: string; machine: string; session: string; owner: string; input: boolean }>();
+  /** The acking watch's frames, paced to its acks. */
+  sender: FrameSender<string> | undefined;
   last: number | undefined;
-  deferred: Timer | undefined;
   thumbs: (() => void) | undefined;
   /** The last reason a person's input was refused, logged once until it changes. */
   inputRefused: string | undefined;
-  /** An H.264 frame went unsent: the next to go is a keyframe or a JPEG. */
-  needKey = false;
+  /** The app's peer the watch's frames come on (`browser_watch`'s `rtc`): none go here meanwhile. */
+  rtc: string | undefined;
 
   constructor(
     private readonly hub: Hub,
@@ -36,52 +48,97 @@ class Connection {
   stopWatch(): void {
     this.watch?.end();
     this.watch = undefined;
-    this.pace = undefined;
-    this.slot = undefined;
+    this.asked = undefined;
+    this.sender?.end();
+    this.sender = undefined;
     this.last = undefined;
-    this.needKey = false;
-    clearTimeout(this.deferred);
-    this.deferred = undefined;
-  }
-
-  /** Sends the waiting frame when the pace has room, else when it will. */
-  pump(): void {
-    if (!this.slot) return;
-    const now = performance.now();
-    const pace = this.pace;
-    if (pace) {
-      // It waits in the slot, replaced by any newer, until its time or an ack's room.
-      const at = pace.notBefore(now);
-      if (at !== undefined) return this.defer(at - now);
-      const room = pace.room(now);
-      if (!room.ok) {
-        pace.waited(now);
-        if (room.at !== undefined) this.defer(room.at - now);
-        return;
-      }
-    }
-    const frame = this.slot;
-    this.slot = undefined;
-    if (pace) {
-      if (pace.ping(now)) this.conn.ws.ping(PING);
-      pace.sent(frame.seq, frame.bytes, now);
-    }
-    appWs(this.hub).sendTo(this.conn, frame.text);
-  }
-
-  private defer(ms: number): void {
-    if (this.deferred) return;
-    this.deferred = setTimeout(() => {
-      this.deferred = undefined;
-      this.pump();
-    }, Math.max(ms, 0));
   }
 
   end(): void {
     this.stopWatch();
     this.thumbs?.();
     this.thumbs = undefined;
+    for (const peer of [...this.peers.keys()]) closePeer(this.hub, this, peer);
   }
+}
+
+/** The app peers' by the hub's id for each: which connection, and its own id. */
+const peerIds = (hub: Hub) =>
+  hub.area("browser.rtc", () => ({
+    n: 0,
+    byId: new Map<string, { c: Connection; peer: string }>(),
+    timer: undefined as ReturnType<typeof setInterval> | undefined,
+    revokes: false,
+  }));
+
+/** An app connection holds this many peers at most: its windows' screens, and one being replaced. */
+export const MAX_APP_PEERS = 4;
+/** Each peer's key is checked again this often: a role or grant it lost stops its frames and input within this. */
+export const RTC_RECHECK_MS = 2_000;
+
+/** Whether `caller` may watch a screen of `owner`'s machine, and drive it. */
+const access = (caller: Caller | undefined, owner: string) => ({
+  read: caller !== undefined && allows(caller, "read", owner),
+  input: caller !== undefined && isHuman(caller) && allows(caller, "operate", owner),
+});
+
+/** The connection's caller as its key is now: undefined once the key is refused (the socket closes it too). */
+function callerNow(hub: Hub, conn: AppConn): Caller | undefined {
+  if (conn.key === undefined) return conn.caller;
+  try {
+    return hub.auth.verify(conn.key) as Caller;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Closes each peer whose key lost what it was let in with. */
+export function recheckPeers(hub: Hub): void {
+  for (const { c, peer } of [...peerIds(hub).byId.values()]) {
+    const p = c.peers.get(peer);
+    if (!p) continue;
+    const now = access(callerNow(hub, c.conn), p.owner);
+    if (now.read && (now.input || !p.input)) continue;
+    closePeer(hub, c, peer);
+    appWs(hub).sendTo(c.conn, { t: "browser_rtc", session: p.session, peer, error: "Your access to this screen changed." });
+  }
+}
+
+/** Rechecks every RTC_RECHECK_MS while any peer is open, and on every revocation. */
+function watchPeers(hub: Hub): void {
+  const ids = peerIds(hub);
+  if (ids.timer !== undefined) return;
+  ids.timer = setInterval(() => {
+    recheckPeers(hub);
+    if (ids.byId.size === 0) {
+      clearInterval(ids.timer);
+      ids.timer = undefined;
+    }
+  }, RTC_RECHECK_MS);
+  if (!ids.revokes) {
+    ids.revokes = true;
+    hub.auth.onRevoke(() => recheckPeers(hub));
+    hub.shutdown.signal.addEventListener("abort", () => clearInterval(ids.timer), { once: true });
+  }
+}
+
+/** Closes the app's peer `peer`: the node is told, and the watch it carried takes its frames here again. */
+function closePeer(hub: Hub, c: Connection, peer: string): void {
+  const p = c.peers.get(peer);
+  if (!p) return;
+  c.peers.delete(peer);
+  peerIds(hub).byId.delete(p.id);
+  link(hub).send(p.machine, { t: "browser_rtc", sessionId: p.session, peer: p.id });
+  if (c.rtc === peer) offPeer(c);
+}
+
+/** The watch's frames come through the hub again, from a whole picture. */
+function offPeer(c: Connection): void {
+  c.rtc = undefined;
+  if (!c.watch) return;
+  c.watch.peer(false);
+  if (c.sender) c.sender.needKey = true;
+  c.watch.key();
 }
 
 /** Each frame's text, made once for every connection watching it: the frame is the node's, the same for all. */
@@ -131,58 +188,61 @@ function refuse(hub: Hub, conn: AppConn, caller: Caller, e: unknown): void {
   appWs(hub).sendTo(conn, errorFrame(caller.kind === "human" ? e.forPerson() : e));
 }
 
-export function browserWatch(hub: Hub, conn: AppConn, msg: { session?: string; acks?: boolean; fps?: number; video?: boolean }): void {
+export function browserWatch(
+  hub: Hub,
+  conn: AppConn,
+  msg: { session?: string; acks?: boolean; fps?: number; video?: boolean; rtc?: string },
+): void {
   const caller = conn.caller;
   if (!caller) return;
   const c = connection(hub, conn);
-  c.stopWatch();
   const session = msg.session;
+  const asked = session === undefined ? undefined : { session, acks: msg.acks === true, fps: msg.fps, video: msg.video === true };
+  // A peer of this connection's for this session, or none.
+  const rtc = msg.rtc !== undefined && c.peers.get(msg.rtc)?.session === session ? msg.rtc : undefined;
+  const a = c.asked;
+  if (c.watch && a && asked && a.session === asked.session && a.acks === asked.acks && a.fps === asked.fps && a.video === asked.video) {
+    if (rtc === c.rtc) return;
+    if (rtc === undefined) return offPeer(c);
+    c.rtc = rtc;
+    c.watch.peer(true);
+    return;
+  }
+  c.stopWatch();
+  c.rtc = undefined;
   if (session === undefined) return;
   const onFrame = (frame: BrowserFrame) => {
     if (frame.sessionId !== session) return;
     // The node sends its newest frame again for each `on`: not again to a connection that has it.
     if (c.last === frame.seq) return;
     c.last = frame.seq;
+    // On the app's peer: it has this one already.
+    if (c.rtc !== undefined) return;
+    if (!c.sender) return void appWs(hub).sendTo(conn, textOf(frame));
     const h264 = frame.h264B64 !== undefined;
-    // A stream that lost a frame starts again at a keyframe; a JPEG is a whole picture whatever came before.
-    if (h264 && !frame.key && c.needKey) return;
-    if (c.slot?.h264) {
-      c.needKey = true;
-      c.watch?.key();
-    }
-    if (!h264 || frame.key) c.needKey = false;
-    if (c.needKey) {
-      c.slot = undefined;
-      return;
-    }
-    c.slot = {
-      text: textOf(frame),
-      seq: frame.seq,
-      bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3,
-      h264,
-    };
-    c.pump();
+    c.sender.offer({ seq: frame.seq, bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3, h264, key: frame.key === true, data: textOf(frame) });
   };
   try {
     c.watch = startWatch(hub, caller, session, onFrame, msg.video === true);
-    if (msg.acks) c.pace = new Pace(msg.fps);
+    c.asked = asked;
+    if (msg.acks) {
+      const w = c.watch;
+      c.sender = new FrameSender<string>(
+        { send: (f) => void appWs(hub).sendTo(conn, f.data), key: () => w.key(), budget: (kbps) => w.budget(kbps) },
+        msg.fps,
+      );
+    }
+    if (rtc !== undefined) {
+      c.rtc = rtc;
+      c.watch.peer(true);
+    }
   } catch (e) {
     refuse(hub, conn, caller, e);
   }
 }
 
 export function browserFrameAck(hub: Hub, conn: AppConn, msg: { seq: number }): void {
-  const c = connections(hub).get(conn);
-  if (!c?.pace || !c.watch) return;
-  c.pace.acked(msg.seq, performance.now());
-  c.watch.budget(c.pace.kbps());
-  // Room again, maybe, for the frame that waited.
-  c.pump();
-}
-
-/** A pong on an app connection: the round trip of a pace's ping (app_ws's `onPong`). */
-export function pong(hub: Hub, conn: AppConn, payload: Buffer): void {
-  if (payload.toString() === PING) connections(hub).get(conn)?.pace?.pong(performance.now());
+  connections(hub).get(conn)?.sender?.ack(msg.seq);
 }
 
 export function browserInput(hub: Hub, conn: AppConn, msg: { session: string; input: BrowserInput }): void {
@@ -199,6 +259,62 @@ export function browserInput(hub: Hub, conn: AppConn, msg: { session: string; in
       c.inputRefused = e.message;
     }
     refuse(hub, conn, caller, e);
+  }
+}
+
+/**
+ * The app's `browser_rtc`: an offer for a session the key may watch goes on to its node, with whether input on it
+ * may drive the screen (a person's key with operate on the machine, as `browser_input` asks); without one, the peer
+ * closes. Refused with a `browser_rtc` that says why, and the app stays on the socket.
+ */
+export function browserRtc(hub: Hub, conn: AppConn, msg: { session: string; peer: string; offer?: string }): void {
+  const caller = conn.caller;
+  if (!caller) return;
+  const c = connection(hub, conn);
+  const refuse = (error: string): void => void appWs(hub).sendTo(conn, { t: "browser_rtc", session: msg.session, peer: msg.peer, error });
+  if (msg.offer === undefined || c.peers.has(msg.peer)) {
+    closePeer(hub, c, msg.peer);
+    if (msg.offer === undefined) return;
+  }
+  const s = get(hub, msg.session);
+  if (!s || !allows(caller, "read", s.projectRef.machineId)) return refuse(`No screen ${msg.session}.`);
+  if (s.state !== "live") return refuse(`Screen ${msg.session} is ${s.state}.`);
+  const machine = runsOn(hub, s);
+  if (!link(hub).can(machine, CAP_BROWSER_RTC)) return refuse(`${machine}'s node isn't connected, or is too old for screens peer to peer.`);
+  if (c.peers.size >= MAX_APP_PEERS) return refuse(`This connection has ${MAX_APP_PEERS} screen peers open already.`);
+  const ids = peerIds(hub);
+  const id = `p${++ids.n}`;
+  const owner = s.projectRef.machineId;
+  const { input } = access(caller, owner);
+  c.peers.set(msg.peer, { id, machine, session: msg.session, owner, input });
+  ids.byId.set(id, { c, peer: msg.peer });
+  watchPeers(hub);
+  if (!link(hub).send(machine, { t: "browser_rtc", sessionId: msg.session, peer: id, offer: msg.offer, input })) {
+    closePeer(hub, c, msg.peer);
+    refuse(`${machine}'s node isn't connected.`);
+  }
+}
+
+/** A node's `browser_rtc`: its answer to an app's offer, or its peer's end, for that app; a person's input on it. */
+export function rtcReport(hub: Hub, machine: string, r: BrowserRtcReport): void {
+  const ids = peerIds(hub);
+  const p = ids.byId.get(r.peer);
+  const held = p?.c.peers.get(p.peer);
+  if (!p || !held || held.machine !== machine) return;
+  if (r.input) live(hub).noteInput(held.session, hub.clock.now());
+  if (r.answer !== undefined) appWs(hub).sendTo(p.c.conn, { t: "browser_rtc", session: held.session, peer: p.peer, answer: r.answer });
+  if (r.closed || r.error !== undefined) {
+    p.c.peers.delete(p.peer);
+    ids.byId.delete(r.peer);
+    if (p.c.rtc === p.peer) offPeer(p.c);
+    appWs(hub).sendTo(p.c.conn, { t: "browser_rtc", session: held.session, peer: p.peer, error: r.error ?? "The peer closed." });
+  }
+}
+
+/** A machine linked again: its node's peers ended with its last link. */
+export function rtcRelinked(hub: Hub, machine: string): void {
+  for (const [id, p] of [...peerIds(hub).byId]) {
+    if (p.c.peers.get(p.peer)?.machine === machine) rtcReport(hub, machine, { sessionId: "", peer: id, closed: true, error: "The screen's machine linked again." });
   }
 }
 
@@ -220,6 +336,6 @@ export function bindApp(hub: Hub, app: AppWsArea): void {
   app.on("browser_watch", (conn, m) => browserWatch(hub, conn, m as never));
   app.on("browser_frame_ack", (conn, m) => browserFrameAck(hub, conn, m as never));
   app.on("browser_input", (conn, m) => browserInput(hub, conn, m as never));
+  app.on("browser_rtc", (conn, m) => browserRtc(hub, conn, m as never));
   app.on("screen_thumbs", (conn, m) => screenThumbs(hub, conn, m as never));
-  app.onPong((conn, data) => pong(hub, conn, data));
 }

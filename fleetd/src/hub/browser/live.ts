@@ -47,18 +47,21 @@ class Budgets {
 /** A key asked of the node again this soon after the last for the same screen goes untold: one is on its way. */
 const KEY_EVERY = 250;
 
-const watchFrame = (sessionId: string, on: boolean, kbps: number | undefined, video = false, key = false) => ({
+const watchFrame = (sessionId: string, on: boolean, kbps: number | undefined, video = false, key = false, relay = true) => ({
   t: "browser_watch" as const,
   sessionId,
   on,
   ...(kbps === undefined ? {} : { kbps }),
   ...(video ? { video: true } : {}),
   ...(key ? { key: true } : {}),
+  ...(relay ? {} : { relay: false }),
 });
 
 /** One app connection's watch of a session; `end()` ends it. */
 export class Watch {
   private ended = false;
+  /** Its frames come on a peer of the app's (`browser_rtc`), not through the hub. */
+  rtc = false;
   constructor(
     private readonly live: Live,
     readonly machine: string,
@@ -72,6 +75,13 @@ export class Watch {
   /** A frame of its was dropped on the way (an H.264 one): the node sends a keyframe next. */
   key(): void {
     if (!this.ended) this.live.key(this.session);
+  }
+
+  /** Its frames come on a peer of the app's now (`on`), or through the hub again. */
+  peer(on: boolean): void {
+    if (this.ended || this.rtc === on) return;
+    this.rtc = on;
+    this.live.relayChanged(this.session);
   }
 
   /** The watch's link carries `kbps` (undefined: it keeps up). */
@@ -136,7 +146,7 @@ export class Live {
     // A new watch of an H.264 screen starts from a keyframe (`key`); a watch frame again without it (a budget told
     // anew, a relink) changes only what it says.
     const h264 = this.video(session);
-    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264));
+    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264, this.relay(session)));
     return w;
   }
 
@@ -144,6 +154,17 @@ export class Live {
   private video(session: string): boolean {
     const watches = [...(this.watched.get(session)?.watches ?? [])];
     return watches.some((w) => w.video === true) && !watches.some((w) => w.video === false);
+  }
+
+  /** Whether `session`'s frames should come through the hub: some watch has no peer of its own. */
+  private relay(session: string): boolean {
+    return [...(this.watched.get(session)?.watches ?? [])].some((w) => !w.rtc);
+  }
+
+  /** A watch of `session` moved onto its app's peer or off it: the node is told whether to send frames here. */
+  relayChanged(session: string): void {
+    const watched = this.watched.get(session);
+    if (watched) link(this.hub).send(watched.machine, watchFrame(session, true, this.budgets.get(session)?.told, this.video(session), false, this.relay(session)));
   }
 
   /** A watch lost an H.264 frame: the node sends a keyframe next, asked once per KEY_EVERY. */
@@ -154,7 +175,7 @@ export class Live {
     const last = this.keyed.get(session);
     if (last !== undefined && now - last < KEY_EVERY) return;
     this.keyed.set(session, now);
-    link(this.hub).send(watched.machine, watchFrame(session, true, this.budgets.get(session)?.told, true, true));
+    link(this.hub).send(watched.machine, watchFrame(session, true, this.budgets.get(session)?.told, true, true, this.relay(session)));
   }
 
   budget(w: Watch, kbps: number | undefined): void {
@@ -167,7 +188,7 @@ export class Live {
 
   private tell(session: string, kbps: number | undefined): void {
     const machine = this.watched.get(session)?.machine;
-    if (machine) link(this.hub).send(machine, watchFrame(session, true, kbps, this.video(session)));
+    if (machine) link(this.hub).send(machine, watchFrame(session, true, kbps, this.video(session), false, this.relay(session)));
   }
 
   unwatch(w: Watch): void {
@@ -191,7 +212,10 @@ export class Live {
       link(this.hub).send(watched.machine, watchFrame(w.session, false, undefined));
     } else if (this.video(w.session) !== video) {
       // The one watch that couldn't decode H.264 left, or the last that could: the node switches.
-      link(this.hub).send(watched.machine, watchFrame(w.session, true, this.budgets.get(w.session)?.told, !video));
+      link(this.hub).send(watched.machine, watchFrame(w.session, true, this.budgets.get(w.session)?.told, !video, false, this.relay(w.session)));
+    } else if (!w.rtc && !this.relay(w.session)) {
+      // The last watch through the hub left: the rest have peers of their own.
+      this.relayChanged(w.session);
     }
   }
 
@@ -201,7 +225,7 @@ export class Live {
       if (w.machine !== machine) continue;
       // Frames sent while the link was down are lost: an H.264 screen starts again from a keyframe.
       const h264 = this.video(session);
-      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, h264, h264));
+      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, h264, h264, this.relay(session)));
     }
   }
 
