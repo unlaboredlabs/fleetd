@@ -932,7 +932,8 @@ $ fleetd project profile gemini --model gemini-4-neon --effort high --key-file ~
 
 The machine runs `agy acp`, Antigravity's own agent, and fleetd drives it over the Agent Client Protocol: the reply
 streams into the chat, tool calls show as they run, fleetd's tools and the bot's [MCP servers](/docs/mcp-servers)
-reach it, **Stop** cancels the turn, and the next start resumes the same conversation. A machine without `agy` gets it
+reach it, a message sent while it works steers the turn it is in, as with Claude, **Stop** cancels the turn, and the
+next start resumes the same conversation. A machine without `agy` gets it
 from Google's release channel at the first session that needs it, its checksum checked, at `~/.local/bin/agy`, and
 Antigravity's own background update stays off (`AGY_CLI_DISABLE_AUTO_UPDATE=1`).
 

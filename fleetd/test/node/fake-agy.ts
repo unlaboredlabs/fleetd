@@ -1,11 +1,18 @@
 // A stand-in for `agy acp`: just enough of Antigravity's ACP server for the runner's tests, with no Google behind it.
 // Every request it gets goes to $AGY_LOG, one JSON line each. A prompt's text picks what the turn does:
-// `hang` waits for session/cancel; `cmd <command>` runs a command after asking permission (and `mcp <server> <tool>`
+// `hang` waits for session/cancel, or for a prompt sent mid-turn, which steers it as agy does; `cmd <command>` runs a command after asking permission (and `mcp <server> <tool>`
 // calls an MCP tool so), and a cancel answers that permission `cancelled`; anything else thinks,
 // streams "hello" and ends. `authenticate` takes GEMINI_API_KEY, or `oauth-personal` once $AGY_SIGNIN exists;
 // `session/new` with $AGY_SIGNED_OUT refuses. `acp --login` plays Antigravity's sign-in: a Google link, then the code
 // `good-code` creates $AGY_SIGNIN.
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+
+if (process.argv[2] === "--version") {
+  process.stdout.write("1.5.14\n");
+  process.exit(0);
+}
+// What it was started with, for the node's launch test: $AGY_START gets its argv and environment.
+if (process.env.AGY_START) writeFileSync(process.env.AGY_START, JSON.stringify({ argv: process.argv.slice(2), env: process.env }));
 
 if (process.argv.includes("--login")) {
   process.stdout.write("Open this link in a browser to log in with Google:\n\n  https://accounts.google.com/o/oauth2/auth?state=fake\n\nThen paste the authorization code, or the full URL of the page you land on, and press Enter:\n");
@@ -31,15 +38,18 @@ const CONFIG = [
   { id: "model", category: "model", type: "select", currentValue: "gemini-4-neon", options: [{ value: "gemini-4-neon" }, { value: "gemini-4-argon" }] },
   { id: "thought_level", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "low" }, { value: "medium" }, { value: "high" }, { value: "xhigh" }] },
 ];
-let cancelled: (() => void) | undefined;
+let cancelled: ((how: "cancel" | "steer") => void) | undefined;
 const answers = new Map<string, (optionId: string) => void>();
 let asked = 0;
 
 async function prompt(id: unknown, sessionId: string, text: string): Promise<void> {
   if (text === "hang") {
     update(sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "working" } });
-    await new Promise<void>((resolve) => (cancelled = resolve));
-    reply(id, { stopReason: "cancelled" });
+    let mine: ((how: "cancel" | "steer") => void) | undefined;
+    const how = await new Promise<"cancel" | "steer">((resolve) => (cancelled = mine = resolve));
+    if (cancelled === mine) cancelled = undefined;
+    // Steered: agy answers the running prompt at once, with no usage, and the new prompt carries the turn on.
+    reply(id, how === "steer" ? { stopReason: "end_turn" } : { stopReason: "cancelled" });
     return;
   }
   if (text.startsWith("cmd ") || text.startsWith("mcp ")) {
@@ -103,10 +113,14 @@ if (!process.argv.includes("--login")) process.stdin.on("data", (chunk: Buffer) 
         reply(m.id, { configOptions: CONFIG });
         break;
       case "session/prompt":
-        void prompt(m.id, p.sessionId, p.prompt?.[0]?.text ?? "");
+        if (cancelled) {
+          // A prompt mid-turn: the running one answers first, then this one carries the turn on.
+          cancelled("steer");
+          void Bun.sleep(10).then(() => prompt(m.id, p.sessionId, p.prompt?.[0]?.text ?? ""));
+        } else void prompt(m.id, p.sessionId, p.prompt?.[0]?.text ?? "");
         break;
       case "session/cancel":
-        cancelled?.();
+        cancelled?.("cancel");
         break;
       default:
         if (m.id !== undefined) refuse(m.id, -32601, `no ${m.method}`);
