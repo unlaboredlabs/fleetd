@@ -123,6 +123,24 @@ describe("a bot's draft", () => {
     expect(draft?.error).toMatch(/blob.bin can't be sent: chats take images, PDFs/);
   });
 
+  it("says at once why a file didn't upload, and Try again uploads it in its place", async () => {
+    let fail = true;
+    const d = createDrafts(
+      layer(() => (fail ? Promise.resolve({ ok: false, error: { code: "unavailable", message: "The team's file store didn't answer." } }) : Promise.resolve({ ok: true, output: { attachmentId: "att-2", bytes: 5, sha256: "x" } }))),
+    );
+    d.attach("devbox/api", [new File(["notes"], "notes.txt", { type: "text/plain" })]);
+    await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload).toBeDefined());
+    const failed = d.store.getState()["devbox/api"];
+    expect(failed?.error).toMatch(/^notes.txt didn’t upload: The team's file store didn't answer/);
+    expect(failed?.attached[0]?.file).toBeDefined();
+    fail = false;
+    d.retry("devbox/api", failed?.attached[0]?.local ?? -1);
+    await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload?.ok).toBe(true));
+    const done = d.store.getState()["devbox/api"];
+    expect(done?.error).toBeUndefined();
+    expect(done?.attached.map((a) => [a.name, a.file])).toEqual([["notes.txt", undefined]]);
+  });
+
   it("takes back a message that didn't go with its files, after words already in the box", () => {
     const d = createDrafts(layer(() => Promise.resolve({ ok: true, output: {} })));
     d.set("devbox/api", (x) => ({ ...x, text: "and also" }));

@@ -22,6 +22,8 @@ export interface Attached {
   readonly bytes: number;
   /** Undefined while it uploads. */
   readonly upload?: Upload;
+  /** The file itself, kept while its upload failed, for Try again. */
+  readonly file?: File;
 }
 
 export interface Draft {
@@ -40,6 +42,8 @@ export interface Drafts {
   set(key: string, next: (now: Draft) => Draft): void;
   /** Uploads each file (attachment_put); a refused one says why. */
   attach(key: string, files: readonly File[]): void;
+  /** A file whose upload failed, uploaded again in its place. */
+  retry(key: string, local: number): void;
   /** A message that didn't go, back in the box: its words after any already there, and its files, already uploaded. */
   restore(key: string, text: string, files: readonly AttachmentRef[]): void;
 }
@@ -71,12 +75,17 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
       const d = next(s[key] ?? emptyDraft);
       return Object.fromEntries([...Object.entries(s).filter(([k]) => k !== key), ...(isEmpty(d) ? [] : [[key, d] as const])]);
     }, true);
-  const settle = (key: string, local: number, upload: Upload | undefined, error?: string) =>
+  const settle = (key: string, local: number, upload: Upload | undefined, error?: string, file?: File) =>
     set(key, (d) => ({
       ...d,
-      attached: upload ? d.attached.map((a) => (a.local === local ? { ...a, upload } : a)) : d.attached.filter((a) => a.local !== local),
+      attached: upload ? d.attached.map((a) => (a.local === local ? { ...a, upload, ...(upload.ok || file === undefined ? {} : { file }) } : a)) : d.attached.filter((a) => a.local !== local),
       ...(error === undefined ? {} : { error }),
     }));
+  // A failed upload says why at once, not only when Send is pressed, and keeps its file for Try again.
+  const send = async (key: string, local: number, file: File, mime: AttachmentMime) => {
+    const up = await upload(layer, file, mime);
+    settle(key, local, up, up.ok ? undefined : `${file.name} didn’t upload: ${up.message}`, file);
+  };
   return {
     store,
     set,
@@ -111,9 +120,22 @@ export function createDrafts(layer: Pick<DataLayer, "call">, saved: Readonly<Rec
         void file.slice(0, TEXT_HEAD).arrayBuffer().then(async (head) => {
           const mime = mimeFor(file.name, looksText(head));
           if (!mime) return settle(key, local, undefined, `${file.name} can't be sent: chats take ${TAKES}.`);
-          settle(key, local, await upload(layer, file, mime));
+          await send(key, local, file, mime);
         });
       }
+    },
+    retry: (key, local) => {
+      const a = (store.getState()[key] ?? emptyDraft).attached.find((x) => x.local === local);
+      const file = a?.file;
+      if (file === undefined) return;
+      set(key, (d) => {
+        const { error: _, ...rest } = d;
+        return { ...rest, attached: d.attached.map((x) => (x.local === local ? { local, name: x.name, bytes: x.bytes } : x)) };
+      });
+      void file.slice(0, TEXT_HEAD).arrayBuffer().then(async (head) => {
+        const mime = mimeFor(file.name, looksText(head));
+        if (mime) await send(key, local, file, mime);
+      });
     },
   };
 }
