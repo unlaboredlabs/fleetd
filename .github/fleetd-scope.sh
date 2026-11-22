@@ -4,13 +4,17 @@
 # always runs it. HEAD^1 is the base for a PR's merge commit (the train's batch PR included); a manual run from a branch
 # compares with its merge base on main. No base to compare with runs it.
 #
-# The paths: everything its steps read. Add one here when a test starts reading a file outside them.
+# The paths: everything its steps read. Add one here when a test starts reading a file outside them
+# (fleetd/test/ci_scope.test.ts fails until it is).
 set -euo pipefail
 
 paths=(
-  fleetd .fleetd .github/workflows/ci.yml .github/fleetd-scope.sh .github/migrations-check.mjs
-  # The wire contract and its schemas; the setup steps the docs generator checks; the installer a test runs.
-  app/desktop/src/shared/contracts app/desktop/fixtures/setup site/install.sh
+  # fleetd/test/repo.test.ts reads every workflow (mac.yml's jobs against .fleetd/train.json among them).
+  fleetd .fleetd .github
+  # The wire contract and its schemas; the setup steps the docs generator checks; the installer a test runs; the Claude
+  # endpoint the CLI's setup imports; the desktop's package manager a test matches the sandbox image to.
+  app/desktop/src/shared/contracts app/desktop/fixtures/setup site/install.sh app/desktop/src/shared/claudeEndpoint.ts
+  app/desktop/package.json
   # The lab scenarios; the two-team cases a test proves (fleetd/test/compare).
   tests/lab tests/compare
   # The docs pages generated from the code.
