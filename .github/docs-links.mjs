@@ -1,5 +1,5 @@
 // Every link on fleetd.sh resolves. Run by CI from the repo root:
-//   node .github/docs-links.mjs              internal: each href/src in site/home.html and the built docs' pages
+//   node .github/docs-links.mjs              internal: each href/src in site/home.html, site/pricing.html and the built docs' pages
 //                                            (site/docs/**/*.html) names a file in site/ (clean URLs as Vercel serves
 //                                            them) and an id on that page
 //   node .github/docs-links.mjs --external   external: each http(s) link answers, 10 s per try, two tries
@@ -12,6 +12,7 @@ import { resolve } from "./docs-serve.mjs";
 // Starlight's own assets (_astro/, pagefind/) hold no pages.
 const PAGES = [
   "site/home.html",
+  "site/pricing.html",
   ...fs
     .readdirSync("site/docs", { recursive: true })
     .filter((n) => n.endsWith(".html") && !/^(_astro|pagefind)\//u.test(n))

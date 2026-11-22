@@ -70,6 +70,7 @@ export default defineConfig({
             "github",
             "steering",
             "automations",
+            "issues",
             "approvals-and-secrets",
             "vault",
             "people",

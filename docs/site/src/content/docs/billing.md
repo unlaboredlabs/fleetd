@@ -32,6 +32,9 @@ fix it. Paying happens on Stripe's own pages, in your browser; fleetd never sees
 | Team | $50 | $60 |
 | Scale | $200 | $260 |
 
+A plan also sets how many agents run on fleetd's computers at once (leads never count): 3 on Solo, 10 on Team, 40
+on Scale, and 3 with credits and no plan.
+
 A plan renews each month. Its included time is used before bought credits and ends with its month: it doesn't roll
 over. A plan change applies from the next month. Cancelling stops renewal; the plan lasts to the end of the month paid
 for. Prices are before VAT, which Stripe adds where it applies.
@@ -51,9 +54,9 @@ Each computer is charged for the time it runs, to the millisecond, at its size's
 | 2 CPU, 4 GB | $0.06 |
 | 4 CPU, 8 GB | $0.12 |
 | 8 CPU, 16 GB | $0.24 |
-| 16 CPU, 32 GB | $0.60 |
 
-Time is counted per team, from the moment a computer starts to the moment it stops.
+8 CPU, 16 GB is the largest size for now. Time is counted per team, from the moment a computer starts to the moment
+it stops.
 
 ## When computers stop {#stops}
 

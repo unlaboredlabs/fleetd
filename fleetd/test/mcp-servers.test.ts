@@ -13,11 +13,14 @@ import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
 import { oauthCallback } from "../src/hub/mcp_oauth/callback.ts";
 import { type ServeStatus, serveFront } from "../src/hub/mcp_oauth/https_front.ts";
 import { mcpServers } from "../src/hub/mcp_servers/index.ts";
+import { plainKeyless } from "../src/hub/mcp_servers/tools.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { HubDb } from "../src/hub/store/db.ts";
 import { redact } from "../src/hub/redact.ts";
 import { openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import type { McpServer } from "../src/shared/contracts.ts";
+import { people } from "../src/hub/people/store.ts";
+import { tinyMcp } from "./tiny_mcp.ts";
 import { tempHome } from "./helpers.ts";
 
 /** A service that signs in with OAuth as MCP's spec has it, with dynamic client registration. */
@@ -81,9 +84,12 @@ function service() {
 }
 
 const svc = service();
+/** A server that asks no one to sign in, as a plain MCP server on a tailnet host is. */
+const open = tinyMcp({ name: "open" });
 const home = tempHome();
 afterAll(() => {
   svc.server.stop(true);
+  open.server.stop(true);
   home.done();
 });
 
@@ -92,6 +98,8 @@ const NODE_SECRET = crypto.getRandomValues(new Uint8Array(32));
 /** A node: keeps MCP secrets by fingerprint (sha256 prefix of the opened value), lists a server's tools. */
 class FakeLink implements Link {
   calls: Record<string, unknown>[] = [];
+  /** What the node's test of a server finds. */
+  tested: Record<string, unknown> = { server: "crm", tools: [{ name: "list_contacts" }, { name: "send_email" }] };
   opened: string[] = [];
   /** The machine of each call. */
   to: string[] = [];
@@ -113,7 +121,7 @@ class FakeLink implements Link {
       ];
       return { result: { ok: { kind: "mcp_secrets", secrets } } };
     }
-    if (call.op === "mcp_test") return { result: { ok: { kind: "mcp_tested", server: "crm", tools: [{ name: "list_contacts" }, { name: "send_email" }] } } };
+    if (call.op === "mcp_test") return { result: { ok: { kind: "mcp_tested", ...this.tested } } };
     throw new Error(`unexpected ${String(call.op)}`);
   }
   /** The machine is offline: no link. */
@@ -739,4 +747,87 @@ test("only a bot's sign-in with no key of its own is carried over, one service p
   expect(started.scope).toEqual(scope);
   expect(mcpServers(l.hub).get(team, "tickets")!.oauth).toBeUndefined();
   expect(getRow(l.hub, team, "tickets")).toBeUndefined();
+});
+
+test("a team server with no key that asks no one to sign in reaches the agents of the bots it names, and Test says so", async () => {
+  const l = lab();
+  const at = "2026-11-08T10:00:00.000Z";
+  store(l.hub).projectsUpsertMany("lab", [{ machineId: "lab", projectId: "p2", title: "P2", workspaceRoot: "/w2", lastActivityAt: at, threads: { running: 0, total: 0 } } as never]);
+  const input = { scope: team, name: "open", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: open.url }, env: [], headers: [], projects: [{ machineId: "lab", projectId: "p1" }] };
+  const saved = (await l.call("mcp_server_set", input)).server as McpServer;
+  // A plain server, not a sign-in waiting to finish.
+  expect(saved.oauth).toBeUndefined();
+  expect(saved.connectedBy).toBeUndefined();
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([
+    { name: "open", secrets: { kind: "global" }, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: open.url }, env: [], headers: [] },
+  ]);
+  // Only the bots it names.
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p2" }).servers).toEqual([]);
+  const tested = (await l.call("mcp_server_test", { scope: team, name: "open" })).result as Record<string, unknown>;
+  expect(tested.error).toBeUndefined();
+  expect(tested.signIn).toBeUndefined();
+  expect((tested.tools as unknown[]).length).toBe(2);
+
+  // One the hub can't reach to ask (a tailnet host only the machines reach) is plain too: Test on a machine says the rest.
+  const far = (await l.call("mcp_server_set", { ...input, name: "far", transport: { type: "http", url: "http://127.0.0.1:1/mcp" } })).server as McpServer;
+  expect([far.oauth, far.connectedBy]).toEqual([undefined, undefined]);
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers.map((x) => x.name)).toEqual(["far", "open"]);
+
+  // A member doesn't give every bot a server with no sign-in, and is told why.
+  const member: Caller = { ...l.person, keyId: "k2", grants: [{ role: "operate", machines: ["lab"] }], person: { personId: "p_bbbbbbbb", name: "Bo" } };
+  await expect(l.call("mcp_server_set", { ...input, name: "open2" }, member)).rejects.toMatchObject({
+    code: "forbidden",
+    message: expect.stringContaining("doesn't ask anyone to sign in"),
+  });
+  expect(mcpServers(l.hub).get(team, "open2")).toBeUndefined();
+});
+
+test("a team server with no key that answers with OAuth waits for its sign-in, and Test says it asks you to sign in", async () => {
+  const l = lab();
+  const saved = (await l.call("mcp_server_set", { scope: team, name: "docs", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [] })).server as McpServer;
+  expect(saved.oauth).toMatchObject({ status: "signed_out", issuer: `${svc.base}/as` });
+  expect(saved.connectedBy).toBe("p_aaaaaaaa");
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([]);
+  const tested = (await l.call("mcp_server_test", { scope: team, name: "docs" })).result as Record<string, unknown>;
+  expect(tested).toMatchObject({ signIn: true, error: "docs asks you to sign in: sign in with your own account." });
+});
+
+test("a keyless server that turns fleetd away with no sign-in to offer is said to want a key", async () => {
+  const l = lab();
+  const keyed = tinyMcp({ name: "keyed", key: "k-1" });
+  try {
+    await l.call("mcp_server_set", { scope: team, name: "keyed", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: keyed.url }, env: [], headers: [] });
+    expect(mcpServers(l.hub).get(team, "keyed")!.oauth).toBeUndefined();
+    l.link.tested = { tools: [], error: "HTTP 401: who are you" };
+    const tested = (await l.call("mcp_server_test", { scope: team, name: "keyed" })).result as Record<string, unknown>;
+    expect(tested.signIn).toBeUndefined();
+    expect(tested.error).toBe("keyed turned fleetd away (HTTP 401) without asking anyone to sign in: it wants a key, added under Headers.");
+  } finally {
+    keyed.server.stop(true);
+  }
+});
+
+test("a team server with a key of its own reaches agents with its header, as before", async () => {
+  const l = lab();
+  const saved = (await l.call("mcp_server_set", { scope: team, name: "crm", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: open.url }, env: [], headers: [{ kind: "secret", name: "X-Key", sealed: [{ machineId: "lab", sealed: sealedFor("k-crm") }] }] })).server as McpServer;
+  expect(saved.oauth).toBeUndefined();
+  expect(saved.connectedBy).toBeUndefined();
+  expect(l.link.opened).toContain("k-crm");
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toMatchObject([{ name: "crm", headers: [{ kind: "secret", name: "X-Key" }] }]);
+});
+
+test("a keyless team server an owner or admin added before as a sign-in that never came is a plain server now; a member's stays off, with why", async () => {
+  const l = lab();
+  const ann = people(l.hub).create("Ann", "admin");
+  const bo = people(l.hub).create("Bo", "member");
+  const row = (name: string, by: string): McpServer => ({ scope: team, name, enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: open.url }, env: [], headers: [], connectedBy: by, updatedAt: "2026-11-08T10:00:00.000Z" });
+  mcpServers(l.hub).put(row("anns", ann.personId));
+  mcpServers(l.hub).put(row("bos", bo.personId));
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers).toEqual([]);
+  plainKeyless(l.hub);
+  expect(mcpServers(l.hub).get(team, "anns")!.connectedBy).toBeUndefined();
+  expect(mcpServers(l.hub).sessionConfig({ machineId: "lab", projectId: "p1" }).servers.map((x) => x.name)).toEqual(["anns"]);
+  const tested = (await l.call("mcp_server_test", { scope: team, name: "bos" })).result as Record<string, unknown>;
+  expect(tested.signIn).toBeUndefined();
+  expect(tested.error).toBe("bos asks no one to sign in, and only an owner or admin gives every bot a server with no key: ask one to save it again in Connections.");
 });

@@ -669,8 +669,8 @@ for (const clip of ["lead", "team", "screens"] as const) {
  * screen's layout fails the run rather than cropping something else.
  */
 const STILLS = [
-  { still: "dms", screen: "agents.work", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 250, width: 400, height: 556 }, holds: ["Will do. Does #214", "Tests pass in en-US"] },
-  { still: "dmlog", screen: "activity", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 214, width: 400, height: 556 }, holds: ["Receipt dates now print", "Which locale did you run"] },
+  { still: "dms", screen: "agents.work", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 286, width: 400, height: 556 }, holds: ["Will do. Does #214", "Tests pass in en-US"] },
+  { still: "dmlog", screen: "activity", variant: "dms", fixture: "dms-relays", part: { x: 988, y: 118, width: 400, height: 556 }, holds: ["Receipt dates now print", "Which locale did you run"] },
 ] as const;
 
 for (const { still, screen, variant, fixture, part, holds } of STILLS) {

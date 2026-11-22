@@ -151,6 +151,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       </SettingsSection>
       <RepoSection settings={settings}>
         {vault ? <EnvInVault count={settings.env.length} projectRef={ref} /> : <EnvSetting env={settings.env} projectRef={ref} />}
+        {summary?.issueOrders !== undefined ? <IssueOrdersSetting projectRef={ref} on={summary.issueOrders} /> : null}
       </RepoSection>
       <SettingsSection title="Safety">
         <ApprovalsSetting projectRef={ref} />
@@ -268,6 +269,36 @@ function NameSetting({ settings }: { settings: Settings }) {
           ) : null}
         </>
       }
+    />
+  );
+}
+
+/**
+ * Issues are orders (`issueOrders`, on by default; shown once the bot has a repo on GitHub): a GitHub issue in its repos
+ * that someone with write access labels `fleetd` opens an order.
+ */
+function IssueOrdersSetting({ projectRef, on }: { projectRef: Ref; on: boolean }) {
+  const hubCall = useHubCall();
+  const [picked, setPicked] = useState<{ on: boolean; over: boolean } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const shown = picked !== null && picked.over === on ? picked.on : on;
+  const flip = (next: boolean) => {
+    const mine = { on: next, over: on };
+    setPicked(mine);
+    setProblem(null);
+    hubCall("project_settings_set", { ...projectRef, issueOrders: next }).catch((e: unknown) => {
+      setPicked((p) => (p === mine ? null : p));
+      setProblem(errorText(e));
+    });
+  };
+  return (
+    <SwitchRow
+      title="Issues are orders"
+      hint="A GitHub issue in its repos that someone with write access labels fleetd opens an order. fleetd comments on the issue when it starts and when its PR lands."
+      checked={shown}
+      line={problem !== null ? <span role="alert">{problem}</span> : null}
+      lineTone="danger"
+      onCheckedChange={flip}
     />
   );
 }
