@@ -33,6 +33,7 @@ export function prune(c: Database, nowMs: number): boolean {
     .run(cutoff, PRUNE_BATCH).changes;
   // A Change's stamp is read when it lands; one older than the retention would land outside every range.
   c.query("DELETE FROM metric_changes WHERE review_passed_ms < ?1").run(cutoff);
+  c.query("DELETE FROM metric_pipeline WHERE merged_ms < ?1").run(cutoff);
   return merges === PRUNE_BATCH || touches === PRUNE_BATCH;
 }
 

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
-import type { GitHost, MetricsCoverage, MetricsGetOutput, RepoCoverage, RepoStale } from "../../shared/contracts.ts";
+import type { GitHost, MetricsCoverage, MetricsDay, MetricsGetOutput, RepoCoverage, RepoStale } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
 import { requireRole } from "../api/grants.ts";
@@ -14,6 +14,8 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { cursor as readCursor } from "../time/store.ts";
 import * as compute from "./compute.ts";
+import * as pipeline from "./pipeline.ts";
+import { pipelineOfValues, pipelineSql, PIPELINE_COLUMN_LIST } from "./pipeline_store.ts";
 import { Identities, attributed, REVIEW_MAX_MS } from "./human.ts";
 import * as store from "./store.ts";
 import { sweepArea } from "./sweep.ts";
@@ -146,9 +148,11 @@ export async function metricsGet(hub: Hub, caller: Caller, input: import("../../
   // `until` (one recorded then may have started before it).
   const [mergeSql, mergeParams] = store.mergesSql(prevSince, until, repos);
   const [touchSql, touchParams] = store.touchesSql(prevSince, until + REVIEW_MAX_MS);
-  const [mergeAnswer, touchAnswer] = await Promise.all([
+  const [pipeSql, pipeParams] = pipelineSql(prevSince, until);
+  const [mergeAnswer, touchAnswer, pipeAnswer] = await Promise.all([
     hub.db.read<{ j: string }>(store.asJson(mergeSql, store.MERGE_COLUMN_LIST), mergeParams),
     hub.db.read<{ j: string }>(store.asJson(touchSql, store.TOUCH_COLUMN_LIST), touchParams),
+    hub.db.read<{ j: string }>(store.asJson(pipeSql, PIPELINE_COLUMN_LIST), pipeParams),
   ]);
   const rows = store.fromJson(mergeAnswer).map(store.mergeOfValues);
   const touches = store.fromJson(touchAnswer).map(store.touchOfValues).filter((t) => {
@@ -183,21 +187,44 @@ export async function metricsGet(hub: Hub, caller: Caller, input: import("../../
   }
   const prevKnown = knownFrom !== undefined && knownFrom <= prevSince;
   const onPrs = compute.prTouches(touches);
-  const items = cur.flatMap((r) => compute.mergeItem(r, onPrs) ?? []);
+  // The train's figures, for the landed changes in scope: a pipeline row is its Change's.
+  const pipes = new Map(store.fromJson(pipeAnswer).map(pipelineOfValues).map((r) => [r.changeId, r]));
+  const pipeOf = (rows: store.MergeRow[]) => rows.flatMap((r) => (r.route === "train" && r.changeId !== undefined ? (pipes.get(r.changeId) ?? []) : []));
+  const curPipes = pipeOf(cur);
+  const prevPipes = prevKnown ? pipeOf(prevRows) : undefined;
+  const items = cur.flatMap((r) => {
+    const item = compute.mergeItem(r, onPrs);
+    const pipe = r.changeId === undefined ? undefined : pipes.get(r.changeId);
+    return item === undefined ? [] : [pipe?.known === true && r.route === "train" ? { ...item, pipeline: pipeline.item(pipe) } : item];
+  });
+  const tiles = compute.tiles(curPeriod, prevKnown ? prevPeriod : undefined);
+  const dayList = withPipeline(compute.dayList(curPeriod), days, curPipes);
   const out: MetricsGetOutput = {
     since: isoMs(since),
     until: isoMs(until),
-    tiles: compute.tiles(curPeriod, prevKnown ? prevPeriod : undefined),
-    days: compute.dayList(curPeriod),
+    tiles: curPipes.length > 0 || (prevPipes?.length ?? 0) > 0 ? { ...tiles, pipeline: pipeline.tiles(curPipes, days, prevPipes) } : tiles,
+    days: dayList,
+    ...(curPipes.length > 0 ? { ciJobs: pipeline.jobs(curPipes, prevPipes) } : {}),
     merges: items.slice(0, MAX_MERGES),
     mergesTotal: items.length,
     ...(p ? {} : { repos: compute.repoRows(curPeriod, projects).slice(0, MAX_REPOS) }),
     coverage: coverage(hub, repos, stored, knownSince, now, tz),
-    ...(input.compare ? { compare: { since: isoMs(prevSince), until: isoMs(since), days: compute.dayList(prevPeriod) } } : {}),
+    ...(input.compare
+      ? { compare: { since: isoMs(prevSince), until: isoMs(since), days: withPipeline(compute.dayList(prevPeriod), prevDays, pipeOf(prevRows)) } }
+      : {}),
     next: NEXT,
     ...(items.length > MAX_MERGES ? { truncated: true } : {}),
   };
   return out;
+}
+
+/** Each day with the train's figures of the changes that landed in it, once the train has any in the range. */
+function withPipeline(list: MetricsDay[], ds: compute.Day[], rows: pipeline.PipelineRow[]): MetricsDay[] {
+  if (rows.length === 0) return list;
+  return list.map((d, i) => {
+    const day = ds[i];
+    return day === undefined ? d : { ...d, pipeline: pipeline.day(rows.filter((r) => r.mergedMs >= day.start && r.mergedMs < day.end)) };
+  });
 }
 
 export function register(tools: Registry): void {
