@@ -82,9 +82,13 @@ export function start(node: Node): void {
 export function startSims(node: Node, h: Host, simulators: Simulators, setting?: number): MacSims {
   const sims = new MacSims(node.home, simulators, setting);
   h.sims = sims;
-  void simulators.start();
   sims.screens = simScreens(node, simulators);
   const screens = sims.screens;
+  // A screen's video starting is kept at once: a node that dies without its stop still leaves it to the next.
+  screens.changed = () => sims.save();
+  // The simulators the node before left held are their agents' again, screens too, before the sweep below looks for
+  // recordings a stopped node left; the pool starts once they are known.
+  void sims.adopt();
   void screens.housekeep();
   sweeps.set(
     h,
@@ -156,12 +160,12 @@ function startHousekeeping(node: Node, h: Host): void {
   housekeeping.set(h, [setInterval(clean, SWEEP_EVERY), setInterval(write, ACTIVITY_EVERY)]);
 }
 
-/** Every job on the Mac ends with its node, and every simulator it lent. */
+/** Every job on the Mac ends with its node; the simulators it lent run on, for the next node to take over. */
 export async function stop(node: Node): Promise<void> {
   if (!isAgentsMac(node)) return;
   const h = host(node);
   h.stop();
   clearInterval(sweeps.get(h));
   for (const t of housekeeping.get(h) ?? []) clearInterval(t);
-  await h.sims?.shutdown();
+  await h.sims?.stop();
 }

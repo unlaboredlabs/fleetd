@@ -8,8 +8,8 @@ import { blocksSimulators } from "../src/node/agents_mac/checks.ts";
 import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
 import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Pool, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
-import { MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
-import { SimScreens } from "../src/node/device/ios/sim_screen.ts";
+import { endedPath, heldPath, MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
+import { recordingsDir, resumeRecording, SimScreens, type SimTools, startRecording } from "../src/node/device/ios/sim_screen.ts";
 import { builtXctestrun, installWrapper, iosEnv, runnerDir, setDir, writeConfig, wrapperScript } from "../src/node/device/ios/wrapper.ts";
 import { Host, jobEnv } from "../src/node/mac_tool/host.ts";
 import { simBudget } from "../src/node/mac_tool/protocol.ts";
@@ -256,7 +256,7 @@ function writeGolden(home: string, xctestrun: string): Golden {
 }
 
 /** A stand-in `xcrun simctl --set <set> …`: each call logged, a fresh udid for a clone or create. With `gate`, a clone
- * answers only once that file is there. */
+ * answers only once that file is there. `simctl list devices` prints `devices.json` beside the log once it is there. */
 function fakeXcrun(home: string, gate?: string): { xcrun: string; log: string } {
   const xcrun = join(home, "bin/xcrun");
   const log = join(home, "xcrun.log");
@@ -269,7 +269,7 @@ function fakeXcrun(home: string, gate?: string): { xcrun: string; log: string } 
 shift 3
 echo "$@" >> '${log}'
 case "$1" in
-  list) if [ "$2" = runtimes ]; then cat '${runtimes}'; else echo '{"devices":{"r":[{"udid":"LEFT-OVER","name":"fleetd-x","state":"Booted"}]}}'; fi ;;
+  list) if [ "$2" = runtimes ]; then cat '${runtimes}'; elif [ -e '${join(home, "devices.json")}' ]; then cat '${join(home, "devices.json")}'; else echo '{"devices":{"r":[{"udid":"LEFT-OVER","name":"fleetd-x","state":"Booted"}]}}'; fi ;;
   clone|create) ${gate ? `[ "$1" = clone ] && while [ ! -e '${gate}' ]; do sleep 0.02; done; ` : ""}tr a-z A-Z < /proc/sys/kernel/random/uuid ;;
 esac
 exit 0
@@ -638,4 +638,135 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   const actions = Buffer.from(parts.map((p) => String(p.args.dataB64)).join(""), "base64").toString().trim().split("\n").map((l) => JSON.parse(l).tool);
   expect(actions).toEqual(["sim_start", "takeover", "agent-device", "handback", "agent-device", "sim_end"]);
   expect(screens.count()).toBe(0);
+});
+
+test("a node restart ends no simulator an agent holds: the next node takes it over, its screen, video and takeover too", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  const golden = writeGolden(home.dir, xctestrun);
+  const { xcrun, log } = fakeXcrun(home.dir);
+  const calls: { thread: string; op: string; args: Record<string, unknown> }[] = [];
+  const hub = {
+    hub: async (thread: string, _cwd: string, op: string, args: Record<string, unknown>) => {
+      calls.push({ thread, op, args });
+      return op === "browser_recording_part" ? { bytes: Number(args.offset) + Buffer.from(String(args.dataB64), "base64").length } : {};
+    },
+    send: () => {},
+  };
+  const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x6a, 0x02, 0x80, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xd9]);
+  const finished: string[] = [];
+  // recordVideo: pid 4242 for the first node; the next finds it still recording by that pid.
+  const tools: SimTools = {
+    shoot: async () => JPEG,
+    record: () => ({ pid: 4242, finish: async () => (finished.push("node 1"), undefined) }),
+    resume: (pid, path) => (pid === 4242 ? { pid, finish: async () => (finished.push("node 2"), writeFileSync(path, "mp4"), undefined) } : undefined),
+    run: async () => ({ ok: true, said: "", ms: 1 }),
+  };
+  const node = () => {
+    const simulators = new Simulators(home.dir, { enabled: true }, { simctl: new Simctl(setDir(home.dir), xcrun), runner: async () => {} });
+    const sims = new MacSims(home.dir, simulators, 2, () => 64 * 2 ** 30);
+    sims.screens = new SimScreens(home.dir, hub, tools);
+    sims.screens.changed = () => sims.save();
+    const host = new Host(join(home.dir, "mac"), { open: () => null });
+    host.sims = sims;
+    return { simulators, sims, screens: sims.screens, host };
+  };
+
+  // The first node lends T1 a simulator with a screen, watched and taken over by a person, and T2 one without.
+  const one = node();
+  await one.sims.adopt();
+  await until(() => one.simulators.warm() === 1);
+  const a = one.host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta", taskId: "T1" });
+  const screen = { hostKey: `H${"1".repeat(32)}`, sessionId: `B${"2".repeat(32)}` };
+  const udid = ((await one.host.step(a, { step: "sim_start" }, undefined, screen))[0] as { udid: string }).udid;
+  one.screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
+  one.screens.control({ sessionId: screen.sessionId, control: "human", by: "human:laptop" } as never);
+  await until(() => one.simulators.warm() === 1);
+  const b = one.host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
+  const lost = ((await one.host.step(b, { step: "sim_start" }))[0] as { udid: string }).udid;
+  await until(() => one.simulators.warm() === 1);
+
+  // It stops: the warm clone goes, the held ones run on, video and person's control included; nothing ends at the hub.
+  await one.sims.stop();
+  const stopped = readFileSync(log, "utf8");
+  for (const held of [udid, lost]) {
+    expect(stopped).not.toContain(`shutdown ${held}`);
+    expect(stopped).not.toContain(`delete ${held}`);
+  }
+  expect(finished).toEqual([]);
+  expect(existsSync(controlPath(home.dir, simKey("T1")))).toBe(true);
+  expect(existsSync(simConfig(home.dir, "T1"))).toBe(true);
+  expect(calls.filter((c) => c.op === "browser_session").map((c) => c.args.state)).toEqual(["live", "live"]);
+  expect(JSON.parse(readFileSync(heldPath(home.dir), "utf8")).map((k: { agent: string }) => k.agent)).toEqual(["T1", "T2"]);
+
+  // The next node finds T1's clone still booted and T2's gone (a Mac's reboot, say).
+  writeFileSync(
+    join(home.dir, "devices.json"),
+    JSON.stringify({ devices: { r: [{ udid: golden.udid, name: "fleetd-golden", state: "Shutdown" }, { udid, name: "fleetd-a", state: "Booted" }] } }),
+  );
+  const two = node();
+  cleanups.push(() => two.sims.shutdown());
+  await two.sims.adopt();
+  // T1's is its own again: the same simulator, its jobs pointed at it, its screen live under the same ids with the person in control.
+  expect(two.sims.held.get("T1")?.lent.udid).toBe(udid);
+  expect(two.sims.env("T1", "/usr/bin")!.find(([k]) => k === "FLEETD_MAC_SIM")?.[1]).toBe(udid);
+  expect(two.screens.of("T1")?.id).toBe(screen.sessionId);
+  expect(two.screens.of("T1")?.control()).toBe("human");
+  expect(calls.at(-2)).toMatchObject({ thread: screen.hostKey, op: "browser_session", args: { sessionId: screen.sessionId, state: "live", control: "human" } });
+  expect(readFileSync(log, "utf8").slice(stopped.length)).not.toContain(`delete ${udid}`);
+  // The sweep for recordings a stopped node left leaves T1's be.
+  await two.screens.housekeep();
+  expect(calls.some((c) => c.op === "browser_recording_part")).toBe(false);
+  expect(existsSync(join(recordingsDir(home.dir), screen.sessionId))).toBe(true);
+
+  // T2's went: its clone is deleted, and its agent-device says why rather than that there is none.
+  await until(() => readFileSync(log, "utf8").includes(`delete ${lost}`));
+  expect(two.sims.held.has("T2")).toBe(false);
+  const env = jobEnv(b, "/c", [], { PATH: "/usr/bin:/bin" }, (path) => two.sims.env("T2", path));
+  expect(env.FLEETD_MAC_SIM).toBeUndefined();
+  const ran = Bun.spawnSync(["agent-device", "snapshot"], { env, stdout: "pipe", stderr: "pipe" });
+  expect(ran.exitCode).toBe(69);
+  expect(ran.stderr.toString()).toMatch(/^Your iOS simulator ended when the agents' Mac's fleetd node restarted \(\d\d:\d\d:\d\d UTC\): it wasn't running any more\. Run `mac sim start` again, then retry\.\n$/);
+  // Its next mac sim start gives it one again, and its agent-device its own.
+  await until(() => two.simulators.warm() === 1);
+  const b2 = two.host.agent({ machineId: "devbox", projectId: "p1", threadId: "tb", taskId: "T2" });
+  await two.host.step(b2, { step: "sim_start" });
+  expect(existsSync(endedPath(home.dir, "T2"))).toBe(false);
+  expect(two.sims.env("T2", "/usr/bin")!.find(([k]) => k === "FLEETD_MAC_SIM")).toBeDefined();
+
+  // T1's mac sim end on the next node finishes the video the first started, and the recording goes on one log.
+  const a2 = two.host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta", taskId: "T1" });
+  await two.host.step(a2, { step: "sim_end" });
+  await until(() => calls.some((c) => c.op === "browser_session" && c.args.state === "recorded"));
+  expect(finished).toEqual(["node 2"]);
+  const parts = calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "actions");
+  const actions = Buffer.from(parts.map((p) => String(p.args.dataB64)).join(""), "base64").toString().trim().split("\n").map((l) => JSON.parse(l));
+  expect(actions.map((x) => x.tool)).toEqual(["sim_start", "takeover", "sim_resumed", "sim_end"]);
+  expect(actions.map((x) => x.seq)).toEqual([1, 2, 3, 4]);
+  const recorded = calls.find((c) => c.args.state === "recorded")!;
+  expect((recorded.args.files as { file: string }[]).map((f) => f.file).sort()).toEqual(["actions", "video_mp4"]);
+});
+
+test("recordVideo writes its output to a file, not the node's pipe, and the next node finishes it by its pid", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  // A stand-in recordVideo: says it started, and writes its video when interrupted.
+  const script = join(home.dir, "record.sh");
+  writeFileSync(script, `#!/bin/sh\ntrap 'echo mp4 > "$2"; echo "Wrote video"; exit 0' INT\necho "Recording started"\nwhile :; do sleep 0.05; done\n`);
+  chmodSync(script, 0o755);
+  const video = join(home.dir, "rec", "video.mp4");
+  const first = startRecording([script, "recordVideo", video], video, (l) => l.includes("Recording started"));
+  expect(first.pid).toBeGreaterThan(0);
+  await until(() => existsSync(`${video}.log`) && readFileSync(`${video}.log`, "utf8").includes("Recording started"));
+  // Another pid, or one that isn't this video's recordVideo, is no recording to take over.
+  expect(resumeRecording(process.pid, video)).toBeUndefined();
+  expect(resumeRecording(first.pid!, join(home.dir, "other.mp4"))).toBeUndefined();
+  const again = resumeRecording(first.pid!, video)!;
+  expect(again).toBeDefined();
+  expect(await again.finish()).toBeUndefined();
+  expect(readFileSync(video, "utf8")).toBe("mp4\n");
+  expect(readFileSync(`${video}.log`, "utf8")).toContain("Wrote video");
 });

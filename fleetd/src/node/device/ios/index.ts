@@ -166,21 +166,23 @@ export class Simulators {
   }
 
   /**
-   * Ready once the golden is made and the clones a stopped node left are deleted; on a Mac opted in without a golden,
-   * the node starts making it.
+   * Ready once the golden is made and the clones a stopped node left are deleted, but those of `keep` (the clones
+   * agents still hold, which the node before left running); on a Mac opted in without a golden, the node starts making
+   * it, and that deletes every clone. Which of `keep` are still there.
    */
-  async start(): Promise<void> {
+  async start(keep: string[] = []): Promise<Set<string>> {
     // The node stopped while making it; it starts again below.
     if (readState(this.home).preparing) writeState(this.home, { preparing: false });
     const golden = findGolden(this.home, this.config.deviceType);
     if (golden) {
       this.prep = { at: "starting" };
-      const cleared = (await clearHomes(this.home)) + (await clear(this.simctl, golden.udid));
+      const cleared = (await clearHomes(this.home, keep)) + (await clear(this.simctl, [golden.udid, ...keep]));
       if (cleared > 0) console.info(`${cleared} iOS simulators a stopped node left were deleted`);
       this.ready(golden);
-    } else if (optedIn(this.config)) {
-      this.beginPrepare();
+      return new Set(keep);
     }
+    if (optedIn(this.config)) this.beginPrepare();
+    return new Set();
   }
 
   /** Starts making the golden, once. */

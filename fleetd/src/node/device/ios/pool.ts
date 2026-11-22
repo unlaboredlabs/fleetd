@@ -231,8 +231,9 @@ export async function stopDaemon(state: string, within = DAEMON_EXIT): Promise<v
  */
 export const cloneHome = (home: string, udid: string) => join(home, "ios-clones", udid);
 
-/** Stops the daemons of the clone homes a stopped node left, and deletes them. Returns how many. */
-export async function clearHomes(home: string): Promise<number> {
+/** Stops the daemons of the clone homes a stopped node left, and deletes them, but those of `keep` (clones agents
+ * still hold, sims.ts `adopt`). Returns how many. */
+export async function clearHomes(home: string, keep: string[] = []): Promise<number> {
   const dir = join(home, "ios-clones");
   let names: string[];
   try {
@@ -241,7 +242,7 @@ export async function clearHomes(home: string): Promise<number> {
     return 0;
   }
   let cleared = 0;
-  for (const name of names) {
+  for (const name of names.filter((n) => !keep.includes(n))) {
     await stopDaemon(join(dir, name, "state"));
     try {
       rmSync(join(dir, name), { recursive: true });
@@ -253,8 +254,8 @@ export async function clearHomes(home: string): Promise<number> {
   return cleared;
 }
 
-/** Deletes every simulator in the node's set but `keep`. Returns how many. */
-export async function clear(simctl: Simctl, keep?: string): Promise<number> {
+/** Deletes every simulator in the node's set but those of `keep`. Returns how many. */
+export async function clear(simctl: Simctl, keep: string[] = []): Promise<number> {
   let devices;
   try {
     devices = await simctl.devices();
@@ -262,7 +263,7 @@ export async function clear(simctl: Simctl, keep?: string): Promise<number> {
     return 0;
   }
   let cleared = 0;
-  for (const device of devices.filter((d) => d.udid !== keep)) {
+  for (const device of devices.filter((d) => !keep.includes(d.udid))) {
     if (device.state !== "Shutdown") await simctl.shutdown(device.udid).catch(() => {});
     try {
       await simctl.delete(device.udid);
