@@ -1,5 +1,5 @@
 // The words and choices of the hosted sandbox providers in Hub › Machines › Providers, pure so they are tested on their own: the team's own hosted
-// sandbox accounts (boat.dev), each a key connected or not and its limit, in the one fixed order agents go to them once
+// sandbox accounts (fleetd's computers), each a key connected or not and its limit, in the one fixed order agents go to them once
 // a machine's own slots are full. A row's state and its line are shared/hostedRow.ts's, which the phone shares.
 import { specOf } from "../../../shared/providers";
 import type { SandboxProvider } from "../../../shared/contracts";
@@ -9,7 +9,7 @@ export const providerName = (p: SandboxProvider): string => specOf(p).name;
 
 /** What each one is, for its row's hover. */
 const HINTS: Readonly<Record<string, string>> = {
-  boat: "Sandboxes on your boat.dev account, each a whole VM, with its own browser, Linux desktop and Android.",
+  boat: "fleetd's computers, each a whole VM, with its own browser, Linux desktop and Android.",
 };
 export const providerHint = (p: SandboxProvider): string | undefined => HINTS[p];
 

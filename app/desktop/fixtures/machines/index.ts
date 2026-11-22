@@ -9,14 +9,14 @@
 // devbox its only machine; `machines-unwell` has buildbox offline for three days and laptop joined with claude logged
 // out, so the list has a row that needs someone of each kind and each one's page says what to do. The team's own hosted
 // sandbox accounts in Machines' Sandboxes section (W688): `machines-sandboxes-off` with none connected,
-// `machines-sandboxes-on` with boat.dev connected, its key refused at its last test. `machines-revyl-removed` is a hub
+// `machines-sandboxes-on` with fleetd's computers connected, its key refused at its last test. `machines-revyl-removed` is a hub
 // that had Revyl connected before fleetd removed it (D576): one line says so; `machines-e2b-removed` one that had E2B
-// and Daytona, a line each. `machines-places` has machines and boat.dev both, so What runs where's Linux machine is a
+// and Daytona, a line each. `machines-places` has machines and fleetd's computers both, so What runs where's Linux machine is a
 // pick; `machines-places-one` a machine alone, a plain value.
-// `machines-none` is a team with no machine of its own, its agents only in boat.dev through the hub's runner, which has no
-// Claude account yet (W721): the list's empty state with its own Add machine, and boat.dev's row saying so with Connect.
-// The boat.dev row's own states (W743), on a team whose agents run only there: `machines-hosted-starting` while the
-// hub's runner comes up, `machines-hosted-ready` with 3 of 20 running, `machines-hosted-refused` after boat.dev refused a
+// `machines-none` is a team with no machine of its own, its agents only in fleetd's computers through the hub's runner, which has no
+// Claude account yet (W721): the list's empty state with its own Add machine, and fleetd's computers' row saying so with Connect.
+// The fleetd's computers row's own states (W743), on a team whose agents run only there: `machines-hosted-starting` while the
+// hub's runner comes up, `machines-hosted-ready` with 3 of 20 running, `machines-hosted-refused` after fleetd's computers refused a
 // sandbox for billing (why, its fix and Try again), and `machines-sandboxes-on` its key refused at its test (Test again).
 import { defineGroup } from "../kit/group.ts";
 import { Fixture, HUB } from "../kit/fixture.ts";
@@ -260,8 +260,8 @@ const SANDBOXES_ON_PAUSED: JsonObject = {
         ok: false,
         at: "2026-10-19T08:55:00.000Z",
         reason: "invalid_key",
-        message: "boat.dev refused the key.",
-        fix: "make a new key in boat.dev's dashboard and connect it again",
+        message: "fleetd's computers refused the key.",
+        fix: "try again later",
       },
     },
   ],
@@ -302,7 +302,7 @@ function withShares(f: Fixture, perMachine: JsonObject[]): void {
 
 /**
  * The page as a team that has grown into it uses it: devbox well and busy; laptop with claude logged out;
- * buildbox offline for three days. boat.dev connected, its key refused.
+ * buildbox offline for three days. fleetd's computers connected, its key refused.
  */
 function places(from: Fixture, name: string, note: string): Fixture {
   const f = unwell(from, name, note);
@@ -330,9 +330,9 @@ function onePlace(from: Fixture): Fixture {
   return f;
 }
 
-/** No machine of the team's: boat.dev connected, the hub's runner for it with no Claude account to run its agents on. */
+/** No machine of the team's: fleetd's computers connected, the hub's runner for it with no Claude account to run its agents on. */
 function none(from: Fixture): Fixture {
-  const f = one(from, "machines-none", "No machine yet: Add machine in the empty list; boat.dev connected, its hosted agents with no Claude account");
+  const f = one(from, "machines-none", "No machine yet: Add machine in the empty list; fleetd's computers connected, its hosted agents with no Claude account");
   const runner: JsonObject = {
     machineId: "hosted",
     name: "Hosted sandboxes",
@@ -352,8 +352,8 @@ function none(from: Fixture): Fixture {
   return f;
 }
 
-/** A team whose agents run only in boat.dev, through the hub's runner in `runner`'s state, with `hosted` the slot
- * board's live word on boat.dev (its count and trouble) and `provider` what sandbox_get says of it. */
+/** A team whose agents run only in fleetd's computers, through the hub's runner in `runner`'s state, with `hosted` the slot
+ * board's live word on fleetd's computers (its count and trouble) and `provider` what sandbox_get says of it. */
 function hostedOnly(from: Fixture, name: string, note: string, runner: JsonObject, hosted: JsonObject, provider: JsonObject = {}): Fixture {
   const f = one(from, name, note);
   const machine: JsonObject = { machineId: "hosted", name: "Hosted sandboxes", runner: true, lastSeenAt: f.now, nodeVersion: "0.9.0", ...runner };
@@ -371,12 +371,12 @@ function hostedOnly(from: Fixture, name: string, note: string, runner: JsonObjec
   return f;
 }
 
-/** boat.dev's refusal of a sandbox for billing, as the hub has it from the runner. */
+/** fleetd's computers' refusal of a sandbox for billing, as the hub has it from the runner. */
 const BILLING: JsonObject = {
   what: "start",
   reason: "billing",
-  message: "boat.dev refused: billing isn't set up on the account",
-  fix: "set up billing in boat.dev's dashboard",
+  message: "fleetd's computers refused: billing isn't set up on the account",
+  fix: "try again later",
   until: "2026-10-19T09:10:00.000Z",
 };
 
@@ -389,7 +389,7 @@ export default defineGroup({
     joinedWith(base("typical"), "machines-warning", "laptop joined with Android not ready: the one row, and its fix to run on laptop", laptopChecks({ kvm: true })),
     one(base("empty")),
     sandboxes(base("typical"), "machines-sandboxes-off", "No hosted sandbox account yet: each provider's name and Connect, and that none runs agents yet", SANDBOXES_OFF),
-    sandboxes(base("typical"), "machines-sandboxes-on", "boat.dev connected, its key refused at its last test", SANDBOXES_ON_PAUSED),
+    sandboxes(base("typical"), "machines-sandboxes-on", "fleetd's computers connected, its key refused at its last test", SANDBOXES_ON_PAUSED),
     sandboxes(base("typical"), "machines-revyl-removed", "A hub that had Revyl connected before fleetd removed it: one plain line above the providers", {
       ...SANDBOXES_ON,
       removed: ["Revyl was removed from fleetd, with the key you connected: iOS simulators run on a Mac machine, Android on a Linux machine."],
@@ -405,24 +405,24 @@ export default defineGroup({
       ...SANDBOXES_OFF,
       placing: true,
       removed: [
-        "Daytona was removed from fleetd, with the key you connected: its boxes can't open /dev/kvm (user-namespaced containers), so they can't run Android's emulator. Agents run on your machines or boat.dev.",
-        "E2B was removed from fleetd, with the key you connected: its boxes have no KVM (Firecracker microVMs), so they can't run Android's emulator. Agents run on your machines or boat.dev.",
+        "Daytona was removed from fleetd, with the key you connected: its boxes can't open /dev/kvm (user-namespaced containers), so they can't run Android's emulator. Agents run on your machines or fleetd's computers.",
+        "E2B was removed from fleetd, with the key you connected: its boxes have no KVM (Firecracker microVMs), so they can't run Android's emulator. Agents run on your machines or fleetd's computers.",
       ],
     }),
     unwell(base("typical")),
-    places(base("typical"), "machines-places", "devbox busy, laptop logged out, buildbox offline; boat.dev connected, so Linux machine is a pick"),
+    places(base("typical"), "machines-places", "devbox busy, laptop logged out, buildbox offline; fleetd's computers connected, so Linux machine is a pick"),
     onePlace(base("empty")),
     none(base("empty")),
-    hostedOnly(base("empty"), "machines-hosted-starting", "boat.dev connected and the hub's runner coming up: Starting… on its row, no button", {
+    hostedOnly(base("empty"), "machines-hosted-starting", "fleetd's computers connected and the hub's runner coming up: Starting… on its row, no button", {
       status: "degraded",
       degradedReason: "Starting…",
       degradedCause: "starting",
     }, { running: 0 }),
-    hostedOnly(base("empty"), "machines-hosted-ready", "boat.dev ready with 3 of its 20 sandboxes running", { status: "online" }, { running: 3 }, { running: 3 }),
+    hostedOnly(base("empty"), "machines-hosted-ready", "fleetd's computers ready with 3 of their 20 sandboxes running", { status: "online" }, { running: 3 }, { running: 3 }),
     hostedOnly(
       base("empty"),
       "machines-hosted-refused",
-      "boat.dev refused a sandbox for billing: Couldn't start with why, its fix and Try again",
+      "fleetd's computers refused a sandbox for billing: Couldn't start with why, its fix and Try again",
       { status: "online" },
       { running: 0, trouble: BILLING },
       { trouble: BILLING },

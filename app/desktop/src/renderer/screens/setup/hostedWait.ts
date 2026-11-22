@@ -44,5 +44,5 @@ export function hostedProblem(p: HostedProvider, runner: RunnerState | undefined
   const fallback = `If it keeps failing, check ${name} in ${settingsPath(cloud, "Machines")}.`;
   const row = hostedRow(p, runner);
   if (row.state === "failed" && row.text !== null) return { reason: row.text, fix: row.fix ?? fallback };
-  return { reason: `${name}'s sandboxes didn't get ready.`, fix: fallback };
+  return { reason: `${name} didn't get ready.`, fix: fallback };
 }

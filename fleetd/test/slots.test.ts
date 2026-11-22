@@ -318,24 +318,24 @@ describe("board", () => {
     const acquire = (h: string, r: ProjectRef, hostable = true) => k.board.acquire(h, r, "work", hostable);
     expect(acquire("T1", air)).toEqual(GRANTED);
     expect(acquire("T2", air)).toEqual(GRANTED);
-    // Its own slots full: boat.dev, then the next.
+    // Its own slots full: fleetd's computers, then the next.
     expect(acquire("T3", air)).toEqual(GRANTED);
     expect(acquire("T4", big)).toEqual(GRANTED);
     expect(acquire("T5", big)).toEqual(GRANTED);
     expect(acquire("T6", air)).toEqual(GRANTED);
     expect(["T1", "T2", "T3", "T4", "T5", "T6"].map((h) => k.board.placeOf(h))).toEqual([LOCAL, LOCAL, "boat", LOCAL, "boat", "acme"]);
-    // boat.dev's limit is the team's: big, which makes only boat.dev's boxes, waits; so does air.
-    expect(acquire("T7", big)).toEqual(queued("machine cap: 1 of 1 running on big-box (memory 18 GB), and hosted sandboxes are full: boat.dev 2 of 2"));
-    expect(acquire("T8", air)).toEqual(queued("machine cap: 2 of 2 running on air-box (memory 18 GB), and hosted sandboxes are full: boat.dev 2 of 2, acme 1 of 1"));
-    // A boat.dev box freed goes to the first in line that can use it.
+    // fleetd's computers' limit is the team's: big, which makes only fleetd's computers' boxes, waits; so does air.
+    expect(acquire("T7", big)).toEqual(queued("machine cap: 1 of 1 running on big-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 2 of 2"));
+    expect(acquire("T8", air)).toEqual(queued("machine cap: 2 of 2 running on air-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 2 of 2, acme 1 of 1"));
+    // A fleetd's computers box freed goes to the first in line that can use it.
     k.release("T3");
     expect(k.board.placeOf("T7")).toBe("boat");
     expect(k.board.placeOf("T8")).toBeUndefined();
     // A machine shows its own slots and what runs in them; the hosted limits are the team's, named, never added to
     // each machine's cap. The total counts each once.
     expect(k.board.state().perMachine.map((m) => [m.cap, m.running, m.why])).toEqual([
-      [2, 2, "memory 18 GB; then the team's hosted sandboxes (boat.dev 2, acme 1)"],
-      [1, 1, "memory 18 GB; then the team's hosted sandboxes (boat.dev 2)"],
+      [2, 2, "memory 18 GB; then the team's hosted sandboxes (fleetd's computers 2, acme 1)"],
+      [1, 1, "memory 18 GB; then the team's hosted sandboxes (fleetd's computers 2)"],
     ]);
     expect(k.board.total()).toBe(6);
     // A person's number for a machine counts its own slots.
@@ -347,7 +347,7 @@ describe("board", () => {
     const air = project_("pa", "air");
     const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["boat"] }]);
     const acquire = (h: string, hostable = true) => k.board.acquire(h, air, "work", hostable);
-    // Your machines only: a full machine never spills into boat.dev.
+    // Your machines only: a full machine never spills into fleetd's computers.
     k.board.setHosted([{ provider: "boat", max: 2 }], "ours_only");
     expect(acquire("T1")).toEqual(GRANTED);
     expect(acquire("T2")).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB)"));
@@ -355,14 +355,14 @@ describe("board", () => {
     k.release("T1");
     expect(k.board.placeOf("T2")).toBe(LOCAL);
     k.release("T2");
-    // boat.dev only: the machine's free slot stays empty, and boat's limit is the room.
+    // fleetd's computers only: the machine's free slot stays empty, and boat's limit is the room.
     k.board.setHosted([{ provider: "boat", max: 1 }], "boat");
     expect(acquire("T3")).toEqual(GRANTED);
     expect(k.board.placeOf("T3")).toBe("boat");
-    expect(acquire("T4")).toEqual(queued("the team's agents run on boat.dev only, and it is full: 1 of 1"));
+    expect(acquire("T4")).toEqual(queued("the team's agents run on fleetd's computers only, and they are full: 1 of 1"));
     expect(k.board.total()).toBe(1);
     // One with no Claude account can't go there, and says so.
-    expect(acquire("T5", false)).toEqual(queued(`the team's agents run on boat.dev only, and ${NO_ACCOUNT_HOSTED}`));
+    expect(acquire("T5", false)).toEqual(queued(`the team's agents run on fleetd's computers only, and ${NO_ACCOUNT_HOSTED}`));
     // Machines first again (today's rule): what waits starts on the machine.
     expect(k.board.setHosted([{ provider: "boat", max: 1 }], "ours_first")).toBe(true);
     k.board.evaluate();
@@ -375,21 +375,21 @@ describe("board", () => {
     k.board.setHosted([{ provider: "boat", max: 1 }]);
     k.board.setComputer(hosted_, { kind: "boat", cpu: 4, memGb: 8 });
     const acquire = (h: string, r: ProjectRef, hostable = true) => k.board.acquire(h, r, "work", hostable);
-    // The boat.dev bot's agent goes to boat.dev though the machine has a free slot, at its picked size.
+    // The fleetd's computers bot's agent goes to fleetd's computers though the machine has a free slot, at its picked size.
     expect(acquire("T1", hosted_)).toEqual(GRANTED);
     expect([k.board.placeOf("T1"), k.board.sizeOf("T1")]).toEqual(["boat", { cpu: 4, memGb: 8 }]);
     // Full: it waits for its own computer, never another's, nor another size.
-    expect(acquire("T3", hosted_)).toEqual(queued("its bot's computer is boat.dev · 4 vCPU / 8 GB: boat.dev is full, 1 of 1"));
+    expect(acquire("T3", hosted_)).toEqual(queued("its bot's computer is fleetd's computers · 4 vCPU / 8 GB: fleetd's computers are full, 1 of 1"));
     // A bot with no pick is placed as before, with the default size.
     expect(acquire("T5", free)).toEqual(GRANTED);
     expect([k.board.placeOf("T5"), k.board.sizeOf("T5")]).toEqual([LOCAL, undefined]);
     k.release("T5");
-    // A stale pick: boat.dev disconnected. Its agent waits and says so; it never runs on the machine or another provider.
+    // A stale pick: fleetd's computers disconnected. Its agent waits and says so; it never runs on the machine or another provider.
     k.release("T1");
     k.release("T3");
     k.board.setHosted([]);
     expect(acquire("T6", hosted_)).toEqual(
-      queued("its bot's computer is boat.dev · 4 vCPU / 8 GB, and boat.dev isn't connected: an admin connects it in Settings › Hub › Machines, or pick another on the bot's Computer page"),
+      queued("its bot's computer is fleetd's computers · 4 vCPU / 8 GB, and fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines, or pick another on the bot's Computer page"),
     );
     expect(k.board.placeOf("T6")).toBeUndefined();
     // Dropping the pick: placed as before again.
@@ -407,7 +407,7 @@ describe("board", () => {
     expect(acquire("T2", hosted)).toEqual(GRANTED);
     expect(acquire("T3", mine)).toEqual(GRANTED);
     expect(["T1", "T2", "T3"].map((h) => k.board.placeOf(h))).toEqual([LOCAL, "boat", "boat"]);
-    expect(acquire("T4", hosted)).toEqual(queued("hosted sandboxes are full: boat.dev 2 of 2"));
+    expect(acquire("T4", hosted)).toEqual(queued("hosted sandboxes are full: fleetd's computers 2 of 2"));
     expect(acquire("T5", hosted, false)).toEqual(
       queued("agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings"),
     );
@@ -425,18 +425,18 @@ describe("board", () => {
     const runner = { cap: 0, why: "hosted sandboxes only" };
     k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, ["boat"], { th1: "boat", th2: "boat", th3: "boat" });
     expect(k.board.state().hosted).toEqual([{ provider: "boat", limit: 20, running: 3 }]);
-    // boat.dev refused a box for billing: the runner offers it no more until 12:45, and says why.
+    // fleetd's computers refused a box for billing: the runner offers it no more until 12:45, and says why.
     const refused = { provider: "boat", what: "start" as const, reason: "billing", why: "boat won't run sandboxes on this account until its billing is sorted out (402 Payment Required).", until: now + 10 * 60_000 };
     k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, [], { th1: "boat" }, [refused]);
-    const trouble = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard", until: "2026-11-19T12:45:00.000Z" };
+    const trouble = { what: "start", reason: "billing", message: "fleetd's computers refused: billing isn't set up on the account", fix: "try again later", until: "2026-11-19T12:45:00.000Z" };
     expect(k.board.state().hosted).toEqual([{ provider: "boat", limit: 20, running: 1, trouble }]);
-    const why = "boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying again at 12:45";
+    const why = "fleetd's computers refused: billing isn't set up on the account (try again later); trying again at 12:45";
     expect(k.board.acquire("T1", hosted, "work", true)).toEqual(queued(why));
-    // A computer's bot whose own slots are full says it too, rather than nothing about boat.dev.
+    // A computer's bot whose own slots are full says it too, rather than nothing about fleetd's computers.
     expect(k.board.acquire("T2", mine, "work", true)).toEqual(GRANTED);
     k.board.observeMachine("air", "air-box", { cap: 1, why: "memory 18 GB" }, undefined, [], {}, [refused]);
     expect(k.board.acquire("T3", mine, "work", true)).toEqual(queued(`machine cap: 1 of 1 running on air-box (memory 18 GB); ${why}`));
-    // The runner offers boat.dev again: the trouble is gone and the queued agent goes there.
+    // The runner offers fleetd's computers again: the trouble is gone and the queued agent goes there.
     k.board.observeMachine(RUNNER_ID, "Hosted sandboxes", runner, undefined, ["boat"], { th1: "boat" });
     k.board.evaluate();
     expect(k.board.placeOf("T1")).toBe("boat");
@@ -464,7 +464,7 @@ describe("board", () => {
     k.board.setHosted([{ provider: "boat", max: 5 }]);
     expect(k.board.acquire("T1", air, "work", true)).toEqual(GRANTED);
     expect(k.board.acquire("T2", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB)"));
-    // Its node now holds boat.dev's key.
+    // Its node now holds fleetd's computers' key.
     k.board.observeMachine("air", "air-box", { cap: 1, why: "memory 18 GB" }, undefined, ["boat"]);
     k.freed();
     expect(k.board.placeOf("T2")).toBe("boat");
@@ -489,7 +489,7 @@ describe("board", () => {
     k.board.observeMachine("air", "air-box", auto, undefined, ["boat"], { th2: "boat" });
     // T2's turn ends; its box stays until its claude idles out, and still counts.
     k.board.observe("air", "th2", false);
-    expect(k.board.acquire("T3", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: boat.dev 1 of 1"));
+    expect(k.board.acquire("T3", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 1 of 1"));
     // T2's next turn goes back to its box, whatever else is free.
     k.release("T1");
     expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
@@ -497,7 +497,7 @@ describe("board", () => {
     expect(k.board.placeOf("T3")).toBe(LOCAL);
     // Once the node says the box is gone, its room is free again.
     k.board.observe("air", "th2", false);
-    expect(k.board.acquire("T4", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: boat.dev 1 of 1"));
+    expect(k.board.acquire("T4", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 1 of 1"));
     expect(k.board.observeMachine("air", "air-box", auto, undefined, ["boat"], {})).toBe(true);
     k.board.evaluate();
     expect(k.board.placeOf("T4")).toBe("boat");
@@ -508,12 +508,12 @@ describe("board", () => {
     const k = Kit.on(undefined, [{ ...machine("air", 0), sandboxes: ["boat"] }, { ...machine("big", 0), sandboxes: ["boat"] }]);
     k.board.setHosted([{ provider: "boat", max: 1 }]);
     k.board.tick(1_000);
-    // air reports a live boat.dev box, then goes offline.
+    // air reports a live fleetd's computers box, then goes offline.
     k.board.observeMachine("air", "air-box", { cap: 0, why: "memory 18 GB" }, undefined, ["boat"], { th9: "boat" });
-    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: boat.dev 1 of 1"));
+    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 1 of 1"));
     // Within the box's last hour it still counts; past it, its room is free.
     k.board.tick(1_000 + PLACES_FRESH_MS);
-    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: boat.dev 1 of 1"));
+    expect(k.board.acquire("T1", big, "work", true)).toEqual(queued("machine cap: 0 of 0 running on big-box (memory 18 GB), and hosted sandboxes are full: fleetd's computers 1 of 1"));
     k.board.tick(1_000 + PLACES_FRESH_MS + 1);
     k.board.evaluate();
     expect(k.board.placeOf("T1")).toBe("boat");
@@ -530,7 +530,7 @@ describe("board", () => {
     k.board.observeMachine("air", "air-box", auto, undefined, ["boat"], { th1: LOCAL });
     expect(k.board.acquire("T2", air, "work", true)).toEqual(GRANTED);
     expect(k.board.placeOf("T2")).toBe(LOCAL);
-    // T1's claude is still alive here: it doesn't go to boat.dev behind its node's back, it waits for its own slot.
+    // T1's claude is still alive here: it doesn't go to fleetd's computers behind its node's back, it waits for its own slot.
     expect(k.board.acquire("T1", air, "work", true)).toEqual(queued("machine cap: 1 of 1 running on air-box (memory 18 GB); its Claude still runs there, so it waits for a slot of its own"));
     // A Monitor of its own wakes it: it runs where its claude is.
     k.board.observe("air", "th1", true);

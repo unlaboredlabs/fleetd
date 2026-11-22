@@ -1,5 +1,5 @@
 // Settings › Machines › a provider, for admins (machines.ts): one provider the team connects with its own key
-// (boat.dev). Not connected, its API key in a secure field, sealed here to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
+// (fleetd's computers). Not connected, its API key in a secure field, sealed here to the hub's box key before it leaves the phone; connected, its limit where it has one, Test and Disconnect.
 import { useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, Platform, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import type { SandboxState } from "../../../desktop/src/shared/contracts";

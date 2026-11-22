@@ -142,7 +142,7 @@ async function node(probe: (url: string) => Promise<void>) {
 }
 
 const PLAIN =
-  "a boat.dev sandbox couldn't reach the hub's Claude account at 10.0.0.5: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections";
+  "a sandbox at fleetd's computers couldn't reach the hub's Claude account at 10.0.0.5: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections";
 
 test("a lead whose box can't reach Claude tries once more after a while, then fails as `sandbox` in plain words", async () => {
   HOSTED_RETRY.ms = 200;
@@ -171,11 +171,11 @@ test("a lead whose box can't reach Claude tries once more after a while, then fa
     // The run's progress line: the computer at boat.dev (its template built the first time), the repo, then again.
     const p = progress("r1");
     expect(p.said).toEqual([
-      "Starting its computer at boat.dev",
-      "Starting its computer at boat.dev (first time: a few minutes)",
+      "Starting its computer",
+      "Starting its computer (first time: a few minutes)",
       "Cloning the repo",
-      "Starting its computer at boat.dev again",
-      "Starting its computer at boat.dev",
+      "Starting its computer again",
+      "Starting its computer",
       "Cloning the repo",
     ]);
     expect(p.ended).toBe("failed");
@@ -239,7 +239,7 @@ test("a message to a lead whose box is still coming up from its start ahead show
   release();
   await until("the progress line to end", () => progress("r1").ended);
   expect(progress("r1").ended).toBe("completed");
-  expect(progress("r1").said.every((w) => w.startsWith("Starting its computer at boat.dev") || w === "Cloning the repo")).toBe(true);
+  expect(progress("r1").said.every((w) => w.startsWith("Starting its computer") || w === "Cloning the repo")).toBe(true);
   // One box, one claude: the send went into the start ahead's.
   expect(s.calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sandboxes" && !String(c.body?.name ?? "").startsWith("fleetd build")).length).toBe(1);
   expect(service.store.runs("s-ahead").map((r) => r.id)).toEqual(["r1"]);

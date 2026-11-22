@@ -17,10 +17,11 @@ The web app is for fleetd cloud only. A hub you run yourself is used from the [d
 After your first sign-in, a new team opens on **Get started**: the few steps between you and a first chat with a
 bot's lead. The one step still to do is open; each one done keeps a line saying what it ended on.
 
-1. **Where agents run.** A computer of yours or hosted sandboxes; either one is enough, and a machine is optional.
+1. **Where agents run.** A computer of yours or fleetd's computers; either one is enough, and a machine is optional.
    **A computer**: copy the line shown and paste it in a terminal on a Mac or Linux computer; it installs fleetd and
    joins. The line's code works once, for 15 minutes, and the page makes a new line by itself when it runs out.
-   **Hosted sandboxes**: **Connect** beside boat.dev and paste an API key of your own account there.
+   **fleetd's computers**: they run the team's agents once it has a plan or credits ([Billing](/docs/billing));
+   until then the step says so, with **Pick a plan**.
 2. **Tailscale** (optional). **Connect Tailscale** opens Tailscale's sign-in page: sign in and approve, and hosted
    agents reach your tailnet through one device fleetd cloud runs for your team. **Skip** goes on; it isn't
    asked again, and the step's row keeps a quiet **Connect**.

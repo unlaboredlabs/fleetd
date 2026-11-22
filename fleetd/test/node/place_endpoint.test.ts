@@ -66,13 +66,13 @@ test("a hosted box is only checked, and a failed check says what to do: connect 
   await expect(probe(box.box, "http://100.104.249.49:8317")).rejects.toThrow("the box can't reach Claude at 100.104.249.49:8317: curl: (7) Failed to connect");
   const dns = async (h: string) => (h === "api.anthropic.com" ? ["160.79.104.10"] : Promise.reject(new Error("ENOTFOUND")));
   const e = (url: string) => ({ url, source: "the environment" });
-  const off = await unreached(e("http://100.104.249.49:8317"), "boat.dev", false, dns);
+  const off = await unreached(e("http://100.104.249.49:8317"), "fleetd's computers", false, dns);
   // In a person's words: the account, never the check's output or the file the endpoint was set in.
-  expect(off).toBe("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections");
-  expect(await unreached(e("http://devbox.tail1234.ts.net:8317"), "boat.dev", true, dns)).toContain("the team's tailnet doesn't reach it either");
-  expect(await unreached(e("http://localhost:8317"), "boat.dev", false, dns)).toContain("a machine's own loopback, which a hosted sandbox never reaches");
+  expect(off).toBe("a sandbox at fleetd's computers couldn't reach the hub's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections");
+  expect(await unreached(e("http://devbox.tail1234.ts.net:8317"), "fleetd's computers", true, dns)).toContain("the team's tailnet doesn't reach it either");
+  expect(await unreached(e("http://localhost:8317"), "fleetd's computers", false, dns)).toContain("a machine's own loopback, which a hosted sandbox never reaches");
   // A public endpoint's failure is its own: nothing to connect.
-  expect(await unreached(e(ANTHROPIC_API), "boat.dev", false, dns)).toBe("a boat.dev sandbox couldn't reach the hub's Claude account at api.anthropic.com: it didn't answer from there. Check that it is up, then try again");
+  expect(await unreached(e(ANTHROPIC_API), "fleetd's computers", false, dns)).toBe("a sandbox at fleetd's computers couldn't reach the hub's Claude account at api.anthropic.com: it didn't answer from there. Check that it is up, then try again");
   // By its name or address alone, for the runner's word.
   for (const u of ["http://100.104.249.49:8317", "http://devbox:8317", "https://gw.tail1234.ts.net", "http://localhost:1", "http://10.0.0.5"]) expect(privateByName(u)).toBe(true);
   for (const u of [ANTHROPIC_API, "https://gw.example.com", "https://160.79.104.10"]) expect(privateByName(u)).toBe(false);

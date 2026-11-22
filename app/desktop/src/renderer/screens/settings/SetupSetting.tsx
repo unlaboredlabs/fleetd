@@ -120,7 +120,7 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
 }
 
 /**
- * Where the agents the bot's lead starts run (the lead itself stays on the bot's machine, as the hover says): one pick, each choice a real machine, provider and exact size together ("boat.dev ·
+ * Where the agents the bot's lead starts run (the lead itself stays on the bot's machine, as the hover says): one pick, each choice a real machine, provider and exact size together ("fleetd's computers ·
  * 4 vCPU / 8 GB"), or Automatic (its machine's own slots, then the team's hosted sandboxes). Saved as picked. Choices
  * that can't be used now are greyed, and the list says why once under them, with the command that fixes it; a pick that
  * can't be had now says so under the row, since its agents wait for it. No row when there is nothing to pick.

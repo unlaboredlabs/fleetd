@@ -168,7 +168,7 @@ it("a cloud team with only a hosted provider: Connect Claude opens Settings over
     await new Promise((r) => setTimeout(r, 0));
   });
   await until(() => button("Subscription") !== undefined, "Get started's Claude step");
-  expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
   await click("Subscription");
   await click("Connect Claude");
   expect(window.location.hash).toBe("#/settings/accounts");
@@ -196,5 +196,5 @@ it("a cloud team with only a hosted provider: Connect Claude opens Settings over
   expect(window.location.hash).toBe("#/start");
   await until(() => document.querySelector('[data-sheet="settings"]') === null, "Get started without the sheet");
   expect(document.querySelector("[data-screen^='start.']")?.getAttribute("data-screen")).toBe("start.github");
-  expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
 }, 20_000);

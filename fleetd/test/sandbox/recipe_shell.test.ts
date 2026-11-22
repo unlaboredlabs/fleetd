@@ -129,7 +129,7 @@ describe("the recipe's shell lines", () => {
       const p = provider("boat", { key: KEY }, { urls: { api: `${s.url}/api/v1` }, pollMs: 5 });
       const logs: string[] = [];
       const e: Error = await p.build(hosted(BASE, { claude: TESTED, fleetd: { url: SIGNED, sha256: SHA } }), { name: "fleetd-tabc", onLog: (l) => logs.push(l) }).then(() => new Error("it built"), (e: Error) => e);
-      expect(e.message).toContain("a step failed in boat.dev's build box (exit 22), RUN curl -fsSL 'https://releases.example.invalid/fleetd/edge/fleetd-linux-x64?");
+      expect(e.message).toContain("a step failed in the build box at fleetd's computers (exit 22), RUN curl -fsSL 'https://releases.example.invalid/fleetd/edge/fleetd-linux-x64?");
       expect(e.message).toContain(said);
       for (const text of [e.message, ...logs]) for (const part of ["X-Amz", "MADEUP", "0123madeup", "21600", "fleetd_probe"]) expect({ text, has: text.includes(part) }).toEqual({ text, has: false });
       expect(logs.some((l) => l.startsWith("RUN curl -fsSL 'https://releases.example.invalid/fleetd/edge/fleetd-linux-x64?…"))).toBe(true);

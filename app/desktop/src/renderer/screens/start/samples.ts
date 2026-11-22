@@ -2,6 +2,7 @@
 // and the tests: the page itself reads the hub's own state (state.ts).
 import type { StartRepo, StartView } from "./model";
 import { settingsPath } from "../../../shared/settingsPages";
+import { FLEETD_COMPUTERS } from "../../../shared/providers";
 
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code 7QK4-M2XD";
 
@@ -36,7 +37,7 @@ export const SAMPLES = {
   // ...or a hosted provider whose sandboxes didn't get ready within the wait: why, the fix and Try again.
   "hosted-failed": {
     ...owner,
-    computer: { at: "hosted_failed", provider: "boat.dev", reason: "boat.dev's sandboxes didn't get ready.", fix: `If it keeps failing, check boat.dev in ${settingsPath(true, "Machines")}.` },
+    computer: { at: "hosted_failed", provider: FLEETD_COMPUTERS, reason: `${FLEETD_COMPUTERS} didn't get ready.`, fix: `If it keeps failing, check ${FLEETD_COMPUTERS} in ${settingsPath(true, "Machines")}.` },
     tailscale: { at: "todo" },
     claude: { at: "wait" },
     github: { at: "todo" },
@@ -52,12 +53,12 @@ export const SAMPLES = {
     project: pick,
   },
   // 2. Tailscale, optional: Connect and sign in at Tailscale, or Skip.
-  tailscale: { ...owner, computer: { at: "hosted", provider: "boat.dev" }, tailscale: { at: "todo" }, claude: { at: "account", provider: "boat.dev" }, tailnet: false, github: { at: "todo" }, project: pick },
+  tailscale: { ...owner, computer: { at: "hosted", provider: FLEETD_COMPUTERS }, tailscale: { at: "todo" }, claude: { at: "account", provider: FLEETD_COMPUTERS }, tailnet: false, github: { at: "todo" }, project: pick },
   "tailscale-signin": {
     ...owner,
-    computer: { at: "hosted", provider: "boat.dev" },
+    computer: { at: "hosted", provider: FLEETD_COMPUTERS },
     tailscale: { at: "signin", url: "https://login.tailscale.com/a/1a2b3c" },
-    claude: { at: "account", provider: "boat.dev" },
+    claude: { at: "account", provider: FLEETD_COMPUTERS },
     tailnet: false,
     github: { at: "todo" },
     project: pick,
@@ -65,9 +66,9 @@ export const SAMPLES = {
   // 3. Claude: the hub's API key and its endpoint, or the place's own way in.
   "claude-key": {
     ...owner,
-    computer: { at: "hosted", provider: "boat.dev" },
+    computer: { at: "hosted", provider: FLEETD_COMPUTERS },
     tailscale: { at: "done", tailnet: "Sam's tailnet" },
-    claude: { at: "account", provider: "boat.dev" },
+    claude: { at: "account", provider: FLEETD_COMPUTERS },
     tailnet: true,
     github: { at: "todo" },
     project: pick,
@@ -75,9 +76,9 @@ export const SAMPLES = {
   // Tailscale skipped: an endpoint on the tailnet says so, with Connect (the QA screen types one).
   "claude-tailnet": {
     ...owner,
-    computer: { at: "hosted", provider: "boat.dev" },
+    computer: { at: "hosted", provider: FLEETD_COMPUTERS },
     tailscale: { at: "skipped" },
-    claude: { at: "account", provider: "boat.dev" },
+    claude: { at: "account", provider: FLEETD_COMPUTERS },
     tailnet: false,
     github: { at: "todo" },
     project: pick,

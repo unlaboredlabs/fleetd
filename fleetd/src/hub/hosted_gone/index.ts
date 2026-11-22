@@ -29,7 +29,7 @@ export function filesOf(hub: Hub, r: ProjectRef): string {
 
 /** Why bot `r`, which ran in a hosted sandbox, does nothing now, and what to do: what a message to it is answered. */
 export const hostedGone = (hub: Hub, r: ProjectRef): { message: string; fix: string } => ({
-  message: `This bot ran in a hosted sandbox with your own boat.dev key, which fleetd no longer supports. Its files are in ${filesOf(hub, r)} on the hub's machine.`,
+  message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${filesOf(hub, r)} on the hub's machine.`,
   fix: "Add its repo on one of your computers to keep working on it.",
 });
 
@@ -43,7 +43,7 @@ export const hostedGoneLine = (hub: Hub, r: ProjectRef): string => {
 export function pickGoneLine(was: "vm" | "boat", machine: string): string {
   return was === "vm"
     ? `fleetd no longer runs agents in VMs on your computers: this bot's agents run directly on ${machine} again, as before.`
-    : `fleetd no longer supports hosted sandboxes with your own boat.dev key: this bot's agents run on ${machine} from now on.`;
+    : `fleetd no longer supports hosted sandboxes with a key of your own: this bot's agents run on ${machine} from now on.`;
 }
 
 /** The source the line goes in with: a chat takes one message per source, so it is said once however often this runs. */
