@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chatItems, type ChatMessage, type HumanRequest } from "./desktop";
+import { chatItems, FIRST_PIECE_BYTES, type ChatMessage, type HumanRequest } from "./desktop";
 import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
 import { memoryPins } from "./pins";
@@ -393,13 +393,17 @@ describe("Session", () => {
     expect(pages()).toHaveLength(1);
   });
 
-  it("checks a live link when the network changes, and dials at once one that waits out its backoff", () => {
+  it("checks a live link when the network changes while it dials one beside it, and dials at once one that waits out its backoff", () => {
     const { hub, session } = setup();
     vi.advanceTimersByTime(1000);
+    const first = hub.link;
     session.networkChanged();
-    expect(hub.sentOf("call").filter((c) => c.tool === "hub_info")).toHaveLength(2);
-    // Nothing back: the link was on the network left behind.
+    // The old link is asked, and a fresh one dialled on the new network at once, not after the probe's wait.
+    expect(first.sent.filter((c) => c.t === "call" && c.tool === "hub_info")).toHaveLength(2);
+    expect(hub.links).toHaveLength(2);
+    // Nothing back: the link was on the network left behind, and the fresh one is the link.
     vi.advanceTimersByTime(2500);
+    expect(first.closed).toBe(true);
     expect(hub.links).toHaveLength(2);
     hub.link.close(1006);
     expect(session.state.hub.phase).toBe("retrying");
@@ -790,7 +794,7 @@ describe("a tap on a screen just taken over", () => {
       await flush();
       const whole = session.attachment(KEY, "F3");
       await flush();
-      expect(gets(hub).at(-1)).toEqual({ projectRef: REF, attachmentId: "F3", offset: 0, length: 524_286 });
+      expect(gets(hub).at(-1)).toEqual({ projectRef: REF, attachmentId: "F3", offset: 0, length: FIRST_PIECE_BYTES });
       hub.answer("attachment_get", { ...file, bytes: 3, mime: "image/png", dataB64: "AAEC", offset: 0 });
       await expect(whole).resolves.toMatchObject({ ok: true, output: { dataB64: "AAEC", mime: "image/png" } });
     });

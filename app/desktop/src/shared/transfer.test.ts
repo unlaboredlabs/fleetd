@@ -2,7 +2,7 @@
 // that resumes; an older hub still gets the whole file, sent again from its start, and sends whole files back.
 import { describe, expect, it } from "vitest";
 import { ATTACHMENT_PART_BYTES } from "./contracts";
-import { b64Bytes, READ_PIECE_BYTES, READS_IN_FLIGHT, readFile, readPreview, RECONNECT_BUDGET_MS, sendFile, type TransferCall, type TransferOutcome } from "./transfer";
+import { b64Bytes, FIRST_PIECE_BYTES, PIECE_TARGET_MS, READ_PIECE_BYTES, READS_IN_FLIGHT, UP_PIECE_TARGET_MS, readFile, readPreview, RECONNECT_BUDGET_MS, sendFile, type TransferCall, type TransferOutcome } from "./transfer";
 
 const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const unb64 = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, "base64"));
@@ -84,12 +84,12 @@ describe("sending a file", () => {
     const sent = await send(hub.call, bytes, (d) => seen.push(d));
     expect(sent).toEqual({ ok: true, attachmentId: "F1", bytes: bytes.length });
     expect(Buffer.from(hub.files.get("F1") ?? []).equals(Buffer.from(bytes))).toBe(true);
-    // part, part (answer lost), part again (link still down), part again, put.
+    // part (small, the first), part (answer lost), part again (link still down), part again, put.
     expect(hub.calls.map((c) => [c.tool, c.input["offset"]])).toEqual([
       ["attachment_part", undefined],
-      ["attachment_part", ATTACHMENT_PART_BYTES],
-      ["attachment_part", ATTACHMENT_PART_BYTES],
-      ["attachment_part", ATTACHMENT_PART_BYTES],
+      ["attachment_part", FIRST_PIECE_BYTES],
+      ["attachment_part", FIRST_PIECE_BYTES],
+      ["attachment_part", FIRST_PIECE_BYTES],
       ["attachment_put", undefined],
     ]);
     expect(seen.at(-1)).toBe(1);
@@ -147,8 +147,10 @@ describe("reading a file", () => {
     const got = await readFile(hub.call, ref, undefined, noWait);
     expect(got.ok && Buffer.from(got.file.dataB64, "base64").equals(Buffer.from(bytes))).toBe(true);
     expect(got.ok && got.file.offset).toBeUndefined();
-    // The second and third go together; the second again once the link is back.
-    expect(hub.calls.map((c) => c.input["offset"])).toEqual([0, READ_PIECE_BYTES, READ_PIECE_BYTES * 2, READ_PIECE_BYTES]);
+    // A small first, then the second and third together at the size this fast link takes; the second again once the
+    // link is back.
+    const third = FIRST_PIECE_BYTES + READ_PIECE_BYTES;
+    expect(hub.calls.map((c) => c.input["offset"])).toEqual([0, FIRST_PIECE_BYTES, third, FIRST_PIECE_BYTES]);
   });
 
   it("keeps two pieces on their way at once, no more", async () => {
@@ -187,3 +189,64 @@ describe("reading a file", () => {
     for (const n of [0, 1, 2, 3, 4, 5]) expect(b64Bytes(b64(fileOf(n)))).toBe(n);
   });
 });
+
+/**
+ * A link of `bytesPerSec` both ways on a clock of its own: each call's frame takes its bytes' time, and frames queue
+ * behind each other as on one socket. `gaps` hears how long the socket went without a frame arriving.
+ */
+const slowLink = (hub: ReturnType<typeof fakeHub>, bytesPerSec: number) => {
+  let clock = 0;
+  let free = 0;
+  let lastFrame = 0;
+  const gaps: number[] = [];
+  const now = () => clock;
+  const call: TransferCall = async (tool, input, ms) => {
+    const out = await hub.call(tool, input, ms);
+    const up = typeof input["dataB64"] === "string" ? input["dataB64"].length : 0;
+    const down = out.ok ? ((out.output as { dataB64?: string }).dataB64?.length ?? 0) : 0;
+    const bytes = up + down;
+    free = Math.max(free, clock) + (bytes / bytesPerSec) * 1000;
+    // Two in flight: the clock moves to when this one's frame has come, never back.
+    clock = Math.max(clock, free);
+    gaps.push(clock - lastFrame);
+    lastFrame = clock;
+    return out;
+  };
+  return { call, now, gaps };
+};
+
+describe("pieces sized to the link", () => {
+  const ref = { projectRef: { machineId: "devbox", projectId: "app" }, attachmentId: "F1" };
+
+  it("sends and reads a photo on a 256 kbit/s link in pieces of a few seconds, never a 22 s frame", async () => {
+    const hub = fakeHub(true);
+    const bytes = fileOf(1_800_000);
+    const up = slowLink(hub, 32_000);
+    const sent = await sendFile(up.call, bytes.length, (s, e) => b64(bytes.subarray(s, e)), "a.jpg", "image/jpeg", undefined, noWait, up.now);
+    expect(sent.ok).toBe(true);
+    expect(Buffer.from(hub.files.get("F1") ?? []).equals(Buffer.from(bytes))).toBe(true);
+    // base64's third included: a piece up is the link's UP_PIECE_TARGET_MS, give or take its first, which is smaller.
+    expect(Math.max(...up.gaps)).toBeLessThan(UP_PIECE_TARGET_MS * 1.5);
+    hub.calls.length = 0;
+    const down = slowLink(hub, 32_000);
+    const got = await readFile(down.call, ref, undefined, noWait, down.now);
+    expect(got.ok && Buffer.from(got.file.dataB64, "base64").equals(Buffer.from(bytes))).toBe(true);
+    expect(Math.max(...down.gaps)).toBeLessThan(PIECE_TARGET_MS * 1.5);
+    // Whole 512 KiB pieces would have been ~22 s each.
+    expect((READ_PIECE_BYTES * 4) / 3 / 32_000).toBeGreaterThan(20);
+  });
+
+  it("goes up to whole pieces on a fast link after the first", async () => {
+    const hub = fakeHub(true);
+    const bytes = fileOf(READ_PIECE_BYTES * 3);
+    const fast = slowLink(hub, 10_000_000);
+    expect((await sendFile(fast.call, bytes.length, (s, e) => b64(bytes.subarray(s, e)), "a.zip", "application/zip", undefined, noWait, fast.now)).ok).toBe(true);
+    const sizes = hub.calls.map((c) => unb64(String(c.input["dataB64"])).length);
+    expect(sizes.slice(0, 3)).toEqual([FIRST_PIECE_BYTES, ATTACHMENT_PART_BYTES, ATTACHMENT_PART_BYTES]);
+    hub.calls.length = 0;
+    const read = slowLink(hub, 10_000_000);
+    expect((await readFile(read.call, ref, undefined, noWait, read.now)).ok).toBe(true);
+    expect(hub.calls.map((c) => c.input["length"]).slice(0, 3)).toEqual([FIRST_PIECE_BYTES, READ_PIECE_BYTES, READ_PIECE_BYTES]);
+  });
+});
+

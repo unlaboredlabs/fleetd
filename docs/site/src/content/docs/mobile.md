@@ -10,7 +10,8 @@ shows only those; you answer each from its card in the chat, with everything it 
 send button is **Stop**, which stops its running step and the bot's agents, as on the desktop (a key that may
 not stop it, such as a Read member's, has no Stop). What you were writing in a chat (its words, picked files and the
 reply quote) stays there as you go between chats and when the app starts again; a file still uploading when the app
-closes is left out. Notifications show the full text,
+closes is left out. A photo from Photos or the camera goes up at most 2048 px on its long side, upright and without
+its location or other metadata (a screenshot or a file goes as it is). Notifications show the full text,
 end-to-end encrypted. You can [watch and take over](#screens) a lead's or agent's screen when it needs
 you (a captcha, a bank's check, a sign-in only you can do), open a screen of your own, read a chat's
 [artifacts](#artifacts), make, rename, archive and delete bots, and on an iPhone

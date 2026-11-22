@@ -38,6 +38,13 @@ export const WAKE_PROBE_MS = 2_500;
  * life, and the first to show life is kept, so a dead link costs the dial alone rather than WAKE_PROBE_MS first.
  */
 export const RACE_AFTER_BEHIND_MS = 25_000;
+/**
+ * In front, a call sent on a link with nothing else on its way that hears nothing back within this asks the link for a
+ * sign of life (askAlive): a message the person sends into a link that died quietly (a tunnel, a lift, a NAT that
+ * forgot it) goes again on a fresh one in seconds, rather than after the 15 s of silence that drop a quiet link. The
+ * hub answers calls side by side, so a slow tool's answer never holds the probe's up.
+ */
+export const ANSWER_DUE_MS = 3_000;
 /** In front, a retry waits at most this long: someone is looking at "Connecting…". */
 export const FRONT_BACKOFF_CAP_MS = 5_000;
 /** A link must stay up this long before the backoff starts over. */
@@ -124,6 +131,8 @@ const fail = (code: string, message: string, fix?: string): CallOutcome => ({ ok
 interface Pending {
   readonly resolve: (outcome: CallOutcome) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+  /** The askAlive due if nothing is heard after it (ANSWER_DUE_MS). */
+  readonly due?: ReturnType<typeof setTimeout>;
 }
 
 /** A link dialled beside the live one (RACE_AFTER_BEHIND_MS): its frames wait, unread, until it is kept or closed. */
@@ -176,6 +185,8 @@ export class HubClient {
   #restartUntil = 0;
   #readyAt = 0;
   #heardAt = 0;
+  /** Frames read on the live link so far: one after a call's send says the link brought something since. */
+  #heard = 0;
   /** When the probe's timer last ran: a tick far later than that means the app slept. */
   #tickAt = 0;
   /** Whether the app is in front, where the link is watched closer. */
@@ -254,13 +265,18 @@ export class HubClient {
   }
 
   /**
-   * The phone's network changed (Wi-Fi to cellular, a network back): a live link is asked for a sign of life, as one
-   * on the network left behind dies without a word, and one waiting out its backoff or still dialling on the old
-   * network dials now.
+   * The phone's network changed (Wi-Fi to cellular, a network back): a link on the network left behind dies without a
+   * word, so a live one is asked for a sign of life while a fresh link is dialled on the new network beside it, and
+   * the first to show life is kept (as back from long behind), rather than WAKE_PROBE_MS spent on the old one first.
+   * One waiting out its backoff or still dialling on the old network dials now.
    */
   networkChanged(): void {
     if (this.#stopped) return;
-    if (this.#ready) return this.#askAlive();
+    if (this.#ready) {
+      this.#askAlive();
+      if (this.#spare === null) this.#dialSpare();
+      return;
+    }
     if (this.#connection === null) return this.#dialNow();
     this.reconnectNow();
   }
@@ -297,11 +313,21 @@ export class HubClient {
       return Promise.resolve(fail("offline", "Not connected to the hub.", "Wait for the connection to come back.") as Typed<T>);
     }
     const id = `c${String(++this.#nextId)}`;
+    // Alone on the link: its answer is the next frame, so silence after it says the link is gone. Behind others, or
+    // given longer than calls are (a file's piece, seconds on a slow link), the link may just be busy bringing it,
+    // which the silence check gives its time.
+    const alone = this.#front && this.#pending.size === 0 && timeoutMs <= DEFAULT_CALL_TIMEOUT_MS;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${String(Math.round(timeoutMs / 1000))} s.`));
       }, timeoutMs);
-      this.#pending.set(id, { resolve: (o) => resolve(o as Typed<T>), timer });
+      const heard = this.#heard;
+      const due = alone
+        ? setTimeout(() => {
+            if (this.#pending.has(id) && this.#heard === heard) this.#askAlive();
+          }, ANSWER_DUE_MS)
+        : undefined;
+      this.#pending.set(id, { resolve: (o) => resolve(o as Typed<T>), timer, ...(due === undefined ? {} : { due }) });
       this.#send({ t: "call", id, tool, input });
     });
   }
@@ -412,6 +438,7 @@ export class HubClient {
   #take(connection: Connection, text: string): void {
     if (connection === this.#connection) {
       this.#heardAt = Date.now();
+      this.#heard++;
       // The live link shows life: the spare racing it isn't needed.
       this.#dropSpare();
       return this.#onFrame(parseFrame(text));
@@ -633,6 +660,7 @@ export class HubClient {
     if (pending === undefined) return;
     this.#pending.delete(id);
     clearTimeout(pending.timer);
+    if (pending.due !== undefined) clearTimeout(pending.due);
     pending.resolve(outcome);
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "./desktop";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES, FIRST_PIECE_BYTES } from "./desktop";
 import { mimeOf, pickedName, refusal, toBase64, upload, type Call } from "./upload";
 
 describe("upload", () => {
@@ -49,7 +49,8 @@ describe("upload", () => {
     await upload(call, new Uint8Array(ATTACHMENT_PART_BYTES * 2 + 5), "b.pdf", "application/pdf", (d) => seen.push(d));
     expect(calls.map(([tool, input]) => [tool, input.uploadId, input.offset])).toEqual([
       ["attachment_part", undefined, undefined],
-      ["attachment_part", "u1", ATTACHMENT_PART_BYTES],
+      // A small first piece (transfer.ts pace), then a whole one on a link this fast.
+      ["attachment_part", "u1", FIRST_PIECE_BYTES],
       ["attachment_put", "u1", undefined],
     ]);
     expect(seen.at(-1)).toBe(1);
