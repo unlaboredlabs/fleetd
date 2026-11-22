@@ -17,12 +17,15 @@ import {
   signIn,
   signInAsking,
   shownAfterSignIn,
+  shownHub,
   signOutAll,
   type AfterSignInAsk,
   type AuthResult,
   type KeptHub,
   type SignInPorts,
 } from "./account";
+import { billingShown, type BillingState } from "../billing";
+import { deleteTeamShown } from "../team";
 import { builtCloudConfig, cloudConfig, firstScreen, type CloudConfig } from "./config";
 
 const random = (n: number) => new Uint8Array(randomBytes(n));
@@ -326,6 +329,37 @@ describe("Sign Out", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("a team paired with a code", () => {
+  // As qa-sweep's Pair a phone pairs it: the team's own address and a key, nothing of the account.
+  const paired: KeptHub = { hub: "https://qa-sweep.fleetd.dev", key: "fld_code", hubName: "qa-sweep" };
+  const own: KeptHub = { hub: "http://devbox:4790", key: "fld_own", hubName: "devbox" };
+  const CLOUD_LEFT_OUT = ["hub_update", "hub_update_status", "hub_restart", "machine_add"];
+  const on = { providedOn: true } as BillingState;
+
+  it("is a team once its hub_info leaves tools out, as only fleetd cloud does: Team, Billing and Delete Team show", () => {
+    const shown = shownHub(paired, CLOUD_LEFT_OUT);
+    expect(shown).toEqual({ ...paired, cloud: true });
+    expect(deleteTeamShown(shown, "owner")).toBe(true);
+    expect(billingShown(shown, true, on)).toBe(true);
+    // Before the hub says so, and on a self-run hub, which leaves nothing out, it is a hub.
+    expect(shownHub(paired, [])).toBe(paired);
+    expect(billingShown(shownHub(own, []), true, on)).toBe(false);
+    expect(deleteTeamShown(shownHub(own, []), "owner")).toBe(false);
+  });
+
+  it("keeps a team of the account as it is", () => {
+    const team: KeptHub = { ...paired, cloud: true, invited: true };
+    expect(shownHub(team, CLOUD_LEFT_OUT)).toBe(team);
+    expect(shownHub(team, [])).toBe(team);
+  });
+
+  it("stays out of the account's teams: a sign-in or sign-out never drops its key", async () => {
+    const left = await signOutAll({ config: null, fetch: () => Promise.reject(new Error("no call")), revoke: () => Promise.reject(new Error("not revoked")) }, null, [own, paired]);
+    expect(left).toEqual({ hubs: [own, paired], kept: [] });
+    expect(afterSignIn([own, paired], []).dropped).toEqual([]);
   });
 });
 
