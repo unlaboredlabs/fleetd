@@ -1,0 +1,61 @@
+/* The chat's card for a publish (ArtifactCard): its own few rules, so the chat doesn't bring the Artifacts pane's
+   styles into the web's first load. */
+/* One line of title over one quiet line, the time at its end. */
+.card {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(100%, 420px);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-quick) var(--ease-snap);
+}
+.card:hover {
+  background: var(--hover);
+}
+/* On the title's line, as the time is: 1lh is the card's line, which the title keeps. */
+.cardIcon {
+  flex: none;
+  align-self: flex-start;
+  width: 18px;
+  height: 18px;
+  margin-top: calc((1lh - 18px) / 2);
+  color: var(--quiet);
+}
+.words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.title {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cardTime {
+  flex: none;
+  align-self: flex-start;
+  font-size: var(--text-xs);
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+}
+.card:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}

@@ -1,6 +1,9 @@
 // The hub data the renderer sees: the /app protocol's own shapes, generated from crates/fleetd-contracts.
 import type { BrowserFrame, ChatDelta, FleetStatus, HubEvent, HubInfoOutput, LiveFrame, ScreenThumb } from "./contracts";
 
+/** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it (ipc.ts checks it). */
+export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
+
 export type { BrowserFrame, HubEvent, LiveFrame };
 /** The answer to `snapshot`: fleetd_status's data, with the event cursor to resume from. */
 export type Snapshot = FleetStatus;

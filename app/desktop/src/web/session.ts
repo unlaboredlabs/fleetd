@@ -9,7 +9,8 @@
 //   /t/<team>/app                  the team's hub socket; /t/<team>/accounts/v1/invites…, /t/<team>/github/v1/install
 // Every call but a GET carries `x-fleetd-web: 1`, which a page on another origin can't send without a preflight the
 // cloud never answers.
-import { z } from "zod";
+// Plain checks, not zod: this runs before the web app's first chat (shared/check.ts).
+import { isFields, isList, isOptional, isText, type Fields } from "../shared/check";
 import { parseHash, toHash } from "../renderer/screens/shell/routes";
 
 /** The header every call carries; the cloud refuses a write without it. */
@@ -17,16 +18,34 @@ export const WEB_HEADER = { "x-fleetd-web": "1" } as const;
 
 const CALL_TIMEOUT_MS = 20_000;
 
-const Team = z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(100), url: z.string().min(1).max(300), later: z.literal(true).optional() });
-export type WebTeam = z.infer<typeof Team>;
-const Invitation = z.object({ name: z.string().min(1).max(100), invitedBy: z.string().max(320), role: z.string().max(32), accept: z.string().min(1).max(200) });
-export type WebInvitation = z.infer<typeof Invitation>;
-const Session = z.object({
-  email: z.string().min(1).max(320),
-  teams: z.array(Team).max(100),
-  invitations: z.array(Invitation).max(100).optional(),
-  removed: z.array(z.string().min(1).max(100)).max(50).optional(),
-});
+export interface WebTeam {
+  readonly id: string;
+  readonly name: string;
+  readonly url: string;
+  readonly later?: true | undefined;
+}
+export interface WebInvitation {
+  readonly name: string;
+  readonly invitedBy: string;
+  readonly role: string;
+  readonly accept: string;
+}
+const text = (min: number, max: number) => (v: unknown): v is string => isText(v, min, max);
+const isTeam = (v: unknown): v is Fields => isFields(v) && isText(v["id"], 1, 64) && isText(v["name"], 1, 100) && isText(v["url"], 1, 300) && (v["later"] === undefined || v["later"] === true);
+const isInvitation = (v: unknown): v is Fields => isFields(v) && isText(v["name"], 1, 100) && isText(v["invitedBy"], 0, 320) && isText(v["role"], 0, 32) && isText(v["accept"], 1, 200);
+/** The session's answer, its known fields only (as a schema's parse gives them), or null. */
+const sessionOf = (v: unknown): Omit<WebSession, "invitations" | "removed"> & { invitations?: WebInvitation[]; removed?: string[] } | null => {
+  if (!isFields(v) || !isText(v["email"], 1, 320) || !isList(v["teams"], 100, isTeam)) return null;
+  if (!isOptional(v["invitations"], (x) => isList(x, 100, isInvitation)) || !isOptional(v["removed"], (x) => isList(x, 50, text(1, 100)))) return null;
+  const team = (t: Fields): WebTeam => ({ id: t["id"] as string, name: t["name"] as string, url: t["url"] as string, ...(t["later"] === true ? { later: true as const } : {}) });
+  const invitation = (i: Fields): WebInvitation => ({ name: i["name"] as string, invitedBy: i["invitedBy"] as string, role: i["role"] as string, accept: i["accept"] as string });
+  return {
+    email: v["email"],
+    teams: v["teams"].map(team),
+    ...(v["invitations"] === undefined ? {} : { invitations: v["invitations"].map(invitation) }),
+    ...(v["removed"] === undefined ? {} : { removed: v["removed"] }),
+  };
+};
 export interface WebSession {
   readonly email: string;
   readonly teams: readonly WebTeam[];
@@ -48,7 +67,11 @@ export type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 const unreachable: WebFailure = { code: "offline", message: "Can't reach fleetd cloud.", fix: "Check your connection, then try again." };
 
-const Refusal = z.object({ code: z.string().max(64), message: z.string().min(1).max(500), fix: z.string().max(500).optional() });
+/** The cloud's refusal, its known fields only, or null. */
+const refusal = (v: unknown): WebFailure | null =>
+  isFields(v) && isText(v["code"], 0, 64) && isText(v["message"], 1, 500) && isOptional(v["fix"], text(0, 500))
+    ? { code: v["code"], message: v["message"], ...(v["fix"] === undefined ? {} : { fix: v["fix"] }) }
+    : null;
 
 const readJson = async (response: Response): Promise<unknown> => {
   try {
@@ -60,8 +83,7 @@ const readJson = async (response: Response): Promise<unknown> => {
 
 /** The cloud's refusal in its own words, else one that says the status. */
 const refusalOf = async (response: Response): Promise<WebFailure> => {
-  const said = Refusal.safeParse(await readJson(response));
-  return said.success ? said.data : { code: "", message: `fleetd cloud answered ${String(response.status)}.`, fix: "Try again in a minute." };
+  return refusal(await readJson(response)) ?? { code: "", message: `fleetd cloud answered ${String(response.status)}.`, fix: "Try again in a minute." };
 };
 
 /** One same-origin call with the session's cookie; never throws. A 401 is `signedOut`. */
@@ -93,9 +115,9 @@ export const webCall = async (
 export const readSession = async (fetch: Fetch): Promise<SessionRead> => {
   const answer = await webCall(fetch, "GET", "/web/session");
   if (!answer.ok) return answer;
-  const got = Session.safeParse(answer.body);
-  if (!got.success) return { ok: false, failure: { code: "", message: "fleetd cloud answered in a way this page doesn't read.", fix: "Reload the page." } };
-  return { ok: true, session: { email: got.data.email, teams: got.data.teams, invitations: got.data.invitations ?? [], removed: got.data.removed ?? [] } };
+  const got = sessionOf(answer.body);
+  if (got === null) return { ok: false, failure: { code: "", message: "fleetd cloud answered in a way this page doesn't read.", fix: "Reload the page." } };
+  return { ok: true, session: { email: got.email, teams: got.teams, invitations: got.invitations ?? [], removed: got.removed ?? [] } };
 };
 
 /** How long after a team is made its session is read again, while it doesn't list a team yet: about 7.5 s in all. */
@@ -199,3 +221,17 @@ export function removedNotice() {
     },
   };
 }
+
+/**
+ * What a page that opened from its kept account (main.tsx) does once its session is read: goes on (`keep`), starts
+ * again from the session (`fresh`: signed out, another account, other teams, or something a gate says: invitations,
+ * no team, a removal), or stays as it is with the cloud out of reach (`offline`: the app says so, and reconnects).
+ */
+export const afterKeptStart = (kept: { readonly email: string; readonly teams: ReadonlyArray<{ readonly id: string }> }, read: SessionRead): "keep" | "fresh" | "offline" => {
+  if (!read.ok) return read.signedOut === true ? "fresh" : "offline";
+  const { session } = read;
+  const ids = (teams: ReadonlyArray<{ readonly id: string }>) => teams.map((t) => t.id).sort().join("\n");
+  if (session.email !== kept.email || ids(session.teams) !== ids(kept.teams)) return "fresh";
+  if (session.invitations.length > 0 || session.teams.length === 0 || session.removed.length > 0) return "fresh";
+  return "keep";
+};

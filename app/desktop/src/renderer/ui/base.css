@@ -5,7 +5,8 @@
    -latin and -more keep every layout feature; -basic the default ones and tnum (the only other the app asks for),
    which takes it from ~31 KB to ~18. Cut with fontTools: pyftsubset <whole font> --flavor=woff2 --layout-features='*'
    (-basic: --layout-features+=tnum) --name-IDs='*' --name-languages='*' --notdef-glyph --notdef-outline
-   --recommended-glyphs --glyph-names (not for -basic) --symbol-cmap --legacy-cmap --unicodes=<the file's unicode-range>. */
+   --recommended-glyphs --glyph-names (not for -basic) --symbol-cmap --legacy-cmap --unicodes=<the file's unicode-range>.
+   Geist's Medium and SemiBold are added from ui/laterFonts.ts, with the same cuts: on the web after the first chat. */
 @font-face {
   font-family: "Geist";
   src: url("./fonts/Geist-Regular-basic.woff2") format("woff2");
@@ -26,54 +27,6 @@
   font-family: "Geist";
   src: url("./fonts/Geist-Regular-more.woff2") format("woff2");
   font-weight: 400;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+0100-0130, U+0132-0151, U+0154-02AF, U+0370-052F, U+1C80-1C8F, U+1E00-1FFF, U+2DE0-2DFF, U+A640-A69F;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-Medium-basic.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-Medium-latin.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-Medium-more.woff2") format("woff2");
-  font-weight: 500;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+0100-0130, U+0132-0151, U+0154-02AF, U+0370-052F, U+1C80-1C8F, U+1E00-1FFF, U+2DE0-2DFF, U+A640-A69F;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-SemiBold-basic.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-SemiBold-latin.woff2") format("woff2");
-  font-weight: 600;
-  font-style: normal;
-  font-display: block;
-  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
-}
-@font-face {
-  font-family: "Geist";
-  src: url("./fonts/Geist-SemiBold-more.woff2") format("woff2");
-  font-weight: 600;
   font-style: normal;
   font-display: block;
   unicode-range: U+0100-0130, U+0132-0151, U+0154-02AF, U+0370-052F, U+1C80-1C8F, U+1E00-1FFF, U+2DE0-2DFF, U+A640-A69F;

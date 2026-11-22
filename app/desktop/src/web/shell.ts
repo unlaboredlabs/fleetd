@@ -23,9 +23,13 @@ import { cleanLabel, HUB_COLORS, type HubColor, type HubEntry, type HubId } from
 import type { CallRequest, FileRequest } from "../shared/ipc";
 import { readFile } from "../shared/transfer";
 import type { UpdatesState } from "../shared/updates";
-import { openBilling, readTeamBilling, setBillingCap } from "../main/cloud/billing";
-import { connectGithub, githubRepos, installGithub } from "../main/cloud/github";
-import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "../main/cloud/invites";
+import type { KeyedTeam } from "../main/cloud/invites";
+
+// Invites, GitHub and billing, asked for from Settings only: loaded on their first use, so their checks (zod) stay out
+// of the first load.
+const invites = () => import("../main/cloud/invites");
+const billing = () => import("../main/cloud/billing");
+const github = () => import("../main/cloud/github");
 import { externalUrl } from "../main/external";
 import type { Transport } from "../main/hub/link";
 import { submitClaudeAccount, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSandboxKey, submitSecret } from "../main/secret";
@@ -369,21 +373,21 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       move: () => Promise.resolve({ ok: false, message: NEEDS_DESKTOP }),
       invites: (hub): Promise<InvitesOutcome> => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : listInvites(teamFetch, team);
+        return team === null ? Promise.resolve(notTeam) : invites().then((m) => m.listInvites(teamFetch, team));
       },
       invite: (hub, request) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : sendInvite(teamFetch, team, request);
+        return team === null ? Promise.resolve(notTeam) : invites().then((m) => m.sendInvite(teamFetch, team, request));
       },
       revokeInvite: (hub, inviteId) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : revokeInvite(teamFetch, team, inviteId);
+        return team === null ? Promise.resolve(notTeam) : invites().then((m) => m.revokeInvite(teamFetch, team, inviteId));
       },
       // Gone, the team leaves this page: the web app's start lists the teams left, or makes one.
       deleteTeam: async (hub, name) => {
         const team = keyed(hub);
         if (team === null) return notTeam;
-        const out = await deleteTeam(teamFetch, team, name);
+        const out = await (await invites()).deleteTeam(teamFetch, team, name);
         if (out.ok) {
           cache.clear();
           deps.go("/");
@@ -393,25 +397,27 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       installGithub: (hub): Promise<InstallGithubOutcome> => {
         const team = keyed(hub);
         if (team === null) return Promise.resolve(notTeam);
-        return installGithub(teamFetch, team, (url) => (deps.open(url) === null ? Promise.reject(new Error("the browser blocked the new tab; allow pop-ups for this site")) : Promise.resolve()));
+        return github().then((m) =>
+          m.installGithub(teamFetch, team, (url) => (deps.open(url) === null ? Promise.reject(new Error("the browser blocked the new tab; allow pop-ups for this site")) : Promise.resolve())),
+        );
       },
       githubRepos: (hub) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : githubRepos(teamFetch, team);
+        return team === null ? Promise.resolve(notTeam) : github().then((m) => m.githubRepos(teamFetch, team));
       },
       // GitHub's trip is this tab's: it leaves for GitHub and comes back to `back` (a pop-up would be blocked after the call).
       connectGithub: (hub, request) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : connectGithub(teamFetch, team, request, deps.go);
+        return team === null ? Promise.resolve(notTeam) : github().then((m) => m.connectGithub(teamFetch, team, request, deps.go));
       },
       billing: (hub) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : readTeamBilling(teamFetch, team);
+        return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.readTeamBilling(teamFetch, team));
       },
       // Stripe's page is this tab's trip too, as GitHub's is: it comes back to the web app (a pop-up would be blocked after the call).
       billingOpen: (hub, what) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : openBilling(teamFetch, team, what, (url) => Promise.resolve(deps.go(url)));
+        return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.openBilling(teamFetch, team, what, (url) => Promise.resolve(deps.go(url))));
       },
       startLater: async (hub) => {
         const team = teams.get(hub);
@@ -419,7 +425,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       },
       billingCap: (hub, capCents) => {
         const team = keyed(hub);
-        return team === null ? Promise.resolve(notTeam) : setBillingCap(teamFetch, team, capCents);
+        return team === null ? Promise.resolve(notTeam) : billing().then((m) => m.setBillingCap(teamFetch, team, capCents));
       },
     },
     system: { hostName: () => Promise.resolve("") },

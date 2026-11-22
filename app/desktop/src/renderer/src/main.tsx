@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { sendKept } from "../screens/checklist/removal";
-import { afterShown, applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
+import { addLaterFonts, afterShown, applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
 import { onWeb } from "./web";
 import { App } from "./App";
 import { Boundary, reportError } from "./Boundary";
@@ -47,6 +47,9 @@ sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer);
 // has shown, which draws its messages' plain words meanwhile: on a slow link the chat comes seconds sooner.
 if (onWeb()) afterShown(preloadMarkdown);
 else preloadMarkdown();
+// Geist's Medium and SemiBold: the desktop's as the page starts, the web's once the first chat has shown (ui/laterFonts).
+if (onWeb()) afterShown(() => addLaterFonts("swap"));
+else addLaterFonts("block");
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");

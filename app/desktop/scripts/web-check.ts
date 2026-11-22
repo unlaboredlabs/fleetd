@@ -17,10 +17,11 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
 /**
  * The first load's budget, gzip (level 9) of every file index.html names: 641 KB / 47 files when set (W701), down from
  * 827 KB / 50 files in 3-4 waves; 613 KB / 34 once the side panel loaded after the chat, 441 KB / 28 once the fonts'
- * everyday cut, the markdown parser and the chat's cards of other screens came after it too (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
+ * everyday cut, the markdown parser and the chat's cards of other screens came after it too, 373 KB / 29 once the
+ * hub's frames and the session were read without zod and Medium and SemiBold came after the chat (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
  * loaded on use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
  */
-const FIRST_LOAD_KB = 460;
+const FIRST_LOAD_KB = 390;
 const FIRST_LOAD_FILES = 32;
 /** Chunks and files that load on use or once the chat has shown, never with the first load. */
 const NOT_FIRST: ReadonlyArray<readonly [RegExp, string]> = [
@@ -30,6 +31,7 @@ const NOT_FIRST: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(ProjectPanel|panes|ChecklistPane)-[\w-]+\.js$/u, "the side panel, loaded once the chat has shown"],
   [/-(more|latin)-[\w-]+\.woff2$/u, "a font's symbols or extended Latin, loaded when the text uses them"],
   [/^MarkdownBody-[\w-]+\.js$/u, "the markdown parser, loaded once the chat has shown its plain words"],
+  [/^Geist-(Medium|SemiBold)-/u, "Geist's Medium and SemiBold, added once the chat has shown (ui/laterFonts.ts)"],
   [/^GeistMono-/u, "the mono font, loaded when code or an id shows"],
 ];
 /** What the first chat draws, loaded by import(): named in index.html, or it comes a wave (a round trip) later. */

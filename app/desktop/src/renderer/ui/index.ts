@@ -9,6 +9,7 @@ export { arrived, forgetList, noteKeys, useArrivals, useArrived } from "./lib/ar
 export { LEAVE_MS, useLeavers, type Shown } from "./lib/leaving";
 export { useReorder, type Reorder } from "./lib/reorder";
 export { BEAT_MS, BEATS, useBeat, useBeatRef } from "./lib/beat";
+export { addLaterFonts } from "./laterFonts";
 export { afterFirstPaint, afterShown, markShown, preloadable, preloadWhenIdle, useShownYet, type Preloadable } from "./lib/idle";
 
 export { Text, textClass, type TextProps, type TextSize, type TextTone, type TextStyleProps } from "./text/Text";

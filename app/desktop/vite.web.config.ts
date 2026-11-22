@@ -20,7 +20,7 @@ export default defineConfig({
   root: resolve(import.meta.dirname, "src/web"),
   // From the origin's root: the cloud answers index.html on any path, so a relative asset path would break on a deep one.
   base: "/",
-  plugins: [react(), preloadChunks({ entries: FIRST_CHAT, fonts: /Geist-(Regular|Medium|SemiBold)-basic-/u })],
+  plugins: [react(), preloadChunks({ entries: FIRST_CHAT, fonts: /Geist-Regular-basic-/u })],
   build: {
     outDir: resolve(import.meta.dirname, "out/web"),
     emptyOutDir: true,
