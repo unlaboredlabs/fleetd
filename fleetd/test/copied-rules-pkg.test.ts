@@ -112,6 +112,9 @@ test("the lead digest's train lines from plain data", () => {
     "- acme/web: now C2 (ci); queue C3 ready",
     "- C1 merged since your last wake: acme/web#1 as abcdef012345 (by T1)",
   ]);
+  // A batch that passed and waits for the one behind it says so, not "ci".
+  const waiting = changes.map((c) => (c.changeId === "C2" ? { ...c, lastError: "passed, waiting up to 10 min for batch #9 behind it" } : c));
+  expect(leadTrainLines({ trains, changes: waiting })[0]).toBe("- acme/web: now C2 (passed, waiting up to 10 min for batch #9 behind it); queue C3 ready");
 });
 
 test("a decision's search words and a person's overturn", () => {

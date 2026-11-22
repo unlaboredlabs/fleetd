@@ -3,6 +3,7 @@ import type { Hub } from "../api/hub.ts";
 import { approvals } from "../approvals/index.ts";
 import { checkerSeams } from "../project_lead/checker_turn.ts";
 import { registerLeadCalls } from "./calls.ts";
+import { watchers } from "../watchers/index.ts";
 import { automations } from "./index.ts";
 
 /**
@@ -39,4 +40,5 @@ export function start(hub: Hub): void {
   });
   checkerSeams(hub).running = (r) => automations(hub).running(r);
   automations(hub).start();
+  watchers(hub).start();
 }

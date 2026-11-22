@@ -10,6 +10,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stop as stopHost } from "../../src/node/runner/host.ts";
+import { START_LOG } from "../../src/sandbox/providers/boat.ts";
+import { heldPort } from "../ports.ts";
 
 export const KEY = "test-key-0123456789";
 export const SECRET = "box-secret-abc";
@@ -254,6 +256,8 @@ export function boatStandIn(runner?: Runner, step?: Step): StandIn {
  * at `cleanup`, by process group, and the session hosts its guests started by their records. */
 export function localRunner(dir: string, boxDir: string): { runner: Runner; track: (s: StandIn) => void; cleanup: () => Promise<void> } {
   const ports = new Map<string, number>();
+  /** Each box's port, held here until its command starts: another test run's box can't take it meanwhile. */
+  const holds = new Map<string, () => void>();
   const groups: number[] = [];
   const runner: Runner = {
     rewrite: (box, text) =>
@@ -262,7 +266,11 @@ export function localRunner(dir: string, boxDir: string): { runner: Runner; trac
         .replace(/FLEETD_BOOT_PORT='7787'/, `FLEETD_BOOT_PORT='${ports.get(box)}'`)
         .replaceAll(boxDir, join(dir, box)),
     exec: (box, argv, env) => {
-      const [cmd, ...args] = argv.map((a) => a.replaceAll(boxDir, join(dir, box)));
+      // The box's paths in /tmp go in the test's dir: every test run on this machine would share them.
+      mkdirSync(dir, { recursive: true });
+      const [cmd, ...args] = argv.map((a) => a.replaceAll(boxDir, join(dir, box)).replaceAll(START_LOG, join(dir, `${box}.start.log`)));
+      holds.get(box)?.();
+      holds.delete(box);
       const child = spawn(cmd!, args, {
         // The guest's forwards on 127.0.0.2, beside this machine's own ports on 127.0.0.1.
         env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}`, FLEETD_BOOT_LOOPBACK: "127.0.0.2", ...env },
@@ -280,11 +288,17 @@ export function localRunner(dir: string, boxDir: string): { runner: Runner; trac
     track: (s) => {
       const set = s.boxes.set.bind(s.boxes);
       s.boxes.set = (k: string, v: unknown) => {
-        if (!ports.has(k)) ports.set(k, freePort());
+        if (!ports.has(k)) {
+          const { port, release } = heldPort();
+          ports.set(k, port);
+          holds.set(k, release);
+        }
         return set(k, v);
       };
     },
     cleanup: async () => {
+      for (const release of holds.values()) release();
+      holds.clear();
       for (const g of groups.splice(0)) {
         try {
           process.kill(-g, "SIGKILL");
@@ -298,22 +312,3 @@ export function localRunner(dir: string, boxDir: string): { runner: Runner; trac
   };
 }
 
-/** Ports a box of this process was given: never given twice, since its bootstrap lets go of it before the guest takes
- * it. */
-const given = new Set<number>();
-/** A port for a box, free on every address (the bootstrap listens on 0.0.0.0). It is held by nothing until the box
- * listens, so it is never one the kernel hands out by itself (Linux's from 32768, macOS's from 49152): a port 0 picks
- * comes from that range, and under load another socket's connection or listener took it before the box did. */
-function freePort(): number {
-  for (;;) {
-    const port = 20_000 + Math.floor(Math.random() * 12_000);
-    if (given.has(port)) continue;
-    try {
-      Bun.listen({ hostname: "0.0.0.0", port, socket: { data() {} } }).stop(true);
-    } catch {
-      continue;
-    }
-    given.add(port);
-    return port;
-  }
-}

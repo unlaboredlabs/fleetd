@@ -265,6 +265,9 @@
 .wide {
   width: min(760px, calc(100vw - 4 * var(--edge-inset)));
 }
+.medium {
+  width: min(640px, calc(100vw - 4 * var(--edge-inset)));
+}
 .sheet {
   -webkit-app-region: no-drag;
   position: fixed;

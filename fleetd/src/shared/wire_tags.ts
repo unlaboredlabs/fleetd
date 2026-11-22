@@ -20,6 +20,7 @@ export const NODE_TO_HUB = [
   "session_host_result",
   "mac_result",
   "leave",
+  "screen_control_result",
 ] as const;
 export type NodeToHubTag = (typeof NODE_TO_HUB)[number];
 
@@ -41,6 +42,7 @@ export const HUB_TO_NODE = [
   "browser_control",
   "session_host",
   "mac_call",
+  "screen_control",
   "relay_dial",
   "session_step",
   "session_end",

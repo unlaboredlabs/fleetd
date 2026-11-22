@@ -9,6 +9,7 @@ const desktop = path.resolve(__dirname, "../desktop/src");
 config.watchFolders = [
   path.join(desktop, "shared"),
   path.join(desktop, "renderer/src/data"),
+  path.join(desktop, "renderer/screens/automations"),
   path.join(desktop, "renderer/screens/connections"),
   path.join(desktop, "renderer/screens/projects"),
   path.join(desktop, "renderer/screens/sessions"),

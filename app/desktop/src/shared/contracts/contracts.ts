@@ -890,6 +890,13 @@ export type Automation = {
   /** Absent: no schedule. */
   schedule?: AutomationSchedule;
   updatedAt: Timestamp;
+  /**
+   * A watcher: its runs are a read-only look at one thing about the bot's software, in no order, that says one line in
+   * the chat only when something is off. Its prompt is what it watches; the hub keeps its schedule to `every`.
+   */
+  watch?: AutomationWatch;
+  /** A watcher's runs over the last 24 hours: how many, how many spoke up, and what they cost. */
+  lastDay?: AutomationUsage;
   /** Whether it has a webhook URL. The URL holds a secret, shown once when it is made or rotated. */
   webhook: boolean;
 };
@@ -900,6 +907,8 @@ export type AutomationCreateInput = {
   projectRef: ProjectRef;
   prompt: string;
   schedule?: AutomationSchedule;
+  /** Make it a watcher: the hub sets its schedule from `every` (any `schedule` given is ignored), and it has no webhook. */
+  watch?: AutomationWatch;
   /** Give it a webhook URL. */
   webhook?: boolean;
 };
@@ -934,6 +943,8 @@ export type AutomationListOutput = {
   memoryRefresh?: MemoryRefreshJob;
   next?: string;
   truncated?: boolean;
+  /** The watcher presets this bot can have now (`deploys` only when its GitHub repo has deployments); absent from older hubs. */
+  watchable?: WatchKind[];
 };
 
 export type AutomationPauseInput = {
@@ -963,12 +974,16 @@ export type AutomationRun = {
   automationId: AutomationId;
   /** Who pressed Run now: a keyId, "human" or "lead:<machineId>/<projectId>". */
   by?: string;
+  /** A watcher's run: what it cost, in US dollars, as its runner reported it. */
+  costUsd?: number;
   endedAt?: Timestamp;
   /** A scheduled run the hub was down for, run once on its return: by how many minutes. */
   lateMin?: number;
   /** A webhook run: the size of the body it carried. The body itself is in automation_runs only. */
   payloadBytes?: number;
   runId: AutomationRunId;
+  /** A watcher's run that spoke up: the line it posted in the chat. */
+  said?: string;
   /** A scheduled run: the time it was due. */
   scheduledAt?: Timestamp;
   state: AutomationRunState;
@@ -1033,6 +1048,8 @@ export type AutomationUpdateInput = {
   /** true: take its schedule off. */
   removeSchedule?: boolean;
   schedule?: AutomationSchedule;
+  /** A watcher's new frequency or profile; its kind stays. */
+  watch?: AutomationWatch;
   /** true adds a webhook URL (kept if it has one); false removes it. */
   webhook?: boolean;
 };
@@ -1043,6 +1060,20 @@ export type AutomationUpdateOutput = {
   truncated?: boolean;
   /** Only when this update made its webhook URL. */
   webhookUrl?: string;
+};
+
+/** A watcher's runs over a stretch: how many ran, how many spoke up, and their cost in US dollars. */
+export type AutomationUsage = {
+  costUsd: number;
+  runs: number;
+  spoke: number;
+};
+
+/** What a watcher watches and how often; its runs use `profile`, or the bot's default. */
+export type AutomationWatch = {
+  every: WatchEvery;
+  kind: WatchKind;
+  profile?: ProfileName;
 };
 
 /** The square of a picture to keep, in its pixels as it shows (EXIF orientation applied): its top-left corner and side. */
@@ -1267,12 +1298,23 @@ export type BrowserRetentionSetOutput = {
 
 /** One session as the hub keeps it. */
 export type BrowserSession = {
+  /** Light or dark, on a phone screen whose device has the setting (an iOS simulator's); absent where it can't. */
+  appearance?: ScreenAppearance;
   control: BrowserControl;
+  /**
+   * The device controls a phone screen takes (`screen_control`, an agent's `mac sim <control>`), only those its machine
+   * checked work there. Absent on other screens and from older nodes.
+   */
+  controls?: ScreenControl[];
   /** How many logins the node filled from 1Password; never their values. */
   credentialsFilled?: number;
   endedAt?: Timestamp;
   /** The recording's files on the hub; empty until it is recorded, and again once it expired. */
   files?: BrowserRecordingEntry[];
+  /** A foldable's state now, one of `folds`. */
+  fold?: string;
+  /** A foldable's states, in the order a picker shows them ("folded", "open"); absent on any other device. */
+  folds?: string[];
   kind?: SessionKind;
   /**
    * The machine it runs on: the one hosting it for an agent elsewhere (the agents' Mac, another machine's
@@ -1286,6 +1328,11 @@ export type BrowserSession = {
    * for an agent's.
    */
   openedBy?: PersonRef;
+  /**
+   * Which way the phone is turned, as its machine last set it. A hint: the live frames' own size flips a moment after
+   * it does.
+   */
+  orientation?: ScreenOrientation;
   projectRef: ProjectRef;
   purpose: string;
   sessionId: BrowserSessionId;
@@ -3148,6 +3195,8 @@ export type HostCheck = {
   /** Why it can't, as a word the app acts on. Absent while it can, and from a node before it. */
   off?: HostOff;
   ready: boolean;
+  /** `ios` on the agents' Mac: the simulators a person may start there (`screen_open` kind ios), and its budget. */
+  sims?: SimModels;
 };
 
 /** Why a machine can't host a kind of screen. */
@@ -7728,6 +7777,8 @@ export type ScreenOpenInput = {
    */
   pr?: ScreenPr;
   projectRef: ProjectRef;
+  /** Kind ios: which simulator, from the Mac's `sims`; absent, a plain iPhone on the newest iOS. */
+  sim?: ScreenSim;
   wait?: boolean;
 };
 
@@ -7738,6 +7789,68 @@ export type ScreenOpenOutput = {
   truncated?: boolean;
   /** Its place in line for the machine's next free slot. */
   waiting?: ScreenWait;
+};
+
+/** A phone screen's light or dark appearance. */
+export type KnownScreenAppearance = "light" | "dark";
+/** KnownScreenAppearance, or a value from a newer hub. */
+export type ScreenAppearance = KnownScreenAppearance | (string & {});
+
+/**
+ * A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or
+ * dark (`value`), take a screenshot, set its location (`value` "lat,lon"), fold it (`value`, one of the session's
+ * `folds`), or go back (Android).
+ */
+export type KnownScreenControl =
+  | "rotate_left"
+  | "rotate_right"
+  | "shake"
+  | "home"
+  | "lock"
+  | "appearance"
+  | "screenshot"
+  | "location"
+  | "fold"
+  | "back";
+/** KnownScreenControl, or a value from a newer hub. */
+export type ScreenControl = KnownScreenControl | (string & {});
+
+export type ScreenControlInput = {
+  control: ScreenControl;
+  sessionId: BrowserSessionId;
+  /** `appearance`: light or dark; `location`: "lat,lon"; `fold`: one of the session's `folds`. */
+  value?: string;
+};
+
+export type ScreenControlOutput = {
+  next?: string;
+  /** The screen after it, its orientation, fold and appearance as they are now. */
+  session?: BrowserSession;
+  /** `screenshot`: the screen's own picture, at the device's full size. */
+  screenshot?: ScreenShot;
+  truncated?: boolean;
+};
+
+/** Which way a phone screen is turned: upright, or a quarter turn with its top to the left or the right. */
+export type KnownScreenOrientation = "portrait" | "landscape_left" | "landscape_right" | "portrait_upside_down";
+/** KnownScreenOrientation, or a value from a newer hub. */
+export type ScreenOrientation = KnownScreenOrientation | (string & {});
+
+/** A screenshot of a phone screen (`screen_control` screenshot). */
+export type ScreenShot = {
+  dataB64: string;
+  height: number;
+  /** "image/png". */
+  mime: string;
+  width: number;
+};
+
+/** The simulator a person's iOS screen starts (`screen_open` kind ios). */
+export type ScreenSim = {
+  /** A SimModel's `id`. */
+  model: string;
+  /** One of the model's runtimes' `id`; absent, its newest. */
+  runtime?: string;
 };
 
 /**
@@ -7808,6 +7921,39 @@ export type ScreensCountOutput = {
   live: number;
   next?: string;
   truncated?: boolean;
+};
+
+/** What kind of device a simulator model is. */
+export type KnownSimFamily = "iphone" | "ipad" | "foldable";
+/** KnownSimFamily, or a value from a newer hub. */
+export type SimFamily = KnownSimFamily | (string & {});
+
+/** A simulator model the agents' Mac can start, from its Xcode's device types. */
+export type SimModel = {
+  family: SimFamily;
+  /** simctl's device type id: `com.apple.CoreSimulator.SimDeviceType.iPhone-17`. */
+  id: string;
+  /** "iPhone 17", "iPhone Duo". */
+  name: string;
+  /** The OS versions it runs on that Mac, newest first. */
+  runtimes: SimRuntime[];
+};
+
+/** The agents' Mac's simulators for people: the models it offers, and how many of its budget are booted. */
+export type SimModels = {
+  /** Simulators booted now, people's and agents'. */
+  live: number;
+  /** The most booted at once. */
+  max: number;
+  models: SimModel[];
+};
+
+/** An OS a simulator model runs. */
+export type SimRuntime = {
+  /** simctl's runtime id: `com.apple.CoreSimulator.SimRuntime.iOS-27-2`. */
+  id: string;
+  /** "iOS 27.2". */
+  name: string;
 };
 
 export type SealedSecret = string;
@@ -10659,6 +10805,7 @@ export interface ToolMap {
   sandbox_set: { input: SandboxSetInput; output: SandboxState };
   sandbox_test: { input: SandboxTestInput; output: SandboxState };
   sandbox_where_set: { input: SandboxWhereSetInput; output: SandboxState };
+  screen_control: { input: ScreenControlInput; output: ScreenControlOutput };
   screen_end: { input: ScreenEndInput; output: ScreenEndOutput };
   screen_open: { input: ScreenOpenInput; output: ScreenOpenOutput };
   screens_count: { input: ScreensCountInput; output: ScreensCountOutput };
@@ -10782,3 +10929,16 @@ export interface HubEventDataMap {
   "workstream.running": WorkstreamEventData;
   "workstream.state": WorkstreamEventData;
 }
+
+/**
+ * What a watcher watches: `main_ci` the checks on the default branch of the bot's GitHub repo, `deploys` its GitHub
+ * deployments' statuses, `other` the one plain sentence in its prompt, through the bot's connections.
+ */
+export type KnownWatchKind = "main_ci" | "deploys" | "other";
+/** KnownWatchKind, or a value from a newer hub. */
+export type WatchKind = KnownWatchKind | (string & {});
+
+/** How often a watcher looks: every 15 minutes, every hour on the hour, or once a day at 09:00 in the person's zone. */
+export type KnownWatchEvery = "15m" | "hour" | "day";
+/** KnownWatchEvery, or a value from a newer hub. */
+export type WatchEvery = KnownWatchEvery | (string & {});

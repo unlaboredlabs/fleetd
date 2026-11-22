@@ -9,9 +9,9 @@ screen. It gets a fresh Chrome on its machine that no other screen shares, drive
 app and take it over. The node records the screen and uploads the recording to the hub.
 
 A screen is any of these an agent opens: a browser, an [Android emulator](#android), a
-[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents share app by app. iOS simulators aren't
-screens you open: each one an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
-[open one yourself](#yours) too. The app shows every bot's on the [Screens page](#page), and each
+[Linux desktop](#desktop), or the [agents' Mac's own screen](#mac), which agents share app by app. Each iOS simulator
+an agent starts on [the agents' Mac](/docs/agents-mac#sim) is [that agent's screen](#ios). You can
+[open one yourself](#yours) too, an iPhone among them. The app shows every bot's on the [Screens page](#page), and each
 bot's under **Agents › Screens**. The agent tools that open and close one keep their names, `session_start` and
 `session_end`.
 
@@ -28,7 +28,7 @@ bots you can see, in three groups:
 - **Recent**: screens that ended, newest first, with how they ended and when: the first 12, then **Show more**.
 
 Opening a screen gives its live view or replay the whole page, with a back arrow to the wall. **New screen** at the top
-right opens a short sentence: the kind, the machine with its slots in use, and the bot. A full machine
+right opens the same picker as a bot's ([below](#yours)), with the bot as its first pick. A full machine
 gives you its next free slot. **All screens**, the icon beside **Screens** in a bot's Agents tab in the panel, opens the page too.
 
 The pictures are cheap by design. While the page is on screen, the hub takes one frame of each live screen every 20
@@ -113,19 +113,23 @@ You can open a screen of your own: **New screen**, the plus beside **Screens** i
 [Screens page](#page), or **New screen…** in the command palette (⌘K) for the bot on screen. On the phone, **New Screen** is on a bot's
 ⓘ page ([Phone app](/docs/mobile#screens)).
 
-1. **Pick the kind**: a browser, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
+1. **Pick the kind**: a browser, an iPhone, an Android emulator, a Linux desktop or the agents' Mac. A kind no machine can host
    says why under its name (`Needs a Mac`, `Installing`, `Offline`, `Needs an update`). Pick it for the reason in
    full, from the machines' nodes, and its one fix: an owner or admin gets a button to the part of Settings › Hub ›
    Machines that fixes it; anyone else is told whom to ask.
 2. **Pick the machine.** The list has only the machines that can host that kind (the sessions role, the kind set up,
-   and a current fleetd), each with its screens in use: `1 of 2 screens in use`.
-3. **Pick a PR** (optional, Android): one of the bot's open PRs, whose CI build is installed before you get
+   and a current fleetd), each with its screens in use: `1 of 2 in use`, or `Full · 2 of 2 in use`. An iPhone's is the
+   agents' Mac, its slots the Mac's simulators, yours and agents' together.
+3. **Pick the model and OS** (iPhone): the simulator models the Mac's Xcode has (iPhone 17, iPhone Duo, iPad…), each
+   on the iOS versions it runs, newest first. The iPhone Duo runs only its own.
+4. **Pick a PR** (optional, Android): one of the bot's open PRs, whose CI build is installed before you get
    it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
-4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
-   yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
+5. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
+   yours (`iPhone Duo · Ada`). **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
    unless set in [Settings](#settings). Hover **Open screen** for the machine's own.
 
-Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
+A full Mac gives an iPhone its next free simulator, ahead of agents' (decision `screens.people-open`). Your screen is
+recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
 to, so it has no Hand back. You need operate on the bot's machine to open one, as to take a screen over.
 
 A browser you open on a bot's own machine runs on the profile the bot keeps
@@ -137,7 +141,7 @@ time runs on the profile, so close yours before the lead needs its own.
 ### When a machine is full {#yours-full}
 
 Your screen takes one of the machine's [screen slots](/docs/machines#roles), as an agent's does. On a full machine the
-picker says so (`Full: 2 of 2 screens in use`) and its button becomes **Wait for a slot**. Your wait shows at the top of
+picker says so (`Full · 2 of 2 in use`) and its button becomes **Wait for a slot**. Your wait shows at the top of
 Screens, with your place in line and Cancel, until your screen opens there. The next slot that frees on that machine
 goes to the oldest person waiting, before any agent's: an agent asking meanwhile is told the machine is full, with how
 many people wait. An agent's running screen is never ended to make room. A wait gives up after 30 minutes.
@@ -165,6 +169,21 @@ MCP clients use `screen_open` and `screen_end`. `browser_sessions` lists your sc
 each with its `stage` (`waiting`, `starting`, `installing`, `failed` with an `error`) and, once it starts, the
 screen's `threadId`. Each move is a `screen.wait` event. `screen_open` takes the PR as `pr: { repo, number }` and then
 answers at once, its screen on its way. `screen_end` with the waitId gives up a wait or clears a failed one.
+
+### Phone controls {#phone-controls}
+
+A phone screen that's yours, an iPhone or an Android, has a slim strip of icons just off the phone's right edge; hover
+one for its name. It has only what the screen's machine checked works there
+([how each runs](/docs/agents-mac#sim-controls)):
+
+- **iPhone**: rotate left and right, home, lock, shake, light or dark appearance, location (a city in one click, or a
+  latitude and longitude) and a screenshot. An iPhone Duo adds **Fold**: closed, half open or open.
+- **Android**: rotate left and right, home, back and a screenshot.
+
+The phone in the view moves with the device rather than jumping: turned, it turns to its new shape the way the device
+turned; a Duo opened, it grows to the wide inner panel. A screenshot (a PNG at the device's full size) is copied, with
+**Save** to keep it as a file. On the phone app the same strip sits over the screen's buttons, and a screenshot opens
+the share sheet. MCP clients use `screen_control`; agents run `mac sim <control>`.
 
 ## Isolation {#isolation}
 
@@ -409,16 +428,20 @@ without a tap or key.
 
 ## iOS simulators {#ios}
 
-iOS simulators aren't a kind of screen you open (decision `mac.shared-mac`, D298). An agent starts one of its own on
-[the agents' Mac](/docs/agents-mac#sim) with `mac sim start` and drives it with
-[agent-device](https://github.com/callstack/agent-device), and while it holds it the simulator is that agent's screen:
-it lists as "iPhone 17 · T12", in an iPhone bezel, and you watch it live, take it over and hand it back as you do an
-Android screen ([simulator screens](/docs/agents-mac#sim-screens)). New screen offers no iOS; the agents' Mac is the one Apple kind there, and says `Needs a Mac` with its
-fix while none is set up.
+iOS simulators run on [the agents' Mac](/docs/agents-mac#sim) (decision `mac.shared-mac`, D298). An agent starts one of its own
+with `mac sim start` and drives it with [agent-device](https://github.com/callstack/agent-device), and while it holds
+it the simulator is that agent's screen: it lists as "iPhone 17 · T12", in an iPhone bezel, and you watch it live,
+take it over and hand it back as you do an Android screen ([simulator screens](/docs/agents-mac#sim-screens)).
+
+You start one of your own from New screen › **iPhone** while an agents' Mac is connected (D652): pick the model
+(iPhone 17, iPhone Duo, an iPad) and its iOS, and it opens with you in control
+([a person's own iPhone](/docs/agents-mac#sim-people)). It counts in the Mac's simulator budget and goes ahead of
+agents'. With no Mac connected, the kind says so with its fix.
+
+Once it's yours, its strip has the [phone controls](#phone-controls).
 
 `session_start` with `kind` `ios` answers with the way to `mac sim start`, or, while the team has no Mac online for
-agents, how an admin adds one (Settings › Hub › Machines, the plus, **A Mac for agents**). The hub answers an older app
-asking for an iOS screen (`screen_open`) the same way; nothing starts.
+agents, how an admin adds one (Settings › Hub › Machines, the plus, **A Mac for agents**).
 Past iOS screens still list, and their recordings still play.
 
 ## Linux desktop screens {#desktop}

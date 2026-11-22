@@ -8,7 +8,7 @@ import type { Change, ChangeState } from "../../shared/contracts.ts";
 import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, MERGED_LABEL, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
-import { DRAFT, errorText } from "./records.ts";
+import { DRAFT, errorText, WAIT_OWN_RED } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Between, Train } from "./service.ts";
@@ -17,7 +17,7 @@ import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
 
-import { HELD, LEFT_OUT } from "./notes.ts";
+import { HELD, LEFT_OUT, PASSED_WAITING, passedWaiting } from "./notes.ts";
 
 export { HELD, LEFT_OUT } from "./notes.ts";
 
@@ -362,19 +362,19 @@ export async function ownCiRed(t: Train, repo: string, change: Change, base: str
     if (stale) return { why: stale.why, red: verdict.red };
   }
   // Green: a later red head is told again (`tellOwnRed`).
-  if (verdict.why === undefined) t.ownRedTold.delete(change.changeId);
+  if (verdict.why === undefined) t.records.endWait(change.changeId, WAIT_OWN_RED);
   return verdict;
 }
 
 /**
  * Tells the author of a ready Change left out of the batch for its own head's red checks (`red`, each with its log):
- * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, in memory, so a
- * restart may tell one again. `what` when it is out of the line for another reason.
+ * the train never takes that head, and a writer done with its PR hears of nothing else. Once per head, kept in the
+ * hub's database (`train_waits` kind `own_red`), so a restart never tells one again. `what` when it is out of the line
+ * for another reason.
  */
 export async function tellOwnRed(t: Train, change: Change, red: Red[], what = "the merge train leaves it out of every batch"): Promise<void> {
   const head = change.headSha;
-  if (t.ownRedTold.get(change.changeId) === head) return;
-  t.ownRedTold.set(change.changeId, head);
+  if (!t.records.startWait(change, WAIT_OWN_RED, head, t.nowMs(), "told")) return;
   const url = red.find((r) => r.url)?.url;
   const log = url ? ` (log: ${url})` : "";
   const names = named(red.map((r) => r.name));
@@ -608,6 +608,13 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
   const until = t.nowMs() + waitMs;
   let landing = 0;
   let failed: [number, Failed] | undefined;
+  const behind = chain[1];
+  if (behind) {
+    // Not "ci" any more: its CI passed, and it holds for the batch behind to land as one.
+    const note = passedWaiting(waitMs, behind.pr);
+    console.info(`train: batch #${chain[0]!.pr} of ${repo} ${note}`);
+    waitNote(t, chain[0]!, note);
+  }
   for (let i = 1; i < chain.length; i++) {
     const f = await stageCi(t, repo, base, chain[i]!, [until, waitMs]);
     if (!f) landing = i;
@@ -616,6 +623,7 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
       break;
     }
   }
+  if (behind) waitNote(t, chain[0]!, undefined);
   const lands = chain[landing]!;
   if (failed) {
     const [at, f] = failed;
@@ -671,6 +679,18 @@ export async function landChain(t: Train, repo: string, base: string, chain: Sta
     if (failed) release(t, own(chain[failed[0]]!), landed.unlanded.why);
     if (landed.unlanded.kind === "refused") await alone(t, chain[landed.at]!.members, landed.unlanded.why);
     else release(t, chain[landed.at]!.members, landed.unlanded.why);
+  }
+}
+
+/** `note` on each of `stage`'s members still in CI; undefined takes a waiting note off. */
+function waitNote(t: Train, stage: Stage, note: string | undefined): void {
+  for (const m of stage.members) {
+    const shown = t.records.get(m.change.changeId)?.lastError;
+    if (note === undefined && !shown?.startsWith(PASSED_WAITING)) continue;
+    t.update(m.change.changeId, ["ci"], (c) => {
+      const { lastError: _, ...rest } = c;
+      return note === undefined ? rest : { ...rest, lastError: errorText(note) };
+    });
   }
 }
 

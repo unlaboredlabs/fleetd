@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
-import { CAP_AGENTS_MAC, CAP_MAC_TOOL } from "../../shared/screens_wire.ts";
-import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import { CAP_AGENTS_MAC, CAP_MAC_TOOL, CAP_SCREEN_CONTROL } from "../../shared/screens_wire.ts";
+import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame, ScreenControlFrame } from "../../shared/screens_wire.ts";
+import type { HostCheck, SimModels } from "../../shared/contracts.ts";
 import { hubCall, type Node, onHub, toHub } from "../browser/node.ts";
 import { loadOrCreateBoxKey } from "../identity.ts";
 import { type IosConfig, Simulators, supported as simulatorsHere } from "../device/ios/index.ts";
@@ -50,7 +51,7 @@ export const self = (node: Node) => node.area("mac_tool.self", (n) => pinSelf(n.
 export function start(node: Node): void {
   if (isAgentsMac(node)) {
     // As agents_mac/mod.rs `capabilities`: the agents' Mac, and its tool where the Mac is one (macOS).
-    node.area("caps").contribute(() => [CAP_AGENTS_MAC, ...(process.platform === "darwin" ? [CAP_MAC_TOOL] : [])]);
+    node.area("caps").contribute(() => [CAP_AGENTS_MAC, ...(process.platform === "darwin" ? [CAP_MAC_TOOL, CAP_SCREEN_CONTROL] : [])]);
     const h = host(node);
     // The agents' Mac lends iOS simulators while its tool is on (agents_mac.rs `ios_config`: opted in).
     const ios = { ...((node.config.ios ?? {}) as IosConfig), enabled: true };
@@ -95,6 +96,8 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
   // The simulators the node before left held are their agents' again, screens too, before the sweep below looks for
   // recordings a stopped node left; the pool starts once they are known.
   void sims.adopt();
+  // A person's input and controls keep the simulator they use, as an agent's steps do.
+  screens.used = (agent) => sims.touch(agent);
   void screens.housekeep();
   sweeps.set(
     h,
@@ -104,11 +107,36 @@ export function startSims(node: Node, h: Host, simulators: Simulators, setting?:
     }, 60_000),
   );
   // The doctor's iOS row (load.rs `ios`): no Xcode, no Node.js, the golden being made or why it failed, or ready.
+  // The simulators a person may start here (screen_open kind ios), read again every MODELS_EVERY.
+  let models: SimModels | undefined;
+  let modelsAt = 0;
+  const readModels = () => {
+    if (Date.now() - modelsAt < MODELS_EVERY) return;
+    modelsAt = Date.now();
+    sims.models().then(
+      (m) => (models = m),
+      () => (modelsAt = 0),
+    );
+  };
   node.area("hb").contribute((hb) => {
     const ios = simulators.health();
     if (hb.load && ios) (hb.load as Record<string, unknown>).ios = ios;
+    if (!hb.load) return;
+    readModels();
+    hb.load.hosts = [...(hb.load.hosts ?? []), iosHost(simulators.usable(), models && { ...models, live: sims.held.size, max: sims.budget() })];
   });
   return sims;
+}
+
+/** How often the Mac reads its simulator models again (a new Xcode or runtime). */
+export const MODELS_EVERY = 300_000;
+
+/** The Mac's `ios` line: people start simulators here once its golden is made and it has read its models. */
+export function iosHost(usable: boolean, models: SimModels | undefined): HostCheck {
+  if (usable && models && models.models.length > 0) {
+    return { host: "ios", ready: true, detail: `${models.models.length} iPhone and iPad models`, idleMinutes: 30, sims: models };
+  }
+  return { host: "ios", ready: false, off: "installing", detail: "the Mac's simulators are getting ready", idleMinutes: 30, ...(models ? { sims: models } : {}) };
 }
 const sweeps = new WeakMap<Host, Timer>();
 
@@ -128,11 +156,17 @@ function simScreens(node: Node, simulators: Simulators): SimScreens {
     ["browser_watch", (f: unknown) => screens.watch(f as BrowserWatchFrame)],
     ["browser_input", (f: unknown) => screens.input(f as BrowserInputFrame)],
     ["browser_control", (f: unknown) => screens.control(f as BrowserControlFrame)],
+    [
+      "screen_control",
+      (f: unknown) => void screens.screenControl(f as ScreenControlFrame).then((answer) => toHub(node, { t: "screen_control_result", ...answer })),
+    ],
   ] as const) {
     const before = link.handler(tag);
     link.on(tag, (frame, ctx) => {
       if (ours(frame)) mine(frame);
-      else before?.(frame, ctx);
+      else if (before) before(frame, ctx);
+      // A control for a screen the Mac doesn't have: the hub hears so at once.
+      else if (tag === "screen_control") toHub(node, { t: "screen_control_result", ...noScreen(frame as unknown as ScreenControlFrame) });
     });
   }
   node.area("hb").contribute((hb) => {
@@ -140,6 +174,12 @@ function simScreens(node: Node, simulators: Simulators): SimScreens {
   });
   return screens;
 }
+
+/** The answer to a control for a screen this node doesn't have. */
+export const noScreen = (frame: ScreenControlFrame) => ({
+  id: frame.id,
+  error: { code: "not_found" as const, message: `Screen ${frame.sessionId} isn't live here any more.` },
+});
 
 /** How often the Mac looks for old folders and builds, and for a disk short of room (host.ts `housekeep`): a cold
  * iOS build writes gigabytes in minutes. */

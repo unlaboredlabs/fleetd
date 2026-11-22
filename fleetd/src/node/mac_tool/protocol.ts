@@ -5,6 +5,7 @@
 // so only the agent's node opens what comes back. A step or an answer may carry raw bytes after its JSON (a piece of
 // a file), so large pushes and pulls go without base64.
 import { seal, secretbox, secretboxOpen } from "../../shared/sealed_box.ts";
+import type { ScreenControl } from "../../shared/contracts.ts";
 import type { McpToolError } from "../../shared/screens_wire.ts";
 
 /** The most of a file one step carries. */
@@ -32,7 +33,9 @@ export type Step =
   | { step: "get"; path: string; offset: number; raw?: boolean }
   /** `device`: a device type of the agent's choosing; absent, the golden's. `wait`: none free, the agent joins the line
    * (queue.ts) and hears its place; an older node sends none. */
-  | { step: "sim_start"; device?: string; wait?: boolean }
+  | { step: "sim_start"; device?: string; wait?: boolean; person?: string; runtime?: string }
+  /** A device control on the agent's simulator (`mac sim rotate left`, …): `value` as screen_control's. */
+  | { step: "sim_control"; control: ScreenControl; value?: string }
   | { step: "sim_end" };
 
 export type Done =
@@ -46,7 +49,9 @@ export type Done =
   | { step: "get"; dataB64: string; total: number; folder: boolean }
   | { step: "sim_start"; udid: string; device: string }
   | { step: "sim_queued"; place: number; secs?: number | null; why: string }
-  | { step: "sim_end"; ended: boolean };
+  | { step: "sim_end"; ended: boolean }
+  /** `path`: a screenshot, in the agent's folder on the Mac. */
+  | { step: "sim_control"; device: string; path?: string; width?: number; height?: number };
 
 /** What goes inside the sealed box. */
 export type Envelope = { thread: string; atMs: number; nonce: string; answerKey: string; step: Step };

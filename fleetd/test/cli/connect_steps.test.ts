@@ -91,6 +91,6 @@ test("the save speaks for the hub's owner, as only a person who administers it m
       db.conn.close();
     }
   } finally {
-    fleet.stop();
+    await fleet.stop();
   }
 }, 60_000);

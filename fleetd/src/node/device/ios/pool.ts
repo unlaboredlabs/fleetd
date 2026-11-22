@@ -476,8 +476,9 @@ export class Pool {
    * A simulator of the device type `wanted` for one agent (`mac sim start --device`), on the newest runtime that has
    * it, and its device and runtime's names: made and booted from nothing, since a clone keeps the golden's type.
    */
-  async make(wanted: string): Promise<[Lent, string]> {
-    const [runtime, type] = pick(await this.simctl.runtimes(), wanted);
+  async make(wanted: string, on?: string): Promise<[Lent, string]> {
+    const runtimes = await this.simctl.runtimes();
+    const [runtime, type] = pick(on === undefined ? runtimes : runtimes.filter((r) => r.identifier === on || r.name === on), wanted);
     const udid = await this.simctl.create(`fleetd-${shortId()}`, type.identifier, runtime.identifier);
     const lent = new Lent(udid, cloneHome(this.home, udid), this.simctl);
     lent.scale = await scale(type);

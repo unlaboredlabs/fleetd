@@ -12,4 +12,8 @@ export const SESSION = {
   mine: "B5e2c4a6f8d0b1a3c5e7f9d1b3a5c7e9f",
   /** A person's own iOS simulator on the Mac, live and theirs. */
   phone: "B3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3d",
+  /** The iPhone Duo a person opens from New screen (D652): closed, then turned or opened from its control strip. */
+  duo: "B8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c",
+  /** A person's own Android emulator on devbox, with its strip. */
+  android: "B2a4c6e8f0b2d4a6c8e0f2b4d6a8c0e2f",
 } as const;

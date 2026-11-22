@@ -2,18 +2,20 @@
 // that can host each (from machine_roles: the sessions role, the kind ready there, and a node that hosts screens the hub
 // places), and each machine's slots in words, full ones offering to wait. A project's browser runs only on the project's
 // own machine, where it keeps its sign-ins. An Android screen can take an open PR's CI build, installed before the
-// person gets it. iOS screens are gone (D298): iOS simulators are the agents' Mac's (`mac sim`), and the agents' Mac is
-// the one Apple kind here, the only kind the agents' Mac offers. A kind no machine can host says why, from what the
+// person gets it. Apple's kinds are the agents' Mac's (D298), the only machine that offers them: its own screen, and an
+// iPhone simulator of the person's own (D652), whose model and OS come from the simulators the Mac reports and whose
+// slots are the Mac's simulator budget, people's ahead of agents' (D239). A kind no machine can host says why, from what the
 // machines' nodes report, and what fixes it: an admin's button to the place that does, else who to ask. There is no
 // switch per kind (D574) to turn on. Pure, so it is unit-tested. The phone app runs it
 // too, on Hermes, which has no Array toSorted: each list here sorts its own fresh copy instead.
-import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
+import type { BrowserSession, MachineRolesEntry, PrRow, SimModel } from "../../../shared/contracts";
 
-export type ScreenKind = "browser" | "android" | "linux_desktop" | "mac";
+export type ScreenKind = "browser" | "ios" | "android" | "linux_desktop" | "mac";
 
 /** Each kind's name and, under it, one short line: the tiles read at a glance, so it fits on one line. */
 export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string; readonly line: string }[] = [
   { kind: "browser", label: "Browser", line: "Saved sign-ins" },
+  { kind: "ios", label: "iPhone", line: "Simulator" },
   { kind: "android", label: "Android", line: "Emulator" },
   { kind: "linux_desktop", label: "Linux desktop", line: "With a terminal" },
   { kind: "mac", label: "Agents’ Mac", line: "One at a time" },
@@ -30,7 +32,10 @@ export const profileBusy = (sessions: readonly BrowserSession[], home: string): 
 export const kindLine = (kind: (typeof KINDS)[number], busy: boolean): string => (kind.kind === "browser" && busy ? "Fresh profile" : kind.line);
 
 /** A kind's word in machine_roles' host checks. */
-const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", android: "android", linux_desktop: "desktop", mac: "mac" };
+const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", ios: "ios", android: "android", linux_desktop: "desktop", mac: "mac" };
+
+/** Apple's kinds: only the agents' Mac offers them. */
+const APPLE: ReadonlySet<ScreenKind> = new Set(["mac", "ios"]);
 
 /** A machine as the picker lists it. */
 interface HostChoice {
@@ -44,8 +49,8 @@ interface HostChoice {
   readonly full: boolean;
 }
 
-/** The agents' Mac offers only its own screen, whatever an older hub or node of it says it has ready. */
-const offers = (m: Pick<MachineRolesEntry, "mac">, kind: ScreenKind): boolean => kind === "mac" || m.mac === undefined;
+/** The agents' Mac offers only Apple's kinds, whatever an older hub or node of it says it has ready; an iPhone is only its. */
+const offers = (m: Pick<MachineRolesEntry, "mac">, kind: ScreenKind): boolean => (kind === "ios" ? m.mac !== undefined : kind === "mac" || m.mac === undefined);
 
 const ready = (m: MachineRolesEntry, kind: ScreenKind): boolean =>
   offers(m, kind) && m.roles.includes("sessions") && m.hostsOthers && (m.hosts ?? []).some((h) => h.host === HOST[kind] && h.ready);
@@ -57,7 +62,13 @@ const ready = (m: MachineRolesEntry, kind: ScreenKind): boolean =>
 export const hostsFor = (machines: readonly MachineRolesEntry[], kind: ScreenKind, home?: string): HostChoice[] =>
   machines
     .filter((m) => ready(m, kind) && onHome(m, kind, home))
-    .map((m) => ({ machineId: m.machineId, name: m.name, live: m.sessionsLive, max: m.maxSessions, online: m.online, full: m.sessionsLive >= m.maxSessions }))
+    .map((m) => {
+      // An iPhone's slots are the Mac's simulator budget, not its screens'.
+      const sims = kind === "ios" ? simsOn(m) : undefined;
+      const live = sims?.live ?? m.sessionsLive;
+      const max = sims?.max ?? m.maxSessions;
+      return { machineId: m.machineId, name: m.name, live, max, online: m.online, full: live >= max };
+    })
     .sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 
 /** Whether any machine can host `kind`: a kind none can is shown, and says why ([`whyOff`]). */
@@ -83,6 +94,7 @@ export interface OffReason {
 /** A kind as the sentences say it. */
 const PLURAL: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens",
+  ios: "iPhone simulators",
   android: "Android emulators",
   linux_desktop: "Linux desktops",
   mac: "Agents’ Mac screens",
@@ -94,6 +106,7 @@ const LOWER: Readonly<Record<ScreenKind, string>> = { ...PLURAL, browser: "brows
 /** What a kind needs, where no machine can run it at all. */
 const NEEDS: Readonly<Record<ScreenKind, string>> = {
   browser: "Browser screens need a machine that hosts screens.",
+  ios: "iPhone simulators need a Mac joined as the agents’ Mac.",
   android: "Android emulators need a Linux x86_64 machine with KVM, and none here hosts screens.",
   linux_desktop: "Linux desktops need a Linux machine, and none here hosts screens.",
   mac: "The agents’ Mac screen needs a Mac joined as the agents’ Mac.",
@@ -118,7 +131,7 @@ const machineOff = (m: MachineRolesEntry, kind: ScreenKind): (OffReason & { read
     case "installing":
       return { rank: 2, why: `${m.name} is installing what ${LOWER[kind]} need.`, short: "Installing", fix: "none", machine };
     case "unsupported":
-      return { rank: 7, why: NEEDS[kind], short: kind === "mac" ? "Needs a Mac" : "No machine for it", fix: "add" };
+      return { rank: 7, why: NEEDS[kind], short: APPLE.has(kind) ? "Needs a Mac" : "No machine for it", fix: "add" };
     default:
       // Missing, failed, or a node before reasons: its own words.
       return { rank: 3, why: `${m.name}: ${sentence(check.detail)}`, short: check.off === "failed" ? "Setup failed" : "Not set up", fix: "none", machine };
@@ -140,7 +153,7 @@ export const whyOff = (machines: readonly MachineRolesEntry[], kind: ScreenKind,
   const joined = machines.filter((m) => onHome(m, kind, home));
   if (joined.length === 0) return { why: "No machine has joined this hub yet.", short: "No machine", fix: "add" };
   const mine = joined.filter((m) => offers(m, kind));
-  if (mine.length === 0) return { why: NEEDS[kind], short: "No machine for it", fix: "add" };
+  if (mine.length === 0) return { why: NEEDS[kind], short: APPLE.has(kind) ? "Needs a Mac" : "No machine for it", fix: "add" };
   const hosting = mine.filter((m) => m.roles.includes("sessions"));
   if (hosting.length === 0) {
     return mine.length === 1 && mine[0] !== undefined
@@ -179,6 +192,7 @@ export const adminWho = (admins: readonly string[]): string => {
 /** The machine a kind no machine here can run needs. */
 const ADD: Readonly<Record<ScreenKind, string>> = {
   browser: "a machine",
+  ios: "a Mac set aside for agents",
   android: "a Linux machine",
   linux_desktop: "a Linux machine",
   mac: "a Mac set aside for agents",
@@ -225,11 +239,11 @@ export const fixPlace = (fix: OffFix): { readonly tab: "hub.machines" | "hub.upd
 export const pickHost = (hosts: readonly HostChoice[], picked: string | null): HostChoice | undefined =>
   hosts.find((h) => h.machineId === picked && h.online) ?? hosts.find((h) => h.online && !h.full) ?? hosts.find((h) => h.online);
 
-/** A machine's slots in words, under its name. */
+/** A machine's slots in words, under its name: the same few words for every kind (Open says a full one waits). */
 export const slotLine = (h: HostChoice): string => {
   if (!h.online) return "Offline";
-  if (h.full) return `Full: ${String(h.live)} of ${String(h.max)} screens in use. You can wait for the next one.`;
-  return `${String(h.live)} of ${String(h.max)} screens in use`;
+  const used = `${String(h.live)} of ${String(h.max)} in use`;
+  return h.full ? `Full · ${used}` : used;
 };
 
 /** What the picker's button says for the machine picked. */
@@ -256,8 +270,20 @@ export const prChoices = (rows: readonly PrRow[]): PrChoice[] =>
     .filter((r) => r.state === "open" || r.state === "draft")
     .map((r) => ({ value: `${r.repo}#${String(r.number)}`, label: `#${String(r.number)} ${r.title}`, repo: r.repo, number: r.number }));
 
-/** Where an open with a PR's build is, in words, while the picker follows it. */
-export const openingLine = (stage: string | undefined, pr: number, machine: string): string => {
+/** Where an open the picker follows is, in words: a PR's build going in, or (no `pr`) an iPhone starting on the Mac. */
+export const openingLine = (stage: string | undefined, pr: number | undefined, machine: string): string => {
+  if (pr === undefined) {
+    switch (stage) {
+      case "failed":
+        return "It didn’t open.";
+      case undefined:
+        return "Handing it to you…";
+      case "waiting":
+        return `Waiting for a free simulator on ${machine}, ahead of agents…`;
+      default:
+        return `Starting the iPhone on ${machine}…`;
+    }
+  }
   switch (stage) {
     case "installing":
       return `Installing #${String(pr)}’s build on ${machine}…`;
@@ -273,6 +299,8 @@ export const openingLine = (stage: string | undefined, pr: number, machine: stri
 /** What the picker says while an open is slow (past its first second or so): what is starting. */
 export const startingLine = (kind: ScreenKind): string => {
   switch (kind) {
+    case "ios":
+      return "Starting the simulator…";
     case "android":
       return "Starting the emulator…";
     case "linux_desktop":
@@ -290,3 +318,23 @@ export const startingLine = (kind: ScreenKind): string => {
  */
 export const newScreenOf = (sessions: readonly BrowserSession[], kind: ScreenKind, known: ReadonlySet<string>): BrowserSession | undefined =>
   sessions.find((x) => x.state === "live" && x.openedBy !== undefined && (x.kind ?? "browser") === kind && !known.has(x.sessionId));
+
+/** The simulators the Mac reports, with its budget; absent on any other machine, and from a node before them. */
+const simsOn = (m: MachineRolesEntry) => (m.hosts ?? []).find((h) => h.host === "ios")?.sims;
+
+/** The iPhone models the machine offers, iPhones first, then foldables, then iPads, each family in the Mac's order. */
+export const simModels = (machines: readonly MachineRolesEntry[], machineId: string | undefined): SimModel[] => {
+  const m = machines.find((x) => x.machineId === machineId);
+  const models = m === undefined ? [] : [...(simsOn(m)?.models ?? [])];
+  const rank = (x: SimModel) => FAMILY.indexOf(x.family) + 1 || FAMILY.length + 1;
+  return models.map((x, i) => ({ x, i })).sort((a, b) => rank(a.x) - rank(b.x) || a.i - b.i).map(({ x }) => x);
+};
+
+const FAMILY: readonly string[] = ["iphone", "foldable", "ipad"];
+
+/** The model the picker starts on: the one picked, while the machine still has it; else its first. */
+export const pickModel = (models: readonly SimModel[], picked: string | null): SimModel | undefined => models.find((x) => x.id === picked) ?? models[0];
+
+/** The OS the picker starts on: the one picked, while the model still runs it; else the model's newest (its first). */
+export const pickRuntime = (model: SimModel | undefined, picked: string | null): SimModel["runtimes"][number] | undefined =>
+  model?.runtimes.find((r) => r.id === picked) ?? model?.runtimes[0];
