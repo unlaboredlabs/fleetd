@@ -4,9 +4,9 @@
 # It starts a phone lab on the runner (tests/lab/phoneLab.ts, as scripts/phone-lab.sh does on the devbox), pairs each
 # simulator with it and drives the app with agent-device (fleetd's pinned version):
 #
-# - phone: an ordinary iPhone, on Chats, a chat and the chat's Info.
+# - phone: an ordinary iPhone, on Chats, a chat and the chat's Info, Settings and New Bot.
 # - duo: the iPhone Duo unfolded each way up, folded each way up, and unfolded again under the running app, on Chats,
-#   a chat and its Info in each.
+#   a chat and its Info in each, and folded on Settings and New Bot too.
 #
 #   app/mobile/scripts/screens.sh <fleetd.app> <out dir> <prefix> phone|duo...
 #
@@ -102,12 +102,25 @@ start() {
 open_chat() { try ad find "inventory" click --first; try ad wait text "Low-stock alerts" 30000; }
 open_info() { try ad press 'label="Info"'; try ad wait text "Agents" 30000; }
 back() { try ad back; sleep 1; }
+# From Chats: Settings (a pushed stack), then New Bot (a sheet), each shot and closed again.
+others() {
+  try ad find "Settings," click --first
+  try ad wait text "Settings" 30000
+  shot "$1-settings"
+  back
+  try ad press 'label="New Bot"'
+  sleep 2
+  shot "$1-newbot"
+  try ad swipe 200 120 200 700
+  sleep 2
+}
 
 for device in "$@"; do
   case $device in
     phone)
       start "iPhone 18 Pro" || continue
       shot phone-chats
+      others phone
       open_chat
       shot phone-chat
       open_info
@@ -136,6 +149,7 @@ for device in "$@"; do
       back
       back
       shot duo-closed-portrait-chats
+      others duo-closed-portrait
       try ad orientation landscape-left
       shot duo-closed-landscape-chats
       open_chat
