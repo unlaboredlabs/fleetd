@@ -20,7 +20,7 @@
 // - the sessions' `screens` (ScreenHooks, set by the node core from node/browser): what a session's launch tells the
 //   screens, and what the sessions ask of them;
 // - `node.config`: node.json, its screens' sections typed by their areas.
-import type { NodeLoad } from "../shared/contracts.ts";
+import type { BrowserFrame, NodeLoad } from "../shared/contracts.ts";
 import type { ThreadItem } from "./sessions/types.ts";
 import type { Masker } from "./mask.ts";
 import type { NodeConfig } from "./config.ts";
@@ -33,7 +33,19 @@ export type FrameHandler = (frame: HubFrame, link: LinkContext) => void;
 export class LinkArea {
   readonly #handlers = new Map<string, FrameHandler>();
   #current: LinkContext | undefined;
+  #screens: ((frame: BrowserFrame) => boolean) | undefined;
+  readonly #ended: (() => void)[] = [];
   constructor(readonly relay: LeadRelay) {}
+
+  /** Sees each screen's `browser_frame` on its way to the hub (node/rtc's peers): false keeps it off the link. */
+  screens(fn: (frame: BrowserFrame) => boolean): void {
+    this.#screens = fn;
+  }
+
+  /** Runs `fn` each time the link that was up ends. */
+  onEnded(fn: () => void): void {
+    this.#ended.push(fn);
+  }
 
   /** Handles every hub frame tagged `tag` (one handler per tag; a later one replaces it). */
   on(tag: HubToNodeTag, fn: FrameHandler): void {
@@ -47,6 +59,7 @@ export class LinkArea {
 
   /** Queues a frame on the link that is up; false when none is (the frame is dropped). */
   send(frame: NodeFrame): boolean {
+    if (frame.t === "browser_frame" && this.#screens?.(frame as unknown as BrowserFrame) === false) return true;
     if (!this.#current) return false;
     this.#current.send(frame);
     return true;
@@ -67,7 +80,9 @@ export class LinkArea {
 
   /** The node core's: the welcomed link, then none once it ends. */
   linked(link: LinkContext | undefined): void {
+    const ended = this.#current !== undefined && link === undefined;
     this.#current = link;
+    if (ended) for (const fn of this.#ended) fn();
   }
 }
 

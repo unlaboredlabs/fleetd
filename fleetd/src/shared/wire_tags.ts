@@ -19,6 +19,7 @@ export const NODE_TO_HUB = [
   "browser_frame",
   "session_host_result",
   "mac_result",
+  "browser_rtc",
   "leave",
   "screen_control_result",
 ] as const;
@@ -40,6 +41,7 @@ export const HUB_TO_NODE = [
   "browser_watch",
   "browser_input",
   "browser_control",
+  "browser_rtc",
   "session_host",
   "mac_call",
   "screen_control",

@@ -84,6 +84,8 @@ export const registerIpc = (
   handle(IPC.hubThumbs, (event, id, on) => hubs.get(id)?.thumbs(event.sender, on));
   // Checked against the contract's shape above; an absent field may arrive as undefined, which JSON leaves out.
   handle(IPC.hubInput, (_event, id, session, input) => hubs.get(id)?.input(session, input as BrowserInput));
+  handle(IPC.hubRtc, (_event, id, session, peer, offer) => hubs.get(id)?.rtc(session, peer, offer));
+  handle(IPC.hubRtcWatch, (_event, id, session, peer) => hubs.get(id)?.rtcWatch(session, peer));
   handle(IPC.hubResync, (_event, id) => hubs.get(id)?.resync());
   handle(IPC.hubRetryNow, (_event, id) => hubs.get(id)?.retryNow());
   handle(IPC.hubCacheRead, (_event, id) => hubs.get(id)?.cacheRead() ?? null);

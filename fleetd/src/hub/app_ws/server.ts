@@ -66,6 +66,7 @@ export const APP_FEATURES = [
   "frame_acks",
   "chat_find_pins",
   "h264_frames",
+  "browser_rtc",
 ] as const;
 export const APP_DEFLATE = "deflate";
 /** The upgrade's `auth`: the key as `Authorization: Bearer`, the features comma-separated in this header. */
@@ -78,6 +79,7 @@ const OWNERS: Record<string, string> = {
   browser_watch: "src/hub/browser",
   browser_frame_ack: "src/hub/browser",
   browser_input: "src/hub/browser",
+  browser_rtc: "src/hub/browser",
   screen_thumbs: "src/hub/browser",
 };
 

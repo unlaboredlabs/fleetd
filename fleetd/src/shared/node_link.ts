@@ -69,6 +69,8 @@ export const CAP_COMPUTER_IMAGE = "computer_image";
 export const CAP_ALLOWED_ONLY = "allowed_only";
 export const CAP_ISOLATED = "isolated";
 export const CAP_BROWSER = "browser";
+/** The node answers `browser_rtc` offers: a screen's frames and input peer to peer (src/node/rtc). */
+export const CAP_BROWSER_RTC = "browser_rtc";
 export const CAP_SESSION_ANDROID = "session_android";
 export const CAP_SESSION_IOS = "session_ios";
 export const CAP_SESSION_DESKTOP = "session_linux_desktop";

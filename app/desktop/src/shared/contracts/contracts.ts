@@ -26,6 +26,52 @@ export const LIVE_MAX_TEXTS = 4;
 /** Machines in one live frame. */
 export const LIVE_MAX_MACHINES = 20;
 
+/**
+ * The STUN servers a screen's peer gathers with, at both ends (`browser_rtc`). Public and free: no TURN, so a link
+ * that can't go peer to peer stays on the hub's socket.
+ */
+export const RTC_STUN = ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] as const;
+
+/** A screen peer's binary messages are at most this big: a frame's bytes go in as many as they take. */
+export const RTC_CHUNK = 64 * 1024;
+
+/** A screen peer's node says it is there this often, a frame or not: a peer quiet for RTC_QUIET_MS is gone. */
+export const RTC_HB_MS = 1_000;
+export const RTC_QUIET_MS = 3_500;
+
+/**
+ * On a screen's peer, its `frames` channel (ordered), from the node, as text: a frame's head, which its `bytes`
+ * follow in binary messages of at most RTC_CHUNK; and `hb` every RTC_HB_MS.
+ * Not decoded by the hub: the hub only signals.
+ */
+export type RtcFromNode = {
+  /** The frame's bytes that follow: its H.264 access unit or its JPEG. */
+  bytes: number;
+  control: BrowserControl;
+  height: number;
+  key?: boolean;
+  kind: "h264" | "jpeg";
+  seq: number;
+  sessionId: BrowserSessionId;
+  t: "frame";
+  url?: string;
+  width: number;
+} | {
+  t: "hb";
+};
+
+/**
+ * On a screen's peer, its `input` channel (ordered), from the app: a person's input, as `browser_input` has it; the
+ * ack of each frame as it lands, as `browser_frame_ack`.
+ */
+export type RtcFromApp = {
+  input: BrowserInput;
+  t: "input";
+} | {
+  seq: number;
+  t: "ack";
+};
+
 /** The info string of a block's code fence in a lead message. */
 export const BLOCK_FENCE = "fleetd-block";
 
@@ -550,6 +596,11 @@ export type AppClientMessage = {
    * draws: the hub sends no more, always the newest, and the last of a burst once its gap is up.
    */
   fps?: number;
+  /**
+   * Sent only to a hub whose `ready` names `browser_rtc`. The client's peer (`browser_rtc`) whose `frames` channel
+   * carries this watch's frames now, so the hub sends none on the socket. Absent: they come on the socket.
+   */
+  rtc?: string;
   session?: BrowserSessionId;
   t: "browser_watch";
   /**
@@ -564,6 +615,16 @@ export type AppClientMessage = {
   input: BrowserInput;
   session: BrowserSessionId;
   t: "browser_input";
+} | {
+  /**
+   * An SDP offer with its ICE candidates gathered, for the session's node to answer: frames, then input, go
+   * peer to peer while it holds. Absent: the peer closes.
+   */
+  offer?: string;
+  /** The client's own id for the peer, which the answer and a close name. */
+  peer: string;
+  session: BrowserSessionId;
+  t: "browser_rtc";
 } | {
   on: boolean;
   t: "screen_thumbs";
@@ -620,6 +681,14 @@ export type AppServerMessage = {
   t: "browser_frame";
 } | ScreenThumb & {
   t: "screen_thumb";
+} | {
+  /** The node's SDP answer, its ICE candidates gathered. */
+  answer?: string;
+  /** Why there is no peer (a node too old, a refusal, a closed one): the screen stays on the socket. */
+  error?: string;
+  peer: string;
+  session: BrowserSessionId;
+  t: "browser_rtc";
 };
 
 export type ApprovalAnswerInput = {

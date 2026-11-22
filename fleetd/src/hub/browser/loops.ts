@@ -2,10 +2,10 @@
 // area reads, the rewatch when a node links, the app's live-view messages, the lead calls a node makes for a
 // session, and the loops `run_end_outlived`, `run_prune` and `thumbs::run`. Each loop stops on `hub.shutdown`.
 import type { BrowserFrame } from "../../shared/contracts.ts";
-import type { ScreenStep } from "../../shared/screens_wire.ts";
+import type { BrowserRtcReport, ScreenStep } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
 import { appWs } from "../app_ws/index.ts";
-import { appBound, bindApp } from "./app.ts";
+import { appBound, bindApp, rtcRelinked, rtcReport } from "./app.ts";
 import { registerLeadCalls } from "./calls.ts";
 import { registerLeadCalls as registerPurchases } from "./purchases.ts";
 import { live } from "./live.ts";
@@ -19,7 +19,11 @@ export function start(hub: Hub): void {
   nodes.on("browser_frame", (machine, frame) => live(hub).frame(machine, frame as unknown as BrowserFrame));
   // The link keeps each heartbeat's load itself (link.load); its steps are this area's.
   nodes.on("hb", (machine, frame) => live(hub).stepsReported(machine, (frame.steps as ScreenStep[] | undefined) ?? []));
-  nodes.onLinked((linked) => live(hub).rewatch(linked.machineId));
+  nodes.on("browser_rtc", (machine, frame) => rtcReport(hub, machine, frame as unknown as BrowserRtcReport));
+  nodes.onLinked((linked) => {
+    rtcRelinked(hub, linked.machineId);
+    live(hub).rewatch(linked.machineId);
+  });
   if (!appBound(hub)) bindApp(hub, appWs(hub));
   registerLeadCalls(hub);
   registerPurchases(hub);
