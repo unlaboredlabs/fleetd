@@ -325,6 +325,7 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
       </ListSection>
 
       <ListSection>
+        <ListRow title="Watching" icon="eye" {...(live ? { onPress: () => navigation.navigate("Watching", { key }) } : {})} />
         <ListRow title="Approvals" icon="approvals" {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} />
         <ListRow title="Payments" icon="money" {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} />
         {vaultShown(state.hub) ? <ListRow title="Vault" icon="lock" onPress={() => navigation.navigate("Vault", { key })} /> : null}

@@ -18,6 +18,7 @@ import type {
   AutomationRunState,
   AutomationSchedule,
   AutomationTrigger,
+  AutomationWatch,
   HubEvent,
   HubEventType,
   ProjectRef,
@@ -26,6 +27,7 @@ import type {
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
+import { hubZone } from "../attention/index.ts";
 import { uuidFrom } from "../executor/index.ts";
 import { leads } from "../leads/index.ts";
 import { unknownProject } from "../leads/seams.ts";
@@ -36,6 +38,8 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { LATE_AFTER_MS } from "../wakes/index.ts";
+import { profiles } from "../projects/profiles.ts";
+import { checkWatch, cronOf, lastDay, named, PRESETS, watchers } from "../watchers/index.ts";
 import {
   atMs,
   AUTOMATIONS_PER_PROJECT,
@@ -85,6 +89,8 @@ export type NewAutomation = {
   confirmed: boolean;
   /** Makes a retry return the automation the first call made. */
   clientRequestId?: string;
+  /** A watcher (hub/watchers): its schedule comes from `every`, in `schedule`'s zone; it has no webhook. */
+  watch?: AutomationWatch;
 };
 
 /** An edit: only the fields given change. */
@@ -97,6 +103,8 @@ export type Edit = {
   webhook?: boolean;
   /** Whether the person stands behind it after this edit; undefined leaves it as it was. */
   confirmed?: boolean;
+  /** A watcher's new frequency or profile; its kind stays. */
+  watch?: AutomationWatch;
 };
 
 /** What starts a run. */
@@ -256,9 +264,20 @@ export class Automations {
   }
 
   private withLastRun(a: Automation): Automation {
-    const last = this.runsOf(a.automationId, 1)[0];
-    const { lastRun: _, ...rest } = a;
-    return stored(last ? { ...rest, lastRun: this.settle(last) } : rest);
+    const runs = this.runsOf(a.automationId, a.watch === undefined ? 1 : RUNS_KEPT);
+    const last = runs[0];
+    const { lastRun: _, lastDay: __, ...rest } = a;
+    const day = a.watch === undefined ? {} : { lastDay: lastDay(runs, this.now()) };
+    return stored(last ? { ...rest, lastRun: this.settle(last), ...day } : { ...rest, ...day });
+  }
+
+  /** A watcher's watch as given, checked against the bot: a known kind and frequency, a profile the bot allows. */
+  private watchOf(r: ProjectRef, w: AutomationWatch): AutomationWatch {
+    const out = checkWatch(w);
+    if (out.profile !== undefined && !profiles(this.hub).allowed(r).includes(out.profile)) {
+      throw invalid(`The bot doesn't allow the profile '${out.profile}'.`, "Pick one of the bot's profiles, or leave it out for the default.");
+    }
+    return out;
   }
 
   get(id: string): Automation | undefined {
@@ -315,6 +334,21 @@ export class Automations {
     const r = input.projectRef;
     if (!store(this.hub).projectGet(r)) throw unknownProject(r);
     const count = db.all<{ n: number }>("SELECT COUNT(*) AS n FROM automations WHERE machine_id = ? AND project_id = ?", [r.machineId, r.projectId])[0]?.n ?? 0;
+    const watch = input.watch === undefined ? undefined : this.watchOf(r, input.watch);
+    if (watch !== undefined) {
+      // A preset is one per bot; "Something else" as many as the person writes.
+      if (PRESETS.includes(watch.kind as never) && this.list(r).some((x) => x.watch?.kind === watch.kind)) {
+        throw invalid(`The bot already has a ${named(watch, "").name} watcher.`, "Change that one's frequency or profile instead.");
+      }
+      const preset = named(watch, input.prompt);
+      input = {
+        ...input,
+        name: watch.kind === "other" && input.name.trim() !== "" ? input.name : preset.name,
+        prompt: preset.prompt,
+        schedule: { cron: cronOf(watch), tz: input.schedule?.tz ?? hubZone() },
+        webhook: false,
+      };
+    }
     const schedule = input.schedule === undefined ? undefined : kept(input.schedule);
     const now = this.now();
     const next = schedule === undefined ? undefined : nextAfter(schedule, now);
@@ -340,6 +374,7 @@ export class Automations {
       webhook: input.webhook,
       paused: false,
       ...(next === undefined ? {} : { nextRunAt: isoMs(next) }),
+      ...(watch === undefined ? {} : { watch }),
       createdBy: input.by,
       confirmed: input.confirmed,
       createdAt: at,
@@ -372,8 +407,11 @@ export class Automations {
     let a = this.row(id);
     if (!a) throw notFound(id);
     a = { ...a };
+    if (a.watch !== undefined) edit = this.watchEdit(a, edit);
+    else if (edit.watch !== undefined) throw invalid(`${a.name} is an automation, not a watcher.`, "Make a watcher of its own instead.");
     if (edit.name !== undefined) a.name = edit.name;
     if (edit.prompt !== undefined) a.prompt = edit.prompt;
+    if (edit.watch !== undefined) a.watch = edit.watch;
     if (edit.schedule !== undefined) {
       // A new schedule starts over, a one-time one that has run included.
       if (edit.schedule === null) delete a.schedule;
@@ -393,6 +431,28 @@ export class Automations {
     this.changedEvent(a, "edited", by);
     this.signal();
     return [this.withLastRun(a), secret];
+  }
+
+  /**
+   * An edit of a watcher as it applies: a new watch (same kind) moves its schedule to the new frequency in the same
+   * zone; a preset's name and prompt are fleetd's, and a watcher takes no schedule or webhook of its own.
+   */
+  private watchEdit(a: Automation, edit: Edit): Edit {
+    const w = a.watch as AutomationWatch;
+    if (edit.webhook === true) throw invalid("A watcher has no webhook.", "Leave webhook out.");
+    if (edit.schedule !== undefined) throw invalid("A watcher's schedule follows how often it looks.", "Give watch with every 15m, hour or day.");
+    const preset = PRESETS.includes(w.kind as never);
+    if (preset && (edit.prompt !== undefined || edit.name !== undefined)) {
+      throw invalid(`${a.name} is a preset: what it looks at is fleetd's.`, "Change how often it looks or its profile; for something else, add a watcher with one sentence.");
+    }
+    const out: Edit = { ...edit, ...(edit.prompt === undefined ? {} : { prompt: named(w, edit.prompt).prompt }) };
+    if (edit.watch !== undefined) {
+      const next = this.watchOf(a.projectRef, edit.watch);
+      if (next.kind !== w.kind) throw invalid("A watcher keeps what it watches.", "Delete it and add the other one.");
+      out.watch = next;
+      if (next.every !== w.every) out.schedule = { cron: cronOf(next), tz: a.schedule?.tz ?? hubZone() };
+    }
+    return out;
   }
 
   private setHash(id: string, secret: string | undefined): void {
@@ -484,6 +544,11 @@ export class Automations {
    */
   async run(id: string, start: Start): Promise<AutomationRun> {
     const [a, run] = this.open(id, start);
+    // A watcher's look runs in a session of its own, which watchers start; the run is running until it ends.
+    if (a.watch !== undefined) {
+      if (run.state === "running") watchers(this.hub).later(a, run);
+      return run;
+    }
     await this.wakeLead(a, run);
     return run;
   }
@@ -573,6 +638,11 @@ export class Automations {
       } else this.runEvent(a, run, `kept for later: ${keptWhy}`);
       return [a, run];
     }
+    // A watcher's run opens no order: watchers start its look.
+    if (a.watch !== undefined) {
+      this.runEvent(a, run, "looking");
+      return [a, run];
+    }
     run = this.openOrder(a, run, payload);
     if (run.workstreamId === undefined) this.runEvent(a, run, "failed: its order could not be opened");
     return [a, run];
@@ -613,8 +683,10 @@ export class Automations {
    */
   private recover(run: AutomationRun): AutomationRun {
     if (run.state !== "running" || run.workstreamId !== undefined) return run;
-    const payload = this.hub.db.all<{ payload: string | null }>("SELECT payload FROM automation_runs WHERE run_id = ?", [run.runId])[0]?.payload;
     const a = this.row(run.automationId);
+    // A watcher's run has no order to open; watchers' sweep ends one whose look a stop cut off.
+    if (a?.watch !== undefined) return run;
+    const payload = this.hub.db.all<{ payload: string | null }>("SELECT payload FROM automation_runs WHERE run_id = ?", [run.runId])[0]?.payload;
     if (!a) {
       const failed = storedRun({
         ...run,

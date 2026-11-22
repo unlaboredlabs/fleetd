@@ -679,7 +679,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 * * 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own.",
+   "description": "Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 * * 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). Leave out tz for the zone of the person who last wrote in the chat (each of their messages names it); give an IANA tz only when they ask for another. A one-time run is done once it has run; automation_delete cancels it before. Runs start work on their own; reviews, the train and approvals still apply. Only a person adds a webhook, in the app. For one whose runs send or change something, call automation_confirm after it, so the person can let it run on its own. A watcher (watch) is different: a read-only look at the bot's own software on a schedule (every 15m, hour or day) that opens no order and posts one line in the chat only when something is off; add one only when the person asks, with their pick of kind, every and profile.",
    "inputSchema": {
     "properties": {
      "name": {
@@ -715,6 +715,62 @@
         "type": "string"
        }
       },
+      "type": "object"
+     },
+     "watch": {
+      "description": "Make it a watcher (a person asked for one): `kind` main_ci or deploys, or other with the one sentence of what to watch as\nthe prompt; `every` sets its schedule, so leave schedule out.",
+      "properties": {
+       "every": {
+        "description": "How often a watcher looks.",
+        "oneOf": [
+         {
+          "const": "15m",
+          "description": "Every 15 minutes.",
+          "type": "string"
+         },
+         {
+          "const": "hour",
+          "description": "Every hour, on the hour.",
+          "type": "string"
+         },
+         {
+          "const": "day",
+          "description": "Once a day, at 09:00 in the person's zone.",
+          "type": "string"
+         }
+        ],
+        "x-open": true
+       },
+       "kind": {
+        "description": "What a watcher watches.",
+        "oneOf": [
+         {
+          "const": "main_ci",
+          "description": "The checks on the default branch of the bot's GitHub repo.",
+          "type": "string"
+         },
+         {
+          "const": "deploys",
+          "description": "The statuses of its GitHub repo's deployments.",
+          "type": "string"
+         },
+         {
+          "const": "other",
+          "description": "The one plain sentence in its prompt, through the bot's connections.",
+          "type": "string"
+         }
+        ],
+        "x-open": true
+       },
+       "profile": {
+        "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "every"
+      ],
       "type": "object"
      }
     },
@@ -790,6 +846,62 @@
         "type": "string"
        }
       },
+      "type": "object"
+     },
+     "watch": {
+      "description": "A watcher's new frequency or profile; its kind stays.",
+      "properties": {
+       "every": {
+        "description": "How often a watcher looks.",
+        "oneOf": [
+         {
+          "const": "15m",
+          "description": "Every 15 minutes.",
+          "type": "string"
+         },
+         {
+          "const": "hour",
+          "description": "Every hour, on the hour.",
+          "type": "string"
+         },
+         {
+          "const": "day",
+          "description": "Once a day, at 09:00 in the person's zone.",
+          "type": "string"
+         }
+        ],
+        "x-open": true
+       },
+       "kind": {
+        "description": "What a watcher watches.",
+        "oneOf": [
+         {
+          "const": "main_ci",
+          "description": "The checks on the default branch of the bot's GitHub repo.",
+          "type": "string"
+         },
+         {
+          "const": "deploys",
+          "description": "The statuses of its GitHub repo's deployments.",
+          "type": "string"
+         },
+         {
+          "const": "other",
+          "description": "The one plain sentence in its prompt, through the bot's connections.",
+          "type": "string"
+         }
+        ],
+        "x-open": true
+       },
+       "profile": {
+        "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "every"
+      ],
       "type": "object"
      }
     },
@@ -2724,6 +2836,34 @@
    "/schedule/tz": {
     "expected": "a string",
     "pattern": "expected an IANA time zone name such as Europe/London, got {got}"
+   },
+   "/watch": {
+    "expected": "struct AutomationWatch",
+    "fields": [
+     "kind",
+     "every",
+     "profile"
+    ]
+   },
+   "/watch/every": {
+    "variants": [
+     "15m",
+     "hour",
+     "day"
+    ],
+    "expected": "string or map"
+   },
+   "/watch/kind": {
+    "variants": [
+     "main_ci",
+     "deploys",
+     "other"
+    ],
+    "expected": "string or map"
+   },
+   "/watch/profile": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9][a-z0-9._-]{0,31}$, got {got}"
    }
   },
   "automation_update": {
@@ -2760,6 +2900,34 @@
    "/schedule/tz": {
     "expected": "a string",
     "pattern": "expected an IANA time zone name such as Europe/London, got {got}"
+   },
+   "/watch": {
+    "expected": "struct AutomationWatch",
+    "fields": [
+     "kind",
+     "every",
+     "profile"
+    ]
+   },
+   "/watch/every": {
+    "variants": [
+     "15m",
+     "hour",
+     "day"
+    ],
+    "expected": "string or map"
+   },
+   "/watch/kind": {
+    "variants": [
+     "main_ci",
+     "deploys",
+     "other"
+    ],
+    "expected": "string or map"
+   },
+   "/watch/profile": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[a-z0-9][a-z0-9._-]{0,31}$, got {got}"
    }
   },
   "automation_delete": {

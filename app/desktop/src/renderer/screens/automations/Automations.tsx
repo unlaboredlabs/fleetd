@@ -1,11 +1,11 @@
-// Settings → Projects › Automations: one project's automations (the project picked in the sidebar), each a prompt the project's lead runs on a schedule, from a
+// Settings → Projects › Automations: one project's watchers (Watching.tsx) at the top, then its automations (the project picked in the sidebar), each a prompt the project's lead runs on a schedule, from a
 // webhook or on Run now. Each run opens an order the lead starts on its own; reviews, the merge train and approvals
 // still apply. A person makes, edits, pauses, runs and deletes them here and reads their runs, each linked to its
 // order. A webhook URL holds its secret, so the hub returns it only when it is made or rotated: shown once, here.
 // The nightly memory refresh isn't one of them: it is on the project's Instructions & memory, beside the memory it tidies.
 import { useEffect, useState } from "react";
 import type { Automation, ProjectRef } from "../../../shared/contracts";
-import { Button, Dialog, Field, Input, Segmented, StatusChip, Switch, Text, Textarea, copyText, type TextTone } from "../../ui";
+import { Button, Dialog, Field, Input, Segmented, Switch, Text, Textarea, copyText, type TextTone } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -22,11 +22,8 @@ import {
   hasProblems,
   localZone,
   onceLine,
-  orderHref,
   problems,
   runChip,
-  runNote,
-  triggerWord,
   triggersLine,
   updateInput,
   withWhen,
@@ -34,6 +31,9 @@ import {
   type Draft,
 } from "./model";
 import s from "./automations.module.css";
+import { Runs } from "./Runs";
+import { isWatcher } from "./watchModel";
+import { Watching } from "./Watching";
 
 const READS = ["automation_list", "automation_runs"] as const;
 
@@ -64,14 +64,17 @@ export function Automations({ route }: { route: SettingsRoute }) {
     );
   }
 
-  const automations = list.data?.automations ?? [];
+  const all = list.data?.automations ?? [];
+  const automations = all.filter((a) => !isWatcher(a));
   const name = project ? scopeName(project, projects) : null;
   return (
     <div className={settings.scroll} data-screen="settings.automations">
       <div className={settings.column}>
         <PageHead title="Automations" />
         {url ? <WebhookUrl {...url} onDone={() => setUrl(null)} /> : null}
+        {ref && list.data ? <Watching projectRef={ref} watchers={all.filter(isWatcher)} watchable={list.data.watchable} /> : null}
         <SettingsSection
+          title={ref && list.data ? "Automations" : undefined}
           aside={ref && editing === "new" ? undefined : <AddButton label="New automation" disabled={!ref} onClick={() => setEditing("new")} />}
         >
           {list.isLoadingError ? (
@@ -272,38 +275,6 @@ function Card(props: { automation: Automation; onEdit: () => void; onUrl: (u: { 
         }
       />
     </SettingsRow>
-  );
-}
-
-/** Its runs, newest first, each with its trigger, state and the order it opened. */
-function Runs({ automationId }: { automationId: string }) {
-  const runs = useToolQuery("automation_runs", { automationId, limit: 30 });
-  if (runs.isError) return <Text tone="danger">{errorText(runs.error)}</Text>;
-  if (runs.data === undefined) return <Text tone="quiet">Loading runs…</Text>;
-  if (runs.data.runs.length === 0) return <Text tone="quiet">No runs yet.</Text>;
-  return (
-    <ul className={s.runs} aria-label="Runs">
-      {runs.data.runs.map((r) => {
-        const chip = runChip(r);
-        const note = runNote(r);
-        return (
-          <li key={r.runId} className={s.run}>
-            <Text size="xs">{when(r.at)}</Text>
-            <Text size="xs" tone="quiet">
-              {triggerWord(r.trigger)}
-            </Text>
-            <StatusChip tone={chip.tone} inRow>
-              {chip.label}
-            </StatusChip>
-            <Text size="xs" tone="quiet">
-              {r.workstreamId ? <a href={orderHref(r.workstreamId)}>Order {r.workstreamId}</a> : null}
-              {r.workstreamId && note ? " · " : null}
-              {note}
-            </Text>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 

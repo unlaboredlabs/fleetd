@@ -118,6 +118,8 @@ function automations(f: Fixture) {
   const deps = "au_fixtureDeps1";
   const alerts = "au_fixtureHook1";
   const notes = "au_fixtureNote1";
+  const ci = "au_fixtureCi001";
+  const sentry = "au_fixtureSentr";
   const depsRuns = [
     run(deps, 4, { trigger: "schedule", at: "2026-10-19T07:00:00.000Z", state: "done", workstreamId: "W41", scheduledAt: "2026-10-19T07:00:00.000Z", endedAt: "2026-10-19T08:12:00.000Z" }),
     run(deps, 3, { trigger: "manual", at: "2026-10-16T13:20:00.000Z", state: "done", workstreamId: "W36", by: "human", endedAt: "2026-10-16T14:02:00.000Z" }),
@@ -126,6 +128,20 @@ function automations(f: Fixture) {
   const alertRuns = [
     run(alerts, 7, { trigger: "webhook", at: "2026-10-19T10:04:00.000Z", state: "skipped", payloadBytes: 1210, why: "run ar_fixture6x is still going (W57 is open)", endedAt: "2026-10-19T10:04:00.000Z" }),
     run(alerts, 6, { trigger: "webhook", at: "2026-10-19T09:52:00.000Z", state: "running", workstreamId: "W57", payloadBytes: 1184 }),
+  ];
+  // Watchers: Main's CI every 15 minutes, quiet but for one failed check, and one sentence on Sentry, hourly.
+  const ciRuns = [
+    run(ci, 12, { trigger: "schedule", at: "2026-10-19T09:45:00.000Z", state: "done", scheduledAt: "2026-10-19T09:45:00.000Z", why: "Nothing changed since its last look.", costUsd: 0, endedAt: "2026-10-19T09:45:01.000Z" }),
+    run(ci, 11, {
+      trigger: "schedule",
+      at: "2026-10-19T09:30:00.000Z",
+      state: "done",
+      scheduledAt: "2026-10-19T09:30:00.000Z",
+      said: "test (linux) failed on main at 09:24 UTC, after the cart fix: https://github.com/acme/storefront/actions/runs/8812/job/2231",
+      costUsd: 0.0091,
+      endedAt: "2026-10-19T09:31:10.000Z",
+    }),
+    run(ci, 10, { trigger: "schedule", at: "2026-10-19T09:15:00.000Z", state: "done", scheduledAt: "2026-10-19T09:15:00.000Z", costUsd: 0.0074, endedAt: "2026-10-19T09:15:40.000Z" }),
   ];
   const base = { projectRef, createdBy: "human", createdAt: made, updatedAt: made };
   const list = [
@@ -158,6 +174,31 @@ function automations(f: Fixture) {
       webhook: false,
       paused: true,
     },
+    {
+      ...base,
+      automationId: ci,
+      name: "Main's CI",
+      prompt: "Main's CI",
+      schedule: { cron: "*/15 * * * *", tz: "Europe/Berlin" },
+      webhook: false,
+      paused: false,
+      nextRunAt: "2026-10-19T10:00:00.000Z",
+      watch: { kind: "main_ci", every: "15m" },
+      lastDay: { runs: 96, spoke: 1, costUsd: 0.41 },
+      lastRun: ciRuns[0] ?? null,
+    },
+    {
+      ...base,
+      automationId: sentry,
+      name: "Watch the checkout errors in Sentry",
+      prompt: "Watch the checkout errors in Sentry",
+      schedule: { cron: "0 * * * *", tz: "Europe/Berlin" },
+      webhook: false,
+      paused: false,
+      nextRunAt: "2026-10-19T10:00:00.000Z",
+      watch: { kind: "other", every: "hour", profile: "medium" },
+      lastDay: { runs: 24, spoke: 0, costUsd: 0.86 },
+    },
   ];
   // The nightly memory refresh, listed with them as a built-in row: last night it tidied the memory.
   const memoryRefresh = {
@@ -167,7 +208,9 @@ function automations(f: Fixture) {
     nextRunAt: "2026-10-20T02:00:00.000Z",
     lastRun: { at: "2026-10-19T02:00:00.000Z", trigger: "schedule", state: "done", added: 2, replaced: 1, removed: 1 },
   };
-  f.answer("automation_list", { projectRef }, { automations: json(list), memoryRefresh });
+  f.answer("automation_list", { projectRef }, { automations: json(list), memoryRefresh, watchable: ["main_ci", "deploys", "other"] });
+  f.answer("automation_runs", { automationId: ci }, { runs: ciRuns });
+  f.answer("automation_runs", { automationId: sentry }, { runs: [] });
   f.answer("automation_runs", { automationId: deps }, { runs: depsRuns });
   f.answer("automation_runs", { automationId: alerts }, { runs: alertRuns });
   f.answer("automation_runs", { automationId: notes }, { runs: [] });

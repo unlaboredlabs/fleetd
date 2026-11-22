@@ -227,6 +227,8 @@ export function stored(a: Automation): Automation {
     ...(a.nextRunAt === undefined ? {} : { nextRunAt: a.nextRunAt }),
     ...(a.doneAt === undefined ? {} : { doneAt: a.doneAt }),
     ...(a.lastRun === undefined ? {} : { lastRun: a.lastRun }),
+    ...(a.watch === undefined ? {} : { watch: a.watch }),
+    ...(a.lastDay === undefined ? {} : { lastDay: a.lastDay }),
     createdBy: a.createdBy,
     confirmed: a.confirmed === true,
     createdAt: a.createdAt,
@@ -237,7 +239,7 @@ export function stored(a: Automation): Automation {
 /** The run as its row's `data` holds it, keys in the Rust struct's order. */
 export function storedRun(r: AutomationRun): AutomationRun {
   const o: Record<string, unknown> = { runId: r.runId, automationId: r.automationId, trigger: r.trigger, at: r.at, state: r.state };
-  for (const k of ["workstreamId", "scheduledAt", "lateMin", "payloadBytes", "why", "by", "endedAt"] as const) {
+  for (const k of ["workstreamId", "scheduledAt", "lateMin", "payloadBytes", "why", "by", "endedAt", "said", "costUsd"] as const) {
     if (r[k] !== undefined) o[k] = r[k];
   }
   return o as AutomationRun;

@@ -53,8 +53,10 @@ function fakeHub() {
         return ok({
           automations: automations.map((a) => ({ ...a, ...(runs.find((r) => r.automationId === a.automationId) ? { lastRun: runs.find((r) => r.automationId === a.automationId) } : {}) })),
           memoryRefresh: refresh.job,
+          watchable: ["main_ci", "other"],
         });
       }
+      if (name === "profiles_list") return ok({ profiles: [{ id: 1, name: "opus", default: true }], allowed: ["opus", "sonnet"], efforts: [], models: [] });
       if (name === "memory_refresh_run") {
         if (refresh.why === undefined) refresh.job = { ...refresh.job, lastRun: { at: AT, trigger: "manual", state: "running", added: 0, replaced: 0, removed: 0 } };
         return ok({ memoryRefresh: refresh.job, ...(refresh.why === undefined ? {} : { why: refresh.why }) });
@@ -68,6 +70,7 @@ function fakeHub() {
           prompt: input.prompt,
           ...(input.schedule ? { schedule: input.schedule, nextRunAt: "2026-10-19T07:00:00.000Z" } : {}),
           webhook: input.webhook ?? false,
+          ...(input.watch ? { watch: input.watch, lastDay: { runs: 3, spoke: 1, costUsd: 0.042 } } : {}),
           paused: false,
           createdBy: "human",
           createdAt: AT,
@@ -78,7 +81,7 @@ function fakeHub() {
       }
       if (name === "automation_update") {
         const input = raw as ToolInput<"automation_update">;
-        const a = { ...find(input.automationId), ...(input.name ? { name: input.name } : {}) };
+        const a = { ...find(input.automationId), ...(input.name ? { name: input.name } : {}), ...(input.watch ? { watch: input.watch } : {}) };
         put(a);
         return ok({ automation: a });
       }
@@ -269,4 +272,47 @@ it("leaves the nightly memory refresh to Instructions & memory, and the time zon
   await click(button("New automation", host));
   expect(editor().textContent).not.toContain("Time zone");
   expect(editor().querySelector("[aria-label='Schedule preview']")?.textContent).toMatch(/\(.+\)$/u);
+});
+
+it("watches Main's CI from the Watching group: + picks it, how often and the profile; its row shows them and its cost", async () => {
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin" }).resolvedOptions() });
+  const hub = await mount();
+  const group = () => host.querySelector("[data-group='watching']") as HTMLElement;
+  expect(group().textContent).toContain("Nothing watched yet.");
+  // Deploys isn't offered: this bot's repo has no GitHub deployments.
+  await click(button("New watcher", group()));
+  expect(button("Main's CI", group())).toBeTruthy();
+  expect(() => button("Deploys", group())).toThrow();
+  await click(button("15 min", group()));
+  await click(button("Watch", group()));
+  expect(hub.calls.find((c) => c.tool === "automation_create")?.input).toMatchObject({
+    projectRef: project,
+    name: "Main's CI",
+    schedule: { tz: "Europe/Berlin" },
+    watch: { kind: "main_ci", every: "15m" },
+  });
+  const row = host.querySelector("[data-watcher]") as HTMLElement;
+  expect(row.textContent).toContain("Main's CI");
+  expect(row.textContent).toContain("Every 15 min · opus · $0.0420 in 24 h");
+  // It isn't one of the automations below.
+  expect(host.textContent).toContain("storefront has no automations yet.");
+  // A preset is one per bot: the + now offers only Something else, which needs its sentence.
+  await click(button("New watcher", group()));
+  expect(() => button("Main's CI", group())).toThrow();
+  await click(button("Watch", group()));
+  expect(group().textContent).toContain("Say in one sentence what to watch.");
+  await click(button("Cancel", group()));
+
+  // Its switch pauses it; Edit changes how often.
+  act(() => (row.querySelector("button[role='switch']") as HTMLElement).click());
+  await flush();
+  expect(hub.calls.filter((c) => c.tool === "automation_pause").map((c) => c.input)).toEqual([{ automationId: "au_test001", paused: true }]);
+  // Its menu, by its label: a name with an apostrophe makes no selector.
+  const more = [...row.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Main's CI: more") as HTMLElement;
+  act(() => void more.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" })));
+  const edit = [...document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((i) => i.textContent.trim() === "Edit") as HTMLElement;
+  await click(edit);
+  await click(button("Daily", group()));
+  await click(button("Save", group()));
+  expect(hub.calls.find((c) => c.tool === "automation_update")?.input).toEqual({ automationId: "au_test001", watch: { kind: "main_ci", every: "day" } });
 });

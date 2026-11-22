@@ -1532,6 +1532,10 @@
           "$ref": "#/$defs/Timestamp",
           "description": "A one-time schedule that has run: when. It starts nothing more by itself; Run now still runs it."
         },
+        "lastDay": {
+          "$ref": "#/$defs/AutomationUsage",
+          "description": "A watcher's runs over the last 24 hours: how many, how many spoke up, and what they cost."
+        },
         "lastRun": {
           "$ref": "#/$defs/AutomationRun"
         },
@@ -1563,6 +1567,10 @@
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "watch": {
+          "$ref": "#/$defs/AutomationWatch",
+          "description": "A watcher: its runs are a read-only look at one thing about the bot's software, in no order, that says one line in\nthe chat only when something is off. Its prompt is what it watches; the hub keeps its schedule to `every`."
         },
         "webhook": {
           "description": "Whether it has a webhook URL. The URL holds a secret, shown once when it is made or rotated.",
@@ -1604,6 +1612,10 @@
         },
         "schedule": {
           "$ref": "#/$defs/AutomationSchedule"
+        },
+        "watch": {
+          "$ref": "#/$defs/AutomationWatch",
+          "description": "Make it a watcher: the hub sets its schedule from `every` (any `schedule` given is ignored), and it has no webhook."
         },
         "webhook": {
           "default": false,
@@ -1704,6 +1716,14 @@
         },
         "truncated": {
           "type": "boolean"
+        },
+        "watchable": {
+          "description": "The watcher presets this bot can have now (`deploys` only when its GitHub repo has deployments); absent from older hubs.",
+          "items": {
+            "$ref": "#/$defs/WatchKind"
+          },
+          "maxItems": 10,
+          "type": "array"
         }
       },
       "required": [
@@ -1787,6 +1807,11 @@
           "description": "Who pressed Run now: a keyId, \"human\" or \"lead:<machineId>/<projectId>\".",
           "type": "string"
         },
+        "costUsd": {
+          "description": "A watcher's run: what it cost, in US dollars, as its runner reported it.",
+          "minimum": 0,
+          "type": "number"
+        },
         "endedAt": {
           "$ref": "#/$defs/Timestamp"
         },
@@ -1804,6 +1829,12 @@
         },
         "runId": {
           "$ref": "#/$defs/AutomationRunId"
+        },
+        "said": {
+          "description": "A watcher's run that spoke up: the line it posted in the chat.",
+          "maxLength": 300,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         },
         "scheduledAt": {
           "$ref": "#/$defs/Timestamp",
@@ -2007,6 +2038,10 @@
         "schedule": {
           "$ref": "#/$defs/AutomationSchedule"
         },
+        "watch": {
+          "$ref": "#/$defs/AutomationWatch",
+          "description": "A watcher's new frequency or profile; its kind stays."
+        },
         "webhook": {
           "description": "true adds a webhook URL (kept if it has one); false removes it.",
           "type": "boolean"
@@ -2035,6 +2070,50 @@
       },
       "required": [
         "automation"
+      ],
+      "type": "object"
+    },
+    "AutomationUsage": {
+      "description": "A watcher's runs over a stretch: how many ran, how many spoke up, and their cost in US dollars.",
+      "properties": {
+        "costUsd": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "runs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spoke": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "runs",
+        "spoke",
+        "costUsd"
+      ],
+      "type": "object"
+    },
+    "AutomationWatch": {
+      "description": "What a watcher watches and how often; its runs use `profile`, or the bot's default.",
+      "properties": {
+        "every": {
+          "$ref": "#/$defs/WatchEvery"
+        },
+        "kind": {
+          "$ref": "#/$defs/WatchKind"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileName"
+        }
+      },
+      "required": [
+        "kind",
+        "every"
       ],
       "type": "object"
     },
@@ -27063,6 +27142,48 @@
         "threadId"
       ],
       "type": "object"
+    },
+    "WatchEvery": {
+      "description": "How often a watcher looks.",
+      "oneOf": [
+        {
+          "const": "15m",
+          "description": "Every 15 minutes.",
+          "type": "string"
+        },
+        {
+          "const": "hour",
+          "description": "Every hour, on the hour.",
+          "type": "string"
+        },
+        {
+          "const": "day",
+          "description": "Once a day, at 09:00 in the person's zone.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
+    },
+    "WatchKind": {
+      "description": "What a watcher watches.",
+      "oneOf": [
+        {
+          "const": "main_ci",
+          "description": "The checks on the default branch of the bot's GitHub repo.",
+          "type": "string"
+        },
+        {
+          "const": "deploys",
+          "description": "The statuses of its GitHub repo's deployments.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "The one plain sentence in its prompt, through the bot's connections.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     },
     "WorkAction": {
       "description": "A command, file edit or tool call. Secrets in its summary and output are replaced by `[secret]`.",
