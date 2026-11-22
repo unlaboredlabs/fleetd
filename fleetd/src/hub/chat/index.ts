@@ -776,6 +776,17 @@ export class Chat {
     );
   }
 
+  /** The human's last message written in the chat; history left out. */
+  lastHuman(r: ProjectRef): ChatMessage | undefined {
+    return this.many(
+      `SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2
+       AND json_extract(data, '$.author') = 'human' AND json_extract(data, '$.history') IS NULL
+       ORDER BY seq DESC LIMIT 1`,
+      r.machineId,
+      r.projectId,
+    )[0];
+  }
+
   /** The project's open items, through the partial index `chat_items_unsettled` (its condition, then the state). */
   private openItems(r: ProjectRef): ChatMessage[] {
     return this.many(
