@@ -485,7 +485,7 @@ export class SessionService {
         } catch {}
         if (existsSync(dir)) await place.stop(dir);
       }
-      if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, INTERRUPT_GRACE_MS);
+      if (row.local.pid && row.local.pidStart) await killRecorded(row.local.pid, row.local.pidStart, id, leadSocketPath(service.home), INTERRUPT_GRACE_MS);
       if (row.local.pid || row.summary.activeRunId || row.summary.pendingPermission) service.#settleRestarted(id);
       // Idle, waiting on a Monitor that went with the last node's claude: nothing else would wake it. One kept on the
       // row never told the agent it ended (only a turn after its notice drops it, or after its time ran out), so its

@@ -5,7 +5,7 @@
 // an agent's agent-browser does. The last test runs the box's real launcher (sh, socat) on a real Chrome, where this
 // machine has both.
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
@@ -392,7 +392,7 @@ test.skipIf(!realChrome || !hasSocat)("a box's Chrome outlives its dropped conne
         s.once("connect", () => resolve(s)).once("error", reject);
       }),
   };
-  const first = await boxChrome(here, [], { chrome: realChrome! });
+  const first = await boxChrome(here, [], { chrome: realChrome!, dir: join(root, "chrome") });
   const handle = first.handle!;
   cleanups.push(() => first.close?.());
   const { targetInfos } = (await first.cdp.call(undefined, "Target.getTargets")) as { targetInfos: { targetId: string }[] };
@@ -401,7 +401,21 @@ test.skipIf(!realChrome || !hasSocat)("a box's Chrome outlives its dropped conne
   const after = (await second.cdp.call(undefined, "Target.getTargets")) as { targetInfos: { targetId: string }[] };
   expect(after.targetInfos.map((t) => t.targetId)).toEqual(targetInfos.map((t) => t.targetId));
   second.cdp.shut();
-  await Bun.sleep(timing.graceMs + 2_500);
+  const letGo = Date.now();
+  // No connection within its grace: its launcher's whole session goes, Chrome with it. Waited for, however long a loaded
+  // machine takes to get there, never before the grace is out.
+  const launcher = Number(readFileSync(join(handle.dir, "session.pid"), "utf8"));
+  const alive = () => {
+    try {
+      process.kill(launcher, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const end = Date.now() + 10 * timing.graceMs; alive() && Date.now() < end; ) await Bun.sleep(50);
+  expect(alive()).toBe(false);
+  expect(Date.now() - letGo).toBeGreaterThanOrEqual(timing.graceMs);
   await expect(reattachChrome(here, handle, 400_000_001, 500)).rejects.toThrow();
 }, 30_000);
 
