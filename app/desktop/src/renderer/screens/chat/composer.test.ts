@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PART_BYTES } from "../../../shared/contracts";
 import { MAX_CALL_INPUT_BYTES } from "../../../shared/ipc";
+import { FIRST_PIECE_BYTES } from "../../../shared/transfer";
 import type { DataLayer } from "../../src/data/queries";
 import { pastedName } from "./attachments";
 import { checkMessage, placeholder, recallsOn, receiptFor, receiptMark, type Sendable, sendsOn, stopFailed } from "./composerModel";
@@ -165,12 +166,15 @@ describe("a bot's draft", () => {
     const first = draft?.attached[0]?.upload;
     expect(first?.ok === true ? { name: first.ref.name, mime: first.ref.mime, bytes: first.ref.bytes } : first).toEqual({ name: "big.txt", mime: "text/plain", bytes: ATTACHMENT_MAX_BYTES });
     const parts = calls.filter((c) => c.tool === "attachment_part");
-    expect(parts).toHaveLength(ATTACHMENT_MAX_BYTES / ATTACHMENT_PART_BYTES - 1);
-    expect(parts.map((c) => c.input["offset"])).toEqual([undefined, ...parts.slice(1).map((_, i) => (i + 1) * ATTACHMENT_PART_BYTES)]);
+    // A small first piece, then whole ones on a link this fast (transfer.ts pace), each from where the last ended.
+    const sizes = parts.map((c) => atob(String(c.input["dataB64"])).length);
+    expect(sizes).toEqual([FIRST_PIECE_BYTES, ...sizes.slice(1).map(() => ATTACHMENT_PART_BYTES)]);
+    const ends = sizes.map((_, i) => sizes.slice(0, i + 1).reduce((a, b) => a + b, 0));
+    expect(parts.map((c) => c.input["offset"])).toEqual([undefined, ...ends.slice(0, -1)]);
     // Each piece fits one call to main.
     expect(Math.max(...calls.map((c) => JSON.stringify(c.input).length))).toBeLessThan(MAX_CALL_INPUT_BYTES);
     const last = calls.find((c) => c.tool === "attachment_put" && c.input["uploadId"] !== undefined);
-    expect(atob(String(last?.input["dataB64"])).length).toBe(ATTACHMENT_PART_BYTES);
+    expect(atob(String(last?.input["dataB64"])).length).toBe(ATTACHMENT_MAX_BYTES - (ends.at(-1) ?? 0));
 
     d.attach("devbox/api", [small(20)]);
     expect(d.store.getState()["devbox/api"]?.error).toBe("A message carries at most 20 files.");

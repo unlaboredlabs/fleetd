@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { chatItems, type ChatMessage, type HumanRequest } from "./desktop";
+import { chatItems, FIRST_PIECE_BYTES, type ChatMessage, type HumanRequest } from "./desktop";
 import { fakeHub } from "./hub/fake";
 import { lists } from "./lists";
 import { memoryPins } from "./pins";
@@ -790,7 +790,7 @@ describe("a tap on a screen just taken over", () => {
       await flush();
       const whole = session.attachment(KEY, "F3");
       await flush();
-      expect(gets(hub).at(-1)).toEqual({ projectRef: REF, attachmentId: "F3", offset: 0, length: 524_286 });
+      expect(gets(hub).at(-1)).toEqual({ projectRef: REF, attachmentId: "F3", offset: 0, length: FIRST_PIECE_BYTES });
       hub.answer("attachment_get", { ...file, bytes: 3, mime: "image/png", dataB64: "AAEC", offset: 0 });
       await expect(whole).resolves.toMatchObject({ ok: true, output: { dataB64: "AAEC", mime: "image/png" } });
     });
