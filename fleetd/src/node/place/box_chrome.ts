@@ -50,8 +50,15 @@ const CLOSE_MS = 2_000;
 export const hex = (n: number) => randomBytes(n).toString("hex");
 export const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 export const enc = (s: string) => new TextEncoder().encode(s);
-/** A port on the box's loopback for one screen's stream: a random one, which a box's few screens rarely share. */
-export const port = () => 20_000 + (randomBytes(2).readUInt16LE(0) % 30_000);
+/** A port on the box's loopback for one screen's stream: a random one, which a box's few screens rarely share. Under
+ * every kernel's ephemeral range (Linux's from 32768, macOS's from 49152), where a busy machine's own connections each
+ * take a port at random: one held a held Chrome's port as its socat first listened, or between two of its listens, and
+ * the launcher went, Chrome with it. */
+export const port = () => 10_000 + (randomBytes(2).readUInt16LE(0) % 10_000);
+/** Whether a launcher's socat log (`accepts.log` in its folder) says its port was taken: the launcher went at once. */
+export const portTaken = (log: string) => log.includes("Address already in use");
+/** Where a box's Chrome listens: `port`'s pick, or a test's own. */
+export const ports = { next: port };
 
 /** Runs `script` with `sh` in the box; throws what it printed when it fails. */
 export async function sh(box: ScreenBox, script: string, env: Record<string, string> = {}, timeoutSec = 30): Promise<string> {
@@ -228,7 +235,7 @@ async function connected(box: ScreenBox, handle: ChromeHandle, kept: string | un
  */
 export async function boxChrome(box: KeptBox, extra: string[] = [], o: BoxChromeOptions = {}): Promise<Launched> {
   const dir = o.dir ?? `/tmp/fleetd-browser-${hex(6)}`;
-  const at = port();
+  const at = ports.next();
   const profile = o.profile ?? `${dir}/profile`;
   const argv = chromeArgs(o.chrome ?? "chrome-headless-shell", profile, o.sandboxed ?? false, extra);
   await sh(box, `mkdir -p ${shq(o.profile ? dir : profile)} && chmod 700 ${shq(dir)}`);
