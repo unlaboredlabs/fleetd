@@ -3,7 +3,7 @@
 // Machines (the machines, Add machine at the title's end or in the empty list, each machine's
 // page with Repair while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
-// as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide
+// as a project's own pages are: Agents (the profiles and the skills), Instructions (and the hub-wide
 // built-in prompts from its foot) and Vault (the vault key, settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
 // Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every
@@ -15,9 +15,7 @@ import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react"
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { ProvidersGroup, WhatRunsWhere } from "../settings/Places";
-import { TailscaleSection } from "../settings/Tailscale";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
-import { HubMcpServers } from "../settings/McpServers";
 import { EveryProjectFrame, Part } from "../settings/Frames";
 import { PageHead, SettingsSection } from "../settings/parts";
 import { revealNext, useReveal } from "../settings/search";
@@ -167,8 +165,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
  * One page, in the order a person comes to it (D550): the hub's machines and how each is (a row each, its state a dot,
  * opening its own page with everything about it; Add machine at the title's end adds one, its steps opening above the
  * list, and with none yet the empty list holds the button instead); the providers
- * the team connects with its own keys, one list, each with what it can run; Tailscale, the team's tailnet
- * for its hosted sandboxes; what runs where, a row per kind of work
+ * the team connects with its own keys, one list, each with what it can run (Tailscale is Connections'); what runs where, a row per kind of work
  * with the same choice; then updates, the one status of them and the Update automatically switch (a page of its own
  * once: a link to it lands here).
  */
@@ -195,7 +192,6 @@ function Machines() {
         <AddMachine open={open} closed={open === undefined} onClose={() => setOpen(undefined)} />
         <MachineList onAdd={add} />
         <ProvidersGroup />
-        <TailscaleSection />
         <WhatRunsWhere />
         <Updates />
       </div>
@@ -205,8 +201,8 @@ function Machines() {
 
 /**
  * Every project › Agents: what every project's agents run on and get. The task profiles (each a model, an effort, fast
- * mode and a note, and the hub's default; each project picks which it allows on its own Agents page), then the MCP
- * servers and the skills, which come before a project's own (Tools & skills, a page of its own once).
+ * mode and a note, and the hub's default; each project picks which it allows on its own Agents page), then the
+ * skills, which come before a project's own (Tools & skills, a page of its own once). MCP servers are Connections'.
  */
 function EveryAgents() {
   return (
@@ -215,9 +211,6 @@ function EveryAgents() {
         <PageHead title="Agents" />
         <ProfilesEditor />
         <Part reveal="hub.tools" screen="settings.hub.tools">
-          <SettingsSection title="MCP servers" reveal="hub.mcp">
-            <HubMcpServers />
-          </SettingsSection>
           <HubSkills />
         </Part>
       </div>

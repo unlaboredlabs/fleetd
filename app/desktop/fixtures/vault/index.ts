@@ -1,8 +1,7 @@
 // The Vault (D492). vault-team: a hub with the team vault, as Sam (an admin) sees it: the team's logins, cards and
 // addresses; storefront's variables and an order's; and two of Sam's own items set aside from before the team vault.
 // vault-team-member: the same team vault as Bob, a member, with a team card someone else added that only its creator
-// or an admin may show or change. vault-paper-connect and vault-paper: Paper under the team's Integrations, not added
-// yet and connected (D592). vault-old-hub: a hub from before the team vault, whose items
+// or an admin may show or change. vault-old-hub: a hub from before the team vault, whose items
 // (Sam's own among them) are one list and nothing is set aside.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -48,45 +47,8 @@ const variables = (f: Fixture): JsonObject[] => [
 
 const status = { hubBoxKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", keyMode: "file", keyId: "k1", locked: false, keyMissing: false, recoverySaved: true, migration: { done: true, machines: [] } };
 
-/** Paper as Connect saves it for the team (D592): its URL, no key, every bot's lead and agents; signed in with `signIn`. */
-const paper = (signIn?: JsonObject): JsonObject => ({
-  scope: { kind: "global" },
-  name: "paper",
-  enabled: true,
-  roles: { lead: true, writers: true, reviewers: true },
-  transport: { type: "http", url: "https://mcp.paper.design" },
-  headers: [],
-  ...(signIn === undefined ? {} : { oauth: signIn }),
-  updatedAt: "2026-10-27T09:00:00.000Z",
-});
-const TEAM = { kind: "global" };
-
-/** Paper not added yet: Connect saves it for the team and goes straight to its sign-in page. */
-const paperToConnect = (f: Fixture): Fixture => {
-  f.answer("mcp_server_set", { scope: TEAM, name: "paper" }, { server: paper() });
-  f.answer("mcp_oauth_start", { scope: TEAM, name: "paper" }, {
-    authorizeUrl: "https://app.paper.design/oauth/authorize?client_id=fleetd-devbox&state=qa",
-    redirectUri: "http://devbox:4790/oauth/callback",
-    scope: TEAM,
-  });
-  return f;
-};
-
-/** Paper connected for the team (`team` of the vault), with Test. */
-const PAPER_CONNECTED = [paper({ status: "connected", issuer: "https://app.paper.design", signedInAt: "2026-10-27T09:00:00.000Z" })];
-const paperConnected = (f: Fixture): Fixture => {
-  f.answer("mcp_server_test", { scope: TEAM, name: "paper" }, {
-    machineId: AGENT.machineId,
-    result: { server: "Paper MCP 0.4.0", tools: [{ name: "get_basic_info", readOnly: true, policy: "read" }, { name: "write_html", policy: "ask" }] },
-  });
-  return f;
-};
-
-const vault = (f: Fixture, features: string[], list: JsonObject[], admin: boolean, team: JsonObject[] = []): Fixture => {
+const vault = (f: Fixture, features: string[], list: JsonObject[], admin: boolean): Fixture => {
   answerHub(f, admin ? sam : bob, admin);
-  // The team's integrations at the page's foot, as `team` has them (else the base's servers). The page asks with no
-  // input, so this answers it.
-  if (team.length > 0) f.answer("mcp_servers_get", undefined, { global: team, project: [], userServers: true });
   if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), ...features] };
   f.answer("vault_status", {}, status);
   f.answer("vault_list", {}, { items: list });
@@ -104,8 +66,6 @@ export default defineGroup({
     vault(Fixture.from(base("typical"), "vault-team", "Vault: the team's items, storefront's variables and two of Sam's set aside."), ["vault", "vault_team"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
     vault(Fixture.from(base("typical"), "vault-team-member", "Vault as a member: a team card someone else added, which only its creator or an admin may show or change."), ["vault", "vault_team"], teamItems(base("typical"), false), false),
     vault(Fixture.from(base("typical"), "vault-empty", "Vault with nothing in it yet: its words and its own add, and the trash under them."), ["vault", "vault_team"], [], true),
-    paperToConnect(vault(Fixture.from(base("typical"), "vault-paper-connect", "Vault with Paper not connected yet: Connect saves it for the team and opens its sign-in page."), ["vault", "vault_team"], teamItems(base("typical"), true), true)),
-    paperConnected(vault(Fixture.from(base("typical"), "vault-paper", "Vault with Paper connected for the team: its row under Integrations, with Test."), ["vault", "vault_team"], teamItems(base("typical"), true), true, PAPER_CONNECTED)),
     vault(Fixture.from(base("typical"), "vault-old-hub", "Vault on a hub from before the team vault: one list, Sam's own among them, nothing set aside."), ["vault"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
   ],
 });

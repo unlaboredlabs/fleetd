@@ -118,6 +118,8 @@ let root: Root | undefined;
 // The panel's own chunk and its tabs' counts, loaded once up front as the app's first opening would, so each step waits on answers only.
 beforeAll(async () => {
   await Promise.all([import("../panel/ProjectPanel"), import("../panel/panes"), import("../panel/counts")]);
+  // The skill view loads on use, out of the app's first load: loaded here, it never suspends a test.
+  await (await import("../panel/panes")).SkillView.preload();
 });
 
 /** happy-dom's window size, which its media queries follow. */

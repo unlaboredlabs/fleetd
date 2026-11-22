@@ -1,35 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { canConnect, lineOf, markOf, waiting } from "./tailscaleModel";
+import { canConnect, lineOf, waiting, wordOf } from "./tailscaleModel";
 
 describe("Tailscale's row", () => {
-  it("says nothing at rest, and only what the person needs now otherwise", () => {
-    expect(lineOf({ status: "off" })).toBeNull();
-    expect(lineOf({ status: "connected", tailnet: "example.com", device: "fleetd" })).toEqual({ text: "example.com · as fleetd", tone: "quiet" });
-    expect(lineOf({ status: "login", loginUrl: "https://login.tailscale.com/a/x" })?.text).toBe("Waiting for you to sign in to Tailscale and approve the device.");
-    expect(lineOf({ status: "approve" })?.tone).toBe("warning");
-    expect(lineOf({ status: "failed", problem: "it ended" })).toEqual({ text: "it ended", tone: "danger" });
+  it("says nothing at rest, the tailnet once connected, and what it waits on", () => {
+    expect(wordOf({ status: "off" })).toBeNull();
+    expect(lineOf({ status: "off" }, true)).toBeNull();
+    expect(wordOf({ status: "connected", tailnet: "example.com", device: "fleetd" })).toEqual({ text: "example.com", tone: "quiet" });
+    expect(lineOf({ status: "connected", tailnet: "example.com" }, true)).toBeNull();
+    expect(wordOf({ status: "login", loginUrl: "https://login.tailscale.com/a/x" })).toEqual({ text: "Waiting for sign-in", tone: "warning" });
+    expect(lineOf({ status: "approve" }, true)?.text).toBe("An admin of your tailnet approves the device in Tailscale's admin console.");
+    expect(wordOf({ status: "failed", problem: "it ended" })?.tone).toBe("danger");
+    expect(lineOf({ status: "failed", problem: "it ended" }, true)).toEqual({ text: "it ended.", tone: "danger" });
   });
 
   it("says what to do when it's connected but its sign-in can't be kept (a locked vault)", () => {
-    const s = { status: "connected", tailnet: "example.com", device: "fleetd", problem: "Connected, but its sign-in isn't kept: unlock the vault" };
-    expect(lineOf(s)).toEqual({ text: "example.com · as fleetd. Connected, but its sign-in isn't kept: unlock the vault.", tone: "warning" });
-    expect(markOf(s)).toBe("needs");
+    const s = { status: "connected", tailnet: "example.com", problem: "Its sign-in isn't kept: unlock the vault" };
+    expect(lineOf(s, true)).toEqual({ text: "Its sign-in isn't kept: unlock the vault.", tone: "warning" });
   });
 
-  it("is off with why where the hub can't run it, and Connect off there", () => {
-    const mac = { status: "off", problem: "Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64)" };
-    expect(lineOf(mac)?.text).toBe("Tailscale's gateway runs on Linux hubs, and this hub runs on darwin (arm64).");
+  it("is off with why where the hub can't run it, and Connect off there; a member is told an admin connects it", () => {
+    const mac = { status: "off", problem: "Tailscale isn't running on the hub's computer" };
+    expect(lineOf(mac, true)?.text).toBe("Tailscale isn't running on the hub's computer.");
     expect(canConnect(mac)).toBe(false);
     expect(canConnect({ status: "off" })).toBe(true);
     expect(canConnect({ status: "failed", problem: "x" })).toBe(true);
     expect(canConnect({ status: "connected" })).toBe(false);
+    expect(lineOf({ status: "off" }, false)?.text).toBe("An admin connects Tailscale.");
   });
 
-  it("marks its state as a dot, and reads it again only while it waits on a sign-in", () => {
-    expect(markOf({ status: "connected" })).toBe("ready");
-    expect(markOf({ status: "login" })).toBe("needs");
-    expect(markOf({ status: "failed" })).toBe("failed");
-    expect(markOf({ status: "off" })).toBe("off");
+  it("reads its state again only while it waits on a sign-in", () => {
     expect(waiting({ status: "login" })).toBe(true);
     expect(waiting({ status: "connected" })).toBe(false);
     expect(waiting(undefined)).toBe(false);

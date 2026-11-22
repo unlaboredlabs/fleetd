@@ -143,6 +143,8 @@ type ScreenOf =
    */
   | { readonly id: "time"; readonly orderId: string | null }
   | { readonly id: "projects.add" }
+  /** Connections (D653): a sheet over the screen it opened from, as New bot is (connections/ConnectionsHost). */
+  | { readonly id: "connections" }
   /**
    * A tab; `prompt` and `for` ("<machine>/<project>") link one built-in prompt and a project's texts (the hub-wide
    * prompts with no `for`); `machine` opens one machine's page under Hub › Machines.
@@ -253,6 +255,8 @@ const screenOf = (parts: ReadonlyArray<string>, query: URLSearchParams): ScreenO
       return { id: "factory", project: projectParam(query.get("project")) };
     case "projects":
       return a === "add" ? { id: "projects.add" } : HOME;
+    case "connections":
+      return { id: "connections" };
     case "settings": {
       if (a === "hub") return hubScreen(b, parts[3], query);
       const [prompt, project] = [query.get("prompt"), query.get("for")];
@@ -328,6 +332,7 @@ const path = (screen: Screen): Array<string> => {
     case "factory":
     case "onboarding":
     case "start":
+    case "connections":
       return [screen.id];
   }
 };

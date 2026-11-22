@@ -1,19 +1,15 @@
-// Tailscale in Hub › Machines and on its own setup step (Settings › Hub › Setup › Tailscale, the first run), admins
-// only, as the whole Hub group: the team's tailnet for its hosted sandboxes, as a named connection. Connect asks the
-// hub to start its gateway (tailnet_connect) and opens Tailscale's sign-in page it answers with; the person signs in
-// and approves the device there, and the row reads the hub's state again until it says Connected, with the tailnet's
-// name. Nothing is pasted. Disconnect (tailnet_disconnect) logs the device out of the tailnet and deletes its state on
-// the hub. A hub too old for tailnet_get shows nothing. The Claude key's endpoint field (TailnetHint) and Get started
-// use the same Connect (useTailnet).
+// Tailscale's state and Connect (useTailnet), the team's route to its tailnet: Connections' Tailscale row
+// (connections/ConnectionsSheet.tsx) and the Claude key's endpoint field (TailnetHint) use the same one. Connect asks
+// the hub to start its gateway (tailnet_connect) and opens Tailscale's sign-in page it answers with; the person signs
+// in and approves the device there, and the state is read again until it says connected. A hub too old for
+// tailnet_get shows nothing.
 import { useCallback, useEffect, useState } from "react";
-import type { TailnetState } from "../../../shared/contracts";
 import { tailnetLine } from "../../../shared/claudeEndpoint";
 import { useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
-import { ConfirmRemove, Problem } from "./claudeParts";
+import { Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive } from "./hub";
-import { RowMenu, SettingsRow, SettingsSection } from "./parts";
-import { canConnect, HINT, lineOf, MACHINES_URL, markLabel, markOf, waiting } from "./tailscaleModel";
+import { canConnect, MACHINES_URL, waiting } from "./tailscaleModel";
 import s from "./settings.module.css";
 
 const noInput = {};
@@ -66,74 +62,6 @@ export function useTailnet(enabled = true) {
 }
 
 export type Tailnet = ReturnType<typeof useTailnet>;
-
-/** The Network section of Hub › Machines: Tailscale's one row. `title`: none on its own setup step, which names it. */
-export function TailscaleSection({ title = "Network" }: { title?: string | null }) {
-  const tailnet = useTailnet();
-  if (tailnet.state === undefined) return null;
-  return (
-    <SettingsSection title={title ?? undefined} reveal="hub.tailscale" data={{ "data-tailscale": tailnet.state.status }}>
-      <TailscaleRow state={tailnet.state} tailnet={tailnet} />
-    </SettingsSection>
-  );
-}
-
-export function TailscaleRow({ state, tailnet }: { state: TailnetState; tailnet: Tailnet }) {
-  const call = useHubCall();
-  const { reread, connect, busy, problem } = tailnet;
-  const [removing, setRemoving] = useState(false);
-  const line = lineOf(state);
-  const loginUrl = state.loginUrl;
-  const control =
-    state.status === "connected" ? (
-      <RowMenu label="Tailscale" items={[{ label: "Disconnect", onSelect: () => setRemoving(true), danger: true }]} />
-    ) : state.status === "login" && loginUrl !== undefined ? (
-      <>
-        <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
-          Cancel
-        </Button>
-        <Button size="sm" onClick={() => void open(loginUrl)}>
-          Open sign-in
-        </Button>
-      </>
-    ) : state.status === "approve" ? (
-      <>
-        <Button size="sm" variant="ghost" onClick={() => setRemoving(true)}>
-          Cancel
-        </Button>
-        <Button size="sm" onClick={() => void open(MACHINES_URL)}>
-          Open Tailscale
-        </Button>
-      </>
-    ) : state.status === "starting" ? undefined : (
-      <Button size="sm" disabled={busy || !canConnect(state)} onClick={connect}>
-        {busy ? "Connecting…" : state.status === "failed" ? "Connect again" : "Connect"}
-      </Button>
-    );
-  return (
-    <SettingsRow
-      mark={markOf(state)}
-      markLabel={markLabel(state)}
-      title="Tailscale"
-      hint={HINT}
-      line={line === null ? null : <span role={line.tone === "danger" ? "alert" : "status"}>{line.text}</span>}
-      lineTone={line?.tone}
-      control={control}
-      data={{ "data-tailscale-row": state.status }}
-    >
-      <Problem text={problem} />
-      {removing ? (
-        <ConfirmRemove
-          title={state.status === "connected" ? "Disconnect Tailscale?" : "Stop connecting Tailscale?"}
-          description="The hub logs its device out of your tailnet and deletes its state. Hosted sandboxes lose the tailnet at once."
-          action="Disconnect"
-          onRemove={() => call("tailnet_disconnect", noInput).then(reread)}
-          onClose={() => setRemoving(false)}
-        />
-      ) : null}
-    </SettingsRow>
-  );
-}
 
 /**
  * Beside a Claude endpoint on the tailnet while Tailscale isn't connected: one line that says so, and Connect, the fix,

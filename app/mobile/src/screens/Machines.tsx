@@ -2,14 +2,11 @@
 // each is; the providers the team connects with its own key, one list, each with what it can run, a tap opening its
 // screen (Provider.tsx: connect, its limit, Test, Disconnect); then what runs where: Linux machine (where agents and
 // their browser, Linux desktop and Android run; a choice once there is more than one place), Mac machine, and how long
-// recordings are kept. Network holds Tailscale, the team's tailnet for its hosted sandboxes: a tap connects it (the hub
-// answers with Tailscale's sign-in page, which opens), opens the sign-in again while it waits, or disconnects it.
-// Updates stay on Settings itself, with Restart Hub. A hub without sandbox_get lists no providers, and one without
-// tailnet_get no Network.
+// recordings are kept. Tailscale is Connections' (Connections.tsx). Updates stay on Settings itself, with Restart Hub. A
+// hub without sandbox_get lists no providers.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
-import { useEffect } from "react";
-import { ActionSheetIOS, Alert, Linking, Platform, RefreshControl, ScrollView } from "react-native";
-import type { MachineRolesOutput, SandboxState, TailnetState } from "../../../desktop/src/shared/contracts";
+import { ActionSheetIOS, Alert, Platform, RefreshControl, ScrollView } from "react-native";
+import type { MachineRolesOutput, SandboxState } from "../../../desktop/src/shared/contracts";
 import { useHub, type SettingsParams } from "../hubContext";
 import {
   canWords,
@@ -27,9 +24,6 @@ import {
   providerValue,
   runnerOf,
   specOf,
-  tailnetValue,
-  tailnetWaiting,
-  CONNECT_WAIT_MS,
   YOURS,
 } from "../machines";
 import { space, useTheme } from "../theme";
@@ -54,59 +48,11 @@ export function Machines() {
   const navigation = useNavigation<NavigationProp<SettingsParams>>();
   const sandboxes = useRead(() => session.call("sandbox_get", {}), [session]);
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
-  const tailnet = useRead(() => session.call("tailnet_get", {}), [session]);
   const sb = sandboxes.value?.ok === true ? (sandboxes.value.output as SandboxState) : undefined;
   const mr = roles.value?.ok === true ? (roles.value.output as MachineRolesOutput) : undefined;
-  const ts = tailnet.value?.ok === true ? (tailnet.value.output as TailnetState) : undefined;
   const reload = () => {
     sandboxes.reload();
     roles.reload();
-    tailnet.reload();
-  };
-  // The person signs in on Tailscale's page: its state is read again until it isn't waiting on them.
-  const waitingOn = tailnetWaiting(ts);
-  const rereadTailnet = tailnet.reload;
-  useEffect(() => {
-    if (!waitingOn) return;
-    const timer = setInterval(rereadTailnet, 2_000);
-    return () => clearInterval(timer);
-  }, [waitingOn, rereadTailnet]);
-
-  const disconnectTailnet = (s: TailnetState) =>
-    Alert.alert(
-      s.status === "connected" ? "Disconnect Tailscale?" : "Stop connecting Tailscale?",
-      "The hub logs its device out of your tailnet and deletes its state. Hosted sandboxes lose the tailnet at once.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: () =>
-            void session.call("tailnet_disconnect", {}).then((out) => {
-              if (out.ok) haptics.success();
-              else Alert.alert("Not disconnected", errorWords(out.error));
-              tailnet.reload();
-            }),
-        },
-      ],
-    );
-  const onTailnet = (s: TailnetState) => {
-    if (s.status === "connected") return pick("Tailscale", ["Disconnect"], () => disconnectTailnet(s));
-    if (s.status === "login" && s.loginUrl !== undefined) {
-      const url = s.loginUrl;
-      return pick("Tailscale", ["Open Sign-In", "Cancel Connecting"], (i) => (i === 0 ? void Linking.openURL(url) : disconnectTailnet(s)));
-    }
-    if (s.status === "approve") return pick("Tailscale", ["Open Tailscale", "Cancel Connecting"], (i) => (i === 0 ? void Linking.openURL("https://login.tailscale.com/admin/machines") : disconnectTailnet(s)));
-    if (s.status === "starting" || (s.status === "off" && s.problem !== undefined)) return;
-    // As long as the hub can take: a first Connect downloads Tailscale, starts it and waits for its sign-in page.
-    void session.call("tailnet_connect", {}, CONNECT_WAIT_MS).then((out) => {
-      tailnet.reload();
-      if (!out.ok) return Alert.alert("Not connected", errorWords(out.error));
-      const url = (out.output as TailnetState).loginUrl;
-      if (url !== undefined) void Linking.openURL(url);
-    });
-    // Meanwhile the row reads the hub's state, which says it is starting, and goes on reading it until it isn't.
-    setTimeout(rereadTailnet, 1_000);
   };
   const providers = providersOf(sb);
   const runner = runnerOf(state.machines);
@@ -185,23 +131,6 @@ export function Machines() {
       {failed.map((line) => (
         <Problem key={line} text={`Couldn't read the providers: ${line}`} />
       ))}
-      {ts === undefined ? null : (
-        <ListSection header="Network">
-          {(() => {
-            const v = tailnetValue(ts);
-            return (
-              <ListRow
-                title="Tailscale"
-                value={v.text}
-                {...(v.detail === undefined ? {} : { detail: v.detail })}
-                {...(v.problem ? { valueColor: t.danger } : {})}
-                {...(ts.status === "connected" ? { valueDot: t.success } : {})}
-                {...(ts.status === "starting" || (ts.status === "off" && ts.problem !== undefined) ? { chevron: false } : { onPress: () => onTailnet(ts) })}
-              />
-            );
-          })()}
-        </ListSection>
-      )}
       <ListSection header="What runs where">
         {linuxRow}
         <ListRow title={MAC} value={mac ? YOURS : NONE} chevron={false} />

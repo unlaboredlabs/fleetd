@@ -22,7 +22,7 @@ fill; and **variables**, kept per bot, plus an order's own variables while it ru
 | Page | Lists | Who changes an item |
 |---|---|---|
 | Settings › Vault | The team vault: every login, card and address on the hub | Its creator, or an owner or admin |
-| Settings › Vault › Integrations | The services the team signed in to once, such as Paper, which every bot's agents use ([Integrations](/docs/integrations#sign-in)) | Anyone connects one and signs in again; its connector, or an owner or admin, disconnects it |
+| Connections (the sidebar's foot) | The services the team signed in to once, such as Paper and Notion, which every bot's agents use ([Integrations](/docs/integrations#sign-in)), and custom MCPs whose headers come from this vault | Anyone connects one and signs in again; its connector, or an owner or admin, disconnects it |
 | Settings › Bots › *bot* › Vault | The bot's variables, and its orders' (tagged with the order) | Anyone who may operate on the bot |
 | Settings › Hub › Bot defaults › Vault | The vault key | Owners and admins |
 

@@ -17,7 +17,6 @@ import { useHubCall, useLive, useRefetch } from "./hub";
 import { AddButton, GroupNote, Notice, PageHead, RowMenu, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { useReveal } from "./reveal";
 import { DeleteDialog, VaultItemPanel } from "./VaultItem";
-import { TeamIntegrations } from "./Integrations";
 import { KIND_ICON, useMoveSetAside, VAULT_READS, vaultError } from "./vaultParts";
 import { ImportDialog, PasteEnvDialog, VaultEditor } from "./VaultForms";
 import {
@@ -136,7 +135,6 @@ function VaultList({ whose }: { whose: Whose }) {
           )}
         </SettingsSection>
         {setAside.length === 0 ? null : <SetAsidePart items={setAside} />}
-        {whose.kind === "team" && !trash ? <TeamIntegrations /> : null}
       </div>
       {adding?.kind === "item" ? <VaultEditor whose={whose} kind={adding.item} onClose={() => setAdding(null)} onSaved={(item) => (setAdding(null), setTrash(false), setOpen(item.itemId))} /> : null}
       {adding?.kind === "paste" ? <PasteEnvDialog whose={whose} onClose={() => setAdding(null)} /> : null}

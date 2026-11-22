@@ -2,7 +2,7 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its approvals' and payments' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, the named MCP servers (Paper), a cloud bot waking (wake.ts),
+// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking (wake.ts),
 // and fleetd cloud's accounts call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
@@ -126,6 +126,21 @@ export {
 } from "../../desktop/src/renderer/screens/projects/create";
 export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
+export {
+  connectedOf,
+  countText,
+  customOf,
+  initialOf,
+  isTailnetHost,
+  needsSignIn,
+  stateOf as customState,
+  suggestedName,
+  testLine as connectionTestLine,
+  whereOf,
+  type StripItem,
+  type Tested,
+} from "../../desktop/src/renderer/screens/connections/model";
+export { canConnect as tailnetCanConnect, lineOf as tailnetLineOf, MACHINES_URL as TAILSCALE_MACHINES_URL, waiting as tailnetWaits, wordOf as tailnetWordOf } from "../../desktop/src/renderer/screens/settings/tailscaleModel";
 export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { addPage as addApprovedPage, FIRST_PAGE as APPROVED_FIRST_PAGE, fold as foldApproved, hasMore as moreApproved, PAGE as APPROVED_PAGE, SHOWN as APPROVED_SHOWN, showAllWord, timesWord, type LogRow as ApprovedRow, type Pages as ApprovedPages } from "../../desktop/src/renderer/screens/settings/approvedLog";

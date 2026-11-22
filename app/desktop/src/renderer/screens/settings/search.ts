@@ -1,6 +1,7 @@
 // Settings search: every page and option by its own name, plus the words people use for it ("dark", "theme"), so
 // typing in the sidebar's field narrows to the option and opening one lands on it. Matching is pure and tested; the
 // reveal is a one-shot "focus this option" that the page showing it takes up when it renders.
+import { openConnections } from "../connections/state";
 import { revealNext } from "./reveal";
 import { isEveryProject, isHubTab, pageOf, tabHref, type Tab } from "./route";
 
@@ -12,6 +13,8 @@ export interface SettingsOption {
   readonly label: string;
   readonly tab: Tab;
   readonly keywords?: ReadonlyArray<string>;
+  /** It isn't in Settings: Connections (D653) holds it, and opening it opens that sheet. */
+  readonly opens?: "connections";
 }
 
 export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
@@ -53,8 +56,33 @@ export const pagePath = (tab: Tab): string => {
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
 
+/**
+ * What moved to Connections (D653): Settings' Integrations, MCP servers (a bot's, every bot's, the machines' own) and
+ * Machines' Network (Tailscale). Found by their old names and words, each opens the sheet.
+ */
+const CONNECTIONS: ReadonlyArray<SettingsOption> = [
+  {
+    key: "connections",
+    label: "Connections",
+    tab: "general",
+    opens: "connections",
+    keywords: ["integrations", "apps", "connect", "sign in", "oauth", "mcp", "mcp servers", "custom mcp", "tools", "servers", "global", "mcp servers for every bot", "headers"],
+  },
+  { key: "connections.paper", label: "Paper", tab: "general", opens: "connections", keywords: ["paper", "design", "connect"] },
+  { key: "connections.notion", label: "Notion", tab: "general", opens: "connections", keywords: ["notion", "docs", "wiki", "connect"] },
+  {
+    key: "connections.tailscale",
+    label: "Tailscale",
+    tab: "general",
+    opens: "connections",
+    keywords: ["tailscale", "tailnet", "network", "vpn", "magicdns", "private", "gateway", "connect"],
+  },
+  { key: "connections.own", label: "Machines' own MCP servers", tab: "general", opens: "connections", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers", "agents' own"] },
+];
+
 /** Every option, in the sidebar's order. The Hub group's are found only by its owners and admins (optionsFor). */
 export const OPTIONS: ReadonlyArray<SettingsOption> = [
+  ...CONNECTIONS,
   page("general", ["preferences"]),
   { key: "general.name", label: "Name", tab: "general", keywords: ["your name", "rename", "display name", "profile", "account", "who you are"] },
   { key: "general.appearance", label: "Appearance", tab: "general", keywords: ["theme", "dark", "light", "mode", "match system", "see-through sidebar", "transparent", "solid sidebar"] },
@@ -75,7 +103,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
   page("vault", ["vault", "team vault", "passwords", "logins", "cards", "credit card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every bot", "hub-wide"]),
   { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
-  { key: "vault.integrations", label: "Integrations", tab: "vault", keywords: ["integrations", "paper", "connect", "sign in", "oauth"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
   page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
@@ -97,7 +124,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   },
   { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["checker", "approve", "ask me", "yolo", "auto"] },
   { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["checker", "log", "auto-approved", "yolo", "history"] },
-  { key: "projects.mcp", label: "MCP servers", tab: "projects", keywords: ["mcp", "integrations", "tools", "servers", "connections", "connect", "oauth", "sign in"] },
+  { key: "projects.mcp", label: "Bot connections", tab: "projects", keywords: ["what this bot uses", "this bot's connections"] },
   { key: "projects.payments", label: "Payments", tab: "projects", keywords: ["card", "credit card", "pay", "purchase", "buy", "book", "checkout", "1password"] },
   { key: "projects.signins", label: "Sign-ins", tab: "projects", keywords: ["browser", "sign in", "login", "logged in", "cookies", "forget", "sign out"] },
   { key: "projects.skills", label: "Bot skills", tab: "projects", keywords: ["skill", "skills", "learned", "history", "versions", "revert"] },
@@ -126,7 +153,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
   { key: "hub.sandboxes", label: "Providers", tab: "hub.machines", keywords: ["providers", "sandbox", "sandboxes", "hosted", "boat", "boat.dev", "api key", "limit", "at once", "cloud", "capacity", "connect"] },
-  { key: "hub.tailscale", label: "Tailscale", tab: "hub.machines", keywords: ["tailscale", "tailnet", "network", "vpn", "magicdns", "private", "endpoint", "gateway", "connect"] },
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
@@ -134,8 +160,6 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.task-profiles", label: "Profiles", tab: "hub.profiles", keywords: ["task profiles", "profile", "model", "effort", "reasoning", "fast mode", "default", "every bot"] },
   { key: "hub.lead", label: "Lead runs on", tab: "hub.profiles", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
   { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.profiles", keywords: ["every bot", "hub-wide", "global"] },
-  { key: "hub.mcp", label: "MCP servers for every bot", tab: "hub.profiles", keywords: ["mcp", "tools", "servers", "global", "every bot"] },
-  { key: "mcp.user", label: "Agents' own MCP servers", tab: "hub.profiles", keywords: ["mcp", "own", "claude.json", ".mcp.json", "servers"] },
   { key: "hub.skills", label: "Hub-wide skills", tab: "hub.profiles", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every bot"] },
   { key: "hub.instructions", label: "Instructions for every bot", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
   { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
@@ -180,8 +204,15 @@ export function searchSettings(query: string, options: ReadonlyArray<SettingsOpt
     .map((x) => x.o);
 }
 
-/** Opens an option: its page, then focus on the option itself. */
+/** Where a result is, beside its name: Connections, or the page that holds it; none for a page itself. */
+export const whereOf = (o: SettingsOption): string | null => (o.opens === "connections" ? (o.key === "connections" ? null : "Connections") : o.key === o.tab ? null : pagePath(o.tab));
+
+/** Opens an option: its page, then focus on the option itself; one of Connections', that sheet. */
 export function openOption(o: SettingsOption) {
+  if (o.opens === "connections") {
+    openConnections();
+    return;
+  }
   revealNext(o.key !== o.tab ? o.key : null);
   window.location.hash = tabHref(o.tab);
 }

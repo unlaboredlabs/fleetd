@@ -71,9 +71,15 @@ export const fixtures = [
   "vault-team-member",
   "vault-old-hub",
   "vault-empty",
-  // ...and Paper under the team's Integrations, to connect and connected (fixtures/vault, D592).
-  "vault-paper-connect",
-  "vault-paper",
+  // Connections (fixtures/connections, D653): nothing connected, some, a failing Test, OAuth pending, a custom MCP on
+  // the tailnet (Tailscale connected and not), and as a member.
+  "connections-empty",
+  "connections-some",
+  "connections-failing",
+  "connections-oauth",
+  "connections-tailnet",
+  "connections-tailnet-off",
+  "connections-member",
   // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -544,7 +550,7 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("Enter");
 };
 
-// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
+// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (its review asked for changes),
 // #10 (checks failed), #8 (merged), #14 (a person's, review asked for) and #13 (240 files) open.
 const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;
@@ -4197,15 +4203,15 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "boat.dev API key" }).waitFor();
     },
   },
-  // W722: Tailscale, the team's tailnet for its hosted sandboxes, a named connection: Connect; waiting for the sign-in
-  // at Tailscale's page; connected with the tailnet's name; the gateway signed out, with why and Connect again.
+  // W722, D653: Tailscale's row in Connections: Connect; waiting for the sign-in at Tailscale's page; connected with
+  // the tailnet's name; the gateway ended, with why and Connect again.
   {
-    id: "settings.hub.machines",
-    route: "#/settings/hub/machines",
+    id: "connections",
+    route: "#/connections",
     fixtures: ["machines-tailscale-off", "machines-tailscale-login", "machines-tailscale-on", "machines-tailscale-failed"],
     variant: "tailscale",
     open: async (page) => {
-      await page.locator("[data-tailscale-row]").scrollIntoViewIfNeeded();
+      await page.locator("[data-tailscale]").waitFor();
     },
   },
   { id: "settings.hub.machine", route: "#/settings/hub/machines/devbox", fixtures: ["machines-places"], variant: "places" },
@@ -4929,76 +4935,111 @@ export const screens: readonly Screen[] = [
       await api.scrollIntoViewIfNeeded();
     },
   },
-  // A project's servers that sign in with OAuth (W354): mail signed in, calendar signed out by its service with Reconnect.
+  // Connections (D653), from the sidebar's icon: nothing connected, some connected, and as a member.
+  { id: "connections", route: "#/connections", fixtures: ["connections-empty", "connections-some", "connections-member"] },
   {
-    id: "settings.projects",
-    variant: "integrations-signin",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["integrations-signin"],
+    id: "connections",
+    variant: "from-sidebar",
+    route: "#/",
+    fixtures: ["connections-some"],
     open: async (page) => {
-      const list = page.getByRole("list", { name: "MCP servers" });
-      await expect(list.getByRole("listitem", { name: "calendar" })).toContainText("Signed out");
-      await expect(list.getByRole("listitem", { name: "mail" })).toContainText("Signed in with auth.mail.example");
-      await list.scrollIntoViewIfNeeded();
+      await page.getByRole("button", { name: "Connections", exact: true }).click();
+      await expect(page.getByRole("list", { name: "Custom MCP" }).getByRole("listitem")).toHaveCount(3);
     },
   },
-  // ...adding notes with no key: its test asks for sign-in, and the dialog offers it.
+  // ...a Test that works through Tailscale, on the custom MCP on the tailnet.
   {
-    id: "settings.projects",
-    variant: "integrations-signin-add",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
-    fixtures: ["integrations-signin"],
+    id: "connections",
+    variant: "test-tailnet",
+    route: "#/connections",
+    fixtures: ["connections-some"],
     open: async (page) => {
-      await page.getByRole("button", { name: "Add an MCP server" }).click();
-      const dialog = page.getByRole("dialog");
-      await dialog.getByRole("textbox", { name: "Name" }).fill("notes");
-      await dialog.getByRole("textbox", { name: "URL" }).fill("https://mcp.notes.example/mcp");
-      await dialog.getByRole("button", { name: "Connect and test" }).click();
-      await expect(dialog.getByText("Sign in to notes")).toBeVisible();
+      const row = page.getByRole("listitem", { name: "docs" });
+      await row.getByRole("button", { name: "docs: more" }).click();
+      await page.getByRole("menuitem", { name: "Test" }).click();
+      await expect(row).toContainText("Works on devbox through Tailscale: 2 tools.");
     },
   },
-  // ...Reconnect on calendar, whose service lets no app sign up: the person's own app, with the redirect URL to paste.
+  // ...a failing Test: why, in one line on its row.
   {
-    id: "settings.projects",
-    variant: "integrations-own-client",
-    route: "#/settings/projects?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    id: "connections",
+    variant: "test-failed",
+    route: "#/connections",
+    fixtures: ["connections-failing"],
+    open: async (page) => {
+      const row = page.getByRole("listitem", { name: "github" });
+      await row.getByRole("button", { name: "github: more" }).click();
+      await page.getByRole("menuitem", { name: "Test" }).click();
+      await expect(row.getByRole("alert")).toContainText("401 Bad credentials");
+    },
+  },
+  // ...Bots, a list to tick in a row's menu.
+  {
+    id: "connections",
+    variant: "bots",
+    route: "#/connections",
+    fixtures: ["connections-some"],
+    open: async (page) => {
+      await page.getByRole("listitem", { name: "linear" }).getByRole("button", { name: "linear: more" }).click();
+      await page.getByRole("menuitem", { name: /Bots/u }).click();
+      await expect(page.getByRole("menuitemcheckbox", { name: "Every bot" })).toBeVisible();
+    },
+  },
+  // ...Notion's Connect: saved for the team, its sign-in page open in the browser, the dialog waiting on it; linear
+  // signed out by its service, with Sign in on its row.
+  {
+    id: "connections",
+    variant: "oauth",
+    route: "#/connections",
+    fixtures: ["connections-oauth"],
+    open: async (page) => {
+      await expect(page.getByRole("listitem", { name: "linear" })).toContainText("mcp.linear.app ended the sign-in");
+      await page.getByRole("listitem", { name: "Notion" }).getByRole("button", { name: "Connect" }).click();
+      const dialog = page.getByRole("dialog", { name: "Sign in to Notion" });
+      await expect(dialog.getByRole("status")).toContainText("Finish signing in on mcp.notion.com");
+      await expect(dialog.getByRole("button", { name: "Open the sign-in page again" })).toBeVisible();
+    },
+  },
+  // ...a bot's own server whose service lets no app sign up: the person's own app, with the redirect URL to paste.
+  {
+    id: "connections",
+    variant: "own-client",
+    route: "#/connections",
     fixtures: ["integrations-signin"],
     open: async (page) => {
-      await page.getByRole("listitem", { name: "calendar" }).getByRole("button", { name: "Reconnect" }).click();
+      await page.getByRole("listitem", { name: "calendar" }).getByRole("button", { name: "Sign in" }).click();
       const dialog = page.getByRole("dialog");
       await dialog.getByRole("button", { name: "Sign in" }).click();
       await expect(dialog.getByRole("region", { name: "Redirect URL" })).toContainText("http://devbox:4790/oauth/callback");
     },
   },
-  // Paper, a named service the team connects once, on the Vault page's Integrations (D592): Connect saves it and goes
-  // straight to its sign-in page (W686).
+  // ...a custom MCP on the tailnet: added, then tested through Tailscale, with nothing else to set.
   {
-    id: "settings.vault",
-    variant: "integrations-paper-connect",
-    route: "#/settings/vault",
-    fixtures: ["vault-paper-connect"],
+    id: "connections",
+    variant: "add-tailnet",
+    route: "#/connections",
+    fixtures: ["connections-tailnet"],
     open: async (page) => {
-      const row = page.getByRole("list", { name: "Integrations" }).getByRole("listitem", { name: "Paper" });
-      await row.getByRole("button", { name: "Connect" }).click();
-      const dialog = page.getByRole("dialog");
-      await expect(dialog.getByText("Sign in to Paper")).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Open the sign-in page again" })).toBeVisible();
+      await page.getByRole("button", { name: "Add a custom MCP" }).click();
+      await page.getByRole("textbox", { name: "URL" }).fill("http://docs.tail4f2e.ts.net:8080/mcp");
+      await expect(page.locator("[data-tailnet-line]")).toContainText("reached through Tailscale");
+      await page.getByRole("button", { name: "Add and test" }).click();
+      await expect(page.locator("[data-result]")).toContainText("Works on devbox through Tailscale: 2 tools.");
     },
   },
-  // ...Paper connected: its row says so, and Test says where it works.
+  // ...the same URL while Tailscale isn't connected: the form says so, with Connect Tailscale.
   {
-    id: "settings.vault",
-    variant: "integrations-paper",
-    route: "#/settings/vault",
-    fixtures: ["vault-paper"],
+    id: "connections",
+    variant: "add-tailnet-off",
+    route: "#/connections",
+    fixtures: ["connections-tailnet-off"],
     open: async (page) => {
-      const list = page.getByRole("list", { name: "Integrations" });
-      const row = list.getByRole("listitem", { name: "Paper" });
-      await expect(row).toContainText("Connected");
-      await row.getByRole("button", { name: "Test" }).click();
-      await expect(row).toContainText("Works on");
-      await expect(list.getByRole("listitem", { name: "paper", exact: true })).toHaveCount(0);
-      await list.scrollIntoViewIfNeeded();
+      await page.getByRole("button", { name: "Add a custom MCP" }).click();
+      await page.getByRole("button", { name: "Command" }).click();
+      await page.getByRole("button", { name: "URL" }).click();
+      await page.getByRole("textbox", { name: "URL" }).fill("http://docs.tail4f2e.ts.net:8080/mcp");
+      await page.getByRole("button", { name: "Add header" }).click();
+      await expect(page.getByRole("button", { name: "Connect Tailscale" })).toBeVisible();
     },
   },
   // Import memory under it, shut at rest as one row: Import… opens its two steps in place, a ChatGPT export pasted,

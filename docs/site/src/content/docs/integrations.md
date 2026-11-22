@@ -3,16 +3,15 @@ title: Integrations
 description: Connect a bot to any MCP server, with a key or by signing in with your own account. Reads run unasked; everything else goes by the bot's approval mode, and a card shows exactly what it would send.
 ---
 
-A bot's lead can reach any service with an MCP server. A server you give a key of your own is the bot's: you connect
-it in the bot's settings, under **MCP servers** (the bot's one list of them), and the key is sealed on the bot's
-machine, where the lead never sees it. A service you sign in to with your account instead is the whole team's: you
-connect it once, under **Settings › Vault › Integrations**, and every bot's agents use it, as they fill the team
-vault. A named service, such as [Paper](#paper), connects there with one press.
+Agents reach any service with an MCP server, through **Connections**: the plain icon at the sidebar's foot, beside
+you (on the phone, Settings › **Connections**). It holds a few named services that connect with one press,
+[Paper](#paper) and [Notion](#notion), the team's [Tailscale](/docs/mcp-servers#tailnet), and any other server as a
+[custom MCP](/docs/mcp-servers#add), its key picked from the [vault](/docs/vault). A connection is the team's: you
+connect it once, and every bot's lead and agents use it, or the bots you tick under **Bots** in its row's menu.
 
-An integration reaches the bot's lead alone: its agents never get one. Turn on **Agents get it too** when you add
-a server to give it to the bot's writers and reviewers as well: then none of its tools asks you, since an agent
-can't stop to ask, and it is a [bot MCP server](/docs/mcp-servers) with roles you edit. A bot on a machine whose fleetd is
-older takes none until that machine runs `fleetd update`.
+A server saved for one bot's lead alone before Connections keeps working as it was, its writes asking by the bot's
+approval mode; its row in Connections says which bot. A bot on a machine whose fleetd is older takes none until that
+machine runs `fleetd update`.
 
 ## What runs unasked, and what asks {#policy}
 
@@ -57,17 +56,12 @@ approved at 09:12". The tool may still refuse or fail; what it did is in the bot
 
 ## Connect a server {#custom}
 
-**Add an MCP server** takes a URL (MCP's streamable HTTP) or a command started on the bot's machine, and an optional
-key: a header such as `Authorization: Bearer …`, or an environment variable. The key is sealed to the bot's machine.
-A service that signs you in with your account instead takes no key: leave it empty, and **Connect and test** offers
-[Sign in](#sign-in).
+**Add a custom MCP** in Connections takes a URL or a command, and headers or environment variables whose values come
+from the vault ([MCP servers](/docs/mcp-servers#add)). A service that signs you in with your account instead takes no
+key: leave the headers empty, and **Add and test** goes to [Sign in](#sign-in).
 
-After **Connect and test**, fleetd lists the server's tools. A tool whose name says it only reads is listed as a read
-already; tick any other that only reads, and it runs unasked too. A tool its server marks read-only (MCP's
-`readOnlyHint`) is ticked to start with. Every other tool goes by the bot's approval mode. A tool the blocked list refuses (its name says transfer, payout, withdraw, trade, sell, sign up, create account
-and the like) can't be ticked, and is never run.
-
-**Test connection** on a connected server runs the test again and lists each tool by what the hub does with it.
+**Test** in a row's menu runs the test again: one plain line says it works and how many tools it lists, that it wants
+a sign-in, or why it failed.
 
 ## Sign in with your account {#sign-in}
 
@@ -79,14 +73,14 @@ over as they were, so nobody signs in again (where two bots had each signed in, 
 [authorization spec](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) says, with no
 fleetd-run app in between:
 
-1. **Connect and test** finds that the server asks you to sign in, and **Sign in** opens the service's sign-in page in
-   your browser.
+1. **Connect** on a named service, or **Add and test** on a custom one that offers OAuth, opens the service's sign-in
+   page in your browser.
 2. You sign in there and allow fleetd. The service sends your browser back to a page the hub serves,
    `<hub>/oauth/callback`, at the address this app reaches the hub by, so it works from any computer that reaches it.
    Where that address is plain http and the hub has an https one (its `--url`, or a Tailscale Serve https address in
    front of its port), the page is at the https one, since many services accept only an https callback.
-3. The dialog moves on by itself: it tests the server and asks which tools may run unasked, as for a key. The lead gets
-   the server at its next message, and says once that it is connected.
+3. The dialog moves on by itself and tests the server. The lead gets the server at its next message, and says once
+   that it is connected.
 
 fleetd registers itself with the service where the service allows it (dynamic client registration). Where it doesn't,
 the dialog says so and asks for an OAuth app of your own: make one in the service's developer settings, allow the
@@ -108,26 +102,25 @@ only then.
 
 **When the service ends the sign-in** (you revoked fleetd's access, changed your password, the sign-in expired with
 no way to renew it, or the service turns away a token fleetd has just renewed), the server shows **Sign in needed**
-with the service's reason, and each bot's chat says so once: "mail is signed out: … No bot can use it until you press
-Reconnect on it in Settings › Vault › Integrations". The dead token leaves every machine (one offline, as soon as it is
+with the service's reason, and each bot's chat says so once: "mail is signed out: … No bot can use it until you sign in again on it in Connections". The dead token leaves every machine (one offline, as soon as it is
 back), so new agents start without the server; an agent already running is answered, at its next call, that the
-sign-in has ended and that you sign in again from Settings › Vault › Integrations, and carries on without it. **Reconnect** signs in again with
-the same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token has ended, the
+sign-in has ended and that you sign in again from Connections, and carries on without it. **Sign in** on its row signs in again with the
+same app. If the service only can't be reached, the hub keeps trying every 2 minutes; once the token has ended, the
 row shows why, and the chat says so once, and again when it works. An agent whose call can't reach the server is told
 so in plain words and keeps the server for its next call.
 
 ## Example: Paper {#paper}
 
 Paper (paper.design) is a design canvas with a hosted MCP server. Every bot's agents use it with the Paper account the
-team signed in with; no key and no Paper app on the bots' machines. It is a named service: **Paper** heads the team's
-**Integrations**, with nothing to type.
+team signed in with; no key and no Paper app on the bots' machines. It is a named service: **Paper** heads Connections, with
+nothing to type.
 
-1. **Settings › Vault › Integrations › Paper › Connect**. On the phone: **Vault › Integrations › Paper**.
+1. **Connections › Paper › Connect**. On the phone: **Settings › Connections › Paper**.
 2. Paper's sign-in page opens: sign in and allow fleetd. The row then says **Connected**, and **Test** lists Paper's
    tools.
 
 Connect saves what adding it by hand would: a server named `paper` (or `paper-2` when that name is taken) at
-`https://mcp.paper.design`, no key, **Agents get it too** on. A `paper` server you added by hand at that URL shows as
+`https://mcp.paper.design`, no key, for every bot. A `paper` server you added by hand at that URL shows as
 this row. When the sign-in ends, the row says **Sign in needed**, with **Sign in**. Paper takes only an https or
 loopback callback, so the hub needs an https address (its `--url`, or Tailscale Serve in front of its port) unless you
 sign in on its machine.
@@ -142,10 +135,21 @@ file in their results.
 Paper's pricing page (paper.design/pricing) has the current numbers, which may change while its hosted MCP is in early
 access.
 
+## Example: Notion {#notion}
+
+Notion's hosted MCP server (`https://mcp.notion.com/mcp`) signs in with your Notion account, and fleetd registers
+itself there, so there is no app to make and nothing to type.
+
+1. **Connections › Notion › Connect**. On the phone: **Settings › Connections › Notion**.
+2. Notion's page opens: pick the workspace and the pages to share, and allow fleetd. The row then says **Connected**.
+
+Notion takes only an https or loopback callback, as Paper does: the hub needs an https address (its `--url`, or
+Tailscale Serve in front of its port) unless you sign in on its machine.
+
 ## Disconnect {#disconnect}
 
-**Disconnect** removes the connection. The lead starts without it from its next message, and the key is erased from the
-bot's machine. To cut it off at the source too, revoke the key where you made it. A server you signed in to is signed
+**Disconnect**, in a row's menu, removes the connection. Agents start without it from their next message, and its key
+is erased from every machine. To cut it off at the source too, revoke the key where you made it. A server you signed in to is signed
 out at the service too, where the service offers that (token revocation).
 
 ## Where your credentials are {#credentials}

@@ -41,6 +41,8 @@ export const screenPart = (screen: Screen): { key: string; words: string } => {
       return { key: "settings", words: "Settings" };
     case "projects.add":
       return { key: "projects.add", words: "Add bot" };
+    case "connections":
+      return { key: "connections", words: "Connections" };
     case "onboarding":
       return { key: "onboarding", words: "the connect screen" };
     case "setup":
@@ -81,7 +83,8 @@ function screenFor(screen: Screen): ReactNode {
     case "time":
       return <TimeScreen order={screen.orderId ?? undefined} tabs={<FactoryTabs tab="time" />} />;
     case "projects.add":
-      // A modal over the screen it opened from (ProjectsHost), which the route keeps on show (navigation.ts).
+    case "connections":
+      // A modal over the screen it opened from (ProjectsHost, ConnectionsHost), which the route keeps on show (navigation.ts).
       return null;
     case "settings":
       return <SettingsScreen />;

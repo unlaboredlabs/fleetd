@@ -1,5 +1,5 @@
-// The services a project connects by name, one record each, at the top of its MCP servers (the desktop's Project page,
-// the phone's project screen). Connect saves the same server the manual form would (mcp_server_set), then signs in to
+// The services the team connects by name, one record each, at the top of Connections (the desktop's sheet,
+// the phone's Connections screen). Connect saves the same server the manual form would (mcp_server_set), then signs in to
 // it with the person's own account (mcp_oauth_start): nothing to type. A server already saved by hand at an entry's URL
 // is that entry, not a second one. Another service is one more record in NAMED. Pure, for both apps: it imports the
 // hub's contract types alone (the phone has no zod, which the desktop's ipc.ts needs).
@@ -26,6 +26,15 @@ export const NAMED: ReadonlyArray<Named> = [
     name: "paper",
     agents: true,
     mark: { viewBox: "0 0 21 21", path: "M3 0H21V13H13V3H3ZM0 3H3V13H13V21H0Z", tint: "#81ACEC" },
+  },
+  {
+    // Notion's hosted MCP server: OAuth with dynamic client registration, so Connect is a sign-in and nothing else.
+    id: "notion",
+    label: "Notion",
+    url: "https://mcp.notion.com/mcp",
+    name: "notion",
+    agents: true,
+    mark: { viewBox: "0 0 21 21", path: "M4 2.5H8.2L13.6 11.6V2.5H17V18.5H12.9L7.4 9.3V18.5H4Z", tint: "#191919" },
   },
 ];
 
@@ -70,7 +79,7 @@ export const nameFor = (entry: Named, taken: ReadonlyArray<string>): string => {
   return `${entry.name}-${String(n)}`;
 };
 
-/** What Connect saves: the manual form's server for the entry's URL, with no key (as mcpModel's toRequest makes it). */
+/** What Connect saves: the custom MCP form's server for the entry's URL, with no key (connections/model.ts toInput). */
 export const namedInput = (entry: Named, scope: McpScope, taken: ReadonlyArray<string>): McpServerSetInput => ({
   scope,
   name: nameFor(entry, taken),
@@ -81,10 +90,19 @@ export const namedInput = (entry: Named, scope: McpScope, taken: ReadonlyArray<s
   headers: [],
 });
 
+/** A saved value, sent again as it is: a secret kept, a vault item by its id, a plain value with it. */
+export const keptValue = (v: McpValue): McpValueSet => {
+  if (v.kind === "secret") return { kind: "keep", name: v.name };
+  if (v.kind === "vault" && v.itemId !== undefined) {
+    return { kind: "vault", name: v.name, itemId: v.itemId, ...(v.field === undefined ? {} : { field: v.field }), ...(v.prefix === undefined ? {} : { prefix: v.prefix }) };
+  }
+  return { kind: "plain", name: v.name, value: v.value ?? "" };
+};
+
 /** A server turned off, saved again on, as it is otherwise: a key it was saved with is kept. */
 export const turnOnInput = (server: McpServer): McpServerSetInput => {
   const values = (list: readonly McpValue[] | undefined): McpValueSet[] =>
-    (list ?? []).map((v) => (v.kind === "secret" ? { kind: "keep", name: v.name } : { kind: "plain", name: v.name, value: v.value ?? "" }));
+    (list ?? []).map((v) => keptValue(v));
   const t = server.transport;
   return {
     scope: server.scope,
@@ -95,6 +113,7 @@ export const turnOnInput = (server: McpServer): McpServerSetInput => {
     env: values(server.env),
     headers: values(server.headers),
     ...(server.integration === undefined ? {} : { integration: server.integration }),
+    ...(server.projects === undefined ? {} : { projects: server.projects }),
   };
 };
 

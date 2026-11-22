@@ -39,6 +39,7 @@ export function ListSection({ header, footer, children }: { header?: string; foo
 export function ListRow({
   title,
   detail,
+  detailColor,
   value,
   valueColor,
   valueDot,
@@ -54,6 +55,8 @@ export function ListRow({
   title: string;
   /** A line under the title: why, where it failed. */
   detail?: string | undefined;
+  /** The line's colour when it says how something went (a Test that worked or failed); else the secondary label's. */
+  detailColor?: string | undefined;
   value?: string | undefined;
   valueColor?: string | undefined;
   /** A status dot's color, before the value: how a link is. */
@@ -94,7 +97,7 @@ export function ListRow({
           <Text style={[type.body, { color: destructive ? t.danger : t.label }]} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={[type.footnote, { color: t.secondary }]}>{detail}</Text>
+          <Text style={[type.footnote, { color: detailColor ?? t.secondary }]}>{detail}</Text>
         </View>
       )}
       {valueDot === undefined || value === undefined || stacked ? null : <View style={[styles.dot, { backgroundColor: valueDot }]} />}

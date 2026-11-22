@@ -124,6 +124,10 @@ export const submitMcpServer = async (
   const values = async (list: McpServerRequest["env"]): Promise<{ ok: true; set: McpValueSet[] } | { ok: false; error: HubError }> => {
     const set: McpValueSet[] = [];
     for (const v of list) {
+      if (v.kind === "vault") {
+        set.push({ kind: "vault", name: v.name, itemId: v.itemId, ...(v.field === undefined ? {} : { field: v.field }), ...(v.prefix === undefined ? {} : { prefix: v.prefix }) });
+        continue;
+      }
       if (v.kind !== "secret") {
         set.push(v);
         continue;
@@ -155,6 +159,7 @@ export const submitMcpServer = async (
     transport,
     env: env.set,
     headers: headers.set,
+    ...(request.projects === undefined ? {} : { projects: request.projects }),
     ...(request.integration === undefined
       ? {}
       : { integration: request.integration.readTools === undefined ? {} : { readTools: request.integration.readTools } }),

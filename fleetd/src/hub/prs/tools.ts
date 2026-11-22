@@ -11,6 +11,7 @@ import {
   agentReview,
   count,
   fillCtx,
+  fillHolds,
   history,
   ownerOf,
   personReview,
@@ -67,6 +68,7 @@ async function prList(hub: Hub, caller: Caller, input: Record<string, unknown>) 
   const repos = projectRepos(hub, project, changes);
   const ctx = join.rowCtx(projectTasks(hub, project));
   fillCtx(hub, ctx, repos);
+  fillHolds(hub, ctx, changes);
   const page = await listPage(prsGithub(hub), repos, changes, closedSince, ctx, after);
   const last = page.rows.at(-1);
   return {
@@ -100,6 +102,7 @@ async function prGet(hub: Hub, caller: Caller, input: Record<string, unknown>) {
   const change = changes[0];
   const ctx = join.rowCtx(projectTasks(hub, project));
   fillCtx(hub, ctx, [repo]);
+  fillHolds(hub, ctx, changes.slice(0, 1));
   const pr = join.row(repo, detail?.pull, change, ctx);
   if (!pr) throw new ToolError("failed", `${repo}#${number} could not be read.`);
   const head = detail?.pull.headRefOid ?? change?.headSha ?? "";

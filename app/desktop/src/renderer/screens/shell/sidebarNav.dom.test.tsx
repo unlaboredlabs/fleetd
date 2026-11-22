@@ -13,6 +13,7 @@ import type { Routed } from "./navigation";
 import type { Screen } from "./routes";
 import { Sidebar } from "./Sidebar";
 import { resetSidebarView } from "./sidebarLayout";
+import { closeConnections } from "../connections/state";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -80,11 +81,19 @@ const settings = () => {
   act(() => document.querySelector<HTMLElement>("[aria-label='You'] [data-opens='settings']")?.click());
 };
 
-describe("the sidebar's places, two small icons beside you", () => {
-  it("are Screens and Factory, with no Status, Time or Machines", () => {
+describe("the sidebar's places, three small icons beside you", () => {
+  it("are Connections, Screens and Factory, with no Status, Time or Machines", () => {
     mount();
-    expect(labels()).toEqual(["Screens", "Factory"]);
+    expect(labels()).toEqual(["Connections", "Screens", "Factory"]);
     expect(host.textContent).not.toMatch(/Status|Time|Machines/u);
+  });
+
+  it("open Connections as a sheet, the screen under it as it was", () => {
+    mount();
+    act(() => row("Connections").click());
+    expect(row("Connections").getAttribute("aria-current")).toBe("page");
+    expect(went).toEqual([]);
+    act(() => closeConnections());
   });
 
   it("open the Factory on Output, Settings from your card, and the Agent time for a hub without metrics", () => {

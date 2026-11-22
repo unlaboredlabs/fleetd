@@ -107,6 +107,19 @@ test("reviews count only verdicts on the current change", () => {
   expect(join.isCurrent(clean, "T9", SHA)).toBe(true);
 });
 
+test("a review holding the current change is changes requested, with its findings and people's reviews counted", () => {
+  const pending = change(1, 7, "reviewing", []);
+  expect(join.reviewSummary(pending, 1, "")).toEqual({ state: "pending", done: 0, needed: 1 });
+  // The gate keeps blocking findings out of the Change's reviews: the hold carries them, so it's never "0 of 1".
+  expect(join.reviewSummary(pending, 1, "", { blocking: 2, people: 0 })).toEqual({ state: "changes_requested", done: 0, needed: 1, blocking: 2 });
+  expect(join.reviewSummary(pending, 1, "", { blocking: 0, people: 1 })).toEqual({ state: "changes_requested", done: 0, needed: 1, people: 1 });
+  const clean = change(1, 7, "reviewing", [review("T5", "c".repeat(40), 0)]);
+  expect(join.reviewSummary(clean, 1, "", { blocking: 0, people: 2 })).toEqual({ state: "changes_requested", done: 1, needed: 1, people: 2 });
+  expect(join.reviewSummary(clean, 1, "")).toEqual({ state: "approved", done: 1, needed: 1 });
+  // A PR fleetd doesn't land reads GitHub's own decision.
+  expect(join.reviewSummary(undefined, 0, "CHANGES_REQUESTED", { blocking: 3, people: 0 })).toEqual({ state: "changes_requested", done: 0, needed: 0 });
+});
+
 test("the list joins GitHub with the queue and names the writing agent", () => {
   const ctx = join.rowCtx([task("T4", "fleetd/T4-pricing"), task("T8", "feature-9")]);
   ctx.queues.set("acme/web", 3);
@@ -421,6 +434,28 @@ test("pr_get joins GitHub's detail, the reviewer's verdict and the queue, with s
   expect("error" in missing && missing.error.kind === "tool" && missing.error.error.code).toBe("not_found");
   const nobody = await l.tools.call(l.hub, reader, "pr_get", { repo: "other/repo", number: 1 });
   expect("error" in nobody && nobody.error.kind === "tool" && nobody.error.error.message).toBe("No bot of this fleet lands PRs on other/repo.");
+});
+
+test("pr_get and pr_list say a PR its review holds: the findings bound to its head, people's reviews, not what the lead resolved", async () => {
+  const l = toolLab();
+  const db = l.hub.db.conn;
+  const bind = (taskId: string, role: string, sha: string, blocking: number) => {
+    db.query("INSERT INTO review_tasks (task_id, change_id, role, patch_id) VALUES (?, ?, ?, 'p')").run(taskId, l.made.changeId, role);
+    db.query("INSERT INTO review_bindings (task_id, pr_head_sha, patch_id, blocking, non_blocking) VALUES (?, ?, 'p', ?, 1)").run(taskId, sha, blocking);
+  };
+  const review = async () => (await call(l, "pr_get", { repo: "acme/web", number: 7 })).pr.review;
+  expect(await review()).toEqual({ state: "pending", done: 0, needed: 1 });
+  bind("T2", "reviewer", SHA, 2);
+  // An older head's findings and ones the lead resolved hold it no more.
+  bind("T3", "reviewer", "a".repeat(40), 4);
+  bind("T1", "resolved", SHA, 5);
+  expect(await review()).toEqual({ state: "changes_requested", done: 0, needed: 1, blocking: 2 });
+  const list = await call(l, "pr_list", { projectRef: { machineId: "devbox", projectId: "web" } });
+  expect(list.prs[0].review).toEqual({ state: "changes_requested", done: 0, needed: 1, blocking: 2 });
+  db.query("INSERT INTO review_people (pr_key, read_ms, data) VALUES ('github.com/acme/web/pull/7', 0, ?)").run(
+    JSON.stringify([{ kind: "changes", by: "dana", url: "https://github.com/acme/web/pull/7#r1", said: [], keys: ["review:1"] }]),
+  );
+  expect(await review()).toEqual({ state: "changes_requested", done: 0, needed: 1, blocking: 2, people: 1 });
 });
 
 test("pr_files pages a PR's files and pr_diff one file's lines", async () => {

@@ -175,6 +175,13 @@ scripts on, nothing loaded past the page itself, no storage, cookies or files; a
 Android doesn't run HTML artifacts yet and says to open them on an iPhone or the desktop app. With more than one
 version, **Versions** picks an older one, which says so over the page with the way back to the newest.
 
+## Connections {#connections}
+
+**Connections** in Settings is the desktop app's [Connections](/docs/mcp-servers): what is connected on top, then
+Paper and Notion (a tap connects and opens the service's sign-in), Tailscale (an admin's), and **Custom MCP**, each
+row's tap offering **Test**, **Sign In** when it wants one, and **Disconnect**. **Add Custom MCP** takes a URL; a
+command or headers from the vault are the desktop's to add.
+
 ## Machines {#machines}
 
 An admin has **Machines** in Settings, the desktop app's [Machines page](/docs/machines#page) in three groups: the
