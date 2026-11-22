@@ -3,7 +3,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readableLines, settingsPathProblems } from "./settingsPages";
+import { readableLines, settingsPathProblems } from "./settingsPathCheck";
+import { settingsPath } from "./settingsPages";
 
 const app = join(__dirname, "..", "..", "..");
 const sources = (dir: string): string[] =>
@@ -11,7 +12,7 @@ const sources = (dir: string): string[] =>
     const path = join(dir, e.name);
     if (e.isDirectory()) return e.name === "node_modules" || e.name === "schema" ? [] : sources(path);
     // Not the check itself, whose own lines name what it looks for.
-    return /\.tsx?$/u.test(e.name) && !/\.test\.tsx?$/u.test(e.name) && e.name !== "settingsPages.ts" ? [path] : [];
+    return /\.tsx?$/u.test(e.name) && !/\.test\.tsx?$/u.test(e.name) && e.name !== "settingsPathCheck.ts" ? [path] : [];
   });
 
 describe("Settings paths", () => {
@@ -31,3 +32,20 @@ describe("Settings paths", () => {
     expect(found).toEqual([]);
   });
 });
+
+describe("a fleetd cloud team's Settings group", () => {
+  it("is named by settingsPath, never written: no line of the apps names Settings › Hub or a Hub › page itself", () => {
+    const found = [join(app, "desktop", "src"), join(app, "mobile", "src")].flatMap(sources).flatMap((path) =>
+      readableLines(readFileSync(path, "utf8"))
+        .filter((line) => !/^\s*\{\/\*/u.test(line) && /Settings › Hub(?![\w&])|(^|[^\w])Hub › (Setup|Machines|People|Billing|Bot defaults)/u.test(line))
+        .map((line) => `${path.slice(app.length + 1)}: ${line.trim().slice(0, 120)}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("reads Team on a cloud team and Hub on a self-hosted hub", () => {
+    expect(settingsPath(true, "Machines")).toBe("Settings › Team › Machines");
+    expect(settingsPath(false, "Setup", "GitHub")).toBe("Settings › Hub › Setup › GitHub");
+  });
+});
+

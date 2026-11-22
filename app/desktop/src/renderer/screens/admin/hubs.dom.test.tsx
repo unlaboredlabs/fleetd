@@ -168,6 +168,8 @@ const go = async (hash: string) => {
   await settle();
   await settle();
   await settle();
+  // Settings loads its sheet on demand: the first time, past a few ticks.
+  if (hash.startsWith("#/settings")) await vi.waitFor(() => expect(host.querySelector("[data-screen^='settings']")).not.toBeNull());
 };
 
 const managing = () => host.querySelector<HTMLElement>("[data-managing]");

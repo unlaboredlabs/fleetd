@@ -7,6 +7,7 @@ import type { Hub } from "../api/hub.ts";
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
 import { toolOn } from "./places.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** Whether `m` is the agents' Mac, by what its node last said at its hello. */
 export const isAgentsMac = (hub: Hub, m: string) => store(hub).machineGet(m)?.agentsMac === true;
@@ -35,7 +36,7 @@ export function tool(hub: Hub, m: string): MacTool | undefined {
   if (machine.status === "offline") {
     note = `${name} is offline. After a restart, log in on it again as the account it joined from (at the Mac or over Screen Sharing) to bring it back.`;
   } else if (!ready) {
-    note = `${name}'s node doesn't offer the tool: it runs on macOS only. Its checks in Settings › Hub › Setup › A Mac for agents say what to fix.`;
+    note = `${name}'s node doesn't offer the tool: it runs on macOS only. Its checks in ${settingsPath()} › Setup › A Mac for agents say what to fix.`;
   } else if (!on) {
     note = "Off: agents' mac commands answer that the Mac is turned off.";
   }

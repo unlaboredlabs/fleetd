@@ -8,6 +8,7 @@ import type { GithubAccount, GithubApp, PersonId } from "../../shared/contracts.
 import { isoMs } from "../train/seams.ts";
 import { GithubError, type GithubApps } from "./index.ts";
 import { SESSION_MARGIN_MS } from "./session_rules.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export { SESSION_MARGIN_MS } from "./session_rules.ts";
 
@@ -121,7 +122,7 @@ export async function connect(
   redirect: string,
 ): Promise<GithubAccount> {
   const { app, secret } =
-    client(apps) ?? fail("This hub has no GitHub App yet: an admin creates it in Settings › Hub › Setup › GitHub");
+    client(apps) ?? fail(`This hub has no GitHub App yet: an admin creates it in ${settingsPath()} › Setup › GitHub`);
   const pair = await tokenCall(apps, {
     client_id: app.clientId,
     client_secret: secret,

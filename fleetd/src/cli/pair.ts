@@ -21,6 +21,7 @@ import {
 } from "./store.ts";
 import { terminalQr } from "./qr.ts";
 import { PAIR_USAGE } from "./usages.ts";
+import { settingsPath } from "../shared/settings_path.ts";
 export { PAIR_USAGE };
 
 /** `fleetd://pair?hub=<hub>&code=<code>`, the hub form-urlencoded. */
@@ -139,12 +140,12 @@ export function phoneUrl(urls: string[]): string | undefined {
 /** Why a worker told to reach the hub at `hub` can join only from the hub's own computer; undefined when another can. */
 export function workerReachNote(hub: string): string | undefined {
   return phoneUrl([hub]) === undefined
-    ? `The hub is only at ${hub}, which no other machine reaches, so only a node on the hub's own computer can join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port> (Settings › Hub › Setup › Where the hub listens), then try again.`
+    ? `The hub is only at ${hub}, which no other machine reaches, so only a node on the hub's own computer can join it. For another machine, give the hub its tailnet or LAN address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port> (${settingsPath()} › Setup › Where the hub listens), then try again.`
     : undefined;
 }
 
 export const loopbackOnlyFix = (device: string, then: string) =>
-  `Give the hub an address ${device} reaches, its tailnet or LAN address: on the hub, run \`fleetd init --listen <ip>:<port> --url http://<name>:<port>\` (Settings › Hub › Setup › Where the hub listens), then ${then}.`;
+  `Give the hub an address ${device} reaches, its tailnet or LAN address: on the hub, run \`fleetd init --listen <ip>:<port> --url http://<name>:<port>\` (${settingsPath()} › Setup › Where the hub listens), then ${then}.`;
 export const phoneLoopbackFix = () => loopbackOnlyFix("your phone", "pair the phone again");
 
 /** `tailscale ip -4`, only when a `tailscale` binary is on PATH. */

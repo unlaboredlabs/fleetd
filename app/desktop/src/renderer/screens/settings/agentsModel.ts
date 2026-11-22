@@ -3,6 +3,7 @@
 // them. Pure, so it is tested without a screen.
 import type { ComputerPick, ProjectRef, SandboxState, SlotState, SlotStatePerMachine } from "../../../shared/contracts";
 import { hostedProvider, RUNNER_ID, specOf } from "../../../shared/providers";
+import { adminGroup } from "../../../shared/settingsPages";
 
 export interface ProjectAgents {
   /** Agents of the project running now (its lead's own turns aside). Above `max` right after a lower. */
@@ -135,12 +136,12 @@ export function machineHolds(a: ProjectAgents, value: number, machineId: string,
 }
 
 /** The admin's way from machineHolds to what holds it: the provider's limit on its row, or the machine's max. */
-export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_HOLD): { text: string; provider: boolean; billing?: true } => {
+export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_HOLD, cloud = false): { text: string; provider: boolean; billing?: true } => {
   if (hold.provided) return { text: "Plans in Billing", provider: true, billing: true };
   const provider = providerHolding(machineId, hold);
   return provider !== undefined
-    ? { text: `${provider}'s limit (${a.machineCap}) in Hub › Machines`, provider: true }
-    : { text: `${machineId}'s max in Hub › Machines`, provider: false };
+    ? { text: `${provider}'s limit (${a.machineCap}) in ${adminGroup(cloud)} › Machines`, provider: true }
+    : { text: `${machineId}'s max in ${adminGroup(cloud)} › Machines`, provider: false };
 };
 
 /** One machine as Settings shows it. */

@@ -10,6 +10,7 @@ import type { ClaudeAccount, HubEvent, HubEventType, ProjectRef } from "../../sh
 import { ASIDE_MS, RATE_MS, RATE_WORDS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** How a run died (tasks/recovery.rs `Kind`), the kinds the lead's wake reads. */
 export type DeathKind = "node_lost" | "stalled" | "exited" | "unreachable" | "no_sandbox" | "signed_out" | "context_full" | "cut" | "not_dead" | "fatal";
@@ -93,7 +94,7 @@ export type End =
 /** The chat's line when Claude refused the lead's sign-in, by what the lead runs on (the thread's account; none: the
  * machine's own login): where it is reconnected, and that the lead then carries on by itself. */
 export function signedOutLine(account: ClaudeAccount | undefined): string {
-  if (account?.kind === "hub") return "The hub's Claude API key stopped working for this bot: an admin replaces it in Settings › Hub › Setup › Claude. The lead carries on by itself once it is.";
+  if (account?.kind === "hub") return `The hub's Claude API key stopped working for this bot: an admin replaces it in ${settingsPath()} › Setup › Claude. The lead carries on by itself once it is.`;
   if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is.";
   return "Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message.";
 }
@@ -132,7 +133,7 @@ export function notStartedLine(message: string, n: number): string {
       ? `It was tried again ${START_RETRIES} times by itself; your message is kept, and the lead tries again when you send another.`
       : `It tries again by itself in about ${minutes === 1 ? "a minute" : `${minutes} minutes`}, and your message is kept for it.`;
   const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
-  if (at) return `The lead couldn't start: no sandbox came up for it at ${at}. ${again} If it keeps failing, check ${at} in Settings › Hub › Machines.`;
+  if (at) return `The lead couldn't start: no sandbox came up for it at ${at}. ${again} If it keeps failing, check ${at} in ${settingsPath()} › Machines.`;
   const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
     // A path the node names (its settings file's) is for the log, not the person.
     .replace(/\s*\([^()]*\/[^()]*\)/g, "")

@@ -12,6 +12,7 @@ import type { ProviderId, Size } from "../../sandbox/providers/index.ts";
 import { hasBox, hostedBox, hostedPlace, readRecord } from "./hosted.ts";
 import type { Box } from "../sandbox/box.ts";
 import { processPlace } from "./process.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export type PlaceKind = "process" | "hosted";
 
@@ -65,16 +66,16 @@ export const isRunner = () => runner !== undefined;
 export const runnerProvider = (): ProviderId | undefined => runner?.();
 
 /** What the hub's runner says when no provider of the team's takes its agents. */
-export const RUNNER_NO_PROVIDER =
-  "no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects boat.dev in Settings › Hub › Machines";
+export const runnerNoProvider = (): string =>
+  `no hosted sandbox provider of the team's is connected, and no computer runs this bot: an admin connects boat.dev in ${settingsPath()} › Machines`;
 
 /** The place the runner gives a session no provider takes: it never starts, and says why. */
 const noPlace: Place = {
   ...processPlace,
   start: async () => {
-    throw new LaunchError(RUNNER_NO_PROVIDER);
+    throw new LaunchError(runnerNoProvider());
   },
-  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: RUNNER_NO_PROVIDER }),
+  run: async () => ({ exitCode: null, outputTail: "", timedOut: false, notRun: runnerNoProvider() }),
 };
 
 /** The place session `s`'s next start (and its setup commands) runs in: the hosted provider's box the hub placed it

@@ -17,6 +17,7 @@ import { steerTasks } from "../steer/index.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** How long browser_control waits for the node to say it acted. */
 const CONTROL_WAIT = 5_000;
@@ -50,7 +51,7 @@ export const unknownMachine = (m: string) =>
     `No machine ${m}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    "This hub has no machine by that id: Settings › Hub › Machines lists the ones it has, or ask the hub admin.",
+    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
   );
 
 /** Some grant on every machine gives at least `role` (api/grants.rs `allows_everywhere`). */

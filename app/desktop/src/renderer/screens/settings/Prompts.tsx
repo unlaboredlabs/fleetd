@@ -6,7 +6,8 @@
 // block a save. A running session keeps the text it started with.
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Button, cx, Dialog, Dot, Text, Textarea, Tooltip } from "../../ui";
-import { useToolQuery } from "../../src/data/react";
+import { settingsPath } from "../../../shared/settingsPages";
+import { useCloudTeam, useToolQuery } from "../../src/data/react";
 import { describe, listed, type CatalogRow } from "./catalog";
 import { type PromptDetail, type PromptSummary, type PromptWarning, type RetiredPromptOverride } from "./contracts";
 import { DiffBlock } from "./DiffBlock";
@@ -58,6 +59,7 @@ function placeRoute(where: PromptsWhere, prompt: string | null, project: string 
 
 export function Prompts({ route, where = "project" }: { route: SettingsRoute; where?: PromptsWhere }) {
   const live = useLive();
+  const cloud = useCloudTeam();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const refetchPrompts = () => refetch(["prompt_get"]);
@@ -300,7 +302,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
         <div className={cx(s.column, s.wide)}>
           <PageHead title={name} lead={toList}>
-            One text for every bot: the hub&apos;s owners and admins change it in Hub › Bot defaults › Instructions.
+            One text for every bot: the hub&apos;s owners and admins change it in {settingsPath(cloud, "Bot defaults", "Instructions")}.
           </PageHead>
           <SettingsSection bare>
             <div data-text="code">

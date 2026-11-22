@@ -4,6 +4,7 @@ import type { GlyphState } from "../../ui";
 import type { JoinHere, ThisComputer } from "../../../shared/joinHere";
 import type { MachineAddRun, MachineHost, SetupStep } from "../../../shared/contracts";
 import { machineIdFromHost } from "../projects/source";
+import { settingsPath } from "../../../shared/settingsPages";
 
 /**
  * "This computer": the machine of the hub the app is connected to (that hub adds it with its own fleetd, no
@@ -198,7 +199,7 @@ export const onlyHereLine = (hubUrl: string): string | undefined => {
   }
   const loopback = host === "localhost" || host.endsWith(".localhost") || /^127\./u.test(host) || host === "::1" || host === "0.0.0.0" || host === "::";
   return loopback
-    ? `The hub is only at ${hubUrl}, which no other machine reaches, so this line works only on the hub's own computer. For another machine, give the hub its tailnet or LAN address in Settings › Hub › Setup › Where the hub listens, then make the line again.`
+    ? `The hub is only at ${hubUrl}, which no other machine reaches, so this line works only on the hub's own computer. For another machine, give the hub its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the hub listens, then make the line again.`
     : undefined;
 };
 

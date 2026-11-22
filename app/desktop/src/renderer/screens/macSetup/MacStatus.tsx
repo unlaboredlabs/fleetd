@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import type { MacMenuBarRead } from "../../../shared/macMenuBar";
 import { HUB_UPDATE_WHERE, type HubBehind, type MacFound, type MacLeaveOutcome, type MacSetupFailure } from "../../../shared/macSetup";
+import { settingsPath } from "../../../shared/settingsPages";
 import { HubScope, useHubs } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { MacSections, useMacRead, useScreenActions } from "../menuBar/MenuBar";
@@ -155,7 +156,7 @@ export function HubBehindLine({ behind, hubUrl }: { behind: HubBehind; hubUrl: s
       : behind.who === "admin"
         ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; Update brings the hub level."
         : behind.who === "member"
-          ? "Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in Settings › Hub › Machines › Updates."
+          ? `Your hub runs an older fleetd than this Mac. Agents can use the Mac already; ask an admin of the hub to press Update in ${settingsPath(false, "Machines", "Updates")}.`
           : `Your hub runs an older fleetd than this Mac. Agents can use the Mac already. ${HUB_UPDATE_WHERE}`;
   return (
     <div className={s.notice} role="status" data-hub-behind={behind.who}>

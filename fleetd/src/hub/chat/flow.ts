@@ -56,6 +56,7 @@ import { stopOrder } from "./stop.ts";
 import { forLead, stopLine } from "./lead_text.ts";
 import { unanswered } from "./unanswered.ts";
 import { requestFor } from "./whom.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export { forLead, stopLine } from "./lead_text.ts";
 
@@ -368,7 +369,7 @@ function machineAway(hub: Hub, m: MachineId): string | undefined {
     return `${m} isn't one of this hub's machines now (it was removed), so its lead can't take this. It goes in once ${m} joins again: on the hub, run \`fleetd pair --worker ${m}\`, then run what it prints on ${m} with --rejoin.`;
   }
   if (!writeQueue(hub).isConnected(m)) {
-    return `${m} is offline: its node isn't connected. It goes in when ${m} is back. If ${m} is on, Repair it in Settings › Hub › Machines.`;
+    return `${m} is offline: its node isn't connected. It goes in when ${m} is back. If ${m} is on, Repair it in ${settingsPath()} › Machines.`;
   }
   return undefined;
 }

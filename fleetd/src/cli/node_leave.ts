@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { tellHub, type Told } from "../node/agents_mac/leave.ts";
 import { readConfig, type NodeConfig } from "../node/config.ts";
 import { loadOrCreateIdentity } from "../node/identity.ts";
+import { settingsPath } from "../shared/settings_path.ts";
 import { localDirs, localPlatform, localUid } from "./setup/shared.ts";
 import { foreignUnit, ServiceManager, unitPath } from "./setup/units.ts";
 
@@ -32,7 +33,7 @@ export async function leave(home: string, ports: LeavePorts): Promise<number> {
   // Only the agents' Mac leaves by itself: a worker holds bots and their worktrees, which Remove in the app erases
   // with care (machine_remove), never this.
   if (config !== undefined && config.agentsMac !== true) {
-    ports.say(`fleetd: ${config.machineId} isn't the agents' Mac, so it doesn't leave by itself. Fix: remove it from the app, Settings › Hub › Machines`);
+    ports.say(`fleetd: ${config.machineId} isn't the agents' Mac, so it doesn't leave by itself. Fix: remove it from the app, ${settingsPath("Machines")}`);
     return 1;
   }
   const stopped = ports.stopService(home);

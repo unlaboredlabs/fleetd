@@ -5,6 +5,7 @@
 import type { MacHealth } from "./contracts";
 import type { JoinStep, ThisComputer } from "./joinHere";
 import type { MacBehind } from "./macMenuBar";
+import { settingsPath } from "./settingsPages";
 
 /** A failure in words: what went wrong, what to do, and which field it is about. */
 export interface MacSetupFailure {
@@ -94,7 +95,7 @@ export interface HubBehind {
 }
 
 /** Where an admin updates the hub, for when this app can't do it from the Mac. */
-export const HUB_UPDATE_WHERE = "On your main machine, open Settings › Hub › Machines › Updates and press Update.";
+export const HUB_UPDATE_WHERE = `On your main machine, open ${settingsPath(false, "Machines", "Updates")} and press Update.`;
 
 export type MacHubUpdateOutcome = { readonly ok: true } | { readonly ok: false; readonly failure: MacSetupFailure };
 

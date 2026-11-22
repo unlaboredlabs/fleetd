@@ -179,7 +179,7 @@ export function useStart(
   const hostedWait = useWaitedOut(owner && hostedWaits);
   const [hostedTrying, setHostedTrying] = useState(false);
   const [hostedTried, setHostedTried] = useState<string | null>(null);
-  const hostedFailed = hostedWait.over && hosted !== undefined ? hostedProblem(hosted, runnerMachine) : undefined;
+  const hostedFailed = hostedWait.over && hosted !== undefined ? hostedProblem(hosted, runnerMachine, hub.cloud === true) : undefined;
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }

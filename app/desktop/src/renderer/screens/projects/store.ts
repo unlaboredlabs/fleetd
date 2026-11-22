@@ -11,6 +11,7 @@ import type { Machine } from "./contracts";
 import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CreateState, type HubView, type RepoDraft } from "./create";
 import { navigate } from "../shell/navigation";
 import { addSource, machineIdFromHost, omit, tilde } from "./source";
+import { settingsPath } from "../../../shared/settingsPages";
 
 export interface Note {
   readonly text: string;
@@ -257,11 +258,11 @@ export const pickHub = (hub: string, from: string, to: string): void => {
 export const setNote = (note: Note | undefined): void => set(note === undefined ? omit(ui, "note") : { ...ui, note });
 
 /** Create: the bot and its repos, or why not yet. `typed`: a repo left in the add field, which goes in the list first. */
-export const create = (machineId: string | undefined, why?: string, typed?: RepoDraft): void => {
+export const create = (machineId: string | undefined, why?: string, typed?: RepoDraft, cloud = false): void => {
   const repos = typed === undefined ? ui.repos : withRepo(ui.repos, typed);
   const shown = typed === undefined ? ui : { ...omit(ui, "note"), repos, adding: null };
   const name = botName(ui.name, repos);
-  const refused = why ?? (machineId === undefined ? "Nothing that runs agents is online: start fleetd on one of your computers, or connect one in Settings › Hub › Machines." : name === "" ? "Name it, or add a repo." : undefined);
+  const refused = why ?? (machineId === undefined ? `Nothing that runs agents is online: start fleetd on one of your computers, or connect one in ${settingsPath(cloud, "Machines")}.` : name === "" ? "Name it, or add a repo." : undefined);
   if (refused !== undefined || machineId === undefined) {
     set({ ...shown, refused: refused ?? "" });
     return;

@@ -142,7 +142,7 @@ interface ThreadActions {
 export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "Chat">) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { state, session } = useHub();
+  const { state, session, paired } = useHub();
   const prefs = usePrefs();
   const chatKey = route.params.key;
   // Opened again after the app was closed: drawn where it was scrolled to from its first frame (cache.ts OpenChat).
@@ -270,7 +270,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // "Connecting…", "Updating…" while the hub restarts for an update, or nothing for a restart's first seconds (hubWord.ts).
   const linkWord = useHubWord().word;
   // Always a line under the name, as a chat app's "online": the title never jumps when the lead starts or stops.
-  const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId)}`;
+  const quiet = project === undefined ? undefined : `on ${machineName(state.machines, project.machineId, paired.cloud === true)}`;
   const status = link?.busy === true ? (linkWord?.text ?? quiet) : link !== undefined ? "Offline" : working ? "Working…" : waitsOnMe(chatState, state.me) ? "Waiting for you" : quiet;
   // Its bot: done a moment after the lead's turn ends, as the desktop's chat title.
   const bot = useBot(chatKey, useJustDone(working));

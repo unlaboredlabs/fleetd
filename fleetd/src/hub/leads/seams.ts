@@ -6,6 +6,7 @@ import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export type { CallerAgent, LeadCall, LeadCaller, LeadCallHandler } from "../lead_calls/index.ts";
 export { leadCalls } from "../lead_calls/index.ts";
@@ -35,7 +36,7 @@ export const unknownMachine = (machineId: string) =>
     `No machine ${machineId}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    "This hub has no machine by that id: Settings › Hub › Machines lists the ones it has, or ask the hub admin.",
+    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
   );
 
 export const unknownThread = (r: { machineId: string; threadId: string }) =>

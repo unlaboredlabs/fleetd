@@ -336,7 +336,11 @@ export class CloudAccount {
         }),
       );
     }
-    return { ok: true, email: answer.email, teams: outcomes };
+    // The team picked on the sign-in page opens first.
+    const pick = answer.picked === undefined ? undefined : answer.teams.find((t) => t.id === answer.picked);
+    const pickedAt = pick === undefined ? null : teamOrigin(pick.url, config.accountsUrl, this.#ports.local);
+    const picked = pickedAt === null ? undefined : this.#ports.heldAt(pickedAt)?.id;
+    return { ok: true, email: answer.email, teams: outcomes, ...(picked === undefined ? {} : { picked }) };
   }
 
   /** The empty teams the last sign-in for a move connected: the hubs a hub may move into. */

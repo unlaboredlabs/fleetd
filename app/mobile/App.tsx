@@ -27,7 +27,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import { afterSignIn, endSession, revokeDropped, revokeOver, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { afterSignIn, endSession, revokeDropped, revokeOver, shownAfterSignIn, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
 import { cloudDomain } from "./src/desktop";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
@@ -155,7 +155,7 @@ export default function App() {
       void revokeDropped((h) => revokeOver({ hub: h.hub, key: h.key, transport: webSocketTransport }), dropped);
       forgetPreviews(dropped.filter((h) => !list.some((k) => k.hub === h.hub)).map((h) => h.hub));
       setNote(undefined);
-      await show(list.find((h) => h.cloud === true) ?? null, list);
+      await show(shownAfterSignIn(list, out.picked), list);
     },
     [account, hubs, show],
   );
