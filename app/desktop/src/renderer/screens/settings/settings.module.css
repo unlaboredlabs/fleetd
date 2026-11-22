@@ -113,6 +113,16 @@
   gap: var(--space-2);
   min-width: 0;
 }
+/* Lead model's picker, with Restart lead before it while it applies: one line, each at its own width. */
+.leadControl {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.leadControl > * {
+  flex: none;
+  width: auto;
+}
 /* A row's line over something under it (a project's folder under its name's line). */
 .lineBlock {
   display: block;
