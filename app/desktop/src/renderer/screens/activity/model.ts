@@ -57,6 +57,8 @@ export const hubWideFor = (filter: KindFilter): boolean => filter.size === 0 || 
 export const inFeed = (e: HubEvent, project: { readonly machineId: string; readonly projectId: string }, filter: KindFilter): boolean => {
   const kind = kindOf(e.type);
   if (kind === undefined || !shownKinds(filter).includes(kind)) return false;
+  // A browser signing in to the web app pairs a key each time: Your devices lists it, a bot's history doesn't.
+  if (e.type === "key.paired" && (e.data as { web?: unknown } | undefined)?.web === true) return false;
   if (e.machineId === undefined && e.projectId === undefined) return hubWideFor(filter);
   return e.machineId === project.machineId && e.projectId === project.projectId;
 };
