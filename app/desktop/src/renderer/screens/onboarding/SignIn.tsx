@@ -14,7 +14,7 @@ import s from "./signin.module.css";
 
 /** The two ways in, and what each means in a line. */
 export const WAYS = {
-  signIn: { name: "Sign in", line: "fleetd hosts your hub. Your agents run on your own computers." },
+  signIn: { name: "Sign in", line: "fleetd hosts your team. Agents run on fleetd's computers or your own." },
   own: { name: "Use your own hub", line: "A hub you run yourself. No fleetd account." },
   mac: { name: "Set up this Mac for agents", line: "For builds and iOS simulators, with a code from your hub." },
 } as const;

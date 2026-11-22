@@ -97,8 +97,8 @@ export function Info({ navigation, route }: ChatInfoProps<"Info">) {
 function Page({ project: p, navigation }: { project: ProjectSummary; navigation: ChatInfoProps<"Info">["navigation"] }) {
   const t = useTheme();
   const now = useNow();
-  const { state, session } = useHub();
-  const machine = machineName(state.machines, p.machineId);
+  const { state, session, paired } = useHub();
+  const machine = machineName(state.machines, p.machineId, paired.cloud === true);
   const archived = isArchived(p);
   const skills = skillsShown(state.hub);
   const dms = dmsShown(state.hub);

@@ -1,10 +1,12 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, tilde, type AgentRow, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { deleteWords as eraseWords, RUNNER_ID, tilde, type AgentRow, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** A machine's name, else its id. */
-export const machineName = (machines: readonly Machine[], machineId: string): string => machines.find((m) => m.machineId === machineId)?.name ?? machineId;
+/** A machine by its name; on a fleetd cloud team, its hosted runner is fleetd's computers, not a machine of the team's. */
+export const machineName = (machines: readonly Machine[], machineId: string, cloud = false): string =>
+  cloud && machineId === RUNNER_ID ? "fleetd's computers" : (machines.find((m) => m.machineId === machineId)?.name ?? machineId);
 
 /** The line under its name on its screen. */
 export const subtitle = (p: ProjectSummary, machine: string): string => {

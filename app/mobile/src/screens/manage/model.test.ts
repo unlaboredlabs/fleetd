@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
+import { machineName } from "./model";
 import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
@@ -187,3 +188,14 @@ describe("New Bot's Create", () => {
     expect(refusalNow("Name it, or add a repo.", true)).toBe("Name it, or add a repo.");
   });
 });
+
+describe("a machine's name", () => {
+  it("calls a fleetd cloud team's hosted runner fleetd's computers, never its id or name", () => {
+    const machines = [{ machineId: "hosted", name: "Hosted sandboxes" }, { machineId: "devbox", name: "devbox" }] as Parameters<typeof machineName>[0];
+    expect(machineName(machines, "hosted", true)).toBe("fleetd's computers");
+    expect(machineName(machines, "devbox", true)).toBe("devbox");
+    // A self-hosted hub's own hosted sandboxes keep their name.
+    expect(machineName(machines, "hosted")).toBe("Hosted sandboxes");
+  });
+});
+

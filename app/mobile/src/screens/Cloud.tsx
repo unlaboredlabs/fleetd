@@ -26,7 +26,7 @@ export const cloud: CloudConfig | null = builtCloudConfig();
 
 /** The two ways in, and what each means in a line: the desktop's words (onboarding/SignIn.tsx WAYS). */
 export const WAYS = {
-  signIn: { name: "Sign In", line: "fleetd hosts your hub. Your agents run on your own computers." },
+  signIn: { name: "Sign In", line: "fleetd hosts your team. Agents run on fleetd's computers or your own." },
   own: { name: "Use Your Own Hub", line: "A hub you run yourself. No fleetd account." },
 } as const;
 

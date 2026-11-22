@@ -41,7 +41,7 @@ export function CloudAccountSettings() {
     <SettingsSection title="fleetd account" part="hubs.account">
       <SettingsRow
         title={state.email ?? "fleetd cloud"}
-        hint={state.email === null ? "fleetd hosts your hub; your agents run on your own computers. Signing in adds your teams beside these hubs." : undefined}
+        hint={state.email === null ? "fleetd hosts your team, and its agents run on fleetd's computers or your own. Signing in adds your teams beside these hubs." : undefined}
         line={step.at === "finishing" ? "Connecting your teams…" : waiting ? "Finish signing in in your browser." : state.email === null ? "Not signed in." : teams.length === 0 ? "Signed in." : `Signed in. fleetd hosts ${names} for this account.`}
         control={
           step.at === "waiting" ? (

@@ -27,8 +27,8 @@ const SUGGESTIONS_SHOWN = 8;
 
 export function NewProject({ navigation, route }: Props) {
   const t = useTheme();
-  const { state, session } = useHub();
-  const names = useCallback((id: string) => machineName(state.machines, id), [state.machines]);
+  const { state, session, paired } = useHub();
+  const names = useCallback((id: string) => machineName(state.machines, id, paired.cloud === true), [state.machines, paired.cloud]);
   // The agents' Mac is no bot's home: neither offered nor searched.
   const home = useCallback((id: string) => projectHome(state.machines.find((m) => m.machineId === id)), [state.machines]);
   const found = useRead(() => discover(session, names, home), [session]);

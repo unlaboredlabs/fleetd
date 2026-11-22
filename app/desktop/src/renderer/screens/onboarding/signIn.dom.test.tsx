@@ -127,7 +127,7 @@ it("on a build without the cloud's values, the first screen is today's connect f
 it("offers both ways a line each; Use your own hub is the connect form, with the way back", async () => {
   await mount(<OnboardingScreen />, unpaired);
   expect(screen()).toBe("onboarding.ways");
-  expect(host.textContent).toContain("fleetd hosts your hub. Your agents run on your own computers.");
+  expect(host.textContent).toContain("fleetd hosts your team. Agents run on fleetd's computers or your own.");
   expect(host.textContent).toContain("A hub you run yourself. No fleetd account.");
   click(/^Use your own hub/u);
   expect(screen()).toBe("onboarding");
