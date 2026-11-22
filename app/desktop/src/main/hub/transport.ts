@@ -152,6 +152,9 @@ export const webSocketTransport: Transport = (url, events, headers) => {
     deliver(bytes, isBinary);
   });
   socket.on("ping", () => events.onHeard());
+  // The hub's answer to the app's own ping. Its bytes count above too when `ws` hands over the raw socket; a runtime
+  // whose `ws` doesn't (Bun's) would otherwise give every quiet ping up as unanswered.
+  socket.on("pong", () => events.onHeard());
   // An error is always followed by close; the close carries the code, the error the cause.
   socket.on("error", (e: Error & { code?: unknown; errors?: ReadonlyArray<Error & { code?: unknown }> }) => {
     // A name with several addresses fails as an AggregateError; its first error has the code.

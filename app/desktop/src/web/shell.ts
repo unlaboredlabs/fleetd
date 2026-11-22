@@ -450,11 +450,32 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   return { api, hubs: [...hubs.values()] };
 };
 
-/** Back-forward cache, the network, the tab shown: what main hears from the OS, the page hears from the browser. */
-export const followBrowser = (hubs: Iterable<WebHub>, target: Pick<Window, "addEventListener"> & { readonly document: Pick<Document, "visibilityState" | "addEventListener"> }): void => {
+/** How often the page reads the clock for a sleep, and a gap past which it was one (followBrowser). */
+export const SLEEP_TICK_MS = 2_000;
+export const SLEEP_GAP_MS = 10_000;
+
+/**
+ * Back-forward cache, the network, the tab shown or focused, a sleep: what main hears from the OS, the page hears from
+ * the browser. A browser says nothing when the computer resumes, so a clock that jumped while the page showed was a
+ * sleep (a hidden tab's timers are slowed, so only a visible page's gap counts).
+ */
+export const followBrowser = (
+  hubs: Iterable<WebHub>,
+  target: Pick<Window, "addEventListener" | "setInterval"> & { readonly document: Pick<Document, "visibilityState" | "addEventListener"> },
+  now: () => number = Date.now,
+): void => {
   const each = (fn: (hub: WebHub) => void) => {
     for (const hub of hubs) fn(hub);
   };
+  let tick = now();
+  let shown = target.document.visibilityState === "visible";
+  target.setInterval(() => {
+    const at = now();
+    if (shown && at - tick > SLEEP_GAP_MS) each((h) => h.woke());
+    tick = at;
+    shown = target.document.visibilityState === "visible";
+  }, SLEEP_TICK_MS);
+  target.addEventListener("focus", () => each((h) => h.check()));
   target.addEventListener("online", () => each((h) => h.probe()));
   target.addEventListener("pageshow", (e) => {
     if (e.persisted) each((h) => h.probe());

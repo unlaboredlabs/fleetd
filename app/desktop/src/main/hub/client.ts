@@ -5,6 +5,9 @@
 // refused (close 4401, or an error before `ready`) or the client is stopped. The event long-poll is silent when
 // nothing happens, so the client pings and drops a link whose ping goes unanswered: a half-open socket (Wi-Fi or
 // tailnet gone without a sleep, a NAT that forgot it) must not keep showing as live, nor wait on TCP's own retries.
+// The steady ping finds a dead idle link within PING_EVERY_MS + PONG_WAIT_MS; one that dies mid-flow (a reply streaming,
+// a call out) goes quiet where it shouldn't, so QUIET_PING_MS after the traffic stops it is pinged once, and given up
+// when nothing comes back in QUIET_PONG_MS; a window coming to the front (check()) pings it the same way.
 // A wake (woke(): the computer resumed) drops the link at once and dials again on a short deadline, about once a second
 // for WAKE_FAST_MS; the screen unlocking or the network coming back (probe()) ping the link first and do that only if it
 // doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
@@ -54,6 +57,13 @@ export const ADVICE_AFTER_MS = WAKE_FAST_MS;
 export const PING_EVERY_MS = 15_000;
 /** A ping with nothing heard since (no byte, no pong) for this long: the link is dead. */
 export const PONG_WAIT_MS = 10_000;
+/** A link that has carried traffic (a frame in, a call out) and gone quiet this long is pinged once. */
+export const QUIET_PING_MS = 3_000;
+/**
+ * How long that ping, or a check()'s, waits for anything at all: a pong, or a byte of a frame on its way. Room for a
+ * satellite's or a loaded 3G link's round trip with a retransmit or two, and a frame of a few seconds ahead of it.
+ */
+export const QUIET_PONG_MS = 5_000;
 /** A link must stay up this long before the backoff starts over, so a hub that accepts and drops isn't hammered. */
 export const STABLE_MS = 30_000;
 /** A reconnect that missed more events than this reads everything again: replaying them would cost more. */
@@ -90,6 +100,8 @@ export interface HubClientOptions {
 interface Pending {
   readonly resolve: (outcome: CallOutcome) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+  /** Given longer than DEFAULT_CALL_TIMEOUT_MS (a file's piece, a machine's login): its frames take seconds. */
+  readonly long: boolean;
 }
 
 const fail = (code: string, message: string, fix?: string): CallOutcome => ({ ok: false, error: { code, message, fix } });
@@ -142,6 +154,10 @@ export class HubClient implements HubSource {
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   #pongTimer: ReturnType<typeof setTimeout> | null = null;
   #probeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the last frame came or call went: traffic the quiet ping looks after. */
+  #activeAt = 0;
+  #quietTimer: ReturnType<typeof setTimeout> | null = null;
+  #checkTimer: ReturnType<typeof setTimeout> | null = null;
   /** This connection's hub reads presence: its `ready` named it, and it hasn't refused a presence frame since. */
   #presence = false;
   /** The hub serves browser sessions (ready's `browser_sessions`): only then go browser_watch and browser_input. */
@@ -209,15 +225,66 @@ export class HubClient implements HubSource {
     if (this.#probeTimer !== null) return;
     const heard = this.#heardCount;
     this.#connection?.ping();
+    // At least the last link's own handshake: a satellite's round trips take longer than a second, and a healthy link
+    // redialled on every unlock costs a resync.
     this.#probeTimer = setTimeout(() => {
       this.#probeTimer = null;
       if (this.#ready && this.#heardCount === heard) this.#redialForWake();
-    }, WAKE_PROBE_MS);
+    }, Math.min(Math.max(WAKE_PROBE_MS, this.#handshakeMs), QUIET_PONG_MS));
+  }
+
+  /**
+   * A window came to the front, or the page into view: the person is about to read what it shows, so a live link is
+   * pinged and given up when nothing comes back in QUIET_PONG_MS, rather than showing a dead one as live until the next
+   * steady ping. One not live is left to its retry.
+   */
+  check(): void {
+    if (this.#stopped || !this.#ready || this.#checkTimer !== null) return;
+    this.#pingAndWait();
+  }
+
+  /** One ping; nothing at all heard in QUIET_PONG_MS after it gives the link up. */
+  #pingAndWait(): void {
+    const pingAt = Date.now();
+    if (this.#checkTimer !== null) clearTimeout(this.#checkTimer);
+    this.#checkTimer = setTimeout(() => {
+      this.#checkTimer = null;
+      // A long call's frame (an upload's piece) can hold the ping behind it for seconds: the steady ping's longer
+      // wait judges the link then.
+      if (this.#ready && this.#heardAt < pingAt && !this.#longCall()) this.#abandon(explainAbandon(this.#options.hub, "silent"));
+    }, QUIET_PONG_MS);
+    this.#connection?.ping();
+  }
+
+  #longCall(): boolean {
+    for (const p of this.#pending.values()) if (p.long) return true;
+    return false;
+  }
+
+  /** A frame came or a call went: once the link has been quiet QUIET_PING_MS after it, one ping. */
+  #active(): void {
+    this.#activeAt = Date.now();
+    if (this.#ready && this.#quietTimer === null) this.#armQuiet(QUIET_PING_MS);
+  }
+
+  #armQuiet(ms: number): void {
+    this.#quietTimer = setTimeout(() => {
+      this.#quietTimer = null;
+      if (!this.#ready) return;
+      const quiet = Date.now() - Math.max(this.#heardAt, this.#activeAt);
+      if (quiet < QUIET_PING_MS) return this.#armQuiet(QUIET_PING_MS - quiet);
+      if (this.#checkTimer === null) this.#pingAndWait();
+    }, ms);
   }
 
   #heard(): void {
     this.#heardAt = Date.now();
     this.#heardCount++;
+    // Anything at all answers the quiet ping or check() out.
+    if (this.#checkTimer !== null) {
+      clearTimeout(this.#checkTimer);
+      this.#checkTimer = null;
+    }
   }
 
   #redialForWake(): void {
@@ -254,8 +321,10 @@ export class HubClient implements HubSource {
       const timer = setTimeout(() => {
         this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
-      this.#pending.set(id, { resolve, timer });
+      const long = timeoutMs > DEFAULT_CALL_TIMEOUT_MS;
+      this.#pending.set(id, { resolve, timer, long });
       this.#connection?.send(text, this.#deflateUp && text.length >= DEFLATE_UP_BYTES);
+      if (!long) this.#active();
     });
   }
 
@@ -346,6 +415,7 @@ export class HubClient implements HubSource {
         if (this.#connection !== connection) return;
         this.#heard();
         this.#onFrame(parseServerFrame(text));
+        this.#active();
       },
       onHeard: () => {
         if (this.#connection === connection) this.#heard();
@@ -595,6 +665,10 @@ export class HubClient implements HubSource {
     if (this.#heartbeat !== null) clearInterval(this.#heartbeat);
     if (this.#pongTimer !== null) clearTimeout(this.#pongTimer);
     if (this.#probeTimer !== null) clearTimeout(this.#probeTimer);
+    if (this.#quietTimer !== null) clearTimeout(this.#quietTimer);
+    if (this.#checkTimer !== null) clearTimeout(this.#checkTimer);
+    this.#quietTimer = null;
+    this.#checkTimer = null;
     this.#pongTimer = null;
     this.#probeTimer = null;
     this.#retryTimer = null;
