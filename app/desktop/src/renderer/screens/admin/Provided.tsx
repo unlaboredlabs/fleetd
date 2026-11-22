@@ -36,6 +36,7 @@ export function ProvidedComputers() {
   return (
     <SettingsSection
       title="fleetd's computers"
+      reveal="hub.provided"
       aside={
         atOnce === undefined || atOnce === null ? undefined : (
           <Text size="sm" tone="quiet" data-provided-at-once="">
