@@ -138,7 +138,6 @@ export function Recordings() {
     <>
       <SettingsRow
         reveal="hub.recordings"
-        mark="none"
         title="Keep screen recordings for"
         data={{ "data-screens-retention": "" }}
         control={<Select aria-label="Keep recordings for" className={s.machineCap} value={String(retention.retentionDays)} options={daysChoices(retention.retentionDays)} disabled={busy} onValueChange={(v) => set(Number(v))} />}
