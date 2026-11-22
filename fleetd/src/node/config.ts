@@ -17,6 +17,8 @@ export type NodeConfig = {
   minFreeGb?: number;
   warmBuilds?: number;
   buildSlots?: number;
+  /** Full pre-push checks that run at once (check_slots.ts). Absent: one per 8 cores, at least 2; 0: no turns. */
+  checkSlots?: number;
   /** True once the hub has accepted this node's key. */
   enrolled: boolean;
   /** The hub removed this machine: the node isn't enrolled any more, and waits until it joins again. */
