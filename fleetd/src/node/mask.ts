@@ -10,9 +10,12 @@ export const HIDDEN = "[secret hidden]";
 const pemArmor = (line: string) => (line.startsWith("-----BEGIN ") || line.startsWith("-----END ")) && line.endsWith("-----");
 // A line break as printed, or as JSON escapes it.
 const NL = String.raw`(?:\r?\n|(?:\\r)?\\n)`;
-// What a tool may print before each line: indentation (a YAML block), a line number (`cat -n`, claude's Read with its
-// arrow, `grep -n`), a file's name and line (`grep -rn`).
-const PREFIX = String.raw`(?:[ \t]|\\t)*(?:\d+(?:→|\t|\\t|:)|[^\s:"\\]+:\d+[:-])?(?:[ \t]|\\t)*`;
+// What a tool may print before each line: indentation (a YAML block), a diff's `-` or `+`, a line number (`cat -n`,
+// claude's Read with its arrow, `grep -n`), a file's name and line (`grep -rn`). Its whitespace runs never meet, so a
+// long one is matched in linear time.
+const WS = String.raw`(?:[ \t]|\\t)*`;
+const MARK = String.raw`(?:[-+]|\d+(?:→|\t|\\t|:)|[^\s:"\\]+:\d+[:-])`;
+const PREFIX = String.raw`${WS}(?:${MARK}${WS})?`;
 const B64 = "[A-Za-z0-9+/=]";
 /** A private key's PEM block: its header, the base64 lines after it (the first of 16 characters or more, so prose
  * that names the header isn't one), each after a line break and what a tool prints before it, or after spaces where
@@ -30,7 +33,7 @@ const PRIVATE_KEY = new RegExp(
  * after it and, after it, nothing yet, a line's prefix or a base64 run reaching the text's end, or a base64 run of 16
  * characters or more. */
 const OPENING = new RegExp(
-  String.raw`^-----BEGIN (?:[A-Z0-9 ]*-{0,5}|[A-Z0-9 ]*PRIVATE KEY-----(?![\s\S]*-----END [A-Z0-9 ]*PRIVATE KEY-----)(?:\s|\\[rnt])*(?:(?:${PREFIX})?(?:${B64}{16,}[\s\S]*|${B64}*)|(?:[ \t]|\\t)*[^\s:"\\]+(?::\d*)?)\\?)$`,
+  String.raw`^-----BEGIN (?:[A-Z0-9 ]*-{0,5}|[A-Z0-9 ]*PRIVATE KEY-----(?![\s\S]*-----END [A-Z0-9 ]*PRIVATE KEY-----)(?:\s|\\[rnt])*(?:(?:${MARK}${WS})?(?:${B64}{16,}[\s\S]*|${B64}*)|[^\s:"\\]+(?::\d*)?)\\?)$`,
 );
 const BEGIN = "-----BEGIN ";
 const utf8 = (s: string) => Buffer.from(s, "utf8");

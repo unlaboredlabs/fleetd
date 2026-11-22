@@ -190,8 +190,9 @@ the output leaves the machine, in command output, the agent's replies and live t
 - for a secret of several lines, each whole line of 8 characters or more, wherever it appears, and the line without
   its `=` padding (as `env | cut -d= -f1` prints it). PEM armor lines such as `-----BEGIN CERTIFICATE-----` are the
   same in every file and stay readable;
-- any private key's PEM block (`-----BEGIN … PRIVATE KEY-----`, its base64 lines and its `END` line), whoever's key
-  it is, as `[secret hidden]`. Text that only names the header is left alone.
+- as a best effort, any other private key's PEM block (`-----BEGIN … PRIVATE KEY-----`, its base64 lines and its
+  `END` line), as `[secret hidden]`: printed plainly, JSON-escaped, line-numbered (`cat -n`, `grep -n`), indented, in
+  a diff or joined by spaces. Text that only names the header is left alone.
 
 Claude Code keeps its own copy of the conversation on the machine, which `--resume` reads. When the agent's claude
 exits, the node masks the same values in that file too, and the agent resumes from it as before. What a command printed
