@@ -16,7 +16,7 @@ import type { AddressInfo } from "node:net";
 import { z } from "zod";
 import { madeTeam, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../shared/accounts";
 import type { FinishOutcome, SignInOutcome, SignOutOutcome, TeamOutcome } from "../../shared/cloud";
-import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, type AccountsTeam } from "../../shared/contracts";
+import { ACCOUNTS_ACCEPT_PATH, ACCOUNTS_LOOPBACK_PATH, ACCOUNTS_SIGN_IN_PATH, ACCOUNTS_SIGN_OUT_PATH, ACCOUNTS_TEAM_PATH, type AccountsTeam } from "../../shared/contracts";
 import type { CallOutcome, ConnectOutcome } from "../../shared/hub";
 import { cleanLabel } from "../../shared/hubs";
 import type { PairFailure } from "../../shared/pairing";
@@ -265,7 +265,11 @@ export class CloudAccount {
     this.#held = { config, answer, deviceName: body.deviceName };
     return {
       ok: true,
-      arrival: { email: answer.email, invitations: answer.invitations.map(({ name, invitedBy, role }) => ({ name: cleanLabel(name) ?? "fleetd", invitedBy, role })) },
+      arrival: {
+        email: answer.email,
+        invitations: answer.invitations.map(({ name, invitedBy, role }) => ({ name: cleanLabel(name) ?? "fleetd", invitedBy, role })),
+        ...(answer.make === undefined ? {} : { canMake: true as const }),
+      },
     };
   }
 
@@ -274,7 +278,7 @@ export class CloudAccount {
    * joined it. Each key this replaces is revoked on its team first, and when the account changed, the previous one's
    * teams this sign-in didn't bring are revoked and dropped. With nothing connected, the session ends and nothing is kept.
    */
-  async finish(join: readonly number[]): Promise<FinishOutcome> {
+  async finish(join: readonly number[], make = false): Promise<FinishOutcome> {
     const held = this.#held;
     this.#held = null;
     if (held === null) return failed("", "That sign-in isn't waiting any more.", "Sign in again.");
@@ -287,10 +291,16 @@ export class CloudAccount {
       if (out.origin !== null) paired.add(out.origin);
     };
     for (const team of answer.teams) await pairOne(team, false);
+    // A team of their own, on asking: what the sign-in offered, made now, and connected as one they made.
+    if (make && answer.make !== undefined) {
+      const made = await this.#call(config, ACCOUNTS_TEAM_PATH, { make: answer.make });
+      if (made.ok) await pairOne(made.team, false);
+      else outcomes.push({ name: "Your team", ok: false, failure: made.failure });
+    }
     for (const at of [...new Set(join)]) {
       const invitation = answer.invitations[at];
       if (invitation === undefined) continue;
-      const joined = await this.#accept(config, invitation.accept);
+      const joined = await this.#call(config, ACCOUNTS_ACCEPT_PATH, { accept: invitation.accept });
       if (joined.ok) await pairOne(joined.team, true);
       else outcomes.push({ name: cleanLabel(invitation.name) ?? "fleetd", ok: false, failure: joined.failure });
     }
@@ -318,11 +328,11 @@ export class CloudAccount {
     return { ok: true, email: answer.email, teams: outcomes };
   }
 
-  /** The service joins an invitation the person chose, and answers the team with its pairing code. */
-  async #accept(config: CloudConfig, accept: string): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> {
+  /** The service joins an invitation the person chose (accept) or makes their own team (team), and answers the team with its pairing code. */
+  async #call(config: CloudConfig, path: string, body: { accept: string } | { make: string }): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> {
     let response: Response;
     try {
-      response = await this.#post(config, ACCOUNTS_ACCEPT_PATH, { accept });
+      response = await this.#post(config, path, body);
     } catch {
       return OFFLINE;
     }

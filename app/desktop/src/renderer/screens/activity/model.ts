@@ -53,12 +53,15 @@ export const typesFor = (filter: KindFilter): HubEventType[] => shownKinds(filte
 /** Whether the read takes the hub's own events too: a device paired is Other. */
 export const hubWideFor = (filter: KindFilter): boolean => filter.size === 0 || filter.has("other");
 
+const webPairing = (data: { web?: unknown; deviceName?: unknown } | undefined): boolean => data?.web === true || data?.deviceName === "Web browser";
+
 /** Whether `e` belongs in the feed of `project` under `filter`: its own events, and the hub's when Other shows. */
 export const inFeed = (e: HubEvent, project: { readonly machineId: string; readonly projectId: string }, filter: KindFilter): boolean => {
   const kind = kindOf(e.type);
   if (kind === undefined || !shownKinds(filter).includes(kind)) return false;
   // A browser signing in to the web app pairs a key each time: Your devices lists it, a bot's history doesn't.
-  if (e.type === "key.paired" && (e.data as { web?: unknown } | undefined)?.web === true) return false;
+  // Before the cloud marked them, its web sign-ins all paired as "Web browser" (fleetd-cloud's DEVICE_NAME then).
+  if (e.type === "key.paired" && webPairing(e.data as { web?: unknown; deviceName?: unknown } | undefined)) return false;
   if (e.machineId === undefined && e.projectId === undefined) return hubWideFor(filter);
   return e.machineId === project.machineId && e.projectId === project.projectId;
 };

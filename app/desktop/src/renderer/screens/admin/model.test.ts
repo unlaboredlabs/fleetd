@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentKeyInfo, Invite, Person, PersonClaude } from "../../../shared/contracts";
-import { accountsLine, administers, devicesLine, expiresLine, nameProblem, openInvites, peopleRows } from "./model";
+import { accountsLine, administers, deviceNames, devicesLine, expiresLine, nameProblem, openInvites, peopleRows } from "./model";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const person = (personId: string, name: string, role: Person["role"]): Person => ({ personId, name, role, createdAt: AT });
@@ -120,5 +120,20 @@ describe("a person's accounts on People", () => {
     // No GitHub App: no GitHub part. An older hub: no Claude part.
     expect(accountsLine(claude({ kind: "machine_login" }), {}, false)).toBe("Claude: Machine's own login");
     expect(accountsLine(undefined, undefined, true)).toBeNull();
+  });
+});
+
+describe("a person's devices", () => {
+  it("names each kind once, with how many", () => {
+    expect(deviceNames(["Web browser", "Web browser", "Chrome on Linux", "Web browser"])).toBe("Web browser ×3, Chrome on Linux");
+    expect(deviceNames([])).toBe("");
+  });
+});
+
+describe("a cloud team's words", () => {
+  it("calls the key the team's", () => {
+    const claude = { person: { personId: "p1", name: "Sam" }, runsOn: { kind: "account", account: { kind: "hub" } } } as never;
+    expect(accountsLine(claude, undefined, false, false, true)).toBe("Claude: Team API key");
+    expect(accountsLine(claude, undefined, false)).toBe("Claude: Hub API key");
   });
 });

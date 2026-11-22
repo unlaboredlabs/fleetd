@@ -50,10 +50,11 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
   const nowMs = useNow(true, 60_000);
   const people = (data.people ?? []).map((p) => p.person);
   const hubPause = pauseLine({ kind: "hub" }, usage, nowMs);
+  const team = useHub().cloud === true;
   return (
     <>
       <HubKey api={data.hubApi} pause={hubPause}>
-        <Owner data={data} usage={usage} me={me} nowMs={nowMs} runsOn={runsOnLine(data.leadsRunOn, people, me?.personId)} />
+        <Owner data={data} usage={usage} me={me} nowMs={nowMs} runsOn={runsOnLine(data.leadsRunOn, people, me?.personId, false, team)} />
       </HubKey>
       <Members on={data.settings.membersUseHubApi} hubApi={data.hubApi !== undefined} />
     </>

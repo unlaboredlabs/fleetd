@@ -388,7 +388,7 @@ test("it runs in any live bot of the hub, another person's former Only me one to
     (e: ToolError) => e,
   );
   expect(refused).toMatchObject({ code: "invalid", reason: "no_project", fix: "Add a bot first, then import again." });
-  expect(refused?.message).toContain("Everyone on this hub can read what it writes.");
+  expect(refused?.message).toBe("Import memory runs in one of your bots, and there is none yet.");
 });
 
 test("clean and parse read what other assistants write", () => {

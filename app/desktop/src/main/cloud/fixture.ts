@@ -30,7 +30,9 @@ export const CloudSection = z.object({
     .union([
       z.literal("wait"),
       z.object({ failure: Failure }),
-      z.object({ arrival: z.object({ email: z.string(), invitations: z.array(z.object({ name: z.string(), invitedBy: z.string(), role: z.string() })) }) }),
+      z.object({
+        arrival: z.object({ email: z.string(), invitations: z.array(z.object({ name: z.string(), invitedBy: z.string(), role: z.string() })), canMake: z.literal(true).optional() }),
+      }),
     ])
     .optional(),
   /** The terminal Connect this computer opens; absent: none could be opened. Nothing is ever run. */

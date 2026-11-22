@@ -30,6 +30,8 @@ export interface Invitation {
 export interface Arrival {
   readonly email: string;
   readonly invitations: ReadonlyArray<Invitation>;
+  /** In no team of their own (they came by an invitation): passing on every invitation, they may make one. */
+  readonly canMake?: true | undefined;
 }
 
 /** How the browser's part of a sign-in ended. Cancelled ends quietly: the person pressed Cancel, or started another. */

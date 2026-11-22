@@ -261,7 +261,13 @@ function Step({ item }: { item: Exclude<FeedItem, { kind: "dm" }> }) {
         </Text>
       </span>
       <span className={cx(s.machine, line.tone === "danger" && s.failed)}>
-        <MiddleCut text={line.machine} />
+        {line.prose === true ? (
+          <Text size="xs" tone="inherit" className={s.prose}>
+            {line.machine}
+          </Text>
+        ) : (
+          <MiddleCut text={line.machine} />
+        )}
       </span>
       {line.outcome !== undefined ? (
         <Text size="xs" tone="danger">
