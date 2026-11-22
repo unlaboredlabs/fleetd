@@ -59,3 +59,12 @@ describe("on fleetd's computers", () => {
     expect(sealedLine([{ machineId: "devbox" } as never])).toBe("Sealed on devbox.");
   });
 });
+
+describe("a cloud team's words", () => {
+  it("calls the shared key the team's", () => {
+    const team = { kind: "account", account: { kind: "hub" } } as const;
+    expect(runsOnLine(team, [], undefined, false, true)).toBe("The team's API key.");
+    expect(theirRunsOn(team, false, true)).toBe("Team API key");
+    expect(runsOnLine(team, [])).toBe("The hub's API key.");
+  });
+});

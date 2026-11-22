@@ -22,7 +22,7 @@ import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { pauseLine } from "../settings/claudeModel";
 import { useNoMachine } from "../settings/claudeParts";
-import { accountsLine, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
+import { accountsLine, deviceNames, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
 import a from "./admin.module.css";
@@ -93,12 +93,14 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   const nowMs = useNow(true, 60_000);
   const noMachine = useNoMachine();
+  const cloud = useHub().cloud === true;
   const accounts = (personId: string) => {
     const line = accountsLine(
       claude.data?.people?.find((p) => p.person.personId === personId),
       github.data?.people?.find((p) => p.person.personId === personId),
       github.data?.app !== undefined,
       noMachine,
+      cloud,
     );
     const pause = pauseLine({ kind: "person", personId }, usage.data?.machines ?? [], nowMs);
     return { line, pause };
@@ -170,7 +172,7 @@ function PersonLine({
   const setRole = (role: HubRole) => {
     if (role !== p.role) run("person_set", { personId: p.personId, role }, "Not changed");
   };
-  const devices = row.devices.map((d) => d.name).join(", ");
+  const devices = deviceNames(row.devices.map((d) => d.name));
   return (
     <SettingsListRow
       label={p.name}
