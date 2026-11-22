@@ -3,7 +3,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readableLines, settingsPathProblems } from "./settingsPages";
+import { holdsLink } from "../renderer/screens/settings/agentsModel";
+import { placesOf } from "../renderer/screens/setup/steps";
+import { readableLines, settingsPath, settingsPathProblems } from "./settingsPages";
 
 const app = join(__dirname, "..", "..", "..");
 const sources = (dir: string): string[] =>
@@ -31,3 +33,26 @@ describe("Settings paths", () => {
     expect(found).toEqual([]);
   });
 });
+
+describe("a fleetd cloud team's Settings group", () => {
+  it("is named by settingsPath, never written: no line of the apps names Settings › Hub or a Hub › page itself", () => {
+    const found = [join(app, "desktop", "src"), join(app, "mobile", "src")].flatMap(sources).flatMap((path) =>
+      readableLines(readFileSync(path, "utf8"))
+        .filter((line) => !/^\s*\{\/\*/u.test(line) && /Settings › Hub(?![\w&])|(^|[^\w])Hub › (Setup|Machines|People|Billing|Bot defaults)/u.test(line))
+        .map((line) => `${path.slice(app.length + 1)}: ${line.trim().slice(0, 120)}`),
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("reads Team on a cloud team and Hub on a self-hosted hub, in the lines the apps build", () => {
+    expect(settingsPath(true, "Machines")).toBe("Settings › Team › Machines");
+    expect(settingsPath(false, "Setup", "GitHub")).toBe("Settings › Hub › Setup › GitHub");
+    const a = { machineCap: 4 } as Parameters<typeof holdsLink>[0];
+    expect(holdsLink(a, "devbox", undefined, true).text).toBe("devbox's max in Team › Machines");
+    expect(holdsLink(a, "devbox").text).toBe("devbox's max in Hub › Machines");
+    const step = { id: "machines", place: "machines" } as Parameters<typeof placesOf>[0];
+    expect(placesOf(step, false, true).map((p) => p.label)).toEqual(["Open Team › Machines"]);
+    expect(placesOf(step).map((p) => p.label)).toEqual(["Open Hub › Machines"]);
+  });
+});
+

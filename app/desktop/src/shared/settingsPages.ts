@@ -49,3 +49,9 @@ export function settingsPathProblems(text: string): string[] {
 
 /** The lines of a source file a person may read: comments are left out. */
 export const readableLines = (source: string): string[] => source.split("\n").filter((line) => !/^\s*(\/\/|\*|\/\*)/u.test(line));
+
+/** The admins' group of Settings as a hub's people see it: Hub on a self-hosted hub, Team on a fleetd cloud team. */
+export const adminGroup = (cloud: boolean): string => (cloud ? "Team" : "Hub");
+
+/** "Settings › Hub", or "Settings › Team" on a cloud team, then each part. The apps' lines take it from here (fleetd's, shared/settings_path.ts). */
+export const settingsPath = (cloud: boolean, ...parts: string[]): string => ["Settings", adminGroup(cloud), ...parts].join(" › ");

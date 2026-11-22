@@ -14,6 +14,7 @@ import { ConfirmRemove, Problem } from "./claudeParts";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { RowMenu, SettingsRow } from "./parts";
 import { onWeb } from "../../src/web";
+import { settingsPath } from "../../../shared/settingsPages";
 
 const noInput = {};
 
@@ -29,7 +30,7 @@ export function GithubSettings() {
   if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub opens PRs with each machine's own gh login. Update fleetd on the hub to connect your own GitHub.");
   if (read.isLoadingError) return note(errorText(read.error), "danger");
   if (read.data === undefined) return note("Loading…");
-  if (read.data.app === undefined) return note(cloud ? "GitHub isn't set up on this service." : "This hub has no GitHub App yet. An admin creates it in Hub › Setup.");
+  if (read.data.app === undefined) return note(cloud ? "GitHub isn't set up on this service." : `This hub has no GitHub App yet. An admin creates it in ${settingsPath(false, "Setup")}.`);
   return <Account info={read.data} />;
 }
 

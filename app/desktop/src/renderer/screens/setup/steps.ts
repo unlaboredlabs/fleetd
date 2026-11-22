@@ -4,6 +4,7 @@
 
 import type { HubSetupStep, SetupGroup, SetupNeed, SetupStatus } from "../../../shared/contracts";
 import type { Screen } from "../shell/routes";
+import { adminGroup } from "../../../shared/settingsPages";
 
 export type SetupStep = HubSetupStep;
 
@@ -41,16 +42,25 @@ export interface Place {
  * The hub's own accounts, saved on the step's own page in Settings › Hub › Setup, which holds their controls
  * (admin/SetupPage.tsx): the reveal opens that page.
  */
-const HUB_ACCOUNTS: Readonly<Record<string, Place>> = {
-  claude: { label: "Open Hub › Setup › Claude", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.claude" },
-  github: { label: "Open Hub › Setup › GitHub", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.github" },
-};
+const HUB_ACCOUNTS = ["claude", "github"];
 
-const ADMIN: Readonly<Record<string, Place>> = {
-  machines: { label: "Open Hub › Machines", screen: { id: "settings", tab: "hub.machines" } },
-  invites: { label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } },
-  sandboxes: { label: "Open Hub › Machines › Providers", screen: { id: "settings", tab: "hub.machines" }, reveal: "hub.sandboxes" },
-  ...HUB_ACCOUNTS,
+/** A page of the admins' group, opened by its place: "Open Hub › Machines", or Team's on a fleetd cloud team. */
+const admin = (place: string, cloud: boolean): Place | undefined => {
+  const open = (...parts: string[]) => `Open ${[adminGroup(cloud), ...parts].join(" › ")}`;
+  switch (place) {
+    case "claude":
+      return { label: open("Setup", "Claude"), screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.claude" };
+    case "github":
+      return { label: open("Setup", "GitHub"), screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.github" };
+    case "machines":
+      return { label: open("Machines"), screen: { id: "settings", tab: "hub.machines" } };
+    case "invites":
+      return { label: open("People"), screen: { id: "settings", tab: "hub.people" } };
+    case "sandboxes":
+      return { label: open("Machines", "Providers"), screen: { id: "settings", tab: "hub.machines" }, reveal: "hub.sandboxes" };
+    default:
+      return undefined;
+  }
 };
 
 /** Beside the Hub page, each person's own side of a step; 1Password is only a person's own. */
@@ -66,9 +76,9 @@ const OWN: Readonly<Record<string, Place>> = {
  * step's guide still says it. `here`: on the step's own page in Settings, which is the hub's side of an account
  * already, so only yours is left to open.
  */
-export const placesOf = (step: SetupStep, here = false): ReadonlyArray<Place> => {
+export const placesOf = (step: SetupStep, here = false, cloud = false): ReadonlyArray<Place> => {
   if (step.place === undefined) return [];
-  const hub = here && step.place in HUB_ACCOUNTS ? undefined : ADMIN[step.place];
+  const hub = here && HUB_ACCOUNTS.includes(step.place) ? undefined : admin(step.place, cloud);
   return [hub, OWN[step.place]].filter((p): p is Place => p !== undefined);
 };
 

@@ -15,6 +15,7 @@ import { navigate } from "../shell/navigation";
 import { projectSkills, type ProjectKey } from "../shell/routes";
 import { body, isOwn, metaLine, versionLine } from "./skillsModel";
 import s from "./skills.module.css";
+import { SettingsPath } from "../settings/SettingsPath";
 
 const refOf = (p: ProjectKey): ProjectRef => ({ machineId: p.machineId, projectId: p.projectId });
 
@@ -119,7 +120,13 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
             </div>
             {!own ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>
-                {listed.origin === "global" ? "Every bot gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this bot’s folder: change it there."}
+                {listed.origin === "global" ? (
+                  <>
+                    Every bot gets this one; an owner or admin changes it in <SettingsPath />.
+                  </>
+                ) : (
+                  "It is a file in this bot’s folder: change it there."
+                )}
               </Text>
             ) : listed.install ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>

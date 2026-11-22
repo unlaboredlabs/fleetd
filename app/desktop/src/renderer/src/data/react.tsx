@@ -67,6 +67,9 @@ const AlwaysOn = () => {
   return null;
 };
 
+/** Whether what is on screen here is a fleetd cloud team's; false outside any hub's scope. */
+export const useCloudTeam = (): boolean => useContext(HubContext)?.cloud === true;
+
 /** The hub of what is on screen here: the screen's, or a sidebar group's. */
 export const useHub = (): HubView => {
   const hub = useContext(HubContext);

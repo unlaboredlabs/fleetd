@@ -1,6 +1,7 @@
 // Get started with sample data, each step of both paths, for the QA screens (qa/registry.ts, `#/start?sample=<name>`)
 // and the tests: the page itself reads the hub's own state (state.ts).
 import type { StartRepo, StartView } from "./model";
+import { settingsPath } from "../../../shared/settingsPages";
 
 const LINE = "curl -fsSL https://fleetd.sh | sh -s -- --join https://sam.fleetd.dev --code 7QK4-M2XD";
 
@@ -35,7 +36,7 @@ export const SAMPLES = {
   // ...or a hosted provider whose sandboxes didn't get ready within the wait: why, the fix and Try again.
   "hosted-failed": {
     ...owner,
-    computer: { at: "hosted_failed", provider: "boat.dev", reason: "boat.dev's sandboxes didn't get ready.", fix: "If it keeps failing, check boat.dev in Settings › Hub › Machines." },
+    computer: { at: "hosted_failed", provider: "boat.dev", reason: "boat.dev's sandboxes didn't get ready.", fix: `If it keeps failing, check boat.dev in ${settingsPath(true, "Machines")}.` },
     tailscale: { at: "todo" },
     claude: { at: "wait" },
     github: { at: "todo" },

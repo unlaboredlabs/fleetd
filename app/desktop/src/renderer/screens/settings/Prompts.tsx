@@ -37,6 +37,7 @@ import { orphanAdvice, orphanTitle, targetName, whyLine } from "./orphans";
 import { hashFor, navigate } from "../shell/navigation";
 import { formatRoute, replaceHash, replaceRoute, type SettingsRoute } from "./route";
 import s from "./settings.module.css";
+import { SettingsPath } from "./SettingsPath";
 
 type Switch = { scope: Scope; id: string | null };
 type Echo = { ok: boolean; text: string };
@@ -300,7 +301,7 @@ export function Prompts({ route, where = "project" }: { route: SettingsRoute; wh
         // A prompt with one text for the whole hub can't be edited for a project: its page shows it, read only.
         <div className={cx(s.column, s.wide)}>
           <PageHead title={name} lead={toList}>
-            One text for every bot: the hub&apos;s owners and admins change it in Hub › Bot defaults › Instructions.
+            One text for every bot: the hub&apos;s owners and admins change it in <SettingsPath parts={["Bot defaults", "Instructions"]} />.
           </PageHead>
           <SettingsSection bare>
             <div data-text="code">

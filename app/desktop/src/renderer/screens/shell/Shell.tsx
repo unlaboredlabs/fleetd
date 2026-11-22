@@ -301,7 +301,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
       {
         id: "hub.people",
         title: "People",
-        detail: "Settings › Hub: who is on this hub, their roles and invites",
+        detail: "Who is on it, their roles and invites",
         group: "go-to",
         keywords: ["people", "invite", "team", "roles", "admin", "administration", "hub"],
         enabled: () => chrome && administers,

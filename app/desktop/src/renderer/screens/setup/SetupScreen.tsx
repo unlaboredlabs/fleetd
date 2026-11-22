@@ -21,6 +21,7 @@ import { GuideParts, Part } from "./Guide";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
 import { INLINE, stepControls } from "./accounts";
 import s from "./setup.module.css";
+import { SettingsPath } from "../settings/SettingsPath";
 
 const noInput = {};
 
@@ -216,7 +217,7 @@ function useTest(step: SetupStep) {
 function StepBody({ step, test, account }: { step: SetupStep; test: ReturnType<typeof useTest>; account?: ReactNode }) {
   const hub = useHub();
   const here = account !== undefined;
-  const places = placesOf(step, here);
+  const places = placesOf(step, here, hub.cloud === true);
   // Open while the step is being done, and it stays so when its Test finds it done.
   const [shown, setShown] = useState(step.status !== "done");
   const folded = here && step.status === "done" && !shown;
@@ -427,7 +428,9 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         </Text>
         <Text as="p" tone="quiet">
           {left === 0
-            ? "Add a bot and say hi to its lead. What you left for later waits in Settings › Hub › Setup, and fleetd asks for it the first time it is needed."
+            ? <>
+                Add a bot and say hi to its lead. What you left for later waits in <SettingsPath parts={["Setup"]} />, and fleetd asks for it the first time it is needed.
+              </>
             : `${left} required ${left === 1 ? "step is" : "steps are"} left before agents can run.`}
         </Text>
         <StepSummary title="Ready" steps={ready} brief />

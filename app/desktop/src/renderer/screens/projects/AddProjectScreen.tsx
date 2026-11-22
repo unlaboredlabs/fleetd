@@ -14,7 +14,7 @@ import { Button, Select, StateGlyph, Text, Truncate, cx, underModal, type GlyphS
 import { discovery as discoveryOf, orList, projectHome, repoSuggestions, target, type Discovery, type Worker } from "./discovery";
 import { botAtFolder, botHolding, botName, busy, needsUpdate, ownRepo, repoKey, typedRepo, type Bot, type RepoDraft, type RepoJob } from "./create";
 import { CallError, callKey } from "../../src/data/queries";
-import { HubScope, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
+import { HubScope, useCloudTeam, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { useHubRole } from "../admin/role";
 import { navigate } from "../shell/navigation";
@@ -184,6 +184,7 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
   const named = botName(ui.name, ui.repos);
   const block = blocker(to, d, ui.repos, ui.adding);
   const nothing = block === NOTHING_RUNS;
+  const cloud = useCloudTeam();
   const role = useHubRole();
   /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
   const botAt = (path: string): string | undefined => botAtFolder(projects, to?.machineId, path)?.title;
@@ -194,7 +195,7 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
     if (typed !== null && "why" in typed) return refuseCreate(typed.why);
     const bot = typed?.repo.kind === "folder" ? botAt(typed.repo.path) : undefined;
     if (typed?.repo.kind === "folder" && bot !== undefined) return refuseCreate(`${tilde(typed.repo.path)} is already the bot ${bot}: open it from the sidebar.`);
-    create(to?.machineId, block ?? undefined, typed?.repo);
+    create(to?.machineId, block ?? undefined, typed?.repo, cloud);
   };
   return (
     <>

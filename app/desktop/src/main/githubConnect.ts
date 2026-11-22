@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import type { GithubAppGetOutput, ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError } from "../shared/hub";
 import { landing, pkce } from "./loopback";
+import { settingsPath } from "../shared/settingsPages";
 
 /** How long the browser has to come back: signing in to GitHub and reading its page. */
 export const WAIT_MS = 10 * 60_000;
@@ -72,7 +73,7 @@ export const connectGithub = async (call: Call, open: (url: string) => Promise<v
     if (cancelled()) return failed("cancelled", "Connecting was cancelled.");
     const info = got.output as GithubAppGetOutput;
     if (info.app === undefined) {
-      return failed("invalid", "This hub has no GitHub App yet.", "An admin of the hub creates it in Settings › Hub › Setup › GitHub.");
+      return failed("invalid", "This hub has no GitHub App yet.", `An admin of the hub creates it in ${settingsPath(false, "Setup", "GitHub")}.`);
     }
     const { verifier, challenge } = pkce();
     const state = randomBytes(16).toString("base64url");

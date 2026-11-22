@@ -135,7 +135,7 @@ it("hosted sandboxes that don't get ready within the wait say why, the fix and T
     await act(() => new Promise((r) => setTimeout(r, 120)));
     expect(screen()).toBe("setup.machine.hosted.not-ready");
     expect(host.querySelector("[role=alert]")?.textContent).toBe("boat.dev's sandboxes didn't get ready.");
-    expect(host.textContent).toContain("If it keeps failing, check boat.dev in Settings › Hub › Machines.");
+    expect(host.textContent).toContain("If it keeps failing, check boat.dev in Settings › Team › Machines.");
     expect(host.textContent).not.toContain("runner");
     const again = [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "Try again");
     if (again === undefined) throw new Error(`no Try again in: ${host.textContent}`);
