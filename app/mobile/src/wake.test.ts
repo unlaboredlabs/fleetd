@@ -45,6 +45,20 @@ describe("a cloud bot waking on the phone", () => {
     expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
   });
 
+  it("counts a wake from the person's message at the earliest, as the desktop's", () => {
+    const k = "devbox/w3";
+    const r = { machineId: "devbox", projectId: "w3" };
+    const old = "2026-11-22T10:00:00.000Z";
+    const sent = "2026-11-22T10:42:00.000Z";
+    const s = {
+      chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: true, lastSeq: 1 } },
+      leadActivity: { [leadLaneId(r)]: { kind: "starting", text: "Starting its computer", step: "box", startedAt: old } },
+      chats: { [k]: { messages: [{ author: "human", state: "final", createdAt: sent }] } },
+      sends: {},
+    } as never;
+    expect(wakeIn(s, k)).toEqual({ phase: "waking", step: "box", since: Date.parse(sent) });
+  });
+
   it("Try again that starts nothing says why, a call that throws included, as the desktop's", async () => {
     expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: false, next: "Your team is out of credits." } }))).toBe("Your team is out of credits.");
     expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: false } }))).toBe("Nothing to retry");

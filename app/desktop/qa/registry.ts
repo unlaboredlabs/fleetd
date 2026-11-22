@@ -431,6 +431,7 @@ export const fixtures = [
   "wake-starting",
   "wake-slow",
   "wake-failed",
+  "wake-stale",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -788,7 +789,7 @@ export const screens: readonly Screen[] = [
   {
     id: "chat",
     route: CHAT,
-    fixtures: ["wake-asleep", "wake-starting", "wake-slow", "wake-failed"],
+    fixtures: ["wake-asleep", "wake-starting", "wake-slow", "wake-failed", "wake-stale"],
     sizes: [...defaultSizes, "narrow"],
     variant: "wake",
   },
