@@ -15,6 +15,7 @@ import {
   countText,
   customOf,
   customState,
+  freeName,
   initialOf,
   needsSignIn,
   suggestedName,
@@ -35,7 +36,7 @@ import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { pick } from "./Machines";
 import { NamedRow } from "./manage/Named";
-import { disconnect, readServers, signInPage, test } from "./manage/namedApi";
+import { disconnect, readServers, setOn, signInPage, test } from "./manage/namedApi";
 import { machineName } from "./manage/model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
 
@@ -248,10 +249,17 @@ function CustomRow({ server, line, tell, reload }: { server: McpServer; line: Li
     });
   const press = () => {
     haptics.tap();
-    const labels = signIn ? ["Sign In", "Test", "Disconnect"] : ["Test", "Disconnect"];
+    const toggle = server.enabled ? "Turn Off" : "Turn On";
+    const labels = [...(signIn ? ["Sign In"] : []), "Test", toggle, "Disconnect"];
     const act = (label: string | undefined) => {
       if (label === "Sign In") signInNow();
       else if (label === "Test") go(runTest);
+      else if (label === toggle)
+        go(async () => {
+          const out = await setOn(session, server, !server.enabled);
+          if (!out.ok) return setLine({ text: `Not changed: ${errorWords(out.error)}`, tone: "danger" });
+          haptics.success();
+        });
       else if (label === "Disconnect") remove();
     };
     if (Platform.OS === "ios") {
@@ -288,7 +296,7 @@ function AddRow({ taken, tell, reload }: { taken: string[]; tell: (name: string,
   const add = (url: string) => {
     const name = suggestedName({ kind: "url", url, command: "" });
     if (name === "") return setLine("Give its http or https URL.");
-    const free = taken.includes(name) ? `${name}-2` : name;
+    const free = freeName(name, taken);
     setBusy(true);
     setLine(null);
     void (async () => {

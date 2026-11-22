@@ -4955,7 +4955,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["connections-some"],
     open: async (page) => {
       await page.getByRole("button", { name: "Connections", exact: true }).click();
-      await expect(page.getByRole("list", { name: "Custom MCP" }).getByRole("listitem")).toHaveCount(3);
+      await expect(page.getByRole("list", { name: "Custom MCP" }).getByRole("listitem")).toHaveCount(4);
+      await expect(page.getByRole("switch", { name: "sentry on" })).not.toBeChecked();
     },
   },
   // ...a Test that works through Tailscale, on the custom MCP on the tailnet.
@@ -5022,6 +5023,19 @@ export const screens: readonly Screen[] = [
       const dialog = page.getByRole("dialog");
       await dialog.getByRole("button", { name: "Sign in" }).click();
       await expect(dialog.getByRole("region", { name: "Redirect URL" })).toContainText("http://devbox:4790/oauth/callback");
+    },
+  },
+  // ...the form as a member: a URL that signs in is theirs to add; headers are off, why in Add header's hover.
+  {
+    id: "connections",
+    variant: "add-member",
+    route: "#/connections",
+    fixtures: ["connections-member"],
+    open: async (page) => {
+      await page.getByRole("button", { name: "Add a custom MCP" }).click();
+      await page.getByRole("textbox", { name: "URL" }).fill("https://mcp.linear.app/mcp");
+      await page.getByRole("button", { name: "Add header" }).hover();
+      await expect(page.getByRole("tooltip")).toContainText("An owner or admin adds a command or headers.");
     },
   },
   // ...a custom MCP on the tailnet: added, then tested through Tailscale, with nothing else to set.

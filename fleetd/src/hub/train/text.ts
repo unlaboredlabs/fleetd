@@ -4,6 +4,8 @@
 export const TRAIN_CONTEXT = "fleetd/train";
 /** The label the train puts on its batch PR and on the next PRs it will merge. */
 export const NEXT_LABEL = "fleetd:next";
+/** The label on a PR the train landed in a batch: GitHub shows it Closed, since the batch's commit carried it. */
+export const MERGED_LABEL = "merged";
 /** A hidden line on every comment the train posts. */
 export const TRAIN_MARK = "<!-- fleetd:train -->";
 
