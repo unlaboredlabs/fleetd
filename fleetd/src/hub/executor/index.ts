@@ -618,6 +618,12 @@ export class Executors {
     const slot = this.machines.get(machineId);
     if (!slot) return;
     slot.caughtUp = { atMs: this.hub.clock.now(), head: events(this.hub).head() };
+    // A link back after a drop: its follows ended with it, and a replay carries only the sessions that changed, so one
+    // that ran on through the outage is followed again now, not at its next change or the sweep's minutes later.
+    for (const [id, t] of slot.shell.threads) {
+      const r = threadRef(machineId, id);
+      if (t.activeRunId !== undefined && !this.views.isFollowed(r)) void this.views.follow(r).catch(() => {});
+    }
     this.sinks.caughtUp?.(machineId);
   }
 
