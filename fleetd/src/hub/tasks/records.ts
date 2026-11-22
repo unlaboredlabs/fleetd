@@ -210,6 +210,20 @@ export const TaskRecords = {
       .map((row) => [decode(db, row.data), row.worktree !== null]);
   },
 
+  /**
+   * The tasks that ended after `since` and can't go on: cancelled, or ended with their worktree no longer kept for
+   * them (removed, or seen by the sweep). Their folders on the agents' Mac go (hub/mac_tool `tellEnded`).
+   */
+  endedForGood(db: Database, since: string): TaskId[] {
+    return db
+      .query<{ n: number }, [string]>(
+        `SELECT n FROM tasks WHERE state IN ('done', 'failed', 'cancelled') AND ended_at > ?1
+               AND (worktree IS NOT NULL OR state = 'cancelled') ORDER BY n`,
+      )
+      .all(since)
+      .map((r) => `T${r.n}` as TaskId);
+  },
+
   /** What the sweep found of an ended task's worktree: `removed`, `flagged` or `given_up`. */
   setWorktree(db: Database, taskId: TaskId, seen: string): void {
     db.query("UPDATE tasks SET worktree = ? WHERE n = ? AND state IN ('done', 'failed', 'cancelled')").run(seen, numberOf(taskId));

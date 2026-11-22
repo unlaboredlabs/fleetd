@@ -286,7 +286,8 @@ export type NodeActionKind =
   | "sandbox_limits"
   | "github_tokens"
   | "tailnet"
-  | "rejoin";
+  | "rejoin"
+  | "mac_ended";
 
 /** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
@@ -323,6 +324,9 @@ export type NodeAction = {
    * machine there under its id. The node enrols, then links to that hub from its next start; it answers ok once enrolled.
    */
   rejoin?: { hub: string; code: string };
+  /** `mac_ended`, to the agents' Mac: tasks that ended for good (their worktree gone, or cancelled), whose folders on the
+   * Mac go. An older node answers that it doesn't know the action, and sweeps them after its FOLDER_DAYS. */
+  tasks?: string[];
 };
 
 /** How long a `hold` lasts unless the hub asks again. */
