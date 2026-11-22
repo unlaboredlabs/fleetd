@@ -94,6 +94,11 @@ test("formatting: only blank lines and spaces at a line's end; indentation, inne
   expect(formattingOnly("@@ -1,2 +1,2 @@\n if x:\n-        return x\n+    return x")).toBe(false);
   expect(formattingOnly('@@ -1 +1 @@\n-run("rm -rf / tmp")\n+run("rm -rf /tmp")')).toBe(false);
   expect(formattingOnly("@@ -1 +1 @@\n-const a=1\n+const a = 1")).toBe(false);
+  // A line moved past a context line runs in another order: checkAuth after doThing.
+  expect(formattingOnly("@@ -1,4 +1,4 @@\n function f() {\n-  checkAuth();\n   doThing();\n+  checkAuth();\n }")).toBe(false);
+  expect(decide("people", DEFAULT_RISK_RULES, [file("src/app.ts", "@@ -1,4 +1,4 @@\n function f() {\n-  checkAuth();\n   doThing();\n+  checkAuth();\n }")]).by).toBe("person");
+  // Blank lines and line ends around context lines still are.
+  expect(formattingOnly("@@ -1,3 +1,4 @@\n function f() {\n-  doThing();  \n+\n+  doThing();\n }")).toBe(true);
   expect(formattingOnly("@@ -1 +1 @@\n-const a = 1\n+const a = 2")).toBe(false);
   expect(formattingOnly(undefined)).toBe(false);
 });

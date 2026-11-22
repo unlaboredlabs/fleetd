@@ -167,17 +167,28 @@ const SEMVER = /\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?/g;
  * a digit among them, so a package's name is never taken for one. */
 const HASHLIKE = /(?=[A-Za-z0-9+/=_-]*\d)[A-Za-z0-9+/=_-]{32,}/g;
 
-/** The removed and added lines of each hunk of a unified diff. */
-function hunks(patch: string): { removed: string[]; added: string[] }[] {
-  const out: { removed: string[]; added: string[] }[] = [];
-  let cur: { removed: string[]; added: string[] } | undefined;
+/** A hunk of a unified diff: its removed and added lines, and its old and new sides whole (context lines in both). */
+type Hunk = { removed: string[]; added: string[]; old: string[]; new: string[] };
+
+/** Each hunk of a unified diff. */
+function hunks(patch: string): Hunk[] {
+  const out: Hunk[] = [];
+  let cur: Hunk | undefined;
   for (const line of patch.split("\n")) {
     if (line.startsWith("@@")) {
-      cur = { removed: [], added: [] };
+      cur = { removed: [], added: [], old: [], new: [] };
       out.push(cur);
     } else if (!cur || line.startsWith("\\")) continue;
-    else if (line.startsWith("-")) cur.removed.push(line.slice(1));
-    else if (line.startsWith("+")) cur.added.push(line.slice(1));
+    else if (line.startsWith("-")) {
+      cur.removed.push(line.slice(1));
+      cur.old.push(line.slice(1));
+    } else if (line.startsWith("+")) {
+      cur.added.push(line.slice(1));
+      cur.new.push(line.slice(1));
+    } else {
+      cur.old.push(line.slice(1));
+      cur.new.push(line.slice(1));
+    }
   }
   return out;
 }
@@ -219,7 +230,8 @@ export function lockfileBumpsOnly(patch: string | undefined): boolean {
 
 /**
  * A diff that changes only whitespace no language reads: blank lines, and spaces or a carriage return at a line's end.
- * Each hunk's lines, those ends taken off and blank lines left out, are the same lines in the same order. Indentation
+ * Each hunk's old side and new side whole, context lines in their places, read the same lines in the same order once
+ * those ends are taken off and blank lines left out, so a line moved past another is never formatting. Indentation
  * and spaces within a line are left as they are, since Python, YAML or a string literal read them.
  */
 export function formattingOnly(patch: string | undefined): boolean {
@@ -228,7 +240,7 @@ export function formattingOnly(patch: string | undefined): boolean {
   if (all.length === 0) return false;
   const kept = (lines: string[]) => lines.map((l) => l.replace(/\s+$/u, "")).filter((l) => l !== "");
   return all.every((h) => {
-    const [was, now] = [kept(h.removed), kept(h.added)];
+    const [was, now] = [kept(h.old), kept(h.new)];
     return was.length === now.length && was.every((l, i) => l === now[i]);
   });
 }
