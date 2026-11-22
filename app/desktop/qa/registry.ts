@@ -550,7 +550,7 @@ const openUpdates = async (page: Page) => {
   await page.keyboard.press("Enter");
 };
 
-// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (in review, its reviewers at work),
+// storefront's PRs in the panel beside its chat (fixtures/prs): the list, and #11 (its review asked for changes),
 // #10 (checks failed), #8 (merged), #14 (a person's, review asked for) and #13 (240 files) open.
 const PRS = `${CHAT}/prs`;
 const PR = (n: number) => `${PRS}/acme/storefront/${String(n)}`;

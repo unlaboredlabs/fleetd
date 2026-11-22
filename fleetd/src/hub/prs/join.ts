@@ -35,7 +35,12 @@ export type RowCtx = {
   tasksByBranch: Map<string, Task>;
   /** Per repo (lowercase): how many PRs wait in its queue. */
   queues: Map<string, number>;
+  /** Per Change id: what holds its current change in review, for `ReviewSummary`. Absent when nothing does. */
+  holds: Map<string, ReviewHold>;
 };
+
+/** What holds a Change's current change in review: an agent review's blocking findings, people's reviews on GitHub. */
+export type ReviewHold = { blocking: number; people: number };
 
 export function rowCtx(tasks: Task[]): RowCtx {
   const tasksById = new Map<string, Task>();
@@ -44,7 +49,7 @@ export function rowCtx(tasks: Task[]): RowCtx {
     if (!tasksById.has(t.taskId)) tasksById.set(t.taskId, t);
     if (t.branch !== undefined) tasksByBranch.set(t.branch, t);
   }
-  return { tasksById, tasksByBranch, queues: new Map() };
+  return { tasksById, tasksByBranch, queues: new Map(), holds: new Map() };
 }
 
 /** `normalize_iso`: an RFC 3339 time in the hub's own form, anything else as it came. */
@@ -122,7 +127,12 @@ export function isCurrent(change: Change, taskId: string, sha: string): boolean 
   return r ? ofCurrentPatch(change, r) : change.headSha === sha;
 }
 
-export function reviewSummary(change: Change | undefined, needed: number, decision: string | null | undefined): ReviewSummary {
+export function reviewSummary(
+  change: Change | undefined,
+  needed: number,
+  decision: string | null | undefined,
+  hold: ReviewHold | undefined = undefined,
+): ReviewSummary {
   const fromGithub = (): ReviewState => {
     switch (decision ?? "") {
       case "APPROVED":
@@ -138,15 +148,18 @@ export function reviewSummary(change: Change | undefined, needed: number, decisi
   if (!change) return { state: fromGithub(), done: 0, needed: 0 };
   const current = change.reviews.filter((r) => ofCurrentPatch(change, r));
   const done = current.filter((r) => r.blocking === 0).length;
-  const blocked = current.some((r) => r.blocking > 0);
-  const state: ReviewState = blocked
-    ? "changes_requested"
-    : needed > 0 && done >= needed
-      ? "approved"
-      : needed > 0
-        ? "pending"
-        : fromGithub();
-  return { state, done, needed: Math.max(needed, 0) };
+  // The gate keeps a review's blocking findings apart from the Change's clean reviews: `hold` carries them.
+  const blocking = Math.max(hold?.blocking ?? 0, ...current.map((r) => r.blocking));
+  const people = Math.max(hold?.people ?? 0, 0);
+  const state: ReviewState =
+    blocking > 0 || people > 0
+      ? "changes_requested"
+      : needed > 0 && done >= needed
+        ? "approved"
+        : needed > 0
+          ? "pending"
+          : fromGithub();
+  return { state, done, needed: Math.max(needed, 0), ...(blocking > 0 ? { blocking } : {}), ...(people > 0 ? { people } : {}) };
 }
 
 /** The agent behind a task, as the PR views name it. */
@@ -212,7 +225,7 @@ export function row(repo: string, pull: GhPull | undefined, change: Change | und
     url,
     title: jsTake(title, 300),
     state: pull ? ghState(pull) : change ? changeState(change) : "open",
-    review: reviewSummary(change, needed, pull?.reviewDecision),
+    review: reviewSummary(change, needed, pull?.reviewDecision, change ? ctx.holds.get(change.changeId) : undefined),
     author: author(task, pull?.author?.login),
     createdAt: stamp(pull?.createdAt, change?.createdAt),
     updatedAt: stamp(pull?.updatedAt, change?.updatedAt),

@@ -6,9 +6,11 @@ import { redact } from "../../shared/redact.ts";
 import type { Hub } from "../api/hub.ts";
 import { AppGh } from "../github_app/gh.ts";
 import { githubApps } from "../github_app/index.ts";
+import { openOf } from "../reviews/people.ts";
 import { prKey, type ReviewVerdict } from "../reviews/verdicts.ts";
 import { ChangeRecords } from "../train/records.ts";
 import { clip, isoMs, tasks } from "../train/seams.ts";
+import { TERMINAL_STATES } from "../train/states.ts";
 import { type GhReview, PrsGitHub } from "./github.ts";
 import { agentOf, normalizeIso, roleOf, type RowCtx } from "./join.ts";
 
@@ -67,6 +69,28 @@ export function projectChanges(hub: Hub, project: ProjectRef): Change[] {
 export function fillCtx(hub: Hub, ctx: RowCtx, repos: string[]): void {
   const records = new ChangeRecords(hub.db);
   for (const repo of repos) ctx.queues.set(repo.toLowerCase(), records.trainState(repo).queue.length);
+}
+
+/**
+ * What holds each open Change's current change in review: the blocking findings bound to its patch (its head's, before
+ * the patch is known) that the lead didn't resolve, and people's open reviews on GitHub. Both went to its writer.
+ */
+export function fillHolds(hub: Hub, ctx: RowCtx, changes: Change[]): void {
+  const findings = hub.db.conn.query<{ n: number | null }, [string, string, string]>(
+    `SELECT SUM(b.blocking) AS n FROM review_bindings b JOIN review_tasks t ON t.task_id = b.task_id
+       WHERE t.change_id = ?1 AND t.role != 'resolved' AND b.blocking > 0 AND (b.patch_id = ?2 OR (?2 = '' AND b.pr_head_sha = ?3))`,
+  );
+  for (const c of changes) {
+    if (TERMINAL_STATES.includes(c.state) || ctx.holds.has(c.changeId)) continue;
+    let blocking = 0;
+    try {
+      blocking = findings.get(c.changeId, c.patchId ?? "", c.headSha)?.n ?? 0;
+    } catch (error) {
+      console.warn(`prs: review findings not read: ${error}`);
+    }
+    const people = openOf(hub.db.conn, c.prUrl).length;
+    if (blocking > 0 || people > 0) ctx.holds.set(c.changeId, { blocking, people });
+  }
 }
 
 /** Agent verdicts on the PR, newest first: task id, head sha, at, verdict. */

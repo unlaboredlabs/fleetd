@@ -177,7 +177,7 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
   const pr = data.pr;
   const state = stateLine(pr);
   const checks = pr.checks === undefined ? undefined : checksWord(pr.checks);
-  const reviews = reviewsWord(pr.review);
+  const reviews = reviewsWord(pr);
   const author = authorWords(pr.author);
   return (
     <div className={s.measure}>

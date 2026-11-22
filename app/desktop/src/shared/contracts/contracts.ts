@@ -7270,10 +7270,14 @@ export type KnownReviewState = "approved" | "changes_requested" | "none" | "pend
 export type ReviewState = KnownReviewState | (string & {});
 
 export type ReviewSummary = {
+  /** Blocking findings of an agent review holding its current change, sent back to its writer; absent when none. */
+  blocking?: number;
   /** Clean agent reviews of the current change. */
   done: number;
   /** Agent reviews it needs before it can merge: 1 for a PR fleetd lands, else 0. */
   needed: number;
+  /** People's reviews on GitHub holding it (each review requesting changes, each unresolved thread they started), sent to its writer; absent when none. */
+  people?: number;
   state: ReviewState;
 };
 
