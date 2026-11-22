@@ -7523,6 +7523,11 @@ export type SandboxState = {
   /** What runs where › Linux machine; absent from a hub before the pick, which places as `ours_first`. */
   linux?: LinuxPlace;
   /**
+   * The providers are fleetd's computers (a fleetd cloud team), not an account of the team's own: no key to
+   * connect, test or remove, and `linux` is always sent. Absent: the team's own keys.
+   */
+  provided?: boolean;
+  /**
    * Each provider fleetd removed that this hub had connected, as one plain line saying so and what runs instead,
    * for 30 days after the update that removed it. Absent when there is none, and from older hubs.
    */

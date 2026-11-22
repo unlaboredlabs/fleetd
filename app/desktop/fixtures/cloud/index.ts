@@ -7,13 +7,15 @@
 // with fleetd's one App: to install, installed, the person's own GitHub to connect first, and a service without the
 // App; and `cloud-billing-*`, Settings › Hub › Billing in each state (src/shared/billing.samples.ts): no plan, a plan
 // with credits, a declined card, the cap reached, and the service not answering; and fleetd's computers not on yet for
-// the team, beside a self-hosted hub, where no Billing shows at all.
+// the team, beside a self-hosted hub, where no Billing shows at all; and `cloud-fleetd-*`, Hub › Machines once
+// fleetd's computers are on for the team: with no machine of its own (they alone run its agents), with one (What runs
+// where's Linux machine a pick between them), and on a cloud that doesn't answer the pick yet.
 // Without a `cloud` section every other fixture is today's app.
 import { alice, answerHub, bob, sam } from "../admin/index.ts";
 import { BILLING_SAMPLES, type BillingSample } from "../../src/shared/billing.samples.ts";
 import { Fixture, HUB, PROTOCOL } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
-import type { JsonObject } from "../kit/json.ts";
+import { isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 
 const TEAM = "https://acme.fleetd.dev";
 
@@ -123,6 +125,78 @@ const github = (base: Fixture, name: string, note: string, app: JsonObject | nul
 const billing = (base: Fixture, sample: BillingSample, note: string): Fixture =>
   admin(base, `cloud-billing-${sample}`, note, { billing: BILLING_SAMPLES[sample] as unknown as JsonObject });
 
+/** The hub's runner for fleetd's computers, as a cloud team's snapshot lists it: no machine of the team's. */
+const RUNNER = { machineId: "hosted", name: "fleetd's computers", runner: true, status: "online", lastSeenAt: "2026-10-19T10:29:00Z", nodeVersion: "1.0.0" };
+
+/**
+ * Hub › Machines on the team acme once fleetd's computers are on for it, on the Team plan (BILLING_SAMPLES.plan): its
+ * bots storefront and checkout run there (checkout's computer asleep, storefront's at work with two agents, picked at
+ * 8 CPU · 16 GB), 2 of the plan's 10 at once. `own`: billing runs on laptop, a machine of the team's that runs agents,
+ * and the team runs its machines first, then fleetd's computers; else every bot runs on fleetd's computers. `older`: a
+ * cloud that doesn't answer the pick yet (sandbox_get not found).
+ */
+const fleetd = (base: Fixture, name: string, note: string, own: boolean, older = false): Fixture => {
+  const f = admin(base, `cloud-fleetd-${name}`, note, { billing: BILLING_SAMPLES.plan as unknown as JsonObject });
+  const onFleetd = (json: JsonValue): JsonValue => {
+    const text = JSON.stringify(json)
+      .replaceAll('"machineId":"devbox"', '"machineId":"hosted"')
+      .replaceAll('"machineId":"buildbox"', own ? '"machineId":"laptop"' : '"machineId":"hosted"');
+    return JSON.parse(text) as JsonValue;
+  };
+  if (f.snapshot !== undefined) {
+    const snap = onFleetd(f.snapshot) as JsonObject;
+    const projects = Array.isArray(snap["projects"]) ? snap["projects"].filter(isObject) : [];
+    const storefront = projects.find((p) => p["title"] === "storefront");
+    const checkout = projects.find((p) => p["title"] === "checkout");
+    const chats = (Array.isArray(snap["chats"]) ? snap["chats"].filter(isObject) : []).map((c) =>
+      isObject(c["projectRef"]) && c["projectRef"]["projectId"] === checkout?.["projectId"] ? { ...c, leadAsleep: true, leadWorking: false } : c,
+    );
+    const laptop = { machineId: "laptop", name: "laptop", status: "online", lastSeenAt: "2026-10-19T10:29:00Z", nodeVersion: "1.0.0" };
+    f.snapshot = {
+      ...snap,
+      machines: own ? [laptop, RUNNER] : [RUNNER],
+      chats,
+      slots: {
+        cap: 10,
+        used: 2,
+        queued: 0,
+        perProject: storefront === undefined ? [] : [{ projectRef: { machineId: "hosted", projectId: storefront["projectId"] ?? "" }, maxAgents: 10, running: 2, queued: 0 }],
+        hosted: [{ provider: "boat", limit: 10, running: 2 }],
+      },
+    };
+    if (storefront !== undefined) {
+      f.answer("project_settings_get", { machineId: "hosted", projectId: storefront["projectId"] ?? "" }, {
+        settings: {
+          machineId: "hosted",
+          projectId: storefront["projectId"] ?? "",
+          title: "storefront",
+          workspaceRoot: storefront["workspaceRoot"] ?? "",
+          env: [],
+          setup: { commands: [] },
+          computer: { kind: "boat", cpu: 8, memGb: 16 },
+        },
+      });
+    }
+  }
+  f.live = f.live.map((l) => ({ ...(onFleetd(l) as JsonObject), machines: [] }));
+  // The recorded answers (the chat behind Settings among them) follow the bots to where they run now.
+  f.calls = f.calls.map((c) => ({
+    ...c,
+    ...(c.input === undefined ? {} : { input: onFleetd(c.input) as JsonObject }),
+    ...(c.output === undefined ? {} : { output: onFleetd(c.output) }),
+  }));
+  f.events = f.events.map((e) => onFleetd(e) as JsonObject);
+  f.timeline = f.timeline.map((t) => ({ ...t, payload: onFleetd(t.payload) as JsonObject }));
+  f.update("machine_roles", (out) =>
+    isObject(out) && Array.isArray(out["machines"])
+      ? { ...out, machines: own ? out["machines"].filter(isObject).filter((m) => m["machineId"] === "laptop").map((m) => ({ ...m, name: "laptop", roles: ["agents", "sessions"] })) : [] }
+      : out,
+  );
+  if (older) f.fail("sandbox_get", undefined, { code: "not_found", message: "fleetd provides the hosted computers here: no team brings a boat.dev key." });
+  else f.answer("sandbox_get", undefined, { boxPubKey: "", placing: true, provided: true, providers: [{ provider: "boat", connected: true, limit: 10, running: 2 }], linux: own ? "ours_first" : "boat" });
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => [
     unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own hub under it.", {}),
@@ -210,6 +284,9 @@ export default defineGroup({
       f.hubs = [{ label: "devbox", color: "blue", fixture: own }];
       return f;
     })(),
+    fleetd(base("typical"), "only", "Machines on a team on fleetd's computers with no machine of its own: they run its bots, at once and time used.", false),
+    fleetd(base("typical"), "own", "Machines on a team with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
+    fleetd(base("typical"), "older", "Machines on fleetd's computers where the cloud doesn't answer the pick yet: still says where agents run.", false, true),
     admin(base("typical"), "cloud-billing-unreachable", "Billing when the team doesn't answer: why, and Try again.", {
       billingFailure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." },
     }),
