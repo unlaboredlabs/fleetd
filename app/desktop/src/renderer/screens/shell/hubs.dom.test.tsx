@@ -16,7 +16,7 @@ import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
-import { resetHubSwipe, REST_MS } from "./hubSwipe";
+import { resetHubSwipe, REST_HUB_MS, REST_MS } from "./hubSwipe";
 import { FINGERS, fingers, JITTERY_MAC_SWIPE, MOMENTUM, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 import { resetFolded, resetSidebarView, showHub } from "./sidebarLayout";
 
@@ -1322,6 +1322,74 @@ describe("a Mac trackpad's swipe, told where the fingers lift (W813)", () => {
     } finally {
       done();
     }
+  });
+
+  describe("fingers that stop past halfway and go on, the same touch", () => {
+    /** Fingers down, `n` events of 12 px each (+ toward the next hub), still down: no lift. */
+    const across = (n: number, side: 1 | -1 = 1, first = true) => {
+      const run = fingers(Array.from({ length: n }, () => [12 * side, 0] as const)).slice(first ? 0 : 1, -1);
+      return first ? run : run.map((e) => ({ ...e, phase: FINGERS.changed }));
+    };
+
+    it("holds the list under them a short pause long, and one touch moves one hub at most", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        const there = offset();
+        expect(there).toBe(-144);
+        wait(120);
+        expect(offset()).toBe(there);
+        replay(across(10, 1, false), true);
+        replay(momentum([12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
+
+    it("gives them back a list settling on the next hub after a longer pause, without the switch, so they can go back", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        wait(REST_HUB_MS + 60);
+        // Let go of, on its way to Acme, not there yet.
+        const settling = offset();
+        expect(settling).toBeLessThan(-144);
+        expect(settling).toBeGreaterThan(-256);
+        replay(across(1, -1, false), true);
+        // Taken up where it was, nothing switched.
+        expect(Math.abs(offset() - (settling + 12))).toBeLessThan(2);
+        expect(marks()).toEqual(["[Personal]", "Acme", "Studio"]);
+        replay(across(10, -1, false), true);
+        replay(momentum([-12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["[Personal]", "Acme", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
+
+    it("spends the touch once a pause has landed the next hub: going on never switches a second", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        wait(1000);
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        replay(across(14, 1, false), true);
+        replay(momentum([12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
   });
 
   it("starts a swipe toward a neighbour drawn ahead with nothing to render: the list is only shown", async () => {
