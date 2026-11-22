@@ -4,8 +4,8 @@
 // sign-in) and Tailscale (the hub's route to the team's tailnet). Then Custom MCP: every other server, the team's and
 // a bot's own, each with its state, Sign in when it wants one, and a menu: Test, Edit, Bots, Disconnect. Add opens the
 // form in the sheet's place (CustomForm.tsx). A custom MCP on the tailnet is reached through Tailscale with nothing
-// else to set. At the foot, for an admin: whether agents also get their machine's own Claude MCP servers. What
-// replaced Settings' Integrations, MCP servers and Machines' Network.
+// else to set. Agents also get their machine's own Claude MCP servers, with no switch for it (W817). What replaced
+// Settings' Integrations, MCP servers and Machines' Network.
 import { Dialog as D } from "radix-ui";
 import { ArrowLeft, Ellipsis, Plus, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -29,6 +29,7 @@ import {
   customOf,
   isTailnetHost,
   needsSignIn,
+  onlyText,
   stateOf,
   testLine,
   toggleBot,
@@ -193,7 +194,6 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
                   ))
                 )}
               </ul>
-              {admin && read.data !== undefined ? <UserServers on={read.data.userServers} /> : null}
             </div>
           )}
           {dialog?.kind === "signin" ? (
@@ -233,7 +233,7 @@ function Row(props: {
   tile: ReactNode;
   name: string;
   where?: ReactNode;
-  word?: { text: string; tone: "quiet" | "success" | "warning" | "danger" } | null | undefined;
+  word?: { text: string; tone: "quiet" | "success" | "warning" | "danger"; hint?: string } | null | undefined;
   line?: { text: string; tone: "quiet" | "success" | "warning" | "danger" } | null | undefined;
   children?: ReactNode;
   controls?: ReactNode;
@@ -248,10 +248,16 @@ function Row(props: {
         <div className={c.top}>
           <span className={c.name}>{props.name}</span>
           {props.where === undefined ? null : <span className={c.where}>{props.where}</span>}
-          {props.word == null ? null : (
+          {props.word == null ? null : props.word.hint === undefined ? (
             <span className={c.word} data-tone={props.word.tone}>
               {props.word.text}
             </span>
+          ) : (
+            <Tooltip content={props.word.hint}>
+              <span className={c.word} data-tone={props.word.tone} tabIndex={0}>
+                {props.word.text}
+              </span>
+            </Tooltip>
           )}
         </div>
         {props.line == null ? null : (
@@ -344,7 +350,7 @@ function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: R
     run("connect", requestOf(namedInput(entry, { kind: "global" }, props.team.map((x) => x.name))), (saved) => props.onDialog({ kind: "signin", server: saved, named: entry }));
   const word =
     state.kind === "connected" && !signIn
-      ? { text: server?.scope.kind === "global" && server.projects !== undefined ? botsText(server, props.bots) : "Connected", tone: "quiet" as const }
+      ? { text: (server === undefined ? null : onlyText(server, props.bots)) ?? "Connected", tone: "quiet" as const }
       : state.kind === "signing"
         ? { text: "Signing in…", tone: "quiet" as const }
         : state.kind === "off"
@@ -403,8 +409,8 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
   // Off is the switch's to say.
   const said = stateOf(server);
   const state = said?.text === "Off" ? null : said;
-  const bots = botsText(server, props.bots);
-  const word = state ?? (bots === "Every bot" ? null : { text: bots, tone: "quiet" as const });
+  const only = onlyText(server, props.bots);
+  const word = state ?? (only === null ? null : { text: only, tone: "quiet" as const });
   // On the tailnet while Tailscale isn't connected: the one thing to do, said where it shows.
   const unreached = onTailnet && props.tailnet !== undefined && props.tailnet.status !== "connected";
   const line =
@@ -516,33 +522,6 @@ function TailscaleRow({ state, tailnet, admin, onDisconnect }: { state: TailnetS
         )
       }
     />
-  );
-}
-
-/** Agents also get the MCP servers of their machine's own Claude setup: the hub's one switch for it. */
-function UserServers({ on }: { on: boolean }) {
-  const call = useHubCall();
-  const refetch = useRefetch();
-  const [problem, setProblem] = useState<string | null>(null);
-  return (
-    <div className={c.foot}>
-      <Tooltip content="Agents also load the MCP servers set up in Claude on each machine (~/.claude.json, a repo's .mcp.json).">
-        <span className={c.footTitle}>Machines' own MCP servers</span>
-      </Tooltip>
-      <Switch
-        label=""
-        aria-label="Machines' own MCP servers"
-        checked={on}
-        onCheckedChange={(next) => {
-          setProblem(null);
-          call("mcp_settings_set", { userServers: next }).then(
-            () => refetch(["mcp_servers_get"]),
-            (e: unknown) => setProblem(errorText(e)),
-          );
-        }}
-      />
-      <Problem text={problem} />
-    </div>
   );
 }
 

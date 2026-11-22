@@ -184,7 +184,8 @@ export const value = (v: McpValue): McpValue => ({
   ...(v.sealedOn && v.sealedOn.length > 0 ? { sealedOn: v.sealedOn } : {}),
 });
 
-/** A lead's MCP set: the person's own servers come too, and a fingerprint by server name. */
+/** A lead's MCP set: a fingerprint by server name. userServers is always true now (W817); a lead that started while a
+ * hub had them off differs by it, so it starts afresh once with its machine's own servers. */
 export type LeadMcpSet = { userServers: boolean; servers: Record<string, string> };
 
 /** The servers in `now` that `before` didn't have, or had otherwise, by name. */

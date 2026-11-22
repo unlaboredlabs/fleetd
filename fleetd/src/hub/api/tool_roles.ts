@@ -40,7 +40,6 @@ export const TOOLS = {
   mcp_servers_get: { scope: "read", module: "src/hub/mcp_servers" },
   mcp_server_set: { scope: "operate", module: "src/hub/mcp_servers" },
   mcp_server_remove: { scope: "operate", module: "src/hub/mcp_servers" },
-  mcp_settings_set: { scope: "operate", module: "src/hub/mcp_servers" },
   mcp_server_test: { scope: "operate", module: "src/hub/mcp_servers" },
   mcp_oauth_start: { scope: "operate", module: "src/hub/mcp_oauth" },
   github_app_get: { scope: "read", module: "src/hub/github_app" },

@@ -45,7 +45,7 @@ export function register(tools: Registry): void {
       projectOf(hub, scope);
       project = s.list(scope);
     }
-    return { global: s.list({ kind: "global" }), project, userServers: s.userServers() };
+    return { global: s.list({ kind: "global" }), project };
   });
   tools.add("mcp_server_set", (hub, caller, input) => set(hub, caller, input));
   tools.add("mcp_server_remove", async (hub, caller, input) => {
@@ -70,16 +70,6 @@ export function register(tools: Registry): void {
       }
     }
     return { ok: true, next: "Agents started from now on go without it; a running agent keeps it until its next start." };
-  });
-  tools.add("mcp_settings_set", (hub, caller, input) => {
-    mayChange(caller, { kind: "global" });
-    if (typeof input.userServers !== "boolean") throw new ToolError("invalid", "userServers is true or false.");
-    const s = mcpServers(hub);
-    s.setUserServers(input.userServers);
-    return {
-      userServers: s.userServers(),
-      next: "Agents started from now on run this way; a running agent at its next start, after its next message.",
-    };
   });
   tools.add("mcp_server_test", (hub, caller, input) => test(hub, caller, input.scope, input.name, input.machineId));
 }
