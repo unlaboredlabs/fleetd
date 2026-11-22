@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { botStateOf } from "./bot";
 import type { Activity } from "./contracts";
-import { ColdTurns, SLOW_MS, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
+import { ColdTurns, replied, SLOW_MS, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
 
 const T = Date.parse("2026-11-22T10:00:00.000Z");
 const iso = (ms: number) => new Date(T + ms).toISOString();
@@ -75,6 +75,25 @@ describe("a cloud bot waking", () => {
     expect(cold.see("b", true, { kind: "thinking" })).toBe(false);
     expect(cold.see("a", false, undefined)).toBe(false);
     expect(cold.see("a", true, { kind: "thinking" })).toBe(false);
+  });
+
+  test("a turn stops being cold once its reply lands, though its lead works on", () => {
+    const cold = new ColdTurns();
+    expect(cold.see("a", true, starting())).toBe(true);
+    expect(cold.see("a", true, { kind: "writing" }, false)).toBe(true);
+    // The reply is whole; the lead reads a file and briefs an agent after it.
+    expect(cold.see("a", true, { kind: "read", path: "a.ts" }, true)).toBe(false);
+    expect(cold.see("a", true, { kind: "tool", name: "brief", server: "fleetd" }, false)).toBe(false);
+    expect(wakeOf(at({ working: true, cold: false, activity: { kind: "read", path: "a.ts" } }))).toBeUndefined();
+    // A start, even after a reply, makes it cold again.
+    expect(cold.see("a", true, starting(), true)).toBe(true);
+  });
+
+  test("a reply has landed when the chat's newest message is the lead's, whole", () => {
+    expect(replied(undefined)).toBe(false);
+    expect(replied([{ author: "human", state: "final" }])).toBe(false);
+    expect(replied([{ author: "human", state: "final" }, { author: "lead", state: "streaming" }])).toBe(false);
+    expect(replied([{ author: "human", state: "final" }, { author: "lead", state: "final" }])).toBe(true);
   });
 
   test("a bot sleeps with its computer and wakes while it starts, in every list", () => {

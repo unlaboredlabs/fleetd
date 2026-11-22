@@ -30,6 +30,15 @@ describe("a cloud bot waking on the phone", () => {
     expect(wakeIn(at(true, { kind: "starting", text: "Starting its computer", step: "files", startedAt: "2026-11-22T10:00:00.000Z" }), k)).toEqual({ phase: "waking", step: "files", since: Date.parse("2026-11-22T10:00:00.000Z") });
     expect(wakeIn(at(true, { kind: "thinking" }), k)).toEqual({ phase: "thinking" });
     expect(wakeIn(at(true, { kind: "writing" }), k, true)).toEqual({ phase: "writing" });
+    // Its reply lands and its lead works on: the bot leaves the reply's place, and the turn line says what it does.
+    const landed = (activity: object) =>
+      ({
+        ...(at(true, activity) as object),
+        chats: { [k]: { messages: [{ author: "human", state: "final" }, { author: "lead", state: "final" }] } },
+        sends: {},
+      }) as never;
+    expect(wakeIn(landed({ kind: "read", path: "a.ts" }), k)).toBeUndefined();
+    expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
     // Its turn over, the next one starts warm.
     expect(wakeIn(at(false), k)).toBeUndefined();
     expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();

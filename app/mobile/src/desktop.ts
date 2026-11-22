@@ -136,7 +136,7 @@ export { clockAt, CLOUD_UPDATES, updateStatus, type Row as UpdateRow, type Statu
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
-export { ColdTurns, SLOW_MS, STIR_MS, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake } from "../../desktop/src/shared/wake";
+export { ColdTurns, replied, SLOW_MS, STIR_MS, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake } from "../../desktop/src/shared/wake";
 export { useSteady } from "../../desktop/src/shared/steady";
 export {
   adminNames,

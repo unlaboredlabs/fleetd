@@ -1,10 +1,10 @@
 // A cloud bot waking in its chat (shared/wake.ts): what the chat knows of it, read from the store. Its lead asleep (the
-// chat state's leadAsleep), at work, and what its live lane does now; whether this turn began with a start is held
-// here, one record for every chat and bot, so the row in the reply's place, the typing bubble, the island and the bot
+// chat state's leadAsleep), at work, and what its live lane does now; whether this turn began with a start and its reply
+// hasn't landed yet is held here, one record for every chat and bot, so the row in the reply's place, the typing bubble, the island and the bot
 // in every list agree.
 import { useEffect, useMemo, useState } from "react";
 import { leadLaneId } from "../../../shared/turnWords";
-import { ColdTurns, wakeOf, type Wake } from "../../../shared/wake";
+import { ColdTurns, replied, wakeOf, type Wake } from "../../../shared/wake";
 import { useData } from "../../src/data/react";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
@@ -22,7 +22,9 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const asleep = useData((s) => s.chatStates[key]?.leadAsleep === true);
   const working = useData((s) => s.fresh && s.chatStates[key]?.leadWorking === true);
   const activity = useData((s) => activityOf(s, key));
-  const isCold = cold.see(key, working, activity);
+  // Its reply landed (none of yours still on its way): the wake is over, though the lead may work on.
+  const landed = useData((s) => replied(s.chats[key]?.messages) && (s.chatSends[key]?.length ?? 0) === 0);
+  const isCold = cold.see(key, working, activity, landed);
   return useMemo(() => wakeOf({ asleep, working, activity, cold: isCold, writing }), [asleep, working, activity, isCold, writing]);
 }
 

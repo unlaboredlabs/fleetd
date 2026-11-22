@@ -57,7 +57,7 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
 };
 
-/** The wait shows in the reply's place: from the start until the lead's first words, which it then stands in for. */
+/** The wait shows in the reply's place: from the start until the lead's reply lands, its first words included. */
 export const wakeShown = (w: Wake | undefined): boolean => w !== undefined && w.phase !== "asleep";
 
 /** The bot's pose in the reply's place: still asleep until it stirs, heavy-lidded while its computer starts, eyes open
@@ -107,15 +107,23 @@ export const waited = (ms: number): string => {
 };
 
 /**
- * Which bots' current turns began with a start: a turn is cold from the first `starting` activity seen while its lead
- * works until it stops working. One per app; `see` is told each bot's state as it changes and answers whether its turn
- * is cold.
+ * Which bots' current turns began with a start and have no reply yet: a turn is cold from the first `starting` activity
+ * seen while its lead works until its reply lands (`replied`), or the lead stops. A lead that goes on working after its
+ * reply (reading, briefing agents) is no longer waking: the island and the turn line say what it does, as on any turn.
+ * One per app; `see` is told each bot's state as it changes and answers whether its turn is cold.
  */
 export class ColdTurns {
   private readonly cold = new Set<string>();
-  see(key: string, working: boolean, activity: Activity | undefined): boolean {
+  see(key: string, working: boolean, activity: Activity | undefined, replied = false): boolean {
     if (!working) this.cold.delete(key);
     else if (activity?.kind === "starting") this.cold.add(key);
+    else if (replied) this.cold.delete(key);
     return this.cold.has(key);
   }
 }
+
+/** The lead's reply has landed: the chat's newest message is the lead's, whole. Oldest first, as the chat holds them. */
+export const replied = (messages: readonly { readonly author: string; readonly state: string }[] | undefined): boolean => {
+  const last = messages?.at(-1);
+  return last !== undefined && last.author === "lead" && last.state === "final";
+};

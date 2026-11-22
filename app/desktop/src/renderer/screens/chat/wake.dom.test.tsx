@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Activity } from "../../../shared/contracts";
+import { HOLD_MS } from "../../../shared/steady";
 import type { HubApi } from "../../src/data/queries";
 import { createDataLayer } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -114,6 +115,17 @@ it("the bot stands in the reply's place while its computer starts, and the islan
   await n.lead({ kind: "writing" });
   expect(wake()?.dataset["wake"]).toBe("writing");
   expect(host.querySelector("[data-typing]")).toBeNull();
+  // The reply lands, and the lead works on after it: the bot is gone from under the reply, and the island says what the
+  // lead does, as on any turn.
+  const reply = { ...ASK, messageId: "m2", seq: 2, author: "lead", state: "final", text: "The photos load at full size on phones." };
+  act(() => n.send(event(3, "chat.message", { projectRef: project, messageId: "m2", seq: 2, author: "lead", state: "final", message: reply })));
+  await n.lead({ kind: "read", path: "src/checkout/photos.ts" });
+  expect(host.textContent).toContain("The photos load at full size on phones.");
+  expect(wake()).toBeNull();
+  // The island holds a line a second at least before the next (shared/steady.ts).
+  await act(() => new Promise((done) => setTimeout(done, HOLD_MS + 100)));
+  expect(host.querySelector("[data-island]")?.textContent).toContain("photos.ts");
+  expect(host.textContent).not.toContain("Starting its computer");
 });
 
 it("a failed try says why, counts down to its retry, and Try again asks the hub to start now", async () => {

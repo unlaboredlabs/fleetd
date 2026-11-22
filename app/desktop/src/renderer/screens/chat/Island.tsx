@@ -9,7 +9,7 @@ import { useId, useLayoutEffect, useRef, useState, useEffect } from "react";
 import { useSteady } from "../../../shared/steady";
 import { cx, InlineCode, StateGlyph, Text, type GlyphState } from "../../ui";
 import { useData } from "../../src/data/react";
-import { selectLeadAtWork } from "../../src/data/selectors";
+import { leadLaneId, selectLeadAtWork } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { useDmTotal } from "../dms/hooks";
 import { countWords } from "../dms/model";
@@ -33,7 +33,11 @@ const GLYPH: Readonly<Record<StripAgent["state"], GlyphState>> = { working: "wor
 export function Island({ project, warning }: { project: ProjectRef; warning: string | undefined }) {
   const loaded = useData(selectStrip(project));
   const strip = loaded === undefined || loaded.agents === 0 ? undefined : loaded;
-  const now = useData((st) => leadDoing(st, projectKey(project)));
+  // A computer's start is the bot's in the reply's place to say (WakeRow.tsx): never held here, so it can't linger once
+  // the wake is over.
+  const starting = useData((st) => st.live.lanes[leadLaneId(project)]?.activity?.activity.kind === "starting");
+  const said = useData((st) => leadDoing(st, projectKey(project)));
+  const now = starting && said !== undefined ? "working" : said;
   // Held steady through its short tool calls (shared/steady.ts); thinking, or working with nothing more known, is the
   // quiet state between them.
   const doing = useSteady(now, now ?? "", now === undefined || now === "thinking" || now === "working");
