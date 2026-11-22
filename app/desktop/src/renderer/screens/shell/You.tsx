@@ -1,15 +1,16 @@
-// The sidebar's foot (W530, W714): you, and beside you Screens and the Factory, rarely opened, as two small icons,
+// The sidebar's foot (W530, W714): you, and beside you Connections, Screens and the Factory as three small icons,
 // Screens marked while one needs you. Your picture and name open your menu: who you are, this app's own update when
 // there is one, Settings, Appearance, Keyboard shortcuts and Help; on the web, Sign out. The row is your picture and
 // name alone; this app's update to take, going on or not taken is a small mark on your picture, its words in the
 // tooltip and its row in the menu (AppItem). Hubs, and what is off with them, a hub's update among it, are the hub
 // row's (Sidebar.tsx HubSwitcher), which useHubsMark and useHubUpdate mark.
-import { ArrowUpRight, Factory, Keyboard, LifeBuoy, LogOut, Monitor, MonitorSmartphone, Moon, Settings, Sun, SunMoon } from "lucide-react";
+import { ArrowUpRight, Blocks, Factory, Keyboard, LifeBuoy, LogOut, Monitor, MonitorSmartphone, Moon, Settings, Sun, SunMoon } from "lucide-react";
 import type { ReactNode } from "react";
 import { display } from "../../../shared/shortcuts";
 import { useData, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { Avatar, Kbd, Menu, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuSub, MenuTrigger, THEME_MODES, Tooltip, useTheme, type ThemeMode } from "../../ui";
 import { openShortcuts } from "../palette/state";
+import { openConnections, useConnectionsOpen } from "../connections/state";
 import { onWeb } from "../../src/web";
 import { useHubRole } from "../admin/role";
 import { useAppUpdate } from "../updates/state";
@@ -55,13 +56,22 @@ const useScreensCount = () => {
   return { asking: count?.asking ?? 0, live: count?.live ?? 0 };
 };
 
-/** Screens and the Factory as two small icons beside you, Screens marked while one needs you. */
+/**
+ * Connections, Screens and the Factory as three small icons beside you, Screens marked while one needs you.
+ * Connections (D653) is a plain mark, its name only in its tooltip.
+ */
 export function PlaceIcons({ screen, factory, go }: YouProps) {
   const { asking, live } = useScreensCount();
+  const connections = useConnectionsOpen();
   const mark = asking > 0 ? (asking === 1 ? "one needs you" : `${String(asking)} need you`) : undefined;
   const side = "top";
   return (
     <div className={s.tools}>
+      <Tooltip content="Connections" side={side}>
+        <button type="button" className={s.round} aria-label="Connections" data-opens="connections" {...(connections ? { "aria-current": "page" as const } : {})} onClick={openConnections}>
+          <Blocks aria-hidden />
+        </button>
+      </Tooltip>
       <Tooltip content={`Screens${live > 0 ? ` · ${String(live)} live` : ""}${mark === undefined ? "" : `: ${mark}`}`} side={side}>
         <button
           type="button"

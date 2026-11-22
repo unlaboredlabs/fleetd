@@ -1,0 +1,425 @@
+/*
+ * Connections (ConnectionsSheet.tsx): one sheet floating over the app under Settings' scrim, narrower than Settings,
+ * its rows one line each in soft groups (DESIGN.md: Settings are soft groups), each led by a small tile with the
+ * service's mark. Corners from the scale: the sheet lg, a group md, a tile and what you press sm, a chip xs.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--settings-scrim);
+  animation: scrimIn 160ms var(--ease-out) both;
+}
+@keyframes scrimIn {
+  from {
+    background: transparent;
+  }
+}
+.sheet {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  z-index: 41;
+  /* Its top stays put as it grows or shrinks (the list, the form), so nothing jumps; it fits what it holds. */
+  top: max(40px, 11vh);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, calc(100vw - 64px));
+  max-height: calc(100vh - max(40px, 11vh) - 40px);
+  transform: translateX(-50%);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--sheet);
+  box-shadow: var(--settings-lift);
+  animation: sheetIn 240ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.985);
+  }
+}
+.sheet:focus {
+  outline: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* The head: the title, what is connected at its end, then the ×; Back before the title in the form. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  min-height: 68px;
+  padding: 18px 16px 10px 24px;
+}
+.back {
+  margin-left: -8px;
+}
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-lg);
+  line-height: 24px;
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.close {
+  flex: none;
+}
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 4px 6px 4px 4px;
+  border-radius: var(--radius-sm);
+  cursor: default;
+}
+.stack3 {
+  display: flex;
+  align-items: center;
+}
+.chip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+  color: var(--text);
+  /* Each chip cut out of the one under it by a ring of the sheet's own colour. */
+  box-shadow:
+    0 0 0 2px var(--sheet),
+    inset 0 0 0 1px var(--group-edge);
+}
+.chip + .chip {
+  margin-left: -5px;
+}
+.chip .mark {
+  width: 12px;
+  height: 12px;
+}
+.chip .monogram {
+  font-size: 11px;
+}
+.count {
+  color: var(--quiet);
+  font-size: var(--text-md);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 24px 24px;
+  scrollbar-gutter: stable;
+}
+
+/* A section's quiet label over its group, the section's plus at its end. */
+.label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  margin: 26px 0 8px;
+}
+.labelText {
+  margin: 0;
+  font-size: 14px;
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  letter-spacing: -0.01em;
+}
+.add {
+  margin-right: -6px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--group-edge);
+  border-radius: var(--radius-group);
+  background: var(--group);
+}
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 56px;
+  padding: 10px 12px 10px 12px;
+}
+/* One hairline between two rows, inset to start under the words, never across the tiles. */
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 56px;
+  right: 12px;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--group-edge);
+}
+.tileAdd {
+  color: var(--quiet);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--field-border);
+}
+.tileAdd svg {
+  width: 16px;
+  height: 16px;
+}
+.mark {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.monogram::before {
+  content: attr(data-initial);
+}
+.monogram {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: var(--weight-medium);
+  color: var(--quiet);
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.where {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--quiet);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.whereText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.via {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  height: var(--leading-sm);
+  color: var(--quiet);
+}
+.via .mark {
+  width: 11px;
+  height: 11px;
+}
+.word {
+  flex: none;
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: var(--text-md);
+  white-space: nowrap;
+}
+.word[data-tone="warning"],
+.line[data-tone="warning"] {
+  color: var(--warning);
+}
+.word[data-tone="danger"],
+.line[data-tone="danger"] {
+  color: var(--danger);
+}
+.word[data-tone="success"],
+.line[data-tone="success"] {
+  color: var(--success);
+}
+.line {
+  color: var(--quiet);
+  font-size: var(--text-xs);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
+}
+.controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.controls:empty {
+  display: none;
+}
+
+/* The empty list's one row is its add. */
+.addRow {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-3);
+  margin: -6px -8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--quiet);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.addRow:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.addRow:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+.addRow .name {
+  font-weight: var(--weight-regular);
+}
+
+.menu {
+  min-width: 200px;
+}
+
+/* The hub's switch for the machines' own MCP servers, at the list's foot, in line with the groups' words. */
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-top: 18px;
+  padding: 0 12px;
+}
+.footTitle {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+
+/* The custom MCP form, in the sheet's place. */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-top: 6px;
+}
+/* As a field's own label (ui Field), for the parts that aren't one field: Headers, Environment, Bots. */
+.fieldLabel {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  font-weight: var(--weight-strong);
+  color: var(--text);
+}
+/* The URL or Command switch keeps its own width, at the form's start. */
+.form > [role="group"] {
+  align-self: flex-start;
+}
+.values {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.valuesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: -2px;
+}
+.value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.value:not(:has(.prefix)) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+}
+.prefix {
+  width: 96px;
+}
+.item {
+  min-width: 0;
+}
+.botsField {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.tailnetLine,
+.signInLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: -6px;
+}
+.signInLine {
+  margin-top: 0;
+  justify-content: space-between;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.formFoot {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: 12px 24px 20px;
+}

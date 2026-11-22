@@ -12,6 +12,7 @@ import type { HubId } from "../../../shared/hubs";
 import { AppFrame, TopBar } from "../../ui";
 import { PaletteHost, useCommands, type Command } from "../palette";
 import { NewBot, ProjectsHost } from "../projects";
+import { ConnectionsHost } from "../connections/ConnectionsHost";
 import { useMetricsSupport } from "../factory/support";
 import { useDockBadge, useMainProcess, useMenuState, useModHeld, useNotifications } from "./effects";
 import { useHubState } from "./hubFeed";
@@ -432,6 +433,7 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
       ) : null}
       <PaletteHost />
       <ProjectsHost />
+      <ConnectionsHost />
       <UpdatesOf hubs={hubs} on={route.at} />
     </div>
   );

@@ -41,9 +41,16 @@ describe("settings search", () => {
     expect([tabOf("hubs"), tabOf("claude"), tabOf("github")]).toEqual(["hubs", "accounts", "accounts"]);
     expect([tabOf("notifications"), tabOf("version"), tabOf("check for updates")]).toEqual(["general", "general", "general"]);
     expect([tabOf("max agents"), tabOf("skills")]).toEqual(["agents", "agents"]);
-    // A project's MCP servers are one list, on its Project page (W467); what the team signs in to once is on the
-    // Vault page (D592).
-    expect([tabOf("mcp"), tabOf("integrations"), tabOf("paper")]).toEqual(["projects", "vault", "vault"]);
+    // MCP servers, Integrations and Tailscale are Connections' now (D653): their old names open that sheet.
+    const opensOf = (q: string, admin = false) => searchSettings(q, optionsFor(admin))[0]?.opens;
+    expect([opensOf("mcp"), opensOf("integrations"), opensOf("paper"), opensOf("notion"), opensOf("tailscale", true), opensOf("mcp servers for every bot", true)]).toEqual([
+      "connections",
+      "connections",
+      "connections",
+      "connections",
+      "connections",
+      "connections",
+    ]);
     // Task profiles are the hub's, on Every project › Agents (W146).
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
     expect(tabs("task profiles", false)).not.toContain("hub.profiles");
@@ -52,9 +59,9 @@ describe("settings search", () => {
     expect([tabOf("instructions"), tabOf("memory"), tabOf("bot memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
     expect([tabOf("setup commands"), tabOf("subscription")]).toEqual(["projects", "accounts"]);
     expect([tabOf("automations"), tabOf("environment variables"), tabOf("prompts")]).toEqual(["automations", "projects", "prompts"]);
-    // Nothing hub-wide for a member: the global MCP servers and the instructions for every project are the Hub group's.
-    expect(labels("global")).toEqual([]);
-    expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true), tabOf("global mcp", true)]).toEqual(["hub.people", "hub.people", "hub.machines", "hub.profiles"]);
+    // Nothing hub-wide for a member past Connections, which everyone opens (the hub says what each may change).
+    expect(labels("global")).toEqual(["Connections"]);
+    expect([tabOf("people", true), tabOf("invite", true), tabOf("machine roles", true)]).toEqual(["hub.people", "hub.people", "hub.machines"]);
     expect([tabOf("github app", true), tabOf("guided setup", true)]).toEqual(["hub.setup", "hub.setup"]);
   });
 
@@ -74,17 +81,19 @@ describe("settings search", () => {
     }
     const keys = new Set(OPTIONS.map((o) => o.key));
     expect([...marked].filter((k) => !keys.has(k)), "marked on a page, missing from search").toEqual([]);
-    const found = OPTIONS.filter((o) => o.key !== o.tab).map((o) => o.key);
+    const found = OPTIONS.filter((o) => o.key !== o.tab && o.opens === undefined).map((o) => o.key);
     expect(found.filter((k) => !marked.has(k)), "in search, marked on no page").toEqual([]);
   });
 
   it("finds one place once: one result each for MCP, Claude and the hub's API key (W467)", () => {
     const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
-    expect(keys("mcp")).toEqual(["projects.mcp"]);
+    expect(keys("mcp")).toEqual(["connections.own", "connections"]);
     expect(keys("claude").filter((k) => k.startsWith("claude"))).toEqual(["claude"]);
     expect(keys("hub api key", true)[0]).toBe("admin.claude");
     expect(keys("api key", true)).not.toContain("admin.claude.key");
-    expect(keys("global mcp", true)).toEqual(["hub.mcp"]);
+    expect(keys("global mcp", true)).toEqual(["connections"]);
+    expect(keys("tailscale", true)).toEqual(["connections.tailscale"]);
+    expect(keys("integrations")).toEqual(["connections"]);
     expect(keys("worktrees")).toEqual([]);
   });
 
@@ -115,7 +124,7 @@ describe("settings search", () => {
     expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Bot defaults › Vault"]);
     // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
     expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);
-    expect(first("connections")?.[1]).toBe("accounts");
+    expect(first("connections")?.[0]).toBe("connections");
     expect(first("hub claude api key")).toEqual(["admin.claude", "hub.setup", "Hub › Setup"]);
     expect(first("members may use the hub's key")).toEqual(["admin.claude.members", "hub.setup", "Hub › Setup"]);
     expect(first("github app")).toEqual(["admin.github", "hub.setup", "Hub › Setup"]);

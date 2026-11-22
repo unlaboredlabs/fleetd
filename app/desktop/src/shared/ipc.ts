@@ -147,9 +147,17 @@ const McpValueRequest = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("secret"), name: McpValueName, value: z.string().min(1).max(ENV_VALUE_MAX_BYTES) }),
   /** The secret saved under this name, as it is. */
   z.strictObject({ kind: z.literal("keep"), name: McpValueName }),
+  /** A vault item's value, which the hub seals to the machines itself: the app never holds it. */
+  z.strictObject({
+    kind: z.literal("vault"),
+    name: McpValueName,
+    itemId: z.string().min(1).max(64),
+    field: z.enum(["password", "value"]).optional(),
+    prefix: z.string().max(64).optional(),
+  }),
 ]);
 /**
- * An MCP server to save (Settings › Hub › Every project, a project's MCP section): main seals each secret value to every box
+ * An MCP server to save (Connections): main seals each secret value to every box
  * key in `boxes` (a project server's machine; for a global one, every machine) and calls mcp_server_set. The hub gets
  * the boxes, never a secret's value.
  */
@@ -168,6 +176,8 @@ export const McpServerRequest = z.strictObject({
   ]),
   env: z.array(McpValueRequest).max(50),
   headers: z.array(McpValueRequest).max(50),
+  /** A global server's bots; absent, every bot's. */
+  projects: z.array(z.strictObject({ machineId: z.string().min(1).max(64), projectId: z.string().min(1).max(200) })).max(500).optional(),
   boxes: z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500),
   /** A project's integration: what the hub's tool policy reads its tools as. */
   integration: z

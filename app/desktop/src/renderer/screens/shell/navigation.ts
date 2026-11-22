@@ -47,13 +47,16 @@ const subscribe = (onChange: () => void): (() => void) => {
   return () => window.removeEventListener("hashchange", onChange);
 };
 
-/** The last hash that names a screen: what New project (`#/projects/add`), a modal over it, leaves on screen. */
+/** The last hash that names a screen: what New project (`#/projects/add`) or Connections, a modal over it, leaves on screen. */
 let behind = "#/";
 
-/** The hash of the screen on show: New project's is the one it opened over, so that screen stays mounted as it was. */
+/** The modals a route opens over the screen before it, which stays mounted as it was. */
+const OVER: ReadonlyArray<Screen["id"]> = ["projects.add", "connections"];
+
+/** The hash of the screen on show: a modal's is the one it opened over, so that screen stays mounted as it was. */
 export const screenHash = (): string => {
   const hash = window.location.hash;
-  if (parseHash(hash).id === "projects.add") return behind;
+  if (OVER.includes(parseHash(hash).id)) return behind;
   behind = hash;
   return hash;
 };

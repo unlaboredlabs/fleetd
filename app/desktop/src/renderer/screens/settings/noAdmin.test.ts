@@ -20,7 +20,7 @@ describe("Settings' search for a member", () => {
     const pages = new Set(optionsFor(true).filter((o) => isHubTab(o.tab)).map((o) => o.tab));
     expect([...pages].sort()).toEqual(["hub.instructions", "hub.machines", "hub.people", "hub.profiles", "hub.setup", "hub.vault"]);
     const at = (key: string) => optionsFor(true).find((o) => o.key === key)?.tab;
-    expect([at("hub.updates"), at("hub.tools"), at("hub.mcp"), at("hub.skills")]).toEqual(["hub.machines", "hub.profiles", "hub.profiles", "hub.profiles"]);
+    expect([at("hub.updates"), at("hub.tools"), at("hub.skills")]).toEqual(["hub.machines", "hub.profiles", "hub.profiles"]);
     expect([at("hub.accounts"), at("admin.claude"), at("admin.claude.members"), at("admin.github")]).toEqual(["hub.setup", "hub.setup", "hub.setup", "hub.setup"]);
   });
 

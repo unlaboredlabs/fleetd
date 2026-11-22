@@ -271,7 +271,7 @@ it("gathers what reaches every bot on Every bot's pages, and saves its instructi
   window.location.hash = "#/settings/hub/tools";
   await render(admin);
   expect(host.querySelector("[data-screen='settings.hub.profiles'] [data-screen='settings.hub.tools']")).not.toBeNull();
-  expect(parts()).toEqual(["hub.mcp", "hub.skills"]);
+  expect(parts()).toEqual(["hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();
   // The old shared memory shows only while it has text: this hub's has none.

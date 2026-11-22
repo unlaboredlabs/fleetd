@@ -49,7 +49,7 @@ import {
   useSettingsRoute,
   type Tab,
 } from "./route";
-import { openOption, optionsFor, pagePath, searchSettings } from "./search";
+import { openOption, optionsFor, searchSettings, whereOf } from "./search";
 import { SettingsScreen } from "./SettingsScreen";
 import { vaultServed } from "./vaultModel";
 import n from "./sheet.module.css";
@@ -321,9 +321,7 @@ function Index() {
                 }}
               >
                 <span className={n.itemLabel}>{o.label}</span>
-                {o.key === o.tab ? null : (
-                  <span className={n.where}>{pagePath(o.tab)}</span>
-                )}
+                {whereOf(o) === null ? null : <span className={n.where}>{whereOf(o)}</span>}
               </button>
             ))
           )}

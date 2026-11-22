@@ -1,7 +1,7 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its bot's shape and color (BotLook.tsx), its name, its repos with their computer (RepoSetting.tsx, SetupSetting.tsx),
-// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), approvals (Approvals.tsx) and integrations (its
-// MCP servers), its browser's sign-ins and a way to its skills
+// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), approvals (Approvals.tsx), what it uses of
+// Connections (connections/BotConnections.tsx), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
 // seals each secret to the project machine's key), project_archive and project_remove. A secret's value is write-only: typed here once,
@@ -20,7 +20,7 @@ import { when } from "../live/when";
 import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
-import { McpServersSection } from "./Integrations";
+import { BotConnections } from "../connections/BotConnections";
 import { ApprovalsSetting } from "./Approvals";
 import { PaymentsSetting } from "./Payments";
 import { SigninsSetting, SkillsSetting } from "./Signins";
@@ -156,7 +156,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">
-        <McpServersSection projectRef={ref} />
+        <BotConnections projectRef={ref} />
         <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
         <SkillsSetting projectRef={ref} />
         <PaymentsSetting projectRef={ref} />

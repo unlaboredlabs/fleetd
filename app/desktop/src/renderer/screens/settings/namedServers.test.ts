@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { McpServer } from "../../../shared/contracts";
-import { customRequest } from "./integrationsModel";
-import { emptyDraft, requestOf } from "./mcpModel";
+import { emptyDraft, toInput } from "../connections/model";
 import { NAMED, nameFor, namedInput, namedOf, namedState, namedWord, serverOf, turnOnInput, unnamed } from "./namedServers";
 
 const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
@@ -26,15 +25,16 @@ describe("named MCP servers", () => {
     expect([...text.matchAll(/from "([^"]+)"/gu)].map((m) => m[1])).toEqual(["../../../shared/contracts"]);
   });
 
-  it("ships Paper alone, each record complete", () => {
-    expect(NAMED.map((n) => n.id)).toEqual(["paper"]);
+  it("ships Paper and Notion alone, each record complete", () => {
+    expect(NAMED.map((n) => n.id)).toEqual(["paper", "notion"]);
     expect(PAPER).toMatchObject({ label: "Paper", url: "https://mcp.paper.design", name: "paper", agents: true });
+    expect(NAMED[1]).toMatchObject({ label: "Notion", url: "https://mcp.notion.com/mcp", name: "notion", agents: true });
   });
 
-  it("saves what the manual form saves for the same name, URL, no key and Agents get it too", () => {
-    const manual = customRequest({ ...emptyDraft(), name: "paper", kind: "http", url: "https://mcp.paper.design" }, [], scope, [], true);
+  it("saves what the custom MCP form saves for the same name and URL, with no key, for every bot", () => {
+    const manual = toInput({ ...emptyDraft(), url: "https://mcp.paper.design", named: true, name: "paper" }, null, []);
     expect(manual.ok).toBe(true);
-    expect(requestOf(namedInput(PAPER, scope, []))).toEqual(manual.ok ? manual.request : null);
+    expect(namedInput(PAPER, { kind: "global" }, [])).toEqual(manual.ok ? manual.input : null);
   });
 
   it("knows a server by its URL, whatever its case or trailing slash", () => {
