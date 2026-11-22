@@ -15,6 +15,7 @@ import type { LaunchInput, LaunchOptions } from "../executor/sessions.ts";
 import { profiles } from "../projects/profiles.ts";
 import { prompts } from "../prompts/store.ts";
 import { store } from "../store/hub_store.ts";
+import { isoMs } from "../store/time.ts";
 import { activePeople, Memory } from "./index.ts";
 import { ended, held, type Launcher, launchOptions, nightDue, nodeAccounts, outcome, refreshPorts, RUN_LIMIT_MS, schedule } from "./refresh.ts";
 import { refreshedSummary } from "./refresh_rules.ts";
@@ -168,11 +169,8 @@ function chatOf(hub: Hub, r: ProjectRef, person: PersonId, only: boolean, waterm
   return [`${cut > 0 ? `(${cut} older messages left out.)\n` : ""}${lines.join("\n")}`, readTo];
 }
 
-/**
- * The bot to run `person`'s tidy on, whose chat gets its line: of the bots they wrote in where nobody else did (their
- * entries are theirs alone, D212), the one they wrote in last that can hold the session now.
- */
-function host(hub: Hub, person: PersonId, bots: Bot[], only: boolean): Bot | undefined {
+/** The bots `person` wrote in, by the `seq` of their last message there. */
+function wroteIn(hub: Hub, person: PersonId, only: boolean): Map<string, number> {
   const last = new Map<string, number>();
   const rows = hub.db.all<{ machine_id: string; project_id: string; seq: number }>(
     `SELECT machine_id, project_id, MAX(seq) AS seq FROM chat_messages
@@ -182,31 +180,49 @@ function host(hub: Hub, person: PersonId, bots: Bot[], only: boolean): Bot | und
     [person, only ? 1 : 0],
   );
   for (const row of rows) last.set(botKey({ machineId: row.machine_id, projectId: row.project_id }), row.seq);
-  const shared = new Set(
-    hub.db
-      .all<{ machine_id: string; project_id: string }>(
-        `SELECT DISTINCT machine_id, project_id FROM chat_messages
-         WHERE held = 0 AND json_extract(data, '$.author') = 'human'
-           AND (json_extract(data, '$.person.personId') IS NOT ?1 AND NOT (?2 = 1 AND json_extract(data, '$.person') IS NULL))`,
-        [person, only ? 1 : 0],
-      )
-      .map((row) => botKey({ machineId: row.machine_id, projectId: row.project_id })),
-  );
+  return last;
+}
+
+/** Whether `r` is `person`'s own bot: they wrote in it and nobody else did, so its chat may show their entries (D212). */
+function ownBot(hub: Hub, person: PersonId, r: ProjectRef, only: boolean): boolean {
+  if (!wroteIn(hub, person, only).has(botKey(r))) return false;
+  const other = hub.db.all<{ yes: number }>(
+    `SELECT EXISTS (SELECT 1 FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND held = 0
+       AND json_extract(data, '$.author') = 'human'
+       AND json_extract(data, '$.person.personId') IS NOT ?3 AND NOT (?4 = 1 AND json_extract(data, '$.person') IS NULL)) AS yes`,
+    [r.machineId, r.projectId, person, only ? 1 : 0],
+  )[0];
+  return !other?.yes;
+}
+
+/**
+ * The bot whose machine runs `person`'s tidy: their own bot they wrote in last, else any bot they wrote in, last
+ * first, else any bot, that can hold the session now. Only their own bot's chat gets the line (`finish`).
+ */
+function host(hub: Hub, person: PersonId, bots: Bot[], only: boolean): Bot | undefined {
+  const last = wroteIn(hub, person, only);
+  const rank = (b: Bot) => (ownBot(hub, person, b.r, only) ? 2 : last.has(botKey(b.r)) ? 1 : 0);
   const ports = refreshPorts(hub);
   return bots
-    .filter((b) => last.has(botKey(b.r)) && !shared.has(botKey(b.r)))
-    .sort((a, b) => (last.get(botKey(b.r)) as number) - (last.get(botKey(a.r)) as number))
+    .map((b) => ({ b, rank: rank(b), seq: last.get(botKey(b.r)) ?? -1 }))
+    .sort((x, y) => y.rank - x.rank || y.seq - x.seq)
+    .map((x) => x.b)
     .find((b) => ports.can(b.r.machineId, CAP_ALLOWED_ONLY) && held(hub, b.r) === undefined);
 }
 
 /** Starts `person`'s tidy; whether it started (one that can't yet is tried on the next pass). */
 async function start(hub: Hub, launcher: Launcher, person: PersonId, t: Tidy, bots: Bot[], trigger: AutomationTrigger, at: number): Promise<boolean> {
   const only = activePeople(hub.db).length === 1;
-  const on = host(hub, person, bots, only);
-  if (on === undefined) return false;
   const now = hub.clock.now();
+  const on = host(hub, person, bots, only);
+  if (on === undefined) {
+    // Tried again on the next pass; the Memory page says why meanwhile.
+    t.lastRun = outcome(now, trigger, "failed", [], "No bot's machine can run it now: each is offline, too old or mid-turn.");
+    putTidy(hub.db, person, t);
+    return false;
+  }
   const memory = Memory.of(hub);
-  const before = memory.snapshot(person);
+  const shown = memory.snapshot(person);
   const readTo: Record<string, number> = {};
   const chats: { title: string; text: string }[] = [];
   for (const b of bots) {
@@ -222,7 +238,7 @@ async function start(hub: Hub, launcher: Launcher, person: PersonId, t: Tidy, bo
   } catch {}
   const input: LaunchInput = {
     projectId: on.r.projectId,
-    prompt: tidyPrompt(rules, tidyMemory(before, memory.caps), chats),
+    prompt: tidyPrompt(rules, tidyMemory(shown, memory.caps), chats),
     profile,
     runtimeMode: "approval-required",
     title: [...`fleetd memory tidy: ${name}`].slice(0, 80).join(""),
@@ -246,6 +262,8 @@ async function start(hub: Hub, launcher: Launcher, person: PersonId, t: Tidy, bo
     console.warn(`memory tidy of ${name}: not started:`, (error as Error).message);
     return failed(`It didn't start: ${(error as Error).message}`);
   }
+  // Taken once the session is known, in the same step as its row: a write while it launched is in it, not lost to Undo.
+  const before = memory.snapshot(person);
   Object.assign(t, { host: on.r, threadId, startedMs: now, trigger, readTo, items: [], before, outside: false });
   t.lastRun = outcome(now, trigger, "running", []);
   putTidy(hub.db, person, t);
@@ -260,13 +278,24 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
   const started = t.startedMs ?? hub.clock.now();
   const trigger = t.trigger ?? "schedule";
   const after: Snapshot = Memory.of(hub).snapshot(person);
-  // A bot erased while it ran gets no line; the changes stay, and Settings shows them.
-  if (items.length > 0 && store(hub).projectGet(t.host)) {
-    const { message } = chat(hub).add(t.host, { author: "system", text: refreshedSummary(items), memoryRefreshed: listed(items) });
-    putLineItems(hub.db, t.host, message.messageId, items);
+  if (items.length > 0) {
+    // Their own bot's chat shows the line; else (a bot they share, one erased while it ran) only their Memory page does.
+    const only = activePeople(hub.db).length === 1;
+    const own = store(hub).projectGet(t.host) !== undefined && ownBot(hub, person, t.host, only);
+    const text = refreshedSummary(items);
+    let id: string;
+    if (own) {
+      id = chat(hub).add(t.host, { author: "system", text, memoryRefreshed: listed(items) }).message.messageId;
+      delete t.line;
+    } else {
+      id = `${PAGE_LINE}${person}:${started}`;
+      const at = isoMs(hub.clock.now());
+      t.line = { messageId: id, projectRef: t.host, seq: 0, author: "system", text, createdAt: at, state: "final", memoryRefreshed: listed(items) } as ChatMessage;
+    }
+    putLineItems(hub.db, t.host, id, items);
     // Undo all restores the files exactly only when the tidy alone wrote them meanwhile; else it goes item by item.
-    if (t.outside !== true) putLineSnapshot(hub.db, message.messageId, { person, before: t.before ?? {}, after });
-    t.messageId = message.messageId;
+    if (t.outside !== true) putLineSnapshot(hub.db, id, { person, before: t.before ?? {}, after });
+    t.messageId = id;
   }
   if (completed && t.readTo !== undefined) {
     for (const [k, seq] of Object.entries(t.readTo)) t.watermarks[k] = Math.max(t.watermarks[k] ?? 0, seq);
@@ -280,8 +309,27 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
   putTidy(hub.db, person, t);
 }
 
-/** `person`'s last tidy's line, for the top of their Memory page. */
+/** A tidy line's id when only its person's Memory page shows it, not a chat. */
+export const PAGE_LINE = "tidy:";
+
+/** `person`'s last tidy's line, for the top of their Memory page: a chat's, or the page's own. */
 export function lastTidied(hub: Hub, person: PersonId): ChatMessage | undefined {
-  const id = getTidy(hub.db, person).messageId;
-  return id === undefined ? undefined : chat(hub).byId(id);
+  const t = getTidy(hub.db, person);
+  if (t.messageId === undefined) return undefined;
+  return t.line?.messageId === t.messageId ? t.line : chat(hub).byId(t.messageId);
+}
+
+/** The line only `person`'s Memory page shows, by its id; undefined for any other. */
+export function pageLine(hub: Hub, id: string): { person: PersonId; line: ChatMessage } | undefined {
+  if (!id.startsWith(PAGE_LINE)) return undefined;
+  const person = id.slice(PAGE_LINE.length).split(":")[0] as string;
+  const line = getTidy(hub.db, person).line;
+  return line?.messageId === id ? { person, line } : undefined;
+}
+
+/** Keeps what Undo did to the page's line. */
+export function setPageLine(hub: Hub, person: PersonId, line: ChatMessage): void {
+  const t = getTidy(hub.db, person);
+  t.line = line;
+  putTidy(hub.db, person, t);
 }

@@ -15,9 +15,9 @@ import { changed } from "./calls.ts";
 import { activePeople, Memory, projectTarget, type Target, type You, youTarget, userTarget } from "./index.ts";
 import { registerImportAndRefresh } from "./import.ts";
 import { lineItems, listed, putLineItems } from "./refresh_store.ts";
-import { lastTidied } from "./tidy.ts";
+import { lastTidied, pageLine, setPageLine } from "./tidy.ts";
 import { sameSnapshot } from "./tidy_rules.ts";
-import { lineSnapshot } from "./tidy_store.ts";
+import { getTidy, lineSnapshot } from "./tidy_store.ts";
 
 /** The caller's own memory: their person's; the shared user.md on a hub with no people; nobody's for a key with none. */
 function mine(hub: Hub, caller: Caller): You {
@@ -79,7 +79,15 @@ function mayUndo(hub: Hub, caller: Caller, item: RememberedItem): void {
  * undone is marked, even when a later one can't be: that one says why. Undo all of a tidy's line whose person's memory
  * is still as the tidy left it puts it back exactly as the tidy found it.
  */
-function undoRefreshed(hub: Hub, caller: Caller, message: ChatMessage, refreshed: MemoryRefreshed, index: number | undefined) {
+function undoRefreshed(
+  hub: Hub,
+  caller: Caller,
+  message: ChatMessage,
+  refreshed: MemoryRefreshed,
+  index: number | undefined,
+  // The line as its chat (or the Memory page, for a tidy's own line) shows it, marked.
+  shown: (refreshed: MemoryRefreshed) => void = (now) => chat(hub).setMemoryRefreshed(message, now),
+) {
   const r = message.projectRef;
   const id = message.messageId;
   const items = lineItems(hub.db, id) ?? refreshed.items.map((i) => ({ ...i }));
@@ -92,7 +100,7 @@ function undoRefreshed(hub: Hub, caller: Caller, message: ChatMessage, refreshed
       changed(hub, undefined, undefined, caller.name);
       const undone = items.map((i) => ({ ...i, undone: true }));
       putLineItems(hub.db, r, id, undone);
-      chat(hub).setMemoryRefreshed(message, listed(undone));
+      shown(listed(undone));
       return { ok: true as const };
     }
   }
@@ -127,7 +135,7 @@ function undoRefreshed(hub: Hub, caller: Caller, message: ChatMessage, refreshed
   }
   if (done > 0) {
     putLineItems(hub.db, r, id, items);
-    chat(hub).setMemoryRefreshed(message, listed(items));
+    shown(listed(items));
   }
   if (failed !== undefined) throw failed;
   return { ok: true as const, ...(done === 0 ? { next: "Already undone." } : {}) };
@@ -141,7 +149,8 @@ export function register(tools: Registry): void {
     const user: MemoryFile = own ? memory.file(own) : { scope: "user", text: "", chars: 0, cap: memory.caps.user, notes: [] };
     const userFiles = own ? memory.topicsOf(own).map((topic) => memory.file(userTarget(own.person, topic))) : [];
     const tidied = own?.person === undefined ? undefined : lastTidied(hub, own.person);
-    const yours = { user, ...(userFiles.length ? { userFiles } : {}), ...(tidied ? { tidied } : {}) };
+    const tidyRun = own?.person === undefined ? undefined : getTidy(hub.db, own.person).lastRun;
+    const yours = { user, ...(userFiles.length ? { userFiles } : {}), ...(tidied ? { tidied } : {}), ...(tidyRun ? { tidyRun } : {}) };
     const r = input.projectRef;
     if (!r) {
       return { ...yours, caps: memory.caps, next: "memory_get with projectRef adds that bot's MEMORY.md and topic files." };
@@ -185,6 +194,15 @@ export function register(tools: Registry): void {
 
   tools.add("memory_undo", (hub, caller, input) => {
     requireHuman(caller, "memory_undo");
+    // A tidy's line only its person's Memory page shows: theirs to undo, whatever their grants on its machine.
+    const page = pageLine(hub, input.messageId);
+    if (page) {
+      if (caller.person?.personId !== page.person) throw theirs(hub, page.person);
+      const { line, person } = page;
+      return undoRefreshed(hub, caller, line, line.memoryRefreshed as MemoryRefreshed, input.item, (now) =>
+        setPageLine(hub, person, { ...line, memoryRefreshed: now }),
+      );
+    }
     const r = input.projectRef;
     requireRole(caller, "operate", r.machineId);
     const notFound = () => new ToolError("not_found", `No remembered line ${input.messageId} in this chat.`);

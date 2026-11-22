@@ -548,7 +548,7 @@
       ]
      },
      "text": {
-      "maxLength": 1000,
+      "maxLength": 100000,
       "minLength": 1,
       "pattern": "^[^\\r\\n]*$",
       "type": "string"

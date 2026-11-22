@@ -410,7 +410,7 @@ Keep one entry in memory, in plain words, for every later session: scope user fo
 |---|---|---|---|
 | `replaces` | string | no | Words of the entry this one replaces, quoted exactly; it must match one entry of the file. At most 1000 characters. |
 | `scope` | string | yes | One of `user` (The person's own memory: how they work across every bot. One shared `user.md` on a hub from before people), `project` (This bot's `MEMORY.md`, or one of its topic files). |
-| `text` | string | yes | One line. At most 1000 characters. |
+| `text` | string | yes | One line. At most 100000 characters. |
 | `topic` | string | no | A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`). |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.

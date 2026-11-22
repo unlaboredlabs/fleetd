@@ -15,7 +15,10 @@ export type TidiedShape = {
   readonly memoryRefreshed?: { readonly items: readonly Item[]; readonly total?: number; readonly undone?: number };
 };
 
-export type MyMemory = { readonly core: MemoryFileShape; readonly topics: readonly MemoryFileShape[]; readonly tidied?: TidiedShape };
+/** How the last tidy went (fleetd-contracts MemoryRefreshRun), the part the phone reads. */
+export type TidyRunShape = { readonly state: string; readonly why?: string };
+
+export type MyMemory = { readonly core: MemoryFileShape; readonly topics: readonly MemoryFileShape[]; readonly tidied?: TidiedShape; readonly tidyRun?: TidyRunShape };
 
 type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: HubError };
 type Raw = (tool: string, input: unknown) => Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: HubError }>;
@@ -27,7 +30,7 @@ export type MemoryClient = {
   undoTidy(tidied: TidiedShape): Promise<Result<null>>;
 };
 
-type GetOutput = { user: MemoryFileShape; userFiles?: MemoryFileShape[]; tidied?: TidiedShape };
+type GetOutput = { user: MemoryFileShape; userFiles?: MemoryFileShape[]; tidied?: TidiedShape; tidyRun?: TidyRunShape };
 
 export const memoryClient = (hub: { readonly call: unknown }): MemoryClient => {
   // The calls' types come with fleetd-contracts; read through their shape until the app's are generated.
@@ -37,7 +40,7 @@ export const memoryClient = (hub: { readonly call: unknown }): MemoryClient => {
     read: async () =>
       done(await call("memory_get", {}), (o) => {
         const g = o as GetOutput;
-        return { core: g.user, topics: g.userFiles ?? [], ...(g.tidied ? { tidied: g.tidied } : {}) };
+        return { core: g.user, topics: g.userFiles ?? [], ...(g.tidied ? { tidied: g.tidied } : {}), ...(g.tidyRun ? { tidyRun: g.tidyRun } : {}) };
       }),
     save: async (topic, text) => done(await call("memory_set", { scope: "user", text, ...(topic === undefined ? {} : { topic }) }), () => null),
     undoTidy: async (tidied) => done(await call("memory_undo", { projectRef: tidied.projectRef, messageId: tidied.messageId }), () => null),
@@ -66,3 +69,6 @@ export function withTopicLines(typed: string, before: string): string {
   const lines = [...(body ? [body] : []), ...links];
   return lines.length ? `${lines.join("\n")}\n` : "";
 }
+
+/** Why the last tidy didn't run, when it didn't. */
+export const tidyFailed = (run: TidyRunShape | undefined): string | undefined => (run?.state === "failed" ? (run.why ?? "It failed.") : undefined);

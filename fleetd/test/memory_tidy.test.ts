@@ -155,7 +155,7 @@ test("a write past the core's cap lands, and starts a tidy a minute later instea
 });
 
 test("the night's tidy runs after the bots' refreshes, in the person's own bot, and reads their whole memory and own words", async () => {
-  const { hub, clock, launches } = setup(true);
+  const { hub, clock, launches, tool } = setup(true);
   // Ada's own bot, where nobody else writes; Shop is shared with Ben.
   const NOTES = { machineId: PROJECT.machineId, projectId: "p2" };
   store(hub).projectsUpsertMany(PROJECT.machineId, [
@@ -206,9 +206,55 @@ test("the night's tidy runs after the bots' refreshes, in the person's own bot, 
   expect(line.map((m) => [m.text, m.projectRef.projectId])).toEqual([["Memory refreshed: +1 ~1 −1", "p2"]]);
   expect(line[0]!.memoryRefreshed!.items.every((i) => i.person === ADA.personId)).toBe(true);
   expect(getTidy(hub.db, ADA.personId).lastRun).toMatchObject({ state: "done", trigger: "schedule", added: 1, replaced: 1, removed: 1 });
-  // Ben wrote only in a bot Ada shares: his tidy has no bot of his own to run in, and never posts in another's chat.
+  // Ben wrote only in the bot he shares with Ada: his tidy still runs, but its line shows on his Memory page only.
+  hub.db.conn.query("INSERT INTO memory_settings (key, value) VALUES ('user', 16000) ON CONFLICT (key) DO NOTHING").run();
+  Memory.of(hub).set(userTarget(BEN.personId), "- Use npm.\n");
   await tick(hub);
-  expect(launches.length).toBe(3);
+  expect(launches.length).toBe(4);
+  expect(launches[3]!.title).toBe("fleetd memory tidy: Ben");
+  expect(launches[3]!.prompt).toContain("Human: I like npm, Ben here.");
+  expect(launches[3]!.prompt).not.toContain("No npm, pnpm only.");
+  const benCall = (op: string, args: Record<string, unknown>) => {
+    const agent = { kind: "memory_refresh" as const, person: BEN.personId };
+    return answer(hub, { projectRef: PROJECT, by: "fleetd:memory-tidy", agent }, { op, ...args } as LeadCall);
+  };
+  benCall("remember", { scope: "user", text: "npm is fine.", replaces: "Use npm." });
+  complete(hub, "session-4");
+  await tick(hub);
+  expect(refreshedLines(hub).length).toBe(1);
+  const ben = caller("operate", true, BEN);
+  const page = tool("memory_get", {}, ben).tidied as ChatMessage;
+  expect(page.text).toBe("Memory refreshed: ~1");
+  expect(page.messageId.startsWith("tidy:")).toBe(true);
+  // Ada sees none of it, and can't undo it; Ben's Undo all needs no grant on the bot's machine.
+  expect((tool("memory_get", {}).tidied as ChatMessage | undefined)?.messageId).not.toBe(page.messageId);
+  expect(() => tool("memory_undo", { projectRef: page.projectRef, messageId: page.messageId })).toThrow("only they read and edit it");
+  tool("memory_undo", { projectRef: page.projectRef, messageId: page.messageId }, caller("read", true, BEN));
+  expect(Memory.of(hub).read(userTarget(BEN.personId))).toBe("- Use npm.\n");
+  expect((tool("memory_get", {}, ben).tidied as ChatMessage).memoryRefreshed!.items.every((i) => i.undone === true)).toBe(true);
+});
+
+test("the tidy moves and removes an entry of any length", async () => {
+  const { hub, launches } = setup();
+  const long = `Release steps: ${"tag, build, notarize, upload. ".repeat(60).trim()}`;
+  put(hub, `- Short answers.\n- ${long}\n`);
+  says(hub, ADA, "Hi.");
+  await toTheTidy(hub, launches);
+  tidyCall(hub, "remember", { scope: "user", topic: "release", text: long });
+  tidyCall(hub, "forget", { scope: "user", entry: "Release steps:", reason: "moved to topic release" });
+  expect(mine(hub)).toBe("- Short answers.\n- [release](release.md)\n");
+  expect(mine(hub, "release")).toBe(`- ${long}\n`);
+});
+
+test("a tidy that can't run says why on the Memory page", async () => {
+  const { hub, clock, tool } = setup();
+  put(hub, "- Short answers.\n");
+  says(hub, ADA, "Hi.");
+  // Every bot's machine is offline: the night's tidy can't start, and is tried again on the next pass.
+  Object.assign(refreshPorts(hub), { can: () => false, lacks: () => false });
+  clock.ms += 2 * 3_600_000;
+  await tick(hub);
+  expect(tool("memory_get", {}).tidyRun).toMatchObject({ state: "failed", why: "No bot's machine can run it now: each is offline, too old or mid-turn." });
 });
 
 test("Undo all of a tidy goes item by item when something else wrote the memory while it ran, and keeps that", async () => {

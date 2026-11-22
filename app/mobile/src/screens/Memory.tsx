@@ -6,7 +6,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useHub, type SettingsProps } from "../hubContext";
-import { coreEntries, memoryClient, openChanges, withTopicLines, type MemoryFileShape, type MyMemory } from "../memory";
+import { coreEntries, memoryClient, openChanges, tidyFailed, withTopicLines, type MemoryFileShape, type MyMemory } from "../memory";
 import { shape, space, type, useTheme } from "../theme";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
@@ -48,6 +48,11 @@ export function Memory({ navigation }: SettingsProps<"Memory">) {
   const undoable = openChanges(tidied);
   return (
     <ScrollView style={{ backgroundColor: t.grouped }} contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
+      {tidyFailed(mem?.tidyRun) ? (
+        <ListSection>
+          <ListRow title="Last tidy didn't run" detail={tidyFailed(mem?.tidyRun)} />
+        </ListSection>
+      ) : null}
       {tidied?.text ? (
         <ListSection>
           <ListRow

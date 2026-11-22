@@ -247,7 +247,7 @@ export class Memory {
     if (call.replaces !== undefined) {
       const i = oneEntry(t, lines, call.replaces);
       const old = (lines[i] as string).replace(/^(- )+/, "");
-      if (old.length >= 1 && old.length <= 1000 && !/[\r\n]/.test(old)) replaced = old;
+      if (old.length >= 1 && old.length <= FILE_CAP_MAX && !/[\r\n]/.test(old)) replaced = old;
       lines[i] = line;
     } else {
       // Entries go above the topic index, so MEMORY.md keeps its always-on part first.
@@ -287,12 +287,7 @@ export class Memory {
     const lines = linesOf(this.read(t));
     const i = oneEntry(t, lines, call.entry);
     const whole = (lines[i] as string).replace(/^(- )+/, "").trimEnd();
-    if (whole.length < 1 || whole.length > 1000) {
-      throw invalid(
-        `That line of ${nameOf(t)} is not one entry of at most 1,000 characters.`,
-        "Leave it, or merge it into a shorter entry with remember and replaces.",
-      );
-    }
+    if (whole.length < 1) throw invalid(`That line of ${nameOf(t)} is empty.`, "Quote words of an entry.");
     lines.splice(i, 1);
     const now = joinLines(lines);
     this.putDroppingEmptyTopic(t, now);

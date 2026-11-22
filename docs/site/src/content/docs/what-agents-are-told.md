@@ -328,8 +328,10 @@ words too where nobody else wrote, never anyone else's). It may merge duplicates
 an older entry, tighten wording and move detail into a topic. It never removes a rule just because it didn't come up
 lately. Like the refresh, it may use `memory_read`, `remember` and `forget` and nothing else, and only on your memory;
 it runs on your own Claude, on the machine of the bot you wrote in last. A night with nothing new from you and your
-memory as it left it costs nothing. You get one line, "Memory refreshed: +a ~b −c", in that bot's chat and on top of
-Settings › Your memory, with Undo: Undo all puts your memory back exactly as the tidy found it.
+memory as it left it costs nothing. You get one line, "Memory refreshed: +a ~b −c", with Undo, on top of Settings ›
+Your memory, and in the chat of a bot only you write in, when you have one (never a chat others read). Undo all puts
+your memory back exactly as the tidy found it, unless something else wrote it while the tidy ran: then it takes back
+the tidy's changes one by one. A tidy that couldn't run says why on the same page.
 
 ### Import memory {#memory-import}
 

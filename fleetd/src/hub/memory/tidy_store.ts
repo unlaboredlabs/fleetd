@@ -1,6 +1,6 @@
 // A person's memory tidy's stored state: table `memory_tidies` per person, and the files before and after each of its
 // "Memory refreshed" lines (`memory_refresh_lines.snapshot`).
-import type { MemoryRefreshRun, PersonId, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
+import type { ChatMessage, MemoryRefreshRun, PersonId, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
 import type { Snapshot } from "./tidy_rules.ts";
 
@@ -33,6 +33,8 @@ export type Tidy = {
   lastRun?: MemoryRefreshRun;
   /** The last tidy's line. */
   messageId?: string;
+  /** That line when only the person's Memory page shows it (no bot of their own to post it in). */
+  line?: ChatMessage;
 };
 
 type Row = {
@@ -51,6 +53,7 @@ type Row = {
   seen: string | null;
   last_run: string | null;
   message_id: string | null;
+  line: string | null;
 };
 
 const parseOr = <T>(text: string | null, fallback: T): T => {
@@ -81,6 +84,8 @@ export function getTidy(db: HubDb, person: PersonId): Tidy {
   const last = parseOr<MemoryRefreshRun | undefined>(row.last_run, undefined);
   if (last) t.lastRun = last;
   if (row.message_id !== null) t.messageId = row.message_id;
+  const line = parseOr<ChatMessage | undefined>(row.line, undefined);
+  if (line) t.line = line;
   return t;
 }
 
@@ -89,13 +94,13 @@ export function putTidy(db: HubDb, person: PersonId, t: Tidy): void {
   db.conn
     .query(
       `INSERT INTO memory_tidies (person_id, watermarks, night_ms, due_ms, host_machine, host_project, thread_id,
-         started_ms, trigger, read_to, items, outside, before, seen, last_run, message_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         started_ms, trigger, read_to, items, outside, before, seen, last_run, message_id, line)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (person_id) DO UPDATE SET watermarks = excluded.watermarks, night_ms = excluded.night_ms,
          due_ms = excluded.due_ms, host_machine = excluded.host_machine, host_project = excluded.host_project,
          thread_id = excluded.thread_id, started_ms = excluded.started_ms, trigger = excluded.trigger,
          read_to = excluded.read_to, items = excluded.items, outside = excluded.outside, before = excluded.before, seen = excluded.seen,
-         last_run = excluded.last_run, message_id = excluded.message_id`,
+         last_run = excluded.last_run, message_id = excluded.message_id, line = excluded.line`,
     )
     .run(
       person,
@@ -114,6 +119,7 @@ export function putTidy(db: HubDb, person: PersonId, t: Tidy): void {
       t.seen ?? null,
       json(t.lastRun),
       t.messageId ?? null,
+      json(t.line),
     );
 }
 

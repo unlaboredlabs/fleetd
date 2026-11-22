@@ -13199,7 +13199,11 @@
         },
         "tidied": {
           "$ref": "#/$defs/ChatMessage",
-          "description": "The last tidy of your own memory: its \"Memory refreshed\" line, which memory_undo takes back."
+          "description": "The last tidy of your own memory: its \"Memory refreshed\" line, which memory_undo takes back. In a chat only when\nyou have a bot of your own; else only here."
+        },
+        "tidyRun": {
+          "$ref": "#/$defs/MemoryRefreshRun",
+          "description": "How the last tidy of your own memory went, and why when it failed or was skipped."
         },
         "truncated": {
           "type": "boolean"
@@ -19090,7 +19094,7 @@
         },
         "replaced": {
           "description": "The whole entry it replaced, which Undo puts back.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
@@ -19100,7 +19104,7 @@
         },
         "text": {
           "description": "The entry written; with `forgotten`, the whole entry removed.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"

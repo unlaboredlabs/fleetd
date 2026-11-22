@@ -4826,8 +4826,13 @@ export type MemoryGetOutput = {
   projectCap?: number;
   /** With projectRef: the project's files together, and their cap. */
   projectChars?: number;
-  /** The last tidy of your own memory: its "Memory refreshed" line, which memory_undo takes back. */
+  /**
+   * The last tidy of your own memory: its "Memory refreshed" line, which memory_undo takes back. In a chat only when
+   * you have a bot of your own; else only here.
+   */
   tidied?: ChatMessage;
+  /** How the last tidy of your own memory went, and why when it failed or was skipped. */
+  tidyRun?: MemoryRefreshRun;
   truncated?: boolean;
   /**
    * Your own memory's core: how you work, read by the agents of work you start and by the leads you write to. Empty for a key

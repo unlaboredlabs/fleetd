@@ -37,3 +37,10 @@ it("reads, saves a topic and undoes a tidy through the person's own key", async 
     ["memory_undo", { projectRef: { machineId: "m", projectId: "p" }, messageId: "m9" }],
   ]);
 });
+
+it("says why the last tidy didn't run, and nothing when it did", async () => {
+  const { tidyFailed } = await import("./memory");
+  expect(tidyFailed({ state: "failed", why: "No bot's machine can run it now." })).toBe("No bot's machine can run it now.");
+  expect(tidyFailed({ state: "done" })).toBeUndefined();
+  expect(tidyFailed(undefined)).toBeUndefined();
+});

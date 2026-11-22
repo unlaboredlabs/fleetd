@@ -131,6 +131,7 @@ export function YourMemory() {
   const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
   const topics = read.data?.userFiles ?? [];
   const tidy = read.data?.tidied;
+  const tidyRun = read.data?.tidyRun;
   const searching = query.trim() !== "";
   if (!live) {
     return (
@@ -144,6 +145,11 @@ export function YourMemory() {
       {read.isLoadingError ? (
         <SettingsSection bare>
           <FileError read={read} />
+        </SettingsSection>
+      ) : null}
+      {tidyRun?.state === "failed" ? (
+        <SettingsSection bare data={{ "data-memory-tidy-failed": "" }}>
+          <GroupNote tone="danger">{`Your memory's last tidy didn't run: ${tidyRun.why ?? "it failed"}`}</GroupNote>
         </SettingsSection>
       ) : null}
       {tidy?.memoryRefreshed ? (

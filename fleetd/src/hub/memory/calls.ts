@@ -11,7 +11,7 @@ import { runHuman } from "../leads/requested.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs } from "../store/time.ts";
-import { type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, userTarget, type You, youOf } from "./index.ts";
+import { FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, userTarget, type You, youOf } from "./index.ts";
 import { record, refreshYou } from "./refresh_store.ts";
 import { recordTidy } from "./tidy_store.ts";
 
@@ -36,7 +36,11 @@ function topicOk(op: string, scope: MemoryScope, topic: unknown): void {
   if (scope === "user" && topic === "user") throw invalid(`${op} call: user.md is the core of user memory; name the topic something else`);
 }
 
-const entryOk = (s: unknown): s is string => typeof s === "string" && s.length >= 1 && s.length <= 1000 && !/[\r\n]/.test(s);
+const lineOf = (max: number) => (s: unknown): s is string => typeof s === "string" && s.length >= 1 && s.length <= max && !/[\r\n]/.test(s);
+/** Words quoted from an entry (`replaces`, `entry`): enough to match one. */
+const entryOk = lineOf(1000);
+/** An entry's own text: one line, as long as a file may be (no cap per entry). */
+const textOk = lineOf(FILE_CAP_MAX);
 
 /** A lead's `remember` or `forget` in user scope: that of the person whose message the turn answers. */
 export function youForTurn(hub: Hub, r: ProjectRef, now: number): You {
@@ -68,7 +72,7 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
   const memory = Memory.of(hub, caller.agent.kind === "memory_refresh" ? caller.agent.person : undefined);
   if (call.op === "remember") {
     const scope = scopeOf(call);
-    if (!entryOk(call.text)) throw invalid("remember call: text is one line of 1 to 1000 characters");
+    if (!textOk(call.text)) throw invalid(`remember call: text is one line of 1 to ${FILE_CAP_MAX} characters`);
     if (call.replaces !== undefined && !entryOk(call.replaces)) throw invalid("remember call: replaces is one line of 1 to 1000 characters");
     const remember: RememberCall = {
       scope,

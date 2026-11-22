@@ -283,3 +283,8 @@ it("puts the last tidy's line on top, with Undo all", async () => {
   await click("Undo all");
   expect(hub.calls.find((c) => c.tool === "memory_undo")?.input).toEqual({ projectRef: project, messageId: "m40" });
 });
+
+it("says why your memory's last tidy didn't run", async () => {
+  await mount(FILE, undefined, { tidyRun: { state: "failed", trigger: "schedule", at: AT, added: 0, replaced: 0, removed: 0, why: "No bot's machine can run it now." } });
+  expect(document.querySelector("[data-memory-tidy-failed]")?.textContent).toBe("Your memory's last tidy didn't run: No bot's machine can run it now.");
+});
