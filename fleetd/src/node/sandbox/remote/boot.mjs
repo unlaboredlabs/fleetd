@@ -1,4 +1,4 @@
-const { mkdirSync, writeFileSync, renameSync, appendFileSync, readFileSync, rmSync, symlinkSync } = require("node:fs");
+const { mkdirSync, writeFileSync, renameSync, appendFileSync, readFileSync, rmSync, symlinkSync, chmodSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 const { timingSafeEqual } = require("node:crypto");
 const secret = Buffer.from(process.env.FLEETD_BOX_SECRET || "");
@@ -6,6 +6,9 @@ const port = Number(process.env.FLEETD_BOOT_PORT);
 const dir = process.env.FLEETD_BOOT_DIR;
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 const bin = dir + "/fleetd";
+// A directory on the disk the provider keeps across a stop, when the node names one: the last build it took is kept
+// there, so a box woken on a new machine from its disk starts it again with nothing fetched.
+const keep = process.env.FLEETD_BOOT_KEEP;
 const log = (m) => appendFileSync(dir + "/boot.log", new Date().toISOString() + " " + m + "\n");
 let want = null, parts = [], got = 0, done = false;
 const sha256 = (bytes) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -17,6 +20,29 @@ function finish(ws, bytes, way) {
   writeFileSync(bin + ".part", bytes, { mode: 0o755 });
   renameSync(bin + ".part", bin);
   run(ws, way);
+  if (keep) void kept(bytes);
+}
+// The build just taken, kept on the kept disk once the guest is on its way (one build only: each replaces the last).
+async function kept(bytes) {
+  try {
+    mkdirSync(keep, { recursive: true, mode: 0o700 });
+    await Bun.write(keep + "/fleetd.part", bytes);
+    chmodSync(keep + "/fleetd.part", 0o755);
+    renameSync(keep + "/fleetd.part", keep + "/fleetd");
+    log("kept fleetd on the kept disk");
+  } catch (e) { log("fleetd wasn't kept: " + (e && e.message || e)); }
+}
+// The build kept on the kept disk (`kept`), when it is the one the node asks for: started where it is, nothing fetched.
+function fromKept(ws) {
+  if (!keep) return false;
+  let bytes;
+  try { bytes = readFileSync(keep + "/fleetd"); } catch { return false; }
+  if (sha256(bytes) !== want.sha256) { log("the kept fleetd is another build"); return false; }
+  rmSync(bin, { force: true });
+  symlinkSync(keep + "/fleetd", bin);
+  log("the kept fleetd is the node's");
+  run(ws, "kept");
+  return true;
 }
 // The template's own fleetd, when it is the very build the node asks for: started where it is, with nothing fetched.
 function baked(ws) {
@@ -57,7 +83,7 @@ const server = Bun.serve({
       try {
         if (typeof m === "string") {
           want = JSON.parse(m); parts = []; got = 0;
-          if (baked(ws)) return;
+          if (baked(ws) || fromKept(ws)) return;
           if (want.url) {
             let host = "an address that isn't a URL";
             try { host = new URL(want.url).host; } catch {}
