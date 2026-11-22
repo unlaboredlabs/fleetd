@@ -16,8 +16,34 @@ export type Term = { tokens: string[]; prefix: boolean };
 
 const TOKEN = /[\p{L}\p{N}]+/gu;
 
-/** What the index holds of a message: its text. */
-export const indexedText = (m: { text: string }) => m.text;
+/** A block's words in a line, as the apps' previews say them: its caption, title or question, else what it is. */
+function blockWords(json: string): string {
+  let b: { kind?: unknown; caption?: unknown; title?: unknown; question?: unknown; name?: unknown; number?: unknown };
+  try {
+    b = JSON.parse(json) as typeof b;
+  } catch {
+    return "";
+  }
+  const own = [b.caption, b.title, b.question, b.name].find((w): w is string => typeof w === "string" && w.trim() !== "");
+  if (b.kind === "pr") return `Pull request #${String(b.number ?? "")}${own === undefined ? "" : `: ${own}`}`;
+  if (own !== undefined) return own;
+  const what: Record<string, string> = { diff: "A diff", agent: "An agent", image: "Photo", clip: "Clip", file: "File", table: "A table", checklist: "A checklist", chart: "A chart" };
+  return typeof b.kind === "string" ? (what[b.kind] ?? "") : "";
+}
+
+/**
+ * A message's text as the chat shows it: each fleetd block by its words, a link by its label, no bold or italic marks.
+ * A hit's line, a pin's line and the index read this, never the JSON of a block or a link's target.
+ */
+export function shownText(text: string): string {
+  return text
+    .replace(/^ {0,3}(`{3,}|~{3,})[ \t]*fleetd-block[^\n]*\n([\s\S]*?)(?:^ {0,3}\1[ \t]*$|(?![\s\S]))/gmu, (_all, _fence: string, json: string) => `${blockWords(json)}\n`)
+    .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/gu, "$1")
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/gu, "$2");
+}
+
+/** What the index holds of a message: its text as the chat shows it. */
+export const indexedText = (m: { text: string }) => shownText(m.text);
 /** Whether a message is in the index: once its text is final. */
 export const indexed = (m: { state: string }) => m.state !== "streaming";
 
@@ -92,7 +118,7 @@ export function marksOf(text: string, terms: Term[]): [number, number][] {
 
 /** A message's first line with text, else its first attachment's name, at most LINE_CHARS characters. */
 export function firstLine(m: { text: string; attachments?: AttachmentRef[] }): string {
-  const line = m.text.split("\n").map((l) => l.trim()).find((l) => l !== "") ?? m.attachments?.[0]?.name ?? "";
+  const line = shownText(m.text).split("\n").map((l) => l.trim()).find((l) => l !== "") ?? m.attachments?.[0]?.name ?? "";
   return cut(line, LINE_CHARS);
 }
 
@@ -107,7 +133,7 @@ export function cut(text: string, max: number): string {
  * its first mark, `…` where cut; a message with no text shows its first attachment's name. Its marks are in that line.
  */
 export function hitText(text: string, attachments: AttachmentRef[] | undefined, terms: Term[]): { text: string; marks: [number, number][] } {
-  const line = text.replace(/\s+/gu, " ").trim() || (attachments?.[0]?.name ?? "");
+  const line = shownText(text).replace(/\s+/gu, " ").trim() || (attachments?.[0]?.name ?? "");
   const marks = marksOf(line, terms);
   const chars = [...line];
   if (chars.length <= LINE_CHARS) return { text: line, marks };
