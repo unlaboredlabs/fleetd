@@ -231,14 +231,11 @@ export type TopFix = "portal" | "buy" | "cap" | null;
 
 /**
  * The one line at the top of the page, when something needs the team, with what fixes it; null when nothing does.
- * fleetd's computers not on yet comes first (nothing else applies), then the service's own notice (a declined card,
- * no plan and no credits), then the boxes held for credits used up or the cap reached.
+ * The service's own notice first (a declined card, no plan and no credits), then the boxes held for credits used up or
+ * the cap reached. Never before fleetd's computers are on: there is no page then (`billingOn`).
  */
 export const topLine = (state: BillingState): { tone: "danger" | "warning"; message: string; fix: TopFix } | null => {
-  if (!state.providedOn) {
-    const said = state.notice === null ? "fleetd's computers aren't on yet, so there is nothing to buy. Bots run on the team's own machines until then." : `${state.notice.message} ${state.notice.fix}`.trim();
-    return { tone: "warning", message: said, fix: null };
-  }
+  if (!state.providedOn) return null;
   if (state.notice !== null) {
     const fix = state.notice.fix === "" ? "" : ` ${state.notice.fix}`;
     return { tone: "danger", message: `${state.notice.message}${fix}`, fix: state.notice.action ?? null };
@@ -277,12 +274,18 @@ export const usageRows = (state: BillingState): BillingSize[] =>
 /** The usage period's words: "Since Nov 1". */
 export const periodWord = (state: BillingState, nowMs: number): string => `Since ${dayWord(state.usage.from, nowMs)}`;
 
+/**
+ * Whether the team has Billing at all: only once its answer says fleetd's computers are on for it. Before, there is
+ * nothing to buy or count, so neither app lists it, finds it in a search or opens a page that only says so; unread yet
+ * (or unreadable) is not on either, so no entry shows and then goes.
+ */
+export const billingOn = (state: BillingState | null | undefined): boolean => state?.providedOn === true;
+
 /** Whether the page offers anything to buy: fleetd's computers on, payments set up, and the person may buy. */
 export const buys = (state: BillingState): boolean => state.providedOn && state.setUp && state.canBuy;
 
 /** Why buying is off, for the one place that says so; null when it is on. */
 export const noBuyWhy = (state: BillingState): string | null => {
-  if (!state.providedOn) return null; // the top line already says it
   if (!state.canBuy) return "Only the team's owners and admins buy plans and credits.";
   if (!state.setUp) return "Payments aren't set up on fleetd cloud yet.";
   return null;

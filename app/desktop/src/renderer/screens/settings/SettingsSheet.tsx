@@ -3,7 +3,7 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Billing (a fleetd cloud team's only), Every bot and Setup, which says how many required steps are left. Vault shows
+// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Every bot and Setup, which says how many required steps are left. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
@@ -31,6 +31,7 @@ import {
 import { Button, cx, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
+import { useBillingShown } from "../admin/Billing";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
@@ -187,9 +188,10 @@ function useEntries() {
   const route = useSettingsRoute();
   const administers = useSettledAdministers();
   const vault = useData((st) => vaultServed(st.features));
-  const { id, cloud } = useHub();
-  // Billing is a fleetd cloud team's alone: a self-hosted hub has no such page, not even a row that says so.
-  const billing = cloud === true;
+  const { id } = useHub();
+  // Billing is a fleetd cloud team's alone, once fleetd's computers are on for it: a self-hosted hub, or a team with
+  // nothing to buy yet, has no such page, not even a row that says so.
+  const billing = useBillingShown(administers);
   const steps = useServes("setup_list");
   const setup = useToolQuery("setup_list", noInput, {
     enabled: steps && administers,

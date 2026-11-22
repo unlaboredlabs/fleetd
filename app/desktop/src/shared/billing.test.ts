@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  billingOn,
   buys,
   capFromInput,
   capLine,
@@ -103,11 +104,14 @@ describe("what the page says in each state", () => {
     expect(topLine(s)).toMatchObject({ fix: "buy", message: "No credits left, so bots on fleetd's computers wait. Add credits or pick a plan." });
   });
 
-  it("not switched on: one line, nothing to buy, whatever else the answer says", () => {
+  it("not switched on: no Billing at all, so no line to say so and nothing to buy", () => {
     const s = state("off");
-    expect(topLine(s)).toEqual({ tone: "warning", message: "fleetd's computers aren't on yet, so there is nothing to buy. Bots run on the team's own machines until then.", fix: null });
+    expect(billingOn(s)).toBe(false);
+    expect(topLine(s)).toBeNull();
     expect(buys(s)).toBe(false);
-    expect(noBuyWhy(s)).toBeNull();
+    // Not read yet is not on either: no entry shows and then goes.
+    expect(billingOn(undefined)).toBe(false);
+    expect(billingOn(state("plan"))).toBe(true);
   });
 
   it("says why nothing can be bought", () => {

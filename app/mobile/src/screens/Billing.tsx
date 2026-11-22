@@ -3,12 +3,14 @@
 // one row that fixes it; the plan and when it renews or ends, Choose a Plan or Change Plan; the credits left and the
 // soonest that lapse within 30 days, Add Credits; Manage Payment; the computer time used this period by size; and the
 // monthly spend cap, set in a prompt. Stripe's checkout and portal open in the browser sheet, and the screen reads
-// again when it closes. Before fleetd's computers are on for teams the screen is that one line, with nothing to buy.
-import { useFocusEffect } from "@react-navigation/native";
+// again when it closes. Before fleetd's computers are on for the team there is no Billing (Settings lists no row), and
+// a screen opened just as they went off goes back.
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, AppState, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
+  billingOn,
   billingPage,
   buys,
   capFromInput,
@@ -41,6 +43,7 @@ import { Problem } from "./manage/parts";
 export function Billing() {
   const t = useTheme();
   const { paired } = useHub();
+  const navigation = useNavigation();
   const [read, setRead] = useState<Got<BillingState> | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -92,7 +95,13 @@ export function Billing() {
       .finally(() => setBusy(null));
   };
 
-  if (read === undefined) return <ActivityIndicator style={styles.loading} />;
+  // Nothing to show until fleetd's computers are on for the team: back to Settings, never a screen that only says so.
+  const off = read?.ok === true && !billingOn(read.value);
+  useEffect(() => {
+    if (off && navigation.canGoBack()) navigation.goBack();
+  }, [off, navigation]);
+
+  if (read === undefined || off) return <ActivityIndicator style={styles.loading} />;
   const scroll = (children: ReactNode) => (
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
       {children}
@@ -111,15 +120,6 @@ export function Billing() {
   const state = read.value;
   const nowMs = Date.now();
   const top = topLine(state);
-  if (!state.providedOn) {
-    return scroll(
-      top === null ? null : (
-        <ListSection>
-          <Line text={top.message} color={t.secondary} />
-        </ListSection>
-      ),
-    );
-  }
   const can = buys(state);
   const why = noBuyWhy(state);
   const label = (l: string) => (busy === l ? "Opening…" : l);
