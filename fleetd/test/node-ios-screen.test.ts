@@ -15,6 +15,14 @@ afterEach(async () => {
   for (const fn of cleanups.splice(0).reverse()) await fn();
 });
 
+/** Waits until `ok`, 5 s at most. */
+const until = async (ok: () => boolean) => {
+  const deadline = Date.now() + 5_000;
+  while (!ok()) {
+    if (Date.now() > deadline) throw new Error("timed out");
+    await Bun.sleep(2);
+  }
+};
 const touch = (action: "down" | "up" | "move", x: number, y: number): Input => ({ kind: "touch", action, x, y });
 /** A JPEG as far as its size goes: 640×1386, with `tag` making each one's bytes differ. */
 const jpeg = (tag: number) => Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x6a, 0x02, 0x80, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, tag, 0xff, 0xd9]);
@@ -192,6 +200,75 @@ test("the live view shoots only while someone watches, at most one frame each 10
   shooter.run();
   await Bun.sleep(20);
   expect(shots).toBe(6);
+});
+
+test("the live view streams the simulator's frames while someone watches, a still for a new watcher, and screenshots once the stream fails", async () => {
+  let watching = true;
+  let shots = 0;
+  const frames: { seq: number; width: number; height: number }[] = [];
+  const asked: string[] = [];
+  let send: (jpeg: Uint8Array, w: number, h: number) => void = () => {};
+  let end: (why: string) => void = () => {};
+  let starts = 0;
+  const shooter = new Shooter(
+    async () => jpeg(100 + ++shots),
+    performance.now(),
+    () => watching,
+    (f) => frames.push({ seq: f.seq, width: f.width, height: f.height }),
+    (ms) => Bun.sleep(Math.min(ms, 5)),
+    async (onFrame) => {
+      starts += 1;
+      send = onFrame;
+      return { still: () => asked.push("still"), stop: () => asked.push("stop"), ended: new Promise<string | undefined>((r) => (end = r)) };
+    },
+  );
+  shooter.run();
+  await until(() => starts === 1);
+  // Frames as the stream sends them, sized in the screen's pixels whatever the picture's: the same one twice is one.
+  send(jpeg(1), 1206, 2622);
+  send(jpeg(1), 1206, 2622);
+  send(jpeg(2), 1206, 2622);
+  expect(frames).toEqual([
+    { seq: 1, width: 1206, height: 2622 },
+    { seq: 2, width: 1206, height: 2622 },
+  ]);
+  expect(shots).toBe(0);
+  // Another watcher meanwhile: the screen now, at once.
+  shooter.run();
+  expect(asked).toEqual(["still"]);
+  // Nobody watches: the stream stops; a watcher again starts a new one.
+  watching = false;
+  await until(() => asked.includes("stop"));
+  watching = true;
+  shooter.run();
+  await until(() => starts === 2);
+  // The stream dies (the private framework moved, say): screenshots from then on, for good.
+  end("fleetd-frames: no simulator service");
+  await until(() => shots > 0);
+  watching = false;
+  await Bun.sleep(30);
+  watching = true;
+  shooter.run();
+  await Bun.sleep(30);
+  expect(starts).toBe(2);
+  shooter.stop();
+});
+
+test("a stream that can't start (no swiftc) falls back to screenshots", async () => {
+  let shots = 0;
+  const shooter = new Shooter(
+    async () => jpeg(++shots),
+    performance.now(),
+    () => shots < 3,
+    () => {},
+    (ms) => Bun.sleep(Math.min(ms, 5)),
+    async () => {
+      throw new Error("fleetd-frames did not build: xcrun: error: unable to find utility swiftc");
+    },
+  );
+  shooter.run();
+  await until(() => shots >= 3);
+  shooter.stop();
 });
 
 test("a failed screenshot waits a second before the next, and the screen's name is its device and agent", async () => {

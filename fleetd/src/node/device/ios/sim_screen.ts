@@ -18,7 +18,8 @@ import { appendAction, files as recordedFiles, GIVE_UP_MS, giveUp, type HubCall,
 import { mkdirPrivate } from "../../config.ts";
 import { deviceInput, Pump } from "../live.ts";
 import type { Frame, Input } from "../scrcpy.ts";
-import { Hands, type Ran, type Runner, Shooter, type Shoot } from "./screen.ts";
+import { jpegStream } from "../../screen/mac_frames.ts";
+import { Hands, type Live, type Ran, type Runner, Shooter, type Shoot } from "./screen.ts";
 import { recordingStarted, type Simctl } from "./simctl.ts";
 import { iosDir } from "./wrapper.ts";
 
@@ -43,6 +44,8 @@ export type Recording = { finish(): Promise<string | undefined> };
 /** What a screen does to its simulator: a screenshot, a recording, an agent-device command. Simctl's, or a test's. */
 export type SimTools = {
   shoot(udid: string): Promise<Uint8Array>;
+  /** The screen as a stream of frames, where the Mac can make one. */
+  live?: (udid: string) => Live;
   record(udid: string, path: string): Recording;
   run?: (runner: Runner, args: string[]) => Promise<Ran>;
 };
@@ -106,9 +109,11 @@ export function startRecording(argv: string[], path: string, saysStarted: (line:
   };
 }
 
-/** The tools on the Mac's own simulators: simctl's screenshot (through a file in `shots`) and recordVideo. */
+/** The tools on the Mac's own simulators: fleetd-frames' stream (built beside `shots`), simctl's screenshot (through a
+ * file in `shots`) and recordVideo. */
 export function simctlTools(simctl: Simctl, shots: string): SimTools {
   return {
+    live: (udid) => (onFrame) => jpegStream(join(dirname(shots), "frames"), ["sim", simctl.set, udid], onFrame),
     async shoot(udid) {
       mkdirSync(shots, { recursive: true });
       const to = join(shots, `${udid}.jpg`);
@@ -177,7 +182,7 @@ export class SimScreen {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.writeMeta();
     const shoot: Shoot = () => tools.shoot(this.udid);
-    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame));
+    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, tools.live?.(this.udid));
     this.hands = new Hands(opened.runner, opened.scale, (args, ran) => this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms), tools.run);
   }
 
