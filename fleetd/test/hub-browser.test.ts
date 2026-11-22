@@ -207,6 +207,9 @@ test("H.264 goes to a session's node only while every watch decodes it, and a wa
   t.link.deliver("devbox", h264(6, true));
   t.link.deliver("devbox", h264(7));
   expect(seqs()).toEqual([1, 2, 6, 7]);
+  // The node links again: its frames meanwhile are lost, so the watch goes on from a keyframe.
+  t.link.link("devbox", ["browser"]);
+  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true, video: true, key: true }]);
   // The last watch gone: the node stops.
   const asked = watches().length;
   t.app.close(app);

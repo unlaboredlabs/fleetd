@@ -318,8 +318,6 @@ export class SimScreen {
     this.shooter.key();
   }
 
-
-
   /**
    * Each new frame of the screen to `fn` (the newest so far at once), until the returned function is called. The first
    * watcher starts the video, which runs until the screen ends.

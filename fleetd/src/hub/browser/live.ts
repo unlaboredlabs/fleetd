@@ -198,7 +198,10 @@ export class Live {
   /** A node linked (again): the sessions watched there, so it sends their frames. */
   rewatch(machine: string): void {
     for (const [session, w] of this.watched) {
-      if (w.machine === machine) link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, this.video(session)));
+      if (w.machine !== machine) continue;
+      // Frames sent while the link was down are lost: an H.264 screen starts again from a keyframe.
+      const h264 = this.video(session);
+      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, h264, h264));
     }
   }
 
