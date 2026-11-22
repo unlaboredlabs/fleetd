@@ -23,7 +23,7 @@ export interface Numbers {
   readonly hubs: string;
   /**
    * Frames drawn from the first wheel event until it was still, the ones missed among them while the list moved, and
-   * the longest one then (ms). Apart, the frame it landed on another hub in (ms): the list in its place already, the
+   * the longest one then (ms): a frame across which the list didn't move missed nothing of it. Apart, the frame it landed on another hub in (ms): the list in its place already, the
    * new hub's sidebar and chat drawn.
    */
   readonly frames: number;
@@ -67,6 +67,8 @@ export const numbers = (c: Clip): Numbers => {
       landing = Math.round(dt);
       continue;
     }
+    // The list still across it (in its place, the new hub's chat opening): no motion missed.
+    if (x === px) continue;
     worst = Math.max(worst, dt);
     dropped += Math.max(0, Math.round(dt / FRAME) - 1);
   }
