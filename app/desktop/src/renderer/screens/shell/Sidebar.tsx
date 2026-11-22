@@ -458,25 +458,36 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   );
 
   // Two fingers across it switch hubs (hubSwipe.ts): the list follows them, the next or previous hub's beside it, and
-  // the marks at the foot follow too. The whole sidebar listens, its top included.
+  // the marks at the foot follow too. The whole sidebar listens, its top included. The hubs either side are drawn
+  // ahead, hidden, once the sidebar is idle (W813): a swipe then starts on a list already there, with nothing to render
+  // and no frame lost; the swipe asks for any other (a mark further off, or a swipe before then).
   const area = useRef<HTMLElement | null>(null);
   const pane = useRef<HTMLDivElement>(null);
-  const besidePane = useRef<HTMLDivElement>(null);
+  const pages = useRef<HTMLDivElement>(null);
+  const sides = useRef(new Map<number, HTMLDivElement>());
   const marks = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => hubs.map((h) => h.id), [hubs]);
   const at = shownHub === undefined ? -1 : ids.indexOf(shownHub.id);
-  const { beside, moving, press } = useHubSwipe({
+  const warm = useIdle(hubs.length > 1);
+  const { beside, press } = useHubSwipe({
     area,
     pane,
+    frame: pages,
     hubs: ids,
     at,
     paint: (offset, by, width) => {
       if (pane.current !== null) pane.current.style.transform = offset === 0 ? "" : `translate3d(${String(offset)}px, 0, 0)`;
-      if (besidePane.current !== null && by !== null) besidePane.current.style.transform = `translate3d(${String(offset + by.side * width)}px, 0, 0)`;
+      for (const [side, el] of sides.current) {
+        const on = by?.side === side;
+        el.toggleAttribute("data-shown", on);
+        if (on) el.style.transform = `translate3d(${String(offset + side * width)}px, 0, 0)`;
+      }
       marks.current?.style.setProperty("--at", String(at - (width > 0 ? offset / width : 0)));
     },
+    drawn: (b) => warm && b.to === at + b.side,
   });
-  const besideHub = beside === null ? undefined : hubs[beside.to];
+  /** The hub drawn on `side`: the one the swipe asked for there, else, once idle, the neighbour. */
+  const sideHub = (side: 1 | -1): HubView | undefined => (beside?.side === side ? hubs[beside.to] : warm && at >= 0 ? hubs[at + side] : undefined);
   // Each hub opens at its top, the one slid in as it was drawn beside.
   useLayoutEffect(() => {
     if (pane.current !== null) pane.current.scrollTop = 0;
@@ -491,15 +502,27 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
       aria-label="Sidebar"
       data-compact={view.compact || undefined}
     >
-      <div className={s.pages} data-moving={moving || undefined} {...press}>
+      <div ref={pages} className={s.pages} {...press}>
         <div ref={pane} className={s.list} {...hold}>
           {shownHub === undefined ? null : group(shownHub, jumpOf)}
         </div>
-        {besideHub === undefined ? null : (
-          <div ref={besidePane} className={cx(s.list, s.beside)} aria-hidden inert>
-            {group(besideHub, () => null)}
-          </div>
-        )}
+        {([-1, 1] as const).map((side) => {
+          const h = sideHub(side);
+          return h === undefined ? null : (
+            <div
+              key={h.id}
+              ref={(el) => {
+                if (el === null) sides.current.delete(side);
+                else sides.current.set(side, el);
+              }}
+              className={cx(s.list, s.beside)}
+              aria-hidden
+              inert
+            >
+              {group(h, () => null)}
+            </div>
+          );
+        })}
       </div>
       <div className={s.foot}>
         <You go={go} />
@@ -509,6 +532,21 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
     </nav>
   );
 }
+
+/** Whether the window has been idle once since this mounted (with `wanted`): for work that can wait until then. */
+const useIdle = (wanted: boolean): boolean => {
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    if (!wanted || idle) return;
+    if (typeof requestIdleCallback !== "function") {
+      const t = setTimeout(() => setIdle(true), 0);
+      return () => clearTimeout(t);
+    }
+    const id = requestIdleCallback(() => setIdle(true), { timeout: 1000 });
+    return () => cancelIdleCallback(id);
+  }, [wanted, idle]);
+  return idle;
+};
 
 /**
  * One small mark a hub at the sidebar's foot, between you and the two icons, the one on show filled; a swipe moves it
