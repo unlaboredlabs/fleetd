@@ -70,6 +70,12 @@ export function directoryOver(db: HubDb): Directory {
         threadId,
       );
       if (refresh) return { agent: { kind: "memory_refresh" }, projectRef: { machineId, projectId: refresh.project_id } };
+      const tidy = one<{ person_id: string; host_project: string }>(
+        "SELECT person_id, host_project FROM memory_tidies WHERE host_machine = ? AND thread_id = ?",
+        machineId,
+        threadId,
+      );
+      if (tidy) return { agent: { kind: "memory_refresh", person: tidy.person_id }, projectRef: { machineId, projectId: tidy.host_project } };
       const lead = one<{ machine_id: string; project_id: string }>(
         "SELECT machine_id, project_id FROM leads WHERE machine_id = ? AND thread_id = ? ORDER BY machine_id, project_id LIMIT 1",
         machineId,

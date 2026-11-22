@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AgentsMac,
+  CAPTURE_RETRY,
   agentsMac,
   heartbeat,
   isAgentsMac,
@@ -15,7 +16,8 @@ import {
   TOOL_ONLY,
 } from "../src/node/agents_mac/index.ts";
 import { blocksSimulators, COMMAND_TIMEOUT, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run } from "../src/node/agents_mac/checks.ts";
-import { healthFile, type MacCheckId, toolsDir } from "../src/node/agents_mac/common.ts";
+import { healthFile, type MacCheckId, toolsDir, writeHealth, writeLink } from "../src/node/agents_mac/common.ts";
+import { setupRows, STALL_MS } from "../src/node/agents_mac/rows.ts";
 import {
   answer,
   askFile,
@@ -447,4 +449,51 @@ test("`fleetd node grants` is the CLI's", async () => {
   const [err, failed] = await Promise.all([new Response(asking.stderr).text(), asking.exited]);
   expect(failed).toBe(1);
   expect(err).toContain("the node didn't ask macOS for Accessibility");
+});
+
+test("init's rows on the agents' Mac: the hub link first, a stall said after its limit, a grant left to the app", () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const at = 1_000_000;
+  expect(setupRows(home.dir, "devbox", at)).toEqual([{ title: "Node", state: "waiting", detail: "starting" }]);
+  writeLink(home.dir, { state: "linking", since: at });
+  expect(setupRows(home.dir, "devbox", at + 1000)[0]).toMatchObject({ state: "waiting" });
+  expect(setupRows(home.dir, "devbox", at + STALL_MS + 1)[0]).toMatchObject({ state: "failed", detail: "devbox isn't answering this Mac" });
+  writeLink(home.dir, { state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the hub", since: at });
+  expect(setupRows(home.dir, "devbox", at)[0]).toMatchObject({ state: "failed", fix: expect.stringContaining("A Mac for agents") });
+  writeLink(home.dir, { state: "linked", since: at });
+  writeHealth(home.dir, health("agents", [grant("accessibility", false), grant("screen_recording", true)]));
+  expect(setupRows(home.dir, "devbox", at).map((r) => [r.title, r.state])).toEqual([
+    ["Linked to devbox", "done"],
+    ["accessibility", "needs_you"],
+    ["screen_recording", "done"],
+  ]);
+});
+
+test("the screen capture prompt: tried once Screen Recording is on, its Allow seen at the next try, and at once when setup asks", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  let allowed = false;
+  let tries = 0;
+  const mac = new AgentsMac(home.dir, false, async () => (tries++, allowed ? undefined : "The user declined TCCs for application, window, display capture (code -3801)"));
+  const at = 1_000_000;
+  mac.publish(health("agents", [grant("screen_recording", false)]));
+  // Waits for Screen Recording: nothing tried.
+  await mac.probeCapture(false, false, at);
+  expect(tries).toBe(0);
+  const capture = () => mac.health()!.checks.find((c) => c.id === "screen_capture");
+  await mac.probeCapture(true, false, at);
+  expect(capture()).toMatchObject({ state: "fail", message: expect.stringContaining("code -3801") });
+  // Allowed at macOS's prompt: the next try, a few seconds on, sees it, and the file setup reads says so.
+  allowed = true;
+  await mac.probeCapture(true, false, at + 1000);
+  expect(capture()?.state).toBe("fail");
+  await mac.probeCapture(true, false, at + CAPTURE_RETRY);
+  expect(capture()?.state).toBe("ok");
+  expect(JSON.parse(readFileSync(healthFile(home.dir), "utf8")).checks.map((c: { id: string }) => c.id)).toEqual(["screen_recording", "screen_capture"]);
+  // Setup's Allow tries at once, whatever the wait.
+  allowed = false;
+  await mac.probeCapture(true, true, at + CAPTURE_RETRY + 1);
+  expect(capture()?.state).toBe("fail");
+  expect(tries).toBe(3);
 });

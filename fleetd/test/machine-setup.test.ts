@@ -105,6 +105,13 @@ const ports: SetupPorts = {
     }
     return code === "abc#s1" ? { ok: true, message: "Login successful." } : { ok: false, message: "claude auth login failed: Invalid code" };
   },
+  // Antigravity's: `signed` is signed in already; `lab` starts with a URL and takes only `g#1`.
+  async antigravityLogin(_hub, m, code) {
+    logins.push(code);
+    if (m === "signed") return { ok: true, message: "Antigravity is signed in (Google AI Pro)", signedIn: "Google AI Pro" };
+    if (code === undefined) return { ok: true, message: "sign in at the URL, then give the code it shows", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" };
+    return code === "g#1" ? { ok: true, message: "Antigravity is signed in (Google AI Pro)", signedIn: "Google AI Pro" } : { ok: false, message: "agy acp --login failed: invalid code" };
+  },
 };
 
 beforeEach(() => {
@@ -246,6 +253,7 @@ test("only an admin's device adds or removes", async () => {
       ["machine_remove", { machineId: "builder-1" }],
       ["machine_join", { machineId: "builder-1" }],
       ["machine_claude_login", { machineId: "builder-1" }],
+      ["machine_antigravity_login", { machineId: "builder-1" }],
     ] as const) {
       await expect(call(tool, input, who)).rejects.toMatchObject({ code: "forbidden" });
     }
@@ -363,6 +371,23 @@ test("claude logs in on a machine through its node, and a bad code says to start
   expect(logins).toEqual([undefined, "abc#s1", "nope"]);
   // The code goes nowhere else: no event carries it.
   expect(JSON.stringify(events(t.hub).page(0).events)).not.toContain("abc#s1");
+});
+
+test("Antigravity signs in on a machine through its node: one signed in already says so and starts nothing", async () => {
+  for (const id of ["lab", "signed"]) store(t.hub).machineUpsert({ machineId: id, name: id, tags: [], status: "online", lastSeenAt: new Date().toISOString(), nodeVersion: "1" } as never);
+  expect(await call("machine_antigravity_login", { machineId: "signed" })).toMatchObject({ signedIn: "Google AI Pro", next: "Antigravity on signed is signed in: its agents on Antigravity can start." });
+  const started = await call("machine_antigravity_login", { machineId: "lab" });
+  expect([started.loginUrl, started.signedIn]).toEqual(["https://accounts.google.com/o/oauth2/auth?state=g1", undefined]);
+  expect(started.next).toContain("The sign-in waits 10 minutes.");
+  expect(await call("machine_antigravity_login", { machineId: "lab", code: " g#1 " })).toMatchObject({ signedIn: "Google AI Pro" });
+  await expect(call("machine_antigravity_login", { machineId: "lab", code: "nope" })).rejects.toMatchObject({
+    code: "failed",
+    message: "agy acp --login failed: invalid code",
+    fix: "Start the sign-in again: each sign-in page's code works once.",
+  });
+  await expect(call("machine_antigravity_login", { machineId: "lab", code: " " })).rejects.toMatchObject({ code: "invalid" });
+  expect(logins).toEqual([undefined, undefined, "g#1", "nope"]);
+  expect(JSON.stringify(events(t.hub).page(0).events)).not.toContain("g#1");
 });
 
 test("a login on a machine the hub doesn't know, or with an empty code, asks nothing of a node", async () => {

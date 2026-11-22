@@ -1,0 +1,41 @@
+// The agents' Mac's setup as rows, for `fleetd init` run again on it: the same node files the app's setup window reads
+// (mac-link.json and mac-health.json, app/desktop/src/renderer/screens/macSetup/model.ts), so the terminal and the app
+// say the same. A step only the person can do points at the app's window, where its button is.
+import { readHealth, readLink } from "./common.ts";
+
+export type Row = { title: string; state: "done" | "waiting" | "needs_you" | "failed"; detail: string; fix?: string };
+
+/** A link still dialing after this long, or lost for this long, is said as not reached. */
+export const STALL_MS = 20_000;
+
+const IN_APP = "In the fleetd app on this Mac, press Allow next to it";
+
+/** The rows for the node at `home`: the hub link first, then each check the node ran. */
+export function setupRows(home: string, hubName: string, now = Date.now()): Row[] {
+  const link = readLink(home);
+  const rows: Row[] = [];
+  if (link === undefined) rows.push({ title: "Node", state: "waiting", detail: "starting" });
+  else if (link.state === "linked") rows.push({ title: `Linked to ${hubName}`, state: "done", detail: "linked" });
+  else if (link.state === "refused") {
+    rows.push({
+      title: `Linked to ${hubName}`,
+      state: "failed",
+      detail: `${hubName} refused this Mac: ${link.why ?? "no reason given"}`,
+      fix: "On your main machine, open Add machine › A Mac for agents, and type its code in the fleetd app on this Mac",
+    });
+  } else if (now - link.since > STALL_MS) {
+    rows.push({
+      title: `Linked to ${hubName}`,
+      state: "failed",
+      detail: `${hubName} isn't answering this Mac`,
+      fix: `Check this Mac is on ${hubName}'s network and that the hub runs`,
+    });
+  } else rows.push({ title: `Linked to ${hubName}`, state: "waiting", detail: "linking" });
+  for (const check of readHealth(home)?.health.checks ?? []) {
+    const grant = check.id === "accessibility" || check.id === "screen_recording";
+    if (check.state === "ok") rows.push({ title: check.id, state: "done", detail: check.message });
+    else if (grant) rows.push({ title: check.id, state: "needs_you", detail: check.message, fix: IN_APP });
+    else rows.push({ title: check.id, state: check.state === "fail" ? "failed" : "waiting", detail: check.message, ...(check.fix ? { fix: check.fix } : {}) });
+  }
+  return rows;
+}

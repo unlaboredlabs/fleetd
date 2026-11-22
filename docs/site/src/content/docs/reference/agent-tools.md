@@ -55,9 +55,9 @@ Every lead gets these.
 | [`close`](#close) | The workstream is done: say why in one line. | No |
 | [`gated_run`](#gated_run) | A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. | A human approves the exact command in chat before the node runs it. |
 | [`decisions_search`](#decisions_search) | Search this bot's decisions (and the global ones) by words, or read one by its id (D12), whole. | No |
-| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot (MEMORY.md, or a topic file for detail). | No |
+| [`remember`](#remember) | Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot. | No |
 | [`forget`](#forget) | Remove one entry from memory: entry quotes words of exactly one entry, as it reads now; scope and topic as for remember. | No |
-| [`memory_read`](#memory_read) | Read one of this bot's memory topic files (MEMORY.md lists them). | No |
+| [`memory_read`](#memory_read) | Read one memory topic file: this bot's (MEMORY.md lists them), or with scope user one of the person's own (their user.md lists them). | No |
 | [`nudge`](#nudge) | Flag the message you end this turn with for the human's look, with reason in a few words ("the Machines page redesign"): the app shows it as something to look at, below your questions, until they have seen it, for a day at most. | No |
 | [`automation_create`](#automation_create) | Make an automation for this bot: a name, the prompt each run gives you as a new order, and optionally a schedule: a 5-field cron to run again and again (0 9 \* \* 1-5), or at, one date and time to run once (a reminder or follow-up: 2026-11-03T18:00). | No |
 | [`automation_list`](#automation_list) | This bot's automations with their schedule, next run, paused state and last run; doneAt marks a one-time one that has run. | No |
@@ -404,14 +404,14 @@ Search this bot's decisions (and the global ones) by words, or read one by its i
 
 ### remember
 
-Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot (MEMORY.md, or a topic file for detail). With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A write past a file's cap is refused: merge or replace entries, then call again. The chat shows the human what you remembered, with Undo. Never a secret.
+Keep one entry in memory, in plain words, for every later session: scope user for how the person whose message you answer works everywhere (tone, taste, standing rules; their own memory), project for this bot. Each scope has a short core (user.md, MEMORY.md) every session reads, and topic files for detail that matters only for some work: put a long procedure, reference values or a narrow area's rules in a topic, and keep the core to what every turn needs. With replaces (words of one entry, quoted exactly) it takes that entry's place: never keep two versions. A project write past a file's cap is refused: merge or replace entries, then call again; user memory past its cap is tidied for you. The chat shows the human what you remembered, with Undo. Never a secret.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `replaces` | string | no | Words of the entry this one replaces, quoted exactly; it must match one entry of the file. At most 1000 characters. |
 | `scope` | string | yes | One of `user` (The person's own memory: how they work across every bot. One shared `user.md` on a hub from before people), `project` (This bot's `MEMORY.md`, or one of its topic files). |
-| `text` | string | yes | One line. At most 1000 characters. |
-| `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
+| `text` | string | yes | One line. At most 100000 characters. |
+| `topic` | string | no | A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`). |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
@@ -435,7 +435,7 @@ Remove one entry from memory: entry quotes words of exactly one entry, as it rea
 | `entry` | string | yes | Words of the entry to remove, quoted exactly; they must match one entry of the file. At most 1000 characters. |
 | `reason` | string | no | One line. At most 300 characters. |
 | `scope` | string | yes | One of `user` (The person's own memory: how they work across every bot. One shared `user.md` on a hub from before people), `project` (This bot's `MEMORY.md`, or one of its topic files). |
-| `topic` | string | no | Project scope only: the topic file; absent, `MEMORY.md`. |
+| `topic` | string | no | A topic file of that scope; absent, its core (`user.md` or `MEMORY.md`). |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
 
@@ -452,10 +452,11 @@ Remove one entry from memory: entry quotes words of exactly one entry, as it rea
 
 ### memory_read
 
-Read one of this bot's memory topic files (MEMORY.md lists them).
+Read one memory topic file: this bot's (MEMORY.md lists them), or with scope user one of the person's own (their user.md lists them).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `scope` | string | no | One of `user` (The person's own memory: how they work across every bot. One shared `user.md` on a hub from before people), `project` (This bot's `MEMORY.md`, or one of its topic files). |
 | `topic` | string | yes | Lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory. |
 
 **Who may call:** a lead, checked by the hub. **Needs a human:** no.
@@ -1328,7 +1329,7 @@ A lead's call: record a payment at the checkout open in your browser session, wi
 | `items[].name` | string | yes | What it is, as the checkout names it: `Double room, 12-14 Nov, 2 nights`. At most 200 characters. |
 | `items[].quantity` | integer | no | How many; absent: 1. 1 to 10000. |
 | `shop` | object | yes | The shop the lead buys from. |
-| `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. |
+| `shop.domain` | string | yes | The checkout page's host: `shop.example.com`. The card fills only on it (and its subdomains) and in its payment provider's frames. At most 253 characters. |
 | `shop.name` | string | yes | Its name, as the shop calls itself: `Hotel Adlon`. At most 120 characters. |
 | `total` | object | yes | The total the checkout shows, with everything in it (taxes, fees, shipping). |
 | `total.amount` | string | yes | Matches `^(0\|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$`. |
@@ -1387,7 +1388,7 @@ A lead's call: when a page needs something only the person may give and you must
 | `label` | string | yes | What it is, in the person's words: `Passport number`, `The code texted to you`. At most 120 characters. |
 | `ref` | string | no | Fill it from this 1Password field instead (an Identity, Passport, Driver License or Social Security item's): the person approves, then call secure_input_fill. Absent: the person types it. |
 | `site` | object | yes | The site the field is on. |
-| `site.domain` | string | yes | The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). |
+| `site.domain` | string | yes | The page's host: `passport.gov.example`. The value fills only on it (and its subdomains). At most 253 characters. |
 | `site.name` | string | yes | Its name, as it calls itself. At most 120 characters. |
 | `target` | string | yes | The field: a CSS selector on the page or one of its frames (`input[name=passport]`, `#otp`). At most 500 characters. |
 | `why` | string | yes | Why the page needs it, in one line. At most 300 characters. |

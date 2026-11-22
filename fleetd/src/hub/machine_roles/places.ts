@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import type { HostCheck } from "../../shared/contracts.ts";
 import { CAP_SESSION_HOST, CAP_SESSION_SEAL } from "../../shared/screens_wire.ts";
+import { CAP_ANTIGRAVITY_LOGIN } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
 import type { HostedCaller } from "../lead_calls/types.ts";
@@ -185,6 +186,7 @@ export function runners(hub: Hub): RunnerRow[] {
       live: liveOn(c, m.machineId, now),
       max,
       held: heldOn(c, m.machineId, now),
+      ...(nodes.can(m.machineId, CAP_ANTIGRAVITY_LOGIN) ? { antigravityLogin: true } : {}),
     };
     return { runner, roles, why };
   });

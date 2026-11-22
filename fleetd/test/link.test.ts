@@ -9,6 +9,7 @@ import { FakeNode, nodeKey } from "./fake-node.ts";
 import { NodeIdentity } from "../src/node/identity.ts";
 import { REFUSED, runCmdCheck } from "../src/node/cmd/index.ts";
 import { runNode, type LinkContext } from "../src/node/link/index.ts";
+import { tellHub } from "../src/node/agents_mac/leave.ts";
 import { deflateBomb, hubHome } from "./helpers.ts";
 
 const home = hubHome();
@@ -57,7 +58,7 @@ test("a node on another protocol is told which side to update", async () => {
 test("an enroll token links once; the machine is online once its runner answers", async () => {
   const node = await linked("worker-1", { capabilities: ["browser", "session_host"], fingerprint: "fp1" });
   const welcome = await node.tag("welcome");
-  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once", "link_bulk"] });
+  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once", "link_bulk", "machine_leave"] });
   await until(() => types().includes("machine.online worker-1"));
   expect(links.can("worker-1", "browser")).toBe(true);
   expect(links.can("worker-1", "mac_tool")).toBe(false);
@@ -571,4 +572,64 @@ test("the hub links a node that proves itself in its upgrade, a stale proof alik
   const old = new FakeNode(url, { machineId, key: { pubKey: identity.pubKey(), sign: (n) => identity.sign(n) } });
   expect(await old.tag("welcome")).toMatchObject({ hubId: links.hubId });
   old.ws.close();
+});
+
+test("the agents' Mac that leaves is removed: its key revoked, its machine forgotten, its link closed as removed", async () => {
+  const node = await linked("mac-leaves", { capabilities: ["agents_mac"] });
+  node.send({ t: "leave" });
+  expect(await node.closed).toEqual({ code: 4001, reason: "mac-leaves was removed from this hub: its node key is revoked" });
+  expect(hub.auth.nodes.nodePubKey("mac-leaves")).toBeUndefined();
+  expect(store(hub).machineGet("mac-leaves")).toBeUndefined();
+  expect(types()).toContain("machine.removed mac-leaves");
+});
+
+test("only the agents' Mac leaves by itself: a worker's leave is refused and it stays", async () => {
+  const node = await linked("worker-stays");
+  node.send({ t: "leave" });
+  expect((await node.closed).code).toBe(4000);
+  expect(hub.auth.nodes.nodePubKey("worker-stays")).toBeDefined();
+});
+
+test("a machine that holds bots doesn't leave by itself, whatever its hello says: its key and bots stay", async () => {
+  const node = await linked("worker-claims-mac", { capabilities: ["agents_mac"] });
+  const at = new Date().toISOString();
+  store(hub).projectsUpsertMany("worker-claims-mac", [
+    { machineId: "worker-claims-mac", projectId: "shop", title: "Shop", workspaceRoot: "/w/shop", lastActivityAt: at, threads: { running: 0, total: 0 } } as never,
+  ]);
+  node.send({ t: "leave" });
+  expect((await node.closed).code).toBe(4000);
+  expect(hub.auth.nodes.nodePubKey("worker-claims-mac")).toBeDefined();
+  expect(store(hub).projectsList("worker-claims-mac")).toHaveLength(1);
+});
+
+test("Stop being the agents' Mac tells a hub that answers, and says when the hub wasn't reached", async () => {
+  const machineId = "mac-tells";
+  const identity = new NodeIdentity(new Uint8Array(32).fill(7));
+  const { token } = hub.auth.nodes.createEnrollToken(machineId, "test");
+  const enrolled = new FakeNode(url, { machineId, enrollToken: token, capabilities: ["agents_mac"], key: { pubKey: identity.pubKey(), sign: (n) => identity.sign(n) } });
+  await enrolled.tag("welcome");
+  enrolled.close();
+  await enrolled.closed;
+  const config = { hub: `http://127.0.0.1:${server.port}`, machineId, name: machineId };
+  expect(await tellHub(config, identity, 5000)).toBe("removed");
+  expect(hub.auth.nodes.nodePubKey(machineId)).toBeUndefined();
+  // Gone already: the hub doesn't know it, which is as good.
+  expect(await tellHub(config, identity, 5000)).toBe("removed");
+  // Nothing listens there: the wait runs out, and the Mac leaves anyway.
+  const started = Date.now();
+  expect(await tellHub({ ...config, hub: "http://127.0.0.1:9" }, identity, 600)).toBe("unreached");
+  expect(Date.now() - started).toBeLessThan(3000);
+});
+
+test("a node its hub holds no key for ends its link as unknown, not removed", async () => {
+  const fatal = await runNode({
+    settings: { hub: `http://127.0.0.1:${server.port}`, machineId: "never-joined", name: "never-joined", nodeVersion: "0.0.0-test" },
+    identity: new NodeIdentity(new Uint8Array(32).fill(9)),
+    capabilities: () => ["agents_mac"],
+    heartbeat: async () => ({}),
+    attach: () => () => {},
+    handle: () => {},
+    log: () => {},
+  });
+  expect(fatal).toMatchObject({ unknown: true, removed: false });
 });

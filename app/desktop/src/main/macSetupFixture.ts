@@ -102,7 +102,7 @@ const ATTENTION: ReadonlyArray<object> = [
 
 export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FIXTURE_MAC"]): MacSetupPorts => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fleetd-mac-fixture-"));
-  const opened = mac === "busy" || mac === "attention" ? mac : undefined;
+  let opened: "busy" | "attention" | undefined = mac === "busy" || mac === "attention" ? mac : undefined;
   const started = Date.now();
   // A Mac joined a while ago, with both grants given (the attention one's Screen Recording lost since).
   let joinedAt: number | undefined = opened === undefined ? undefined : started - 3_600_000;
@@ -114,7 +114,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
   let xcodeWaits: ReadonlyArray<object> | undefined;
   /** 555555: the node joins, but never writes its checks. */
   let silent = false;
-  const asked = new Map<MacPane, number>(opened === undefined ? [] : [["accessibility", started - 3_600_000], ...(opened === "busy" ? [["screen_recording", started - 3_600_000] as const] : [])]);
+  const asked = new Map<MacPane, number>(opened === undefined ? [] : [["accessibility", started - 3_600_000], ...(opened === "busy" ? [["screen_recording", started - 3_600_000] as const, ["screen_capture", started - 3_600_000] as const] : [])]);
   if (opened === "attention") hubVersion = "0.9.2";
   const granted = (pane: MacPane) => {
     const at = asked.get(pane);
@@ -131,6 +131,11 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
       granted("screen_recording")
         ? { id: "screen_recording", state: "ok", message: "fleetd may record the screen." }
         : { id: "screen_recording", state: "fail", message: "fleetd may not record the screen yet.", fix: "Turn on fleetd in Privacy & Security › Screen Recording." },
+      !granted("screen_recording")
+        ? { id: "screen_capture", state: "unknown", message: "Waits for Screen Recording." }
+        : granted("screen_capture")
+          ? { id: "screen_capture", state: "ok", message: "fleetd captures the Mac's screen directly." }
+          : { id: "screen_capture", state: "fail", message: "macOS hasn't let fleetd capture the screen directly yet.", fix: "Press Allow in macOS's prompt." },
       ...CHECKS.slice(6).map(([id, message]) =>
         id === "tools" && opened === "busy"
           ? { id, state: "ok", message: "Node.js 22.12.0, agent-device 0.11.2 and agent-desktop 0.4.0 are in. CocoaPods 1.16.2." }
@@ -180,6 +185,13 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
         if (!asked.has(pane)) asked.set(pane, Date.now());
         return { code: 0, output: "" };
       }
+      // `fleetd node leave`: the hub hears, and this Mac is no agents' Mac from then on.
+      if (args[0] === "node" && args[1] === "leave") {
+        await later(STEP_MS, null);
+        joinedAt = undefined;
+        opened = undefined;
+        return { code: 0, output: "mac left http://devbox.example.ts.net:4790.\nleft: removed\n" };
+      }
       if (args[0] === "status") return { code: 0, output: JSON.stringify({ Peer: { a: { DNSName: "devbox.example.ts.net.", Online: true } } }) };
       await later(STEP_MS * 2, null);
       if (args[0] === "init") joinedAt = Date.now();
@@ -199,6 +211,7 @@ export const fixtureMacPorts = (mac: string | undefined = process.env["FLEETD_FI
         return Promise.resolve({ text: JSON.stringify({ enrolled: true, agentsMac: true, machineId: "mac", hub: HUB }), writtenAt: joinedAt });
       }
       if (silent) return Promise.resolve(undefined);
+      if (file.endsWith("mac-link.json")) return Promise.resolve({ text: JSON.stringify({ state: "linked", since: joinedAt + 1500 }), writtenAt: joinedAt + 1500 });
       if (file.endsWith("mac-activity.json")) {
         return Promise.resolve({ text: JSON.stringify(opened === "busy" ? busyActivity(started) : { simulators: [], jobs: [] }), writtenAt: Date.now() });
       }

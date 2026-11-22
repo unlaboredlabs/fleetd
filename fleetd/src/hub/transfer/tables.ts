@@ -50,6 +50,7 @@ export const CARRIED = [
   "memory_refresh_lines",
   "memory_refreshes",
   "memory_settings",
+  "memory_tidies",
   "metric_changes",
   "metric_identities",
   "metric_merges",

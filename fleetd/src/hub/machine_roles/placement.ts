@@ -67,6 +67,8 @@ export type Runner = {
   max: number;
   /** People waiting for a slot here: the next ones free are theirs, before any agent's. */
   held: number;
+  /** Its node signs Antigravity in from the app (`antigravity_login`). */
+  antigravityLogin?: boolean;
 };
 
 export const ready = (r: Runner, host: SessionHost) => r.hosts?.some((h) => h.host === host && h.ready);
@@ -184,6 +186,7 @@ export function entry({ runner, roles, why }: RunnerRow): MachineRolesEntry {
     hosts: runner.hosts ?? [],
     hostsOthers: runner.hostsOthers,
     ...(runner.othersNote !== undefined && roles.sessions ? { hostsOthersNote: runner.othersNote } : {}),
+    ...(runner.antigravityLogin === true ? { antigravityLogin: true } : {}),
   };
 }
 

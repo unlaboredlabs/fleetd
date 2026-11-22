@@ -34,6 +34,10 @@ export const REASON_MAX_BYTES = 123;
  * that doesn't know a node for another reason (an import, which leaves keys behind) says it isn't enrolled. */
 export const REMOVED = "was removed from this hub";
 export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: its node key is revoked`;
+/** What an UNAUTHORIZED close says for a node whose key the hub doesn't hold at all: the agents' Mac stops as enrolled
+ * on it too, as only a new code joins it again. */
+export const NOT_ENROLLED = "is not enrolled";
+export const notEnrolledReason = (machineId: string) => `${machineId} ${NOT_ENROLLED}: run fleetd pair --worker ${machineId} on the hub`;
 
 /** Both directions every 15 s. */
 export const HEARTBEAT_INTERVAL_SECS = 15;
@@ -71,6 +75,8 @@ export const CAP_SESSION_DESKTOP = "session_linux_desktop";
 export const CAP_SELF_UPDATE = "self_update";
 export const CAP_CLAUDE_INSTALL = "claude_install";
 export const CAP_CLAUDE_LOGIN = "claude_login";
+/** `antigravity_login`: the node signs Antigravity in from the app (`agy acp --login`), and says whether it is. */
+export const CAP_ANTIGRAVITY_LOGIN = "antigravity_login";
 export const CAP_UPDATE_FETCH = "update_fetch";
 export const CAP_UPDATE_HOLD = "update_hold";
 export const CAP_SESSION_HOST = "session_host";
@@ -116,6 +122,8 @@ export const HUB_CAP_LINK_DEFLATE = "link_deflate";
  * at QUIET_DEAD (12 s). A hub or cloud that doesn't list it gets the heartbeats' bound (30 s), so a big frame it sends
  * unannounced over a slow link never reads as a dead link. */
 export const HUB_CAP_LINK_BULK = "link_bulk";
+/** The hub takes a `leave` frame from the agents' Mac: it removes that machine, as Stop being the agents' Mac asks. */
+export const HUB_CAP_MACHINE_LEAVE = "machine_leave";
 
 /** A node's first frame (`NodeHello`). */
 export type NodeHello = {
@@ -271,6 +279,8 @@ export type NodeActionKind =
   | "claude"
   | "claude_login"
   | "claude_login_code"
+  | "antigravity_login"
+  | "antigravity_login_code"
   | "hold"
   | "sandbox_check"
   | "sandbox_limits"
@@ -335,6 +345,8 @@ export type NodeActionResult = {
   probe?: NodeProbe;
   stage?: string;
   login_url?: string;
+  /** `antigravity_login`, `antigravity_login_code`: the machine's Antigravity is signed in, on this plan ("Google AI Pro"). */
+  signed_in?: string;
   /** `sandbox_check` that failed: why, as SandboxCheck's `reason`. */
   reason?: string;
   /** `hold`: the sessions still mid-step, a tool call of theirs running; with `unhosted` and `hosted`, only those not hosted. */

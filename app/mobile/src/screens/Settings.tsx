@@ -4,7 +4,7 @@
 // MCPs), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
 // (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
-// hub that has one, Import Memory, this phone (its notifications, name and app), and Disconnect, which asks first.
+// hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -177,8 +177,8 @@ export function Settings() {
           <ListRow title="Vault" onPress={() => navigation.navigate("Vault")} />
         </ListSection>
       ) : null}
-      <ListSection header="Memory">
-        <ListRow title="Import Memory" detail="What another assistant knows about you" onPress={() => navigation.navigate("ImportMemory")} />
+      <ListSection>
+        <ListRow title="Memory" onPress={() => navigation.navigate("Memory")} />
       </ListSection>
       <ListSection header="This phone">
         <ListRow title="Notifications" detail="Sealed so only this phone reads them" value={notifications} onPress={onNotifications} />

@@ -10115,6 +10115,51 @@
       ],
       "type": "object"
     },
+    "MachineAntigravityLoginInput": {
+      "properties": {
+        "code": {
+          "description": "Absent: check the sign-in, and start one when there is none. The code the sign-in page showed: finish it.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "MachineAntigravityLoginOutput": {
+      "properties": {
+        "loginUrl": {
+          "description": "A sign-in that started: where to sign in with Google.",
+          "type": "string"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "message": {
+          "description": "The node's words: what happened, or why not.",
+          "type": "string"
+        },
+        "next": {
+          "type": "string"
+        },
+        "signedIn": {
+          "description": "Antigravity on the machine is signed in, on this plan (\"Google AI Pro\"): already, or once the code ended it.",
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "machineId",
+        "message"
+      ],
+      "type": "object"
+    },
     "MachineClaudeLoginInput": {
       "properties": {
         "code": {
@@ -10399,6 +10444,10 @@
     "MachineRolesEntry": {
       "description": "A machine as Settings › Hub › Machines shows it: its roles, its session slots and what it can host.",
       "properties": {
+        "antigravityLogin": {
+          "description": "Its node signs Google Antigravity in from the app (machine_antigravity_login); absent from older nodes.",
+          "type": "boolean"
+        },
         "hosts": {
           "default": [],
           "description": "What it can host, as its node last reported; empty until it reports.",
@@ -11699,6 +11748,12 @@
         },
         "machine_add_status.output": {
           "$ref": "#/$defs/MachineAddStatusOutput"
+        },
+        "machine_antigravity_login.input": {
+          "$ref": "#/$defs/MachineAntigravityLoginInput"
+        },
+        "machine_antigravity_login.output": {
+          "$ref": "#/$defs/MachineAntigravityLoginOutput"
         },
         "machine_claude_login.input": {
           "$ref": "#/$defs/MachineClaudeLoginInput"
@@ -13244,7 +13299,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "A project's topic file; absent for `user.md` and `MEMORY.md`."
+          "description": "A topic file; absent for a core (`user.md`, `MEMORY.md`)."
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -13295,12 +13350,27 @@
           "minimum": 0,
           "type": "integer"
         },
+        "tidied": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The last tidy of your own memory: its \"Memory refreshed\" line, which memory_undo takes back. In a chat only when\nyou have a bot of your own; else only here."
+        },
+        "tidyRun": {
+          "$ref": "#/$defs/MemoryRefreshRun",
+          "description": "How the last tidy of your own memory went, and why when it failed or was skipped."
+        },
         "truncated": {
           "type": "boolean"
         },
         "user": {
           "$ref": "#/$defs/MemoryFile",
-          "description": "Your own memory: how you work, read by the agents of work you start and by the leads you write to. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
+          "description": "Your own memory's core: how you work, read by the agents of work you start and by the leads you write to. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
+        },
+        "userFiles": {
+          "description": "Your own memory's topic files, by name.",
+          "items": {
+            "$ref": "#/$defs/MemoryFile"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -13613,7 +13683,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "Project scope: a topic file; absent, MEMORY.md."
+          "description": "A topic file; absent, the core (user.md, or with scope project MEMORY.md)."
         }
       },
       "required": [
@@ -19177,7 +19247,7 @@
         },
         "replaced": {
           "description": "The whole entry it replaced, which Undo puts back.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
@@ -19187,7 +19257,7 @@
         },
         "text": {
           "description": "The entry written; with `forgotten`, the whole entry removed.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"

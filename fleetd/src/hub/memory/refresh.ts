@@ -37,8 +37,9 @@ import { prompts } from "../prompts/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
-import { INDEX_FILE, Memory, projectTarget, youTarget } from "./index.ts";
+import { INDEX_FILE, Memory, projectTarget, userTarget, youTarget } from "./index.ts";
 import { getRun, listed, putLineItems, putRun, type Run, youOver } from "./refresh_store.ts";
+import { tick as tidyTick } from "./tidy.ts";
 import { allowedTools, AT_KEY, DEFAULT_AT, nextNight, nightDue, parseTime, prompt, refreshedSummary, RUN_LIMIT_MS, sign, type Time } from "./refresh_rules.ts";
 
 export { allowedTools, AT_KEY, DEFAULT_AT, nextNight, nightDue, prompt, refreshedSummary, RUN_LIMIT_MS } from "./refresh_rules.ts";
@@ -86,7 +87,7 @@ export const refreshPorts = (hub: Hub): RefreshPorts =>
   }));
 
 /** claude_accounts `node_accounts`: whether the machine's node runs Claude accounts. */
-function nodeAccounts(hub: Hub, m: string): NodeAccounts {
+export function nodeAccounts(hub: Hub, m: string): NodeAccounts {
   const ports = refreshPorts(hub);
   return ports.can(m, CAP_CLAUDE_ACCOUNTS) ? "runs" : ports.lacks(m, CAP_CLAUDE_ACCOUNTS) ? "too_old" : "offline";
 }
@@ -101,6 +102,11 @@ export function run(hub: Hub): void {
     } catch (error) {
       console.warn("memory refresh: pass failed:", (error as Error).message);
     }
+    try {
+      await tidyTick(hub);
+    } catch (error) {
+      console.warn("memory tidy: pass failed:", (error as Error).message);
+    }
     if (!stop.aborted) {
       const timer = setTimeout(pass, TICK_MS);
       stop.addEventListener("abort", () => clearTimeout(timer), { once: true });
@@ -112,7 +118,7 @@ export function run(hub: Hub): void {
 // ---- the night's hour ------------------------------------------------------------------------------------------------
 
 /** `policy.memory_refresh_at`, or 04:00; and the zone it is in. */
-function schedule(hub: Hub): [string, Time] {
+export function schedule(hub: Hub): [string, Time] {
   const global = (k: string) => {
     try {
       return decisions(hub).globalValue(k);
@@ -146,7 +152,7 @@ const QUIET = "Nothing new in the chat or its orders since the last refresh.";
 const tooOld = (r: ProjectRef) => `update ${r.machineId} to let it run`;
 
 /** Why a refresh of `r` can't start now: its lead is mid-turn, its login is out of usage, or no node is linked. */
-function held(hub: Hub, r: ProjectRef): string | undefined {
+export function held(hub: Hub, r: ProjectRef): string | undefined {
   try {
     if (leads(hub).get(r)?.state === "working") return "The lead is mid-turn: try again once it is done.";
   } catch {}
@@ -168,7 +174,7 @@ function leadAccountKey(hub: Hub, r: ProjectRef): string | undefined {
 }
 
 /** A refresh's record for its row: when, what started it, how it went, and the changes in `items`. */
-function outcome(atMs: number, trigger: AutomationTrigger, state: AutomationRunState, items: RememberedItem[], why?: string): MemoryRefreshRun {
+export function outcome(atMs: number, trigger: AutomationTrigger, state: AutomationRunState, items: RememberedItem[], why?: string): MemoryRefreshRun {
   const count = (s: string) => items.filter((i) => sign(i) === s).length;
   return {
     at: isoMs(atMs),
@@ -196,7 +202,7 @@ function ran(hub: Hub, r: ProjectRef, run: Run, last: MemoryRefreshRun): void {
 }
 
 /** Whether the session ended after `startedMs`: true when it completed. */
-function ended(hub: Hub, thread: ThreadRef, startedMs: number): boolean | undefined {
+export function ended(hub: Hub, thread: ThreadRef, startedMs: number): boolean | undefined {
   const type = hub.db.all<{ type: string }>(
     `SELECT type FROM events WHERE type IN (SELECT value FROM json_each(?1)) AND machine_id = ?2
        AND json_extract(data, '$.threadId') = ?3 AND created_ms >= ?4 ORDER BY seq LIMIT 1`,
@@ -425,10 +431,9 @@ function memoryNow(hub: Hub, r: ProjectRef, watermark: number, readTo: number): 
   }
   const t = youTarget(you);
   const user = t ? memory.read(t) : "(Several people wrote in this chat, so user memory is left alone tonight.)";
-  const files: [string, string][] = [
-    ["user.md (add only)", user],
-    [`${INDEX_FILE} (project)`, memory.read(projectTarget(r))],
-  ];
+  const files: [string, string][] = [["user.md (add only)", user]];
+  for (const topic of t ? memory.topicsOf(t) : []) files.push([`${topic}.md (user, topic ${topic}, add only)`, memory.read(userTarget(t?.person, topic))]);
+  files.push([`${INDEX_FILE} (project)`, memory.read(projectTarget(r))]);
   for (const topic of memory.topics(r)) files.push([`${topic}.md (bot, topic ${topic})`, memory.read(projectTarget(r, topic))]);
   const caps = memory.caps;
   let out =

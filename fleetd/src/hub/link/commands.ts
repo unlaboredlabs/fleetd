@@ -18,6 +18,8 @@ const CLAUDE_WAIT_SEC = 45 * 60 + 60;
 const LOGIN_WAIT_SEC = 90;
 /** A node's rejoin: it enrols at the new hub first, which has a minute to answer (node/rejoin.ts), and a grace. */
 const REJOIN_WAIT_SEC = 90;
+/** Antigravity's sign-in may install agy first (about 280 MB). */
+const AGY_LOGIN_WAIT_SEC = 600;
 /** How long the hub waits for a node to write a secret. */
 const SECRET_REPLY_SEC = 30;
 /** A session call's default wait, as the executor's READ_TIMEOUT. */
@@ -227,6 +229,11 @@ export class NodeCommands {
     return code === undefined ? this.runAction(machineId, "claude_login") : this.runAction(machineId, "claude_login_code", { code });
   }
 
+  /** Antigravity's sign-in, as claudeLogin; a machine already signed in answers `signed_in` and starts nothing. */
+  antigravityLogin(machineId: string, code?: string) {
+    return code === undefined ? this.runAction(machineId, "antigravity_login") : this.runAction(machineId, "antigravity_login_code", { code });
+  }
+
   screens(machineId: string, screens: unknown) {
     return this.runAction(machineId, "screens", { screens });
   }
@@ -288,7 +295,10 @@ function defaultWait(frame: HubFrame): number {
           return CLAUDE_WAIT_SEC;
         case "claude_login":
         case "claude_login_code":
+        case "antigravity_login_code":
           return LOGIN_WAIT_SEC;
+        case "antigravity_login":
+          return AGY_LOGIN_WAIT_SEC;
         case "update":
           return UPDATE_WAIT_SEC;
         case "rejoin":

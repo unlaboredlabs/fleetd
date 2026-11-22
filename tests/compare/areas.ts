@@ -248,6 +248,7 @@ const REFUSALS: Readonly<Record<string, readonly [codes: ReadonlyArray<string>, 
   sandbox_test: [["invalid"], "a run's hub has no provider key connected to test"],
   project_avatar_get: [["not_found"], "a run reads a bot's picture before project_avatar_set gives it one"],
   machine_claude_login: [["failed"], "no node joins, so no machine logs claude in"],
+  machine_antigravity_login: [["failed"], "no node joins, so no machine signs Antigravity in"],
   project_image_rebuild: [["invalid", "machine_offline"], "a run's bots have no setup commands, and no node joins to build an image"],
 };
 
