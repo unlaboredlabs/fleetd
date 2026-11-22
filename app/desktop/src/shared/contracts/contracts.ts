@@ -65,6 +65,9 @@ export const ACCOUNTS_SIGN_IN_PATH = "/v1/app/sign-in";
 /** The accounts service's accept of an invitation the sign-in answered: POST, JSON. */
 export const ACCOUNTS_ACCEPT_PATH = "/v1/app/accept";
 
+/** The accounts service's team of the person's own, made by the make value the sign-in answered: POST, JSON. */
+export const ACCOUNTS_TEAM_PATH = "/v1/app/team";
+
 /** The accounts service's sign-out: POST, JSON, always 204. */
 export const ACCOUNTS_SIGN_OUT_PATH = "/v1/app/sign-out";
 
@@ -98,7 +101,7 @@ export type AccountsAcceptOutput = {
 
 /** A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written. */
 export type AccountsFailure = {
-  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
+  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Team: invalid (400), make_refused (401: a make value unknown, used before or run out), already_own (409: the person has a team of their own), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
   code: string;
   fix?: string;
   message: string;
@@ -165,6 +168,8 @@ export type AccountsSignInOutput = {
   email: string;
   /** Absent: none. Each pending invitation to a team, not joined: it carries no pairing code. */
   invitations?: AccountsInvitation[];
+  /** Makes a team of the person's own when sent to POST /v1/app/team: offered only to someone in no team of their own (one who came by an invitation), one use, 15 minutes; each sign-in answers a fresh one. */
+  make?: string;
   /** WorkOS's session id, which sign-out ends. The app keeps it and the email, nothing else of WorkOS. */
   sessionId: string;
   /** The person's own teams: never one they were only invited to. Empty only while an invitation is pending. */
@@ -188,6 +193,16 @@ export type AccountsTeam = {
   pairingCode: string;
   /** The team's hub address, an https origin with no path (http only on 127.0.0.1, for tests). */
   url: string;
+};
+
+/** POST /v1/app/team: a team of the person's own, by the make value the sign-in answered. No auth header. */
+export type AccountsTeamInput = {
+  make: string;
+};
+
+/** 200: the team made, as the sign-in answers its teams, with a pairing code for its /pair. */
+export type AccountsTeamOutput = {
+  team: AccountsTeam;
 };
 
 export type ActionItem = {

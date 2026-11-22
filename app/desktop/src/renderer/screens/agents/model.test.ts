@@ -274,3 +274,12 @@ describe("the Now line", () => {
     expect(nowLine(thinking, undefined)).toBe(thinking);
   });
 });
+
+describe("a step's line", () => {
+  const step = (kind: "other" | "command", summary: string) => ({ kind: "action", id: "a1", at: "2026-10-17T10:00:00.000Z", action: { at: "2026-10-17T10:00:00.000Z", kind, status: "running", summary, failed: false } }) as const;
+  it("keeps a start's words whole, so the reason after the step's name shows; a command is cut as before", () => {
+    const why = "Putting its files on its computer: GitHub refused the clone of acme/shop from its computer. Trying again in 300 s, by itself.";
+    expect(actionLine(step("other", why))).toEqual({ words: "", machine: why, tone: "quiet", prose: true });
+    expect(actionLine(step("command", "npm test")).prose).toBeUndefined();
+  });
+});

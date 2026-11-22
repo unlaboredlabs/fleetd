@@ -64,7 +64,7 @@ function place(hub: Hub): ProjectRef {
   if (!first) {
     throw new ToolError(
       "invalid",
-      "Import memory runs in one of this hub's bots, and it has none yet. Everyone on this hub can read what it writes.",
+      "Import memory runs in one of your bots, and there is none yet.",
       NO_PROJECT_FIX,
       "no_project",
     );

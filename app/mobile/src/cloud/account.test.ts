@@ -69,6 +69,31 @@ const answering = (me = true, join: (name: string) => boolean = () => false): Af
   };
 };
 
+describe("No team yet", () => {
+  it("someone invited who passes on it: Make a Team makes one of their own and keeps it", async () => {
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "new@example.com", "eve@other.example");
+    const ask = { ...answering(), makeTeam: (email: string) => (ask.asked.push(`No team yet for ${email}`), Promise.resolve(true)) };
+    const out = await signInAsking(ports("new@example.com"), ask);
+    expect(ask.asked).toEqual(["Signed in as new@example.com", "eve@other.example invited you to acme as member", "No team yet for new@example.com"]);
+    expect(out).toMatchObject({ ok: true, teams: [{ name: "new", ok: true }] });
+    expect(fake.madeOnAsking).toEqual(["new new@example.com"]);
+  });
+
+  it("Not Now makes nothing, and isn't asked of someone with a team", async () => {
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "new@example.com", "eve@other.example");
+    const ask = { ...answering(), makeTeam: () => Promise.resolve(false) };
+    expect(await signInAsking(ports("new@example.com"), ask)).toMatchObject({ ok: false, failure: { code: "none_joined" } });
+    expect(fake.madeOnAsking).toEqual([]);
+    await fake.team("lab", ["ada@example.com"]);
+    let asked = false;
+    const out = await signInAsking(ports("ada@example.com"), { ...answering(), makeTeam: () => ((asked = true), Promise.resolve(true)) });
+    expect(out.ok).toBe(true);
+    expect(asked).toBe(false);
+  });
+});
+
 describe("Sign In", () => {
   it("one team: the page with PKCE, one call to the accounts service, and the team's key from its own /pair", async () => {
     const url = await fake.team("acme", ["ada@example.com"]);

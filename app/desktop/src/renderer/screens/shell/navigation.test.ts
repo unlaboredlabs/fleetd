@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Routes and several hubs: a route names its hub as `?at=<id>`, one that doesn't stays on the
 // hub of the screen before it, and a single-hub app's hashes never name one.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { currentRoute, hashFor, navigate, screenHash, setRouteHubs } from "./navigation";
 import { parseHash, toHash } from "./routes";
 
@@ -46,6 +46,27 @@ describe("routes on several hubs", () => {
     setRouteHubs(["hub", "a1b2"]);
     window.location.hash = "#/factory?at=gone1";
     expect(currentRoute().at).toBe("hub");
+  });
+});
+
+describe("a reload", () => {
+  it("opens the team the window was on, not the first, when the address names none (Settings' own links don't)", async () => {
+    setRouteHubs(["weishang", "qasweep"]);
+    navigate({ id: "project", project: { machineId: "devbox", projectId: "chat" }, message: null, at: "qasweep" });
+    window.location.hash = "#/settings/general";
+    // The page loads again: a fresh module, the same window.
+    vi.resetModules();
+    const again = await import("./navigation");
+    again.setRouteHubs(["weishang", "qasweep"]);
+    expect(again.currentRoute().at).toBe("qasweep");
+  });
+
+  it("opens the first when the kept team is gone", async () => {
+    window.sessionStorage.setItem("fleetd.route.hub", "gone");
+    vi.resetModules();
+    const again = await import("./navigation");
+    again.setRouteHubs(["weishang", "qasweep"]);
+    expect(again.currentRoute().at).toBe("weishang");
   });
 });
 

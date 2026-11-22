@@ -3,6 +3,7 @@
 // claude_accounts_get and say it the same way. Pure, so the wording is tested without a hub.
 import type { ClaudeAccount, ClaudeChoice, ClaudeRunsOn, ClaudeSealedOn, ClaudeTest, PersonClaude, PersonRef, UsageStatus } from "../../../shared/contracts";
 import type { ClaudeAccountRequest } from "../../../shared/ipc";
+import { RUNNER_ID } from "../../../shared/providers";
 import { when } from "../live/when";
 
 /** The plain line for someone with nothing to run on, as the brief and spawn_agent say it. */
@@ -15,8 +16,8 @@ export const KEY_PLACEHOLDER = "sk-ant-api03-…";
 export const CONSOLE_KEYS = "https://console.anthropic.com/settings/keys";
 
 /** An account by whose it is: "the hub's API key", "your subscription", "Sam Rivera's subscription". */
-export function accountWords(account: ClaudeAccount, people: ReadonlyArray<PersonRef>, me?: string): string {
-  if (account.kind === "hub") return "the hub's API key";
+export function accountWords(account: ClaudeAccount, people: ReadonlyArray<PersonRef>, me?: string, team = false): string {
+  if (account.kind === "hub") return team ? "the team's API key" : "the hub's API key";
   if (account.personId === me) return "your subscription";
   const name = people.find((p) => p.personId === account.personId)?.name;
   return name === undefined ? "a person's subscription" : `${name}'s subscription`;
@@ -28,24 +29,24 @@ const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
  * What some work runs on now, as one line: "Your subscription.", "Each machine's own Claude login.". `noMachine`: the
  * team has no machine of its own (a fleetd cloud team before its first computer), so a machine's login is nothing.
  */
-export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string, noMachine = false): string {
+export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string, noMachine = false, team = false): string {
   switch (runsOn.kind) {
     case "machine_login":
       return noMachine ? "Not connected." : "Each machine's own Claude login.";
     case "account":
-      return `${capital(accountWords(runsOn.account, people, me))}.`;
+      return `${capital(accountWords(runsOn.account, people, me, team))}.`;
     case "refused":
       return runsOn.message;
   }
 }
 
 /** Someone's account in a list of everyone's: "Own subscription", "Hub API key", "Nothing to run on". */
-export function theirRunsOn(runsOn: ClaudeRunsOn, noMachine = false): string {
+export function theirRunsOn(runsOn: ClaudeRunsOn, noMachine = false, team = false): string {
   switch (runsOn.kind) {
     case "machine_login":
       return noMachine ? "Not connected" : "Machine's own login";
     case "account":
-      return runsOn.account.kind === "hub" ? "Hub API key" : "Own subscription";
+      return runsOn.account.kind === "hub" ? (team ? "Team API key" : "Hub API key") : "Own subscription";
     case "refused":
       return "Nothing to run on";
   }
@@ -58,13 +59,16 @@ export function shownChoice(me: PersonClaude): ClaudeChoice | undefined {
   return me.runsOn.account.kind === "hub" ? "hub_api" : "subscription";
 }
 
+/** A place a secret is kept or tried, as the person reads it: the hosted runner's machine is fleetd's computers. */
+const placeName = (machineId: string): string => (machineId === RUNNER_ID ? "fleetd's computers" : machineId);
+
 /** Machines that run agents and don't hold the secret: nothing runs on it there. */
 export const missingOn = (sealedOn: ReadonlyArray<ClaudeSealedOn>, machines: ReadonlyArray<string>): string[] =>
   machines.filter((m) => !sealedOn.some((s) => s.machineId === m)).sort();
 
 /** Where a secret is, never what: "Sealed on buildbox and devbox." */
 export function sealedLine(sealedOn: ReadonlyArray<ClaudeSealedOn>): string {
-  const names = sealedOn.map((s) => s.machineId).sort();
+  const names = sealedOn.map((s) => placeName(s.machineId)).sort();
   if (names.length === 0) return "Sealed on no machine.";
   const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
   return `Sealed on ${list ?? ""}.`;
@@ -73,9 +77,9 @@ export function sealedLine(sealedOn: ReadonlyArray<ClaudeSealedOn>): string {
 /** A Test's verdict: "Worked on devbox, today 14:02." or claude's own words, the secret masked by the node. */
 export function testLine(test: ClaudeTest, nowMs: number): { ok: boolean; text: string } {
   const at = when(test.at, nowMs);
-  if (test.ok) return { ok: true, text: `Worked on ${test.machineId}, ${at}.` };
+  if (test.ok) return { ok: true, text: `Worked on ${placeName(test.machineId)}, ${at}.` };
   const said = (test.error ?? "claude failed and said nothing").trim().replace(/\.$/u, "");
-  return { ok: false, text: `Failed on ${test.machineId}, ${at}: ${said}.` };
+  return { ok: false, text: `Failed on ${placeName(test.machineId)}, ${at}: ${said}.` };
 }
 
 /**
@@ -104,7 +108,7 @@ export function pauseLine(account: ClaudeAccount, usage: ReadonlyArray<UsageStat
         const until = a.breaker.until ?? a.breaker.checkAt;
         const time = until === undefined ? "" : ` until ${when(until, nowMs)}`;
         const why = a.breaker.message === undefined ? "" : `: ${a.breaker.message.trim().replace(/\.$/u, "")}`;
-        return `Paused on ${m.machineId}${time}${why}.`;
+        return `Paused on ${placeName(m.machineId)}${time}${why}.`;
       }),
   );
   return lines.length === 0 ? null : lines.join(" ");

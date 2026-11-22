@@ -278,7 +278,7 @@ describe("signing in to fleetd cloud", () => {
     fake.invite("acme", "new@acme.example", "eve@other.example");
     const { account, hubs, saved } = setup(fake, { email: "new@acme.example" });
     const arrived = await account.signIn();
-    expect(arrived).toEqual({ ok: true, arrival: { email: "new@acme.example", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }] } });
+    expect(arrived).toEqual({ ok: true, arrival: { email: "new@acme.example", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }], canMake: true } });
     const out = await account.finish([]);
     expect(out).toEqual({ ok: false, failure: { code: "none_joined", message: "You didn't join a team, so you aren't signed in.", fix: "Sign in again when you want to join it." } });
     expect(hubs).toEqual([]);
@@ -286,6 +286,23 @@ describe("signing in to fleetd cloud", () => {
     await expect.poll(() => fake.sessions.size).toBe(0);
     expect(await signInAll(account, [0])).toEqual({ ok: true, email: "new@acme.example", teams: [{ name: "acme", ok: true }] });
     expect(hubs.map((h) => [h.label, h.invited])).toEqual([["acme", true]]);
+  });
+
+  it("no team of their own, passing on the invitation: Make a team makes one, connects it as theirs, and offers no second", async () => {
+    await fake.team("acme", ["eve@other.example"]);
+    fake.invite("acme", "new@acme.example", "eve@other.example");
+    const { account, hubs, saved } = setup(fake, { email: "new@acme.example" });
+    const arrived = await account.signIn();
+    expect(arrived.ok && arrived.arrival.canMake).toBe(true);
+    expect(await account.finish([], true)).toEqual({ ok: true, email: "new@acme.example", teams: [{ name: "new", ok: true }] });
+    expect(fake.madeOnAsking).toEqual(["new new@acme.example"]);
+    expect(hubs.map((h) => [h.label, h.invited])).toEqual([["new", false]]);
+    expect(saved()?.email).toBe("new@acme.example");
+    // The next sign-in finds it: nothing to make, the invitation still asked about.
+    const again = await account.signIn();
+    expect(again).toEqual({ ok: true, arrival: { email: "new@acme.example", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }] } });
+    expect(await account.finish([])).toEqual({ ok: true, email: "new@acme.example", teams: [{ name: "new", ok: true }] });
+    expect(fake.madeOnAsking).toEqual(["new new@acme.example"]);
   });
 
   it("a team the person didn't make never opens on Connect a computer, even joined on another device", async () => {

@@ -10,8 +10,18 @@ import { onHub, parseHash, toHash, type Screen } from "./routes";
 export type Routed = Screen & { readonly at: HubId };
 
 let hubs: readonly HubId[] = [FIRST_HUB];
-/** The hub of the last route that named one. */
-let current: HubId | null = null;
+/** Where this window keeps the hub it is on, so a reload opens the team the person picked, not the first. */
+const KEPT_HUB = "fleetd.route.hub";
+const keptHub = (): HubId | null => {
+  try {
+    return typeof window === "undefined" ? null : ((window.sessionStorage.getItem(KEPT_HUB)) ?? null);
+  } catch {
+    return null;
+  }
+};
+
+/** The hub of the last route that named one, this window's kept one at its start. */
+let current: HubId | null = keptHub();
 
 /** The app's hubs, in sidebar order (the shell sets them as they change). */
 export const setRouteHubs = (ids: readonly HubId[]): void => {
@@ -20,7 +30,14 @@ export const setRouteHubs = (ids: readonly HubId[]): void => {
 
 /** `screen` on its hub: the one it names, else the one before, else the first; a hub since removed is the first. */
 export const routed = (screen: Screen): Routed => {
-  if (screen.at !== undefined) current = screen.at;
+  if (screen.at !== undefined && screen.at !== current) {
+    current = screen.at;
+    try {
+      window.sessionStorage.setItem(KEPT_HUB, current);
+    } catch {
+      // No storage (a locked-down browser): it holds for this page's life only.
+    }
+  }
   const at = screen.at ?? current;
   return { ...screen, at: at !== null && hubs.includes(at) ? at : (hubs[0] ?? FIRST_HUB) };
 };

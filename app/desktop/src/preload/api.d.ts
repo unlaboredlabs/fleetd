@@ -175,8 +175,8 @@ export interface FleetdApi {
     state(): Promise<CloudState>;
     /** The browser's part of a sign-in and the service's answer, held until finish or notMe; resolves when it ends. Never rejects. */
     signIn(): Promise<SignInOutcome>;
-    /** It's them: connects the account's teams and the invitations joined, by their places in the arrival. Never rejects. */
-    finish(join: number[]): Promise<FinishOutcome>;
+    /** It's them: connects the account's teams and the invitations joined, by their places in the arrival, and with `make` a team of their own the arrival offered. Never rejects. */
+    finish(join: number[], make?: boolean): Promise<FinishOutcome>;
     /** Not them: drops the answer held and ends its session; nothing was connected. */
     notMe(): Promise<void>;
     cancel(): Promise<void>;

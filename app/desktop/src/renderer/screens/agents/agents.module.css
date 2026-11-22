@@ -308,6 +308,10 @@
 .failed {
   color: var(--danger);
 }
+/* A step in words (a start, a retry): wrapped whole, so its reason after the step's name stays readable. */
+.prose {
+  overflow-wrap: anywhere;
+}
 
 /* Elsewhere: work on the repo that isn't this project's, laid out as an agent's row but not a link. */
 .other:hover {
