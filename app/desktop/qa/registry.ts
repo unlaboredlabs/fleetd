@@ -1831,6 +1831,18 @@ export const screens: readonly Screen[] = [
       await row.scrollIntoViewIfNeeded();
     },
   },
+  // Its PRs merge, then verify, on a main that requires branches up to date: the line says so, with Turn off.
+  {
+    id: "settings.projects",
+    variant: "merge-mode",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["no-repo-settings"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "How it merges", exact: true });
+      await row.getByRole("button", { name: "Turn off" }).waitFor();
+      await row.scrollIntoViewIfNeeded();
+    },
+  },
   // Settings › Bots: Taxes archived, in its own group under the others, with Bring back.
   {
     id: "settings.projects",

@@ -35,9 +35,10 @@
 # The desktop app's update feeds (latest-mac.yml, latest-linux.yml, from update-yml.sh) go up after the assets they
 # point at, for the same reason. An edge build that didn't build the desktop app keeps the previous feeds.
 #
-# Env: CHANNEL, VERSION, APP_BUILT, CLI_PUBLISH, GH_TOKEN, GITHUB_SHA, GITHUB_REF_NAME.
+# Env: CHANNEL, VERSION, APP_BUILT, CLI_PUBLISH, GH_TOKEN, RELEASE_SHA (the commit built; GITHUB_SHA without it),
+# GITHUB_REF_NAME.
 set -euo pipefail
-: "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${GITHUB_SHA:?}"
+: "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${RELEASE_SHA:=${GITHUB_SHA:?}}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
 if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
@@ -82,7 +83,7 @@ else
   gh release download -p release.json -p changes.json -D "$since" 2>/dev/null || echo "no previous release"
 fi
 [ -s "$prev/release.json" ] || echo '{}' > "$prev/release.json"
-"$here/changes.sh" "$since" "$GITHUB_SHA" > changes.json
+"$here/changes.sh" "$since" "$RELEASE_SHA" > changes.json
 touch "$prev/SHA256SUMS"
 
 sha256sum "${assets[@]}" > "$prev/built"
@@ -125,7 +126,7 @@ done
 # The previous release's pins carry on for what this run didn't build (the CLI or the app), as in SHA256SUMS; what it
 # built replaces its kind's, so a build that stops being made drops out. A release with none pinned leaves sha256 out,
 # and its readers take SHA256SUMS.
-jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$GITHUB_SHA" --arg date "$(date -u +%FT%TZ)" \
+jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$RELEASE_SHA" --arg date "$(date -u +%FT%TZ)" \
   --arg cli "$cli_built" --arg app "$APP_BUILT" --slurpfile prev "$prev/release.json" --rawfile pinned "$prev/pinned" '
   $prev[0] as $p
   | (($p.sha256 // {} | with_entries(select(if (.key | startswith("fleetd-desktop-")) then $app != "true" else $cli != "true" end)))
@@ -141,7 +142,7 @@ jq -r '.changes[:20][] | "\(.commit[:7]) \(.areas | join(",")): \(.subject)"' ch
 
 # rolling <tag> <title> <notes>: points <tag> at this commit and makes its prerelease say so.
 rolling() {
-  git push -f origin "${GITHUB_SHA}:refs/tags/$1"
+  git push -f origin "${RELEASE_SHA}:refs/tags/$1"
   if gh release view "$1" >/dev/null 2>&1; then
     gh release edit "$1" --prerelease --title "$2" --notes "$3"
   else
@@ -163,7 +164,7 @@ upload() {
 
 feeds=(latest-*.yml)
 if [ "$CHANNEL" = edge ]; then
-  notes="Rolling build of main at ${GITHUB_SHA} (${VERSION}), published after each merge."
+  notes="Rolling build of main at ${RELEASE_SHA} (${VERSION}), published after each merge."
   notes+=" Install: curl -fsSL https://fleetd.sh | sh"
   notes+=$'\n\n'"$upgrade"
   rolling edge "Edge" "$notes"

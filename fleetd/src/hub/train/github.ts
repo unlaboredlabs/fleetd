@@ -14,6 +14,7 @@ export { MERGED_PAGES, type MergedPull } from "../work/landing_rules.ts";
 export { BATCH_MARKER, batchHeads } from "./text.ts";
 import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
 import { Budget, limitNote, limitReset, limitText, noRulesOnPlan, rateLimited } from "./budget.ts";
+import { type UpToDate, upToDateFrom } from "./up_to_date.ts";
 
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
 export { MERGED_LABEL, NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
@@ -326,6 +327,10 @@ export type BaseRules = {
   method: MergeMethod;
   /** What couldn't be read, each with why: what the train did before it read these rules stands in. */
   unread: string[];
+  /** Where the base requires branches to be up to date (up_to_date.ts); absent where it wasn't read. */
+  upToDate?: UpToDate;
+  /** Whether the hub's GitHub access administers the repo, and so may edit its rules. */
+  admin?: boolean;
 };
 
 /** A base's CI config and its rules. */
@@ -371,7 +376,7 @@ export const ALLOW_ESCAPES = "--allow-escape-sequences";
 
 const CLASSIC_RULE =
   "query($owner: String!, $name: String!, $ref: String!) { repository(owner: $owner, name: $name) { ref(qualifiedName: $ref) { " +
-  "branchProtectionRule { requiresApprovingReviews requiredApprovingReviewCount requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval } } } }";
+  "branchProtectionRule { requiresApprovingReviews requiredApprovingReviewCount requiresCodeOwnerReviews dismissesStaleReviews requireLastPushApproval requiresStrictStatusChecks } } } }";
 
 export class TrainGitHub {
   /** What GitHub's answers say is left of each account's budget. */
@@ -558,6 +563,12 @@ export class TrainGitHub {
   /** A GET for callers outside the train: `{ ok: false, status, message }` for a non-2xx answer. */
   async get(path: string): Promise<{ ok: true; value: unknown } | { ok: false; status: number; message: string }> {
     return this.call("GET", path);
+  }
+
+  /** A `method` (PUT, PATCH) of `path` with the JSON in `file` as its body; throws why GitHub refused it. */
+  async putJson(path: string, file: string, method = "PUT"): Promise<void> {
+    const r = await this.exchange(method, path, "Accept: application/vnd.github+json", [], ["--input", file]);
+    if (!r.ok) throw TrainGitHub.failed(path, r.status, r.message);
   }
 
   /** A GraphQL query with string `vars`: its `data`, or an error when GitHub answers with errors. */
@@ -1117,6 +1128,7 @@ export class TrainGitHub {
       return (data?.repository?.ref?.branchProtectionRule ?? null) as unknown;
     });
     const settings = await soft("the repo's merge methods", () => this.json("GET", `repos/${repo}`, [], obj));
-    return { ...ciFromAnswers(workflows, protection, rules), rules: { ...rulesFromAnswers(rules, classic, settings), unread } };
+    const admin = (settings as { permissions?: { admin?: unknown } } | undefined)?.permissions?.admin === true;
+    return { ...ciFromAnswers(workflows, protection, rules), rules: { ...rulesFromAnswers(rules, classic, settings), unread, upToDate: upToDateFrom(rules, classic), admin } };
   }
 }

@@ -120,7 +120,8 @@ The **ⓘ** at the top of a chat opens its bot's page:
 - **Machine** and **Folder**: where it runs, read only.
 - **[Computer](/docs/projects#computer)**: each repo's setup commands. Edit them in the desktop app.
 - **Who merges**: You or fleetd, and while You its risk rules, one a line, saved with the bar's ✓. See
-  [Who merges](/docs/merge-train#who-merges).
+  [Who merges](/docs/merge-train#who-merges). Below it, **How it merges**: Test, then merge or Merge, then verify
+  ([Merge, then verify](/docs/merge-train#verify)).
 - **Approvals**, **Payments** and **Skills**: the bot's [approval mode](/docs/projects#approvals) and what ran
   without asking, its card and purchases, and what it learned, as in the desktop app's settings.
 - **Artifacts**: the chat's [artifacts](#artifacts).

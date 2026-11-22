@@ -6935,6 +6935,27 @@ export type ProjectRepoRemoveOutput = {
 export type Merger = "people" | "fleetd";
 
 /**
+ * How the train merges a bot's PRs: test_first, "Test, then merge" (batches whose combined tree passed CI; the
+ * default), or verify_after, "Merge, then verify" (each PR on its own green CI, side by side, and a red base afterwards
+ * bisected and its culprit reverted).
+ */
+export type MergeMode = "test_first" | "verify_after";
+
+/**
+ * A base of one of a bot's repos that requires branches to be up to date before merging, so its PRs land one at a time
+ * in "Merge, then verify" however many run side by side.
+ */
+export type UpToDateRule = {
+  base: string;
+  /** Whether this hub's GitHub access may turn it off (`project_settings_set` upToDateOff): it administers the repo,
+   * and the rule is the repo's own, not an organization's. */
+  canTurnOff: boolean;
+  /** What it means and the fix, in one line. */
+  line: string;
+  repo: GitHubRepo;
+};
+
+/**
  * A bot's risk rules where people merge its PRs: the train merges a PR itself when every file matches a rule of
  * `itself`, and never when any file matches one of `person`. A rule is a path glob (`docs/**`, `*.sql`; one with no `/`
  * matches a file's name in any folder) or a named kind: docs, tests, lockfile-bumps or formatting for `itself`, auth,
@@ -6958,6 +6979,8 @@ export type ProjectSetInput = {
   /** Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends. */
   leadRestart?: boolean;
   machineId: MachineId;
+  /** How the train merges its PRs from now on. A person's key only. */
+  mergeMode?: MergeMode;
   /** Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's
    * key only. */
   merges?: Merger;
@@ -6995,6 +7018,8 @@ export type ProjectSettings = {
    * hubs. */
   mergeRules?: RiskRules;
   projectId: ProjectId;
+  /** The bases of its repos that require branches up to date, read while it merges, then verifies; absent: none. */
+  upToDate?: UpToDateRule[];
   /** The repo `setup` is for; absent when it is the project's own directory's, and from older hubs. */
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
@@ -7042,6 +7067,8 @@ export type ProjectSettingsSetInput = {
   /** Drop its pick: its agents are placed and sized by default again. */
   computerDefault?: boolean;
   machineId: MachineId;
+  /** How the train merges its PRs from now on. A person's key only. */
+  mergeMode?: MergeMode;
   /** Replaces its risk rules (a person's key only); the defaults are kept as none. */
   mergeRules?: RiskRules;
   /** Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's
@@ -7057,6 +7084,11 @@ export type ProjectSettingsSetInput = {
   setup?: WorktreeSetup;
   /** The project's name in fleetd; its folder keeps its own. */
   title?: string;
+  /**
+   * Turns off "require branches to be up to date" on this repo's default branch, and nothing else of its rules (an
+   * admin's key only, one of `upToDate` that can turn off).
+   */
+  upToDateOff?: GitHubRepo;
 };
 
 export type ProjectSettingsSetOutput = {
@@ -7210,6 +7242,8 @@ export type ProjectSummary = {
   icon?: ProjectIcon;
   lastActivityAt: Timestamp;
   machineId: MachineId;
+  /** How the train merges its PRs, from the hub. Absent: "Test, then merge", from an older hub too. */
+  mergeMode?: MergeMode;
   /**
    * Who merges its PRs, from the hub: people, the default for a new bot (the train reviews them and keeps them
    * up to date, never merges one), or fleetd's merge train. Absent from an older hub: fleetd.

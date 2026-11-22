@@ -368,6 +368,14 @@ fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key> [-
 
 who merges its PRs. you: the train reviews them and keeps them up to date, merges only those its merges-itself rules allow, and the lead says when each other one is ready; fleetd: the train merges each one once it is reviewed and green
 
+### fleetd project set {#project-set-merge-mode}
+
+```text
+fleetd project set <machine>/<bot> --merge-mode test|verify --key-file <human key> [--hub <url>]
+```
+
+how the train merges its PRs. test: ready PRs merge in batches whose combined tree passed CI; verify: each PR merges on its own green CI, up to 4 side by side, and a red main is bisected and reverted
+
 ### fleetd project profiles {#project-profiles}
 
 ```text

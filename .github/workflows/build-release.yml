@@ -19,6 +19,10 @@ on:
         description: build the app even when app/ is unchanged since the last edge build
         type: boolean
         default: false
+      sha:
+        description: the commit to build; empty, the one that started the run. Edge passes main's commit whose CI passed
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -27,6 +31,8 @@ permissions:
 # (EXPO_PUBLIC_*): the accounts service and the production WorkOS client id, both public. mobile-release.yml sets the
 # same pair for the phone's native builds. Removing both pairs turns Sign in off again in the next release.
 env:
+  # The commit every job checks out, builds and publishes.
+  RELEASE_SHA: ${{ inputs.sha || github.sha }}
   MAIN_VITE_FLEETD_ACCOUNTS_URL: https://accounts.fleetd.dev
   MAIN_VITE_FLEETD_WORKOS_CLIENT_ID: client_01M75KC5MJ3MV0ECKD55KPR1G2
   EXPO_PUBLIC_FLEETD_ACCOUNTS_URL: https://accounts.fleetd.dev
@@ -43,6 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
       - id: plan
         env:
@@ -57,7 +64,7 @@ jobs:
             base="${base#v}"
             # Valid semver that orders by build time, which the desktop app's updater compares: one numeric
             # minute stamp (no leading zero), and the commit as build metadata (a hash can start with 0).
-            version="${base:-0.0.0}-edge.$(date -u +%Y%m%d%H%M)+${GITHUB_SHA::7}"
+            version="${base:-0.0.0}-edge.$(date -u +%Y%m%d%H%M)+${RELEASE_SHA::7}"
           fi
           has_cli=false
           if [ -f fleetd/package.json ]; then has_cli=true; fi
@@ -92,7 +99,7 @@ jobs:
             done
             if [ -s "$prev/release.json" ]; then break; fi
           done
-          .github/release/changes.sh "$prev" "$GITHUB_SHA" > "$RUNNER_TEMP/changes.json"
+          .github/release/changes.sh "$prev" "$RELEASE_SHA" > "$RUNNER_TEMP/changes.json"
           jq -e '.changes | length > 0 and length <= 300 and all(.[];
             (.commit | test("^[0-9a-f]{40}$")) and (.date | test("^[0-9-]{10}T[0-9:]{8}Z$")) and (.subject | type == "string") and
             (.areas | length > 0 and all(.[]; . == "app" or . == "hub" or . == "other")))' "$RUNNER_TEMP/changes.json"
@@ -111,6 +118,8 @@ jobs:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - uses: oven-sh/setup-bun@v2
         with:
           # As fleetd.yml's.
@@ -142,6 +151,8 @@ jobs:
       NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - name: Signing secrets
         id: secrets
         run: |
@@ -209,6 +220,8 @@ jobs:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: app/desktop/package.json
@@ -379,6 +392,8 @@ jobs:
       FLEETD_VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_SHA }}
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: app/desktop/package.json
@@ -472,6 +487,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_SHA }}
           # changes.sh reads the history since the previous release.
           fetch-depth: 0
       - uses: actions/download-artifact@v8
@@ -488,9 +504,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           held="$(gh release download edge -p release.json -O - 2>/dev/null | jq -r '.commit // empty' || true)"
-          echo "edge holds: ${held:-nothing}, this run: $GITHUB_SHA"
-          if [ -n "$held" ] && [ "$held" != "$GITHUB_SHA" ] && git cat-file -e "$held^{commit}" 2>/dev/null &&
-            git merge-base --is-ancestor "$GITHUB_SHA" "$held"; then
+          echo "edge holds: ${held:-nothing}, this run: $RELEASE_SHA"
+          if [ -n "$held" ] && [ "$held" != "$RELEASE_SHA" ] && git cat-file -e "$held^{commit}" 2>/dev/null &&
+            git merge-base --is-ancestor "$RELEASE_SHA" "$held"; then
             echo "edge already holds a newer commit; not publishing"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
@@ -528,6 +544,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_SHA }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -567,6 +584,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ env.RELEASE_SHA }}
           persist-credentials: false
       - name: Signing key
         id: key

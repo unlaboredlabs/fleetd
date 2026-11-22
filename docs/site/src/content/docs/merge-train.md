@@ -1,6 +1,6 @@
 ---
 title: Merge train
-description: "How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run."
+description: "How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run, or each PR on its own CI with a revert when the base turns red."
 ---
 
 How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on its repo's
@@ -366,6 +366,64 @@ in a batch built on that commit, the same way, and that batch's CI starts right 
 
 A PR in the batch never lands before or without the PR ahead of it, and only on its own green CI.
 
+## Merge, then verify {#verify}
+
+Each bot picks how its PRs merge, under **How it merges** in its settings, below [Who merges](#who-merges):
+
+- **Test, then merge** (the default): the train as described above. Ready PRs merge in [batches](#batches) whose
+  combined tree passed CI first, so the base stays green, but one red batch sends every PR in it through alone.
+- **Merge, then verify**: no batches. Each ready PR merges on its own CI, and the base's own CI after each merge
+  catches what two PRs break only together.
+
+In **Merge, then verify**, for each ready PR the train:
+
+1. Rebases it onto its base as the base is then, as in [What the train does](#steps).
+2. Waits for its [fast set](#fast-set) on that commit, with the [one re-run](#ci-time) a failed check gets.
+3. Merges it the moment that passes, if GitHub sees no conflict, even when other PRs merged meanwhile.
+
+Up to 4 PRs of a repo are in CI at once, side by side, so a slow or red PR holds no other. A PR past that waits and says
+"waiting for a free place in CI". The repo sets the number in `.fleetd/train.json`, from 1 to 16:
+
+```json
+{ "ciAtOnce": 2 }
+```
+
+Where the base requires branches to be up to date before merging (a ruleset's "Require branches to be up to date
+before merging", or classic protection's strict status checks), GitHub refuses a PR whose base moved during its CI.
+The train then rebases it and runs its CI again, which never counts as a failure, but PRs land one at a time. The
+setting says so under the control, and for an admin of the repo it has a button that turns off that one setting and
+leaves the rest of the rule, its required checks too, as it was. A rule set by an organization's ruleset is its
+owners' to change.
+
+Review, the repo's GitHub rules, `hold` and [Who merges](#who-merges) work as in **Test, then merge**: where you
+merge, the train merges only the PRs its rules let merge themselves, each the same way. A revert the train opened (below) goes before
+any other PR.
+
+### A red base {#red-base}
+
+The train [watches](#after-merge) every check on each merged commit, the fast set too. A check that fails there is
+re-run once. If the re-run passes, it was flaky: nothing is reverted, and nothing opens. If it fails again:
+
+1. The train finds the merge that broke it: the first commit red since the check was last green on the base, at most
+   30 commits back. A commit the check didn't run on counts as its parent. A cancelled run in between is re-run, the
+   one in the middle first, so finding one culprit among 30 merges takes at most 5 re-runs.
+2. It has GitHub open a revert PR of that merge's PR, and puts it at the front of the line, under the order the
+   culprit came from (in a new order when that one is closed). The revert is reviewed like any PR.
+3. The culprit's writer hears it was reverted, with the run's link, and brings the change back in a new PR with a fix.
+4. The lead hears it once, in one line.
+
+When the train can't pin it on one merge (no green run within 30 commits, a commit no PR merged, a revert GitHub
+refuses), it opens a [fix order](#after-merge) instead, as in **Test, then merge**.
+
+Edge builds, and the hubs that [update](/docs/updating-and-uninstall) from them, take only main commits whose CI passed,
+so a red merge never ships while it is being reverted.
+
+This needs main's own CI to be honest about every check on every push. A job that skips itself on main when its paths
+didn't change since a red run (reporting success at once) reads as green there: it would let a later merge build on a
+red one, and the bisect blame the wrong merge. A job skipped outright counts as its commit's parent's result. fleetd's
+own CI runs every job in full on main, but Desktop QA, which skips a push only when nothing it reads changed since its
+last passing run on main.
+
 ## Generated files {#regenerate}
 
 Built files (a docs site, generated types, reference pages) conflict on almost every rebase. A repo that commits
@@ -649,7 +707,8 @@ it goes in its turn. It is for a one-off hold; for every PR of a bot, set [Who m
 
 ## What never relaxes {#guarantees}
 
-Batches only save waiting.
+Batches only save waiting, and **Merge, then verify** only trades a green base before each merge for a fast revert
+after it.
 
 - Every PR in a batch is reviewed at its current patch, or carries an approval of the same changed lines.
 - A person's review that requests changes, or a person's unresolved thread, holds the PR until GitHub shows it
@@ -657,5 +716,7 @@ Batches only save waiting.
 - The batch's fast set must pass, and it always includes the checks the base requires.
 - `fleetd/train` is posted only on a commit whose CI passed.
 - GitHub's rules on the base decide every merge. fleetd never approves a PR, and never goes around a rule.
-- What lands is always a tree CI passed on: a batch on top of another lands only as itself, never stacked onto a squash
-  it wasn't tested with.
+- In **Test, then merge**, what lands is always a tree CI passed on: a batch on top of another lands only as itself,
+  never stacked onto a squash it wasn't tested with.
+- In **Merge, then verify**, every PR merges only on its own green CI, on a rebase onto its base as the base was when
+  that CI started, and a red base is reverted automatically. Edge builds only take green commits.

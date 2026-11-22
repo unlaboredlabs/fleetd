@@ -248,6 +248,14 @@ const adaSettings = (f: Fixture): void => {
       env: [],
       setup: { commands: [], inputs: [] },
       mergeRules: { itself: ["docs", "tests", "lockfile-bumps", "formatting"], person: ["auth", "billing", "migrations", "infra", "ci", "secrets"] },
+      upToDate: [
+        {
+          repo: "acme/ada",
+          base: "main",
+          line: "acme/ada's main requires branches to be up to date, so PRs still land one at a time.",
+          canTurnOff: true,
+        },
+      ],
     },
   });
   f.answer("mcp_servers_get", undefined, { global: [], project: [] });
@@ -255,10 +263,15 @@ const adaSettings = (f: Fixture): void => {
 
 /** Ada's settings page, whole, for the screens that open it. */
 const settings = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "no-repo-settings", "No repo: Ada's settings page, a bot whose people merge its PRs.");
+  const f = Fixture.from(from, "no-repo-settings", "No repo: Ada's settings page, a bot whose people merge its PRs, which merge, then verify.");
   adaSettings(f);
-  // Made since Who merges came: people merge its PRs.
-  for (const p of ((f.snapshot as { projects?: JsonObject[] } | undefined)?.projects ?? [])) if (p.projectId === ADA.projectId) p.merges = "people";
+  // Made since Who merges came: people merge its PRs. They merge, then verify, on a main that requires branches up to date.
+  for (const p of ((f.snapshot as { projects?: JsonObject[] } | undefined)?.projects ?? [])) {
+    if (p.projectId === ADA.projectId) {
+      p.merges = "people";
+      p.mergeMode = "verify_after";
+    }
+  }
   projectSections(f, ADA);
   return f;
 };

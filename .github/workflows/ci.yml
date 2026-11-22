@@ -9,7 +9,9 @@ name: CI
 # the iOS simulator build also on its own in a manual run of mac.yml with `only: ios`.
 #
 # Each job has its own scope: one whose paths didn't change reports success at once (fleetd, desktop) or is skipped
-# (the phone app's), so its check reports on every PR and a check that never comes never holds one.
+# (the phone app's), so its check reports on every PR and a check that never comes never holds one. On a push to main
+# every job runs in full: the merge train checks each merge on main's own run, bisecting and reverting a red one, and
+# edge.yml builds only a main commit whose run passed, so no job may pass there without running.
 
 on:
   pull_request:
@@ -211,6 +213,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
           fi
+          # Main runs it in full: a merge is checked on main's own run, and edge builds only a commit it passed.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           # The hub's feature list and default prompts are read by the app's tests and fixtures.
           if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml \
             fleetd/src/hub/app_ws/server.ts fleetd/src/hub/prompts/defaults; then
@@ -283,6 +287,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
           fi
+          # Main runs it in full: a merge is checked on main's own run, and edge builds only a commit it passed.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
             run=false
             echo "app/desktop didn't change."
@@ -371,6 +377,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
           fi
+          # Main runs it in full: a merge is checked on main's own run, and edge builds only a commit it passed.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/workflows/ci.yml; then
             run=false
             echo "app/desktop didn't change."
@@ -442,6 +450,8 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != refs/heads/main ]; then
             base=$(git merge-base origin/main HEAD || true)
           fi
+          # Main runs it in full: a merge is checked on main's own run, and edge builds only a commit it passed.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           if [ -n "$base" ] && git diff --quiet "$base" HEAD -- app/desktop .github/release/desktop-fuses-check.sh .github/workflows/ci.yml; then
             run=false
             echo "app/desktop didn't change."
@@ -496,6 +506,8 @@ jobs:
           # A manual run builds everything: it is how a fork gets its own builds (docs: fleetd.sh/docs/mobile).
           base=
           if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then base=$(git rev-parse -q --verify HEAD^1 || true); fi
+          # Main builds everything: a merge is checked on main's own run, and edge builds only a commit it passed.
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then base=; fi
           # scope <output> <check> <paths>: <output>=true when any of the paths, or this workflow, changed.
           scope() {
             out=$1

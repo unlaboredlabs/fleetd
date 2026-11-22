@@ -1,8 +1,8 @@
 // What the hub keeps of a project beyond its node's report, in its own `project_settings` columns (D310): the key that
-// made it, when it was archived, its bot's color and shape, who merges its PRs and by which risk rules, and the card
-// it pays with. Every project is everyone's on its hub (D491): `only_me` and `owner_person` are no longer read.
+// made it, when it was archived, its bot's color and shape, who merges its PRs, by which risk rules and how (its merge
+// mode), and the card it pays with. Every project is everyone's on its hub (D491): `only_me` and `owner_person` are no longer read.
 import type { Database } from "bun:sqlite";
-import { botLookOf, type BotColor, type BotShape, type Merger, type ProjectCreator, type RiskRules, type ProjectRef, type ProjectSite, type Timestamp } from "../../shared/contracts.ts";
+import { botLookOf, type BotColor, type BotShape, type Merger, type MergeMode, type ProjectCreator, type RiskRules, type ProjectRef, type ProjectSite, type Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
 import { DEFAULT_RISK_RULES } from "../train/merge_rules.ts";
 
@@ -20,6 +20,8 @@ export type Kept = {
   issueOrdersOff?: true;
   /** fleetd's merge train merges its PRs; absent: people do, the default. */
   merges?: "fleetd";
+  /** Its PRs merge, then verify; absent: test, then merge, the default. */
+  mergeMode?: "verify_after";
 };
 
 type KeptRow = {
@@ -31,13 +33,14 @@ type KeptRow = {
   chat_tags: number | null;
   issue_orders: number | null;
   merges: string | null;
+  merge_mode: string | null;
 };
 
 /** Undefined for a project with no row of its own. */
 export function kept(db: Database, r: ProjectRef): Kept | undefined {
   const row = db
     .query<KeptRow, [string, string]>(
-      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags, issue_orders, merges FROM project_settings
+      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags, issue_orders, merges, merge_mode FROM project_settings
          WHERE machine_id = ? AND project_id = ?`,
     )
     .get(r.machineId, r.projectId);
@@ -50,6 +53,7 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.chat_tags === 1) out.chatTags = true;
   if (row.issue_orders === 0) out.issueOrdersOff = true;
   if (mergerOf(row.merges) === "fleetd") out.merges = "fleetd";
+  if (modeOf(row.merge_mode) === "verify_after") out.mergeMode = "verify_after";
   return out;
 }
 
@@ -86,6 +90,25 @@ export function mergesOf(db: Database, r: ProjectRef): Merger {
     .query<{ v: string | null }, [string, string]>("SELECT merges AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
     .get(r.machineId, r.projectId);
   return mergerOf(row?.v);
+}
+
+/** A row's `merge_mode`: NULL is test, then merge, the default. */
+const modeOf = (v: string | null | undefined): MergeMode => (v === "verify_after" ? "verify_after" : "test_first");
+
+/** How the train merges the project's PRs: test, then merge for a project with no row of its own. */
+export function mergeModeOf(db: Database, r: ProjectRef): MergeMode {
+  const row = db
+    .query<{ v: string | null }, [string, string]>("SELECT merge_mode AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return modeOf(row?.v);
+}
+
+/** Sets how the train merges the project's PRs; test, then merge, the default, is kept as none. */
+export function setMergeMode(db: Database, r: ProjectRef, mode: MergeMode): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, merge_mode) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET merge_mode = excluded.merge_mode`,
+  ).run(r.machineId, r.projectId, mode === "verify_after" ? "verify_after" : null);
 }
 
 /** Sets who merges the project's PRs; people, the default, is kept as none. */

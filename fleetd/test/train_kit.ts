@@ -9,7 +9,7 @@ import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
-import type { Change, Merger, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
+import type { Change, Merger, MergeMode, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
 
 export const REPO = "acme/storefront";
 export const PROJECT: ProjectRef = { machineId: "devbox", projectId: "storefront" };
@@ -113,6 +113,10 @@ export class FakeGh implements GhRunner {
   readonly jobLogs = new Map<number, string>();
   /** gh before 2.97.0: it knows no `--allow-escape-sequences`, and prints a log with escape sequences as it is. */
   oldGh = false;
+  /** The base requires a PR's branch up to date with it before a merge; false: a PR behind it squashes onto it. */
+  upToDate = true;
+  /** The revert PRs GitHub opened (`revertPullRequest`), each the PR it reverts. */
+  readonly reverted: number[] = [];
 
   constructor(
     readonly origin: string,
@@ -213,9 +217,16 @@ export class FakeGh implements GhRunner {
     if (decision === "CHANGES_REQUESTED") return httpError(405, "Changes were requested by a reviewer with write access.");
     if (decision === "REVIEW_REQUIRED") return httpError(405, "Repository rule violations found\n\nAt least 1 approving review is required by reviewers with write access.\n\n");
     const main = this.headOf(p.base)!;
-    if (git(this.origin, ["merge-base", main, sha]) !== main) return httpError(405, "Base branch was modified. Review and try the merge again.");
+    const current = git(this.origin, ["merge-base", main, sha]) === main;
+    if (!current && this.upToDate) return httpError(405, "Base branch was modified. Review and try the merge again.");
     let landed: string;
-    if (method === "squash") landed = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-m", message]);
+    if (!current) {
+      // Behind its base, where the base doesn't require it up to date: GitHub squashes it onto the base as it is now.
+      if (method !== "squash") return httpError(405, "Base branch was modified. Review and try the merge again.");
+      const tree = gitOut(this.origin, ["merge-tree", "--write-tree", main, sha]);
+      if (tree === undefined) return httpError(405, "Pull Request is not mergeable");
+      landed = git(this.origin, ["commit-tree", tree.split("\n")[0]!, "-p", main, "-m", message]);
+    } else if (method === "squash") landed = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-m", message]);
     else if (method === "rebase") landed = sha;
     else landed = git(this.origin, ["commit-tree", `${sha}^{tree}`, "-p", main, "-p", sha, "-m", `${title ?? `Merge pull request #${n} from ${p.branch}`}\n\n${body ?? p.title}`]);
     git(this.origin, ["update-ref", `refs/heads/${p.base}`, landed]);
@@ -225,6 +236,23 @@ export class FakeGh implements GhRunner {
     p.mergedAt = new Date(this.now()).toISOString();
     this.log.push(method === "squash" ? `merge #${n}` : `merge #${n} by ${method}`);
     return ok({ sha: landed, merged: true, message: "Pull Request successfully merged" });
+  }
+
+  /** GitHub's `revertPullRequest`: a branch off the base that undoes merged PR `n`'s commit, and a PR of it. */
+  private revertPull(n: number, body: string): GhOut {
+    const p = this.pulls.get(n);
+    if (!p?.merged || !p.mergeSha) return ok({ errors: [{ message: "Pull request is not merged" }] });
+    const main = this.headOf(p.base)!;
+    const tree = gitOut(this.origin, ["merge-tree", "--write-tree", `--merge-base=${p.mergeSha}`, main, `${p.mergeSha}^`]);
+    if (tree === undefined) return ok({ errors: [{ message: "Could not revert: the pull request has conflicts" }] });
+    const branch = `revert-${n}-${p.branch}`;
+    const sha = git(this.origin, ["commit-tree", tree.split("\n")[0]!, "-p", main, "-m", `Revert "${p.title}"`]);
+    git(this.origin, ["update-ref", `refs/heads/${branch}`, sha]);
+    const number = 100 + this.pulls.size;
+    this.pulls.set(number, { repo: p.repo, branch, base: p.base, title: `Revert "${p.title}"`, body, state: "open", merged: false, labels: [], draft: false, comments: [] });
+    this.reverted.push(n);
+    this.log.push(`revert #${n} as #${number}`);
+    return ok({ data: { revertPullRequest: { revertPullRequest: { number, url: `https://github.com/${p.repo}/pull/${number}` } } } });
   }
 
   async run(args: string[]): Promise<GhOut> {
@@ -268,6 +296,9 @@ export class FakeGh implements GhRunner {
         const p = this.pulls.get(Number(query.match(/pullRequest\(number: (\d+)\)/)?.[1]));
         return ok({ data: { repository: { pullRequest: p ? { reviewDecision: this.reviewDecision(p) } : null } } });
       }
+      const prId = query.match(/pullRequest\(number:(\d+)\)\{id\}/);
+      if (prId) return ok({ data: { repository: { pullRequest: this.pulls.has(Number(prId[1])) ? { id: `PR_${prId[1]}` } : null } } });
+      if (query.includes("revertPullRequest")) return this.revertPull(Number((fields.get("id") ?? "").slice(3)), fields.get("body") ?? "");
       // The reverts' histories: none, so no PR undoes the base.
       return ok({ data: { repository: { object: {} } } });
     }
@@ -451,6 +482,10 @@ export class FakeGh implements GhRunner {
       const shas = git(this.origin, ["log", "--format=%H", `-${q("per_page") ?? "30"}`, q("sha") ?? "main"]).split("\n");
       return ok(shas.map((sha) => ({ sha })));
     }
+    if (a === "commits" && c === "pulls") {
+      const sha = git(this.origin, ["rev-parse", b!]);
+      return pullsOf((p) => p.merged && p.mergeSha === sha);
+    }
     if (a === "commits" && c === "check-runs") {
       if (this.runs) {
         // GitHub names the commit each run is on, as main's CI read takes it.
@@ -572,6 +607,8 @@ export class FakeHost implements TrainHost {
   wsClosed = false;
   /** The bot's Who merges and risk rules; undefined: the host has none to give, and fleetd merges. */
   who: { merges: Merger; rules: RiskRules } | undefined;
+  /** How the bot's PRs merge; undefined: "Test, then merge". */
+  mode: MergeMode | undefined;
   private listeners: (() => void)[] = [];
 
   eventsOf(type: string): any[] {
@@ -653,6 +690,9 @@ export class FakeHost implements TrainHost {
   }
   whoMerges(): { merges: Merger; rules: RiskRules } {
     return this.who ?? { merges: "fleetd", rules: { itself: [], person: [] } };
+  }
+  mergeMode(): MergeMode {
+    return this.mode ?? "test_first";
   }
   tellPerson(_r: ProjectRef, text: string) {
     this.told.push(text);

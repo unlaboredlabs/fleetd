@@ -302,6 +302,34 @@ export class ChangeRecords {
       .run(repo.toLowerCase(), check, sha, order, atMs);
   }
 
+  /** The revert PR the train opened for culprit commit `sha` (verify.ts), when it opened one. */
+  revertOf(repo: string, sha: string): number | undefined {
+    return (
+      this.db.conn
+        .query<{ revert_pr: number }, [string, string]>("SELECT revert_pr FROM train_reverts WHERE repo = ?1 AND culprit_sha = ?2")
+        .get(repo.toLowerCase(), sha.toLowerCase())?.revert_pr ?? undefined
+    );
+  }
+
+  /** Whether PR `prNumber` is a revert the train opened. */
+  isRevert(repo: string, prNumber: number): boolean {
+    return this.db.conn.query("SELECT 1 FROM train_reverts WHERE repo = ?1 AND revert_pr = ?2").get(repo.toLowerCase(), prNumber) !== null;
+  }
+
+  /** Records that the train reverted culprit commit `sha` in PR `revertPr`, for `check` red at `redSha`. */
+  putRevert(repo: string, sha: string, check: string, redSha: string, revertPr: number, atMs: number): void {
+    this.db.conn
+      .query("INSERT OR IGNORE INTO train_reverts (repo, culprit_sha, check_name, red_sha, revert_pr, at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
+      .run(repo.toLowerCase(), sha.toLowerCase(), check, redSha.toLowerCase(), revertPr, atMs);
+  }
+
+  /** Moves the Change to the front of its repo's line. */
+  toFront(changeId: ChangeId): void {
+    this.db.conn
+      .query("UPDATE changes SET train_order = (SELECT MIN(train_order) - 1 FROM changes c WHERE c.repo = changes.repo) WHERE n = ?1")
+      .run(numberOf(changeId));
+  }
+
   /** The train's `kind` of wait on the Change (`train_waits`). */
   wait(changeId: ChangeId, kind: string): Wait | undefined {
     const row = this.db.conn

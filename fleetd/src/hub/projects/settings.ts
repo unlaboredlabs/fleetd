@@ -15,6 +15,7 @@ import type {
   EnvVarSet,
   MachineId,
   Merger,
+  MergeMode,
   RiskRules,
   ProjectEnvVar,
   ProjectRef,
@@ -24,6 +25,7 @@ import type {
   ProjectWorktrees,
   RepoId,
   RepoName,
+  UpToDateRule,
   WorktreeSetup,
 } from "../../shared/contracts.ts";
 import { BOT_COLORS, BOT_COLORS_WERE, BOT_SHAPES, type BotShape } from "../../shared/contracts.ts";
@@ -39,7 +41,22 @@ import { projectEnv, projectUpsert, projectWorktrees } from "../executor/project
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { issueOrders } from "../issues/index.ts";
-import { chatTagsOn, issueOrdersOn, mergesOf, riskRulesOf, setAvatarColor, setAvatarShape, setChatTags, setIssueOrders, setMerges, setRiskRules } from "../project_lead/store.ts";
+import {
+  chatTagsOn,
+  issueOrdersOn,
+  mergeModeOf,
+  mergesOf,
+  riskRulesOf,
+  setAvatarColor,
+  setAvatarShape,
+  setChatTags,
+  setIssueOrders,
+  setMergeMode,
+  setMerges,
+  setRiskRules,
+} from "../project_lead/store.ts";
+import { trainArea } from "../train/index.ts";
+import { ruleOf, turnOffOn } from "../train/up_to_date.ts";
 import { rulesProblems, tidyRules } from "../train/merge_rules.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
@@ -258,6 +275,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   const signinsKept = worktrees?.signinsKept;
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
+  const upToDate = await upToDateRules(hub, r);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -266,6 +284,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     ...(repo ? { repo: repo.name } : {}),
     env: s.env(r),
     mergeRules: riskRulesOf(hub.db.conn, r),
+    ...(upToDate.length > 0 ? { upToDate } : {}),
     setup,
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
@@ -344,6 +363,54 @@ export function setRules(hub: Hub, caller: Caller, project: ProjectSummary, rule
   announce(hub, r, `${project.title}'s merge rules changed`, { mergeRules: tidy });
 }
 
+/**
+ * How the train merges the project's PRs from now on, a person's pick only: the train reads it at each pass, so a PR
+ * already in a batch lands with it and the next ones go the new way. Tells every app; false when it was already so.
+ */
+export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary, mode: MergeMode): boolean {
+  if (mode !== "test_first" && mode !== "verify_after") throw new ToolError("invalid", `${mode as string} isn't a merge mode.`, "Give test_first or verify_after.");
+  if (!isHuman(caller)) {
+    throw new ToolError("forbidden", "Only a person picks how a bot's PRs merge.", "Ask the human to set it next to Who merges in the bot's settings.");
+  }
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  if (mergeModeOf(hub.db.conn, r) === mode) return false;
+  setMergeMode(hub.db.conn, r, mode);
+  announce(hub, r, mode === "verify_after" ? `${project.title}'s PRs merge, then verify now` : `${project.title}'s PRs are tested, then merged now`, { mergeMode: mode });
+  return true;
+}
+
+/** What a change of how it merges means, as a call's `next`. */
+export const mergeModeNext = (mode: MergeMode) =>
+  mode === "verify_after"
+    ? "Each reviewed PR merges once its own CI passes on a fresh rebase, side by side (4 at once unless the repo's .fleetd/train.json sets ciAtOnce); a red main afterwards is bisected and its culprit reverted."
+    : "Ready PRs merge in batches whose combined tree passed CI first.";
+
+/** The bases of the project's GitHub repos that require up-to-date branches, while it merges, then verifies. */
+async function upToDateRules(hub: Hub, r: ProjectRef): Promise<UpToDateRule[]> {
+  if (mergeModeOf(hub.db.conn, r) !== "verify_after") return [];
+  const { train, host } = trainArea(hub);
+  const out: UpToDateRule[] = [];
+  for (const [repo] of host.githubRepos(r)) {
+    const rule = await ruleOf(train, repo).catch(() => undefined);
+    if (rule) out.push(rule);
+  }
+  return out;
+}
+
+/** Turns off up-to-date branches on one of the project's repos, an admin's alone; nothing else of its rules. */
+async function upToDateOff(hub: Hub, caller: Caller, r: ProjectRef, repo: string): Promise<void> {
+  requireRole(caller, "admin", r.machineId);
+  const { train, host } = trainArea(hub);
+  const name = repo.toLowerCase();
+  if (!host.githubRepos(r).some(([x]) => x.toLowerCase() === name)) throw new ToolError("invalid", `${repo} is not one of this bot's repos.`, "Give one of its repos on GitHub.");
+  try {
+    await turnOffOn(train, name);
+  } catch (error) {
+    throw new ToolError("failed", `GitHub didn't change ${repo}'s rule: ${(error as Error).message}`, "A repo admin turns off \"Require branches to be up to date\" in its ruleset on GitHub.");
+  }
+  announce(hub, r, `${repo} no longer requires branches to be up to date`, { upToDateOff: name });
+}
+
 /** What a change of who merges means, as a call's `next`. */
 export const whoMergesNext = (merges: Merger) =>
   merges === "people"
@@ -384,6 +451,8 @@ export function register(tools: Registry): void {
     }
     if (input.merges !== undefined) setWhoMerges(hub, caller, project, input.merges);
     if (input.mergeRules !== undefined) setRules(hub, caller, project, input.mergeRules);
+    if (input.mergeMode !== undefined) setHowItMerges(hub, caller, project, input.mergeMode);
+    if (input.upToDateOff !== undefined) await upToDateOff(hub, caller, r, input.upToDateOff);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     // A self-hosted hub's bots run on their machine: there is no computer to pick (an app made for fleetd's cloud may
     // still send one).
@@ -396,6 +465,8 @@ export function register(tools: Registry): void {
       next = `Its bot is ${look.filter((w) => w !== undefined).join(" in ")} on every device now.`;
     } else if (input.merges !== undefined && input.setup === undefined && input.title === undefined) {
       next = whoMergesNext(input.merges);
+    } else if (input.mergeMode !== undefined && input.setup === undefined && input.title === undefined) {
+      next = mergeModeNext(input.mergeMode);
     } else if (input.mergeRules !== undefined && input.setup === undefined && input.title === undefined) {
       next = "The merge train reads these rules before its next merge of the bot's PRs.";
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
