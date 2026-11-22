@@ -77,6 +77,9 @@ test("a header from a team login is sealed to the machine by the hub, again when
     headers: [{ kind: "vault", name: "Authorization", itemId: id, prefix: "Bearer " }],
   });
   expect(held.get("crm/header/Authorization")).toBe("Bearer planted-crm-1");
+  // The machine holds it now: no warning that it doesn't.
+  expect((out as { missingOn?: string[] }).missingOn).toBeUndefined();
+  expect((out as unknown as { next: string }).next).not.toContain("aren't on");
   const row = mcpServers(k.hub).get(team, "crm")!;
   expect(row.headers).toEqual([
     { name: "Authorization", kind: "vault", itemId: id, prefix: "Bearer ", label: "CRM key", sealedOn: [{ machineId: M, fingerprint: expect.stringMatching(/^[0-9a-f]{8}$/) }] },
@@ -171,7 +174,23 @@ test("a tailnet server's Test says it went through Tailscale, and a failed one n
   expect(forSession(public_.server, M)?.tailnet).toBeUndefined();
 });
 
-test("tailnet hosts: its addresses and MagicDNS names, nothing else", () => {
-  expect(["100.64.0.1", "100.127.255.254", "[fd7a:115c:a1e0::1]", "devbox.tail1234.ts.net", "devbox.corp.example"].map((h) => isTailnetHost(h, "corp.example"))).toEqual([true, true, true, true, true]);
-  expect(["100.63.0.1", "100.128.0.1", "192.168.1.5", "localhost", "example.com", "1.100.in-addr.arpa"].map((h) => isTailnetHost(h))).toEqual([false, false, false, false, false, false]);
+test("tailnet hosts: its addresses and MagicDNS names, short ones too once the suffix is known, nothing else", () => {
+  expect(["100.64.0.1", "100.127.255.254", "[fd7a:115c:a1e0::1]", "devbox.tail1234.ts.net", "devbox", "DEVBOX.tail1234.ts.net."].map((h) => isTailnetHost(h, "tail1234.ts.net"))).toEqual([true, true, true, true, true, true]);
+  expect(["devbox.corp.example"].map((h) => isTailnetHost(h, "corp.example"))).toEqual([true]);
+  // Another tailnet's public Funnel address, a LAN name, localhost: not this tailnet's.
+  expect(["shop.tail9999.ts.net", "printer.lan", "localhost", "192.168.1.5"].map((h) => isTailnetHost(h, "tail1234.ts.net"))).toEqual([false, false, false, false]);
+  // No suffix known: any *.ts.net name, no short ones.
+  expect(["devbox.tail1234.ts.net", "devbox", "100.63.0.1", "100.128.0.1", "example.com", "1.100.in-addr.arpa"].map((h) => isTailnetHost(h))).toEqual([true, false, false, false, false, false]);
+});
+
+test("a short MagicDNS name is a tailnet server once the hub's Tailscale route is on", async () => {
+  const scope = { kind: "project", ...PROJECT } as const;
+  const out = await set({ scope, name: "tiny", transport: { type: "http", url: "http://devbox:8765/mcp" }, headers: [{ kind: "plain", name: "X-Who", value: "fleetd" }] });
+  expect(forSession(out.server, M)?.tailnet).toBeUndefined();
+  expect(forSession(out.server, M, "tail1234.ts.net")?.tailnet).toBe(true);
+  k.hub.area("tailnet.host", () => async () => ({ running: true, suffix: "tail1234.ts.net" }));
+  await k.call(k.ownerDevice, "tailnet_connect");
+  expect(mcpServers(k.hub).sessionConfig(PROJECT).servers[0]!.tailnet).toBe(true);
+  const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope, name: "tiny" });
+  expect(tested.result.via).toBe("tailnet");
 });

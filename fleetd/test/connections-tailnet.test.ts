@@ -11,14 +11,16 @@ import { Relay } from "../src/cli/mcp_relay.ts";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { NOT_RUNNING } from "../src/hub/tailnet/index.ts";
 import { start as startTailnet } from "../src/hub/tailnet/loops.ts";
-import type { Dialer } from "../src/hub/tailnet/route.ts";
+import { type Dialer, tailnetAddress } from "../src/hub/tailnet/route.ts";
+import { mcpServers } from "../src/hub/mcp_servers/index.ts";
+import { mayDial, tailnetTargets } from "../src/hub/mcp_servers/model.ts";
 import { keep, relayed, sessionConfig } from "../src/node/actions/mcp.ts";
 import { viaRoute } from "../src/node/actions/mcp_relay.ts";
 import { refresh, setLocalTailscale, viaHub } from "../src/node/actions/mcp_tailnet.ts";
 import { loadOrCreateIdentity } from "../src/node/identity.ts";
 import { NodeTailnet, setNodeTailnet } from "../src/node/sandbox/tailnet.ts";
 import { dialFetch } from "../src/node/sandbox/tailnet_fetch.ts";
-import type { TailnetState } from "../src/shared/contracts.ts";
+import type { McpServer, TailnetState } from "../src/shared/contracts.ts";
 import { CAP_MCP_TAILNET } from "../src/shared/node_link.ts";
 import type { McpSessionServer } from "../src/shared/sessions.ts";
 import type { LocalTailscale } from "../src/shared/tailnet_local.ts";
@@ -109,11 +111,22 @@ test("a machine off the tailnet reaches a tailnet MCP server through the hub, an
     node.set({ suffix: "tail1234.ts.net" });
     const fetchThrough = dialFetch((h, p) => node.dial(h, p));
 
+    // The team's tailnet MCP server, for every bot; another machine's own bot has one too.
+    const row = (name: string, url: string, scope: McpServer["scope"]): McpServer => ({ scope, name, enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url }, env: [], headers: [], updatedAt: "2026-11-22T00:00:00.000Z" });
+    mcpServers(t.hub).put(row("tiny", `http://${NAME}:8765/mcp`, { kind: "global" }));
+    mcpServers(t.hub).put(row("theirs", `http://${ADDRESS}:9000/mcp`, { kind: "project", machineId: "desk", projectId: "p9" }));
     // The route is off until Connect.
     await expect(node.dial(NAME, 8765)).rejects.toThrow();
     await call("tailnet_connect");
-    // Only the tailnet: a name the hub's computer resolves elsewhere is refused, and so is a stranger's call.
-    await expect(node.dial("printer.lan", 80)).rejects.toThrow("isn't on the tailnet");
+    // Only the tailnet MCP servers this machine's bots get: not another port of the same host (its SSH), not another
+    // machine's bot's server, not a name off the tailnet; and a stranger's call not at all.
+    await expect(node.dial(NAME, 22)).rejects.toThrow();
+    await expect(node.dial(ADDRESS, 9000)).rejects.toThrow();
+    await expect(node.dial("printer.lan", 80)).rejects.toThrow();
+    expect(await tailnetAddress(standIn, "printer.lan")).toEqual({ error: "printer.lan isn't on the tailnet" });
+    expect(await tailnetAddress(standIn, NAME)).toEqual({ ip: ADDRESS });
+    expect(tailnetTargets(mcpServers(t.hub).list({ kind: "global" }), "laptop", "tail1234.ts.net")).toEqual([{ host: NAME, port: 8765 }]);
+    expect(mayDial([{ host: NAME, port: 8765 }], NAME.toUpperCase(), 8765)).toBe(true);
     const forged = new NodeTailnet(hubUrl, "laptop", loadOrCreateIdentity(join(home.dir, "other")), { now: () => t.hub.clock.now() });
     forged.set({ suffix: "tail1234.ts.net" });
     await expect(forged.dial(NAME, 8765)).rejects.toThrow();

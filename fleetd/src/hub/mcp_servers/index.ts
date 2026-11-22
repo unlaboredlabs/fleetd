@@ -7,6 +7,7 @@ import type { McpScope, McpServer, ProjectRef } from "../../shared/contracts.ts"
 import type { Hub } from "../api/hub.ts";
 import { sortedValue } from "../integrations/policy.ts";
 import { holders } from "../repos/store.ts";
+import { suffix as tailnetSuffix } from "../tailnet/index.ts";
 import type { HubDb } from "../store/db.ts";
 import { anyRole, canonical, forBot, forSession, isOauthToken, type LeadMcpSet, type McpSecretScope, type McpSessionConfig, type McpSessionServer, parse, scopeKey, value, valuesOf } from "./model.ts";
 
@@ -36,7 +37,11 @@ export {
 
 // The node link's MCP types (fleetd-contracts mcp_servers.rs), which only Rust renders.
 export class McpServerStore {
-  constructor(private readonly db: HubDb) {}
+  /** `suffix`: the team tailnet's MagicDNS suffix while its Tailscale route is on, which a short host name completes. */
+  constructor(
+    private readonly db: HubDb,
+    private readonly suffix: () => string | undefined = () => undefined,
+  ) {}
 
   /** A scope's servers, by name. */
   list(scope: McpScope): McpServer[] {
@@ -136,7 +141,7 @@ export class McpServerStore {
       userServers: this.userServers(),
       servers: this.serversFor(r)
         .filter((s) => s.enabled && anyRole(s) && forBot(s, r))
-        .map((s) => forSession(s, r.machineId))
+        .map((s) => forSession(s, r.machineId, this.suffix()))
         .filter((s): s is McpSessionServer => s !== undefined),
     };
   }
@@ -145,7 +150,7 @@ export class McpServerStore {
   leadSet(r: ProjectRef): LeadMcpSet {
     const servers: Record<string, string> = {};
     for (const s of this.serversFor(r).filter((s) => s.enabled && s.roles.lead && forBot(s, r))) {
-      const session = forSession(s, r.machineId);
+      const session = forSession(s, r.machineId, this.suffix());
       if (!session) continue;
       // A replaced key is a new value on the node; a renewed OAuth token isn't a change.
       const keys = valuesOf(s)
@@ -162,4 +167,4 @@ export class McpServerStore {
   }
 }
 
-export const mcpServers = (hub: Hub) => hub.area("mcp_servers", (h) => new McpServerStore(h.db));
+export const mcpServers = (hub: Hub) => hub.area("mcp_servers", (h) => new McpServerStore(h.db, () => tailnetSuffix(h)));

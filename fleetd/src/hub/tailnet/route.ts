@@ -1,5 +1,6 @@
 // `GET /node/tailnet/dial` on a self-hosted hub (shared/tailnet.ts): a websocket per TCP connection from a node whose
-// machine isn't on the tailnet to a tailnet MCP server, dialed from the hub's computer, which is. Each call is signed
+// machine isn't on the tailnet to one of its bots' tailnet MCP servers (and nothing else), dialed from the hub's
+// computer, which is on the tailnet. Each call is signed
 // by the node's own identity key, checked against the key the hub enrolled for the machine, within SKEW_MS of the
 // hub's clock and once per nonce. Only the tailnet is reached: the name is resolved by the hub computer's own resolver
 // (MagicDNS) and dialed only when it is one of the tailnet's addresses, never the hub's LAN, loopback or the internet.
@@ -12,7 +13,9 @@ import { verifyEd25519 } from "../../shared/upgrade_proof.ts";
 import { ACK_EVERY, AT_HEADER, CAP, MACHINE_HEADER, NONCE_HEADER, SIG_HEADER, SKEW_MS, signedMessage, tailnetIp } from "../../shared/tailnet.ts";
 import type { Hub } from "../api/hub.ts";
 import { json, type Route, type Socket, type SocketHandler, upgrade } from "../http/route.ts";
-import { NOT_RUNNING, routeOn, routing } from "./index.ts";
+import { mcpServers } from "../mcp_servers/index.ts";
+import { mayDial, tailnetTargets } from "../mcp_servers/model.ts";
+import { NOT_RUNNING, routeOn, routing, suffix } from "./index.ts";
 
 /** The nonces seen within SKEW_MS, by when they expire. */
 const seen = new Map<string, number>();
@@ -148,6 +151,11 @@ export const dialRoute: Route = (req, ctx) => {
   if ("refused" in who) return json({ error: who.refused }, 401);
   if (!routeOn(ctx.hub)) return json({ error: "the team's Tailscale isn't connected: connect it in Connections" }, 503);
   if (!routing(ctx.hub)) return json({ error: NOT_RUNNING }, 503);
+  // Only the tailnet MCP servers the machine's sessions get: Connect lends the hub's tailnet to them, not to its SSH,
+  // its NAS or anything else the hub's computer reaches there.
+  const s = mcpServers(ctx.hub);
+  const targets = tailnetTargets([...s.list({ kind: "global" }), ...s.perBot()], who.machineId, suffix(ctx.hub));
+  if (!mayDial(targets, host, p)) return json({ error: `${host}:${p} isn't a tailnet MCP server of this machine's bots` }, 403);
   const state: DialState = { early: [], closed: false, host, port: p, held: 0, taken: 0 };
   return upgrade(req, ctx, handler(ctx.hub), state);
 };

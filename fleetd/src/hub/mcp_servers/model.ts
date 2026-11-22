@@ -74,6 +74,39 @@ export const onTailnet = (s: Pick<McpServer, "transport">, suffix?: string) => {
   return host !== undefined && isTailnetHost(host, suffix);
 };
 
+/** Where a tailnet route dials for a server: its URL's host, in lower case as written, and its port (the scheme's
+ * default when it names none). */
+export type DialTarget = { host: string; port: number };
+
+export function targetOf(t: McpServer["transport"]): DialTarget | undefined {
+  if (t.type === "stdio") return undefined;
+  try {
+    const u = new URL(t.url);
+    const port = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : u.protocol === "http:" ? 80 : NaN;
+    return Number.isInteger(port) ? { host: u.hostname.replace(/^\[(.*)\]$/u, "$1").toLowerCase(), port } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** What machine `machineId` may dial through the team's tailnet route: the addresses of the enabled tailnet servers
+ * its sessions get (the team's, for the bots it names when it names some, and its own bots'), nothing else on the
+ * tailnet. */
+export function tailnetTargets(servers: readonly McpServer[], machineId: string, suffix?: string): DialTarget[] {
+  return servers.flatMap((s) => {
+    if (!s.enabled || !anyRole(s) || !onTailnet(s, suffix)) return [];
+    const runs = s.scope.kind === "global" ? s.projects === undefined || s.projects.some((p) => p.machineId === machineId) : s.scope.machineId === machineId;
+    const t = runs ? targetOf(s.transport) : undefined;
+    return t ? [t] : [];
+  });
+}
+
+/** Whether a dial of `host`:`port` is to one of `targets`. */
+export const mayDial = (targets: readonly DialTarget[], host: string, port: number) => {
+  const h = host.replace(/^\[(.*)\]$/u, "$1").toLowerCase();
+  return targets.some((t) => t.host === h && t.port === port);
+};
+
 /**
  * A server's one switch, "Agents get it too": its lead alone, or its writers and reviewers as well. Roles from an
  * older app that named some kinds of agent count as on; a server for no one is its lead's, and off.
@@ -88,7 +121,7 @@ export function oneSwitch(roles: McpRoles, enabled: boolean): { roles: McpRoles;
  * machine's node doesn't hold all of its secrets, or when it signs in with OAuth and is signed out or tokenless. An
  * integration reaches the lead alone.
  */
-export function forSession(s: McpServer, machineId: string): McpSessionServer | undefined {
+export function forSession(s: McpServer, machineId: string, suffix?: string): McpSessionServer | undefined {
   const tokenless = s.oauth !== undefined && !valuesOf(s).some(([f, v]) => isOauthToken(s, f, v));
   // One a person connected for the team reaches agents only once signed in: no one adds a keyless server for every bot.
   const unsigned = s.connectedBy !== undefined && s.oauth?.status !== "connected";
@@ -105,7 +138,7 @@ export function forSession(s: McpServer, machineId: string): McpSessionServer | 
     env: values(s.env),
     headers: values(s.headers),
     ...(s.oauth !== undefined ? { oauth: true as const } : {}),
-    ...(onTailnet(s) ? { tailnet: true as const } : {}),
+    ...(onTailnet(s, suffix) ? { tailnet: true as const } : {}),
   };
 }
 

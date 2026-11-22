@@ -81,9 +81,14 @@ export function tailnetName(name: string, suffix: string | undefined): boolean {
 }
 
 /** Whether a URL's `host` (an address, bracketed or not, or a name) is on the tailnet: one of its addresses, or a
- * MagicDNS name (`suffix` the tailnet's own, when known). What a server's Test says it reached "via Tailscale", and
- * what a node not on the tailnet reaches through the hub's route. */
+ * MagicDNS name. With the tailnet's own `suffix` known, that is a name under it or a short one (`devbox`, which MagicDNS
+ * completes with it), and no other tailnet's `*.ts.net` (a Funnel address is public); without, any `*.ts.net` name.
+ * What a server's Test says it reached "via Tailscale", and what a node not on the tailnet reaches through the hub. */
 export function isTailnetHost(host: string, suffix?: string): boolean {
-  const h = host.replace(/^\[(.*)\]$/u, "$1");
-  return isIP(h) !== 0 ? tailnetIp(h) : tailnetName(h, suffix) && !/\.arpa$/iu.test(h);
+  const h = host.replace(/^\[(.*)\]$/u, "$1").toLowerCase().replace(/\.$/u, "");
+  if (isIP(h) !== 0) return tailnetIp(h);
+  const s = suffix?.toLowerCase().replace(/\.$/u, "");
+  if (!s) return tailnetName(h, undefined) && !h.endsWith(".arpa");
+  if (!h.includes(".")) return h !== "localhost" && /^[a-z0-9-]+$/u.test(h);
+  return h === s || h.endsWith(`.${s}`);
 }

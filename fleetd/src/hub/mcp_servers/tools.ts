@@ -10,6 +10,7 @@ import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { toolPolicy } from "../integrations/policy.ts";
 import * as oauth from "../mcp_oauth/index.ts";
 import { discover, offersSignIn } from "../mcp_oauth/oauth.ts";
+import { suffix as tailnetSuffix } from "../tailnet/index.ts";
 import { vault } from "../vault/index.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
@@ -275,10 +276,11 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
     updatedAt: isoMs(hub.clock.now()),
   };
   s.put(server);
-  await syncVault(hub, server);
+  // As the sync left it: a vault value it just sealed is on its machines.
+  const saved = await syncVault(hub, server);
   if (hadSignIn && !signsIn) await oauth.forget(hub, scope, input.name);
   const machines = project ? [project.machineId] : store(hub).machinesList().map((m) => m.machineId);
-  const missingOn = machines.filter((m) => secretsMissingOn(server, m).length > 0);
+  const missingOn = machines.filter((m) => secretsMissingOn(saved, m).length > 0);
   let next = "Agents started from now on get it; a running agent gets it at its next start, after its next message.";
   if (missingOn.length > 0) {
     next = `${next} Its secrets aren't on ${missingOn.join(", ")}, whose agents go without it until it is saved again while they are online.`;
@@ -360,7 +362,7 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   }
   nodeReady(hub, machineId);
   const missing = secretsMissingOn(server, machineId);
-  const session = forSession(server, machineId);
+  const session = forSession(server, machineId, tailnetSuffix(hub));
   if (!session) {
     return {
       machineId,
@@ -404,7 +406,7 @@ async function turnedAway(
     if (renewed === "yes") {
       // Tested again as the server is now: its header may have reached the machine since the first test.
       const now = mcpServers(hub).get(server.scope, server.name);
-      return mcpTest(hub, machineId, projectId, (now && forSession(now, machineId)) ?? session);
+      return mcpTest(hub, machineId, projectId, (now && forSession(now, machineId, tailnetSuffix(hub))) ?? session);
     }
     if (renewed === "signed_out") {
       const problem = mcpServers(hub).get(server.scope, server.name)?.oauth?.problem;

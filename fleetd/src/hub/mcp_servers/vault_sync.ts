@@ -11,6 +11,7 @@ import { store } from "../store/hub_store.ts";
 import { fingerprintOf } from "../vault/fields.ts";
 import { vault } from "../vault/index.ts";
 import { type McpField, mcpServers, secretScope, valuesOf } from "./index.ts";
+import { canonical } from "./model.ts";
 import { CAP_MCP_SERVERS } from "./rules.ts";
 import { keptVaultValue, vaultAudit, vaultProblem, vaultSetOf, vaultValue } from "./vault_values.ts";
 
@@ -88,7 +89,7 @@ export async function syncVault(hub: Hub, s: McpServer): Promise<McpServer> {
   if (!changed && JSON.stringify(next) === JSON.stringify(s)) return s;
   // Saved over the row as it is now, so a renewal or a save while the nodes answered isn't undone.
   const now = mcpServers(hub).get(s.scope, s.name);
-  if (now === undefined || now.updatedAt !== s.updatedAt) return now ?? s;
+  if (now === undefined || JSON.stringify(canonical(now)) !== JSON.stringify(canonical(s))) return now ?? s;
   mcpServers(hub).put(next);
   return next;
 }

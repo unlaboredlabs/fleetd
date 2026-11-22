@@ -92,7 +92,7 @@ export class NodeTailnet implements TailnetHooks {
   }
 
   async dial(host: string, port: number): Promise<Duplex> {
-    if (!this.#on) throw new Error("the team has no Tailscale connection: an admin connects it in Settings › Hub › Machines");
+    if (!this.#on) throw new Error("the team has no Tailscale connection: an admin connects it in Connections");
     for (let i = 0; ; i++) {
       const got = await this.#dialOnce(host, port);
       if ("duplex" in got) return got.duplex;
