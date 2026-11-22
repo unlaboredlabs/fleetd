@@ -100,6 +100,44 @@ export const linuxValue = (providers: ReadonlyArray<{ provider: string; connecte
   return connected.length === 0 ? NONE : connected.map((id) => specOf(id).name).join(", then ");
 };
 
+/** A fleetd cloud team's provider (SandboxState.provided): fleetd's own computers, never its provider's name. */
+export const FLEETD = "fleetd's computers";
+
+/**
+ * The Linux machine's choices on a fleetd cloud team (sandbox_get's `provided`): with a machine of the team's that runs
+ * agents, Your machines, Your machines first then fleetd's computers, or fleetd's computers only, each `value` the
+ * cloud's own (`ours_only`, `ours_first`, its provider's id); with none, fleetd's computers alone, which the cloud then
+ * answers whatever was picked: not a choice, a plain value.
+ */
+export const providedChoices = (provider: string, machines: boolean): Choice[] =>
+  machines
+    ? [
+        { value: "ours_only", label: YOURS },
+        { value: "ours_first", label: `${YOURS} first, then ${FLEETD}` },
+        { value: provider, label: `${FLEETD} only` },
+      ]
+    : [{ value: provider, label: FLEETD }];
+
+/**
+ * The Linux machine on a fleetd cloud team whose cloud doesn't answer the pick yet (sandbox_get not found): each bot
+ * runs where New bot made it, so it is where the team's bots can be, as a plain value.
+ */
+export const providedValue = (machines: boolean): string => (machines ? `${YOURS} and ${FLEETD}` : FLEETD);
+
+/** The Mac machine's line on a fleetd cloud team: Macs are the team's own only. */
+export const MAC_OWN_ONLY = `${FLEETD} don't run Macs`;
+
+/** How many of fleetd's computers run now of what the team's plan allows; null while its credits or cap hold them all. */
+export const atOnceWord = (hosted: ReadonlyArray<{ readonly limit: number; readonly running?: number | undefined }>): string | null => {
+  const limit = hosted.reduce((n, h) => n + h.limit, 0);
+  const running = hosted.reduce((n, h) => n + (h.running ?? 0), 0);
+  return limit === 0 ? null : `${String(running)} of ${String(limit)} at once`;
+};
+
+/** A bot's computer on fleetd's computers: its lead's awake or asleep, and its agents at work in boxes of their own. */
+export const computerStateWord = (asleep: boolean, agents = 0): string =>
+  [asleep ? "Asleep" : "Awake", ...(agents > 0 ? [agents === 1 ? "1 agent" : `${String(agents)} agents`] : [])].join(" · ");
+
 /** How to get a Linux machine, or a Mac machine, when there is none yet: the row's hover. */
 export const LINUX_NONE = "Add a machine with the plus above, or connect a provider.";
 export const MAC_NONE = "Add a Mac for agents with the plus above.";

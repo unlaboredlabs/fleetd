@@ -250,6 +250,15 @@ export const topLine = (state: BillingState): { tone: "danger" | "warning"; mess
   return null;
 };
 
+/**
+ * This period's computer time against what the plan includes: "12 h · $4.20 of $20 included", or with no plan its
+ * hours and cost alone.
+ */
+export const usedWord = (state: BillingState): string => {
+  const used = `${hours(state.usage.seconds)} · ${money(state.usage.cents, state.currency)}`;
+  return state.plan === null ? used : `${used} of ${money(state.plan.creditsCents, state.currency)} included`;
+};
+
 /** The cap's quiet line: this month's spend against it. */
 export const capLine = (state: BillingState): string | null =>
   state.credits.capCents === null ? null : `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;

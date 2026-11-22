@@ -5,27 +5,39 @@
 // recordings are kept. Network holds Tailscale, the team's tailnet for its hosted sandboxes: a tap connects it (the hub
 // answers with Tailscale's sign-in page, which opens), opens the sign-in again while it waits, or disconnects it.
 // Updates stay on Settings itself, with Restart Hub. A hub without sandbox_get lists no providers, and one without
-// tailnet_get no Network.
+// tailnet_get no Network. On a fleetd cloud team (sandbox_get's `provided`, or Billing's word from a cloud that doesn't
+// answer the pick yet) the provider is fleetd's computers: no provider row, Linux machine picks between the team's own
+// machines and fleetd's computers, Mac machine says Macs are the team's own, and a section of its own lists each bot
+// running there, awake or asleep with the size its agents get, how many run at once and this period's computer time,
+// which opens Billing.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { useEffect } from "react";
 import { ActionSheetIOS, Alert, Linking, Platform, RefreshControl, ScrollView } from "react-native";
-import type { MachineRolesOutput, SandboxState, TailnetState } from "../../../desktop/src/shared/contracts";
+import type { MachineRolesOutput, ProjectSummary, SandboxState, TailnetState } from "../../../desktop/src/shared/contracts";
+import { billingOn, readTeamBilling, sizeWord, usedWord } from "../billing";
 import { useHub, type SettingsParams } from "../hubContext";
 import {
+  atOnceWord,
   canWords,
+  computerStateWord,
   daysChoices,
+  FLEETD,
   LINUX,
   linuxChoices,
   linuxValue,
   MAC,
+  MAC_OWN_ONLY,
   machinesRun,
   machineValue,
   teamMachines,
   NONE,
   providersFooter,
+  providedChoices,
+  providedValue,
   providersOf,
   providerValue,
   runnerOf,
+  RUNNER_ID,
   specOf,
   tailnetValue,
   tailnetWaiting,
@@ -50,11 +62,12 @@ export const pick = (title: string, labels: string[], onPick: (i: number) => voi
 
 export function Machines() {
   const t = useTheme();
-  const { session, state } = useHub();
+  const { session, state, paired } = useHub();
   const navigation = useNavigation<NavigationProp<SettingsParams>>();
   const sandboxes = useRead(() => session.call("sandbox_get", {}), [session]);
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
   const tailnet = useRead(() => session.call("tailnet_get", {}), [session]);
+  const billing = useRead(() => (paired.cloud === true ? readTeamBilling(paired) : Promise.resolve(undefined)), [paired]);
   const sb = sandboxes.value?.ok === true ? (sandboxes.value.output as SandboxState) : undefined;
   const mr = roles.value?.ok === true ? (roles.value.output as MachineRolesOutput) : undefined;
   const ts = tailnet.value?.ok === true ? (tailnet.value.output as TailnetState) : undefined;
@@ -62,6 +75,7 @@ export function Machines() {
     sandboxes.reload();
     roles.reload();
     tailnet.reload();
+    billing.reload();
   };
   // The person signs in on Tailscale's page: its state is read again until it isn't waiting on them.
   const waitingOn = tailnetWaiting(ts);
@@ -108,7 +122,11 @@ export function Machines() {
     // Meanwhile the row reads the hub's state, which says it is starting, and goes on reading it until it isn't.
     setTimeout(rereadTailnet, 1_000);
   };
-  const providers = providersOf(sb);
+  // fleetd's computers: the cloud's pick, or (a cloud that doesn't answer it yet) Billing's word that they are on.
+  const bill = billing.value?.ok === true ? billing.value.value : undefined;
+  const provided = sb?.provided === true;
+  const fleetd = provided || (paired.cloud === true && billingOn(bill));
+  const providers = provided ? [] : providersOf(sb);
   const runner = runnerOf(state.machines);
   const failed = [sandboxes.value].flatMap((v) => (v !== undefined && !v.ok && v.error.code !== "not_found" ? [errorWords(v.error)] : []));
 
@@ -131,7 +149,7 @@ export function Machines() {
   const team = teamMachines(state.machines);
   const ours = mr === undefined || machinesRun("agents", mr.machines.filter((m) => state.machines.find((x) => x.machineId === m.machineId)?.runner !== true));
   const current = sb?.linux ?? "ours_first";
-  const choices = linuxChoices(sb?.providers ?? [], ours, current);
+  const choices = provided ? providedChoices(sb.providers[0]?.provider ?? "boat", ours) : linuxChoices(sb?.providers ?? [], ours, current);
   const setLinux = () => {
     pick(LINUX, choices.map((c) => c.label), (i) => {
       const next = choices[i];
@@ -146,9 +164,15 @@ export function Machines() {
   const linuxRow =
     sb !== undefined && choices.length > 1 ? (
       <ListRow title={LINUX} value={choices.find((c) => c.value === current)?.label ?? current} onPress={setLinux} />
+    ) : fleetd ? (
+      <ListRow title={LINUX} value={provided ? FLEETD : providedValue(ours)} chevron={false} />
     ) : (
       <ListRow title={LINUX} value={choices[0]?.label ?? linuxValue(sb?.providers ?? [], ours)} chevron={false} />
     );
+  const bots = Object.values(state.projects ?? {})
+    .filter((p) => p.machineId === RUNNER_ID && p.archivedAt === undefined)
+    .sort((a, b) => a.title.localeCompare(b.title));
+  const atOnce = provided ? atOnceWord(sb.providers) : undefined;
   const mac = mr === undefined || machinesRun("mac", mr.machines);
 
   return (
@@ -204,9 +228,31 @@ export function Machines() {
       )}
       <ListSection header="What runs where">
         {linuxRow}
-        <ListRow title={MAC} value={mac ? YOURS : NONE} chevron={false} />
+        <ListRow title={MAC} value={mac ? YOURS : NONE} {...(fleetd ? { detail: MAC_OWN_ONLY } : {})} chevron={false} />
         {retention === undefined ? null : <ListRow title="Keep Recordings For" value={`${retention.retentionDays} days`} onPress={() => setDays(retention)} />}
       </ListSection>
+      {!fleetd || bill === undefined ? null : (
+        <ListSection header={FLEETD}>
+          {bots.map((p) => (
+            <BotComputer key={p.projectId} project={p} asleep={state.chatStates[`${p.machineId}/${p.projectId}`]?.leadAsleep === true} />
+          ))}
+          {atOnce === undefined ? null : (
+            <ListRow
+              title="At Once"
+              {...(atOnce === null ? { value: "None until the team has credits", valueColor: t.danger, onPress: () => navigation.navigate("Billing") } : { value: atOnce.replace(/ at once$/u, ""), chevron: false })}
+            />
+          )}
+          <ListRow title="Computer Time" value={usedWord(bill)} onPress={() => navigation.navigate("Billing")} />
+        </ListSection>
+      )}
     </ScrollView>
   );
+}
+
+/** A bot on fleetd's computers: its lead's computer awake or asleep, and the size its agents get (its Computer's pick). */
+function BotComputer({ project, asleep }: { project: ProjectSummary; asleep: boolean }) {
+  const { session } = useHub();
+  const read = useRead(() => session.call("project_settings_get", { machineId: project.machineId, projectId: project.projectId }), [session, project.machineId, project.projectId]);
+  const pick = read.value?.ok === true ? (read.value.output as { settings: { computer?: { cpu: number; memGb: number } } }).settings.computer : undefined;
+  return <ListRow title={project.title} detail={pick === undefined ? "Automatic" : sizeWord(pick)} value={computerStateWord(asleep)} chevron={false} />;
 }

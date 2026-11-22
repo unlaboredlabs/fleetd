@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { canWords, KINDS, linuxChoices, linuxValue, machinesRun, ordered, PROVIDERS, SCREEN_KINDS, serves, specOf } from "./providers";
+import {
+  atOnceWord,
+  canWords,
+  computerStateWord,
+  KINDS,
+  linuxChoices,
+  linuxValue,
+  MAC_OWN_ONLY,
+  machinesRun,
+  ordered,
+  providedChoices,
+  providedValue,
+  PROVIDERS,
+  SCREEN_KINDS,
+  serves,
+  specOf,
+} from "./providers";
 
 describe("the providers, as one model", () => {
   it("says what each runs, so each group lists the ones that serve it", () => {
@@ -74,5 +90,37 @@ describe("the Linux machine", () => {
       { value: "boat", label: "boat.dev only" },
       { value: "ours_only", label: "Your machines" },
     ]);
+  });
+});
+
+describe("fleetd's computers, on a fleetd cloud team", () => {
+  it("offers the team's own machines and fleetd's computers, never a provider's name", () => {
+    expect(providedChoices("boat", true)).toEqual([
+      { value: "ours_only", label: "Your machines" },
+      { value: "ours_first", label: "Your machines first, then fleetd's computers" },
+      { value: "boat", label: "fleetd's computers only" },
+    ]);
+    // With no machine of the team's that runs agents, fleetd's computers alone: a value, not a choice.
+    expect(providedChoices("boat", false)).toEqual([{ value: "boat", label: "fleetd's computers" }]);
+  });
+
+  it("says where bots run when the cloud doesn't answer the pick yet, and that Macs are the team's own", () => {
+    expect(providedValue(false)).toBe("fleetd's computers");
+    expect(providedValue(true)).toBe("Your machines and fleetd's computers");
+    expect(MAC_OWN_ONLY).toBe("fleetd's computers don't run Macs");
+  });
+
+  it("counts what runs at once of what the plan allows, and nothing while it holds them", () => {
+    expect(atOnceWord([{ limit: 3, running: 1 }])).toBe("1 of 3 at once");
+    expect(atOnceWord([{ limit: 10 }])).toBe("0 of 10 at once");
+    expect(atOnceWord([{ limit: 0, running: 0 }])).toBeNull();
+    expect(atOnceWord([])).toBeNull();
+  });
+
+  it("says a bot's computer asleep or awake, with its agents at work", () => {
+    expect(computerStateWord(true)).toBe("Asleep");
+    expect(computerStateWord(false, 0)).toBe("Awake");
+    expect(computerStateWord(false, 1)).toBe("Awake · 1 agent");
+    expect(computerStateWord(true, 2)).toBe("Asleep · 2 agents");
   });
 });

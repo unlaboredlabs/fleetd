@@ -21,6 +21,7 @@ import {
   sizeWord,
   topLine,
   usageRows,
+  usedWord,
   type BillingState,
 } from "./billing";
 import { BILLING_SAMPLES, SAMPLE_NOW, type BillingSample } from "./billing.samples";
@@ -131,6 +132,17 @@ describe("the page's figures", () => {
 
   it("writes hours plainly", () => {
     expect([hours(0), hours(300), hours(9000), hours(36_000), hours(460_800)]).toEqual(["0 h", "0 h", "2.5 h", "10 h", "128 h"]);
+  });
+
+  it("writes this period's computer time against what the plan includes, or alone with no plan", () => {
+    const read = (s: unknown): BillingState => {
+      const b = readBilling(s);
+      if (b === null) throw new Error("sample doesn't read");
+      return b;
+    };
+    const used = (b: BillingState): BillingState => ({ ...b, usage: { ...b.usage, seconds: 12 * 3600, cents: 4_20 } });
+    expect(usedWord(used(read(BILLING_SAMPLES.plan)))).toBe("12 h · $4.20 of $60 included");
+    expect(usedWord(used({ ...read(BILLING_SAMPLES.plan), plan: null }))).toBe("12 h · $4.20");
   });
 
   it("reads the cap as typed", () => {

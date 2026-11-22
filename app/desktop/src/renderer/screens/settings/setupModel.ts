@@ -4,7 +4,8 @@
 import type { ComputerChoice, ComputerImage, ComputerPick, WorktreeSetup } from "../../../shared/contracts";
 import { age } from "../live/when";
 import { fmtBytes } from "../time/format";
-import { hostedProvider, RUNNER_ID } from "../../../shared/providers";
+import { sizeWord } from "../../../shared/billing";
+import { FLEETD, hostedProvider, RUNNER_ID } from "../../../shared/providers";
 
 /** WorktreeSetup's most commands and input files. */
 export const SETUP_COMMANDS_MAX = 20;
@@ -97,10 +98,10 @@ export const whereOf = (image: ComputerImage | undefined): string | null => (ima
 export const AUTO = "auto";
 /**
  * Runs on's hover: the pick is where the agents the lead starts run, and the lead itself stays on the bot's machine
- * (`name`), or on the hosted sandboxes, in a box of its own.
+ * (`name`), or on the hosted sandboxes, in a box of its own: on a fleetd cloud team (`cloud`), fleetd's computers.
  */
-export const runsOnHint = (machineId: string, name: string): string =>
-  `Where the agents the lead starts run. The lead itself runs ${machineId === RUNNER_ID ? `in a ${hostedProvider().name} sandbox` : `on ${name}`}.`;
+export const runsOnHint = (machineId: string, name: string, cloud = false): string =>
+  `Where the agents the lead starts run. The lead itself runs ${machineId !== RUNNER_ID ? `on ${name}` : cloud ? `on ${FLEETD}` : `in a ${hostedProvider().name} sandbox`}.`;
 
 export const pickValue = (p: Pick<ComputerChoice, "kind" | "cpu" | "memGb"> | undefined): string => (p ? `${p.kind}:${p.cpu}:${p.memGb}` : AUTO);
 
@@ -115,9 +116,10 @@ export type PickOption = { value: string; label: string; why?: string; pick?: Co
 /**
  * The Runs on select's options: Automatic (no pick: placed and sized as by default), then the hub's choices in its
  * order. Null when there is nothing to pick and nothing picked (a hub whose bots run on their machine, no provider
- * connected, or a hub too old to say): no row then.
+ * connected, or a hub too old to say): no row then. On a fleetd cloud team (`cloud`) every choice is one of fleetd's
+ * computers, so each reads as its size alone ("4 CPU · 8 GB"), never its provider's name.
  */
-export function pickOptions(settings: { computer?: ComputerPick; computers?: ComputerChoice[] }): PickOption[] | null {
+export function pickOptions(settings: { computer?: ComputerPick; computers?: ComputerChoice[] }, cloud = false): PickOption[] | null {
   const choices = settings.computers;
   if (choices === undefined || (choices.length === 0 && settings.computer === undefined)) return null;
   return [
@@ -127,7 +129,7 @@ export function pickOptions(settings: { computer?: ComputerPick; computers?: Com
       const last = choices[i + 1]?.unavailable !== why;
       return {
         value: pickValue(c),
-        label: c.label,
+        label: cloud ? sizeWord(c) : c.label,
         ...(why ? { why } : {}),
         pick: { kind: c.kind, cpu: c.cpu, memGb: c.memGb },
         ...(why && last ? { note: { why, ...(c.fix ? { fix: c.fix } : {}) } } : {}),
