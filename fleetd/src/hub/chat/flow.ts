@@ -47,7 +47,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { leadMessages, leadSource, order, question, QUIET, said, steer, unquiet } from "./history.ts";
+import { leadMessages, leadSource, leadText, madeUpAt, madeUpLine, maybeTurn, order, question, QUIET, said, steer } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
@@ -650,7 +650,7 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
   if (runOver(hub, thread)) {
     for (const cut of c.streamingFrom(r, leadSource(thread.threadId, ""))) {
       try {
-        c.finish(cut, unquiet(cut.text));
+        c.finish(cut, leadText(cut.text));
       } catch (error) {
         console.warn("chat: cut-off reply not finished:", error);
       }
@@ -665,6 +665,9 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
 
 /** `sent` for a reply that landed whole: nothing more streams into it. */
 const LANDED = Number.POSITIVE_INFINITY;
+
+/** `sent` for a reply that went on with a turn it made up: nothing from there streams, and it lands cut (leadText). */
+const CUT = Number.NEGATIVE_INFINITY;
 
 /** A lead's thread, by `machineId\u0000threadId`. */
 const threadKey = (t: ThreadRef) => `${t.machineId}\u0000${t.threadId}`;
@@ -710,21 +713,36 @@ function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts
   for (const done of parts.done) {
     const source = leadSource(lead.threadId, done.messageId);
     live.add(source);
-    if (sent.get(source) !== LANDED && land(hub, r, source, unquiet(done.text))) sent.set(source, LANDED);
+    if (sent.get(source) !== LANDED && land(hub, r, source, leadText(done.text))) {
+      sent.set(source, LANDED);
+      madeUp(hub, r, source, done.text);
+    }
   }
   const text = parts.runActive ? parts.text : undefined;
   if (!text) return;
   const source = leadSource(lead.threadId, text.messageId);
   live.add(source);
   const done = sent.get(source) ?? 0;
-  if (text.total <= done) return;
+  if (done === CUT || text.total <= done) return;
   const streamed = since(text, done);
-  // A last line that can still turn out to be QUIET waits for the next words (or the reply landing without it).
-  const append = streamed.slice(0, streamed.length - maybeQuiet(streamed).length);
+  // The reply so far, for where its lines and code fences start: what its bubble shows, then what came since.
+  const shown = done === 0 ? "" : shownText(hub, r, source);
+  const at = madeUpAt(shown + streamed);
+  let append: string;
+  // A turn the reply made up streams none of its words: the bubble ends before it.
+  if (at !== undefined) append = streamed.slice(0, Math.max(0, at - shown.length));
+  else {
+    // A last line that can still turn out to be QUIET or a turn's marker waits for the next words (or the reply landing
+    // without it).
+    const held = Math.max(maybeQuiet(streamed).length, Math.min(streamed.length, maybeTurn(shown + streamed).length));
+    append = streamed.slice(0, streamed.length - held);
+  }
   // A turn that ends with no text, or with the quiet reply, posts nothing: no bubble opens before the reply has
   // words in it that can't still turn out to be QUIET.
-  if (done === 0 && QUIET.startsWith(append.trim())) return;
-  if (!append) return;
+  if ((done === 0 && QUIET.startsWith(append.trim())) || !append) {
+    if (at !== undefined) sent.set(source, CUT);
+    return;
+  }
   let message: ChatMessage | undefined;
   try {
     message = c.bySource(r, source) ?? c.add(r, { author: "lead", streaming: true, source }).message;
@@ -741,7 +759,29 @@ function streamLead(hub: Hub, sent: Map<string, number>, lead: StoredLead, parts
     console.warn("chat: streamed text not kept:", error);
     return;
   }
-  sent.set(source, text.total - [...streamed].length + [...append].length);
+  sent.set(source, at !== undefined ? CUT : text.total - [...streamed].length + [...append].length);
+}
+
+/** The text of a streaming reply's bubble so far; "" when the store can't read it. */
+function shownText(hub: Hub, r: ProjectRef, source: string): string {
+  try {
+    return chat(hub).bySource(r, source)?.text ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * A reply that landed went on with a turn it made up (`Human: …`): logged, and the lead told with its next wake that the
+ * person never wrote it. Its session still holds the whole reply, so without this line its next turn reads that turn as
+ * the person's message and acts on it.
+ */
+function madeUp(hub: Hub, r: ProjectRef, source: string, reply: string): void {
+  const line = madeUpLine(reply);
+  if (line === undefined) return;
+  const turn = reply.slice(madeUpAt(reply)).trim();
+  console.warn(`chat: lead reply ${source} cut before a turn it made up: ${[...turn].length} characters from "${/^[^:]*:/.exec(turn)?.[0] ?? ""}"`);
+  leads(hub).wakes.trigger(r, { kind: "line", line: "made_up", text: line });
 }
 
 /** The end of streamed text from the start of its last line, when that line is so far QUIET or the start of it; else "". */
