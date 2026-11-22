@@ -7,7 +7,7 @@ import { Fleet } from "./golden.ts";
 
 let fleet: Fleet;
 beforeAll(async () => {
-  fleet = new Fleet("node-join");
+  fleet = new Fleet("node-join", { tools: true });
   await fleet.startHub();
 });
 afterAll(() => fleet?.stop());
@@ -31,7 +31,7 @@ test("a worker code enrolls the node with the hub", async () => {
 // `--mac` reaches the join (it was once dropped, so the agents' Mac joined as a plain runner): off a Mac it refuses
 // before writing anything, with may_join's words. On the Mac it writes `agentsMac` and `mac.enabled`.
 test.skipIf(process.platform === "darwin")("node join --mac off a Mac refuses and writes no config", async () => {
-  const fleet = new Fleet("node-join-mac");
+  const fleet = new Fleet("node-join-mac", { tools: true });
   try {
     const node = join(fleet.home, "node");
     const joined = await fleet.run(["node", "join", "--hub", "http://127.0.0.1:9", "--token", "fle_x", "--machine", "mac-1", "--mac", "--home", node]);

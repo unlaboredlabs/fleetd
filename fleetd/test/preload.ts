@@ -1,7 +1,7 @@
 // Run before every test file (bunfig.toml). A hub's doctor runs `gh auth status` through its default command runner:
 // this machine's own gh, which can answer after a test's wait on a busy runner, or ask GitHub where it is logged in.
 // A test hub gives its doctor stand-ins; one that doesn't fails at once, rather than now and then.
-import { afterAll, beforeAll, mock } from "bun:test";
+import { afterAll, mock } from "bun:test";
 import * as sqlite from "bun:sqlite";
 import * as doctor from "../src/hub/doctor/index.ts";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -31,14 +31,13 @@ class NoSync extends sqlite.Database {
 }
 mock.module("bun:sqlite", () => ({ ...sqlite, Database: NoSync, default: NoSync }));
 
+// Each test file's own $TMPDIR, removed when the file ends: what its tests and the processes they start make there
+// (homes a test never removed, a hub's vault key beside its home) goes with it, and two runs on one machine never
+// share a path. It is made under the run's $TMPDIR, kept in FLEETD_TEST_TMPDIR for the next file in this process.
+const outer = (process.env.FLEETD_TEST_TMPDIR ??= process.env.TMPDIR ?? tmpdir());
+const scratch = mkdtempSync(join(outer, "t-"));
+process.env.TMPDIR = scratch;
 // A stand-in box (test/sandbox/stand_ins.ts) runs here, and a box keeps its sessions' bundles in BOX_DIR: one /tmp
-// path for every test run on the machine, where one run's box sealing cleared another's bundle mid-clone. Each test
-// process takes its own.
-let boxDir: string | undefined;
-beforeAll(() => {
-  boxDir = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "fleetd-box-"));
-  setBoxDir(boxDir);
-});
-afterAll(() => {
-  if (boxDir) rmSync(boxDir, { recursive: true, force: true });
-});
+// path for every test run on the machine, where one run's box sealing cleared another's bundle mid-clone.
+setBoxDir(join(scratch, "box"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));

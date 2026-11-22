@@ -4,11 +4,10 @@
 // own. With --no-service nothing goes to systemd or launchd; `machine add --local` copies the binary into its own
 // scratch home.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { localHostName, machineIdFromHost } from "../../src/cli/project.ts";
 import { createEnrollToken, openHub } from "../../src/cli/store.ts";
-import { TESTED } from "../../src/node/runner/claude.ts";
 import { Fleet } from "./golden.ts";
 
 let bunBin = "";
@@ -40,14 +39,12 @@ async function join_(mint: (fleet: Fleet) => Promise<string> = named, args = ["-
   await fleet.startHub();
   const code = await mint(fleet);
   // The worker is another fleetd home on this machine; its hub is the one above.
-  const worker = new Fleet("init-join-worker");
+  // Its claude and npm are stand-ins (../tools.ts): its join checks no real login and installs nothing.
+  const worker = new Fleet("init-join-worker", { tools: true });
   fleets.push(worker);
-  const bin = join(worker.home, "stand-in");
-  mkdirSync(bin);
-  writeFileSync(join(bin, "claude"), `#!/bin/sh\necho '${TESTED} (Claude Code)'\n`, { mode: 0o755 });
   const proc = Bun.spawn([bunBin, "init", "--join", fleet.hubUrl, "--code", code, ...args, "--no-service"], {
     cwd: worker.cwd,
-    env: { ...worker.env(), PATH: `${bin}:${process.env.PATH ?? ""}` },
+    env: worker.env(),
     // stdin a pipe, as `curl … | sh` without a terminal leaves it: nothing can be asked.
     stdin: new Blob(["y\n"]),
     stdout: "pipe",
@@ -69,7 +66,7 @@ test("a worker joins with the code", async () => {
   expect(joined.shown.stderr).toContain("start builder-1's node: $HOME/bin/fleetd node run --home $HOME/node");
   // With nobody to ask, claude's login is a step left to the person with its command, and the run ends clean.
   expect(joined.shown.stderr).toContain("–  claude on builder-1 not logged in\n");
-  expect(joined.shown.stderr).toContain("log claude in on builder-1: $HOME/stand-in/claude auth login");
+  expect(joined.shown.stderr).toContain("log claude in on builder-1: $HOME/tools/claude auth login");
   expect(joined.shown.code).toBe(0);
 }, 60_000);
 

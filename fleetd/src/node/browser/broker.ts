@@ -465,9 +465,12 @@ export class BrowserBroker {
     this.setEnded(thread, note ? { sessionId: session.id, at: new Date().toISOString(), why: note } : undefined);
     // Out of the map but not yet ended: housekeeping's sweep leaves its recording alone until it is.
     this.ending.add(session.id);
+    const closing = this.close(open, note);
+    this.closing.add(closing);
     try {
-      return await this.close(open, note);
+      return await closing;
     } finally {
+      this.closing.delete(closing);
       this.ending.delete(session.id);
       this.host.changed?.(thread);
     }
@@ -476,6 +479,8 @@ export class BrowserBroker {
   /** Sessions out of the map whose end is still under way (their video, their DOM captures), and those being taken
    * over: not yet a recording to send, nor one a stopped node left. */
   private readonly ending = new Set<string>();
+  /** Those ends' closes, which a node stopping waits for: a Chrome still closing writes into its profile. */
+  private readonly closing = new Set<Promise<unknown>>();
 
   /** The last session of each agent session that ended under it (`end`'s note), until its next session_start: kept
    * where the broker runs says (`endedChanged`), so a node that restarts still tells the agent. */
@@ -922,6 +927,8 @@ export class BrowserBroker {
   async shutdown(): Promise<void> {
     clearInterval(this.housekeeping);
     for (const thread of [...this.sessions.keys()]) await this.end(thread, "this machine's fleetd node stopped").catch(() => {});
+    // Ends begun before (an agent's session_end, a lead's claude that exited) finish first.
+    await Promise.allSettled([...this.closing]);
     this.proxy.stop();
   }
 }
