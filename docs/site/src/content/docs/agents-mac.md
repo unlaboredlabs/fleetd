@@ -104,15 +104,17 @@ Each simulator an agent holds is a screen of its own, in **Screens** and the bot
 its device and agent ("iPhone 17 · T12") and drawn in an iPhone bezel. It never touches the Mac's own screen and takes
 no turn on it, so several agents' simulators are watched at once, beside an agent on the [Mac's screen](/docs/browser-sessions#mac).
 
-- **Live view.** While someone watches, the Mac takes a screenshot of the simulator (`simctl io screenshot`) at most every
-  100 ms and sends the ones that changed; nobody watching, it takes none.
+- **Live view.** While someone watches, the Mac reads the simulator's screen each time it changes and sends it, as H.264
+  from the Mac's hardware encoder where your app decodes it; nobody watching, it reads nothing.
 - **Recording.** From the first time someone watches until the simulator ends, `simctl io recordVideo` records it. Its
   recording, with a line for each of the agent's `agent-device` commands and for your takeover, lands with the screen's
   others once the simulator ends. A simulator nobody watched has its line log and no video.
-- **Take over.** Your click is an `agent-device press`, a drag a `swipe`, a long press a `longpress`, the wheel a
-  `swipe`, typing a `type`, and Enter, Home and Back their own commands, all through the agent's own agent-device
-  daemon on the Mac. Meanwhile the agent's `agent-device` refuses and says a person has control; its next command after
-  you hand it back drives the simulator again.
+- **Take over.** Your touches, typing and Home go straight into the simulator, as Simulator.app's own do: a tap shows
+  within a frame or two, a drag follows your pointer, the wheel scrolls as a finger would, and a swipe from an edge is
+  the system's gesture (home, Notification Centre, back). Back, and text a US keyboard can't type, go through the
+  agent's own agent-device daemon, as everything does if the simulator can't take input directly. Meanwhile the
+  agent's `agent-device` refuses and says a person has control; its next command after you hand it back drives the
+  simulator again.
 
 The Mac has as many simulator screens as [simulators it boots at once](#sim), plus its own screen. The screen ends with
 the simulator: `mac sim end`, or 30 minutes without a `mac` command from the agent.
