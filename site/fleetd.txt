@@ -10,6 +10,7 @@ You set the direction. Agents build, review and ship it while you sleep.
 macOS or Linux x64. Open source, MIT.
 Install:     https://fleetd.sh/docs/install
 Quick start: https://fleetd.sh/docs/quick-start
+Pricing:     https://fleetd.sh/pricing
 GitHub:      https://github.com/unlaboredlabs/fleetd
 
 
@@ -47,6 +48,52 @@ Agents test in a real browser or iPhone simulator while you watch. When one
 needs a code or a login, take over, then hand back.
 Clip: showcase-screens-dark.webm, showcase-screens-light.webm. Still:
 showcase-screens-dark.jpg. More: https://fleetd.sh/docs/browser-sessions
+
+
+RUN IT YOURSELF, OR ON FLEETD CLOUD
+Self-hosted, free and open source: the hub and its agents run on your own
+machines, with your own Claude and GitHub. Nothing fleetd runs is needed.
+fleetd cloud, from $20 a month: fleetd runs the hub for your team, in the
+EU. Agents run on fleetd's computers, or on your own machines at no cost.
+More: https://fleetd.sh/pricing
+
+
+PRICING (FLEETD CLOUD)
+Free on your machines. Pay for ours. A plan pays for fleetd's computers;
+your own machines cost nothing, self-hosted or on the cloud.
+
+  Solo    $20 a month    $30 of computer time included    3 agents at once
+  Team    $50 a month    $60 of computer time included   10 agents at once
+  Scale  $200 a month   $260 of computer time included   40 agents at once
+
+Computer time, charged to the millisecond while a computer runs:
+  2 CPU, 4 GB    $0.06 an hour
+  4 CPU, 8 GB    $0.12 an hour
+  8 CPU, 16 GB   $0.24 an hour
+
+Credits are computer time paid ahead, at face value ($10 buys $10 of time),
+from $10, with or without a plan. They last 12 months; a plan's time is used
+first and ends with its month. With credits and no plan, 3 agents run at
+once. Leads never count toward agents at once. No free tier of fleetd's
+computers. Prices are before VAT. Details: https://fleetd.sh/docs/billing
+
+
+SELF-HOSTED OR CLOUD
+                     Self-hosted                     fleetd cloud
+The hub              You run it, on a machine        fleetd runs it for your
+                     of yours                        team, in the EU
+Agents run on        Your own machines, directly,    fleetd's computers, or
+                     with no VM                      your own machines
+Signing in           Pair the desktop and phone      Google, GitHub or a code
+                     apps with your hub              by email, apps or browser
+Claude and GitHub    Your own logins, through        Your own Claude; GitHub in
+                     guided, sealed steps            one trip to fleetd's App
+Depends on fleetd    No                              Yes: fleetd runs it
+Costs                Nothing                         A plan or credits for
+                                                     fleetd's computers
+
+A self-hosted hub moves to the cloud from the app, with its bots, history and
+machines: https://fleetd.sh/docs/moving-a-hub#cloud
 
 
 Each clip and still is the fleetd app on sample data, with the waits cut short.

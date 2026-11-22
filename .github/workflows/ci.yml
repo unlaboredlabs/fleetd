@@ -179,9 +179,9 @@ jobs:
         run: node .github/personal-check.mjs
       - name: Internal links and anchors
         run: node .github/docs-links.mjs
-      - name: Landing page fits every width
-        # Renders site/home.html in the runner's google-chrome at 320 to 1920 px wide and fails when the page scrolls
-        # sideways.
+      - name: Landing and pricing pages fit every width
+        # Renders site/home.html and site/pricing.html in the runner's google-chrome at 320 to 1920 px wide and fails
+        # when a page scrolls sideways.
         run: node .github/site-layout-check.mjs
 
   desktop:
