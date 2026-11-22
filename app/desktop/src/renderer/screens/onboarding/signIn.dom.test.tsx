@@ -12,6 +12,7 @@ import { CloudAccountSettings } from "../settings/CloudAccount";
 import { ConnectComputer } from "../setup/ConnectComputer";
 import { resetCloud } from "./cloud";
 import { OnboardingScreen } from "./OnboardingScreen";
+import { setRouteHubs } from "../shell/navigation";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -127,7 +128,7 @@ it("on a build without the cloud's values, the first screen is today's connect f
 it("offers both ways a line each; Use your own hub is the connect form, with the way back", async () => {
   await mount(<OnboardingScreen />, unpaired);
   expect(screen()).toBe("onboarding.ways");
-  expect(host.textContent).toContain("fleetd hosts your hub. Your agents run on your own computers.");
+  expect(host.textContent).toContain("fleetd hosts your team. Agents run on fleetd's computers or your own.");
   expect(host.textContent).toContain("A hub you run yourself. No fleetd account.");
   click(/^Use your own hub/u);
   expect(screen()).toBe("onboarding");
@@ -259,6 +260,17 @@ it("no team yet, and Not now: nothing is made", async () => {
   click("Not now");
   await settle();
   expect(cloud.finish).toHaveBeenCalledWith([]);
+});
+
+it("opens the team picked on the sign-in page, not the first listed", async () => {
+  setRouteHubs(["h1", "h2"]);
+  cloud.finish.mockImplementationOnce(() => Promise.resolve({ ok: true, email: "sam@example.com", teams: [{ name: "sam", ok: true }, { name: "lab", ok: true }], picked: "h2" }));
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({ email: "sam@example.com", invitations: [] });
+  click("Continue");
+  await settle();
+  expect(window.location.hash).toContain("at=h2");
+  setRouteHubs(["hub"]);
 });
 
 it("a pairing link to a team of fleetd cloud says anyone can make one; a link to another hub doesn't", async () => {

@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
-import { bubble, fitWidth } from "../bubble";
+import { bubble, fitKey, fitWidth } from "../bubble";
 import { columnWidths, isNumeric, longestWord, type Measured } from "../table";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -17,9 +17,10 @@ import { SkeletonBlock } from "./Skeleton";
 
 /**
  * `fit`: the words take only as wide as their longest line, as Messages' bubbles do, where a Text takes all the width it
- * may. Paragraphs and headings measure their lines once for each text and text size, then draw at that width; other
+ * may. Paragraphs and headings measure their lines once for each text, text size and width, then draw at that; other
  * blocks (a list, code) keep the whole width. Off while the text still streams in, so the bubble doesn't narrow and
- * widen with each word. Turning it on, or a new text size, lays the words out afresh at the whole width to measure them.
+ * widen with each word. Turning it on, a new text size or a new width (the iPhone Duo folded or opened) lays the words
+ * out afresh at the whole width to measure them.
  * `ground`: the color under the words when they aren't in a bubble, for a wide table's edge fade. In a bubble (none
  * given), the fade is the bubble's fill, and a table scrolls out to the bubble's edges.
  * `holdsBlocks` (on unless a person wrote the words): a fleetd-block fence that reaches here didn't show (`fenceView`),
@@ -29,7 +30,8 @@ export function Markdown({ text, ink, onAccent = false, fit = false, streaming =
   const blocks = useMemo(() => parseMarkdown(text), [text]);
   const fits = fit && blocks.every((b) => b.t === "p" || b.t === "h");
   const { fontScale } = useWindowDimensions();
-  const key = `${String(fontScale)}:${text}`;
+  const room = usePaneWidth();
+  const key = fitKey(fontScale, room, text);
   const lines = useRef<{ key: string; widths: number[] }>({ key: "", widths: [] });
   const [fitted, setFitted] = useState<{ key: string; width: number } | undefined>(undefined);
   const measure = (i: number) => (e: TextLayoutEvent) => {
@@ -42,7 +44,7 @@ export function Markdown({ text, ink, onAccent = false, fit = false, streaming =
   const width = fits && fitted?.key === key ? fitted.width : undefined;
   return (
     // A new key mounts the words again, so they lay out and report their lines: a change to onTextLayout alone doesn't.
-    <View key={fits ? `fit:${String(fontScale)}` : "whole"} style={[styles.blocks, width !== undefined && { width }]}>
+    <View key={fits ? `fit:${fitKey(fontScale, room, "")}` : "whole"} style={[styles.blocks, width !== undefined && { width }]}>
       {blocks.map((b, i) => (
         <BlockView key={i} block={b} ink={ink} onAccent={onAccent} streaming={streaming} holdsBlocks={holdsBlocks} ground={ground} onLines={fits ? measure(i) : undefined} />
       ))}

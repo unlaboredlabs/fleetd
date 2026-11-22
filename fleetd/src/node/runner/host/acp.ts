@@ -7,8 +7,10 @@
 // Sends that come before the session is up wait for it.
 //
 // Run accounting, as the mapper's: every `send` opens a run, and every open run ends with exactly one RunEnded: from
-// its `session/prompt` answer, or from the process exit. One prompt runs at a time; a send while a turn runs waits
-// for it (Queued), and a mode-`now` send cancels the turn, which then ends superseded by it.
+// its `session/prompt` answer, or from the process exit. A plain send while a turn runs waits for it (Queued). A
+// mode-`boundary` send steers it: its prompt goes at once, agy answers the running prompt (`end_turn`) and carries the
+// turn on as the new one, so the running run ends superseded by it, as Claude's turn does at its next
+// tool call. A mode-`now` send cancels the turn, which ends superseded by it too.
 import type { ItemKind, ItemStatus, PermissionDecision, RunFailure, RunUsage, SendMode, ThreadItem, ToolClass } from "../../../shared/sessions.ts";
 import { headUtf16, tailUtf16 } from "../../util.ts";
 import type { ExitInfo, RunOutcome, RunnerEvent } from "./events.ts";
@@ -51,6 +53,8 @@ export function ruleName(call: Record<string, any>): [string, string | undefined
   const name = str(call.name) ?? "";
   if (call.kind === "execute" || name === "run_command") return ["Bash", str(input.CommandLine) ?? ""];
   if (name === "write_file") return ["Write", str(input.Path)];
+  // view_file, list_dir and the rest of agy's reads: Claude's Read, which a lead's allowed rules name.
+  if (call.kind === "read") return ["Read", str(input.Path) ?? str(input.AbsolutePath) ?? str(input.DirectoryPath) ?? str(rec(call.locations?.[0])?.path)];
   if (call.kind === "edit") return ["Edit", str(input.Path) ?? str(input.TargetFile)];
   if (call.kind === "fetch") return ["WebFetch", str(input.Url) ?? str(input.url)];
   if (name.includes("search_web") || name === "web_search") return ["WebSearch", str(input.query) ?? str(input.Query)];
@@ -114,6 +118,11 @@ export class AcpDriver {
   #open: string[] = [];
   /** A mode-`now` send the cancelled turn ends superseded by. */
   #superseding: string | undefined;
+  /** A mode-`boundary` send whose prompt went out while a turn ran: it takes the turn over once the running prompt
+   * answers. */
+  #steering: string | undefined;
+  /** A steer a person's stop dropped: its prompt is out, and it ends withdrawn when it answers, never as a turn. */
+  #dropped: string | undefined;
   #cancelled = false;
   #stopping = false;
   #tools = new Map<string, Tool>();
@@ -150,6 +159,13 @@ export class AcpDriver {
     this.#waiting.push({ runId, text });
     if (this.#active !== undefined) {
       out.events.push({ Queued: { run_id: runId } });
+      // A turn the agent woke into by itself has no prompt of fleetd's to steer: the send waits for it, as a plain one.
+      if (mode === "boundary" && !this.#cancelled && this.#steering === undefined && this.#sessionId !== undefined && this.#active !== this.#woken) {
+        this.#waiting.pop();
+        this.#steering = runId;
+        out.replies.push(this.#prompt(runId, text));
+        return out;
+      }
       if (mode === "now" && !this.#cancelled) {
         this.#superseding = runId;
         this.#cancel(out, now);
@@ -178,6 +194,10 @@ export class AcpDriver {
       out.events.push({ Withdrawn: { run_id: w.runId, cancelled: true, by_stop: true } });
     }
     this.#superseding = undefined;
+    if (this.#steering !== undefined) {
+      this.#dropped = this.#steering;
+      this.#steering = undefined;
+    }
     if (this.#active !== undefined && !this.#cancelled) this.#cancel(out, now);
     return out;
   }
@@ -363,7 +383,11 @@ export class AcpDriver {
     const w = this.#waiting.shift();
     if (!w) return;
     this.#begin(w.runId, out);
-    out.replies.push(this.#request("session/prompt", { what: "prompt", runId: w.runId }, { sessionId: this.#sessionId, prompt: [{ type: "text", text: w.text }] }));
+    out.replies.push(this.#prompt(w.runId, w.text));
+  }
+
+  #prompt(runId: string, text: string): unknown {
+    return this.#request("session/prompt", { what: "prompt", runId }, { sessionId: this.#sessionId, prompt: [{ type: "text", text }] });
   }
 
   #begin(runId: string, out: AcpOut): void {
@@ -376,6 +400,26 @@ export class AcpDriver {
   }
 
   #promptEnded(runId: string, result: Record<string, any> | undefined, failed: string | undefined, now: Now, out: AcpOut): void {
+    if (runId === this.#dropped) {
+      this.#dropped = undefined;
+      this.#open = this.#open.filter((r) => r !== runId);
+      out.events.push({ Withdrawn: { run_id: runId, cancelled: true, by_stop: true } });
+      if (this.#active === undefined) this.#next(out);
+      return;
+    }
+    if (runId === this.#steering && this.#active !== undefined) {
+      // A steer agy refused ends alone, and the turn it meant to steer runs on.
+      if (failed) {
+        this.#steering = undefined;
+        this.#end(runId, { Failed: this.#failure(evidence({ isError: true, text: failed, nowMs: now.ms })) }, undefined, now, out);
+        return;
+      }
+      // The steer answered before the turn it steered: that one ends first, and its own answer, when it comes, ends
+      // nothing more.
+      const steered = this.#active;
+      for (const [id, p] of this.#pending) if (p.what === "prompt" && p.runId === steered) this.#pending.delete(id);
+      this.#promptEnded(steered, { stopReason: "end_turn" }, undefined, now, out);
+    }
     this.#flush(now, out);
     const u = rec(result?.usage);
     const usage: RunUsage | undefined = u && {
@@ -391,9 +435,15 @@ export class AcpDriver {
     else if (failed) outcome = { Failed: this.#failure(evidence({ isError: true, text: failed, stderr: tailUtf16(this.#runStderr, STDERR_TAIL), nowMs: now.ms })) };
     else if (reason === "refusal") outcome = { Failed: this.#failure(evidence({ isError: true, text: "The model refused the request.", nowMs: now.ms })) };
     else outcome = { Completed: { text: this.#reply } };
+    // The running prompt answered because a steer took its turn over: the turn goes on as the steer's.
+    const steer = this.#steering !== runId ? this.#steering : undefined;
+    if (steer !== undefined && "Completed" in (outcome as object)) outcome = { Superseded: { by: steer } };
     this.#superseding = undefined;
     this.#end(runId, outcome, usage, now, out);
-    this.#next(out);
+    if (steer !== undefined) {
+      this.#steering = undefined;
+      this.#begin(steer, out);
+    } else this.#next(out);
   }
 
   #end(runId: string, outcome: RunOutcome, usage: RunUsage | undefined, now: Now, out: AcpOut): void {

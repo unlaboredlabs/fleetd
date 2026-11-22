@@ -15,6 +15,7 @@ import { VERSION } from "../agent_device.ts";
 import { clear, clearHomes, findGolden, type Golden, type Lent, Pool, prepare, type RunnerStarter, startRunner, type Waiting, waitingWords } from "./pool.ts";
 import { iosRuntimes, pick, Simctl } from "./simctl.ts";
 import { iosDir, setDir } from "./wrapper.ts";
+import { settingsPath } from "../../../shared/settings_path.ts";
 
 /** node.json's `ios`: `enabled` true opts this Mac in (the node makes its golden), false turns it off; `deviceType`. */
 export type IosConfig = { enabled?: boolean; deviceType?: string };
@@ -109,7 +110,7 @@ export function healthFrom(
   const x = xcodeNow();
   if ("err" in x) return optedIn(config) ? of("unavailable", `No iOS simulators: ${x.err}.`, x.fix, false) : undefined;
   if (!optedIn(config)) {
-    return of("wanted", `Xcode with ${x.ok}; iOS simulators are the agents' Mac's: Settings › Hub › Setup › A Mac for agents joins one.`, undefined, false);
+    return of("wanted", `Xcode with ${x.ok}; iOS simulators are the agents' Mac's: ${settingsPath()} › Setup › A Mac for agents joins one.`, undefined, false);
   }
   if (!node()) return of("unavailable", "No iOS simulators: agent-device needs Node.js 22.12 or later on the node's PATH.", "brew install node", false);
   if (state.failed) {

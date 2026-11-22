@@ -8,7 +8,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { adminNames, askLine, hostsFor, kindLine, openWord, pickHost, profileBusy, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, kindLine, openWord, pickHost, profileBusy, SCREEN_KINDS, slotLine, whyOff, type HubError, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
@@ -17,11 +17,12 @@ import { useAnnounce } from "../../ui/announce";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { SHEET_GONE_MS } from "./arrival";
+import { offFooter } from "./model";
 import { CheckRow, errorWords, Problem, sheetOptions, useRead } from "./parts";
 
 export function NewScreen({ navigation, route }: NativeStackScreenProps<RootParams, "NewScreen">) {
   const t = useTheme();
-  const { session, state } = useHub();
+  const { session, state, paired } = useHub();
   const key = route.params.key;
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
   const machines = roles.value?.ok === true ? roles.value.output.machines : [];
@@ -130,7 +131,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
             })}
           </ListSection>
           {off !== null ? (
-            <ListSection header="Can't open" {...offFooter(off, state.admin === true, askLine(off, shownKind, admins))}>
+            <ListSection header="Can't open" {...offFooter(off, state.admin === true, askLine(off, shownKind, admins), paired.cloud === true)}>
               <ListRow title={off.short} detail={off.why} />
             </ListSection>
           ) : (
@@ -162,13 +163,6 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     </ScrollView>
   );
 }
-
-/** Under why a kind can't open: a member's who to ask, or where an admin fixes it. */
-const offFooter = (off: OffReason, admin: boolean, ask: string | null): { footer?: string } => {
-  if (!admin) return ask === null ? {} : { footer: ask };
-  if (off.fix === "none") return {};
-  return { footer: `Fix it in the desktop app, under Settings › Hub › ${off.fix === "update" ? "Updates" : "Machines"}.` };
-};
 
 const styles = StyleSheet.create({
   loading: { marginTop: 48 },

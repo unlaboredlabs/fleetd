@@ -26,6 +26,7 @@ import { Box, type Relay } from "../box.ts";
 import { type HostedStep, stepped } from "../../place/hosted_steps.ts";
 import { nodeTailnet } from "../tailnet.ts";
 import { bootArgv, deliver, firstWord, type Source } from "./bootstrap.ts";
+import { settingsPath } from "../../../shared/settings_path.ts";
 
 /** Labels on every box: the machine that made it, and the session it runs. */
 export const MACHINE_LABEL = "fleetd-machine";
@@ -201,7 +202,7 @@ export class Boxes {
 
   client(p: ProviderId): Provider {
     const auth = this.#auth.get(p);
-    if (!auth) throw new ProviderError("invalid_key", `This machine holds no ${p} key: an admin connects one in Settings › Hub › Machines.`);
+    if (!auth) throw new ProviderError("invalid_key", `This machine holds no ${p} key: an admin connects one in ${settingsPath()} › Machines.`);
     let c = this.#clients.get(p);
     if (!c) {
       c = (this.o.provider ?? makeProvider)(p, auth);

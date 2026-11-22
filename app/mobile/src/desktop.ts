@@ -95,6 +95,8 @@ export {
 export { cloudDomain, madeTeam, invitationLine, invitationTitle, readAccepted, readSignIn, teamOrigin, type SignedIn } from "../../desktop/src/shared/accounts";
 export type { CallOutcome, HubError, HubState } from "../../desktop/src/shared/hub";
 export { serves } from "../../desktop/src/shared/hub";
+export { RUNNER_ID } from "../../desktop/src/shared/providers";
+export { settingsPath } from "../../desktop/src/shared/settingsPages";
 export { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";

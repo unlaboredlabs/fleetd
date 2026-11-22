@@ -18,6 +18,7 @@ import { doctorAlert, fetchFailedText, fixLabel, start } from "./base.ts";
 import { addCommand, type HubSetup, type MachineSetup, restartCommand } from "./config.ts";
 import { clip, machineEntry, manual, placed, settingsFile } from "./entry.ts";
 import { guide } from "./guide.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export { claudeAccountOverride, clip } from "./entry.ts";
 
@@ -71,7 +72,7 @@ export function ghAuth(outcome: CmdOutcome): DoctorCheck {
       "fail",
       "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
       manual(
-        "Log gh in on the hub machine, or create the hub's GitHub App in Settings › Hub › Setup › GitHub",
+        `Log gh in on the hub machine, or create the hub's GitHub App in ${settingsPath()} › Setup › GitHub`,
         "gh auth login",
       ),
     );
@@ -205,11 +206,11 @@ export function githubApp(app: GithubApp): DoctorCheck {
       "github_app",
       "warn",
       `The hub's GitHub App "${app.name}" isn't installed on any repository yet.`,
-      fix("Install it on Settings › Hub › Setup › GitHub, then Test"),
+      fix(`Install it on ${settingsPath()} › Setup › GitHub, then Test`),
     );
   }
   const t = app.lastTest;
-  if (t && !t.ok) return hubEntry("github_app", "fail", t.said, fix("Check it on Settings › Hub › Setup › GitHub, then Test"));
+  if (t && !t.ok) return hubEntry("github_app", "fail", t.said, fix(`Check it on ${settingsPath()} › Setup › GitHub, then Test`));
   if (t) return hubEntry("github_app", "ok", t.said);
   const places = installations.map((i) => i.account);
   return hubEntry("github_app", "ok", `The hub's GitHub App "${app.name}" is installed on ${places.join(", ")}.`);
@@ -492,7 +493,7 @@ function accountEntry(
 export function claudeKey(setup: ClaudeSetupView): DoctorCheck {
   const api = setup.hubApi;
   if (!api) {
-    return hubEntry("claude_key", "unknown", "The hub has no Claude API key.", manual("Add one on Settings › Hub › Setup › Claude"));
+    return hubEntry("claude_key", "unknown", "The hub has no Claude API key.", manual(`Add one on ${settingsPath()} › Setup › Claude`));
   }
   const what = api.endpoint ? `The hub's Claude API key (through ${api.endpoint})` : "The hub's Claude API key";
   return accountEntry(
@@ -501,7 +502,7 @@ export function claudeKey(setup: ClaudeSetupView): DoctorCheck {
     api.sealedOn,
     api.lastTest ?? undefined,
     setup.machines,
-    "Check the key and endpoint on Settings › Hub › Setup › Claude, then save them again",
+    `Check the key and endpoint on ${settingsPath()} › Setup › Claude, then save them again`,
   );
 }
 

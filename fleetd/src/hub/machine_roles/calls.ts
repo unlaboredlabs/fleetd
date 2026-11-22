@@ -38,6 +38,7 @@ import {
 } from "./places.ts";
 import { hashToken } from "./relay.ts";
 import { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export { CALL_WAIT, CANCEL_WAIT, DEVICE_WAIT, START_WAIT } from "./screen_rules.ts";
 
@@ -45,8 +46,8 @@ export const OPS = ["session_route", "session_step"] as const;
 
 /** `kind ios` while no Mac machine is online for agents: iOS simulators run nowhere else. */
 export const NO_MAC = "iOS simulators run on a Mac machine, and this team has none online for agents.";
-export const NO_MAC_FIX =
-  "do without it and say so in your result: an admin adds a Mac in Settings › Hub › Machines (the plus, then A Mac for agents), or brings the team's Mac back online with Agents may use this Mac on";
+export const noMacFix = (): string =>
+  `do without it and say so in your result: an admin adds a Mac in ${settingsPath()} › Machines (the plus, then A Mac for agents), or brings the team's Mac back online with Agents may use this Mac on`;
 
 export function registerLeadCalls(hub: Hub): void {
   const calls = leadCalls(hub);
@@ -141,7 +142,7 @@ export async function route(hub: Hub, caller: LeadCaller, call: SessionRouteCall
   const remote = remoteOn(hub.db.conn) && link(hub).can(origin, CAP_SESSION_SEAL);
   // iOS simulators are a Mac machine's (D298): `mac sim start` there, or how the team gets one while it has none.
   if (host === "ios") {
-    if (macMachine(hub) === undefined) throw new ToolError("failed", NO_MAC, NO_MAC_FIX);
+    if (macMachine(hub) === undefined) throw new ToolError("failed", NO_MAC, noMacFix());
     throw new ToolError("invalid", IOS_GONE, "mac --help says the rest; fleetd docs: The agents' Mac");
   }
   let runner: string;

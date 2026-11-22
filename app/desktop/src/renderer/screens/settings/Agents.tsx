@@ -218,7 +218,8 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   const pick = useToolQuery("project_settings_get", props.projectRef, { enabled: live }).data?.settings.computer;
   const sandboxes = useToolQuery("sandbox_get", NO_INPUT, { enabled: live });
   // A cloud team on fleetd's computers has no sandbox_get (the hub answers not found): its plan holds its agents.
-  const provided = useHub().cloud === true && sandboxes.error instanceof CallError && sandboxes.error.error.code === "not_found";
+  const cloud = useHub().cloud === true;
+  const provided = cloud && sandboxes.error instanceof CallError && sandboxes.error.error.code === "not_found";
   const hold = provided ? providedHold(props.slots) : holdOf(pick, sandboxes.data);
   const a = projectAgents(props.slots, props.projectRef, hold);
   const state = useApplySlider(a.max, !a.own, (maxAgents, pauseExtras, follow) =>
@@ -248,7 +249,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
       }
     >
       <CapSlider id={id} max={a.top} disabled={!live || a.top <= 1} state={state} />
-      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId, hold)} link={holdsLink(a, props.projectRef.machineId, hold)} machineId={props.projectRef.machineId} />
+      <MachineHolds note={machineHolds(a, value, props.projectRef.machineId, hold)} link={holdsLink(a, props.projectRef.machineId, hold, cloud)} machineId={props.projectRef.machineId} />
       <ResultLine
         id={id}
         state={state}

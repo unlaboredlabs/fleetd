@@ -117,6 +117,8 @@ export class FakeAccounts {
   readonly signIns: AccountsSignInInput[] = [];
   /** The next sign-in's answer instead of the real one: a refusal such as a 429. */
   refuseNext: { status: number; failure: AccountsFailure } | null = null;
+  /** The team (by name) the next sign-in says was picked on WorkOS's page, as a person in several picks one. */
+  pickNext: string | null = null;
   /** Every invitation email sent, in order. */
   readonly sent: FakeInviteEmail[] = [];
   /** Each invitation joined through the accept call, as `<team> <email>`, in order. */
@@ -333,6 +335,9 @@ export class FakeAccounts {
       ...(invitations.length === 0 ? {} : { invitations }),
       ...(make === undefined ? {} : { make }),
     };
+    const picked = this.pickNext === null ? undefined : this.#teams.get(this.pickNext);
+    this.pickNext = null;
+    if (picked !== undefined && answer.teams.some((t) => t.id === picked.id)) answer.picked = picked.id;
     send(res, 200, answer);
   }
 

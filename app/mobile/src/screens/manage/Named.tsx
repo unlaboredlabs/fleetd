@@ -27,7 +27,8 @@ function Mark({ entry }: { entry: Named }) {
 /** A named service on Connections: Connect, its sign-in, then its state with Test and Disconnect. */
 export function NamedRow({ entry, servers, reload }: { entry: Named; servers: McpServer[]; reload: () => void }) {
   const t = useTheme();
-  const { session, state: hub } = useHub();
+  const { session, state: hub, paired } = useHub();
+  const cloud = paired.cloud === true;
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<{ text: string } | null>(null);
   const state = namedState(entry, servers);
@@ -42,7 +43,7 @@ export function NamedRow({ entry, servers, reload }: { entry: Named; servers: Mc
   const runTest = async (sv: McpServer) => {
     const out = await test(session, sv);
     if (!out.ok) return failed("Not tested", out.error);
-    const said = testLine(out.value, machineName(hub.machines, out.value.machineId));
+    const said = testLine(out.value, machineName(hub.machines, out.value.machineId, cloud));
     if (said.signIn || out.value.result.error !== undefined) haptics.warning();
     else haptics.success();
     setLine({ text: said.text });

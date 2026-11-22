@@ -16,6 +16,7 @@ import { link } from "../link/server.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import type { Chosen } from "./chosen.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export type { Chosen } from "./chosen.ts";
 
@@ -384,7 +385,7 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
   throw new ToolError(
     "forbidden",
     "Only the hub's owners and admins change task profiles.",
-    "Ask an owner or admin; they change them on Settings › Hub › Bot defaults › Agents in the app.",
+    `Ask an owner or admin; they change them on ${settingsPath()} › Bot defaults › Agents in the app.`,
   );
 }
 

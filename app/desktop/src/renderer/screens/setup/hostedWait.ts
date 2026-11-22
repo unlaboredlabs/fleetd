@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { hostedRow, type HostedRunner } from "../../../shared/hostedRow";
 import { specOf } from "../../../shared/providers";
+import { settingsPath } from "../../../shared/settingsPages";
 
 /** How long the screens wait for hosted sandboxes to be ready before they say they aren't. Tests set it; the QA build
  * waits a few seconds, so its screens reach the failure. */
@@ -38,9 +39,9 @@ export function useWaitedOut(waiting: boolean): { readonly over: boolean; readon
 
 /** Why the provider's sandboxes aren't ready after the wait, and what fixes it: the words its row in Hub › Machines
  * says (shared/hostedRow.ts) when it says what went wrong, else that they didn't come up. */
-export function hostedProblem(p: HostedProvider, runner: RunnerState | undefined): { readonly reason: string; readonly fix: string } {
+export function hostedProblem(p: HostedProvider, runner: RunnerState | undefined, cloud = false): { readonly reason: string; readonly fix: string } {
   const name = specOf(p.provider).name;
-  const fallback = `If it keeps failing, check ${name} in Settings › Hub › Machines.`;
+  const fallback = `If it keeps failing, check ${name} in ${settingsPath(cloud, "Machines")}.`;
   const row = hostedRow(p, runner);
   if (row.state === "failed" && row.text !== null) return { reason: row.text, fix: row.fix ?? fallback };
   return { reason: `${name}'s sandboxes didn't get ready.`, fix: fallback };

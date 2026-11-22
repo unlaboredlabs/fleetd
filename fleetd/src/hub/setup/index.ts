@@ -17,6 +17,7 @@ import type {
 } from "../../shared/contracts.ts";
 import { VERSION } from "../../shared/version.ts";
 import { phoneUrl, workerReachNote } from "../pair/urls.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 const link = (label: string, url: string): SetupLink => ({ label, url });
 const value = (label: string, v: string): SetupValue => ({ label, value: v });
@@ -125,7 +126,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       parts: [
         part(
           "A computer",
-          "The hub's own machine can run agents too. In the app, Settings › Hub › Machines › Add machine does each of these.",
+          `The hub's own machine can run agents too. In the app, ${settingsPath()} › Machines › Add machine does each of these.`,
           [],
           [
             command("The hub's own machine, on it", "fleetd machine add --local"),
@@ -161,7 +162,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             value("Key name", name),
             plain(
               "Where",
-              "Paste it on Settings › Hub › Setup › Claude, the app sealing it on your device, or give it to fleetd init " +
+              `Paste it on ${settingsPath()} › Setup › Claude, the app sealing it on your device, or give it to fleetd init ` +
                 "--step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's.",
             ),
           ],
@@ -193,7 +194,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       parts: [
         part(
           "Create the hub's GitHub App",
-          "On Settings › Hub › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.",
+          `On ${settingsPath()} › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.`,
           [],
           [command("Or on the hub, from a terminal", "fleetd github-app create")],
         ),
@@ -293,7 +294,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             "Join, at the Mac's screen",
             "Paste the join line in Terminal on the Mac, logged in at its screen: launchd runs the node only inside " +
               "that login, so su and ssh won't do. It installs fleetd for that account and joins as the agents' Mac: a " +
-              "tool every bot's agents use, which runs no claude and no lead and takes no secret. Settings › Hub › " +
+              `tool every bot's agents use, which runs no claude and no lead and takes no secret. ${settingsPath()} › ` +
               "Machines › Add machine › A Mac for agents makes the line with its one-time code; if this Mac runs fleetd " +
               "already, give it that machine's name, and the line replaces it. After a restart, log that account in " +
               "again: with FileVault on, macOS logs no one in by itself.",

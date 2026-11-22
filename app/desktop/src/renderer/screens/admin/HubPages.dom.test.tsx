@@ -379,7 +379,7 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Hub › Bot defaults › Instructions.");
+  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Settings › Hub › Bot defaults › Instructions.");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });

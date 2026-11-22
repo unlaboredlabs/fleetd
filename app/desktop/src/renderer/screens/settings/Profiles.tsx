@@ -5,7 +5,7 @@
 import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef } from "../../../shared/contracts";
 import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
-import { useToolQuery } from "../../src/data/react";
+import { useCloudTeam, useToolQuery } from "../../src/data/react";
 import { toHash } from "../shell/routes";
 import { adminNames, adminWho } from "../sessions/pickScreen";
 import { useHubRole, useServes } from "../admin/role";
@@ -28,6 +28,7 @@ import {
 } from "./profilesModel";
 import { AddButton, DangerButton, GroupNote, Notice, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
+import { adminGroup } from "../../../shared/settingsPages";
 
 const noInput = {};
 
@@ -284,6 +285,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
  * on: an owner or admin gets the way to change it, anyone else who to ask.
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
+  const cloud = useCloudTeam();
   const live = useLive();
   const { administers } = useHubRole();
   const people = useToolQuery("people_list", noInput, { enabled: live && !administers });
@@ -309,7 +311,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
     <SettingsSection
       title="Allowed profiles"
       reveal="agents.profiles"
-      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Bot defaults › Agents."
+      hint={`The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in ${adminGroup(cloud)} › Bot defaults › Agents.`}
     >
       {view.profiles.map((p) => (
         <SettingsRow

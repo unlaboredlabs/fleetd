@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
+import { machineName, offFooter } from "./model";
 import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
@@ -185,5 +186,28 @@ describe("New Bot's Create", () => {
     expect(refusalNow(NOT_CONNECTED, true)).toBeUndefined();
     expect(refusalNow(NOT_CONNECTED, false)).toBe(NOT_CONNECTED);
     expect(refusalNow("Name it, or add a repo.", true)).toBe("Name it, or add a repo.");
+  });
+});
+
+describe("a machine's name", () => {
+  it("calls a fleetd cloud team's hosted runner fleetd's computers, never its id or name", () => {
+    const machines = [{ machineId: "hosted", name: "Hosted sandboxes" }, { machineId: "devbox", name: "devbox" }] as unknown as Parameters<typeof machineName>[0];
+    expect(machineName(machines, "hosted", true)).toBe("fleetd's computers");
+    expect(machineName(machines, "devbox", true)).toBe("devbox");
+    // A self-hosted hub's own hosted sandboxes keep their name.
+    expect(machineName(machines, "hosted")).toBe("Hosted sandboxes");
+  });
+});
+
+describe("where an admin fixes a screen kind that can't open", () => {
+  const off = (fix: "update" | "roles" | "none") => ({ why: "Off.", short: "Off", fix });
+  it("names Machines' Updates for an update, a page the desktop's Settings has, as Team on a cloud team", () => {
+    expect(offFooter(off("update"), true, null, false).footer).toBe("Fix it in the desktop app, under Settings › Hub › Machines › Updates.");
+    expect(offFooter(off("update"), true, null, true).footer).toBe("Fix it in the desktop app, under Settings › Team › Machines › Updates.");
+    expect(offFooter(off("roles"), true, null, true).footer).toBe("Fix it in the desktop app, under Settings › Team › Machines.");
+  });
+  it("tells a member who to ask, and says nothing where nobody can fix it", () => {
+    expect(offFooter(off("update"), false, "Ask Ada.", true).footer).toBe("Ask Ada.");
+    expect(offFooter(off("none"), true, null, true)).toEqual({});
   });
 });

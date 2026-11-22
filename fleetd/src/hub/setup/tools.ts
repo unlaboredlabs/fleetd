@@ -12,6 +12,7 @@ import { test as testOnePassword } from "../onepassword/tools.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { store } from "../store/hub_store.ts";
 import { beforeFirstUse, guides, read as readSteps, requiredLeft } from "./index.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** The hub's own setup is an admin's: admin on every machine. */
 function requireAdmin(caller: Caller): void {
@@ -19,7 +20,7 @@ function requireAdmin(caller: Caller): void {
   throw new ToolError(
     "forbidden",
     "The hub's setup is for its owners and admins: a key with admin on every machine.",
-    "Open Settings › Hub › Setup in the app, or run fleetd init on the hub.",
+    `Open ${settingsPath()} › Setup in the app, or run fleetd init on the hub.`,
   );
 }
 

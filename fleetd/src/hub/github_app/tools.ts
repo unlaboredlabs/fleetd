@@ -11,6 +11,7 @@ import * as seams from "../train/seams.ts";
 import { GITHUB_APP_PERMISSIONS, githubApps, manifest, newAppPage } from "./index.ts";
 import { account, connect, disconnect } from "./people.ts";
 import { withdrawAll, withdrawPerson } from "./sessions.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export function register(tools: Registry): void {
   tools.add("github_app_get", get);
@@ -119,7 +120,7 @@ function me(hub: Hub, caller: Caller): PersonId {
 }
 
 const noneYet = () =>
-  new ToolError("not_found", "This hub has no GitHub App yet.", "Create one in Settings › Hub › Setup › GitHub.");
+  new ToolError("not_found", "This hub has no GitHub App yet.", `Create one in ${settingsPath()} › Setup › GitHub.`);
 
 async function get(hub: Hub, caller: Caller) {
   requireRole(caller, "read");

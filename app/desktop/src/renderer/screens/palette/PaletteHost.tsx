@@ -1,18 +1,20 @@
 // Mounted once by the shell: the keymap, the default commands, the theme switches, the project list, whichever
-// overlay is up, and the New screen picker with its "New screen…" (sessions/NewScreen).
+// overlay is up, and the New screen picker with its "New screen…" (sessions/NewScreen). The palette and the shortcuts
+// sheet are chunks of their own, loaded once the chat has shown: the first chat draws neither (web-check.ts's budget).
 
-import { useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { Boundary } from "../../src/Boundary";
 import { useHubSet } from "../../src/data/react";
-import { useTheme } from "../../ui";
+import { preloadable, preloadWhenIdle, useTheme } from "../../ui";
 import { defaultCommands, themeCommands } from "./defaults";
 import { installKeymap } from "./keymap";
 import { projectSource } from "./projects";
 import { registerCommands, useCommands, useSource } from "./registry";
 import { closeOverlay, paletteOpen, useOverlay } from "./state";
-import { Palette } from "./Palette";
-import { ShortcutsSheet } from "./ShortcutsSheet";
 import { NewScreenHost } from "../sessions/NewScreen";
+
+const Palette = preloadable(() => import("./Palette").then((m) => m.Palette));
+const ShortcutsSheet = preloadable(() => import("./ShortcutsSheet").then((m) => m.ShortcutsSheet));
 
 export function PaletteHost() {
   const overlay = useOverlay();
@@ -21,6 +23,7 @@ export function PaletteHost() {
   const { mode, setMode } = useTheme();
   useCommands(themeCommands(mode, setMode), []);
 
+  useEffect(() => preloadWhenIdle(Palette, ShortcutsSheet), []);
   useEffect(() => {
     const offDefaults = registerCommands(defaultCommands());
     // Another shortcut pressed over the shortcuts sheet closes it first, so the command isn't hidden behind it.
@@ -43,7 +46,7 @@ export function PaletteHost() {
       </Boundary>
       {body === null ? null : (
         <Boundary part={overlay.kind === "palette" ? "the command palette" : "the shortcuts sheet"} overlay={{ onError: closeOverlay }}>
-          {body}
+          <Suspense fallback={null}>{body}</Suspense>
         </Boundary>
       )}
     </>

@@ -14,6 +14,7 @@ import { store } from "../store/hub_store.ts";
 import { request } from "../machine_roles/calls.ts";
 import { macMachine } from "../machine_roles/mac.ts";
 import { newKey, simPlace } from "../machine_roles/places.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export const OPS = ["mac_where", "mac_send"] as const;
 
@@ -39,7 +40,7 @@ function theMac(hub: Hub): { machineId: string; key: string | undefined } {
     throw new ToolError(
       "machine_offline",
       "No agents' Mac is online: none joined this hub, it's turned off, or it's waiting for its account to log in again after a restart.",
-      "do without the Mac and say so in your result; an admin connects one in Settings › Hub › Machines",
+      `do without the Mac and say so in your result; an admin connects one in ${settingsPath()} › Machines`,
     );
   }
   return { machineId, key: store(hub).machineGet(machineId)?.boxPubKey };

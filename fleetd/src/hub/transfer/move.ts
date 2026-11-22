@@ -37,6 +37,7 @@ import { vault } from "../vault/index.ts";
 import { CloudRefusal, CloudTransfer, CloudUnreached, type Fetch, type RunAnswer } from "./cloud.ts";
 import { boxKeyAt, exportHub } from "./export.ts";
 import { TransferError } from "./format.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export const MOVE_FILE = "hub-moved.json";
 const EXPORT_FILE = join("move", "export.tar");
@@ -603,7 +604,7 @@ export class Mover {
         if (m.state !== "updating") {
           set(id, "updating", `${m.name} runs an older fleetd that can't move by itself, so it is updating first.`);
           const started = updates(this.hub).start(undefined, false);
-          if (!("run" in started)) set(id, "updating", `${m.name} runs an older fleetd that can't move by itself. Update it (Settings › Hub › Machines › Updates); it moves once it runs the hub's fleetd.`);
+          if (!("run" in started)) set(id, "updating", `${m.name} runs an older fleetd that can't move by itself. Update it (${settingsPath("Machines", "Updates")}); it moves once it runs the hub's fleetd.`);
         }
         continue;
       }

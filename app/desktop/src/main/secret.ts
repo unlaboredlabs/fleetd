@@ -5,6 +5,7 @@ import { fromBase64, toBase64 } from "../shared/base64";
 import { SECRET_MAX_BYTES, type EnvVarSet, type McpValueSet, type ToolInput } from "../shared/contracts";
 import type { CallOutcome, HubError, SecretOutcome } from "../shared/hub";
 import type { ClaudeAccountRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, ProjectEnvRequest, SandboxKeyRequest, SecretRequest } from "../shared/ipc";
+import { settingsPath } from "../shared/settingsPages";
 
 
 const refused = (message: string, fix?: string): { ok: false; error: HubError } => ({
@@ -171,7 +172,7 @@ const sealEach = async (
   boxes: ClaudeAccountRequest["boxes"],
   value: string,
 ): Promise<{ ok: true; sealed: Array<{ machineId: string; sealed: string }> } | { ok: false; error: HubError }> => {
-  if (boxes.length === 0) return refused("No machine can take the key yet.", "Connect a computer in Settings › Hub › Machines, then save it again.");
+  if (boxes.length === 0) return refused("No machine can take the key yet.", `Connect a computer in ${settingsPath(false, "Machines")}, then save it again.`);
   const sealed: Array<{ machineId: string; sealed: string }> = [];
   for (const box of boxes) {
     const one = await seal(box.boxPubKey, value);

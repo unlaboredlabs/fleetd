@@ -6,7 +6,8 @@
 // skill_get; writes skill_set, skill_revert, skill_off and skill_delete. Every write's skills.changed reads both again.
 import { useLayoutEffect, useState } from "react";
 import type { ProjectRef, SkillSummary, SkillVersion } from "../../../shared/contracts";
-import { useToolQuery } from "../../src/data/react";
+import { settingsPath } from "../../../shared/settingsPages";
+import { useCloudTeam, useToolQuery } from "../../src/data/react";
 import { Button, Dialog, EmptyState, Field, Input, Markdown, Segmented, Switch, Text, Textarea, cx } from "../../ui";
 import { useHubRole } from "../admin/role";
 import { DiffBlock } from "../settings/DiffBlock";
@@ -33,6 +34,7 @@ type Mode = "read" | "history";
 type Echo = { ok: boolean; text: string } | null;
 
 function SkillView({ project, name }: { project: ProjectKey; name: string }) {
+  const cloud = useCloudTeam();
   const ref = refOf(project);
   const list = useToolQuery("skills_list", { projectRef: ref });
   const listed = list.data?.skills.find((x) => x.name === name && x.shadowedBy === undefined);
@@ -119,7 +121,13 @@ function SkillView({ project, name }: { project: ProjectKey; name: string }) {
             </div>
             {!own ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>
-                {listed.origin === "global" ? "Every bot gets this one; an owner or admin changes it in Settings › Hub." : "It is a file in this bot’s folder: change it there."}
+                {listed.origin === "global" ? (
+                  <>
+                    Every bot gets this one; an owner or admin changes it in {settingsPath(cloud)}.
+                  </>
+                ) : (
+                  "It is a file in this bot’s folder: change it there."
+                )}
               </Text>
             ) : listed.install ? (
               <Text as="p" size="xs" tone="quiet" className={s.aside}>

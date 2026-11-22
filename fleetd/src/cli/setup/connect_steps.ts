@@ -15,6 +15,7 @@ import { connectWith } from "./doctor.ts";
 import type { Checklist } from "./checklist.ts";
 import { callFor, isFailure } from "./steps.ts";
 import type { Ui } from "./wizard.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 const fromBase64 = (b64: string): Uint8Array | undefined => {
   const bytes = new Uint8Array(Buffer.from(b64, "base64"));
@@ -89,7 +90,7 @@ export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admi
   const endpoint = await ui.input(list, "Claude endpoint", ANTHROPIC_ENDPOINT, "", endpointProblem);
   const key = keyOf(await ui.secret(list, "Claude API key (hidden): "));
   if (key === undefined) {
-    list.skipped("hub API key", "none typed; paste one in Settings › Hub › Setup › Claude, or fleetd init --step claude");
+    list.skipped("hub API key", `none typed; paste one in ${settingsPath()} › Setup › Claude, or fleetd init --step claude`);
     return false;
   }
   list.start("Sealing the key to each machine");

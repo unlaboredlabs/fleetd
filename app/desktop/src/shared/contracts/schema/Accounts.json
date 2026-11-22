@@ -257,6 +257,12 @@
           "minLength": 16,
           "pattern": "^[A-Za-z0-9_-]+$",
           "type": "string"
+        },
+        "picked": {
+          "description": "The id of the team the person picked on the sign-in page, when they are in several (one of `teams`): the app opens it first.",
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
