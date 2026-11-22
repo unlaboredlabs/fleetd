@@ -127,10 +127,16 @@ export function changeTrailer(c: Change): string {
   return `${CHANGE_TRAILER}: ${c.changeId} (${c.taskId !== undefined ? `${c.taskId}, ` : ""}${c.workstreamId})`;
 }
 
-/** A squash message's body with the Changes' trailers last, in its own trailer block when it ends with one. */
-export function withTrailers(raw: string, changes: Change[]): string {
+/**
+ * A squash message's body with the Changes' trailers last, in its own trailer block when it ends with one, and before
+ * them the `fixes` lines it doesn't say yet (an issue's order's `Fixes #N`, hub/issues): GitHub closes the issue from the
+ * commit, which a PR landed in a batch needs, since GitHub shows it Closed, not Merged.
+ */
+export function withTrailers(raw: string, changes: Change[], fixes: string[] = []): string {
   const trailers = changes.map(changeTrailer);
-  const body = raw.replaceAll("\r\n", "\n").trim();
+  let body = raw.replaceAll("\r\n", "\n").trim();
+  const missing = fixes.filter((f, i) => fixes.indexOf(f) === i && !body.includes(f));
+  if (missing.length > 0) body = body === "" ? missing.join("\n") : `${body}\n\n${missing.join("\n")}`;
   const last = body.split("\n\n").at(-1) ?? "";
   const block =
     last !== "" &&
@@ -754,7 +760,7 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
   } catch (error) {
     return back({ kind: "failed", why: githubWhy(error) });
   }
-  const commitBody = withTrailers(memberLines(merging), merging.map((m) => m.change));
+  const commitBody = withTrailers(memberLines(merging), merging.map((m) => m.change), t.fixesOf(merging.map((m) => m.change)));
   // From the merge to its members' closes, an update waits for it before it restarts the hub.
   t.landings += 1;
   try {

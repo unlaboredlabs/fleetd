@@ -9296,6 +9296,11 @@
           "const": "train",
           "description": "The merge train's watch after a merge: a check it doesn't wait for failed on the base; `by` is \"hub:train\".",
           "type": "string"
+        },
+        {
+          "const": "issue",
+          "description": "A GitHub issue in one of the bot's repos that a person with write access labelled `fleetd`; `by` is\n\"github:<login>\", the labeller. Its text quotes the issue as untrusted input.",
+          "type": "string"
         }
       ],
       "x-open": true
@@ -18204,6 +18209,10 @@
           "description": "Turns its chat's tags on or off (a trial; off by default).",
           "type": "boolean"
         },
+        "issueOrders": {
+          "description": "Turns on or off whether a GitHub issue labelled `fleetd` in its repos opens an order (on by default). A person's\nalone.",
+          "type": "boolean"
+        },
         "computer": {
           "$ref": "#/$defs/ComputerPick",
           "description": "Its agents' computer from now on: one of `computers`, exactly."
@@ -18584,6 +18593,10 @@
         },
         "chatTags": {
           "description": "Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off.",
+          "type": "boolean"
+        },
+        "issueOrders": {
+          "description": "Whether a GitHub issue labelled `fleetd` in its repos opens an order (on unless a person turned it off), from the\nhub. Absent for a bot with no repo on GitHub, and from an older hub.",
           "type": "boolean"
         },
         "createdBy": {

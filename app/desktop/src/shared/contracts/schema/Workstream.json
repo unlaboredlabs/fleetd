@@ -70,6 +70,11 @@
           "const": "train",
           "description": "The merge train's watch after a merge: a check it doesn't wait for failed on the base; `by` is \"hub:train\".",
           "type": "string"
+        },
+        {
+          "const": "issue",
+          "description": "A GitHub issue in one of the bot's repos that a person with write access labelled `fleetd`; `by` is\n\"github:<login>\", the labeller. Its text quotes the issue as untrusted input.",
+          "type": "string"
         }
       ],
       "x-open": true

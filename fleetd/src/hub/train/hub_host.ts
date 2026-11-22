@@ -31,6 +31,9 @@ export type IntakePort = {
   submit(input: { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "train"; by: string }): Promise<{ workstreamId: string }> | { workstreamId: string };
 };
 
+/** `hub.peek("issues")`, issues as orders (hub/issues). */
+export type IssuesPort = { fixesFor(workstreamId: string, repo: string): string | undefined };
+
 /** `hub.peek("policy")`, the project policy file (T2256's integrations/policy). */
 export type PolicyPort = { get(r: ProjectRef): Promise<{ branchPrefix?: string }> };
 export type WorkPort = { watches(scope: { repoKey: string; base: string }): boolean };
@@ -79,6 +82,10 @@ export class HubHost implements TrainHost {
       warnHourly(this.policyUnread, this.hub.clock.now(), [key], (error as Error).message, `train: policy of ${key} not read for the branch prefix: ${(error as Error).message}`);
       return undefined;
     }
+  }
+
+  issueFixes(workstreamId: string, repo: string): string | undefined {
+    return this.hub.peek<IssuesPort>("issues")?.fixesFor(workstreamId, repo);
   }
 
   async openOrder(r: ProjectRef, text: string, requestId: string): Promise<string> {
