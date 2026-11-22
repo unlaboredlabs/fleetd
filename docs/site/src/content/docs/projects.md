@@ -944,7 +944,7 @@ connected, picking one of its models shows **Sign in with Google** right under t
 
 **Settings › Hub › Providers** (**Settings › Team › Providers** on a cloud team) is where providers are connected, one
 row each: Anthropic and Google, how each is connected and the models it offers. Opening Google's row lists each
-machine's sign-in and the bots holding a Gemini key.
+machine's sign-in, the team's Gemini API key and the bots holding a key of their own.
 
 ```text
 $ fleetd project profile gemini --model gemini-4-neon --effort high --key-file ~/.fleetd/human.key
@@ -962,7 +962,7 @@ It signs in one of two ways:
 | Mode | How |
 |---|---|
 | The machine's sign-in | Antigravity as it is signed in on that machine. Sign it in from the app: **Sign in with Google** on **Settings › Hub › Providers**' Google row or under a model picker (or a machine's own page, **Google Antigravity › Sign in…** under Agents). A machine already signed in shows its plan; otherwise the app shows a Google page to open on your device, then takes the code that page shows (the machine runs `agy acp --login`, installing `agy` first where it has none). fleetd never reads the sign-in. |
-| Endpoint and API key | A Gemini API key in the bot's [Vault](/docs/vault) as `GEMINI_API_KEY`, and `GOOGLE_GEMINI_BASE_URL` for an endpoint of its own. The bot's agents then run on the key, each in an Antigravity home of its own, so the machine's own `agy` keeps its sign-in and settings. |
+| Endpoint and API key | The team's Gemini API key: **Settings › Hub › Providers**, Google, **Gemini API key**, with an endpoint of its own if you use a gateway. The app seals it to each machine, as the hub's Claude key is, and it never shows again. A bot can have its own instead: `GEMINI_API_KEY` in its [Vault](/docs/vault), and `GOOGLE_GEMINI_BASE_URL` for its endpoint, which win over the team's for that bot. The team's key goes only to Google's endpoint or the one saved with it: a bot (or machine) that sets `GOOGLE_GEMINI_BASE_URL` needs a key of its own, else its agents run on the machine's sign-in. Agents on a key get it in their environment, masked in what they report. Agents on a key run each in an Antigravity home of its own, so the machine's own `agy` keeps its sign-in and settings. |
 
 What differs from Claude: a role's fenced tools (a lead's file edits, `git push --no-verify`) are denied when
 Antigravity asks to run them, and a lead's own tools (fleetd's, its allowed commands) run without asking in approval

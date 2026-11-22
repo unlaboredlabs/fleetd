@@ -185,19 +185,21 @@ const sealEach = async (
 /**
  * A Claude account's secret: the hub's API key (with its endpoint; no key keeps the saved one) or the person's own
  * `claude setup-token` token, sealed to every machine agents run on, then claude_hub_api_set or
- * claude_subscription_set. One line, no spaces: a value pasted with its line break or quotes is trimmed, anything
+ * claude_subscription_set; or the team's Gemini key (with its endpoint), then gemini_key_set. One line, no spaces: a value pasted with its line break or quotes is trimmed, anything
  * else refused here. The hub's answer has where it is sealed, by fingerprint, never the value.
  */
 export const submitClaudeAccount = async (
   request: ClaudeAccountRequest,
-  call: <T extends "claude_hub_api_set" | "claude_subscription_set">(tool: T, input: ToolInput<T>) => Promise<CallOutcome>,
+  call: <T extends "claude_hub_api_set" | "claude_subscription_set" | "gemini_key_set">(tool: T, input: ToolInput<T>) => Promise<CallOutcome>,
 ): Promise<CallOutcome> => {
-  const raw = request.account === "hub_api" ? request.key : request.token;
+  const raw = request.account === "mine" ? request.token : request.key;
   const value = raw?.trim().replace(/^["']|["']$/gu, "");
   if (value !== undefined && (value === "" || /\s/u.test(value) || value.includes("\0"))) {
     return request.account === "hub_api"
       ? refused("That isn't an API key: it has spaces or line breaks in it.", "Copy the key again from the Claude Console and paste only the key.")
-      : refused("That isn't a token: it has spaces or line breaks in it.", "Run claude setup-token again and paste only the line it prints, starting sk-ant-oat.");
+      : request.account === "gemini"
+        ? refused("That isn't an API key: it has spaces or line breaks in it.", "Copy the key again from Google AI Studio and paste only the key.")
+        : refused("That isn't a token: it has spaces or line breaks in it.", "Run claude setup-token again and paste only the line it prints, starting sk-ant-oat.");
   }
   if (request.account === "mine") {
     if (value === undefined) return refused("Paste the token first.", "Run claude setup-token and paste the line it prints.");
@@ -210,12 +212,16 @@ export const submitClaudeAccount = async (
   }
   const endpoint = request.endpoint === undefined ? {} : { endpoint: request.endpoint.replace(/\/+$/u, "") };
   if (endpoint.endpoint !== undefined && !/^https?:\/\/\S{1,500}$/u.test(endpoint.endpoint)) {
-    return refused("The endpoint isn't an http:// or https:// URL.", "Paste the gateway's base URL, such as https://gateway.example.com, or leave it empty for Anthropic's own.");
+    return refused(
+      "The endpoint isn't an http:// or https:// URL.",
+      `Paste the gateway's base URL, such as https://gateway.example.com, or leave it empty for ${request.account === "gemini" ? "Google" : "Anthropic"}'s own.`,
+    );
   }
-  if (value === undefined) return call("claude_hub_api_set", { sealed: [], ...endpoint });
+  const tool = request.account === "gemini" ? "gemini_key_set" : "claude_hub_api_set";
+  if (value === undefined) return call(tool, { sealed: [], ...endpoint });
   const sealed = await sealEach(request.boxes, value);
   if (!sealed.ok) return sealed;
-  return call("claude_hub_api_set", { sealed: sealed.sealed, ...endpoint });
+  return call(tool, { sealed: sealed.sealed, ...endpoint });
 };
 
 /**

@@ -2,7 +2,7 @@
 // key, sealed here to each machine's box key before it leaves the phone (as the desktop seals it on its own device),
 // and its endpoint, Anthropic's own prefilled; one on the tailnet says so while Tailscale isn't connected, with Connect.
 // In words the screen shows; pure, so it is tested on its own (the random one-time key comes from the screen).
-import type { ClaudeHubApi, Machine } from "../../desktop/src/shared/contracts";
+import type { ClaudeHubApi, GeminiKey, Machine } from "../../desktop/src/shared/contracts";
 import { fromBase64, toBase64, utf8Encode } from "./bytes";
 import { keyPairOf, seal } from "./seal";
 
@@ -36,4 +36,12 @@ export const keyWords = (api: ClaudeHubApi | undefined): { value: string; footer
   const on = api.sealedOn.map((s) => (s.machineId === "hosted" ? "hosted sandboxes" : s.machineId));
   const sealed = on.length === 0 ? "On no machine yet." : `Sealed on ${on.join(", ")}.`;
   return { value: api.lastTest?.ok === false ? "Failed" : "Set", footer: api.endpoint === undefined ? sealed : `${sealed} Through ${api.endpoint}.` };
+};
+
+/** The team's Gemini key's value and footer on Providers › Google, as keyWords: where it is sealed, through what. */
+export const geminiKeyWords = (key: GeminiKey | undefined): { value: string; footer?: string } => {
+  if (key === undefined) return { value: "Not Set" };
+  const on = key.sealedOn.map((s) => (s.machineId === "hosted" ? "fleetd's computers" : s.machineId));
+  const sealed = on.length === 0 ? "On no machine yet." : `Sealed on ${on.join(", ")}.`;
+  return { value: "Set", footer: key.endpoint === undefined ? sealed : `${sealed} Through ${key.endpoint}.` };
 };

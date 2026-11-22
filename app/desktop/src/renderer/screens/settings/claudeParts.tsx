@@ -52,7 +52,7 @@ export function useSave() {
   const cloud = useHub().cloud === true;
   const refetch = useRefetch();
   const test = useTest();
-  return async (request: ClaudeAccountRequest): Promise<{ ok: true; missing: string[]; tried: Tried | null } | { ok: false; problem: string }> => {
+  return async (request: Exclude<ClaudeAccountRequest, { account: "gemini" }>): Promise<{ ok: true; missing: string[]; tried: Tried | null } | { ok: false; problem: string }> => {
     if (cloud && request.boxes.length === 0 && (request.account === "mine" || request.key !== undefined)) return { ok: false, problem: CLOUD_NOT_READY };
     const out = await window.fleetd.secret.claudeAccount(hub, request).catch((e: unknown) => ({ ok: false as const, problem: errorText(e) }));
     if (!out.ok) return { ok: false, problem: "problem" in out ? out.problem : errorText(new CallError(out.error)) };

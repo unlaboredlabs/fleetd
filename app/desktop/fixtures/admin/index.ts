@@ -246,10 +246,19 @@ export default defineGroup({
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Hub group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
-    // Providers with Google connected: devbox signed in on a Google AI Pro plan, and storefront holding a Gemini key.
-    answerGoogle(hub(base("chat-empty"), "admin-google", "Sam's hub with Google connected: devbox signed in, and a Gemini key in storefront's Vault", sam, true), {
+    // Providers with Google connected: devbox signed in on a Google AI Pro plan, the team's Gemini key on devbox and
+    // buildbox through a gateway, and storefront holding a key of its own.
+    answerGoogle(hub(base("chat-empty"), "admin-google", "Sam's hub with Google connected: devbox signed in, the team's Gemini key, and storefront's own", sam, true), {
       machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }],
       keyIn: [{ machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" }],
+      teamKey: {
+        endpoint: "https://gemini-gw.devbox.example",
+        sealedOn: [
+          { machineId: "buildbox", fingerprint: "7c41aa02" },
+          { machineId: "devbox", fingerprint: "7c41aa02" },
+        ],
+        updatedAt: "2026-10-19T09:30:00.000Z",
+      },
     }),
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),
   ],

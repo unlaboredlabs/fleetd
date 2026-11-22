@@ -44,7 +44,7 @@ import type { NodeFrame } from "../wire.ts";
 import * as worktree from "../worktree/index.ts";
 import { gitFiles, hasFile, putFile, rank, readProjectFile } from "./files.ts";
 import { inspect, projectsRoot, scan } from "../repos/index.ts";
-import { accountSecrets, accountSettingsEnv, envFor, held, putOn } from "../actions/accounts.ts";
+import { accountSecrets, accountSettingsEnv, envFor, geminiVars, held, putOn } from "../actions/accounts.ts";
 import { privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
@@ -678,6 +678,10 @@ export class SessionService {
     }
     try {
       out.push(...onepasswordFallback(this.home, row.local.onepassword as string | undefined, out));
+    } catch {}
+    // The team's Gemini key, masked wherever it could show.
+    try {
+      out.push(...geminiVars(this.home).filter(([n]) => n === antigravity.KEY_ENV));
     } catch {}
     return out;
   }
@@ -1548,8 +1552,9 @@ export class SessionService {
     return [live, note];
   }
 
-  /** An Antigravity session's launch: agy (installed first when the machine has none), signed in as the machine's agy
-   * is or on the project's Gemini key, and the ACP spec its host drives it with (runner/host/acp.ts). */
+  /** An Antigravity session's launch: agy (installed first when the machine has none), on the project's Gemini key, else
+   * the team's (`gemini_key`) unless an endpoint the bot or machine set would get it, else signed in as the machine's agy
+   * is, and the ACP spec its host drives it with (runner/host/acp.ts). */
   async #antigravity(row: SessionRow, spec: claude.SessionSpec, mark: string): Promise<{ program: string; args: string[]; env: Env }> {
     let program: string;
     try {
@@ -1558,6 +1563,18 @@ export class SessionService {
       throw new Refusal("runner_unavailable", (error as Error).message);
     }
     const dir = join(this.home, "sessions", row.summary.sessionId);
+    // The team's key goes only to Google's own endpoint or the one its admins saved with it: never to an endpoint the
+    // bot's variables or the machine's environment set, which would hand the admins' key to a server of their choosing.
+    // A bot on an endpoint of its own needs a key of its own.
+    if (!spec.env[antigravity.KEY_ENV] && !spec.env[antigravity.ENDPOINT_ENV]) {
+      let team: [string, string][];
+      try {
+        team = geminiVars(this.home);
+      } catch (error) {
+        throw new Refusal("runner_unavailable", (error as Error).message);
+      }
+      for (const [k, v] of team) spec.env[k] = v;
+    }
     const auth = antigravity.authOf(spec.env);
     const acp = antigravity.spec({
       cwd: spec.cwd,

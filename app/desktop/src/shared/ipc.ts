@@ -241,7 +241,8 @@ const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), box
 /**
  * A Claude account's secret (Settings › Accounts › Claude, Settings › Hub › Setup › Claude): main seals it to every machine in `boxes`
  * and calls claude_hub_api_set (the hub's key, with its endpoint; no key keeps the saved one) or
- * claude_subscription_set (the person's own `claude setup-token` token). The hub gets the boxes, never the value.
+ * claude_subscription_set (the person's own `claude setup-token` token). The team's Gemini key (Settings › Hub ›
+ * Providers › Google) goes the same way to gemini_key_set. The hub gets the boxes, never the value.
  */
 export const ClaudeAccountRequest = z.discriminatedUnion("account", [
   z.strictObject({
@@ -251,6 +252,12 @@ export const ClaudeAccountRequest = z.discriminatedUnion("account", [
     boxes: Boxes,
   }),
   z.strictObject({ account: z.literal("mine"), token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes }),
+  z.strictObject({
+    account: z.literal("gemini"),
+    key: z.string().min(1).max(SECRET_MAX_BYTES).optional(),
+    endpoint: z.string().trim().min(1).max(500).optional(),
+    boxes: Boxes,
+  }),
 ]);
 export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
 

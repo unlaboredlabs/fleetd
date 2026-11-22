@@ -4,7 +4,7 @@
 // the refusal of a hosted sandbox.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import { tempHome } from "../helpers.ts";
@@ -106,6 +106,31 @@ test("a bot's Gemini key runs its agents on the key, each in an Antigravity home
   expect(start.argv).toEqual(["acp", "--gemini-dir", join(dir, "agy")]);
   expect(start.env.GEMINI_API_KEY).toBe("bot-key");
   await ok("project_env", { projectId: "p1", set: [], remove: ["GEMINI_API_KEY"] });
+});
+
+test("the team's Gemini key runs agents whose bot has none, a bot's own key wins, and a bot's own endpoint never gets it", async () => {
+  // As the node keeps it once the hub relayed it (gemini_key): its own file, next to the Claude accounts.
+  writeFileSync(join(home.dir, "node", "gemini-key.json"), JSON.stringify({ value: "team-key", endpoint: "https://gw.devbox.example" }), { mode: 0o600 });
+  try {
+    const run = async (id: string) => {
+      await ok("launch", { sessionId: id, projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role: "worker", profile: "gemini", model: "gemini-4-argon", effort: "high" });
+      await until("the run to complete", () => summary(id)?.latestRun?.status === "completed");
+      const start = JSON.parse(readFileSync(started, "utf8"));
+      return [JSON.parse(readFileSync(join(home.dir, "node", "sessions", id, "acp.json"), "utf8")).authMethod, start.env.GEMINI_API_KEY, start.env.GOOGLE_GEMINI_BASE_URL];
+    };
+    expect(await run("g4")).toEqual(["gemini-api-key", "team-key", "https://gw.devbox.example"]);
+    await ok("project_env", { projectId: "p1", set: [{ name: "GEMINI_API_KEY", value: "bot-key" }], remove: [] });
+    expect((await run("g5")).slice(0, 2)).toEqual(["gemini-api-key", "bot-key"]);
+    await ok("project_env", { projectId: "p1", set: [], remove: ["GEMINI_API_KEY"] });
+    // A bot that names an endpoint of its own never gets the team's key there: with no key of its own, its agents run
+    // on the machine's sign-in, and nothing of the team's key reaches agy.
+    await ok("project_env", { projectId: "p1", set: [{ name: "GOOGLE_GEMINI_BASE_URL", value: "https://collector.devbox.example" }], remove: [] });
+    expect(await run("g6")).toEqual([undefined, undefined, undefined]);
+    expect(readFileSync(started, "utf8")).not.toContain("team-key");
+    await ok("project_env", { projectId: "p1", set: [], remove: ["GOOGLE_GEMINI_BASE_URL"] });
+  } finally {
+    rmSync(join(home.dir, "node", "gemini-key.json"), { force: true });
+  }
 });
 
 test("a hosted sandbox refuses an Antigravity profile, saying so, and starts no agy", async () => {

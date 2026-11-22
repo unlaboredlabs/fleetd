@@ -1,17 +1,21 @@
 // Settings › Providers, for admins, as the desktop's Settings › Hub › Providers: what agents run on, a row per provider
 // (the desktop's shared/agentProviders.ts) with how it is connected and the models it offers under its name. Anthropic
 // opens the hub's Claude API key (Claude.tsx); Google opens its own (Google below): a sign-in on each machine agents run
-// on, and the bots whose Vault holds a Gemini key.
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet } from "react-native";
-import type { AntigravityStatusOutput, ClaudeAccountsGetOutput, ProfileModel } from "../../../desktop/src/shared/contracts";
+// on, the team's Gemini API key, and the bots whose Vault holds a key of their own, which wins there.
+import { getRandomBytes } from "expo-crypto";
+import { useState } from "react";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import type { AntigravityStatusOutput, ClaudeAccountsGetOutput, GeminiKey, ProfileModel } from "../../../desktop/src/shared/contracts";
+import { boxesOf, endpointOk, geminiKeyWords, keyOf as keyOfTyped, sealEach } from "../claude";
 import { googleConnected, googleWords, runsWords } from "../desktop";
 import { useHub, type SettingsProps } from "../hubContext";
 import { keyOf } from "../store";
-import { space, useTheme } from "../theme";
+import { shape, space, type, useTheme } from "../theme";
+import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { GoogleSignIn } from "./GoogleSignIn";
 import { machineName } from "./manage/model";
-import { useRead } from "./manage/parts";
+import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
 
 /** How many models a row names under its provider, then how many more: one line on a phone. */
 const MODELS_SHOWN = 1;
@@ -77,17 +81,101 @@ export function Google() {
       {google.machines.map((m) => (
         <GoogleSignIn key={m.machineId} machineId={m.machineId} name={machineName(state.machines, m.machineId, paired.cloud === true)} signedIn={m.signedIn} onSigned={google.reload} />
       ))}
-      <ListSection header="Gemini API Key" footer="A bot's agents on Google run on the GEMINI_API_KEY in its Vault, ahead of a sign-in.">
-        {keyIn.length === 0 ? (
-          <ListRow title="No bot has one yet" />
-        ) : (
-          keyIn.map((r) => <ListRow key={`${r.machineId}/${r.projectId}`} title={state.projects?.[keyOf(r)]?.title ?? r.projectId} />)
-        )}
-      </ListSection>
+      <GeminiKeySection teamKey={google.status?.teamKey} onSaved={google.reload} />
+      {keyIn.length === 0 ? null : (
+        <ListSection header="Bots with Their Own Key" footer="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the team's.">
+          {keyIn.map((r) => (
+            <ListRow key={`${r.machineId}/${r.projectId}`} title={state.projects?.[keyOf(r)]?.title ?? r.projectId} />
+          ))}
+        </ListSection>
+      )}
     </ScrollView>
+  );
+}
+
+/**
+ * The team's Gemini API key, as Providers › Anthropic has the hub's Claude key: a secure field, sealed here to each
+ * machine's box key before it leaves the phone (gemini_key_set), and its endpoint; Remove once it is set.
+ */
+function GeminiKeySection({ teamKey, onSaved }: { teamKey: GeminiKey | undefined; onSaved: () => void }) {
+  const t = useTheme();
+  const { session, state } = useHub();
+  const [key, setKey] = useState("");
+  const [endpoint, setEndpoint] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"save" | "remove" | null>(null);
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const shown = endpoint ?? teamKey?.endpoint ?? "";
+  const words = geminiKeyWords(teamKey);
+  const save = async () => {
+    const typed = key.trim() === "" ? null : keyOfTyped(key);
+    if (key.trim() !== "" && typed === null) return setProblem("That isn't an API key: it has spaces or line breaks in it.");
+    if (!endpointOk(shown)) return setProblem("The endpoint isn't an http:// or https:// URL.");
+    if (typed === null && teamKey === undefined) return setProblem("Paste the key from Google AI Studio.");
+    const boxes = boxesOf(state.machines);
+    if (typed !== null && boxes.length === 0) return setProblem("No machine takes secrets yet: add a machine first.");
+    setBusy("save");
+    setProblem(undefined);
+    const ep = shown.trim().replace(/\/+$/u, "");
+    const out = await session.call("gemini_key_set", { sealed: typed === null ? [] : sealEach(typed, boxes, getRandomBytes), ...(ep === "" ? {} : { endpoint: ep }) });
+    setBusy(null);
+    if (!out.ok) {
+      haptics.warning();
+      return setProblem(`Not saved: ${errorWords(out.error)}`);
+    }
+    haptics.success();
+    setKey("");
+    setEndpoint(null);
+    onSaved();
+  };
+  const remove = () =>
+    confirmDestructive({
+      title: "Remove the team's Gemini key?",
+      message: "Each machine forgets it. Agents on Google run on their bot's own key, else the machine's Google sign-in, from their next start.",
+      button: "Remove",
+      onConfirm: () => {
+        setBusy("remove");
+        void session.call("gemini_key_remove", {}).then((out) => {
+          setBusy(null);
+          if (!out.ok) setProblem(`Not removed: ${errorWords(out.error)}`);
+          onSaved();
+        });
+      },
+    });
+  const changed = key.trim() !== "" || shown.trim() !== (teamKey?.endpoint ?? "");
+  const field = (props: { value: string; onChangeText: (v: string) => void; placeholder: string; label: string; secure?: boolean }) => (
+    <View style={styles.field}>
+      <TextInput
+        value={props.value}
+        onChangeText={props.onChangeText}
+        placeholder={props.placeholder}
+        placeholderTextColor={t.tertiary}
+        {...(props.secure === true ? { secureTextEntry: true } : { keyboardType: "url" as const })}
+        textContentType="none"
+        autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
+        editable={busy === null}
+        accessibilityLabel={props.label}
+        selectionColor={t.accent}
+        style={[type.body, styles.input, { color: t.label }]}
+      />
+    </View>
+  );
+  return (
+    <>
+      <ListSection header="Gemini API Key" {...(words.footer === undefined ? {} : { footer: words.footer })}>
+        {field({ value: key, onChangeText: setKey, placeholder: teamKey === undefined ? "API Key" : "New API Key", label: "Gemini API key", secure: true })}
+        {field({ value: shown, onChangeText: setEndpoint, placeholder: "Endpoint (Google's own)", label: "Gemini endpoint" })}
+        <ListRow title={busy === "save" ? "Saving…" : "Save"} {...(busy === null && changed ? { onPress: () => void save() } : {})} chevron={false} />
+        {teamKey === undefined ? null : <ListRow title={busy === "remove" ? "Removing…" : "Remove"} destructive {...(busy === null ? { onPress: remove } : {})} chevron={false} />}
+      </ListSection>
+      <Problem text={problem} />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   loading: { marginTop: 64 },
+  field: { flexDirection: "row", alignItems: "center", minHeight: shape.row, paddingHorizontal: space.lg },
+  input: { flex: 1, paddingVertical: 11 },
 });

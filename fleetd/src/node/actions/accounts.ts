@@ -15,6 +15,7 @@ import type { ApiModel, ClaudeSecretSet } from "../../shared/sessions.ts";
 import { mkdirPrivate } from "../config.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { Masker } from "../mask.ts";
+import { ENDPOINT_ENV as GEMINI_ENDPOINT_ENV, KEY_ENV as GEMINI_KEY_ENV } from "../runner/antigravity_spec.ts";
 import { AUTO_MEMORY_OFF_ENV, AUTO_MEMORY_OFF_SETTINGS, FLEETD_ENV_SOURCE } from "../runner/claude.ts";
 import type { Fetcher } from "../sandbox/tailnet_fetch.ts";
 import type { Vars } from "../secrets/env.ts";
@@ -42,12 +43,14 @@ const path = (home: string, account: ClaudeAccount) => join(home, DIR, `${accoun
 const shown = (account: ClaudeAccount) => (account.kind === "hub" ? "the hub's API key" : `${account.personId}'s subscription`);
 const accountVar = (account: ClaudeAccount) => (account.kind === "hub" ? API_KEY_ENV : OAUTH_TOKEN_ENV);
 
-function read(home: string, account: ClaudeAccount): AccountFile | undefined {
+const read = (home: string, account: ClaudeAccount): AccountFile | undefined => readSecret(path(home, account), shown(account));
+
+function readSecret(file: string, what: string): AccountFile | undefined {
   let bytes: Buffer | undefined;
   try {
-    bytes = readIfThere(() => readFileSync(path(home, account)));
+    bytes = readIfThere(() => readFileSync(file));
   } catch (error) {
-    throw new Error(`cannot read ${shown(account)}: ${ioWhy(error)}`);
+    throw new Error(`cannot read ${what}: ${ioWhy(error)}`);
   }
   if (!bytes) return undefined;
   try {
@@ -55,7 +58,7 @@ function read(home: string, account: ClaudeAccount): AccountFile | undefined {
     if (typeof file.value !== "string") throw new Error();
     return file;
   } catch {
-    throw new Error(`${shown(account)}'s file does not parse`);
+    throw new Error(`${what}'s file does not parse`);
   } finally {
     bytes.fill(0);
   }
@@ -64,31 +67,35 @@ function read(home: string, account: ClaudeAccount): AccountFile | undefined {
 /** Saves the account's secret (a new value, or a new endpoint for the one held), or forgets it with no `set`. The
  * fingerprint of the value held afterwards; none once forgotten. */
 export function applyAccount(home: string, account: ClaudeAccount, set: ClaudeSecretSet | undefined, boxKey: NodeBoxKey | undefined): string | undefined {
-  const file = path(home, account);
+  if (set?.endpoint !== undefined && account.kind !== "hub") throw new Error("only the hub's API key takes an endpoint");
+  return applySecret(path(home, account), shown(account), set, boxKey);
+}
+
+/** applyAccount for any one secret kept in its own file (`file`), named `what` in errors: the team's Gemini key too. */
+export function applySecret(file: string, what: string, set: ClaudeSecretSet | undefined, boxKey: NodeBoxKey | undefined): string | undefined {
   if (!set) {
     try {
       removeIfThere(() => rmSync(file));
     } catch (error) {
-      throw new Error(`cannot remove ${shown(account)}: ${ioWhy(error)}`);
+      throw new Error(`cannot remove ${what}: ${ioWhy(error)}`);
     }
     return undefined;
   }
-  if (set.endpoint !== undefined && account.kind !== "hub") throw new Error("only the hub's API key takes an endpoint");
   let value: string;
   if (set.sealed === undefined) {
-    const held = read(home, account);
-    if (!held) throw new Error(`this machine holds no ${shown(account)}: seal it again`);
+    const held = readSecret(file, what);
+    if (!held) throw new Error(`this machine holds no ${what}: seal it again`);
     value = held.value;
   } else {
     if (!boxKey) throw new Error("this node takes no secrets: it has no box key");
     const plain = openB64(boxKey, set.sealed);
-    if (!plain) throw new Error(`${shown(account)} was not sealed to this machine's current box key: seal it to its boxPubKey again`);
+    if (!plain) throw new Error(`${what} was not sealed to this machine's current box key: seal it to its boxPubKey again`);
     const text = utf8(plain);
     plain.fill(0);
-    if (text === undefined) throw new Error(`${shown(account)} is not UTF-8 text`);
+    if (text === undefined) throw new Error(`${what} is not UTF-8 text`);
     value = text.trim();
-    if (!value) throw new Error(`${shown(account)} is empty`);
-    if (Buffer.byteLength(value) > VALUE_MAX || hasControl(value)) throw new Error(`${shown(account)} is not one line of at most 4 KiB`);
+    if (!value) throw new Error(`${what} is empty`);
+    if (Buffer.byteLength(value) > VALUE_MAX || hasControl(value)) throw new Error(`${what} is not one line of at most 4 KiB`);
   }
   const saved: AccountFile = { value, ...(set.endpoint !== undefined ? { endpoint: set.endpoint } : {}) };
   try {
@@ -100,7 +107,7 @@ export function applyAccount(home: string, account: ClaudeAccount, set: ClaudeSe
   try {
     writeAtomic(file, bytes);
   } catch (error) {
-    throw new Error(`cannot write ${shown(account)}: ${ioWhy(error)}`);
+    throw new Error(`cannot write ${what}: ${ioWhy(error)}`);
   } finally {
     bytes.fill(0);
   }
@@ -308,4 +315,20 @@ export function tried(exitedOk: boolean, stdout: string, stderr: string): void {
   const result = typeof answer?.result === "string" && answer.result.trim() ? answer.result : undefined;
   const said = [...(result ?? (stderr || stdout).trim())].slice(0, 500).join("");
   throw new Error(said || "claude failed and said nothing");
+}
+
+/** The team's Gemini API key, as the hub sealed it to this node (`gemini_key`): `<node home>/gemini-key.json`. Agents
+ * on Google whose bot has no GEMINI_API_KEY of its own run on it. */
+const GEMINI_FILE = "gemini-key.json";
+const GEMINI_SHOWN = "the team's Gemini API key";
+
+export const applyGeminiKey = (home: string, set: ClaudeSecretSet | undefined, boxKey: NodeBoxKey | undefined): string | undefined =>
+  applySecret(join(home, GEMINI_FILE), GEMINI_SHOWN, set, boxKey);
+
+/** The team's Gemini key as a session's variables (`GEMINI_API_KEY`, and `GOOGLE_GEMINI_BASE_URL` with an endpoint); none
+ * while this node holds none. */
+export function geminiVars(home: string): Vars {
+  const file = readSecret(join(home, GEMINI_FILE), GEMINI_SHOWN);
+  if (!file) return [];
+  return [[GEMINI_KEY_ENV, file.value], ...(file.endpoint !== undefined ? ([[GEMINI_ENDPOINT_ENV, file.endpoint]] as Vars) : [])];
 }

@@ -11,6 +11,7 @@ import { type AddArgs, type Found, type HubSide, type Progress, type Resolved, S
 import { isHuman, readable } from "../api/grants.ts";
 import { runners } from "../machine_roles/places.ts";
 import { vault } from "../vault/index.ts";
+import { accounts } from "../claude_accounts/tools.ts";
 import type { Hub } from "../api/hub.ts";
 import { eraseIn } from "../project_lead/erase.ts";
 import { adminEverywhereFix, allowsEverywhere } from "../api/refusals.ts";
@@ -232,7 +233,8 @@ export function register(tools: Registry): void {
     const keyIn = vault(hub)
       .store.select("kind = 'env' AND scope = 'project' AND env_name = ?", [GEMINI_KEY])
       .flatMap((row) => (row.machineId !== undefined && row.projectId !== undefined && readable(caller, row.machineId) ? [{ machineId: row.machineId, projectId: row.projectId }] : []));
-    return { machines: asked.filter((m) => m !== undefined), keyIn };
+    const teamKey = accounts(hub).geminiKey();
+    return { machines: asked.filter((m) => m !== undefined), keyIn, ...(teamKey ? { teamKey } : {}) };
   });
 }
 

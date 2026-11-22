@@ -10,7 +10,10 @@ import type { AntigravityStatusOutput, ProjectRef } from "../../../shared/contra
 import { googleConnected } from "../../../shared/agentProviders";
 import { FLEETD } from "../../../shared/provided";
 import { RUNNER_ID } from "../../../shared/providers";
-import { useCloudTeam, useData, useToolQuery } from "../../src/data/react";
+import { useCloudTeam, useData, useDataLayer, useHub, useToolQuery } from "../../src/data/react";
+import { CallError } from "../../src/data/queries";
+import { CLOUD_NOT_READY, ConfirmRemove, MissingOn, Problem, useMachines } from "./claudeParts";
+import { sealedLine } from "./claudeModel";
 import { settingsPath } from "../../../shared/settingsPages";
 import { Button, copyText, Field, Input, Text, Truncate } from "../../ui";
 import { MACHINE_WAIT_MS } from "../admin/machines";
@@ -264,5 +267,109 @@ export function GoogleConnect({ project, flush = false }: { project?: ProjectRef
         ) : undefined
       }
     />
+  );
+}
+
+/** Where a Gemini key comes from. */
+const AI_STUDIO_KEYS = "https://aistudio.google.com/apikey";
+
+/**
+ * The team's Gemini API key (gemini_key_set): sealed in the app's main process to each machine agents run on, never
+ * shown again. Agents on Google whose bot has no GEMINI_API_KEY of its own run on it. Add key… opens its form in place
+ * (the key, and an endpoint for a gateway of its own); once saved, where it is held, Change and Remove.
+ */
+export function GeminiKeyRow({ status }: { status: AntigravityStatusOutput | undefined }) {
+  const { hub } = useDataLayer();
+  const cloud = useHub().cloud === true;
+  const machines = useMachines();
+  const live = useLive();
+  const hubCall = useHubCall();
+  const refetch = useRefetch();
+  const key = status?.teamKey;
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [endpoint, setEndpoint] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const changed = value.trim() !== "" || (key !== undefined && endpoint.trim() !== (key.endpoint ?? ""));
+  const submit = () => {
+    if (cloud && machines.boxes.length === 0 && value.trim() !== "") return setProblem(CLOUD_NOT_READY);
+    setBusy(true);
+    setProblem(null);
+    const request = { account: "gemini" as const, ...(value.trim() === "" ? {} : { key: value }), ...(endpoint.trim() === "" ? {} : { endpoint: endpoint.trim() }), boxes: machines.boxes };
+    void window.fleetd.secret
+      .claudeAccount(hub, request)
+      .then(
+        (out) => (out.ok ? null : "problem" in out ? String(out.problem) : errorText(new CallError(out.error))),
+        (e: unknown) => errorText(e),
+      )
+      .then((failed) => {
+        setBusy(false);
+        if (failed !== null) return setProblem(failed);
+        setValue("");
+        setEditing(false);
+        refetch(["antigravity_status"]);
+      });
+  };
+  const open = editing;
+  return (
+    <SettingsRow
+      title="Gemini API key"
+      hint="The team's key, from Google AI Studio: agents on Google run on it unless their bot has a key or an endpoint of its own. It is sealed to each machine and never shown again; agents on Google get it in their environment, masked in what they report, and it goes to no endpoint but Google's or the one saved here."
+      line={key === undefined ? null : `${sealedLine(key.sealedOn)}${key.endpoint === undefined ? "" : ` Through ${key.endpoint}.`}`}
+      data={{ "data-row": "gemini-key" }}
+      control={
+        editing ? undefined : key === undefined ? (
+          <Button size="sm" disabled={!live} onClick={() => (setEndpoint(""), setEditing(true))}>
+            Add key…
+          </Button>
+        ) : (
+          <>
+            <Button size="sm" variant="ghost" disabled={!live} onClick={() => (setEndpoint(key.endpoint ?? ""), setEditing(true))}>
+              Change
+            </Button>
+            <Button size="sm" variant="ghost" disabled={!live} onClick={() => setRemoving(true)}>
+              Remove
+            </Button>
+          </>
+        )
+      }
+    >
+      {key === undefined ? null : <MissingOn sealedOn={key.sealedOn} machines={machines.ids} there="its agents on Google run on their bot's key or the sign-in there" />}
+      {open ? (
+        <>
+          <div className={s.inline}>
+            <Button size="sm" variant="ghost" onClick={() => void window.fleetd.openExternal(AI_STUDIO_KEYS)}>
+              Google AI Studio › API keys
+            </Button>
+          </div>
+          <Field label="API key" description={key === undefined ? undefined : "Leave it empty to keep the saved key."}>
+            <Input mono aria-label="Gemini API key" className={s.secretValue} data-secret="" value={value} disabled={busy} autoComplete="off" spellCheck={false} onChange={(e) => setValue(e.target.value)} />
+          </Field>
+          <Field label="Endpoint">
+            <Input mono aria-label="Gemini endpoint" value={endpoint} disabled={busy} autoComplete="off" spellCheck={false} placeholder="Google's own" onChange={(e) => setEndpoint(e.target.value)} />
+          </Field>
+          <div className={s.inline}>
+            <Button variant="primary" disabled={busy || !live || (key === undefined ? value.trim() === "" : !changed)} onClick={submit}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => (setEditing(false), setValue(""), setProblem(null))}>
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : null}
+      <Problem text={problem} />
+      {removing ? (
+        <ConfirmRemove
+          title="Remove the team's Gemini key?"
+          description="Each machine forgets it. Agents on Google run on their bot's own key, else the machine's Google sign-in, from their next start."
+          action="Remove"
+          onRemove={() => hubCall("gemini_key_remove", {}).then(() => refetch(["antigravity_status"]))}
+          onClose={() => setRemoving(false)}
+        />
+      ) : null}
+    </SettingsRow>
   );
 }

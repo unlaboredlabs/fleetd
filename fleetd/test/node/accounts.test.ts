@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { connect } from "node:net";
 import { join } from "node:path";
 import { HELPER, installDir, SDK_VERSION } from "../../src/node/actions/onepassword.ts";
-import { endpointSilent, tried } from "../../src/node/actions/accounts.ts";
+import { endpointSilent, geminiVars, held, tried } from "../../src/node/actions/accounts.ts";
 import { loadOrCreateBoxKey } from "../../src/node/identity.ts";
 import { useRunner } from "../../src/node/place/index.ts";
 import { NodeTailnet, setNodeTailnet } from "../../src/node/sandbox/tailnet.ts";
@@ -72,6 +72,26 @@ test("a person's subscription is saved sealed, in the Rust node's file, and forg
   expect(JSON.stringify(two.result)).not.toContain("more");
   // A person's token takes no endpoint.
   expect((await call("claude_account_secret", { account: alice, set: { endpoint: "https://gw.devbox.example" } })).result).toMatchObject({ err: { code: "invalid" } });
+});
+
+test("the team's Gemini key is kept sealed with its endpoint, in a file of its own, and forgotten", async () => {
+  const saved = await ok("gemini_key", { set: { sealed: sealed("gem-team\n"), endpoint: "https://gw.devbox.example" } });
+  expect(saved).toEqual({ kind: "gemini_key_saved", fingerprint: fingerprintOf("gem-team") });
+  const file = join(nodeHome, "gemini-key.json");
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ value: "gem-team", endpoint: "https://gw.devbox.example" });
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  expect(geminiVars(nodeHome)).toEqual([
+    ["GEMINI_API_KEY", "gem-team"],
+    ["GOOGLE_GEMINI_BASE_URL", "https://gw.devbox.example"],
+  ]);
+  // Never a Claude account: the runner's probe never picks it.
+  expect(held(nodeHome)?.kind).not.toBe("gemini");
+  const two = await call("gemini_key", { set: { sealed: sealed("gem\nmore") } });
+  expect(JSON.stringify(two.result)).toContain("one line");
+  expect(JSON.stringify(two.result)).not.toContain("more");
+  expect(await ok("gemini_key", {})).toEqual({ kind: "gemini_key_saved" });
+  expect(existsSync(file)).toBe(false);
+  expect(geminiVars(nodeHome)).toEqual([]);
 });
 
 test("an account's Test runs claude on that account alone, and masks what claude echoes", async () => {

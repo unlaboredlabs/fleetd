@@ -291,6 +291,22 @@ describe("a Claude account's key or token", () => {
     const keep = await run({ account: "hub_api", endpoint: "https://gateway.devbox.example/v2", boxes });
     expect(keep.sent).toEqual([{ tool: "claude_hub_api_set", input: { sealed: [], endpoint: "https://gateway.devbox.example/v2" } }]);
   });
+
+  it("seals the team's Gemini key to every machine for gemini_key_set, with its endpoint, never in the clear", async () => {
+    await sodium.ready;
+    const [pk, sk] = [bytes(rust.publicKey), bytes(rust.secretKey)];
+    const GEMINI = "AIzaSy-devbox-gemini_CCCC";
+    const boxes = [{ machineId: "devbox", boxPubKey: rust.publicKey }];
+    const set = await run({ account: "gemini", key: ` ${GEMINI}\n`, endpoint: "https://gw.devbox.example/", boxes });
+    expect(set.sent.map((s) => s.tool)).toEqual(["gemini_key_set"]);
+    expect(JSON.stringify(set.sent)).not.toContain(GEMINI);
+    const input = set.sent[0]?.input as { endpoint: string; sealed: Array<{ machineId: string; sealed: string }> };
+    expect(input.endpoint).toBe("https://gw.devbox.example");
+    expect(sodium.to_string(sodium.crypto_box_seal_open(bytes(input.sealed[0]?.sealed ?? ""), pk, sk))).toBe(GEMINI);
+    const bad = await run({ account: "gemini", key: "two words", boxes });
+    expect(bad.out).toMatchObject({ ok: false, error: { message: "That isn't an API key: it has spaces or line breaks in it.", fix: "Copy the key again from Google AI Studio and paste only the key." } });
+    expect(bad.sent).toEqual([]);
+  });
 });
 
 describe("a person's 1Password token", () => {

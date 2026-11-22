@@ -10,6 +10,7 @@ import { register as r6 } from "../chat/tools.ts";
 import { register as r7 } from "../chat_pins/tools.ts";
 import { register as r8 } from "../checklist/tools.ts";
 import { register as r9 } from "../claude_accounts/tools.ts";
+import { register as r9g } from "../claude_accounts/gemini.ts";
 import { register as r10 } from "../doctor/tools.ts";
 import { register as r11 } from "../executor/tools.ts";
 import { register as r12 } from "../github_app/tools.ts";
@@ -60,6 +61,7 @@ export function registerAll(tools: Registry): void {
   r7(tools); // hub/chat_pins
   r8(tools); // hub/checklist
   r9(tools); // hub/claude_accounts
+  r9g(tools); // hub/claude_accounts: the team's Gemini key
   r10(tools); // hub/doctor
   r11(tools); // hub/executor
   r12(tools); // hub/github_app

@@ -101,6 +101,8 @@ export const CAP_VAULT = "vault";
 /** Fills from `vault_fill` and a purchase claim's `sealedCard` (node_link.rs CAP_VAULT_FILL). */
 export const CAP_VAULT_FILL = "vault_fill";
 export const CAP_CLAUDE_MODELS = "claude_models";
+/** `gemini_key`: the node keeps the team's Gemini API key, which its agents on Google run on without a bot's own. */
+export const CAP_GEMINI_KEY = "gemini_key";
 export const CAP_PROFILE_NAMES = "profile_names";
 export const CAP_SYSTEM_PROMPT = "system_prompt";
 export const CAP_PROJECT_ERASE = "project_erase";

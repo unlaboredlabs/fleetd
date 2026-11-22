@@ -165,6 +165,8 @@ export const TOOLS = {
   machine_claude_login: { scope: "admin", module: "src/hub/machine_setup" },
   machine_antigravity_login: { scope: "admin", module: "src/hub/machine_setup" },
   antigravity_status: { scope: "read", module: "src/hub/machine_setup" },
+  gemini_key_set: { scope: "admin", module: "src/hub/claude_accounts" },
+  gemini_key_remove: { scope: "admin", module: "src/hub/claude_accounts" },
   artifacts_list: { scope: "read", module: "src/hub/artifacts" },
   artifact_get: { scope: "read", module: "src/hub/artifacts" },
   skills_list: { scope: "read", module: "src/hub/skills" },

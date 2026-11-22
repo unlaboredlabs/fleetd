@@ -42,6 +42,7 @@ export const nodeCan = (hub: Hub, m: string, cap: string) => nodePort(hub).can(m
 const CALLS: Record<string, [NodeOperation, number]> = {
   mcp_secrets: ["project", 15_000],
   claude_account_secret: ["project", 15_000],
+  gemini_key: ["project", 15_000],
   onepassword_token: ["project", 15_000],
   claude_account_test: ["read", 100_000],
   onepassword_test: ["read", 230_000],
