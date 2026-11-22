@@ -74,7 +74,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       try {
         return await http.call(method, path, c);
       } catch (e) {
-        const again = e instanceof ProviderError && (e.code === "sandbox_starting" || e.code === "boat_starting" || (e.status === 502 && /sandbox_restoring/.test(e.message)));
+        const again = e instanceof ProviderError && (e.code === "sandbox_starting" || e.code === "boat_starting" || (e.status === 502 && /sandbox_restoring/.test(e.said ?? "")));
         if (!again || now() + startingMs > until) throw e;
         await pause(startingMs, c.signal);
       }
@@ -136,7 +136,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal });
       const status = g.body?.snapshot?.status;
       if (status === "ready") return name;
-      if (status === "failed") throw new ProviderError("failed", `${NAME} couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
+      if (status === "failed") throw new ProviderError("failed", `${NAME} couldn't save the snapshot ${name}`, undefined, undefined, g.body?.snapshot?.error);
       if (now() > until) throw new ProviderError("unreachable", `${NAME} didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`);
       await pause(pollMs, signal);
     }
@@ -263,7 +263,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           const g = await http.call("GET", box(id), { signal: b.signal });
           const state = String(g.body?.sandbox?.state ?? "");
           if (READY.has(state)) break;
-          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `the build box at ${NAME} didn't start (${g.body?.sandbox?.error ?? state})`);
+          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `the build box at ${NAME} didn't start`, undefined, undefined, g.body?.sandbox?.error ?? state);
           if (now() > until) throw new ProviderError("failed", `the build box at ${NAME} didn't start within 10 minutes`);
           await pause(pollMs, b.signal);
         }
@@ -304,35 +304,35 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
 const seconds = (ms: number) => Math.min(2_592_000, Math.max(1, Math.ceil(ms / 1000)));
 
 /** boat's own error codes (docs.boat.dev/api/v1, "Error model" and "Limits and retries"). */
-function refine(a: Answer, words: string): { reason: "billing" | "limit" | "rate" | "failed"; message: string } | undefined {
+function refine(a: Answer, _words: string): { reason: "billing" | "limit" | "rate" | "failed"; message: string } | undefined {
   const code = String(a.body?.code ?? a.body?.error?.code ?? "");
   switch (code) {
     case "billing_required":
     case "credit_required":
-      return { reason: "billing", message: `${NAME} won't start sandboxes on this account until its billing is sorted out (${words}).` };
+      return { reason: "billing", message: `${NAME} won't start sandboxes on this account until its billing is sorted out.` };
     case "team_member_cap_reached":
     case "member_limit_reached":
-      return { reason: "limit", message: `the organization owner at ${NAME} has capped this member's use (${words}).` };
+      return { reason: "limit", message: `the organization owner at ${NAME} has capped this member's use.` };
     case "org_suspended":
-      return { reason: "billing", message: `${NAME} have suspended the organization's wallet (${words}).` };
+      return { reason: "billing", message: `${NAME} have suspended the organization's wallet.` };
     case "trial_machine_class_not_allowed":
     case "machine_class_plan_required":
-      return { reason: "billing", message: `the plan at ${NAME} for this account doesn't include that sandbox size (${words}).` };
+      return { reason: "billing", message: `the plan at ${NAME} for this account doesn't include that sandbox size.` };
     case "trial_compute_limit_reached":
-      return { reason: "billing", message: `the free trial hours at ${NAME} are used up (${words}).` };
+      return { reason: "billing", message: `the free trial hours at ${NAME} are used up.` };
     case "rate_limited": {
       // It names the window whose starts are used up (docs.boat.dev/limits): a minute's free by themselves within one,
       // so asked again then (`rate`); an hour's or a day's don't, and a retry each minute wouldn't help: the plan's
       // limit, with its wait.
       const b = a.body;
       const window = String(b?.window ?? b?.error?.window ?? b?.details?.window ?? b?.error?.details?.window ?? "");
-      if (window === "minute") return { reason: "rate", message: `the limit of ${NAME} on sandbox starts a minute is reached for now (${words}).` };
-      return { reason: "limit", message: `the limit of ${NAME} on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached (${words}).` };
+      if (window === "minute") return { reason: "rate", message: `the limit of ${NAME} on sandbox starts a minute is reached for now.` };
+      return { reason: "limit", message: `the limit of ${NAME} on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached.` };
     }
     case "limit_reached":
-      return { reason: "limit", message: `the limit of ${NAME} on sandboxes at once is reached (${words}).` };
+      return { reason: "limit", message: `the limit of ${NAME} on sandboxes at once is reached.` };
     case "snapshot_not_found":
-      return { reason: "failed", message: `${NAME} have no saved snapshot by that name (${words}): build it first.` };
+      return { reason: "failed", message: `${NAME} have no saved snapshot by that name: build it first.` };
   }
   return undefined;
 }

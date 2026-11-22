@@ -94,10 +94,21 @@ export function checkFix(_provider: KnownSandboxProvider, reason: string): strin
 /** The longest a provider's own words go into a line a person reads. */
 const WHY_MAX = 200;
 
-/** A provider's or box's own sentence as a person reads it: no status code in brackets, at most WHY_MAX characters. */
+/** The supplier's own name and domains, as a sentence relayed from a box or an older node may still carry them. */
+const SUPPLIER = /\b(?:[\w-]+\.)*boat\.dev\b|\bboat\b(?=\s)/giu;
+
+/**
+ * A provider's or box's own sentence as a person reads it: no status code in brackets, no address, the supplier never
+ * named (fleetd's computers instead, as every line names them), at most WHY_MAX characters.
+ */
 export function plainWhy(text: string): string {
   const t = text
     .replace(/\s*\((?:HTTP )?\d{3}\b[^)]*\)/g, "")
+    .replace(/\b(?:https?|wss?):\/\/\S+/giu, "")
+    .replace(/\s*\([^()]*\b(?:[\w-]+\.)*boat\.dev\b[^()]*\)/giu, "")
+    .replace(/\bboat(?:\.dev)?'s\b/giu, `${FLEETD_COMPUTERS}'`)
+    .replace(SUPPLIER, FLEETD_COMPUTERS)
+    .replace(/\(\s*\)/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.;:,]+$/, "");

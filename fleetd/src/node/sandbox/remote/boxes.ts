@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { Duplex } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
+import { DEFAULT_SIZE, GUEST_PORT, provider as makeProvider, notOffered, type ClientOptions, logWords, type Provider, type ProviderAuth, ProviderError, type ProviderId, PROVIDERS, type Reason, sameSize, type Saved, type Size } from "../../../sandbox/providers/index.ts";
 import { bakedName, hostedCheck, hostedDockerfile, templateName } from "../../../sandbox/providers/recipe.ts";
 import { noQuery } from "../../../sandbox/providers/shell.ts";
 import { Stages } from "../../../shared/stages.ts";
@@ -358,7 +358,7 @@ export class Boxes {
       })
       .catch((error: unknown) => {
         run.failed = true;
-        console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify((error as Error).message)}}`);
+        console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify(logWords(error))}}`);
         // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
         if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
         throw new ProviderError("failed", `the sandbox template at ${NAMES[p]} didn't build`);
@@ -383,7 +383,7 @@ export class Boxes {
         console.log(`${nowIso()} INFO an old hosted sandbox template is deleted {"provider":"${p}","name":"${t.name}"}`);
       }
     } catch (error) {
-      console.warn(`${nowIso()} WARN old hosted sandbox templates not deleted {"provider":"${p}","error":${JSON.stringify((error as Error).message)}}`);
+      console.warn(`${nowIso()} WARN old hosted sandbox templates not deleted {"provider":"${p}","error":${JSON.stringify(logWords(error))}}`);
     }
   }
 
@@ -559,7 +559,7 @@ export class Boxes {
       try {
         boxes = await this.client(p).list();
       } catch (error) {
-        console.warn(`${nowIso()} WARN hosted boxes not swept {"provider":"${p}","error":${JSON.stringify((error as Error).message)}}`);
+        console.warn(`${nowIso()} WARN hosted boxes not swept {"provider":"${p}","error":${JSON.stringify(logWords(error))}}`);
         continue;
       }
       const keep = known();

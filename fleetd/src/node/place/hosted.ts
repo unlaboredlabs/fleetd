@@ -27,7 +27,7 @@
 //   is reached as the box reaches the internet. Nothing of this machine's own network is relayed into a box.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CLAUDE_PATH, ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
+import { CLAUDE_PATH, logWords, ProviderError, type ProviderId, type Size } from "../../sandbox/providers/index.ts";
 import { Stages } from "../../shared/stages.ts";
 import { NAMES, troubleLine, troubleOf } from "../../shared/sandbox.ts";
 import { configDir, sessionFile } from "../runner/claude.ts";
@@ -468,7 +468,7 @@ export function teardown(session: string, dir: string, o: { takeBack?: boolean }
         await b.destroy(record);
       } catch (error) {
         // The reaper deletes it later, by its labels.
-        console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+        console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify(logWords(error))}}`);
       }
     }
     rmSync(recordFile(dir), { force: true });
@@ -629,7 +629,7 @@ async function tryOne(b: Boxes, file: string, k: KeptBox, session: string, last:
     await b.destroy(r);
   } catch (error) {
     // The reaper deletes it later, by its labels.
-    console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify((error as Error).message)}}`);
+    console.warn(`${nowIso()} WARN a hosted box wasn't deleted {"sessionId":"${session}","error":${JSON.stringify(logWords(error))}}`);
   }
   rmSync(file, { force: true });
 }
@@ -680,8 +680,7 @@ function keepAlive(b: Boxes, l: Live, inMs: number): void {
       report(error);
       if (live.get(session) !== l) return;
       l.failed++;
-      const message = (error as Error).message;
-      if (l.failed === 1) console.warn(`${nowIso()} WARN a hosted box couldn't be kept running {"sessionId":"${session}","provider":"${provider}","error":${JSON.stringify(message)}}`);
+      if (l.failed === 1) console.warn(`${nowIso()} WARN a hosted box couldn't be kept running {"sessionId":"${session}","provider":"${provider}","error":${JSON.stringify(logWords(error))}}`);
       const left = (l.record.aliveUntil ?? asked) - Date.now();
       if (left - KEEP_ALIVE.retryMs >= KEEP_ALIVE.endBeforeMs) return keepAlive(b, l, KEEP_ALIVE.retryMs);
       console.warn(`${nowIso()} WARN ending a hosted session before its box's time runs out {"sessionId":"${session}","failed":${l.failed}}`);
