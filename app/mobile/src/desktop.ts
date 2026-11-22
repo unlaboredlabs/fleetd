@@ -98,7 +98,7 @@ export { serves } from "../../desktop/src/shared/hub";
 export { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../desktop/src/shared/pairing";
 export { initials, tintIndex } from "../../desktop/src/shared/avatar";
 export { glyphOf, kindOf, mimeOfFile, TAKES, type FileGlyph } from "../../desktop/src/shared/files";
-export { PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";
+export { FIRST_PIECE_BYTES, PREVIEW_SIDE, readFile, readPreview, sendFile, type Read, type TransferCall, type Wait } from "../../desktop/src/shared/transfer";
 export { advanceRig, BODY, BOT_BODIES, REACH, BOT_COLORS, BOT_PAINT, BOT_SHAPES, botColorLabel, botShapeLabel, botStateOf, colorOf, shapeOf, CROP, DIMMED, drawnAt, frameOf, LARGE, listRest, moment, newRig, paintOf, random, setRigState, type BotColorName, type BotIn, type BotShapeName, type BotState, type Frame, type Rig } from "../../desktop/src/shared/bot";
 export { baseScale, clampPan, clampZoom, cropOf, MAX_ZOOM, zoomAbout } from "../../desktop/src/shared/crop";
 export * from "../../desktop/src/renderer/src/data/chat";

@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { serve, stop } from "../src/hub/http/index.ts";
 import { link, NodeCommandError } from "../src/hub/link/index.ts";
-import { closeReason } from "../src/shared/node_link.ts";
+import { closeReason, LINK_BULK_BYTES } from "../src/shared/node_link.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -57,7 +57,7 @@ test("a node on another protocol is told which side to update", async () => {
 test("an enroll token links once; the machine is online once its runner answers", async () => {
   const node = await linked("worker-1", { capabilities: ["browser", "session_host"], fingerprint: "fp1" });
   const welcome = await node.tag("welcome");
-  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once"] });
+  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once", "link_bulk"] });
   await until(() => types().includes("machine.online worker-1"));
   expect(links.can("worker-1", "browser")).toBe(true);
   expect(links.can("worker-1", "mac_tool")).toBe(false);
@@ -181,6 +181,35 @@ test("a link_deflate node gets compressed frames and its own compressed frames a
   expect(asked.binary).toBe(true);
   node.send({ t: "node_action_result", id: asked.id, ok: true, message: "m".repeat(300) });
   expect((await long).message).toBe("m".repeat(300));
+  node.close();
+  await node.closed;
+});
+
+test("a frame big enough to take seconds on a slow link is announced by a heartbeat with its length right before it", async () => {
+  const node = await linked("worker-bulk");
+  await until(() => types().includes("machine.online worker-bulk"));
+  const small = links.request("worker-bulk", { t: "node_action", action: "probe" });
+  const asked = await node.next((f) => f.t === "node_action");
+  node.send({ t: "node_action_result", id: asked.id, ok: true, message: "ok" });
+  await small;
+  const big = links.request("worker-bulk", { t: "node_action", action: "probe", padding: "p".repeat(LINK_BULK_BYTES) });
+  const bigAsked = await node.next((f) => f.t === "node_action" && f.id !== asked.id);
+  const at = node.frames.indexOf(bigAsked);
+  const { binary: _binary, ...sent } = bigAsked as Record<string, unknown>;
+  expect(node.frames[at - 1]).toMatchObject({ t: "hb", bulk: Buffer.byteLength(JSON.stringify(sent)) });
+  // Only the big one: the small request came with no heartbeat before it.
+  expect(node.frames.filter((f) => f.t === "hb" && "bulk" in f)).toHaveLength(1);
+  node.send({ t: "node_action_result", id: bigAsked.id, ok: true, message: "ok" });
+  await big;
+  // Counted in UTF-8 bytes: a frame of non-ASCII text under the bound in characters but over it on the wire is announced.
+  const wide = "é漢".repeat(LINK_BULK_BYTES / 4);
+  const multi = links.request("worker-bulk", { t: "node_action", action: "probe", padding: wide });
+  const multiAsked = await node.next((f) => f.t === "node_action" && f.id !== asked.id && f.id !== bigAsked.id);
+  const { binary: _b, ...multiSent } = multiAsked as Record<string, unknown>;
+  expect(JSON.stringify(multiSent).length).toBeLessThan(LINK_BULK_BYTES);
+  expect(node.frames[node.frames.indexOf(multiAsked) - 1]).toMatchObject({ t: "hb", bulk: Buffer.byteLength(JSON.stringify(multiSent)) });
+  node.send({ t: "node_action_result", id: multiAsked.id, ok: true, message: "ok" });
+  await multi;
   node.close();
   await node.closed;
 });

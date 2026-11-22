@@ -39,7 +39,7 @@ export const browserTransport =
       socket = new Socket(withFeatures(url, headers));
     } catch (error) {
       queueMicrotask(() => close(1006, error instanceof Error ? error.message : String(error)));
-      return { send: () => undefined, ping: () => undefined, close: () => close(1006, "closed by the app") };
+      return { send: () => undefined, ping: () => undefined, close: () => close(1006, "closed by the app"), wholeFrames: true };
     }
     socket.binaryType = "arraybuffer";
     socket.onopen = () => events.onOpen();
@@ -65,6 +65,8 @@ export const browserTransport =
         socket.close();
         close(1006, "closed by the app");
       },
+      // The page hears a frame only once it has all come.
+      wholeFrames: true,
     };
   };
 
@@ -145,10 +147,24 @@ export class WebHub {
     this.#client.reconnectNow();
   }
 
-  /** The tab came back into view: the live feed again, now. */
+  /** The tab came back into view: the live feed again, now, on a link that answers (a tab in the back, or a laptop
+   * that slept with it, may hold a dead one). */
   shown(on: boolean): void {
     this.#client.shown(on);
-    if (on) this.#client.refreshLive();
+    if (on) {
+      this.#client.refreshLive();
+      this.#client.check();
+    }
+  }
+
+  /** The window came to the front: a dead link is found now, not at the next steady ping. */
+  check(): void {
+    this.#client.check();
+  }
+
+  /** The computer slept (followBrowser saw the clock jump): the link is most likely half-open. */
+  woke(): void {
+    this.#client.woke();
   }
 
   /** The network came back, or the page came back from the back-forward cache: the link may be half-open. */

@@ -104,6 +104,19 @@ describe("webSocketTransport", () => {
     connection.close();
   });
 
+  it("hears the hub's answer to its own ping, with nothing else said", async () => {
+    let opened: (() => void) | undefined;
+    const open = new Promise<void>((resolve) => (opened = resolve));
+    const url = await listen(() => undefined);
+    const r = record();
+    const connection = webSocketTransport(url, { ...r.events, onOpen: () => opened?.() });
+    await open;
+    const before = r.heard();
+    connection.ping();
+    await expect.poll(() => r.heard()).toBeGreaterThan(before);
+    connection.close();
+  });
+
   it("dials a hub by name through the shared lookup", async () => {
     const url = await listen((socket) => socket.send("hello"));
     const r = record();

@@ -307,6 +307,8 @@ export class FixtureSource implements HubSource {
 
   probe(): void {}
 
+  check(): void {}
+
   // Retry now while waiting out a retry: the attempt starts and, with no hub behind a fixture, keeps running.
   reconnectNow(): void {
     const s = this.#state;

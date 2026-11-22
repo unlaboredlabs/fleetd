@@ -100,6 +100,29 @@ test("a launch runs its first message through the host, and the thread streams i
   expect(streamed).toContain("run");
 });
 
+test("a follow again with `since` gets only what changed from then; one without it, the whole window", async () => {
+  const snapshotOf = async (args: Record<string, unknown>) => {
+    frames.length = 0;
+    await ok("follow", { sessionId: "s1", ...args });
+    return (frames.find((f) => f.t === "thread_event") as Record<string, any>).event;
+  };
+  const whole = await snapshotOf({});
+  expect(whole.since).toBeUndefined();
+  expect(whole.messages.length).toBeGreaterThanOrEqual(4);
+  // From before every message: the same as the whole window, said to be from then.
+  const all = await snapshotOf({ since: "2000-01-01T00:00:00.000Z" });
+  expect(all).toMatchObject({ since: "2000-01-01T00:00:00.000Z" });
+  expect(all.messages).toEqual(whole.messages);
+  expect(all.items).toEqual(whole.items);
+  expect(all.runs).toEqual(whole.runs);
+  // From after them: nothing of the window but the summary, nothing running.
+  const none = await snapshotOf({ since: "2999-01-01T00:00:00.000Z" });
+  expect(none.messages).toEqual([]);
+  expect(none.items).toEqual([]);
+  expect(none.runs).toEqual([]);
+  expect(none.summary.sessionId).toBe("s1");
+});
+
 test("a prompt under full access is answered by the node; one under approval waits for the hub's answer", async () => {
   await ok("send", { sessionId: "s1", runId: "r3", text: "ask: may I" });
   await until("the auto-answered run", () => summary("s1")?.latestRun?.id === "r3" && summary("s1")?.latestRun?.status === "completed");

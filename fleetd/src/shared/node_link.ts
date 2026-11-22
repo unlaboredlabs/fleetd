@@ -39,6 +39,12 @@ export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: it
 export const HEARTBEAT_INTERVAL_SECS = 15;
 /** A link silent this long is offline. */
 export const HEARTBEAT_TIMEOUT_SECS = 45;
+/**
+ * A frame this big (as JSON) may take seconds on a slow link: 2 s at 256 kbit/s. The hub sends a heartbeat with `bulk`
+ * (its length) before one, so the node, which hears a frame only once it is whole, gives it the heartbeats' time to
+ * arrive instead of taking the wait for a dead link.
+ */
+export const LINK_BULK_BYTES = 64 * 1024;
 
 // What a node lists in its hello's `capabilities`: calls it understands beyond the protocol's base set.
 export const CAP_REPOS = "repos";
@@ -103,6 +109,10 @@ export const CAP_BUILD_BUN = "build_bun";
 /** What the hub lists in its welcome. */
 export const HUB_CAP_SESSION_ROUTE = "session_route";
 export const HUB_CAP_LINK_DEFLATE = "link_deflate";
+/** The hub sends a heartbeat with `bulk` before each frame of LINK_BULK_BYTES or more: the node may give a quiet link up
+ * at QUIET_DEAD (12 s). A hub or cloud that doesn't list it gets the heartbeats' bound (30 s), so a big frame it sends
+ * unannounced over a slow link never reads as a dead link. */
+export const HUB_CAP_LINK_BULK = "link_bulk";
 
 /** A node's first frame (`NodeHello`). */
 export type NodeHello = {
@@ -128,8 +138,9 @@ export type HubChallenge = { nonce: string };
  * none). */
 export type HubWelcome = { hubId: string; protocol: number; nonce?: string; capabilities?: string[]; machineId?: string };
 
-/** Both directions every 15 s; `load`, `steps` and `busy` are node -> hub only. */
-export type Heartbeat = { at: Timestamp; load?: NodeLoad; steps?: unknown[]; busy?: NodeBusy };
+/** Both directions every 15 s; `load`, `steps` and `busy` are node -> hub only, `bulk` hub -> node only, right before
+ * a frame of that many bytes (LINK_BULK_BYTES). */
+export type Heartbeat = { at: Timestamp; load?: NodeLoad; steps?: unknown[]; busy?: NodeBusy; bulk?: number };
 
 /** What keeps a machine busy, as its node counts it at each heartbeat. */
 export type NodeBusy = { threads: number; screens: number; uploads: number; hosted: number };

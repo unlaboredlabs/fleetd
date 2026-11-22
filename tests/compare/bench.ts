@@ -14,7 +14,7 @@
 // - sql: #1127's slow reads, through the tools: a hub whose database a fleet run filled with real events and time
 //   spans, multiplied to --events / --spans, then reopened alone; events_list (busiest project, paging back, small,
 //   small + hub-wide, none) and an order's time_spans / time_breakdown across 400 lead runs. Median of 9.
-// - weaknet: #1128's connect numbers through scripts/netem.py (300 ms RTT, 1 Mbit/s, 1.5% loss, 128 KB queue; and a
+// - weaknet: #1128's connect numbers through scripts/netem.ts (300 ms RTT, 1 Mbit/s, 1.5% loss, 128 KB queue; and a
 //   clean link): dial → 101 → ready → snapshot → the first call's answer, and bytes down, median of 5.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -274,7 +274,7 @@ const benches: Record<string, () => Promise<unknown>> = {
       const hubPort = Number(new URL(fleet.f.hubUrl).port);
       for (const [link, args] of Object.entries(links)) {
         const [listen, control] = [await freePort(), await freePort()];
-        const proxy = spawn("python3", ["-I", path.join(REPO, "scripts/netem.py"), "--listen", String(listen), "--target", String(hubPort), "--control", String(control), ...args], { stdio: "ignore" });
+        const proxy = spawn(process.execPath, [path.join(REPO, "scripts/netem.ts"), "--listen", String(listen), "--target", String(hubPort), "--control", String(control), ...args], { stdio: "ignore" });
         try {
           await waitPort(control);
           const rows: Array<Record<string, number>> = [];
@@ -327,7 +327,7 @@ const waitPort = async (port: number) => {
   throw new Error(`nothing listens on ${port}`);
 };
 
-/** One command to netem.py's control port; its JSON answer. */
+/** One command to netem.ts's control port; its JSON answer. */
 const netem = (port: number, command: string) =>
   new Promise<unknown>((resolve, reject) => {
     const c = net.connect(port, "127.0.0.1", () => c.write(`${command}\n`));

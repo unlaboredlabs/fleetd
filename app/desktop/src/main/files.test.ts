@@ -46,7 +46,7 @@ vi.mock("electron", () => ({
 }));
 
 const { copyImage, downloadFile, openFile, showDownloaded } = await import("./files");
-const { READ_PIECE_BYTES } = await import("../shared/transfer");
+const { FIRST_PIECE_BYTES, READ_PIECE_BYTES } = await import("../shared/transfer");
 
 const request = { projectRef: { machineId: "devbox", projectId: "ivy" }, attachmentId: "F7" };
 const dir = mkdtempSync(join(tmpdir(), "fleetd-files-test-"));
@@ -67,7 +67,7 @@ it("writes the file under a name of its type and opens it", async () => {
   };
   expect(await openFile(call, request, dir)).toEqual({ ok: true });
   // From its start, in pieces: a hub that sends no offset sent it whole.
-  expect(asked).toEqual([["attachment_get", { ...request, offset: 0, length: READ_PIECE_BYTES }]]);
+  expect(asked).toEqual([["attachment_get", { ...request, offset: 0, length: FIRST_PIECE_BYTES }]]);
   expect(opened).toHaveLength(1);
   const path = opened[0] ?? "";
   expect(basename(path)).toBe("run.command.txt");
@@ -104,7 +104,7 @@ it("downloads the hub's own bytes to the folder under the picture's name", async
   expect(out).toEqual({ ok: true, path: join(downloads, "pebble.png"), name: "pebble.png" });
   expect(readFileSync(join(downloads, "pebble.png")).equals(bytes)).toBe(true);
   // The file itself, from its start: no preview's side.
-  expect(asked).toEqual([["attachment_get", { ...request, offset: 0, length: READ_PIECE_BYTES }]]);
+  expect(asked).toEqual([["attachment_get", { ...request, offset: 0, length: FIRST_PIECE_BYTES }]]);
 });
 
 it("joins a picture the hub sends in pieces into the same bytes", async () => {
