@@ -685,6 +685,29 @@ test("a turn claude starts for a notice while idle is a run of its own", () => {
   expect(mapper.hasOpenRun()).toBe(false);
 });
 
+/** As T4888's turn ended on 2026-11-22: its Monitor ended within a second, while the model wrote the turn's last answer.
+ * No request of that turn carried the notice, so claude gives it in a turn of its own after the `result`: the run's end
+ * says so, where a notice a later request of the turn carried says nothing. */
+test("a run's end names the Monitors that ended after its last request", () => {
+  const mapper = new StreamMapper("s", none);
+  const ends: unknown[] = [];
+  const feed = (l: unknown) => {
+    for (const e of mapper.feed(line(l), now()).events) if (typeof e === "object" && "RunEnded" in e) ends.push(e.RunEnded);
+  };
+  const requesting = { type: "system", subtype: "status", status: "requesting", user_message_uuids: ["w"] };
+  const ended = (id: string) => ({ type: "system", subtype: "task_notification", task_id: `b-${id}`, tool_use_id: id, status: "completed", summary: "Monitor ended" });
+  const result = { type: "result", subtype: "success", is_error: false, result: "The Monitor wakes me.", user_message_uuid: "w" };
+  mapper.send("w", "Run the check.", "plain");
+  for (const l of [{ type: "command_lifecycle", command_uuid: "w", state: "started" }, requesting, ended("toolu_early"), requesting, ended("toolu_late"), result]) feed(l);
+  expect(ends).toEqual([{ run_id: "w", outcome: { Completed: { text: "The Monitor wakes me." } }, usage: null, untold_watches: ["toolu_late"] }]);
+  // claude's own turn for it asks the model with the notice: that turn's end has nothing untold.
+  feed({ type: "system", subtype: "status", status: "requesting" });
+  feed({ type: "assistant", parent_tool_use_id: null, message: { id: "m2", role: "assistant", content: [{ type: "text", text: "The check passed." }] } });
+  feed({ type: "result", subtype: "success", is_error: false, result: "The check passed.", num_turns: 1, origin: { kind: "task-notification" } });
+  expect(ends[1]).toMatchObject({ outcome: { Completed: { text: "The check passed." } } });
+  expect(ends[1]).not.toHaveProperty("untold_watches");
+});
+
 test("claude's tools arrive classified", () => {
   expect(toolClass("Read", { file_path: "/x/a.rs" })).toEqual({ type: "read", path: "/x/a.rs" });
   expect(toolClass("Glob", { pattern: "**/*.rs" })).toEqual({ type: "search", pattern: "**/*.rs" });

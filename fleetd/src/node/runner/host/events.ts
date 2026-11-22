@@ -47,7 +47,10 @@ export type RunnerEvent =
   | { RateLimit: RateLimit }
   | { Usage: { run_id: string; usage: RunUsage } }
   | { Spans: SpanWire[] }
-  | { RunEnded: { run_id: string; outcome: RunOutcome; usage: RunUsage | null } }
+  /** `untold_watches`: the background tasks (Monitors) that ended after the turn's last API request, so no request of
+   * it carried their notice: claude still holds it, and gives it in a turn of its own next. Absent when none, and from
+   * hosts older than it. */
+  | { RunEnded: { run_id: string; outcome: RunOutcome; usage: RunUsage | null; untold_watches?: string[] } }
   | { Exited: ExitInfo };
 
 export type { ItemKind };
