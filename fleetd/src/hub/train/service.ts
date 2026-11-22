@@ -62,6 +62,7 @@ import {
   CI_TIMED_OUT,
   CI_WATCHED,
   NEVER_RAN_WAIT_MS,
+  NO_CI_REQUEUED,
   PIPELINE_DEPTH,
   REMOVED_PROJECT,
   REVIEW_WAIT_MS,
@@ -1540,6 +1541,12 @@ export class Train {
     } catch (error) {
       return this.warnHourly([`train: check runs of ${change.changeId} not read`], ghMessage(error), `train: check runs of ${change.changeId} not read: ${ghMessage(error)}`);
     }
+    // Nothing reports because the repo has no CI at all (it timed out before the train knew): back in the queue,
+    // where it merges on its review alone (D642).
+    if (runs.length === 0 && (await this.withoutCi(change, base, true))) {
+      if (this.setReady(change, [])) await this.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, NO_CI_REQUEUED));
+      return;
+    }
     const fast = await this.fast(change.repo, base);
     let judged = checks(gated(runs, fast));
     if (judged.kind === "none" && runs.length > 0) judged = { kind: "green" };
@@ -1946,6 +1953,9 @@ export class Train {
             this.note(existing.changeId, resolved);
             this.records.endWait(existing.changeId, WAIT_BLOCKED);
           }
+          // Enqueued again after its CI timed out: its lead asks the train to try it again (CI fixed, or a repo found
+          // to have none). Its review stands: ready for the train, CI's clock starting over.
+          if (!result && existing.state === "ci_failed" && timedOut(existing)) this.setReady(existing, []);
           // Enqueued again after a merge GitHub refused by a rule: the rule or the PR has changed, so it is tried again.
           if (!result && existing.state === "ci_failed" && existing.lastError?.endsWith(RULE_HELD)) {
             const v = await this.gate.again(existing);
