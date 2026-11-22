@@ -34,6 +34,19 @@ const evalJson = async <T>(js: string): Promise<T | undefined> => {
 
 const last = ((await (await fetch(`http://127.0.0.1:${rig.control}/truth`)).json()) as Array<{ text: string }>).at(-1)!.text.trim().slice(-30);
 const USABLE = `JSON.stringify({ ok: !!document.querySelector('[aria-label="Message the lead"]') && document.body.innerText.includes(${JSON.stringify(last)}), at: performance.now(), url: location.href })`;
+/** The side panel filled (its tab row there), and where the composer sits: a panel that fills in place moves nothing. */
+const PANEL = `JSON.stringify({ ok: !!document.querySelector('[role="tablist"][aria-label="Panel"]'), at: performance.now(), box: (() => { const r = document.querySelector('[aria-label="Message the lead"]')?.getBoundingClientRect(); return r ? [Math.round(r.x), Math.round(r.width)] : null; })() })`;
+const boxAt = async () => (await evalJson<{ box: number[] | null }>(PANEL))?.box?.join(",") ?? "";
+/** ms from navigation start until the panel has filled, and whether the composer moved meanwhile. */
+const panelFilled = async (box: string, timeoutMs = 120_000) => {
+  const t0 = performance.now();
+  for (;;) {
+    const r = await evalJson<{ ok: boolean; at: number; box: number[] | null }>(PANEL);
+    if (r?.ok === true) return { at: r.at, moved: (r.box ?? []).join(",") !== box ? 1 : 0 };
+    if (performance.now() - t0 > timeoutMs) return { at: Number.NaN, moved: 0 };
+    await Bun.sleep(100);
+  }
+};
 
 /** Navigates (without waiting on load) and polls until the chat is usable; ms from navigation start. */
 const load = async (url: string, timeoutMs = 120_000) => {
@@ -49,6 +62,22 @@ const load = async (url: string, timeoutMs = 120_000) => {
   }
 };
 
+/** Waits until nothing has crossed the link for 2 s (90 s at most). */
+const quiet = async (n: { stats: () => { up: number; down: number } }) => {
+  const t0 = performance.now();
+  let last = -1;
+  let since = performance.now();
+  while (performance.now() - t0 < 90_000) {
+    const s = n.stats();
+    const now = s.up + s.down;
+    if (now !== last) {
+      last = now;
+      since = performance.now();
+    } else if (performance.now() - since >= 2000) return;
+    await Bun.sleep(250);
+  }
+};
+
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 const out: Record<string, unknown> = {};
 for (const profile of profiles) {
@@ -60,14 +89,19 @@ for (const profile of profiles) {
     // --path: a route to open (the measured chat's, `#/project/lab-a/p1`, on a rig with many bots).
     const url = `${n.url}/${flag("path") ?? ""}`;
     const cold = await load(url);
-    await Bun.sleep(3000);
+    const coldUsableDown = n.stats().down;
+    const coldBox = await boxAt();
+    const coldPanel = await panelFilled(coldBox);
+    // Until the link has gone quiet (what loads after the chat, on a slow link, takes a while): none of it may spill
+    // into the warm load.
+    await quiet(n);
     const coldBytes = n.stats();
     n.reset();
     await browser("open", "about:blank");
     const warm = await load(url);
-    await Bun.sleep(3000);
+    await quiet(n);
     const warmBytes = n.stats();
-    rows.push({ coldMs: Math.round(cold), coldDown: coldBytes.down, coldUp: coldBytes.up, coldConns: coldBytes.conns, warmMs: Math.round(warm), warmDown: warmBytes.down, warmUp: warmBytes.up });
+    rows.push({ coldPanelMs: Math.round(coldPanel.at), coldMoved: coldPanel.moved, coldMs: Math.round(cold), coldUsableDown, coldDown: coldBytes.down, coldUp: coldBytes.up, coldConns: coldBytes.conns, warmMs: Math.round(warm), warmDown: warmBytes.down, warmUp: warmBytes.up });
     await browser("open", "about:blank");
     await n.close();
   }
