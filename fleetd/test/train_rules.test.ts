@@ -429,6 +429,7 @@ test("a repo with no CI of any provider merges each PR alone on its review; once
   expect(merges(k)).toEqual(["merge #35", "merge #37"]);
   expect(k.host.told).toEqual([`PR #35 in ${REPO} merged on its review alone: the repo has no CI.`, `PR #37 in ${REPO} merged on its review alone: the repo has no CI.`]);
   // The repo gains a workflow, whose checks haven't started on the next PR: it waits for them, as in any repo.
+  k.commitMain({ ".github/workflows/ci.yml": "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n" });
   k.gh.noCi = false;
   k.gh.runs = () => [];
   k.pr(38, "fleetd/T38-z", { "z.md": "z\n" });
@@ -441,6 +442,34 @@ test("a repo with no CI of any provider merges each PR alone on its review; once
   await k.settle();
   expect(k.change(38).state).toBe("merged");
   expect(k.host.told.length).toBe(2);
+});
+
+test("GitHub's own Actions runs on main (Pages, Dependabot) are no CI: with no workflow file, a reviewed PR merges on review alone", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  const actions = { slug: "github-actions" };
+  k.gh.runs = () => [
+    { id: 7, name: "pages build and deployment", status: "completed", conclusion: "success", app: actions, html_url: `https://github.com/${REPO}/actions/runs/7/job/7` },
+    { id: 8, name: "Dependabot", status: "completed", conclusion: "success", app: actions, html_url: `https://github.com/${REPO}/actions/runs/8/job/8` },
+  ];
+  k.pr(46, "fleetd/T46-x", { "x.md": "x\n" });
+  await k.enqueue(46);
+  await k.settle();
+  expect(k.change(46).state).toBe("merged");
+  expect(k.host.told).toEqual([`PR #46 in ${REPO} merged on its review alone: the repo has no CI.`]);
+});
+
+test("a PR that adds the repo's first workflow waits for its own CI, and red goes back to its author: never merged on review alone", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  const actions = { slug: "github-actions" };
+  k.gh.runs = () => [{ id: 9, name: "ci", status: "completed", conclusion: "failure", app: actions, html_url: `https://github.com/${REPO}/actions/runs/9/job/9` }];
+  k.pr(47, "fleetd/T47-ci", { ".github/workflows/ci.yml": "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: false\n" });
+  await k.enqueue(47);
+  await k.settle();
+  expect(k.change(47).state).toBe("ci_failed");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
 });
 
 test("a provider that reported only on the default branch's recent commits is CI: the PR waits for it", async () => {

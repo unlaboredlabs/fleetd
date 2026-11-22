@@ -11,6 +11,8 @@ export type CheckRun = {
   started_at?: string | null;
   completed_at?: string | null;
   head_sha?: string | null;
+  /** The GitHub App that made it: `github-actions` for a workflow's job, Pages' and Dependabot's too. */
+  app?: { slug?: string | null } | null;
 };
 
 /** The workflow run that reported it, from its page (`.../actions/runs/<id>/job/<job>`). */
