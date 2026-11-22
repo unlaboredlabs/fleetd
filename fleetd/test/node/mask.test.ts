@@ -73,3 +73,42 @@ test("a multi-line value is masked line by line, a line cut at its = padding too
   // A short line isn't masked wherever it appears.
   expect(new Masker([["V", "line one is long\nshort"]]).text("a short word")).toBe("a short word");
 });
+
+test("text that only names a private key's header is left as it is, and isn't held back in live text", () => {
+  const m = new Masker();
+  for (const prose of [
+    "The parser expects -----BEGIN PRIVATE KEY----- but this file has an RSA header, so convert it",
+    "convert -----BEGIN RSA PRIVATE KEY----- to -----BEGIN PRIVATE KEY----- with openssl",
+    'grep -n "-----BEGIN PRIVATE KEY-----" src/keys.ts',
+  ])
+    expect(m.text(prose)).toBe(prose);
+  // Held only while what follows could still be a key's body: a word could, words with a space between can't.
+  expect(m.held("expects -----BEGIN PRIVATE KEY----- but")).toBe(31);
+  expect(m.held("expects -----BEGIN PRIVATE KEY----- but this")).toBe(0);
+  // A key's block cut short keeps the text after its body lines.
+  const body = Buffer.from("made-up filler, not a key ".repeat(3)).toString("base64").match(/.{1,64}/g)!.join("\n");
+  expect(m.text(`-----BEGIN PRIVATE KEY-----\n${body}\n(output cut)`)).toBe(`${HIDDEN}\n(output cut)`);
+});
+
+test("live text streamed in small pieces never cuts a secret in two, even where one line's end starts another", () => {
+  // A value whose lines repeat: one line's end is another line's start.
+  const filler = Buffer.from("not a real key, only filler for a test of fleetd's masking: ".repeat(7) + "end.").toString("base64").match(/.{1,64}/g)!;
+  const key = ["-----BEGIN PRIVATE KEY-----", ...filler, "-----END PRIVATE KEY-----"].join("\n");
+  const m = new Masker([["APP_KEY", key]]);
+  for (const line of filler.slice(1, -1)) {
+    for (const size of [1, 3, 5, 7]) {
+      const said = `a line ${line} there`;
+      // As the pump's flushDelta: hold back what could still be cut, mask what goes.
+      let out = "";
+      let buffered = "";
+      for (const piece of said.match(new RegExp(`[\\s\\S]{1,${size}}`, "g"))!) {
+        buffered += piece;
+        const keep = m.held(buffered);
+        out += m.text(buffered.slice(0, buffered.length - keep));
+        buffered = buffered.slice(buffered.length - keep);
+      }
+      out += m.text(buffered);
+      expect(out).toBe("a line ***APP_KEY*** there");
+    }
+  }
+});
