@@ -4,7 +4,7 @@
 // decisions a row away), Artifacts and one skill. With them the counts on the row. The PR tab you read (Overview or
 // Changes) is kept while the app runs, so reading diffs one PR after another stays on Changes; Changes, one screen,
 // one artifact and one skill ask the frame for its wide width.
-import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useData, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { selectLiveAgents } from "../../src/data/selectors";
@@ -19,8 +19,12 @@ import type { PrTab } from "../prs/PrDetail";
 import { PrsPane, usePrList } from "../prs/PrsPane";
 import { openCount } from "../prs/words";
 import { SessionView } from "../sessions/SessionView";
-import { SkillsTabView } from "../skills/SkillsPane";
+import { preloadable, preloadWhenIdle } from "../../ui";
 import type { CountProps, PaneProps } from "./tabs";
+
+// One skill opens only when someone picks it: its chunk loads once the app has painted, out of the first load.
+export const SkillView = preloadable(() => import("../skills/SkillsPane").then((m) => m.SkillsTabView));
+preloadWhenIdle(SkillView);
 
 const ALL = {} as const;
 
@@ -92,7 +96,11 @@ export function PinnedTab({ project }: PaneProps) {
 /** One of a project's skills, which asks for the frame's wide width. */
 export function SkillsTab({ project, view, onWide }: PaneProps): ReactNode {
   // ProjectPanel opens Agents for a skills view with none named.
-  return view.tab === "skills" && view.skill !== null ? <SkillsTabView project={project} skill={view.skill} onWide={onWide} /> : null;
+  return view.tab === "skills" && view.skill !== null ? (
+    <Suspense fallback={<div aria-busy="true" />}>
+      <SkillView project={project} skill={view.skill} onWide={onWide} />
+    </Suspense>
+  ) : null;
 }
 
 /** The chat's artifacts, or one of them, which asks for the frame's wide width. */

@@ -3,7 +3,7 @@ import type { DiffLine, PrFile, PrReviewEntry, PrRow } from "../../../shared/con
 import { DIFF_PAGE, diffRows, fileRowIndex, toPairs, type Page } from "./diffModel";
 import { listItems, openGroup, rowMeta, type Item } from "./listModel";
 import { resolvePr } from "./PrsPane";
-import { checksShort, checksWord, findingsWord, githubLine, movedWords, openCount, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
+import { checksShort, checksWord, findingsWord, githubLine, movedWords, openCount, reviewsShort, reviewsWord, sortChecks, stat, stateLine, when } from "./words";
 
 const row = (over: Partial<PrRow> = {}): PrRow => ({
   repo: "acme/storefront",
@@ -49,6 +49,55 @@ describe("where a PR is on its way to main", () => {
   });
 });
 
+describe("a PR its review holds", () => {
+  const writer = { role: "implementer", taskId: "T7", profile: "high" } as const;
+  const held = (review: Partial<PrRow["review"]>, over: Partial<PrRow> = {}) =>
+    row({ author: writer, queue: queue("reviewing", { position: 0 }), review: { state: "changes_requested", done: 0, needed: 1, ...review }, ...over });
+
+  it("says its review's blocking findings went back to its writer, never \"Reviews 0 of 1\"", () => {
+    const pr = held({ blocking: 2 });
+    expect(reviewsWord(pr)).toEqual({ text: "Changes requested · 2 findings, back with its writer", tone: "working" });
+    expect(stateLine(pr)).toEqual({
+      word: "changes requested",
+      sentence: "Changes requested: 2 findings, back with its writer. It merges once it passes review.",
+      tone: "working",
+    });
+    expect(reviewsWord(held({ blocking: 1 }))?.text).toBe("Changes requested · 1 finding, back with its writer");
+  });
+
+  it("keeps a list row and a card short beside their state word, and in line while its writer fixes it", () => {
+    const pr = held({ blocking: 2 });
+    expect(reviewsShort(pr)?.text).toBe("2 findings, back with its writer");
+    expect(rowMeta(pr)).toMatchObject({ state: { word: "changes requested" }, review: { text: "2 findings, back with its writer", tone: "working" } });
+    expect(openGroup(pr)).toBe("train");
+    // Out of review (sent back on a conflict), its state word says the conflict: the review says it in full.
+    expect(reviewsShort({ ...pr, queue: queue("needs_rebase") })?.text).toBe("Changes requested · 2 findings, back with its writer");
+  });
+
+  it("says people's reviews on GitHub hold it", () => {
+    const pr = held({ people: 1 });
+    expect(reviewsWord(pr)?.text).toBe("Changes requested · on GitHub, back with its writer");
+    expect(reviewsShort(pr)?.text).toBe("on GitHub, back with its writer");
+    expect(stateLine(pr).sentence).toBe("Changes requested: on GitHub, back with its writer. It merges once it passes review.");
+  });
+
+  it("needs a look when no agent has the findings", () => {
+    const pr = held({ blocking: 3 }, { author: { login: "sam" } });
+    expect(reviewsWord(pr)).toEqual({ text: "Changes requested · 3 findings, no agent on them", tone: "failed" });
+    expect(stateLine(pr)).toMatchObject({ word: "changes requested", tone: "failed" });
+    expect(openGroup(pr)).toBe("look");
+  });
+
+  it("reads as in review again once a new version is being reviewed, and approved once clean", () => {
+    const reviewing = row({ author: writer, queue: queue("reviewing", { position: 0 }), review: { state: "pending", done: 0, needed: 1 } });
+    expect(stateLine(reviewing).word).toBe("in review");
+    expect(reviewsWord(reviewing)?.text).toBe("Reviews 0 of 1");
+    const approved = row({ author: writer, queue: queue("ready", { position: 0 }), review: { state: "approved", done: 1, needed: 1 } });
+    expect(reviewsWord(approved)).toEqual({ text: "Approved", tone: "done" });
+    expect(rowMeta(approved).review).toBeUndefined();
+  });
+});
+
 describe("checks and reviews", () => {
   it("leads with what failed, then what runs", () => {
     expect(checksWord({ state: "failing", passed: 7, failed: 2, pending: 1 })).toEqual({ text: "2 checks failed", tone: "failed" });
@@ -65,10 +114,10 @@ describe("checks and reviews", () => {
   });
 
   it("counts reviews against what the work needs, and a review's open findings", () => {
-    expect(reviewsWord({ state: "pending", done: 1, needed: 3 })?.text).toBe("Reviews 1 of 3");
-    expect(reviewsWord({ state: "approved", done: 3, needed: 3 })?.text).toBe("Approved");
-    expect(reviewsWord({ state: "changes_requested", done: 2, needed: 3 })?.tone).toBe("failed");
-    expect(reviewsWord({ state: "none", done: 0, needed: 0 })).toBeUndefined();
+    expect(reviewsWord({ review: { state: "pending", done: 1, needed: 3 } })?.text).toBe("Reviews 1 of 3");
+    expect(reviewsWord({ review: { state: "approved", done: 3, needed: 3 } })?.text).toBe("Approved");
+    expect(reviewsWord({ review: { state: "changes_requested", done: 2, needed: 3 } })).toEqual({ text: "Changes requested", tone: "failed" });
+    expect(reviewsWord({ review: { state: "none", done: 0, needed: 0 } })).toBeUndefined();
     const review = (blocking?: number, nonBlocking?: number): PrReviewEntry => ({
       verdict: "changes_requested",
       text: "",

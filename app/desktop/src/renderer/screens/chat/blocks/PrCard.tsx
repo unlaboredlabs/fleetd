@@ -6,7 +6,7 @@ import type { PrBlock } from "../../../../shared/contracts";
 import { useToolQuery } from "../../../src/data/react";
 import { Button, Text, Truncate } from "../../../ui";
 import { openExternal } from "../../prs/PrDetail";
-import { checksWord, reviewsWord, stat, stateLine } from "../../prs/words";
+import { checksWord, reviewsShort, stat, stateLine } from "../../prs/words";
 import { navigate } from "../../shell/navigation";
 import { panelRoute } from "../../shell/routes";
 import { useBubbleActions } from "../actions";
@@ -18,7 +18,7 @@ export function PrCard({ pr, changes = false }: { pr: PrBlock; changes?: boolean
   const row = got.data?.pr;
   const state = row === undefined ? undefined : stateLine(row);
   const checks = row?.checks === undefined ? undefined : checksWord(row.checks);
-  const review = row === undefined ? undefined : reviewsWord(row.review);
+  const review = row === undefined ? undefined : reviewsShort(row);
   const title = row?.title ?? pr.title ?? `Pull request ${String(pr.number)}`;
   const size = got.data?.additions !== undefined && got.data.deletions !== undefined ? got.data : undefined;
   const project = actions?.project;

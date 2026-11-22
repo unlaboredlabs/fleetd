@@ -81,13 +81,15 @@ const queueSentence = (q: NonNullable<PrRow["queue"]>): string => {
 };
 
 /** Where the PR is on its way to main: GitHub's state, then fleetd's queue for an open PR. */
-export const stateLine = (pr: Pick<PrRow, "state" | "queue">): StateLine => {
+export const stateLine = (pr: Pick<PrRow, "state" | "queue"> & Partial<Pick<PrRow, "review" | "author">>): StateLine => {
   if (pr.state === "merged") return { word: "merged", sentence: "Merged.", tone: "done" };
   if (pr.state === "closed") return { word: "closed", sentence: "Closed without merging.", tone: "idle" };
   if (pr.state === "draft") return { word: "draft", sentence: "A draft, not ready for review yet.", tone: "quiet" };
   const q = pr.queue;
   const known = q === undefined ? undefined : QUEUE[q.state];
   if (q === undefined || known === undefined) return { word: "open", sentence: "Open. fleetd isn't merging it.", tone: "quiet" };
+  const held = q.state === "reviewing" && pr.review !== undefined ? heldHint({ ...pr, review: pr.review }) : undefined;
+  if (held !== undefined) return { word: "changes requested", sentence: `Changes requested: ${held.text}. It merges once it passes review.`, tone: held.tone };
   return { word: known.word, sentence: queueSentence(q), tone: known.tone };
 };
 
@@ -154,14 +156,35 @@ export const checkTook = (c: PrCheck): string | undefined => {
   return Number.isNaN(start) || Number.isNaN(end) || end < start ? undefined : duration(end - start);
 };
 
-/** "Reviews 1 of 3", "Approved"; undefined when nothing asks for a review. */
-export const reviewsWord = (r: PrRow["review"]): { readonly text: string; readonly tone: Tone } | undefined => {
-  if (r.state === "changes_requested") return { text: "Changes asked for", tone: "failed" };
+type ReviewOf = Pick<PrRow, "review"> & Partial<Pick<PrRow, "author" | "queue">>;
+
+/**
+ * What holds it in review and who has it, "1 finding, back with its writer", "on GitHub, no agent on them": its review's
+ * blocking findings or people's reviews on GitHub, which the hub sends to the task that opened it. Undefined when none.
+ */
+const heldHint = (pr: ReviewOf): { readonly text: string; readonly tone: Tone } | undefined => {
+  const { blocking = 0, people = 0 } = pr.review;
+  if (blocking + people < 1) return undefined;
+  const writer = pr.author?.taskId !== undefined;
+  const what = blocking > 0 ? `${blocking} finding${blocking === 1 ? "" : "s"}` : "on GitHub";
+  return { text: `${what}, ${writer ? "back with its writer" : "no agent on them"}`, tone: writer ? "working" : "failed" };
+};
+
+/** "Changes requested · 2 findings, back with its writer", "Reviews 1 of 3", "Approved"; undefined when nothing asks for a review. */
+export const reviewsWord = (pr: ReviewOf): { readonly text: string; readonly tone: Tone } | undefined => {
+  const r = pr.review;
+  const held = heldHint(pr);
+  if (held !== undefined) return { text: `Changes requested · ${held.text}`, tone: held.tone };
+  if (r.state === "changes_requested") return { text: "Changes requested", tone: "failed" };
   if (r.needed > 0 && r.done < r.needed) return { text: `Reviews ${r.done} of ${r.needed}`, tone: "working" };
   if (r.state === "approved" || (r.needed > 0 && r.done >= r.needed)) return { text: "Approved", tone: "done" };
   if (r.state === "pending") return { text: "Review asked for", tone: "working" };
   return undefined;
 };
+
+/** A list row's and a PR card's review, beside its state word: without "Changes requested" when that word says it. */
+export const reviewsShort = (pr: ReviewOf): { readonly text: string; readonly tone: Tone } | undefined =>
+  (pr.queue?.state === "reviewing" ? heldHint(pr) : undefined) ?? reviewsWord(pr);
 
 // The app's one word per role (ui ROLE_WORD), with the article a line starts with.
 const ROLE: Readonly<Partial<Record<string, string>>> = {

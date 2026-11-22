@@ -43,6 +43,8 @@ const SKILLS: SkillSummary[] = [
 // The markdown parser loads on first use; loaded here, a skill's text renders in the first pass.
 beforeAll(async () => {
   await import("../../ui/markdown/MarkdownBody");
+  // The panel's skill view loads on use, out of the app's first load: loaded here, it never suspends a test.
+  await (await import("../panel/panes")).SkillView.preload();
 });
 
 let host: HTMLDivElement;

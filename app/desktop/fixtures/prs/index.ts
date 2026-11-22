@@ -1,9 +1,9 @@
 // The PR screens' answers (pr_list, pr_get, pr_files, pr_diff) for the first project, storefront: open PRs in every
-// state on their way to main (in review, checks failed, next in line, a draft, one fleetd doesn't merge), and one
-// merged and one closed lately, with descriptions, checks, agent and people's reviews, files and real-looking diffs.
-// Added to the shared fixtures; the group's own cover no PRs, the reads still on their way, GitHub out of reach, a PR
-// that fails to load, GitHub's rate limit reached with the hub's last answer kept, and a PR of 240 files with a
-// 3,000-line file, paged as the hub pages them.
+// state on their way to main (its review asking for changes, checks failed, next in line, a draft, one fleetd doesn't
+// merge), and one merged and one closed lately, with descriptions, checks, agent and people's reviews, files and
+// real-looking diffs. Added to the shared fixtures; the group's own cover no PRs, the reads still on their way, GitHub
+// out of reach, a PR that fails to load, GitHub's rate limit reached with the hub's last answer kept, and a PR of 240
+// files with a 3,000-line file, paged as the hub pages them.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import { firstProject } from "../kit/chat.ts";
@@ -235,7 +235,8 @@ interface PrSpec {
   readonly files: readonly FileSpec[];
 }
 
-const implementer = (title: string): JsonObject => ({ role: "implementer", title, profile: "high", login: "acme-fleet" });
+// The hub names a PR's writer by its task, which its review's findings go back to.
+const implementer = (title: string, taskId: string): JsonObject => ({ role: "implementer", taskId, title, profile: "high", login: "acme-fleet" });
 const reviewer = (role = "reviewer"): JsonObject => ({ role, profile: "high" });
 
 const check = (f: Fixture, name: string, state: string, startedMin: number, tookS: number | undefined, conclusion?: string): JsonObject => ({
@@ -265,8 +266,9 @@ const specs = (f: Fixture): PrSpec[] => [
     branch: "fleetd/receipts-local-time",
     queue: { changeId: "X11", state: "reviewing", length: 2 },
     checks: { state: "pending", passed: 6, failed: 0, pending: 1 },
-    review: { state: "pending", done: 0, needed: 1 },
-    author: implementer("Date receipts in the shop's time zone"),
+    // Its review's blocking finding holds it, back with its writer.
+    review: { state: "changes_requested", done: 0, needed: 1, blocking: 1 },
+    author: implementer("Date receipts in the shop's time zone", "T41"),
     created: 95,
     updated: 6,
     body: [
@@ -333,7 +335,7 @@ const specs = (f: Fixture): PrSpec[] => [
     },
     checks: { state: "failing", passed: 6, failed: 1, pending: 0 },
     review: { state: "approved", done: 1, needed: 1 },
-    author: implementer("Keep cart money in cents"),
+    author: implementer("Keep cart money in cents", "T38"),
     created: 260,
     updated: 18,
     body: "Cart and tax maths move from floating-point dollars to integer cents, and tax rounds half to even.\n\nFixes the one-cent drift on carts with many lines.",
@@ -377,7 +379,7 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "X9", state: "ready", position: 0, length: 2 },
     checks: { state: "passing", passed: 6, failed: 0, pending: 0 },
     review: { state: "approved", done: 1, needed: 1 },
-    author: implementer("Warm the search index on deploy"),
+    author: implementer("Warm the search index on deploy", "T36"),
     created: 180,
     updated: 9,
     body: "The first searches after a deploy took seconds while the index loaded. It now loads in the background during the deploy.",
@@ -432,7 +434,7 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "X8", state: "merged", length: 0 },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "approved", done: 1, needed: 1 },
-    author: implementer("Format receipt dates with Intl"),
+    author: implementer("Format receipt dates with Intl", "T43"),
     created: 400,
     updated: 44,
     merged: 44,
@@ -456,7 +458,7 @@ const specs = (f: Fixture): PrSpec[] => [
     queue: { changeId: "X7", state: "abandoned", length: 0, reason: "The lead dropped it: the provider has no refunds API." },
     checks: { state: "passing", passed: 7, failed: 0, pending: 0 },
     review: { state: "pending", done: 0, needed: 1 },
-    author: implementer("Spike a second payment provider"),
+    author: implementer("Spike a second payment provider", "T44"),
     created: 2900,
     updated: 1700,
     body: "A spike: checkout can pay through a second provider behind a flag.",

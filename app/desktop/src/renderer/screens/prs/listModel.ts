@@ -2,7 +2,7 @@
 // merges now among them, and what a row says under its title. No React here, so the tests read it directly.
 import type { PrRow } from "../../../shared/contracts";
 import type { Moving } from "../train/model";
-import { checksShort, isOpen, reviewsWord, stateLine, type StateLine, type Tone } from "./words";
+import { checksShort, isOpen, reviewsShort, stateLine, type StateLine, type Tone } from "./words";
 
 export type Item =
   | { readonly kind: "group"; readonly label: string; readonly count: number }
@@ -89,7 +89,7 @@ export interface RowMeta {
 export const rowMeta = (row: PrRow): RowMeta => {
   const open = isOpen(row);
   // The state word already says the checks failed or are running for the merge; a closed PR's checks don't matter.
-  const review = reviewsWord(row.review);
+  const review = reviewsShort(row);
   const checksSaid = row.queue?.state === "ci_failed" || row.queue?.state === "ci";
   return {
     ref: `${row.repo.slice(row.repo.lastIndexOf("/") + 1)}#${row.number}`,
