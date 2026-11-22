@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { HubDb } from "../src/hub/store/db.ts";
 import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "../src/hub/train/host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
 import type { Change, ProjectRef } from "../src/shared/contracts.ts";
 
@@ -656,6 +656,11 @@ export class FakeHost implements TrainHost {
   spans: Parameters<TimeSink["span"]>[0][] = [];
   time(): TimeSink | undefined {
     return { span: (s) => void this.spans.push(s), close: () => {} };
+  }
+  /** The write tasks under way, with what each was asked. */
+  readonly underWay: WorkView[] = [];
+  tasksUnderWay(): WorkView[] {
+    return this.underWay;
   }
 }
 
