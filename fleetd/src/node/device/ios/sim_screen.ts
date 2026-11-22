@@ -277,7 +277,10 @@ export class SimScreen {
       this.step("takeover", { by }, true, undefined, 0);
     } else {
       rmSync(this.controlFile, { force: true });
-      if (before === "human") this.step("handback", { by }, true, undefined, 0);
+      if (before === "human") {
+        this.hands.release();
+        this.step("handback", { by }, true, undefined, 0);
+      }
     }
   }
 
