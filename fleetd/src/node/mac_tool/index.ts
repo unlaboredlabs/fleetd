@@ -22,11 +22,29 @@ import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
 
-/** The worktree a call comes from: the top of the git checkout its cwd is in. */
-function worktreeOf(cwd: string): string {
-  const out = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
-  if (out.exitCode !== 0) throw new ToolError("invalid", "fleetd mac runs in an agent's session, and this one has no worktree");
-  return out.stdout.toString().trim();
+/** The top of the git checkout `dir` is in. */
+function checkoutOf(dir: string): string | undefined {
+  const out = Bun.spawnSync(["git", "-C", dir, "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
+  return out.exitCode === 0 ? out.stdout.toString().trim() : undefined;
+}
+
+/**
+ * The worktree a call comes from: the top of the git checkout its cwd is in, else of the folder the node started the
+ * session in (`started`, its record's: a restarted task's is the worktree it took over), for a call from its scratch dir.
+ */
+export function worktreeOf(cwd: string, started: string | undefined): string {
+  const top = checkoutOf(cwd) ?? (started ? checkoutOf(started) : undefined);
+  if (top) return top;
+  throw new ToolError("invalid", `${cwd} is in no git checkout, and this session has no worktree of its own`, "Run mac from inside a worktree.");
+}
+
+/** The folder the node started a session in, from its record; undefined where the node has no sessions. */
+export function startedIn(node: Node, session: string): string | undefined {
+  try {
+    return node.area("sessions").sessionCwd(session);
+  } catch {
+    return undefined;
+  }
 }
 
 // Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
@@ -66,7 +84,7 @@ export function start(node: Node): void {
     try {
       if (!session) throw new ToolError("forbidden", "The agents' Mac is for agents' sessions, and this call comes from none.");
       const call = frame.call as unknown as MacCall;
-      return { result: { op: "mac", ...(await c.call(session, worktreeOf(String(frame.cwd ?? "/")), call)) } };
+      return { result: { op: "mac", ...(await c.call(session, worktreeOf(String(frame.cwd ?? "/"), startedIn(node, session)), call)) } };
     } catch (e) {
       return { error: e instanceof ToolError ? e.toJSON() : { code: "failed", message: (e as Error).message } };
     }
