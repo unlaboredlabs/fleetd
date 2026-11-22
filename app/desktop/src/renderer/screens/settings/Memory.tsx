@@ -24,7 +24,8 @@ import {
   type CapState,
   type MemoryLine,
 } from "./memoryModel";
-import { DangerButton, GroupNote, scopeName, SettingsSection, useProjects } from "./parts";
+import { RefreshedChanges } from "../chat/Remembered";
+import { DangerButton, GroupNote, scopeName, SettingsList, SettingsListRow, SettingsSection, useProjects } from "./parts";
 import m from "./Memory.module.css";
 import s from "./settings.module.css";
 
@@ -116,8 +117,10 @@ export function Memory({ project }: { project: Scope | null }) {
 }
 
 /**
- * You › Your memory: how you work, as the leads remember it. The agents of work you start read it; only you
- * edit it (memory_set at user scope writes the caller's own). On a hub with no people it is the hub's one user.md.
+ * You › Your memory: how you work, as the leads remember it. The agents of work you start read its core every turn and
+ * open a topic when its work comes up; only you edit it (memory_set at user scope writes the caller's own). On top, the
+ * last tidy's "Memory refreshed" line with its Undo; then the core; then each topic, a row that opens in place. On a
+ * hub with no people it is the hub's one user.md.
  */
 export function YourMemory() {
   const live = useLive();
@@ -125,6 +128,11 @@ export function YourMemory() {
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [query, setQuery] = useState("");
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const topics = read.data?.userFiles ?? [];
+  const tidy = read.data?.tidied;
+  const tidyRun = read.data?.tidyRun;
+  const searching = query.trim() !== "";
   if (!live) {
     return (
       <SettingsSection>
@@ -139,6 +147,16 @@ export function YourMemory() {
           <FileError read={read} />
         </SettingsSection>
       ) : null}
+      {tidyRun?.state === "failed" ? (
+        <SettingsSection bare data={{ "data-memory-tidy-failed": "" }}>
+          <GroupNote tone="danger">{`Your memory's last tidy didn't run: ${tidyRun.why ?? "it failed"}`}</GroupNote>
+        </SettingsSection>
+      ) : null}
+      {tidy?.memoryRefreshed ? (
+        <SettingsSection bare data={{ "data-memory-tidied": "" }}>
+          <RefreshedChanges project={tidy.projectRef} message={tidy} refreshed={tidy.memoryRefreshed} at={when(tidy.createdAt)} />
+        </SettingsSection>
+      ) : null}
       <MemoryGroup
         bare
         label="Your memory"
@@ -151,9 +169,49 @@ export function YourMemory() {
         reread={() => hubCall("memory_get", {}).then((now) => now.user.text)}
         deletable={false}
       />
+      {topics.length > 0 ? (
+        <SettingsSection title="Topics">
+          <SettingsList label="Topics">
+            {topics.map((f) => {
+              const topic = f.topic as string;
+              const open = opened.has(topic) || (searching && memoryLines(f).some((l) => l.kind === "entry" && lineMatches(l, query)));
+              return (
+                <SettingsListRow
+                  key={topic}
+                  name={topic}
+                  label={topic}
+                  expanded={open}
+                  open={{ onClick: () => setOpened(toggled(opened, topic)) }}
+                  data={{ "data-memory-topic": topic }}
+                >
+                  {open ? (
+                    <MemoryGroup
+                      bare
+                      label={topic}
+                      help=""
+                      name={`${topic}.md`}
+                      file={f}
+                      query={query}
+                      onSave={(text) => hubCall("memory_set", { scope: "user", topic, text }).then(() => refetch(["memory_get"]))}
+                      reread={() => hubCall("memory_get", {}).then((now) => now.userFiles?.find((u) => u.topic === topic)?.text ?? "")}
+                      deletable
+                    />
+                  ) : null}
+                </SettingsListRow>
+              );
+            })}
+          </SettingsList>
+        </SettingsSection>
+      ) : null}
     </>
   );
 }
+
+const toggled = (set: ReadonlySet<string>, key: string): ReadonlySet<string> => {
+  const next = new Set(set);
+  if (!next.delete(key)) next.add(key);
+  return next;
+};
 
 function FileError({ read }: { read: { isLoadingError: boolean; error: unknown; refetch: () => unknown } }) {
   return (
@@ -230,7 +288,8 @@ function MemoryGroup(props: {
   const shown = searching ? lines.filter((l) => l.kind === "entry" && lineMatches(l, props.query)) : lines;
 
   // The project's cap is checked with this file's new text in place of its old.
-  const capOf = (next: string): CapState[] => [
+  // A person's own memory is never refused for size (a tidy trims it), so its cap never blocks a save.
+  const capOf = (next: string): CapState[] => file?.scope === "user" ? [] : [
     capState(next, file?.cap ?? 0),
     ...(props.project ? [projectCapState(props.project.files, { name, text: next }, props.project.cap)] : []),
   ];
@@ -496,7 +555,7 @@ function FileEditor(props: {
   const dirty = draft.text !== draft.from;
   const cap = capState(draft.text, file?.cap ?? 0);
   const total = props.project && file ? projectCapState(props.project.files, { name: fileName(file), text: draft.text }, props.project.cap) : null;
-  const over = cap.over || (total?.over ?? false);
+  const over = file?.scope !== "user" && (cap.over || (total?.over ?? false));
   const name = file ? fileName(file) : "";
 
   const run = (work: () => Promise<void>, done: string) => {

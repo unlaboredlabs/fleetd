@@ -13244,7 +13244,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "A project's topic file; absent for `user.md` and `MEMORY.md`."
+          "description": "A topic file; absent for a core (`user.md`, `MEMORY.md`)."
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -13295,12 +13295,27 @@
           "minimum": 0,
           "type": "integer"
         },
+        "tidied": {
+          "$ref": "#/$defs/ChatMessage",
+          "description": "The last tidy of your own memory: its \"Memory refreshed\" line, which memory_undo takes back. In a chat only when\nyou have a bot of your own; else only here."
+        },
+        "tidyRun": {
+          "$ref": "#/$defs/MemoryRefreshRun",
+          "description": "How the last tidy of your own memory went, and why when it failed or was skipped."
+        },
         "truncated": {
           "type": "boolean"
         },
         "user": {
           "$ref": "#/$defs/MemoryFile",
-          "description": "Your own memory: how you work, read by the agents of work you start and by the leads you write to. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
+          "description": "Your own memory's core: how you work, read by the agents of work you start and by the leads you write to. Empty for a key with no\nperson. The one shared user.md on a hub from before people."
+        },
+        "userFiles": {
+          "description": "Your own memory's topic files, by name.",
+          "items": {
+            "$ref": "#/$defs/MemoryFile"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -13613,7 +13628,7 @@
         },
         "topic": {
           "$ref": "#/$defs/MemoryTopic",
-          "description": "Project scope: a topic file; absent, MEMORY.md."
+          "description": "A topic file; absent, the core (user.md, or with scope project MEMORY.md)."
         }
       },
       "required": [
@@ -19177,7 +19192,7 @@
         },
         "replaced": {
           "description": "The whole entry it replaced, which Undo puts back.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
@@ -19187,7 +19202,7 @@
         },
         "text": {
           "description": "The entry written; with `forgotten`, the whole entry removed.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"

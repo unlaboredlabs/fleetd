@@ -1,6 +1,7 @@
 // The lead's `remember`, `forget` and `memory_read`, scoped to the caller's project by its session.
 // User scope is a person's own memory: the one whose message the turn answers
-// (a project's owner), and refused when that is nobody. A nightly refresh's changes are kept for its one line at the end.
+// (a project's owner), and refused when that is nobody; a tidy's, the person it tidies. A nightly refresh's or tidy's
+// changes are kept for its one line at the end.
 import type { MemoryScope, PersonId, ProjectRef, RememberedItem } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
@@ -10,8 +11,9 @@ import { runHuman } from "../leads/requested.ts";
 import { type LeadCall, type LeadCaller, leadCalls } from "../leads/seams.ts";
 import { events } from "../store/events.ts";
 import { isoMs, nowMs } from "../store/time.ts";
-import { type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, type You, youOf } from "./index.ts";
+import { FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, Memory, nameOf, projectTarget, type RememberCall, userTarget, type You, youOf } from "./index.ts";
 import { record, refreshYou } from "./refresh_store.ts";
+import { recordTidy } from "./tidy_store.ts";
 
 export const OPS = ["remember", "forget", "memory_read"] as const;
 
@@ -23,14 +25,22 @@ const invalid = (why: string) => new ToolError("invalid", `Invalid ${why}.`);
 
 function scopeOf(call: LeadCall): MemoryScope {
   if (call.scope !== "user" && call.scope !== "project") throw invalid(`${call.op} call: scope is user or project`);
-  if (call.scope === "user" && call.topic !== undefined) throw invalid(`${call.op} call: user.md has no topics; leave topic out with scope user`);
-  if (call.topic !== undefined && (typeof call.topic !== "string" || !isTopic(call.topic))) {
-    throw invalid(`${call.op} call: topic is a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory`);
-  }
+  topicOk(call.op, call.scope, call.topic);
   return call.scope;
 }
 
-const entryOk = (s: unknown): s is string => typeof s === "string" && s.length >= 1 && s.length <= 1000 && !/[\r\n]/.test(s);
+/** A topic, when the call names one: a slug, other than `memory`, and in user scope other than `user` (its core). */
+function topicOk(op: string, scope: MemoryScope, topic: unknown): void {
+  if (topic === undefined) return;
+  if (typeof topic !== "string" || !isTopic(topic)) throw invalid(`${op} call: topic is a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory`);
+  if (scope === "user" && topic === "user") throw invalid(`${op} call: user.md is the core of user memory; name the topic something else`);
+}
+
+const lineOf = (max: number) => (s: unknown): s is string => typeof s === "string" && s.length >= 1 && s.length <= max && !/[\r\n]/.test(s);
+/** Words quoted from an entry (`replaces`, `entry`): enough to match one. */
+const entryOk = lineOf(1000);
+/** An entry's own text: one line, as long as a file may be (no cap per entry). */
+const textOk = lineOf(FILE_CAP_MAX);
 
 /** A lead's `remember` or `forget` in user scope: that of the person whose message the turn answers. */
 export function youForTurn(hub: Hub, r: ProjectRef, now: number): You {
@@ -43,6 +53,7 @@ export function youForTurn(hub: Hub, r: ProjectRef, now: number): You {
 function whose(hub: Hub, caller: LeadCaller, scope: MemoryScope): PersonId | undefined {
   if (scope === "project") return undefined;
   const r = caller.projectRef;
+  if (caller.agent.kind === "memory_refresh" && caller.agent.person !== undefined) return caller.agent.person;
   const refresh = caller.agent.kind === "memory_refresh";
   const you = refresh ? refreshYou(hub.db, r) : youForTurn(hub, r, nowMs(hub.clock));
   if (you.kind === "person") return you.person;
@@ -58,10 +69,10 @@ function whose(hub: Hub, caller: LeadCaller, scope: MemoryScope): PersonId | und
 
 export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   const r = caller.projectRef;
-  const memory = Memory.of(hub);
+  const memory = Memory.of(hub, caller.agent.kind === "memory_refresh" ? caller.agent.person : undefined);
   if (call.op === "remember") {
     const scope = scopeOf(call);
-    if (!entryOk(call.text)) throw invalid("remember call: text is one line of 1 to 1000 characters");
+    if (!textOk(call.text)) throw invalid(`remember call: text is one line of 1 to ${FILE_CAP_MAX} characters`);
     if (call.replaces !== undefined && !entryOk(call.replaces)) throw invalid("remember call: replaces is one line of 1 to 1000 characters");
     const remember: RememberCall = {
       scope,
@@ -96,14 +107,16 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
     };
   }
   if (call.op === "memory_read") {
-    if (typeof call.topic !== "string" || !isTopic(call.topic)) {
-      throw invalid("memory_read call: topic is a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory");
-    }
-    const text = memory.read(projectTarget(r, call.topic));
+    const scope = call.scope === undefined ? "project" : scopeOf(call);
+    if (typeof call.topic !== "string") throw invalid("memory_read call: topic is a lowercase slug, [a-z0-9][a-z0-9-]{0,47}, other than memory");
+    topicOk(call.op, scope, call.topic);
+    const t = scope === "user" ? userTarget(whose(hub, caller, scope), call.topic) : projectTarget(r, call.topic);
+    const text = memory.read(t);
+    const core = scope === "user" ? "user.md" : INDEX_FILE;
     return {
       topic: call.topic,
       text,
-      ...(text.trim() ? {} : { next: `There is no topic ${call.topic} yet; MEMORY.md lists the ones there are.` }),
+      ...(text.trim() ? {} : { next: `There is no topic ${call.topic} yet; ${core} lists the ones there are.` }),
     };
   }
   throw new ToolError("invalid", `${call.op} is not a memory call.`);
@@ -113,10 +126,11 @@ export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<str
 function remembered(hub: Hub, r: ProjectRef, caller: LeadCaller, item: RememberedItem): void {
   changed(hub, item.scope === "project" ? r : undefined, item.topic, caller.by);
   if (caller.agent.kind === "memory_refresh") {
-    record(hub.db, r, item);
+    if (caller.agent.person !== undefined) recordTidy(hub.db, caller.agent.person, item);
+    else record(hub.db, r, item);
     return;
   }
-  const where = item.scope === "user" ? " for every bot" : item.topic !== undefined ? ` (${item.topic})` : "";
+  const where = item.scope === "user" ? ` for every bot${item.topic !== undefined ? ` (${item.topic})` : ""}` : item.topic !== undefined ? ` (${item.topic})` : "";
   const text =
     item.forgotten === true
       ? item.reason !== undefined
@@ -134,7 +148,7 @@ export function changed(hub: Hub, project: ProjectRef | undefined, topic: string
     ...(project ? { machineId: project.machineId, projectId: project.projectId } : {}),
     summary: project
       ? `${topic === undefined ? INDEX_FILE : `${topic}.md`} of ${project.machineId}/${project.projectId} changed`
-      : "user.md changed",
+      : topic === undefined ? "user.md changed" : `${topic}.md of user memory changed`,
     data: { scope: project ? "project" : "user", projectRef: project ?? null, topic: topic ?? null, by },
   });
 }

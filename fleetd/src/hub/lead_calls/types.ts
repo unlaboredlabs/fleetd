@@ -1,7 +1,7 @@
 // The lead-call frames, which the contracts don't render to TypeScript:
 // the node's `lead_call` and the hub's `lead_result`, and who a call comes from.
 import type { LeadCallOp } from "../../shared/wire_tags.ts";
-import type { ProjectRef, ThreadId } from "../../shared/contracts.ts";
+import type { PersonId, ProjectRef, ThreadId } from "../../shared/contracts.ts";
 import type { ToolError } from "../../shared/errors.ts";
 
 /** One lead call: its `op` and the call's own fields, camelCase as on the wire. */
@@ -37,8 +37,11 @@ export type CallerAgent =
   | { kind: "lead" }
   /** A task's agent. */
   | { kind: "task"; taskId: string }
-  /** A project's nightly memory refresh: a lead session of its own that only reads and writes memory. */
-  | { kind: "memory_refresh" };
+  /**
+   * A project's nightly memory refresh: a lead session of its own that only reads and writes memory. With `person`, the
+   * tidy of that person's own memory (hub/memory/tidy), which reads and writes only theirs.
+   */
+  | { kind: "memory_refresh"; person?: PersonId };
 
 /** Who a lead call came from, as the hub decided it from the node link, the caller's cwd and the session it names. */
 export type LeadCaller = {

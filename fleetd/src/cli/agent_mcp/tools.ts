@@ -95,9 +95,6 @@ export const RULES: Record<string, Record<string, (call: Call) => string | undef
       }
     },
   },
-  // memory.rs RememberCall, ForgetCall.
-  remember: { "": (call) => userTopic(call) },
-  forget: { "": (call) => userTopic(call) },
   // checklist.rs TodoEdit, ChecklistCall.
   checklist: {
     "/items/*": (edit) => {
@@ -123,6 +120,3 @@ export const RULES: Record<string, Record<string, (call: Call) => string | undef
   },
 };
 
-function userTopic(call: Call): string | undefined {
-  if (call.scope === "user" && some(call.topic)) return "user.md has no topics; leave topic out with scope user";
-}

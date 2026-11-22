@@ -134,6 +134,18 @@ export function check(agent: CallerAgent, op: string): void {
 /** `check`, and what only the call itself says. */
 export function checkCall(agent: CallerAgent, call: LeadCall): void {
   check(agent, call.op);
+  // A tidy reads and writes only its person's own memory.
+  if (agent.kind === "memory_refresh" && agent.person !== undefined) {
+    const scope = call.scope ?? (call.op === "memory_read" ? "project" : undefined);
+    if (scope !== "user") {
+      throw new ToolError(
+        "forbidden",
+        "The tidy of a person's own memory only reads and writes theirs: it never touches a bot's memory.",
+        "Use scope user, then end your turn.",
+      );
+    }
+    return;
+  }
   // The refresh adds to a person's own memory, but never changes or removes what is there.
   const userMdChanged =
     (call.op === "remember" && call.scope === "user" && call.replaces != null) ||

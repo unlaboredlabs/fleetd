@@ -1,9 +1,11 @@
 // What the leads remember: plain markdown under `<hub home>/memory`, in no repo.
-// `people/<person>.md` is one person's own memory ("You", user scope, D212); a hub from before people keeps one shared
-// `user.md`. `<machine>/<project>/MEMORY.md` (the always-on part, then one `- [topic](topic.md)` line per topic) and its
-// topic files belong to one project and are never read for another. The hub is the only writer: a lead's `remember`
-// or `forget` (`calls`; the nightly `refresh` makes them too) or a person's edit in the app (`tools`). A write past a
-// cap is refused, never truncated. Every write here is synchronous, so writes never interleave.
+// `people/<person>.md` is one person's own memory's core ("You", user scope, D212) and `people/<person>/<topic>.md` its
+// topics; a hub from before people keeps one shared `user.md` (topics in `user/`). `<machine>/<project>/MEMORY.md` and
+// its topic files belong to one project and are never read for another. A core is the always-on part, then one
+// `- [topic](topic.md)` line per topic. The hub is the only writer: a lead's `remember` or `forget` (`calls`; the nightly
+// `refresh` and `tidy` make them too) or a person's edit in the app (`tools`). A project write past a cap is refused,
+// never truncated; a person's own write is never refused for size: it lands, and asks for a tidy of their memory
+// (tidy_store `askTidy`). Every write here is synchronous, so writes never interleave.
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -21,11 +23,13 @@ import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs } from "../store/time.ts";
 import { redact } from "./redact.ts";
-import { CAP_MIN, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
+import { CAP_MIN, coreOf, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, SHARED_TOPICS_DIR, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
+import type { Snapshot } from "./tidy_rules.ts";
+import { askTidy, noteOutsideWrite } from "./tidy_store.ts";
 
 const MIGRATED_KEY = "user_migrated";
 
-export { CAP_MIN, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
+export { CAP_MIN, coreOf, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
 
 export const memoryDir = (hub: Hub) => (hub.config.home ? join(hub.config.home, "memory") : undefined);
 
@@ -73,7 +77,10 @@ function oneEntry(t: Target, lines: string[], words: string): number {
 }
 
 const targetFor = (scope: MemoryScope, r: ProjectRef, person: PersonId | undefined, topic: string | undefined): Target =>
-  scope === "project" ? projectTarget(r, topic) : userTarget(person);
+  scope === "project" ? projectTarget(r, topic) : userTarget(person, topic);
+
+/** Whether `t` is a person's own memory (their core or a topic), which tidies instead of refusing a write. */
+const personal = (t: Target) => !t.project && t.person !== undefined;
 
 /** The memory of one hub, over `<home>/memory`. */
 export class Memory {
@@ -82,17 +89,27 @@ export class Memory {
   constructor(
     private readonly db: HubDb,
     private readonly dir: string | undefined,
+    private readonly now: () => number = Date.now,
+    /** The person whose tidy makes these writes, which aren't outside writes to its run. */
+    private readonly tidying?: PersonId,
   ) {
     this.caps = memoryCaps(db);
   }
 
-  static of(hub: Hub): Memory {
-    return new Memory(hub.db, memoryDir(hub));
+  static of(hub: Hub, tidying?: PersonId): Memory {
+    return new Memory(hub.db, memoryDir(hub), () => hub.clock.now(), tidying);
   }
 
-  /** The cap of file `t`. */
+  /** The cap of file `t`: a core's (`user.md`, `MEMORY.md`) or a topic's. */
   cap(t: Target): number {
-    return !t.project ? this.caps.user : t.topic === undefined ? this.caps.index : this.caps.topic;
+    if (t.topic !== undefined) return this.caps.topic;
+    return t.project ? this.caps.index : this.caps.user;
+  }
+
+  /** Whether any file of `person`'s own memory is past its cap. */
+  overCap(person: PersonId): boolean {
+    const core = userTarget(person);
+    return [core, ...this.topicsOf(core).map((topic) => userTarget(person, topic))].some((t) => chars(this.read(t)) > this.cap(t));
   }
 
   private root(): string {
@@ -104,10 +121,18 @@ export class Memory {
     return this.dir === undefined ? undefined : join(this.dir, r.machineId, projectDirName(r));
   }
 
+  /** The folder of the topics of `core`'s file. */
+  private topicDir(core: Target): string | undefined {
+    if (this.dir === undefined) return undefined;
+    if (core.project) return this.projectDir(core.project);
+    return core.person === undefined ? join(this.dir, SHARED_TOPICS_DIR) : join(this.dir, PEOPLE_DIR, core.person);
+  }
+
   path(t: Target): string | undefined {
     if (this.dir === undefined) return undefined;
+    if (t.topic !== undefined) return join(this.topicDir(t) as string, nameOf(t));
     if (!t.project) return t.person === undefined ? join(this.dir, USER_FILE) : join(this.dir, PEOPLE_DIR, `${t.person}.md`);
-    return join(this.projectDir(t.project) as string, nameOf(t));
+    return join(this.projectDir(t.project) as string, INDEX_FILE);
   }
 
   /** The file's text; empty when there is none. */
@@ -133,7 +158,12 @@ export class Memory {
 
   /** A project's topics, by name. */
   topics(r: ProjectRef): string[] {
-    const dir = this.projectDir(r);
+    return this.topicsOf(projectTarget(r));
+  }
+
+  /** The topics of the memory whose core is `core`, by name: a project's, or a person's own. */
+  topicsOf(core: Target): string[] {
+    const dir = this.topicDir(core);
     if (dir === undefined) return [];
     let names: string[];
     try {
@@ -151,12 +181,17 @@ export class Memory {
     return chars(this.read(projectTarget(r))) + this.topics(r).reduce((n, t) => n + chars(this.read(projectTarget(r, t))), 0);
   }
 
-  /** Writes `text` to `t`, or deletes the file when it is empty, after the secret and cap checks. */
+  /**
+   * Writes `text` to `t`, or deletes the file when it is empty, after the secret and cap checks. A person's own file
+   * past its cap is written, and asks for a tidy of their memory.
+   */
   private put(t: Target, text: string): void {
     this.root();
     secretRefusal(text);
     const [len, cap] = [chars(text), this.cap(t)];
-    if (len > cap) {
+    if (personal(t) && t.person !== this.tidying) noteOutsideWrite(this.db, t.person as PersonId);
+    if (len > cap && personal(t)) askTidy(this.db, t.person as PersonId, this.now());
+    else if (len > cap) {
       throw invalid(
         `${nameOf(t)} would be ${len} characters, past its cap of ${cap}. Nothing was written.`,
         "Merge or replace: fold this into an entry it overlaps (remember with replaces), or drop one that no longer holds.",
@@ -187,9 +222,9 @@ export class Memory {
     }
   }
 
-  /** A project's index with the line for `topic` added (`present`) or dropped; undefined when it is already so. */
-  private indexWith(r: ProjectRef, topic: string, present: boolean): string | undefined {
-    const lines = linesOf(this.read(projectTarget(r)));
+  /** A core's index with the line for `topic` added (`present`) or dropped; undefined when it is already so. */
+  private indexWith(core: Target, topic: string, present: boolean): string | undefined {
+    const lines = linesOf(this.read(core));
     const link = `(${topic}.md)`;
     const has = lines.some((l) => isIndexLine(l) && l.includes(link));
     if (present && !has) lines.push(indexLine(topic));
@@ -212,7 +247,7 @@ export class Memory {
     if (call.replaces !== undefined) {
       const i = oneEntry(t, lines, call.replaces);
       const old = (lines[i] as string).replace(/^(- )+/, "");
-      if (old.length >= 1 && old.length <= 1000 && !/[\r\n]/.test(old)) replaced = old;
+      if (old.length >= 1 && old.length <= FILE_CAP_MAX && !/[\r\n]/.test(old)) replaced = old;
       lines[i] = line;
     } else {
       // Entries go above the topic index, so MEMORY.md keeps its always-on part first.
@@ -222,7 +257,7 @@ export class Memory {
     }
     const text = joinLines(lines);
     // The index line is in the cap check of the topic write: both go, or neither.
-    const index = t.project && t.topic !== undefined ? this.indexWith(t.project, t.topic, true) : undefined;
+    const index = t.topic !== undefined ? this.indexWith(coreOf(t), t.topic, true) : undefined;
     if (index !== undefined && t.project) {
       const it = projectTarget(t.project);
       const room = Math.max(this.caps.project - (this.projectChars(t.project) - chars(this.read(t)) - chars(this.read(it))), 0);
@@ -234,7 +269,7 @@ export class Memory {
       }
     }
     this.put(t, text);
-    if (index !== undefined && t.project) this.put(projectTarget(t.project), index);
+    if (index !== undefined) this.put(coreOf(t), index);
     const item: RememberedItem = {
       scope: call.scope,
       ...(t.person === undefined ? {} : { person: t.person }),
@@ -252,12 +287,7 @@ export class Memory {
     const lines = linesOf(this.read(t));
     const i = oneEntry(t, lines, call.entry);
     const whole = (lines[i] as string).replace(/^(- )+/, "").trimEnd();
-    if (whole.length < 1 || whole.length > 1000) {
-      throw invalid(
-        `That line of ${nameOf(t)} is not one entry of at most 1,000 characters.`,
-        "Leave it, or merge it into a shorter entry with remember and replaces.",
-      );
-    }
+    if (whole.length < 1) throw invalid(`That line of ${nameOf(t)} is empty.`, "Quote words of an entry.");
     lines.splice(i, 1);
     const now = joinLines(lines);
     this.putDroppingEmptyTopic(t, now);
@@ -274,9 +304,9 @@ export class Memory {
 
   private putDroppingEmptyTopic(t: Target, text: string): void {
     this.put(t, text);
-    if (t.project && t.topic !== undefined && !text.trim()) {
-      const index = this.indexWith(t.project, t.topic, false);
-      if (index !== undefined) this.put(projectTarget(t.project), index);
+    if (t.topic !== undefined && !text.trim()) {
+      const index = this.indexWith(coreOf(t), t.topic, false);
+      if (index !== undefined) this.put(coreOf(t), index);
     }
   }
 
@@ -298,9 +328,9 @@ export class Memory {
   /** A person's edit in the app: the whole file. Empty deletes it, and a topic's index line with it. */
   set(t: Target, text: string): void {
     this.put(t, text);
-    if (t.project && t.topic !== undefined) {
-      const index = this.indexWith(t.project, t.topic, text.trim() !== "");
-      if (index !== undefined) this.put(projectTarget(t.project), index);
+    if (t.topic !== undefined) {
+      const index = this.indexWith(coreOf(t), t.topic, text.trim() !== "");
+      if (index !== undefined) this.put(coreOf(t), index);
     }
   }
 
@@ -328,7 +358,7 @@ export class Memory {
     if (!user.trim() && !project.trim()) return "";
     let out = "## Memory\n";
     out += lead
-      ? "What you remembered in earlier sessions, with `remember`. Open a topic with `memory_read`."
+      ? "What you remembered in earlier sessions, with `remember`. Open a topic with `memory_read` when its work comes up: scope user for one listed under how the human works."
       : "What fleetd remembers about the human and this bot. Follow it.";
     for (const [title, text] of [
       ["How the human works (user.md)", user],
@@ -337,6 +367,35 @@ export class Memory {
       if (text.trim()) out += `\n\n### ${title}\n${text.trimEnd()}`;
     }
     return out;
+  }
+
+  /** `person`'s own memory, every file by name: `user.md` (the core, when there is one) and each `<topic>.md`. */
+  snapshot(person: PersonId): Snapshot {
+    const core = userTarget(person);
+    const out: Snapshot = {};
+    for (const t of [core, ...this.topicsOf(core).map((topic) => userTarget(person, topic))]) {
+      const text = this.read(t);
+      if (text) out[nameOf(t)] = text;
+    }
+    return out;
+  }
+
+  /** Puts `person`'s own memory back to `files` exactly, as a snapshot took them: a file it lacks goes. */
+  restore(person: PersonId, files: Snapshot): void {
+    this.root();
+    noteOutsideWrite(this.db, person);
+    const names = new Set([...Object.keys(this.snapshot(person)), ...Object.keys(files)]);
+    for (const name of names) {
+      const t = name === USER_FILE ? userTarget(person) : userTarget(person, name.slice(0, -3));
+      const path = this.path(t) as string;
+      const text = files[name];
+      try {
+        if (text) writeAtomic(path, text);
+        else unlinkSync(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new ToolError("failed", `cannot write the memory file: ${(error as Error).message}`);
+      }
+    }
   }
 
   /** Copies the shared `user.md` to `owner`'s own memory, once per hub. */

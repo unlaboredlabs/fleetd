@@ -42,6 +42,7 @@ import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { Devices } from "./src/screens/Devices";
 import { ImportMemory } from "./src/screens/ImportMemory";
+import { Memory } from "./src/screens/Memory";
 import { Billing } from "./src/screens/Billing";
 import { Machines } from "./src/screens/Machines";
 import { Connections } from "./src/screens/Connections";
@@ -653,6 +654,7 @@ function SettingsScreens() {
     <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Memory" component={Memory} options={{ ...pushed(t, "Memory"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Connections" component={Connections} options={{ ...pushed(t, "Connections"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="Machines" component={Machines} options={{ ...pushed(t, "Machines"), headerLargeTitleEnabled: true }} />

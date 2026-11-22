@@ -50,7 +50,7 @@ type Kind = "added" | "updated" | "removed";
 export const kindOf = (item: RememberedItem): Kind => (item.forgotten ? "removed" : item.replaced !== undefined ? "updated" : "added");
 
 /** "MEMORY.md", "deploys.md" or "user.md". */
-export const fileOf = (item: RememberedItem): string => (item.scope === "user" ? "user.md" : item.topic !== undefined ? `${item.topic}.md` : "MEMORY.md");
+export const fileOf = (item: RememberedItem): string => (item.topic !== undefined ? `${item.topic}.md` : item.scope === "user" ? "user.md" : "MEMORY.md");
 
 const SIGN_KIND: Record<string, Kind> = { "+": "added", "~": "updated", "−": "removed" };
 
