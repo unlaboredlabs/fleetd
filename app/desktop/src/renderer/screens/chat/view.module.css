@@ -212,29 +212,19 @@
     opacity: 0;
   }
 }
-/* In a narrow chat (beside the panel, a side window) a bubble's actions and time float over its top corner while it
-   is hovered, a small raised strip: beside it they'd squeeze it to a word, and under it they'd hold an empty line
-   under every bubble at rest. */
+/* In a narrow chat (beside the panel, a side window, a phone's browser) the actions and time stay beside the bubble's
+   foot, as at every width, never over its words (F1179): the line takes the whole column instead, so the bubble keeps
+   all of it but the strip's room. A card or picture gives up its 320 px floor there for the same room; a chart, table
+   or diff keeps the whole column, its strip under its foot. */
 @container (max-width: 480px) {
-  .aside {
-    position: absolute;
-    z-index: 2;
-    top: -14px;
-    /* From the bubble's outer edge into the column, so a short bubble's strip never passes the column's edge. */
-    left: var(--space-2);
-    padding: 1px 2px;
-    border-radius: var(--radius-sm);
-    background: var(--raised);
-    box-shadow: var(--float-shadow);
-    pointer-events: none;
+  .line {
+    max-width: 100%;
   }
-  .mine .aside {
-    left: auto;
-    right: var(--space-2);
+  .line > .blockBubble {
+    min-width: 0;
   }
-  .line:hover > .aside,
-  .line:focus-within > .aside {
-    pointer-events: auto;
+  .line.wide {
+    flex-wrap: wrap;
   }
 }
 .wide {
