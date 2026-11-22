@@ -1,5 +1,5 @@
 // The hub link: challenge, signed hello, welcome, then heartbeats and the hub's
-// requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 30 s, ±20%
+// requests until the socket ends or the hub goes silent. Reconnects with backoff (250 ms doubling to 5 s, ±20%
 // jitter, reset by each welcome), and only gives up when the hub refuses the node. A quiet link is pinged before it is
 // given up on (QUIET_PROBE, QUIET_DEAD): a link cut under it (a network switch, wifi that drops) is found dead within
 // seconds, not at the next heartbeats. With a hub that lists `link_deflate`, frames go compressed (./deflate.ts).
@@ -82,9 +82,13 @@ export function linkUrl(hub: string): string {
   return url.toString();
 }
 
+/** The longest wait between redials: a network back after a long outage is relinked within it. A dial to a hub that
+ * is down costs a refused connection, about 300 bytes. */
+export const RECONNECT_MAX_MS = 5_000;
+
 /** The wait before reconnect `attempt` (0 first), `jitter` in 0.8..1.2. */
 export function reconnectDelay(attempt: number, jitter: number): number {
-  return Math.round(Math.min(30_000, 250 * 2 ** Math.min(attempt, 16)) * jitter);
+  return Math.round(Math.min(RECONNECT_MAX_MS, 250 * 2 ** Math.min(attempt, 16)) * jitter);
 }
 
 /** How long the node redials every `RESTART_REDIAL_MS` after the hub closed its link as a restart. */

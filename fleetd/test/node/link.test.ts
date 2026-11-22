@@ -266,9 +266,9 @@ test("a capability an area turns on reaches the hub in a new hello; one that did
   home.done();
 });
 
-test("reconnects start fast and back off to 30 s; the URL and the frame caps are the Rust node's", () => {
-  expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map((a) => reconnectDelay(a, 1))).toEqual([250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000]);
-  expect(reconnectDelay(1000, 1.2)).toBe(36000);
+test("reconnects start fast and back off to 5 s, so a network back after a long outage is relinked within it; the URL and the frame caps are the Rust node's", () => {
+  expect([0, 1, 2, 3, 4, 5, 6].map((a) => reconnectDelay(a, 1))).toEqual([250, 500, 1000, 2000, 4000, 5000, 5000]);
+  expect(reconnectDelay(1000, 1.2)).toBe(6000);
   expect(linkUrl("https://devbox.example:4790/x?y")).toBe("wss://devbox.example:4790/node/link");
   expect(linkUrl("http://127.0.0.1:4790")).toBe("ws://127.0.0.1:4790/node/link");
   expect(compresses(["link_deflate"], ["link_deflate"])).toBe(true);
