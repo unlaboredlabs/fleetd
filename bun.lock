@@ -1,0 +1,16 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "fleetd",
+      "peerDependencies": {
+        "acorn": "8.19.0",
+      },
+      "optionalPeers": [
+        "acorn",
+      ],
+    },
+  },
+  "packages": {}
+}
