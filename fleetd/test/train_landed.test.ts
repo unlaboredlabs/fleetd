@@ -56,7 +56,7 @@ async function passes(k: Kit, n: number, train = k.train): Promise<void> {
   }
 }
 
-const landingComments = (k: Kit, n: number) => k.gh.pulls.get(n)!.comments.filter((c) => c.startsWith("Landed in #"));
+const landingComments = (k: Kit, n: number) => k.gh.pulls.get(n)!.comments.filter((c) => c.startsWith("Merged by the train in "));
 
 test("a member whose close fails after its comment is closed on a later pass, commented once, and never queued again", async () => {
   const close: Close = { fail: 2, hang: false };
@@ -142,4 +142,29 @@ test("a wait for a batched PR to merge ends when the batch lands, also while its
   // Later passes take nothing of it again, so the wait's answer stays merged.
   await passes(k, 3);
   expect(await mergeOf(merges, PROJECT, targetOf(url)!)).toEqual({ kind: "merged" });
+});
+
+test("a member a person closed while its batch landed is still labelled merged and commented with the batch's commit", async () => {
+  let k!: Kit;
+  const wrap = (gh: GhRunner): GhRunner => ({
+    async run(args: string[]): Promise<GhOut> {
+      const out = await gh.run(args);
+      if (args.includes("PUT") && args.some((a) => a.endsWith("/merge"))) k.gh.pulls.get(11)!.state = "closed";
+      return out;
+    },
+  });
+  k = new Kit({}, wrap);
+  kits.push(k);
+  for (const n of [11, 12]) {
+    k.pr(n, `fleetd/T${n}-x`, { [`${n}.md`]: `${n}\n` });
+    await k.enqueue(n);
+  }
+  await k.settle();
+  const landed = k.change(11);
+  expect(landed.state).toBe("merged");
+  expect(landed.lastError).toBeUndefined();
+  const pull = k.gh.pulls.get(11)!;
+  expect(pull.state).toBe("closed");
+  expect(pull.labels).toEqual(["merged"]);
+  expect(landingComments(k, 11)).toEqual([expect.stringContaining(`Merged by the train in ${landed.mergedSha!.slice(0, 12)}: `)]);
 });

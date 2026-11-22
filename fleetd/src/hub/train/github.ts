@@ -15,7 +15,7 @@ import { type CheckRun, type CommitStatus, workflowRun } from "./checks.ts";
 import { Budget, limitNote, limitReset, limitText, noRulesOnPlan, rateLimited } from "./budget.ts";
 
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
-export { NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
+export { MERGED_LABEL, NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
 
 export const GH_AUTH_FIX = "run `gh auth login` on the hub machine";
 /** How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST_MS`. */
