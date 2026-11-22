@@ -45,7 +45,7 @@ export const GAP_MS = 100;
  */
 export const LIFT_MS = 400;
 /** With the platform's word on the lift too, fingers still this long have most likely lifted: the list settles. */
-export const REST_MS = 120;
+export const REST_MS = 80;
 /** How far a gesture moves before it picks its axis. */
 export const DECIDE_PX = 6;
 /** Its horizontal travel must beat its vertical by this much to be a swipe: the list scrolls far more often. */
@@ -249,6 +249,16 @@ export const settleOn = (x: number, v: number, width: number, prev: boolean, nex
   return 0;
 };
 
+/**
+ * The speed a list let go of at `x` (px), moving `v` (px a ms), settles from. Stretched past an end it comes straight
+ * back, as macOS's rubber band does (WebKit's: (x + v t) e^(-t/τ)), at once and at its fastest: the spring's own start
+ * from rest is slow, and the stretch seemed to hang there. Elsewhere, its own speed.
+ */
+export const settleSpeed = (x: number, v: number, prev: boolean, next: boolean): number => {
+  const stretched = x > 0 ? !prev : x < 0 ? !next : false;
+  return stretched ? v - OMEGA * x : v;
+};
+
 /** With reduced motion: the swipe has gone far enough to switch. */
 export const farEnough = (raw: number, width: number): boolean => Math.abs(raw) >= width * REDUCED_AT;
 
@@ -431,9 +441,10 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
     [draw, place],
   );
 
+  /** Settles on `to` (the hub there, or null back where it was), from `v`, as from `since` (when it was let go). */
   const run = useCallback(
-    (to: number, hub: number | null, v: number) => {
-      settling.current = { to, hub, v, t: performance.now() };
+    (to: number, hub: number | null, v: number, since = performance.now()) => {
+      settling.current = { to, hub, v, t: Math.min(since, performance.now()) };
       held.current = false;
       cancelAnimationFrame(frame.current);
       const tick = (now: number) => {
@@ -461,7 +472,8 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
     const raw = -g.current.x;
     const v = shown(raw + g.current.v, width.current, prev, next) - shown(raw, width.current, prev, next);
     const to = settleOn(offset.current, v, width.current, prev, next);
-    run(to, to === 0 ? null : here.current + (to < 0 ? 1 : -1), v);
+    // From the lift (the glide's first event, or the last before a rest): the frame it is drawn on is that much on.
+    run(to, to === 0 ? null : here.current + (to < 0 ? 1 : -1), settleSpeed(offset.current, v, prev, next), g.current.at);
   }, [run]);
 
   /** Whatever was on its way ends where it was going, at once. */
@@ -494,7 +506,7 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
       clearTimeout(timer.current);
       timer.current = setTimeout(
         () => {
-          g.current = rest(g.current);
+          g.current = { ...rest(g.current), at: performance.now() };
           letGo();
         },
         lifts ? REST_MS : said ? LIFT_MS : GAP_MS,
