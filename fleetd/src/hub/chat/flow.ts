@@ -647,6 +647,12 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
       console.warn("chat: lead message not added:", error);
     }
   }
+  // A run's last reply lands here, not in the stream pass, once its run has ended: the lead is told of a made-up turn
+  // either way, as many replies as the chat has kept (none from before the chat).
+  for (const m of messages) {
+    const at = parseMs(m.createdAt);
+    if (m.role === "assistant" && at !== undefined && at >= since) madeUp(hub, r, leadSource(thread.threadId, m.id), m.text, at);
+  }
   if (runOver(hub, thread)) {
     for (const cut of c.streamingFrom(r, leadSource(thread.threadId, ""))) {
       try {
@@ -771,14 +777,24 @@ function shownText(hub: Hub, r: ProjectRef, source: string): string {
   }
 }
 
+/** The replies whose made-up turn a hub told their lead of, by `source`: the stream pass and the mirror both see one. */
+const madeUpTold = new WeakMap<Hub, Set<string>>();
+
 /**
  * A reply that landed went on with a turn it made up (`Human: …`): logged, and the lead told with its next wake that the
  * person never wrote it. Its session still holds the whole reply, so without this line its next turn reads that turn as
- * the person's message and acts on it.
+ * the person's message and acts on it. Once per reply: `createdMs` (a reply read off the session) at or before the
+ * lead's last wake was told already, by a hub before a restart.
  */
-function madeUp(hub: Hub, r: ProjectRef, source: string, reply: string): void {
+function madeUp(hub: Hub, r: ProjectRef, source: string, reply: string, createdMs?: number): void {
   const line = madeUpLine(reply);
   if (line === undefined) return;
+  const told = madeUpTold.get(hub) ?? new Set<string>();
+  madeUpTold.set(hub, told);
+  if (told.has(source)) return;
+  told.add(source);
+  const woken = parseMs(leads(hub).records.leadGet(r)?.lastWakeAt ?? "");
+  if (createdMs !== undefined && woken !== undefined && createdMs <= woken) return;
   const turn = reply.slice(madeUpAt(reply)).trim();
   console.warn(`chat: lead reply ${source} cut before a turn it made up: ${[...turn].length} characters from "${/^[^:]*:/.exec(turn)?.[0] ?? ""}"`);
   leads(hub).wakes.trigger(r, { kind: "line", line: "made_up", text: line });
