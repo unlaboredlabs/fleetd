@@ -2,12 +2,14 @@
 // plan and when it renews or ends, the credits left (and the soonest that lapse, within 30 days), the computer time used
 // this period by size, and the team's own monthly spend cap. Change plan, Add credits and Manage payment open Stripe's
 // checkout or portal in the browser (main: src/main/cloud/billing.ts); no card is ever typed here. A declined card, no
-// credits or a reached cap is one line at the top with its fix (no credits: Pick a plan and Add credits right under it). Before fleetd's computers are on for teams the page is
-// that one line and nothing to buy. Every price, included amount and rate is the service's answer (shared/billing.ts).
-// A self-hosted hub has no Billing at all.
+// credits or a reached cap is one line at the top with its fix (no credits: Pick a plan and Add credits right under it).
+// Every price, included amount and rate is the service's answer (shared/billing.ts). A self-hosted hub has no Billing
+// at all, and a team has none until fleetd's computers are on for it (`useBillingShown`): no entry, no search result,
+// and a link to it lands on People.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import {
+  billingOn,
   buys,
   capFromInput,
   capLine,
@@ -31,6 +33,7 @@ import type { PairFailure } from "../../../shared/pairing";
 import { Button, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text, toast } from "../../ui";
 import { useHub } from "../../src/data/react";
 import { useNow } from "../live";
+import { navigate } from "../shell/navigation";
 import { GroupNote, HintLines, Notice, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
 import { useReveal } from "../settings/search";
 import s from "../settings/settings.module.css";
@@ -60,6 +63,16 @@ export function useBilling(enabled: boolean) {
   });
 }
 
+/**
+ * Whether the hub in scope has Billing: a fleetd cloud team whose answer says fleetd's computers are on for it. Read
+ * only while `asked` (the Settings index, a Hub page's switch on Billing), sharing the page's own query.
+ */
+export function useBillingShown(asked = true): boolean {
+  const cloud = useHub().cloud === true;
+  const read = useBilling(asked && cloud);
+  return cloud && billingOn(read.data);
+}
+
 /** Stripe's page for `what`, in the browser; a refusal is a toast in the team's words. */
 function useOpen() {
   const hub = useHub().id;
@@ -80,13 +93,17 @@ export function Billing() {
   const hub = useHub();
   const read = useBilling(hub.cloud === true);
   const nowMs = useNow(true, 60_000);
+  // No page that only says there is nothing here: a link to Billing where it isn't lands on People instead.
+  const none = hub.cloud !== true || (read.data !== undefined && !billingOn(read.data));
+  useEffect(() => {
+    if (none) navigate({ id: "settings", tab: "hub.people", at: hub.id }, { replace: true });
+  }, [none, hub.id]);
+  if (none) return null;
   return (
     <div className={s.scroll} data-screen="settings.hub.billing">
       <div className={s.column}>
         <PageHead title="Billing" />
-        {hub.cloud !== true ? (
-          <Text tone="quiet">Billing is for fleetd cloud teams.</Text>
-        ) : read.isPending ? (
+        {read.isPending ? (
           <SettingsSection>
             <GroupNote>Loading…</GroupNote>
           </SettingsSection>
@@ -115,9 +132,6 @@ function BillingBody({ state, nowMs }: { state: BillingState; nowMs: number }) {
   const { busy, open } = useOpen();
   const capField = useRef<HTMLInputElement>(null);
   const top = topLine(state);
-  if (!state.providedOn) {
-    return top === null ? null : <Notice tone={top.tone}>{top.message}</Notice>;
-  }
   const can = buys(state);
   const why = noBuyWhy(state);
   // The portal answers only once the team has paid for something: a plan, or credits it had.

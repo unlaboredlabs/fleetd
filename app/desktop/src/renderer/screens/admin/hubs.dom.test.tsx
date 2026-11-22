@@ -10,6 +10,8 @@ import type { HubFrame } from "../../../shared/hub";
 import type { HubEntry } from "../../../shared/hubs";
 import { createHubSet } from "../../src/data/hubs";
 import { HubsProvider } from "../../src/data/react";
+import { BILLING_SAMPLES } from "../../../shared/billing.samples";
+import { readBilling } from "../../../shared/billing";
 import { AT, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { Shell } from "../shell/Shell";
@@ -18,6 +20,8 @@ import { Shell } from "../shell/Shell";
 
 const fake = vi.hoisted(() => {
   const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }> }>();
+  // Each cloud team's `GET /billing/v1` answer, by hub.
+  const billing = new Map<string, unknown>();
   // The role this app's person has on each hub (hub_info's `me`).
   const roles = new Map<string, "owner" | "admin" | "member">();
   // Hubs from before hub_info: it isn't a tool there, and the app lets their keys try.
@@ -90,8 +94,14 @@ const fake = vi.hoisted(() => {
     machines: { thisComputer: () => Promise.resolve({ kind: "none" }), joinHereState: () => Promise.resolve(null), onJoinHere: () => () => undefined },
     pair: { store: () => Promise.resolve(null), probe: (hub: string) => Promise.resolve({ answers: false, hub }), start: () => new Promise(() => undefined) },
     system: { hostName: () => Promise.resolve("devbox") },
+    cloud: {
+      billing: (id: string) => {
+        const answer = billing.get(id);
+        return Promise.resolve(answer === undefined ? { ok: false, failure: { code: "not_found", message: "Nothing is here." } } : { ok: true, billing: answer });
+      },
+    },
   });
-  return { hubs, of, roles, old };
+  return { hubs, of, roles, old, billing };
 });
 
 const send = (id: string, frame: HubFrame) => {
@@ -176,6 +186,7 @@ beforeEach(() => {
   fake.hubs.clear();
   fake.roles.clear();
   fake.old.clear();
+  fake.billing.clear();
   fake.roles.set("hub", "owner").set("a1b2", "admin").set("c3d4", "member");
 });
 afterEach(() => {
@@ -235,6 +246,59 @@ it("switches hub from the Hub group, keeping the page, and the page follows", as
   expect(managing()?.textContent).toContain("Personal");
   await openInvite();
   expect(button("Create invite link to Personal")).toBeDefined();
+});
+
+// Billing is a cloud team's, and only once fleetd's computers are on for it: before, there is nothing to buy, so no
+// entry, no search result and no page that only says so; on, the switch on its page offers only the hubs that have it.
+const TEAM_AND_OWN: HubEntry[] = [
+  { id: "hub", label: "Personal" },
+  { id: "a1b2", label: "Acme", color: "amber", cloud: true },
+];
+const entries = () => [...host.querySelectorAll<HTMLElement>('nav[aria-label="Settings"] button')].map((b) => b.textContent);
+const search = async (words: string) => {
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Search settings"]');
+  if (field === null) throw new Error("no search");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, words);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+  return [...host.querySelectorAll<HTMLElement>("[data-result]")].map((b) => b.textContent);
+};
+
+it("shows no Billing for a cloud team whose fleetd computers aren't on: no entry, no result, and its link lands on People", async () => {
+  fake.roles.set("a1b2", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.off));
+  await mount(TEAM_AND_OWN);
+  await go("#/settings/hub/people?at=a1b2");
+  expect(entries()).toContain("People");
+  expect(entries()).not.toContain("Billing");
+  // Claude's account row knows the word too; nothing found is Billing's page or a part of it.
+  expect((await search("billing")).filter((r) => r.includes("Billing"))).toEqual([]);
+  expect((await search("spend cap")).filter((r) => r.includes("Billing"))).toEqual([]);
+  await search("");
+  await go("#/settings/hub/billing?at=a1b2");
+  expect(host.querySelector('[data-screen="settings.hub.billing"]')).toBeNull();
+  expect(host.querySelector('[data-screen="settings.hub.people"]')).not.toBeNull();
+  expect(window.location.hash).toBe("#/settings/hub/people?at=a1b2");
+  expect(host.textContent).not.toContain("aren't on yet");
+});
+
+it("shows Billing once fleetd's computers are on for the team, switching only between hubs that have it", async () => {
+  fake.roles.set("a1b2", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.plan));
+  await mount(TEAM_AND_OWN);
+  await go("#/settings/hub/billing?at=a1b2");
+  expect(host.querySelector('[data-screen="settings.hub.billing"]')).not.toBeNull();
+  expect(entries()).toContain("Billing");
+  // Personal, a self-hosted hub, has no Billing: no choice of it here leads to a page that says so.
+  expect(choices()).toEqual([["a1b2", true]]);
+  // Elsewhere in the Hub group the switch still offers every hub this person administers.
+  await go("#/settings/hub/people?at=a1b2");
+  expect(choices()).toEqual([
+    ["hub", false],
+    ["a1b2", true],
+  ]);
 });
 
 it("with one hub, names none and offers no switch: the page is as it was", async () => {

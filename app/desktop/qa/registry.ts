@@ -195,8 +195,8 @@ export const fixtures = [
   "cloud-github-installed",
   "cloud-github-connect-first",
   "cloud-github-not-set-up",
-  // ...and Billing on a team: no plan, a plan with credits, a declined card, the cap reached, fleetd's computers not on
-  // yet, and the team not answering.
+  // ...and Billing on a team: no plan, a plan with credits, a declined card, the cap reached, and the team not
+  // answering; and before fleetd's computers are on for it, beside a self-hosted hub: no Billing at all.
   "cloud-billing-none",
   "cloud-billing-plan",
   "cloud-billing-failed",
@@ -4382,12 +4382,24 @@ export const screens: readonly Screen[] = [
     },
   },
   // Billing on a fleetd cloud team (fixtures/cloud, the team's answer from src/shared/billing.samples.ts): no plan and
-  // no credits, the Team plan with credits and use, a declined card, the cap reached, fleetd's computers not on yet,
-  // and the team not answering; then Add credits' menu open. A self-hosted hub has no Billing row (settings.sheet).
+  // no credits, the Team plan with credits and use, a declined card, the cap reached, and the team not answering; then
+  // Add credits' menu open. A self-hosted hub has no Billing row (settings.sheet).
   {
     id: "settings.hub.billing",
     route: "#/settings/hub/billing",
-    fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-off", "cloud-billing-unreachable"],
+    fixtures: ["cloud-billing-none", "cloud-billing-plan", "cloud-billing-failed", "cloud-billing-cap", "cloud-billing-unreachable"],
+  },
+  // Before fleetd's computers are on for the team there is nothing to buy, so no Billing: no entry in the index, and its
+  // link lands on People, never a page that only says so (W759).
+  {
+    id: "settings.hub.people",
+    route: "#/settings/hub/billing",
+    fixtures: ["cloud-billing-off"],
+    variant: "billing-off",
+    check: async (page) => {
+      await expect(page).toHaveURL(/#\/settings\/hub\/people/u);
+      await expect(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Billing", exact: true })).toHaveCount(0);
+    },
   },
   {
     id: "settings.hub.billing",

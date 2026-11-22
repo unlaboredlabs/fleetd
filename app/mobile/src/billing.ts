@@ -1,12 +1,14 @@
 // A fleetd cloud team's billing on the phone (fleetd-cloud README "Payments"; the reading and the words are the
 // desktop's, shared/billing.ts): plain HTTP calls to the team's own address with this phone's key, as the desktop's
 // main makes them. Checkout and the portal are Stripe's own pages, which the phone opens in its browser sheet; no card
-// is ever typed into fleetd. Only a hub that came with the account is asked: a self-hosted hub has no Billing.
+// is ever typed into fleetd. Only a hub that came with the account is asked: a self-hosted hub has no Billing, and a
+// team has none until fleetd's computers are on for it.
 import {
   BILLING_CAP_PATH,
   BILLING_CHECKOUT_PATH,
   BILLING_PATH,
   BILLING_PORTAL_PATH,
+  billingOn,
   readBilling,
   readCap,
   readPage,
@@ -29,8 +31,12 @@ export type Got<T> = { readonly ok: true; readonly value: T } | { readonly ok: f
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** Billing shows for a team's owners and admins on a hub that came with the account, and nowhere else. */
-export const billingShown = (hub: Pick<KeptHub, "cloud">, admin: boolean | undefined): boolean => hub.cloud === true && admin === true;
+/**
+ * Billing shows for a team's owners and admins on a hub that came with the account, once the team's answer says
+ * fleetd's computers are on for it (`billingOn`), and nowhere else: no row for a page that would only say so.
+ */
+export const billingShown = (hub: Pick<KeptHub, "cloud">, admin: boolean | undefined, billing: BillingState | null | undefined): boolean =>
+  hub.cloud === true && admin === true && billingOn(billing);
 
 const record = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
