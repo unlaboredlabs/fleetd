@@ -44,6 +44,7 @@ import {
   type Worker,
 } from "./inspect.ts";
 import { problem, problemError } from "./adding.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export { problem, problemError } from "./adding.ts";
 
@@ -186,7 +187,7 @@ export function targetMachine(hub: Hub, given: MachineId | undefined): MachineId
       problem(
         "no_worker",
         "nothing is connected to run the bot: no computer is online",
-        "Connect a computer in Settings › Hub › Machines, or start fleetd on one that joined",
+        `Connect a computer in ${settingsPath()} › Machines, or start fleetd on one that joined`,
       ),
     );
   }

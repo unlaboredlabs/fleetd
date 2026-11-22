@@ -11,6 +11,7 @@ import { isoMs } from "../store/time.ts";
 import { json, type Route } from "../http/route.ts";
 import { FIRST_MAC, pairCodes, RedeemError } from "./codes.ts";
 import { expand6, isUnspecified } from "./urls.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 const MAX_FAILURES = 5;
 const FAILURE_WINDOW_MS = 60_000;
@@ -217,7 +218,7 @@ export const macPair: Route = async (req, { hub, ip }) => {
       409,
       "mac_other_computer",
       "this hub's agents' Mac is another computer",
-      "To make this Mac the agents' Mac instead, remove the old one on your main machine (Settings › Hub › " +
+      `To make this Mac the agents' Mac instead, remove the old one on your main machine (${settingsPath()} › ` +
         "Machines › the Mac › Remove), then type this code again.",
     );
   }

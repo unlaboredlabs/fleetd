@@ -3,6 +3,7 @@
 import type { McpClient } from "../mcp_client.ts";
 import type { Failure } from "../common.ts";
 import type { Checklist, State } from "./checklist.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export async function callFor(client: McpClient, tool: string, input: unknown, waitMs: number): Promise<any> {
   let result;
@@ -90,7 +91,7 @@ export function unowned(checks: any[], steps: any[]): any[] {
 
 function placeWords(place: string): string {
   if (place === "claude") {
-    return "Settings › Hub › Setup › Claude for the hub's API key; Settings › Accounts › Claude for your own subscription";
+    return `${settingsPath()} › Setup › Claude for the hub's API key; Settings › Accounts › Claude for your own subscription`;
   }
   const names: Record<string, string> = {
     github: "Hub › Setup › GitHub",

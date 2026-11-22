@@ -4,6 +4,7 @@ import type { AgentKeyInfo as Caller, HubEvent, MachineId, ProjectRef, Role, Thr
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/allows.ts";
 import { isHuman, REPAIR_FIX } from "./grants.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** How much one tool result may carry. */
 export const LIMITS = {
@@ -43,7 +44,7 @@ export const unknownMachine = (machineId: MachineId) =>
     `No machine ${machineId}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    "This hub has no machine by that id: Settings › Hub › Machines lists the ones it has, or ask the hub admin.",
+    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
   );
 
 export const unknownProject = (r: ProjectRef) =>

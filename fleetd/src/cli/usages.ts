@@ -1,5 +1,6 @@
 // Every command's usage, in one module so `fleetd help` and `--help` load no command. test/cli/fixtures hold the whole
 // texts; docs/site's CLI reference is generated from `fleetd help`.
+import { settingsPath } from "../shared/settings_path.ts";
 
 export const UPDATE_USAGE = `  update [--check] [--channel <c>] [--now]
              replace this fleetd with the latest release, then restart its hub at once and its
@@ -29,7 +30,7 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              --no-service enrols the node but leaves running it to you, and prints how
   init --step <address|machines|claude|github|onepassword|people|mac>
              open one of the hub's setup steps: why, the values to paste and the pages to open,
-             then Test it, or put it off for later. The app's Settings › Hub › Setup has the same
+             then Test it, or put it off for later. The app's ${settingsPath()} › Setup has the same
              steps
   doctor
              run every setup check on the hub now: the setup steps first, then each other

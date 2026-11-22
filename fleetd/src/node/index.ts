@@ -52,6 +52,7 @@ import { VERSION } from "../shared/version.ts";
 import { protect } from "./oom.ts";
 import { moveKeptProfiles } from "./own_homes.ts";
 import { uploads } from "./uploads.ts";
+import { settingsPath } from "../shared/settings_path.ts";
 
 export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
             [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
@@ -64,8 +65,8 @@ export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-fi
 `;
 
 /** What the hub's runner answers a command the hub asks it to run on its machine. */
-const RUNNER_NO_COMMANDS =
-  "approved commands and checks run on a computer of the team's, and none runs this bot: its agents run in hosted sandboxes. Connect a computer (Settings › Hub › Machines) to run them";
+const runnerNoCommands = (): string =>
+  `approved commands and checks run on a computer of the team's, and none runs this bot: its agents run in hosted sandboxes. Connect a computer (${settingsPath()} › Machines) to run them`;
 
 /** What the hub's runner leaves out of the core's capabilities: installing, signing in to or updating a Claude Code or
  * fleetd of its machine's (its boxes have their own, and it updates with the hub that starts it). */
@@ -525,7 +526,7 @@ export async function startNode(
         return relay.resolve(frame as unknown as LeadResultFrame);
       case "cmd_check":
         // The hub's runner runs nothing on the machine it is on: commands go to a computer of the team's.
-        if (config.runner) return ctx.send({ t: "cmd_result", ...notRunResult(String(frame.id ?? ""), `${REFUSED}${RUNNER_NO_COMMANDS}`) });
+        if (config.runner) return ctx.send({ t: "cmd_result", ...notRunResult(String(frame.id ?? ""), `${REFUSED}${runnerNoCommands()}`) });
         void runCmdCheck(frame as unknown as CmdCheck, roots, home, ctx.signal).then((r) => ctx.send({ t: "cmd_result", ...r }), logFailed("cmd_check"));
         return;
       case "secret_deliver": {
@@ -542,7 +543,7 @@ export async function startNode(
         return ctx.send({ t: "secret_result", ...deliverSecret(deliver, secretsCtx) });
       }
       case "gated_run":
-        if (config.runner) return ctx.send({ t: "gated_result", id: String(frame.id ?? ""), exitCode: null, outputTail: "", timedOut: false, error: RUNNER_NO_COMMANDS });
+        if (config.runner) return ctx.send({ t: "gated_result", id: String(frame.id ?? ""), exitCode: null, outputTail: "", timedOut: false, error: runnerNoCommands() });
         // Not the link's: an approved command runs to its end when the link drops, and the hub asks for its result.
         void gated.run(frame as unknown as GatedRun, ctx.hubId, secretsCtx).then((r) => link.send({ t: "gated_result", ...r }), logFailed("gated_run"));
         return;

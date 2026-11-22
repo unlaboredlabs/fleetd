@@ -13,6 +13,7 @@ import { retentionOn } from "../browser/store.ts";
 import { isAgentsMac, tool } from "./mac.ts";
 import { entry, rolesOn, runners, setRoles, setToolOn } from "./places.ts";
 import { register as registerScreens } from "./screens.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export function register(tools: Registry): void {
   tools.add("machine_roles", machineRoles);
@@ -53,7 +54,7 @@ function machineRolesSet(
     throw new ToolError(
       "invalid",
       `${m} isn't the agents' Mac, so it has no Mac tool to turn on or off.`,
-      "Settings › Hub › Setup › A Mac for agents joins one.",
+      `${settingsPath()} › Setup › A Mac for agents joins one.`,
     );
   }
   if (agentsMac && input.roles?.includes("agents")) {

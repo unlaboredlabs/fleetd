@@ -4,6 +4,7 @@
 // makes one box per agent there (node/sandbox, node/place/hosted.ts).
 import type { ComputerChoice, ComputerPick, KnownSandboxCheckReason, KnownSandboxProvider, ProviderTrouble, SandboxProviderState, SlotSandbox } from "./contracts.ts";
 import { notOffered, SIZES, sizeText } from "../sandbox/providers/common.ts";
+import { settingsPath } from "./settings_path.ts";
 
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
 export const CAP_SANDBOX = "sandbox";
@@ -159,14 +160,14 @@ export function computerChoices(o: { providers: readonly SandboxProviderState[];
     const st = o.providers.find((x) => x.provider === p);
     if (!st?.connected) continue;
     const off =
-      st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? "test it again in Settings › Hub › Machines"}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
+      st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? `test it again in ${settingsPath()} › Machines`}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
     for (const size of SIZES[p]) out.push({ kind: p, cpu: size.cpu, memGb: size.memGb, label: computerLabel({ kind: p, ...size }), ...(off ? { unavailable: off } : {}) });
   }
   const pick = o.pick;
   if (pick && !out.some((c) => c.kind === pick.kind && c.cpu === pick.cpu && c.memGb === pick.memGb)) {
     const why = !isProvider(pick.kind)
       ? `this hub doesn't know ${pick.kind}`
-      : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} isn't connected: an admin connects it in Settings › Hub › Machines`);
+      : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} isn't connected: an admin connects it in ${settingsPath()} › Machines`);
     out.push({ kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb, label: computerLabel(pick), unavailable: why });
   }
   return out;

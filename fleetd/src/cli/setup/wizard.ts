@@ -17,6 +17,7 @@ import { loginCommand, loginStatusCommand } from "./machine_plan.ts";
 import { capture, localDirs, release } from "./shared.ts";
 import { runAttached, runSsh } from "./ssh.ts";
 import { q } from "./units.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 const AGAIN = "Run fleetd init to continue; it keeps what's done.";
 /** A join that stopped before it enrolled: a plain `fleetd init` would ask what this machine is, as on a new one. */
@@ -572,7 +573,7 @@ export async function openStep(opts: InitOptions, id: string, interactive: boole
   try {
     const status = await walk(opts, ui, list, client, found);
     if (status === "done") {
-      list.outro([], "Next: fleetd init lists what's left; the app's Settings › Hub › Setup has the same steps.");
+      list.outro([], `Next: fleetd init lists what's left; the app's ${settingsPath()} › Setup has the same steps.`);
       return 0;
     }
     list.outro([], `Run fleetd init --step ${id} again when you've done it; it keeps what's done.`);

@@ -12,6 +12,7 @@ import { eprintln, isLiveHubHome, liveHubRefusal, println, readSetup, resolveHom
 import { localHostName, machineIdFromHost } from "./project.ts";
 import { openHub, secret } from "./store.ts";
 import { GITHUB_APP_USAGE } from "./usages.ts";
+import { settingsPath } from "../shared/settings_path.ts";
 export { GITHUB_APP_USAGE };
 
 /** How long GitHub's form may take: reading it, renaming the App, signing in. */
@@ -88,7 +89,7 @@ function show(apps: GithubApps) {
   if (app) describe(app);
   else {
     println(
-      "This hub has no GitHub App yet: `fleetd github-app create`, or Settings › Hub › Setup › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.",
+      `This hub has no GitHub App yet: \`fleetd github-app create\`, or ${settingsPath()} › Setup › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.`,
     );
   }
 }

@@ -3,6 +3,7 @@
 // calls have no field for any of them (W614, D442): a field named here is refused before anything else is read, to a
 // lead and to a task alike.
 import { ToolError } from "../../shared/errors.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 export type PeopleOnly =
   | "approval_mode"
@@ -24,7 +25,9 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   agents: "Only a person picks a bot's profiles and models and sets its max agents: Settings › Bots › Agents in the app.",
   card: "Only a person gives a bot a card: the bot's Vault in the app, on their own device.",
   vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a bot's variables in its Vault tab. For a secret you need, call request_secret.",
-  mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Bot defaults › Tools & skills, or the bot's own settings, in the app.",
+  get mcp_servers() {
+    return `Only a person adds or removes MCP servers: ${settingsPath()} › Bot defaults › Tools & skills, or the bot's own settings, in the app.`;
+  },
   prompts: "Only a person edits prompts: the bot's settings › Prompts in the desktop app. The bot's Instructions are yours to write: project_setup with instructions.",
   delete: "Only a person deletes a bot: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
   create:

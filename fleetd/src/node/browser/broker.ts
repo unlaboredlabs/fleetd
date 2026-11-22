@@ -36,6 +36,7 @@ import { boxChrome, reattachChrome, type ScreenBox, timing } from "../place/box_
 import { type Meta, type Recording, type RecordingStore, Steps } from "./recording.ts";
 import { deliver as deliverSecureInput, fillApproved, request as requestSecureInput, type Waiting, waitingKey } from "./secure_input.ts";
 import { Session, type SessionState } from "./session.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** A session no step touched this long ends (BrokerHost `idleMinutes`, else 30). */
 const IDLE_MINUTES = 30;
@@ -295,7 +296,7 @@ export class BrowserBroker {
         throw new ToolError(
           "failed",
           `The browser didn't start: ${(e as Error).message}`,
-          "do without it and say so in your result; a person can check this machine's browser screens in Settings › Hub › Machines",
+          `do without it and say so in your result; a person can check this machine's browser screens in ${settingsPath()} › Machines`,
         );
       }
       let own: [string, string][];

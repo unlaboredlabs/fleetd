@@ -1,6 +1,7 @@
 // An order's GitHub token at its agents, without the hub (sessions.ts hands it over): the placeholders that take it
 // back, what a task started without one is told, how long one lasts before it is renewed, and the lead's line when it
 // is taken back.
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** The node capability an `order:` sink needs (contracts `CAP_ORDER_ENV`). */
 export const CAP_ORDER_ENV = "order_env";
@@ -30,6 +31,6 @@ export function blockedLine(order: string, name: string, why: Block): string {
       "at their next command."
     : `${order}: its agents' GitHub token ended and the hub couldn't renew it (${why.why}), so their gh fails (GitHub says bad ` +
       "credentials) rather than use the machine's own login. The hub tries again every 5 minutes and the agents " +
-      "get the new token at their next command; if it keeps failing, an admin runs Test in Settings › Hub " +
+      `get the new token at their next command; if it keeps failing, an admin runs Test in ${settingsPath()} ` +
       "accounts › GitHub.";
 }

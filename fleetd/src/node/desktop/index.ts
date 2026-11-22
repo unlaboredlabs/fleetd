@@ -46,6 +46,7 @@ import { DesktopSessions, IDLE_MINUTES } from "./desktops.ts";
 import { DiskDesktopRecordings } from "./disk_recordings.ts";
 import { hasBox, hostedBox } from "../place/hosted.ts";
 import { BOX_NO_DESKTOP_LAUNCH, inBox as agentInBox } from "../place/index.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** The capability a node lists at its hello once desktop sessions can run (node_link.rs `CAP_SESSION_DESKTOP`). */
 export const CAP_SESSION_DESKTOP = "session_linux_desktop";
@@ -503,7 +504,7 @@ export class Desktops extends DesktopSessions implements Screens {
       throw new ToolError(
         "failed",
         "This machine lends no Mac screen: it is off in its node.json, or this isn't a Mac.",
-        "say so in your result: an admin turns the Mac screen on, on the Mac's page in Settings › Hub › Machines",
+        `say so in your result: an admin turns the Mac screen on, on the Mac's page in ${settingsPath()} › Machines`,
       );
     }
     const open = this.sessions.get(thread);

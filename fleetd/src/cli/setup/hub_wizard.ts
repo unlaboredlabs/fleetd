@@ -32,6 +32,7 @@ import { runLocal } from "./ssh.ts";
 import { isFailure } from "./steps.ts";
 import { q } from "./units.ts";
 import { failedWithLog, type InitOptions, nodeLine, notes, splitFix, type Ui, walk, workerClaude } from "./wizard.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 const PORT = 4790;
 /** The installer's line, with the desktop app or without. */
@@ -581,7 +582,7 @@ async function setupSteps(opts: InitOptions, ui: Ui, list: Checklist, idle: stri
   list.done("doctor", `${ok} of ${rest.length} other checks pass`);
   const left: [string, string, string][] = all.filter((s) => s.status !== "done").map((s) => [s.id, s.title, steps.needWords(s.need)]);
   if (left.length === 0 || !ui.interactive) return;
-  const picked = await ui.multi(list, "Set up any of these now? (the app's Settings › Hub › Setup has them too)", left, []);
+  const picked = await ui.multi(list, `Set up any of these now? (the app's ${settingsPath()} › Setup has them too)`, left, []);
   for (const step of all.filter((s) => picked.includes(s.id))) await walk(opts, ui, list, client, step);
 }
 

@@ -46,6 +46,7 @@ import {
   splitRaw,
   type Step,
 } from "./protocol.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 
 /** An agent's folder nothing touched for this many days goes. */
 export const FOLDER_DAYS = 3;
@@ -273,7 +274,7 @@ export class Host {
           throw new ToolError(
             "failed",
             "The agents' Mac has no iOS simulators: its golden simulator isn't made.",
-            "do without a simulator and say so; an admin finishes the Mac's setup in Settings › Hub › Machines",
+            `do without a simulator and say so; an admin finishes the Mac's setup in ${settingsPath()} › Machines`,
           );
         }
         return [await this.sims.start(agent, step.device, step.wait ?? false, screen), none];
