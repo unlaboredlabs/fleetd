@@ -29,6 +29,11 @@ on:
         type: choice
         options: [all, ios, screens, links, hosted, swipe]
         default: all
+      screens:
+        description: "With only=screens, which: the iPhone Duo, the ordinary iPhone (the branch's and main's), or both."
+        type: choice
+        options: [both, duo, phone]
+        default: both
       metro:
         description: >-
           A Metro server (host:port) the iOS simulator build loads its JavaScript from: a Debug build, for trying
@@ -287,15 +292,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - app: branch
-            devices: duo
-          - app: branch
-            devices: phone
-          - app: main
-            devices: phone
+        include: >-
+          ${{ fromJSON(inputs.screens == 'duo' && '[{"app":"branch","devices":"duo"}]'
+          || inputs.screens == 'phone' && '[{"app":"branch","devices":"phone"},{"app":"main","devices":"phone"}]'
+          || '[{"app":"branch","devices":"duo"},{"app":"branch","devices":"phone"},{"app":"main","devices":"phone"}]') }}
     runs-on: xcode-27
-    timeout-minutes: 120
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
         with:

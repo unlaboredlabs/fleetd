@@ -50,8 +50,10 @@ done
 home=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).fleetdHome)' "$LAB/lab.json")
 say "phone lab up: $(cat "$LAB/lab.json" | tr -d '\n')"
 
-# A pairing link of its own for each simulator: a code pairs once.
-pair_link() { FLEETD_HOME=$home HOME=$home/hub-user "$FLEETD_BIN" pair --no-qr --name "$1" | sed -n 's/^Pairing link: //p'; }
+# A pairing code of its own for each simulator (a code pairs once), and the hub's address, as `fleetd pair` prints them.
+pair_code() { FLEETD_HOME=$home HOME=$home/hub-user "$FLEETD_BIN" pair --no-qr --name "$1" >"$WORK/pair.txt"; }
+# Its first word: "Pairing code: ABCD-2345  (single use, …)", "Hub address:  http://…".
+pair_field() { sed -n "s/^$1: *//p" "$WORK/pair.txt" | head -n1 | cut -d' ' -f1; }
 
 # The newest runtime's simulator of that name, as the image installs them.
 udid_of() {
@@ -96,21 +98,31 @@ start() {
   try ad install "$APP"
   # agent-device's XCTest runner, built and started once, before any wait counts on it.
   try adlong prepare ios-runner --timeout 900000
+  # Paired by typing the hub's address and the code into Enter Code Manually, and notifications allowed before the
+  # app asks: no system prompt, which agent-device's runner can't answer on the iPhone Duo (a pairing link raises
+  # "Open in fleetd?").
+  try ad settings permission grant notifications --app sh.fleetd.app
   try adlong open sh.fleetd.app --timeout 900000
-  try ad open "$(pair_link "$device")"
-  # iOS's "Open in “fleetd”?" (Open), then the app's own "Connect" to the hub, then notifications (Don't Allow).
-  if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert accept; fi
-  try ad wait 'label="Connect"' 120000
+  pair_code "$device"
+  try ad press 'label="Enter Code Manually"'
+  try ad wait 'label="Hub address"' 30000
+  try ad fill 'label="Hub address"' "$(pair_field "Hub address")"
+  try ad fill 'label="Pairing code"' "$(pair_field "Pairing code")"
   try ad press 'label="Connect"'
-  if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert dismiss; fi
   try ad wait text "inventory" 120000
 }
 
 open_chat() { try ad find "inventory" click --first; try ad wait text "Low-stock alerts" 30000; }
 open_info() { try ad press 'label="Info"'; try ad wait text "Agents" 30000; }
 back() { try ad back; sleep 1; }
-# closed or open; the app's window follows a few seconds later.
-fold() { xcrun simctl spawn "$UDID" "$FOLD" "$1" >>"$LOG" 2>&1 || say "  failed: fold $1"; sleep 8; }
+# closed or open, as a two-second turn of the hinge from the other end; the app's window follows a few seconds later.
+# The lit panel's size in the next shot says whether it took (466x678 closed, 951x669 or 669x951 open).
+fold() {
+  local frames='[{"atMs":0,"angle":0},{"atMs":2000,"angle":180}]'
+  [ "$1" = closed ] && frames='[{"atMs":0,"angle":180},{"atMs":2000,"angle":0}]'
+  xcrun simctl spawn "$UDID" "$FOLD" "$frames" >>"$LOG" 2>&1 || say "  failed: fold $1"
+  sleep 8
+}
 # From Chats: Settings (a pushed stack), then New Bot (a sheet), each shot and closed again.
 others() {
   try ad find "Settings," click --first
