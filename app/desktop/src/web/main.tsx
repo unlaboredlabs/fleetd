@@ -8,7 +8,7 @@ import { browserDeps } from "./browser";
 import { clearWebCache } from "./cache";
 import { Gate, type GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
-import { readSession, signInPath, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
+import { readSession, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -79,7 +79,11 @@ const start = async (session: WebSession) => {
   followBrowser(hubs, window);
   // GitHub's trip back (`?github=…`): read before the app starts, the address cleaned whichever screen it came back to.
   takeGithubReturn();
-  const joined = joinedTeam === null ? undefined : teamHubIds(session.teams.map((t) => t.id)).get(joinedTeam);
+  const hubIds = teamHubIds(session.teams.map((t) => t.id));
+  // A team the address names (the one picked at sign-in, Stripe's way back): its hub opens, on the screen asked for.
+  const named = teamFromAddress(window.location, hubIds);
+  if (named !== null) window.history.replaceState(window.history.state, "", `${window.location.pathname}${named.search}${named.hash}`);
+  const joined = joinedTeam === null ? undefined : hubIds.get(joinedTeam);
   if (joined !== undefined) window.location.hash = toHash(startScreen(joined));
   // The desktop's renderer, as it starts in the app: it reads window.fleetd as its modules load.
   await import("../renderer/src/main");

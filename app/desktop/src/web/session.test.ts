@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, signInPath, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
+import { readSession, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -59,5 +59,20 @@ describe("signInPath and teamHubId", () => {
     expect(ids.get("side")).toBe("side");
     const again = teamHubIds(["ab", "side", "acme-corporation-us", "a-b", "acme-corporation-eu"]);
     expect([...again].toSorted()).toEqual([...ids].toSorted());
+  });
+});
+
+describe("teamFromAddress", () => {
+  const hubs = new Map([["3f2b9c1e-0000-4000-8000-000000000001", "3f2b9c1e00004000"]]);
+  it("opens the team the address names, on the screen its hash asks for, and takes the parameter away", () => {
+    expect(teamFromAddress({ search: "?team=3f2b9c1e-0000-4000-8000-000000000001", hash: "" }, hubs)).toEqual({ search: "", hash: "#/?at=3f2b9c1e00004000" });
+    const billing = teamFromAddress({ search: "?billing=paid&team=3f2b9c1e-0000-4000-8000-000000000001", hash: "#/settings/hub/billing" }, hubs);
+    expect(billing?.search).toBe("?billing=paid");
+    expect(billing?.hash).toContain("settings/hub/billing");
+    expect(billing?.hash).toContain("at=3f2b9c1e00004000");
+  });
+  it("leaves the screen alone for a team that isn't the account's, and an address naming none", () => {
+    expect(teamFromAddress({ search: "?team=someone-else", hash: "#/settings/hub/billing" }, hubs)).toEqual({ search: "", hash: "#/settings/hub/billing" });
+    expect(teamFromAddress({ search: "?github=connected", hash: "#/" }, hubs)).toBeNull();
   });
 });

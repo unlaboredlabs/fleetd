@@ -10,6 +10,7 @@
 // Every call but a GET carries `x-fleetd-web: 1`, which a page on another origin can't send without a preflight the
 // cloud never answers.
 import { z } from "zod";
+import { parseHash, toHash } from "../renderer/screens/shell/routes";
 
 /** The header every call carries; the cloud refuses a write without it. */
 export const WEB_HEADER = { "x-fleetd-web": "1" } as const;
@@ -121,4 +122,21 @@ export const teamHubIds = (teamIds: readonly string[]): ReadonlyMap<string, stri
   const counts = new Map<string, number>();
   for (const id of base.values()) counts.set(id, (counts.get(id) ?? 0) + 1);
   return new Map([...base].map(([team, id]) => [team, (counts.get(id) ?? 0) > 1 ? `${id.slice(0, 9)}${hashOf(team)}` : id]));
+};
+
+/**
+ * The team an address names (`?team=<team id>`: the one picked on WorkOS's page at sign-in, or Stripe's way back), as
+ * the address the app opens: the screen its hash names, on that team's hub, and the parameter gone. Null when it names
+ * none of `hubs` (team id → hub id), which leaves the address as it is.
+ */
+export const teamFromAddress = (address: { readonly search: string; readonly hash: string }, hubs: ReadonlyMap<string, string>): { search: string; hash: string } | null => {
+  const params = new URLSearchParams(address.search);
+  const team = params.get("team");
+  if (team === null) return null;
+  params.delete("team");
+  const rest = params.toString();
+  const search = rest === "" ? "" : `?${rest}`;
+  const hub = hubs.get(team);
+  if (hub === undefined) return { search, hash: address.hash };
+  return { search, hash: toHash({ ...parseHash(address.hash), at: hub }) };
 };
