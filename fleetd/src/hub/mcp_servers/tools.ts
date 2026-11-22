@@ -364,10 +364,15 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   const missing = secretsMissingOn(server, machineId);
   const session = forSession(server, machineId, tailnetSuffix(hub));
   if (!session) {
-    return {
-      machineId,
-      result: { tools: [], error: `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.` },
-    };
+    // Why no agent gets it: a vault item that can't be used, a secret the machine doesn't hold, or a team server with
+    // no key that nobody signed in to.
+    const problem = valuesOf(server).find(([, v]) => v.kind === "vault" && v.problem !== undefined)?.[1];
+    const error = problem
+      ? `${problem.name}: ${problem.problem}`
+      : missing.length > 0
+        ? `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.`
+        : `${server.name} has no key and isn't signed in, so no agent gets it: sign in to it in Connections, or add a key.`;
+    return { machineId, result: { tools: [], error, ...(problem === undefined && missing.length === 0 ? { signIn: true } : {}) } };
   }
   const projectId = project?.projectId;
   let result = await mcpTest(hub, machineId, projectId, session);

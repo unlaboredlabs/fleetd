@@ -106,6 +106,9 @@ test("a header from a team login is sealed to the machine by the hub, again when
   expect(held.has("crm/header/Authorization")).toBe(false);
   expect(mcpServers(k.hub).get(team, "crm")!.headers![0]).toMatchObject({ kind: "vault", problem: "Its vault item was deleted: pick another." });
   expect(names(PROJECT)).toEqual([]);
+  // Its Test says why, not which secret is missing.
+  const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope: team, name: "crm", machineId: M });
+  expect(tested.result.error).toBe("Authorization: Its vault item was deleted: pick another.");
 });
 
 test("a team server takes only team logins; a bot's own server its own variables too", async () => {
@@ -153,6 +156,10 @@ test("a URL that signs in is saved signed out with its issuer, before any Test, 
   const out = await set({ scope: team, name: "notion", transport: { type: "http", url: `${oauthService.base}/mcp` } });
   expect(out.server.oauth).toEqual({ status: "signed_out", issuer: `${oauthService.base}/as` });
   expect(names(PROJECT)).toEqual([]);
+  // A team server with no key that nobody signed in to: its Test names it and offers Sign in.
+  await set({ scope: team, name: "linear", transport: { type: "http", url: "http://127.0.0.1:9/mcp" } });
+  const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope: team, name: "linear", machineId: M });
+  expect(tested.result).toEqual({ tools: [], error: "linear has no key and isn't signed in, so no agent gets it: sign in to it in Connections, or add a key.", signIn: true });
   // One with a key of its own isn't asked.
   const keyed = await set({ scope: team, name: "keyed", transport: { type: "http", url: `${oauthService.base}/mcp` }, headers: [{ kind: "plain", name: "X-Api", value: "v" }] });
   expect(keyed.server.oauth).toBeUndefined();
