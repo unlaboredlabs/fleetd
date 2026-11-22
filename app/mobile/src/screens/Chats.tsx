@@ -502,9 +502,9 @@ function SwipingChat({ row, separator, open, onPress, onPin, more }: { row: Chat
           accessibilityRole="button"
           accessibilityLabel={rowLabel(row)}
           accessibilityState={{ selected: open }}
-          style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : open ? { backgroundColor: t.fill } : null)}
+          style={({ pressed }) => (pressed ? { backgroundColor: t.fillQuiet } : null)}
         >
-          <ChatRowFace row={row} separator={separator} lifted={lifted} />
+          <ChatRowFace row={row} separator={separator && !open} lifted={lifted} open={open} />
         </HoldMenu>
       )}
     </SwipeRow>
@@ -522,7 +522,7 @@ const rowLabel = (row: ChatRow): string => {
   return [row.project.title, line, ...counts].filter((s) => s !== undefined && s !== "").join(", ");
 };
 
-function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: boolean; lifted: SharedValue<number> }) {
+function ChatRowFace({ row, separator, lifted, open = false }: { row: ChatRow; separator: boolean; lifted: SharedValue<number>; open?: boolean }) {
   const t = useTheme();
   // Swiped, the row is a card with no line under it.
   const line = useAnimatedStyle(() => ({ opacity: 1 - lifted.value }));
@@ -536,6 +536,8 @@ function ChatRowFace({ row, separator, lifted }: { row: ChatRow; separator: bool
   const bot = useBot(row.key, unread || row.markedUnread);
   return (
     <View style={styles.row}>
+      {/* Open beside the list: a faint rounded box inset from the edges, not a slab across the row. */}
+      {open ? <View pointerEvents="none" style={[styles.open, { backgroundColor: t.fillQuiet }]} /> : null}
       <Avatar name={row.project.title} size={AVATAR} picture={row.project} bot={bot} />
       <View style={styles.body}>
         <View style={styles.top}>
@@ -641,6 +643,7 @@ const styles = StyleSheet.create({
   marks: { flexDirection: "row", alignItems: "center", gap: 4, height: 20 },
   match: { fontWeight: "600" },
   separator: { position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
+  open: { position: "absolute", left: space.sm, right: space.sm, top: 2, bottom: 2, borderRadius: 12, borderCurve: "continuous" },
   me: { width: ME_BOX, height: ME_BOX },
   meFace: { position: "absolute", left: (ME_BOX - ME) / 2, top: (ME_BOX - ME) / 2, width: ME, height: ME },
   meDot: { position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
