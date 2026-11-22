@@ -168,6 +168,8 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
   f.answer("person_remove", undefined, { person: { ...bob, removedAt: f.now }, revoked: 1 });
   // Every project › Agents: the hub's task profiles.
   f.answer("profiles_list", {}, profilesList());
+  // Providers: Google not connected yet, devbox the one machine to sign in, its Google page waiting for the code.
+  answerGoogle(f, { machines: [{ machineId: "devbox", checked: true }], keyIn: [] });
   // The hub's GitHub App, and everyone's connection through it, for People's rows: Sam's and Alice's connected,
   // Bob's not yet. A member is answered with their own only.
   const login = (l: string): JsonObject => ({ login: l, userId: l.length, connectedAt: "2026-10-18T09:20:00.000Z" });
@@ -244,6 +246,19 @@ export default defineGroup({
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
     hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Hub group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
+    // Providers with Google connected: devbox signed in on a Google AI Pro plan, and storefront holding a Gemini key.
+    answerGoogle(hub(base("chat-empty"), "admin-google", "Sam's hub with Google connected: devbox signed in, and a Gemini key in storefront's Vault", sam, true), {
+      machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }],
+      keyIn: [{ machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" }],
+    }),
     hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),
   ],
 });
+
+/** Where Google is connected (antigravity_status), and a sign-in on devbox: its Google page, then the code taken. */
+export function answerGoogle(f: Fixture, status: JsonObject): Fixture {
+  f.answer("antigravity_status", undefined, status);
+  f.answer("machine_antigravity_login", { code: "g#1" }, { machineId: "devbox", message: "Antigravity is signed in (Google AI Pro)", signedIn: "Google AI Pro" });
+  f.answer("machine_antigravity_login", { machineId: "devbox" }, { machineId: "devbox", message: "sign in at the URL, then give the code it shows", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=devbox" });
+  return f;
+}

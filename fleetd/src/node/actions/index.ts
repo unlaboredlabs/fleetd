@@ -35,8 +35,9 @@ export type ActionHooks = {
   scoped?: () => Promise<boolean>;
   /** The machine's Claude Code, and its login, with the runner's environment. */
   claude?: { installer: Claude; binary: string; env: () => Env; logins: Logins; reprobe: () => Promise<{ login: string }> };
-  /** Antigravity's sign-in from the app: its agy (installed first where there is none), the runner's environment. */
-  antigravity?: { binary: () => Promise<string>; env: () => Env; logins: Logins };
+  /** Antigravity's sign-in from the app: its agy (installed first where there is none), the agy already here if any
+   * (`antigravity_status`, which installs nothing), the runner's environment. */
+  antigravity?: { binary: () => Promise<string>; found: () => string | undefined; env: () => Env; logins: Logins };
   /** A self-update: install `update` and restart (node/update). */
   update?: (frame: NodeAction) => Promise<NodeActionResult>;
 };
@@ -118,6 +119,18 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
         if (plan !== undefined) return answer(frame.id, true, `Antigravity is signed in (${plan})`, { signed_in: plan });
         const url = await hooks.antigravity.logins.start(agy.loginArgv(binary), agy.loginEnv(env));
         return answer(frame.id, true, "sign in at the URL, then give the code it shows", { login_url: headUtf16(url, 4000) });
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message);
+      }
+    }
+    case "antigravity_status": {
+      // Only says: no agy is installed for it, nothing starts, and a machine without agy is not signed in.
+      if (!hooks.antigravity) return answer(frame.id, false, "this node doesn't sign Antigravity in");
+      const binary = hooks.antigravity.found();
+      if (binary === undefined) return answer(frame.id, true, "Antigravity isn't installed");
+      try {
+        const plan = await agy.signedIn(binary, hooks.antigravity.env());
+        return plan === undefined ? answer(frame.id, true, "Antigravity isn't signed in") : answer(frame.id, true, `Antigravity is signed in (${plan})`, { signed_in: plan });
       } catch (error) {
         return answer(frame.id, false, (error as Error).message);
       }

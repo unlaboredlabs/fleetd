@@ -2,6 +2,7 @@
 // the pickers, the dry run, a prompt whose default changed), and `settings-prompts` is the whole real
 // registry from the fake prompt hub: every prompt's real text, a hub-wide edit made against an older default (the
 // 3-way Update view), a project's own edit, and the instructions at both levels.
+import { answerGoogle } from "../admin/index.ts";
 import fs from "node:fs";
 import { defineGroup, SHARED } from "../kit/group.ts";
 import { Fixture } from "../kit/fixture.ts";
@@ -279,6 +280,7 @@ const shared = (f: Fixture) => basics(f);
 function agents(from: Fixture): Fixture {
   const f = Fixture.from(from, "settings-agents", "A fleet cap of 16; one bot under its max, one at it, one with no limit of its own");
   f.agentsFromSlots = true;
+  answerGoogle(f, { machines: [{ machineId: "devbox", checked: true }], keyIn: [] });
   // An admin's key on a hub from before people: the Hub group shows, with the fleet and machine caps.
   f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
   const projects = isObject(f.snapshot) && Array.isArray(f.snapshot["projects"]) ? f.snapshot["projects"].filter(isObject) : [];

@@ -77,8 +77,9 @@ export const CallRequest = z.strictObject({
   input: z.custom<z.core.util.JSONType>(isBoundedJson, {
     message: `Input must be plain JSON, at most ${MAX_CALL_INPUT_BYTES} bytes and ${MAX_CALL_INPUT_DEPTH} levels deep.`,
   }),
-  /** Defaults to 30 s. Long-polls such as events_wait pass their own. */
-  timeoutMs: z.int().min(100).max(300_000).optional(),
+  /** Defaults to 30 s. Long-polls such as events_wait pass their own; the longest, Google's first sign-in on a machine,
+   * which may install agy first, waits 10 minutes (GoogleSignIn.tsx's AGY_SIGN_IN_WAIT_MS). */
+  timeoutMs: z.int().min(100).max(600_000).optional(),
 });
 export type CallRequest = z.infer<typeof CallRequest>;
 
