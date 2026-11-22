@@ -247,6 +247,8 @@ export function SettingsRow(props: {
   hintId?: string | undefined;
   /** Marks for tests and the QA screens (`data-…`). */
   data?: Readonly<Record<`data-${string}`, string | undefined>> | undefined;
+  /** Flush with the fields around it, for a row inside a form (a profile's editor) rather than in a group. */
+  flush?: boolean | undefined;
 }) {
   const ref = useReveal<HTMLElement>(props.reveal ?? "");
   const own = useId();
@@ -254,7 +256,7 @@ export function SettingsRow(props: {
   const label = props.label ?? (typeof props.title === "string" ? props.title : undefined);
   const stop = said(props.hint) && props.control === undefined;
   return (
-    <section ref={ref} className={g.row} aria-label={label} aria-describedby={said(props.hint) ? hintId : undefined} tabIndex={-1} {...props.data}>
+    <section ref={ref} className={cx(g.row, props.flush === true && g.flush)} aria-label={label} aria-describedby={said(props.hint) ? hintId : undefined} tabIndex={-1} {...props.data}>
       <Hinted hint={props.hint}>
         <div className={g.rowHead}>
           <div className={cx(g.rowText, props.mark !== undefined && g.marked)}>

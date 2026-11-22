@@ -1,6 +1,7 @@
 // The task profiles' page (Settings › Hub › Every project › Agents) and a project's allowed ones, kept free of
 // React: a profile's draft, what it checks before the hub does, and the calls it makes.
 import type { Effort, Profile, ProfileCreateInput, ProfileModel, ProfileUpdateInput } from "../../../shared/contracts";
+import { byProvider, providerOf } from "../../../shared/agentProviders";
 
 /** The name `spawn_agent` takes: as the hub checks it. */
 const NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/u;
@@ -91,3 +92,26 @@ export function allowedAfter(allowed: ReadonlyArray<string>, defaultName: string
   const rest = allowed.filter((n) => n !== defaultName && n !== name);
   return on ? [...rest, name].sort() : rest;
 }
+
+/** The profiles by their models' providers, each provider's in the order given, with its name to group them under. */
+export const byProviderOf = (profiles: ReadonlyArray<Profile>): { profile: Profile; group: string }[] =>
+  byProvider(profiles, (p) => p.model).flatMap((g) => g.items.map((profile) => ({ profile, group: g.provider.name })));
+
+/** A choice of Lead model past Hub default: a profile, or a model no profile runs on yet, which a profile is made on. */
+export type LeadChoice = { kind: "profile"; profile: Profile; group: string } | { kind: "model"; model: ProfileModel; group: string };
+
+/**
+ * Lead model's choices past Hub default, by provider: each profile, and each model of a provider other than Anthropic's
+ * that no profile runs on (Google's Gemini), so a lead can start on one from here; Anthropic's are the profiles alone.
+ */
+export function leadChoices(profiles: ReadonlyArray<Profile>, models: ReadonlyArray<ProfileModel>): LeadChoice[] {
+  const bare = models.filter((m) => providerOf(m.id).id !== "anthropic" && !profiles.some((p) => p.model === m.id));
+  const all: ({ kind: "profile"; profile: Profile } | { kind: "model"; model: ProfileModel })[] = [
+    ...profiles.map((profile) => ({ kind: "profile" as const, profile })),
+    ...bare.map((model) => ({ kind: "model" as const, model })),
+  ];
+  return byProvider(all, (c) => (c.kind === "profile" ? c.profile.model : c.model.id)).flatMap((g) => g.items.map((c) => ({ ...c, group: g.provider.name })));
+}
+
+/** A model choice's value in Lead model's picker: never a profile's name, which can't hold a colon. */
+export const MODEL_CHOICE = "model:";

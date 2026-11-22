@@ -163,6 +163,7 @@ export const TOOLS = {
   mac_code_status: { scope: "admin", module: "src/hub/pair" },
   machine_claude_login: { scope: "admin", module: "src/hub/machine_setup" },
   machine_antigravity_login: { scope: "admin", module: "src/hub/machine_setup" },
+  antigravity_status: { scope: "read", module: "src/hub/machine_setup" },
   artifacts_list: { scope: "read", module: "src/hub/artifacts" },
   artifact_get: { scope: "read", module: "src/hub/artifacts" },
   skills_list: { scope: "read", module: "src/hub/skills" },

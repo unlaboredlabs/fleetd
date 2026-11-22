@@ -283,7 +283,10 @@ test("the app signs Antigravity in through the node: it checks the sign-in, runs
   chmodSync(bin, 0o755);
   const signin = join(dir, "signed-in");
   const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, AGY_SIGNIN: signin, DISPLAY: ":0" };
-  const hooks = { antigravity: { binary: async () => bin, env: () => env, logins: new Logins(10_000) } };
+  const hooks = { antigravity: { binary: async () => bin, found: () => bin, env: () => env, logins: new Logins(10_000) } };
+  // The status only asks: not signed in, and no sign-in starts.
+  const before = await runNodeAction({ id: "s1", action: "antigravity_status" }, hooks);
+  expect([before.ok, before.signed_in, before.login_url]).toEqual([true, undefined, undefined]);
   const started = await runNodeAction({ id: "a1", action: "antigravity_login" }, hooks);
   expect([started.ok, started.login_url, started.signed_in]).toEqual([true, "https://accounts.google.com/o/oauth2/auth?state=fake", undefined]);
   const bad = await runNodeAction({ id: "a2", action: "antigravity_login_code", code: "nope" }, hooks);
@@ -294,6 +297,10 @@ test("the app signs Antigravity in through the node: it checks the sign-in, runs
   // Signed in now: a new ask starts nothing and says so.
   const again = await runNodeAction({ id: "a5", action: "antigravity_login" }, hooks);
   expect([again.ok, again.signed_in, again.login_url]).toEqual([true, "Google AI Pro", undefined]);
+  expect((await runNodeAction({ id: "s2", action: "antigravity_status" }, hooks)).signed_in).toBe("Google AI Pro");
+  // A machine without agy is not signed in, and the status installs nothing.
+  const bare = await runNodeAction({ id: "s3", action: "antigravity_status" }, { antigravity: { ...hooks.antigravity, binary: async () => { throw new Error("installs"); }, found: () => undefined } });
+  expect([bare.ok, bare.signed_in, bare.message]).toEqual([true, undefined, "Antigravity isn't installed"]);
   // The login never opens a browser of the machine's own, and tells agy it runs over SSH.
   expect(agy.loginEnv(env)).toMatchObject({ BROWSER: "true", SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0" });
   expect(agy.loginEnv(env).DISPLAY).toBeUndefined();

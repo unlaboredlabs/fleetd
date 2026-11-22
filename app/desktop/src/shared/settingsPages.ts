@@ -6,7 +6,7 @@
 export const YOU_PAGES = { general: "General", accounts: "Accounts", vault: "Vault", memory: "Memory", hubs: "Hubs & devices" } as const;
 
 /** The admins' group: Hub on a self-hosted hub, Team on a fleetd cloud team. */
-export const HUB_PAGES = { people: "People", machines: "Machines", billing: "Billing", botDefaults: "Bot defaults", setup: "Setup" } as const;
+export const HUB_PAGES = { people: "People", machines: "Machines", providers: "Providers", billing: "Billing", botDefaults: "Bot defaults", setup: "Setup" } as const;
 
 /** The rows of Accounts. */
 export const ACCOUNT_ROWS = ["Claude", "GitHub", "1Password"] as const;
