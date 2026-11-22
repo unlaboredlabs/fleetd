@@ -15,7 +15,6 @@ import {
   enabled,
   forgetRuntimeCheck,
   healthOf,
-  iosRecordingsDir,
   recordingsDir,
   hostCheck,
   start as startDesktop,
@@ -23,6 +22,7 @@ import {
 } from "../src/node/desktop/index.ts";
 import { bmp, jpeg } from "../src/node/desktop/screen.ts";
 import { NO_VIDEO } from "../src/node/desktop/session.ts";
+import { recordingsDir as iosSimRecordingsDir } from "../src/node/device/ios/sim_screen.ts";
 import { Masker } from "../src/node/mask.ts";
 import { charKeysym, keysym, parseChord, X } from "../src/node/desktop/x11.ts";
 import { router } from "../src/node/device/router.ts";
@@ -386,7 +386,7 @@ test("no switch: an older node.json's desktop.enabled turns nothing off; only th
   }
 });
 
-test("recordings a stopped node left (desktop ones and a Rust node's iOS screens') are ended and go to the hub", async () => {
+test("desktop recordings a stopped node left are ended and go to the hub; a live iOS simulator screen's are not the desktop's", async () => {
   const t = testNode("devbox");
   cleanups.push(t.done);
   const reports: Record<string, unknown>[] = [];
@@ -404,8 +404,12 @@ test("recordings a stopped node left (desktop ones and a Rust node's iOS screens
   const base = { kind: "linux_desktop", threadId: "t1", cwd: "/", purpose: "look", startedAt: "2026-11-01T10:00:00.000Z", credentialsFilled: 0 };
   const ended = join(recordingsDir(t.node.home), `B${"1".repeat(32)}`);
   write(ended, { ...base, sessionId: `B${"1".repeat(32)}`, endedAt: "2026-11-01T10:05:00.000Z" });
-  const cut = join(iosRecordingsDir(t.node.home), `B${"2".repeat(32)}`);
-  write(cut, { ...base, kind: "ios", sessionId: `B${"2".repeat(32)}` });
+  const cut = join(recordingsDir(t.node.home), `B${"2".repeat(32)}`);
+  write(cut, { ...base, sessionId: `B${"2".repeat(32)}` });
+  // An iOS simulator's screen on the agents' Mac records under device/ios/recordings while it is live (sim_screen.ts),
+  // and SimScreens sends what a stopped node left there: the desktop's sweep never ends it, however long it is still.
+  const sim = join(iosSimRecordingsDir(t.node.home), `B${"4".repeat(32)}`);
+  write(sim, { ...base, kind: "ios", sessionId: `B${"4".repeat(32)}` });
   // A session still opening (its folder is new and it hasn't ended) is left alone; so is a live one.
   const opening = join(recordingsDir(t.node.home), `B${"3".repeat(32)}`);
   write(opening, { ...base, sessionId: `B${"3".repeat(32)}` });
@@ -415,7 +419,9 @@ test("recordings a stopped node left (desktop ones and a Rust node's iOS screens
   // Ten minutes on, those a node stopped during are ended with a note, and go too.
   await d.sweep(Date.now() + 10 * 60_000);
   expect(existsSync(cut)).toBe(false);
+  expect(existsSync(sim)).toBe(true);
+  expect(readFileSync(join(sim, "session.json"), "utf8")).not.toContain("endedAt");
   const recorded = reports.filter((r) => r.state === "recorded");
   expect(recorded.map((r) => r.sessionId).sort()).toEqual([`B${"1".repeat(32)}`, `B${"2".repeat(32)}`, `B${"3".repeat(32)}`]);
-  expect(recorded.find((r) => r.kind === "ios")).toMatchObject({ note: "the node stopped during this session; its video may end early", files: [{ file: "actions" }] });
+  expect(recorded.find((r) => r.sessionId === `B${"2".repeat(32)}`)).toMatchObject({ note: "the node stopped during this session; its video may end early", files: [{ file: "actions" }] });
 });
