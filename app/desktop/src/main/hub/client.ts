@@ -171,6 +171,8 @@ export class HubClient implements HubSource {
   #frameAcks = false;
   /** The hub sends H.264 to a watch that asks (ready's `h264_frames`). */
   #h264 = false;
+  /** The windows decode H.264: the option, until `setVideo` says otherwise. */
+  #video: boolean;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
   #thumbsServed = false;
   /** This connection's hub reads compressed frames from the app: its `ready` listed `deflate`. */
@@ -181,6 +183,7 @@ export class HubClient implements HubSource {
 
   constructor(options: HubClientOptions) {
     this.#options = options;
+    this.#video = options.video === true;
     this.#state = { phase: "connecting", hub: options.hub, attempt: 0 };
   }
 
@@ -379,6 +382,13 @@ export class HubClient implements HubSource {
     if (this.#watch === session) return;
     this.#watch = session;
     if (this.#ready && this.#browser) this.#sendWatch();
+  }
+
+  setVideo(on: boolean): void {
+    if (this.#video === on) return;
+    this.#video = on;
+    // The watch again, asking or not: a JPEG at once, then H.264 from a keyframe or JPEG from then on.
+    if (this.#ready && this.#browser && this.#watch !== null) this.#sendWatch();
   }
 
   thumbs(on: boolean): void {
@@ -696,7 +706,7 @@ export class HubClient implements HubSource {
             t: "browser_watch",
             session: this.#watch,
             ...(this.#frameAcks ? { acks: true as const } : {}),
-            ...(this.#h264 && this.#options.video ? { video: true as const } : {}),
+            ...(this.#h264 && this.#video ? { video: true as const } : {}),
           },
     );
   }

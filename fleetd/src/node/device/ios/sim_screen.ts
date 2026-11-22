@@ -308,9 +308,9 @@ export class SimScreen {
     for (const watcher of this.watchers) watcher(frame);
   }
 
-  /** H.264 from now on (every watcher decodes it) within `kbps`, or JPEG. */
-  want(video: boolean, kbps: number | undefined): void {
-    this.shooter.want(video, kbps);
+  /** H.264 from now on (every watcher decodes it) within `kbps`, or JPEG: whether that switched. */
+  want(video: boolean, kbps: number | undefined): boolean {
+    return this.shooter.want(video, kbps);
   }
 
   /** A watcher lost an H.264 frame: the screen now as a JPEG, then H.264 from a keyframe. */
@@ -318,10 +318,7 @@ export class SimScreen {
     this.shooter.key();
   }
 
-  /** The screen now, for a watcher that just came: a JPEG, then (with H.264) a keyframe. */
-  fresh(): void {
-    this.shooter.run();
-  }
+
 
   /**
    * Each new frame of the screen to `fn` (the newest so far at once), until the returned function is called. The first
@@ -595,14 +592,14 @@ export class SimScreens {
     const screen = this.byId(frame.sessionId);
     if (!screen) return;
     if (!frame.on) return this.unwatch(screen.id);
-    if (frame.key) return screen.key();
-    screen.want(frame.video === true, frame.kbps);
+    const switched = screen.want(frame.video === true, frame.kbps);
     const on = this.pumps.get(screen.id);
     if (on) {
       on.pump.kbps = frame.kbps;
-      // Another viewer: it gets the newest picture too, and with H.264 a keyframe after it.
-      if (screen.newest) on.pump.offer(screen.newest);
-      if (frame.video) screen.fresh();
+      // A new H.264 watcher (the hub's `key`), a lost frame, or a switch to H.264: the screen now, then a keyframe. A
+      // JPEG watcher that may be new gets the newest picture; a budget told again costs nothing more.
+      if (frame.key || (switched && frame.video)) return screen.key();
+      if (!frame.video && screen.newest) on.pump.offer(screen.newest);
       return;
     }
     const pump = new Pump(screen.id, () => screen.control(), (f) => this.link.send({ t: "browser_frame", ...f }), frame.kbps);

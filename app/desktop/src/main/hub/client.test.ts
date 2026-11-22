@@ -654,6 +654,14 @@ describe("HubClient", () => {
     expect(watches(hub).at(-1)).toEqual({ t: "browser_watch", session, acks: true, video: true });
     hub.frame({ t: "browser_frame", sessionId: session, seq: 3, h264B64: "AAAAAWc=", key: true, width: 1206, height: 2622, control: "agent" });
     expect(hub.sent.at(-1)).toEqual({ t: "browser_frame_ack", seq: 3 });
+    // A window whose decoder failed: the watch again without H.264, and JPEG from then on, until it is asked again.
+    client.setVideo(false);
+    expect(watches(hub).at(-1)).toEqual({ t: "browser_watch", session, acks: true });
+    const asked = watches(hub).length;
+    client.setVideo(false);
+    expect(watches(hub)).toHaveLength(asked);
+    client.setVideo(true);
+    expect(watches(hub).at(-1)).toEqual({ t: "browser_watch", session, acks: true, video: true });
     expect(frames.filter((f) => f.t === "browser_frame").map((f) => (f as { frame: { key?: boolean } }).frame.key)).toEqual([true]);
   });
 

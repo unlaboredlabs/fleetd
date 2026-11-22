@@ -256,12 +256,16 @@ test("a watched Mac screen's live view is its own stream: H.264 to a watcher tha
     { jpeg: false, h264: true, key: true, width: 1920 },
     { jpeg: false, h264: true, key: false, width: 1920 },
   ]);
-  // The hub again: a lost frame asks the screen now (a JPEG, then a keyframe); a slow link bounds the bit rate, and the
-  // watch frame that says so may be a new watcher's, who gets the screen now too.
+  // The hub again: a lost frame asks the screen now (a JPEG, then a keyframe); a slow link bounds the bit rate and costs
+  // nothing more; a switch to JPEG and back sends the screen anew.
   told.length = 0;
   session.key();
   session.setBudget(1000, true);
-  expect(told).toEqual(["still", "h264", "kbps 700", "still"]);
+  expect(told).toEqual(["still", "h264", "kbps 700"]);
+  told.length = 0;
+  session.setBudget(1000, false);
+  session.setBudget(1000, true);
+  expect(told).toEqual(["jpeg", "kbps 700", "still", "h264", "kbps 700", "still"]);
   // The stream ends by itself: the session reads the screen for the live view again.
   end("fleetd-frames: the screen's capture stopped");
   while (grabs === read && Date.now() < deadline) await Bun.sleep(5);

@@ -431,22 +431,25 @@ export class Session implements GuardSession {
     }
   }
 
-  /** The watchers' budget and whether they all decode H.264, as the hub says it. A watch frame again may be a new
-   * watcher: with H.264 it gets the page now, as a lost frame does (`key`). */
+  /** The watchers' budget and whether they all decode H.264, as the hub says it. Only a switch between H.264 and
+   * JPEG sends the page anew: a budget told again costs nothing. */
   setBudget(kbps: number | undefined, video = this.watcher?.video): void {
     const w = this.watcher;
     if (!w) return;
+    const switched = (w.video === true) !== (video === true);
     w.kbps = kbps;
     w.video = video;
-    if (video) this.key();
+    if (switched) this.key();
   }
 
-  /** A watcher lost an H.264 frame, or just came: the page now as a whole JPEG, then encoded anew from a keyframe,
-   * even if it doesn't change. */
+  /** A watcher lost an H.264 frame, or just came (the hub's `key`): the page now, under a seq newer than any frame
+   * sent, as a keyframe of a new encoder where H.264 goes, else as the JPEG it is, even if it doesn't change. */
   key(): void {
-    if (!this.watcher?.video || !this.encoder || !this.last) return;
-    this.encoder.key();
-    this.offer({ ...this.last, control: this.controlNow, ...this.frameUrl() });
+    const last = this.last;
+    if (!this.watcher || !last) return;
+    this.encoder?.key();
+    this.seq += 1;
+    this.last = { ...last, seq: this.seq, control: this.controlNow, ...this.frameUrl() };
     this.sendNewest();
   }
 

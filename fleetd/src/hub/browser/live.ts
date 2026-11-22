@@ -133,7 +133,10 @@ export class Live {
       this.budgets.set(session, b);
     }
     b.byWatch.set(w.id, undefined);
-    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, this.video(session)));
+    // A new watch of an H.264 screen starts from a keyframe (`key`); a watch frame again without it (a budget told
+    // anew, a relink) changes only what it says.
+    const h264 = this.video(session);
+    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264));
     return w;
   }
 

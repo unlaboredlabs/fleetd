@@ -35,6 +35,9 @@ import type { AgentRow, ScreenThumb } from "../../../shared/contracts";
 import { CHAT_EVENTS, type ChatDelta, type ProjectChatState } from "./chat-contract";
 import { ordersNamed } from "./effects";
 
+/** The H.264 frames kept for the decoder between two renders: a second's worth at 60 fps, far more than one render's. */
+export const VIDEO_KEPT = 64;
+
 /** "machineId/projectId". */
 export type ProjectKey = string;
 export const projectKey = (r: { readonly machineId: string; readonly projectId: string }): ProjectKey =>
@@ -78,6 +81,12 @@ export interface DataState {
   readonly features: readonly string[];
   /** The watched browser session's newest page (hub.watch): shown while it is the newest, never kept on disk. */
   readonly browserFrame?: BrowserFrame | undefined;
+  /**
+   * The watched session's H.264 frames since its last keyframe, in order (VIDEO_KEPT at most): the decoder takes every
+   * one, where the picture takes only the newest. `dropped` is the newest seq let go past VIDEO_KEPT: a loss if the
+   * decoder hadn't had it.
+   */
+  readonly browserVideo?: { readonly sessionId: string; readonly frames: readonly BrowserFrame[]; readonly dropped: number } | undefined;
   /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
   readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
   /**
@@ -303,8 +312,15 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "browser_frame": {
       // A frame older than one already shown (a slow link's) is dropped.
       const shown = s.browserFrame;
-      if (shown !== undefined && shown.sessionId === frame.frame.sessionId && shown.seq >= frame.frame.seq) return [s, {}];
-      return [{ ...s, browserFrame: frame.frame }, {}];
+      const f = frame.frame;
+      if (shown !== undefined && shown.sessionId === f.sessionId && shown.seq >= f.seq) return [s, {}];
+      if (f.h264B64 === undefined) return [{ ...s, browserFrame: f }, {}];
+      const before = s.browserVideo?.sessionId === f.sessionId ? s.browserVideo : { sessionId: f.sessionId, frames: [], dropped: -1 };
+      // A keyframe makes those before it no longer needed.
+      const frames = f.key === true ? [f] : [...before.frames, f];
+      const over = Math.max(0, frames.length - VIDEO_KEPT);
+      const dropped = frames[over - 1]?.seq ?? before.dropped;
+      return [{ ...s, browserFrame: f, browserVideo: { sessionId: f.sessionId, frames: frames.slice(over), dropped } }, {}];
     }
     case "screen_thumb":
       return [{ ...s, screenThumbs: withThumb(s.screenThumbs, frame.thumb) }, {}];

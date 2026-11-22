@@ -96,9 +96,11 @@ export class Shooter {
 
   /** H.264 from now on (every watcher decodes it), or JPEG; with H.264, `kbps` (undefined: the links keep up) is its
    * bit rate's bound. Only a stream sends H.264: screenshots stay JPEG. */
-  want(video: boolean, kbps: number | undefined): void {
+  want(video: boolean, kbps: number | undefined): boolean {
+    const switched = this.wants.video !== video;
     this.wants = { video, kbps };
     this.tellWants();
+    return switched;
   }
 
   /** A watcher lost an H.264 frame: the screen now as a JPEG (even unchanged), and the next H.264 frame a keyframe. */

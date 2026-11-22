@@ -244,22 +244,25 @@ export class Session {
     void this.startStream();
   }
 
-  /** The watchers' budget and whether they all decode H.264, as the hub says it. A watch frame again may be a new
-   * watcher: it gets the screen now, as a lost frame does (`key`). */
+  /** The watchers' budget and whether they all decode H.264, as the hub says it. Only a switch between H.264 and
+   * JPEG sends the screen anew: a budget told again (each few seconds on a varying link) costs nothing. */
   setBudget(kbps: number | undefined, video = this.watcher?.video): void {
-    if (!this.watcher) return;
-    this.watcher.kbps = kbps;
-    this.watcher.video = video;
+    const w = this.watcher;
+    if (!w) return;
+    const switched = (w.video === true) !== (video === true);
+    w.kbps = kbps;
+    w.video = video;
     this.tellStream();
-    this.key();
+    if (switched) this.key();
   }
 
-  /** A watcher lost an H.264 frame, or just came: the screen now as a whole JPEG, and the next H.264 frame a keyframe
-   * (a new encoder) whether the screen changes or not. */
+  /** A watcher lost an H.264 frame, or just came (the hub's `key`): the screen now as a whole JPEG, under a seq newer
+   * than any frame sent, and the next H.264 frame a keyframe (a new encoder) whether the screen changes or not. */
   key(): void {
     if (!this.watcher) return;
     if (this.streaming) return this.streaming.still();
     this.encoder?.key();
+    if (this.last) this.last = { ...this.last, seq: ++this.liveSeq, control: this.controlNow };
     this.sendLive(true);
   }
 

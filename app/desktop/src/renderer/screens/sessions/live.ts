@@ -46,13 +46,18 @@ export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | und
 export const pictureOf = (frame: BrowserFrame | undefined, sessionId: string): BrowserFrame | undefined =>
   frame?.jpegB64 !== undefined ? frame : shown.get(sessionId);
 
-/** Watches the session anew (a JPEG of it, then an H.264 keyframe): for a decoder that lost its way. */
-export function useWatchAgain(sessionId: string): () => void {
+/**
+ * Watches the session anew: `again` for a decoder that lost a frame (a JPEG of it, then an H.264 keyframe), `jpeg` for
+ * one that can't decode at all (JPEG from then on, the hub told so).
+ */
+export function useWatchAgain(sessionId: string): { again: () => void; jpeg: () => void } {
   const { hub } = useDataLayer();
-  return useCallback(() => {
+  const again = useCallback(() => {
     void window.fleetd.hub.watch(hub, null);
     void window.fleetd.hub.watch(hub, sessionId);
   }, [hub, sessionId]);
+  const jpeg = useCallback(() => void window.fleetd.hub.watch(hub, sessionId, false), [hub, sessionId]);
+  return { again, jpeg };
 }
 
 /**

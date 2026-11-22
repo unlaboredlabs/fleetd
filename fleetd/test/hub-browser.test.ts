@@ -180,7 +180,8 @@ test("H.264 goes to a session's node only while every watch decodes it, and a wa
   const phone = fakeSocket();
   const watches = () => t.link.sent("devbox").filter((f: { t: string }) => f.t === "browser_watch");
   await t.app.deliver(as(app, person), { t: "browser_watch", session: S1, acks: true, video: true });
-  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true });
+  // A new H.264 watch starts from a keyframe; a watch frame again without `key` only says what changed.
+  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true, key: true });
   // The phone app doesn't decode it: JPEG while it watches, H.264 again once it's gone.
   await t.app.deliver(as(phone, person), { t: "browser_watch", session: S1 });
   expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true });

@@ -135,7 +135,8 @@ export interface FleetdApi {
     /** The order whose lanes stream their text in live frames, or null for none. Kept across reconnects. */
     focus(hub: HubId, workstreamId: OrderFocus | null): Promise<void>;
     /** The browser session whose frames this window shows, or null for none. Kept across reconnects. */
-    watch(hub: HubId, session: string | null): Promise<void>;
+    /** `video` false: this window's H.264 decoder failed, so the watch asks for JPEG from now on. */
+    watch(hub: HubId, session: string | null, video?: boolean): Promise<void>;
     /** A person's input to a session they took over, in its last frame's pixels; dropped while offline. */
     input(hub: HubId, session: string, input: BrowserInput): Promise<void>;
     /** Whether this window shows the Screens page: each live screen's picture comes a few times a minute while one does. */

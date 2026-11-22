@@ -154,8 +154,10 @@ export class HubService {
     if (this.#thumbs.delete(contents)) this.#source?.thumbs(this.#thumbs.size > 0);
   }
 
-  /** The browser session `contents` shows live, or null when it shows none. */
-  watch(contents: WebContents, session: string | null): void {
+  /** The browser session `contents` shows live, or null when it shows none. `video` false: its decoder failed, so
+   * H.264 is asked no more on this hub (every window gets JPEG). */
+  watch(contents: WebContents, session: string | null, video?: boolean): void {
+    if (video === false) this.#source?.setVideo?.(false);
     // Asked again, it is the newest ask.
     this.#watches.delete(contents);
     if (session !== null) this.#watches.set(contents, session);

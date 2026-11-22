@@ -749,8 +749,11 @@ export class BrowserBroker {
     const session = this.byId(frame.sessionId);
     if (!session) return;
     if (!frame.on) return session.setWatcher(undefined);
-    if (frame.key) return session.key();
-    if (session.watched()) return session.setBudget(frame.kbps, frame.video === true);
+    if (session.watched()) {
+      session.setBudget(frame.kbps, frame.video === true);
+      if (frame.key) session.key();
+      return;
+    }
     session.setWatcher({
       kbps: frame.kbps,
       video: frame.video === true,

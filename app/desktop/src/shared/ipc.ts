@@ -385,7 +385,7 @@ export const REQUESTS = {
   [IPC.hubCall]: z.tuple([HubId, CallRequest]),
   [IPC.hubChat]: z.tuple([HubId, ChatScope.nullable()]),
   [IPC.hubFocus]: z.tuple([HubId, OrderFocus.nullable()]),
-  [IPC.hubWatch]: z.tuple([HubId, BrowserSessionId.nullable()]),
+  [IPC.hubWatch]: z.tuple([HubId, BrowserSessionId.nullable(), z.boolean().optional()]),
   [IPC.hubInput]: z.tuple([HubId, BrowserSessionId, BrowserInput]),
   [IPC.hubThumbs]: z.tuple([HubId, z.boolean()]),
   [IPC.hubResync]: z.tuple([HubId]),

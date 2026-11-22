@@ -323,9 +323,11 @@ export class DesktopSessions {
     const session = this.byId(frame.sessionId);
     if (!session) return false;
     if (!frame.on) session.setWatcher(undefined);
-    else if (frame.key) session.key();
-    else if (session.watched()) session.setBudget(frame.kbps, frame.video === true);
-    else session.setWatcher({ kbps: frame.kbps, video: frame.video === true, send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+    else if (!session.watched()) session.setWatcher({ kbps: frame.kbps, video: frame.video === true, send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+    else {
+      session.setBudget(frame.kbps, frame.video === true);
+      if (frame.key) session.key();
+    }
     return true;
   }
 

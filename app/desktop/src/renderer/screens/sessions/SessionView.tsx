@@ -182,7 +182,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   // This window watches the page, unless the session's own window has it (that one watches it).
   const frame = useLiveFrame(x.id, !away);
   const picture = pictureOf(frame, x.id);
-  const { canvas: videoCanvas, on: videoOn } = useVideo(frame, x.id, picture?.seq, useWatchAgain(x.id));
+  const { again, jpeg } = useWatchAgain(x.id);
+  const { canvas: videoCanvas, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg);
   // Until its first frame: the empty page, quiet; words only once it is slow to come.
   const slow = useAfter(frame === undefined && !away, SLOW_MS);
   const takes = yours && !away;
