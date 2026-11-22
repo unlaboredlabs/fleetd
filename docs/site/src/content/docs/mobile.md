@@ -118,11 +118,9 @@ The **ⓘ** at the top of a chat opens its bot's page:
   always allowed.
 - **Machine** and **Folder**: where it runs, read only.
 - **[Computer](/docs/projects#computer)**: each repo's setup commands. Edit them in the desktop app.
-- **Approvals**, **Payments**, **Linked Hubs** and **Skills**: the bot's
-  [approval mode](/docs/projects#approvals) and what ran without asking, its card and purchases, the hubs it reaches
-  and what it learned, as in the desktop app's settings.
-- **Artifacts**: the chat's [artifacts](#artifacts). Linking a hub is done in the desktop
-  app.
+- **Approvals**, **Payments** and **Skills**: the bot's [approval mode](/docs/projects#approvals) and what ran
+  without asking, its card and purchases, and what it learned, as in the desktop app's settings.
+- **Artifacts**: the chat's [artifacts](#artifacts).
 - **Forget Sign-ins…**: signs it out of every site its browser kept, after a confirm.
 - **Archive Bot** sets it aside with everything kept, under the **Archived** filter in Chats (it shows in the list
   again while an approval of its waits); **Unarchive Bot** brings it back.

@@ -1,15 +1,13 @@
 // Settings › You › Hubs & devices: the hubs this app is paired with, each under a name the person picks and an
 // optional colour. Each can be renamed, recoloured, paired again or removed; Add a hub pairs one more beside them.
 // A hub's name shows in the sidebar, notifications, Status and Commands once there are two. An admin of a hub also
-// restarts it from its row (hubRestart.ts); a member's row has no such button. Then Hub links: the keys
-// made as you on each hub (hubLinks/LinksToThisHub.tsx); the hubs a project reaches are in its settings (LinkedHubs).
+// restarts it from its row (hubRestart.ts); a member's row has no such button.
 import { useState } from "react";
 import type { HubState } from "../../../shared/hub";
 import { LABEL_MAX, type HubColor } from "../../../shared/hubs";
 import { keyStoreLine } from "../../../shared/pairing";
 import { Button, Dialog, Field, Input, type TextTone } from "../../ui";
 import { HubScope, useData, useHub, useHubs } from "../../src/data/react";
-import { LinksToThisHub } from "../hubLinks/LinksToThisHub";
 import { useKeyStore } from "../onboarding";
 import { sentence } from "../onboarding/form";
 import { Prose } from "../onboarding/Prose";
@@ -52,23 +50,6 @@ export function HubsSettings() {
       {hubs.map((hub) => (
         <HubScope key={hub.id} hub={hub}>
           <HubSetting only={hubs.length === 1} />
-        </HubScope>
-      ))}
-    </SettingsSection>
-  );
-}
-
-/**
- * Hub links: the link keys made as you on each paired hub, which let your project elsewhere act here. The other hubs a
- * project reaches through keys made there are in its settings (Settings › Projects › Linked hubs).
- */
-export function HubLinksSettings() {
-  const hubs = useHubs();
-  return (
-    <SettingsSection title="Hub links" part="hubs.hub-links">
-      {hubs.map((hub) => (
-        <HubScope key={hub.id} hub={hub}>
-          <LinksToThisHub label={hubs.length === 1 ? "Links to this hub" : `Links to ${hub.label}`} />
         </HubScope>
       ))}
     </SettingsSection>

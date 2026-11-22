@@ -5,7 +5,7 @@
 // runs there now (Agents: agents_list, then the DMs its agents sent each other: screens/dms), its open orders (orders_board), its To-do (its checklist) and its recent
 // merges with their PRs, read-only; then its name, the profiles its agents may run on, where it lives and its Computer
 // (Computer.tsx: its setup and the image its agents start from). Then the
-// desktop's sections, each pushed: Approvals, Payments, its Vault, Linked hubs, Skills and the chat's Artifacts
+// desktop's sections, each pushed: Approvals, Payments, its Vault, Skills and the chat's Artifacts
 // (screens/artifacts); its named MCP servers (Paper: Named.tsx), connected with one tap; Forget Sign-ins; New Screen, a screen of your own for it, where the hub opens them; Archive.
 // Delete last, red, in a sheet that erases everything fleetd keeps for it, with a tickbox for its folder, once its
 // name is typed (TypedDelete).
@@ -325,7 +325,6 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title="Approvals" icon="approvals" {...(live ? { onPress: () => navigation.navigate("Approvals", { key }) } : {})} />
         <ListRow title="Payments" icon="money" {...(live ? { onPress: () => navigation.navigate("Payments", { key }) } : {})} />
         {vaultShown(state.hub) ? <ListRow title="Vault" icon="lock" onPress={() => navigation.navigate("Vault", { key })} /> : null}
-        <ListRow title="Linked Hubs" icon="link" {...(live ? { onPress: () => navigation.navigate("LinkedHubs", { key }) } : {})} />
         {skills ? <ListRow title="Skills" icon="sparkles" {...(v?.skills === undefined ? {} : { value: String(v.skills.length) })} onPress={() => navigation.navigate("Skills", { key })} /> : null}
         {artifactsShown(state.hub) ? <ListRow title="Artifacts" icon="fileDoc" onPress={() => navigation.navigate("Artifacts", { key })} /> : null}
       </ListSection>

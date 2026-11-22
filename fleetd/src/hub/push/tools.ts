@@ -8,7 +8,7 @@ import { isBase64 } from "../../shared/text.ts";
 import { isHuman } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import type { Hub } from "../api/hub.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { allowsEverywhere } from "../people/tools.ts";
 import { badge, DEFAULT_RELAY, defaultHost, list, PUSH_DEVICES_MAX, register as registerDevice, relay, type RelaySetting, remove, setRelay } from "./index.ts";
 import { httpUrl } from "./payload.ts";
@@ -29,7 +29,7 @@ function reseal(hub: Hub, sealed: string): string {
     new ToolError(
       "invalid",
       "The relay key wasn't sealed to this hub, or is empty.",
-      "Seal the relay's key to boxPubKey from hub_links_get, or run `fleetd push-relay set <url> --relay-key-file <path>`.",
+      "Seal the relay's key to boxPubKey from hub_info, or run `fleetd push-relay set <url> --relay-key-file <path>`.",
     );
   let key: Uint8Array;
   try {

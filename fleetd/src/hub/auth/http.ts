@@ -1,4 +1,4 @@
-// The bearer check of the HTTP routes that take a key (/mcp, /link/v1): every request, so a revoked key stops at once.
+// The bearer check of the HTTP routes that take a key (/mcp): every request, so a revoked key stops at once.
 import { internalError, ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";

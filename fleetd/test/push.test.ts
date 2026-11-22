@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
 import { approvalNotice, Follow, payloadJson, PUSH_PAYLOAD_MAX, recipients, step, type PushPayload } from "../src/hub/push/index.ts";
-import { boxKey } from "../src/hub/hub_links/store.ts";
+import { boxKey } from "../src/hub/auth/box_key.ts";
 import { events } from "../src/hub/store/events.ts";
 import { people } from "../src/hub/people/store.ts";
 import { refusal, testHub } from "./people-kit.ts";

@@ -7814,7 +7814,7 @@
         },
         {
           "const": "project.settings",
-          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed; or its icon (`project_icon_set`): `data.icon`; or a linked hub was removed from it\n(`hub_link_remove`): `data.hubLinkRemoved`, the link's id.",
+          "description": "A project's settings changed (`project_set`): `data.profiles`, the profiles it allows; or a repo was removed from it\n(`project_repo_remove`): `data.repoRemoved`, its name; or its picture (`project_avatar_set`): `data.avatar`, the\nnew one's id, null once removed; or its icon (`project_icon_set`): `data.icon`.",
           "type": "string"
         },
         {
@@ -8155,6 +8155,10 @@
           "description": "The caller's key holds Admin on every machine, so it may change the fleet and machine caps. Absent from a hub\nbefore this, which leaves an app to try.",
           "type": "boolean"
         },
+        "boxPubKey": {
+          "description": "The hub's own X25519 key, standard base64: what a key the hub keeps (the push relay's) is sealed to\n(`crypto_box_seal`). Absent from older hubs.",
+          "type": "string"
+        },
         "busy": {
           "description": "Empty when nothing is in flight. A restart interrupts each item.",
           "items": {
@@ -8202,10 +8206,6 @@
         "truncated": {
           "type": "boolean"
         },
-        "url": {
-          "description": "The address another hub reaches this one at, for a hub link: its URL when that is https, or http over a\ntailnet, and not this machine's loopback. Absent when it has no such address, and from older hubs.",
-          "type": "string"
-        },
         "version": {
           "description": "The hub's fleetd version, as `fleetd --version` prints it. \"0.0.0\" for a local build.",
           "type": "string"
@@ -8215,285 +8215,6 @@
         "version",
         "protocol",
         "busy"
-      ],
-      "type": "object"
-    },
-    "HubLink": {
-      "description": "A link this hub keeps for one of its projects. The key stays sealed in the hub; nothing returns it.",
-      "properties": {
-        "checkedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "createdAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "error": {
-          "description": "Why it is unreachable or revoked, in the words the person reads.",
-          "type": "string"
-        },
-        "label": {
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "linkId": {
-          "$ref": "#/$defs/HubLinkId"
-        },
-        "project": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "projects": {
-          "description": "The projects it is limited to there, as the other hub last said; absent: every project its person reaches.",
-          "items": {
-            "$ref": "#/$defs/LinkProject"
-          },
-          "type": "array"
-        },
-        "state": {
-          "$ref": "#/$defs/HubLinkState"
-        },
-        "url": {
-          "description": "The other hub's URL: https, or http over a tailnet or this machine.",
-          "type": "string"
-        },
-        "who": {
-          "description": "The person it acts as there, as the other hub last said; absent until a hub that says has answered.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "linkId",
-        "project",
-        "label",
-        "url",
-        "state",
-        "createdAt"
-      ],
-      "type": "object"
-    },
-    "HubLinkAddInput": {
-      "properties": {
-        "label": {
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "project": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "The project."
-        },
-        "sealed": {
-          "$ref": "#/$defs/SealedSecret",
-          "description": "The link key sealed to this hub's boxPubKey."
-        },
-        "url": {
-          "description": "The other hub's URL, as the app pairs with it: https, or http over a tailnet.",
-          "maxLength": 500,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "label",
-        "project",
-        "sealed",
-        "url"
-      ],
-      "type": "object"
-    },
-    "HubLinkAddOutput": {
-      "properties": {
-        "link": {
-          "$ref": "#/$defs/HubLink"
-        },
-        "next": {
-          "type": "string"
-        },
-        "projects": {
-          "description": "What the project reaches there.",
-          "items": {
-            "$ref": "#/$defs/LinkProject"
-          },
-          "type": "array"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "link",
-        "projects"
-      ],
-      "type": "object"
-    },
-    "HubLinkId": {
-      "pattern": "^hl_[a-z2-7]{8}$",
-      "type": "string"
-    },
-    "HubLinkMintInput": {
-      "properties": {
-        "label": {
-          "description": "What the person calls the hub the link is for.",
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "projects": {
-          "description": "The projects it reaches, each one the caller may operate; absent: every project the caller reaches.",
-          "items": {
-            "$ref": "#/$defs/ProjectRef"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "label"
-      ],
-      "type": "object"
-    },
-    "HubLinkMintOutput": {
-      "properties": {
-        "key": {
-          "description": "\"flk_…\": shown once, never stored; paste it into the other hub's project, Linked hubs, which seals it.",
-          "type": "string"
-        },
-        "link": {
-          "$ref": "#/$defs/IssuedLink"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "link",
-        "key"
-      ],
-      "type": "object"
-    },
-    "HubLinkRemoveInput": {
-      "properties": {
-        "linkId": {
-          "$ref": "#/$defs/HubLinkId"
-        }
-      },
-      "required": [
-        "linkId"
-      ],
-      "type": "object"
-    },
-    "HubLinkRemoveOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "revokedThere": {
-          "description": "Whether the other hub revoked the key too; false when it couldn't be reached (the key is gone here anyway).",
-          "type": "boolean"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "revokedThere"
-      ],
-      "type": "object"
-    },
-    "HubLinkRevokeInput": {
-      "properties": {
-        "linkId": {
-          "$ref": "#/$defs/HubLinkId"
-        }
-      },
-      "required": [
-        "linkId"
-      ],
-      "type": "object"
-    },
-    "HubLinkRevokeOutput": {
-      "properties": {
-        "link": {
-          "$ref": "#/$defs/IssuedLink"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "link"
-      ],
-      "type": "object"
-    },
-    "HubLinkState": {
-      "oneOf": [
-        {
-          "const": "ok",
-          "description": "The last call there went through.",
-          "type": "string"
-        },
-        {
-          "const": "unreachable",
-          "description": "The last call there didn't: the other hub is down or this hub can't reach it.",
-          "type": "string"
-        },
-        {
-          "const": "revoked",
-          "description": "The other hub refused the key: revoked or expired there, or its person removed.",
-          "type": "string"
-        }
-      ],
-      "x-open": true
-    },
-    "HubLinksGetInput": {
-      "properties": {
-        "project": {
-          "$ref": "#/$defs/ProjectRef",
-          "description": "The project."
-        }
-      },
-      "type": "object"
-    },
-    "HubLinksGetOutput": {
-      "properties": {
-        "boxPubKey": {
-          "description": "This hub's X25519 key, standard base64: what a link key is sealed to (`crypto_box_seal`) for hub_link_add.",
-          "type": "string"
-        },
-        "issued": {
-          "description": "Links minted on this hub: the caller's own, or every one for an admin.",
-          "items": {
-            "$ref": "#/$defs/IssuedLink"
-          },
-          "type": "array"
-        },
-        "links": {
-          "description": "The project's links to other hubs.",
-          "items": {
-            "$ref": "#/$defs/HubLink"
-          },
-          "type": "array"
-        },
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "links",
-        "issued",
-        "boxPubKey"
       ],
       "type": "object"
     },
@@ -9372,61 +9093,6 @@
       ],
       "x-open": true
     },
-    "IssuedLink": {
-      "description": "A link minted on this hub, as its person and the hub's admins see it. The key itself is shown once, at minting.",
-      "properties": {
-        "createdAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "device": {
-          "type": "string"
-        },
-        "keyId": {
-          "description": "The device that minted it. The link acts as its person, at the lesser of their role and this device's grants\nwhen it was minted, never above operate, and stops when they leave the hub or this device is revoked (which\nrevokes it too); a link from before people acts at this device's grants.",
-          "type": "string"
-        },
-        "label": {
-          "description": "What the person called the hub it is for; requests through it read \"<person> via <label>\".",
-          "maxLength": 40,
-          "minLength": 1,
-          "pattern": "^[^\\r\\n]*$",
-          "type": "string"
-        },
-        "lastUsedAt": {
-          "$ref": "#/$defs/Timestamp"
-        },
-        "linkId": {
-          "$ref": "#/$defs/HubLinkId"
-        },
-        "person": {
-          "$ref": "#/$defs/PersonRef",
-          "description": "Its person, on a hub with people."
-        },
-        "prefix": {
-          "description": "\"flk_\" plus the first 6 characters of the key's body.",
-          "type": "string"
-        },
-        "projects": {
-          "description": "The projects it reaches; absent: every project its person reaches.",
-          "items": {
-            "$ref": "#/$defs/ProjectRef"
-          },
-          "type": "array"
-        },
-        "revokedAt": {
-          "$ref": "#/$defs/Timestamp"
-        }
-      },
-      "required": [
-        "linkId",
-        "label",
-        "prefix",
-        "keyId",
-        "device",
-        "createdAt"
-      ],
-      "type": "object"
-    },
     "KeptWorktree": {
       "properties": {
         "machineId": {
@@ -9733,22 +9399,6 @@
       },
       "required": [
         "handle"
-      ],
-      "type": "object"
-    },
-    "LinkProject": {
-      "description": "One project a link reaches.",
-      "properties": {
-        "projectRef": {
-          "$ref": "#/$defs/ProjectRef"
-        },
-        "title": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "projectRef",
-        "title"
       ],
       "type": "object"
     },
@@ -11689,36 +11339,6 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
-        "hub_link_add.input": {
-          "$ref": "#/$defs/HubLinkAddInput"
-        },
-        "hub_link_add.output": {
-          "$ref": "#/$defs/HubLinkAddOutput"
-        },
-        "hub_link_mint.input": {
-          "$ref": "#/$defs/HubLinkMintInput"
-        },
-        "hub_link_mint.output": {
-          "$ref": "#/$defs/HubLinkMintOutput"
-        },
-        "hub_link_remove.input": {
-          "$ref": "#/$defs/HubLinkRemoveInput"
-        },
-        "hub_link_remove.output": {
-          "$ref": "#/$defs/HubLinkRemoveOutput"
-        },
-        "hub_link_revoke.input": {
-          "$ref": "#/$defs/HubLinkRevokeInput"
-        },
-        "hub_link_revoke.output": {
-          "$ref": "#/$defs/HubLinkRevokeOutput"
-        },
-        "hub_links_get.input": {
-          "$ref": "#/$defs/HubLinksGetInput"
-        },
-        "hub_links_get.output": {
-          "$ref": "#/$defs/HubLinksGetOutput"
-        },
         "hub_restart.input": {
           "$ref": "#/$defs/HubRestartInput"
         },
@@ -12725,16 +12345,6 @@
         "github_disconnect.output",
         "hub_info.input",
         "hub_info.output",
-        "hub_link_add.input",
-        "hub_link_add.output",
-        "hub_link_mint.input",
-        "hub_link_mint.output",
-        "hub_link_remove.input",
-        "hub_link_remove.output",
-        "hub_link_revoke.input",
-        "hub_link_revoke.output",
-        "hub_links_get.input",
-        "hub_links_get.output",
         "hub_restart.input",
         "hub_restart.output",
         "hub_update.input",
@@ -19027,7 +18637,7 @@
       "properties": {
         "key": {
           "$ref": "#/$defs/SealedSecret",
-          "description": "The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_links_get); the hub sends\nit as a bearer token. Absent: the relay takes no key."
+          "description": "The relay's key (its FLEETD_PUSH_RELAY_KEY_FILE), sealed to this hub's boxPubKey (hub_info); the hub sends\nit as a bearer token. Absent: the relay takes no key."
         },
         "url": {
           "maxLength": 2000,

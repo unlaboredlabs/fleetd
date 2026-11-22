@@ -8,7 +8,7 @@ import { people } from "../src/hub/people/store.ts";
 import { type DeliveryPort } from "../src/hub/vault/deliver.ts";
 import { vault } from "../src/hub/vault/index.ts";
 import { openSealed, publicKeyOf, seal } from "../src/shared/sealed_box.ts";
-import { boxKey } from "../src/hub/hub_links/store.ts";
+import { boxKey } from "../src/hub/auth/box_key.ts";
 import type { EnvVarName, EnvVarSet, ProjectRef } from "../src/shared/contracts.ts";
 import { tempHome } from "./helpers.ts";
 import { testHub } from "./people-kit.ts";

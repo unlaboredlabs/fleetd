@@ -1,4 +1,4 @@
-// gzip on the JSON /mcp and /link/v1 answer (Rust's hub/http/gzip.rs): only when the request offers it, only for a
+// gzip on the JSON /mcp answers (Rust's hub/http/gzip.rs): only when the request offers it, only for a
 // JSON answer worth it, and whole either way.
 import { afterAll, expect, test } from "bun:test";
 import { gunzipSync } from "node:zlib";

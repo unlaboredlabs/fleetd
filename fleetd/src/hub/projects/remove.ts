@@ -11,8 +11,6 @@ import type { Caller } from "../api/registry.ts";
 import { executors } from "../executor/index.ts";
 import { projectRemove } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
-import { revokeAllThere } from "../hub_links/client.ts";
-import { kept } from "../hub_links/store.ts";
 import { link } from "../link/index.ts";
 import { asked, erase } from "../project_lead/erase.ts";
 import * as repos from "../repos/store.ts";
@@ -24,19 +22,13 @@ import { tooOld } from "./settings.ts";
 
 const ERASED =
   "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser " +
-  "sign-ins, linked hubs, transcripts, attachments and screen recordings";
+  "sign-ins, transcripts, attachments and screen recordings";
 
 export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput): Promise<{ ok: true; next: string }> {
   const m = input.machineId;
   requireRole(caller, "operate", m);
   const r = { machineId: m, projectId: input.projectId };
-  // Its linked hubs, read before the erase deletes their keys: each is asked to revoke its link once it is gone.
-  const links = kept(hub.db, r);
-  if (!store(hub).machineGet(m)) {
-    const forgot = forgetGone(hub, r);
-    revokeAllThere(hub, links);
-    return forgot;
-  }
+  if (!store(hub).machineGet(m)) return forgetGone(hub, r);
   if (!executors(hub).isConnected(m)) throw offline(m);
   const removeWorktrees = input.removeWorktrees === true;
   if (removeWorktrees && !link(hub).can(m, CAP_PROJECT_SETTINGS)) throw tooOld(m);
@@ -69,7 +61,6 @@ export async function remove(hub: Hub, caller: Caller, input: ProjectRemoveInput
     });
   }
   erase(hub, r);
-  revokeAllThere(hub, links);
   const next = removeFolder
     ? `${ERASED}, and its folder with everything in it.`
     : `${ERASED}. Its folder, files and branches stay on the machine.`;

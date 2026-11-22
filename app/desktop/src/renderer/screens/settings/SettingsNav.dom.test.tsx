@@ -217,7 +217,7 @@ it("opens a bot's built-in prompts from the one row at the foot of its Instructi
   expect(screen()).toBe("settings.instructions");
 });
 
-it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs, your devices and hub links on Hubs & devices", async () => {
+it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs and your devices on Hubs & devices", async () => {
   const parts = () => [...host.querySelectorAll<HTMLElement>("[data-part]")].map((p) => p.dataset["part"]);
   await render("#/settings/accounts", false);
   expect(screen()).toBe("settings.accounts");
@@ -227,7 +227,7 @@ it("puts your Claude, GitHub and 1Password on Your accounts, and the paired hubs
   root = createRoot(host);
   await render("#/settings/hubs", false);
   expect(screen()).toBe("settings.hubs");
-  expect(parts()).toEqual(["hubs.add", "devices.pair", "hubs.hub-links"]);
+  expect(parts()).toEqual(["hubs.add", "devices.pair"]);
   // Your devices keeps its own name inside the page, so its screenshots and tests still find it.
   expect(host.querySelector("[data-screen='settings.hubs'] [data-screen='settings.devices']")).not.toBeNull();
 });

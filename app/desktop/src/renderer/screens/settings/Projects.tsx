@@ -1,6 +1,6 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its bot's shape and color (BotLook.tsx), its name, its repos with their computer (RepoSetting.tsx, SetupSetting.tsx),
-// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), linked hubs (LinkedHubs.tsx), approvals (Approvals.tsx) and integrations (its
+// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), approvals (Approvals.tsx) and integrations (its
 // MCP servers), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
@@ -16,7 +16,6 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { RemoveProjectDialog, type RemoveTarget } from "../projects/RemoveProjectDialog";
 import { archiveProject } from "../projects/actions";
-import { LinkedHubs } from "../hubLinks/LinkedHubs";
 import { when } from "../live/when";
 import { navigate } from "../shell/navigation";
 import { parseScope, projectRefOf, scopeKey, type Scope } from "./editor";
@@ -157,7 +156,6 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">
-        <LinkedHubs project={ref} />
         <McpServersSection projectRef={ref} />
         <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
         <SkillsSetting projectRef={ref} />

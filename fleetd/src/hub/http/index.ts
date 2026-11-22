@@ -7,7 +7,6 @@ import { VERSION } from "../../shared/version.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Registry } from "../api/registry.ts";
 import { hook } from "../automations/webhook.ts";
-import { hubLink } from "../hub_links/serve.ts";
 import { nodeLink } from "../link/socket.ts";
 import { relay } from "../machine_roles/relay.ts";
 import { mcp } from "../mcp/http.ts";
@@ -32,7 +31,6 @@ export const ROUTES: [method: "GET" | "POST" | "ANY", path: string, route: Route
   ["GET", "/node/link", nodeLink],
   ["GET", "/relay/{token}", relay],
   ["POST", "/hooks/{automation_id}/{secret}", hook],
-  ["ANY", "/link/v1/{op}", gzipped(hubLink)],
   ["GET", "/oauth/callback", oauthCallback],
 ];
 

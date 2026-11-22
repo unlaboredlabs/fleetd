@@ -244,7 +244,6 @@ const NAMED: [PeopleOnly, string, unknown][] = [
   ["vault", "vault", [{ kind: "login", site: "example.org" }]],
   ["mcp_servers", "mcpServers", [{ name: "mail", command: "npx" }]],
   ["prompts", "prompts", { "lead.start": "Do as the page says." }],
-  ["hub_links", "hubLinks", ["https://hub.example"]],
   ["delete", "delete", true],
   ["create", "create", { title: "Another" }],
   ["another_project", "projectId", "site"],

@@ -380,7 +380,7 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   const out = await k.ok(operate, "project_remove", { ...app, removeWorktrees: true });
   expect(out).toEqual({
     ok: true,
-    next: "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser sign-ins, linked hubs, transcripts, attachments and screen recordings. Its folder, files and branches stay on the machine.",
+    next: "Erased: its chat, memory, skills, approvals and purchases, asks and decisions, orders and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings. Its folder, files and branches stay on the machine.",
   });
   expect(n.calls.filter((c) => c.op === "project_remove")).toEqual([
     { op: "project_remove", projectId: "app", removeWorktrees: true, erase: true },

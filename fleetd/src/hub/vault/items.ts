@@ -7,7 +7,7 @@ import { openSealed } from "../../shared/sealed_box.ts";
 import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import { allows } from "../auth/index.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { ENV_TOTAL_MAX_BYTES, envTotalOver, PROJECT_ENV_MAX } from "../projects/settings.ts";
 import { store as hubStore } from "../store/hub_store.ts";

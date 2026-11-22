@@ -12,7 +12,6 @@ export type PeopleOnly =
   | "vault"
   | "mcp_servers"
   | "prompts"
-  | "hub_links"
   | "delete"
   | "create"
   | "another_project"
@@ -27,7 +26,6 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   vault: "Only a person adds, changes or removes vault items: the team vault in Settings › Vault, a bot's variables in its Vault tab. For a secret you need, call request_secret.",
   mcp_servers: "Only a person adds or removes MCP servers: Settings › Hub › Every bot › Tools & skills, or the bot's own settings, in the app.",
   prompts: "Only a person edits prompts: the bot's settings › Prompts in the desktop app. The bot's Instructions are yours to write: project_setup with instructions.",
-  hub_links: "Only a person links hubs: Settings › You › Hubs in the app.",
   delete: "Only a person deletes a bot: its settings in the app, or `fleetd project remove` from their own terminal. Archiving it is yours: project_setup with archive: true.",
   create:
     "Only a person creates a bot. When they ask you for one, propose it with project_propose: their Approve on its card makes it, as theirs. Or they make it themselves: New bot in the app, or `fleetd project add` from their own terminal.",
@@ -44,7 +42,6 @@ const NAMES: Record<PeopleOnly, string[]> = {
   vault: ["vault", "vaultitem", "vaultitems", "secret", "secrets", "login", "logins"],
   mcp_servers: ["mcp", "mcpserver", "mcpservers"],
   prompts: ["prompt", "prompts"],
-  hub_links: ["hublink", "hublinks", "linkedhub", "linkedhubs", "hubs"],
   delete: ["delete", "deleted", "remove", "destroy"],
   create: ["create", "new", "createproject", "newproject"],
   another_project: ["project", "projectid", "projectref", "machine", "machineid"],

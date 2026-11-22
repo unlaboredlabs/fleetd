@@ -133,8 +133,6 @@ export const IPC = {
   projectEnvSubmit: "project:env-submit",
   /** invoke(McpServerRequest) → CallOutcome. Main seals each secret to each machine's key, then calls mcp_server_set. */
   mcpServerSubmit: "mcp:server-submit",
-  /** invoke(HubLinkRequest) → CallOutcome. Main seals a pasted link key to the hub's own key, then calls hub_link_add. */
-  hubLinkSubmit: "hub-link:submit",
   /** invoke(SandboxKeyRequest) → CallOutcome. Main seals a hosted sandbox provider's key to the hub's own key, then calls sandbox_connect. */
   sandboxKeySubmit: "sandbox:key-submit",
   /**

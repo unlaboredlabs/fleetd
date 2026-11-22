@@ -9,7 +9,7 @@ import { publicKeyOf, seal } from "../../shared/sealed_box.ts";
 import { fingerprintOf } from "../../node/secrets/files.ts";
 import { readSecret } from "../../node/secrets/index.ts";
 import { Hub } from "../api/hub.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import type { HubDb } from "../store/db.ts";
 import { type ItemRow, vault } from "./index.ts";
 import { adopt, migratePlain, SYSTEM_ORDER_VARS } from "./migrate.ts";

@@ -1,6 +1,6 @@
 // Settings' Hub group (#/settings/hub/<page>, D211): the hub's owners' and admins' pages, in the Settings window and
-// shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open,
-// and every hub link); Machines (the machines, Add machine at the title's end or in the empty list, each machine's
+// shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open);
+// Machines (the machines, Add machine at the title's end or in the empty list, each machine's
 // page with Repair while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
 // as a project's own pages are: Agents (the profiles, the MCP servers and the skills), Instructions (and the hub-wide

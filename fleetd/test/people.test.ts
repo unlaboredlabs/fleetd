@@ -110,10 +110,6 @@ test("the hub keeps its owners; removing a person signs out their devices; a rev
 
   const carol = people(hub).create("Carol", "member");
   const carolDevice = device(undefined, carol.personId, "carol");
-  // A hub link minted from Carol's device goes when her device does.
-  hub.db.conn.run(
-    `INSERT INTO hub_links_issued (link_id, hash, prefix, label, key_id, device, created_ms) VALUES ('hl_1', 'h', 'flk', 'x', '${carolDevice.keyId}', 'carol', 1)`,
-  );
   const forgotten: string[] = [];
   onPersonRemoved(hub, (id) => {
     forgotten.push(id);
@@ -132,17 +128,6 @@ test("the hub keeps its owners; removing a person signs out their devices; a rev
   expect(eventsOf(hub, "people.changed").filter((e) => e.data?.change === "invite_revoked").length).toBe(said);
   expect(await redeem(hub, dave.code)).toBe(401);
   expect(people(hub).list(false).map((p) => p.name)).toEqual([owner.person?.name, "Ada"].map(String));
-});
-
-test("revoking a device revokes the hub links minted from it", async () => {
-  const { hub, call, device } = testHub();
-  const owner = ownerDevice(hub, device as never);
-  const phone = device(undefined, owner.person?.personId, "phone");
-  hub.db.conn.run(
-    `INSERT INTO hub_links_issued (link_id, hash, prefix, label, key_id, device, created_ms) VALUES ('hl_2', 'h2', 'flk', 'x', '${phone.keyId}', 'phone', 1)`,
-  );
-  await call(owner, "device_revoke", { keyId: phone.keyId });
-  expect(hub.db.all<{ revoked_ms: number | null }>("SELECT revoked_ms FROM hub_links_issued")[0]?.revoked_ms).not.toBeNull();
 });
 
 test("an older hub's human keys all bind to one owner made from the machine's user", () => {

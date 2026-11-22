@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, readLinks, rebuildImage, REMOVE_MS, removeLink, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, rebuildImage, REMOVE_MS, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -301,7 +301,7 @@ describe("Your name", () => {
   });
 });
 
-describe("Approvals and Linked hubs", () => {
+describe("Approvals", () => {
   const approvals = { mode: "checker" as const, model: "claude-opus-5-5", effort: "high" as const, defaults: true };
 
   it("reads its approvals, and nothing about the checker's model", async () => {
@@ -331,19 +331,6 @@ describe("Approvals and Linked hubs", () => {
     expect(calls(PROJECT_TOOLS.approvals).at(-1)?.input).toEqual({ ...REF, limit: 50, before: 51 });
     hub.answer(PROJECT_TOOLS.approvals, { approvals, log: [entry] });
     await expect(next).resolves.toEqual({ ok: true, value: { log: [entry], older: undefined } });
-  });
-
-  it("lists the hub links the hub reads for the bot, and removes one", async () => {
-    const { hub, session, calls } = setup();
-    const read = readLinks(session, SHOP);
-    expect(calls("hub_links_get").at(-1)?.input).toEqual({ project: REF });
-    const link = (linkId: string, project: typeof REF) => ({ linkId, label: "Acme", url: "https://acme.example", state: "ok", createdAt: AT, project });
-    hub.answer("hub_links_get", { boxPubKey: "k", issued: [], links: [link("hl_1", REF)] });
-    await expect(read).resolves.toMatchObject({ ok: true, value: [{ linkId: "hl_1" }] });
-    const removed = removeLink(session, "hl_1");
-    expect(calls("hub_link_remove").at(-1)?.input).toEqual({ linkId: "hl_1" });
-    hub.answer("hub_link_remove", { revokedThere: true });
-    await expect(removed).resolves.toEqual({ ok: true, value: { revokedThere: true } });
   });
 });
 

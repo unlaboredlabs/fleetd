@@ -383,9 +383,8 @@ export const fixtures = [
   // Projects with no repo (fixtures/no-repo): Ada and Home in the sidebar and Taxes archived, Ada asking to book a
   // table and following work it asked for.
   "no-repo-chats",
-  // Hub links (fixtures/no-repo): Ada's Linked hubs and Sam's links to this hub; and neither yet.
-  "no-repo-links",
-  "no-repo-links-none",
+  // Ada's settings page (fixtures/no-repo).
+  "no-repo-settings",
   // Files both ways in a no-repo project's chat (fixtures/no-repo): a lease and a bank export in, a trip PDF and
   // receipts out.
   "no-repo-files",
@@ -1717,7 +1716,7 @@ export const screens: readonly Screen[] = [
     id: "settings.projects",
     variant: "archive",
     route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["no-repo-links"],
+    fixtures: ["no-repo-settings"],
     open: async (page) => {
       await page.getByRole("region", { name: "Archive", exact: true }).scrollIntoViewIfNeeded();
       await page.getByRole("region", { name: "Delete bot" }).waitFor();
@@ -2700,7 +2699,7 @@ export const screens: readonly Screen[] = [
   {
     id: "settings.projects",
     route: `${ADA_ROUTE}/agents`,
-    fixtures: ["no-repo-links"],
+    fixtures: ["no-repo-settings"],
     variant: "from-panel",
     open: async (page) => {
       await page.getByRole("complementary", { name: "Bot panel" }).getByRole("button", { name: "Bot settings" }).click();
@@ -4526,47 +4525,6 @@ export const screens: readonly Screen[] = [
     variant: "fleet-cap",
     open: async (page) => {
       await page.locator("[data-fleet-cap]").scrollIntoViewIfNeeded();
-    },
-  },
-  // Hub links: a project's Linked hubs (in its settings), working, can't reach and revoked there, and none yet; a
-  // person's Links to this hub (on You › Hubs & devices), and a key just made, shown once. Hub › People's list of everyone's is
-  // on settings.hub.people.
-  {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["no-repo-links", "no-repo-links-none"],
-    variant: "linked-hubs",
-    open: (page) => page.getByRole("region", { name: "Linked hubs" }).scrollIntoViewIfNeeded(),
-  },
-  {
-    id: "settings.projects",
-    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
-    fixtures: ["no-repo-links-none"],
-    variant: "link-a-hub",
-    open: async (page) => {
-      const region = page.getByRole("region", { name: "Linked hubs" });
-      await region.getByRole("button", { name: "Link a hub" }).click();
-      await region.getByRole("form", { name: "Link a hub" }).scrollIntoViewIfNeeded();
-    },
-  },
-  {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
-    fixtures: ["no-repo-links", "no-repo-links-none"],
-    variant: "hubs-hub-links",
-    open: (page) => page.getByRole("region", { name: "Links to this hub" }).scrollIntoViewIfNeeded(),
-  },
-  {
-    id: "settings.hubs",
-    route: "#/settings/hubs",
-    fixtures: ["no-repo-links"],
-    variant: "hubs-hub-link-made",
-    open: async (page) => {
-      const region = page.getByRole("region", { name: "Links to this hub" });
-      await region.getByRole("button", { name: "Make a link key" }).click();
-      await region.getByLabel("What do you call the other hub?").fill("home");
-      await region.getByRole("button", { name: "Make link key" }).click();
-      await region.getByRole("region", { name: "Link key for home" }).scrollIntoViewIfNeeded();
     },
   },
   // Settings search: an option found by its name, and by nothing.

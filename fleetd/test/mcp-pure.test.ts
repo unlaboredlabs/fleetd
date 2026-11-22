@@ -1,7 +1,5 @@
 import { expect, test } from "bun:test";
 import { allows, stripBearer } from "../src/hub/auth/allows.ts";
-import { CallFailed, readAnswer } from "../src/hub/hub_links/answers.ts";
-import { linkAllows, statusOf } from "../src/hub/hub_links/links.ts";
 import { offersSignIn, type Net } from "../src/hub/mcp_oauth/flow.ts";
 import { escape } from "../src/hub/mcp_oauth/page.ts";
 import { due, recordText } from "../src/hub/mcp_oauth/record.ts";
@@ -45,20 +43,7 @@ test("the OAuth flow reaches a server only through the Net it is given", async (
   expect(await offersSignIn("https://mcp.devbox/mcp", false, net(new Response("{}", { status: 200 })))).toBe(false);
 });
 
-test("a link's call answer, its grants, and the status a refusal is sent with", () => {
-  const ok = { status: 200, statusText: "OK", ok: true };
-  expect(readAnswer(ok, new TextEncoder().encode('{"a":1}'))).toEqual({ a: 1 });
-  const dead = () => readAnswer({ status: 401, statusText: "", ok: false }, new TextEncoder().encode('{"code":"forbidden","message":"gone","dead":true}'));
-  expect(dead).toThrow(CallFailed);
-  try {
-    dead();
-  } catch (e) {
-    expect((e as CallFailed).failure.kind).toBe("dead");
-  }
-  expect(() => readAnswer({ status: 502, statusText: "Bad Gateway", ok: false }, new TextEncoder().encode("<html>"))).toThrow("without fleetd's own words");
-  const link = { linkId: "l", label: "x", who: "w", grants: [{ role: "operate", machines: ["m"] }] } as never;
-  expect([linkAllows(link, "read", "m"), linkAllows(link, "admin", "m"), linkAllows(link, "read", "n")]).toEqual([true, false, false]);
-  expect([statusOf("not_found"), statusOf("unknown" as never)]).toEqual([404, 500]);
+test("a bearer key is read without its scheme, and a grant everywhere allows less", () => {
   expect(stripBearer("bearer   fld_x ")).toBe("fld_x");
   expect(allows({ grants: [{ role: "admin", machines: "*" }] } as never, "operate", "m")).toBe(true);
 });

@@ -293,16 +293,13 @@ test("approvals reach the bot's hooks once the inbox area starts", async () => {
     expect(hooks.floor({ tool: "mcp__bank__transfer_funds" })).toContain("never moves money");
     expect(hooks.visitCarriesData({ url: "https://x.example/?to=sam@friends.example" })).toBe(true);
     expect(hooks.alwaysAsks({ tool: "t", summary: "", input: {}, preview: { server: "s", tool: "buy", action: "spend", title: "x", input: "{}" } })).toBe(true);
-    // A confirm step that pays is refused; one that books is a card; a text to a bot here goes at once (D580), one to a
-    // linked hub's bot is a send.
+    // A confirm step that pays is refused; one that books is a card; a text to another bot goes at once (D580).
     expect(hooks.promptVerdict(inbox, confirm.TOOL, { site: "a.example", button: "Pay now", does: "Pays" }, [], undefined)).toEqual({
       deny: "Blocked by fleetd: this step pays, orders or trades, which confirm_step never does. Hand the final click to the person with request_takeover.",
     });
     const booking = hooks.promptVerdict(inbox, confirm.TOOL, { site: "a.example", button: "Book", does: "Books a table" }, [], undefined);
     expect(booking && "ask" in booking && booking.ask.title).toBe('Click "Book" on a.example');
     expect(hooks.promptVerdict(inbox, "mcp__fleetd__project_message", { project: "app", text: "ship it" }, [], undefined)).toEqual({ allow: true });
-    const bridge = hooks.promptVerdict(inbox, "mcp__fleetd__project_message", { project: "app", text: "ship it", hub: "Work" }, [], undefined);
-    expect(bridge && "ask" in bridge && [bridge.ask.action, bridge.ask.title]).toEqual(["send", "Message the lead of app on Work"]);
     expect(hooks.promptVerdict(inbox, "mcp__fleetd__automation_confirm", { automationId: "a1" }, [], undefined)).toEqual({
       deny: "Blocked by fleetd: this bot has no such automation. automation_list names them.",
     });

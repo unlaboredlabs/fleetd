@@ -1,7 +1,7 @@
 // Projects with no repo in the app: a chat with a lead in a folder. no-repo-chats: Ada and Home beside the projects, and
 // Taxes archived; Ada asks to book a table through its MCP server (the approval card, with its preview), has asked
-// storefront and billing for work (Asked work, project_asks) and keeps skills it learned (Skills, with weekly-invoices' history). no-repo-links: Ada's Linked hubs and Sam's links to this
-// hub (hubLinks/); no-repo-links-none: neither yet. no-repo-files: files both ways in Home's chat: the person sends a
+// storefront and billing for work (Asked work, project_asks) and keeps skills it learned (Skills, with weekly-invoices' history). no-repo-settings: Ada's settings
+// page. no-repo-files: files both ways in Home's chat: the person sends a
 // lease (.docx) and a bank export (.csv), and Home sends back the trip as a PDF and the receipts as a CSV, each a card
 // that opens or saves. no-repo-pictures: pictures both ways there: the person sends two screenshots side by side, and
 // Home answers with a picture of its own, each with a download button and Save image… and Copy image on right-click.
@@ -14,7 +14,7 @@ import { ADA, HOME, TAXES } from "./ids.ts";
 import { asText, isObject, type JsonObject } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
 import { PROJECT_TOOLS } from "../../src/renderer/screens/projects/model.ts";
-import { projectSections, yourDevices } from "../kit/sections.ts";
+import { projectSections } from "../kit/sections.ts";
 
 
 const CREATOR = { keyId: "k-laptop", name: "laptop" };
@@ -246,77 +246,11 @@ const adaSettings = (f: Fixture): void => {
   f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
 };
 
-const BOX = "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=";
-const SAM = { personId: "p_aaaaaaaa", name: "Sam" };
-
-/**
- * Hub links (hubLinks/): Ada reaches three other hubs, acme working (as Sam, only Shop and Website), personal out of
- * reach and an old job's revoked there; and Sam has made two link keys on this hub, one limited to storefront, and
- * revoked a third. A new key Sam makes is answered too.
- */
-const links = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "no-repo-links", "Hub links: Ada's Linked hubs (working, can't reach, revoked there), and Sam's links to this hub.");
+/** Ada's settings page, whole, for the screens that open it. */
+const settings = (from: Fixture): Fixture => {
+  const f = Fixture.from(from, "no-repo-settings", "No repo: Ada's settings page.");
   adaSettings(f);
   projectSections(f, ADA);
-  const storefront = refOf(f, "storefront");
-  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: false, url: "https://hub.devbox.example", me: { ...SAM, role: "member", createdAt: at(f.now, -30 * 86_400_000) } });
-  const kept = (label: string, url: string, extra: JsonObject): JsonObject => ({
-    linkId: `hl_${label.replace(/[^a-z]/gu, "").slice(0, 4).padEnd(8, "a")}`,
-    project: { ...ADA },
-    label,
-    url,
-    createdAt: at(f.now, -5 * 86_400_000),
-    checkedAt: at(f.now, -60_000),
-    ...extra,
-  });
-  f.answer("hub_links_get", { project: { ...ADA } }, {
-    boxPubKey: BOX,
-    issued: [],
-    links: [
-      kept("acme", "https://hub.acme.example", {
-        state: "ok",
-        who: "Sam",
-        projects: [
-          { projectRef: { machineId: "build-1", projectId: "shop" }, title: "Shop" },
-          { projectRef: { machineId: "build-1", projectId: "website" }, title: "Website" },
-        ],
-      }),
-      kept("personal", "https://hub.home.example", {
-        state: "unreachable",
-        who: "Sam",
-        error: "Can't reach personal at https://hub.home.example: connection refused.",
-      }),
-      kept("old job", "https://fleet.oldjob.example", { state: "revoked", who: "Sam Rivera", error: "The person who made link hl_ccfmqd4e was removed from this hub, and the link with them." }),
-    ],
-  });
-  const issued = (linkId: string, label: string, extra: JsonObject): JsonObject => ({
-    linkId,
-    label,
-    prefix: `flk_${linkId.slice(3, 9)}`,
-    keyId: "k-laptop",
-    device: "laptop",
-    person: { ...SAM },
-    createdAt: at(f.now, -9 * 86_400_000),
-    ...extra,
-  });
-  f.answer("hub_links_get", undefined, {
-    boxPubKey: BOX,
-    links: [],
-    issued: [
-      issued("hl_homeaaaa", "home", { lastUsedAt: at(f.now, -25_000) }),
-      issued("hl_workaaaa", "work", { projects: [storefront], createdAt: at(f.now, -2 * 86_400_000) }),
-      issued("hl_tripaaaa", "travel laptop", { revokedAt: at(f.now, -86_400_000) }),
-    ],
-  });
-  f.answer("hub_link_mint", undefined, { key: `flk_${"q7m2xk4v".repeat(6)}abcd`, link: issued("hl_newaaaaa", "home", { createdAt: f.now }) });
-  // The page these links are on (Settings › Hubs & devices) lists Sam's devices over them.
-  yourDevices(f);
-  return f;
-};
-
-const linksNone = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "no-repo-links-none", "Hub links: no linked hubs for Ada and no links to this hub yet.");
-  for (const input of [{ project: { ...ADA } }, undefined]) f.answer("hub_links_get", input, { boxPubKey: BOX, links: [], issued: [] });
   return f;
 };
 
@@ -386,8 +320,7 @@ const pictures = (from: Fixture): Fixture => {
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
-    const linked = links(made);
-    return [made, linked, linksNone(linked), files(made), pictures(made)];
+    return [made, settings(made), files(made), pictures(made)];
   },
 });
 

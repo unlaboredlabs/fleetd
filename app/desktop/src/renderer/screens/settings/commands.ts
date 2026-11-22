@@ -76,9 +76,9 @@ const pages: Command[] = [
   {
     id: "go:settings.hubs",
     title: "Hubs & devices",
-    detail: "The hubs this app is paired with, their links, and your devices",
+    detail: "The hubs this app is paired with, and your devices",
     group: "settings",
-    keywords: ["hub", "hubs", "pair", "add a hub", "hub links", "connections"],
+    keywords: ["hub", "hubs", "pair", "add a hub", "connections"],
     run: () => go(tabHref("hubs")),
   },
   {

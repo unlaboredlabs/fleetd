@@ -6,8 +6,7 @@ description: "Add a bot or start a new one, choose who sees it, its branch, task
 A [bot](/docs/glossary#project) is a chat with a lead, in a folder of its own, holding zero or more repos. Send
 it work and follow that work to merged pull requests, or keep one with no repo as your own assistant: one for home,
 one for taxes. Every bot has the same abilities: memory, [automations](/docs/automations),
-[screens](/docs/browser-sessions), [kept sign-ins](#sign-ins), [purchases](#purchases), [skills](#skills) and
-[links to other hubs](#hub-links).
+[screens](/docs/browser-sessions), [kept sign-ins](#sign-ins), [purchases](#purchases) and [skills](#skills).
 
 ## Add a bot {#add-a-project}
 
@@ -144,7 +143,6 @@ right-click menu. Its **Bot** page has these, in order:
 | Name | How fleetd shows the bot. Its folder keeps its own name. |
 | Repos | The git repos the bot holds, each with its remote, base branch and checkout (machine and path). A plain folder holds none. **Add repo** and **Remove…**: see [Repos](#repos). Under them, each repo's **Computer**: its setup commands. See [Computer](#computer). |
 | Environment variables | Variables every new agent of the bot gets. See [Environment variables](#env). |
-| Linked hubs | Hubs its lead opens and follows work on. See [Hub links](#hub-links). |
 | Approvals | Who approves its lead's sends and first visits, and what ran without asking. See [What the lead asks first](#approvals). |
 | MCP servers | One list of the bot's MCP servers: the ones its lead reaches for you, which follow Approvals and may sign in with your account ([Integrations](/docs/integrations)), and the ones its agents get too, by role ([MCP servers](/docs/mcp-servers)). Below them, the global ones it gets. |
 | Sign-ins | **Forget sign-ins…** signs its browser out of every site. It shows once its machine keeps sign-ins for it; until then the row says "None kept yet." See [Sign-ins](#sign-ins). |
@@ -320,9 +318,8 @@ fleetd project unarchive devbox/taxes
 Delete is in no menu: it is the last setting of a bot's own settings (on the phone, the last row of its info).
 **Delete bot…** stops the bot's agents, removes the worktrees they worked in, and erases the bot: one rule for every
 bot (D310). On the hub and its machine its chat, memory, skills, approvals and purchases, asks and decisions, orders
-and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings go, and so do its links
-to other hubs, each revoked on its hub. A machine whose node is older refuses the delete until you update fleetd
-there. **Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a
+and tasks, automations, kept browser sign-ins, transcripts, attachments and screen recordings go. A machine whose
+node is older refuses the delete until you update fleetd there. **Also delete its folder** (`removeFolder`) deletes its folder with everything in it; fleetd refuses that for a
 home folder, its own directory, or a folder holding another bot. Type the bot's name to confirm. If any of its
 worktrees has uncommitted changes, the dialog names them: those changes are lost. The app lists the worktrees again
 when you click it, so Delete waits while the bot's machine is offline or can't list them, and says so.
@@ -417,7 +414,7 @@ that is gone, says so under the line.
 
 What stays yours, whatever the lead is asked or told: the approval mode, [allowed sites](#sites) (the card on a first
 visit stays), profiles, models and [max agents](#max-agents), the bot's [card](#purchases), vault items, MCP
-servers, the built-in prompts, [linked hubs](#hub-links), deleting a bot, creating one
+servers, the built-in prompts, deleting a bot, creating one
 (the lead can only [propose it](#lead-propose)), and
 adding by path a folder that is a bot of its own (adding it would archive that bot). The lead's calls have no
 field for any of these, and one that names any of them is refused with a line that says who can do it and where. A
@@ -456,9 +453,8 @@ bomb) is refused, with why.
 
 What reaches outside goes by the bot's **Approvals** setting (decision D263): a send, reply, forward, share or
 invite through an [integration](/docs/integrations), a site it opens on its own for the first time, the final Confirm
-or Submit on a site (`confirm_step`), and a message to a bot's lead on a [linked hub](#hub-links) (`project_message`),
-whose card is headed "Message the lead of Shop on acme" and shows the exact text. A text to another bot's lead on
-this hub never asks: see [Leads text each other](#lead-texts).
+or Submit on a site (`confirm_step`). A text to another bot's lead never asks: see
+[Leads text each other](#lead-texts).
 
 A new bot starts in **YOLO**, where none of these asks you. Pick **Checker decides** or **Ask me about
 everything** to be asked. A bot made before YOLO became the starting mode keeps the mode it had: the one you
@@ -658,45 +654,9 @@ does, on a fresh profile.
 chat, memory, folder and allowed sites stay. Deleting the bot deletes its sign-ins too. To sign out of one site
 only, ask the lead to sign out there.
 
-## Hub links {#hub-links}
-
-A bot's lead can open and follow work in bots on another hub, such as a team hub when the bot lives on
-your personal one. You make a link key on the hub it reaches and add it to the bot. It acts as you there, and
-either side can revoke it. [Security](/docs/security#hub-links) has the rules.
-
-**On the hub it reaches.** Open **Settings › Hubs & devices**, **Hub links**, **Links to this hub** (with several hubs, *Links
-to* that hub), and click **Make a link key**:
-
-1. Name the other hub as you think of it, such as *home*. Requests through the link read "*you* via home" there.
-2. Leave **Every bot you can reach**, or pick **Only some bots** and tick them.
-3. **Make link key** shows the key (`flk_…`) once. **Copy** takes it with the address other hubs reach this hub
-   at: its HTTPS or tailnet URL. When the hub has no such address set, type it in the box that appears.
-
-The list below shows the links made as you: what each is for, its bots, when it was last used, and **Revoke**.
-Signing out the device you made a link on revokes the link too.
-An admin sees everyone's on **Settings › Hub › People**, under **Hub links**, each with the person it acts as.
-
-**On the bot's hub.** Open the bot's settings, **Linked hubs**, and click **Link a hub**. Paste what you
-copied into **Link key**: the address fills itself. Name the hub as the lead should call it (*acme*), then click
-**Link hub**. The app seals the key to this hub, which checks it with the other hub and never shows it again. Then
-tell the lead what you want ("ask the Shop lead on acme for saved carts"). It follows the order and tells you when it
-lands.
-
-Each linked hub shows its address, the person it acts as there and its bots (*only Shop, Website*, or *every
-bot of theirs*), and one word for its state:
-
-| State | Means |
-|---|---|
-| Working | Its last call went through. |
-| Can't reach | This hub can't reach the other one. The row gives the address and the reason, such as *connection refused*. A link needs the other hub reachable from this one over a tailnet or HTTPS. |
-| Revoked | The other hub refused the key: it was revoked there, the device it was made on was signed out, or you left that hub. Remove it, or make a new key there and add it. |
-
-**Remove** deletes the key at once and asks the other hub to revoke it too. When that hub doesn't answer, the
-notice says so: its link stays listed there until someone revokes it, but nothing can use it.
-
 ## Leads text each other {#lead-texts}
 
-A bot's lead texts another bot's lead on this hub when the work needs it: a question, a heads-up, or an ask for work
+A bot's lead texts another bot's lead when the work needs it: a question, a heads-up, or an ask for work
 (`project_message`). It needs no word from you and no approval card. The other lead is woken once and may answer
 with the same call, which wakes the first. Both chats show each text as a quiet line headed by whose lead wrote it,
 and neither rings your phone.
@@ -708,8 +668,6 @@ and neither rings your phone.
   the asker hears when it lands (*Asked of other bots*, below).
 - **No ping-pong.** Two bots' leads trade at most 10 texts an hour, both ways together. Past that the next is
   refused, with the time it can go again.
-- **Linked hubs ask as before.** A text to a bot on a [linked hub](#hub-links) goes through the bot's approval mode
-  like a send, and gets no reply: the asker hears what happens to the work.
 
 ## Asked {#asked}
 
@@ -799,7 +757,6 @@ crop?}` (an image from `attachment_put` and the square to keep; no `attachmentId
 | Payments | `project_purchases {machineId, projectId}` reads its card and purchase log; `project_card_set {machineId, projectId, card?}` picks its card (a person's own device only) from `onepassword_cards {machineId?, project?}`, the Credit Card items their 1Password token reads (the bot's own token's, when it has one; refused in a shared bot without one). |
 | Asked | `project_asks {project}`, with the orders opened for each. |
 | Sign-ins | `project_signins_forget {machineId, projectId}`; it needs the bot's machine online and on a fleetd that keeps them. |
-| Hub links | `hub_links_get {project?}`, `hub_link_mint {label, projects?}`, `hub_link_revoke {linkId}`, `hub_link_add {project, label, url, sealed}` (the key sealed to `boxPubKey` from `hub_links_get`), `hub_link_remove {linkId}` |
 
 A bot's [skills](#skills) are `scope: "project"` skills with its `projectRef`. `skills_list {projectRef}` gives each with `changed` (its newest version: `version`,
 `author` `agent` or `person`, `by`, `at`, `why`), `off` and `lastUsedAt`. `skill_get {origin, projectRef, name,

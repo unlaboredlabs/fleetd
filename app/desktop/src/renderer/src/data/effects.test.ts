@@ -73,14 +73,9 @@ describe("event effects", () => {
   it("a remove elsewhere reaches every open page that showed it", () => {
     // An MCP server removed: Integrations drops it.
     expect(effectsOf(e("mcp.oauth", { name: "mail", removed: true }))).toEqual({ invalidate: [{ tool: "mcp_servers_get" }], resync: false });
-    // A linked hub removed from a project.
-    const settings = tools(e("project.settings", { hubLinkRemoved: "L1" }, { machineId: "devbox", projectId: "app" }));
-    expect(settings).toContain("hub_links_get");
-    // Someone's Claude subscription, 1Password token or GitHub connection removed, or a hub link of theirs revoked.
-    for (const change of ["account_removed", "link_revoked"]) {
-      const people = tools(e("people.changed", { change }));
-      for (const read of ["people_list", "claude_accounts_get", "onepassword_get", "github_app_get", "hub_links_get"]) expect(people, `${change} ${read}`).toContain(read);
-    }
+    // Someone's Claude subscription, 1Password token or GitHub connection removed.
+    const people = tools(e("people.changed", { change: "account_removed" }));
+    for (const read of ["people_list", "claude_accounts_get", "onepassword_get", "github_app_get"]) expect(people, read).toContain(read);
   });
 
   it("a vault item changed or used: the Vault's lists, the open item and its activity read again, and Payments' card", () => {

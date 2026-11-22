@@ -13,7 +13,6 @@ import { register as r9 } from "../claude_accounts/tools.ts";
 import { register as r10 } from "../doctor/tools.ts";
 import { register as r11 } from "../executor/tools.ts";
 import { register as r12 } from "../github_app/tools.ts";
-import { register as r13 } from "../hub_links/tools.ts";
 import { register as r14 } from "../info/tools.ts";
 import { register as r15 } from "../leads/tools.ts";
 import { register as r16 } from "../ledger/tools.ts";
@@ -62,7 +61,6 @@ export function registerAll(tools: Registry): void {
   r10(tools); // hub/doctor
   r11(tools); // hub/executor
   r12(tools); // hub/github_app
-  r13(tools); // hub/hub_links
   r14(tools); // hub/info
   r15(tools); // hub/leads
   r16(tools); // hub/ledger

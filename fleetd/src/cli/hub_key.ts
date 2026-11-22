@@ -132,18 +132,12 @@ export function hubKey(argv: string[], home?: string): CliResult {
       const keyId = v.positionals[0];
       if (!keyId) return keyUsage("revoke needs a key id (see `fleetd hub key list`)");
       return withHub(home, (db) => {
-        let links: number;
         try {
-          links = revokeKey(db, keyId);
+          revokeKey(db, keyId);
         } catch (error) {
           return fail(1, (error as Error).message);
         }
-        const revoked =
-          links === 0
-            ? `revoked ${keyId}`
-            : links === 1
-              ? `revoked ${keyId} and its hub link`
-              : `revoked ${keyId} and its ${links} hub links`;
+        const revoked = `revoked ${keyId}`;
         try {
           const released = releaseClaims(db, keyId, "its key was revoked");
           return ok(released.length === 0 ? `${revoked}\n` : `${revoked}; released ${released.join(", ")}\n`);

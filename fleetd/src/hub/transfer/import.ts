@@ -21,7 +21,7 @@ import { migrate } from "../store/migrations.ts";
 import { fileChunks } from "./export.ts";
 import { damaged, decodeValue, MANIFEST_PATH, readPart, sha256Hex, TransferError, type Verified, verifyExport } from "./format.ts";
 import { itemFromExport, openSecrets, openValue } from "./seal.ts";
-import { AREAS, CARRIED, fateOf, MARKS_USE, RETIRED, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
+import { AREAS, CARRIED, DROPPED, fateOf, MARKS_USE, RETIRED, SEALED, type SealedColumns, SECRET_TABLES, VAULT_ITEMS } from "./tables.ts";
 import { bodyBytes, TarError, tarEntries } from "./tar.ts";
 
 const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
@@ -220,7 +220,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
     const target = o.secrets ? await o.secrets.target() : undefined;
     const key = o.secrets?.key;
     const secret = (name: string) => SECRET_TABLES.includes(name);
-    if (!key && manifest.tables.some((t) => secret(t.name) && t.rows > 0)) skipped.push("the secrets: vault items, the GitHub App's keys, connected accounts and hub links");
+    if (!key && manifest.tables.some((t) => secret(t.name) && t.rows > 0)) skipped.push("the secrets: vault items, the GitHub App's keys and connected accounts");
     if (manifest.secretsLeftOut) skipped.push("the secrets, which the export was written without");
 
     mkdirSync(join(stage, "files"), { recursive: true, mode: 0o700 });
@@ -239,7 +239,8 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
       const tables = new Map<string, { t: HubExportTable; insert: ReturnType<Database["query"]>; load: Loader }>();
       const parts = new Map<string, { table: string; rows: number; bytes: number; sha256: string }>();
       for (const t of manifest.tables) {
-        if (!key && secret(t.name)) continue;
+        // A table a later migration drops loads nowhere: its rows are named as left behind below.
+        if ((!key && secret(t.name)) || DROPPED[t.name] !== undefined) continue;
         const columns = there.has(t.name) ? new Set(columnsOf(staged, t.name)) : undefined;
         if (!columns || t.columns.some((c) => !columns.has(c))) throw damaged(`its table ${t.name} isn't the hub's at its migrations`);
         const insert = staged.query(`INSERT INTO ${quoted(t.name)} (${t.columns.map(quoted).join(", ")}) VALUES (${t.columns.map(() => "?").join(", ")})`);

@@ -92,8 +92,6 @@ export type ChatInfoParams = {
   ApprovedLog: { key: Key };
   /** The card it pays with and what it bought (Payments.tsx). */
   Payments: { key: Key };
-  /** The other hubs it reaches (LinkedHubs.tsx). */
-  LinkedHubs: { key: Key };
   /** Its skills (Skills.tsx), a skill's view, its editor, its history and one version's change. */
   Skills: { key: Key };
   Skill: { key: Key; origin: SkillOrigin; name: string };

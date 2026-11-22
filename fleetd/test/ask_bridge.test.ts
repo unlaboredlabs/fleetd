@@ -1,9 +1,8 @@
-// The factory bridge: asks and their retries, the follow that wakes the
-// asking lead, a link's feed, the asks sent through a kept link, and project_asks.
+// The factory bridge: asks and their retries, the follow that wakes the asking lead, and project_asks.
 import { expect, test } from "bun:test";
 import { leadWakes, type Trigger } from "../src/hub/api/leads.ts";
 import { leadCalls } from "../src/hub/lead_calls/index.ts";
-import { answer, bridgeOf, found, step } from "../src/hub/project_lead/bridge.ts";
+import { answer, found, step } from "../src/hub/project_lead/bridge.ts";
 import { start } from "../src/hub/project_lead/loops.ts";
 import { apply } from "../src/hub/checklist/index.ts";
 import { events } from "../src/hub/store/events.ts";
@@ -96,41 +95,10 @@ test("the asker hears when its order opens, its PRs merge or fail, and it closes
   expect(s.woken.map(([, l]) => l)).toEqual([`- N1 to Storefront: order ${w.workstreamId} "Gift cards" is done: Gift cards pay at checkout`]);
 });
 
-test("a link's asks go out on its feed, not as wakes; asks sent through a kept link are recorded once", async () => {
-  const { hub, woken, posts, leads, copies } = setup();
-  const bridge = bridgeOf(hub);
-  const link = { linkId: "L1", label: "Work", grants: [{ role: "operate" as const, machines: "*" as const }], who: "Ada" };
-  const sent = await bridge.projectMessage({ kind: "link", link }, { project: "Storefront", text: "Invoices." });
-  expect(sent.handle).toBe("N1");
-  // A link's ask is no lead's text: its handle rides in its words, and no chat here holds a sent copy.
-  expect(posts[0]?.[1]).toBe("Ada via Work");
-  expect(posts[0]?.[2]).toStartWith(`Invoices.\n\n(Ask N1. If you open an order for it, pass asked: "N1" to brief`);
-  expect([leads[0], copies]).toEqual([undefined, []]);
-  const w = workstream(hub, ref("storefront"), "Invoices");
-  events(hub).append({ at: "x", type: "workstream.created", machineId: "devbox", projectId: "storefront", summary: "s", data: { workstreamId: w.workstreamId, asked: "N1" } });
-  expect(step(hub, 0).woken).toEqual([]);
-  expect(woken).toEqual([]);
-  expect(bridge.feed("L1", 0)).toEqual({ cursor: 1, more: false, items: [{ handle: "N1", title: "Storefront", what: `its lead opened order ${w.workstreamId} "Invoices"` }] });
-  expect(bridge.feed("L2", 0).items).toEqual([]);
-  // A read-only link opens no orders; a link limited to other projects doesn't reach this one.
-  await expect(bridge.projectMessage({ kind: "link", link: { ...link, grants: [{ role: "read", machines: "*" }] } }, { project: "Storefront", text: "x" })).rejects.toThrow(
-    "they only read it",
-  );
-  await expect(bridge.projectMessage({ kind: "link", link: { ...link, projects: [ref("checkout")] } }, { project: "Storefront", text: "x" })).rejects.toThrow(
-    "is not one of this link's bots",
-  );
-  const handle = bridge.recordSent(ref("inbox"), "K1", { handle: "N7", projectRef: ref("far"), title: "Far" }, "Hello there", 5);
-  expect(bridge.recordSent(ref("inbox"), "K1", { handle: "N7", projectRef: ref("far"), title: "Far" }, "Hello there", 6)).toBe(handle);
-  expect(bridge.askSent("K1", "N7")).toEqual({ handle, from: ref("inbox") });
-  expect(bridge.askSent("K1", "N8")).toBeUndefined();
-});
-
-test("start fills the ask bridge whoever asked first, and registers the two lead calls", async () => {
+test("start registers the two lead calls", async () => {
   const { hub, ok } = setup();
-  const early = hub.area<Record<string, unknown>>("ask_bridge", () => ({}));
   const stop = hub.shutdown;
   start(hub);
-  expect(typeof early.factoryStatus).toBe("function");
   expect(leadCalls(hub).handler("project_message")).toBeDefined();
   expect(leadCalls(hub).handler("factory_status")).toBeDefined();
   // project_asks reads the asks a project made, with their orders.

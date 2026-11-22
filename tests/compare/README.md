@@ -92,7 +92,7 @@ full run. With it, `isolation.ts` and `contract.ts` start no node and add no pro
   `doctor_fix` `invalid` (the hub fixes nothing itself), `project_avatar_get` `not_found` (read before
   `project_avatar_set`), `machine_claude_login` `failed` (no node joins) and `project_image_rebuild` `invalid` or
   `machine_offline` (a run's bots have no setup commands, and no node joins to build an image); `claude_hub_api_set`
-  (machines take the key), `hub_link_add` (another hub answers a hello first), `claude_account_test`,
+  (machines take the key), `claude_account_test`,
   `onepassword_test`, `onepassword_cards` and `vault_import` (a machine holding the account or token does their work),
   `screen_open` and `screen_end` (a node hosts screens), the reads `pr_get`, `pr_files` and `pr_diff` (GitHub, which a
   run doesn't reach), `skill_update` (it fetches from outside), `vault_move` (it moves an item set aside at the

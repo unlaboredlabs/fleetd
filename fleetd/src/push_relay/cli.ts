@@ -71,7 +71,7 @@ async function set(v: Parsed, raw: string): Promise<number> {
         return 1;
       }
       // Sealed here to the hub's box key: the key never crosses the connection in the clear.
-      const got = await hub.call("hub_links_get", {});
+      const got = await hub.call("hub_info", {});
       const pub = Buffer.from(typeof got?.boxPubKey === "string" ? got.boxPubKey : "", "base64");
       if (pub.length !== 32) {
         eprintln("fleetd push-relay: the hub sent no key to seal the relay's key to");

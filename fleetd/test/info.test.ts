@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { registerAll } from "../src/hub/serve/areas.ts";
 import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
@@ -10,11 +10,16 @@ import { store } from "../src/hub/store/hub_store.ts";
 import { TaskRecords } from "../src/hub/tasks/records.ts";
 import { fingerprintOf, platformUuid } from "../src/shared/fingerprint.ts";
 import type { Grant, HubInfoOutput } from "../src/shared/contracts.ts";
+import { tempHome } from "./helpers.ts";
 
 const AT = "2026-10-19T10:00:00.000Z";
 
-function setup(url?: string) {
-  const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 4790 }, ...(url ? { url } : {}) }, HubDb.memory(), { now: () => Date.parse(AT) });
+// hub_info reads the hub's box key from its home.
+const home = tempHome();
+afterAll(home.done);
+
+function setup() {
+  const hub = new Hub({ home: home.dir, listen: { host: "127.0.0.1", port: 4790 } }, HubDb.memory(), { now: () => Date.parse(AT) });
   store(hub).projectsUpsertMany("devbox", [
     { machineId: "devbox", projectId: "p1", title: "storefront", workspaceRoot: "/w", lastActivityAt: AT } as never,
   ]);
@@ -42,7 +47,7 @@ test("a build follows the channel its version names", () => {
 });
 
 test("an idle hub reports its version and nothing busy; admin only for a key with admin everywhere", async () => {
-  const { hub, call } = setup("https://hub.example.com/");
+  const { hub, call } = setup();
   leads(hub).records.leadPut({ projectRef: { machineId: "devbox", projectId: "p1" }, threadId: "lead-thread", startedAt: AT, sessionGeneration: 1 } as never);
   putThread(hub, "lead-thread", "idle");
   const out = await call([{ role: "read", machines: "*" }]);
@@ -50,12 +55,10 @@ test("an idle hub reports its version and nothing busy; admin only for a key wit
   expect(out.busy).toEqual([]);
   expect(out.admin).toBe(false);
   expect(out.next).toBe("Nothing runs: restarting the hub now interrupts nothing.");
-  expect(out.url).toBe("https://hub.example.com");
+  expect(out.boxPubKey).toHaveLength(44);
   expect(out.people).toBe(0);
   expect((await call([{ role: "admin", machines: "*" }])).admin).toBe(true);
   expect((await call([{ role: "admin", machines: ["devbox"] }])).admin).toBe(false);
-  // Loopback is no address another hub reaches.
-  expect((await setup().call([{ role: "read", machines: "*" }])).url).toBeUndefined();
 });
 
 test("a working lead, running agents and a clone are busy; a node's restart cuts off only its own", async () => {

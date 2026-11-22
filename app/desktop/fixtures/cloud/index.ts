@@ -89,7 +89,7 @@ const admin = (base: Fixture, name: string, note: string, cloud: JsonObject = {}
   f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
   f.label = "acme";
   f.cloud = { email: EMAIL, hub: true, ...cloud };
-  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, people: 4, url: TEAM, leftOut: LEFT_OUT });
+  f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, people: 4, leftOut: LEFT_OUT });
   return f;
 };
 

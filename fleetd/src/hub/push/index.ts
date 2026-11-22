@@ -23,7 +23,7 @@ import { Requests } from "../approvals/store.ts";
 import { base32 } from "../auth/nodes.ts";
 import { chat } from "../chat/index.ts";
 import { orderPerson, requestFor } from "../chat/whom.ts";
-import { boxKey } from "../hub_links/store.ts";
+import { boxKey } from "../auth/box_key.ts";
 import { decisions } from "../ledger/decisions.ts";
 import { ownerOn } from "../people/store.ts";
 import { events } from "../store/events.ts";

@@ -9,12 +9,9 @@ const desktop = path.resolve(__dirname, "../desktop/src");
 config.watchFolders = [
   path.join(desktop, "shared"),
   path.join(desktop, "renderer/src/data"),
-  path.join(desktop, "renderer/screens/hubLinks"),
   path.join(desktop, "renderer/screens/projects"),
   path.join(desktop, "renderer/screens/sessions"),
   path.join(desktop, "renderer/screens/settings"),
-  // live/when's `when`: the time linked hubs' words give an error.
-  path.join(desktop, "renderer/screens/live"),
   path.join(desktop, "renderer/screens/updates"),
 ];
 config.resolver.nodeModulesPaths = [path.resolve(__dirname, "node_modules")];
