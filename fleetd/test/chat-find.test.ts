@@ -239,6 +239,13 @@ test("hit lines: one line around the first match, marks inside it, a file's name
   expect([...text].length).toBe(160);
   expect(text.startsWith("…") && text.endsWith("…")).toBe(true);
   expect(text.slice(marks[0]![0], marks[0]![1])).toBe("needle");
+  // A match near a long message's end stays whole and near the line's start, where a two-line preview still shows it:
+  // the line ends at the message's end, never cut inside the match.
+  const late = `${"word ".repeat(40)}Shall I give it to a writer?`;
+  const end = hitText(late, undefined, parseWords("writer"));
+  expect(end.text.startsWith("…") && end.text.endsWith("writer?")).toBe(true);
+  expect(end.text.slice(end.marks[0]![0], end.marks[0]![1])).toBe("writer");
+  expect(end.marks[0]![0]).toBeLessThanOrEqual(1 + 160 / 3);
   expect(hitText("", [pdf], parseWords("x"))).toEqual({ text: "invoice.pdf", marks: [] });
   expect(hitText("a\n\n  b   c", undefined, [])).toEqual({ text: "a b c", marks: [] });
   // Marks are in the text's own code units, past accents and wide characters.
