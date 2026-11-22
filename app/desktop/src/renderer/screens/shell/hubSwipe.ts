@@ -11,7 +11,8 @@
 // the only one it makes cancelable (its glide's never are), so long as the page never cancels that first one, which
 // the swipe never does. Where the fingers lift it says too (W813): the glide's events are WheelEvent.momentum, so the
 // list follows the fingers 1:1 until the first of them, and settles from there at once. Fingers that stop before they
-// lift send no glide and no event at all: after REST_MS still the list settles, and if they move again it is theirs
+// lift send no glide and no event at all: after REST_MS still the list settles (REST_HUB_MS when it would settle on
+// another hub), and if they move again it is theirs
 // again, from wherever the spring has it, as a touch on a settling list takes it up. Without momentum (an older
 // Chromium) the deltas tell: once a swipe's events have shrunk FALLS times in a row under FADE of its largest, or after
 // a pause (LIFT_MS there, as a pause doesn't end a touch). Elsewhere (Linux, Safari, Firefox), where a cancelable event says nothing,
@@ -46,6 +47,11 @@ export const GAP_MS = 100;
 export const LIFT_MS = 400;
 /** With the platform's word on the lift too, fingers still this long have most likely lifted: the list settles. */
 export const REST_MS = 80;
+/**
+ * ...and this long when the list would settle on another hub from there: a pause halfway across is more often fingers
+ * that stopped to look than ones that lifted, and a switch can't be taken back by the same touch.
+ */
+export const REST_HUB_MS = 240;
 /** How far a gesture moves before it picks its axis. */
 export const DECIDE_PX = 6;
 /** Its horizontal travel must beat its vertical by this much to be a swipe: the list scrolls far more often. */
@@ -375,6 +381,8 @@ const view = { current: { beside: null as Beside | null, moving: false, show: (_
 const pressed = { current: false };
 // A spring held still under a new touch going sideways, until it is taken up or turns out to be no swipe.
 const held = { current: false };
+// The hub the swipe stood on when its fingers last stood still: a rest that has landed another since spent the touch.
+const restOn = { current: null as number | null };
 
 const setBeside = (b: Beside | null): void => {
   view.current.beside = b;
@@ -395,6 +403,7 @@ export const resetHubSwipe = (): void => {
   settling.current = null;
   pressed.current = false;
   held.current = false;
+  restOn.current = null;
   view.current = { ...view.current, beside: null, moving: false };
 };
 
@@ -504,12 +513,15 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
     /** A pause: the fingers stood still, or lifted with no glide, so the list is let go standing still too. */
     const wait = () => {
       clearTimeout(timer.current);
+      const n = live.current.hubs.length;
+      const switching = settleOn(offset.current, 0, width.current, here.current > 0, here.current < n - 1) !== 0;
       timer.current = setTimeout(
         () => {
           g.current = { ...rest(g.current), at: performance.now() };
+          restOn.current = here.current;
           letGo();
         },
-        lifts ? REST_MS : said ? LIFT_MS : GAP_MS,
+        lifts ? (switching ? REST_HUB_MS : REST_MS) : said ? LIFT_MS : GAP_MS,
       );
     };
     const onWheel = (e: WheelEvent) => {
@@ -517,6 +529,8 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
       const w = pane.current?.clientWidth ?? 0;
       const { dx, dy } = px(e, w);
       const was = g.current.phase;
+      // Let go of under fingers that stood still (rest): if they move again, it is the same touch going on.
+      const resting = was === "glide" && g.current.rested === true;
       // Nothing to move by: a touch's or a glide's end, which Chromium can hand the page.
       if (dx === 0 && dy === 0) return;
       // When the event happened, not when the page got to it: a busy renderer hands them over late and bunched.
@@ -544,13 +558,18 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
       const next = here.current < n - 1;
       if (was !== "drag") {
         const s = settling.current;
-        if (s !== null && s.hub === null && width.current === w && !reduced()) {
-          // A list springing back (from an end, or a swipe not far enough, or let go of under fingers that stood still):
-          // they take it up where it is, as a hand stops a moving list, and it follows them from there.
+        if (s !== null && (s.hub === null || resting) && width.current === w && !reduced()) {
+          // A list springing back (from an end, or a swipe not far enough), or one let go of under fingers that stood
+          // still, on its way to a hub or not: they take it up where it is, as a hand stops a moving list, and it follows
+          // them from there. That hub isn't switched to: the same touch goes on, and may go back.
           settling.current = null;
           held.current = false;
           cancelAnimationFrame(frame.current);
           g.current = { ...step.g, x: -unshown(offset.current, w, prev, next) + (was === "glide" ? dx : step.g.x), v: 0 };
+        } else if (resting && s === null && restOn.current !== here.current) {
+          // Fingers whose rest has landed another hub, moving again: that was the touch's switch, and the rest is spent.
+          g.current = spend(step.g);
+          return;
         } else {
           // A new swipe: one still settling that it can't take up lands first.
           finish();
