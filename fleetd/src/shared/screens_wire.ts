@@ -16,6 +16,9 @@ import type {
   MachineId,
  
   ProjectId,
+  ScreenAppearance,
+  ScreenControl,
+  ScreenOrientation,
   SessionHost,
   SessionKind,
   TaskId,
@@ -34,6 +37,8 @@ export const CAP_SESSION_SEAL = "session_seal";
 export const CAP_PROJECT_SIGNINS = "project_signins";
 export const CAP_MAC_TOOL = "mac_tool";
 export const CAP_AGENTS_MAC = "agents_mac";
+/** The node answers `screen_control` on its phone screens (W804). */
+export const CAP_SCREEN_CONTROL = "screen_control";
 
 // ---- browser.rs constants ----
 export const RECORDING_PART_BYTES = 512 * 1024;
@@ -111,10 +116,28 @@ export type MacCaller = { machineId: MachineId; projectId: ProjectId; taskId?: T
  */
 export type SimScreen = { hostKey: string; sessionId: BrowserSessionId };
 export type MacCallFrame = { id: string; caller: MacCaller; sealed: string; screen?: SimScreen };
+/** A person's device control on a phone screen they have control of (`screen_control`). */
+export type ScreenControlFrame = { id: string; sessionId: BrowserSessionId; control: ScreenControl; value?: string; by: string };
+
+/** Where a phone screen's device is: what the hub keeps on its session ([`BrowserSession`]'s fields of the same names). */
+export type ScreenDevice = {
+  controls: ScreenControl[];
+  orientation?: ScreenOrientation;
+  fold?: string;
+  folds?: string[];
+  appearance?: ScreenAppearance;
+};
 
 // ---- node -> hub ----
 export type SessionHostResult = { id: string; frame: BrowserResultFrame };
 export type MacResultFrame = { id: string; sealed?: string; error?: McpToolError };
+/** `screen_control`'s answer: the device after it, and a screenshot's PNG. */
+export type ScreenControlResult = {
+  id: string;
+  device?: ScreenDevice;
+  screenshot?: { pngB64: string; width: number; height: number };
+  error?: McpToolError;
+};
 
 
 /** The tagged frames, as they go on the link. */
@@ -127,12 +150,14 @@ export type HubToNodeFrame =
   | ({ t: "relay_dial" } & RelayDialFrame)
   | ({ t: "session_end" } & SessionEndFrame)
   | ({ t: "mac_call" } & MacCallFrame)
+  | ({ t: "screen_control" } & ScreenControlFrame)
   | { t: string; [field: string]: unknown };
 
 export type NodeToHubFrame =
   | ({ t: "browser_frame" } & BrowserFrame)
   | ({ t: "session_host_result" } & SessionHostResult)
   | ({ t: "mac_result" } & MacResultFrame)
+  | ({ t: "screen_control_result" } & ScreenControlResult)
   | { t: string; [field: string]: unknown };
 
 // ---- lead calls (lead_calls.rs) the node makes for a session ----
@@ -148,6 +173,8 @@ export type BrowserSessionCall = {
   files?: BrowserRecordingEntry[];
   credentialsFilled?: number;
   note?: string;
+  /** A phone screen's device: its controls, orientation, fold and appearance now. */
+  device?: ScreenDevice;
 };
 export type BrowserRecordingPartCall = {
   sessionId: BrowserSessionId;

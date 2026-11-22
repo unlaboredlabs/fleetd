@@ -14,6 +14,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import type { ScreenControl } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { selfArgv } from "../util.ts";
 import { type Done, type Envelope, openAnswer, PIECE, PULL_MAX, PUSH_MAX, sealStep, type Step } from "./protocol.ts";
@@ -35,6 +36,7 @@ export type MacCall =
   | { step: "kill"; job: number }
   | { step: "pull"; path: string; to?: string }
   | { step: "sim_start"; device?: string; wait?: boolean }
+  | { step: "sim_control"; control: ScreenControl; value?: string; to?: string }
   | { step: "sim_end" };
 
 type Mac = { machineId: string; key: Uint8Array };
@@ -276,6 +278,13 @@ export class MacClient {
         }
         if (done.step === "sim_queued") return { step: "sim_queued", place: done.place, secs: done.secs ?? null, why: done.why };
         throw failed("the Mac answered sim start with another step's");
+      }
+      case "sim_control": {
+        const done = await one({ step: "sim_control", control: call.control, ...(call.value ? { value: call.value } : {}) }, "sim_control");
+        if (done.path === undefined) return { step: "sim_control", control: call.control, device: done.device };
+        // A screenshot: brought back at once, as `mac pull` would.
+        const pulled = await this.pull(thread, worktree, mac, done.path, call.to);
+        return { step: "sim_control", control: call.control, device: done.device, path: pulled.path, width: done.width, height: done.height };
       }
       case "sim_end": {
         const done = one({ step: "sim_end" }, "sim_end");

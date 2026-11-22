@@ -20,6 +20,7 @@ Every coding agent has `mac` on its PATH:
 | `mac ps` / `mac kill <job>` | The agent's jobs, and ending one (its whole process group). |
 | `mac pull <path> [to]` | A file or folder from the agent's folder on the Mac into its worktree, as `cp -R` would: to `to` (into it, when it's a folder), or the path's last part. Nothing there is deleted: files go over the files of their names. A relative path starts in the pushed worktree there. |
 | `mac sim start` / `mac sim end` | An [iOS simulator](#sim) of the agent's own on the Mac, and ending it. |
+| `mac sim rotate left` … | Its [device controls](#sim-controls): rotate, shake, Home, lock, light/dark, location, an iPhone Duo's fold, a screenshot. |
 
 A `push` or `pull` cut off by a dropped link (the agent's machine, the hub or the Mac) goes on from where it stopped
 once the link is back, for up to 5 minutes, rather than failing or starting again.
@@ -118,6 +119,35 @@ no turn on it, so several agents' simulators are watched at once, beside an agen
 
 The Mac has as many simulator screens as [simulators it boots at once](#sim), plus its own screen. The screen ends with
 the simulator: `mac sim end`, or 30 minutes without a `mac` command from the agent.
+
+### Device controls {#sim-controls}
+
+A simulator's screen has the controls Xcode's Device Hub has, in a slim strip under the live view while you have
+control; an agent runs the same ones as `mac sim` commands. Each was checked on the agents' Mac (Xcode 27.2):
+
+| Control | `mac sim` | How it runs |
+|---|---|---|
+| Rotate left / right | `mac sim rotate left` | agent-device's `orientation` (its XCTest runner). The UI turns; the picture keeps the panel's shape, and the live view turns it |
+| Shake | `mac sim shake` | the shake notification Simulator itself posts (an app's shake-to-undo) |
+| Home | `mac sim home` | the Home button, pressed inside the simulator |
+| Lock | `mac sim lock` | the side button: once locks, again wakes |
+| Light / dark | `mac sim appearance dark` | `simctl ui appearance`; no word switches to the other |
+| Location | `mac sim location 48.8584,2.2945` | `simctl location set` |
+| Fold (iPhone Duo) | `mac sim fold half-open` | the hinge, as agent-device's fold helper sets it: `closed` lights the outer panel, `half-open` and `open` the inner |
+| Screenshot | `mac sim screenshot shot.png` | the lit panel's PNG, into the agent's worktree |
+
+A Duo starts closed. After a fold, refs and coordinates from before it are stale: take a new `agent-device snapshot`.
+`agent-device fold` and `agent-device screenshot` don't work on the Mac's simulators (they look the simulator up
+through CoreDevice, which doesn't see fleetd's own simulators); `mac sim fold` and `mac sim screenshot` do. While a person has
+control, `mac sim` controls refuse, as agent-device does.
+
+### A person's own iPhone {#sim-people}
+
+A person starts a simulator of their own from **New screen › iPhone** ([Open one yourself](/docs/browser-sessions#yours)),
+picking the model (iPhone 17, iPhone Duo, an iPad: what the Mac's Xcode runs) and its iOS. It is a simulator like an
+agent's, named for the model and the person ("iPhone Duo · Ada"), theirs to drive from the start. It counts in the
+Mac's simulator budget and goes ahead of every agent waiting for one (D239): with all in use, it waits first in line.
+It ends with **End screen**, or after 30 minutes without the person's input.
 
 ### Waiting for a simulator {#sim-queue}
 

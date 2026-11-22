@@ -57,7 +57,11 @@ export async function run(args: string[]): Promise<number> {
         return parsed instanceof Error ? usage(parsed.message) : simStart(...parsed);
       }
       if (rest[0] === "end") return printDone(await call({ step: "sim_end" }, STEP_WAIT_MS));
-      return usage("mac sim start [--device <type>] [--no-wait] | mac sim end");
+      if (rest[0] !== undefined && SIM_CONTROLS.includes(rest[0])) {
+        const parsed = simControlArgs(rest);
+        return parsed instanceof Error ? usage(parsed.message) : printDone(await call({ step: "sim_control", ...parsed }, STEP_WAIT_MS));
+      }
+      return usage(`mac sim start [--device <type>] [--no-wait] | mac sim end | mac sim ${SIM_CONTROLS.join("|")} ...`);
     case "agent-device":
       return runCommand(["agent-device", ...rest.map(shQuote)], [], false);
     default:
@@ -85,6 +89,38 @@ async function simStart(device: string | undefined, wait: boolean): Promise<numb
       said = now;
     }
     await Bun.sleep(ASK_EVERY);
+  }
+}
+
+/** The device controls `mac sim` takes. */
+export const SIM_CONTROLS = ["rotate", "shake", "home", "lock", "appearance", "location", "fold", "screenshot"];
+const SIM_CONTROL_USAGE =
+  "mac sim rotate left|right | shake | home | lock | appearance [light|dark] | location <lat>,<lon> | fold closed|half-open|open | screenshot [to]";
+
+/** `mac sim <control> …` as the step's control and value (and a screenshot's `to`), or why not. */
+export function simControlArgs(args: string[]): { control: string; value?: string; to?: string } | Error {
+  const [verb, ...more] = args;
+  const bad = new Error(SIM_CONTROL_USAGE);
+  switch (verb) {
+    case "rotate":
+      return more.length === 1 && (more[0] === "left" || more[0] === "right") ? { control: `rotate_${more[0]}` } : bad;
+    case "shake":
+    case "home":
+    case "lock":
+      return more.length === 0 ? { control: verb } : bad;
+    case "appearance":
+      if (more.length === 0) return { control: "appearance" };
+      return more.length === 1 && (more[0] === "light" || more[0] === "dark") ? { control: "appearance", value: more[0] } : bad;
+    case "location": {
+      const at = more.join(",").replace(/,+/g, ",");
+      return /^-?[0-9.]+,-?[0-9.]+$/.test(at) ? { control: "location", value: at } : bad;
+    }
+    case "fold":
+      return more.length === 1 && ["closed", "half-open", "open"].includes(more[0]!) ? { control: "fold", value: more[0] } : bad;
+    case "screenshot":
+      return more.length <= 1 ? { control: "screenshot", ...(more[0] ? { to: more[0] } : {}) } : bad;
+    default:
+      return bad;
   }
 }
 
@@ -230,6 +266,10 @@ export function shown(result: any): string {
     }
     case "sim_end":
       return result.ended === true ? "your simulator ended\n" : "you had no simulator on the Mac\n";
+    case "sim_control":
+      return typeof result.path === "string"
+        ? `screenshot of your ${typeof result.device === "string" ? result.device : "simulator"}: ${result.path} (${u64(result.width)}x${u64(result.height)})\n`
+        : `${typeof result.control === "string" ? result.control.replace("_", " ") : "done"}: done on your ${typeof result.device === "string" ? result.device : "simulator"}\n`;
     default:
       return `${display(result)}\n`;
   }
