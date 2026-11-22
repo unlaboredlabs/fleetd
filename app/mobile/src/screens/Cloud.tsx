@@ -56,6 +56,13 @@ const alertAsk: AfterSignInAsk = {
         { text: "Join", onPress: () => resolve(true) },
       ], { cancelable: false }),
     ),
+  makeTeam: (email) =>
+    new Promise((resolve) =>
+      Alert.alert("No Team Yet", `Make one of your own for ${email}, or ask a teammate to invite this email.`, [
+        { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
+        { text: "Make a Team", isPreferred: true, onPress: () => resolve(true) },
+      ], { cancelable: false }),
+    ),
 };
 
 /** A signed-in account's outcome, for the app to keep its teams' keys; a failure there is the keychain's. */

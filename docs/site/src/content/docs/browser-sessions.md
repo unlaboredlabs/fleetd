@@ -123,14 +123,15 @@ You can open a screen of your own: **New screen**, the plus beside **Screens** i
    it ([below](#yours-pr)). If the PRs can't be read, the picker says why, with Retry.
 4. **Open screen.** It opens in the panel's live view with you in control from the start, and lists under Screens as
    yours. **End screen** closes it. It also ends after the machine's idle timeout without your input: 30 minutes
-   unless set in [Settings](#settings). The picker says the machine's own.
+   unless set in [Settings](#settings). Hover **Open screen** for the machine's own.
 
 Your screen is recorded and kept like an agent's, and plays back the same way once it ends. There's no agent to hand it
 to, so it has no Hand back. You need operate on the bot's machine to open one, as to take a screen over.
 
 A browser you open on a bot's own machine runs on the profile the bot keeps
 ([Bots › Sign-ins](/docs/projects#sign-ins)): a site you sign in to there stays signed in for its lead. While the
-lead's browser is on that profile, yours opens on a fresh one, and so does one on another machine. One browser at a
+lead's browser is on that profile, yours opens on a fresh one (the Browser tile says `Fresh profile`), and so does one
+on another machine. One browser at a
 time runs on the profile, so close yours before the lead needs its own.
 
 ### When a machine is full {#yours-full}

@@ -153,7 +153,7 @@ const api: FleetdApi = {
   cloud: {
     state: () => ipcRenderer.invoke(IPC.cloudState) as Promise<CloudState>,
     signIn: () => ipcRenderer.invoke(IPC.cloudSignIn) as Promise<SignInOutcome>,
-    finish: (join) => ipcRenderer.invoke(IPC.cloudFinish, join) as Promise<FinishOutcome>,
+    finish: (join, make) => (make === true ? ipcRenderer.invoke(IPC.cloudFinish, join, true) : ipcRenderer.invoke(IPC.cloudFinish, join)) as Promise<FinishOutcome>,
     notMe: () => ipcRenderer.invoke(IPC.cloudNotMe) as Promise<void>,
     cancel: () => ipcRenderer.invoke(IPC.cloudCancel) as Promise<void>,
     reopen: () => ipcRenderer.invoke(IPC.cloudReopen) as Promise<void>,

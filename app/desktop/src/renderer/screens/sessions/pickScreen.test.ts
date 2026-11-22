@@ -2,7 +2,7 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { KINDS, adminNames, askLine, canOpen, fixLabel, fixPlace, hostsFor, idleFor, idleWords, newScreenOf, openingLine, openWord, pickHost, prChoices, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
+import { KINDS, adminNames, askLine, canOpen, fixLabel, fixPlace, hostsFor, idleFor, idleWords, kindLine, newScreenOf, openingLine, openWord, pickHost, prChoices, profileBusy, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -125,6 +125,42 @@ describe("newScreenOf", () => {
   it("skips an agent's screen and one that has ended", () => {
     const { openedBy: _person, ...agents } = row("B3");
     expect(newScreenOf([agents, row("B2", { state: "uploading" })], "browser", new Set())).toBeUndefined();
+  });
+});
+
+describe("the browser tile's profile", () => {
+  const row = (sessionId: string, more: Partial<BrowserSession> = {}): BrowserSession => ({
+    sessionId,
+    control: "agent",
+    projectRef: { machineId: "devbox", projectId: "p" },
+    purpose: "Lead's browser",
+    startedAt: "2026-10-31T11:00:10.000Z",
+    state: "live",
+    threadId: "t",
+    ...more,
+  });
+  const browser = KINDS.find((k) => k.kind === "browser");
+  const android = KINDS.find((k) => k.kind === "android");
+  if (browser === undefined || android === undefined) throw new Error("no browser or android kind");
+
+  it("says saved sign-ins while the bot's profile is free", () => {
+    expect(profileBusy([], "devbox")).toBe(false);
+    expect(kindLine(browser, profileBusy([], "devbox"))).toBe("Saved sign-ins");
+  });
+
+  it("says a fresh profile while the lead's browser or a person's screen holds it on the bot's machine", () => {
+    expect(profileBusy([row("B1")], "devbox")).toBe(true);
+    expect(profileBusy([row("B1", { openedBy: { personId: "u1", name: "Sam" }, machineId: "devbox" })], "devbox")).toBe(true);
+    expect(kindLine(browser, true)).toBe("Fresh profile");
+    // Other kinds keep their own line.
+    expect(kindLine(android, true)).toBe(android.line);
+  });
+
+  it("ignores an agent's browser, an ended one, another kind and another machine's", () => {
+    expect(profileBusy([row("B1", { taskId: "T1" })], "devbox")).toBe(false);
+    expect(profileBusy([row("B1", { state: "uploading" })], "devbox")).toBe(false);
+    expect(profileBusy([row("B1", { kind: "android" })], "devbox")).toBe(false);
+    expect(profileBusy([row("B1", { openedBy: { personId: "u1", name: "Sam" }, machineId: "mac" })], "devbox")).toBe(false);
   });
 });
 

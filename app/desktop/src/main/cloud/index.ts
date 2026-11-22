@@ -22,7 +22,7 @@ import { listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites
 export interface Cloud {
   state(): CloudState;
   signIn(): Promise<SignInOutcome>;
-  finish(join: readonly number[]): Promise<FinishOutcome>;
+  finish(join: readonly number[], make?: boolean): Promise<FinishOutcome>;
   notMe(): Promise<void>;
   cancel(): void;
   reopen(): Promise<void>;
@@ -102,7 +102,7 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
   return {
     state: () => ({ ...account.state(), domain: config === null ? null : cloudDomain(config.accountsUrl) }),
     signIn: () => account.signIn(),
-    finish: (join) => account.finish(join),
+    finish: (join, make) => account.finish(join, make),
     notMe: () => account.notMe(),
     cancel: () => account.cancel(),
     reopen: () => account.reopen(),

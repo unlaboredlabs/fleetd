@@ -178,6 +178,7 @@ export const fixtures = [
   "cloud-sign-in-timeout",
   "cloud-signed-in",
   "cloud-invited",
+  "cloud-no-team",
   "cloud-connect",
   "cloud-connect-no-terminal",
   "cloud-hosted-stuck",
@@ -2055,6 +2056,88 @@ export const screens: readonly Screen[] = [
       expect(text.x).toBeCloseTo(picture.x, 0);
     },
   },
+  // W798: Later folded by a click on its label: one line with its name, how many chats in the quieter colour, and the dot
+  // (search waits on you) in line with the rows' dots; no chevron at rest. The fold is kept on this device.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["sidebar-sections"],
+    variant: "section-folded",
+    open: async (page) => {
+      const nav = page.getByRole("navigation", { name: "Sidebar" });
+      // A fold takes the rows under it up on the spring, and on macOS the sidebar under them is the window's own
+      // material (data-vibrancy), which no tone of the page's matches: none of them paints one on its way (W585: each
+      // was a dark box until it landed). Clients' fold moves Later's label, docs and search, read here while they glide.
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const rising = await page.evaluate(async () => {
+        const root = document.documentElement;
+        const mac = "vibrancy" in root.dataset;
+        root.dataset["vibrancy"] = "";
+        document.querySelector<HTMLElement>('nav[aria-label="Sidebar"] [data-section="s1"] button')?.click();
+        await new Promise((rendered) => setTimeout(rendered, 0));
+        const glides = document.getAnimations().filter((a) => a.effect instanceof KeyframeEffect && a.effect.target?.matches("[data-reorder-row]") === true);
+        const fills = [...document.querySelectorAll('nav[aria-label="Sidebar"] [data-gliding="up"]')].map((el) => getComputedStyle(el).backgroundColor);
+        if (!mac) delete root.dataset["vibrancy"];
+        return { fills, ms: glides.map((a) => a.effect?.getTiming().duration) };
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(rising.fills).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"]);
+      // The sidebar's spring (Sidebar.tsx SPRING).
+      expect(rising.ms).toEqual([360, 360, 360]);
+      await nav.getByRole("button", { name: "Clients", expanded: false }).click();
+      // The unfold puts Clients' rows back where Later's label and rows are, which glide down to make room. Each new
+      // row shows only down to their upper edge, from the glide's first frame to its last, where it shows whole: none
+      // is drawn under them (W585: Later's rows were drawn on Clients' for the glide's first 150 ms).
+      await nav.getByRole("button", { name: "Clients", expanded: true }).click();
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      const unfold = await page.evaluate(async () => {
+        document.querySelector<HTMLElement>('nav[aria-label="Sidebar"] [data-section="s1"] button')?.click();
+        await new Promise((rendered) => setTimeout(rendered, 0));
+        const glides = document.getAnimations().filter((a) => a.effect instanceof KeyframeEffect && a.effect.target?.matches("[data-reorder-row]") === true);
+        const at = (time: number) => {
+          for (const a of glides) {
+            a.pause();
+            a.currentTime = time;
+          }
+          const fresh = [...document.querySelectorAll('nav[aria-label="Sidebar"] [data-section="s1"]:not([class*="sectionSlot"])')];
+          return {
+            // How far down the page each new row shows: its clip's lower edge, an inset from the row's own.
+            shown: fresh.map((el) => el.getBoundingClientRect().bottom - parseFloat(/^inset\(\S+ \S+ (\S+)\)$/u.exec(getComputedStyle(el).clipPath)?.[1] ?? "")),
+            ends: fresh.map((el) => el.getBoundingClientRect().bottom),
+            // The first row making room: Later's label.
+            cover: document.querySelector('nav[aria-label="Sidebar"] [data-gliding="down"]')?.getBoundingClientRect().top ?? Number.NaN,
+          };
+        };
+        return { start: at(0), end: at(360) };
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect(unfold.start.shown).toHaveLength(3);
+      expect(unfold.end.cover - unfold.start.cover).toBeGreaterThan(80);
+      for (const y of unfold.start.shown) expect(y).toBeLessThanOrEqual(unfold.start.cover);
+      unfold.end.shown.forEach((y, i) => {
+        expect(y).toBeLessThanOrEqual(unfold.end.cover);
+        expect(y).toBeGreaterThanOrEqual(unfold.end.ends[i] ?? Number.NaN);
+      });
+      await nav.getByRole("button", { name: "Later", expanded: true }).click();
+      const folded = nav.getByRole("button", { name: "Later", expanded: false });
+      await expect(folded).toHaveAccessibleDescription("2 chats, one waits on you");
+      await expect(nav.locator('[class*="rows"] > [data-reorder-row]')).toHaveText(["Bots", /^Rewrite the pricing/u, "Clients", /^checkout/u, /^inventory/u, /^mobile/u, "Later2"]);
+      expect(await page.evaluate(() => window.localStorage.getItem("fleetd.foldedSections"))).toContain("/s2");
+      // The pointer is off the label, as it is at rest: no chevron shows.
+      await page.mouse.move(600, 400);
+      await expect(folded.locator('[class*="sectionHint"]')).toHaveCSS("opacity", "0");
+      const box = async (at: Locator) => {
+        const b = await at.boundingBox();
+        if (b === null) throw new Error("not on screen");
+        return b;
+      };
+      const [dot, rowDot, count, name] = await Promise.all([folded.locator('[class*="dot"]'), nav.locator('[class*="rows"] [class*="mark"] [class*="dot"]').first(), folded.locator('[class*="sectionCount"]'), folded.locator('[class*="sectionName"]')].map(box));
+      if (dot === undefined || rowDot === undefined || count === undefined || name === undefined) throw new Error("not on screen");
+      // The dot's centre in line with a row's; the count 4 px after the name.
+      expect(dot.x + dot.width / 2).toBeCloseTo(rowDot.x + rowDot.width / 2, 0);
+      expect(count.x - (name.x + name.width)).toBeCloseTo(4, 0);
+    },
+  },
   // ...beside another hub, in Hubs: the hub on show's pins, its chats in no section, then its own sections; another
   // picked at the top brings its own.
   {
@@ -3040,6 +3123,19 @@ export const screens: readonly Screen[] = [
       await page.getByText("eve@example.com invited you to security").waitFor({ timeout: 10_000 });
     },
   },
+  // In no team of their own (they came by an invitation): Not now on it leaves No team yet, with Make a team.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-no-team"],
+    variant: "no-team",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Not now" }).click();
+      await page.getByText("No team yet").waitFor({ timeout: 10_000 });
+    },
+  },
   {
     id: "onboarding",
     route: "#/onboarding",
@@ -3604,8 +3700,20 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-page"],
     variant: "view",
   },
-  // D239: New screen, the plus beside Screens in the Agents list: the kind as four tiles (no iOS, D298), the machines that can host it with
-  // their slots; the agents' Mac, its one screen in use, offers to wait, and the wait shows in the list until cancelled.
+  // D239: New screen, the plus beside Screens in the Agents list, as it opens: the title, the kind as four tiles (no
+  // iOS, D298) with Browser picked, the machine and Open, and no explaining lines under the title (W796).
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-browser",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await expect(page.getByRole("radio", { name: /^Browser/u })).toHaveAttribute("aria-checked", "true");
+    },
+  },
+  // ...the machines that can host it with their slots; the agents' Mac, its one screen in use, offers to wait, and the
+  // wait shows in the list until cancelled.
   {
     id: "sessions",
     route: `${CHAT}/sessions`,
@@ -3641,7 +3749,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("radio", { name: /^Android/u }).click();
       await page.getByRole("combobox", { name: "PR build" }).click();
       await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
-      await expect(page.getByText("Its newest CI build is installed before you get control.")).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "PR build" })).toHaveText("#14 Checkout keeps the cart after sign-in");
     },
   },
   // ...opened: it goes on in the hub, and the picker follows it (here, the build going in) until the screen is yours.

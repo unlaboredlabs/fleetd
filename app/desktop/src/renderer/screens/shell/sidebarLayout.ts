@@ -3,7 +3,8 @@
 // first) and draws them compact, kept on this computer. Which hub is on show is this window's: opening a bot of
 // another hub shows that hub. The rows on show, in order, are what ⌘1–9 count (shownRows). A computer that kept the
 // old List or Rail layout (fleetd.sidebarLayout) just shows this. Switching to another hub (its switcher, the swipe,
-// the marks, ⇧⌘[ / ⇧⌘]) takes the screen with it (openHub).
+// the marks, ⇧⌘[ / ⇧⌘]) takes the screen with it (openHub). A section's label folds it (W798): which are folded is
+// this device's alone, kept across launches (useFolded), and a folded section's chats are not on show.
 import { useSyncExternalStore } from "react";
 import { currentRoute, navigate } from "./navigation";
 import { HOME } from "./routes";
@@ -110,14 +111,71 @@ export const sortRows = <P extends Shown>(rows: ReadonlyArray<P>, sort: SidebarS
       ? rows.toSorted((a, b) => Number(b.want !== undefined) - Number(a.want !== undefined))
       : rows;
 
+const FOLDED = "fleetd.foldedSections";
+
+/** One of your sections on one hub, as the folded ones are kept. */
+export const foldKey = (hub: string, section: string): string => `${hub}/${section}`;
+
+const readFolded = (): ReadonlySet<string> => {
+  try {
+    const raw: unknown = JSON.parse(window.localStorage.getItem(FOLDED) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+};
+
+let folded: ReadonlySet<string> | null = null;
+const foldListeners = new Set<() => void>();
+const currentFolded = (): ReadonlySet<string> => (folded ??= readFolded());
+
+const setFolded = (key: string, on: boolean): void => {
+  const was = currentFolded();
+  if (was.has(key) === on) return;
+  const next = new Set(was);
+  if (on) next.add(key);
+  else next.delete(key);
+  folded = next;
+  try {
+    window.localStorage.setItem(FOLDED, JSON.stringify([...next]));
+  } catch {
+    // Kept for this window only.
+  }
+  for (const l of foldListeners) l();
+};
+
+/** Fold the section, or unfold it: a label's click. */
+export const toggleFold = (hub: string, section: string): void => setFolded(foldKey(hub, section), !currentFolded().has(foldKey(hub, section)));
+
+/** Unfold the section: one of its chats is opened from elsewhere (a notification, ⌘K, a hub's last chat). */
+export const unfold = (hub: string, section: string): void => setFolded(foldKey(hub, section), false);
+
+/** Your folded sections, by foldKey, on this device. */
+export const useFolded = (): ReadonlySet<string> =>
+  useSyncExternalStore(
+    (onChange) => {
+      foldListeners.add(onChange);
+      return () => void foldListeners.delete(onChange);
+    },
+    currentFolded,
+  );
+
+/** For tests: read the kept folds again. */
+export const resetFolded = (): void => {
+  folded = null;
+  for (const l of foldListeners) l();
+};
+
+const NO_FOLDS: ReadonlySet<string> = new Set();
+
 /**
  * The rows on show, in the order the sidebar draws them: the hub's pins, then its other bots group by group (the chats
- * in no section, then each section, in the order the frame arranged them), each group in the list's order. ⌘1–9 count
- * these.
+ * in no section, then each section, in the order the frame arranged them), each group in the list's order. A folded section's chats are
+ * left out, bar the pinned ones (among the pins). ⌘1–9 count these.
  */
-export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string): ReadonlyArray<P> => {
+export const shownRows = <P extends Shown>(rows: ReadonlyArray<P>, v: SidebarView, hub: string, shut: ReadonlySet<string> = NO_FOLDS): ReadonlyArray<P> => {
   const own = rows.filter((p) => p.hub === hub);
-  const rest = own.filter((p) => !p.pinned);
+  const rest = own.filter((p) => !p.pinned && (p.section === undefined || !shut.has(foldKey(hub, p.section))));
   const group = new Map<string | undefined, number>();
   for (const p of rest) if (!group.has(p.section)) group.set(p.section, group.size);
   // A stable sort by group keeps each group in the list's order.

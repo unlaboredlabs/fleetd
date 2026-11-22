@@ -31,6 +31,8 @@ export type SignInStep =
   | { readonly at: "arrived"; readonly arrival: Arrival }
   /** The invitation at `index` asked about; `join`, the ones joined so far. */
   | { readonly at: "invited"; readonly arrival: Arrival; readonly index: number; readonly join: readonly number[] }
+  /** Every invitation passed on, and in no team of their own: a team of their own, or sign in again later. */
+  | { readonly at: "no-team"; readonly arrival: Arrival }
   | { readonly at: "finishing" };
 
 /** An invitation as the question says it (shared/accounts.ts, the phone's words too). */
@@ -73,10 +75,10 @@ export function useSignIn(onSignedIn?: (out: FinishOutcome & { ok: true }) => vo
     });
   }, []);
   const finish = useCallback(
-    (join: readonly number[]) => {
+    (join: readonly number[], make = false) => {
       held.current = false;
       setStep({ at: "finishing" });
-      void window.fleetd.cloud.finish([...join]).then((out) => {
+      void (make ? window.fleetd.cloud.finish([...join], true) : window.fleetd.cloud.finish([...join])).then((out) => {
         void refreshCloud();
         if (out.ok) {
           missed = out.teams.filter((t): t is TeamOutcome & { ok: false } => !t.ok);
@@ -92,8 +94,10 @@ export function useSignIn(onSignedIn?: (out: FinishOutcome & { ok: true }) => vo
   /** It's them: on to the invitations, else connect. */
   const confirm = useCallback(() => {
     if (step.at !== "arrived") return;
-    if (step.arrival.invitations.length === 0) finish([]);
-    else setStep({ at: "invited", arrival: step.arrival, index: 0, join: [] });
+    if (step.arrival.invitations.length === 0) {
+      if (step.arrival.canMake === true) setStep({ at: "no-team", arrival: step.arrival });
+      else finish([]);
+    } else setStep({ at: "invited", arrival: step.arrival, index: 0, join: [] });
   }, [step, finish]);
   /** Not them: nothing was connected; the answer is dropped and its session ended. */
   const notMe = useCallback(() => {
@@ -108,11 +112,15 @@ export function useSignIn(onSignedIn?: (out: FinishOutcome & { ok: true }) => vo
       const join = joined ? [...step.join, step.index] : step.join;
       const next = step.index + 1;
       if (next < step.arrival.invitations.length) setStep({ ...step, index: next, join });
+      else if (join.length === 0 && step.arrival.canMake === true) setStep({ at: "no-team", arrival: step.arrival });
       else finish(join);
     },
     [step, finish],
   );
-  return { step, start, cancel, confirm, notMe, answer };
+  /** No team yet: make one of their own, or leave it for another sign-in (nothing connects). */
+  const makeTeam = useCallback(() => finish([], true), [finish]);
+  const noTeam = useCallback(() => finish([]), [finish]);
+  return { step, start, cancel, confirm, notMe, answer, makeTeam, noTeam };
 }
 
 function Note({ note }: { note: SignInNote }) {
@@ -245,6 +253,29 @@ export function Invited({ invitation, onJoin, onLater }: { invitation: Invitatio
   );
 }
 
+/** Every invitation passed on, and no team of their own yet: Make a team, or not now. */
+export function NoTeam({ email, onMake, onLater }: { email: string; onMake: () => void; onLater: () => void }) {
+  return (
+    <Stage id="onboarding.no-team">
+      <Bot state="idle" size={64} />
+      <Text as="h1" size="xl" strong className={s.title}>
+        No team yet
+      </Text>
+      <Text as="p" tone="quiet" className={s.lede}>
+        {`Make one of your own for ${email}, or ask a teammate to invite this email.`}
+      </Text>
+      <div className={s.waitActions}>
+        <Button variant="primary" size="md" onClick={onMake}>
+          Make a team
+        </Button>
+        <Button size="md" variant="quiet" onClick={onLater}>
+          Not now
+        </Button>
+      </div>
+    </Stage>
+  );
+}
+
 /** The teams connecting, after the questions. */
 export function Finishing() {
   return (
@@ -265,6 +296,7 @@ export function AfterBrowser({ signIn }: { signIn: ReturnType<typeof useSignIn> 
     const invitation = step.arrival.invitations[step.index];
     return invitation === undefined ? null : <Invited key={step.index} invitation={invitation} onJoin={() => signIn.answer(true)} onLater={() => signIn.answer(false)} />;
   }
+  if (step.at === "no-team") return <NoTeam email={step.arrival.email} onMake={signIn.makeTeam} onLater={signIn.noTeam} />;
   if (step.at === "finishing") return <Finishing />;
   return null;
 }

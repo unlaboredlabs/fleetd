@@ -7,7 +7,8 @@
 // its limit of people. The email WorkOS would send is a line in `sent`. An open invite joins nothing at sign-in: the
 // answer lists it apart, with its inviter's email and a one-use accept value, and only POST ACCOUNTS_ACCEPT_PATH with
 // that value makes the person one of the team (decision hosted.invites-need-accept). A person with no team and an
-// invitation pending gets no team of their own made. Each team entry says whether the person made it (`made`): the
+// invitation pending gets no team of their own made: the answer offers a one-use `make` value instead, which POST
+// ACCOUNTS_TEAM_PATH turns into a team of their own (once; one who has a team already is refused). Each team entry says whether the person made it (`made`): the
 // first person a test names, or the one whose sign-in made it; anyone who joined by an invitation didn't. Each team's
 // origin also answers POST GITHUB_INSTALL_PATH as fleetd-cloud's src/github/install.ts does: an owner's or admin's key
 // whose person connected their own GitHub (`githubConnected`) gets GitHub's install page for fleetd's App with a state
@@ -19,6 +20,7 @@ import {
   ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
+  ACCOUNTS_TEAM_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   GITHUB_INSTALL_PATH,
   type AccountsFailure,
@@ -131,6 +133,10 @@ export class FakeAccounts {
   readonly #codes = new Map<string, { email: string; challenge: string; redirectUri: string; used: boolean }>();
   /** Each accept value a sign-in answered: its team, invite and person; gone once used. */
   readonly #accepts = new Map<string, { team: string; inviteId: string; email: string }>();
+  /** Each make value a sign-in answered: whose; gone once used. */
+  readonly #makes = new Map<string, string>();
+  /** Each team made on asking (POST ACCOUNTS_TEAM_PATH), as `<team> <email>`. */
+  readonly madeOnAsking: string[] = [];
 
   /** The accounts service's origin, once started. */
   get url(): string {
@@ -272,6 +278,7 @@ export class FakeAccounts {
       return send(res, 204);
     }
     if (path === ACCOUNTS_ACCEPT_PATH) return this.#accept(body, res);
+    if (path === ACCOUNTS_TEAM_PATH) return this.#make(body, res);
     if (path !== ACCOUNTS_SIGN_IN_PATH) return fail(res, 404, { code: "not_found", message: "Nothing here." });
     const input = {
       code: str(body, "code"),
@@ -300,13 +307,33 @@ export class FakeAccounts {
     }
     const sessionId = `session_${randomBytes(8).toString("hex")}`;
     this.sessions.add(sessionId);
+    // In no team: a team of their own is theirs to ask for.
+    let make: string | undefined;
+    if (this.teamsOf(grant.email).length === 0) {
+      make = randomBytes(24).toString("base64url");
+      this.#makes.set(make, grant.email);
+    }
     const answer: AccountsSignInOutput = {
       email: grant.email,
       sessionId,
       teams: this.teamsOf(grant.email).map((name) => this.#entry(this.#teams.get(name)!, grant.email)),
       ...(invitations.length === 0 ? {} : { invitations }),
+      ...(make === undefined ? {} : { make }),
     };
     send(res, 200, answer);
+  }
+
+  /** POST ACCOUNTS_TEAM_PATH: a team of the person's own, made once, answered with a pairing code. */
+  async #make(body: unknown, res: ServerResponse): Promise<void> {
+    const value = str(body, "make") ?? "";
+    const email = this.#makes.get(value);
+    this.#makes.delete(value);
+    if (email === undefined) return fail(res, 401, { code: "make_refused", message: "That team can't be made any more.", fix: "Sign in again." });
+    if (this.teamsOf(email).length > 0) return fail(res, 409, { code: "already_own", message: "You have a team already.", fix: "Sign in again to open it." });
+    const name = email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team";
+    await this.team(name, [email]);
+    this.madeOnAsking.push(`${name} ${email}`);
+    send(res, 200, { team: this.#entry(this.#teams.get(name)!, email) });
   }
 
   /** POST ACCOUNTS_ACCEPT_PATH: the invitation joined, once, and the team answered with a pairing code. */

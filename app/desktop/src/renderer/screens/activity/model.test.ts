@@ -114,6 +114,8 @@ group("filters", () => {
     expect(inFeed(paired, project, new Set<ActivityKind>(["agents"]))).toBe(false);
     // A web app sign-in's key is no news for a bot: every sign-in pairs one.
     expect(inFeed({ ...paired, data: { deviceName: "Chrome on Mac", web: true } }, project, new Set())).toBe(false);
+    // One from before the cloud marked them: its web sign-ins were all named "Web browser".
+    expect(inFeed({ ...paired, data: { deviceName: "Web browser" } }, project, new Set())).toBe(false);
   });
 });
 

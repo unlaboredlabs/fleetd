@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeChoice, PersonClaude } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useToolQuery } from "../../src/data/react";
+import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { Button, Field, InlineCode, Input, Segmented, Text } from "../../ui";
@@ -40,6 +40,8 @@ export function ClaudeSettings() {
 function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude }) {
   const machines = useMachines();
   const noMachine = useNoMachine();
+  // A fleetd cloud team is a team to the person, never a hub.
+  const team = useHub().cloud === true;
   const save = useSave();
   const test = useTest();
   const hubCall = useHubCall();
@@ -105,7 +107,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       </div>
     </div>
   );
-  const hint = [HINT, !offer && data.hubApi !== undefined ? "The hub's API key is kept for leads and unrequested work." : null, sub === undefined ? null : `${sealedLine(sub.sealedOn)}.`]
+  const hint = [HINT, !offer && data.hubApi !== undefined ? `The ${team ? "team" : "hub"}'s API key is kept for leads and unrequested work.` : null, sub === undefined ? null : `${sealedLine(sub.sealedOn)}.`]
     .filter((x) => x !== null)
     .join(" ");
   return (
@@ -115,7 +117,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       markLabel={none ? CONNECT : "Claude: in use"}
       title="Claude"
       hint={hint}
-      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId, noMachine)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
+      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId, noMachine, team)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
       lineTone={none ? "warning" : "quiet"}
       control={
         sub === undefined ? (
@@ -145,7 +147,11 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       {removing ? (
         <ConfirmRemove
           title="Disconnect your subscription?"
-          description="Each machine forgets the token. Agents started from then on run on the hub's API key if you may use it; otherwise you connect again before your next order."
+          description={
+            team
+              ? "Agents started from then on run on the team's API key if you may use it; otherwise you connect again before you start work."
+              : "Each machine forgets the token. Agents started from then on run on the hub's API key if you may use it; otherwise you connect again before your next order."
+          }
           action="Disconnect"
           onRemove={() => hubCall("claude_subscription_remove", {})}
           onClose={() => setRemoving(false)}
@@ -157,6 +163,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
 
 /** Runs on, as a line of its own under Claude's title: the two accounts as one switch. */
 function Choice({ me }: { me: PersonClaude }) {
+  const team = useHub().cloud === true;
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
@@ -178,7 +185,7 @@ function Choice({ me }: { me: PersonClaude }) {
   };
   return (
     <>
-      <div className={s.subRow} title="Your subscription: your plan's limits, and only your work runs on it. The hub's API key: billed to the hub's Claude account. Agents started after a switch use the new one.">
+      <div className={s.subRow} title={`Your subscription: your plan's limits, and only your work runs on it. The ${team ? "team" : "hub"}'s API key: billed to the ${team ? "team" : "hub"}'s Claude account. Agents started after a switch use the new one.`}>
         <Text size="sm" tone="quiet">
           Runs on
         </Text>
@@ -189,7 +196,7 @@ function Choice({ me }: { me: PersonClaude }) {
           onChange={pick}
           options={[
             { value: "subscription", label: "My subscription" },
-            ...(me.mayUseHubApi || shown === "hub_api" ? [{ value: "hub_api" as const, label: "Hub's API key" }] : []),
+            ...(me.mayUseHubApi || shown === "hub_api" ? [{ value: "hub_api" as const, label: team ? "Team's API key" : "Hub's API key" }] : []),
           ]}
         />
       </div>

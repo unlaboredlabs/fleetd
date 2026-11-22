@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MemoryImportInput, MemoryImportOutput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { live, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { addUi, closeAddProject } from "../projects/store";
@@ -48,7 +48,18 @@ const ADDED: MemoryImportOutput = {
 };
 
 /** Your memory above it, as on the page, and a hub whose memory_import answers the prompt at once and an import when `finish` is called; every call kept. */
-async function mount(missing?: HubError, refuse?: HubError) {
+/** The page on a fleetd cloud team, as the web app has it. */
+function OnCloud() {
+  const layer = useDataLayer();
+  return (
+    <HubScope hub={{ id: layer.hub, label: "acme", layer, cloud: true }}>
+      <YourMemory />
+      <ImportMemory />
+    </HubScope>
+  );
+}
+
+async function mount(missing?: HubError, refuse?: HubError, cloud = false) {
   const hub = {
     imports: [] as { input: MemoryImportInput; timeoutMs: number | undefined }[],
     gets: 0,
@@ -82,8 +93,14 @@ async function mount(missing?: HubError, refuse?: HubError) {
     root.render(
       <UiProvider>
         <DataProvider layer={createDataLayer(api)}>
-          <YourMemory />
-          <ImportMemory />
+          {cloud ? (
+            <OnCloud />
+          ) : (
+            <>
+              <YourMemory />
+              <ImportMemory />
+            </>
+          )}
         </DataProvider>
       </UiProvider>,
     );
@@ -122,6 +139,12 @@ const paste = (value: string) => {
 };
 
 const status = () => document.querySelector('section[data-part="import-memory"] [role="status"]')?.textContent ?? "";
+
+it("says who reads it as a team on a fleetd cloud team, never a hub", async () => {
+  await mount(undefined, undefined, true);
+  expect(host.textContent).toContain("Everyone on this team can read what it writes.");
+  expect(host.textContent).not.toContain("hub");
+});
 
 it("shows the two steps with the hub's prompt, and copies it whole", async () => {
   await mount();
