@@ -3,7 +3,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readableLines, settingsPath, settingsPathProblems } from "./settingsPages";
+import { readableLines, settingsPathProblems } from "./settingsPathCheck";
+import { settingsPath } from "./settingsPages";
 
 const app = join(__dirname, "..", "..", "..");
 const sources = (dir: string): string[] =>
@@ -11,7 +12,7 @@ const sources = (dir: string): string[] =>
     const path = join(dir, e.name);
     if (e.isDirectory()) return e.name === "node_modules" || e.name === "schema" ? [] : sources(path);
     // Not the check itself, whose own lines name what it looks for.
-    return /\.tsx?$/u.test(e.name) && !/\.test\.tsx?$/u.test(e.name) && e.name !== "settingsPages.ts" ? [path] : [];
+    return /\.tsx?$/u.test(e.name) && !/\.test\.tsx?$/u.test(e.name) && e.name !== "settingsPathCheck.ts" ? [path] : [];
   });
 
 describe("Settings paths", () => {

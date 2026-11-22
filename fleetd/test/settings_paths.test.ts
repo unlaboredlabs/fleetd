@@ -4,7 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { readableLines, settingsPathProblems } from "../../app/desktop/src/shared/settingsPages.ts";
+import { readableLines, settingsPathProblems } from "../../app/desktop/src/shared/settingsPathCheck.ts";
 import { noMacFix } from "../src/hub/machine_roles/calls.ts";
 import { signedOutLine } from "../src/hub/leads/cut_off.ts";
 import { PEOPLE_ONLY } from "../src/hub/projects/people_only.ts";

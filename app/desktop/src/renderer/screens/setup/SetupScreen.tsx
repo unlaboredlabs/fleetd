@@ -11,7 +11,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { SetupListOutput, SetupStepId } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError, callKey } from "../../src/data/queries";
-import { useDataLayer, useHub, useToolQuery } from "../../src/data/react";
+import { settingsPath } from "../../../shared/settingsPages";
+import { useCloudTeam, useDataLayer, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text, cx } from "../../ui";
 import { useHubRole, useServes } from "../admin/role";
 import { errorText, useRefetch } from "../settings/hub";
@@ -21,7 +22,6 @@ import { GuideParts, Part } from "./Guide";
 import { groupWords, isRequiredLeft, needWords, placesOf, requiredLeft, statusWords, testMs, type SetupStep } from "./steps";
 import { INLINE, stepControls } from "./accounts";
 import s from "./setup.module.css";
-import { SettingsPath } from "../settings/SettingsPath";
 
 const noInput = {};
 
@@ -417,6 +417,7 @@ function StepSummary({ title, steps, brief = false }: { title: string; steps: Re
 
 /** The end: what is ready, and what waits in Settings › Hub › Setup for when it is needed. */
 function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
+  const cloud = useCloudTeam();
   const ready = steps.filter((st) => st.status === "done");
   const waiting = steps.filter((st) => st.status !== "done");
   const left = requiredLeft(steps);
@@ -429,7 +430,7 @@ function Done({ steps }: { steps: ReadonlyArray<SetupStep> }) {
         <Text as="p" tone="quiet">
           {left === 0
             ? <>
-                Add a bot and say hi to its lead. What you left for later waits in <SettingsPath parts={["Setup"]} />, and fleetd asks for it the first time it is needed.
+                Add a bot and say hi to its lead. What you left for later waits in {settingsPath(cloud, "Setup")}, and fleetd asks for it the first time it is needed.
               </>
             : `${left} required ${left === 1 ? "step is" : "steps are"} left before agents can run.`}
         </Text>
