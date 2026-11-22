@@ -981,14 +981,16 @@ export class Train {
   }
 
   /**
-   * Whether PRs into `base` get CI: the repo has a workflow, `base` requires a check other than the train's own, or
-   * some CI reports, a check run or a commit status of any provider but the train, on one of `heads` (a PR's, earlier
-   * ones too) or on one of the default branch's last `CI_HISTORY` commits (the cloud's rule too). Throws while one of
-   * those can't be read.
+   * Whether PRs into `base` get CI: `base` requires a check other than the train's own, its workflow files have a job,
+   * or some CI reports, a check run (not GitHub Actions') or a commit status of any provider but the train, on one of
+   * `heads` (a PR's, earlier ones too) or on one of the default branch's last `CI_HISTORY` commits (the cloud's rule
+   * too). Throws while one of those can't be read.
    */
   async hasCi(repo: string, base: string, heads: string[] = []): Promise<boolean> {
     const ci = await this.ciConfig(repo, base);
-    if (ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
+    if (ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
+    // A job in `base`'s own workflow files, not the repo's list of workflows, which has GitHub's Pages and Dependabot.
+    if (next.jobChecks(await this.github.workflowFiles(repo, base)).length > 0) return true;
     for (const head of heads) if (await this.reported(repo, head)) return true;
     const known = this.ciHistory.get(repo);
     if (known && this.nowMs() - known[0] < CI_CONFIG_TTL_MS) return known[1];
@@ -1001,7 +1003,8 @@ export class Train {
 
   /** Whether CI of any provider but the train reported on `sha`: a check run or a commit status. */
   private async reported(repo: string, sha: string): Promise<boolean> {
-    if ((await this.github.checkRuns(repo, sha)).some((r) => r.name !== TRAIN_CONTEXT)) return true;
+    // An Actions run is a workflow's, which `hasCi` reads from the files, or GitHub's own (Pages, Dependabot): not CI here.
+    if ((await this.github.checkRuns(repo, sha)).some((r) => r.name !== TRAIN_CONTEXT && r.app?.slug !== "github-actions")) return true;
     return (await this.github.statuses(repo, sha)).some((s) => s.context !== TRAIN_CONTEXT);
   }
 
