@@ -7,7 +7,7 @@ import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
 import { clearWebCache, keepSession, keptSession } from "./cache";
 import type { GateView } from "./Gate";
-import { createWebShell, followBrowser } from "./shell";
+import { createWebShell, followBrowser, followFreshBuild } from "./shell";
 import { afterKeptStart, NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
@@ -17,6 +17,8 @@ const VERSION = (import.meta.env["VITE_FLEETD_VERSION"] as string | undefined) ?
 
 document.documentElement.dataset["shell"] = "web";
 applyTheme();
+
+followFreshBuild(window);
 
 const element = document.getElementById("root");
 if (element === null) throw new Error("index.html has no #root");

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 interface Sw {
   kindOf: (r: Request, origin: string) => string | null;
-  page: (c: FakeCaches, f: typeof fetch, r: Request, w: (p: Promise<unknown>) => void) => Promise<Response>;
+  page: (c: FakeCaches, f: typeof fetch, r: Request, w: (p: Promise<unknown>) => void, waitMs?: number) => Promise<Response>;
   asset: (c: FakeCaches, f: typeof fetch, r: Request) => Promise<Response>;
   refresh: (c: FakeCaches, f: typeof fetch) => Promise<void>;
 }
@@ -64,10 +64,17 @@ const network = (files: Record<string, string>) => {
 const nav = (p: string) => ({ method: "GET", url: `${ORIGIN}${p}`, mode: "navigate" }) as unknown as Request;
 
 describe("the web app's service worker", () => {
-  it("keeps only the app's own files: never the session, a team's socket or calls, another origin or a write", () => {
+  it("keeps only the app's own files: never the sign-in's way back, the session, a team's paths, another origin or a write", () => {
     expect(sw.kindOf(new Request(`${ORIGIN}/assets/main-abc.js`), ORIGIN)).toBe("asset");
     expect(sw.kindOf(nav("/"), ORIGIN)).toBe("page");
-    expect(sw.kindOf(nav("/some/route"), ORIGIN)).toBe("page");
+    expect(sw.kindOf(nav("/?team=t1#/project/a/b"), ORIGIN)).toBe("page");
+    expect(sw.kindOf(nav("/index.html"), ORIGIN)).toBe("page");
+    // The cloud's sign-in comes back here (WorkOS's redirect): it must reach the cloud, which sets the session.
+    expect(sw.kindOf(nav("/signin/callback?code=x&state=y"), ORIGIN)).toBeNull();
+    expect(sw.kindOf(nav("/web/github/callback?code=x"), ORIGIN)).toBeNull();
+    expect(sw.kindOf(nav("/some/route"), ORIGIN)).toBeNull();
+    // A page asked for fresh, after a chunk of an older build failed to load: the network's, the current build.
+    expect(sw.kindOf(nav("/?fresh=1"), ORIGIN)).toBeNull();
     expect(sw.kindOf(nav("/web/sign-in"), ORIGIN)).toBeNull();
     expect(sw.kindOf(new Request(`${ORIGIN}/web/session`), ORIGIN)).toBeNull();
     expect(sw.kindOf(nav("/t/team/web/frames"), ORIGIN)).toBeNull();
@@ -83,12 +90,43 @@ describe("the web app's service worker", () => {
     const first = await sw.page(caches, net.f, nav("/"), (p) => waits.push(p));
     expect(await first.text()).toBe(index("main-1.js"));
     await Promise.all(waits);
-    // Next time: no network before the page; the refresh behind it waits (not while the page loads on a slow link).
+    // Its file is kept: from here, no network.
     net.asked.length = 0;
-    const second = await sw.page(caches, net.f, nav("/"), () => undefined);
-    expect(await second.text()).toBe(index("main-1.js"));
-    expect(net.asked).toEqual([]);
     expect(await (await sw.asset(caches, net.f, new Request(`${ORIGIN}/assets/main-1.js`))).text()).toBe("one");
+    expect(net.asked).toEqual([]);
+  });
+
+  it("opens a deploy's new build, not the kept one, when the network answers in time", async () => {
+    const caches = new FakeCaches();
+    await (await caches.open("fleetd-shell-v1")).put("/index.html", new Response(index("main-1.js")));
+    await (await caches.open("fleetd-assets-v1")).put("/assets/main-1.js", new Response("one"));
+    const net = network({ "/index.html": index("main-2.js"), "/assets/main-2.js": "two" });
+    const waits: Array<Promise<unknown>> = [];
+    const res = await sw.page(caches, net.f, nav("/"), (p) => waits.push(p));
+    expect(await res.text()).toBe(index("main-2.js"));
+    await Promise.all(waits);
+    expect(await (await (await caches.open("fleetd-shell-v1")).match("/index.html"))?.text()).toBe(index("main-2.js"));
+  });
+
+  it("opens the kept page on a slow link or offline, and keeps the network's when it comes", async () => {
+    const caches = new FakeCaches();
+    await (await caches.open("fleetd-shell-v1")).put("/index.html", new Response(index("main-1.js")));
+    await (await caches.open("fleetd-assets-v1")).put("/assets/main-1.js", new Response("one"));
+    // Slow: the network's index comes after the wait.
+    let answer: (r: Response) => void = () => undefined;
+    const slow = ((input: Request | string) =>
+      new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname === "/index.html"
+        ? new Promise<Response>((r) => (answer = r))
+        : Promise.resolve(new Response("two"))) as typeof fetch;
+    const waits: Array<Promise<unknown>> = [];
+    const res = await sw.page(caches, slow, nav("/"), (p) => waits.push(p), 20);
+    expect(await res.text()).toBe(index("main-1.js"));
+    answer(new Response(index("main-2.js")));
+    await Promise.all(waits);
+    expect(await (await (await caches.open("fleetd-shell-v1")).match("/index.html"))?.text()).toBe(index("main-2.js"));
+    // Offline: the kept one.
+    const offline = (() => Promise.reject(new Error("offline"))) as typeof fetch;
+    expect(await (await sw.page(caches, offline, nav("/"), () => undefined, 20)).text()).toBe(index("main-2.js"));
   });
 
   it("serves the network's page when the kept index names a file not kept", async () => {

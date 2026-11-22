@@ -502,3 +502,33 @@ export const followBrowser = (
   });
   target.document.addEventListener("visibilitychange", () => each((h) => h.shown(target.document.visibilityState === "visible")));
 };
+
+/** Set for the page load that came back `fresh`: one more failed chunk shows its error card, not another reload. */
+export const FRESH_LOAD = "fleetd.web.freshLoad";
+
+/**
+ * A chunk the page asks for that the cloud no longer serves: the page opened on an older build (a deploy while it was
+ * open, or a slow link's kept index, public/sw.js) and the cloud holds only the current build's files. The page loads
+ * once more with `fresh`, which the service worker leaves to the network, so it opens on the current build; once a
+ * page load, so a chunk that fails for another reason (offline) shows its error card rather than reloading again.
+ */
+export const followFreshBuild = (page: {
+  readonly location: Pick<Location, "href" | "replace">;
+  readonly history: Pick<History, "state" | "replaceState">;
+  readonly sessionStorage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  readonly addEventListener: (type: "vite:preloadError", listener: (event: Event) => void) => void;
+}): void => {
+  const here = new URL(page.location.href);
+  if (here.searchParams.has("fresh")) {
+    here.searchParams.delete("fresh");
+    page.history.replaceState(page.history.state, "", `${here.pathname}${here.search}${here.hash}`);
+  } else page.sessionStorage.removeItem(FRESH_LOAD);
+  page.addEventListener("vite:preloadError", (event) => {
+    if (page.sessionStorage.getItem(FRESH_LOAD) !== null) return;
+    page.sessionStorage.setItem(FRESH_LOAD, "1");
+    event.preventDefault();
+    const url = new URL(page.location.href);
+    url.searchParams.set("fresh", "1");
+    page.location.replace(url.toString());
+  });
+};
