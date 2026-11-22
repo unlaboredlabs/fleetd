@@ -186,6 +186,7 @@ import m182 from "../hub/store/migrations/202611221330_hub_links_gone.sql" with 
 import m183 from "../hub/store/migrations/202611221400_chat_find_shown.sql" with { type: "text" };
 import m184 from "../hub/store/migrations/202611221500_memory_tidies.sql" with { type: "text" };
 import m185 from "../hub/store/migrations/202611222000_metric_pipeline.sql" with { type: "text" };
+import m186 from "../hub/store/migrations/202611222021_lead_profile_per_bot.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -374,4 +375,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611221400_chat_find_shown", sql: m183 },
   { name: "202611221500_memory_tidies", sql: m184 },
   { name: "202611222000_metric_pipeline", sql: m185 },
+  { name: "202611222021_lead_profile_per_bot", sql: m186 },
 ];

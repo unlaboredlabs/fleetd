@@ -2,7 +2,7 @@
 // prompt plus the digest. A project with no repo's lead does its own work, from `assistant.start` in the assistant
 // role; no lead starts while its project is archived. `leads(hub)` is the area other areas read: `get` (a Lead with
 // its state off its thread), `list`, and `leadProfile`.
-import type { ChatMessage, Lead, ProjectRef, ProjectSummary, UsageParked } from "../../shared/contracts.ts";
+import type { ChatMessage, Lead, Profile, ProjectRef, ProjectSummary, UsageParked } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
@@ -288,24 +288,24 @@ export class Leads {
     return project !== undefined && ahead!.shape !== this.shapeOf(r, project);
   }
 
-  /** What a lead session started now is launched with: the lead profile's name, model, effort and fast mode. */
-  private launchedNow(): string {
+  /** What the project's lead session started now is launched with: its lead profile's name, model, effort and fast mode. */
+  private launchedNow(r: ProjectRef): string {
     const store_ = profiles(this.hub);
-    const { profile, model, effort, fast } = store_.chosen(store_.leadProfile().name);
+    const { profile, model, effort, fast } = store_.chosen(store_.leadProfileFor(r).name);
     return JSON.stringify({ profile, model: model ?? null, effort, fast });
   }
 
   /**
-   * Whether the lead profile is another, or has another model, effort or fast mode, than the project's lead session
-   * started on. A session from before fleetd kept what it was launched with: the profile's name differs, or it was
+   * Whether the project's lead profile (its own pick, else the hub's) is another, or has another model, effort or fast
+   * mode, than its lead session started on. A session from before fleetd kept what it was launched with: the profile's name differs, or it was
    * edited since the session started.
    */
   profileChanged(r: ProjectRef): boolean {
     const lead = this.records.leadGet(r);
     if (!lead) return false;
     const was = this.records.leadLaunchedGet(r);
-    if (was !== undefined) return was !== this.launchedNow();
-    const now = profiles(this.hub).leadProfile();
+    if (was !== undefined) return was !== this.launchedNow(r);
+    const now = profiles(this.hub).leadProfileFor(r);
     const name = this.records.leadProfileGet(r);
     return (name !== undefined && name !== now.name) || (parseMs(now.updatedAt) ?? 0) > (parseMs(lead.startedAt) ?? 0);
   }
@@ -324,6 +324,17 @@ export class Leads {
     }
     this.restarting = true;
     return marked;
+  }
+
+  /**
+   * `project_set` leadRestart: the project's lead starts again on its lead profile, as Restart hub does for every lead:
+   * now when idle on a linked machine, else once its turn ends or its machine is back. False when it already runs on it.
+   */
+  async switchSoon(r: ProjectRef): Promise<boolean> {
+    if (!this.profileChanged(r)) return false;
+    this.records.leadSwitchSet(r, true);
+    await this.switchIfDue(r).catch((error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`));
+    return true;
   }
 
   /** The lead's profile switch is due, it still differs, and the lead is idle. */
@@ -399,6 +410,30 @@ export class Leads {
     return allowed;
   }
 
+  /**
+   * `project_set` leadProfile: the profile the project's lead starts on from its next start, by name; undefined drops
+   * its pick, back to the hub's lead profile. A name no profile has is refused. Tells the clients; returns the one its
+   * lead starts on now.
+   */
+  setLeadProfile(r: ProjectRef, title: string, name: string | undefined): Profile {
+    const store_ = profiles(this.hub);
+    const picked = name === undefined ? undefined : store_.byName(name);
+    if (name !== undefined && picked === undefined) {
+      throw new ToolError("invalid", `No profile is named ${name}.`, `Pick one of: ${store_.list().map((p) => p.name).join(", ")}.`);
+    }
+    store_.setLeadPick(r, picked?.id);
+    const lead = store_.leadProfileFor(r);
+    events(this.hub).append({
+      at: isoMs(nowMs(this.hub.clock)),
+      type: "project.settings",
+      machineId: r.machineId,
+      projectId: r.projectId,
+      summary: `${title}: its lead starts on ${lead.name}${picked ? "" : ", the hub's lead profile"}`,
+      data: { leadProfile: picked?.name ?? null },
+    });
+    return lead;
+  }
+
   /** The drafts waiting for this lead whose order says more than its title, oldest first, as a wake says a new order. */
   private waitingOrders(r: ProjectRef): string | undefined {
     const open = this.records.workstreamsList({ projectRef: r, state: "open", limit: 100 });
@@ -472,9 +507,9 @@ export class Leads {
     const { text: digest, idleSince } = this.wakes.digestToSend(r);
     const manual = wiring.ports.oneLeadMode(r.machineId);
     const ownWork = manual && (project.repos ?? []).length === 0;
-    const leadProfile = store_.leadProfile();
+    const leadProfile = store_.leadProfileFor(r);
     // Read before the launch, as the launch reads it: an edit that lands meanwhile reads as changed.
-    const launched = this.launchedNow();
+    const launched = this.launchedNow(r);
     const start = renderLeadStart(
       set,
       r,
