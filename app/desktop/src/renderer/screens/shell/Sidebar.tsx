@@ -458,7 +458,7 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const marks = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => hubs.map((h) => h.id), [hubs]);
   const at = shownHub === undefined ? -1 : ids.indexOf(shownHub.id);
-  const { beside, moving } = useHubSwipe({
+  const { beside, moving, press } = useHubSwipe({
     area,
     pane,
     hubs: ids,
@@ -484,7 +484,7 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
       aria-label="Sidebar"
       data-compact={view.compact || undefined}
     >
-      <div className={s.pages} data-moving={moving || undefined}>
+      <div className={s.pages} data-moving={moving || undefined} {...press}>
         <div ref={pane} className={s.list} {...hold}>
           {shownHub === undefined ? null : group(shownHub, jumpOf)}
         </div>

@@ -1,52 +1,137 @@
-// The sidebar's swipe between hubs, as a gesture: one axis a gesture, a scroll never a swipe, the momentum after the
-// fingers lift letting it go and then swallowed, and the spring that settles it never passing its target.
+// The sidebar's swipe between hubs, as a gesture: one axis a gesture, a scroll never a swipe and never swallowed, a
+// glide never moving the list, the next touch a new gesture at once; where a touch begins told by the platform (Chromium
+// on a Mac: its first event the only cancelable one) or by the deltas alone (Linux, Safari, Firefox), on the same Mac
+// trackpad sequences. And the spring that settles it never passing its target.
 import { describe, expect, it } from "vitest";
-import { GAP_MS, IDLE, settleOn, shown, spring, stepHub, wheel, type Gesture, type Wheel } from "./hubSwipe";
+import { IDLE, settleOn, shown, spring, stepHub, wheel, type Gesture, type Step } from "./hubSwipe";
+import { FINGERS, fingers, momentum, scrollDown, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 
-/** Runs `events` through a gesture from rest, each 10 ms after the one before. */
-const run = (deltas: ReadonlyArray<readonly [number, number]>, from: Gesture = IDLE, start = 0) => {
+/**
+ * Plays the wheel events a page gets of a trackpad's scrolls through a gesture from rest: with `touches`, each saying
+ * whether it begins a touch, as Chromium on a Mac does (the fingers' began). Each one's step, in order.
+ */
+const play = (scrolls: readonly Scroll[], touches: boolean, from: Gesture = IDLE, pause = 16) => {
   let g = from;
-  const steps = deltas.map(([dx, dy], i) => {
-    const e: Wheel = { dx, dy, at: start + i * 10 };
-    const s = wheel(g, e);
-    g = s.g;
-    return s;
-  });
-  return { g, steps };
+  // On from the gesture given, `pause` ms after its last event.
+  let t = Number.isFinite(from.at) ? from.at + pause : 1000;
+  const steps: Step[] = [];
+  let releases = 0;
+  for (const s of scrolls) {
+    if (s.dx !== 0 || s.dy !== 0) {
+      const step = wheel(g, { dx: s.dx, dy: s.dy, at: t, ...(touches ? { began: s.phase === FINGERS.began } : {}) });
+      g = step.g;
+      steps.push(step);
+      if (step.release) releases++;
+    }
+    t += s.wait;
+  }
+  return { g, steps, releases, claimed: steps.filter((s) => s.claim).length };
 };
 
-describe("wheel", () => {
-  it("takes a horizontal swipe as one, the list moving against the wheel", () => {
-    const { g, steps } = run([[3, 0], [5, 1], [8, 0], [10, 1]]);
-    expect(g.phase).toBe("drag");
-    expect(-g.x).toBe(-26);
-    // The first small delta doesn't decide yet; from the decision on, every event is the swipe's.
-    expect(steps.map((s) => s.claim)).toEqual([false, true, true, true]);
+describe.each([
+  ["the platform's word on where a touch begins", true],
+  ["the deltas alone", false],
+])("wheel, told by %s", (_, touches) => {
+  it("takes a swipe as one: it lets go once, and its glide is swallowed", () => {
+    const { g, steps, releases } = play(swipe(1), touches);
+    expect(releases).toBe(1);
+    expect(g.phase).toBe("glide");
+    expect(g.swiped).toBe(true);
+    // From the event that picks the axis on, every one is the swipe's, its glide's included.
+    const first = steps.findIndex((s) => s.claim);
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(4);
+    expect(steps.slice(first).every((s) => s.claim)).toBe(true);
   });
 
-  it("never takes a vertical scroll for a swipe, its sideways drift and momentum included", () => {
-    const { g, steps } = run([[1, 4], [2, 8], [12, 6], [20, 4], [30, 2], [2, 1]]);
-    expect(g.phase).toBe("vertical");
-    expect(steps.some((s) => s.claim)).toBe(false);
+  it("takes the next swipe at once, back or on, while the last one's glide is still arriving", () => {
+    for (const side of [-1, 1] as const) {
+      const first = play(swipe(1, 20), touches);
+      const { g, releases } = play(swipe(side), touches, first.g);
+      expect(first.releases + releases).toBe(2);
+      // The second gesture went its own way.
+      expect(Math.sign(g.x)).toBe(side);
+    }
   });
 
-  it("lets go as the deltas die away (the momentum after the fingers lift), then swallows the rest until a pause", () => {
-    const { g, steps } = run([[4, 0], [10, 0], [20, 0], [24, 0], [18, 0], [12, 0], [8, 0], [5, 0], [3, 0], [2, 0]]);
-    const released = steps.findIndex((s) => s.release);
-    // The third fall in a row, under 60% of the peak (24).
-    expect(released).toBe(6);
-    expect(steps.filter((s) => s.release)).toHaveLength(1);
-    expect(g.phase).toBe("drain");
-    expect(steps.slice(released).every((s) => s.claim)).toBe(true);
-    // A pause, and the next one is a new gesture.
-    const after = wheel(g, { dx: 6, dy: 0, at: 90 + GAP_MS + 1 });
-    expect(after.g.phase).toBe("drag");
+  it("never lets a glide go a second time, however long", () => {
+    // A flick's glide, long and strong: two seconds of it.
+    const flick = play([...swipeFingers(1), ...momentum([30, 0], { decay: 0.97 })], touches);
+    expect(flick.releases).toBe(1);
+    expect(flick.steps.length).toBeGreaterThan(100);
   });
 
+  it("never takes a scroll up or down the list, or across it, for a swipe, and never swallows it", () => {
+    const diagonal = [...fingers([[2, 2], [5, 4], [9, 8], [12, 11], [10, 10], [6, 6]]), ...momentum([5, 5])];
+    for (const scroll of [scrollDown(), diagonal]) {
+      const { claimed, releases } = play(scroll, touches);
+      expect(claimed).toBe(0);
+      expect(releases).toBe(0);
+    }
+  });
+
+  it("never swallows a scroll that starts while a swipe's glide is still arriving", () => {
+    const first = play(swipe(1, 20), touches);
+    const { claimed, g } = play(scrollDown(), touches, first.g);
+    expect(claimed).toBe(0);
+    expect(g.swiped).toBe(false);
+  });
+});
+
+describe("wheel, told by the deltas alone", () => {
   it("starts afresh after a pause, whichever axis came before", () => {
-    const { g } = run([[0, 10], [0, 10]]);
+    const { g } = play(scrollDown(), false);
     expect(g.phase).toBe("vertical");
-    expect(wheel(g, { dx: 10, dy: 0, at: 10 + GAP_MS + 1 }).g.phase).toBe("drag");
+    expect(wheel(g, { dx: 10, dy: 0, at: g.at + 101 }).g.phase).toBe("drag");
+  });
+
+  it("lets go at once of a glide that runs on past a pause, as a run sideways that only shrinks", () => {
+    const first = play(swipe(1, 20), false);
+    const { steps, releases, g } = play(momentum([9, 0], { decay: 0.97 }), false, first.g, 150);
+    expect(releases).toBe(1);
+    expect(steps.find((s) => s.release)?.back).toBe(true);
+    expect(g.phase).toBe("glide");
+  });
+
+  it("takes a first event that is already far sideways for fingers, after rest: a flick, or a start handed over as one lump", () => {
+    for (const deltas of [[30, 28, 26, 22, 18, 14], [14, 12, 16, 20, 20, 16, 12], [24, 12, 18, 20, 20, 16, 12]]) {
+      const { steps } = play([...fingers(deltas.map((d) => [d, 0] as const)), ...momentum([10, 0])], false);
+      expect(steps.some((s) => s.back === true)).toBe(false);
+      expect(steps.filter((s) => s.release)).toHaveLength(1);
+    }
+  });
+
+  it("takes a flick for fingers once the last glide has been still 400 ms (from rest), and one back at once mid-glide", () => {
+    const flick = (side: 1 | -1) => [...fingers([30, 28, 26, 22, 18, 14].map((d) => [d * side, 0] as const)), ...momentum([10 * side, 0])];
+    const rest = play(flick(1), false, play(swipe(1), false).g, 410);
+    expect(rest.steps.some((s) => s.back === true)).toBe(false);
+    expect(rest.releases).toBe(1);
+    const back = play(flick(-1), false, play(swipe(1, 8), false).g);
+    expect(back.releases).toBe(1);
+    expect(Math.sign(back.g.x)).toBe(-1);
+    // And back after a pause of any length: a glide never turns back, so that is fingers too, a lump start included.
+    for (const pause of [16, 120, 250, 380, 450]) {
+      for (const deltas of [[30, 28, 26, 22, 18, 14], [14, 12, 16, 20, 20, 16, 12]]) {
+        const run = [...fingers(deltas.map((d) => [-d, 0] as const)), ...momentum([-10, 0])];
+        const after = play(run, false, play(swipe(1), false).g, pause);
+        expect(after.steps.some((s) => s.back === true), `${String(pause)} ms, ${String(deltas[0])} first`).toBe(false);
+        expect(after.releases).toBe(1);
+      }
+    }
+  });
+});
+
+describe("wheel, told by the platform where a touch begins", () => {
+  it("takes a new touch as a new gesture whatever its pace, the last one's glide still arriving", () => {
+    // Fingers that touch again and go on the same way as fast as the glide was going: no speed says so, the platform does.
+    const first = play(swipe(1, 8), true);
+    const { releases } = play([...fingers(Array.from({ length: 10 }, () => [12, 0] as const)), ...momentum([12, 0])], true, first.g);
+    expect(first.releases + releases).toBe(2);
+  });
+
+  it("never lets one touch go twice, its fingers slowing and speeding up again under a lift guessed early", () => {
+    const { releases } = play([...fingers([2, 8, 16, 20, 12, 8, 5, 4, 10, 18, 20, 12].map((d) => [d, 0] as const)), ...momentum([12, 0])], true);
+    expect(releases).toBe(1);
   });
 });
 

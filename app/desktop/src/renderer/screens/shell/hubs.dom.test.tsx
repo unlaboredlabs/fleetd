@@ -4,7 +4,7 @@
 // its own hub, whose calls go to that hub only.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import type { HubEntry } from "../../../shared/hubs";
 import { createHubSet } from "../../src/data/hubs";
@@ -16,6 +16,7 @@ import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
+import { FINGERS, fingers, JITTERY_MAC_SWIPE, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 import { resetSidebarView, showHub } from "./sidebarLayout";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -795,6 +796,297 @@ it("switches to the next hub on a swipe across the sidebar, once a gesture howev
     swipe([[-4, 0], [-60, 0], [-60, 0], [-60, 0], [-60, 0]]);
     lift();
     expect(bots("storefront", "billing")).toEqual(["storefront"]);
+  } finally {
+    done();
+  }
+});
+
+/**
+ * Plays a Mac trackpad's scrolls (hubSwipe.samples.ts) over a row of the list on show, on the clock, the pointer never
+ * moving: the wheel events the page gets of them, each cancelable as `mac` says. On a Mac, Chromium makes a touch's
+ * first event cancelable, and the rest of it only if the page cancelled that first one (the app is told it is on one);
+ * elsewhere every one is. Whether the page let the list scroll with each.
+ */
+const replay = (scrolls: readonly Scroll[], mac: boolean): boolean[] => {
+  const free: boolean[] = [];
+  let held = false;
+  for (const s of scrolls) {
+    act(() => {
+      if (s.dx !== 0 || s.dy !== 0) {
+        const first = s.phase === FINGERS.began;
+        const e = new WheelEvent("wheel", { deltaX: s.dx, deltaY: s.dy, bubbles: true, cancelable: !mac || first || held });
+        (host.querySelector("nav[aria-label='Sidebar'] [data-reorder-row] button") ?? host.querySelector("nav"))?.dispatchEvent(e);
+        if (first) held = e.defaultPrevented;
+        free.push(!e.defaultPrevented);
+      }
+      vi.advanceTimersByTime(s.wait);
+    });
+  }
+  return free;
+};
+const threeHubs = async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme", color: "amber" },
+    { id: "c3d4", label: "Studio", color: "green" },
+  ]);
+  act(() => {
+    for (const [id, machine, bot] of [["hub", "devbox", "storefront"], ["a1b2", "laptop", "billing"], ["c3d4", "studio", "atlas"]] as const) {
+      hub(id).send(live());
+      hub(id).send(project(machine, bot));
+    }
+  });
+  await settle();
+};
+
+describe.each([
+  ["on a Mac, where Chromium says where a touch begins", true],
+  ["where only the deltas tell", false],
+])("a trackpad's swipes %s", (_, mac) => {
+  const fleetd = window.fleetd as { shell?: string; platform: string };
+  beforeEach(() => {
+    if (mac) Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
+  });
+  afterEach(() => {
+    delete fleetd.shell;
+    fleetd.platform = "linux";
+  });
+
+  it("swipes back at once, while the last swipe's momentum is still arriving, the pointer never moving", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      // A swipe left: it has landed on Acme while its glide still arrives, until the fingers touch again and swipe right.
+      replay(swipe(1, 30), mac);
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+      replay(swipe(-1), mac);
+      lift();
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      expect(bots("storefront", "billing")).toEqual(["storefront"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("swipes on a touch whose first event already goes far sideways", async () => {
+    await threeHubs();
+    const { lift, done } = swiping();
+    try {
+      // Each one a hub, on and back in turn, so a swipe that does nothing shows: first events of 6, 9 and 24 px, a
+      // flick from its fastest, and a start handed over as one lump.
+      const runs: ReadonlyArray<readonly [1 | -1, readonly number[], readonly string[]]> = [
+        [1, [6, 12, 18, 20, 20, 16, 12], ["Personal", "[Acme]", "Studio"]],
+        [-1, [9, 12, 18, 20, 20, 16, 12], ["[Personal]", "Acme", "Studio"]],
+        [1, [24, 12, 18, 20, 20, 16, 12], ["Personal", "[Acme]", "Studio"]],
+        [1, [30, 28, 26, 22, 18, 14], ["Personal", "Acme", "[Studio]"]],
+        [-1, [14, 12, 16, 20, 20, 16, 12], ["Personal", "[Acme]", "Studio"]],
+      ];
+      for (const [side, deltas, then] of runs) {
+        replay([...fingers(deltas.map((d) => [d * side, 0] as const)), ...momentum([10 * side, 0])], mac);
+        lift();
+        expect(marks()).toEqual(then);
+      }
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("switches on a flick from rest, and on a flick back while the last glide still arrives", async () => {
+    await threeHubs();
+    const { lift, done } = swiping();
+    try {
+      const flick = (side: 1 | -1, count = Infinity) => [...fingers([30, 28, 26, 22, 18, 14].map((d) => [d * side, 0] as const)), ...momentum([10 * side, 0], { count })];
+      replay(swipe(1), mac);
+      act(() => void vi.advanceTimersByTime(410));
+      expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+      // Its glide lands the slide while it still arrives; the flick back comes in the middle of it.
+      replay(flick(1, 30), mac);
+      expect(marks()).toEqual(["Personal", "Acme", "[Studio]"]);
+      replay(flick(-1), mac);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+      // And back again a quarter of a second after the last glide ended.
+      replay(swipe(1), mac);
+      expect(marks()).toEqual(["Personal", "Acme", "[Studio]"]);
+      act(() => void vi.advanceTimersByTime(250));
+      replay(flick(-1), mac);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("swipes on at once, mid-glide and mid-settle, one hub a swipe", async () => {
+    await threeHubs();
+    const { lift, done } = swiping();
+    try {
+      // The second touch comes while the first is still settling: it lands, and the second goes on from there.
+      replay(swipe(1, 6), mac);
+      replay(swipe(1), mac);
+      lift();
+      expect(marks()).toEqual(["Personal", "Acme", "[Studio]"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("never switches a second time on a glide, however long, nor on its glide running on past a pause", async () => {
+    await threeHubs();
+    const { lift, done } = swiping();
+    try {
+      replay([...swipeFingers(1), ...momentum([30, 0], { decay: 0.97 })], mac);
+      act(() => void vi.advanceTimersByTime(150));
+      expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+      replay(momentum([20, 0], { decay: 0.97 }), mac);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("never switches on a scroll up, down or across the list, one started mid-glide included, and never swallows it", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      const diagonal = [...fingers([[2, 2], [5, 4], [9, 8], [12, 11], [10, 10], [6, 6]]), ...momentum([5, 5])];
+      expect(replay(scrollDown(), mac).every((f) => f)).toBe(true);
+      lift();
+      expect(replay(diagonal, mac).every((f) => f)).toBe(true);
+      lift();
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      // A swipe, and a scroll down the list while its glide still arrives: the scroll is the list's.
+      replay(swipe(1, 30), mac);
+      expect(replay(scrollDown(), mac).every((f) => f)).toBe(true);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+    } finally {
+      done();
+    }
+  });
+
+  it("lands a slide at once when a scroll begins while it settles, the list in place to scroll", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      replay(swipe(1, 2), mac);
+      expect(host.querySelector("nav[aria-label='Sidebar'] [data-moving]")).not.toBeNull();
+      // Its touch's first event, after a pause as a new touch on a trackpad comes.
+      act(() => void vi.advanceTimersByTime(120));
+      expect(replay(scrollDown().slice(0, 3), mac).every((f) => f)).toBe(true);
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+      inPlace();
+      lift();
+    } finally {
+      done();
+    }
+  });
+
+  it("springs back on a swipe that turns back before it lifts", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      replay(fingers([2, 6, 12, 16, 16, 12, 8, 4, -4, -10, -16, -16, -10, -6].map((d) => [d, 0] as const)), mac);
+      lift();
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+});
+
+describe.each([
+  ["on a Mac", true],
+  ["where only the deltas tell", false],
+])("a swipe whose events reach the page late and bunched, as a slow machine hands them over, %s", (_, mac) => {
+  // On a Mac it switches one hub. With only the deltas, 300 ms between two of a touch's events are a pause like any
+  // other, and the pieces between them are no swipe of their own: it springs back. Never two hubs, either way.
+  it(mac ? "switches one hub" : "never switches two hubs", async () => {
+    const fleetd = window.fleetd as { shell?: string; platform: string };
+    if (mac) Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
+    await threeHubs();
+    const { lift, done } = swiping();
+    try {
+      let t = 0;
+      for (const [at, dx, dy, cancelable] of SLOW_MAC_SWIPE) {
+        act(() => {
+          vi.advanceTimersByTime(at - t);
+          t = at;
+          const e = new WheelEvent("wheel", { deltaX: dx, deltaY: dy, bubbles: true, cancelable: !mac || cancelable === 1 });
+          (host.querySelector("nav[aria-label='Sidebar'] [data-reorder-row] button") ?? host.querySelector("nav"))?.dispatchEvent(e);
+        });
+      }
+      lift();
+      expect(marks()).toEqual(mac ? ["Personal", "[Acme]", "Studio"] : ["[Personal]", "Acme", "Studio"]);
+      inPlace();
+    } finally {
+      done();
+      delete fleetd.shell;
+      fleetd.platform = "linux";
+    }
+  });
+});
+
+it("switches on a swipe whose events come unevenly late, as a busy Mac hands them over, by their sizes", async () => {
+  const fleetd = window.fleetd as { shell?: string; platform: string };
+  Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
+  await threeHubs();
+  const { lift, done } = swiping();
+  try {
+    act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Acme']")?.click());
+    lift();
+    let t = 0;
+    for (const [at, dx, dy, cancelable] of JITTERY_MAC_SWIPE) {
+      act(() => {
+        vi.advanceTimersByTime(at - t);
+        t = at;
+        const e = new WheelEvent("wheel", { deltaX: dx, deltaY: dy, bubbles: true, cancelable: cancelable === 1 });
+        (host.querySelector("nav[aria-label='Sidebar'] [data-reorder-row] button") ?? host.querySelector("nav"))?.dispatchEvent(e);
+      });
+    }
+    lift();
+    expect(marks()).toEqual(["[Personal]", "Acme", "Studio"]);
+    inPlace();
+  } finally {
+    done();
+    delete fleetd.shell;
+    fleetd.platform = "linux";
+  }
+});
+
+it("keeps a hub picked in the switcher while a slide is on its way to another", async () => {
+  await threeHubs();
+  const { lift, done } = swiping();
+  try {
+    act(() => void runCommand("hub.next"));
+    act(() => void vi.advanceTimersByTime(60));
+    pickHub("Studio");
+    lift();
+    expect(marks()).toEqual(["Personal", "Acme", "[Studio]"]);
+    inPlace();
+  } finally {
+    done();
+  }
+});
+
+it("lands a slide at once on a press over the list, the list back under the pointer", async () => {
+  await twoHubs();
+  const { done } = swiping();
+  try {
+    act(() => void runCommand("hub.next"));
+    act(() => void vi.advanceTimersByTime(60));
+    const frame = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [data-moving]");
+    expect(frame).not.toBeNull();
+    act(() => void frame?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(marks()).toEqual(["Personal", "[Acme]"]);
+    inPlace();
   } finally {
     done();
   }

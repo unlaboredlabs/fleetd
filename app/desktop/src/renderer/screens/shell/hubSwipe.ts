@@ -1,25 +1,57 @@
-// The sidebar's swipe between hubs (W772), after Dia's spaces: two fingers left or right over the sidebar move its list
-// with them, the next or previous hub's sliding in beside it, and on release it settles on the nearer one on a calm
-// spring that never overshoots. A trackpad's swipe is wheel events with a horizontal delta. A gesture is the events
-// with no pause of GAP_MS between them, and it picks one axis once it has moved DECIDE_PX: a scroll up or down the list
-// stays one for good, its horizontal jitter and its momentum included. One gesture switches at most one hub: once it
-// lets go (a pause, or its deltas dying away as the trackpad's momentum takes over after the fingers lift) the rest of
-// it is swallowed until a pause. Past the first or the last hub the list gives a little and springs back; with one hub
-// nothing happens at all. With reduced motion the list stays still and the hub switches once the swipe has gone far
-// enough. The marks at the sidebar's foot and ⇧⌘[ / ⇧⌘] switch on the same slide (switchHub); the hub switcher's
-// pick shows the hub at once, as it always has.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+// The sidebar's swipe between hubs (W772, W777), after Dia's spaces: two fingers left or right over the sidebar move
+// its list with them, the next or previous hub's sliding in beside it, and when they lift it settles on the nearer one
+// on a calm spring that never overshoots. A trackpad's swipe is wheel events with a horizontal delta, and they keep
+// coming after the fingers lift, a second or more of momentum dying away. A gesture is one touch of the fingers, from
+// down to up, and the glide after it; it picks one axis once it has moved DECIDE_PX: a scroll up or down the list stays
+// one for good, its sideways drift included, and is never swallowed. One gesture switches at most one hub: its glide
+// never moves the list, and once it has gone all the way across the rest of it is spent. The next touch is a new
+// gesture at once, its glide still arriving or not, the pointer never moved.
+//
+// Where a touch begins, Chromium on a Mac says, from the trackpad's own phases: the first wheel event of each touch is
+// the only one it makes cancelable (its glide's never are), so long as the page never cancels that first one, which
+// the swipe never does. Nothing says where the fingers lift (Electron's input-event has no phases), so the deltas
+// tell: once a swipe's events have shrunk FALLS times in a row under FADE of its largest, or after a pause (LIFT_MS
+// there, as a pause doesn't end a touch). Elsewhere (Linux, Safari, Firefox), where a cancelable event says nothing,
+// the deltas tell where a touch begins too: after a pause of GAP_MS, and in a glide, which only ever slows on in one
+// direction, an event that turns back or turns to the other axis, or events growing twice running, are fingers that
+// touched again; a run sideways that begins on a pause in a glide and only shrinks is that glide, and springs back.
+// Both go through wheel below.
+//
+// Past the first or the last hub the list gives a little and springs back; with one hub nothing happens at all. With
+// reduced motion the list stays still and the hub switches once the swipe has gone far enough. The marks at the
+// sidebar's foot and ⇧⌘[ / ⇧⌘] switch on the same slide (switchHub); the hub switcher's pick shows the hub at once, as
+// it always has, a slide on its way included.
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { showHub } from "./sidebarLayout";
 
-/** A pause this long between wheel events ends a gesture. */
+/** A pause this long between wheel events lets a swipe go, and without the platform's word ends a gesture. */
 export const GAP_MS = 100;
+/**
+ * With it, a pause doesn't end a touch (the next one says so), so only this long a one lets a swipe go: fingers that
+ * stopped and lifted with no glide. A busy Mac can hand the page a touch's events 300 ms apart.
+ */
+export const LIFT_MS = 400;
 /** How far a gesture moves before it picks its axis. */
 export const DECIDE_PX = 6;
 /** Its horizontal travel must beat its vertical by this much to be a swipe: the list scrolls far more often. */
 const BIAS = 1.2;
-/** Deltas falling this many times in a row, under FADE of their peak, are the momentum after the fingers lifted. */
+/**
+ * Events shrinking this many times in a row, under FADE of the largest, are the glide after the fingers lifted. Their
+ * sizes, which the trackpad measured, not their speeds: a busy machine hands them over late and unevenly.
+ */
 const FALLS = 3;
 const FADE = 0.6;
+/**
+ * In a glide, events growing twice running to RISE times its smallest (and RISE_PX on) are fingers again: a glide's
+ * events only shrink, and one handed over late is a lump of several, which the next one doesn't outgrow.
+ */
+const RISE = 2;
+const RISE_PX = 1;
+/** Without the platform's word, a swipe whose first this many events only shrink is momentum: it lets go. */
+const FIRST = 3;
+/** The time a gesture's first event is taken to span (ms), as a trackpad sends them. */
+const FRAME_MS = 16;
 /** How far ahead of where it is let go a swipe looks to pick the nearer hub: a flick goes on. */
 const PROJECT_MS = 90;
 /** Past the end, the list gives at most this share of its width. */
@@ -29,29 +61,48 @@ const REDUCED_AT = 0.25;
 /** The spring's stiffness, critically damped (per ms): settled in about 280 ms from a standing start. */
 const OMEGA = 0.024;
 
-export type Phase = "idle" | "deciding" | "vertical" | "drag" | "drain";
+/**
+ * Where a gesture is: fingers down and its axis not picked yet, a scroll, a swipe moving the list, a swipe that went all
+ * the way across already; or the glide after the fingers lifted.
+ */
+export type Phase = "idle" | "deciding" | "vertical" | "drag" | "spent" | "glide";
 
 export interface Gesture {
   readonly phase: Phase;
-  /** The wheel's travel this gesture, as it scrolls: the list moves the other way (-x). */
+  /** Its fingers swiped: its glide is the swipe's, and the list mustn't scroll with it. */
+  readonly swiped: boolean;
+  /** Its travel, as the wheel scrolls: the list moves the other way (-x). */
   readonly x: number;
   readonly y: number;
   /** When its last event came (ms). */
   readonly at: number;
   /** How fast the list moves, px a ms. */
   readonly v: number;
-  /** The largest horizontal delta so far, and the last, and how many times in a row they fell. */
+  /** Its largest event (px), and how many in a row didn't grow. */
   readonly peak: number;
-  readonly last: number;
   readonly falls: number;
+  /** A glide's smallest event (px), and how many in a row grew. */
+  readonly low: number;
+  readonly up: number;
+  /** It began on a pause in a glide: what comes may be that glide running on, handed over late. */
+  readonly late: boolean;
+  /** Its first events (FIRST of them): how many so far, the last one's size (px), and whether one was larger than the one before. */
+  readonly n: number;
+  readonly size: number;
+  readonly rose: boolean;
+  /** A glide's events growing since its smallest: where fingers that touched again began. */
+  readonly rx: number;
+  readonly ry: number;
 }
 
-export const IDLE: Gesture = { phase: "idle", x: 0, y: 0, at: Number.NEGATIVE_INFINITY, v: 0, peak: 0, last: 0, falls: 0 };
+export const IDLE: Gesture = { phase: "idle", swiped: false, x: 0, y: 0, at: Number.NEGATIVE_INFINITY, v: 0, peak: 0, falls: 0, low: 0, up: 0, late: false, n: 0, size: 0, rose: false, rx: 0, ry: 0 };
 
 export interface Wheel {
   readonly dx: number;
   readonly dy: number;
   readonly at: number;
+  /** The platform's word: the event is the first of a touch, or not; absent where it says nothing. */
+  readonly began?: boolean;
 }
 
 export interface Step {
@@ -60,35 +111,84 @@ export interface Step {
   readonly claim: boolean;
   /** The swipe lets go now: settle. */
   readonly release: boolean;
+  /** ...back where it was, whatever its travel: it was no swipe. */
+  readonly back?: boolean;
 }
 
-/** One wheel event through the gesture. */
+/** Fingers down: a new gesture, from `x`, `y` travelled already. */
+const begin = (at: number, x = 0, y = 0): Gesture => ({ ...IDLE, phase: "deciding", at, x, y });
+
+/** After the fingers lift: what follows is the glide of what they did. */
+export const glide = (g: Gesture): Gesture => ({ ...g, phase: "glide", swiped: g.swiped || g.phase === "drag" || g.phase === "spent", low: g.size, up: 0, rx: 0, ry: 0 });
+
+/** It switched already (all the way across, or far enough with reduced motion): the rest of the gesture is spent. */
+export const spend = (g: Gesture): Gesture => ({ ...g, phase: "spent", swiped: true });
+
+/** Two events the same way: their dot product is above zero. */
+const along = (dx: number, dy: number, x: number, y: number): number => dx * x + dy * y;
+/** The axis the travel (x, y) mostly goes: a swipe's sideways, else up or down. */
+const sideways = (x: number, y: number): boolean => Math.abs(x) > Math.abs(y) * BIAS;
+
+/** One wheel event through the gesture: a new one where the platform says a touch began, else where the deltas do. */
 export const wheel = (was: Gesture, e: Wheel): Step => {
-  // A pause ends a gesture: whatever comes next starts a new one.
-  const g = e.at - was.at > GAP_MS || was.phase === "idle" ? { ...IDLE, phase: "deciding" as const, at: e.at } : was;
+  const touches = e.began !== undefined;
+  const span = (from: number) => Math.min(Math.max(e.at - from, 4), 50);
+  const size = Math.hypot(e.dx, e.dy);
+  let g = was;
+  if (e.began === true) g = begin(e.at - FRAME_MS);
+  else if (touches) {
+    // A touch this gesture never saw begin (it began before the sidebar listened): a glide, never a swipe.
+    if (g.phase === "idle") g = { ...glide(g), low: size };
+  } else if (g.phase === "idle" || e.at - g.at > GAP_MS) {
+    // Soon after a glide and on its way, it may be that glide running on, handed over late; a glide never turns back.
+    const late = g.phase === "glide" && e.at - g.at <= LIFT_MS && along(e.dx, e.dy, g.x, g.y) > 0;
+    g = { ...begin(e.at - FRAME_MS), late };
+  }
+  else if (g.phase === "glide") {
+    // A glide only shrinks, on the way it went. One that turns back, turns to the other axis or grows again is fingers.
+    const back = along(e.dx, e.dy, g.x, g.y) < 0;
+    const across = Math.hypot(e.dx, e.dy) >= 2 && sideways(e.dx, e.dy) !== sideways(g.x, g.y);
+    const rising = g.up >= 1 && size > g.size && size > g.low * RISE + RISE_PX;
+    if (back || across) g = begin(e.at - FRAME_MS);
+    else if (rising) g = { ...begin(e.at - FRAME_MS, g.rx, g.ry), n: FIRST };
+  }
+  const dt = span(g.at);
+  if (g.phase === "glide") {
+    const grew = size > g.size;
+    const next = { ...g, x: g.x + e.dx, y: g.y + e.dy, at: e.at, size, low: Math.min(g.low, size), up: grew ? g.up + 1 : 0, rx: grew ? g.rx + e.dx : e.dx, ry: grew ? g.ry + e.dy : e.dy };
+    return { g: next, claim: g.swiped, release: false };
+  }
   if (g.phase === "vertical") return { g: { ...g, at: e.at }, claim: false, release: false };
-  if (g.phase === "drain") return { g: { ...g, at: e.at }, claim: true, release: false };
+  const n = g.n + 1;
+  const rose = g.rose || (g.n > 0 && size > g.size);
+  // Begun on a pause in a glide, and only shrinking from its first event on: that glide running on, no fingers. Anywhere
+  // else a first event that big is fingers: a flick, or a start the browser handed over as one lump.
+  const shrank = !touches && g.late && g.n > 0 && g.n < FIRST && !rose && size < g.size;
+  const falls = size <= g.size * 1.05 ? g.falls + 1 : 0;
+  const peak = Math.max(g.peak, size);
+  if (g.phase === "spent") {
+    const next = { ...g, at: e.at, peak, falls, size };
+    return { g: falls >= FALLS && size < peak * FADE ? glide(next) : next, claim: true, release: false };
+  }
   if (g.phase === "deciding") {
     const x = g.x + e.dx;
     const y = g.y + e.dy;
-    if (Math.abs(x) + Math.abs(y) < DECIDE_PX) return { g: { ...g, x, y, at: e.at }, claim: false, release: false };
-    if (Math.abs(x) <= Math.abs(y) * BIAS) return { g: { ...g, phase: "vertical", x, y, at: e.at }, claim: false, release: false };
-    const mag = Math.abs(x);
-    return { g: { ...g, phase: "drag", x, y, at: e.at, v: 0, peak: mag, last: mag, falls: 0 }, claim: true, release: false };
+    const next = { ...g, x, y, at: e.at, peak, n, size, rose };
+    if (Math.abs(x) + Math.abs(y) < DECIDE_PX) return { g: next, claim: false, release: false };
+    if (!sideways(x, y)) return { g: { ...next, phase: "vertical" }, claim: false, release: false };
+    if (shrank) return { g: { ...glide(next), rx: x, ry: y }, claim: false, release: false };
+    // Never the touch's first event the platform marked: cancelled, it would keep the whole touch cancelable after it.
+    return { g: { ...next, phase: "drag", swiped: true, v: 0, peak: size, falls: 0 }, claim: e.began !== true, release: false };
   }
-  // A drag: the list follows, and its deltas say when the fingers have lifted.
+  // A drag: the list follows, and its events' sizes say when the fingers have lifted (nothing else does).
   const x = g.x + e.dx;
-  const dt = Math.max(e.at - g.at, 4);
   const v = g.v === 0 ? -e.dx / dt : 0.6 * (-e.dx / dt) + 0.4 * g.v;
-  const mag = Math.abs(e.dx);
-  const falls = mag < g.last ? g.falls + 1 : 0;
-  const peak = Math.max(g.peak, mag);
-  const release = falls >= FALLS && mag < peak * FADE;
-  return { g: { ...g, phase: release ? "drain" : "drag", x, y: g.y + e.dy, at: e.at, v, peak, last: mag, falls }, claim: true, release };
+  const next = { ...g, x, y: g.y + e.dy, at: e.at, v, peak, falls, n, size, rose };
+  // Momentum that no fingers started springs back where it was, carried nowhere: its speed is no fling's.
+  if (shrank) return { g: { ...glide(next), v: 0 }, claim: true, release: true, back: true };
+  const release = falls >= FALLS && size < peak * FADE;
+  return { g: release ? glide(next) : next, claim: true, release };
 };
-
-/** The gesture let go (a pause, or it switched already): the rest of it is swallowed. */
-export const drained = (g: Gesture): Gesture => ({ ...g, phase: "drain" });
 
 /**
  * Where the list is drawn for a swipe's travel `raw` (px, + to the right): with the fingers up to a whole width toward
@@ -142,6 +242,16 @@ const px = (e: WheelEvent, page: number): { dx: number; dy: number } => {
   return { dx: e.deltaX * k, dy: e.deltaY * k };
 };
 
+/**
+ * Chromium on a Mac: its wheel events' cancelable says where a touch begins (the header). The app's own platform, or
+ * on the web the browser's word that it is Chromium on macOS.
+ */
+const phased = (): boolean => {
+  if (window.fleetd.shell === "desktop") return window.fleetd.platform === "darwin";
+  const ua = (navigator as Navigator & { userAgentData?: { platform: string; brands: ReadonlyArray<{ brand: string }> } }).userAgentData;
+  return ua?.platform === "macOS" && ua.brands.some((b) => b.brand === "Chromium");
+};
+
 const reduced = (): boolean => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** The mounted sidebar's slide: to a hub, or `by` from the one it is on or on its way to; none while it is hidden. */
@@ -179,7 +289,14 @@ export interface SwipeOptions {
  * The swipe over `area`: what it draws beside the list (null while nothing slides) and whether a swipe or a slide is
  * under way. Settling on a hub shows it (sidebarLayout.ts showHub), as the switcher does.
  */
-export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { beside: Beside | null; moving: boolean } {
+export interface Swipe {
+  readonly beside: Beside | null;
+  readonly moving: boolean;
+  /** For the list's frame: a press while a slide settles lands it at once, and goes to what is under it then. */
+  readonly press: { readonly onPointerDownCapture: () => void; readonly onClickCapture: (e: MouseEvent<HTMLElement>) => void };
+}
+
+export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swipe {
   const [beside, setBeside] = useState<Beside | null>(null);
   const [moving, setMoving] = useState(false);
   const g = useRef<Gesture>(IDLE);
@@ -266,16 +383,38 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
   useEffect(() => {
     const el = area.current;
     if (el === null || hubs.length < 2) return;
+    const said = phased();
+    /** The swipe lets go: on the spring, or with reduced motion back where it was. */
+    const letGo = (back = false) => {
+      clearTimeout(timer.current);
+      if (reduced()) land(null);
+      else if (back) run(0, null, 0);
+      else release();
+    };
+    /** A pause: the fingers stood still, or lifted with no glide, so the list is let go standing still too. */
+    const wait = () => {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        g.current = { ...glide(g.current), v: 0 };
+        letGo();
+      }, said ? LIFT_MS : GAP_MS);
+    };
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return;
       const w = pane.current?.clientWidth ?? 0;
       const { dx, dy } = px(e, w);
       const was = g.current.phase;
-      const step = wheel(g.current, { dx, dy, at: performance.now() });
+      // Nothing to move by: a touch's or a glide's end, which Chromium can hand the page.
+      if (dx === 0 && dy === 0) return;
+      // When the event happened, not when the page got to it: a busy renderer hands them over late and bunched.
+      const step = wheel(g.current, { dx, dy, at: e.timeStamp, ...(said ? { began: e.cancelable } : {}) });
       g.current = step.g;
-      if (!step.claim) return;
-      e.preventDefault();
-      if (step.g.phase !== "drag" && !step.release) return;
+      // A new touch takes over at once: a slide still settling lands first, whatever the touch turns out to be (a
+      // scroll's must find the list in place, taking the pointer, to scroll it).
+      if (step.g.phase === "deciding" && was !== "deciding" && settling.current !== null) flushSync(finish);
+      if (step.claim) e.preventDefault();
+      if (step.release) return letGo(step.back === true);
+      if (step.g.phase !== "drag") return;
       if (was !== "drag") {
         // A new swipe: one still settling lands first.
         finish();
@@ -286,50 +425,39 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
       const prev = here.current > 0;
       const next = here.current < n - 1;
       const raw = -step.g.x;
+      const side = raw > 0 ? -1 : 1;
       if (reduced()) {
-        if (farEnough(raw, w) && (raw > 0 ? prev : next)) {
-          g.current = drained(step.g);
+        if (farEnough(raw, w) && (side < 0 ? prev : next)) {
+          g.current = spend(step.g);
           clearTimeout(timer.current);
-          land(here.current + (raw > 0 ? -1 : 1));
-        } else if (step.release) {
-          g.current = drained(step.g);
-          land(null);
-        } else {
-          clearTimeout(timer.current);
-          timer.current = setTimeout(() => {
-            g.current = drained(g.current);
-            land(null);
-          }, GAP_MS);
-        }
+          land(here.current + side);
+        } else wait();
         return;
       }
       offset.current = shown(raw, w, prev, next);
-      const side = raw > 0 ? -1 : 1;
       place((side < 0 ? prev : next) && raw !== 0 ? { to: here.current + side, side } : null);
       draw();
       if (Math.abs(offset.current) >= w && w > 0) {
         // All the way across: on that hub now, and the rest of the gesture is spent.
-        g.current = drained(step.g);
+        g.current = spend(step.g);
         clearTimeout(timer.current);
         land(here.current + side);
-      } else if (step.release) release();
-      else {
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
-          // A pause: the fingers stood still, so the list is let go standing still too.
-          g.current = { ...drained(g.current), v: 0 };
-          release();
-        }, GAP_MS);
-      }
+      } else wait();
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [area, pane, hubs.length, draw, place, land, release, finish]);
+  }, [area, pane, hubs.length, draw, place, land, run, release, finish]);
 
   // The hub on show changed (a swipe landed, or any other switch): drawn in place, unless a new swipe is already moving.
+  // A pick elsewhere (the switcher, a bot opened on another hub) while a slide is on its way to another stops it there.
   useLayoutEffect(() => {
     here.current = at;
-    if (g.current.phase === "drag" || settling.current !== null) return;
+    if (g.current.phase === "drag") return;
+    if (settling.current !== null) {
+      if (settling.current.hub === at) return;
+      settling.current = null;
+      cancelAnimationFrame(frame.current);
+    }
     offset.current = 0;
     near.current = null;
     setBeside(null);
@@ -348,7 +476,7 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
         // Mid-swipe, or still: straight there.
         finish();
         clearTimeout(timer.current);
-        g.current = drained(g.current);
+        g.current = g.current.phase === "drag" ? spend(g.current) : g.current;
         land(to);
         return;
       }
@@ -380,5 +508,26 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): { be
     [],
   );
 
-  return { beside, moving };
+  // The list doesn't take the pointer while it moves (nothing lights up under the fingers), so a press then lands on its
+  // frame: the slide lands first, and the click goes on to the row, the switcher or whatever is there now.
+  const pressed = useRef(false);
+  const press = useMemo(
+    () => ({
+      onPointerDownCapture: () => {
+        if (settling.current === null) return;
+        pressed.current = true;
+        flushSync(finish);
+      },
+      onClickCapture: (e: MouseEvent<HTMLElement>) => {
+        if (!pressed.current) return;
+        pressed.current = false;
+        if (e.target !== e.currentTarget) return;
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        if (under instanceof HTMLElement && under !== e.currentTarget && e.currentTarget.contains(under)) under.click();
+      },
+    }),
+    [finish],
+  );
+
+  return { beside, moving, press };
 }
