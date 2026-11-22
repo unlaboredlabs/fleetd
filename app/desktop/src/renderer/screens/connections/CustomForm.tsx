@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { McpServer, McpServerSetOutput, VaultItemSummary } from "../../../shared/contracts";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { Button, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuSeparator, MenuTrigger, Segmented, Select } from "../../ui";
+import { Button, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuSeparator, MenuTrigger, Segmented, Select, Tooltip } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import type { Tailnet } from "../settings/Tailscale";
 import { TailscaleMark } from "./marks";
@@ -183,9 +183,17 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
               ))}
             </section>
           ) : (
-            <span className={c.line} data-tone="quiet">
-              A command or headers are an admin's to add. A URL that signs in, you can.
-            </span>
+            // Off for a member, with why in its hover: a command or a key reaches every teammate's agents.
+            <div className={c.valuesHead}>
+              <span className={c.fieldLabel}>Headers</span>
+              <Tooltip content="An owner or admin adds a command or headers. A URL that signs in, anyone adds.">
+                <span tabIndex={0}>
+                  <Button size="sm" variant="ghost" disabled>
+                    Add header
+                  </Button>
+                </span>
+              </Tooltip>
+            </div>
           )}
           {team && props.bots.length > 0 ? (
             <div className={c.botsField}>
