@@ -31,6 +31,7 @@ import { Billing } from "./Billing";
 import { useBillingShown } from "./billingQuery";
 import { AddMachineButton, MachineList, useTeamMachines } from "./MachineList";
 import { MachinePage } from "./MachinePage";
+import { ProvidedComputers } from "./Provided";
 import { People } from "./People";
 import { SetupPage } from "./SetupPage";
 import { Updates } from "./Updates";
@@ -166,7 +167,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
  * opening its own page with everything about it; Add machine at the title's end adds one, its steps opening above the
  * list, and with none yet the empty list holds the button instead); the providers
  * the team connects with its own keys, one list, each with what it can run (Tailscale is Connections'); what runs where, a row per kind of work
- * with the same choice; then updates, the one status of them and the Update automatically switch (a page of its own
+ * with the same choice; on a fleetd cloud team, fleetd's computers (Provided.tsx); then updates, the one status of them and the Update automatically switch (a page of its own
  * once: a link to it lands here).
  */
 function Machines() {
@@ -193,6 +194,7 @@ function Machines() {
         <MachineList onAdd={add} />
         <ProvidersGroup />
         <WhatRunsWhere />
+        <ProvidedComputers />
         <Updates />
       </div>
     </div>
