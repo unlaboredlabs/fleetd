@@ -100,6 +100,25 @@ export const tryAgainLabel = (w: Extract<Wake, { phase: "failed" }>, nowMs: numb
   return left > 0 ? `Try again · ${String(left)}s` : "Try again";
 };
 
+/**
+ * What Try again's press came to, said in the row when it didn't start anything: the hub's own word on why (its
+ * `next`, such as the team's billing), "Nothing to retry" when no start was waiting, or why the call failed. Undefined
+ * when the start went again: its own steps say so from there.
+ */
+export const tryAgainNote = (outcome: { readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: { readonly message: string } }): string | undefined => {
+  if (!outcome.ok) {
+    const why = outcome.error.message.trim().replace(/[.\s]+$/u, "");
+    return why === "" ? "Couldn’t try again" : `Couldn’t try again: ${why}`;
+  }
+  const out = outcome.output as { readonly started?: unknown; readonly next?: unknown } | undefined;
+  if (out?.started === true) return undefined;
+  return typeof out?.next === "string" && out.next.trim() !== "" ? out.next.trim() : "Nothing to retry";
+};
+
+/** Try again's press: the call, and what it came to as tryAgainNote says it; a call that throws says why too. */
+export const tryAgainNow = (call: () => Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: { readonly message: string } }>): Promise<string | undefined> =>
+  call().then(tryAgainNote, (error: unknown) => tryAgainNote({ ok: false, error: { message: error instanceof Error ? error.message : String(error) } }));
+
 /** "34s", "1m 05s": how long it has waited. */
 export const waited = (ms: number): string => {
   const s = Math.max(0, Math.floor(ms / 1000));

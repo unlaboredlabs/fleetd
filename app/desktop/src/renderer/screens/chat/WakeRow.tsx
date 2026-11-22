@@ -2,9 +2,9 @@
 // arrives asleep, stirs, and wakes with its computer's steps, one quiet word beside it that rises out as the next rises
 // in; once its lead thinks, its own look says so with no word, and its working look stands in for the typing dots until
 // the reply lands where it sat. A failed try slumps, with one plain reason and a Try again that counts down to the
-// start's own retry and goes at once when pressed.
+// start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
 import { useEffect, useState, type ReactNode } from "react";
-import { STIR_MS, tryAgainLabel, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
+import { STIR_MS, tryAgainLabel, tryAgainNow, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { Avatar } from "../../ui";
@@ -48,28 +48,40 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
       </span>
       <span className={s.words}>
         {words === undefined ? null : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
-        {wake.phase === "failed" ? <TryAgain project={project} wake={wake} now={now} /> : null}
+        {wake.phase === "failed" ? <TryAgain key={`${wake.reason}|${String(wake.retryAt)}`} project={project} wake={wake} now={now} /> : null}
       </span>
     </div>
   );
 }
 
-/** Try again: the start's waiting try goes now. */
+/** Try again: the start's waiting try goes now. A press that started nothing says why beside it (shared/wake.ts tryAgainNote). */
 function TryAgain({ project, wake, now }: { project: ProjectRef; wake: Extract<Wake, { phase: "failed" }>; now: number }) {
   const layer = useDataLayer();
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string>();
   return (
-    <button
-      type="button"
-      className={s.act}
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        void layer.call("chat_start_now", { projectRef: project }).finally(() => setBusy(false));
-      }}
-    >
-      {tryAgainLabel(wake, now)}
-    </button>
+    <>
+      <button
+        type="button"
+        className={s.act}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setNote(undefined);
+          void tryAgainNow(() => layer.call("chat_start_now", { projectRef: project })).then((said) => {
+            setNote(said);
+            setBusy(false);
+          });
+        }}
+      >
+        {tryAgainLabel(wake, now)}
+      </button>
+      {note === undefined ? null : (
+        <span className={s.note} role="status">
+          {note}
+        </span>
+      )}
+    </>
   );
 }
 

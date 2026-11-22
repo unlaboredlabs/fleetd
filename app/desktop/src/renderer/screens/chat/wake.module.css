@@ -56,6 +56,11 @@
   cursor: default;
   color: var(--quiet);
 }
+/* What a press of Try again that started nothing came to, quiet beside it. */
+.note {
+  color: var(--quiet);
+  animation: fadeIn 200ms var(--ease-out) both;
+}
 
 /* Words giving way to the next: the old rise out, the new rise in, on the spring. */
 .swap {

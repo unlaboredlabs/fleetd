@@ -8266,7 +8266,6 @@ export type StalePrompt = {
 /** `"*"`: every machine. */
 export type Star = "*";
 
-/** A project's items per group. Complete: the rows' `items` may stop at a cap; these never do. */
 /** Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on
  * something else, such as the team's billing). */
 export type StartFailed = {
@@ -8281,6 +8280,7 @@ export type StartFailed = {
 export type KnownStartStep = "image" | "box" | "files" | "session" | "message";
 export type StartStep = KnownStartStep | (string & {});
 
+/** A project's items per group. Complete: the rows' `items` may stop at a cap; these never do. */
 export type StatusCounts = {
   done: number;
   idle: number;

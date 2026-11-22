@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { botStateOf } from "./bot";
 import type { Activity } from "./contracts";
-import { ColdTurns, replied, SLOW_MS, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
+import { ColdTurns, replied, SLOW_MS, tryAgainNote, tryAgainNow, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
 
 const T = Date.parse("2026-11-22T10:00:00.000Z");
 const iso = (ms: number) => new Date(T + ms).toISOString();
@@ -87,6 +87,18 @@ describe("a cloud bot waking", () => {
     expect(wakeOf(at({ working: true, cold: false, activity: { kind: "read", path: "a.ts" } }))).toBeUndefined();
     // A start, even after a reply, makes it cold again.
     expect(cold.see("a", true, starting(), true)).toBe(true);
+  });
+
+  test("Try again that starts nothing says why: the hub's word, nothing waiting, or why the call failed", async () => {
+    expect(tryAgainNote({ ok: true, output: { started: true } })).toBeUndefined();
+    expect(tryAgainNote({ ok: true, output: { started: false } })).toBe("Nothing to retry");
+    expect(tryAgainNote({ ok: true, output: { started: false, next: "Your team is out of credits. It goes on by itself once that is done." } })).toBe(
+      "Your team is out of credits. It goes on by itself once that is done.",
+    );
+    expect(tryAgainNote({ ok: false, error: { message: "The hub didn't answer in time." } })).toBe("Couldn’t try again: The hub didn't answer in time");
+    // A call that throws rather than answers says why too.
+    expect(await tryAgainNow(() => Promise.reject(new Error("offline")))).toBe("Couldn’t try again: offline");
+    expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: true } }))).toBeUndefined();
   });
 
   test("a reply has landed when the chat's newest message is the lead's, whole", () => {

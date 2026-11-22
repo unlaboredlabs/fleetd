@@ -49,18 +49,18 @@ const flush = async () => {
 };
 
 /** The chat of a cloud bot whose lead's computer starts: you asked, and its lead is at work. */
-const mount = async () => {
+const mount = async (startNow: { ok: true; output: unknown } | { ok: false; error: { code: string; message: string } } = { ok: true, output: { started: true } }) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const calls: string[] = [];
   const answers: Readonly<Record<string, unknown>> = {
     status_get: { rows: [{ projectRef: project, title: "storefront", asOf: AT, agentsRunning: 0, state: "working" }] },
     orders_board: { orders: [] },
     chat_history: { messages: [ASK], moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, leadWorking: true, lastSeq: 1 } },
-    chat_start_now: { started: true },
   };
   const hub: HubApi = {
     call: (tool) => {
       calls.push(tool);
+      if (tool === "chat_start_now") return Promise.resolve(startNow as never);
       return Promise.resolve({ ok: true, output: answers[tool] ?? {} } as never);
     },
     subscribe: (l) => ((send = l), () => undefined),
@@ -139,6 +139,25 @@ it("a failed try says why, counts down to its retry, and Try again asks the hub 
   act(() => button?.click());
   await flush();
   expect(n.calls).toContain("chat_start_now");
+});
+
+it("Try again that starts nothing says why in the row: the hub's word, or that nothing waited, or the error", async () => {
+  layout();
+  const cases: [Parameters<typeof mount>[0], string][] = [
+    [{ ok: true, output: { started: false, next: "Your team is out of credits. It goes on by itself once that is done." } }, "Your team is out of credits."],
+    [{ ok: true, output: { started: false } }, "Nothing to retry"],
+    [{ ok: false, error: { code: "offline", message: "The hub isn't connected." } }, "Couldn’t try again: The hub isn't connected"],
+  ];
+  for (const [answer, says] of cases) {
+    const n = await mount(answer);
+    await n.lead({ kind: "starting", text: "…", step: "box", startedAt: AT, failed: { reason: "No computer was free", retryAt: later(9) } });
+    const button = [...host.querySelectorAll("button")].find((b) => b.textContent.startsWith("Try again"));
+    act(() => button?.click());
+    await flush();
+    expect(wake()?.textContent).toContain(says);
+    act(() => root?.unmount());
+    root = undefined;
+  }
 });
 
 it("an awake bot's turn shows no wake, and its island says what the lead does as before", async () => {

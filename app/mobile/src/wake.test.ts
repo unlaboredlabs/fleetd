@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { botOf } from "./botState";
-import { leadLaneId } from "./desktop";
+import { leadLaneId, tryAgainNow } from "./desktop";
+import { initial, reduce, type State } from "./store";
 import { wakeIn } from "./wake";
 
 const ref = { machineId: "devbox", projectId: "w1" };
@@ -42,5 +43,29 @@ describe("a cloud bot waking on the phone", () => {
     // Its turn over, the next one starts warm.
     expect(wakeIn(at(false), k)).toBeUndefined();
     expect(wakeIn(at(true, { kind: "thinking" }), k)).toBeUndefined();
+  });
+
+  it("Try again that starts nothing says why, a call that throws included, as the desktop's", async () => {
+    expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: false, next: "Your team is out of credits." } }))).toBe("Your team is out of credits.");
+    expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: false } }))).toBe("Nothing to retry");
+    expect(await tryAgainNow(() => Promise.resolve({ ok: false, error: { message: "The hub isn't connected." } }))).toBe("Couldn’t try again: The hub isn't connected");
+    expect(await tryAgainNow(() => Promise.reject(new Error("timeout")))).toBe("Couldn’t try again: timeout");
+    expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: true } }))).toBeUndefined();
+  });
+
+  it("times a wake on the hub's clock: the live frames' offset, the largest since the last full one", () => {
+    const at = Date.parse("2026-11-22T10:00:00.000Z");
+    const frame = (s: State, full: boolean, hubMs: number, nowMs: number): State =>
+      reduce(s, { t: "frame", frame: { t: "live", frame: { at: new Date(hubMs).toISOString(), full, lanes: [] } }, nowMs });
+    // A device 5 s behind the hub, each frame some ms on its way.
+    let s = frame(initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), true, at, at - 5_000 + 40);
+    expect(s.skewMs).toBe(4_960);
+    s = frame(s, false, at + 1_000, at - 4_000 + 10);
+    expect(s.skewMs).toBe(4_990);
+    s = frame(s, false, at + 2_000, at - 3_000 + 200);
+    expect(s.skewMs).toBe(4_990);
+    // A full frame starts over.
+    s = frame(s, true, at + 3_000, at - 2_000 + 300);
+    expect(s.skewMs).toBe(4_700);
   });
 });
