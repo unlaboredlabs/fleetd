@@ -23,6 +23,8 @@ export const RESOLVED =
 export const RESTARTED =
   "enqueued again after its reviewers ended without a verdict: they count no more, and a fresh full review of its patch runs";
 export const CI_FINISHED_LATE = "CI finished after the timeout; back in the queue";
+/** A head whose CI timed out, found to be in a repo with no CI (D642): nothing was ever going to report. */
+export const NO_CI_REQUEUED = "its repo has no CI, so nothing was ever going to report: back in the queue, it merges on its review alone";
 /** The reviews' note on a Change its findings block (reviews/service.rs `BLOCKED`). */
 export const BLOCKED_PREFIX = "waiting for a new head: ";
 

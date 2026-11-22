@@ -139,7 +139,7 @@ test("hosted stays reserved: no code is made for it and no computer joins as it,
 
 test("the hub serves none of fleetd cloud's own tools: the apps read their absence and show none of it", async () => {
   const t = testHub();
-  for (const tool of ["sandbox_get", "sandbox_connect", "tailnet_get", "tailnet_connect", "project_image_rebuild"]) {
+  for (const tool of ["sandbox_get", "sandbox_connect", "project_image_rebuild"]) {
     expect(await t.tools.call(t.hub, admin, tool, {})).toEqual({ error: { kind: "unknown" } });
   }
   t.done();

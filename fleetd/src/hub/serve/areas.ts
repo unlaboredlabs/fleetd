@@ -20,6 +20,7 @@ import { register as r17 } from "../machine_roles/tools.ts";
 import { register as r18 } from "../machine_setup/tools.ts";
 import { register as r19 } from "../mcp_oauth/tools.ts";
 import { register as r20 } from "../mcp_servers/tools.ts";
+import { register as rTailnet } from "../tailnet/tools.ts";
 import { register as r21 } from "../memory/tools.ts";
 import { register as r22 } from "../metrics/tools.ts";
 import { register as r23 } from "../project_lead/tools.ts";
@@ -69,6 +70,7 @@ export function registerAll(tools: Registry): void {
   r18(tools); // hub/machine_setup
   r19(tools); // hub/mcp_oauth
   r20(tools); // hub/mcp_servers
+  rTailnet(tools); // hub/tailnet
   r21(tools); // hub/memory
   r22(tools); // hub/metrics
   r23(tools); // hub/project_lead

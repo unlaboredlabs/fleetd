@@ -4,6 +4,7 @@ import type { AgentKeyInfo, McpScope, McpServer, McpServerSetInput } from "../..
 import { ToolError } from "../../shared/errors.ts";
 import { isSealedSecret } from "../approvals/sink.ts";
 import { allows, allowsEverywhere } from "../auth/allows.ts";
+import { VAULT_PREFIX_MAX } from "./vault_values.ts";
 
 export const CAP_MCP_SERVERS = "mcp_servers";
 export const CAP_ONE_LEAD_MODE = "one_lead_mode";
@@ -27,13 +28,13 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
     throw new ToolError(
       "forbidden",
       "Global MCP servers reach every teammate's agents: only the hub's owners and admins change them.",
-      "Ask an owner or admin (Settings › Hub › Bot defaults › Agents), or add the server to one bot in its settings.",
+      "Ask an owner or admin to add it in Connections.",
     );
   }
   throw new ToolError(
     "forbidden",
     "Only a person changes the MCP servers agents get, with operate on every machine they reach.",
-    "Change them in the desktop app: Settings › Hub › Bot defaults › Agents, or the bot's settings.",
+    "Change them in the app's Connections.",
   );
 }
 
@@ -52,7 +53,7 @@ export const signsInOnly = (input: Pick<McpServerSetInput, "transport" | "env" |
  */
 export function mayConnect(caller: AgentKeyInfo, server: McpServer | undefined): void {
   if (caller.kind !== "human" || caller.person === undefined) {
-    throw new ToolError("forbidden", "Only a person connects a service for the team.", "Connect it in the app: Settings › Vault › Integrations.");
+    throw new ToolError("forbidden", "Only a person connects a service for the team.", "Connect it in the app's Connections.");
   }
   if (server === undefined || allowsEverywhere(caller, "admin") || server.connectedBy === caller.person.personId) return;
   throw new ToolError(
@@ -80,6 +81,9 @@ export function notFound(scope: McpScope, name: string): ToolError {
 export const NAME = /^[A-Za-z0-9_-]{1,64}$/;
 export const VALUE_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const VAULT_ITEM = /^V[0-9a-f]{32}$/;
+/** The most bots one team server names. */
+export const PROJECTS_MAX = 500;
 
 /** The contracts' checks on McpServerSetInput (mcp.rs `checked!`), with their words. */
 export function checkInput(input: McpServerSetInput): void {
@@ -93,6 +97,12 @@ export function checkInput(input: McpServerSetInput): void {
   } else if (t?.type === "http" || t?.type === "sse") {
     if (typeof t.url !== "string" || t.url.length > 2048 || !/^https?:\/\/[^\s/]+/.test(t.url)) throw bad("url is an http or https URL of at most 2048 characters");
   } else throw bad("transport is stdio, http or sse.");
+  if (input.projects !== undefined) {
+    if (!Array.isArray(input.projects) || input.projects.length > PROJECTS_MAX) throw bad(`projects is a list of at most ${PROJECTS_MAX} bots.`);
+    for (const r of input.projects) {
+      if (typeof r?.machineId !== "string" || typeof r.projectId !== "string") throw bad("each of projects is { machineId, projectId }.");
+    }
+  }
   const env = input.env ?? [];
   const headers = input.headers ?? [];
   if (env.length > 50 || headers.length > 50) throw bad("a server holds at most 50 env values and 50 headers.");
@@ -111,6 +121,14 @@ export function checkInput(input: McpServerSetInput): void {
   for (const v of [...env, ...headers]) {
     if (v.kind === "plain" && (typeof v.value !== "string" || Buffer.byteLength(v.value) > 65536 || v.value.includes("\0"))) {
       throw bad(`${v.name}'s value is at most 64 KiB with no NUL`);
+    }
+    if (v.kind === "vault") {
+      if (typeof v.itemId !== "string" || !VAULT_ITEM.test(v.itemId)) throw bad(`${v.name}'s itemId is a vault item's id`);
+      if (v.field !== undefined && v.field !== "password" && v.field !== "value") throw bad(`${v.name}'s field is password or value`);
+      if (v.prefix !== undefined && (typeof v.prefix !== "string" || v.prefix.length > VAULT_PREFIX_MAX || /[\r\n\0]/.test(v.prefix))) {
+        throw bad(`${v.name}'s prefix is at most ${VAULT_PREFIX_MAX} characters on one line`);
+      }
+      continue;
     }
     if (v.kind !== "secret") continue;
     if (!Array.isArray(v.sealed) || v.sealed.length === 0) throw bad(`${v.name} is sealed to no machine`);

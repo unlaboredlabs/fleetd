@@ -219,7 +219,7 @@ test("on the hub's runner, an endpoint the Test doesn't reach says what to do", 
     const out = await ok("claude_account_test", { account: { kind: "hub" } });
     expect(out.error).toStartWith(`the endpoint 127.0.0.1:${port} doesn't answer (`);
     expect(out.error).toEndWith(
-      "): that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead, and connect Tailscale in Settings › Hub › Machines",
+      "): that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead, and connect Tailscale in Connections",
     );
     expect(out.error).not.toContain("sk-hub");
   });

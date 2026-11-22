@@ -53,6 +53,9 @@ export const CAP_LANDED_LOG = "landed_log";
 export const CAP_PROJECT_SETTINGS = "project_settings";
 export const CAP_PROJECT_ENV_COPY = "project_env_copy";
 export const CAP_MCP_SERVERS = "mcp_servers";
+/** The node relays a tailnet MCP server through the hub's Tailscale route when its machine isn't on the tailnet, and
+ * takes `node_action` tailnet for it. */
+export const CAP_MCP_TAILNET = "mcp_tailnet";
 export const CAP_SKILLS = "skills";
 export const CAP_HAS_FILE = "has_file";
 export const CAP_ORDER_ENV = "order_env";

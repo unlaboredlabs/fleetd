@@ -4,6 +4,7 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
 import { awaitsChecks, checks } from "../src/hub/train/rules.ts";
+import { timedOut } from "../src/hub/train/notes.ts";
 import { batchSkipped, gatedName, jobChecks, labelGated, unprovenBatchSkips } from "../src/hub/train/next.ts";
 import { ownChecks, ownCi, withTrailers } from "../src/hub/train/batch.ts";
 import { failedTest } from "../src/hub/train/flaky.ts";
@@ -213,6 +214,43 @@ test("a repo with no CI merges a reviewed PR on its review alone, and the chat s
   expect(k.host.told).toEqual([`PR #20 in ${REPO} merged on its review alone: the repo has no CI.`]);
   await k.settle();
   expect(k.host.told.length).toBe(1);
+});
+
+test("a PR that timed out in a repo found to have no CI goes back in the queue by itself and merges on its review alone", async () => {
+  const k = kit();
+  // Its rules can't be read yet, so it may have CI, which never reports: the PR times out, as a cloud test PR
+  // did on 2026-11-22 before the train knew its repo had no CI.
+  k.gh.unreadable = ["rules"];
+  k.gh.runs = () => [];
+  k.pr(24, "fleetd/T24-x", { "x.md": "x\n" });
+  await k.enqueue(24);
+  await k.settle(3);
+  k.clock.ms += 46 * 60_000;
+  await k.settle(3);
+  expect(k.change(24).state).toBe("ci_failed");
+  expect(timedOut(k.change(24))).toBe(true);
+  // The repo has no CI at all, now read: the timed-out watch puts it back, and it merges with nothing to wait for.
+  k.gh.unreadable = [];
+  k.gh.runs = undefined;
+  k.gh.noCi = true;
+  await k.settle(5);
+  expect(k.change(24).state).toBe("merged");
+  expect(k.host.wakes.some((w) => w.includes("its repo has no CI, so nothing was ever going to report: back in the queue"))).toBe(true);
+});
+
+test("enqueued again after its CI timed out, a PR is tried again at once, its review standing, never refused as still timed out", async () => {
+  const k = kit();
+  k.gh.unreadable = ["rules"];
+  k.gh.runs = () => [];
+  k.pr(25, "fleetd/T25-x", { "x.md": "x\n" });
+  await k.enqueue(25);
+  await k.settle(3);
+  k.clock.ms += 46 * 60_000;
+  await k.settle(3);
+  expect(k.change(25).state).toBe("ci_failed");
+  // Its lead puts it back (its CI fixed): ready for the train at once, then into CI again.
+  await k.enqueue(25);
+  expect(["ready", "rebasing", "ci"]).toContain(k.change(25).state);
 });
 
 test("a merge GitHub refuses goes back to ready, and after three the lead hears the train gave up", async () => {

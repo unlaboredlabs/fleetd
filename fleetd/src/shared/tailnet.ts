@@ -5,7 +5,18 @@
 // A node's call carries its machine id, the time, a fresh nonce and a signature by the node's own identity key over
 // all of them and the call itself (`signedMessage`); the hub checks it against the key it enrolled for that machine,
 // which every host of a hub can read, so the call needs no token handed out first.
-import { isIP } from "node:net";
+
+/** Whether `s` is an IPv4 address (4), looks like an IPv6 one (6: a name never holds a colon), or is a name (0); as
+ * `node:net`'s isIP for what the tailnet's checks ask, without the import, so this module stays pure for fleetd
+ * cloud. */
+function isIP(s: string): 0 | 4 | 6 {
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(s)) return s.split(".").every((p) => Number(p) <= 255 && (p === "0" || !p.startsWith("0"))) ? 4 : 0;
+  if (!s.includes(":") || !/^[0-9a-f:.]+$/iu.test(s) || (s.match(/::/gu) ?? []).length > 1) return 0;
+  const tail = s.slice(s.lastIndexOf(":") + 1);
+  if (tail.includes(".") && isIP(tail) !== 4) return 0;
+  const groups = s.split(":");
+  return groups.length <= 8 && groups.every((g) => g.length <= 4 || g === tail) ? 6 : 0;
+}
 
 /** One tailnet connection: a websocket, `?host=&port=`. The hub's first message says how the dial went
  * (`{"ok":true}` or `{"error","retry"?}`); the bytes follow as binary messages, the hub's acks (WINDOW) as text. */
@@ -67,4 +78,17 @@ export function tailnetName(name: string, suffix: string | undefined): boolean {
     return b >= 64 && b < 128;
   }
   return n.endsWith("0.e.1.a.c.5.1.1.a.7.d.f.ip6.arpa");
+}
+
+/** Whether a URL's `host` (an address, bracketed or not, or a name) is on the tailnet: one of its addresses, or a
+ * MagicDNS name. With the tailnet's own `suffix` known, that is a name under it or a short one (`devbox`, which MagicDNS
+ * completes with it), and no other tailnet's `*.ts.net` (a Funnel address is public); without, any `*.ts.net` name.
+ * What a server's Test says it reached "via Tailscale", and what a node not on the tailnet reaches through the hub. */
+export function isTailnetHost(host: string, suffix?: string): boolean {
+  const h = host.replace(/^\[(.*)\]$/u, "$1").toLowerCase().replace(/\.$/u, "");
+  if (isIP(h) !== 0) return tailnetIp(h);
+  const s = suffix?.toLowerCase().replace(/\.$/u, "");
+  if (!s) return tailnetName(h, undefined) && !h.endsWith(".arpa");
+  if (!h.includes(".")) return h !== "localhost" && /^[a-z0-9-]+$/u.test(h);
+  return h === s || h.endsWith(`.${s}`);
 }

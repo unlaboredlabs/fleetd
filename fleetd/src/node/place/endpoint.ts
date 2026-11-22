@@ -158,8 +158,8 @@ export async function hostedHint(url: string, tailnet: boolean, resolve?: (host:
     return undefined;
   }
   if (isLoopback(host))
-    return `that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead${tailnet ? "" : ", and connect Tailscale in Settings › Hub › Machines"}`;
+    return `that is a machine's own loopback, which a hosted sandbox never reaches. Point the Claude account at the machine's tailnet address or name instead${tailnet ? "" : ", and connect Tailscale in Connections"}`;
   if (await publicEndpoint(url, resolve)) return undefined;
-  if (!tailnet) return "it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines";
+  if (!tailnet) return "it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections";
   return "the team's tailnet doesn't reach it either. Check that the endpoint runs, and that the tailnet's access rules let the gateway device (fleetd) reach it";
 }

@@ -14,6 +14,7 @@ import type { Vars } from "../secrets/env.ts";
 import { ENV_VALUE_MAX_BYTES, fingerprintOf, writeAtomic } from "../secrets/files.ts";
 import { nowIso } from "../util.ts";
 import type { Resolved } from "./mcp_probe.ts";
+import { viaHub } from "./mcp_tailnet.ts";
 import { ioWhy, openB64, readIfThere, removeIfThere, utf8 } from "./refusal.ts";
 
 /** A server with its secrets resolved: what claude gets. */
@@ -269,12 +270,21 @@ function resolveSignedIn(home: string, server: McpSessionServer): Resolved {
   }
 }
 
-/** The server signs in with OAuth and is reached by URL: the session gets it through `fleetd mcp-relay`. */
-export const relayed = (server: McpSessionServer) => server.oauth === true && server.transport.type !== "stdio";
+/** The server signs in with OAuth and is reached by URL, or is on the tailnet while this machine isn't
+ * (./mcp_tailnet.ts): the session gets it through `fleetd mcp-relay`. */
+export const relayed = (server: McpSessionServer) => server.transport.type !== "stdio" && (server.oauth === true || (server.tailnet === true && viaHub()));
 
 /** What `fleetd mcp-relay` sends a server with now: where it is, its headers, and the fingerprint of its token, by
  * which a later renewal knows whether the token it was turned away with is still the current one. */
-export type RelayHeaders = { transport: McpTransport; headers: Record<string, string>; fingerprint: string };
+export type RelayHeaders = {
+  transport: McpTransport;
+  headers: Record<string, string>;
+  fingerprint: string;
+  /** The hub renews its token on a 401; a server without a sign-in's 401 is its answer. */
+  signsIn: boolean;
+  /** Its requests go through the node (`mcp_fetch`) and the hub's Tailscale route. */
+  viaHub?: true;
+};
 
 /** Why the relay can't reach the server now, in words for the agent. `signedOut`: its sign-in is gone. */
 export class RelayRefused extends Error {
@@ -289,7 +299,7 @@ export class RelayRefused extends Error {
 /** The relayed server `name` of the session whose directory is `dir`, with its headers as the node holds them now. */
 export function relayHeaders(home: string, dir: string, name: string): RelayHeaders {
   const k = kept(dir);
-  const server = k ? ofRole(k).find((s) => s.name === name && relayed(s)) : undefined;
+  const server = k ? ofRole(k).find((s) => s.name === name && (relayed(s) || s.tailnet === true)) : undefined;
   if (!server) throw new RelayRefused(`${name} isn't one of this session's signed-in servers`, true);
   let resolved: Resolved;
   try {
@@ -300,5 +310,11 @@ export function relayHeaders(home: string, dir: string, name: string): RelayHead
   }
   const headers = Object.fromEntries(resolved.values);
   const token = Object.entries(headers).find(([h]) => h.toLowerCase() === "authorization")?.[1] ?? "";
-  return { transport: server.transport, headers, fingerprint: fingerprintOf(token) };
+  return {
+    transport: server.transport,
+    headers,
+    fingerprint: fingerprintOf(token),
+    signsIn: server.oauth === true,
+    ...(server.tailnet === true && viaHub() ? { viaHub: true as const } : {}),
+  };
 }

@@ -210,10 +210,10 @@ test("a lead cut off by its node is woken every time; one whose own turn hung, o
   expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", message: "no hosted sandbox came up at boat.dev: HTTP 402" });
   expect(notStartedLine((boxless as { message: string }).message, 1)).toStartWith("The lead couldn't start: no sandbox came up for it at boat.dev.");
   // A box that came up but couldn't start it: the node's own sentence, without its wrapper.
-  const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines (cwd /srv/p)" } }), leadsList)?.end;
+  const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections (cwd /srv/p)" } }), leadsList)?.end;
   expect(unreached?.kind).toBe("not_started");
   expect(notStartedLine((unreached as { message: string }).message, 1)).toBe(
-    "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Settings › Hub › Machines. It tries again by itself in about 10 minutes, and your message is kept for it.",
+    "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections. It tries again by itself in about 10 minutes, and your message is kept for it.",
   );
 });
 

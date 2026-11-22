@@ -11,6 +11,7 @@ import { nodeLink } from "../link/socket.ts";
 import { relay } from "../machine_roles/relay.ts";
 import { mcp } from "../mcp/http.ts";
 import { oauthCallback } from "../mcp_oauth/callback.ts";
+import { dialRoute } from "../tailnet/route.ts";
 import { macPair, pair } from "../pair/http.ts";
 import { app } from "../app_ws/socket.ts";
 import { gzipped } from "./gzip.ts";
@@ -30,6 +31,7 @@ export const ROUTES: [method: "GET" | "POST" | "ANY", path: string, route: Route
   ["POST", "/pair/mac", macPair],
   ["GET", "/node/link", nodeLink],
   ["GET", "/relay/{token}", relay],
+  ["GET", "/node/tailnet/dial", dialRoute],
   ["POST", "/hooks/{automation_id}/{secret}", hook],
   ["GET", "/oauth/callback", oauthCallback],
 ];

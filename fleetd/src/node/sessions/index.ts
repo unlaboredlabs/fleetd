@@ -309,7 +309,7 @@ export function runnerClaude(account: ClaudeAccount | undefined, endpoint?: stri
     if (endpoint === undefined || tailnet || !privateByName(endpoint)) return on;
     return {
       ...on,
-      problem: `the hub's Claude endpoint ${endpoint} is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Settings › Hub › Machines`,
+      problem: `the hub's Claude endpoint ${endpoint} is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections`,
     };
   }
   return {

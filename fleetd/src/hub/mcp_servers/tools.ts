@@ -9,7 +9,9 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { linked, nodeCan, offline, sessionCall } from "../link/node_port.ts";
 import { toolPolicy } from "../integrations/policy.ts";
 import * as oauth from "../mcp_oauth/index.ts";
-import { offersSignIn } from "../mcp_oauth/oauth.ts";
+import { discover, offersSignIn } from "../mcp_oauth/oauth.ts";
+import { suffix as tailnetSuffix } from "../tailnet/index.ts";
+import { vault } from "../vault/index.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import {
@@ -20,11 +22,14 @@ import {
   mcpServers,
   OAUTH_HEADER,
   oneSwitch,
+  onTailnet,
   secretScope,
   secretsMissingOn,
   signedIn,
   valuesOf,
 } from "./index.ts";
+import { syncVault } from "./vault_sync.ts";
+import { keptVaultValue, vaultProblem } from "./vault_values.ts";
 import { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkInput, checkScope, mayChange, mayConnect, notFound, sameTransport, signsInOnly } from "./rules.ts";
 
 export { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkScope, mayChange, notFound } from "./rules.ts";
@@ -154,6 +159,18 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   }
   const savedSecret = (field: McpField, name: string): McpValue | undefined =>
     before ? valuesOf(before).find(([f, v]) => f === field && v.name === name && v.kind === "secret")?.[1] : undefined;
+  // A vault value saved before from the same item, which its machines keep until the sync seals it again.
+  const savedVault = (field: McpField, v: McpValueSet): McpValue | undefined =>
+    v.kind !== "vault" || !before
+      ? undefined
+      : valuesOf(before).find(([f, x]) => f === field && x.name === v.name && x.kind === "vault" && x.itemId === v.itemId && x.prefix === (v.prefix || undefined) && x.field === v.field)?.[1];
+  for (const field of ["env", "header"] as const) {
+    for (const v of field === "env" ? (input.env ?? []) : (input.headers ?? [])) {
+      if (v.kind !== "vault") continue;
+      const problem = vaultProblem(scope, vault(hub).store.get(v.itemId), v.field);
+      if (problem !== undefined) throw new ToolError("invalid", `${v.name}: ${problem}`);
+    }
+  }
   // A server signed in with OAuth keeps its sign-in through a save that leaves its URL and its Authorization header
   // alone; a new URL, or a typed Authorization, ends it.
   const typedToken = (input.headers ?? []).some((v) => v.name.toLowerCase() === OAUTH_HEADER.toLowerCase());
@@ -205,6 +222,8 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
           if (x) setList.push({ field, name: v.name, sealed: x.sealed });
         } else if (v.kind === "keep" && (savedSecret(field, v.name)?.sealedOn ?? []).some((y) => y.machineId === m)) {
           keep.push({ field, name: v.name });
+        } else if (v.kind === "vault" && (savedVault(field, v)?.sealedOn ?? []).some((y) => y.machineId === m)) {
+          keep.push({ field, name: v.name });
         }
       }
     }
@@ -224,6 +243,12 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   const values = (field: McpField): McpValue[] =>
     fieldOf(field).map((v): McpValue => {
       if (v.kind === "plain") return { name: v.name, kind: "plain", value: v.value };
+      if (v.kind === "vault") {
+        // What a machine kept of the same item; the sync after the save seals the rest.
+        const saved = savedVault(field, v);
+        const sealedOn = saved ? [...(held.get(`${field}\u0000${v.name}`) ?? []), ...(saved.sealedOn ?? []).filter((x) => !reached.has(x.machineId))] : [];
+        return keptVaultValue(v, vault(hub).store.get(v.itemId), sealedOn.sort(byMachine), undefined);
+      }
       const sealedOn = [...(held.get(`${field}\u0000${v.name}`) ?? [])];
       // A kept secret stays recorded on a machine this save didn't reach: its node still has it.
       if (v.kind === "keep") {
@@ -235,8 +260,9 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
     });
   // The person who connected a team sign-in, kept through later saves.
   const connectedBy = !team ? undefined : before ? before.connectedBy : caller.person?.personId;
-  // Read again: a renewal may have changed the sign-in while the nodes answered.
-  const signIn = signsIn ? s.get(scope, input.name)?.oauth : undefined;
+  // Read again: a renewal may have changed the sign-in while the nodes answered. A new URL with no key of its own
+  // that offers OAuth is saved as signed out, so the app offers Sign in before any Test.
+  const signIn = signsIn ? s.get(scope, input.name)?.oauth : typedToken || hasKey(input) ? undefined : await offered(input.transport);
   const server: McpServer = {
     scope,
     name: input.name,
@@ -247,18 +273,44 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
     ...(input.integration ? { integration: input.integration } : {}),
     ...(signIn ? { oauth: signIn } : {}),
     ...(connectedBy !== undefined ? { connectedBy } : {}),
+    ...(scope.kind === "global" && input.projects !== undefined ? { projects: input.projects } : {}),
     updatedAt: isoMs(hub.clock.now()),
   };
   s.put(server);
+  // As the sync left it: a vault value it just sealed is on its machines.
+  const saved = await syncVault(hub, server);
   if (hadSignIn && !signsIn) await oauth.forget(hub, scope, input.name);
   const machines = project ? [project.machineId] : store(hub).machinesList().map((m) => m.machineId);
-  const missingOn = machines.filter((m) => secretsMissingOn(server, m).length > 0);
+  const missingOn = machines.filter((m) => secretsMissingOn(saved, m).length > 0);
   let next = "Agents started from now on get it; a running agent gets it at its next start, after its next message.";
   if (missingOn.length > 0) {
     next = `${next} Its secrets aren't on ${missingOn.join(", ")}, whose agents go without it until it is saved again while they are online.`;
   }
   if (problems.length > 0) next = `${next} ${problems.join(" ")}`;
   return { server: s.get(scope, input.name) ?? server, ...(missingOn.length > 0 ? { missingOn } : {}), next };
+}
+
+/** Whether a save gives the server a key or headers of its own: then it isn't asked whether it signs in. */
+const hasKey = (input: McpServerSetInput) => (input.headers ?? []).length > 0 || (input.env ?? []).length > 0;
+
+/** How long a save waits to learn whether a new URL signs in. */
+export const DISCOVER_WAIT_MS = 5_000;
+
+/** A URL server's sign-in, signed out, when it offers OAuth; undefined when it doesn't, or doesn't say in time. */
+async function offered(t: McpServer["transport"]): Promise<McpServer["oauth"]> {
+  if (t.type === "stdio") return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const found = await Promise.race([
+      discover(t.url, t.type === "sse"),
+      new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), DISCOVER_WAIT_MS))),
+    ]);
+    return found ? { status: "signed_out", issuer: found.issuer } : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Has each online node forget the secrets queued for it; one offline, or too old, is asked again next round. */
@@ -311,19 +363,35 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   }
   nodeReady(hub, machineId);
   const missing = secretsMissingOn(server, machineId);
-  const session = forSession(server, machineId);
+  const session = forSession(server, machineId, tailnetSuffix(hub));
   if (!session) {
-    return {
-      machineId,
-      result: { tools: [], error: `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.` },
-    };
+    // Why no agent gets it: a vault item that can't be used, a secret the machine doesn't hold, or a team server with
+    // no key that nobody signed in to.
+    const problem = valuesOf(server).find(([, v]) => v.kind === "vault" && v.problem !== undefined)?.[1];
+    const error = problem
+      ? `${problem.name}: ${problem.problem}`
+      : missing.length > 0
+        ? `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.`
+        : `${server.name} has no key and isn't signed in, so no agent gets it: sign in to it in Connections, or add a key.`;
+    return { machineId, result: { tools: [], error, ...(problem === undefined && missing.length === 0 ? { signIn: true } : {}) } };
   }
   const projectId = project?.projectId;
   let result = await mcpTest(hub, machineId, projectId, session);
   if (result.error?.includes("401")) result = await turnedAway(hub, server, machineId, projectId, session, result);
   for (const tool of result.tools ?? []) tool.policy = toolPolicy(server, tool.name);
+  if (onTailnet(server, tailnetSuffix(hub))) {
+    result = result.error === undefined ? { ...result, via: "tailnet" } : { ...result, error: tailnetHint(result.error, machineId, server.scope.kind === "global") };
+  }
   return { machineId, result };
 }
+
+/** A tailnet server the machine couldn't reach: the fix, when the words don't name one already. */
+export const tailnetHint = (error: string, m: string, team = true) =>
+  /tailscale/iu.test(error)
+    ? error
+    : team
+      ? `${error}. It's on your tailnet: put ${m} on it, or connect Tailscale in Connections so fleetd reaches it for ${m}.`
+      : `${error}. It's on your tailnet, and a server added to one bot reaches the tailnet only from a machine on it: put ${m} on the tailnet, or add the server in Connections for the team with this bot picked.`;
 
 async function mcpTest(hub: Hub, m: string, projectId: string | undefined, server: McpSessionServer): Promise<McpTestResult> {
   const out = await sessionCall(hub, m, { op: "mcp_test", ...(projectId !== undefined ? { projectId } : {}), server });
@@ -350,7 +418,7 @@ async function turnedAway(
     if (renewed === "yes") {
       // Tested again as the server is now: its header may have reached the machine since the first test.
       const now = mcpServers(hub).get(server.scope, server.name);
-      return mcpTest(hub, machineId, projectId, (now && forSession(now, machineId)) ?? session);
+      return mcpTest(hub, machineId, projectId, (now && forSession(now, machineId, tailnetSuffix(hub))) ?? session);
     }
     if (renewed === "signed_out") {
       const problem = mcpServers(hub).get(server.scope, server.name)?.oauth?.problem;

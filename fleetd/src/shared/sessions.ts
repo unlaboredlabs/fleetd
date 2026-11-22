@@ -100,6 +100,9 @@ export type McpSessionServer = {
   /** It signs in with OAuth: the session reaches it through `fleetd mcp-relay`, which takes its current token from
    * the node at each request, never from the session's `mcp.json`. */
   oauth?: boolean;
+  /** Its URL is on the team's tailnet: a machine that isn't on it reaches it through `fleetd mcp-relay`, which dials
+   * through the hub's Tailscale route (shared/tailnet.ts DIAL_PATH). A machine on the tailnet reaches it directly. */
+  tailnet?: boolean;
 };
 
 /** mcp_servers.rs `McpSessionConfig`. */

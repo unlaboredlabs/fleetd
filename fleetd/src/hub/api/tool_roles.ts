@@ -1,5 +1,5 @@
 // Every MCP tool's least role and the module that registers it. typecheck fails while a tool in the contracts' ToolMap
-// has no line here. A tool only fleetd's cloud serves (CLOUD: hosted sandboxes, their tailnet, computer images) keeps
+// has no line here. A tool only fleetd's cloud serves (CLOUD: hosted sandboxes, computer images) keeps
 // the module it had, which fleetd cloud's port map names, and isn't registered here: this hub answers that it has no
 // such tool, which is how the apps know to show none of it.
 import type { Role, ToolMap } from "../../shared/contracts.ts";
@@ -226,7 +226,7 @@ export const TOOLS = {
 
 export type ToolName = keyof typeof TOOLS;
 
-/** The tools only fleetd's cloud serves: a self-hosted hub runs no hosted sandboxes, gateway or computer images. */
+/** The tools only fleetd's cloud serves: a self-hosted hub runs no hosted sandboxes or computer images. */
 export const CLOUD: ReadonlySet<ToolName> = new Set<ToolName>([
   "sandbox_get",
   "sandbox_connect",
@@ -234,8 +234,5 @@ export const CLOUD: ReadonlySet<ToolName> = new Set<ToolName>([
   "sandbox_where_set",
   "sandbox_test",
   "sandbox_disconnect",
-  "tailnet_get",
-  "tailnet_connect",
-  "tailnet_disconnect",
   "project_image_rebuild",
 ]);
