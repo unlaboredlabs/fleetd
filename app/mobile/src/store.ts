@@ -120,6 +120,11 @@ export interface State {
   readonly decided: Readonly<Record<string, HumanRequest>>;
   /** What a lead does this moment, by live lane id: the open chat's, which the turn line says (turn.ts). */
   readonly leadActivity: Readonly<Record<string, Activity>>;
+  /**
+   * The hub's clock less this device's, from the live frames as the desktop reads it (its data/store.ts applyLive):
+   * the largest `at - received` since the last full frame. A wake's count and Try again's countdown go by it.
+   */
+  readonly skewMs?: number | undefined;
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
   /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
@@ -395,13 +400,16 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
     case "live": {
       // A full frame names every lane in scope (the others are gone); a delta only those that changed.
       const { full, lanes } = frame.frame;
-      if (!full && lanes.length === 0) return s;
+      const at = Date.parse(frame.frame.at);
+      const seen = Number.isNaN(at) ? undefined : at - nowMs;
+      const skewMs = seen === undefined ? s.skewMs : !full && s.skewMs !== undefined ? Math.max(s.skewMs, seen) : seen;
+      if (!full && lanes.length === 0) return skewMs === s.skewMs ? s : { ...s, skewMs };
       const next: Record<string, Activity> = full ? {} : { ...s.leadActivity };
       for (const lane of lanes) {
         if (lane.activity === undefined) delete next[lane.laneId];
         else next[lane.laneId] = lane.activity.activity;
       }
-      return { ...s, leadActivity: next };
+      return { ...s, leadActivity: next, skewMs };
     }
     case "browser_frame":
     case "browser_error":

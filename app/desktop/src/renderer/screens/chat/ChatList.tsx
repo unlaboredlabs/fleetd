@@ -12,6 +12,9 @@ import type { ChatItem } from "../../src/data/chat";
 
 import { shortClock } from "./format";
 import { isMineRow, latestLabel, newestKey, type Arrival, type Row, type TopState } from "./model";
+import { wakeShown } from "../../../shared/wake";
+import { useWake } from "./wake";
+import { WakeRow } from "./WakeRow";
 import { MessageView, useEnter } from "./Bubble";
 import { useGlide } from "./glide";
 import { useBubbleActions } from "./actions";
@@ -140,6 +143,8 @@ function Waited({ id, children }: { id: string; children: ReactNode }) {
 
 /** Every chat's rows' heights as last measured, by key: a chat opened again lays its rows out at their heights at once. */
 const heights = new Map<string | number, number>();
+const WAKE_ROW: Row = { kind: "wake", key: "wake", writing: false };
+const WAKE_WRITING: Row = { kind: "wake", key: "wake", writing: true };
 const noop = () => {};
 
 const RowView = memo(function RowView(props: {
@@ -252,6 +257,8 @@ const RowView = memo(function RowView(props: {
       );
     case "message":
       return <MessageView row={r} mineLatest={props.mineLatest} enter={props.enter} />;
+    case "wake":
+      return <WakeRow project={project} writing={r.writing} />;
   }
 });
 
@@ -441,10 +448,15 @@ export function ChatList(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sent]);
 
+  // A cloud bot waking: the bot in the reply's place after the rows, until its reply is whole.
+  const last = rows.at(-1);
+  const writing = last?.kind === "message" && last.item.author === "lead" && last.item.state === "streaming";
+  const waking = wakeShown(useWake(projectKey(props.project), writing));
+  const shown = useMemo((): readonly Row[] => (waking ? [...rows, writing ? WAKE_WRITING : WAKE_ROW] : rows), [rows, waking, writing]);
   return (
     <div className={s.log}>
       <VirtualList
-        items={rows}
+        items={shown}
         getKey={(r) => r.key}
         estimateSize={56}
         heights={heights}

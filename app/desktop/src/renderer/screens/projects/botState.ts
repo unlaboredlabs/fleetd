@@ -1,17 +1,29 @@
 // What a project's bot shows (shared/bot.ts botStateOf), from what the app already knows: the project list's row (the
-// lead waits on you, agents at work) and what the lead does now. The sidebar adds its own marks (why it wants you, a
+// lead waits on you, agents at work), what the lead does now, and a cloud bot's computer asleep or starting. The sidebar adds its own marks (why it wants you, a
 // block, unread), the chat's title that its turn just ended.
 import { useEffect, useState } from "react";
 import { botStateOf, type BotIn, type BotState } from "../../../shared/bot";
 import { useData } from "../../src/data/react";
 import { selectProjectList } from "../../src/data/selectors";
 import { leadDoing } from "../chat/activity";
+import { useWake } from "../chat/wake";
 
 /** The bot of the project `key` ("machineId/projectId"), with what the caller knows over the row's own. */
 export const useBotState = (key: string, own: Partial<BotIn> = {}): BotState => {
   const row = useData((s) => selectProjectList(s)?.find((r) => r.key === key));
   const doing = useData((s) => leadDoing(s, key));
-  return botStateOf({ needs: own.needs ?? row?.needsYou ?? false, blocked: own.blocked ?? false, running: own.running ?? row?.running ?? 0, doing: own.doing ?? doing, done: own.done ?? false });
+  // A cloud bot sleeps with its computer, and wakes while it starts (shared/wake.ts).
+  const wake = useWake(key);
+  const start = wake?.phase === "waking" ? "waking" : wake?.phase === "failed" ? "failed" : undefined;
+  return botStateOf({
+    needs: own.needs ?? row?.needsYou ?? false,
+    blocked: own.blocked ?? false,
+    running: own.running ?? row?.running ?? 0,
+    doing: own.doing ?? doing,
+    done: own.done ?? false,
+    asleep: wake?.phase === "asleep",
+    start,
+  });
 };
 
 /** How long a bot stays done after its lead's turn ends, while its chat is open. */

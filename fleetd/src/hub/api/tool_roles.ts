@@ -214,6 +214,7 @@ export const TOOLS = {
   pr_files: { scope: "read", module: "src/hub/prs" },
   pr_diff: { scope: "read", module: "src/hub/prs" },
   chat_stop: { scope: "operate", module: "src/hub/chat" },
+  chat_start_now: { scope: "operate", module: "src/hub/chat" },
   work_claim: { scope: "operate", module: "src/hub/work" },
   work_list: { scope: "read", module: "src/hub/work" },
   work_done: { scope: "operate", module: "src/hub/work" },

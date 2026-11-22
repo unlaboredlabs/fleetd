@@ -2707,6 +2707,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "leadAsleep": {
+          "description": "The lead's computer is asleep (fleetd cloud): the next message starts it before the lead reads it. Absent: awake,\nor a hub whose leads never sleep.",
+          "type": "boolean"
+        },
         "leadWorking": {
           "description": "The lead is mid-turn.",
           "type": "boolean"

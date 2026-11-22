@@ -542,6 +542,12 @@ export class Executors {
     // TODO(executor): a long reply's headline from a thread read, once the thread views are ported.
     for (const u of upserts) {
       try {
+        // A computer that went to sleep or woke changes no status: its chat is told here.
+        const was = store(this.hub).threadGet(threadRef(machineId, u.summary.threadId))?.thread.asleep === true;
+        if (was !== (u.summary.asleep === true)) {
+          const thread = { machineId, threadId: u.summary.threadId, projectId: u.summary.projectId };
+          queueMicrotask(() => executorHooks(this.hub).sleptOrWoke(thread));
+        }
         store(this.hub).threadUpsert(fromStored(u));
       } catch (error) {
         console.error("executor: thread write failed:", error);

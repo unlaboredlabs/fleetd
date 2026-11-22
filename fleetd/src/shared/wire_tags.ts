@@ -72,6 +72,7 @@ export const SESSION_CALLS = [
   "send",
   "withdraw",
   "interrupt",
+  "start_now",
   "stop",
   "answer",
   "subscribe",

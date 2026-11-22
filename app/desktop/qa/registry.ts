@@ -415,6 +415,11 @@ export const fixtures = [
   "menu-long-offline",
   "menu-everything",
   "menu-app-update",
+  // A cloud bot waking (W792): asleep at rest, its computer starting, slow, and a failed try (fixtures/wake).
+  "wake-asleep",
+  "wake-starting",
+  "wake-slow",
+  "wake-failed",
 ] as const;
 export type FixtureName = (typeof fixtures)[number];
 
@@ -709,6 +714,16 @@ export const screens: readonly Screen[] = [
     sizes: [...defaultSizes, "narrow"],
     variant: "island",
     check: islandHolds,
+  },
+  // W792: a cloud bot waking. Asleep at rest (in the sidebar and the title), then the bot in the reply's place while its
+  // computer starts, past 30 s still waking with the time so far, and a failed try's reason with Try again; nothing
+  // over the composer says it again.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["wake-asleep", "wake-starting", "wake-slow", "wake-failed"],
+    sizes: [...defaultSizes, "narrow"],
+    variant: "wake",
   },
   // ...and with no agent, no step worth saying and main green: nothing over the composer.
   {

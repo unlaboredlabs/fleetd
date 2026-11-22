@@ -255,6 +255,12 @@ export type Activity = {
 } | {
   /** A hosted agent's computer starting: "Starting its computer at boat.dev", "Cloning the repo", "Running setup". */
   kind: "starting";
+  /** Its start's step; absent from older hubs and starts that don't say it. */
+  step?: StartStep;
+  /** When the whole start began, so how long it has taken counts from there on every device. */
+  startedAt?: Timestamp;
+  /** Its last try failed: why, and when it is tried again by itself. */
+  failed?: StartFailed;
   text: string;
 };
 
@@ -1955,6 +1961,17 @@ export type ChatSendOutput = {
   leadWaiting?: string;
   message: ChatMessage;
   next?: string;
+  truncated?: boolean;
+};
+
+export type ChatStartNowInput = {
+  projectRef: ProjectRef;
+};
+
+export type ChatStartNowOutput = {
+  next?: string;
+  /** A start that waited between tries runs now; false when none waited. */
+  started: boolean;
   truncated?: boolean;
 };
 
@@ -6077,6 +6094,11 @@ export type ProjectChatState = {
   lastMessageAt?: Timestamp;
   /** The newest message's `seq`; 0 for an empty chat. */
   lastSeq: number;
+  /**
+   * The lead's computer is asleep (fleetd cloud): the next message starts it before the lead reads it. Absent: awake,
+   * or a hub whose leads never sleep.
+   */
+  leadAsleep?: boolean;
   /** The lead is mid-turn. */
   leadWorking: boolean;
   /** The lead's last message waits for a human reply, or an inline item is open. */
@@ -8244,6 +8266,20 @@ export type StalePrompt = {
 /** `"*"`: every machine. */
 export type Star = "*";
 
+/** Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on
+ * something else, such as the team's billing). */
+export type StartFailed = {
+  reason: string;
+  retryAt?: Timestamp;
+};
+
+/**
+ * A hosted session's start, step by step: its computer's image ready, its computer started, its files put in, the
+ * agent started there, the message handed to it.
+ */
+export type KnownStartStep = "image" | "box" | "files" | "session" | "message";
+export type StartStep = KnownStartStep | (string & {});
+
 /** A project's items per group. Complete: the rows' `items` may stop at a cap; these never do. */
 export type StatusCounts = {
   done: number;
@@ -8703,6 +8739,8 @@ export type ThreadStatus = "running" | "waiting" | "idle" | "completed" | "faile
 
 export type ThreadSummary = {
   asOf: Timestamp;
+  /** Its computer is off with no start under way (a hosted session); the next run starts it first. Absent: awake. */
+  asleep?: boolean;
   /** As reported by the runner; not narrowed to Effort because it may report other levels. */
   effort?: string;
   /** Why its latest run ended; absent while it runs and from older nodes. */
@@ -10146,6 +10184,7 @@ export interface ToolMap {
   chat_sections_get: { input: ChatSectionsGetInput; output: ChatSectionsGetOutput };
   chat_sections_set: { input: ChatSectionsSetInput; output: ChatSectionsSetOutput };
   chat_send: { input: ChatSendInput; output: ChatSendOutput };
+  chat_start_now: { input: ChatStartNowInput; output: ChatStartNowOutput };
   chat_stop: { input: ChatStopInput; output: ChatStopOutput };
   checklist_get: { input: ChecklistGetInput; output: ChecklistGetOutput };
   checklist_remove: { input: ChecklistRemoveInput; output: ChecklistRemoveOutput };

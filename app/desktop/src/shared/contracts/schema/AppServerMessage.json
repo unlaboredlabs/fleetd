@@ -188,9 +188,21 @@
         {
           "description": "A hosted agent's computer starting: \"Starting its computer at boat.dev\", \"Cloning the repo\", \"Running setup\".",
           "properties": {
+            "failed": {
+              "$ref": "#/$defs/StartFailed",
+              "description": "Its last try failed: why, and when it is tried again by itself."
+            },
             "kind": {
               "const": "starting",
               "type": "string"
+            },
+            "startedAt": {
+              "$ref": "#/$defs/Timestamp",
+              "description": "When the whole start began, so how long it has taken counts from there on every device."
+            },
+            "step": {
+              "$ref": "#/$defs/StartStep",
+              "description": "Its start's step; absent from older hubs and starts that don't say it."
             },
             "text": {
               "maxLength": 120,
@@ -2172,6 +2184,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "leadAsleep": {
+          "description": "The lead's computer is asleep (fleetd cloud): the next message starts it before the lead reads it. Absent: awake,\nor a hub whose leads never sleep.",
+          "type": "boolean"
+        },
         "leadWorking": {
           "description": "The lead is mid-turn.",
           "type": "boolean"
@@ -2783,6 +2799,35 @@
         "samples"
       ],
       "type": "object"
+    },
+    "StartFailed": {
+      "description": "Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on\nsomething else, such as the team's billing).",
+      "properties": {
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "retryAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "type": "object"
+    },
+    "StartStep": {
+      "description": "A hosted session's start, step by step: its computer's image ready, its computer started, its files put in, the\nagent started there, the message handed to it.",
+      "enum": [
+        "image",
+        "box",
+        "files",
+        "session",
+        "message"
+      ],
+      "type": "string",
+      "x-open": true
     },
     "ThreadCounts": {
       "properties": {

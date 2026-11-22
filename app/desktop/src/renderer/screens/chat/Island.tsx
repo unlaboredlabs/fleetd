@@ -1,7 +1,7 @@
 // The island over the composer (W651): one small glass capsule, centred in the band, as wide as what it says. What the
 // lead does now, in words only when they say more than its avatar's motion does ("Reading `rounding.ts`", never a bare
 // "Thinking"), else its glyph alone while nothing else in it says work, so it is drawn whenever the composer shows Stop
-// (W669); a glyph per agent at work (three at most, those waiting on you first, in the attention color) and how many;
+// (W669; a cloud bot waking says neither: its bot in the reply's place does, WakeRow.tsx); a glyph per agent at work (three at most, those waiting on you first, in the attention color) and how many;
 // a red dot while main is red. Nothing to say, nothing drawn. A click (or Enter) opens a card above it: main's
 // reason in full, a row per agent (live/Lanes), and the count of the agents' DMs, a way to Activity's log of them; a
 // second click, a press outside or Escape closes it. With none of those (the lead's step alone), it is no button. A file name too long for the room is cut once, in the middle.
@@ -9,7 +9,7 @@ import { useId, useLayoutEffect, useRef, useState, useEffect } from "react";
 import { useSteady } from "../../../shared/steady";
 import { cx, InlineCode, StateGlyph, Text, type GlyphState } from "../../ui";
 import { useData } from "../../src/data/react";
-import { selectLeadAtWork } from "../../src/data/selectors";
+import { leadLaneId, selectLeadAtWork } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
 import { useDmTotal } from "../dms/hooks";
 import { countWords } from "../dms/model";
@@ -19,6 +19,8 @@ import { Lanes, middleEllipsis, selectStrip, stripHeadline, useSteadyLine, type 
 import { leadDoing, sentenceCase } from "./activity";
 import type { ProjectRef } from "./slots";
 import s from "./island.module.css";
+import { wakeShown } from "../../../shared/wake";
+import { useWake } from "./wake";
 
 /** Steps the lead's avatar already says by its motion: the island says nothing for them. */
 const BARE = new Set(["working", "thinking", "writing"]);
@@ -31,15 +33,21 @@ const GLYPH: Readonly<Record<StripAgent["state"], GlyphState>> = { working: "wor
 export function Island({ project, warning }: { project: ProjectRef; warning: string | undefined }) {
   const loaded = useData(selectStrip(project));
   const strip = loaded === undefined || loaded.agents === 0 ? undefined : loaded;
-  const now = useData((st) => leadDoing(st, projectKey(project)));
+  // A computer's start is the bot's in the reply's place to say (WakeRow.tsx): never held here, so it can't linger once
+  // the wake is over.
+  const starting = useData((st) => st.live.lanes[leadLaneId(project)]?.activity?.activity.kind === "starting");
+  const said = useData((st) => leadDoing(st, projectKey(project)));
+  const now = starting && said !== undefined ? "working" : said;
   // Held steady through its short tool calls (shared/steady.ts); thinking, or working with nothing more known, is the
   // quiet state between them.
   const doing = useSteady(now, now ?? "", now === undefined || now === "thinking" || now === "working");
-  const step = doing === undefined || BARE.has(doing) ? undefined : sentenceCase(doing);
+  // A cloud bot waking: the bot in the reply's place says what its lead does, so nothing here repeats it.
+  const waking = wakeShown(useWake(projectKey(project)));
+  const step = waking || doing === undefined || BARE.has(doing) ? undefined : sentenceCase(doing);
   // The lead at work, as the composer's Stop has it (live, or last known offline), with no words and no agents' glyphs
   // to say so: its glyph, still while offline.
   const atWork = useData(selectLeadAtWork(projectKey(project)));
-  const lead = atWork === undefined || step !== undefined || strip !== undefined ? undefined : atWork;
+  const lead = waking || atWork === undefined || step !== undefined || strip !== undefined ? undefined : atWork;
   const dms = countWords(useDmTotal(project));
   // The card has something to show: the agents, main's reason or the agents' DMs. Without, the island is no button.
   const opens = strip !== undefined || warning !== undefined || dms !== undefined;

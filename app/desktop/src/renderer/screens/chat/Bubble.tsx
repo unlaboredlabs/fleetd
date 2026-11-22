@@ -10,6 +10,7 @@ import { PREVIEW_SIDE } from "../../../shared/transfer";
 import type { ChatItem } from "../../src/data/chat";
 import { useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
+import { useWake } from "./wake";
 import { useSeen } from "../live";
 import {
   Button,
@@ -348,6 +349,12 @@ function TypingLine({ enter }: { enter: Arrival | undefined }) {
   );
 }
 
+/** The lead writing: the typing bubble, unless its bot stands in the reply's place, woken for this turn (WakeRow.tsx). */
+function Typing({ project, enter }: { project: ProjectRef | undefined; enter: Arrival | undefined }) {
+  const waking = useWake(project === undefined ? "" : projectKey(project), true)?.phase === "writing";
+  return waking ? null : <TypingLine enter={enter} />;
+}
+
 export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, { kind: "message" }>; mineLatest: boolean; enter?: Arrival | undefined }) {
   const i = r.item;
   const actions = useBubbleActions();
@@ -399,7 +406,7 @@ export function MessageView({ row: r, mineLatest, enter }: { row: Extract<Row, {
           </button>
         ) : null}
         {typing ? (
-          <TypingLine enter={enter} />
+          <Typing project={lead ? actions?.project : undefined} enter={enter} />
         ) : (
           bubbles.map((b, n) => {
             // A message about several orders: a bubble whose order isn't the one before it says which, as a run would.

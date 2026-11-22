@@ -105,6 +105,10 @@
     },
     "ThreadSummary": {
       "properties": {
+        "asleep": {
+          "description": "Its computer is off with no start under way (a hosted session); the next run starts it first. Absent: awake.",
+          "type": "boolean"
+        },
         "asOf": {
           "$ref": "#/$defs/Timestamp"
         },

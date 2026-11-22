@@ -8,7 +8,7 @@ import type { Registry } from "../api/registry.ts";
 import { requireHuman } from "../leads/seams.ts";
 import { store } from "../store/hub_store.ts";
 import { parseMs } from "../store/time.ts";
-import { chatStop, ensure, projectStop, send, state } from "./flow.ts";
+import { chatStop, ensure, projectStop, send, startNow, state } from "./flow.ts";
 import { chat } from "./index.ts";
 import { FIND_LIMIT, hitText, parseWords, type Term } from "./find_rules.ts";
 import { register as registerPins } from "./pins.ts";
@@ -91,6 +91,13 @@ export function register(tools: Registry): void {
       throw error;
     }
     return chatStop(hub, caller, input);
+  });
+
+  // The chat's Try again while the lead's computer starts.
+  tools.add("chat_start_now", async (hub, caller, input) => {
+    requireHuman(caller, "chat_start_now");
+    requireRole(caller, "operate", input.projectRef.machineId);
+    return { started: await startNow(hub, input.projectRef) };
   });
 
   // The person has seen a nudge's message, or dismissed it.

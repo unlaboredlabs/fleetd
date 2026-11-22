@@ -19,10 +19,30 @@ export type StatusHook = (hub: Hub, caller: Caller) => Promise<Record<string, un
 /** A session's finished command named a GitHub PR (executor/mod.rs `pr_sink`). */
 export type PrFoundHook = (thread: { machineId: string; threadId: string }) => void;
 
+/** A session's computer went to sleep or woke (its summary's `asleep`), with no change of status to say so. */
+export type AsleepHook = (thread: { machineId: string; threadId: string; projectId: string }) => void;
+
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
   readonly status: StatusHook[] = [];
   readonly prFound: PrFoundHook[] = [];
+  readonly asleep: AsleepHook[] = [];
+
+  /** Told when a session's computer goes to sleep or wakes: the chat says so in its state. */
+  onAsleep(hook: AsleepHook): void {
+    this.asleep.push(hook);
+  }
+
+  /** Each `onAsleep` hook, a throwing one logged. */
+  sleptOrWoke(thread: { machineId: string; threadId: string; projectId: string }): void {
+    for (const hook of this.asleep) {
+      try {
+        hook(thread);
+      } catch (error) {
+        console.warn("executor: an asleep hook failed:", error);
+      }
+    }
+  }
 
   /** Told when a session's finished command printed a GitHub PR URL (`gh pr create`): the train reads it at once. */
   onPrFound(hook: PrFoundHook): void {

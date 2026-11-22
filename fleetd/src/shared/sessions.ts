@@ -31,6 +31,8 @@ import type {
   SecretFingerprint,
   SkillName,
   SkillOrigin,
+  StartFailed,
+  StartStep,
   SteerId,
   SteerStage,
   ThreadId,
@@ -223,6 +225,8 @@ export type SessionCall =
     }
   | { op: "withdraw"; sessionId: ThreadId; runId: string }
   | { op: "interrupt"; sessionId: ThreadId; runId?: string; reason?: string }
+  /** The session's start, waiting between tries, tries again now; not_found when none waits. */
+  | { op: "start_now"; sessionId: ThreadId }
   | { op: "stop"; sessionId: ThreadId; removeWorktree?: boolean; idle?: boolean }
   | { op: "answer"; sessionId: ThreadId; requestId: string; decision: PermissionDecision; by?: DecidedBy }
   | { op: "subscribe"; after?: number; spansAfter?: number; caughtUp?: boolean }
@@ -514,6 +518,8 @@ export type SessionSummary = {
   watchingUntil?: Timestamp;
   /** What those Monitors watch: each one's description (`a Monitor` for one with none); absent with none. */
   watching?: string[];
+  /** Its computer is off with no start under way (a hosted session): the next run starts it first. Absent: awake. */
+  asleep?: true;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -564,8 +570,11 @@ export type ItemKind =
   | { type: "compaction"; trigger: string; preTokens?: number; postTokens?: number }
   | { type: "api_retry"; attempt: number; maxRetries: number; errorStatus?: number; error: string; retryDelayMs?: number }
   | { type: "node_retry"; attempt: number; of: number; delayMs: number; reason: RunFailure }
-  /** A hosted session's start while its computer comes up, in plain words (node/place/hosted_steps.ts). */
-  | { type: "starting"; text: string }
+  /**
+   * A hosted session's start while its computer comes up, in plain words (node/place/hosted_steps.ts), and what the apps
+   * draw it from: its step, when the whole start began, and a failed try's plain reason and when it goes again.
+   */
+  | { type: "starting"; text: string; step?: StartStep; startedAt?: Timestamp; failed?: StartFailed }
   | { type: "error"; failure: RunFailure };
 
 export type ThreadItem = {

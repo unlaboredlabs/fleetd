@@ -10,13 +10,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
-import { sentenceCase, useSteady, workedFor } from "../desktop";
+import { sentenceCase, useSteady, wakeShown, workedFor } from "../desktop";
 import { LOOP_BEATS } from "../glyph";
 import { useHub } from "../hubContext";
 import type { Key } from "../store";
 import { mono, space, type, useTheme } from "../theme";
 import { codeRuns, leadActivityOf, SWEEP, SWEEP_WIDTH, turnView } from "../turn";
 import { useAnnounceChange } from "../ui/announce";
+import { wakeIn } from "../wake";
 import { swapIn, swapOut, useBeat, useReduceMotion } from "../ui/motion";
 import { GLYPH_SIZE, StateGlyph } from "../ui/StateGlyph";
 
@@ -51,7 +52,9 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
     const timer = setTimeout(() => setHeld(seen), HOLD_MS);
     return () => clearTimeout(timer);
   }, [over, seen]);
-  const view = running ? turnView(writing ? { kind: "writing" } : activity, since, 0) : undefined;
+  // A cloud bot waking: its bot in the reply's place says what its lead does (WakeRow.tsx), so the line says nothing.
+  const waking = wakeShown(wakeIn(state, chatKey, writing));
+  const view = running && !waking ? turnView(writing ? { kind: "writing" } : activity, since, 0) : undefined;
   const worked = over && held !== seen ? workedFor(ended.until - ended.since) : undefined;
   const glyph = view?.glyph;
   const now = view?.now;
