@@ -18,10 +18,16 @@ export const NO_VIDEO = "no video: this machine has no ffmpeg for it";
 
 /** The start of a result's text a step keeps. */
 const RESULT_CHARS = 500;
-/** How often the node looks at the screen: a look starts this long after the last one started (10 frames a second
- * while reading and encoding take less), or at once when they took longer. */
+/** How often the node looks at a screen that can't say when it changed (the Mac's): a look starts this long after the
+ * last one started, or at once when it took longer. */
 export const FRAME_EVERY = 100;
-/** Without DAMAGE telling it, the node reads the whole screen at least this often. */
+/** A screen that says when it changes (an X display's DAMAGE) is read as soon as it does, a frame each FRAME_GAP at
+ * most (30 a second). */
+export const FRAME_GAP = 33;
+/** Reading and encoding take at most this share of the time, so a screen changing all over (a video) costs a third of
+ * a core, at fewer frames, rather than a whole one. */
+const WORK_SHARE = 1 / 3;
+/** The node reads the whole screen at least this often, whatever DAMAGE says. */
 const FULL_EVERY = 2_000;
 
 /** `desktop`'s call (fleetd-contracts browser.rs `DesktopCall`): its fields as the agent's tool sends them. */
@@ -253,7 +259,7 @@ export class Session {
       const full = started - lastFull >= FULL_EVERY;
       try {
         if (this.screen.changed() || full) {
-          const raw = await this.screen.serial(() => this.screen.grabRaw());
+          const raw = await this.screen.serial(() => this.screen.grabRaw(full));
           if (full) lastFull = performance.now();
           const hash = Bun.hash.xxHash64(raw.data) ^ BigInt(raw.width * 65536 + raw.height);
           if (hash !== lastHash && !this.closed) {
@@ -268,7 +274,15 @@ export class Session {
         return;
       }
       this.sendLive(false);
-      await Bun.sleep(Math.max(0, FRAME_EVERY - (performance.now() - started)));
+      const spent = performance.now() - started;
+      const next = this.screen.nextChange;
+      if (!next) {
+        await Bun.sleep(Math.max(0, FRAME_EVERY - spent));
+        continue;
+      }
+      await Bun.sleep(Math.max(0, FRAME_GAP - spent, spent / WORK_SHARE - spent));
+      // Then nothing until the screen changes, or its whole read is due.
+      if (!this.closed) await next.call(this.screen, Math.max(0, FULL_EVERY - (performance.now() - lastFull)));
     }
   }
 
