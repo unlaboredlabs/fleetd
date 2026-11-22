@@ -2,8 +2,8 @@
 // control strip and an agent's `mac sim <control>` do to an iOS simulator. Each one was tried on the real Mac (Xcode
 // 27.2, Nov 2026) on simulators in fleetd's own device set, where Device Hub and `devicectl` see none:
 //
-// - rotate: agent-device's `orientation`, which turns the device through its XCTest runner. The framebuffer keeps its
-//   shape; the UI turns inside it, so the live view turns the picture by the session's `orientation`.
+// - rotate: agent-device's `orientation`, which turns the device through its XCTest runner (XCUIDevice); the app on
+//   screen turns, and simctl's screenshots with it (an iPhone 17's 1206x2622 becomes 2622x1206).
 // - shake: the Darwin notification Simulator's own Shake posts (`notifyutil -p com.apple.UIKit.SimulatorShake`).
 // - home and lock: the Home and Power buttons as HID key presses inside the simulator (BUTTON below, `simctl spawn`):
 //   agent-device's `home` takes seconds and it has no lock on a simulator.
