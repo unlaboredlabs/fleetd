@@ -278,6 +278,13 @@ it("a fresh team's first run in the web app opens Get started, and Skip for now 
   again();
 });
 
+it("a fresh team's first run opened at Settings (Stripe's way back to Billing) stays there, Get started behind it", async () => {
+  window.history.replaceState(null, "", "/?billing=paid#/settings/hub/billing");
+  const stop = await render({}, "first-run");
+  expect(window.location.hash).toBe("#/settings/hub/billing");
+  stop();
+});
+
 it("where agents run never asks a cloud team for a sandbox key of its own: before fleetd's computers, a computer's line alone", async () => {
   const stop = await render({});
   expect(host.textContent).toContain("Where agents run");
