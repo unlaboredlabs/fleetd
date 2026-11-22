@@ -68,3 +68,11 @@ export function tailnetName(name: string, suffix: string | undefined): boolean {
   }
   return n.endsWith("0.e.1.a.c.5.1.1.a.7.d.f.ip6.arpa");
 }
+
+/** Whether a URL's `host` (an address, bracketed or not, or a name) is on the tailnet: one of its addresses, or a
+ * MagicDNS name (`suffix` the tailnet's own, when known). What a server's Test says it reached "via Tailscale", and
+ * what a node not on the tailnet reaches through the hub's route. */
+export function isTailnetHost(host: string, suffix?: string): boolean {
+  const h = host.replace(/^\[(.*)\]$/u, "$1");
+  return isIP(h) !== 0 ? tailnetIp(h) : tailnetName(h, suffix) && !/\.arpa$/iu.test(h);
+}

@@ -243,7 +243,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   expect(refused).toContain("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49");
   expect(refused).not.toContain("settings.json");
   expect(refused).not.toContain("curl");
-  expect(refused).toContain("Connect Tailscale in Settings › Hub › Machines");
+  expect(refused).toContain("Connect Tailscale in Connections");
   await placeAt(join(home, "hosts", "s-off")).stop(join(home, "hosts", "s-off"));
   // With it on, a new box is told so before its repo comes in (a stand-in box beside its node refuses the TUN: it
   // carries on without it, and says so), and an endpoint it still can't reach is the tailnet's to fix.

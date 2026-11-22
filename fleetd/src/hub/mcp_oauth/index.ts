@@ -193,7 +193,7 @@ function say(hub: Hub, row: Row, text: string): void {
 }
 
 /** Where a person signs the server in again. */
-const reconnectAt = (row: Row) => (row.scope.kind === "global" ? "Settings › Vault › Integrations" : "the bot's settings › Integrations");
+const reconnectAt = (_row: Row) => "Connections";
 
 /** The machines that keep the server's token: its bot's, or, for the team's, every machine a bot runs on. */
 export function machinesOf(hub: Hub, row: Row): string[] {
@@ -499,7 +499,7 @@ async function signOut(hub: Hub, row: Row, problem: string): Promise<void> {
   say(
     hub,
     row,
-    `${row.name} is signed out: ${problem} ${row.scope.kind === "global" ? "No bot can" : "Its bot can't"} use it until you press Reconnect on it in ${reconnectAt(row)}.`,
+    `${row.name} is signed out: ${problem} ${row.scope.kind === "global" ? "No bot can" : "Its bot can't"} use it until you sign in again on it in ${reconnectAt(row)}.`,
   );
   try {
     await erase(hub, row);

@@ -41,7 +41,7 @@ const trim = (s: string) => s.trim().replace(/\.$/, "");
 
 /** Words for a sign-in that is gone: what the person does, and that the agent carries on. */
 export const signedOutText = (name: string, why: string) =>
-  `${name}'s sign-in has ended (${trim(why)}). Ask the person to sign in to ${name} again: Reconnect on ${name} in Settings › Vault › Integrations. Until then, carry on without ${name} and say so in your result.`;
+  `${name}'s sign-in has ended (${trim(why)}). Ask the person to sign in to ${name} again: Sign in again on ${name} in Connections. Until then, carry on without ${name} and say so in your result.`;
 
 /** Words for a server that can't be reached now. */
 export const notNowText = (name: string, why: string) =>

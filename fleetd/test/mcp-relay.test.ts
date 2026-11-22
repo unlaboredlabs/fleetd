@@ -179,12 +179,12 @@ test("a dead sign-in, a refused renewal and an unreachable server answer in word
   const said = last();
   expect(said).toMatchObject({ id: 1, result: { isError: true } });
   expect(textOf(said)).toBe(
-    "paper's sign-in has ended (login.stand-in ended the sign-in (invalid_grant), so you need to sign in again). Ask the person to sign in to paper again: Reconnect on paper in Settings › Vault › Integrations. Until then, carry on without paper and say so in your result.",
+    "paper's sign-in has ended (login.stand-in ended the sign-in (invalid_grant), so you need to sign in again). Ask the person to sign in to paper again: Sign in again on paper in Connections. Until then, carry on without paper and say so in your result.",
   );
   expect(textOf(said)).not.toContain("/mcp");
   // A request other than a tool's call is answered with its error, in the same words.
   await r.deliver({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  expect(last()).toMatchObject({ id: 2, error: { code: -32603, message: expect.stringContaining("Settings › Vault › Integrations") } });
+  expect(last()).toMatchObject({ id: 2, error: { code: -32603, message: expect.stringContaining("in Connections") } });
 
   // Renewed, and the new token turned away too: the hub hears it (and signs the server out).
   hub.mode = "refused";
@@ -194,7 +194,7 @@ test("a dead sign-in, a refused renewal and an unreachable server answer in word
     { server: "paper", fingerprint: expect.any(String) },
     { server: "paper", fingerprint: expect.any(String), refused: true },
   ]);
-  expect(textOf(last())).toContain("Reconnect on paper");
+  expect(textOf(last())).toContain("Sign in again on paper");
 
   // The server is down for a while: it says so, and the next call after works.
   hub.mode = "renew";

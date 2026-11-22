@@ -8,10 +8,12 @@ import type { Hub } from "../api/hub.ts";
 import { sortedValue } from "../integrations/policy.ts";
 import { holders } from "../repos/store.ts";
 import type { HubDb } from "../store/db.ts";
-import { anyRole, canonical, forSession, isOauthToken, type LeadMcpSet, type McpSecretScope, type McpSessionConfig, type McpSessionServer, parse, scopeKey, value, valuesOf } from "./model.ts";
+import { anyRole, canonical, forBot, forSession, isOauthToken, type LeadMcpSet, type McpSecretScope, type McpSessionConfig, type McpSessionServer, parse, scopeKey, value, valuesOf } from "./model.ts";
 
 export {
+  forBot,
   forSession,
+  hostOf,
   isOauthToken,
   type LeadMcpSet,
   MCP_SERVERS_MAX,
@@ -22,6 +24,7 @@ export {
   type McpSessionValue,
   newSince,
   OAUTH_HEADER,
+  onTailnet,
   oneSwitch,
   scopeKey,
   secretScope,
@@ -132,7 +135,7 @@ export class McpServerStore {
     return {
       userServers: this.userServers(),
       servers: this.serversFor(r)
-        .filter((s) => s.enabled && anyRole(s))
+        .filter((s) => s.enabled && anyRole(s) && forBot(s, r))
         .map((s) => forSession(s, r.machineId))
         .filter((s): s is McpSessionServer => s !== undefined),
     };
@@ -141,7 +144,7 @@ export class McpServerStore {
   /** What a lead's session of the project gets: each lead server as a fingerprint of what the node writes for it. */
   leadSet(r: ProjectRef): LeadMcpSet {
     const servers: Record<string, string> = {};
-    for (const s of this.serversFor(r).filter((s) => s.enabled && s.roles.lead)) {
+    for (const s of this.serversFor(r).filter((s) => s.enabled && s.roles.lead && forBot(s, r))) {
       const session = forSession(s, r.machineId);
       if (!session) continue;
       // A replaced key is a new value on the node; a renewed OAuth token isn't a change.

@@ -68,7 +68,7 @@ test("a hosted box is only checked, and a failed check says what to do: connect 
   const e = (url: string) => ({ url, source: "the environment" });
   const off = await unreached(e("http://100.104.249.49:8317"), "boat.dev", false, dns);
   // In a person's words: the account, never the check's output or the file the endpoint was set in.
-  expect(off).toBe("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Settings › Hub › Machines");
+  expect(off).toBe("a boat.dev sandbox couldn't reach the hub's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections");
   expect(await unreached(e("http://devbox.tail1234.ts.net:8317"), "boat.dev", true, dns)).toContain("the team's tailnet doesn't reach it either");
   expect(await unreached(e("http://localhost:8317"), "boat.dev", false, dns)).toContain("a machine's own loopback, which a hosted sandbox never reaches");
   // A public endpoint's failure is its own: nothing to connect.
@@ -82,7 +82,7 @@ test("the hub's runner says to connect Tailscale while its Claude endpoint is pl
   const { runnerClaude } = await import("../../src/node/sessions/index.ts");
   const hub = { kind: "hub" } as const;
   expect(runnerClaude(hub, "http://100.104.249.49:8317").problem).toBe(
-    "the hub's Claude endpoint http://100.104.249.49:8317 is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Settings › Hub › Machines",
+    "the hub's Claude endpoint http://100.104.249.49:8317 is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections",
   );
   expect(runnerClaude(hub, "http://100.104.249.49:8317", true).problem).toBeUndefined();
   expect(runnerClaude(hub, ANTHROPIC_API).problem).toBeUndefined();

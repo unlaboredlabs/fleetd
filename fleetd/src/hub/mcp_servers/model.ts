@@ -1,7 +1,8 @@
 // An MCP server as a session and a lead get it, without the database (index.ts keeps the rows): its scope and secret
 // scope, its values, whether it is signed in, the role switch, the session's config, a row's canonical form, and what a
 // lead's set gained.
-import type { McpRoles, McpScope, McpServer, McpValue } from "../../shared/contracts.ts";
+import type { McpRoles, McpScope, McpServer, McpValue, ProjectRef } from "../../shared/contracts.ts";
+import { isTailnetHost } from "../../shared/tailnet.ts";
 
 export type McpField = "env" | "header";
 export type McpSecretScope = { kind: "global" } | { kind: "project"; projectId: string };
@@ -15,6 +16,8 @@ export type McpSessionServer = {
   headers: McpSessionValue[];
   /** It signs in with OAuth: the node relays it (`fleetd mcp-relay`) with the token it holds now. */
   oauth?: true;
+  /** Its URL is on the team's tailnet: a node not on it relays it through the hub's Tailscale route. */
+  tailnet?: true;
 };
 export type McpSessionConfig = { userServers: boolean; servers: McpSessionServer[] };
 
@@ -35,10 +38,10 @@ export const valuesOf = (s: McpServer): [McpField, McpValue][] => [
   ...(s.headers ?? []).map((v): [McpField, McpValue] => ["header", v]),
 ];
 
-/** Secrets whose value the node of `machineId` doesn't hold: the server can't start there. */
+/** Secrets (typed, or from the vault) whose value the node of `machineId` doesn't hold: the server can't start there. */
 export const secretsMissingOn = (s: McpServer, machineId: string) =>
   valuesOf(s)
-    .filter(([, v]) => v.kind === "secret" && !(v.sealedOn ?? []).some((x) => x.machineId === machineId))
+    .filter(([, v]) => v.kind !== "plain" && !(v.sealedOn ?? []).some((x) => x.machineId === machineId))
     .map(([, v]) => v.name);
 
 /** A server that signs in with OAuth has a token; one that doesn't sign in always counts. */
@@ -49,6 +52,27 @@ export const isOauthToken = (s: McpServer, field: McpField, v: McpValue) =>
   s.oauth !== undefined && field === "header" && v.name.toLowerCase() === OAUTH_HEADER.toLowerCase();
 
 export const anyRole = (s: McpServer) => s.roles.lead || s.roles.writers || s.roles.reviewers;
+
+/** Whether bot `r`'s sessions get `s`: a project's own server always, the team's when its bots list names `r` or
+ * there is no list. */
+export const forBot = (s: McpServer, r: ProjectRef) =>
+  s.scope.kind === "project" || s.projects === undefined || s.projects.some((p) => p.machineId === r.machineId && p.projectId === r.projectId);
+
+/** The host of an HTTP or SSE server's URL; undefined for a command or a URL that doesn't parse. */
+export function hostOf(t: McpServer["transport"]): string | undefined {
+  if (t.type === "stdio") return undefined;
+  try {
+    return new URL(t.url).hostname.replace(/^\[(.*)\]$/u, "$1");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a server's URL is on the team's tailnet (`suffix` its MagicDNS suffix, when known). */
+export const onTailnet = (s: Pick<McpServer, "transport">, suffix?: string) => {
+  const host = hostOf(s.transport);
+  return host !== undefined && isTailnetHost(host, suffix);
+};
 
 /**
  * A server's one switch, "Agents get it too": its lead alone, or its writers and reviewers as well. Roles from an
@@ -81,6 +105,7 @@ export function forSession(s: McpServer, machineId: string): McpSessionServer | 
     env: values(s.env),
     headers: values(s.headers),
     ...(s.oauth !== undefined ? { oauth: true as const } : {}),
+    ...(onTailnet(s) ? { tailnet: true as const } : {}),
   };
 }
 
@@ -95,7 +120,7 @@ export const parse = (data: string): McpServer | undefined => {
 /** The Rust struct's key order, so a row reads the same whichever hub wrote it. */
 export function canonical(s: McpServer): McpServer {
   const out: Record<string, unknown> = {};
-  for (const k of ["scope", "name", "enabled", "roles", "transport", "env", "headers", "integration", "oauth", "connectedBy", "updatedAt"] as const) {
+  for (const k of ["scope", "name", "enabled", "roles", "transport", "env", "headers", "integration", "oauth", "connectedBy", "projects", "updatedAt"] as const) {
     if (s[k] !== undefined && s[k] !== null) out[k] = s[k];
   }
   out.transport = transportOf(s.transport);
@@ -112,6 +137,11 @@ export const value = (v: McpValue): McpValue => ({
   name: v.name,
   kind: v.kind,
   ...(v.value !== undefined && v.value !== null ? { value: v.value } : {}),
+  ...(v.itemId !== undefined ? { itemId: v.itemId } : {}),
+  ...(v.field !== undefined ? { field: v.field } : {}),
+  ...(v.prefix !== undefined ? { prefix: v.prefix } : {}),
+  ...(v.label !== undefined ? { label: v.label } : {}),
+  ...(v.problem !== undefined ? { problem: v.problem } : {}),
   ...(v.sealedOn && v.sealedOn.length > 0 ? { sealedOn: v.sealedOn } : {}),
 });
 
