@@ -1,6 +1,8 @@
 // The browser's WebSocket as the hub client's transport, with the socket faked.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { HubClient, PING_EVERY_MS, QUIET_PING_MS, QUIET_PONG_MS } from "../main/hub/client";
 import type { ConnectionEvents } from "../main/hub/link";
+import type { HubFrame } from "../shared/hub";
 import { browserTransport } from "./hub";
 
 class FakeSocket {
@@ -82,5 +84,57 @@ describe("browserTransport", () => {
     link.close();
     FakeSocket.made[0]?.onclose?.({ code: 1000, reason: "" });
     expect(heard).toEqual(["close:1006:closed by the app"]);
+  });
+});
+
+describe("the hub client over the browser's WebSocket", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A web client on a fake socket, opened and `ready`: what it shows, and the socket's frames from the hub. */
+  const live = () => {
+    vi.useFakeTimers();
+    FakeSocket.made = [];
+    const frames: HubFrame[] = [];
+    const client = new HubClient({ hub: "https://t1.fleetd.dev", key: "", transport: transport, emit: (f) => frames.push(f), random: () => 0.5 });
+    client.start();
+    const socket = FakeSocket.made[0]!;
+    const hub = (frame: Record<string, unknown>) => socket.onmessage?.({ data: JSON.stringify(frame) });
+    socket.open();
+    hub({ t: "ready", protocol: 1 });
+    return { client, socket, hub, frames };
+  };
+
+  it("keeps a link whose first snapshot takes longer than the quiet ping's wait to cross a slow link", () => {
+    const { client, socket, hub, frames } = live();
+    // A big hub at 256 kbit/s: the snapshot is seconds on its way, the page hears nothing of it until it has all come,
+    // and the quiet ping's frame waits behind it.
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
+    expect(socket.sent).toContain('{"t":"ping"}');
+    expect(client.state.phase).toBe("live");
+    expect(socket.closed).toBeNull();
+    hub({ t: "snapshot", cursor: 41, machines: [] });
+    hub({ t: "pong" });
+    expect(frames.filter((f) => f.t === "snapshot")).toHaveLength(1);
+    expect(client.state.phase).toBe("live");
+    expect(FakeSocket.made).toHaveLength(1);
+  });
+
+  it("still gives a link up within seconds when it goes quiet with nothing due, and a call's answer is waited for", () => {
+    const { client, hub } = live();
+    hub({ t: "snapshot", cursor: 41, machines: [] });
+    // A call's answer due: the steady ping judges the link, not the quiet ping.
+    const answer = client.call({ tool: "chat_history", input: {} });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
+    expect(client.state.phase).toBe("live");
+    const asked = JSON.parse(FakeSocket.made[0]!.sent.filter((t) => t.includes("chat_history")).at(-1)!) as { id: string };
+    hub({ t: "result", id: asked.id, output: {} });
+    void answer;
+    // Nothing due, and the link goes dead after traffic: found in the quiet ping's seconds, before the steady ping.
+    hub({ t: "event", seq: 42, type: "task.started" });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
+    expect(QUIET_PING_MS + QUIET_PONG_MS).toBeLessThan(PING_EVERY_MS);
+    expect(client.state.phase).toBe("retrying");
   });
 });

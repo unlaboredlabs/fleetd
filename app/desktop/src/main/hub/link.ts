@@ -21,6 +21,11 @@ export interface Connection {
   ping(): void;
   /** Drops the link at once, without waiting on a closing handshake a dead peer would never answer. */
   close(): void;
+  /**
+   * Heard only once a whole frame is in (a browser's WebSocket): a big one still crossing a slow link reads as silence,
+   * and its ping, a frame too, queues behind it.
+   */
+  readonly wholeFrames?: boolean;
 }
 
 /**

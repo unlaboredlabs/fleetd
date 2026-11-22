@@ -249,9 +249,9 @@ export class HubClient implements HubSource {
     if (this.#checkTimer !== null) clearTimeout(this.#checkTimer);
     this.#checkTimer = setTimeout(() => {
       this.#checkTimer = null;
-      // A long call's frame (an upload's piece) can hold the ping behind it for seconds: the steady ping's longer
-      // wait judges the link then.
-      if (this.#ready && this.#heardAt < pingAt && !this.#longCall()) this.#abandon(explainAbandon(this.#options.hub, "silent"));
+      // A long call's frame (an upload's piece) can hold the ping behind it for seconds, and on a link heard only in
+      // whole frames so can any answer due (the first snapshot, a call's): the steady ping's longer wait judges it then.
+      if (this.#ready && this.#heardAt < pingAt && !this.#longCall() && !this.#answerDue()) this.#abandon(explainAbandon(this.#options.hub, "silent"));
     }, QUIET_PONG_MS);
     this.#connection?.ping();
   }
@@ -259,6 +259,11 @@ export class HubClient implements HubSource {
   #longCall(): boolean {
     for (const p of this.#pending.values()) if (p.long) return true;
     return false;
+  }
+
+  /** On a link heard only in whole frames, an answer is on its way that may still be crossing it. */
+  #answerDue(): boolean {
+    return this.#connection?.wholeFrames === true && (this.#firstSnapshot || this.#pending.size > 0);
   }
 
   /** A frame came or a call went: once the link has been quiet QUIET_PING_MS after it, one ping. */

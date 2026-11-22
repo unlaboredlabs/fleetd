@@ -39,7 +39,7 @@ export const browserTransport =
       socket = new Socket(withFeatures(url, headers));
     } catch (error) {
       queueMicrotask(() => close(1006, error instanceof Error ? error.message : String(error)));
-      return { send: () => undefined, ping: () => undefined, close: () => close(1006, "closed by the app") };
+      return { send: () => undefined, ping: () => undefined, close: () => close(1006, "closed by the app"), wholeFrames: true };
     }
     socket.binaryType = "arraybuffer";
     socket.onopen = () => events.onOpen();
@@ -65,6 +65,8 @@ export const browserTransport =
         socket.close();
         close(1006, "closed by the app");
       },
+      // The page hears a frame only once it has all come.
+      wholeFrames: true,
     };
   };
 
