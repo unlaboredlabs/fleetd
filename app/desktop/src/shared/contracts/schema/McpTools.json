@@ -11329,44 +11329,10 @@
         },
         "truncated": {
           "type": "boolean"
-        },
-        "userServers": {
-          "description": "Agents also get the person's own MCP servers from their claude setup (on by default).",
-          "type": "boolean"
         }
       },
       "required": [
-        "global",
-        "userServers"
-      ],
-      "type": "object"
-    },
-    "McpSettingsSetInput": {
-      "properties": {
-        "userServers": {
-          "description": "Agents also get the person's own MCP servers from their claude setup.",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "userServers"
-      ],
-      "type": "object"
-    },
-    "McpSettingsSetOutput": {
-      "properties": {
-        "next": {
-          "type": "string"
-        },
-        "truncated": {
-          "type": "boolean"
-        },
-        "userServers": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "userServers"
+        "global"
       ],
       "type": "object"
     },
@@ -11986,12 +11952,6 @@
         },
         "mcp_servers_get.output": {
           "$ref": "#/$defs/McpServersGetOutput"
-        },
-        "mcp_settings_set.input": {
-          "$ref": "#/$defs/McpSettingsSetInput"
-        },
-        "mcp_settings_set.output": {
-          "$ref": "#/$defs/McpSettingsSetOutput"
         },
         "memory_get.input": {
           "$ref": "#/$defs/MemoryGetInput"
@@ -12911,8 +12871,6 @@
         "mcp_server_test.output",
         "mcp_servers_get.input",
         "mcp_servers_get.output",
-        "mcp_settings_set.input",
-        "mcp_settings_set.output",
         "memory_get.input",
         "memory_get.output",
         "memory_import.input",

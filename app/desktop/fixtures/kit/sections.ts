@@ -11,7 +11,7 @@ export const projectSections = (f: Fixture, ref: { readonly machineId: string; r
   const own = { machineId: ref.machineId, projectId: ref.projectId };
   const reads: ReadonlyArray<[string, JsonObject, JsonValue]> = [
     [PROJECT_TOOLS.approvals, own, { approvals: YOLO, log: [] }],
-    ["mcp_servers_get", { project: own }, { global: [], project: [], userServers: true }],
+    ["mcp_servers_get", { project: own }, { global: [], project: [] }],
     [PROJECT_TOOLS.purchases, own, { purchases: [] }],
   ];
   for (const [tool, input, output] of reads) if (f.output(tool, input) === undefined && f.output(tool) === undefined) f.answer(tool, input, output);

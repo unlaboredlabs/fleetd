@@ -334,21 +334,6 @@
   min-width: 200px;
 }
 
-/* The hub's switch for the machines' own MCP servers, at the list's foot, in line with the groups' words. */
-.foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  margin-top: 18px;
-  padding: 0 12px;
-}
-.footTitle {
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
-}
-
 /* The custom MCP form, in the sheet's place. */
 .form {
   display: flex;

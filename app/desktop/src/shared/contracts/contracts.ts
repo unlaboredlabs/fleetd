@@ -4758,19 +4758,6 @@ export type McpServersGetOutput = {
   /** The asked project's own, by name; each replaces a global one of the same name there. */
   project?: McpServer[];
   truncated?: boolean;
-  /** Agents also get the person's own MCP servers from their claude setup (on by default). */
-  userServers: boolean;
-};
-
-export type McpSettingsSetInput = {
-  /** Agents also get the person's own MCP servers from their claude setup. */
-  userServers: boolean;
-};
-
-export type McpSettingsSetOutput = {
-  next?: string;
-  truncated?: boolean;
-  userServers: boolean;
 };
 
 /** What a connection test found: the tools a server lists, or why it couldn't be reached. */
@@ -10593,7 +10580,6 @@ export interface ToolMap {
   mcp_server_set: { input: McpServerSetInput; output: McpServerSetOutput };
   mcp_server_test: { input: McpServerTestInput; output: McpServerTestOutput };
   mcp_servers_get: { input: McpServersGetInput; output: McpServersGetOutput };
-  mcp_settings_set: { input: McpSettingsSetInput; output: McpSettingsSetOutput };
   memory_get: { input: MemoryGetInput; output: MemoryGetOutput };
   memory_import: { input: MemoryImportInput; output: MemoryImportOutput };
   memory_refresh_run: { input: MemoryRefreshRunInput; output: MemoryRefreshRunOutput };

@@ -99,7 +99,7 @@ describe("settings search", () => {
 
   it("finds one place once: one result each for MCP, Claude and the hub's API key (W467)", () => {
     const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
-    expect(keys("mcp")).toEqual(["connections.own", "connections"]);
+    expect(keys("mcp")).toEqual(["connections"]);
     expect(keys("claude").filter((k) => k.startsWith("claude"))).toEqual(["claude"]);
     expect(keys("hub api key", true)[0]).toBe("admin.claude");
     expect(keys("api key", true)).not.toContain("admin.claude.key");
