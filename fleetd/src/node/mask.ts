@@ -1,11 +1,16 @@
 // Masking a project's secret variables in what its agents' sessions report: every
 // exact occurrence of a secret's value, its standard and URL-safe base64, its percent-encoding and its form encoding
 // becomes `***NAME***` before the node keeps or sends any of it. A value of several lines is also masked line by
-// line (each whole line of MIN_LINE characters or more, PEM armor excepted). Values under MIN_LEN are left alone.
+// line (each whole line of MIN_LINE characters or more, PEM armor excepted, and the line without its `=` padding, as
+// `cut -d=` leaves it). Values under MIN_LEN are left alone. A private key's PEM block becomes HIDDEN whoever's it is.
 export const MIN_LEN = 4;
 export const MIN_LINE = 8;
+export const HIDDEN = "[secret hidden]";
 
 const pemArmor = (line: string) => (line.startsWith("-----BEGIN ") || line.startsWith("-----END ")) && line.endsWith("-----");
+/** A private key's PEM block, or its start up to the end of a text cut short. */
+const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$(?![\s\S]))/g;
+const BEGIN = "-----BEGIN ";
 const utf8 = (s: string) => Buffer.from(s, "utf8");
 
 const isAlnum = (b: number) => (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122);
@@ -75,6 +80,7 @@ export class Masker {
         ...value
           .split(/\r?\n/)
           .map((l) => l.trim())
+          .flatMap((l) => [l, l.replace(/=+$/, "")])
           .filter((l) => utf8(l).length >= MIN_LINE && !pemArmor(l) && l.length < value.length),
       ];
       for (const form of forms) if (!this.patterns.some(([p]) => p === form)) this.patterns.push([form, shown]);
@@ -100,7 +106,7 @@ export class Masker {
   text(text: string): string {
     let out = text;
     for (const [pattern, shown] of this.patterns) if (out.includes(pattern)) out = out.split(pattern).join(shown);
-    return out;
+    return out.includes("PRIVATE KEY-----") ? out.replace(PRIVATE_KEY, HIDDEN) : out;
   }
 
   /** Every string in a JSON value, object keys included. */
@@ -114,12 +120,17 @@ export class Masker {
 
   /** How many characters at the end of `text` could start a form not yet complete: live text holds them back. */
   held(text: string): number {
+    // A private key's block not yet closed, or what could still become its header.
+    const open = text.lastIndexOf(BEGIN);
+    if (open >= 0 && !text.includes("-----END ", open) && (text.length - open < 64 || text.slice(open, open + 64).includes("PRIVATE KEY"))) return text.length - open;
+    let held = 0;
+    for (let at = Math.max(0, text.length - (BEGIN.length - 1)); at < text.length && !held; at++) if (BEGIN.startsWith(text.slice(at))) held = text.length - at;
     const longest = this.patterns[0]?.[0].length ?? 0;
-    for (let at = Math.max(0, text.length - (longest - 1)); at < text.length; at++) {
+    for (let at = Math.max(0, text.length - (longest - 1)); at < text.length - held; at++) {
       const tail = text.slice(at);
       if (this.patterns.some(([p]) => p.length > tail.length && p.startsWith(tail))) return text.length - at;
     }
-    return 0;
+    return held;
   }
 }
 
