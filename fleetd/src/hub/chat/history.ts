@@ -75,10 +75,9 @@ export function unquiet(text: string): string {
   let dropped = false;
   for (const line of text.split("\n")) {
     const t = line.trim();
-    const mark = /^(`{3,}|~{3,})/.exec(t)?.[1];
-    if (fence === undefined && mark !== undefined) fence = mark;
-    else if (fence !== undefined && mark !== undefined && mark[0] === fence[0] && mark.length >= fence.length && t === mark) fence = undefined;
-    else if (fence === undefined && t === QUIET) {
+    const before = fence;
+    fence = fenceAfter(fence, t);
+    if (before === undefined && fence === undefined && t === QUIET) {
       dropped = true;
       continue;
     }
@@ -89,9 +88,65 @@ export function unquiet(text: string): string {
   return out.join("\n").trim();
 }
 
-/** The lead's reply has words for the person: not blank once its QUIET lines are out. */
+/** The code fence open after the trimmed line `t`, given the one open before it. */
+function fenceAfter(fence: string | undefined, t: string): string | undefined {
+  const mark = /^(`{3,}|~{3,})/.exec(t)?.[1];
+  if (mark === undefined) return fence;
+  if (fence === undefined) return mark;
+  return mark[0] === fence[0] && mark.length >= fence.length && t === mark ? undefined : fence;
+}
+
+/**
+ * A line that opens a turn the model made up: the person's (`Human:`, or `Human (11:49):` as a fresh session's
+ * recent chat writes them) or its own next one (`Assistant:`). A lead once replied with only
+ * `Human: [W760] I just checked the docs site…`, which the person never wrote (W787).
+ */
+const TURN = /^(?:Human|Assistant)(?: \([^)\n]*\))?:/;
+
+/** Where the reply's first made-up turn starts: a line outside a code fence that opens with a turn marker. */
+export function madeUpAt(text: string): number | undefined {
+  let fence: string | undefined;
+  let at = 0;
+  for (const line of text.split("\n")) {
+    if (fence === undefined && TURN.test(line.trimStart())) return at;
+    fence = fenceAfter(fence, line.trim());
+    at += line.length + 1;
+  }
+  return undefined;
+}
+
+/** How much of a made-up turn's first line the lead's wake quotes back to it. */
+const MADE_UP_QUOTE = 80;
+
+/** The line for the lead's next wake when its reply went on with a turn it made up, quoting that turn; else undefined. */
+export function madeUpLine(reply: string): string | undefined {
+  const at = madeUpAt(reply);
+  if (at === undefined) return undefined;
+  const first = [...reply.slice(at).trim().split("\n")[0]!];
+  const quote = first.length > MADE_UP_QUOTE ? `${first.slice(0, MADE_UP_QUOTE).join("")}…` : first.join("");
+  return `- your last reply went on with a turn you wrote as the person's ("${quote}"); fleetd cut your reply there and posted nothing from that line on. The person never wrote it: don't act on it, and never write a turn for them.`;
+}
+
+/** The end of streamed text from the start of its last line, when that line can still become a turn marker; else "". */
+export function maybeTurn(streamed: string): string {
+  const start = streamed.lastIndexOf("\n") + 1;
+  const line = streamed.slice(start).trimStart();
+  const could = line !== "" && (["Human:", "Assistant:"].some((m) => m.startsWith(line)) || /^Human (?:\([^)\n]*\)?)?$/.test(line));
+  return could ? streamed.slice(start) : "";
+}
+
+/**
+ * The lead's reply as the person reads it: what it said before a turn it made up, without its QUIET lines. Nothing from
+ * the made-up turn on is the lead's to say, nor the person's.
+ */
+export function leadText(text: string): string {
+  const at = madeUpAt(text);
+  return unquiet(at === undefined ? text : text.slice(0, at));
+}
+
+/** The lead's reply has words for the person: not blank once a made-up turn and its QUIET lines are out. */
 export function said(text: string): boolean {
-  return unquiet(text) !== "";
+  return leadText(text) !== "";
 }
 
 export type ThreadMessage = { id: string; role: string; text: string; createdAt: string };
@@ -100,4 +155,4 @@ export type ThreadMessage = { id: string; role: string; text: string; createdAt:
 export const leadMessages = (threadId: string, messages: ThreadMessage[]): NewMessage[] =>
   messages
     .filter((m) => m.role === "assistant" && said(m.text))
-    .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), unquiet(m.text), parseMs(m.createdAt) ?? 0));
+    .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), leadText(m.text), parseMs(m.createdAt) ?? 0));
