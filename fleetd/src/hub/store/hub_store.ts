@@ -172,7 +172,7 @@ function aProject(r: ProjectRef): void {
 
 /**
  * The project with what the hub keeps of it, whatever its stored row says: its repos from `repos`, and from
- * `project_settings` who made it, its archive and its bot's color and shape.
+ * `project_settings` who made it, its archive, its bot's color and shape and who merges its PRs.
  */
 function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   const r = { machineId: stored.machineId, projectId: stored.projectId };
@@ -185,6 +185,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     avatarShape: _avatarShape,
     chatTags: _chatTags,
     issueOrders: _issueOrders,
+    merges: _merges,
     icon: _icon,
     ...project
   } = stored;
@@ -199,6 +200,8 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.chatTags) out.chatTags = true;
   // Its issues-as-orders switch, shown once it has a repo on GitHub to watch.
   if (held.some((x) => x.repoKey?.startsWith("github.com/"))) out.issueOrders = kept.issueOrdersOff !== true;
+  // A project with no row of its own is new: people merge its PRs.
+  out.merges = kept.merges ?? "people";
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
   out.icon = icon.of(conn, r);
@@ -216,6 +219,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     avatarShape: _avatarShape,
     chatTags: _chatTags,
     issueOrders: _issueOrders,
+    merges: _merges,
     icon: _icon,
     ...row
   } = project;

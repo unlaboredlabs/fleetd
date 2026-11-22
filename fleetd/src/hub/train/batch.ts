@@ -17,9 +17,9 @@ import { watchMerge } from "./watch.ts";
 
 const BATCH_MAX = 8;
 
-import { HELD, LEFT_OUT, PASSED_WAITING, passedWaiting } from "./notes.ts";
+import { HELD, LEFT_OUT, PASSED_WAITING, PEOPLE, passedWaiting } from "./notes.ts";
 
-export { HELD, LEFT_OUT } from "./notes.ts";
+export { HELD, LEFT_OUT, PEOPLE } from "./notes.ts";
 
 /** How hubs before D642 held a ready PR in a repo with no CI: a note of theirs still shown clears. */
 const NO_CI_HELD = "held: this repo has no CI";
@@ -277,13 +277,16 @@ async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Can
       continue;
     }
     const waiting = await next.waitingOn(t, change);
+    const decided = await t.mergeDecision(change);
+    t.noteDecision(change, decided);
     let hold: string | undefined;
     if (pull.draft) hold = DRAFT;
+    else if (decided.by === "person") hold = PEOPLE;
     else if (held(pull)) hold = HELD;
     else if (waiting) hold = waiting.note;
     else if (await person.awaitsApproval(t, change, pull.base.ref)) hold = person.APPROVAL;
     const shown = change.lastError;
-    const ours = [DRAFT, HELD, person.APPROVAL];
+    const ours = [DRAFT, PEOPLE, HELD, person.APPROVAL];
     const wasWaiting = (shown?.startsWith(next.WAITING_ON) || shown?.startsWith(NO_CI_HELD)) ?? false;
     if (hold !== shown && (hold !== undefined || wasWaiting || (shown !== undefined && ours.includes(shown)))) {
       t.update(change.changeId, ["ready"], (c) => {
@@ -291,7 +294,7 @@ async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Can
         return hold === undefined ? rest : { ...rest, lastError: errorText(hold) };
       });
     }
-    if (hold === HELD || hold === person.APPROVAL) await person.waits(t, change, pull, hold);
+    if (hold === PEOPLE || hold === HELD || hold === person.APPROVAL) await person.waits(t, change, pull, hold);
     if (hold !== undefined) continue;
     // Stacked on a PR's branch: once that PR merged, it goes into its base, never into the landed branch.
     try {
@@ -754,13 +757,18 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
       return { kind: "members", ids, why: `batch #${pr} passed CI, but ${dropped.join(" and ")}; the batch forms again without it` };
     }
   }
-  // A member pushed to, held or closed while CI ran is not what was tested.
+  // A member pushed to, held or closed while CI ran is not what was tested; one whose bot people came to merge
+  // meanwhile waits for them.
   const moved: string[] = [];
   let why: string | undefined;
   for (const m of inCi) {
     try {
       const p = await t.github.pull(repo, m.change.prNumber);
-      if (p.state === "open" && !p.merged && !held(p) && p.head.sha.toLowerCase() === m.change.headSha) continue;
+      if (p.state === "open" && !p.merged && !held(p) && p.head.sha.toLowerCase() === m.change.headSha) {
+        const decided = await t.mergeDecision(m.change);
+        t.noteDecision(m.change, decided);
+        if (decided.by !== "person") continue;
+      }
       moved.push(m.change.changeId);
       why ??= `#${m.change.prNumber} was pushed to, held or closed while batch #${pr} was in CI`;
     } catch (error) {

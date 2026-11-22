@@ -217,6 +217,11 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
               {reviews?.text ?? "None asked for."}
             </Text>
           </Fact>
+          {pr.queue?.mergeRule !== undefined && pr.queue.mergeRule !== "" ? (
+            <Fact label="Who merges">
+              <Text size="sm">{sentence(pr.queue.mergeRule)}</Text>
+            </Fact>
+          ) : null}
           <Fact label="Written by">
             <Text size="sm" tone={author === undefined ? "quiet" : "default"}>
               {author ?? "Not known."}
@@ -313,6 +318,9 @@ export function WithCode({ text }: { text: string }) {
     </>
   );
 }
+
+/** The hub's words as a sentence: capitalized, with a full stop. */
+const sentence = (words: string) => `${words.charAt(0).toUpperCase()}${words.slice(1)}${/[.!?]$/.test(words) ? "" : "."}`;
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (

@@ -125,6 +125,11 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
   project set <machine>/<bot> --profiles <name>,...|none [--hub <url>]
              the task profiles its lead may run agents on besides the hub's default,
              which every bot allows; none: the default alone
+  project set <machine>/<bot> --merges you|fleetd --key-file <human key> [--hub <url>]
+             who merges its PRs. you: the train reviews them and keeps them up to
+             date, merges only those its merges-itself rules allow, and the lead
+             says when each other one is ready; fleetd: the train merges each one
+             once it is reviewed and green
   project profiles [<machine>/<bot>] [--hub <url>]
              the hub's task profiles: model, effort, fast mode and note, and which
              the bot allows

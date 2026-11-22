@@ -9,6 +9,7 @@ import { withReviews } from "../src/hub/reviews/service.ts";
 import { prKey } from "../src/hub/reviews/verdicts.ts";
 import { registerLeadCalls } from "../src/hub/train/calls.ts";
 import { HubHost } from "../src/hub/train/hub_host.ts";
+import { PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
 import { start } from "../src/hub/train/loops.ts";
 import { ToolError } from "../src/shared/errors.ts";
 import { Kit, PROJECT, REPO } from "./train_kit.ts";
@@ -168,9 +169,11 @@ test("the lead digest's merge train lines", async () => {
   await k.enqueue(10);
   await k.settle();
   const lines = trainDigest(hub, PROJECT, "2026-10-17T09:00:00.000Z")!;
-  expect(lines[0]).toBe(`- ${REPO}: queue empty`);
-  expect(lines[1]).toStartWith(`- X1 ci_failed: ${REPO}#10, by T10; CI failed on `);
-  expect(lines[1]).toEndWith("Back with its author; the train retries its next push");
+  // The lab's bot was made with Who merges on You: the section says so first.
+  expect(lines[0]).toBe(PEOPLE_MERGE_LINE);
+  expect(lines[1]).toBe(`- ${REPO}: queue empty`);
+  expect(lines[2]).toStartWith(`- X1 ci_failed: ${REPO}#10, by T10; CI failed on `);
+  expect(lines[2]).toEndWith("Back with its author; the train retries its next push");
   expect(trainUnlanded(hub, PROJECT, "W1")).toEqual(["#10 ci_failed"]);
 });
 

@@ -28,6 +28,7 @@ const SPEC = {
     "fleet-cap": "str",
     "key-file": "str",
     profiles: "str",
+    merges: "str",
     model: "str",
     effort: "str",
     fast: "str",
@@ -191,7 +192,9 @@ export async function projectCommand(argv: string[]): Promise<number> {
   try {
     if (verb === "stop" && keyFile === undefined) return usage(humanKeyRequired("a stop"));
     if (verb === "profile" && keyFile === undefined) return usage(humanKeyRequired("a profile change"));
-    if (verb === "stop" || verb === "profile") {
+    const picksMerges = verb === "set" && v.str("merges") !== undefined;
+    if (picksMerges && keyFile === undefined) return usage(humanKeyRequired("picking who merges"));
+    if (verb === "stop" || verb === "profile" || picksMerges) {
       let key: string;
       try {
         key = readFileSync(keyFile!, "utf8").trim();
@@ -200,7 +203,7 @@ export async function projectCommand(argv: string[]): Promise<number> {
       }
       client = await connectWith(home, v.str("hub"), "fleetd-project", key);
     } else if (keyFile !== undefined) {
-      return usage("--key-file is for project stop and project profile");
+      return usage("--key-file is for project stop, project profile and project set --merges");
     } else {
       client = await connectTo(home, v.str("hub"), "fleetd-project");
     }
@@ -481,6 +484,14 @@ async function profile(client: McpClient, out: Out, v: Parsed) {
   out.success(typeof body?.next === "string" ? body.next : "Done.");
 }
 
+/** `--merges`: you (people merge the bot's PRs, as the app's Who merges says it) or fleetd. */
+export function mergesFlag(value: string | undefined): "people" | "fleetd" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "you" || value === "people") return "people";
+  if (value === "fleetd") return "fleetd";
+  throw new Stop(2, `--merges takes you or fleetd, got '${value}'`);
+}
+
 async function set(client: McpClient, out: Out, v: Parsed) {
   const profilesFlag = v.str("profiles");
   const allowed =
@@ -491,14 +502,16 @@ async function set(client: McpClient, out: Out, v: Parsed) {
           .map((p) => p.trim())
           .filter((p) => p !== "" && p !== "none");
   // null: back to its machine's cap within the fleet cap.
+  const merges = mergesFlag(v.str("merges"));
   const maxAgents: number | null | undefined = v.str("max-agents") === "default" ? null : countOf(v, "max-agents");
   const fleetCap = countOf(v, "fleet-cap");
-  if (allowed !== undefined) {
+  if (allowed !== undefined || merges !== undefined) {
     const [machine, project] = await find(client, v);
     const body = await call(client, "project_set", {
       machineId: machine,
       projectId: s(project, "/projectId"),
-      profiles: allowed,
+      ...(allowed !== undefined ? { profiles: allowed } : {}),
+      ...(merges !== undefined ? { merges } : {}),
     });
     out.success(typeof body?.next === "string" ? body.next : "Set.");
     if (maxAgents === undefined && fleetCap === undefined) return;
@@ -515,7 +528,7 @@ async function set(client: McpClient, out: Out, v: Parsed) {
     if (maxAgents === null) input.project.followDefault = true;
     else input.project.maxAgents = maxAgents;
   } else if (target !== undefined) {
-    if (allowed === undefined) throw new Stop(2, "give --max-agents <n> or --profiles <names> for the bot");
+    if (allowed === undefined && merges === undefined) throw new Stop(2, "give --max-agents <n>, --profiles <names> or --merges you|fleetd for the bot");
   } else if (maxAgents !== undefined) {
     throw new Stop(2, "--max-agents needs the bot as <machine>/<bot>");
   } else if (fleetCap === undefined) {
