@@ -138,6 +138,8 @@ export class HubClient implements HubSource {
   #resumeFrom: number | null = null;
   /** This link's first snapshot (the one sent with auth) hasn't come yet. */
   #firstSnapshot = false;
+  /** A snapshot asked for on this link hasn't come yet. */
+  #snapshotDue = false;
   #resumeAttempt = 0;
   #resumeTimer: ReturnType<typeof setTimeout> | null = null;
   #nextCallId = 0;
@@ -243,16 +245,28 @@ export class HubClient implements HubSource {
     this.#pingAndWait();
   }
 
-  /** One ping; nothing at all heard in QUIET_PONG_MS after it gives the link up. */
+  /**
+   * One ping; nothing at all heard in QUIET_PONG_MS after it gives the link up, or in PONG_WAIT_MS while a call's
+   * answer may still be crossing a link heard only in whole frames.
+   */
   #pingAndWait(): void {
     const pingAt = Date.now();
     if (this.#checkTimer !== null) clearTimeout(this.#checkTimer);
-    this.#checkTimer = setTimeout(() => {
+    const judge = (held: boolean) => {
       this.#checkTimer = null;
       // A long call's frame (an upload's piece) can hold the ping behind it for seconds, and on a link heard only in
-      // whole frames so can any answer due (the first snapshot, a call's): the steady ping's longer wait judges it then.
-      if (this.#ready && this.#heardAt < pingAt && !this.#longCall() && !this.#answerDue()) this.#abandon(explainAbandon(this.#options.hub, "silent"));
-    }, QUIET_PONG_MS);
+      // whole frames so can a snapshot due (the whole hub, seconds on a slow link): the steady ping's longer wait judges
+      // it then.
+      if (!this.#ready || this.#heardAt >= pingAt || this.#longCall() || this.#snapshotCrossing()) return;
+      // A call's answer may be crossing there too, but one sent into a link that just died is never answered either:
+      // it gets the steady ping's wait, not its whole cycle.
+      if (!held && this.#callCrossing()) {
+        this.#checkTimer = setTimeout(() => judge(true), PONG_WAIT_MS - QUIET_PONG_MS);
+        return;
+      }
+      this.#abandon(explainAbandon(this.#options.hub, "silent"));
+    };
+    this.#checkTimer = setTimeout(() => judge(false), QUIET_PONG_MS);
     this.#connection?.ping();
   }
 
@@ -261,9 +275,14 @@ export class HubClient implements HubSource {
     return false;
   }
 
-  /** On a link heard only in whole frames, an answer is on its way that may still be crossing it. */
-  #answerDue(): boolean {
-    return this.#connection?.wholeFrames === true && (this.#firstSnapshot || this.#pending.size > 0);
+  /** On a link heard only in whole frames, a snapshot is on its way that may still be crossing it. */
+  #snapshotCrossing(): boolean {
+    return this.#connection?.wholeFrames === true && this.#snapshotDue;
+  }
+
+  /** On a link heard only in whole frames, a call's answer is due that may still be crossing it. */
+  #callCrossing(): boolean {
+    return this.#connection?.wholeFrames === true && this.#pending.size > 0;
   }
 
   /** A frame came or a call went: once the link has been quiet QUIET_PING_MS after it, one ping. */
@@ -363,7 +382,9 @@ export class HubClient implements HubSource {
   }
 
   resync(): void {
-    if (this.#ready) this.#send({ t: "snapshot" });
+    if (!this.#ready) return;
+    this.#snapshotDue = true;
+    this.#send({ t: "snapshot" });
   }
 
   /**
@@ -412,6 +433,7 @@ export class HubClient implements HubSource {
         // the upgrade has sent `ready` and the snapshot already, and takes these two as answered.
         this.#send({ t: "auth", key: this.#options.key, features: [...CLIENT_FEATURES] });
         this.#firstSnapshot = true;
+        this.#snapshotDue = true;
         this.#send({ t: "snapshot" });
         this.#sendLive();
         if (this.#chat !== null) this.#sendChat();
@@ -510,6 +532,7 @@ export class HubClient implements HubSource {
         // last event the old link applied, when the gap is small: those events then say what changed meanwhile.
         const from = this.#firstSnapshot ? this.#resumeFrom : null;
         this.#firstSnapshot = false;
+        this.#snapshotDue = false;
         this.#resumeFrom = null;
         const resume = from !== null && snapshot.cursor >= from && snapshot.cursor - from <= RESUME_MAX_EVENTS;
         this.#cursor = resume ? from : snapshot.cursor;
@@ -636,6 +659,7 @@ export class HubClient implements HubSource {
     if (this.#cursor !== null) this.#resumeFrom = this.#cursor;
     this.#cursor = null;
     this.#firstSnapshot = false;
+    this.#snapshotDue = false;
     this.#failPending("disconnected", "The connection to the hub dropped before it answered.");
     return wasReady;
   }
