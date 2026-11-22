@@ -146,8 +146,12 @@ export type SettingsParams = {
   Machines: undefined;
   /** One provider: connect it, its limit, Test, Disconnect. */
   Provider: { id: string };
-  /** The hub's Claude API key and its endpoint, for admins. */
+  /** What agents run on, a row per provider (Anthropic, Google), for admins. */
+  Providers: undefined;
+  /** The hub's Claude API key and its endpoint, for admins: Providers › Anthropic. */
   Claude: undefined;
+  /** Google's sign-in on each machine, and the bots with a Gemini key: Providers › Google. */
+  Google: undefined;
   /** A fleetd cloud team's plan, credits, computer time and spend cap, for its owners and admins. */
   Billing: undefined;
 } & VaultParams;

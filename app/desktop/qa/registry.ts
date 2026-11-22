@@ -76,6 +76,7 @@ export const fixtures = [
   "admin-hubs",
   // Teams step 8 (fixtures/admin): Bob on a hub that keeps its Claude API key for leads, with no subscription of his own.
   "admin-claude-member",
+  "admin-google",
   // The Vault (fixtures/vault): the team's items with two of Sam's set aside, as a member, on a hub from before it, and empty.
   "vault-team",
   "vault-team-member",
@@ -4587,6 +4588,57 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Edit medium" }).waitFor();
     },
   },
+  // Providers: Anthropic and Google, a row each with how it is connected and its models; Google not connected yet
+  // (Sign in with Google at its end), and connected (signed in, a bot's key). Then Google's row open, and its sign-in
+  // started from the row: the Google page to open and the code to paste.
+  { id: "settings.hub.providers", route: "#/settings/hub/providers", fixtures: ["admin-owner", "admin-google"] },
+  {
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
+    fixtures: ["admin-google"],
+    variant: "google",
+    open: async (page) => {
+      await page.locator("[data-provider='google'] button").first().click();
+      await page.locator("[data-provider-setup='google']").waitFor();
+    },
+  },
+  {
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
+    fixtures: ["admin-owner"],
+    variant: "sign-in",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in with Google" }).click();
+      await page.getByRole("form", { name: "Sign in" }).waitFor();
+    },
+  },
+  // A profile's editor on a Gemini model while Google isn't connected: Sign in with Google right under the model.
+  {
+    id: "settings.hub.profiles",
+    route: "#/settings/hub/profiles",
+    fixtures: ["settings-agents"],
+    variant: "google-model",
+    sizes: ["medium"],
+    open: async (page) => {
+      await page.locator("[data-profile='medium'] button").first().click();
+      await page.getByRole("combobox", { name: "Model" }).click();
+      await page.getByRole("option", { name: "Gemini 4 Neon" }).click();
+      await page.locator("[data-google-connect]").waitFor();
+    },
+  },
+  // A profile's Model open: Anthropic's models, then Google's, each under its provider's name.
+  {
+    id: "settings.hub.profiles",
+    route: "#/settings/hub/profiles",
+    fixtures: ["settings-agents"],
+    variant: "models",
+    sizes: ["medium"],
+    open: async (page) => {
+      await page.locator("[data-profile='medium'] button").first().click();
+      await page.getByRole("combobox", { name: "Model" }).click();
+      await page.getByRole("listbox").waitFor();
+    },
+  },
   { id: "settings.hub.instructions", route: "#/settings/hub/instructions", fixtures: ["admin-owner", "settings-agents"] },
   // Every project › Agents, at its skills: the hub-wide ones (one installed and pinned), Update on the installed one,
   // and Install.
@@ -4801,6 +4853,20 @@ export const screens: readonly Screen[] = [
     },
   },
   // A link to one project's Agents opens on that project, whichever the sidebar last showed.
+  // A bot's Lead model open: its profiles by provider, and Google's models a lead can start on.
+  {
+    id: "settings.agents",
+    route: "#/settings/agents?for=devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22",
+    fixtures: ["settings-agents"],
+    variant: "lead-models",
+    sizes: ["medium"],
+    open: async (page) => {
+      const lead = page.getByRole("combobox", { name: "Lead model" });
+      await lead.scrollIntoViewIfNeeded();
+      await lead.click();
+      await page.getByRole("listbox").waitFor();
+    },
+  },
   {
     id: "settings.agents",
     variant: "for-project",

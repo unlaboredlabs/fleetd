@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
 import { machineName, offFooter } from "./model";
-import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadSections, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -126,22 +126,49 @@ describe("its screen", () => {
   it("lists its lead's model: the hub's lead profile first, then the hub's profiles, one claude refused not to pick", () => {
     const view = {
       profiles: [
-        { id: 1, name: "high", default: true, note: "" },
-        { id: 2, name: "max", default: false, lead: true, note: "" },
-        { id: 3, name: "quick", default: false, note: "", refused: "claude refused claude-haiku-5-5" },
+        { id: 1, name: "high", default: true, note: "", model: "claude-opus-5-5" },
+        { id: 2, name: "max", default: false, lead: true, note: "", model: "claude-opus-5-5" },
+        { id: 3, name: "quick", default: false, note: "", model: "claude-haiku-5-5", refused: "claude refused claude-haiku-5-5" },
       ],
+      models: [],
       allowed: ["high"],
     } as unknown as ProfilesListOutput;
     expect(leadLines(view)).toEqual([
       { value: LEAD_HUB, title: "Hub default (max)", checked: true, disabled: false },
-      { value: "high", title: "high", checked: false, disabled: false },
-      { value: "max", title: "max", checked: false, disabled: false },
-      { value: "quick", title: "quick", checked: false, disabled: true, why: "claude refused claude-haiku-5-5" },
+      { value: "high", title: "high", checked: false, disabled: false, group: "Anthropic" },
+      { value: "max", title: "max", checked: false, disabled: false, group: "Anthropic" },
+      { value: "quick", title: "quick", checked: false, disabled: true, why: "claude refused claude-haiku-5-5", group: "Anthropic" },
     ]);
     expect(leadValue(view)).toBe("Hub default");
     const own = { ...view, leadProfile: "high" };
     expect(leadLines(own).filter((l) => l.checked).map((l) => l.value)).toEqual(["high"]);
     expect(leadValue(own)).toBe("high");
+  });
+
+  it("lists its lead's model by provider: Google's profiles under Google, and for an admin each Gemini model no profile runs on", () => {
+    const view = {
+      profiles: [
+        { id: 1, name: "high", default: true, note: "", model: "claude-opus-5-5" },
+        { id: 2, name: "gemini", default: false, note: "", model: "gemini-4-argon" },
+      ],
+      models: [
+        { id: "claude-opus-5-5", displayName: "Claude Opus 5.5", fast: true },
+        { id: "gemini-4-neon", displayName: "Gemini 4 Neon (Antigravity)", fast: false },
+        { id: "gemini-4-argon", displayName: "Gemini 4 Argon (Antigravity)", fast: false },
+      ],
+    } as unknown as ProfilesListOutput;
+    // A member picks among the profiles alone: a new one is an admin's to make.
+    expect(leadSections(leadLines(view)).map((s) => [s.group, ...s.lines.map((l) => l.value)])).toEqual([
+      [undefined, LEAD_HUB],
+      ["Anthropic", "high"],
+      ["Google", "gemini"],
+    ]);
+    expect(leadSections(leadLines(view, true)).map((s) => [s.group, ...s.lines.map((l) => l.title)])).toEqual([
+      [undefined, "Hub default (high)"],
+      ["Anthropic", "high"],
+      ["Google", "gemini", "Gemini 4 Neon"],
+    ]);
+    expect(leadLines(view, true).at(-1)?.value).toBe("model:gemini-4-neon");
   });
 });
 

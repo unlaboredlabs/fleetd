@@ -1,6 +1,6 @@
 // machine_add_plan, machine_add, machine_add_status, machine_hosts, machine_remove, machine_join and
 // machine_claude_login: an owner's or admin's device only, as
-// everything on the Hub pages of the app's Settings.
+// everything on the Hub pages of the app's Settings; and antigravity_status, where Google is connected, for anyone.
 import { HOSTED_ID, hostedIdRefused } from "../hosted_gone/index.ts";
 import type { MachineHost, MachineHostSource } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -8,7 +8,9 @@ import { isMachineId, readSetup } from "../../cli/common.ts";
 import { workerJoin, workerReachNote } from "../../cli/pair.ts";
 import * as machine from "../../cli/setup/machine.ts";
 import { type AddArgs, type Found, type HubSide, type Progress, type Resolved, Stop } from "../../cli/setup/machine.ts";
-import { isHuman } from "../api/grants.ts";
+import { isHuman, readable } from "../api/grants.ts";
+import { runners } from "../machine_roles/places.ts";
+import { vault } from "../vault/index.ts";
 import type { Hub } from "../api/hub.ts";
 import { eraseIn } from "../project_lead/erase.ts";
 import { adminEverywhereFix, allowsEverywhere } from "../api/refusals.ts";
@@ -194,6 +196,7 @@ export function register(tools: Registry): void {
       throw new ToolError("failed", answer.message, code === undefined ? `Check that ${m} is online, then try again.` : "Start the sign-in again: each sign-in page's code works once.");
     }
     if (answer.signedIn !== undefined) {
+      agyChecked(hub).set(m, { at: hub.clock.now(), signedIn: answer.signedIn });
       return { next: `Antigravity on ${m} is signed in: its agents on Antigravity can start.`, machineId: m, signedIn: answer.signedIn, message: answer.message };
     }
     if (answer.loginUrl !== undefined && code === undefined) {
@@ -206,7 +209,43 @@ export function register(tools: Registry): void {
     }
     return { next: `Antigravity on ${m} is signed in.`, machineId: m, message: answer.message };
   });
+
+  // Where Google is connected, for the apps' Providers page and the model pickers: each machine agents run on that signs
+  // Antigravity in from the app, and whether it is (asked of its node at most once a minute, never starting a sign-in),
+  // and the bots whose Vault holds a Gemini API key.
+  tools.add("antigravity_status", async (hub, caller) => {
+    const now = hub.clock.now();
+    const seen = agyChecked(hub);
+    const ports = machineSetup(hub).ports;
+    const asked = await Promise.all(
+      runners(hub)
+        .filter((r) => r.roles.agents && readable(caller, r.runner.machineId))
+        .map(async ({ runner: { machineId } }) => {
+          const kept = seen.get(machineId);
+          if (kept !== undefined && now - kept.at < AGY_CHECKED_MS) return { machineId, checked: true, ...(kept.signedIn !== undefined ? { signedIn: kept.signedIn } : {}) };
+          const said = await ports.antigravityStatus(hub, machineId);
+          if (said === undefined) return undefined;
+          if (said.checked) seen.set(machineId, { at: now, ...(said.signedIn !== undefined ? { signedIn: said.signedIn } : {}) });
+          return { machineId, ...said };
+        }),
+    );
+    const keyIn = vault(hub)
+      .store.select("kind = 'env' AND scope = 'project' AND env_name = ?", [GEMINI_KEY])
+      .flatMap((row) => (row.machineId !== undefined && row.projectId !== undefined && readable(caller, row.machineId) ? [{ machineId: row.machineId, projectId: row.projectId }] : []));
+    return { machines: asked.filter((m) => m !== undefined), keyIn };
+  });
 }
+
+/** The Vault variable a bot's agents on Antigravity run on (node/runner/antigravity.ts). */
+const GEMINI_KEY = "GEMINI_API_KEY";
+/** How long a machine's answer to antigravity_status is kept. */
+export const AGY_CHECKED_MS = 60_000;
+const agyCheckedOf = new WeakMap<Hub, Map<string, { at: number; signedIn?: string }>>();
+const agyChecked = (hub: Hub) => {
+  let m = agyCheckedOf.get(hub);
+  if (m === undefined) agyCheckedOf.set(hub, (m = new Map()));
+  return m;
+};
 
 const SOURCE: Record<Found, MachineHostSource> = { here: "hub", set_up: "set_up", ssh_config: "ssh_config", tailnet: "tailnet" };
 

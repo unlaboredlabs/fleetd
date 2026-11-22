@@ -49,6 +49,7 @@ import { Connections } from "./src/screens/Connections";
 import { providerName } from "./src/machines";
 import { Provider } from "./src/screens/Provider";
 import { Claude } from "./src/screens/Claude";
+import { Google, Providers } from "./src/screens/Providers";
 import { Screen } from "./src/screens/Screen";
 import { Settings } from "./src/screens/Settings";
 import { Vault } from "./src/screens/vault/Vault";
@@ -672,7 +673,9 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Connections" component={Connections} options={large("Connections")} />
       <SettingsStack.Screen name="Machines" component={Machines} options={large("Machines")} />
       <SettingsStack.Screen name="Billing" component={Billing} options={large("Billing")} />
-      <SettingsStack.Screen name="Claude" component={Claude} options={{ ...pushed(t, "Claude"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Providers" component={Providers} options={large("Providers")} />
+      <SettingsStack.Screen name="Claude" component={Claude} options={{ ...pushed(t, "Anthropic"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="Google" component={Google} options={{ ...pushed(t, "Google"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Vault" component={Vault} options={large("Vault")} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />

@@ -587,7 +587,7 @@ export async function startNode(
             logins: LOGINS,
             reprobe: () => sessions.reprobe(),
           },
-          antigravity: { binary: () => antigravity.ensure(), env: () => runnerEnv(sessions.config), logins: AGY_LOGINS },
+          antigravity: { binary: () => antigravity.ensure(), found: () => antigravity.found(), env: () => runnerEnv(sessions.config), logins: AGY_LOGINS },
         }).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
         return;
       case "session_call":

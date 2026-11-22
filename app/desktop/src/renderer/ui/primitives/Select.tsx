@@ -14,6 +14,8 @@ export interface SelectOption<V extends string> {
   title?: string;
   /** Words under the option, not part of it: why it and the disabled ones above it can't be picked, said once. */
   note?: ReactNode;
+  /** The quiet word over a run of options that share it (a model's provider): said once, before the first. */
+  group?: string;
 }
 
 export interface SelectProps<V extends string> {
@@ -27,9 +29,36 @@ export interface SelectProps<V extends string> {
   className?: string | undefined;
 }
 
-/** A field-like picker over a short list. Long lists belong in the command palette, not here. */
+/** Options in runs of one group each, in the order given: a run without a group is one with none. */
+function runsOf<V extends string>(options: ReadonlyArray<SelectOption<V>>): { group: string | undefined; options: SelectOption<V>[] }[] {
+  const runs: { group: string | undefined; options: SelectOption<V>[] }[] = [];
+  for (const o of options) {
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.group === o.group) last.options.push(o);
+    else runs.push({ group: o.group, options: [o] });
+  }
+  return runs;
+}
+
+/** A field-like picker over a short list, its options under their groups' words when they have them. Long lists
+ * belong in the command palette, not here. */
 export function Select<V extends string>(props: SelectProps<V>) {
   const { options } = props;
+  const item = (o: SelectOption<V>) => (
+    <Fragment key={o.value}>
+      <S.Item value={o.value} className={s.item} {...(o.textValue ? { textValue: o.textValue } : {})} {...(o.disabled ? { disabled: true } : {})}>
+        <span className={s.indicator}>
+          <S.ItemIndicator>
+            <Check />
+          </S.ItemIndicator>
+        </span>
+        <span className={cx(s.itemLabel, o.title ? s.itemWhy : undefined)} data-text="wrap" {...(o.title ? { title: o.title } : {})}>
+          <S.ItemText>{o.label}</S.ItemText>
+        </span>
+      </S.Item>
+      {o.note === undefined ? null : <div className={s.note}>{o.note}</div>}
+    </Fragment>
+  );
   return (
     <S.Root
       {...(props.value !== undefined ? { value: props.value } : {})}
@@ -54,26 +83,16 @@ export function Select<V extends string>(props: SelectProps<V>) {
       <S.Portal>
         <S.Content className={cx(s.surface, s.selectContent)} position="popper" sideOffset={4} collisionPadding={8}>
           <S.Viewport>
-            {options.map((o) => (
-              <Fragment key={o.value}>
-                <S.Item
-                  value={o.value}
-                  className={s.item}
-                  {...(o.textValue ? { textValue: o.textValue } : {})}
-                  {...(o.disabled ? { disabled: true } : {})}
-                >
-                  <span className={s.indicator}>
-                    <S.ItemIndicator>
-                      <Check />
-                    </S.ItemIndicator>
-                  </span>
-                  <span className={cx(s.itemLabel, o.title ? s.itemWhy : undefined)} data-text="wrap" {...(o.title ? { title: o.title } : {})}>
-                    <S.ItemText>{o.label}</S.ItemText>
-                  </span>
-                </S.Item>
-                {o.note === undefined ? null : <div className={s.note}>{o.note}</div>}
-              </Fragment>
-            ))}
+            {runsOf(options).map((run, i) =>
+              run.group === undefined ? (
+                run.options.map(item)
+              ) : (
+                <S.Group key={`${run.group}-${i}`}>
+                  <S.Label className={s.label}>{run.group}</S.Label>
+                  {run.options.map(item)}
+                </S.Group>
+              ),
+            )}
           </S.Viewport>
         </S.Content>
       </S.Portal>

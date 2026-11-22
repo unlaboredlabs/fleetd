@@ -2,7 +2,8 @@
 // which a tap offers to give or take away a photo; their name, changed in place; their role on the hub); then the hub
 // (how the link is, its address and version; on a fleetd cloud team, its owner's Delete Team), Connections (Connections.tsx: Paper, Notion, Tailscale and custom
 // MCPs), the person's Devices on it (Devices.tsx), the hubs this phone keeps to switch between and the fleetd account
-// (Cloud.tsx), for an admin Restart Hub and its update and Machines (the machines, the team's providers and what runs where), on a
+// (Cloud.tsx), for an admin Restart Hub and its update, Machines (the machines, the team's providers and what runs where) and
+// Providers (what agents run on: Anthropic, Google; Providers.tsx), on a
 // fleetd cloud team Billing once fleetd's computers are on for it (Billing.tsx), the Vault (screens/vault) on a
 // hub that has one, Memory (the person's own, with Import Memory), this phone (its notifications, name and app), and Disconnect, which asks first.
 import { useFocusEffect, useNavigation, type NavigationProp } from "@react-navigation/native";
@@ -202,7 +203,7 @@ export function Settings() {
       {machinesShown(state.admin) ? (
         <ListSection>
           <ListRow title="Machines" onPress={() => navigation.navigate("Machines")} />
-          {claudeShown(state.admin) ? <ListRow title="Claude" onPress={() => navigation.navigate("Claude")} /> : null}
+          {claudeShown(state.admin) ? <ListRow title="Providers" onPress={() => navigation.navigate("Providers")} /> : null}
           {billingShown(paired, state.admin, billing) ? <ListRow title="Billing" onPress={() => navigation.navigate("Billing")} /> : null}
         </ListSection>
       ) : null}

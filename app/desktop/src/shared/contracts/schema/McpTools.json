@@ -845,6 +845,58 @@
       "pattern": "^(0|[1-9][0-9]{0,8})(\\.[0-9]{1,3})?$",
       "type": "string"
     },
+    "AntigravityMachine": {
+      "properties": {
+        "checked": {
+          "description": "Its node said: false while it is offline, or its fleetd is too old to say without starting a sign-in.",
+          "type": "boolean"
+        },
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "signedIn": {
+          "description": "Antigravity on the machine is signed in, on this plan (\"Google AI Pro\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checked",
+        "machineId"
+      ],
+      "type": "object"
+    },
+    "AntigravityStatusInput": {
+      "type": "object"
+    },
+    "AntigravityStatusOutput": {
+      "properties": {
+        "keyIn": {
+          "description": "The bots whose Vault holds a GEMINI_API_KEY: their agents on Antigravity run on it.",
+          "items": {
+            "$ref": "#/$defs/ProjectRef"
+          },
+          "type": "array"
+        },
+        "machines": {
+          "description": "Each machine agents run on that signs Antigravity in from the app (machine_antigravity_login).",
+          "items": {
+            "$ref": "#/$defs/AntigravityMachine"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "keyIn",
+        "machines"
+      ],
+      "type": "object"
+    },
     "ApprovalAnswerInput": {
       "properties": {
         "decision": {
@@ -11541,6 +11593,12 @@
         "agents_list.output": {
           "$ref": "#/$defs/AgentsListOutput"
         },
+        "antigravity_status.input": {
+          "$ref": "#/$defs/AntigravityStatusInput"
+        },
+        "antigravity_status.output": {
+          "$ref": "#/$defs/AntigravityStatusOutput"
+        },
         "approval_answer.input": {
           "$ref": "#/$defs/ApprovalAnswerInput"
         },
@@ -12823,6 +12881,8 @@
         "agent_work.output",
         "agents_list.input",
         "agents_list.output",
+        "antigravity_status.input",
+        "antigravity_status.output",
         "approval_answer.input",
         "approval_answer.output",
         "artifact_get.input",

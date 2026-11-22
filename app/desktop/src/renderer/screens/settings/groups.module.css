@@ -140,6 +140,12 @@
 .below:empty {
   display: none;
 }
+/* A row inside a form: its words and control in line with the fields over it. */
+.flush .rowHead,
+.flush .below {
+  padding-left: 0;
+  padding-right: 0;
+}
 /* A narrow window: the control goes under its words rather than squeezing them. */
 @media (max-width: 640px) {
   .rowHead {
