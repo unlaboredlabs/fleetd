@@ -16672,6 +16672,14 @@
           "minItems": 1,
           "type": "array"
         },
+        "leadProfile": {
+          "$ref": "#/$defs/ProfileName",
+          "description": "With projectRef: its lead's own profile (`project_set` leadProfile); absent: the hub's lead profile."
+        },
+        "leadRestart": {
+          "description": "With projectRef: its lead runs on another profile, or an edited one, than it would start on now.",
+          "type": "boolean"
+        },
         "models": {
           "description": "The models a profile may pick.",
           "items": {
@@ -18056,6 +18064,18 @@
     },
     "ProjectSetInput": {
       "properties": {
+        "leadDefault": {
+          "description": "Drop its lead's own profile: its lead starts on the hub's lead profile again, from its next start.",
+          "type": "boolean"
+        },
+        "leadProfile": {
+          "$ref": "#/$defs/ProfileName",
+          "description": "The profile its lead starts on from its next start, any of the hub's; absent: unchanged."
+        },
+        "leadRestart": {
+          "description": "Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends.",
+          "type": "boolean"
+        },
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
@@ -18065,7 +18085,8 @@
           },
           "maxItems": 50,
           "type": "array",
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Which profiles its agents may run on besides the default; absent: unchanged."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -18073,13 +18094,16 @@
       },
       "required": [
         "machineId",
-        "projectId",
-        "profiles"
+        "projectId"
       ],
       "type": "object"
     },
     "ProjectSetOutput": {
       "properties": {
+        "leadProfile": {
+          "$ref": "#/$defs/ProfileName",
+          "description": "Its lead's own profile; absent: none, so its lead starts on the hub's lead profile."
+        },
         "next": {
           "type": "string"
         },

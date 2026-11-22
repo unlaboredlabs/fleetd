@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
 import { machineName, offFooter } from "./model";
-import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -121,6 +121,27 @@ describe("its screen", () => {
       { name: "quick", note: "Small fixes.", checked: true, fixed: false },
     ]);
     expect(profilesValue(view)).toBe("high, quick");
+  });
+
+  it("lists its lead's model: the hub's lead profile first, then the hub's profiles, one claude refused not to pick", () => {
+    const view = {
+      profiles: [
+        { id: 1, name: "high", default: true, note: "" },
+        { id: 2, name: "max", default: false, lead: true, note: "" },
+        { id: 3, name: "quick", default: false, note: "", refused: "claude refused claude-haiku-5-5" },
+      ],
+      allowed: ["high"],
+    } as unknown as ProfilesListOutput;
+    expect(leadLines(view)).toEqual([
+      { value: LEAD_HUB, title: "Hub default (max)", checked: true, disabled: false },
+      { value: "high", title: "high", checked: false, disabled: false },
+      { value: "max", title: "max", checked: false, disabled: false },
+      { value: "quick", title: "quick", checked: false, disabled: true, why: "claude refused claude-haiku-5-5" },
+    ]);
+    expect(leadValue(view)).toBe("Hub default");
+    const own = { ...view, leadProfile: "high" };
+    expect(leadLines(own).filter((l) => l.checked).map((l) => l.value)).toEqual(["high"]);
+    expect(leadValue(own)).toBe("high");
   });
 });
 

@@ -6194,6 +6194,10 @@ export type ProfilesListOutput = {
   allowed?: ProfileName[];
   /** Every level Claude Code's `--effort` takes; a model without one runs the nearest below. */
   efforts: Effort[];
+  /** With projectRef: its lead's own profile (`project_set` leadProfile); absent: the hub's lead profile. */
+  leadProfile?: ProfileName;
+  /** With projectRef: its lead runs on another profile, or an edited one, than it would start on now. */
+  leadRestart?: boolean;
   /** The models a profile may pick. */
   models: ProfileModel[];
   modelsFrom: ModelSource;
@@ -6754,12 +6758,21 @@ export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "i
 export type ProjectRowState = KnownProjectRowState | (string & {});
 
 export type ProjectSetInput = {
+  /** Drop its lead's own profile: its lead starts on the hub's lead profile again, from its next start. */
+  leadDefault?: boolean;
+  /** The profile its lead starts on from its next start, any of the hub's; absent: unchanged. */
+  leadProfile?: ProfileName;
+  /** Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends. */
+  leadRestart?: boolean;
   machineId: MachineId;
-  profiles: ProfileName[];
+  /** Which profiles its agents may run on besides the default; absent: unchanged. */
+  profiles?: ProfileName[];
   projectId: ProjectId;
 };
 
 export type ProjectSetOutput = {
+  /** Its lead's own profile; absent: none, so its lead starts on the hub's lead profile. */
+  leadProfile?: ProfileName;
   next?: string;
   /** The profiles it allows now, the default first. */
   profiles: ProfileName[];

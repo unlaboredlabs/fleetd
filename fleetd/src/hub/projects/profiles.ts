@@ -1,7 +1,8 @@
 // The hub's task profiles (Settings › Hub › Every project › Agents):
 // `profiles_list`, `profile_create`, `profile_update`, `profile_delete`, and the `profiles` rows they keep, one per
 // profile, exactly one of them the default. Each project allows the default and the profiles in its `project_profiles`
-// rows. Leads start on the profile marked `is_lead`, the default when none is: the mark is never on the default.
+// rows. Leads start on the profile marked `is_lead`, the default when none is: the mark is never on the default. A bot
+// may pick its own lead's profile (`project_settings.lead_profile`, W825), any of the hub's; none picked, the hub's.
 import type { Database } from "bun:sqlite";
 import type { Effort, Profile, ProfileModel, ProjectRef } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -13,6 +14,7 @@ import { allowsEverywhere, unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { executors, READ_TIMEOUT_MS } from "../executor/index.ts";
 import { link } from "../link/server.ts";
+import { leads } from "../leads/index.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
 import type { Chosen } from "./chosen.ts";
@@ -133,6 +135,26 @@ export class ProfileStore {
     return this.one("is_lead = 1") ?? this.defaultProfile();
   }
 
+  /** The profile the project picked for its lead (`project_set` leadProfile); undefined: none, or one deleted since. */
+  leadPick(r: ProjectRef): Profile | undefined {
+    return this.one("id = (SELECT lead_profile FROM project_settings WHERE machine_id = ? AND project_id = ?)", r.machineId, r.projectId);
+  }
+
+  /** Picks `id` for the project's lead; undefined drops its pick, so its lead starts on the hub's again. */
+  setLeadPick(r: ProjectRef, id: number | undefined): void {
+    this.db
+      .query(
+        `INSERT INTO project_settings (machine_id, project_id, lead_profile) VALUES (?1, ?2, ?3)
+           ON CONFLICT (machine_id, project_id) DO UPDATE SET lead_profile = excluded.lead_profile`,
+      )
+      .run(r.machineId, r.projectId, id ?? null);
+  }
+
+  /** The profile the project's lead starts on: its own pick, else the hub's lead profile. */
+  leadProfileFor(r: ProjectRef): Profile {
+    return this.leadPick(r) ?? this.leadProfile();
+  }
+
   /** The profiles a project allows, by name: the default first, then the ones it picked, by name. */
   allowed(r: ProjectRef): string[] {
     return this.db
@@ -235,10 +257,11 @@ export class ProfileStore {
     return updated;
   }
 
-  /** Removes a profile and every project's choice of it. The caller refuses the default and one in use. */
+  /** Removes a profile and every project's choice of it, for its agents and its lead. The caller refuses the default and one in use. */
   delete(id: number): void {
     this.db.transaction(() => {
       this.db.query("DELETE FROM project_profiles WHERE profile_id = ?").run(id);
+      this.db.query("UPDATE project_settings SET lead_profile = NULL WHERE lead_profile = ?").run(id);
       this.db.query("DELETE FROM profiles WHERE id = ? AND is_default = 0").run(id);
     })();
   }
@@ -416,9 +439,12 @@ export function register(tools: Registry): void {
     if (r && !store(hub).projectGet(r)) throw unknownProject(r);
     const s = profiles(hub);
     const [offered, modelsFrom] = await models(hub);
+    const pick = r && s.leadPick(r);
     return {
       profiles: s.list().slice(0, PROFILES_MAX),
       ...(r ? { allowed: s.allowed(r) } : {}),
+      ...(pick ? { leadProfile: pick.name } : {}),
+      ...(r && leads(hub).profileChanged(r) ? { leadRestart: true } : {}),
       models: offered.slice(0, 200),
       modelsFrom,
       efforts: EFFORTS,

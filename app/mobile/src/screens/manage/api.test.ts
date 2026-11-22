@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, rebuildImage, REMOVE_MS, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, rebuildImage, REMOVE_MS, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, restartLead, setLeadProfile, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -157,6 +157,18 @@ describe("A bot's screen", () => {
     await expect(on).resolves.toEqual({ ok: true, value: ["high", "max", "quick"] });
     void setProfile(session, REF, view, "quick", false);
     expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, profiles: [] });
+  });
+
+  it("picks its lead's own profile, or the hub's again, and restarts its lead on it", async () => {
+    const { hub, session, calls } = setup();
+    const picked = setLeadProfile(session, SHOP, "max");
+    expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadProfile: "max" });
+    hub.answer("project_set", { profiles: ["high"], leadProfile: "max" });
+    await expect(picked).resolves.toEqual({ ok: true, value: null });
+    void setLeadProfile(session, SHOP, undefined);
+    expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadDefault: true });
+    void restartLead(session, SHOP);
+    expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadRestart: true });
   });
 });
 

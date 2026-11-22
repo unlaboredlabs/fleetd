@@ -40,7 +40,7 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
 const NAMES: Record<PeopleOnly, string[]> = {
   approval_mode: ["approvalmode", "approvals", "approval", "mode", "permissionmode", "yolo"],
   sites: ["sites", "site", "allowedsites", "allowsite", "allowsites"],
-  agents: ["profile", "profiles", "model", "models", "maxagents", "agentlimit", "effort"],
+  agents: ["profile", "profiles", "model", "models", "maxagents", "agentlimit", "effort", "leadprofile", "leadmodel"],
   card: ["card", "cards", "paymentcard"],
   vault: ["vault", "vaultitem", "vaultitems", "secret", "secrets", "login", "logins"],
   mcp_servers: ["mcp", "mcpserver", "mcpservers"],
