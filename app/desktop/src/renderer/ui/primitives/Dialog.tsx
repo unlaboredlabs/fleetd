@@ -17,7 +17,8 @@ export interface DialogProps {
   footer?: ReactNode;
   /** `sheet` slides in from the right edge and fills the height (Add project, details). */
   kind?: "dialog" | "sheet";
-  wide?: boolean;
+  /** Wider than a plain dialog: `medium` for a row of tiles, true for a page's worth. */
+  wide?: boolean | "medium";
 }
 
 /** A modal dialog or side sheet: title, optional description, a scrolling body, a footer. Esc and the X close it. */
@@ -29,7 +30,7 @@ export function Dialog(props: DialogProps) {
       <D.Portal>
         <D.Overlay className={s.backdrop} />
         <D.Content
-          className={cx(kind === "sheet" ? s.sheet : s.dialog, props.wide && kind === "dialog" && s.wide)}
+          className={cx(kind === "sheet" ? s.sheet : s.dialog, kind === "dialog" && props.wide === true && s.wide, kind === "dialog" && props.wide === "medium" && s.medium)}
           {...(props.description ? {} : { "aria-describedby": undefined })}
         >
           <div className={s.dialogHead}>

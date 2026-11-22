@@ -9,7 +9,7 @@ import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { selectLiveAgents, type LiveAgent } from "../../src/data/selectors";
 import { parseMs } from "../live/format";
 import type { ProjectKey } from "../shell/routes";
-import { actionLine, type BrowserSession, type ScreenWaiting, type SessionAction, type SessionState } from "./model";
+import { actionLine, type BrowserSession, type PhoneDevice, type ScreenWaiting, type SessionAction, type SessionState } from "./model";
 
 /** The hub feature that says it serves sessions (panel/tabs.ts gates the view on it too). */
 export const FEATURE = "browser_sessions";
@@ -72,10 +72,20 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     ...(row.credentialsFilled === undefined || row.credentialsFilled === 0 ? {} : { credentialsFilled: row.credentialsFilled }),
     ...(row.note === undefined ? {} : { note: row.note }),
     ...(row.openedBy === undefined ? {} : { openedBy: row.openedBy.name }),
+    ...((row.kind === "ios" || row.kind === "android") && row.controls !== undefined && row.state === "live" ? { device: deviceOf(row) } : {}),
     // What its agent did last, while it is live (a hub that names it: screen_thumbs).
     ...(row.state === "live" && row.step !== undefined ? { now: stepWords(row.step) } : {}),
   };
 };
+
+/** A phone's device from its row: only what it says, so a control the machine didn't check never shows. */
+const deviceOf = (row: HubSession): PhoneDevice => ({
+  controls: row.controls ?? [],
+  ...(row.orientation === undefined ? {} : { orientation: row.orientation }),
+  ...(row.fold === undefined ? {} : { fold: row.fold }),
+  ...(row.folds === undefined || row.folds.length === 0 ? {} : { folds: row.folds }),
+  ...(row.appearance === undefined ? {} : { appearance: row.appearance }),
+});
 
 /** Who a session is for in the views: the person who opened it themselves, else its agent. */
 export const ownerOf = (agents: readonly LiveAgent[] | undefined, row: HubSession): SessionAgent =>
