@@ -4,7 +4,7 @@
 // recording in the same frame, its steps behind Steps, closed until opened, and closed again by it.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -288,11 +288,6 @@ it("puts a phone in its bezel, the island over its screen, and its page takes yo
   // No browser bar on a device, and nothing in the line but its words and its one control.
   expect(host.querySelector("input[aria-label='Address']")).toBeNull();
   expect(host.textContent).not.toContain("started");
-});
-
-// The strip loads on first use (SessionView.tsx): its module is read once here, so a phone of yours renders it at once.
-beforeAll(async () => {
-  await import("./ControlStrip");
 });
 
 const strip = () => host.querySelector("[role='toolbar'][aria-label='Device']");

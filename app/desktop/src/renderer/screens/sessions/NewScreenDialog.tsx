@@ -1,5 +1,4 @@
-// New screen's picker itself (NewScreen.tsx says what it does): loaded on first use, or once the app is idle, so the
-// first load carries only its host and button.
+// New screen's picker itself (NewScreen.tsx says what it does, and hosts it).
 import { Globe, Laptop, Monitor, Smartphone, TabletSmartphone } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, Tooltip, cx } from "../../ui";
