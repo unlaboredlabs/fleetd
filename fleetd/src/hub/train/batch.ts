@@ -21,9 +21,10 @@ import { HELD, LEFT_OUT } from "./notes.ts";
 
 export { HELD, LEFT_OUT } from "./notes.ts";
 
-export const NO_CI =
-  "held: this repo has no CI, and fleetd merges only on green CI. Add a GitHub Actions workflow that runs on pull " +
-  "requests, or CI of another provider that reports on them; it goes on by itself once one does.";
+/** How hubs before D642 held a ready PR in a repo with no CI: a note of theirs still shown clears. */
+const NO_CI_HELD = "held: this repo has no CI";
+/** Why the PRs of a repo with no CI at all go one at a time: each merges on its own review (D642). */
+export const NO_CI_ALONE = "this repo has no CI, so each PR merges alone once its review approves it";
 const MEMBER_LEFT = "a PR left the batch while it formed; the next pass forms it again";
 const NOT_CLOSED = "landed, but its PR is not closed yet";
 /** The trailer that names a Change on the squash that lands it (contracts `metrics::CHANGE_TRAILER`). */
@@ -181,7 +182,7 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   const members: Candidate[] = [];
   const left: [Candidate, string][] = [];
   const reds = new Map<string, Red[]>();
-  const single = await t.oneAtATime(repo, base);
+  const single = (await t.withoutCi(head.change, base)) ? NO_CI_ALONE : await t.oneAtATime(repo, base);
   if (single !== undefined) {
     // No batch: each PR merges as itself.
     for (const c of cands.slice(1)) left.push([c, `${head.change.changeId} goes first: ${single}`]);
@@ -271,20 +272,10 @@ async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Can
     if (pull.draft) hold = DRAFT;
     else if (held(pull)) hold = HELD;
     else if (waiting) hold = waiting.note;
-    else {
-      // A read that failed is not "no CI": the head's checks decide, as for any repo.
-      let ci: boolean | undefined;
-      try {
-        ci = await t.hasCi(repo, pull.base.ref, change.headSha);
-      } catch {
-        ci = undefined;
-      }
-      if (ci === false) hold = NO_CI;
-      else if (await person.awaitsApproval(t, change, pull.base.ref)) hold = person.APPROVAL;
-    }
+    else if (await person.awaitsApproval(t, change, pull.base.ref)) hold = person.APPROVAL;
     const shown = change.lastError;
-    const ours = [DRAFT, HELD, NO_CI, person.APPROVAL];
-    const wasWaiting = shown?.startsWith(next.WAITING_ON) ?? false;
+    const ours = [DRAFT, HELD, person.APPROVAL];
+    const wasWaiting = (shown?.startsWith(next.WAITING_ON) || shown?.startsWith(NO_CI_HELD)) ?? false;
     if (hold !== shown && (hold !== undefined || wasWaiting || (shown !== undefined && ours.includes(shown)))) {
       t.update(change.changeId, ["ready"], (c) => {
         const { lastError: _, ...rest } = c;

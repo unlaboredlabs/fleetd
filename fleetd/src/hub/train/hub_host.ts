@@ -6,6 +6,7 @@
 import type { ProjectRef, Task } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes, trainLine } from "../api/leads.ts";
+import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { time as timeArea } from "../time/index.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "./host.ts";
@@ -237,5 +238,13 @@ export class HubHost implements TrainHost {
 
   async wakeLead(r: ProjectRef, line: string): Promise<void> {
     leadWakes(this.hub).trigger(r, trainLine(line));
+  }
+
+  tellPerson(r: ProjectRef, text: string): void {
+    try {
+      chat(this.hub).systemLine(r, text);
+    } catch (error) {
+      console.warn("train: a line for the person was not posted:", error);
+    }
   }
 }

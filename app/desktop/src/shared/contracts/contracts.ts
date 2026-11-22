@@ -6234,7 +6234,7 @@ export type ProjectImageRebuildOutput = {
 export type ProjectInspect = {
   ci: CiInfo;
   defaultBranch?: string;
-  /** One line for a person, e.g. "no CI found: the merge train holds its PRs until the repo has CI". */
+  /** One line for a person, e.g. "no CI found: the merge train merges its PRs on their review alone until the repo has CI". */
   leadNeeds: string;
   merge: MergeRules;
   /** What could not be read, e.g. "branch rules need admin access on acme/storefront". */

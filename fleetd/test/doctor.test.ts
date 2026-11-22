@@ -127,16 +127,6 @@ test("setup checks are there only once their step is set up", () => {
   expect(all.map((e) => e.id).sort()).toEqual([...c.SETUP_CHECK_IDS].sort());
 });
 
-test("a repo with no CI fails with the add-CI fix", () => {
-  expect(c.repoCi([]).status).toBe("ok");
-  const held = c.repoCi(["acme/app"]);
-  expect([held.id, held.status, held.fix?.label]).toEqual([
-    "hub/repo_ci",
-    "fail",
-    "Add a GitHub Actions workflow that runs on pull requests to acme/app",
-  ]);
-});
-
 test("plain HTTP is fine only on loopback and the tailnet", () => {
   for (const url of [
     "http://127.0.0.1:4790",
@@ -481,7 +471,7 @@ test("doctor_list runs every check once, then answers from the last run until re
   const { d, call, probes } = doctorHub();
   const first = (await call("doctor_list", {})) as { checks: DoctorCheck[]; checkedAt: string; next: string };
   const ids = first.checks.map((x) => x.id);
-  expect(ids.slice(0, 4)).toEqual(["hub/reachable", "hub/gh_auth", "hub/https", "hub/repo_ci"]);
+  expect(ids.slice(0, 3)).toEqual(["hub/reachable", "hub/gh_auth", "hub/https"]);
   expect(ids).toContain("devbox/claude_login");
   expect(ids).toContain("lab-b/online");
   // Machine checks follow the hub's, in machine id order.
@@ -577,7 +567,6 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   const s = hubSources(t.hub);
   expect(s.machines()).toEqual([]);
   expect(s.setupFacts()).toEqual({ joined: [], onepassword: [] });
-  expect(s.reposWithoutCi()).toEqual([]);
   expect(s.bases("lab-a")).toEqual([]);
   expect(s.sameComputer("lab-a")).toEqual([]);
   expect(s.claudeSetup()).toEqual({ configured: false, machines: [] });
@@ -590,7 +579,7 @@ test("the hub's own sources read a fresh hub as nothing set up", async () => {
   d.health = async () => ({ ok: true });
   d.runCmd = async () => ({ ran: false, error: "ENOENT" });
   const results = await d.list(false);
-  expect(results.checks.map((x) => x.id)).toEqual(["hub/reachable", "hub/gh_auth", "hub/https", "hub/repo_ci", "hub/claude_key", "hub/claude_owner"]);
+  expect(results.checks.map((x) => x.id)).toEqual(["hub/reachable", "hub/gh_auth", "hub/https", "hub/claude_key", "hub/claude_owner"]);
   expect(results.checks[1]!.status).toBe("fail");
 });
 

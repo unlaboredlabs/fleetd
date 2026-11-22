@@ -22,7 +22,7 @@ const inspect = (repo: string | null, ci: boolean): JsonObject => ({
   defaultBranch: "main",
   ci: ci ? { workflows: ["ci", "e2e"], requiredChecks: ["ci"] } : { workflows: [], requiredChecks: [] },
   merge: ci ? { protected: true, rulesets: ["main"], squashAllowed: true, requiredReviews: 1, strict: true } : { protected: false, rulesets: [], squashAllowed: true },
-  leadNeeds: ci ? "CI runs on pull requests; the merge train waits for ci" : "no CI found: the merge train holds its PRs until the repo has CI",
+  leadNeeds: ci ? "CI runs on pull requests; the merge train waits for ci" : "no CI found: the merge train merges its PRs on their review alone until the repo has CI",
   notes: [],
 });
 

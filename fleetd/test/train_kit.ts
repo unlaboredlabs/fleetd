@@ -91,6 +91,8 @@ export class FakeGh implements GhRunner {
   ruleMethods?: string[];
   /** What GitHub doesn't show the train: `classic` (branch protection) and `decision` (a PR's reviews), refused; `methods`, the repo's merge methods, left out of its answer. */
   unreadable: string[] = [];
+  /** The commit statuses only main's commits have, [context, state], as a provider that reports on the default branch alone. */
+  mainProvider: [string, string][] = [];
   /** When set, the commit statuses every head has, [context, state], as another CI provider reports them. */
   provider?: (sha: string) => [string, string][];
   /** Scripted answers to the next merge calls, before the fake merges for real. */
@@ -439,6 +441,10 @@ export class FakeGh implements GhRunner {
       const committed = (sha: string) => ({ sha: git(this.origin, ["rev-parse", sha]), commit: { committer: { date: git(this.origin, ["log", "-1", "--format=%cI", sha]) } } });
       return ok({ base_commit: committed(from), merge_base_commit: { ...committed(base), sha: base }, total_commits: list.length, commits: list, files: [] });
     }
+    if (a === "commits" && parts.length === 1 && method === "GET") {
+      const shas = git(this.origin, ["log", "--format=%H", `-${q("per_page") ?? "30"}`, q("sha") ?? "main"]).split("\n");
+      return ok(shas.map((sha) => ({ sha })));
+    }
     if (a === "commits" && c === "check-runs") {
       if (this.runs) {
         // GitHub names the commit each run is on, as main's CI read takes it.
@@ -453,7 +459,8 @@ export class FakeGh implements GhRunner {
     }
     if (a === "commits" && c === "status") {
       const own = this.statuses.filter(([s]) => s === b).map(([, context, state]) => ({ context, state }));
-      const theirs = (this.provider?.(b!) ?? []).map(([context, state]) => ({ context, state, target_url: `https://ci.example.invalid/${context}` }));
+      const onMain = this.mainProvider.length > 0 && git(this.origin, ["log", "--format=%H", "main"]).split("\n").includes(b!);
+      const theirs = [...(this.provider?.(b!) ?? []), ...(onMain ? this.mainProvider : [])].map(([context, state]) => ({ context, state, target_url: `https://ci.example.invalid/${context}` }));
       return ok({ statuses: [...own, ...theirs] });
     }
     if (a === "commits" && parts.length === 2 && diff) return { exitCode: 0, stdout: `${git(this.origin, ["diff", `${b}^`, b!])}\n`, stderr: "" };
@@ -464,6 +471,7 @@ export class FakeGh implements GhRunner {
       return ok({ state: fields.get("state") });
     }
     if (a === "actions" && b === "workflows") {
+      if (this.unreadable.includes("workflows")) return httpError(502, "Bad Gateway");
       return ok(
         this.noCi
           ? { total_count: 1, workflows: [{ name: "Dependabot Updates", path: "dynamic/dependabot/dependabot-updates", state: "active" }] }
@@ -543,6 +551,8 @@ export class FakeHost implements TrainHost {
   readonly sends: [string, string][] = [];
   readonly events: EventView[] = [];
   readonly wakes: string[] = [];
+  /** The lines the train posted in the project's chat. */
+  readonly told: string[] = [];
   readonly orders: [string, string][] = [];
   readonly branches = new Map<string, string>();
   /** The commands the train ran on a node, each its argv. */
@@ -620,6 +630,9 @@ export class FakeHost implements TrainHost {
   }
   async wakeLead(_r: ProjectRef, line: string) {
     this.wakes.push(line);
+  }
+  tellPerson(_r: ProjectRef, text: string) {
+    this.told.push(text);
   }
   async branchPrefix() {
     return "fleetd/";

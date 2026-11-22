@@ -9,7 +9,7 @@
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
 import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared/contracts.ts";
 import * as batch from "./batch.ts";
-import { prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
+import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
 import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
 import { limitNote, limitText } from "./budget.ts";
@@ -170,6 +170,8 @@ export function defaultOptions(signal?: AbortSignal): TrainOptions {
 const RULE_HELD = "; fleetd can't satisfy this rule, and never goes around one";
 
 const CI_CONFIG_TTL_MS = 10 * 60_000;
+/** The default branch's commits `hasCi` looks at for CI of any provider. */
+const CI_HISTORY = 10;
 /** The error code of a task result's PR that already merged: nothing to enqueue, and nothing to tell the lead. */
 const MERGED = "merged";
 const CI_FIRST_WAIT_MS = 2000;
@@ -257,6 +259,8 @@ export class Train {
   readonly staleHeads = new Map<string, StaleHead>();
   /** Each repo and base branch's CI config and rules, and when they were read. */
   readonly ciConfigs = new Map<string, [number, BaseConfig | Error]>();
+  /** Per repo, when the train last read whether CI reported on its default branch's recent commits, and whether it did. */
+  readonly ciHistory = new Map<string, [number, boolean]>();
   /** The bases a merge was refused on for a missing approval: they require one, whatever their rules read. */
   readonly approvalBases = new Set<string>();
   /** Per ready Change, GitHub's answer on its reviews: when it was read, at which head, and the answer. */
@@ -346,6 +350,11 @@ export class Train {
 
   wakeLead(projectRef: ProjectRef, line: string): Promise<void> {
     return this.host.wakeLead(projectRef, line);
+  }
+
+  /** One line in the project's chat, from fleetd itself. */
+  tellPerson(projectRef: ProjectRef, text: string): void {
+    this.host.tellPerson?.(projectRef, text);
   }
 
   /** Applies `nextFn` to the stored Change if it is still in one of `from` (any state when undefined). */
@@ -971,25 +980,50 @@ export class Train {
     return over(start, this.options.ciQueueCeilingMs) ? { kind: "queued", count: runs.length } : undefined;
   }
 
-  /** The repos whose ready PRs wait because they have no CI, sorted. */
-  reposWithoutCi(): string[] {
-    return this.records
-      .trains()
-      .map((t) => t.repo)
-      .filter((repo) => this.records.inTrain(repo, ["ready"]).some((c) => c.lastError === batch.NO_CI))
-      .sort();
+  /**
+   * Whether PRs into `base` get CI: the repo has a workflow, `base` requires a check other than the train's own, or
+   * some CI reports, a check run or a commit status of any provider but the train, on one of `heads` (a PR's, earlier
+   * ones too) or on one of the default branch's last `CI_HISTORY` commits (the cloud's rule too). Throws while one of
+   * those can't be read.
+   */
+  async hasCi(repo: string, base: string, heads: string[] = []): Promise<boolean> {
+    const ci = await this.ciConfig(repo, base);
+    if (ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
+    for (const head of heads) if (await this.reported(repo, head)) return true;
+    const known = this.ciHistory.get(repo);
+    if (known && this.nowMs() - known[0] < CI_CONFIG_TTL_MS) return known[1];
+    const main = await this.github.defaultBranch(repo);
+    let seen = false;
+    for (const sha of await this.github.recentCommits(repo, main, CI_HISTORY)) if ((seen = await this.reported(repo, sha))) break;
+    this.ciHistory.set(repo, [this.nowMs(), seen]);
+    return seen;
+  }
+
+  /** Whether CI of any provider but the train reported on `sha`: a check run or a commit status. */
+  private async reported(repo: string, sha: string): Promise<boolean> {
+    if ((await this.github.checkRuns(repo, sha)).some((r) => r.name !== TRAIN_CONTEXT)) return true;
+    return (await this.github.statuses(repo, sha)).some((s) => s.context !== TRAIN_CONTEXT);
   }
 
   /**
-   * Whether PRs into `base` get CI: the repo has a workflow, `base` requires a check other than the train's own, or
-   * some CI already reports on `head`, a check run or a commit status of any provider.
+   * Whether PRs into `base` get no CI at all (`hasCi` turned over, with what reports on the Change's head and on each
+   * head it was reviewed at: CI that reports only on PRs, not yet on a fresh rebase, still counts): nothing will ever
+   * report on them, so each merges once its review approves it (D642). False while that can't be read: an unread repo
+   * is never taken for one with no CI. `fresh`: never on the base's rules as read up to `CI_CONFIG_TTL_MS` ago, for a
+   * merge with no CI, as the repo may just have gained some.
    */
-  async hasCi(repo: string, base: string, head?: string): Promise<boolean> {
-    const ci = await this.ciConfig(repo, base);
-    if (ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
-    if (head === undefined) return false;
-    if ((await this.github.checkRuns(repo, head)).length > 0) return true;
-    return (await this.github.statuses(repo, head)).some((s) => s.context !== TRAIN_CONTEXT);
+  async withoutCi(change: Change, base: string, fresh = false): Promise<boolean> {
+    const repo = change.repo;
+    const heads = [...new Set([change.headSha, ...change.reviews.map((r) => r.prHeadSha)].map((s) => s.toLowerCase()))];
+    try {
+      if (await this.hasCi(repo, base, heads)) return false;
+      if (!fresh) return true;
+      this.ciConfigs.delete(`${repo}\u0000${base}`);
+      this.ciHistory.delete(repo);
+      return !(await this.hasCi(repo, base, heads));
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -1265,7 +1299,12 @@ export class Train {
     const chain: batch.Stage[] = [{ pr: inCi.prNumber, sha: headSha, title: rebased.title, members: [{ change: inCi, pull: rebased }], added: 1, lone: true }];
     // No batch stacks behind it where each PR merges as itself.
     const stack = (await this.oneAtATime(repo, base)) === undefined ? batch.stacker(this, repo, base, chain) : undefined;
-    const outcome = (await this.watchCi(inCi, repo, headSha, base, lone, noted, undefined, stack)) ?? { kind: "timeout", stall: { kind: "running" } };
+    // A repo with no CI at all goes on its review alone. One whose checks exist but haven't started waits for them, its
+    // author and the lead told after `checksStartWaitMs` (`unstartedChecks`).
+    const noCi = await this.withoutCi(inCi, base, true);
+    const outcome: CiOutcome = noCi
+      ? { kind: "green" }
+      : ((await this.watchCi(inCi, repo, headSha, base, lone, noted, undefined, stack)) ?? { kind: "timeout", stall: { kind: "running" } });
     const failed =
       outcome.kind === "green"
         ? undefined
@@ -1288,17 +1327,17 @@ export class Train {
       else return this.toReview(current, this.reviewOverdue(current));
     }
     if (chain.length > 1) return batch.landChain(this, repo, base, chain, started);
-    await this.mergeAlone(this.records.get(inCi.changeId) ?? inCi, rebased, base);
+    await this.mergeAlone(this.records.get(inCi.changeId) ?? inCi, rebased, base, noCi);
   }
 
-  /** A Change in `ci` whose CI passed, reviewed clean, to merged alone. */
-  async mergeAlone(inCi: Change, rebased: Pull, base: string): Promise<void> {
+  /** A Change in `ci` whose CI passed, reviewed clean, to merged alone; `noCi`: in a repo with no CI, on its review alone. */
+  async mergeAlone(inCi: Change, rebased: Pull, base: string, noCi = false): Promise<void> {
     const repo = inCi.repo;
     const headSha = inCi.headSha;
     const noted = [inCi.changeId];
     const merging = this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }));
     if (!merging) return;
-    await this.github.postTrainStatus(repo, headSha, `${inCi.changeId}: rebased onto ${base}, CI green`);
+    await this.github.postTrainStatus(repo, headSha, `${inCi.changeId}: rebased onto ${base}, ${noCi ? "reviewed; the repo has no CI" : "CI green"}`);
     const method = (await this.rules(repo, base)).method;
     // The squash message GitHub would write by the repo's settings, with the Change's trailer added. A merge commit
     // carries the PR's title and the trailer; a rebase lands the PR's own commits as they are.
@@ -1318,6 +1357,7 @@ export class Train {
       if (out.kind === "merged") {
         watchMerge(this, repo, base, out.sha, merging.prUrl);
         await this.finishMerged(merging, out.sha);
+        if (noCi) this.tellPerson(merging.projectRef, noCiMerged(merging.prUrl, repo));
         return;
       }
       status = out.status;
