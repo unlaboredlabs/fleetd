@@ -47,8 +47,6 @@ When something is off, one line goes in the bot's chat, named for the watcher: "
 main at 09:50 UTC: https://github.com/…". The line comes once per change: the same failure seen again stays quiet
 until something about it changes.
 
-Watchers are for your own software. fleetd watches its own merge train, machines and spend itself, always on.
-
 ### Their cost
 
 Each watcher's row shows its last 24 hours: how many looks, how many spoke up, and what they cost, as Claude Code

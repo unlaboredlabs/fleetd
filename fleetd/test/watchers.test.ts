@@ -153,6 +153,10 @@ test("a look that finds a failed check posts one line with its evidence, opens n
   expect(done.workstreamId).toBeUndefined();
   expect(orders(hub)).toBe(0);
   expect(chatLines(hub)).toEqual([`Main's CI: ${done.said}`]);
+  // Its end is an automation.run event, so the apps read the row and its runs again.
+  const ran = events(hub).page(0, ["automation.run"]).events;
+  expect(ran.at(-1)?.data).toMatchObject({ runId: done.runId, state: "done", automationId: a.automationId });
+  expect(ran.at(-1)?.summary).toContain("spoke up: test (linux) failed");
   const listed = automations(hub).get(a.automationId)!;
   expect(listed.lastDay).toEqual({ runs: 1, spoke: 1, costUsd: 0.0123 });
 });
@@ -175,6 +179,7 @@ test("an OK answer posts nothing, and the same evidence again starts no session"
   expect(launched.length).toBe(1);
   const again = automations(hub).runs(a.automationId, 5)[0]!;
   expect(again).toMatchObject({ state: "done", why: "Nothing changed since its last look.", costUsd: 0 });
+  expect(events(hub).page(0, ["automation.run"]).events.at(-1)?.data).toMatchObject({ runId: again.runId, state: "done" });
   expect(automations(hub).get(a.automationId)!.lastDay).toEqual({ runs: 2, spoke: 0, costUsd: 0.0123 });
 });
 

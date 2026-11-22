@@ -20,6 +20,7 @@ import { mcpServers } from "../mcp_servers/index.ts";
 import { ended, nodeAccounts } from "../memory/refresh.ts";
 import { profiles } from "../projects/profiles.ts";
 import * as repos from "../repos/store.ts";
+import { clip } from "../leads/text.ts";
 import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { systemGh } from "../train/gh.ts";
@@ -237,7 +238,29 @@ export class Watchers {
     if (extra.why !== undefined) out.why = why(extra.why);
     if (extra.said !== undefined) out.said = extra.said;
     if (extra.costUsd !== undefined) out.costUsd = Math.round(extra.costUsd * 10_000) / 10_000;
-    return this.save(out);
+    const saved = this.save(out);
+    this.ended(saved);
+    return saved;
+  }
+
+  /** A look's end as automations' own `automation.run` event, so the apps read the watcher and its runs again. */
+  private ended(run: AutomationRun): void {
+    const a = this.automation(run.automationId);
+    if (!a) return;
+    const by = run.trigger === "schedule" ? "on schedule" : "by Run now";
+    const what = run.said !== undefined ? `spoke up: ${run.said}` : run.state === "failed" ? `failed: ${run.why ?? ""}` : (run.why ?? "nothing is off");
+    try {
+      events(this.hub).append({
+        at: isoMs(this.now()),
+        type: "automation.run",
+        machineId: a.projectRef.machineId,
+        projectId: a.projectRef.projectId,
+        summary: clip(`Automation “${a.name}” ran ${by}: ${what}`, 200),
+        data: { runId: run.runId, trigger: run.trigger, state: run.state, workstreamId: null, projectRef: a.projectRef, automationId: a.automationId },
+      });
+    } catch (error) {
+      console.error("watcher event not appended:", error);
+    }
   }
 
   /** The `seen` of the watcher's last look that finished (spoke or not), other than `runId`. */
