@@ -16,7 +16,7 @@ import type { Tailnet } from "../settings/Tailscale";
 import { TailscaleMark } from "./marks";
 import { draftOf, emptyDraft, isTailnetHost, nameOf, needsSignIn, pickedText, suggestedName, testLine, toggleBot, toInput, type Draft, type DraftValue, type Tested } from "./model";
 import { Problem, SignInDialog } from "./SignIn";
-import { requestOf } from "./signIn";
+import { requestOf } from "./signInModel";
 import c from "./connections.module.css";
 
 interface Bot {

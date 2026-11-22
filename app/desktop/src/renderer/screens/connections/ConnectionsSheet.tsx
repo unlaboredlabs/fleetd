@@ -39,7 +39,7 @@ import {
   type Tested,
 } from "./model";
 import { Problem, SignInDialog, words } from "./SignIn";
-import { requestOf } from "./signIn";
+import { requestOf } from "./signInModel";
 import c from "./connections.module.css";
 
 const noInput = {};

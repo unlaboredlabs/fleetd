@@ -11,7 +11,7 @@ import { Button, Dialog, Field, InlineCode, Input, Text } from "../../ui";
 import { CommandLine } from "../onboarding/Prose";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import type { Named } from "../settings/namedServers";
-import { hostOf, markOf, signInOutcome, type SignInMark } from "./signIn";
+import { hostOf, markOf, signInOutcome, type SignInMark } from "./signInModel";
 import c from "./connections.module.css";
 
 const open = (url: string): void => void window.fleetd.openExternal(url);

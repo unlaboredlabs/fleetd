@@ -28,12 +28,12 @@ const testsOf = (pick: (s: (typeof screens)[number]) => boolean) =>
   screens.filter(pick).flatMap((s) => s.fixtures.map((f) => `${label(s)} · ${f}`)).sort();
 
 // fleetd #1828: Paper's screens moved from the bot page to Settings › Vault, a change to registry.ts alone, and the
-// pre-push check picked none of them; they first ran, and failed, on CI.
-const paper = (s: (typeof screens)[number]) => /^integrations-paper(?:-connect)?$/u.test(s.variant ?? "");
+// pre-push check picked none of them; they first ran, and failed, on CI. The same holds for Connections' (D653).
+const paper = (s: (typeof screens)[number]) => s.id === "connections" && /^(?:oauth|own-client)$/u.test(s.variant ?? "");
 // The base has them on another page, and a fixture the move dropped.
 const moved = base((registry) =>
   registry
-    .replace(/(variant: "integrations-paper(?:-connect)?",\n\s*route: )"[^"]+"/gu, '$1"#/settings/projects?for=devbox/elsewhere"')
+    .replace(/(variant: "(?:oauth|own-client)",\n\s*route: )"[^"]+"/gu, '$1"#/settings/projects?for=devbox/elsewhere"')
     .replace("export const fixtures = [\n", 'export const fixtures = [\n  "integrations-paper-old",\n'),
 );
 

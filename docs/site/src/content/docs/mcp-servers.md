@@ -14,7 +14,7 @@ In Connections, click **+** beside **Custom MCP** (with none yet, **Add a custom
 
 | Field | Is |
 |---|---|
-| URL or Command | **URL**: an MCP server over HTTP (streamable HTTP, which also serves SSE). **Command**: a program each agent's claude starts on its machine, speaking MCP over stdin and stdout, typed as one line (`npx -y @acme/mcp-server --read-only`; quote an argument with spaces). |
+| URL or Command | **URL**: an MCP server over HTTP (streamable HTTP, which also serves SSE). **Command**: a program each agent's claude starts on its machine, speaking MCP over stdin and stdout, typed as one line (`acme-mcp --read-only`; quote an argument with spaces). |
 | Name | How agents see its tools: `mcp__<name>__<tool>`. Made from the URL's host or the command's package until you type one. Letters, digits, `_` and `-`; `fleetd` is taken by fleetd's own tools. |
 | Headers or Environment | Each a name and a value picked from the [vault](/docs/vault): a team login's password or a variable. `Authorization` takes **Bearer** before the value unless you pick **As is**. See [Secrets](#secrets). |
 | Bots | **Every bot** (bots made later too), or the ones you tick. Every agent of a bot that uses it gets it, its lead included. |

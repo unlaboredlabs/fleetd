@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostOf, markOf, requestOf, signInOutcome } from "./signIn";
+import { hostOf, markOf, requestOf, signInOutcome } from "./signInModel";
 
 describe("a sign-in to an MCP server", () => {
   it("follows a sign-in in the browser until the hub has moved on from where it was opened", () => {

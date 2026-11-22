@@ -10,7 +10,8 @@ import { selectMachines } from "../../src/data/selectors";
 import { Dot, MenuItem } from "../../ui";
 import { useHubState } from "./hubFeed";
 import { useServes, useSettledAdministers } from "../admin/role";
-import { OPTIONS, openOption } from "../settings";
+import { revealNext } from "../settings/reveal";
+import { tabHref } from "../settings/route";
 import { useQuiet, useUpdateAct } from "../updates";
 import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
@@ -24,7 +25,14 @@ import { RUNNER_ID } from "../../../shared/providers";
 
 const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
 
-const HUB_OPTION = OPTIONS.find((o) => o.key === "hubs.hub");
+/**
+ * Hubs & devices at this hub's row, as Settings search opens its "Hub" option: by its reveal key and the page's link,
+ * not the search's list of every option, which the first load doesn't carry.
+ */
+const openHubRow = (key: string): void => {
+  revealNext(key);
+  window.location.hash = tabHref("hubs");
+};
 
 const noInput = {};
 
@@ -155,7 +163,7 @@ export function HubLines() {
       navigate({ id: "settings", tab: "hub.machines", at: self.id, machine: RUNNER_ID });
       if (does.retry !== undefined) void layer.call("sandbox_test", { provider: does.retry }, { timeoutMs: 60_000 });
     } else if (does.to === "machines") navigate({ id: "settings", tab: "hub.machines", at: self.id, ...(does.machineId === undefined ? {} : { machine: does.machineId }) });
-    else if (HUB_OPTION !== undefined) openOption(several ? { ...HUB_OPTION, key: `hubs.${self.id}` } : HUB_OPTION);
+    else openHubRow(several ? `hubs.${self.id}` : "hubs.hub");
   };
   return (
     <>
