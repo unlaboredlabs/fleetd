@@ -48,7 +48,8 @@ test("every download into an image is checked against its pinned SHA-256, and ap
   const hostedText = hosted(DOCKERFILE, { claude: TESTED });
   for (const text of [DOCKERFILE, hostedText]) {
     const flat = text.replace(/\\\n/gu, " ");
-    const fetched = [...flat.matchAll(/curl [^&]*?-o (\S+)/gu)].map((m) => m[1]!);
+    // The hosted recipe quotes each path (sandbox/providers/recipe.ts `word`); its checksum line names it bare.
+    const fetched = [...flat.matchAll(/curl [^&]*?-o (\S+)/gu)].map((m) => m[1]!.replace(/^'(.*)'$/u, "$1"));
     expect(fetched.length).toBeGreaterThan(0);
     for (const file of fetched) expect(flat).toMatch(new RegExp(`[0-9a-f]{64}  ${file.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u"));
     // Nothing installed by a registry's or an installer's own latest word.

@@ -16,7 +16,7 @@
 import { badKey, type Box, type BuildOptions, type ClientOptions, type CreateOptions, DEFAULT_SIZE, LABEL, labelsFor, type Provider, notOffered, type ProviderAuth, sameSize, type Saved, SECRET_HEADER, type Size, type StartOptions } from "./common.ts";
 import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
-import { envFile, envPath, launcher, shq } from "./shell.ts";
+import { envFile, envPath, launcher, noQuery, shq } from "./shell.ts";
 import { dial } from "./stream.ts";
 
 /** Its name in every message: NAMES.boat (shared/sandbox.ts). */
@@ -99,8 +99,9 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     for (const k of hosted.keys()) if (k.startsWith(`${id}:`)) hosted.delete(k);
   }
 
-  /** Runs `command` detached; with `wait`, until it ends (at most STEP_MS), failing on a non-zero exit. */
-  async function run(id: string, command: string, wait: boolean, signal?: AbortSignal): Promise<void> {
+  /** Runs `command` detached; with `wait`, until it ends (at most STEP_MS), failing on a non-zero exit, its error
+   * naming `step` (a recipe step's start) and the output's end, each without a URL's query (a signed link's). */
+  async function run(id: string, command: string, wait: boolean, signal?: AbortSignal, step?: string): Promise<void> {
     const started = await onBox("POST", `${box(id)}/commands`, { body: { command, detached: true }, signal });
     if (!wait) return;
     const pid = started.body?.processId;
@@ -111,8 +112,8 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       const st = await http.call("GET", `${box(id)}/commands/${pid}`, { query: { tailBytes: "2000" }, signal });
       if (st.body?.running) continue;
       if (st.body?.exitCode === 0) return;
-      const tail = String(st.body?.stderr || st.body?.stdout || "").trim().split("\n").slice(-3).join(" / ");
-      throw new ProviderError("failed", `a step failed in boat.dev's build box (exit ${st.body?.exitCode ?? st.body?.status}): ${tail.slice(0, 300)}`);
+      const tail = noQuery(String(st.body?.stderr || st.body?.stdout || "").trim().split("\n").slice(-3).join(" / "));
+      throw new ProviderError("failed", `a step failed in boat.dev's build box (exit ${st.body?.exitCode ?? st.body?.status})${step ? `, ${step}` : ""}: ${tail.slice(0, 300)}`);
     }
   }
 
@@ -275,10 +276,11 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           else if (step.op === "WORKDIR") cwd = step.args[0]!;
           else if (step.op === "USER") user = step.args[0]!;
           else {
-            b.onLog?.(`RUN ${step.args[0]!.slice(0, 120)}`);
+            const said = `RUN ${noQuery(step.args[0]!).slice(0, 120)}`;
+            b.onLog?.(said);
             const exports = env.map(([k, v]) => `export ${k}=${shq(v)}; `).join("");
             const script = `${exports}mkdir -p ${shq(cwd)} && cd ${shq(cwd)} && ${step.args[0]}`;
-            await run(id, `sudo -H -u ${shq(user)} bash -c ${shq(`set -e; ${script}`)}`, true, b.signal);
+            await run(id, `sudo -H -u ${shq(user)} bash -c ${shq(`set -e; ${script}`)}`, true, b.signal, said);
           }
         }
         if (env.length > 0) {

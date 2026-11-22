@@ -9,12 +9,14 @@ const bin = dir + "/fleetd";
 const log = (m) => appendFileSync(dir + "/boot.log", new Date().toISOString() + " " + m + "\n");
 let want = null, parts = [], got = 0, done = false;
 const sha256 = (bytes) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-function finish(ws, bytes) {
+// A log line or error leaves out any URL's query: a signed link's signature is in it.
+const noQuery = (t) => String(t).replace(/(https?:\/\/[^\s?#]*)[?#]\S*/g, "$1?…");
+function finish(ws, bytes, way) {
   const sha = sha256(bytes);
   if (sha !== want.sha256) throw new Error("fleetd's SHA-256 is " + sha + ", not " + want.sha256);
   writeFileSync(bin + ".part", bytes, { mode: 0o755 });
   renameSync(bin + ".part", bin);
-  run(ws);
+  run(ws, way);
 }
 // The template's own fleetd, when it is the very build the node asks for: started where it is, with nothing fetched.
 function baked(ws) {
@@ -26,12 +28,12 @@ function baked(ws) {
   rmSync(bin, { force: true });
   symlinkSync(at, bin);
   log("the template's fleetd is the node's");
-  run(ws);
+  run(ws, "template");
   return true;
 }
-function run(ws) {
+function run(ws, way) {
   done = true;
-  ws.send(JSON.stringify({ ok: true }));
+  ws.send(JSON.stringify({ ok: true, way }));
   setTimeout(() => {
     server.stop(true);
     log("starting the guest");
@@ -57,20 +59,23 @@ const server = Bun.serve({
           want = JSON.parse(m); parts = []; got = 0;
           if (baked(ws)) return;
           if (want.url) {
-            log("fetching fleetd");
-            const r = await fetch(want.url);
-            if (!r.ok) throw new Error("fetching fleetd answered HTTP " + r.status);
-            finish(ws, new Uint8Array(await r.arrayBuffer()));
+            let host = "an address that isn't a URL";
+            try { host = new URL(want.url).host; } catch {}
+            log("fetching fleetd from " + host);
+            let r;
+            try { r = await fetch(want.url); } catch (e) { throw new Error("fetching fleetd from " + host + " failed: " + noQuery(e && e.message || e)); }
+            if (!r.ok) throw new Error("fetching fleetd from " + host + " answered HTTP " + r.status);
+            finish(ws, new Uint8Array(await r.arrayBuffer()), "address");
           }
           return;
         }
         parts.push(new Uint8Array(m)); got += m.length;
         if (got < want.size) return;
         const all = Buffer.concat(parts); parts = [];
-        finish(ws, want.gzip ? Bun.gunzipSync(all) : all);
+        finish(ws, want.gzip ? Bun.gunzipSync(all) : all, "link");
       } catch (e) {
-        log(String(e && e.message || e));
-        ws.send(JSON.stringify({ error: String(e && e.message || e) }));
+        log(noQuery(e && e.message || e));
+        ws.send(JSON.stringify({ error: noQuery(e && e.message || e) }));
       }
     },
   },

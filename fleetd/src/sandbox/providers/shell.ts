@@ -5,6 +5,10 @@
 /** `s` quoted for sh. */
 export const shq = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 
+/** `text` for a log line or an error: every URL's query and fragment left out, so a signed link's signature never
+ * reaches one. */
+export const noQuery = (text: string) => text.replace(/(https?:\/\/[^\s?#]*)[?#]\S*/g, "$1?…");
+
 /** Why `name` can't be an environment variable's name, or undefined. */
 export const badName = (name: string) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? undefined : `${JSON.stringify(name)} is not a variable name`);
 
