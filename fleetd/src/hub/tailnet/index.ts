@@ -20,7 +20,7 @@ import { store } from "../store/hub_store.ts";
 export const NOT_RUNNING =
   "Tailscale isn't running on the hub's computer. Install Tailscale there and sign in to your tailnet, then Connect";
 
-/** How the hub reads its computer's Tailscale; a test sets its own (`hub.area("tailnet.host", …)` first). */
+/** How the hub reads its computer's Tailscale; a test makes the `tailnet.host` area first with its own. */
 export type HostTailscale = () => Promise<LocalTailscale>;
 const host = (hub: Hub) => hub.area<HostTailscale>("tailnet.host", () => localTailscale);
 
