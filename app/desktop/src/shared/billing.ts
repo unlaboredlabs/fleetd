@@ -259,6 +259,12 @@ export const usedWord = (state: BillingState): string => {
   return state.plan === null ? used : `${used} of ${money(state.plan.creditsCents, state.currency)} included`;
 };
 
+/**
+ * Why fleetd's computers run nothing now, where they are listed (Machines): the page's own top line for its reason
+ * (the cap reached, no credits, a declined card), so the fix said is the one that holds.
+ */
+export const heldLine = (state: BillingState): string => topLine(state)?.message ?? "Nothing runs on fleetd's computers right now: Billing says why.";
+
 /** The cap's quiet line: this month's spend against it. */
 export const capLine = (state: BillingState): string | null =>
   state.credits.capCents === null ? null : `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;

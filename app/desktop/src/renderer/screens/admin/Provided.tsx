@@ -6,7 +6,7 @@
 import { Timer } from "lucide-react";
 import { useMemo } from "react";
 import type { ProjectSummary } from "../../../shared/contracts";
-import { periodWord, sizeWord, usedWord } from "../../../shared/billing";
+import { heldLine, periodWord, sizeWord, usedWord } from "../../../shared/billing";
 import { atOnceWord, computerStateWord, RUNNER_ID } from "../../../shared/providers";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
@@ -53,7 +53,7 @@ export function ProvidedComputers() {
             </Button>
           }
         >
-          Nothing runs until the team has credits or a plan.
+          {heldLine(billing)}
         </GroupNote>
       ) : null}
       <SettingsList label="fleetd's computers">

@@ -14,7 +14,7 @@ import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { useEffect } from "react";
 import { ActionSheetIOS, Alert, Linking, Platform, RefreshControl, ScrollView } from "react-native";
 import type { MachineRolesOutput, ProjectSummary, SandboxState, TailnetState } from "../../../desktop/src/shared/contracts";
-import { billingOn, readTeamBilling, sizeWord, usedWord } from "../billing";
+import { billingOn, heldLine, readTeamBilling, sizeWord, usedWord } from "../billing";
 import { useHub, type SettingsParams } from "../hubContext";
 import {
   atOnceWord,
@@ -239,7 +239,7 @@ export function Machines() {
           {atOnce === undefined ? null : (
             <ListRow
               title="At Once"
-              {...(atOnce === null ? { value: "None until the team has credits", valueColor: t.danger, onPress: () => navigation.navigate("Billing") } : { value: atOnce.replace(/ at once$/u, ""), chevron: false })}
+              {...(atOnce === null ? { value: "None", detail: heldLine(bill), valueColor: t.danger, onPress: () => navigation.navigate("Billing") } : { value: atOnce.replace(/ at once$/u, ""), chevron: false })}
             />
           )}
           <ListRow title="Computer Time" value={usedWord(bill)} onPress={() => navigation.navigate("Billing")} />

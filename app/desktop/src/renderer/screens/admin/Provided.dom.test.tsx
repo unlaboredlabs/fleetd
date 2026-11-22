@@ -240,12 +240,26 @@ it("lists each bot on fleetd's computers, asleep or awake with its agents and th
   expect(window.location.hash).toBe("#/settings/projects?for=hosted/p2");
 });
 
-it("says nothing runs while the team's credits or cap hold fleetd's computers, with the way to Billing", async () => {
+it("says why nothing runs while fleetd's computers are held, in Billing's words for that reason, with the way to Billing", async () => {
   snap.slots = { ...snap.slots, hosted: [{ provider: "boat", limit: 0, running: 0 }] };
   sandbox = provided("boat", 0, 0);
+  const read = (sample: unknown): BillingState => {
+    const b = readBilling(sample);
+    if (b === null) throw new Error("sample doesn't read");
+    return b;
+  };
+  // The month's spend cap reached, with a plan and credits: raise the cap, never "get credits".
+  billing = read(BILLING_SAMPLES.cap);
   await render();
-  expect(section()?.textContent).toContain("Nothing runs until the team has credits or a plan.");
+  expect(section()?.textContent).toContain("spend cap");
+  expect(section()?.textContent).not.toContain("credits");
   expect(section()?.querySelector("[data-provided-at-once]")).toBeNull();
+  act(() => root.unmount());
+  root = createRoot(host);
+  // No plan and no credits: the service's own words and fix.
+  billing = read(BILLING_SAMPLES.none);
+  await render();
+  expect(section()?.textContent).toContain("This team has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
 });
 
 it("on a cloud that doesn't answer the pick yet, still says agents run on fleetd's computers", async () => {
