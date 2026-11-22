@@ -62,6 +62,7 @@ export const SESSION_CALLS = [
   "signins_forget",
   "order_env_drop",
   "claude_account_secret",
+  "gemini_key",
   "claude_account_reseal",
   "claude_account_test",
   "one_password_token",

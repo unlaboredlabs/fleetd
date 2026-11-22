@@ -195,7 +195,8 @@ An admin has **Providers** under Machines in Settings, as the desktop app's Sett
 provider with how it is connected and the models it offers. **Anthropic** opens the hub's API key in a secure field,
 sealed on the phone to every machine, and its endpoint, Anthropic's own filled in. **Save and Test** saves and tries it
 at once; Test and Remove are there once it is set. **Google** lists each machine agents run on with **Sign In with
-Google**, which opens Google's page; paste the code it shows. Under it, the bots whose Vault holds a Gemini key.
+Google**, which opens Google's page; paste the code it shows. Under it, the team's **Gemini API Key** in a secure
+field, sealed on the phone to every machine, with its endpoint, and the bots whose Vault holds a key of their own.
 
 A bot's **Lead Model** lists its profiles under their provider, and for an admin each Gemini model no profile runs on
 yet: tapping one makes a profile on it and starts the lead on it. While its lead runs on Google and Google isn't

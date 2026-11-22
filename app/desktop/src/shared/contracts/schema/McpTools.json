@@ -887,6 +887,10 @@
         "next": {
           "type": "string"
         },
+        "teamKey": {
+          "$ref": "#/$defs/GeminiKey",
+          "description": "The team's Gemini key, once an admin saved one (gemini_key_set): agents on Google without a bot's own run on it."
+        },
         "truncated": {
           "type": "boolean"
         }
@@ -7361,6 +7365,97 @@
       ],
       "type": "object"
     },
+    "GeminiKey": {
+      "description": "The team's Gemini API key as the hub keeps it (gemini_key_set): never the key, only where it is.",
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/ClaudeEndpoint",
+          "description": "A gateway of its own (GOOGLE_GEMINI_BASE_URL); absent: Google's own."
+        },
+        "sealedOn": {
+          "description": "Each machine whose node holds the key.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSealedOn"
+          },
+          "type": "array"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "updatedBy": {
+          "$ref": "#/$defs/PersonRef"
+        }
+      },
+      "required": [
+        "sealedOn",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "GeminiKeyRemoveInput": {
+      "type": "object"
+    },
+    "GeminiKeyRemoveOutput": {
+      "properties": {
+        "next": {
+          "type": "string"
+        },
+        "ok": {
+          "enum": [
+            true
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "GeminiKeySetInput": {
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/ClaudeEndpoint",
+          "description": "A gateway of its own (GOOGLE_GEMINI_BASE_URL); absent: Google's own."
+        },
+        "sealed": {
+          "default": [],
+          "description": "The key sealed to each machine agents run on; empty keeps the saved key, for an endpoint change alone.",
+          "items": {
+            "$ref": "#/$defs/ClaudeSeal"
+          },
+          "maxItems": 500,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "GeminiKeySetOutput": {
+      "properties": {
+        "geminiKey": {
+          "$ref": "#/$defs/GeminiKey"
+        },
+        "missingOn": {
+          "description": "Machines whose node doesn't hold the key (offline when it was saved): save it again while they are online.",
+          "items": {
+            "$ref": "#/$defs/MachineId"
+          },
+          "type": "array"
+        },
+        "next": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "geminiKey"
+      ],
+      "type": "object"
+    },
     "GitHost": {
       "description": "Where a repo's merges are read from.",
       "oneOf": [
@@ -11921,6 +12016,18 @@
         "fleetd_status.output": {
           "$ref": "#/$defs/FleetdStatusOutput"
         },
+        "gemini_key_remove.input": {
+          "$ref": "#/$defs/GeminiKeyRemoveInput"
+        },
+        "gemini_key_remove.output": {
+          "$ref": "#/$defs/GeminiKeyRemoveOutput"
+        },
+        "gemini_key_set.input": {
+          "$ref": "#/$defs/GeminiKeySetInput"
+        },
+        "gemini_key_set.output": {
+          "$ref": "#/$defs/GeminiKeySetOutput"
+        },
         "github_app_create.input": {
           "$ref": "#/$defs/GithubAppCreateInput"
         },
@@ -12993,6 +13100,10 @@
         "events_wait.output",
         "fleetd_status.input",
         "fleetd_status.output",
+        "gemini_key_remove.input",
+        "gemini_key_remove.output",
+        "gemini_key_set.input",
+        "gemini_key_set.output",
         "github_app_create.input",
         "github_app_create.output",
         "github_app_get.input",

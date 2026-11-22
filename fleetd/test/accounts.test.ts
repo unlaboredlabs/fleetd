@@ -106,6 +106,7 @@ class FakeLink implements Link {
   answer: (m: string, call: Record<string, unknown>) => Record<string, unknown> = (_m, call) => {
     switch (call.op) {
       case "claude_account_secret":
+      case "gemini_key":
       case "onepassword_token":
         return call.set || call.sealed ? { kind: "saved", fingerprint: "ab12cd34" } : { kind: "saved" };
       case "claude_account_test":
@@ -193,6 +194,28 @@ test("only admins set the hub's API, and its key reaches the nodes sealed, never
   await call(ann, "claude_hub_api_remove", {});
   expect(link.calls.at(-1)).toEqual(["lab", { op: "claude_account_secret", account: { kind: "hub" } }]);
   expect(hub.db.all("SELECT * FROM claude_accounts")).toEqual([]);
+});
+
+test("only admins set the team's Gemini key: it reaches the nodes that can keep it sealed, and is no Claude subscription", async () => {
+  const { hub, link, call, ann, bob } = setup();
+  await expect(call(bob, "gemini_key_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({ code: "forbidden" });
+  await expect(call(ann, "gemini_key_set", {})).rejects.toMatchObject({ message: "The team has no Gemini key to keep." });
+  // A node too old to keep it takes none.
+  await expect(call(ann, "gemini_key_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({ code: "failed", message: expect.stringContaining("too old to keep the team's Gemini key") });
+  link.caps.add("gemini_key");
+  const out = await call(ann, "gemini_key_set", { sealed: [{ machineId: "lab", sealed: SEALED }], endpoint: "https://gw.example/v1" });
+  expect(out.geminiKey).toEqual({ endpoint: "https://gw.example/v1", sealedOn: [{ machineId: "lab", fingerprint: "ab12cd34" }], updatedAt: "2026-11-08T10:00:00.000Z", updatedBy: expect.objectContaining({ personId: "p_aaaaaaaa" }) });
+  expect(out.missingOn).toEqual(["mac"]);
+  expect(link.calls.at(-1)).toEqual(["lab", { op: "gemini_key", set: { sealed: SEALED, endpoint: "https://gw.example/v1" } }]);
+  expect(JSON.stringify(hub.db.all("SELECT * FROM claude_accounts"))).not.toContain(SEALED);
+  // Nobody's Claude: it is neither a subscription nor what leads run on.
+  const got = await call(ann, "claude_accounts_get", {});
+  expect(got.leadsRunOn).toEqual({ kind: "machine_login" });
+  expect((got.people as { subscription?: unknown }[]).every((p) => p.subscription === undefined)).toBe(true);
+  expect(accounts(hub).geminiKey()?.sealedOn).toEqual([{ machineId: "lab", fingerprint: "ab12cd34" }]);
+  await call(ann, "gemini_key_remove", {});
+  expect(link.calls.at(-1)).toEqual(["lab", { op: "gemini_key" }]);
+  expect(accounts(hub).geminiKey()).toBeUndefined();
 });
 
 test("a removed machine neither holds an account nor stands as its last Test, in Settings or the doctor", async () => {

@@ -194,6 +194,7 @@ const ON_MACHINE: ReadonlyArray<readonly [tool: string, input: (ids: Ids, tool: 
 /** Tools a run with no machine and one hub can't call at all, by why (reads among them). */
 const NOT_HERE: Readonly<Record<string, string>> = {
   claude_hub_api_set: "not called: it seals the key to each machine, which takes it only while online, and no node joins",
+  gemini_key_set: "not called: it seals the key to each machine, which takes it only while online, and no node joins",
   claude_account_test:
     "not called: a machine holding the account tests it, and no node joins, so no machine holds one (claude_hub_api_set and claude_subscription_set keep a secret only on a machine online)",
   onepassword_test: "not called: a machine holding the 1Password token tests it, and no node joins, so no machine holds one",

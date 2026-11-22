@@ -570,6 +570,8 @@ export type AntigravityStatusOutput = {
   /** Each machine agents run on that signs Antigravity in from the app (machine_antigravity_login). */
   machines: AntigravityMachine[];
   next?: string;
+  /** The team's Gemini key, once an admin saved one (gemini_key_set): agents on Google without a bot's own run on it. */
+  teamKey?: GeminiKey;
   truncated?: boolean;
 };
 
@@ -3083,6 +3085,39 @@ export type GatedRunSpec = {
 /** Where a repo's merges are read from. */
 export type KnownGitHost = "github" | "gitlab" | "gitea" | "bitbucket" | "azure_devops" | "git";
 /** KnownGitHost, or a value from a newer hub. */
+/** The team's Gemini API key as the hub keeps it (gemini_key_set): never the key, only where it is. */
+export type GeminiKey = {
+  /** A gateway of its own (GOOGLE_GEMINI_BASE_URL); absent: Google's own. */
+  endpoint?: ClaudeEndpoint;
+  /** Each machine whose node holds the key. */
+  sealedOn: ClaudeSealedOn[];
+  updatedAt: Timestamp;
+  updatedBy?: PersonRef;
+};
+
+export type GeminiKeyRemoveInput = { [key: string]: unknown };
+
+export type GeminiKeyRemoveOutput = {
+  next?: string;
+  ok: true;
+  truncated?: boolean;
+};
+
+export type GeminiKeySetInput = {
+  /** A gateway of its own (GOOGLE_GEMINI_BASE_URL); absent: Google's own. */
+  endpoint?: ClaudeEndpoint;
+  /** The key sealed to each machine agents run on; empty keeps the saved key, for an endpoint change alone. */
+  sealed?: ClaudeSeal[];
+};
+
+export type GeminiKeySetOutput = {
+  geminiKey: GeminiKey;
+  /** Machines whose node doesn't hold the key (offline when it was saved): save it again while they are online. */
+  missingOn?: MachineId[];
+  next?: string;
+  truncated?: boolean;
+};
+
 export type GitHost = KnownGitHost | (string & {});
 
 /** A repository `gh repo list` returned, for the user or one of their orgs. */
@@ -10826,6 +10861,8 @@ export interface ToolMap {
   events_list: { input: EventsListInput; output: EventsListOutput };
   events_wait: { input: EventsWaitInput; output: EventsWaitOutput };
   fleetd_status: { input: FleetdStatusInput; output: FleetdStatusOutput };
+  gemini_key_remove: { input: GeminiKeyRemoveInput; output: GeminiKeyRemoveOutput };
+  gemini_key_set: { input: GeminiKeySetInput; output: GeminiKeySetOutput };
   github_app_create: { input: GithubAppCreateInput; output: GithubAppCreateOutput };
   github_app_get: { input: GithubAppGetInput; output: GithubAppGetOutput };
   github_app_manifest: { input: GithubAppManifestInput; output: GithubAppManifestOutput };

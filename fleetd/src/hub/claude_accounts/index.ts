@@ -5,6 +5,7 @@
 // At each launch the hub works out whose work it is (`whoseForTask`, `whoseForLead`) and what that runs on
 // (`Setup.runsOn`), sends the account in the launch and records it per thread (`thread_accounts`).
 import type {
+  GeminiKey,
   ClaudeAccount,
   ClaudeChoice,
   ClaudeHubApi,
@@ -31,6 +32,8 @@ export {
 } from "./setup.ts";
 
 const HUB = "hub";
+/** The team's Gemini key's row: no person id looks like it. */
+const GEMINI = "gemini";
 /** What each account keeps of the machines: where it is held, and its last Test. */
 type Held = { sealedOn: ClaudeSealedOn[]; lastTest?: ClaudeTest | null };
 const MEMBERS_USE_HUB_API = "members_use_hub_api";
@@ -73,6 +76,10 @@ export class ClaudeAccountStore {
 
   hubApi = () => this.get<ClaudeHubApi>(HUB);
   putHubApi = (api: ClaudeHubApi) => this.put(HUB, api);
+  /** The team's Gemini API key (gemini_key_set): kept as the hub's API key is, never the key, only where it is. */
+  geminiKey = () => this.get<GeminiKey>(GEMINI);
+  putGeminiKey = (key: GeminiKey) => this.put(GEMINI, key);
+  removeGeminiKey = () => this.remove(GEMINI);
   removeHubApi = () => this.remove(HUB);
   subscription = (person: string) => this.get<ClaudeSubscription>(person);
   putSubscription = (person: string, s: ClaudeSubscription) => this.put(person, s);
@@ -81,8 +88,8 @@ export class ClaudeAccountStore {
   /** Every connected subscription, by person. */
   subscriptions(): Map<string, ClaudeSubscription> {
     const rows = this.db.conn
-      .query<{ account: string; data: string }, [string]>("SELECT account, data FROM claude_accounts WHERE account != ?")
-      .all(HUB);
+      .query<{ account: string; data: string }, [string, string]>("SELECT account, data FROM claude_accounts WHERE account NOT IN (?, ?)")
+      .all(HUB, GEMINI);
     const out = new Map<string, ClaudeSubscription>();
     for (const r of rows.sort((a, b) => (a.account < b.account ? -1 : 1))) {
       const s = parse<ClaudeSubscription>(r.data);

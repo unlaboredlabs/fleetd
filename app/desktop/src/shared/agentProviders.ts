@@ -41,23 +41,28 @@ export function runsWords(models: ReadonlyArray<ProfileModel>, provider: AgentPr
 
 /**
  * Whether Google is connected for agents, from antigravity_status (undefined: a hub that doesn't serve it, or it
- * failed): "yes" once a machine is signed in or a bot holds a key (that bot's, with `project`); "no" when every machine
- * said it isn't and there is no key; "unknown" otherwise, where a sign-in is offered all the same (it says so at once
- * when it is).
+ * failed): "yes" once the team's key is saved, a machine is signed in or a bot holds a key (that bot's, with
+ * `project`); "no" when every machine said it isn't and there is no key; "unknown" otherwise, where a sign-in is offered
+ * all the same (it says so at once when it is).
  */
 export function googleConnected(status: AntigravityStatusOutput | undefined, project?: ProjectRef): "yes" | "no" | "unknown" {
   if (status === undefined) return "unknown";
   const keyed = status.keyIn.some((r) => project === undefined || (r.machineId === project.machineId && r.projectId === project.projectId));
-  if (keyed || status.machines.some((m) => m.signedIn !== undefined)) return "yes";
+  if (keyed || (status.teamKey?.sealedOn.length ?? 0) > 0 || status.machines.some((m) => m.signedIn !== undefined)) return "yes";
   return status.machines.every((m) => m.checked) ? "no" : "unknown";
 }
 
-/** How Google is connected, in a few words: "Signed in · Google AI Pro", "API key in 2 bots", both, or nothing. */
+/** How Google is connected, in a few words: "API key", "Signed in · Google AI Pro", "API key in 2 bots", some of them,
+ * or nothing. */
 export function googleWords(status: AntigravityStatusOutput | undefined): string | undefined {
   if (status === undefined) return undefined;
   const plan = status.machines.find((m) => m.signedIn !== undefined)?.signedIn;
   const keys = status.keyIn.length;
-  const parts = [plan === undefined ? null : `Signed in · ${plan}`, keys === 0 ? null : `API key in ${keys === 1 ? "1 bot" : `${keys} bots`}`];
+  const parts = [
+    status.teamKey === undefined ? null : "API key",
+    plan === undefined ? null : `Signed in · ${plan}`,
+    keys === 0 || status.teamKey !== undefined ? null : `API key in ${keys === 1 ? "1 bot" : `${keys} bots`}`,
+  ];
   const said = parts.filter((p) => p !== null).join(" · ");
   return said === "" ? undefined : said;
 }

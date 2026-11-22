@@ -1,5 +1,6 @@
 // Ports crates/fleetd/src/hub/machine_setup/tests.rs: the hub's Add machine runs `machine add` against a fake
 // machine (a Runner standing in for SSH), fake release builds and a fake node login, in a scratch home under $TMPDIR.
+import { accounts } from "../src/hub/claude_accounts/tools.ts";
 import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -427,6 +428,11 @@ test("antigravity_status says where Google is connected: each machine's sign-in,
   const again = await call("antigravity_status", {});
   expect(statusAsked.sort()).toEqual(["mac", "old"]);
   expect(again.machines.find((m: { machineId: string }) => m.machineId === "lab")).toEqual({ machineId: "lab", checked: true, signedIn: "Google AI Pro" });
+  // The team's Gemini key, once saved, says where it is held; never the key.
+  expect(again.teamKey).toBeUndefined();
+  const key = { sealedOn: [{ machineId: "lab", fingerprint: "ab12cd34" }], updatedAt: "2026-11-22T10:00:00.000Z" };
+  accounts(t.hub).putGeminiKey(key);
+  expect((await call("antigravity_status", {})).teamKey).toEqual(key);
 });
 
 test("a login on a machine the hub doesn't know, or with an empty code, asks nothing of a node", async () => {

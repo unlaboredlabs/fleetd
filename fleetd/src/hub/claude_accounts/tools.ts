@@ -282,9 +282,21 @@ const fingerprintOf = (out: Record<string, unknown>) => (typeof out.fingerprint 
  * Puts `account`'s secret on the machines: each of `seals`, or with none the value each machine in `before` already
  * holds, with `endpoint` as it is now. Every other machine in `before` forgets it.
  */
-async function relay(
+const relay = (hub: Hub, account: ClaudeAccount, seals: ClaudeSeal[], endpoint: string | undefined, before: ClaudeSealedOn[]) =>
+  relaySecret(hub, claudeSecret(account), seals, endpoint, before);
+
+/** One secret the nodes keep: the session call that keeps it (`set`) or forgets it (none), and which nodes can. */
+export type NodeSecret = { call: (set?: Record<string, unknown>) => { op: string } & Record<string, unknown>; ready: (hub: Hub, m: string) => void };
+
+const claudeSecret = (account: ClaudeAccount): NodeSecret => ({
+  call: (set) => ({ op: "claude_account_secret", account, ...(set === undefined ? {} : { set }) }),
+  ready: nodeReady,
+});
+
+/** relay for any secret the nodes keep (a Claude account, the team's Gemini key). */
+export async function relaySecret(
   hub: Hub,
-  account: ClaudeAccount,
+  secret: NodeSecret,
   seals: ClaudeSeal[],
   endpoint: string | undefined,
   before: ClaudeSealedOn[],
@@ -296,13 +308,13 @@ async function relay(
     seals.length === 0 ? before.map((s) => [s.machineId, on]) : seals.map((s) => [s.machineId, { sealed: s.sealed, ...on }]);
   for (const [m, set] of sends) {
     try {
-      nodeReady(hub, m);
+      secret.ready(hub, m);
     } catch (e) {
       problems.push((e as Error).message);
       continue;
     }
     try {
-      const fingerprint = fingerprintOf(await sessionCall(hub, m, { op: "claude_account_secret", account, set }));
+      const fingerprint = fingerprintOf(await sessionCall(hub, m, secret.call(set)));
       if (fingerprint !== undefined) held.push({ machineId: m, fingerprint });
       else problems.push(`${m} kept nothing.`);
     } catch (e) {
@@ -310,19 +322,27 @@ async function relay(
     }
   }
   const now = new Set(held.map((s) => s.machineId));
-  await forget(hub, account, before.map((s) => s.machineId).filter((m) => !now.has(m)));
+  await forgetSecret(hub, secret, before.map((s) => s.machineId).filter((m) => !now.has(m)));
   held.sort((a, b) => (a.machineId < b.machineId ? -1 : a.machineId > b.machineId ? 1 : 0));
   return [held, problems];
 }
 
 /** Each online node of `machines` forgets the account's secret. One offline keeps it unused. */
-export async function forget(hub: Hub, account: ClaudeAccount, machines: string[]): Promise<void> {
+export const forget = (hub: Hub, account: ClaudeAccount, machines: string[]): Promise<void> =>
+  forgetSecret(hub, claudeSecret(account), machines, `Claude account ${accountKey(account)}`);
+
+/** forget for any secret the nodes keep. */
+export async function forgetSecret(hub: Hub, secret: NodeSecret, machines: string[], what = "a secret"): Promise<void> {
   for (const m of machines) {
-    if (!readyOk(hub, m)) continue;
     try {
-      await sessionCall(hub, m, { op: "claude_account_secret", account });
+      secret.ready(hub, m);
+    } catch {
+      continue;
+    }
+    try {
+      await sessionCall(hub, m, secret.call());
     } catch (e) {
-      console.warn(`Claude account ${accountKey(account)} not forgotten on ${m}:`, (e as Error).message);
+      console.warn(`${what} not forgotten on ${m}:`, (e as Error).message);
     }
   }
 }

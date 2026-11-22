@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import nacl from "tweetnacl";
-import { boxesOf, claudeShown, endpointOk, endpointShown, endpointToSave, keyOf, keyWords, sealEach, tailnetLine } from "./claude";
+import { boxesOf, claudeShown, endpointOk, geminiKeyWords, endpointShown, endpointToSave, keyOf, keyWords, sealEach, tailnetLine } from "./claude";
 import { fromBase64, toBase64, utf8 } from "./bytes";
 import { keyPairOf, openSealed } from "./seal";
 
@@ -51,5 +51,12 @@ describe("the phone's Claude row", () => {
       footer: "Sealed on devbox, hosted sandboxes. Through http://100.104.249.49:8317.",
     });
     expect(keyWords({ sealedOn: [], updatedAt: "2026-11-19T00:00:00Z", lastTest: { at: "2026-11-19T00:00:00Z", machineId: "devbox", ok: false } }).value).toBe("Failed");
+  });
+
+  it("says where the team's Gemini key is sealed and through what, fleetd's computers by that name", () => {
+    expect(geminiKeyWords(undefined)).toEqual({ value: "Not Set" });
+    const key = { sealedOn: [{ machineId: "hosted", fingerprint: "ab" }, { machineId: "lab", fingerprint: "ab" }], updatedAt: "2026-11-22T10:00:00Z" };
+    expect(geminiKeyWords(key)).toEqual({ value: "Set", footer: "Sealed on fleetd's computers, lab." });
+    expect(geminiKeyWords({ ...key, sealedOn: [], endpoint: "https://gw.devbox.example" }).footer).toBe("On no machine yet. Through https://gw.devbox.example.");
   });
 });

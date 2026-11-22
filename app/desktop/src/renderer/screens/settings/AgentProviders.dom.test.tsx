@@ -34,9 +34,23 @@ let host: HTMLDivElement;
 let root: Root;
 let google: AntigravityStatusOutput;
 let calls: { tool: string; input: Record<string, unknown> }[];
+/** What the page handed main to seal: the team's Gemini key's requests. */
+let sealed: unknown[];
 
 beforeEach(() => {
-  vi.stubGlobal("fleetd", { platform: "linux", fixture: null });
+  sealed = [];
+  vi.stubGlobal("fleetd", {
+    platform: "linux",
+    fixture: null,
+    openExternal: () => undefined,
+    secret: {
+      claudeAccount: (_hub: string, request: unknown) => {
+        sealed.push(request);
+        google = { ...google, teamKey: { sealedOn: [{ machineId: "devbox", fingerprint: "ab12cd34" }], updatedAt: "2026-11-22T10:00:00.000Z" } };
+        return Promise.resolve({ ok: true, output: {} });
+      },
+    },
+  });
   google = { machines: [{ machineId: "devbox", checked: true }], keyIn: [] };
   calls = [];
   host = document.createElement("div");
@@ -58,6 +72,12 @@ const render = async () => {
       if (tool === "profiles_list") return Promise.resolve({ ok: true, output: { profiles: [], models: MODELS, modelsFrom: "builtin", efforts: ["high"] } });
       if (tool === "claude_accounts_get") return Promise.resolve({ ok: true, output: { hubApi: { sealedOn: [], updatedAt: "2026-11-22T10:00:00.000Z" }, leadsRunOn: { kind: "hub_api" }, settings: { membersUseHubApi: true }, people: [] } });
       if (tool === "antigravity_status") return Promise.resolve({ ok: true, output: google });
+      if (tool === "gemini_key_remove") {
+        calls.push({ tool, input });
+        const { teamKey: _gone, ...rest } = google;
+        google = rest;
+        return Promise.resolve({ ok: true, output: { ok: true } });
+      }
       if (tool === "machine_antigravity_login") {
         calls.push({ tool, input });
         return Promise.resolve({ ok: true, output: { machineId: "devbox", message: "sign in", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" } });
@@ -135,7 +155,7 @@ it("says how a connected Google is, and its setup lists each machine's sign-in a
   await click(button("Google"));
   const setup = host.querySelector("[data-provider-setup='google']");
   expect(setup?.querySelector("[data-machine='devbox']")?.textContent).toContain("Signed in · Google AI Pro");
-  expect(setup?.querySelector("[data-row='gemini-key']")?.textContent).toContain("storefront");
+  expect(setup?.querySelector("[data-row='gemini-bots']")?.textContent).toContain("storefront");
   // Nothing was asked of the machine: what antigravity_status said is shown.
   expect(calls).toEqual([]);
 });
@@ -144,4 +164,28 @@ it("opens Google's row when a link to its setup lands", async () => {
   revealNext(GOOGLE_REVEAL);
   await render();
   expect(host.querySelector("[data-provider-setup='google']")).not.toBeNull();
+});
+
+it("saves the team's Gemini key, sealed by main, and Google reads connected with it; Remove forgets it", async () => {
+  revealNext(GOOGLE_REVEAL);
+  await render();
+  await click(button("Add key…"));
+  const field = host.querySelector<HTMLInputElement>("input[aria-label='Gemini API key']");
+  if (field === null) throw new Error("no key field");
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "AIzaSy-team");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click(button("Save"));
+  expect(sealed).toEqual([{ account: "gemini", key: "AIzaSy-team", boxes: [] }]);
+  // Never through the hub's own calls in the clear.
+  expect(JSON.stringify(calls)).not.toContain("AIzaSy-team");
+  expect(rows()[1]).toMatch(/^GoogleAPI key/u);
+  expect(host.querySelector("[data-row='gemini-key']")?.textContent).toContain("Change");
+  await click(button("Remove"));
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>("[role='dialog'] button")].find((b) => b.textContent.trim() === "Remove");
+  if (confirm === undefined) throw new Error("no confirm");
+  await click(confirm);
+  expect(calls).toEqual([{ tool: "gemini_key_remove", input: {} }]);
+  expect(rows()[1]).toMatch(/^GoogleNot connected/u);
 });

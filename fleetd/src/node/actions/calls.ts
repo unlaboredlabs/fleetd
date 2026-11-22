@@ -14,7 +14,7 @@ import type { VaultImportCandidate, VaultImportError } from "../../shared/contra
 import type { VaultImportRead } from "../../shared/sessions.ts";
 import { homeDir, type Env } from "../util.ts";
 import type { NodeFrame } from "../wire.ts";
-import { applyAccount, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
+import { applyAccount, applyGeminiKey, BASE_URL_ENV, endpointSilent, envFor, hubModels, putOn, resealAccount, tryAccount, tryAccountApi } from "./accounts.ts";
 import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
@@ -54,6 +54,7 @@ export const OPS = [
   "mcp_test",
   "signins_forget",
   "claude_account_secret",
+  "gemini_key",
   "claude_account_reseal",
   "claude_account_test",
   "onepassword_token",
@@ -169,6 +170,10 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     case "claude_account_secret": {
       const fingerprint = asInvalid(() => applyAccount(home, call.account, call.set, ctx.boxKey));
       return { kind: "claude_account_saved", ...(fingerprint ? { fingerprint } : {}) };
+    }
+    case "gemini_key": {
+      const fingerprint = asInvalid(() => applyGeminiKey(home, call.set, ctx.boxKey));
+      return { kind: "gemini_key_saved", ...(fingerprint ? { fingerprint } : {}) };
     }
     case "claude_account_reseal": {
       const sealed = asInvalid(() => resealAccount(home, call.account, call.to));

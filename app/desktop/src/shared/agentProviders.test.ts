@@ -39,6 +39,10 @@ describe("agent providers", () => {
     // A bot's key is that bot's alone.
     expect(googleConnected(keyed, devbox)).toBe("yes");
     expect(googleConnected(keyed, { machineId: "devbox", projectId: "billing" })).toBe("no");
+    // The team's key is every bot's.
+    const team = { machines: [{ machineId: "devbox", checked: true }], keyIn: [], teamKey: { sealedOn: [{ machineId: "devbox", fingerprint: "ab12" }], updatedAt: "2026-11-22T10:00:00.000Z" } };
+    expect(googleConnected(team, { machineId: "devbox", projectId: "billing" })).toBe("yes");
+    expect(googleConnected({ ...team, teamKey: { ...team.teamKey, sealedOn: [] } })).toBe("no");
   });
 
   it("says how Google is connected in a few words", () => {
@@ -46,6 +50,7 @@ describe("agent providers", () => {
     expect(googleWords({ machines: [{ machineId: "devbox", checked: true }], keyIn: [] })).toBeUndefined();
     expect(googleWords({ machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }], keyIn: [devbox, devbox] })).toBe("Signed in · Google AI Pro · API key in 2 bots");
     expect(googleWords({ machines: [], keyIn: [devbox] })).toBe("API key in 1 bot");
+    expect(googleWords({ machines: [], keyIn: [devbox], teamKey: { sealedOn: [], updatedAt: "2026-11-22T10:00:00.000Z" } })).toBe("API key");
   });
 
   it("names a profile made from a model after it, past the names taken", () => {

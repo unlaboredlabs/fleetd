@@ -1,18 +1,17 @@
 // Settings › Hub › Providers (#/settings/hub/providers): what agents run on, one row per provider (shared/
 // agentProviders.ts), each with how it is connected beside its name, the models it offers under it, and its one action
 // at its end. A row opens its setup in its place: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
-// controls Setup's Claude step holds); Google's is a sign-in on each machine agents run on (GoogleSignIn.tsx) and the
-// bots whose Vault holds a Gemini key, with Add key, which opens a bot's Vault. A link to Google's setup (a model
+// controls Setup's Claude step holds); Google's is a sign-in on each machine agents run on (GoogleSignIn.tsx), the team's
+// Gemini API key, and the bots whose Vault holds a key of their own, which wins there. A link to Google's setup (a model
 // picker's Sign in with Google, a search) lands with Google's row open. Every row reads the same way: a provider fleetd
 // adds is one more entry in AGENT_PROVIDERS and its setup here.
 import { useState, type ReactNode } from "react";
 import type { Person, ProfileModel } from "../../../shared/contracts";
 import { AGENT_PROVIDERS, googleConnected, googleWords, runsWords, type AgentProvider, type AgentProviderId } from "../../../shared/agentProviders";
 import { useToolQuery } from "../../src/data/react";
-import { Button, Menu, MenuContent, MenuItem, MenuTrigger, Text } from "../../ui";
+import { Button, Text } from "../../ui";
 import { ClaudeAdmin } from "../admin/Claude";
-import { navigate } from "../shell/navigation";
-import { AntigravityRow, useGoogle, useMachineName } from "./GoogleSignIn";
+import { AntigravityRow, GeminiKeyRow, useGoogle, useMachineName } from "./GoogleSignIn";
 import { useLive } from "./hub";
 import { PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects, type Mark } from "./parts";
 import { useWanted } from "./reveal";
@@ -83,32 +82,15 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
         {google.machines.map((m) => (
           <AntigravityRow key={m.machineId} machineId={m.machineId} title={name(m.machineId)} signedIn={m.signedIn} autoStart={signing && unsigned.length === 1 && unsigned[0]?.machineId === m.machineId} />
         ))}
-        <SettingsRow
-          title="Gemini API key"
-          hint="A bot's agents on Google run on the GEMINI_API_KEY in its Vault, ahead of a sign-in."
-          line={
-            google.status === undefined || google.status.keyIn.length === 0
-              ? undefined
-              : google.status.keyIn.map((r) => projects?.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId).join(", ")
-          }
-          data={{ "data-row": "gemini-key" }}
-          control={
-            projects === undefined || projects.length === 0 ? undefined : (
-              <Menu>
-                <MenuTrigger asChild disabled={!live}>
-                  <Button size="sm">Add key…</Button>
-                </MenuTrigger>
-                <MenuContent align="end">
-                  {projects.map((p) => (
-                    <MenuItem key={`${p.machineId}/${p.projectId}`} onSelect={() => navigate({ id: "settings", tab: "project-vault", for: `${p.machineId}/${p.projectId}` })}>
-                      {`${p.title}'s Vault`}
-                    </MenuItem>
-                  ))}
-                </MenuContent>
-              </Menu>
-            )
-          }
-        />
+        <GeminiKeyRow status={google.status} />
+        {google.status === undefined || google.status.keyIn.length === 0 ? null : (
+          <SettingsRow
+            title="Bots with their own key"
+            hint="Their agents on Google run on the GEMINI_API_KEY in the bot's Vault instead of the team's."
+            line={google.status.keyIn.map((r) => projects?.find((p) => p.machineId === r.machineId && p.projectId === r.projectId)?.title ?? r.projectId).join(", ")}
+            data={{ "data-row": "gemini-bots" }}
+          />
+        )}
       </SettingsSection>
     );
 

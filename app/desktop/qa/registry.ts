@@ -4625,6 +4625,18 @@ export const screens: readonly Screen[] = [
       await page.getByRole("form", { name: "Sign in" }).waitFor();
     },
   },
+  // Google's row open on a hub with no team key yet, and Add key…: the key and its endpoint, sealed on Save.
+  {
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
+    fixtures: ["admin-owner"],
+    variant: "gemini-key",
+    open: async (page) => {
+      await page.locator("[data-provider='google'] button").first().click();
+      await page.getByRole("button", { name: "Add key…" }).click();
+      await page.getByRole("textbox", { name: "Gemini API key" }).waitFor();
+    },
+  },
   // A profile's editor on a Gemini model while Google isn't connected: Sign in with Google right under the model.
   {
     id: "settings.hub.profiles",
