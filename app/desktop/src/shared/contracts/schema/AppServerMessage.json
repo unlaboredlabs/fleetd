@@ -840,6 +840,10 @@
         },
         "ready": {
           "type": "boolean"
+        },
+        "sims": {
+          "$ref": "#/$defs/SimModels",
+          "description": "`ios` on the agents' Mac: the simulators a person may start there (`screen_open` kind ios), and its budget."
         }
       },
       "required": [
@@ -2545,6 +2549,107 @@
         }
       ],
       "x-open": true
+    },
+    "SimFamily": {
+      "description": "What kind of device a simulator model is.",
+      "enum": [
+        "iphone",
+        "ipad",
+        "foldable"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "SimModel": {
+      "description": "A simulator model the agents' Mac can start, from its Xcode's device types.",
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/SimFamily"
+        },
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "simctl's device type id: `com.apple.CoreSimulator.SimDeviceType.iPhone-17`."
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "\"iPhone 17\", \"iPhone Duo\"."
+        },
+        "runtimes": {
+          "description": "The OS versions it runs on that Mac, newest first.",
+          "items": {
+            "$ref": "#/$defs/SimRuntime"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "family",
+        "runtimes"
+      ],
+      "type": "object"
+    },
+    "SimModels": {
+      "description": "The agents' Mac's simulators for people: the models it offers, and how many of its budget are booted.",
+      "properties": {
+        "live": {
+          "description": "Simulators booted now, people's and agents'.",
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max": {
+          "description": "The most booted at once.",
+          "maximum": 64,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/SimModel"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "models",
+        "live",
+        "max"
+      ],
+      "type": "object"
+    },
+    "SimRuntime": {
+      "description": "An OS a simulator model runs.",
+      "properties": {
+        "id": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "simctl's runtime id: `com.apple.CoreSimulator.SimRuntime.iOS-27-2`."
+        },
+        "name": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "\"iOS 27.2\"."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
     },
     "SleptSpan": {
       "description": "A span a machine spent asleep, epoch milliseconds; `machine.slept` carries the same fields as its data.",
