@@ -6,7 +6,7 @@
 // reports, and says why where no agents' Mac is joined. The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -89,11 +89,6 @@ const heightOf = (el: Element) => {
 };
 const proto = HTMLElement.prototype;
 const realRect = proto.getBoundingClientRect.bind(proto);
-
-// The picker loads on first use (NewScreen.tsx): its module is read once here, so opening it renders at once.
-beforeAll(async () => {
-  await import("./NewScreenDialog");
-});
 
 beforeEach(() => {
   vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {

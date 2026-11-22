@@ -13,6 +13,7 @@
 // every ASK_EVERY. The row says how far it is until the screen is theirs, or why it failed.
 import type { BrowserSession, PersonRef, ProjectRef, ScreenControl, ScreenSim, SimModel } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 import { CAP_SCREEN_CONTROL, type MacResultFrame, type ScreenControlResult } from "../../shared/screens_wire.ts";
 import { type Done, type Envelope, openAnswer, sealStep, type Step } from "../../node/mac_tool/protocol.ts";
 import { ASK_EVERY } from "../../node/mac_tool/queue.ts";
@@ -110,7 +111,7 @@ export function prepareSim(hub: Hub, caller: Caller, r: ProjectRef, person: Pers
     throw new ToolError(
       "invalid",
       mac ? `iPhone screens run on the agents' Mac (${mac}), not ${machineId}.` : "No agents' Mac is online to run an iPhone screen.",
-      mac ? "Pick the agents' Mac." : "An admin connects one in Settings › Hub › Machines.",
+      mac ? "Pick the agents' Mac." : `An admin connects one in ${settingsPath("Machines")}.`,
     );
   }
   requireRole(caller, "read", mac);

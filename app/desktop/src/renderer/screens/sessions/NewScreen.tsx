@@ -26,19 +26,18 @@
 // The Screens page opens the same picker, for any bot: its first pick is then the bot, and a screen opened from there
 // opens on that page.
 import { Plus } from "lucide-react";
-import { Suspense, useEffect, useSyncExternalStore } from "react";
-import { Button, preloadable, preloadWhenIdle, Tooltip } from "../../ui";
+import { useSyncExternalStore } from "react";
+import { Button, Tooltip } from "../../ui";
 import { useData } from "../../src/data/react";
 import { selectProjects } from "../../src/data/selectors";
 import { useCommands } from "../palette";
 import { currentRoute } from "../shell/navigation";
 import type { ProjectKey } from "../shell/routes";
+import { NewScreenDialog } from "./NewScreenDialog";
 
 /** The hub feature that says it opens people's screens. */
 export const NEW_SCREEN = "screen_open";
 
-/** The picker itself, out of the first load: loaded once the app is idle, so it opens on the next frame. */
-const Picker = preloadable(() => import("./NewScreenDialog").then((m) => m.NewScreenDialog));
 
 const keyOf = (p: ProjectKey) => `${p.machineId}/${p.projectId}`;
 
@@ -86,19 +85,12 @@ export function NewScreenHost() {
     ],
     [served],
   );
-  useEffect(() => {
-    if (served) preloadWhenIdle(Picker);
-  }, [served]);
   if (open === null) return null;
   // From the Screens page: any bot, the first one picked to start with.
   const first = open.project ?? projects?.[0];
   if (first === undefined) return null;
   const project = { machineId: first.machineId, projectId: first.projectId };
-  return (
-    <Suspense fallback={null}>
-      <Picker key={open.project === undefined ? "any" : keyOf(project)} project={project} anyBot={open.project === undefined} onClose={() => set(null)} />
-    </Suspense>
-  );
+  return <NewScreenDialog key={open.project === undefined ? "any" : keyOf(project)} project={project} anyBot={open.project === undefined} onClose={() => set(null)} />;
 }
 
 /** New screen, a plus at the end of the Agents tab's Screens label. */

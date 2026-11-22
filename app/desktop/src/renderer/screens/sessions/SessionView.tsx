@@ -11,8 +11,8 @@
 // its moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its
 // value is never on the hub to show, nor in a snapshot.
 import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, preloadable, preloadWhenIdle, toast } from "../../ui";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
 import { RolePill } from "../agents/parts";
@@ -47,11 +47,9 @@ import { addressOf, NAVIGATE, pageNav, pictureOf, setControl, useFrameInput, use
 import { useVideo } from "./video";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
+import { ControlStrip } from "./ControlStrip";
 import { keyframesOf, moveOf, MOVE_MS, turnBetween, type Box } from "./turn";
 import s from "./sessions.module.css";
-
-/** A phone's control strip, out of the first load: loaded once a phone screen shows, before it is yours. */
-const ControlStrip = preloadable(() => import("./ControlStrip").then((m) => m.ControlStrip));
 
 /** How long an empty page stays without words before it says what it waits for. */
 const SLOW_MS = 1_000;
@@ -282,15 +280,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const doing = (x.state === "running" && !own) || x.state === "handingBack" ? nowLine(x) : undefined;
   const phone = x.kind === "ios" || x.kind === "android";
   // A phone's control strip (D652), beside it while it's yours here: only what its machine says works.
-  useEffect(() => {
-    if (phone) preloadWhenIdle(ControlStrip);
-  }, [phone]);
-  const strip =
-    phone && takes && x.device !== undefined ? (
-      <Suspense fallback={null}>
-        <ControlStrip sessionId={x.id} device={x.device} name={x.kind === "ios" ? "iPhone" : "Android"} />
-      </Suspense>
-    ) : undefined;
+  const strip = phone && takes && x.device !== undefined ? <ControlStrip sessionId={x.id} device={x.device} name={x.kind === "ios" ? "iPhone" : "Android"} /> : undefined;
   return (
     <>
       <Head session={x} windowed={windowed} back={back} controls={controls} />
