@@ -290,3 +290,37 @@ export const noBuyWhy = (state: BillingState): string | null => {
   if (!state.setUp) return "Payments aren't set up on fleetd cloud yet.";
   return null;
 };
+
+// ── Stripe's way back ──────────────────────────────────────────────────────────────────────────────────────────
+
+/** How long the page reads again after a payment, waiting for Stripe's word of it, and how often. */
+export const PAID_WAIT_MS = 60_000;
+export const PAID_READ_EVERY_MS = 3_000;
+
+/** What Stripe's way back said on the web app's address (`?billing=paid` or `cancelled`, fleetd-cloud README "Payments"); null for none. */
+export const billingReturnOf = (search: string): "paid" | "cancelled" | null => {
+  const said = new URLSearchParams(search).get("billing");
+  return said === "paid" || said === "cancelled" ? said : null;
+};
+
+/** The address's query without Stripe's word, every other parameter kept: "" when none is left. */
+export const withoutBillingReturn = (search: string): string => {
+  const q = new URLSearchParams(search);
+  q.delete("billing");
+  const left = q.toString();
+  return left === "" ? "" : `?${left}`;
+};
+
+/** Whether the answer shows something paid for: a plan, or credits left. */
+export const showsPaid = (state: BillingState): boolean => state.plan !== null || state.credits.leftCents > 0;
+
+/**
+ * The page's line after Stripe's way back, in place of the top line while it waits; null when there is none to say.
+ * `waitedMs`: since the page opened on it. A cancelled checkout charged nothing, which the toast says alone.
+ */
+export const paidLine = (said: "paid" | "cancelled" | null, state: BillingState, waitedMs: number): string | null => {
+  if (said !== "paid" || showsPaid(state)) return null;
+  return waitedMs < PAID_WAIT_MS
+    ? "Payment received. The credits show here in a moment, once Stripe confirms it."
+    : "Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to fleetd's support.";
+};

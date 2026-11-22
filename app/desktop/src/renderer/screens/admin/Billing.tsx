@@ -27,6 +27,12 @@ import {
   topLine,
   usageRows,
   type BillingState,
+  billingReturnOf,
+  PAID_READ_EVERY_MS,
+  PAID_WAIT_MS,
+  paidLine,
+  showsPaid,
+  withoutBillingReturn,
 } from "../../../shared/billing";
 import type { BillingOpen } from "../../../shared/cloud";
 import type { PairFailure } from "../../../shared/pairing";
@@ -41,6 +47,27 @@ import s from "../settings/settings.module.css";
 import b from "./billing.module.css";
 
 const said = (f: PairFailure): string => (f.fix === undefined ? f.message : `${f.message} ${f.fix}`);
+
+let returned: { said: "paid" | "cancelled"; atMs: number } | null | undefined;
+
+/**
+ * What Stripe's way back said (`?billing=paid` or `cancelled` on the web app's address), read once per page load and
+ * cleaned from the address at once, so a reload doesn't say it again. Only the web app comes back this way.
+ */
+const takeBillingReturn = (): { said: "paid" | "cancelled"; atMs: number } | null => {
+  if (returned !== undefined) return returned;
+  const said = billingReturnOf(window.location.search);
+  if (said !== null) {
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutBillingReturn(window.location.search)}${window.location.hash}`);
+  }
+  returned = said === null ? null : { said, atMs: Date.now() };
+  return returned;
+};
+
+/** For tests: read the address again. */
+export const resetBillingReturn = (): void => {
+  returned = undefined;
+};
 
 /** Stripe's page for `what`, in the browser; a refusal is a toast in the team's words. */
 function useOpen() {
@@ -61,7 +88,17 @@ function useOpen() {
 export function Billing() {
   const hub = useHub();
   const read = useBilling(hub.cloud === true);
-  const nowMs = useNow(true, 60_000);
+  const [back] = useState(takeBillingReturn);
+  // Back from paying: read again until Stripe's word of it shows, for a minute at most.
+  const waiting = back?.said === "paid" && (read.data === undefined || !showsPaid(read.data));
+  const nowMs = useNow(true, waiting ? PAID_READ_EVERY_MS : 60_000);
+  const { refetch } = read;
+  useEffect(() => {
+    if (back !== null) toast({ title: back.said === "paid" ? "Payment received" : "Checkout cancelled: nothing was charged", tone: back.said === "paid" ? "success" : "neutral", key: "billing-return" });
+  }, [back]);
+  useEffect(() => {
+    if (waiting && nowMs - back.atMs < PAID_WAIT_MS) void refetch();
+  }, [waiting, back, nowMs, refetch]);
   // No page that only says there is nothing here: a link to Billing where it isn't lands on People instead.
   const none = hub.cloud !== true || (read.data !== undefined && !billingOn(read.data));
   useEffect(() => {
@@ -90,17 +127,18 @@ export function Billing() {
             </GroupNote>
           </SettingsSection>
         ) : (
-          <BillingBody state={read.data} nowMs={nowMs} />
+          <BillingBody state={read.data} nowMs={nowMs} paid={paidLine(back?.said ?? null, read.data, nowMs - (back?.atMs ?? nowMs))} />
         )}
       </div>
     </div>
   );
 }
 
-function BillingBody({ state, nowMs }: { state: BillingState; nowMs: number }) {
+function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: number; paid: string | null }) {
   const { busy, open } = useOpen();
   const capField = useRef<HTMLInputElement>(null);
-  const top = topLine(state);
+  // Just back from paying, Stripe's word on its way: that, not "no credits".
+  const top = paid !== null ? { tone: "warning" as const, message: paid, fix: null } : topLine(state);
   const can = buys(state);
   const why = noBuyWhy(state);
   // The portal answers only once the team has paid for something: a plan, or credits it had.
