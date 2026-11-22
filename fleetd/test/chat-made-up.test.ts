@@ -18,7 +18,7 @@ test("a reply is cut before a line that opens a made-up turn; a mention of Human
   expect(madeUpLine(`No such page.\n\n${FAKE}`)).toContain(`("${FAKE.slice(0, 80)}…")`);
   expect(madeUpLine("A line can say Human: mid-sentence.")).toBeUndefined();
   expect(leadText(`Checked: there's no such page.\n\n${FAKE}\n\nAssistant: Let me look.`)).toBe("Checked: there's no such page.");
-  expect(leadText("Done.\nH: thanks\nA: welcome")).toBe("Done.");
+  expect(leadText("Done.\nHuman: thanks\nAssistant: welcome")).toBe("Done.");
   expect(leadText("Done.\n\nAssistant: and more")).toBe("Done.");
   expect(leadText("Done.\n\nHuman (11:49): ok")).toBe("Done.");
   expect(leadText("Done.\n  Human: indented")).toBe("Done.");
@@ -30,6 +30,8 @@ test("a reply is cut before a line that opens a made-up turn; a mention of Human
     `The marker alone:\n\n${FENCE}\nHuman: hi\nAssistant: hello\n${FENCE}`,
     "Humans: three agents read this.",
     "Hi: there",
+    "The screenshot is 1920 by 1080:\nW: 1920\nH: 1080",
+    "H: a line of its own\nA: and its answer",
   ]) {
     expect(leadText(kept)).toBe(kept);
   }

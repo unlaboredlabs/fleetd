@@ -97,11 +97,11 @@ function fenceAfter(fence: string | undefined, t: string): string | undefined {
 }
 
 /**
- * A line that opens a turn the model made up: the person's (`Human:`, `H:`, or `Human (11:49):` as a fresh session's
+ * A line that opens a turn the model made up: the person's (`Human:`, or `Human (11:49):` as a fresh session's
  * recent chat writes them) or its own next one (`Assistant:`). A lead once replied with only
  * `Human: [W760] I just checked the docs site…`, which the person never wrote (W787).
  */
-const TURN = /^(?:Human|H|Assistant)(?: \([^)\n]*\))?:/;
+const TURN = /^(?:Human|Assistant)(?: \([^)\n]*\))?:/;
 
 /** Where the reply's first made-up turn starts: a line outside a code fence that opens with a turn marker. */
 export function madeUpAt(text: string): number | undefined {
@@ -131,7 +131,7 @@ export function madeUpLine(reply: string): string | undefined {
 export function maybeTurn(streamed: string): string {
   const start = streamed.lastIndexOf("\n") + 1;
   const line = streamed.slice(start).trimStart();
-  const could = line !== "" && (["Human:", "H:", "Assistant:"].some((m) => m.startsWith(line)) || /^Human (?:\([^)\n]*\)?)?$/.test(line));
+  const could = line !== "" && (["Human:", "Assistant:"].some((m) => m.startsWith(line)) || /^Human (?:\([^)\n]*\)?)?$/.test(line));
   return could ? streamed.slice(start) : "";
 }
 
