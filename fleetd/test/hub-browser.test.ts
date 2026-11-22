@@ -155,6 +155,7 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   const frame = (seq: number) => ({ t: "browser_frame", sessionId: S1, seq, jpegB64: "AAAA", width: 1, height: 1, control: "agent" });
   for (let seq = 1; seq <= 5; seq++) t.link.deliver("devbox", frame(seq));
   expect(fast.sent.map((f) => (f as { seq: number }).seq)).toEqual([1, 2, 3, 4, 5]);
+  expect(fast.sent.every((f) => (f as { link: number }).link === t.link.linkId("devbox"))).toBe(true);
   // The acking one has one on its way until its first ack, and what waits is only the newest picture.
   expect(slow.sent.map((f) => (f as { seq: number }).seq)).toEqual([1]);
   await t.app.deliver(as(slow, person), { t: "browser_frame_ack", seq: 1 });
@@ -166,6 +167,15 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   // The node links again: it hears of the watch again.
   t.link.link("devbox", ["browser"]);
   expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true }]);
+  // Its frames count from the start again: each says the link it came on, so the app shows them anyway, and the one
+  // numbered as the last frame sent before still goes.
+  const was = fast.sent.at(-1) as { link: number };
+  t.link.deliver("devbox", frame(5));
+  const now = fast.sent.at(-1) as { seq: number; link: number };
+  expect(fast.sent).toHaveLength(6);
+  expect(now.seq).toBe(5);
+  expect(now.link).toBe(t.link.linkId("devbox")!);
+  expect(now.link).not.toBe(was.link);
   t.app.close(fast);
   t.app.close(slow);
   expect(t.link.sent("devbox").at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: false });

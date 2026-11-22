@@ -138,6 +138,24 @@ describe("connection", () => {
     expect(run([frame(3)], s).browserFrame?.jpegB64).toBe("f3");
   });
 
+  it("shows a node's frames after it linked again, counted from the start, rather than freezing on the last one shown", () => {
+    const frame = (seq: number, link: number, h264 = false) => ({
+      t: "browser_frame" as const,
+      frame: { sessionId: "B1", seq, link, ...(h264 ? { h264B64: `h${String(seq)}`, key: true } : { jpegB64: `f${String(seq)}` }), width: 2, height: 2, control: "agent" },
+    });
+    // The screen streamed on link 1 up to 42; the next server took it over (link 2) and counts from 1 again.
+    let s = run([live(), frame(41, 1), frame(42, 1), frame(1, 2)]);
+    expect(s.browserFrame?.jpegB64).toBe("f1");
+    s = run([frame(2, 2)], s);
+    expect(s.browserFrame?.jpegB64).toBe("f2");
+    // On the same link, a slow link's older frame is still dropped.
+    expect(run([frame(1, 2)], s).browserFrame?.jpegB64).toBe("f2");
+    // The decoder's list starts again on the new link.
+    s = run([frame(40, 1, true), frame(41, 1, true), frame(1, 3, true)], s);
+    expect(s.browserVideo).toMatchObject({ link: 3, dropped: -1 });
+    expect(s.browserVideo?.frames.map((f) => f.seq)).toEqual([1]);
+  });
+
   it("keeps every H.264 frame since the last keyframe, in order, for the decoder, however many land in one render", () => {
     const h264 = (seq: number, key = false) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, h264B64: `h${String(seq)}`, ...(key ? { key: true } : {}), width: 2, height: 2, control: "agent" } });
     const seqs = (s: DataState) => s.browserVideo?.frames.map((f) => f.seq);
