@@ -30,7 +30,7 @@
 import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import type { ChatSection } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
@@ -460,7 +460,8 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   // Two fingers across it switch hubs (hubSwipe.ts): the list follows them, the next or previous hub's beside it, and
   // the marks at the foot follow too. The whole sidebar listens, its top included. The hubs either side are drawn
   // ahead, hidden, once the sidebar is idle (W813): a swipe then starts on a list already there, with nothing to render
-  // and no frame lost; the swipe asks for any other (a mark further off, or a swipe before then).
+  // and no frame lost; the swipe asks for any other (a mark further off, or a swipe before then). With reduced motion
+  // nothing slides, so nothing is drawn ahead.
   const area = useRef<HTMLElement | null>(null);
   const pane = useRef<HTMLDivElement>(null);
   const pages = useRef<HTMLDivElement>(null);
@@ -468,7 +469,8 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const marks = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => hubs.map((h) => h.id), [hubs]);
   const at = shownHub === undefined ? -1 : ids.indexOf(shownHub.id);
-  const warm = useIdle(hubs.length > 1);
+  const still = useReducedMotion();
+  const warm = useIdle(hubs.length > 1 && !still) && !still;
   const { beside, press } = useHubSwipe({
     area,
     pane,
@@ -532,6 +534,18 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
     </nav>
   );
 }
+
+/** The system asks for reduced motion, as it changes. */
+const useReducedMotion = (): boolean =>
+  useSyncExternalStore(
+    (onChange) => {
+      if (typeof window.matchMedia !== "function") return () => undefined;
+      const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
 
 /** Whether the window has been idle once since this mounted (with `wanted`): for work that can wait until then. */
 const useIdle = (wanted: boolean): boolean => {
