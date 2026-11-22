@@ -5,6 +5,7 @@
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
 import type { BrowserControl } from "../../shared/contracts.ts";
+import type { BrowserRtcFrame, BrowserRtcReport } from "../../shared/screens_wire.ts";
 import type { StreamFrame, StreamRun } from "../screen/live.ts";
 
 /** The screen every session gets, in pixels. */
@@ -107,11 +108,14 @@ export type Launched = { pid: number; exited?: { code: number | null; output: st
 /** What a display that reads itself where it runs sends a session (a box's, ./box_frames.ts): a frame for the
  * watchers, as the hub takes it but for whose session it is, its seq and who drives; or one for the video, JPEG or
  * H.264 (an access unit, Annex B). */
-export type LiveFrame = { width: number; height: number; jpegB64?: string; h264B64?: string; key?: boolean };
+export type LiveFrame = { seq?: number; width: number; height: number; jpegB64?: string; h264B64?: string; key?: boolean };
 export type VideoFrame = { kind: "jpeg"; data: Uint8Array } | { kind: "h264"; key: boolean; size: [number, number]; data: Uint8Array };
 
 /** What the watchers asked for, as a session tells its picture (undefined: nobody watches). */
-export type Watching = { kbps: number | undefined; video?: boolean; fps?: number } | undefined;
+export type Watching = { kbps: number | undefined; video?: boolean; fps?: number; relay?: boolean } | undefined;
+
+/** A screen peer's answer or end, as a picture that answers offers itself reports it (../rtc: `browser_rtc`). */
+export type PeerReport = Omit<BrowserRtcReport, "sessionId">;
 
 /** A display's picture, read and encoded where the display runs while the session lives: `ended` says why it stopped
  * by itself. */
@@ -121,6 +125,8 @@ export type PictureRun = {
   key(): void;
   /** Who drives now: the watchers' next frame says so. */
   control(control: BrowserControl): void;
+  /** An app's screen peer (`browser_rtc`): its offer, answered where the picture is made, or its close. */
+  rtc(frame: Omit<BrowserRtcFrame, "sessionId">): void;
   /** The video takes JPEG from now on (it started as JPEG). */
   videoJpeg(): void;
   /** The whole screen, as a JPEG (an agent's screenshot). */
@@ -128,6 +134,9 @@ export type PictureRun = {
   stop(): void;
   ended: Promise<string | undefined>;
 };
+
+/** Where a picture's frames go: the watchers', the video's, and its peers' reports. */
+export type PictureSink = { live(frame: LiveFrame): void; video(frame: VideoFrame): void; rtc(report: PeerReport): void };
 
 /** What the session's video takes from a picture: H.264 where it can, JPEG, or nothing (it keeps none). */
 export type VideoKind = "h264" | "jpeg" | "none";
@@ -145,7 +154,7 @@ export interface Lent {
   appOf?(target: Target): Promise<App | undefined>;
   /** The display's picture read and encoded where it runs, so only frames cross (a box's display: ./box_frames.ts);
    * absent where the session reads the screen itself. */
-  picture?(video: VideoKind, on: { live(frame: LiveFrame): void; video(frame: VideoFrame): void }): Promise<PictureRun>;
+  picture?(o: { video: VideoKind; session: string }, on: PictureSink): Promise<PictureRun>;
   /** Throws it away with everything on it. */
   drop(): Promise<void>;
 }

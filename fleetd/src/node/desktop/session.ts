@@ -27,7 +27,8 @@ import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
 import { type Encoded, fpsFor, HARDWARE_FPS, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, MAX_KBPS, Pace, type StreamFrame, type StreamRun } from "../screen/live.ts";
 import { Nv12 } from "../screen/nv12.ts";
-import type { App, Launched, Lent, LiveFrame, PictureRun, Raw, Screen, Target, VideoFrame, VideoKind, Watching } from "./screen.ts";
+import type { BrowserRtcFrame } from "../../shared/screens_wire.ts";
+import type { App, Launched, Lent, LiveFrame, PeerReport, PictureRun, Raw, Screen, Target, VideoFrame, VideoKind, Watching } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
 /** What a session's recording says without an ffmpeg to encode its video. */
@@ -70,7 +71,7 @@ export type DesktopDone = { message: string; jpegB64?: string; width?: number; h
 
 /** Where a watched session's frames go, the budget the hub last named for it, whether every watcher decodes H.264, and
  * the frame rate they asked for at most. */
-export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean; fps?: number };
+export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean; fps?: number; relay?: boolean };
 
 export type Opened = {
   id: string;
@@ -95,6 +96,8 @@ export type Opened = {
   encoder?: MakeEncoder;
   /** The machine's load per core now (../screen/live.ts BUSY); absent: 0, never busy. */
   load?: () => number;
+  /** Where a picture that answers screen peers itself (a box's) reports each one's answer or end: to the hub. */
+  rtcReport?: (report: PeerReport) => void;
 };
 
 export class Session {
@@ -118,6 +121,7 @@ export class Session {
   private streamFailed: string | undefined;
   /** The display's picture where it runs (Lent `picture`), while it serves: the live view's frames and the video's. */
   private picture: PictureRun | undefined;
+  private readonly rtcReport: ((report: PeerReport) => void) | undefined;
   /** The grabs as H.264 for the video where it takes them, and for watchers that decode it (a screen without a
    * stream of its own) while their link carries the video's rate; absent: JPEG only. */
   private readonly encoder: LiveEncoding | undefined;
@@ -178,6 +182,7 @@ export class Session {
     this.recording = opened.recording;
     this.latest = opened.steps;
     this.launchRefusal = opened.launchRefusal;
+    this.rtcReport = opened.rtcReport;
     this.makeEncoder = opened.encoder;
     this.load = opened.load ?? (() => 0);
     this.encoder = opened.encoder?.(
@@ -304,13 +309,14 @@ export class Session {
 
   /** The watchers' budget and whether they all decode H.264, as the hub says it. Only a switch between H.264 and
    * JPEG sends the screen anew: a budget told again (each few seconds on a varying link) costs nothing. */
-  setBudget(kbps: number | undefined, video = this.watcher?.video, fps = this.watcher?.fps): void {
+  setBudget(kbps: number | undefined, video = this.watcher?.video, fps = this.watcher?.fps, relay = this.watcher?.relay): void {
     const w = this.watcher;
     if (!w) return;
     const switched = (w.video === true) !== (video === true);
     w.kbps = kbps;
     w.video = video;
     w.fps = fps;
+    w.relay = relay;
     if (this.picture) return this.picture.watch(this.watching());
     if (!this.slowLink()) this.stopSlow();
     this.tellStream();
@@ -544,7 +550,16 @@ export class Session {
   /** What the watchers ask for now, as the picture takes it. */
   private watching(): Watching {
     const w = this.watcher;
-    return w && { kbps: w.kbps, video: w.video === true, ...(w.fps !== undefined ? { fps: w.fps } : {}) };
+    return w && { kbps: w.kbps, video: w.video === true, ...(w.fps !== undefined ? { fps: w.fps } : {}), ...(w.relay === false ? { relay: false } : {}) };
+  }
+
+  /** An app's screen peer (the hub's `browser_rtc`): to the picture, which answers it where it is made. False when
+   * this session takes none (it reads its screen here: the node's own peers serve it). */
+  rtc(frame: BrowserRtcFrame): boolean {
+    if (!this.picture) return false;
+    const { sessionId: _id, ...rest } = frame;
+    this.picture.rtc(rest);
+    return true;
   }
 
   /** The display's picture, read where it runs, while the session lives; the session reads the screen itself if it
@@ -554,7 +569,7 @@ export class Session {
     const kind: VideoKind = !video ? "none" : video.h264 ? "h264" : "jpeg";
     let run: PictureRun;
     try {
-      run = await this.lent!.picture!(kind, { live: (f) => this.pictured(f), video: (f) => this.videoFrame(f) });
+      run = await this.lent!.picture!({ video: kind, session: this.id }, { live: (f) => this.pictured(f), video: (f) => this.videoFrame(f), rtc: (r) => this.rtcReport?.(r) });
     } catch (e) {
       if (this.closed) return;
       console.warn(`desktop ${this.id}: the screen is read from here: ${(e as Error).message}`);
@@ -575,7 +590,10 @@ export class Session {
   private pictured(f: LiveFrame): void {
     const w = this.watcher;
     if (this.closed || !w) return;
-    w.send({ ...f, sessionId: this.id, seq: ++this.liveSeq, control: this.controlNow });
+    // The picture's own seq where it gives one: its peers' frames carry the same.
+    const { seq, ...picture } = f;
+    this.liveSeq = Math.max(this.liveSeq + 1, seq ?? 0);
+    w.send({ ...picture, sessionId: this.id, seq: this.liveSeq, control: this.controlNow });
   }
 
   /** A frame of the picture's, into the video (not while the session only observes). */

@@ -17,6 +17,7 @@ import { serve } from "../src/node/desktop/box_frames.ts";
 import { openPicture } from "../src/node/desktop/picture_link.ts";
 import type { LiveFrame, VideoFrame } from "../src/node/desktop/screen.ts";
 import { BoxDisplay, type ScreenBox, timing } from "../src/node/place/box_screens.ts";
+import { RTCPeerConnection } from "werift";
 import { FakeX } from "./fake_x.ts";
 
 const THREAD = "t-cloud";
@@ -63,7 +64,8 @@ function standInBox(o: { lacks?: string[]; frames?: boolean } = {}) {
         pictures.set(port, "");
         if (o.frames === false) return;
         const listen = join(dir, `F${port}`);
-        served.push(serve({ socket: at.socket, cookie: at.cookie, listen, video: frames[2] as "jpeg", waitMs: 5_000 }));
+        // No STUN in a test: a screen peer meets the app's on this machine's own addresses.
+        served.push(serve({ socket: at.socket, cookie: at.cookie, listen, video: frames[2] as "jpeg", waitMs: 5_000, peer: () => new RTCPeerConnection({}) }));
         // Listening once its serve took the socket.
         await until("the picture to listen", () => existsSync(listen));
         pictures.set(port, listen);
@@ -226,7 +228,7 @@ test("box-frames serves only a holder with the display's cookie, answers screens
   // It goes on waiting for the holder's, until its wait is up.
   const one = serve({ socket: join(dir, "X"), cookie, listen: refused, video: "none", waitMs: 500 });
   await until("it to listen", () => existsSync(refused));
-  await expect(openPicture(await reach(refused), new Uint8Array(16).fill(8), { live: () => {}, video: () => {} })).rejects.toThrow("the box's picture stopped");
+  await expect(openPicture(await reach(refused), new Uint8Array(16).fill(8), "B1", { live: () => {}, video: () => {}, rtc: () => {} })).rejects.toThrow("the box's picture stopped");
   await one;
 
   const at = join(dir, "F2");
@@ -234,7 +236,7 @@ test("box-frames serves only a holder with the display's cookie, answers screens
   await until("it to listen", () => existsSync(at));
   const live: LiveFrame[] = [];
   const video: VideoFrame[] = [];
-  const run = await openPicture(await reach(at), cookie, { live: (f) => void live.push(f), video: (f) => void video.push(f) });
+  const run = await openPicture(await reach(at), cookie, "B2", { live: (f) => void live.push(f), video: (f) => void video.push(f), rtc: () => {} });
   run.watch({ kbps: undefined, video: false });
   x.paint(200, 10, 10);
   await until("a live frame", () => live.some((f) => f.jpegB64 !== undefined && f.width === 32));
@@ -255,6 +257,85 @@ test("box-frames serves only a holder with the display's cookie, answers screens
   expect(await run.ended).toBeUndefined();
   await served;
 }, 20_000);
+
+test("an app's screen peer is answered in the box: its frames and a person's input go peer to peer, and the hub's socket carries none once it says so", async () => {
+  const { box, at } = standInBox();
+  const { store } = memoryStore();
+  const { h, frames } = host(box, store);
+  const d = new DesktopSessions(h);
+  cleanups.push(() => d.shutdown());
+  const id = String((await d.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }))).sessionId);
+  d.watch({ t: "browser_watch", sessionId: id, on: true } as never);
+  await until("a frame", () => frames.some((f) => f.t === "browser_frame" && f.sessionId === id));
+
+  // The app's side, as its RTCPeerConnection would: two channels, the offer, the frames gathered and acked.
+  const pc = new RTCPeerConnection({});
+  cleanups.push(() => pc.close().catch(() => {}));
+  const ch = pc.createDataChannel("frames", { ordered: true });
+  const input = pc.createDataChannel("input", { ordered: true });
+  const got: { seq: number; kind: string; control: string }[] = [];
+  let need: { seq: number; kind: string; control: string; bytes: number } | undefined;
+  let have = 0;
+  ch.onmessage = ({ data }) => {
+    if (typeof data === "string") {
+      const m = JSON.parse(data) as { t: string; seq: number; kind: string; control: string; bytes: number };
+      if (m.t === "frame") [need, have] = [m, 0];
+      return;
+    }
+    if (!need) return;
+    have += (data as Buffer).length;
+    if (have < need.bytes) return;
+    got.push({ seq: need.seq, kind: need.kind, control: need.control });
+    input.send(JSON.stringify({ t: "ack", seq: need.seq }));
+    need = undefined;
+  };
+  await pc.setLocalDescription(await pc.createOffer());
+  expect(d.rtc({ sessionId: id, peer: "p1", offer: pc.localDescription!.sdp, input: true } as never)).toBe(true);
+  await until("the box's answer", () => frames.some((f) => f.t === "browser_rtc" && f.peer === "p1" && typeof f.answer === "string"));
+  const answer = frames.find((f) => f.t === "browser_rtc" && f.peer === "p1" && typeof f.answer === "string")!;
+  expect(answer).toMatchObject({ sessionId: id, peer: "p1" });
+  await pc.setRemoteDescription({ type: "answer", sdp: String(answer.answer) });
+  // A peer starts at a whole picture: the newest JPEG.
+  await until("the peer's first frame", () => got.length > 0);
+  expect(got[0]).toMatchObject({ kind: "jpeg", control: "agent" });
+
+  // Every watcher on a peer: the box sends the holder none, and the change still reaches the app.
+  d.watch({ t: "browser_watch", sessionId: id, on: true, relay: false } as never);
+  await Bun.sleep(200);
+  const relayed = frames.filter((f) => f.t === "browser_frame").length;
+  const seen = got.length;
+  at.x!.paint(10, 200, 30);
+  await until("the change on the peer", () => got.length > seen);
+  await Bun.sleep(200);
+  expect(frames.filter((f) => f.t === "browser_frame").length).toBe(relayed);
+
+  // A person takes it over: their input on the peer lands on the display in the box.
+  d.control({ t: "browser_control", sessionId: id, control: "human", by: "ada" } as never);
+  // The box's session hears it as its frame says it, which is what lets the peer's input through.
+  await Bun.sleep(200);
+  input.send(JSON.stringify({ t: "input", input: { kind: "mouse", action: "moved", x: 11, y: 13 } }));
+  await until("the pointer to move", () => at.x!.pointer[0] === 11 && at.x!.pointer[1] === 13);
+  // The app closes it: the hub's close goes on, and nothing more is reported for it.
+  d.rtc({ sessionId: id, peer: "p1" } as never);
+  await Bun.sleep(100);
+  expect(frames.filter((f) => f.t === "browser_rtc" && f.peer === "p1" && f.closed)).toEqual([]);
+}, 30_000);
+
+test("a screen read by its holder answers a peer's offer with why not, and its app stays on the socket", async () => {
+  const upMs = timing.upMs;
+  timing.upMs = 300;
+  cleanups.push(() => void (timing.upMs = upMs));
+  const { box } = standInBox({ frames: false });
+  const { store } = memoryStore();
+  const { h, frames } = host(box, store);
+  const d = new DesktopSessions(h);
+  cleanups.push(() => d.shutdown());
+  const id = String((await d.handle(THREAD, call("session_start", { kind: "linux_desktop", purpose: "x" }))).sessionId);
+  await Bun.sleep(500);
+  expect(d.rtc({ sessionId: id, peer: "p9", offer: "v=0" } as never)).toBe(true);
+  expect(frames.at(-1)).toMatchObject({ t: "browser_rtc", sessionId: id, peer: "p9", closed: true });
+  expect(d.rtc({ sessionId: "Bnope", peer: "p9", offer: "v=0" } as never)).toBe(false);
+});
 
 test("a box without Xvfb, openbox or socat says so at once, and nothing waits on it", async () => {
   const { box, dials } = standInBox({ lacks: ["openbox", "socat"] });
