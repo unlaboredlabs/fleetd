@@ -17,6 +17,8 @@ import { FirstRun } from "../setup/FirstRun";
 import { readKept, resetReturn, takeGithubReturn } from "./kept";
 import { StartScreen } from "./StartScreen";
 import { HOSTED_WAIT } from "../setup/hostedWait";
+import { BILLING_SAMPLES } from "../../../shared/billing.samples";
+import type { BillingState } from "../../../shared/billing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,6 +31,8 @@ let joinHeld: Promise<void> | null = null;
 /** What the app sealed for the hub's key, and whether the hub has one since. */
 let sealed: ClaudeAccountRequest[] = [];
 let hubKey = false;
+/** The team's billing as GET /billing/v1 answers: before the switch to fleetd's computers unless a test says. */
+let billing: BillingState = BILLING_SAMPLES.off;
 
 const machine = (over: Partial<Machine> = {}): Machine => ({
   machineId: "devbox",
@@ -86,6 +90,7 @@ const shell = {
   ),
   connectGithub: vi.fn(() => Promise.resolve({ ok: true as const })),
   openExternal: vi.fn(() => Promise.resolve({ ok: true as const })),
+  billing: vi.fn(() => Promise.resolve({ ok: true as const, billing })),
 };
 
 const render = async (team: Team, at: "start" | "first-run" = "start") => {
@@ -206,7 +211,8 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
     });
     await new Promise((r) => setTimeout(r, 0));
   });
-  await settle();
+  // Billing answers first (fleetd's computers or not), then the providers, then the join line step 1 asks the hub for.
+  for (let i = 0; i < 4; i++) await settle();
   return stop;
 };
 
@@ -234,6 +240,7 @@ beforeEach(() => {
   joinHeld = null;
   sealed = [];
   hubKey = false;
+  billing = BILLING_SAMPLES.off;
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
   vi.stubGlobal("fleetd", {
@@ -271,17 +278,35 @@ it("a fresh team's first run in the web app opens Get started, and Skip for now 
   again();
 });
 
-// Their limits mount the providers' rows (settings/Provider) here, whose first Select and Menu took past 5 s on a busy CI
-// runner: these two get longer.
-it("where agents run is a computer or hosted sandboxes: the second lists the providers to connect, with no text under them", async () => {
+it("where agents run never asks a cloud team for a sandbox key of its own: before fleetd's computers, a computer's line alone", async () => {
   const stop = await render({});
   expect(host.textContent).toContain("Where agents run");
-  expect(button("A computer")?.getAttribute("aria-pressed")).toBe("true");
-  await click("Hosted sandboxes");
-  expect(host.querySelectorAll("[data-sandbox]").length).toBe(1);
-  expect(host.textContent).not.toContain("--code 7QK4-M2XD");
+  expect(host.textContent).toContain("--code 7QK4-M2XD");
+  expect(host.textContent).not.toContain("Hosted sandboxes");
+  expect(host.querySelectorAll("[data-sandbox]").length).toBe(0);
   stop();
-}, 20_000);
+});
+
+it("with fleetd's computers on, step 1 is done on them: no join line made, no provider asked, Claude next", async () => {
+  billing = { ...BILLING_SAMPLES.plan, providedOn: true };
+  const stop = await render({});
+  expect(screen()).toBe("start.claude");
+  expect(host.textContent).toContain("fleetd's computers");
+  expect(host.textContent).not.toContain("--code 7QK4-M2XD");
+  expect(calls.some((c) => c.tool === "machine_join" || c.tool === "sandbox_get")).toBe(false);
+  stop();
+});
+
+it("fleetd's computers held for no plan: step 1 says so in Billing's words, and Pick a plan opens Billing", async () => {
+  billing = BILLING_SAMPLES.none;
+  const stop = await render({});
+  expect(screen()).toBe("start.computer");
+  expect(host.textContent).toContain("This team has no plan and no credits");
+  expect(calls.some((c) => c.tool === "machine_join")).toBe(false);
+  await click("Pick a plan");
+  expect(window.location.hash).toBe("#/settings/hub/billing");
+  stop();
+});
 
 it("a provider connected and no computer: step 1 is done on it, and Claude takes the hub's key or your subscription while its sandboxes have no account", async () => {
   const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedCause: "claude_login", degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them." });

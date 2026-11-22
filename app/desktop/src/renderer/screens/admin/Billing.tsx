@@ -6,7 +6,7 @@
 // Every price, included amount and rate is the service's answer (shared/billing.ts). A self-hosted hub has no Billing
 // at all, and a team has none until fleetd's computers are on for it (`useBillingShown`): no entry, no search result,
 // and a link to it lands on People.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import {
   billingOn,
@@ -32,6 +32,7 @@ import type { BillingOpen } from "../../../shared/cloud";
 import type { PairFailure } from "../../../shared/pairing";
 import { Button, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text, toast } from "../../ui";
 import { useHub } from "../../src/data/react";
+import { billingKey, useBilling } from "./billingQuery";
 import { useNow } from "../live";
 import { navigate } from "../shell/navigation";
 import { GroupNote, HintLines, Notice, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
@@ -40,38 +41,6 @@ import s from "../settings/settings.module.css";
 import b from "./billing.module.css";
 
 const said = (f: PairFailure): string => (f.fix === undefined ? f.message : `${f.message} ${f.fix}`);
-
-export const billingKey = (hub: string) => ["cloud_billing", hub] as const;
-
-/**
- * The team's billing, read on opening the page and again each time the app comes back to the front: a checkout or the
- * portal finishes in the browser, and the person returns here to see it.
- */
-export function useBilling(enabled: boolean) {
-  const hub = useHub().id;
-  return useQuery({
-    queryKey: billingKey(hub),
-    enabled,
-    retry: false,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    queryFn: async (): Promise<BillingState> => {
-      const out = await window.fleetd.cloud.billing(hub);
-      if (!out.ok) throw new Error(said(out.failure));
-      return out.billing;
-    },
-  });
-}
-
-/**
- * Whether the hub in scope has Billing: a fleetd cloud team whose answer says fleetd's computers are on for it. Read
- * only while `asked` (the Settings index, a Hub page's switch on Billing), sharing the page's own query.
- */
-export function useBillingShown(asked = true): boolean {
-  const cloud = useHub().cloud === true;
-  const read = useBilling(asked && cloud);
-  return cloud && billingOn(read.data);
-}
 
 /** Stripe's page for `what`, in the browser; a refusal is a toast in the team's words. */
 function useOpen() {

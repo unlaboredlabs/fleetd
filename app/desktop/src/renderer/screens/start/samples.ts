@@ -41,6 +41,15 @@ export const SAMPLES = {
     github: { at: "todo" },
     project: pick,
   },
+  // ...or fleetd's computers, held until the team has a plan or credits: Billing's line and Pick a plan.
+  "computers-held": {
+    ...owner,
+    computer: { at: "computers_held", message: "This team has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.", canBuy: true },
+    tailscale: { at: "todo" },
+    claude: { at: "wait" },
+    github: { at: "todo" },
+    project: pick,
+  },
   // 2. Tailscale, optional: Connect and sign in at Tailscale, or Skip.
   tailscale: { ...owner, computer: { at: "hosted", provider: "boat.dev" }, tailscale: { at: "todo" }, claude: { at: "account", provider: "boat.dev" }, tailnet: false, github: { at: "todo" }, project: pick },
   "tailscale-signin": {

@@ -52,8 +52,10 @@ export type ComputerStep =
   | { readonly at: "hosted_wait"; readonly provider: string }
   /** Not ready past the bounded wait (setup/hostedWait.ts): why in the hub's words, its fix, and Try again. */
   | { readonly at: "hosted_failed"; readonly provider: string; readonly reason: string; readonly fix: string; readonly trying?: boolean }
-  /** Agents run in the provider's sandboxes once Claude reaches them. */
-  | { readonly at: "hosted"; readonly provider: string };
+  /** Agents run in the provider's sandboxes once Claude reaches them; on a cloud team, fleetd's computers. */
+  | { readonly at: "hosted"; readonly provider: string }
+  /** fleetd's computers, held (no plan or credits, the cap reached): Billing's own line, and Pick a plan for an admin. */
+  | { readonly at: "computers_held"; readonly message: string; readonly canBuy: boolean };
 
 /** The team's Tailscale, as the hub runs its one device (tailnet_get). */
 export type TailscaleStep =

@@ -31,7 +31,7 @@ import {
 import { Button, cx, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
-import { useBillingShown } from "../admin/Billing";
+import { useBillingShown } from "../admin/billingQuery";
 import { HUB_PAGES as HUB_PAGES_SHOWN, YOU_PAGES } from "../../../shared/settingsPages";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
