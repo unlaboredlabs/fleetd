@@ -141,10 +141,11 @@ export function Settings() {
           </>
         )}
       </View>
-      <ListSection header="Hub">
+      {/* A fleetd cloud team is a team to the person, and it updates itself: no version of its own to read. */}
+      <ListSection header={paired.cloud === true ? "Team" : "Hub"}>
         <ListRow title="Status" value={statusOf(hub.phase)} valueDot={{ live: t.success, busy: t.warning, down: t.tertiary }[linkTone(hub.phase)]} />
         <ListRow title="Address" value={paired.hub} selectable />
-        {hub.phase === "live" && hub.version !== undefined ? (
+        {hub.phase === "live" && hub.version !== undefined && paired.cloud !== true ? (
           <ListRow
             title="Version"
             {...(wholeVersion ? { detail: hub.version } : { value: shortVersion(hub.version) })}

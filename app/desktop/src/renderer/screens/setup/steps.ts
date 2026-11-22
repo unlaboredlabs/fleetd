@@ -55,9 +55,9 @@ const ADMIN: Readonly<Record<string, Place>> = {
 
 /** Beside the Hub page, each person's own side of a step; 1Password is only a person's own. */
 const OWN: Readonly<Record<string, Place>> = {
-  claude: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" },
-  github: { label: "Open Your accounts", screen: { id: "settings", tab: "accounts" }, reveal: "github" },
-  onepassword: { label: "Open Your accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
+  claude: { label: "Open Accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" },
+  github: { label: "Open Accounts", screen: { id: "settings", tab: "accounts" }, reveal: "github" },
+  onepassword: { label: "Open Accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
 };
 
 /**

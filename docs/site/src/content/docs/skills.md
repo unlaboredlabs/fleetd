@@ -69,7 +69,7 @@ A bot's skills are in Settings → Bots → Agents: pick the bot. Changing them 
 hub-wide (global) skills it gets are named on one line there, read-only.
 
 Global skills reach every machine's agents, so changing them takes admin on every machine: they are in
-Settings › [Hub](/docs/desktop-app#hub) › Every bot › Agents, which only the hub's owners and admins see.
+Settings › [Hub](/docs/desktop-app#hub) › Bot defaults › Agents, which only the hub's owners and admins see.
 
 - **List**: every skill of the bot or hub-wide, marked with where it comes from. A skill that another source
   outranks says which one.

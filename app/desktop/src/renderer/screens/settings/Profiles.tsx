@@ -70,8 +70,7 @@ export function ProfilesEditor() {
       <SettingsSection
         title="Profiles"
         reveal="hub.task-profiles"
-        hint="What agents run on: a model, its effort and speed, under a name the lead picks it by."
-        intro={view.modelsFrom === "api" ? undefined : "Models from fleetd's own list: the hub has no API key that lists them."}
+        hint={`What agents run on: a model, its effort and speed, under a name the lead picks it by.${view.modelsFrom === "api" ? "" : " The models offered are fleetd's own list until a Claude API key is saved in Setup."}`}
         aside={editing?.kind === "new" ? undefined : <AddButton label="New profile" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))} />}
       >
         {before.length === 0 ? null : <SettingsList label="Profiles">{before.map(row)}</SettingsList>}
@@ -310,7 +309,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
     <SettingsSection
       title="Allowed profiles"
       reveal="agents.profiles"
-      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Every bot › Agents."
+      hint="The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in Hub › Bot defaults › Agents."
     >
       {view.profiles.map((p) => (
         <SettingsRow

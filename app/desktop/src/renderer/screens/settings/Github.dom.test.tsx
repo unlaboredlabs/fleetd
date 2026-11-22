@@ -133,7 +133,7 @@ const click = async (el: HTMLElement) => {
   await settle();
 };
 
-describe("Settings › Your accounts › GitHub", () => {
+describe("Settings › Accounts › GitHub", () => {
   it("asks to connect before a first PR, and connects through main", async () => {
     await render();
     expect(document.body.textContent).toContain("Not connected");

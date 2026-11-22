@@ -182,7 +182,9 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
     expect.stringMatching(/^mediumClaude Opus 5.5 · medium effort$/u),
     expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effort$/u),
   ]);
-  expect(host.textContent).toContain("Models from fleetd's own list");
+  // Where the models come from is the section's hover, never a line at rest.
+  expect(host.textContent).toContain("The models offered are fleetd's own list until a Claude API key is saved in Setup.");
+  expect(host.textContent).not.toContain("the hub has no API key");
   await click(button("New profile"));
   expect(button("Create profile").disabled).toBe(true);
   type(field("Name"), "Quick fix");

@@ -10,6 +10,7 @@ import type { AgentKeyInfo, PairCodeCreateOutput } from "../../../shared/contrac
 import { Button, Dialog, Text } from "../../ui";
 import { HubScope, useData, useHubs } from "../../src/data/react";
 import { usePeople } from "../admin/usePeople";
+import { onWeb } from "../../src/web";
 import { Prose } from "../onboarding/Prose";
 import { when } from "../live/when";
 import { codeLife, deviceLine, pairedSince, qrPath, SIGN_OUT_LINE, yourDevices } from "./devicesModel";
@@ -113,7 +114,7 @@ function DeviceRow({
     <SettingsListRow
       name={d.name}
       label={d.name}
-      meta={here ? "this computer" : undefined}
+      meta={here ? (onWeb() ? "this browser" : "this computer") : undefined}
       {...(just ? { state: { word: "just paired", tone: "success" as const } } : {})}
       controls={
         onSignOut === undefined ? undefined : (

@@ -51,7 +51,7 @@ describe("fleetd's GitHub App on a cloud team", () => {
       failure: {
         code: "failed",
         message: "Connect your own GitHub first: fleetd asks GitHub, as you, that you administer the account you install it on.",
-        fix: "Connect GitHub in Settings › Your accounts › GitHub, then install again.",
+        fix: "Connect GitHub in Settings › Accounts › GitHub, then install again.",
       },
     });
     expect(opened).toEqual([]);

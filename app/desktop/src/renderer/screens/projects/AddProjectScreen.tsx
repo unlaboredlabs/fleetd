@@ -16,6 +16,8 @@ import { botAtFolder, botHolding, botName, busy, needsUpdate, ownRepo, repoKey, 
 import { CallError, callKey } from "../../src/data/queries";
 import { HubScope, useData, useDataLayer, useHub, useHubs, useToolQuery } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
+import { useHubRole } from "../admin/role";
+import { navigate } from "../shell/navigation";
 import { HubText } from "./HubText";
 import { NAME_MAX, nameProblem } from "./model";
 import { otherHost, tilde } from "./source";
@@ -163,10 +165,13 @@ function HubPick() {
   );
 }
 
+/** Nothing at all runs agents: said with the way to fix it (Machines, for an admin), and Create stays off until then. */
+export const NOTHING_RUNS = "Nothing runs agents yet.";
+
 /** Why the bot can't be made on `to` as it stands (`typed`: the add field's text, which goes in too), with the fix; null when it can. */
 const blocker = (to: Worker | null, d: Discovery | null, repos: ReadonlyArray<RepoDraft>, typed: string | null): string | null => {
   if (d === null) return null;
-  if (to === null && d.workers.length === 0) return "Nothing runs agents yet: connect a computer in Settings › Hub › Machines.";
+  if (to === null && d.workers.length === 0) return NOTHING_RUNS;
   if (to === null) return `Nothing is online to make it on: start fleetd on ${orList(d.workers.map((w) => w.name))}.`;
   return d.workers.some((w) => w.machineId === to.machineId) ? needsUpdate(to, repos, typed) : null;
 };
@@ -178,6 +183,8 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
   const problem = nameProblem(ui.name);
   const named = botName(ui.name, ui.repos);
   const block = blocker(to, d, ui.repos, ui.adding);
+  const nothing = block === NOTHING_RUNS;
+  const role = useHubRole();
   /** A folder that is a bot already: adding it would take that bot's place, so it isn't added. */
   const botAt = (path: string): string | undefined => botAtFolder(projects, to?.machineId, path)?.title;
   const go = () => {
@@ -243,7 +250,25 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
         ) : null}
       </div>
       <div className={s.foot}>
-        {ui.refused || block ? (
+        {nothing ? (
+          <div role="alert" className={s.refused} data-nothing-runs="">
+            <Text size="sm" tone="warning">
+              {role.administers ? `${NOTHING_RUNS} ` : `${NOTHING_RUNS} Ask an owner or admin to connect a computer.`}
+            </Text>
+            {role.administers ? (
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => {
+                  closeAddProject();
+                  navigate({ id: "settings", tab: "hub.machines" });
+                }}
+              >
+                Connect a computer
+              </Button>
+            ) : null}
+          </div>
+        ) : ui.refused || block ? (
           <div role="alert">
             <Text as="p" size="sm" tone="warning" className={cx(s.refused)}>
               {ui.refused || block}
@@ -263,7 +288,7 @@ function Form({ ui, d, field }: { ui: AddUi; d: Discovery | null; field: RefObje
           ) : null}
           <span className={s.spacer} />
           <Button onClick={closeAddProject}>Cancel</Button>
-          <Button variant="primary" onClick={go}>
+          <Button variant="primary" disabled={nothing} onClick={go}>
             Create
           </Button>
         </div>

@@ -2,7 +2,7 @@
 // 1Password (ImportDialog: search, tick, Import). What the person types goes to main, which seals it to the hub's own
 // key (main/vault.ts); an edit never shows the stored values, and a sealed field left empty stays as it is. An import
 // is read on a machine holding the person's 1Password token and sealed to the hub there, so no value crosses this app.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { VaultImportCandidate, VaultItemSummary, VaultKind } from "../../../shared/contracts";
 import type { VaultSaveRequest } from "../../../shared/ipc";
 import { Button, Checkbox, Dialog, Field, Input, Segmented, Switch, Text, Textarea, toast } from "../../ui";
@@ -74,6 +74,13 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
   const [draft, setDraft] = useState<Draft>(() => (item === undefined ? emptyDraft(kind) : draftOf(item)));
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // The problem is said at the form's end, which a long form (a login's) scrolls below the dialog's foot: shown, it
+  // comes into view, else Add seems to do nothing.
+  const said = useRef<HTMLDivElement>(null);
+  const [tries, setTries] = useState(0);
+  useEffect(() => {
+    if (problem !== null) said.current?.scrollIntoView({ block: "nearest" });
+  }, [problem, tries]);
   const set = (k: string) => (value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [k]: value } }));
   // A field the item has, and may lose: Clear drops it on save, Keep takes that back (and so does typing a new value).
   const has = (k: string) => item === undefined || item.meta.fields === undefined || (item.meta.fields as readonly string[]).includes(k);
@@ -94,6 +101,7 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
 
   const save = () => {
     const checked = check(draft, editing, new Date());
+    setTries((n) => n + 1);
     if (!checked.ok) return setProblem(checked.problem);
     setBusy(true);
     setProblem(null);
@@ -207,7 +215,7 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
           </>
         )}
         {problem === null ? null : (
-          <div role="alert">
+          <div role="alert" ref={said}>
             <Text size="sm" tone="danger">
               {problem}
             </Text>
@@ -376,7 +384,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
               Cancel
             </Button>
             <Button variant="primary" onClick={() => (onClose(), navigate({ id: "settings", tab: "accounts" }))}>
-              Open Your accounts
+              Open Accounts
             </Button>
           </>
         ) : (
@@ -392,7 +400,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       }
     >
       {noToken ? (
-        <Text size="sm">Importing reads your 1Password with your service account token, which isn&apos;t saved yet. Add it under Settings › You › Your accounts › 1Password, then come back.</Text>
+        <Text size="sm">Importing reads your 1Password with your service account token, which isn&apos;t saved yet. Add it under Settings › Accounts › 1Password, then come back.</Text>
       ) : (
         <div className={v.form}>
           <form

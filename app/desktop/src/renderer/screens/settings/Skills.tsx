@@ -58,7 +58,7 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
             control={
               administers ? (
                 <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
-                  Hub-wide skills in Every bot
+                  Hub-wide skills in Bot defaults
                 </Button>
               ) : undefined
             }

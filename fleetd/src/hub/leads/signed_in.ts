@@ -1,5 +1,5 @@
 // A lead whose last turn Claude refused for its sign-in (`signed_out` in ./cut_off.ts) carries on by itself once a
-// Claude account is connected again (Settings › Your accounts › Claude, or the hub's API key): a wake, once per
+// Claude account is connected again (Settings › Accounts › Claude, or the hub's API key): a wake, once per
 // reconnect, to each lead whose thread's newest end is that refusal. Nothing else wakes it, so a sign-in that stays
 // broken never loops.
 import type { Hub } from "../api/hub.ts";

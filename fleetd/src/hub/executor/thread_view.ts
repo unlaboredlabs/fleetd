@@ -111,6 +111,10 @@ export function toAction(item: ThreadItem): Action | undefined {
       return base("other", nodeRetrySummary(k.attempt, k.of, k.delayMs, failureClass(k.reason.class)), undefined, undefined);
     case "error":
       return { ...base("other", `${failureClass(k.failure.class)}: ${k.failure.message}`, undefined, undefined), status: "failed", failed: true };
+    // Where its start is (a hosted computer starting, or a try that failed with why and when it goes again): the
+    // person's agent panel shows it, not "Nothing yet" over a start that keeps failing.
+    case "starting":
+      return base("other", k.text, undefined, undefined);
     default:
       return undefined;
   }

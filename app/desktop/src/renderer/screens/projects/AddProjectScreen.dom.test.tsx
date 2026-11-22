@@ -38,6 +38,10 @@ let calls: Array<{ tool: string; input: unknown }>;
 let projectsRoot: string | undefined;
 /** Set, project_add answers only once it is called: a create still running. */
 let held: (() => void) | undefined;
+/** A hub with nothing that runs agents: no machine, nothing found (a cloud team before its first computer). */
+let bare: boolean;
+/** hub_info's role for this app's person. */
+let role: "owner" | "member";
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -46,6 +50,8 @@ beforeEach(() => {
   calls = [];
   projectsRoot = ROOT;
   held = undefined;
+  bare = false;
+  role = "owner";
   window.location.hash = "#/projects/add";
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -73,6 +79,8 @@ const render = async () => {
   const hub: HubApi = {
     call: (tool, input) => {
       calls.push({ tool, input });
+      if (tool === "hub_info") return Promise.resolve({ ok: true, output: { version: "1", protocol: 1, busy: [], me: { personId: "p_aaaaaaaa", name: "Sam", role, createdAt: AT } } });
+      if (tool === "project_discover" && bare) return Promise.resolve({ ok: true, output: { machines: [], github: { owners: [], repos: [] } } });
       if (tool === "project_discover") {
         const machine = { machineId: "devbox", online: true, cloneRoot: "/home/w/src", repos: [{ path: "/home/w/code/notes-cli", name: "notes-cli" }], ...(projectsRoot ? { projectsRoot } : {}) };
         const other = { machineId: "buildbox", online: true, cloneRoot: "/home/b/src", repos: [], projectsRoot: "/home/b/fleetd/projects" };
@@ -114,7 +122,7 @@ const render = async () => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1 } });
-    listener(snapshot);
+    listener(bare ? { ...snapshot, snapshot: { ...snapshot.snapshot, machines: [], projects: [] } } : snapshot);
     await new Promise((r) => setTimeout(r, 0));
   });
   await settle();
@@ -160,6 +168,25 @@ const options = () => [...document.querySelectorAll('[role="option"]')].map((o) 
 const madeWith = () => calls.filter((c) => c.tool === "project_add" || c.tool === "project_repo_add").map((c) => [c.tool, c.input]);
 
 describe("New bot", () => {
+  it("with nothing that runs agents, says so with the way to fix it, and Create stays off", async () => {
+    bare = true;
+    await render();
+    await type(field("Name"), "Field notes");
+    expect(document.querySelector("[data-nothing-runs]")?.textContent).toBe("Nothing runs agents yet. Connect a computer");
+    expect(button("Create")?.disabled).toBe(true);
+    await press(button("Connect a computer"));
+    expect(window.location.hash).toBe("#/settings/hub/machines");
+    expect(madeWith()).toEqual([]);
+  });
+
+  it("tells a member with nothing that runs agents who can fix it", async () => {
+    bare = true;
+    role = "member";
+    await render();
+    expect(document.querySelector("[data-nothing-runs]")?.textContent).toBe("Nothing runs agents yet. Ask an owner or admin to connect a computer.");
+    expect(button("Connect a computer")).toBeUndefined();
+  });
+
   it("makes a bot with no repo from just a name, in a folder the hub makes", async () => {
     await render();
     expect(document.body.textContent).toContain("None. It works in a folder of its own.");

@@ -130,7 +130,7 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
     return hubEntry("vault_key", "fail", `The vault key didn't load: ${trimDots(f.problem)}.`, manual("re-enter the recovery code with `fleetd vault restore-key` on the hub"));
   }
   if (f.locked) {
-    return hubEntry("vault_key", "warn", "The vault is locked until an owner or admin unlocks it with its passphrase: fills wait, variables already delivered keep working.", manual("unlock it in Settings › You › Vault"));
+    return hubEntry("vault_key", "warn", "The vault is locked until an owner or admin unlocks it with its passphrase: fills wait, variables already delivered keep working.", manual("unlock it in Settings › Vault"));
   }
   const where = f.mode === "file" ? `a file on this machine (${f.path})` : f.mode === "keyring" ? "this machine's keychain" : "a passphrase-locked file";
   if (!f.recoverySaved) {
@@ -172,7 +172,7 @@ const RANK: Record<DoctorStatus, number> = { ok: 0, unknown: 1, warn: 2, fail: 3
  * each token's last Test; the worst token decides, and every token as bad is named.
  */
 export function onepasswordVault(tokens: [string, OnePasswordTest?][]): DoctorCheck | undefined {
-  const page = "Settings › Your accounts › 1Password";
+  const page = "Settings › Accounts › 1Password";
   const oneVault = (name: string) =>
     manual(
       `${name} makes a service account for only fleetd's vault (${ONEPASSWORD_ACCOUNTS}), pastes its token in ${page} and revokes the old one`,
@@ -526,7 +526,7 @@ export function claudeOwner(setup: ClaudeSetupView): DoctorCheck {
       "claude_owner",
       "unknown",
       `${name}, the hub's owner, has no Claude subscription connected.`,
-      manual(`${name} connects it in Settings › Your accounts › Claude`),
+      manual(`${name} connects it in Settings › Accounts › Claude`),
     );
   }
   return accountEntry(
@@ -535,7 +535,7 @@ export function claudeOwner(setup: ClaudeSetupView): DoctorCheck {
     sub.sealedOn,
     sub.lastTest ?? undefined,
     setup.machines,
-    `${name} runs \`claude setup-token\` again and pastes the new token in Settings › Your accounts › Claude`,
+    `${name} runs \`claude setup-token\` again and pastes the new token in Settings › Accounts › Claude`,
   );
 }
 

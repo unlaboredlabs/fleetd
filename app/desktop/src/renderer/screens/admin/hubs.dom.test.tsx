@@ -11,7 +11,8 @@ import type { HubEntry } from "../../../shared/hubs";
 import { createHubSet } from "../../src/data/hubs";
 import { HubsProvider } from "../../src/data/react";
 import { BILLING_SAMPLES } from "../../../shared/billing.samples";
-import { readBilling } from "../../../shared/billing";
+import { PAID_READ_EVERY_MS, readBilling } from "../../../shared/billing";
+import { resetBillingReturn } from "./Billing";
 import { AT, snapshot } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { Shell } from "../shell/Shell";
@@ -299,6 +300,55 @@ it("shows Billing once fleetd's computers are on for the team, switching only be
     ["hub", false],
     ["a1b2", true],
   ]);
+});
+
+it("back from paying at Stripe, Billing says the payment arrived rather than that there are no credits, and shows them once Stripe says so", async () => {
+  fake.roles.set("a1b2", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.none));
+  resetBillingReturn();
+  window.history.replaceState(null, "", "/?billing=paid&team=t1#/");
+  await mount(TEAM_AND_OWN);
+  await go("#/settings/hub/billing?at=a1b2");
+  const page = () => host.querySelector('[data-screen="settings.hub.billing"]')?.textContent ?? "";
+  expect(page()).toContain("Payment received. The credits show here in a moment, once Stripe confirms it.");
+  expect(page()).not.toContain("no plan and no credits");
+  // Stripe's word goes from the address at once, the rest of it kept: a reload doesn't say it again.
+  expect(window.location.search).toBe("?team=t1");
+  // Stripe's word lands: the page reads it on its own, and the line goes.
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.plan));
+  for (let waited = 0; page().includes("Payment received") && waited < PAID_READ_EVERY_MS * 3; waited += 100) {
+    await act(() => new Promise((done) => setTimeout(done, 100)));
+  }
+  expect(page()).not.toContain("Payment received");
+  expect(page()).toContain("$42.10 left");
+  window.history.replaceState(null, "", "/#/");
+  resetBillingReturn();
+});
+
+it("Stripe's way back is said once, and only on the team that paid: not on another team's Billing, nor on a later visit", async () => {
+  fake.roles.set("a1b2", "owner").set("c3d4", "owner");
+  fake.billing.set("a1b2", readBilling(BILLING_SAMPLES.none));
+  fake.billing.set("c3d4", readBilling(BILLING_SAMPLES.none));
+  resetBillingReturn();
+  window.history.replaceState(null, "", "/?billing=paid#/");
+  await mount([
+    { id: "a1b2", label: "Acme", color: "amber", cloud: true },
+    { id: "c3d4", label: "Club", cloud: true },
+  ]);
+  await go("#/settings/hub/billing?at=a1b2");
+  const page = () => host.querySelector('[data-screen="settings.hub.billing"]')?.textContent ?? "";
+  expect(page()).toContain("Payment received");
+  // Another team, in the same page load (a switch doesn't reload it): nothing was paid there.
+  await go("#/settings/hub/billing?at=c3d4");
+  expect(page()).not.toContain("Payment received");
+  expect(page()).not.toContain("Stripe hasn't confirmed");
+  // Back on the team that paid, a later visit: said already, so the page is as Billing reads.
+  await go("#/settings/hub/people?at=a1b2");
+  await go("#/settings/hub/billing?at=a1b2");
+  expect(page()).not.toContain("Payment received");
+  expect(page()).not.toContain("Stripe hasn't confirmed");
+  window.history.replaceState(null, "", "/#/");
+  resetBillingReturn();
 });
 
 it("with one hub, names none and offers no switch: the page is as it was", async () => {

@@ -155,7 +155,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         part(
           "Give the hub an API key",
           "Bots' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › " +
-            "Your accounts › Claude. Machines need no login of their own.",
+            "Accounts › Claude. Machines need no login of their own.",
           [link("Claude Console › API keys", "https://console.anthropic.com/settings/keys")],
           [
             value("Key name", name),
@@ -169,7 +169,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         part(
           "Or connect your own subscription",
           "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in " +
-            "Settings › Your accounts › Claude; the app seals it on your device.",
+            "Settings › Accounts › Claude; the app seals it on your device.",
           [],
           [command("On any computer with claude", "claude setup-token")],
         ),
@@ -199,7 +199,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
         ),
         part(
           "Install it on the repositories fleetd works on",
-          "Then each person connects their own GitHub in Settings › Your accounts › GitHub, so the PRs of their orders open as them.",
+          "Then each person connects their own GitHub in Settings › Accounts › GitHub, so the PRs of their orders open as them.",
           [],
           [],
         ),
@@ -241,7 +241,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           ),
         ],
         fieldsNote:
-          "Each person pastes their own token (it starts with ops_) in Settings › Your accounts › 1Password; the app seals " +
+          "Each person pastes their own token (it starts with ops_) in Settings › Accounts › 1Password; the app seals " +
           "it on their device to every machine. Test there lists the vaults it reads.",
         place: "onepassword",
         test:

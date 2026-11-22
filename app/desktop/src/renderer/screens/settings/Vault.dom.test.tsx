@@ -291,6 +291,24 @@ it("adds a login by handing its typed fields to main to seal, never to the hub, 
 });
 
 
+it("brings a refused login's problem into view: a long form's foot can't hide why Add did nothing", async () => {
+  const shown: Element[] = [];
+  vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+    shown.push(this);
+  });
+  await render("#/settings/vault");
+  const login = (await openPlus()).find((m) => m.textContent === "Login");
+  if (login === undefined) throw new Error("no Login item");
+  await click(login);
+  await type(fieldByLabel("Websites"), "not a website");
+  await type(fieldByLabel("Password"), CANARY);
+  await click(button("Add"));
+  const alert = document.querySelector("[role='dialog'] [role='alert']");
+  expect(alert?.textContent).toBe("not a website isn't a website.");
+  expect(shown).toContain(alert);
+  expect(saves).toEqual([]);
+});
+
 it("names a picked vault card the list doesn't have by its label, never its raw vault: id", async () => {
   card = { ref: "vault:V00000000000000000000000000000077", label: "Old Visa", brand: "visa", last4: "1111" };
   await render("#/settings/projects?for=devbox/shop", TEAM, <PaymentsSetting projectRef={{ machineId: "devbox", projectId: "shop" }} />);
@@ -361,7 +379,7 @@ it("lists an older hub's items as one list, the person's own among them, with no
   expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
 });
 
-it("keeps only the vault key on Hub › Every bot › Vault", async () => {
+it("keeps only the vault key on Hub › Bot defaults › Vault", async () => {
   await render("#/settings/hub/vault", TEAM, <HubVault />);
   expect(host.querySelector("[data-screen='settings.hub.vault']")).not.toBeNull();
   expect(host.textContent).toContain("Recovery code");

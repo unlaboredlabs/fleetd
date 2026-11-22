@@ -12,7 +12,7 @@
 //   - Claude: the hub's API key with its endpoint (Anthropic's own prefilled; one on the tailnet wants Tailscale), or
 //     the way in each place has of its own: a computer's login (machine_claude_login: its sign-in page, then the code it
 //     shows; until then the hub has the machine degraded, "claude is not logged in"), the hosted sandboxes' the
-//     person's subscription (Settings › Your accounts › Claude);
+//     person's subscription (Settings › Accounts › Claude);
 //   - GitHub, for a bot from a repo: the person's own connection through fleetd's App and the App installed on the
 //     repos (D517), one trip to GitHub; an empty bot needs neither;
 //   - a bot: picking a repository clones it onto the computer and opens its chat with the lead.
@@ -52,8 +52,10 @@ export type ComputerStep =
   | { readonly at: "hosted_wait"; readonly provider: string }
   /** Not ready past the bounded wait (setup/hostedWait.ts): why in the hub's words, its fix, and Try again. */
   | { readonly at: "hosted_failed"; readonly provider: string; readonly reason: string; readonly fix: string; readonly trying?: boolean }
-  /** Agents run in the provider's sandboxes once Claude reaches them. */
-  | { readonly at: "hosted"; readonly provider: string };
+  /** Agents run in the provider's sandboxes once Claude reaches them; on a cloud team, fleetd's computers. */
+  | { readonly at: "hosted"; readonly provider: string }
+  /** fleetd's computers, held (no plan or credits, the cap reached): Billing's own line, and Pick a plan for an admin. */
+  | { readonly at: "computers_held"; readonly message: string; readonly canBuy: boolean };
 
 /** The team's Tailscale, as the hub runs its one device (tailnet_get). */
 export type TailscaleStep =

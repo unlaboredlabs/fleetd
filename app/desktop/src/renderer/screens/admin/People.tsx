@@ -21,6 +21,7 @@ import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { pauseLine } from "../settings/claudeModel";
+import { useNoMachine } from "../settings/claudeParts";
 import { accountsLine, devicesLine, expiresLine, openInvites, peopleRows, roleWord, type PersonRow } from "./model";
 import { usePeople } from "./usePeople";
 import s from "../settings/settings.module.css";
@@ -91,11 +92,13 @@ function PeopleList({ list, me }: { list: PeopleListOutput; me: Person | undefin
   const github = useToolQuery("github_app_get", noInput, { enabled: live });
   const usage = useToolQuery("usage_status", noInput, { enabled: live });
   const nowMs = useNow(true, 60_000);
+  const noMachine = useNoMachine();
   const accounts = (personId: string) => {
     const line = accountsLine(
       claude.data?.people?.find((p) => p.person.personId === personId),
       github.data?.people?.find((p) => p.person.personId === personId),
       github.data?.app !== undefined,
+      noMachine,
     );
     const pause = pauseLine({ kind: "person", personId }, usage.data?.machines ?? [], nowMs);
     return { line, pause };

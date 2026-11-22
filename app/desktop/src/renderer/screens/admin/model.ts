@@ -82,11 +82,11 @@ export function nameProblem(name: string): string | undefined {
  * A person's accounts on their People row, in one line: what the work they start runs on in Claude, and the GitHub
  * their PRs open as. A part the hub doesn't say (an older hub, or no GitHub App yet) is left out; null when both are.
  */
-export function accountsLine(claude: PersonClaude | undefined, github: { readonly account?: GithubAccount } | undefined, githubApp: boolean): string | null {
+export function accountsLine(claude: PersonClaude | undefined, github: { readonly account?: GithubAccount } | undefined, githubApp: boolean, noMachine = false): string | null {
   const parts: string[] = [];
   if (claude !== undefined) {
     const failed = claude.subscription?.lastTest?.ok === false && claude.runsOn.kind === "account" && claude.runsOn.account.kind !== "hub";
-    parts.push(`Claude: ${theirRunsOn(claude.runsOn)}${failed ? ", its last Test failed" : ""}`);
+    parts.push(`Claude: ${theirRunsOn(claude.runsOn, noMachine)}${failed ? ", its last Test failed" : ""}`);
   }
   if (githubApp && github !== undefined) {
     const a = github.account;

@@ -1,6 +1,6 @@
 // `github_app_get` for everyone; `github_app_manifest`, `github_app_create`, `github_app_test` and `github_app_remove`
 // for an owner's or admin's device (Settings › Hub › Setup › GitHub); `github_connect` and `github_disconnect` for a
-// person's own devices (Settings › Your accounts › GitHub). No key, secret or token crosses any of them.
+// person's own devices (Settings › Accounts › GitHub). No key, secret or token crosses any of them.
 import type { Person, PersonGithub, PersonId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { allows } from "../auth/index.ts";
@@ -112,7 +112,7 @@ function me(hub: Hub, caller: Caller): PersonId {
     throw new ToolError(
       "forbidden",
       "Only a person connects their own GitHub, from one of their own devices.",
-      "Open Settings › Your accounts › GitHub in the desktop app.",
+      "Open Settings › Accounts › GitHub in the desktop app.",
     );
   }
   return person.personId;

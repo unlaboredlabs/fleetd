@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings › Your accounts › 1Password: the guided steps link to 1Password's service accounts; a token pasted goes to
+// Settings › Accounts › 1Password: the guided steps link to 1Password's service accounts; a token pasted goes to
 // main to seal (to every machine with a box key) and is tested at once, Test lists the vaults it reads (or 1Password's
 // words), the page never shows the token again, and Remove asks first.
 import { act } from "react";

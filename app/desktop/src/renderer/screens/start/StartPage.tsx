@@ -30,9 +30,11 @@ export interface StartActions {
   readonly onCopy?: (line: string) => void;
   /** Hosted sandboxes that didn't get ready: their provider's key tested again, and the wait started over. */
   readonly onHostedRetry?: () => void;
+  /** Settings › Hub › Billing: a plan or credits for fleetd's computers. */
+  readonly onBilling?: () => void;
   readonly onClaudeLogin?: () => void;
   readonly onClaudeCode?: (code: string) => void;
-  /** Settings › Your accounts › Claude: the account hosted sandboxes' agents run on. */
+  /** Settings › Accounts › Claude: the account hosted sandboxes' agents run on. */
   readonly onClaudeAccount?: () => void;
   /** The hub's API key, sealed to every machine, with the endpoint the hub keeps (none for Anthropic's own). */
   readonly onClaudeKey?: (endpoint: string | undefined, key: string) => void;
@@ -54,8 +56,7 @@ export interface StartActions {
 
 const TITLES: Record<StepId, string> = { computer: "Where agents run", tailscale: "Tailscale", claude: "Claude", github: "Connect GitHub", project: "Start a bot" };
 
-/** `hosted`: the team's hosted sandbox providers as rows to connect (settings/Providers), the second way agents run. */
-export function StartPage({ view, actions = {}, hosted }: { view: StartView; actions?: StartActions; hosted?: ReactNode }) {
+export function StartPage({ view, actions = {} }: { view: StartView; actions?: StartActions }) {
   const open = currentStep(view);
   const steps = stepsOf(view);
   return (
@@ -69,7 +70,7 @@ export function StartPage({ view, actions = {}, hosted }: { view: StartView; act
         </div>
         <ol className={s.steps}>
           {steps.map((step, i) => (
-            <Step key={step} n={i + 1} id={step} view={view} open={step === open} actions={actions} hosted={hosted} />
+            <Step key={step} n={i + 1} id={step} view={view} open={step === open} actions={actions} />
           ))}
         </ol>
         {/* Either way on is the app as it is, set up later: the You menu's Finish setting up comes back here. */}
@@ -83,7 +84,7 @@ export function StartPage({ view, actions = {}, hosted }: { view: StartView; act
   );
 }
 
-function Step({ n, id, view, open, actions, hosted }: { n: number; id: StepId; view: StartView; open: boolean; actions: StartActions; hosted: ReactNode }) {
+function Step({ n, id, view, open, actions }: { n: number; id: StepId; view: StartView; open: boolean; actions: StartActions }) {
   // A skipped GitHub or Tailscale lets the steps go on, but it isn't done: it keeps its number, its Connect at its end.
   const skipped =
     (id === "github" && (view.github.at === "skipped" || view.github.at === "requested")) || (id === "tailscale" && view.who === "owner" && view.tailscale?.at === "skipped");
@@ -100,7 +101,7 @@ function Step({ n, id, view, open, actions, hosted }: { n: number; id: StepId; v
         </Text>
         {!open ? <Ended id={id} view={view} actions={actions} /> : null}
       </div>
-      {open ? <div className={s.body}>{body(id, view, actions, hosted)}</div> : null}
+      {open ? <div className={s.body}>{body(id, view, actions)}</div> : null}
     </li>
   );
 }
@@ -139,8 +140,8 @@ function Ended({ id, view, actions }: { id: StepId; view: StartView; actions: St
   return null;
 }
 
-function body(id: StepId, view: StartView, actions: StartActions, hosted: ReactNode): ReactNode {
-  if (id === "computer" && view.who === "owner") return <Computer step={view.computer} actions={actions} hosted={hosted} />;
+function body(id: StepId, view: StartView, actions: StartActions): ReactNode {
+  if (id === "computer" && view.who === "owner") return <Computer step={view.computer} actions={actions} />;
   if (id === "tailscale" && view.who === "owner" && view.tailscale !== undefined) return <Tailscale step={view.tailscale} actions={actions} />;
   if (id === "claude" && view.who === "owner") return <Claude step={view.claude} tailnet={view.tailnet} actions={actions} />;
   if (id === "github") return <Github step={view.github} actions={actions} />;
@@ -148,31 +149,28 @@ function body(id: StepId, view: StartView, actions: StartActions, hosted: ReactN
   return <Projects projects={view.projects} actions={actions} />;
 }
 
-/** Where agents run, while nothing runs them yet: a computer (its join line) or a hosted provider (its rows). */
-function Where({ step, actions, hosted }: { step: Extract<ComputerStep, { at: "line" }>; actions: StartActions; hosted: ReactNode }) {
-  const [way, setWay] = useState<"computer" | "hosted">("computer");
-  return (
-    <>
-      {hosted ? (
-        <Segmented
-          label="Where agents run"
-          options={[
-            { value: "computer", label: "A computer" },
-            { value: "hosted", label: "Hosted sandboxes" },
-          ]}
-          value={way}
-          onChange={setWay}
-        />
-      ) : null}
-      {way === "hosted" && hosted ? <div className={s.hosted}>{hosted}</div> : <Computer step={step} actions={actions} hosted={null} />}
-    </>
-  );
-}
-
-function Computer({ step, actions, hosted }: { step: ComputerStep; actions: StartActions; hosted: ReactNode }) {
+function Computer({ step, actions }: { step: ComputerStep; actions: StartActions }) {
   const [copied, setCopied] = useState(false);
-  if (step.at === "line" && hosted) return <Where step={step} actions={actions} hosted={hosted} />;
   if (step.at === "hosted_wait") return <Waiting>{`Getting ${step.provider}'s sandboxes ready`}</Waiting>;
+  if (step.at === "computers_held")
+    return (
+      <>
+        <span role="status">
+          <Text tone="warning">{step.message}</Text>
+        </span>
+        {step.canBuy ? (
+          <div>
+            <Button variant="primary" onClick={actions.onBilling}>
+              Pick a plan
+            </Button>
+          </div>
+        ) : (
+          <Text as="p" tone="quiet">
+            Ask an owner or admin of the team.
+          </Text>
+        )}
+      </>
+    );
   if (step.at === "hosted_failed")
     return (
       <>

@@ -1,4 +1,4 @@
-// Which Claude account work runs on (teams step 8, D200), in a person's words: Settings › Your accounts › Claude (each person's own
+// Which Claude account work runs on (teams step 8, D200), in a person's words: Settings › Accounts › Claude (each person's own
 // choice and subscription) and Settings › Hub › Setup › Claude (the hub's API key, who may use it, what leads run on) read
 // claude_accounts_get and say it the same way. Pure, so the wording is tested without a hub.
 import type { ClaudeAccount, ClaudeChoice, ClaudeRunsOn, ClaudeSealedOn, ClaudeTest, PersonClaude, PersonRef, UsageStatus } from "../../../shared/contracts";
@@ -24,11 +24,14 @@ export function accountWords(account: ClaudeAccount, people: ReadonlyArray<Perso
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** What some work runs on now, as one line: "Your subscription.", "Each machine's own Claude login.". */
-export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string): string {
+/**
+ * What some work runs on now, as one line: "Your subscription.", "Each machine's own Claude login.". `noMachine`: the
+ * team has no machine of its own (a fleetd cloud team before its first computer), so a machine's login is nothing.
+ */
+export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string, noMachine = false): string {
   switch (runsOn.kind) {
     case "machine_login":
-      return "Each machine's own Claude login.";
+      return noMachine ? "Not connected." : "Each machine's own Claude login.";
     case "account":
       return `${capital(accountWords(runsOn.account, people, me))}.`;
     case "refused":
@@ -37,10 +40,10 @@ export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef
 }
 
 /** Someone's account in a list of everyone's: "Own subscription", "Hub API key", "Nothing to run on". */
-export function theirRunsOn(runsOn: ClaudeRunsOn): string {
+export function theirRunsOn(runsOn: ClaudeRunsOn, noMachine = false): string {
   switch (runsOn.kind) {
     case "machine_login":
-      return "Machine's own login";
+      return noMachine ? "Not connected" : "Machine's own login";
     case "account":
       return runsOn.account.kind === "hub" ? "Hub API key" : "Own subscription";
     case "refused":

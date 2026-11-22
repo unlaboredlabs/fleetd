@@ -226,7 +226,7 @@ export type GithubAppRequest = z.infer<typeof GithubAppRequest>;
 
 const Boxes = z.array(z.strictObject({ machineId: z.string().min(1).max(64), boxPubKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/u) })).max(500);
 /**
- * A Claude account's secret (Settings › Your accounts › Claude, Settings › Hub › Setup › Claude): main seals it to every machine in `boxes`
+ * A Claude account's secret (Settings › Accounts › Claude, Settings › Hub › Setup › Claude): main seals it to every machine in `boxes`
  * and calls claude_hub_api_set (the hub's key, with its endpoint; no key keeps the saved one) or
  * claude_subscription_set (the person's own `claude setup-token` token). The hub gets the boxes, never the value.
  */
@@ -242,7 +242,7 @@ export const ClaudeAccountRequest = z.discriminatedUnion("account", [
 export type ClaudeAccountRequest = z.infer<typeof ClaudeAccountRequest>;
 
 /**
- * A person's 1Password service account token (Settings › Your accounts › 1Password): main seals it to every machine in
+ * A person's 1Password service account token (Settings › Accounts › 1Password): main seals it to every machine in
  * `boxes` and calls onepassword_set. The hub gets the boxes, never the value.
  */
 export const OnePasswordRequest = z.strictObject({ token: z.string().min(1).max(SECRET_MAX_BYTES), boxes: Boxes });

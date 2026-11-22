@@ -175,17 +175,10 @@
   /* Clear of the main area's hairline along the sidebar. */
   inset: 0 0 calc(-1 * var(--space-6)) 1px;
   /* The sheet's own colour, solid through the top row and 12 px past the pill (60 of its 72 px), so nothing reads under
-     or just below it; then 12 px where what scrolls up blurs and dissolves into it. Without a GPU (QA, software
-     compositing) the gradient alone hides it. */
+     or just below it; then 12 px where what scrolls up dissolves into it. No blur: a blur drew what the solid part
+     hides (a dark bubble just above its edge) down into the fade, as a hard dark band across the chat (W791). */
   background: linear-gradient(to bottom, var(--bg) 0, var(--bg) 83%, color-mix(in srgb, var(--bg) 60%, transparent) 92%, transparent);
-  /* The blur holds almost to the end, so what passes the last 24 px is a soft smear going to white, never words. */
-  backdrop-filter: blur(12px);
-  mask-image: linear-gradient(to bottom, #000 88%, transparent);
   pointer-events: none;
-}
-/* Without a GPU to blur on (tokens.css), its fade alone. */
-:root[data-compositing="software"] .under > .topBar::before {
-  backdrop-filter: none;
 }
 /* With the sidebar hidden, the top row starts after the traffic lights. */
 .noSidebar > .topBar {

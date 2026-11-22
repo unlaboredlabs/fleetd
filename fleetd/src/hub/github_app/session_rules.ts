@@ -26,7 +26,7 @@ export type Block = { kind: "disconnected" } | { kind: "not_renewed"; why: strin
 export function blockedLine(order: string, name: string, why: Block): string {
   return why.kind === "disconnected"
     ? `${order}: ${name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than ` +
-      `use anyone else's account. Ask ${name} to connect GitHub in Settings › Your accounts › GitHub; their agents get the token back ` +
+      `use anyone else's account. Ask ${name} to connect GitHub in Settings › Accounts › GitHub; their agents get the token back ` +
       "at their next command."
     : `${order}: its agents' GitHub token ended and the hub couldn't renew it (${why.why}), so their gh fails (GitHub says bad ` +
       "credentials) rather than use the machine's own login. The hub tries again every 5 minutes and the agents " +

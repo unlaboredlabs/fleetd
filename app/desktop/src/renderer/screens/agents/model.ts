@@ -5,6 +5,7 @@ import type { AgentRow, ChangeState, ClaimOwner, LaneStatus, RecentLanding, Work
 import type { LiveAgent } from "../../src/data/selectors";
 import { projectKey, type ProjectKey } from "../../src/data/store";
 import { parseMs } from "../live/format";
+import type { Line } from "../live/words";
 import { agoText } from "../projects/machineText";
 
 /** A line above agents: the order they work on, or (under Other projects) their project's name. */
@@ -112,6 +113,17 @@ export const agentState = (status: LaneStatus): AgentState => {
 };
 
 /** Each status in one word, beside the dot in an agent's head. */
+/**
+ * What the Now line says: the lane's own words, unless they are only "thinking" while its newest step is still
+ * running with words of its own (a start that keeps failing: where it is, why, and when it goes again), which is what
+ * it is doing then.
+ */
+export const nowLine = (line: Line, steps: ReadonlyArray<WorkStep> | undefined): Line => {
+  const last = steps?.[steps.length - 1];
+  if (!line.thinking || last?.kind !== "action" || last.action.status !== "running" || last.action.kind !== "other") return line;
+  return { words: last.action.summary, tone: "quiet", thinking: false };
+};
+
 export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
   queued: "queued",
   starting: "starting",

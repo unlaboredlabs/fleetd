@@ -5,7 +5,7 @@
 // The nightly memory refresh isn't one of them: it is on the project's Instructions & memory, beside the memory it tidies.
 import { useEffect, useState } from "react";
 import type { Automation, ProjectRef } from "../../../shared/contracts";
-import { Button, Dialog, Field, Input, StatusChip, Switch, Text, Textarea, copyText, type TextTone } from "../../ui";
+import { Button, Dialog, Field, Input, Segmented, StatusChip, Switch, Text, Textarea, copyText, type TextTone } from "../../ui";
 import { useToolQuery } from "../../src/data/react";
 import { parseScope, projectRefOf, type Scope } from "../settings/editor";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
@@ -29,6 +29,7 @@ import {
   triggerWord,
   triggersLine,
   updateInput,
+  withWhen,
   when,
   type Draft,
 } from "./model";
@@ -306,7 +307,12 @@ function Runs({ automationId }: { automationId: string }) {
   );
 }
 
-/** A new automation, or one being edited: name, prompt, schedule with its preview, webhook. */
+const WHEN = [
+  { value: "repeats", label: "Repeats" },
+  { value: "once", label: "Once" },
+] as const;
+
+/** A new automation, or one being edited: name, prompt, schedule (repeating on a cron, or once) with its preview, webhook. */
 function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClose: () => void; onUrl: (u: { name: string; url: string }) => void }) {
   const a = props.automation;
   const [draft, setDraft] = useState<Draft>(() => (a ? draftOf(a, localZone()) : emptyDraft(localZone())));
@@ -371,6 +377,12 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
       <Switch label="On a schedule" checked={draft.scheduled} onCheckedChange={(on) => set({ scheduled: on })} />
       {draft.scheduled ? (
         <>
+          <Segmented<"repeats" | "once">
+            label="When"
+            options={WHEN}
+            value={draft.at === undefined ? "repeats" : "once"}
+            onChange={(when) => setDraft(withWhen(draft, when, new Date()))}
+          />
           <div className={s.scheduleRow}>
             {draft.at === undefined ? (
               <Field label="Cron" description="Minute, hour, day of month, month, day of week." error={shown.cron}>
@@ -383,7 +395,7 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
             )}
           </div>
           <Text size="sm" tone={preview === null || preview.ok ? "default" : "danger"} aria-label="Schedule preview">
-            {preview ? (preview.ok ? preview.text : preview.error) : draft.at !== undefined ? onceLine(draft.at, draft.tz) : null}
+            {preview ? (preview.ok ? preview.text : shown.cron === undefined ? preview.error : null) : draft.at !== undefined ? onceLine(draft.at, draft.tz) : null}
           </Text>
 
         </>

@@ -59,14 +59,18 @@ export const useHubProbe = (hub: string | null): Probe | null => {
   return found !== null && found.hub === hub ? found.probe : null;
 };
 
-/** Where the hub key is kept (asked of main once per mount; it changes only with a restart). */
+/** Where the hub key is kept (asked of main once per mount; it changes only with a restart); null on the web. */
 export const useKeyStore = (): KeyStore | null => {
   const [store, setStore] = useState<KeyStore | null>(null);
   useEffect(() => {
     let current = true;
-    void window.fleetd.pair.store().then((found) => {
-      if (current) setStore(found);
-    });
+    // The web app keeps no hub key (its session holds it): nothing to say, never an error.
+    window.fleetd.pair.store().then(
+      (found) => {
+        if (current) setStore(found);
+      },
+      () => undefined,
+    );
     return () => {
       current = false;
     };

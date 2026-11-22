@@ -203,12 +203,12 @@ export function refusal(
   if (a) {
     return {
       message: `GitHub no longer takes ${name}'s connection (${a.login}): connect GitHub again to open this order's PRs.`,
-      fix: `Ask ${name} to press Connect again in Settings › Your accounts › GitHub in their fleetd app; then spawn the writer again.`,
+      fix: `Ask ${name} to press Connect again in Settings › Accounts › GitHub in their fleetd app; then spawn the writer again.`,
     };
   }
   return {
     message: `${GITHUB_CONNECT_REFUSAL} ${name} started it and hasn't connected their GitHub, and its PRs open as them.`,
-    fix: `Ask ${name} to connect GitHub in Settings › Your accounts › GitHub in their fleetd app (one sign-in); then spawn the writer again.`,
+    fix: `Ask ${name} to connect GitHub in Settings › Accounts › GitHub in their fleetd app (one sign-in); then spawn the writer again.`,
   };
 }
 
@@ -289,7 +289,7 @@ async function hand(
     } else if (failed !== undefined && !lapsed) {
       throw new Error(failed);
     } else if (writer) {
-      throw new Error(`${GITHUB_CONNECT_REFUSAL} Its starter connects GitHub in Settings › Your accounts › GitHub`);
+      throw new Error(`${GITHUB_CONNECT_REFUSAL} Its starter connects GitHub in Settings › Accounts › GitHub`);
     } else {
       // A reader or reviewer opens no PR: it goes on, but never on a token of theirs taken back.
       const k = keptAt(hub, checkout, order);

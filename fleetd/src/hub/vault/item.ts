@@ -73,7 +73,7 @@ export const bindingOf = (r: Pick<ItemRow, "itemId" | "kind" | "version" | "seal
 });
 
 export const locked = () =>
-  new ToolError("failed", "The vault is locked.", "An owner or admin unlocks it in the app: Settings › You › Vault.", "vault_locked");
+  new ToolError("failed", "The vault is locked.", "An owner or admin unlocks it in the app: Settings › Vault.", "vault_locked");
 export const keyMissing = () =>
   new ToolError(
     "failed",

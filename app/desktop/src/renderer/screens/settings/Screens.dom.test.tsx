@@ -157,6 +157,8 @@ it("lists each machine that hosts screens with no switch per kind, and nothing m
   expect(box?.querySelector("[aria-label^='Idle timeout']")).toBeNull();
   // Recordings keep only a number of days; the size limit stays the hub's safety net.
   expect(host.querySelector("[data-screens-retention]")?.textContent).toContain("30 days");
+  // It lines up with What runs where's other rows, which have no state mark: no empty mark slot pushes it in.
+  expect(host.querySelector("[data-screens-retention] [data-mark]")).toBeNull();
   expect(host.querySelector("[aria-label='Recordings per bot, at most']")).toBeNull();
 });
 

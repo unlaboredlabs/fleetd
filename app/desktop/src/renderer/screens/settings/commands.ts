@@ -51,7 +51,7 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.accounts",
-    title: "Your accounts",
+    title: "Accounts",
     detail: "The Claude account and GitHub your work runs on",
     group: "settings",
     keywords: ["claude", "github", "account", "subscription", "connections"],
@@ -59,7 +59,7 @@ const pages: Command[] = [
   },
   {
     id: "go:settings.your-memory",
-    title: "Your memory",
+    title: "Memory",
     detail: "How you work, as the leads remember it: yours alone",
     group: "settings",
     keywords: ["memory", "remember", "forget", "preferences"],
@@ -141,9 +141,9 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   });
   const offAdmin = registerCommands([
     hubPage("go:hub.machines", "Machines", "Settings › Hub: add a machine, its roles, max agents, updates", "hub.machines", ["machine", "add machine", "fleet cap", "machine roles", "update", "upgrade"]),
-    hubPage("go:hub.profiles", "Agents for every bot", "Every bot: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
-    hubPage("go:hub.tools", "Tools & skills", "Every bot › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
-    hubPage("go:hub.instructions", "Instructions for every bot", "Every bot: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
+    hubPage("go:hub.profiles", "Agents for every bot", "Bot defaults: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
+    hubPage("go:hub.tools", "Tools & skills", "Bot defaults › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
+    hubPage("go:hub.instructions", "Instructions for every bot", "Bot defaults: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
     hubPage("go:hub.accounts", "Hub accounts", "Hub › Setup: the hub's Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
     hubPage("go:hub.setup", "Setup", "Settings › Hub: the hub's accounts and its other setup steps", "hub.setup", ["setup", "guided setup", "accounts", "steps"]),
   ]);

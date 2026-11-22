@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   billingOn,
+  billingReturnOf,
+  paidLine,
+  PAID_WAIT_MS,
+  withoutBillingReturn,
   buys,
   capFromInput,
   capLine,
@@ -132,5 +136,29 @@ describe("the page's figures", () => {
   it("reads the cap as typed", () => {
     expect([capFromInput(""), capFromInput(" 50 "), capFromInput("$12.5"), capFromInput("1,000"), capFromInput("12.345"), capFromInput("ten")]).toEqual([null, 5000, 1250, 100_000, undefined, undefined]);
     expect([capToInput(null), capToInput(5000), capToInput(1250)]).toEqual(["", "50", "12.50"]);
+  });
+});
+
+describe("Stripe's way back", () => {
+  const none: BillingState = BILLING_SAMPLES.none;
+  const paid: BillingState = BILLING_SAMPLES.plan;
+  it("reads paid or cancelled from the address, and cleans only that from it", () => {
+    expect(billingReturnOf("?billing=paid&team=t1")).toBe("paid");
+    expect(billingReturnOf("?billing=cancelled")).toBe("cancelled");
+    expect(billingReturnOf("?billing=other")).toBeNull();
+    expect(billingReturnOf("")).toBeNull();
+    expect(withoutBillingReturn("?billing=paid&team=t1")).toBe("?team=t1");
+    expect(withoutBillingReturn("?billing=paid")).toBe("");
+  });
+  it("says the payment arrived while Stripe's word is on its way, never the no-credits line, and nothing once it shows", () => {
+    expect(none.plan).toBeNull();
+    expect(none.credits.leftCents).toBe(0);
+    expect(paidLine("paid", none, 0)).toBe("Payment received. The credits show here in a moment, once Stripe confirms it.");
+    expect(paidLine("paid", none, PAID_WAIT_MS)).toBe(
+      "Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to fleetd's support.",
+    );
+    expect(paidLine("paid", paid, 0)).toBeNull();
+    expect(paidLine("cancelled", none, 0)).toBeNull();
+    expect(paidLine(null, none, 0)).toBeNull();
   });
 });

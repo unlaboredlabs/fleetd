@@ -368,7 +368,7 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
   throw new ToolError(
     "forbidden",
     "Only the hub's owners and admins change task profiles.",
-    "Ask an owner or admin; they change them on Settings › Hub › Every bot › Agents in the app.",
+    "Ask an owner or admin; they change them on Settings › Hub › Bot defaults › Agents in the app.",
   );
 }
 

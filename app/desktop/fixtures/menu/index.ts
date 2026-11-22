@@ -104,7 +104,7 @@ export default defineGroup({
     return [
       made("setup", "Sam's hub with one required setup step left: the menu's line, and Finish.", setupLeft),
       made("machine-offline", "Sam's hub with buildbox offline: the menu names it, and Open goes to its page.", (f) => offline(f, "buildbox")),
-      made("hosted-account", "Sam's hub whose hosted agents have no Claude account: boat.dev isn't ready, and Connect opens Your accounts.", (f) => {
+      made("hosted-account", "Sam's hub whose hosted agents have no Claude account: boat.dev isn't ready, and Connect opens Accounts.", (f) => {
         const hosted = {
           machineId: "hosted",
           name: "Hosted sandboxes",

@@ -112,6 +112,8 @@ group("filters", () => {
     const { machineId: _m, projectId: _p, ...paired } = ev("key.paired", today("10:00"), { deviceName: "phone" });
     expect(inFeed(paired, project, new Set())).toBe(true);
     expect(inFeed(paired, project, new Set<ActivityKind>(["agents"]))).toBe(false);
+    // A web app sign-in's key is no news for a bot: every sign-in pairs one.
+    expect(inFeed({ ...paired, data: { deviceName: "Chrome on Mac", web: true } }, project, new Set())).toBe(false);
   });
 });
 

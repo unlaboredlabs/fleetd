@@ -35,6 +35,11 @@ import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
 import { specOf } from "../../../shared/providers";
 import { hostedProblem, runnerNeedsClaude, useWaitedOut } from "../setup/hostedWait";
+import { useBilling } from "../admin/billingQuery";
+import { topLine } from "../../../shared/billing";
+
+/** What Get started calls fleetd's own computers, where a cloud team's agents run once they are on. */
+const COMPUTERS = "fleetd's computers";
 
 const noInput = {};
 
@@ -109,10 +114,15 @@ export function useStart(
 
   // The join line, made while no computer has joined, and again each time its code runs out.
   const owner = cloudTeam && !teammate && !role.pending;
-  // Where agents run can also be a hosted provider on the team's own key: its connection and last check.
-  const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: owner && live });
+  // fleetd's computers, once the cloud has them on (GET /billing/v1): where agents run, never a key of the team's own.
+  // Read before anything else, so no join line is made for a team that needs none.
+  const billing = useBilling(owner && live);
+  const provided = billing.data?.providedOn === true ? billing.data : undefined;
+  const settled = !billing.isLoading;
+  // Before that, a hosted provider connected in Settings on the team's own key still counts: its connection and last check.
+  const sandboxes = useToolQuery("sandbox_get", noInput, { enabled: owner && live && settled && provided === undefined });
   const hosted = sandboxes.data?.providers.find((p) => p.connected && p.check?.ok === true);
-  const wantLine = page && owner && live && listed.length === 0 && hosted === undefined;
+  const wantLine = page && owner && live && settled && !sandboxes.isLoading && provided === undefined && listed.length === 0 && hosted === undefined;
   const [join, setJoin] = useState<{
     readonly out: MachineJoinOutput | null;
     readonly error?: string;
@@ -160,7 +170,8 @@ export function useStart(
   // The computer agents run on: ready, or joined with its claude logged out (the hub's key may reach it).
   const joined = ready ?? loggedOut ?? null;
 
-  const providerName = hosted === undefined ? "" : specOf(hosted.provider).name;
+  const providerName = provided !== undefined ? COMPUTERS : hosted === undefined ? "" : specOf(hosted.provider).name;
+  const held = provided === undefined ? null : topLine(provided);
   // The hosted sandboxes wait on a Claude account (the hub's runner says so): the Claude step's, not this one's.
   const needsClaude = runnerNeedsClaude(runnerMachine);
   const hostedWaits = ready === null && hosted !== undefined && listed.length === 0 && runnerMachine?.status !== "online" && !needsClaude;
@@ -172,6 +183,10 @@ export function useStart(
   const computer: ComputerStep =
     ready !== null
       ? { at: "ready", machine: ready.name }
+      : provided !== undefined
+        ? held === null
+          ? { at: "hosted", provider: COMPUTERS }
+          : { at: "computers_held", message: held.message, canBuy: provided.canBuy }
       : hosted !== undefined && listed.length === 0
         ? !hostedWaits
           ? { at: "hosted", provider: providerName }
@@ -410,6 +425,7 @@ export function useStart(
     onGithubSkip: () => writeKept(hub.id, { github: "skipped" }),
     onQuery: setQuery,
     onClaudeAccount: () => navigate({ id: "settings", tab: "accounts" }),
+    onBilling: () => navigate({ id: "settings", tab: "hub.billing" }),
     onClaudeKey: (saved, key) => {
       if (key.trim() === "") {
         setKeyState({ error: "Paste the API key from the Claude Console." });
@@ -487,6 +503,8 @@ export function useStart(
     },
     onSkip: () => {
       writeKept(hub.id, { later: true });
+      // Kept with the person too, so another browser or device doesn't open on Get started again.
+      void window.fleetd.cloud.startLater?.(hub.id);
       navigate({ id: "home", at: hub.id });
     },
   };

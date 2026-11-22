@@ -107,7 +107,7 @@ describe("Settings → Bots → Instructions & memory", () => {
     expect(restoreLine("- One.\n", { at: 5, raw: "- Six." })).toBe("- One.\n- Six.\n");
   });
 
-  it("is yours on You › Your memory and a bot's on its Instructions & memory, which search finds by what people call it", () => {
-    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Your memory", "Bot memory"]);
+  it("is yours on You › Memory and a bot's on its Instructions & memory, which search finds by what people call it", () => {
+    expect(searchSettings("remember").map((o) => o.label)).toEqual(["Memory", "Bot memory"]);
   });
 });

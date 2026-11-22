@@ -224,7 +224,7 @@ const me = (hub: Hub, caller: Caller) =>
     new ToolError(
       "forbidden",
       "Only a person connects their own Claude, from one of their own devices.",
-      "Open Settings › Your accounts › Claude in the desktop app.",
+      "Open Settings › Accounts › Claude in the desktop app.",
     ),
   );
 

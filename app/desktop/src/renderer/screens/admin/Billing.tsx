@@ -6,7 +6,7 @@
 // Every price, included amount and rate is the service's answer (shared/billing.ts). A self-hosted hub has no Billing
 // at all, and a team has none until fleetd's computers are on for it (`useBillingShown`): no entry, no search result,
 // and a link to it lands on People.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import {
   billingOn,
@@ -27,11 +27,18 @@ import {
   topLine,
   usageRows,
   type BillingState,
+  billingReturnOf,
+  PAID_READ_EVERY_MS,
+  PAID_WAIT_MS,
+  paidLine,
+  showsPaid,
+  withoutBillingReturn,
 } from "../../../shared/billing";
 import type { BillingOpen } from "../../../shared/cloud";
 import type { PairFailure } from "../../../shared/pairing";
 import { Button, Input, Menu, MenuContent, MenuItem, MenuTrigger, Text, toast } from "../../ui";
 import { useHub } from "../../src/data/react";
+import { billingKey, useBilling } from "./billingQuery";
 import { useNow } from "../live";
 import { navigate } from "../shell/navigation";
 import { GroupNote, HintLines, Notice, PageHead, SettingsRow, SettingsSection } from "../settings/parts";
@@ -41,37 +48,35 @@ import b from "./billing.module.css";
 
 const said = (f: PairFailure): string => (f.fix === undefined ? f.message : `${f.message} ${f.fix}`);
 
-export const billingKey = (hub: string) => ["cloud_billing", hub] as const;
+type BillingReturn = { readonly said: "paid" | "cancelled"; readonly atMs: number; readonly hub: string };
+
+let returned: BillingReturn | null | undefined;
 
 /**
- * The team's billing, read on opening the page and again each time the app comes back to the front: a checkout or the
- * portal finishes in the browser, and the person returns here to see it.
+ * What Stripe's way back said (`?billing=paid` or `cancelled` on the web app's address), for `hub`: read from the
+ * address once per page load and cleaned from it at once, so a reload doesn't say it again. It belongs to the team the
+ * app opened on coming back (the address's `team=`, teamFromAddress), so another team's Billing never says it, and it is
+ * said once: `endBillingReturn` drops it once shown. Only the web app comes back this way.
  */
-export function useBilling(enabled: boolean) {
-  const hub = useHub().id;
-  return useQuery({
-    queryKey: billingKey(hub),
-    enabled,
-    retry: false,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    queryFn: async (): Promise<BillingState> => {
-      const out = await window.fleetd.cloud.billing(hub);
-      if (!out.ok) throw new Error(said(out.failure));
-      return out.billing;
-    },
-  });
-}
+const takeBillingReturn = (hub: string): BillingReturn | null => {
+  if (returned === undefined) {
+    const said = billingReturnOf(window.location.search);
+    if (said !== null) {
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${withoutBillingReturn(window.location.search)}${window.location.hash}`);
+    }
+    returned = said === null ? null : { said, atMs: Date.now(), hub };
+  }
+  return returned !== null && returned.hub === hub ? returned : null;
+};
 
-/**
- * Whether the hub in scope has Billing: a fleetd cloud team whose answer says fleetd's computers are on for it. Read
- * only while `asked` (the Settings index, a Hub page's switch on Billing), sharing the page's own query.
- */
-export function useBillingShown(asked = true): boolean {
-  const cloud = useHub().cloud === true;
-  const read = useBilling(asked && cloud);
-  return cloud && billingOn(read.data);
-}
+const endBillingReturn = (back: BillingReturn): void => {
+  if (returned === back) returned = null;
+};
+
+/** For tests: read the address again. */
+export const resetBillingReturn = (): void => {
+  returned = undefined;
+};
 
 /** Stripe's page for `what`, in the browser; a refusal is a toast in the team's words. */
 function useOpen() {
@@ -92,7 +97,21 @@ function useOpen() {
 export function Billing() {
   const hub = useHub();
   const read = useBilling(hub.cloud === true);
-  const nowMs = useNow(true, 60_000);
+  const [taken] = useState(() => takeBillingReturn(hub.id));
+  // Kept for this visit only (the line waits on Stripe here), and only while the page is on the team that paid.
+  const back = taken !== null && taken.hub === hub.id ? taken : null;
+  // Back from paying: read again until Stripe's word of it shows, for a minute at most.
+  const waiting = back?.said === "paid" && (read.data === undefined || !showsPaid(read.data));
+  const nowMs = useNow(true, waiting ? PAID_READ_EVERY_MS : 60_000);
+  const { refetch } = read;
+  useEffect(() => {
+    if (back === null) return;
+    toast({ title: back.said === "paid" ? "Payment received" : "Checkout cancelled: nothing was charged", tone: back.said === "paid" ? "success" : "neutral", key: "billing-return" });
+    endBillingReturn(back);
+  }, [back]);
+  useEffect(() => {
+    if (waiting && nowMs - back.atMs < PAID_WAIT_MS) void refetch();
+  }, [waiting, back, nowMs, refetch]);
   // No page that only says there is nothing here: a link to Billing where it isn't lands on People instead.
   const none = hub.cloud !== true || (read.data !== undefined && !billingOn(read.data));
   useEffect(() => {
@@ -121,17 +140,18 @@ export function Billing() {
             </GroupNote>
           </SettingsSection>
         ) : (
-          <BillingBody state={read.data} nowMs={nowMs} />
+          <BillingBody state={read.data} nowMs={nowMs} paid={paidLine(back?.said ?? null, read.data, nowMs - (back?.atMs ?? nowMs))} />
         )}
       </div>
     </div>
   );
 }
 
-function BillingBody({ state, nowMs }: { state: BillingState; nowMs: number }) {
+function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: number; paid: string | null }) {
   const { busy, open } = useOpen();
   const capField = useRef<HTMLInputElement>(null);
-  const top = topLine(state);
+  // Just back from paying, Stripe's word on its way: that, not "no credits".
+  const top = paid !== null ? { tone: "warning" as const, message: paid, fix: null } : topLine(state);
   const can = buys(state);
   const why = noBuyWhy(state);
   // The portal answers only once the team has paid for something: a plan, or credits it had.

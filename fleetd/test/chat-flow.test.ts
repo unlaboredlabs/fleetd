@@ -232,7 +232,7 @@ test("a lead whose Claude sign-in stopped working says so plainly, wakes nothing
   const lines = async () =>
     (await call(caller("read"), "chat_history", { projectRef: PROJECT })).messages.filter((m: { author: string }) => m.author === "system").map((m: { text: string }) => m.text);
   for (let i = 0; i < 200 && (await lines()).length === 0; i++) await Bun.sleep(10);
-  expect(await lines()).toEqual(["Your Claude sign-in for this bot stopped working: reconnect it in Settings › Your accounts › Claude. The lead carries on by itself once it is."]);
+  expect(await lines()).toEqual(["Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is."]);
   // No wake, which would be refused the same way, over and over.
   await Bun.sleep(50);
   expect(leads(hub).wakes.pending(PROJECT)).toBe(false);

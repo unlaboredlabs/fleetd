@@ -13,7 +13,7 @@ interface ProjectRef {
   readonly projectId: string;
 }
 
-import { ArrowUp, Check, Paperclip, Reply, Square, X } from "lucide-react";
+import { ArrowUp, Check, Paperclip, Reply, RotateCw, Square, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AttachmentRef, ChatAbout } from "../../../shared/contracts";
 import type { ChatItem } from "../../src/data/chat";
@@ -294,6 +294,11 @@ export function ChatComposer({ project, onSent, autoFocus, recall, replyTo, onCa
                 <Truncate expand="none" size="xs" tone="inherit">
                   {`${a.name} · ${a.upload ? (a.upload.ok ? fmtBytes(a.bytes) : "didn’t upload") : "uploading…"}`}
                 </Truncate>
+                {a.upload && !a.upload.ok && a.file !== undefined ? (
+                  <button type="button" className={c.remove} aria-label={`Try ${a.name} again`} onClick={() => drafts.retry(projectKey, a.local)}>
+                    <RotateCw className={c.removeIcon} aria-hidden />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={c.remove}

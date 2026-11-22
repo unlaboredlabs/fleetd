@@ -102,15 +102,17 @@ describe("settings search", () => {
     expect(first("hubs")).toEqual(["hubs", "hubs", "Hubs & devices"]);
     expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
     expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
-    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Every bot › Agents"]);
-    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Every bot › Agents"]);
-    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Every bot › Agents"]);
-    expect(first("instructions for every bot")).toEqual(["hub.instructions", "hub.instructions", "Every bot › Instructions"]);
+    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Bot defaults › Agents"]);
+    // The page by its name in the sidebar.
+    expect(first("bot defaults")).toEqual(["hub.profiles", "hub.profiles", "Bot defaults › Agents"]);
+    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Bot defaults › Agents"]);
+    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Bot defaults › Agents"]);
+    expect(first("instructions for every bot")).toEqual(["hub.instructions", "hub.instructions", "Bot defaults › Instructions"]);
     // The hub's vault for every project is the team vault now (D492): its old name finds the Vault page.
     expect(first("vault for every bot")).toEqual(["vault", "vault", "Vault"]);
     expect(first("team card")).toEqual(["vault", "vault", "Vault"]);
     expect(first("bot variables")).toEqual(["project-vault", "project-vault", "Bot › Vault"]);
-    expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Every bot › Vault"]);
+    expect(first("recovery code")).toEqual(["vault.key", "hub.vault", "Bot defaults › Vault"]);
     // Hub accounts is a part of Hub › Setup: its name finds the accounts there, and each of its options its account.
     expect(first("hub accounts")).toEqual(["hub.accounts", "hub.setup", "Hub › Setup"]);
     expect(first("connections")?.[1]).toBe("accounts");

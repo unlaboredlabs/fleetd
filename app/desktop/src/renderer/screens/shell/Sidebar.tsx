@@ -33,7 +33,7 @@ import type { DataLayer } from "../../src/data/queries";
 import { HubScope, useDataLayer, useHub, useHubs } from "../../src/data/react";
 import type { HubView } from "../../src/data/hubs";
 import { archiveProject, RenameProjectDialog, type ProjectTarget } from "../projects/actions";
-import { Button, ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
+import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, isCut, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuLabel, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, observeSize, StateGlyph, toast, Tooltip, useReorder } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import type { BotIn } from "../../../shared/bot";
 import { useHubState } from "./hubFeed";
@@ -42,10 +42,10 @@ import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
 import { HubText } from "../projects/HubText";
 import { projectId, routeOf, type SidebarProject } from "./model";
-import type { Routed } from "./navigation";
+import { currentRoute, navigate, type Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
-import { sameProject, type ProjectKey, type Screen } from "./routes";
+import { HOME, sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
@@ -172,6 +172,16 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
  * setup left) with the one thing to do (HubStatus.tsx HubLines). Hubs live here, not in the menu under your name. Add
  * a hub at its foot (the desktop app's; the web app's teams come with the sign-in).
  */
+/**
+ * Another hub picked in the switcher: its list. In the web app, where each is a team of the account, its home too in
+ * place of what was open, so no chat or page of the team just left stays on screen to be written to (W791). The
+ * desktop keeps the chat on screen beside another hub's list.
+ */
+const pickHub = (hub: string): void => {
+  showHub(hub);
+  if (onWeb() && currentRoute().at !== hub) navigate({ ...HOME, at: hub });
+};
+
 function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   const hubs = useHubs();
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
@@ -181,6 +191,8 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
   const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(projects, h.id) > 0);
+  // Only fleetd cloud teams here: they are the person's teams, not hubs.
+  const teams = hubs.every((h) => h.cloud === true);
   return (
     <Menu>
       <Tooltip content={off?.why ?? update ?? undefined}>
@@ -193,11 +205,11 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
           </button>
         </MenuTrigger>
       </Tooltip>
-      <MenuContent align="start" className={s.hubCard} aria-label="Hubs">
-        <MenuLabel>Hubs</MenuLabel>
+      <MenuContent align="start" className={s.hubCard} aria-label={teams ? "Teams" : "Hubs"}>
+        <MenuLabel>{teams ? "Teams" : "Hubs"}</MenuLabel>
         {hubs.map((h) => (
           <HubScope key={h.id} hub={h}>
-            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => showHub(h.id)}>
+            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => pickHub(h.id)}>
               {h.label}
             </MenuItem>
             <HubLines />
@@ -522,17 +534,6 @@ function HubDots({ ref, at }: { ref: RefObject<HTMLDivElement | null>; at: numbe
   );
 }
 
-/** No bots yet: a few quiet words and the way out, where the rows would be. */
-const NoBots = ({ go, at }: { go: (screen: Screen) => void; at: { at?: string } }) => (
-  <div className={s.empty}>
-    <span className={s.emptyTitle}>No chats yet</span>
-    <span className={s.emptyText}>A bot is a chat with its own lead: on a GitHub repo, a folder on one of your machines, or nothing at all.</span>
-    <Button size="sm" onClick={() => go({ id: "projects.add", ...at })}>
-      New bot
-    </Button>
-  </div>
-);
-
 /**
  * Changes `layer`'s pins: `how` gets the hub's own (pins.ts), those of `rows`, as row keys, and returns them changed
  * (the same list for no change). The ones on show may not be the hub's yet.
@@ -760,7 +761,8 @@ function ProjectGroup(props: {
         // only while something is on its way, not while the hub is unreachable.
         <Loading busy={state.phase === "live" || state.phase === "connecting"} />
       ) : rows.length === 0 ? (
-        <NoBots go={go} at={at} />
+        // No bots: nothing here. The main area's one empty state has the one Add a bot (GetStarted), and + is above.
+        <div className={s.empty} data-no-bots="" />
       ) : (
         <>
           {/* With nothing pinned yet, a chat being dragged has somewhere to go: a slim place for the first pin. */}

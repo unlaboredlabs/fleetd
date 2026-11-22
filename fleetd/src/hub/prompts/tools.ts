@@ -66,7 +66,7 @@ function mayEdit(caller: Caller, scope: PromptScope, r: ProjectRef | undefined):
   throw new ToolError(
     "forbidden",
     "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
-    "Ask an owner or admin (Settings › Hub › Every bot › Instructions), or edit this bot's own text instead.",
+    "Ask an owner or admin (Settings › Hub › Bot defaults › Instructions), or edit this bot's own text instead.",
   );
 }
 

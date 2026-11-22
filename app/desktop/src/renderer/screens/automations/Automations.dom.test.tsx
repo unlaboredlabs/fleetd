@@ -235,7 +235,31 @@ it("says what is wrong before it saves", async () => {
   expect(form.textContent).toContain("day of week 9 is outside 0-7.");
   await click(button("Create", form));
   expect(form.textContent).toContain("Give it a name.");
+  // The schedule's problem is said once, under its field, not again in the preview below it.
+  expect(form.textContent.split("day of week 9 is outside 0-7.").length).toBe(2);
   expect(hub.calls.some((c) => c.tool === "automation_create")).toBe(false);
+});
+
+it("makes a one-time run: Once offers tomorrow at 09:00, and Repeats goes back to the cron", async () => {
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({ ...new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Berlin" }).resolvedOptions() });
+  const hub = await mount();
+  await click(button("New automation", host));
+  const form = editor();
+  fill(form.querySelector("input") as HTMLInputElement, "Release notes");
+  fill(form.querySelector("textarea") as HTMLTextAreaElement, "Write the release notes.");
+  await click(button("Once", form));
+  const at = form.querySelector("input[type='datetime-local']") as HTMLInputElement;
+  const tomorrow = new Date(NOW);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day = `${String(tomorrow.getFullYear())}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+  expect(at.value).toBe(`${day}T09:00`);
+  await click(button("Repeats", form));
+  expect(form.querySelector("input[type='datetime-local']")).toBeNull();
+  await click(button("Once", form));
+  fill(form.querySelector("input[type='datetime-local']") as HTMLInputElement, "2026-11-03T18:00");
+  expect(form.textContent).toContain("Once, Tue 3 Nov 2026 at 18:00 (Europe/Berlin)");
+  await click(button("Create", form));
+  expect(hub.calls.find((c) => c.tool === "automation_create")?.input).toMatchObject({ name: "Release notes", schedule: { at: "2026-11-03T18:00", tz: "Europe/Berlin" } });
 });
 
 it("leaves the nightly memory refresh to Instructions & memory, and the time zone to this computer", async () => {

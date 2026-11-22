@@ -198,7 +198,7 @@ scrubbed: whatever showed on the page is in it.
 An agent signs in to a site without seeing the password. It names a [vault](/docs/vault) login, and the node types
 the value into the page itself.
 
-1. **Add the login to the team vault** (Settings › You › Vault), with the websites it signs in to.
+1. **Add the login to the team vault** (Settings › Vault), with the websites it signs in to.
    The node fills a field only on a page of one of those sites (the same host, or a subdomain of it), and submits only
    to a form that sends there. A login with no site fills nowhere. Shared-hosting suffixes (`github.io`,
    `vercel.app`, `netlify.app`, `pages.dev`, `herokuapp.com` and the like) match only as whole hosts.
@@ -215,7 +215,7 @@ the value into the page itself.
 ## Logins from 1Password {#1password}
 
 1Password is only a place to [import from](/docs/vault#import) now: fills use the vault. Your service account token
-(Settings › You › Your accounts › 1Password) lets you and your leads search it and bring items in. Make it read one
+(Settings › Accounts › 1Password) lets you and your leads search it and bring items in. Make it read one
 vault made for fleetd ([why](/docs/security#agent-reach)). For this release, `fill_credential` still takes an `op://`
 reference: it fills from the vault item imported from it, else reads 1Password as before and proposes importing the
 item. A bot's own `OP_SERVICE_ACCOUNT_TOKEN` variable still serves those references, and the node keeps any token

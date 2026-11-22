@@ -127,6 +127,17 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   const ids = teamHubIds(session.teams.map((t) => t.id));
   for (const team of session.teams) teams.set(ids.get(team.id) ?? teamHubId(team.id), team);
   let names = readNames(deps.storage);
+  // Skip for now pressed on another device: this browser's Get started (start/kept.ts) knows it before the app starts.
+  for (const team of session.teams) {
+    if (team.later !== true) continue;
+    const key = `fleetd.start.${ids.get(team.id) ?? teamHubId(team.id)}`;
+    try {
+      const was: unknown = JSON.parse(deps.storage.getItem(key) ?? "{}");
+      deps.storage.setItem(key, JSON.stringify({ ...(typeof was === "object" && was !== null ? was : {}), later: true }));
+    } catch {
+      // A storage that keeps nothing shows Get started once more: nothing else is lost.
+    }
+  }
   const cache = webCache(deps.storage, session.email, session.teams.map((t) => t.id));
   const entries = (): readonly HubEntry[] =>
     [...teams].map(([id, team]) => {
@@ -277,17 +288,30 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         listListeners.add(listener);
         return () => listListeners.delete(listener);
       },
-      update: (hub, change) => {
+      update: async (hub, change) => {
         const team = teams.get(hub);
         const label = cleanLabel(change.label);
-        if (team === undefined) return Promise.resolve({ ok: false, message: "That team isn't in this account." });
-        if (label === null) return Promise.resolve({ ok: false, message: "Give it a name." });
-        if (change.color !== null && !HUB_COLORS.includes(change.color)) return Promise.resolve({ ok: false, message: "Pick one of the colours." });
-        names = { ...names, [team.id]: { label, ...(change.color === null ? {} : { color: change.color }) } };
+        if (team === undefined) return { ok: false, message: "That team isn't in this account." };
+        if (label === null) return { ok: false, message: "Give it a name." };
+        if (change.color !== null && !HUB_COLORS.includes(change.color)) return { ok: false, message: "Pick one of the colours." };
+        const color = change.color === null ? {} : { color: change.color };
+        // An owner's or admin's new name is the team's own, for everyone (its address stays); a member's, which the
+        // cloud refuses as forbidden, is what this browser calls it. Any other refusal or failure renames nothing and
+        // says so: the team keeps its name, never one only this browser knows.
+        const renamed = label === team.name ? null : await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/team"), { json: { name: label } });
+        if (renamed !== null && !renamed.ok) {
+          if (renamed.signedOut === true) return { ok: false, message: "The team wasn't renamed: you're signed out. Sign in again, then rename it." };
+          if (renamed.failure.code !== "forbidden") return { ok: false, message: `The team wasn't renamed: ${renamed.failure.message}${renamed.failure.fix === undefined ? "" : ` ${renamed.failure.fix}`}` };
+        }
+        const named = renamed?.ok === true ? (renamed.body as { name?: unknown }).name : undefined;
+        if (typeof named === "string") {
+          teams.set(hub, { ...team, name: named });
+          names = { ...names, [team.id]: color };
+        } else names = { ...names, [team.id]: { label, ...color } };
         saveNames(deps.storage, names);
         const list = entries();
         for (const listener of listListeners) listener(list);
-        return Promise.resolve({ ok: true });
+        return { ok: true };
       },
     },
     hub: {
@@ -374,6 +398,10 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       billingOpen: (hub, what) => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : openBilling(teamFetch, team, what, (url) => Promise.resolve(deps.go(url)));
+      },
+      startLater: async (hub) => {
+        const team = teams.get(hub);
+        if (team !== undefined) await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/start"), { json: {} });
       },
       billingCap: (hub, capCents) => {
         const team = keyed(hub);

@@ -302,23 +302,9 @@
   background: var(--hover);
 }
 
-/* No chats yet: a few quiet words and the way out, where the rows would be. */
+/* No bots: an empty list, its one empty state in the main area. */
 .empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-2);
-}
-.emptyTitle {
-  font-size: var(--text-md);
-  font-weight: var(--weight-strong);
-  line-height: var(--leading-md);
-}
-.emptyText {
-  color: var(--quiet);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
+  flex: 1;
 }
 
 /* New, beside the window's controls: round, a soft fill at rest. */

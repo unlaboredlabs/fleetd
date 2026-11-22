@@ -1,4 +1,4 @@
-// Settings › Your accounts › 1Password (D235): the person's own 1Password service account token, which fill_credential
+// Settings › Accounts › 1Password (D235): the person's own 1Password service account token, which fill_credential
 // uses in the orders they start when the project has no OP_SERVICE_ACCOUNT_TOKEN of its own (that one wins). Pasted
 // once: main seals it to every machine, and the page never gets it back. Test lists the
 // vaults it reads: agents run as the person on their machine, so it should read one vault, kept for fleetd (D313). On a

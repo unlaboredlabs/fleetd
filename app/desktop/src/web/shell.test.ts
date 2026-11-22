@@ -15,6 +15,11 @@ const SESSION: WebSession = {
   invitations: [],
 };
 const ACME = "3f2b9c1e00004000";
+/** The cloud's answer to a member's rename (fleetd-cloud accounts: only an owner or admin renames a team). */
+const memberRename = (path: string, init?: RequestInit) =>
+  path.endsWith("/accounts/v1/team") && init?.method === "POST"
+    ? Response.json({ code: "forbidden", message: "Only an owner or admin renames the team.", fix: "Ask an owner or admin of this team." }, { status: 403 })
+    : new Response(null, { status: 404 });
 
 interface Call {
   readonly path: string;
@@ -166,7 +171,7 @@ describe("the web shell", () => {
 
   it("never throws on a full storage: a team's cache that doesn't fit is dropped quietly, and names still save", async () => {
     const stored = new Map<string, string>();
-    const t = setup(undefined, SESSION, stored, 2_000);
+    const t = setup(memberRename, SESSION, stored, 2_000);
     await t.api.hub.cache.write(ACME, "a".repeat(1_850));
     // Side's doesn't fit beside Acme's: dropped, and Acme's stays.
     await expect(t.api.hub.cache.write("9a8b7c6d00004000", "s".repeat(1_200))).resolves.toBeUndefined();
@@ -198,8 +203,8 @@ describe("the web shell", () => {
     expect([...stored.keys()].filter((k) => k.startsWith("fleetd.web.cache"))).toEqual([]);
   });
 
-  it("lists the account's teams as cloud hubs, and keeps a new name and colour in this browser", async () => {
-    const { api, stored } = setup();
+  it("lists the account's teams as cloud hubs, and keeps a member's new name and colour in this browser", async () => {
+    const { api, stored } = setup(memberRename);
     expect(api.hubs.initial).toEqual([
       { id: ACME, label: "acme", cloud: true },
       { id: "9a8b7c6d00004000", label: "side", cloud: true },
@@ -210,6 +215,57 @@ describe("the web shell", () => {
     expect((await api.hubs.list())[0]).toEqual({ id: ACME, label: "Acme Inc", cloud: true, color: "green" });
     expect(heard).toHaveLength(1);
     expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [SESSION.teams[0]?.id ?? ""]: { label: "Acme Inc", color: "green" } });
+  });
+
+  it("renames the team itself for an owner or admin, the address the same; anyone else's name stays in this browser", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const { api, stored, calls } = setup((path, init) =>
+      path === `/t/${team}/accounts/v1/team` && init?.method === "POST"
+        ? Response.json({ name: (JSON.parse(init.body as string) as { name: string }).name, address: "acme.fleetd.dev", canRename: true })
+        : new Response(null, { status: 404 }),
+    );
+    expect(await api.hubs.update(ACME, { label: "Acme Inc", color: "green" })).toEqual({ ok: true });
+    expect(calls.some((c) => c.path === `/t/${team}/accounts/v1/team`)).toBe(true);
+    expect((await api.hubs.list())[0]).toEqual({ id: ACME, label: "Acme Inc", cloud: true, color: "green" });
+    // The name is the team's now: this browser keeps only its colour.
+    expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [team]: { color: "green" } });
+  });
+
+  it("keeps a member's name in this browser, and an owner's rename the cloud refuses or can't take renames nothing and says so", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const refusing = (answer: () => Response) =>
+      setup((path, init) => (path === `/t/${team}/accounts/v1/team` && init?.method === "POST" ? answer() : new Response(null, { status: 404 })));
+    // A member: the cloud says only an owner or admin renames it, so it is this browser's name for the team.
+    const member = setup(memberRename);
+    expect(await member.api.hubs.update(ACME, { label: "Our Acme", color: null })).toEqual({ ok: true });
+    expect((await member.api.hubs.list())[0]?.label).toBe("Our Acme");
+    // The cloud down, or a refusal that isn't about who may: the old name stays, here and in storage.
+    const down = refusing(() => Response.json({ code: "unavailable", message: "fleetd cloud couldn't finish this just now.", fix: "Try again in a minute." }, { status: 503 }));
+    expect(await down.api.hubs.update(ACME, { label: "Acme Inc", color: null })).toEqual({
+      ok: false,
+      message: "The team wasn't renamed: fleetd cloud couldn't finish this just now. Try again in a minute.",
+    });
+    expect((await down.api.hubs.list())[0]?.label).toBe("acme");
+    expect(down.stored.has("fleetd.web.teams")).toBe(false);
+    const offline = setup((path, init) => {
+      if (path === `/t/${team}/accounts/v1/team` && init?.method === "POST") throw new TypeError("Failed to fetch");
+      return new Response(null, { status: 404 });
+    });
+    expect(await offline.api.hubs.update(ACME, { label: "Acme Inc", color: null })).toEqual({
+      ok: false,
+      message: "The team wasn't renamed: Can't reach fleetd cloud. Check your connection, then try again.",
+    });
+    expect((await offline.api.hubs.list())[0]?.label).toBe("acme");
+  });
+
+  it("knows a Skip for now pressed on another device before the app starts, and sends this one's to the team", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const stored = new Map<string, string>();
+    const { api, calls } = setup(undefined, { ...SESSION, teams: SESSION.teams.map((t, i) => (i === 0 ? { ...t, later: true as const } : t)) }, stored);
+    expect(JSON.parse(stored.get(`fleetd.start.${ACME}`) ?? "{}")).toEqual({ later: true });
+    expect(stored.has("fleetd.start.9a8b7c6d00004000")).toBe(false);
+    await api.cloud.startLater?.(ACME);
+    expect(calls.find((c) => c.path === `/t/${team}/accounts/v1/start`)?.init?.method).toBe("POST");
   });
 
   it("keeps two teams whose ids begin alike as two hubs, each with its own socket", () => {

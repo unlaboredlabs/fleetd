@@ -3068,6 +3068,7 @@ export const screens: readonly Screen[] = [
     unusable: "computer",
     offline: "computer",
     "hosted-failed": "computer",
+    "computers-held": "computer",
     tailscale: "tailscale",
     "tailscale-signin": "tailscale",
     "claude-key": "claude",

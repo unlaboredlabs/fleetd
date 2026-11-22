@@ -274,7 +274,7 @@ describe("a Claude account's key or token", () => {
       [{ account: "mine", token: KEY, boxes }, "That's an API key, not a subscription token."],
       [{ account: "mine", token: "sk-ant-oat01 part two", boxes }, "That isn't a token: it has spaces or line breaks in it."],
       [{ account: "hub_api", key: `${KEY}\n${KEY}`, boxes }, "That isn't an API key: it has spaces or line breaks in it."],
-      [{ account: "hub_api", key: KEY, boxes: [] }, "No machine takes secrets yet: no node has a box key."],
+      [{ account: "hub_api", key: KEY, boxes: [] }, "No machine can take the key yet."],
       [{ account: "hub_api", key: KEY, endpoint: "gateway.devbox.example", boxes }, "The endpoint isn't an http:// or https:// URL."],
     ] as const) {
       const { out, sent } = await run(request);

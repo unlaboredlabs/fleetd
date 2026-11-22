@@ -9,7 +9,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
-import { DataProvider } from "../../src/data/react";
+import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { AppFrame, TopBar, UiProvider } from "../../ui";
 import { SETTINGS_TABS } from "../shell/routes";
 import { SettingsSheet } from "./SettingsSheet";
@@ -73,7 +73,17 @@ afterEach(() => {
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
-const render = async (hash: string, admin: boolean, live = true, features: ReadonlyArray<string> = []) => {
+/** The sheet on a fleetd cloud team, as the web app and a signed-in desktop app have it. */
+function OnCloud() {
+  const layer = useDataLayer();
+  return (
+    <HubScope hub={{ id: layer.hub, label: "acme", layer, cloud: true }}>
+      <SettingsSheet onClose={() => undefined} />
+    </HubScope>
+  );
+}
+
+const render = async (hash: string, admin: boolean, live = true, features: ReadonlyArray<string> = [], cloud = false) => {
   window.location.hash = hash;
   let listener: (frame: HubFrame) => void = () => undefined;
   const hub: HubApi = {
@@ -99,7 +109,7 @@ const render = async (hash: string, admin: boolean, live = true, features: Reado
       <UiProvider>
         <DataProvider layer={createDataLayer(hub)}>
           <AppFrame topBar={<TopBar />}>
-    <SettingsSheet onClose={() => undefined} />
+    {cloud ? <OnCloud /> : <SettingsSheet onClose={() => undefined} />}
   </AppFrame>
         </DataProvider>
       </UiProvider>,
@@ -237,16 +247,21 @@ const current = () => [...(nav()?.querySelectorAll("button[aria-current='page']"
 it("has the Hub group for an admin only, and Vault only on a hub with the vault", async () => {
   const bots = ["All bots", "docs", "storefront"];
   await render("#/settings/general", true);
-  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Bot defaults", "Setup"]);
   expect(groups()).toEqual(["You", "Bots", "Hub"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", true, true, ["vault"]);
-  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Every bot", "Setup"]);
+  expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots, "People", "Machines", "Bot defaults", "Setup"]);
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/general", false, true, ["vault"]);
   expect(rows()).toEqual(["General", "Accounts", "Vault", "Memory", "Hubs & devices", ...bots]);
+});
+
+it("names the admin group Team on a fleetd cloud team, never Hub", async () => {
+  await render("#/settings/general", true, true, ["vault"], true);
+  expect(groups()).toEqual(["You", "Bots", "Team"]);
 });
 
 // Every link Settings ever had (the palette's, a chat's, a notification's, a bookmark): the page it opens, the part of
@@ -268,11 +283,11 @@ const OLD_LINKS: ReadonlyArray<readonly [hash: string, page: string, part: strin
   ["#/settings/hub/people", "settings.hub.people", null, "People"],
   ["#/settings/hub/machines", "settings.hub.machines", null, "Machines"],
   ["#/settings/hub/updates", "settings.hub.machines", "settings.hub.updates", "Machines"],
-  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Every bot"],
-  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Every bot"],
-  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Every bot"],
-  ["#/settings/hub/vault", "settings.hub.vault", null, "Every bot"],
-  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Every bot"],
+  ["#/settings/hub/profiles", "settings.hub.profiles", null, "Bot defaults"],
+  ["#/settings/hub/tools", "settings.hub.profiles", "settings.hub.tools", "Bot defaults"],
+  ["#/settings/hub/instructions", "settings.hub.instructions", null, "Bot defaults"],
+  ["#/settings/hub/vault", "settings.hub.vault", null, "Bot defaults"],
+  ["#/settings/hub/prompts", "settings.hub.prompts", null, "Bot defaults"],
   ["#/settings/hub/accounts", "settings.hub.setup", "settings.hub.accounts", "Setup"],
   ["#/settings/hub/setup", "settings.hub.setup", null, "Setup"],
 ];

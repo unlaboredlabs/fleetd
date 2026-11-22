@@ -3,13 +3,13 @@
 // own prefilled; one on the tailnet says beside it when Tailscale isn't connected, with Connect),
 // with Test, and a line under it on what leads and automations run on (the key, else the hub owner's own
 // subscription); whether members may run their work on it (on by default). Each person's account, with any usage
-// pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Your accounts ›
+// pause on it, is on their People row; their own choice and subscription are theirs, in Settings › Accounts ›
 // Claude.
 import { useState, type ReactNode } from "react";
 import type { ClaudeAccountsGetOutput, ClaudeHubApi, Person, UsageStatus } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useToolQuery } from "../../src/data/react";
+import { useHub, useToolQuery } from "../../src/data/react";
 import { useNow } from "../live";
 import { HubText } from "../projects/HubText";
 import { Button, Field, Input, Text } from "../../ui";
@@ -61,6 +61,7 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
 }
 
 function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause: string | null; children: ReactNode }) {
+  const team = useHub().cloud === true;
   const machines = useMachines();
   const save = useSave();
   const test = useTest();
@@ -108,7 +109,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
   const open = editing || api === undefined;
   return (
     <SettingsRow
-      title="Hub API key"
+      title={team ? "Team API key" : "Hub API key"}
       hint="From the Claude Console. fleetd never shows it again, and no agent sees it."
       line={api === undefined ? null : `${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`}
       control={
@@ -174,8 +175,12 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove
-          title="Remove the hub's API key?"
-          description="Each machine forgets it. Leads and automations run on the hub owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
+          title={team ? "Remove the team's API key?" : "Remove the hub's API key?"}
+          description={
+            team
+              ? "Leads and automations run on the team owner's subscription from their next start; members who used the key connect their own subscription."
+              : "Each machine forgets it. Leads and automations run on the hub owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
+          }
           action="Remove"
           onRemove={() => hubCall("claude_hub_api_remove", {})}
           onClose={() => setRemoving(false)}
@@ -186,6 +191,8 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
 }
 
 function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
+  // A fleetd cloud team is a team to the person, never a hub.
+  const team = useHub().cloud === true;
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
@@ -208,9 +215,9 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
     <>
       <SwitchRow
         reveal="admin.claude.members"
-        title="Members may use the hub's API key"
-        hint="Off: each member connects their own subscription before their next order. Owners and admins always may."
-        line={hubApi ? null : "Takes effect once the hub has a key."}
+        title={team ? "Members may use the team's API key" : "Members may use the hub's API key"}
+        hint="Off: each member connects their own subscription before they start work. Owners and admins always may."
+        line={hubApi ? null : team ? "Takes effect once the team has a key." : "Takes effect once the hub has a key."}
         checked={on}
         disabled={busy}
         onCheckedChange={flip}
@@ -234,10 +241,11 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
 function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutput; usage: ReadonlyArray<UsageStatus>; me: Person | undefined; nowMs: number; runsOn: string }) {
   const list = usePeople();
   const owner = list.data?.people.find((p) => p.role === "owner" && p.removedAt === undefined);
-  const whose = owner === undefined ? "the hub owner's" : me?.personId === owner.personId ? "your" : `${owner.name}'s`;
+  const team = useHub().cloud === true;
+  const whose = owner === undefined ? (team ? "the team owner's" : "the hub owner's") : me?.personId === owner.personId ? "your" : `${owner.name}'s`;
   const lead = (
     <Text size="sm" tone="quiet" data-leads-run-on="">
-      {`Leads and automations run on ${data.hubApi === undefined ? "the hub's key, once it has one" : "this key"}, else ${whose} subscription.`}
+      {`Leads and automations run on ${data.hubApi === undefined ? `the ${team ? "team" : "hub"}'s key, once it has one` : "this key"}, else ${whose} subscription.`}
     </Text>
   );
   const refused =
@@ -256,7 +264,7 @@ function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutp
   const theirs = (data.people ?? []).find((p) => p.person.personId === owner.personId);
   const sub = theirs?.subscription;
   const you = me?.personId === owner.personId;
-  const line = `The hub owner's subscription (${you ? "yours" : `${owner.name}'s`}) ${sub === undefined ? "isn't connected." : `is connected. ${sealedLine(sub.sealedOn)}`}`;
+  const line = `The ${team ? "team" : "hub"} owner's subscription (${you ? "yours" : `${owner.name}'s`}) ${sub === undefined ? "isn't connected." : `is connected. ${sealedLine(sub.sealedOn)}`}`;
   // Their pause is on their row below; said here too only while leads run on it.
   const leadsOnIt = data.leadsRunOn.kind === "account" && data.leadsRunOn.account.kind === "person" && data.leadsRunOn.account.personId === owner.personId;
   const pause = theirs === undefined || !leadsOnIt ? null : pauseLine({ kind: "person", personId: owner.personId }, usage, nowMs);
@@ -276,11 +284,11 @@ function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutp
       {you ? (
         <span>
           <Button size="sm" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "accounts" }))}>
-            {sub === undefined ? "Connect yours in Settings" : "Open Your accounts › Claude"}
+            {sub === undefined ? "Connect yours in Settings" : "Open Accounts › Claude"}
           </Button>
         </span>
       ) : sub === undefined ? (
-        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Your accounts › Claude.`}</Text>
+        <Text size="xs" tone="quiet">{`${owner.name} connects it in their own Settings › Accounts › Claude.`}</Text>
       ) : null}
     </div>
   );

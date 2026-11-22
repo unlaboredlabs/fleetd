@@ -3,7 +3,7 @@
 // the page beside it: its head in the sheet's header zone, on the index title's line, the page scrolling under it.
 // The index is three groups, each under its label. You: General, Accounts, Vault, Memory, Hubs & devices. Bots: All
 // bots, then each bot by its picture and name, opening its pages under tabs (Frames.tsx). Hub, for the hub's owners
-// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Every bot and Setup, which says how many required steps are left. Vault shows
+// and admins only: People, Machines, Billing (a fleetd cloud team's, once fleetd's computers are on for it), Bot defaults and Setup, which says how many required steps are left. Vault shows
 // only on a hub that serves it. A search at the index's head narrows to an option by name. A page that became a part
 // of another (route.ts) has no entry: its links open the page that holds it.
 import {
@@ -31,7 +31,8 @@ import {
 import { Button, cx, underModal } from "../../ui";
 import type { HubView } from "../../src/data/hubs";
 import { HubScope, useData, useHub, useToolQuery } from "../../src/data/react";
-import { useBillingShown } from "../admin/Billing";
+import { useBillingShown } from "../admin/billingQuery";
+import { HUB_PAGES as HUB_PAGES_SHOWN, YOU_PAGES } from "../../../shared/settingsPages";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { isArchived } from "../projects/model";
@@ -55,24 +56,24 @@ import n from "./sheet.module.css";
 
 /** You's pages, by their short names in the index. */
 const YOU: ReadonlyArray<{ tab: Tab; label: string; icon: ReactNode }> = [
-  { tab: "general", label: "General", icon: <SlidersHorizontal /> },
-  { tab: "accounts", label: "Accounts", icon: <UserRound /> },
-  { tab: "vault", label: "Vault", icon: <LockKeyhole /> },
-  { tab: "your-memory", label: "Memory", icon: <Brain /> },
-  { tab: "hubs", label: "Hubs & devices", icon: <MonitorSmartphone /> },
+  { tab: "general", label: YOU_PAGES.general, icon: <SlidersHorizontal /> },
+  { tab: "accounts", label: YOU_PAGES.accounts, icon: <UserRound /> },
+  { tab: "vault", label: YOU_PAGES.vault, icon: <LockKeyhole /> },
+  { tab: "your-memory", label: YOU_PAGES.memory, icon: <Brain /> },
+  { tab: "hubs", label: YOU_PAGES.hubs, icon: <MonitorSmartphone /> },
 ];
 
-/** The Hub group's pages; Every bot opens on its first tab. */
+/** The Hub group's pages; Bot defaults opens on its first tab. */
 const HUB_PAGES: ReadonlyArray<{
   tab: HubTab;
   label: string;
   icon: ReactNode;
 }> = [
-  { tab: "hub.people", label: "People", icon: <Users /> },
-  { tab: "hub.machines", label: "Machines", icon: <Server /> },
-  { tab: "hub.billing", label: "Billing", icon: <CreditCard /> },
-  { tab: "hub.profiles", label: "Every bot", icon: <Layers /> },
-  { tab: "hub.setup", label: "Setup", icon: <ListChecks /> },
+  { tab: "hub.people", label: HUB_PAGES_SHOWN.people, icon: <Users /> },
+  { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
+  { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
+  { tab: "hub.profiles", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
+  { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];
 
 /** The bots the index lists by name; past them, All bots has the rest. */
@@ -292,6 +293,8 @@ function Group({
 /** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
   const { you, bots, hub, administers, vault, billing } = useEntries();
+  // A fleetd cloud team is a team to the person, never a hub.
+  const cloud = useHub().cloud === true;
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
   const results = searchSettings(query, optionsFor(administers, vault, billing));
@@ -330,7 +333,7 @@ function Index() {
           <Group id="settings-you" label="You" entries={you} />
           <Group id="settings-bots" label="Bots" entries={bots} />
           {hub === null ? null : (
-            <Group id="settings-hub" label="Hub" entries={hub} />
+            <Group id="settings-hub" label={cloud ? "Team" : "Hub"} entries={hub} />
           )}
         </>
       )}

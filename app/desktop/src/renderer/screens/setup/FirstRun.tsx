@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { useHubRole, useServes } from "../admin/role";
 import { GetStarted } from "../onboarding";
-import { navigate } from "../shell/navigation";
+import { navigate, useRoute } from "../shell/navigation";
 import { startScreen, useKept } from "../start/kept";
 import { onWeb } from "../../src/web";
 import { ConnectComputer, whereOpen } from "./ConnectComputer";
@@ -34,7 +34,9 @@ export function FirstRun({ onAddProject }: { onAddProject: () => void }) {
   // ...a resync that mounts the home again included.
   const connecting = shown || (cloud && whereOpen(hub.id));
   const later = useKept(hub.id).later === true;
-  const start = onWeb() && hub.cloud === true && !later;
+  // Settings opened by its address (Stripe's way back to Billing, a link) stays open: Get started is behind it.
+  const settings = useRoute().id === "settings";
+  const start = onWeb() && hub.cloud === true && !later && !settings;
   useEffect(() => {
     if (start) navigate(startScreen(hub.id), { replace: true });
   }, [start, hub.id]);
