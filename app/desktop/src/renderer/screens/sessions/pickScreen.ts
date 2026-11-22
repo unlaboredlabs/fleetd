@@ -270,8 +270,20 @@ export const prChoices = (rows: readonly PrRow[]): PrChoice[] =>
     .filter((r) => r.state === "open" || r.state === "draft")
     .map((r) => ({ value: `${r.repo}#${String(r.number)}`, label: `#${String(r.number)} ${r.title}`, repo: r.repo, number: r.number }));
 
-/** Where an open with a PR's build is, in words, while the picker follows it. */
-export const openingLine = (stage: string | undefined, pr: number, machine: string): string => {
+/** Where an open the picker follows is, in words: a PR's build going in, or (no `pr`) an iPhone starting on the Mac. */
+export const openingLine = (stage: string | undefined, pr: number | undefined, machine: string): string => {
+  if (pr === undefined) {
+    switch (stage) {
+      case "failed":
+        return "It didn’t open.";
+      case undefined:
+        return "Handing it to you…";
+      case "waiting":
+        return `Waiting for a free simulator on ${machine}, ahead of agents…`;
+      default:
+        return `Starting the iPhone on ${machine}…`;
+    }
+  }
   switch (stage) {
     case "installing":
       return `Installing #${String(pr)}’s build on ${machine}…`;

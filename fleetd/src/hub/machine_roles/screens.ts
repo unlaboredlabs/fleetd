@@ -37,7 +37,7 @@ import { sleep } from "../browser/thumbs.ts";
 import { type Build, builds, type Found, openDone, PIECE, sealCall } from "./builds.ts";
 import { cancel, hostSession } from "./calls.ts";
 import { isAgentsMac } from "./mac.ts";
-import { endSim, isSimPlace, openSim, screenControl, waitForSim } from "./phone.ts";
+import { endSim, followSim, isSimPlace, prepareSim, screenControl } from "./phone.ts";
 import {
   endPlace,
   IDLE_MS,
@@ -253,7 +253,7 @@ async function screenOpen(
   // An iPhone is the agents' Mac's (D298, D652): a simulator of its own there, ahead of agents'.
   if (kind === "ios") {
     if (input.pr) throw new ToolError("invalid", "A PR's build goes into an Android screen.", "Pick Android, or leave the PR out.");
-    return openIphone(hub, caller, r, input.machineId, input.sim, input.wait === true);
+    return openIphone(hub, caller, r, input.machineId, input.sim);
   }
   const runnerId = input.machineId;
   requireRole(caller, "read", runnerId);
@@ -334,8 +334,9 @@ async function screenEnd(hub: Hub, caller: Caller, input: { sessionId?: string; 
     const wait = input.waitId;
     const found = waitsOn(hub.db.conn, hub.clock.now()).find((w) => w.id === wait && w.person === me.personId);
     if (!found) throw new ToolError("not_found", `You have no wait ${wait}: its screen may have opened already.`);
-    // One on its way has its screen starting already: it opens, and screen_end ends it then.
-    if (found.stage === "starting" || found.stage === "installing") {
+    // One on its way has its screen starting already: it opens, and screen_end ends it then. An iPhone's start is the
+    // Mac's line and its boot, which the hub's next ask gives up (phone.ts `followSim`).
+    if ((found.stage === "starting" || found.stage === "installing") && found.kind !== "ios") {
       throw new ToolError(
         "invalid",
         `Your screen ${wait} is opening on ${found.runner} now.`,
@@ -479,28 +480,34 @@ async function end(hub: Hub, session: BrowserSession): Promise<void> {
 }
 
 /**
- * A person's iPhone on the agents' Mac: theirs at once while the Mac has a simulator to spare, else (with `wait`) in
- * its line ahead of agents, the wait row saying so until it is theirs.
+ * A person's iPhone on the agents' Mac, in the hub's own time (phone.ts): answered at once with its wait row, starting;
+ * in the Mac's line ahead of agents while every simulator is in use (the row says waiting), until it is theirs or why
+ * it failed. A person's start always waits its turn, `wait` or not: nothing an agent does holds it back for good.
  */
-async function openIphone(hub: Hub, caller: Caller, r: ProjectRef, machineId: string, sim: ScreenSim | undefined, wait: boolean) {
+function openIphone(hub: Hub, caller: Caller, r: ProjectRef, machineId: string, sim: ScreenSim | undefined) {
   const person = personOf(hub, caller);
-  const { start, opened } = await openSim(hub, caller, r, person, machineId, sim, wait);
-  if ("session" in opened) {
-    return { session: opened.session, next: "You have control: send browser_input and screen_control. End it with screen_end when you're done." };
-  }
+  const start = prepareSim(hub, caller, r, person, machineId, sim);
   const now = hub.clock.now();
   const o: Opener = { person, device: caller.name };
-  const id = hub.db.transaction((c) => insertWait(c, o, r, "ios", start.mac, undefined, "waiting", start.place.originThread, now));
+  const id = hub.db.transaction((c) => insertWait(c, o, r, "ios", start.mac, undefined, "starting", start.place.originThread, now));
   const gone = () => !hub.db.all("SELECT 1 FROM screen_waits WHERE wait_id = ?1", [id]).length;
-  void waitForSim(hub, start, caller.name, gone, (outcome) => {
-    if ("session" in outcome) done(hub, r, id);
-    else setStage(hub, r, id, "failed", outcome.error);
-  });
+  void followSim(
+    hub,
+    start,
+    caller.name,
+    gone,
+    // Booting the clone that is theirs is still starting; in line behind a full Mac is waiting.
+    (q) => setStage(hub, r, id, /booting/.test(q.why) ? "starting" : "waiting"),
+    (outcome) => {
+      if ("session" in outcome) done(hub, r, id);
+      else setStage(hub, r, id, "failed", outcome.error);
+    },
+  );
   const all = waitsOn(hub.db.conn, now);
   const w = all.find((x) => x.id === id);
   return {
     ...(w ? { waiting: asWait(w, all) } : {}),
-    next: `The agents' Mac's simulators are all in use (${opened.queued.why}). Yours is next, ahead of agents': it opens as one frees; screen_end with waitId gives up.`,
+    next: "The iPhone is starting on the agents' Mac, ahead of agents: browser_sessions lists it under waits until it is yours, then as your screen. screen_end with waitId gives up.",
   };
 }
 
@@ -599,7 +606,7 @@ async function opening(hub: Hub, wait: string, start: Start, pr: ScreenPr | unde
 export function serveWaits(hub: Hub): number {
   const now = hub.clock.now();
   hub.db.transaction((c) => c.query("DELETE FROM screen_waits WHERE since_ms <= ?").run(now - WAIT_MS));
-  // An iPhone's wait is the agents' Mac's line, asked again by the hub (phone.ts `waitForSim`).
+  // An iPhone's wait is the agents' Mac's line, asked again by the hub (phone.ts `followSim`).
   const waits = waitsOn(hub.db.conn, now).filter((w) => w.stage === "waiting" && w.kind !== "ios");
   if (waits.length === 0) return 0;
   const all = runners(hub);

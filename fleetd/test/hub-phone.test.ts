@@ -1,6 +1,7 @@
 // A person's own iPhone on the agents' Mac (`screen_open` kind ios) and phone screens' device controls
-// (`screen_control`), on the hub (W804): the hub seals the Mac's `mac sim start` itself, the screen is the person's from
-// the start, its controls go to the machine that runs it, and its end is a sealed `mac sim end`.
+// (`screen_control`), on the hub (W804): the hub seals the Mac's `mac sim start` itself, always in the Mac's line, and
+// answers at once with the person's wait row while it follows the start; the screen is the person's from the start,
+// its controls go to the machine that runs it, and its end is a sealed `mac sim end`.
 import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { get } from "../src/hub/browser/store.ts";
@@ -86,6 +87,26 @@ function fakeMac(reply: (env: Envelope, frame: Record<string, unknown>) => Recor
   return { steps, frames };
 }
 
+/** The person's screens and waits for the bot, as browser_sessions lists them now. */
+const listed = async () =>
+  ((await t.tools.call(t.hub, human(), "browser_sessions", { projectRef: { machineId: "devbox", projectId: "p1" } })) as {
+    output: { sessions: { sessionId: string; threadId: string; control: string }[]; waits?: { waitId: string; stage?: string }[] };
+  }).output;
+
+/** The person's wait row for the open, as browser_sessions lists it now. */
+const waitRow = async (waitId: string) => (await listed()).waits?.find((w) => w.waitId === waitId);
+
+/** The person's iPhone, once the hub has followed its start to the end: their screen, its wait row gone. */
+const yours = async (waitId: string, thread: string) => {
+  for (let i = 0; i < 100; i++) {
+    const now = await listed();
+    const s = now.sessions.find((x) => x.threadId === thread && x.control === "human");
+    if (s && !now.waits?.some((w) => w.waitId === waitId)) return get(t.hub, s.sessionId)!;
+    await Bun.sleep(20);
+  }
+  throw new Error("the iPhone never became the person's");
+};
+
 const open = (input: Record<string, unknown>) =>
   t.tools.call(t.hub, human(), "screen_open", { projectRef: { machineId: "devbox", projectId: "p1" }, machineId: "mac1", kind: "ios", ...input }) as Promise<{
     output?: Record<string, any>;
@@ -97,10 +118,14 @@ test("a person starts an iPhone Duo: the Mac lends it ahead of agents, and it is
   const mac = fakeMac((env) => (env.step.step === "sim_start" ? { step: "sim_start", udid: "U1", device: "iPhone Duo on iOS 27.2" } : { step: "sim_end", ended: true }));
   const opened = await open({ sim: { model: DUO.id } });
   expect(opened.error).toBeUndefined();
-  const session = opened.output!.session;
-  // The step the hub sealed: the Duo on its own runtime (the newest it runs, none picked), in the person's name.
-  expect(mac.steps[0]!.step).toEqual({ step: "sim_start", device: DUO.id, wait: false, person: "ada-laptop" });
-  expect(mac.steps[0]!.thread).toMatch(/^screen-/);
+  // Answered at once: its wait row, starting, followed in the hub's own time (a cold boot takes minutes).
+  const waiting = opened.output!.waiting;
+  expect(waiting).toMatchObject({ kind: "ios", stage: "starting" });
+  expect(String(waiting.threadId)).toMatch(/^screen-/);
+  const session = await yours(waiting.waitId, waiting.threadId);
+  // The step the hub sealed: the Duo on its own runtime (the newest it runs, none picked), in the person's name, in line.
+  expect(mac.steps[0]!.step).toEqual({ step: "sim_start", device: DUO.id, wait: true, person: "ada-laptop" });
+  expect(mac.steps[0]!.thread).toBe(waiting.threadId);
   expect(session).toMatchObject({ kind: "ios", state: "live", controls: DEVICE.controls, fold: "closed", folds: DEVICE.folds, openedBy: { name: "ada-laptop" } });
   // Theirs from the start: the hub took control for them.
   expect(mac.frames.some((f) => f.t === "browser_control" && f.control === "human")).toBe(true);
@@ -118,11 +143,13 @@ test("a person starts an iPhone Duo: the Mac lends it ahead of agents, and it is
   await tick();
 });
 
-test("a full Mac: refused without wait, in line ahead of agents with it", async () => {
+test("a full Mac: in line ahead of agents, wait or not, the row saying it waits", async () => {
   setup();
   const mac = fakeMac(() => ({ step: "sim_queued", place: 1, secs: null, why: "all 2 of the Mac's iOS simulators are in use by other agents" }));
-  const waited = await open({ wait: true });
-  expect(waited.output!.waiting).toMatchObject({ kind: "ios", stage: "waiting" });
+  const waited = await open({});
+  expect(waited.output!.waiting).toMatchObject({ kind: "ios", stage: "starting" });
+  for (let i = 0; i < 50 && (await waitRow(waited.output!.waiting.waitId))?.stage !== "waiting"; i++) await tick();
+  expect(await waitRow(waited.output!.waiting.waitId)).toMatchObject({ stage: "waiting" });
   expect(mac.steps[0]!.step).toEqual({ step: "sim_start", wait: true, person: "ada-laptop" });
   // Giving up the wait: the hub's next ask leaves the Mac's line instead.
   expect(await t.tools.call(t.hub, human(), "screen_end", { waitId: waited.output!.waiting.waitId })).not.toHaveProperty("error");
@@ -133,10 +160,26 @@ test("a full Mac: refused without wait, in line ahead of agents with it", async 
   await tick();
 });
 
+test("a Mac still booting the next clone keeps the person first: the row stays starting, no error", async () => {
+  setup();
+  const mac = fakeMac(() => ({ step: "sim_queued", place: 1, secs: 20, why: "yours is booting" }));
+  const opened = await open({});
+  const id = opened.output!.waiting.waitId;
+  for (let i = 0; i < 20 && mac.steps.length === 0; i++) await tick();
+  await tick();
+  expect(mac.steps[0]!.step).toMatchObject({ step: "sim_start", wait: true });
+  expect(await waitRow(id)).toMatchObject({ stage: "starting" });
+  expect((await waitRow(id)) as Record<string, unknown>).not.toHaveProperty("error");
+  // Given up while it boots: the row goes, and the hub's next ask ends it on the Mac.
+  expect(await t.tools.call(t.hub, human(), "screen_end", { waitId: id })).not.toHaveProperty("error");
+  expect(await waitRow(id)).toBeUndefined();
+});
+
 test("screen_control is a person's, for a screen they control, with a control it has", async () => {
   setup();
   fakeMac(() => ({ step: "sim_start", udid: "U1", device: "iPhone Duo on iOS 27.2" }));
-  const session = (await open({ sim: { model: "iPhone Duo" } })).output!.session;
+  const w = (await open({ sim: { model: "iPhone Duo" } })).output!.waiting;
+  const session = await yours(w.waitId, w.threadId);
   const call = (who: ReturnType<typeof caller>, input: Record<string, unknown>) =>
     (t.tools.call(t.hub, who, "screen_control", { sessionId: session.sessionId, ...input }) as Promise<{ error?: { error: { code: string; message: string } } }>).then(
       (a) => ({ error: a.error?.error }),

@@ -144,8 +144,11 @@ control, `mac sim` controls refuse, as agent-device does.
 A person starts a simulator of their own from **New screen › iPhone** ([Open one yourself](/docs/browser-sessions#yours)),
 picking the model (iPhone 17, iPhone Duo, an iPad: what the Mac's Xcode runs) and its iOS. It is a simulator like an
 agent's, named for the model and the person ("iPhone Duo · Ada"), theirs to drive from the start. It counts in the
-Mac's simulator budget and goes ahead of every agent waiting for one (D239): with all in use, it waits first in line.
-It ends with **End screen**, or after 30 minutes without the person's input.
+Mac's simulator budget and goes ahead of every agent waiting for one (D239): with all in use, or the next clone still
+booting, it waits first in line. The hub starts it in its own time (a model the Mac has no clone of boots cold, a
+minute or two): New screen says it's starting, or waiting for a free simulator, and opens its live view once it's
+theirs; closing New screen meanwhile leaves the start going, under Screens. It ends with **End screen**, or after 30
+minutes without the person's input.
 
 ### Waiting for a simulator {#sim-queue}
 

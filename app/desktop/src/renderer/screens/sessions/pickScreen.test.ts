@@ -174,6 +174,13 @@ describe("openingLine", () => {
     expect(openingLine("installing", 12, "mac")).toBe("Installing #12’s build on mac…");
     expect(openingLine(undefined, 12, "mac")).toBe("Handing it to you…");
   });
+
+  it("says where an iPhone the hub starts is", () => {
+    expect(openingLine("starting", undefined, "studio")).toBe("Starting the iPhone on studio…");
+    expect(openingLine("waiting", undefined, "studio")).toBe("Waiting for a free simulator on studio, ahead of agents…");
+    expect(openingLine("failed", undefined, "studio")).toBe("It didn’t open.");
+    expect(openingLine(undefined, undefined, "studio")).toBe("Handing it to you…");
+  });
 });
 
 describe("startingLine", () => {
