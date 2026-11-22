@@ -204,6 +204,50 @@ test("two ready PRs green on their own heads land as one batch, each closed as m
   expect(body).toContain("Fleetd-Change: X1 (T11, W1)\nFleetd-Change: X2 (T12, W1)");
 });
 
+test("a green batch waiting for the batch behind it says so, not ci, and lands with it", async () => {
+  const k = kit();
+  k.pr(21, "fleetd/T21-one", { "one.md": "1\n" });
+  k.pr(22, "fleetd/T22-two", { "two.md": "2\n" });
+  k.pr(23, "fleetd/T23-three", { "three.md": "3\n" });
+  const has = (sha: string, path: string) => Bun.spawnSync(["git", "cat-file", "-e", `${sha}:${path}`], { cwd: k.origin }).exitCode === 0;
+  const start = k.clock.ms;
+  const seen = new Map<string, number>();
+  const notes: (string | undefined)[] = [];
+  // PR 23's own CI runs past the first batch's forming, so it goes in the batch stacked behind it; each batch's CI
+  // takes minutes, the first's longest.
+  k.gh.runs = (sha) => {
+    const [one, three] = [has(sha, "one.md"), has(sha, "three.md")];
+    if (!seen.has(sha)) seen.set(sha, k.clock.ms);
+    let doneAt = 0;
+    if (three && !one) doneAt = start + 3 * 60_000;
+    else if (one && has(sha, "two.md") && !three) doneAt = start + 10 * 60_000;
+    else if (one && three) {
+      doneAt = seen.get(sha)! + 2 * 60_000;
+      notes.push(k.change(21).lastError);
+    }
+    const done = k.clock.ms >= doneAt;
+    return [{ id: 1, name: "ci", status: done ? "completed" : "in_progress", conclusion: done ? "success" : null, html_url: `https://github.com/${REPO}/actions/runs/1` }];
+  };
+  const logged: string[] = [];
+  const info = console.info;
+  console.info = (...a: unknown[]) => void logged.push(a.join(" "));
+  try {
+    await k.enqueue(21);
+    await k.enqueue(22);
+    await k.enqueue(23);
+    await k.settle();
+  } finally {
+    console.info = info;
+  }
+  expect([21, 22, 23].map((n) => k.change(n).state)).toEqual(["merged", "merged", "merged"]);
+  // While the batch behind ran, the passed one's members said they wait for it; once landed, the note is gone.
+  const waiting = notes.filter((n) => n !== undefined);
+  expect(waiting.length).toBeGreaterThan(0);
+  expect(waiting[0]).toMatch(/^passed, waiting up to \d+ min for batch #\d+ behind it$/);
+  expect(k.change(21).lastError).toBeUndefined();
+  expect(logged.some((l) => /^train: batch #\d+ of acme\/storefront passed, waiting up to \d+ min for batch #\d+ behind it$/.test(l))).toBe(true);
+});
+
 test("a red batch sends each PR alone: the green one merges, the red one goes back", async () => {
   const k = kit();
   k.pr(13, "fleetd/T13-good", { "good.md": "g\n" });
