@@ -500,7 +500,7 @@ A decision you changed or revoked goes out with the next wake too, with your why
 - the human replaced D14 payments.provider "stripe" with D19 "adyen": "the contract is signed"; follow D19 from now on
 ```
 
-A model can go on past its own reply and write a turn as if from you: a line starting `Human:`, `H:` or `Assistant:`.
+A model can go on past its own reply and write a turn as if from you: a line starting `Human:` or `Assistant:`.
 fleetd cuts the lead's reply before that line, outside code fences, so the chat never shows it as a bubble. A mention of
 `Human:` mid-sentence or in a quote stays. The lead's session still holds the whole reply, so its next wake tells it
 that you never wrote that turn:
