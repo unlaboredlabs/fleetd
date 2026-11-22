@@ -3,7 +3,10 @@
 // `screen_thumbs`, and the `browser_frame`s and `screen_thumb`s they bring. A `browser_rtc` offer goes on to the
 // screen's node and its answer back (src/node/rtc): the frames and input then go peer to peer, and a watch whose
 // `rtc` names an open peer gets no frames here. The same watch again with `rtc` changed only moves it on or off its
-// peer: off it, the stream starts again at a whole picture. A watch that acks its frames gets them through a
+// peer: off it, the stream starts again at a whole picture. Each peer's key is checked again every RTC_RECHECK_MS and
+// on every revocation, as the socket checks its own on every frame: one that can no longer watch the screen, or no
+// longer drive it when its peer carries input, has its peer closed, and the app is back on the socket, where its
+// input is refused as any other's. A watch that acks its frames gets them through a
 // FrameSender (./flow.ts): as many on their way as the acks' round trip needs, none taken while a queue stands, and its
 // budget from the same acks. One that doesn't ack gets each frame as it comes.
 import type { BrowserFrame, BrowserInput } from "../../shared/contracts.ts";
@@ -27,7 +30,7 @@ class Connection {
   /** What the running watch asked: the same again with another `rtc` only moves it on or off its peer. */
   asked: { session: string; acks: boolean; fps: number | undefined; video: boolean } | undefined;
   /** The app's peers, by its own id: the hub's id for each, the node's, and its session. */
-  readonly peers = new Map<string, { id: string; machine: string; session: string }>();
+  readonly peers = new Map<string, { id: string; machine: string; session: string; owner: string; input: boolean }>();
   /** The acking watch's frames, paced to its acks. */
   sender: FrameSender<string> | undefined;
   last: number | undefined;
@@ -60,10 +63,64 @@ class Connection {
 }
 
 /** The app peers' by the hub's id for each: which connection, and its own id. */
-const peerIds = (hub: Hub) => hub.area("browser.rtc", () => ({ n: 0, byId: new Map<string, { c: Connection; peer: string }>() }));
+const peerIds = (hub: Hub) =>
+  hub.area("browser.rtc", () => ({
+    n: 0,
+    byId: new Map<string, { c: Connection; peer: string }>(),
+    timer: undefined as ReturnType<typeof setInterval> | undefined,
+    revokes: false,
+  }));
 
 /** An app connection holds this many peers at most: its windows' screens, and one being replaced. */
 export const MAX_APP_PEERS = 4;
+/** Each peer's key is checked again this often: a role or grant it lost stops its frames and input within this. */
+export const RTC_RECHECK_MS = 2_000;
+
+/** Whether `caller` may watch a screen of `owner`'s machine, and drive it. */
+const access = (caller: Caller | undefined, owner: string) => ({
+  read: caller !== undefined && allows(caller, "read", owner),
+  input: caller !== undefined && isHuman(caller) && allows(caller, "operate", owner),
+});
+
+/** The connection's caller as its key is now: undefined once the key is refused (the socket closes it too). */
+function callerNow(hub: Hub, conn: AppConn): Caller | undefined {
+  if (conn.key === undefined) return conn.caller;
+  try {
+    return hub.auth.verify(conn.key) as Caller;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Closes each peer whose key lost what it was let in with. */
+export function recheckPeers(hub: Hub): void {
+  for (const { c, peer } of [...peerIds(hub).byId.values()]) {
+    const p = c.peers.get(peer);
+    if (!p) continue;
+    const now = access(callerNow(hub, c.conn), p.owner);
+    if (now.read && (now.input || !p.input)) continue;
+    closePeer(hub, c, peer);
+    appWs(hub).sendTo(c.conn, { t: "browser_rtc", session: p.session, peer, error: "Your access to this screen changed." });
+  }
+}
+
+/** Rechecks every RTC_RECHECK_MS while any peer is open, and on every revocation. */
+function watchPeers(hub: Hub): void {
+  const ids = peerIds(hub);
+  if (ids.timer !== undefined) return;
+  ids.timer = setInterval(() => {
+    recheckPeers(hub);
+    if (ids.byId.size === 0) {
+      clearInterval(ids.timer);
+      ids.timer = undefined;
+    }
+  }, RTC_RECHECK_MS);
+  if (!ids.revokes) {
+    ids.revokes = true;
+    hub.auth.onRevoke(() => recheckPeers(hub));
+    hub.shutdown.signal.addEventListener("abort", () => clearInterval(ids.timer), { once: true });
+  }
+}
 
 /** Closes the app's peer `peer`: the node is told, and the watch it carried takes its frames here again. */
 function closePeer(hub: Hub, c: Connection, peer: string): void {
@@ -227,9 +284,11 @@ export function browserRtc(hub: Hub, conn: AppConn, msg: { session: string; peer
   if (c.peers.size >= MAX_APP_PEERS) return refuse(`This connection has ${MAX_APP_PEERS} screen peers open already.`);
   const ids = peerIds(hub);
   const id = `p${++ids.n}`;
-  c.peers.set(msg.peer, { id, machine, session: msg.session });
+  const owner = s.projectRef.machineId;
+  const { input } = access(caller, owner);
+  c.peers.set(msg.peer, { id, machine, session: msg.session, owner, input });
   ids.byId.set(id, { c, peer: msg.peer });
-  const input = isHuman(caller) && allows(caller, "operate", s.projectRef.machineId);
+  watchPeers(hub);
   if (!link(hub).send(machine, { t: "browser_rtc", sessionId: msg.session, peer: id, offer: msg.offer, input })) {
     closePeer(hub, c, msg.peer);
     refuse(`${machine}'s node isn't connected.`);

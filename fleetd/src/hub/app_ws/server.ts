@@ -268,7 +268,7 @@ export class AppWs {
     return () => conn.closeHooks.delete(fn);
   }
 
-  /** Hears each pong a connection's client sends (browser/app.ts paces live screens by them). */
+  /** Hears each pong a connection's client sends. */
   onPong(fn: (conn: AppConn, data: Buffer) => void): () => void {
     this.pongHooks.add(fn);
     return () => this.pongHooks.delete(fn);

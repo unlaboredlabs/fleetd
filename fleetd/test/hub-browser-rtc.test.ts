@@ -5,6 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { live } from "../src/hub/browser/live.ts";
+import { recheckPeers } from "../src/hub/browser/app.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
 import { addMachine, addProject, agent, as, caller, fakeSocket, testHub } from "./screens_helpers.ts";
 
@@ -113,4 +114,32 @@ test("the node's close reaches the app and takes its watch back through the hub;
   await t.app.deliver(as(app, person), { t: "browser_rtc", session: S1, peer: "a2", offer: "o" });
   t.link.link("devbox", ["browser", "browser_rtc"]);
   expect(app.sent.at(-1)).toMatchObject({ t: "browser_rtc", peer: "a2", error: expect.stringContaining("linked again") });
+});
+
+test("a peer whose key lost the right to drive the screen, or to watch it, is closed, and the app is back on the socket", async () => {
+  await setup();
+  const app = fakeSocket();
+  const conn = as(app, caller("operate", { kind: "human" }));
+  await t.app.deliver(conn, { t: "browser_watch", session: S1 });
+  await t.app.deliver(conn, { t: "browser_rtc", session: S1, peer: "a1", offer: "o" });
+  const peer = (of("browser_rtc").at(-1) as unknown as { peer: string; input: boolean }).peer;
+  await t.app.deliver(conn, { t: "browser_watch", session: S1, rtc: "a1" });
+  recheckPeers(t.hub);
+  // Nothing changed: it stays.
+  expect(of("browser_rtc").at(-1)).toMatchObject({ offer: "o", input: true });
+  // An admin lowers them to read: their input on the peer stops, as the socket would refuse it.
+  conn.caller = caller("read", { kind: "human" });
+  recheckPeers(t.hub);
+  expect(of("browser_rtc").at(-1)).toEqual({ t: "browser_rtc", sessionId: S1, peer });
+  expect(app.sent.at(-1)).toEqual({ t: "browser_rtc", session: S1, peer: "a1", error: "Your access to this screen changed." });
+  expect(of("browser_watch").at(-1)).not.toMatchObject({ relay: false });
+  // A read key's peer, which carries no input, stays until it can't watch either.
+  await t.app.deliver(conn, { t: "browser_rtc", session: S1, peer: "a2", offer: "o" });
+  expect(of("browser_rtc").at(-1)).toMatchObject({ input: false });
+  recheckPeers(t.hub);
+  expect(of("browser_rtc").at(-1)).toMatchObject({ offer: "o" });
+  conn.caller = caller("read", { kind: "human", machines: ["elsewhere"] });
+  recheckPeers(t.hub);
+  expect(of("browser_rtc").at(-1)).not.toHaveProperty("offer");
+  expect(app.sent.at(-1)).toMatchObject({ peer: "a2", error: "Your access to this screen changed." });
 });
