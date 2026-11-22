@@ -2,12 +2,16 @@
 import { expect, test } from "bun:test";
 import { executors } from "../src/hub/executor/index.ts";
 import { link } from "../src/hub/link/server.ts";
-import { MODELS_FRESH_MS, MODELS_RETRY_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
+import { ANTIGRAVITY_MODELS, MODELS_FRESH_MS, MODELS_RETRY_MS, MODELS_WAIT_MS, profiles } from "../src/hub/projects/profiles.ts";
+
 import { taskSetup } from "../src/hub/projects/settings.ts";
 import * as repos from "../src/hub/repos/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { key, kit, project } from "./work-kit.ts";
+
+/** The Antigravity models every list ends with. */
+const AGY = ANTIGRAVITY_MODELS.map(([id]) => id);
 
 /** An owner's device with admin everywhere. */
 function owner(k: ReturnType<typeof kit>) {
@@ -50,16 +54,16 @@ test("profiles_list never waits on a Models API that doesn't answer, and asks it
   expect((await second).modelsFrom).toBe("api");
   expect(asked).toBe(1);
   const cached = await k.ok(key("read"), "profiles_list", {});
-  expect([cached.modelsFrom, cached.models.map((m: { id: string }) => m.id), asked]).toEqual(["api", ["claude-next"], 1]);
+  expect([cached.modelsFrom, cached.models.map((m: { id: string }) => m.id), asked]).toEqual(["api", ["claude-next", ...AGY], 1]);
   // Past its freshness the API is asked again; a changed key is asked at once.
   k.clock.ms += MODELS_FRESH_MS;
   const again = k.ok(key("read"), "profiles_list", {});
   answer([{ id: "claude-later" }]);
-  expect((await again).models.map((m: { id: string }) => m.id)).toEqual(["claude-later"]);
+  expect((await again).models.map((m: { id: string }) => m.id)).toEqual(["claude-later", ...AGY]);
   k.hub.db.conn.run(`UPDATE claude_accounts SET data = '{"sealedOn":[{"machineId":"devbox"}],"v":2}' WHERE account = 'hub'`);
   const rekeyed = k.ok(key("read"), "profiles_list", {});
   answer([{ id: "claude-rekeyed" }]);
-  expect((await rekeyed).models.map((m: { id: string }) => m.id)).toEqual(["claude-rekeyed"]);
+  expect((await rekeyed).models.map((m: { id: string }) => m.id)).toEqual(["claude-rekeyed", ...AGY]);
   expect(asked).toBe(3);
 });
 

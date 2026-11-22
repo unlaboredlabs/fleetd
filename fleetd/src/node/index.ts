@@ -32,7 +32,8 @@ import { pinSelf } from "./self_exe.ts";
 import { deliverSecret, type SecretsContext } from "./secrets/index.ts";
 import { configFor, runnerEnv, SessionService } from "./sessions/index.ts";
 import { RealClaude, turnAutoupdaterOff } from "./runner/install.ts";
-import { LOGINS } from "./runner/login.ts";
+import { AGY_LOGINS, LOGINS } from "./runner/login.ts";
+import * as antigravity from "./runner/antigravity.ts";
 import { notRestarted, run as runUpdate, runFetch } from "./update/index.ts";
 import { emptyHeld } from "./hold.ts";
 import { broker, screenHooks } from "./browser/index.ts";
@@ -68,11 +69,11 @@ const RUNNER_NO_COMMANDS =
 
 /** What the hub's runner leaves out of the core's capabilities: installing, signing in to or updating a Claude Code or
  * fleetd of its machine's (its boxes have their own, and it updates with the hub that starts it). */
-const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.REJOIN];
+const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.ANTIGRAVITY_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.REJOIN];
 
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
-  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
+  CAP.REPOS, CAP.DETACHED, CAP.PROJECT_SETTINGS, CAP.WORKTREE_SETUP, CAP.COMPUTER_IMAGE, CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.ANTIGRAVITY_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.PROJECT_ENV_COPY, CAP.ORDER_ENV, CAP.ALLOWED_ONLY, CAP.UPDATE_HOLD,
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
@@ -580,6 +581,7 @@ export async function startNode(
             logins: LOGINS,
             reprobe: () => sessions.reprobe(),
           },
+          antigravity: { binary: () => antigravity.ensure(), env: () => runnerEnv(sessions.config), logins: AGY_LOGINS },
         }).then((r) => ctx.send({ t: "node_action_result", ...r }), logFailed("node_action"));
         return;
       case "session_call":

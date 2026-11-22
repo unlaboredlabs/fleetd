@@ -59,10 +59,12 @@ const ROLES: MachineRolesEntry[] = [
     sessionsLive: 0,
     hostsOthers: true,
     hosts: [{ host: "browser", ready: true, detail: "Chrome at /usr/bin/google-chrome", idleMinutes: 30 }],
+    antigravityLogin: true,
   },
-  { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false },
+  { machineId: "laptop", name: "laptop", online: false, roles: ["agents"], maxSessions: 0, maxSessionsWhy: "auto", sessionsLive: 0, hostsOthers: false, antigravityLogin: true },
 ];
 const LOGIN_URL = "https://claude.ai/oauth/authorize?code=true&client_id=9d1c&state=s1";
+const AGY_URL = "https://accounts.google.com/o/oauth2/auth?state=g1";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -134,6 +136,10 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
             ? { checks, checkedAt: AT }
             : tool === "machine_remove"
               ? { machineId: (input as { machineId: string }).machineId, steps: [], revoked: true }
+              : tool === "machine_antigravity_login"
+                ? code !== undefined || (input as { machineId: string }).machineId === "builder-1"
+                  ? { machineId: (input as { machineId: string }).machineId, signedIn: "Google AI Pro", message: "Antigravity is signed in (Google AI Pro)" }
+                  : { machineId: "laptop", loginUrl: AGY_URL, message: "sign in at the URL, then give the code it shows" }
               : tool === "machine_claude_login"
                 ? code === undefined
                   ? { machineId: "laptop", loginUrl: LOGIN_URL, message: "sign in at the URL, then give the code it shows" }
@@ -443,6 +449,49 @@ it("logs claude in from the app: the URL to sign in at, then the code, once", as
   // The checks run again, and claude's row goes with its check.
   expect(calls.some((c) => c.tool === "doctor_list" && (c.input as { rerun?: boolean }).rerun === true)).toBe(true);
   expect(problems()).toEqual(["android:warn"]);
+});
+
+it("shows a machine's Antigravity sign-in under Agents: one signed in already says its plan and asks for nothing", async () => {
+  checks = checksOf("builder-1");
+  await render(<MachinePage machineId="builder-1" />);
+  const row = host.querySelector("[data-row='antigravity']");
+  expect(row?.textContent).toContain("Google Antigravity");
+  await click(button("Sign in…"));
+  expect(row?.textContent).toContain("Signed in · Google AI Pro");
+  expect(host.querySelector("form[aria-label='Sign in']")).toBeNull();
+});
+
+it("has no Antigravity row on a machine whose fleetd can't sign it in", async () => {
+  const at = ROLES.findIndex((r) => r.machineId === "builder-1");
+  const kept = ROLES[at];
+  if (kept === undefined) throw new Error("no builder-1");
+  const { antigravityLogin: _, ...without } = kept;
+  ROLES[at] = without;
+  try {
+    checks = checksOf("builder-1");
+    await render(<MachinePage machineId="builder-1" />);
+    expect(host.textContent).toContain("Agents");
+    expect(host.querySelector("[data-row='antigravity']")).toBeNull();
+  } finally {
+    ROLES[at] = kept;
+  }
+});
+
+it("signs Antigravity in from the app: the Google page to sign in at, then the code, once", async () => {
+  checks = READY;
+  await render(<MachinePage machineId="laptop" />);
+  await click(button("Sign in…"));
+  expect(host.textContent).toContain("Open this page and sign in with the Google account laptop's agents on Antigravity should use.");
+  expect(host.textContent).toContain(AGY_URL);
+  const code = host.querySelector<HTMLInputElement>("form[aria-label='Sign in'] input");
+  if (code === null) throw new Error("no code field");
+  await type(code, " g#1 ");
+  await click(button("Sign in"));
+  await settle();
+  expect(calls.filter((c) => c.tool === "machine_antigravity_login").map((c) => c.input)).toEqual([{ machineId: "laptop" }, { machineId: "laptop", code: "g#1" }]);
+  // The first may install agy on the machine: it waits as long as the hub does.
+  expect(calls.find((c) => c.tool === "machine_antigravity_login")?.timeoutMs).toBe(600_000);
+  expect(host.querySelector("[data-row='antigravity']")?.textContent).toContain("Signed in · Google AI Pro");
 });
 
 it("holds what a machine is for, its agents and its screens on its page, under what is wrong with it", async () => {

@@ -5,6 +5,7 @@ import { exec, headUtf16, type Env } from "../util.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../runner/host.ts";
 import { ALREADY, bringTo, type Claude } from "../runner/install.ts";
 import type { Logins } from "../runner/login.ts";
+import * as agy from "../runner/antigravity.ts";
 import type { NodeAction, NodeActionResult } from "../wire.ts";
 
 /** `git config --global user.email`, absent when unset or git is missing. */
@@ -34,6 +35,8 @@ export type ActionHooks = {
   scoped?: () => Promise<boolean>;
   /** The machine's Claude Code, and its login, with the runner's environment. */
   claude?: { installer: Claude; binary: string; env: () => Env; logins: Logins; reprobe: () => Promise<{ login: string }> };
+  /** Antigravity's sign-in from the app: its agy (installed first where there is none), the runner's environment. */
+  antigravity?: { binary: () => Promise<string>; env: () => Env; logins: Logins };
   /** A self-update: install `update` and restart (node/update). */
   update?: (frame: NodeAction) => Promise<NodeActionResult>;
 };
@@ -86,7 +89,7 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
     case "claude_login": {
       if (!hooks.claude) return answer(frame.id, false, "this node doesn't log Claude Code in");
       try {
-        const url = await hooks.claude.logins.start(hooks.claude.binary, hooks.claude.env());
+        const url = await hooks.claude.logins.start([hooks.claude.binary, "auth", "login"], hooks.claude.env());
         return answer(frame.id, true, "sign in at the URL, then give the code it shows", { login_url: headUtf16(url, 4000) });
       } catch (error) {
         return answer(frame.id, false, (error as Error).message);
@@ -101,6 +104,32 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
         const info = await hooks.claude.reprobe();
         if (info.login === "logged_out") return answer(frame.id, false, `${said}; but claude still reports no login`);
         return answer(frame.id, true, said);
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message);
+      }
+    }
+    case "antigravity_login": {
+      if (!hooks.antigravity) return answer(frame.id, false, "this node doesn't sign Antigravity in");
+      try {
+        const binary = await hooks.antigravity.binary();
+        const env = hooks.antigravity.env();
+        // Signed in already: nothing to start, and nothing of the sign-in is touched.
+        const plan = await agy.signedIn(binary, env);
+        if (plan !== undefined) return answer(frame.id, true, `Antigravity is signed in (${plan})`, { signed_in: plan });
+        const url = await hooks.antigravity.logins.start(agy.loginArgv(binary), agy.loginEnv(env));
+        return answer(frame.id, true, "sign in at the URL, then give the code it shows", { login_url: headUtf16(url, 4000) });
+      } catch (error) {
+        return answer(frame.id, false, (error as Error).message);
+      }
+    }
+    case "antigravity_login_code": {
+      if (!frame.code) return answer(frame.id, false, "the hub sent no code");
+      if (!hooks.antigravity) return answer(frame.id, false, "this node doesn't sign Antigravity in");
+      try {
+        const said = await hooks.antigravity.logins.finish(frame.code);
+        const plan = await agy.signedIn(await hooks.antigravity.binary(), hooks.antigravity.env());
+        if (plan === undefined) return answer(frame.id, false, `${said}; but Antigravity still reports no sign-in`);
+        return answer(frame.id, true, `Antigravity is signed in (${plan})`, { signed_in: plan });
       } catch (error) {
         return answer(frame.id, false, (error as Error).message);
       }

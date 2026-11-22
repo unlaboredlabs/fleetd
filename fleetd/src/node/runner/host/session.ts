@@ -18,11 +18,17 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:os";
 import { nowIso } from "../../util.ts";
 import { dedupe, signal, type Proc } from "../procs.ts";
-import { graceMs, type ExitInfo, type RunnerEvent, type SessionCommand } from "./events.ts";
+import { graceMs, type DecidedBy, type ExitInfo, type RunnerEvent, type SessionCommand } from "./events.ts";
+import type { PermissionDecision, SendMode } from "../../../shared/sessions.ts";
+import { readFileSync, writeFileSync } from "node:fs";
 import { classify } from "./failure.ts";
-import { StreamMapper, systemNow } from "./mapper.ts";
-import { decodeLine, type Input } from "./protocol.ts";
+import { StreamMapper, systemNow, type Now } from "./mapper.ts";
+import { decodeLine } from "./protocol.ts";
+import { AcpDriver, type AcpSpec } from "./acp.ts";
 import { reap, SESSION_MARKER, sweep, sweepMarked, track, untrack } from "./reaper.ts";
+import { ACP_ENV } from "../antigravity_spec.ts";
+
+export { ACP_ENV };
 
 /** From SIGTERM to SIGKILL. */
 export const TERM_GRACE_MS = 5_000;
@@ -72,20 +78,97 @@ export type Session = {
   close(): void;
 };
 
-/** Starts claude as `program args…` with this process's environment and working directory, `marker` set on it, and
- * hands each of its events to `onEvent`, Exited last. Rejects when it didn't start (`code` ENOENT: not there). */
+/** What speaks the agent's stdio: Claude's stream-json (./mapper.ts) or ACP (./acp.ts). Each call gives the events it
+ * produced and the lines to write to the agent. */
+export type Driver = {
+  start(): Out;
+  /** One stdout line; undefined when it isn't the agent's protocol (a warning printed to stdout). */
+  line(raw: string, now: Now): Out | undefined;
+  send(runId: string, text: string, mode: SendMode): Out;
+  stop(): Out;
+  /** Undefined when the send can no longer be withdrawn. */
+  withdraw(runId: string): Out | undefined;
+  /** Undefined when the agent no longer waits for the answer. */
+  answer(requestId: string, decision: PermissionDecision, by: DecidedBy | undefined, now: Now): Out | undefined;
+  hasOpenRun(): boolean;
+  /** What a shutdown writes before it closes stdin. */
+  interrupt(): unknown[];
+  stopping(): void;
+  stderr(line: string): void;
+  stderrTail(): string;
+  exited(exit: ExitInfo, now: Now): RunnerEvent[];
+};
+type Out = { events: RunnerEvent[]; replies: unknown[] };
+
+/** Claude's mapper as a Driver. */
+export function claudeDriver(mapper: StreamMapper): Driver {
+  const only = (replies: unknown[]): Out => ({ events: [], replies });
+  return {
+    start: () => only([]),
+    line: (raw, now) => {
+      const decoded = decodeLine(raw);
+      return decoded ? mapper.feed(decoded, now) : undefined;
+    },
+    send: (runId, text, mode) => only(mapper.send(runId, text, mode)),
+    stop: () => only(mapper.stop()),
+    withdraw: (runId) => {
+      const input = mapper.withdraw(runId);
+      return input ? only([input]) : undefined;
+    },
+    answer: (requestId, decision, by, now) => {
+      const input = mapper.answer(requestId, decision, by, now);
+      return input ? only([input]) : undefined;
+    },
+    hasOpenRun: () => mapper.hasOpenRun(),
+    interrupt: () => [mapper.interrupt()],
+    stopping: () => mapper.stopping(),
+    stderr: (line) => mapper.stderr(line),
+    stderrTail: () => mapper.stderrTail(),
+    exited: (exit, now) => mapper.exited(exit, now),
+  };
+}
+
+/** The ACP driver of the spec `FLEETD_ACP` names (../antigravity.ts), resuming the conversation its state file keeps. */
+function acpDriver(specFile: string): Driver {
+  const spec = JSON.parse(readFileSync(specFile, "utf8")) as AcpSpec;
+  let resume: string | undefined;
+  try {
+    resume = readFileSync(spec.stateFile, "utf8").trim() || undefined;
+  } catch {}
+  const acp = new AcpDriver(spec, resume, classify, (id) => writeFileSync(spec.stateFile, id), warn);
+  return {
+    start: () => acp.start(),
+    line: (raw, now) => acp.line(raw, now),
+    send: (runId, text, mode) => acp.send(runId, text, mode, systemNow()),
+    stop: () => acp.stop(systemNow()),
+    withdraw: (runId) => acp.withdraw(runId),
+    answer: (requestId, decision) => acp.answer(requestId, decision),
+    hasOpenRun: () => acp.hasOpenRun(),
+    interrupt: () => acp.interrupt(),
+    stopping: () => acp.stopping(),
+    stderr: (line) => acp.stderr(line),
+    stderrTail: () => acp.stderrTail(),
+    exited: (exit, now) => acp.exited(exit, now),
+  };
+}
+
+/** Starts the agent as `program args…` with this process's environment and working directory, `marker` set on it, and
+ * hands each of its events to `onEvent`, Exited last. With `FLEETD_ACP` set it speaks ACP, else Claude's stream-json.
+ * Rejects when it didn't start (`code` ENOENT: not there). */
 export async function startSession(program: string, args: string[], sessionId: string, marker: string, onEvent: (event: RunnerEvent) => void, mapper?: StreamMapper): Promise<Session> {
+  const { [ACP_ENV]: acpSpec, ...env } = process.env;
+  const driver = acpSpec ? acpDriver(acpSpec) : claudeDriver(mapper ?? new StreamMapper(sessionId, classify, warn));
   const child = spawn(program, args, {
-    env: { ...process.env, [SESSION_MARKER]: marker },
+    env: { ...env, [SESSION_MARKER]: marker },
     stdio: ["pipe", "pipe", "pipe"],
-    // A group of its own, so the ladder signals claude's whole group and never the host's.
+    // A group of its own, so the ladder signals the agent's whole group and never the host's.
     detached: true,
   });
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
     child.once("error", reject);
   });
-  return new Live(child, marker, mapper ?? new StreamMapper(sessionId, classify, warn), onEvent).handle();
+  return new Live(child, marker, driver, onEvent).handle();
 }
 
 class Live {
@@ -106,7 +189,7 @@ class Live {
   constructor(
     readonly child: ChildProcess,
     readonly marker: string,
-    readonly mapper: StreamMapper,
+    readonly mapper: Driver,
     readonly onEvent: (event: RunnerEvent) => void,
   ) {
     this.pid = child.pid!;
@@ -127,22 +210,28 @@ class Live {
   }
 
   handle(): Session {
+    this.#take(this.mapper.start());
     return { pid: this.pid, command: (cmd) => this.#command(cmd), close: () => this.#close() };
   }
 
   #stdout(lines: string[]): void {
     for (const line of lines) {
-      const decoded = decodeLine(line);
-      if (decoded) {
-        const mapped = this.mapper.feed(decoded, systemNow());
-        for (const reply of mapped.replies) this.#write(reply);
-        this.#push(mapped.events);
-      } else if (line.trim()) {
+      const mapped = this.mapper.line(line, systemNow());
+      if (mapped) this.#take(mapped);
+      else if (line.trim()) {
         // Not stream-json (a warning printed to stdout): keep it with stderr, where a failure shows it.
         this.mapper.stderr(line);
       }
     }
     this.#deliver();
+  }
+
+  /** Writes a driver's lines and queues its events. */
+  #take(out: Out): boolean {
+    let wrote = true;
+    for (const reply of out.replies) wrote = this.#write(reply) && wrote;
+    this.#push(out.events);
+    return wrote;
   }
 
   #stderr(lines: string[]): void {
@@ -151,23 +240,21 @@ class Live {
 
   #command(cmd: SessionCommand): void {
     if (cmd === "Interrupt") {
-      for (const input of this.mapper.stop()) this.#write(input);
+      this.#take(this.mapper.stop());
     } else if ("Send" in cmd) {
       const { run_id, text, mode } = cmd.Send;
       // stdin closed: the run can never start, and ends with the exit like any other open run.
-      for (const input of this.mapper.send(run_id, text, mode)) if (!this.#write(input)) warn(`send ${run_id} after stdin closed`);
+      if (!this.#take(this.mapper.send(run_id, text, mode))) warn(`send ${run_id} after stdin closed`);
     } else if ("Withdraw" in cmd) {
-      const input = this.mapper.withdraw(cmd.Withdraw.run_id);
-      if (!input || !this.#write(input)) {
-        this.#push([{ Withdrawn: { run_id: cmd.Withdraw.run_id, cancelled: false, by_stop: false } }]);
-        this.#deliver();
-      }
+      const out = this.mapper.withdraw(cmd.Withdraw.run_id);
+      if (!out || !this.#take(out)) this.#push([{ Withdrawn: { run_id: cmd.Withdraw.run_id, cancelled: false, by_stop: false } }]);
     } else if ("Answer" in cmd) {
       const { request_id, decision, by } = cmd.Answer;
-      const input = this.mapper.answer(request_id, decision, by ?? undefined, systemNow());
-      if (input) this.#write(input);
-      else warn(`answer to ${request_id}, which claude no longer waits for`);
+      const out = this.mapper.answer(request_id, decision, by ?? undefined, systemNow());
+      if (out) this.#take(out);
+      else warn(`answer to ${request_id}, which the agent no longer waits for`);
     } else if ("Shutdown" in cmd) this.#shutdown(graceMs(cmd.Shutdown.grace));
+    this.#deliver();
   }
 
   #close(): void {
@@ -179,7 +266,7 @@ class Live {
 
   #shutdown(grace: number): void {
     if (this.#phase !== "running") return;
-    if (this.mapper.hasOpenRun()) this.#write(this.mapper.interrupt());
+    if (this.mapper.hasOpenRun()) for (const line of this.mapper.interrupt()) this.#write(line);
     this.mapper.stopping();
     this.#stdinOpen = false;
     this.child.stdin!.end();
@@ -209,7 +296,7 @@ class Live {
   }
 
   /** False when stdin is already closed. */
-  #write(input: Input): boolean {
+  #write(input: unknown): boolean {
     if (!this.#stdinOpen) return false;
     this.child.stdin!.write(`${JSON.stringify(input)}\n`);
     return true;
