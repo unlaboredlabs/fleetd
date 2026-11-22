@@ -16,6 +16,8 @@ export default defineConfig({
     { name: "screens", testMatch: ["screens.spec.ts", "platform.spec.ts", "seeThrough.spec.ts"] },
     // It posts events at the screen itself, so it runs alone on it (mac.yml's swipe job).
     { name: "swipe", testMatch: "swipe.spec.ts" },
+    // Not a check: the swipe's clips and frame timings, recorded on a Mac (swipeClip.spec.ts).
+    { name: "swipe-clip", testMatch: "swipeClip.spec.ts" },
     { name: "site", testMatch: "site.spec.ts" },
     { name: "showcase", testMatch: "showcase.spec.ts" },
   ],
