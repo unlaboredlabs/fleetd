@@ -2494,13 +2494,14 @@ export class Tasks {
     for (const key of this.unowned.keys()) if (!seen.has(key)) this.unowned.delete(key);
   }
 
-  /** Whether a task, a lead, a memory refresh, a memory import or an approval check runs in the thread. */
+  /** Whether a task, a lead, a memory refresh or tidy, a memory import or an approval check runs in the thread. */
   private ownedThread(r: ThreadRef): boolean {
     if (TaskRecords.byThread(this.db, r)) return true;
     const row = this.db
       .query<{ owned: number }, [string, string]>(
         `SELECT (EXISTS (SELECT 1 FROM leads WHERE machine_id = ?1 AND thread_id = ?2)
            OR EXISTS (SELECT 1 FROM memory_refreshes WHERE machine_id = ?1 AND thread_id = ?2)
+           OR EXISTS (SELECT 1 FROM memory_tidies WHERE host_machine = ?1 AND thread_id = ?2)
            OR EXISTS (SELECT 1 FROM memory_imports WHERE machine_id = ?1 AND thread_id = ?2)
            OR EXISTS (SELECT 1 FROM approval_checks WHERE machine_id = ?1 AND thread_id = ?2)) AS owned`,
       )

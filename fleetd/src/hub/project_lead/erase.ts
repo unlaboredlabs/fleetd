@@ -188,6 +188,7 @@ function rows(c: Database, r: ProjectRef): { recordings: string[]; blobs: Set<st
     "SELECT thread_id AS v FROM leads WHERE machine_id = ? AND project_id = ?",
     "SELECT thread_id AS v FROM session_prompts WHERE machine_id = ? AND project_id = ?",
     "SELECT thread_id AS v FROM memory_refreshes WHERE machine_id = ? AND project_id = ? AND thread_id IS NOT NULL",
+    "SELECT thread_id AS v FROM memory_tidies WHERE host_machine = ? AND host_project = ? AND thread_id IS NOT NULL",
   ]) {
     for (const t of strings(sql, m, p)) threads.add(t);
   }

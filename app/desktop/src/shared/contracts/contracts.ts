@@ -4835,7 +4835,7 @@ export type MemoryFile = {
   notes: MemoryNote[];
   scope: MemoryScope;
   text: string;
-  /** A project's topic file; absent for `user.md` and `MEMORY.md`. */
+  /** A topic file; absent for a core (`user.md`, `MEMORY.md`). */
   topic?: MemoryTopic;
   updatedAt?: Timestamp;
 };
@@ -4854,12 +4854,21 @@ export type MemoryGetOutput = {
   projectCap?: number;
   /** With projectRef: the project's files together, and their cap. */
   projectChars?: number;
+  /**
+   * The last tidy of your own memory: its "Memory refreshed" line, which memory_undo takes back. In a chat only when
+   * you have a bot of your own; else only here.
+   */
+  tidied?: ChatMessage;
+  /** How the last tidy of your own memory went, and why when it failed or was skipped. */
+  tidyRun?: MemoryRefreshRun;
   truncated?: boolean;
   /**
-   * Your own memory: how you work, read by the agents of work you start and by the leads you write to. Empty for a key
+   * Your own memory's core: how you work, read by the agents of work you start and by the leads you write to. Empty for a key
    * with no person. The one shared user.md on a hub from before people.
    */
   user: MemoryFile;
+  /** Your own memory's topic files, by name. */
+  userFiles?: MemoryFile[];
 };
 
 export type MemoryImportInput = {
@@ -4968,7 +4977,7 @@ export type MemorySetInput = {
   scope: MemoryScope;
   /** The whole file. Empty deletes it (a topic's index line too). */
   text: string;
-  /** Project scope: a topic file; absent, MEMORY.md. */
+  /** A topic file; absent, the core (user.md, or with scope project MEMORY.md). */
   topic?: MemoryTopic;
 };
 

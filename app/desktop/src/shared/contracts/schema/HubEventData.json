@@ -3054,7 +3054,7 @@
         },
         "replaced": {
           "description": "The whole entry it replaced, which Undo puts back.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
@@ -3064,7 +3064,7 @@
         },
         "text": {
           "description": "The entry written; with `forgotten`, the whole entry removed.",
-          "maxLength": 1000,
+          "maxLength": 100000,
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"

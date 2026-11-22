@@ -293,8 +293,9 @@ Leads remember how you work and what each bot decided, so you don't say "concise
 correct the lead or state a rule, it calls `remember` in that turn, and the chat shows "Remembered: …" with Undo. When
 an entry no longer holds, the lead removes it with `forget`, and the chat shows "Forgot: …" with the reason and Undo.
 
-- **You** (your own memory): how you work everywhere. Only you edit it. The agents of the work you start get it; on a hub with several people, a
-  bot's lead gets nobody's (see below).
+- **You** (your own memory): how you work everywhere, as a short core (`user.md`) plus topic files for detail that
+  matters only for some work. Only you edit it. The agents of the work you start get its core; on a hub with several
+  people, a bot's lead gets nobody's (see below). It is tidied once a night ([below](#memory-tidy)).
 - **Each bot** (`MEMORY.md`, plus topic files for detail): only that bot's sessions get it. Another bot
   never sees it.
 
@@ -302,7 +303,8 @@ A lead gets your memory and its bot's `MEMORY.md` in its system prompt at the st
 instructions; writers get them in theirs. A bot's lead answers everyone who shares the hub in one long session, so on a
 hub with several people it starts with no one's memory: anyone's would stay in its context while it answers the
 others. When it remembers something in user scope, it goes to the memory of the person whose message it is
-answering, and only that person can undo it. A lead opens a topic file when it needs one. Something remembered
+answering, and only that person can undo it. A lead opens a topic file, the bot's or yours (`memory_read` with
+scope `user`), when its work comes up, and puts detail that only some work needs in a topic rather than the core. Something remembered
 mid-session reaches the next session.
 
 Read, edit or delete your own memory in Settings › Your memory, and each bot's in Settings › a bot ›
@@ -311,9 +313,25 @@ reads or edits yours, owners and admins included; an owner or admin can only del
 the hub. A hub with no people yet keeps one shared `user.md`, read and edited as Your memory; once it has people, its
 owner gets a copy as their own memory, and the old file stays on disk, read by no agent.
 
-The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`), in no repo. Each file has a
-cap: 16,000 characters for each person's memory and each `MEMORY.md`, 32,000 per topic and 128,000 per bot. A
-write past one is refused, and the lead merges entries instead. Memory never holds a secret.
+The files are plain markdown in the hub's home (`memory/`, yours in `memory/people/`, your topics in
+`memory/people/<you>/`), in no repo. Each file has a cap: 16,000 characters for each person's core and each
+`MEMORY.md`, 32,000 per topic and 128,000 per bot. A bot's write past one is refused, and the lead merges entries
+instead. A write to your own memory is never refused for size: it lands, and a tidy of your memory starts a minute
+later. Memory never holds a secret.
+
+### Your memory's tidy {#memory-tidy}
+
+Once a night, after the bots' refreshes (below), and a minute after a write leaves your memory past a cap (at most
+once an hour), a session of its own tidies your memory, the `memory.tidy` prompt. It reads your whole memory and, from
+each bot, what you said there since its last tidy (newest kept, up to about 40,000 characters per bot; the lead's
+words too where nobody else wrote, never anyone else's). It may merge duplicates, put a newer correction in place of
+an older entry, tighten wording and move detail into a topic. It never removes a rule just because it didn't come up
+lately. Like the refresh, it may use `memory_read`, `remember` and `forget` and nothing else, and only on your memory;
+it runs on your own Claude, on the machine of the bot you wrote in last. A night with nothing new from you and your
+memory as it left it costs nothing. You get one line, "Memory refreshed: +a ~b −c", with Undo, on top of Settings ›
+Your memory, and in the chat of a bot only you write in, when you have one (never a chat others read). Undo all puts
+your memory back exactly as the tidy found it, unless something else wrote it while the tidy ran: then it takes back
+the tidy's changes one by one. A tidy that couldn't run says why on the same page.
 
 ### Import memory {#memory-import}
 
@@ -376,8 +394,8 @@ no longer holds stops misleading the agents:
   machine whose fleetd is too old to hold it to those gets no refresh until it is updated; each night it's skipped,
   the chat says "Memory refresh skipped: update devbox to let it run" once. It adds what the chat taught, merges
   entries that overlap and removes what no longer holds, held to the caps like any write. It only adds to that
-  person's memory: it never replaces or removes an entry there, and when several people wrote, it leaves user memory
-  alone that night. A session still running after an hour, or one that
+  person's memory: it never replaces or removes an entry there (their own [tidy](#memory-tidy) does), and when
+  several people wrote, it leaves user memory alone that night. A session still running after an hour, or one that
   failed, is stopped; what it changed until then is still listed, and the next night reads the same chat again.
 - **What you see:** one line in the chat when it's done, such as "Memory refreshed: +2 ~1 −3" (added, changed,
   removed), with each change below it, each with Undo, and Undo all. A line lists at most 200 changes and says how

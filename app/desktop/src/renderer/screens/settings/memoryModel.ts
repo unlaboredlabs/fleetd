@@ -5,7 +5,7 @@ import type { MemoryFile, MemoryNote } from "../../../shared/contracts";
 import { toHash } from "../shell/routes";
 
 /** `user.md`, `MEMORY.md` or `<topic>.md`, as the files are named on the hub. */
-export const fileName = (f: Pick<MemoryFile, "scope" | "topic">): string => (f.scope === "user" ? "user.md" : f.topic ? `${f.topic}.md` : "MEMORY.md");
+export const fileName = (f: Pick<MemoryFile, "scope" | "topic">): string => (f.topic ? `${f.topic}.md` : f.scope === "user" ? "user.md" : "MEMORY.md");
 
 /** The hub counts characters (code points), not UTF-16 units: an emoji is one. */
 export const charCount = (text: string): number => Array.from(text).length;
@@ -57,9 +57,9 @@ const isIndexLine = (line: string): boolean => line.startsWith("- [") && line.tr
 /** The hub keeps an entry as `- <text>` and matches a note to the line that reads exactly that. */
 const entryLine = (text: string): string => `- ${text}`;
 
-/** The file's lines, blank ones and MEMORY.md's topic lines left out, each with its note when there is one. */
+/** The file's lines, blank ones and a core's topic lines left out, each with its note when there is one. */
 export function memoryLines(f: Pick<MemoryFile, "scope" | "topic" | "text" | "notes">): MemoryLine[] {
-  const index = f.scope === "project" && !f.topic;
+  const index = !f.topic;
   // Notes are newest first; a line written twice gets its newest.
   const notes = new Map<string, MemoryNote>();
   for (const note of f.notes) if (!notes.has(entryLine(note.text))) notes.set(entryLine(note.text), note);
