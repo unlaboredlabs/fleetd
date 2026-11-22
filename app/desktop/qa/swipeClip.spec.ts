@@ -107,6 +107,8 @@ test("records the sidebar's swipe on a Mac trackpad, both ways and at both ends"
           if (w.__frames !== undefined) requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
+        if ((w as Window & { __listening?: boolean }).__listening === true) return;
+        (w as Window & { __listening?: boolean }).__listening = true;
         document.addEventListener(
           "wheel",
           (e) => w.__wheels?.push([e.timeStamp, performance.now(), e.deltaX, e.deltaY, e.cancelable ? 1 : 0, (e as WheelEvent & { momentum?: boolean }).momentum === true ? 1 : 0]),
