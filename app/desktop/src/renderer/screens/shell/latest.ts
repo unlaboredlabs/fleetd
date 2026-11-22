@@ -26,8 +26,13 @@ export interface Latest {
 }
 
 const KEPT = "fleetd.sidebarLatest";
-/** How many of a chat's newest messages a read looks through for its line. */
-const LOOK = 10;
+/**
+ * How many of a chat's newest messages a read looks through for its line: FIRST_LOOK, which nearly always holds it, and
+ * LOOK only when none of those is one to show. Messages come whole (a lead's reply is kilobytes), so the first link up
+ * on a hub with many chats would otherwise read ten each for a line of 160 characters.
+ */
+export const FIRST_LOOK = 2;
+export const LOOK = 10;
 /** Reads at once, as the link comes up. */
 const AT_ONCE = 4;
 /** The longest line kept: one sidebar row shows far less. */
@@ -152,8 +157,11 @@ const refOf = (key: string) => {
   return { machineId: key.slice(0, at), projectId: key.slice(at + 1) };
 };
 
+/** One hub's lines as they stand (tests). */
+export const linesOf = (hub: HubId): Lines => lines.get(hub) ?? none;
+
 /** Reads `keys`' newest messages, AT_ONCE at a time, each chat once while one is on its way. */
-const readAll = async (layer: DataLayer, keys: readonly string[]) => {
+export const readAll = async (layer: DataLayer, keys: readonly string[]) => {
   const busy = reading.get(layer) ?? new Set<string>();
   reading.set(layer, busy);
   const queue = keys.filter((k) => !busy.has(k));
@@ -161,7 +169,13 @@ const readAll = async (layer: DataLayer, keys: readonly string[]) => {
   const next = async (): Promise<void> => {
     const key = queue.shift();
     if (key === undefined) return;
-    const out = await layer.call("chat_history", { projectRef: refOf(key), limit: LOOK });
+    const before = lines.get(layer.hub)?.[key];
+    let out = await layer.call("chat_history", { projectRef: refOf(key), limit: FIRST_LOOK });
+    // None of them a line, and older ones not looked at yet since the kept line: the rest of the LOOK.
+    const more = (m: readonly ChatMessage[]) => m.length >= FIRST_LOOK && m.every((x) => lineOf(x) === null) && Math.min(...m.map((x) => x.seq)) > (before?.seq ?? 0) + 1;
+    if (out.ok && more(out.output.messages)) {
+      out = await layer.call("chat_history", { projectRef: refOf(key), limit: LOOK });
+    }
     busy.delete(key);
     if (out.ok) put(layer.hub, key, latestOf(out.output.messages, lines.get(layer.hub)?.[key]));
     return next();
