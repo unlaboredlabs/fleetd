@@ -81,4 +81,7 @@ test("the repo's regenerate config is one the train can run", () => {
   const config = parseRegenerate(readFileSync(join(ROOT, CONFIG_PATH), "utf8"));
   expect(config.generated).toContain("fleetd/src/gen/");
   expect(config.migrations).toBe("fleetd/src/hub/store/migrations/");
+  // fleetd.sh's bot is a bundle of the app's code: two PRs that both change it are rebuilt, not bounced.
+  expect(config.generated).toContain("site/pebble.js");
+  expect(config.run.some((c) => c.includes("pnpm site:pebble"))).toBe(true);
 });
