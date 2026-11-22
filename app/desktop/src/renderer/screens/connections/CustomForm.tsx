@@ -37,7 +37,7 @@ const PLAIN = "plain:";
 
 const PREFIXES = [
   { value: "bearer", label: "Bearer" },
-  { value: "none", label: "As is" },
+  { value: "none", label: "No prefix" },
 ] as const;
 
 /** The vault items a value may come from: the team's logins and variables, and a bot's own variables for its own server. */
@@ -236,10 +236,10 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
           {signInWanted ? (
             <span className={c.signInLine} role="status">
               <span className={c.line} data-tone="warning">
-                {phase.server.name} signs in with OAuth.
+                {phase.server.name} wants you to sign in.
               </span>
               <Button size="sm" variant="primary" onClick={() => setPhase({ kind: "signin", server: phase.server })}>
-                Sign in with OAuth
+                Sign in
               </Button>
             </span>
           ) : null}

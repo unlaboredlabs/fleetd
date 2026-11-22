@@ -66,7 +66,7 @@ describe("the team's named services on the phone", () => {
 
   it("reads, tests, turns on and disconnects by the server's own scope and name", async () => {
     const { hub, calls } = stub({
-      mcp_servers_get: { global: [paper()], project: [], userServers: true },
+      mcp_servers_get: { global: [paper()], project: [] },
       mcp_server_test: { machineId: "devbox", result: { tools: [{ name: "get_basic_info" }] } },
       mcp_server_set: { server: paper() },
       mcp_server_remove: { ok: true },

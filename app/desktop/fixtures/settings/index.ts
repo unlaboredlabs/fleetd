@@ -222,7 +222,7 @@ function basics(f: Fixture) {
   // The dry run, for any text: a fixture cannot know what will be typed, so it answers with no warnings.
   f.answer("prompt_set", { dryRun: true }, { ref: "lead.start@5e771ed000", warnings: [] });
   // A project's Agents page lists its MCP servers: none, where the recording has no answer of its own.
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
 }
 
 /** Every shared fixture: what Settings calls besides the recorded prompt reads. */
@@ -274,7 +274,7 @@ function agents(from: Fixture): Fixture {
   }
   for (let n = 1; n <= 64; n++) f.answer("cap_set", { cap: n }, { slots: { ...clone(slots), cap: n, fleetCap: n } });
   // Every project's Tools & skills reads the global MCP servers too: none.
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
   return f;
 }
 
@@ -307,7 +307,7 @@ function machines(from: Fixture): Fixture {
     f.answer("cap_set", { machine: { machineId, auto: true } }, at({ ...unset, cap: auto }));
     for (let n = 1; n <= 50; n++) f.answer("cap_set", { machine: { machineId, maxAgents: n } }, at({ ...clone(m), cap: n, maxAgents: n }));
   }
-  f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: [], project: [] });
   return f;
 }
 
