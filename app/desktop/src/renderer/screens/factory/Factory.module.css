@@ -170,6 +170,13 @@
   flex-direction: column;
   gap: 2px;
 }
+.chartTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -199,6 +206,21 @@
   height: 10px;
   flex: none;
   border-radius: 50%;
+  background: var(--series-1);
+}
+.swatchDotSoft {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--series-1);
+  opacity: 0.45;
+}
+.trendKey {
+  width: 12px;
+  height: 2px;
+  flex: none;
+  border-radius: 1px;
   background: var(--series-1);
 }
 .plot {
@@ -270,6 +292,73 @@
 }
 .dotActive {
   stroke: var(--text);
+}
+/* CI per PR: many dots, so they recede and each day's median carries the trend over them. */
+.dotSoft {
+  fill: var(--series-1);
+  fill-opacity: 0.35;
+}
+.dotSoft.dotActive {
+  fill-opacity: 1;
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+.trend {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* The slowest jobs under the CI chart: name, a bar to the median with the p90 fainter behind it, the median. */
+.jobs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: 40px;
+  max-width: 720px;
+}
+.jobList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.job {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(80px, 1fr) 112px;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.jobName {
+  min-width: 0;
+}
+.jobBar {
+  position: relative;
+  height: 8px;
+}
+.jobP90,
+.jobMedian {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--series-1);
+}
+.jobP90 {
+  opacity: 0.25;
+}
+.jobTime {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 .s1 {

@@ -2,11 +2,14 @@
 // every route, the person's minutes by source, a repo checked out on two machines, and the states the screen draws
 // (no merges, a repo whose reads fail, a repo on a plain git host). Seeded, so every build gives the same answer.
 import type {
+  CiJob,
   HumanSource,
+  MergePipeline,
   MetricsDay,
   MetricsGetOutput,
   MetricsMerge,
   MetricsRepoRow,
+  PipelineTiles,
   ProjectRef,
   RepoCoverage,
   RouteCounts,
@@ -216,7 +219,128 @@ const periodOf = (o: MetricsFixtureOptions, repos: readonly Repo[], startMs: num
     if (o.none !== true && i % 11 === 4) notCounted.push({ why: "other_base", n: 1 });
     days.push({ day: ymd(day0), merged, notCounted, human });
   }
+  withPipeline(days, merges, seed);
   return { days, merges: merges.toSorted((a, b) => b.mergedAt.localeCompare(a.mergedAt)), humanMs };
+};
+
+const JOBS = ["test (1/3)", "test (2/3)", "test (3/3)", "e2e", "build", "lint"] as const;
+
+/**
+ * The train's figures for its merges, from a stream of their own so the rest of the answer stays as it was: CI that
+ * got faster over the range (a cache landing a third of the way in), a few red and flaky runs, and trips back.
+ */
+const withPipeline = (days: MetricsDay[], merges: MetricsMerge[], seed: number) => {
+  const rand = rng(seed + 101);
+  const first = days[0] === undefined ? 0 : Date.parse(`${days[0].day}T00:00:00Z`);
+  const span = Math.max(1, days.length) * DAY;
+  for (const m of merges) {
+    if (m.route !== "train") continue;
+    const along = (Date.parse(m.mergedAt) - first) / span;
+    const wall = Math.round((along < 0.33 ? 9 : 6) * MIN + rand() * 3 * MIN);
+    const red = rand() < 0.12 ? 1 : 0;
+    const conflicts = rand() < 0.2 ? 1 : 0;
+    const reviews = 1 + (rand() < 0.4 ? 1 : 0);
+    const blocking = reviews > 1 ? 1 + Math.floor(rand() * 2) : 0;
+    m.pipeline = {
+      stages: {
+        review: Math.round((6 + rand() * 20) * MIN * reviews),
+        back: Math.round((conflicts + red) * (8 + rand() * 30) * MIN),
+        queue: Math.round((1 + rand() * 12) * MIN),
+        ci: wall * (1 + red) + 20_000,
+        merge: Math.round(5_000 + rand() * 10_000),
+      },
+      ciRuns: 1 + red,
+      redRuns: red,
+      flaky: rand() < 0.05 ? 1 : 0,
+      reviews,
+      blocking,
+      sentBack: { conflicts, redCi: red },
+      ciWallMs: wall,
+      runnerMs: Math.round(wall * (3.2 + rand())),
+      waitMs: Math.round(rand() < 0.1 ? 2 * MIN : rand() * 20_000),
+      firstPass: red === 0,
+      slowestJob: { name: JOBS[Math.floor(rand() * 3)] ?? "e2e", ms: wall - 15_000 },
+    };
+  }
+  for (const d of days) {
+    const ms = merges.filter((m) => m.pipeline !== undefined && m.mergedAt.startsWith(d.day));
+    if (ms.length === 0) continue;
+    const sumOf = (f: (m: MetricsMerge) => number) => ms.reduce((a, m) => a + f(m), 0);
+    d.pipeline = {
+      n: ms.length,
+      stages: {
+        review: sumOf((m) => m.pipeline?.stages.review ?? 0),
+        back: sumOf((m) => m.pipeline?.stages.back ?? 0),
+        queue: sumOf((m) => m.pipeline?.stages.queue ?? 0),
+        ci: sumOf((m) => m.pipeline?.stages.ci ?? 0),
+        merge: sumOf((m) => m.pipeline?.stages.merge ?? 0),
+      },
+      sentBack: { conflicts: ms.filter((m) => (m.pipeline?.sentBack.conflicts ?? 0) > 0).length, redCi: ms.filter((m) => (m.pipeline?.redRuns ?? 0) > 0).length },
+      ...opt("ciMedianMs", median(ms.map((m) => m.pipeline?.ciWallMs ?? 0))),
+      ...opt("runnerMedianMs", median(ms.map((m) => m.pipeline?.runnerMs ?? 0))),
+    };
+  }
+};
+
+const opt = <K extends string, V>(key: K, v: V | undefined): Partial<Record<K, V>> => (v === undefined ? {} : ({ [key]: v } as Record<K, V>));
+
+/** The train's tiles over a period's merges. */
+const pipelineTiles = (cur: readonly MetricsMerge[], prev: readonly MetricsMerge[], startMs: number, endMs: number): PipelineTiles => {
+  const ran = (ms: readonly MetricsMerge[]) => ms.flatMap((m) => (m.pipeline === undefined ? [] : [m.pipeline]));
+  const now = ran(cur);
+  const was = ran(prev);
+  const walls = (ps: readonly MergePipeline[]) => ps.map((p) => p.ciWallMs ?? 0);
+  const firstPct = (ps: readonly MergePipeline[]) => (ps.length === 0 ? undefined : round1((100 * ps.filter((p) => p.firstPass === true).length) / ps.length));
+  const backPct = (ps: readonly MergePipeline[]) =>
+    ps.length === 0 ? undefined : round1((100 * ps.filter((p) => p.sentBack.conflicts + p.sentBack.redCi > 0).length) / ps.length);
+  const perPr = (ps: readonly MergePipeline[], f: (p: MergePipeline) => number) => (ps.length === 0 ? undefined : round1(sum(ps.map(f)) / ps.length));
+  const spark = (f: (ps: readonly MergePipeline[]) => number | undefined) => sparkOf(startMs, endMs, cur, (slice) => f(ran(slice)));
+  const runner = sum(now.map((p) => p.runnerMs ?? 0));
+  return {
+    ci: {
+      n: now.length,
+      ...opt("medianMs", median(walls(now))),
+      ...opt("p90Ms", p90(walls(now))),
+      ...opt("previousMedianMs", median(walls(was))),
+      ...opt("runnerMedianMs", median(now.map((p) => p.runnerMs ?? 0))),
+      ...opt("runnerPerPrMs", now.length === 0 ? undefined : Math.round(runner / now.length)),
+      runnerTotalMs: runner,
+      spark: spark((ps) => median(walls(ps))),
+    },
+    firstPass: { n: now.length, ...opt("pct", firstPct(now)), ...opt("previousPct", firstPct(was)), flaky: sum(now.map((p) => p.flaky)), spark: spark(firstPct) },
+    reviews: {
+      n: now.length,
+      ...opt("perPr", perPr(now, (p) => p.reviews)),
+      ...opt("blockingPerPr", perPr(now, (p) => p.blocking)),
+      ...opt("previousPerPr", perPr(was, (p) => p.reviews)),
+      spark: spark((ps) => perPr(ps, (p) => p.reviews)),
+    },
+    sentBack: {
+      n: now.length,
+      ...opt("pct", backPct(now)),
+      ...opt("previousPct", backPct(was)),
+      conflicts: now.filter((p) => p.sentBack.conflicts > 0).length,
+      redCi: now.filter((p) => p.sentBack.redCi > 0).length,
+      spark: spark(backPct),
+    },
+  };
+};
+
+/** The slowest jobs: each test shard and e2e near the run's wall time, the rest quick. */
+const ciJobs = (merges: readonly MetricsMerge[], repo: string | undefined): CiJob[] => {
+  const ran = merges.filter((m) => m.pipeline?.ciWallMs !== undefined);
+  if (ran.length === 0 || repo === undefined) return [];
+  const wall = median(ran.map((m) => m.pipeline?.ciWallMs ?? 0)) ?? 0;
+  const share = [0.96, 0.9, 0.84, 0.7, 0.45, 0.2];
+  return JOBS.map((name, i) => ({
+    repo,
+    name,
+    runs: ran.length,
+    failed: i === 3 ? Math.round(ran.length * 0.08) : i === 0 ? Math.round(ran.length * 0.03) : 0,
+    medianMs: Math.round(wall * (share[i] ?? 0.2)),
+    p90Ms: Math.round(wall * (share[i] ?? 0.2) * 1.35),
+    previousMedianMs: Math.round(wall * (share[i] ?? 0.2) * (i < 3 ? 1.4 : 1)),
+  }));
 };
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
@@ -269,7 +393,6 @@ export const metricsAnswer = (o: MetricsFixtureOptions): MetricsGetOutput => {
   });
   const pct = (part: number, whole: number) => (whole === 0 ? undefined : round1((part * 100) / whole));
   const perPr = (ms: number, prs: number) => (prs === 0 ? undefined : Math.round(ms / prs));
-  const opt = <K extends string, V>(key: K, v: V | undefined): Partial<Record<K, V>> => (v === undefined ? {} : ({ [key]: v } as Record<K, V>));
   const endMs = nowMs;
   const lines = ROUTES.flatMap((route) => {
     const ms = cur.merges.filter((m) => m.route === route);
@@ -351,7 +474,9 @@ export const metricsAnswer = (o: MetricsFixtureOptions): MetricsGetOutput => {
         ...opt("previousPct", pct(before.train, before.n)),
         spark: sparkOf(startMs, endMs, cur.merges, (slice) => pct(routeCount(slice, "train"), slice.length)),
       },
+      ...(o.none === true ? {} : { pipeline: pipelineTiles(cur.merges, prev.merges, startMs, endMs) }),
     },
+    ...(o.none === true ? {} : { ciJobs: ciJobs(cur.merges, repos[0]?.repo) }),
     days: cur.days,
     merges: cur.merges,
     mergesTotal: cur.merges.length,

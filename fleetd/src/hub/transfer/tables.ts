@@ -54,6 +54,7 @@ export const CARRIED = [
   "metric_changes",
   "metric_identities",
   "metric_merges",
+  "metric_pipeline",
   "metric_project_repos",
   "metric_repos",
   "metric_touches",
