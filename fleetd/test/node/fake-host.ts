@@ -2,10 +2,13 @@
 // <session id> -- <program> <args…>`. It registers in <dir> (host.json), serves <dir>/sock with the host's lines
 // ({"seq","event"} out, {"ack"} / {"command"} / "stop" in), and plays a claude that answers each Send with one run:
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
-// Bash first and ends its run once answered; one with `auth:` fails as a refused login. Shutdown exits. Its
-// environment goes to <dir>/env.json. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
+// Bash first and ends its run once answered; one with `auth:` fails as a refused login; one with `print:<NAME>` runs a
+// command that prints that variable whole and line by line (as `env | cut -d= -f1` does), files it in claude's own
+// conversation file as claude would, and answers with what it printed; one with `stream:<A>,<B>` streams those
+// variables' values as live text in 7-character Deltas, 10 ms apart, then answers. Shutdown exits. Its environment goes to
+// <dir>/env.json, its arguments to <dir>/argv.json. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const argv = process.argv.slice(2);
@@ -106,6 +109,43 @@ Bun.listen({
             waiting = { run: run_id, text: "" };
             continue;
           }
+          const printed = /print:([A-Z_]+)/.exec(text)?.[1];
+          if (printed !== undefined) {
+            const value = process.env[printed] ?? "";
+            const output = `${value}\n${`${printed}=${value}`.split("\n").map((l) => l.split("=")[0]).join("\n")}\n`;
+            const at = new Date().toISOString();
+            const tool = `cmd-${run_id}`;
+            emit({ Item: { id: tool, runId: run_id, status: "completed", title: "Bash", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "command", command: `printenv ${printed}; env | cut -d= -f1`, output, exitCode: 0 } } });
+            const config = process.env.CLAUDE_CONFIG_DIR ?? join(process.env.HOME ?? "", ".claude");
+            const project = join(config, "projects", realpathSync(process.cwd()).replace(/[^A-Za-z0-9]/g, "-"));
+            mkdirSync(project, { recursive: true });
+            for (const entry of [
+              { type: "assistant", sessionId: session, message: { role: "assistant", content: [{ type: "tool_use", id: tool, name: "Bash", input: { command: `printenv ${printed}` } }] } },
+              { type: "user", sessionId: session, message: { role: "user", content: [{ type: "tool_result", tool_use_id: tool, content: output }] } },
+            ])
+              appendFileSync(join(project, `${session}.jsonl`), `${JSON.stringify(entry)}\n`);
+            emit({ AssistantText: { message_id: `msg-${run_id}`, text: `it printed:\n${output}` } });
+            emit({ RunEnded: { run_id, outcome: { Completed: { text: `it printed:\n${output}` } }, usage: null } });
+            continue;
+          }
+          const streamed = /stream:([A-Z_,]+)/.exec(text)?.[1];
+          if (streamed !== undefined) {
+            const said = streamed.split(",").map((name) => `${name} is ${process.env[name] ?? ""} there`).join("\n");
+            const pieces = said.match(/[\s\S]{1,7}/g) ?? [];
+            waiting = { run: run_id, text: "" };
+            const next = (i: number) => {
+              if (i < pieces.length) {
+                emit({ Delta: { message_id: `msg-${run_id}`, append: pieces[i] } });
+                setTimeout(() => next(i + 1), 10);
+                return;
+              }
+              waiting = undefined;
+              emit({ AssistantText: { message_id: `msg-${run_id}`, text: said } });
+              emit({ RunEnded: { run_id, outcome: { Completed: { text: said } }, usage: null } });
+            };
+            next(0);
+            continue;
+          }
           if (text.includes("ask:")) {
             waiting = { run: run_id, text };
             emit({ PermissionRequest: { request_id: `req-${run_id}`, tool_use_id: "tu1", tool_name: "Bash", input: { command: "ls" }, summary: "ls" } });
@@ -133,4 +173,5 @@ process.on("SIGTERM", () => {
 });
 // What the session's claude would have been started with, for tests to read.
 writeFileSync(join(dir, "env.json"), JSON.stringify(process.env));
+writeFileSync(join(dir, "argv.json"), JSON.stringify(argv));
 writeFileSync(join(dir, "host.json"), JSON.stringify({ protocol: 1, hostPid: process.pid, hostStart: null, pid: process.pid, start: null, marker: process.env.FLEETD_RUNNER_SESSION ?? "" }));

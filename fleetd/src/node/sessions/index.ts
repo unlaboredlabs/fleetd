@@ -21,6 +21,7 @@ import type { NodeBoxKey } from "../identity.ts";
 import { leadSocketPath } from "../lead/index.ts";
 import { peerSession, type PeerSession } from "../lead/peer.ts";
 import { Masker } from "../mask.ts";
+import { scrubTranscript } from "./scrub.ts";
 import * as claude from "../runner/claude.ts";
 import * as antigravity from "../runner/antigravity.ts";
 import { current as currentScope } from "../runner/scope.ts";
@@ -1733,7 +1734,9 @@ export class SessionService {
         filled = more;
         masker = maskerNow();
       }
-      const event = masker.empty ? raw : masker.value(raw);
+      // Live text is masked as it goes out (flushDelta), whole across its pieces: a form or a key's block cut between
+      // two Deltas matches in neither.
+      const event = typeof raw === "object" && raw !== null && "Delta" in raw ? raw : masker.value(raw);
       live.lastActive = Date.now();
       try {
         if (typeof event === "string") continue;
@@ -2001,6 +2004,9 @@ export class SessionService {
   #exited(id: string, live: Live, exit: state.ExitInfo): void {
     if (this.#live.get(id) !== live) return;
     this.#live.delete(id);
+    // Claude has let go of its conversation's file: what its commands printed of a secret goes from it too, before
+    // a next start resumes it.
+    this.#scrubTranscript(id, this.screens?.filledSince(id, 0) ?? []);
     // Its agent-browser and its tools went with the process: so do its screens, here or elsewhere.
     this.launch?.ended(id);
     this.#steers.exited(id, exit.code, (run) => this.#retries.has(run));
@@ -2036,6 +2042,19 @@ export class SessionService {
     if (cause.kind === "exited" && lost.length) {
       const reaped = live.closing && !live.ending;
       this.#wakeLost(id, lost, reaped ? "it ran out its time and no notice of it reached you" : exitWords(cause.exit));
+    }
+  }
+
+  /** Masks the session's secrets (and the values filled into its browsers) in claude's own file of it, here. A hosted
+   * session's file is its box's, and an Antigravity one keeps none of claude's. */
+  #scrubTranscript(id: string, filled: [string, string][]): void {
+    try {
+      const row = this.store.session(id);
+      if (!row || row.local.hosted || antigravity.agyModel(row.summary.model) !== undefined) return;
+      const file = claude.sessionFile(row.local.configDir, row.local.cwd, id);
+      if (file) scrubTranscript(file, this.#secrets(row), filled);
+    } catch (error) {
+      console.warn(`${nowIso()} WARN couldn't scrub a session's transcript {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
     }
   }
 
