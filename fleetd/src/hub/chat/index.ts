@@ -26,7 +26,7 @@ import type { HubDb } from "../store/db.ts";
 import { events } from "../store/events.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { show } from "../intake/attachments.ts";
-import { find, type FindQuery, keepIndex } from "./find.ts";
+import { find, type FindQuery, keepIndex, showIndexed } from "./find.ts";
 import { tokensOf } from "./find_rules.ts";
 import { parts as partsOf } from "./parts.ts";
 import { tagLead } from "./tags.ts";
@@ -247,6 +247,7 @@ export class Chat {
       if (parts) message.parts = parts;
       tagLead(this.hub, message);
       c.query("UPDATE chat_messages SET data = ?1 WHERE n = ?2").run(serialize(message), rowid);
+      if (!this.db.readonly) showIndexed(c, rowid, message);
       return { message, created: true };
     });
   }
@@ -469,12 +470,14 @@ export class Chat {
       const message = parse(row.data);
       if (!f(message)) return undefined;
       c.query("UPDATE chat_messages SET data = ?1 WHERE n = ?2").run(serialize(message), n);
+      if (!this.db.readonly) showIndexed(c, n, message);
       return message;
     });
   }
 
   put(message: ChatMessage): void {
     this.db.conn.query("UPDATE chat_messages SET data = ?1 WHERE n = ?2").run(serialize(message), numberOf(message.messageId));
+    if (!this.db.readonly) showIndexed(this.db.conn, numberOf(message.messageId), message);
   }
 
   private bySourceAnywhere(source: string): ChatMessage | undefined {

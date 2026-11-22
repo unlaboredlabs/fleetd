@@ -6,7 +6,8 @@
 import { Slider } from "radix-ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ProjectRef, SlotState } from "../../../shared/contracts";
-import { useData, useToolQuery } from "../../src/data/react";
+import { CallError } from "../../src/data/queries";
+import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import {
   appliedLine,
@@ -15,6 +16,7 @@ import {
   extrasLine,
   extrasOver,
   holdOf,
+  providedHold,
   holdsLink,
   machineAgents,
   machineHolds,
@@ -214,8 +216,10 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
   // What holds it past its max: its machine's cap and the hosted limits it goes on to, or the provider its Runs on
   // picked, whose limit alone holds its agents (the hub's slot board places them so).
   const pick = useToolQuery("project_settings_get", props.projectRef, { enabled: live }).data?.settings.computer;
-  const sandboxes = useToolQuery("sandbox_get", NO_INPUT, { enabled: live }).data;
-  const hold = holdOf(pick, sandboxes);
+  const sandboxes = useToolQuery("sandbox_get", NO_INPUT, { enabled: live });
+  // A cloud team on fleetd's computers has no sandbox_get (the hub answers not found): its plan holds its agents.
+  const provided = useHub().cloud === true && sandboxes.error instanceof CallError && sandboxes.error.error.code === "not_found";
+  const hold = provided ? providedHold(props.slots) : holdOf(pick, sandboxes.data);
   const a = projectAgents(props.slots, props.projectRef, hold);
   const state = useApplySlider(a.max, !a.own, (maxAgents, pauseExtras, follow) =>
     call("cap_set", {
@@ -270,7 +274,7 @@ export function AgentsPanel(props: { projectRef: ProjectRef; slots: SlotState; t
  * Under a project's slider past its machine's cap: the machine holds it there. Machine caps are hub-wide, so an owner or
  * admin gets the way to them in Hub › Machines; everyone else, only the line.
  */
-function MachineHolds(props: { note: string | null; link: { text: string; provider: boolean }; machineId: string }) {
+function MachineHolds(props: { note: string | null; link: { text: string; provider: boolean; billing?: true }; machineId: string }) {
   const administers = useAdministers();
   if (props.note === null) return null;
   return (
@@ -283,6 +287,11 @@ function MachineHolds(props: { note: string | null; link: { text: string; provid
           size="sm"
           variant="quiet"
           onClick={() => {
+            // fleetd's computers: the team's plan, on Billing.
+            if (props.link.billing === true) {
+              window.location.hash = toHash({ id: "settings", tab: "hub.billing" });
+              return;
+            }
             // A provider's limit: the hosted sandboxes' link lands on its row by itself (admin/HubPages.tsx).
             if (!props.link.provider) revealNext("hub.caps");
             window.location.hash = toHash({ id: "settings", tab: "hub.machines", machine: props.link.provider ? RUNNER_ID : props.machineId });

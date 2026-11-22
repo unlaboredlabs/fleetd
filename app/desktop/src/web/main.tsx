@@ -2,13 +2,13 @@
 // renderer, with window.fleetd made here (shell.ts) before the renderer's first module reads it.
 import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { applyTheme, UiProvider } from "../renderer/ui";
+import { applyTheme, toast, UiProvider } from "../renderer/ui";
 import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
 import { clearWebCache } from "./cache";
-import { Gate, type GateView } from "./Gate";
+import type { GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
-import { readSession, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
+import { readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -27,6 +27,8 @@ const here = () => `${window.location.pathname}${window.location.search}${window
 let answered = false;
 /** The team last joined in this tab: the app opens on its Get started, its bots first (screens/start). */
 let joinedTeam: string | null = null;
+/** Whom the person was removed from since their last sign-in, until a screen has said it. */
+const removed = removedNotice();
 
 const teamOf = (body: unknown): string | null => {
   const team = typeof body === "object" && body !== null ? (body as { team?: unknown }).team : undefined;
@@ -34,7 +36,9 @@ const teamOf = (body: unknown): string | null => {
   return typeof id === "string" && id !== "" ? id : null;
 };
 
-const show = (view: GateView) => {
+// The gate (sign-in, invitations, no team) loads only when it is shown: a signed-in person's first chat never draws it.
+const show = async (view: GateView) => {
+  const { Gate } = await import("./Gate");
   gate ??= createRoot(element);
   gate.render(
     <StrictMode>
@@ -59,6 +63,19 @@ const show = (view: GateView) => {
             later: () => {
               answered = true;
               void boot();
+            },
+            makeTeam: async (): Promise<WebFailure | null> => {
+              const out = await webCall(window.fetch.bind(window), "POST", "/web/team", { json: {} });
+              if (out.ok) {
+                joinedTeam = teamOf(out.body) ?? joinedTeam;
+                void boot();
+                return null;
+              }
+              if (out.signedOut === true) {
+                window.location.assign(signInPath(here()));
+                return null;
+              }
+              return out.failure;
             },
             signOut: () => {
               clearWebCache(window.localStorage);
@@ -87,6 +104,9 @@ const start = async (session: WebSession) => {
   if (joined !== undefined) window.location.hash = toHash(startScreen(joined));
   // The desktop's renderer, as it starts in the app: it reads window.fleetd as its modules load.
   await import("../renderer/src/main");
+  // Removed from a team since the last sign-in, and no gate said so: one plain line, once.
+  const line = removed.app();
+  if (line !== undefined) toast({ title: line, key: "removed" });
 };
 
 const boot = async () => {
@@ -94,13 +114,16 @@ const boot = async () => {
   if (!read.ok) {
     // Signed out: what the last account's teams left in this browser goes too.
     if (read.signedOut === true) clearWebCache(window.localStorage);
-    show(read.signedOut === true ? { at: "signed-out" } : { at: "failed", failure: read.failure });
+    void show(read.signedOut === true ? { at: "signed-out" } : { at: "failed", failure: read.failure });
     return;
   }
   const { session } = read;
-  if (session.invitations.length > 0 && !answered) show({ at: "invited", email: session.email, invitations: session.invitations });
-  else if (session.teams.length === 0) show({ at: "no-team", email: session.email });
-  else await start(session);
+  const said = removed.read(session);
+  const line = said === undefined ? {} : { removed: said };
+  if (session.invitations.length > 0 && !answered) void show({ at: "invited", email: session.email, invitations: session.invitations, ...line });
+  else if (session.teams.length === 0) void show({ at: "no-team", email: session.email, ...line });
+  else return start(session);
+  removed.shown();
 };
 
 void boot();

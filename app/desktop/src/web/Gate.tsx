@@ -13,8 +13,8 @@ import type { WebFailure, WebInvitation } from "./session";
 export type GateView =
   | { readonly at: "signed-out" }
   | { readonly at: "failed"; readonly failure: WebFailure }
-  | { readonly at: "invited"; readonly email: string; readonly invitations: readonly WebInvitation[] }
-  | { readonly at: "no-team"; readonly email: string };
+  | { readonly at: "invited"; readonly email: string; readonly invitations: readonly WebInvitation[]; readonly removed?: string }
+  | { readonly at: "no-team"; readonly email: string; readonly removed?: string };
 
 export interface GateActions {
   readonly signIn: () => void;
@@ -23,6 +23,8 @@ export interface GateActions {
   readonly join: (invitation: WebInvitation) => Promise<WebFailure | null>;
   /** On to the app, with the invitations left for another time. */
   readonly later: () => void;
+  /** A team of the person's own (someone who came by an invitation has none); its refusal, or null once made. */
+  readonly makeTeam: () => Promise<WebFailure | null>;
   readonly signOut: () => void;
 }
 
@@ -72,19 +74,7 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
       </Stage>
     );
   }
-  if (view.at === "no-team") {
-    return (
-      <Stage id="web.no-team" bot="idle" title="No team yet">
-        <Text strong>{`${view.email} isn't in a fleetd team`}</Text>
-        <Text tone="quiet">Ask a teammate to invite this email, then sign in again.</Text>
-        <div className={st.actions}>
-          <Button size="md" onClick={actions.signOut}>
-            Sign out
-          </Button>
-        </div>
-      </Stage>
-    );
-  }
+  if (view.at === "no-team") return <NoTeam email={view.email} removed={view.removed} actions={actions} />;
   return <Invitations view={view} actions={actions} />;
 }
 
@@ -110,6 +100,7 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
   };
   return (
     <Stage id="web.invited" bot="idle" title={`Join ${invitation.name}`}>
+      {view.removed === undefined ? null : <Text tone="quiet">{view.removed}</Text>}
       <Text strong>{`Invited by ${invitation.invitedBy}`}</Text>
       <Text tone="quiet">{invitationLine(invitation)}</Text>
       {refused === null ? null : (
@@ -125,6 +116,32 @@ function Invitations({ view, actions }: { view: GateView & { at: "invited" }; ac
         </Button>
         <Button size="md" variant="quiet" disabled={busy} onClick={next}>
           Not now
+        </Button>
+      </div>
+    </Stage>
+  );
+}
+
+/** In no team (one who came by an invitation and said Not now): a team of their own, or a teammate's invite. */
+function NoTeam({ email, removed, actions }: { email: string; removed: string | undefined; actions: GateActions }) {
+  // Undefined while it is being made, and once made while the app opens on it (a second press would make another);
+  // a refusal says why in place of the line.
+  const [refused, setRefused] = useState<WebFailure | null | undefined>(null);
+  const make = () => {
+    setRefused(undefined);
+    void actions.makeTeam().then((failure) => setRefused(failure ?? undefined));
+  };
+  return (
+    <Stage id="web.no-team" bot="idle" title="No team yet">
+      {removed === undefined ? null : <Text tone="quiet">{removed}</Text>}
+      <Text strong>{`${email} isn't in a fleetd team`}</Text>
+      <Text tone="quiet">{refused ? `${refused.message} ${refused.fix ?? ""}`.trim() : "Make one of your own, or ask a teammate to invite this email."}</Text>
+      <div className={st.actions}>
+        <Button variant="primary" size="md" disabled={refused === undefined} onClick={make}>
+          Make a team
+        </Button>
+        <Button size="md" onClick={actions.signOut}>
+          Sign out
         </Button>
       </div>
     </Stage>

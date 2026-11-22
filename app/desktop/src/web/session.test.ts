@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
+import { readSession, removedLine, removedNotice, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -12,8 +12,35 @@ const answering =
 describe("readSession", () => {
   it("reads who is signed in, their teams and invitations", async () => {
     const body = { email: "lea@example.com", teams: [{ id: "t1", name: "acme", url: "https://acme.fleetd.dev" }], invitations: [{ name: "side", invitedBy: "sam@example.com", role: "member", accept: "a1" }] };
-    expect(await readSession(answering(() => Response.json(body)))).toEqual({ ok: true, session: body });
-    expect(await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [] })))).toEqual({ ok: true, session: { email: "lea@example.com", teams: [], invitations: [] } });
+    expect(await readSession(answering(() => Response.json(body)))).toEqual({ ok: true, session: { ...body, removed: [] } });
+    expect(await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [] })))).toEqual({ ok: true, session: { email: "lea@example.com", teams: [], invitations: [], removed: [] } });
+    // Removed from teams since the last sign-in: read, for one plain line.
+    const removed = await readSession(answering(() => Response.json({ email: "lea@example.com", teams: [], removed: ["acme", "side"] })));
+    expect(removed.ok && removed.session.removed).toEqual(["acme", "side"]);
+    expect(removedLine(["acme"])).toBe("You were removed from acme.");
+    expect(removedLine(["acme", "side"])).toBe("You were removed from acme, side.");
+  });
+
+  it("keeps whom the person was removed from until a screen says it: every gate, then never the app after a gate did", () => {
+    // Removed from their only team: the no-team gate says it, a second read (the cloud has forgotten) still does,
+    // and the app made from there doesn't say it again.
+    const gate = removedNotice();
+    expect(gate.read({ removed: ["acme"] })).toBe("You were removed from acme.");
+    gate.shown();
+    expect(gate.read({ removed: [] })).toBe("You were removed from acme.");
+    gate.shown();
+    expect(gate.app()).toBeUndefined();
+    expect(gate.read({ removed: [] })).toBeUndefined();
+    // Still in another team, no gate: the app says it once.
+    const app = removedNotice();
+    expect(app.read({ removed: ["acme", "side"] })).toBe("You were removed from acme, side.");
+    expect(app.app()).toBe("You were removed from acme, side.");
+    expect(app.app()).toBeUndefined();
+    // Never removed: nothing anywhere.
+    const none = removedNotice();
+    expect(none.read({ removed: [] })).toBeUndefined();
+    none.shown();
+    expect(none.app()).toBeUndefined();
   });
 
   it("is signed out on a 401, and says what went wrong otherwise, never a bare fetch error", async () => {

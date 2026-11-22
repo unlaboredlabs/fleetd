@@ -424,6 +424,21 @@ it("keeps each hub's last chat across a restart of the app", async () => {
   expect(streaming()).toBe("a1b2:billing");
 });
 
+it("after a team is picked in the switcher, a Hub page opened with no team in its address manages that team", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  twoByTwo();
+  await settle();
+  await open("#/project/devbox/storefront?at=hub");
+  pickHub("Acme");
+  await settle();
+  // Settings' Managing switch: a link to People that names no team is the picked one's.
+  await open("#/settings/hub/people");
+  expect(currentRoute()).toMatchObject({ id: "settings", at: "a1b2" });
+});
+
 it("opens a first-hub notification on the first hub, even while another hub is on screen", async () => {
   await mount([
     { id: "hub", label: "Personal" },

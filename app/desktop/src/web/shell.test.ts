@@ -13,6 +13,7 @@ const SESSION: WebSession = {
     { id: "9a8b7c6d-0000-4000-8000-000000000002", name: "side", url: "https://side.fleetd.dev" },
   ],
   invitations: [],
+  removed: [],
 };
 const ACME = "3f2b9c1e00004000";
 /** The cloud's answer to a member's rename (fleetd-cloud accounts: only an owner or admin renames a team). */

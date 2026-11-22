@@ -15,6 +15,7 @@ import {
   machineSource,
   pauseLine,
   projectAgents,
+  providedHold,
   serialNote,
   sourceLine,
 } from "./agentsModel";
@@ -107,6 +108,18 @@ describe("machines", () => {
     expect(machineHolds(a, 30, "hosted", hold)).toBe("boat.dev runs at most 20 agents at once, so this bot runs 20 until an admin raises boat.dev's limit.");
     expect(holdsLink(a, "hosted", hold)).toEqual({ text: "boat.dev's limit (20) in Hub › Machines", provider: true });
     expect(sourceLine(runner, { ...a, own: false }, "hosted", hold)).toBe("Follows the default: boat.dev's limit.");
+    // On fleetd's computers (a cloud team after the switch, where the hub has no sandbox_get), the team's plan holds it:
+    // no provider named, and the way to more is Billing.
+    const planned: SlotState = { ...runner, hosted: [{ provider: "boat", limit: 3, running: 1 }] };
+    const plan = providedHold(planned);
+    const p = projectAgents(planned, hosted, plan);
+    expect(p.machineCap).toBe(3);
+    expect(machineHolds(p, 30, "hosted", plan)).toBe("This team's plan runs 3 agents at once, so this bot runs 3 until an admin picks a bigger plan in Billing.");
+    expect(holdsLink(p, "hosted", plan)).toEqual({ text: "Plans in Billing", provider: true, billing: true });
+    expect(sourceLine(planned, { ...p, own: false }, "hosted", plan)).toBe("Follows the default: the team's plan.");
+    // With no credits and no plan the board has no hosted limit: nothing runs, and Billing says why.
+    const none = providedHold(runner);
+    expect(machineHolds(projectAgents(runner, hosted, none), 1, "hosted", none)).toBe("No agent runs until the team has credits or a plan: an admin adds them in Billing.");
     // A computer with no provider keeps its own words.
     expect(holdsLink(projectAgents(fleet, storefront), "devbox")).toEqual({ text: "devbox's max in Hub › Machines", provider: false });
     expect(sourceLine(fleet, { ...projectAgents(fleet, storefront), own: false }, "devbox")).toBe("Follows the default: its machine's cap.");
