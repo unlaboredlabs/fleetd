@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
-import { self, start as startMac } from "../src/node/mac_tool/index.ts";
+import { self, start as startMac, worktreeOf } from "../src/node/mac_tool/index.ts";
 import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
@@ -222,4 +222,18 @@ test("an agent node writes `mac` at its start and puts it on every session's PAT
   expect(path).toBe(`${forwarderDir(agent.node.home, "t9")}:${binDir(agent.node.home)}:/usr/bin`);
   expect(shim(["/opt/it's/fleetd"])).toContain(`exec '/opt/it'\\''s/fleetd' mac "$@"`);
   expect(forwarder(["/b/bun", "/src/main.ts"])).toContain(`exec '/b/bun' '/src/main.ts' mac agent-device "$@"`);
+});
+
+test("mac from a session's scratch dir works on the session's own worktree; with none it says to run it from one", () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const wt = join(home.dir, "worktrees", "p1", "t1");
+  mkdirSync(wt, { recursive: true });
+  expect(Bun.spawnSync(["git", "init", "-q", wt]).exitCode).toBe(0);
+  const scratch = join(home.dir, "tmp", "t1");
+  mkdirSync(scratch, { recursive: true });
+  expect(worktreeOf(home.dir, "t1", wt)).toBe(wt);
+  expect(worktreeOf(home.dir, "t1", scratch)).toBe(wt);
+  expect(() => worktreeOf(home.dir, "t2", scratch)).toThrow(`${scratch} is in no git checkout, and this session has no worktree of its own`);
+  expect(() => worktreeOf(home.dir, "../p1/t1", scratch)).toThrow("no worktree of its own");
 });
