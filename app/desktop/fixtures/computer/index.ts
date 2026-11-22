@@ -4,8 +4,8 @@
 // `cargo fetch`, its log's end behind Log, the older image still serving. computer-new: commands saved, not built yet.
 // computer-nowhere: its machine builds no images (a self-hosted hub's), so only its setup shows.
 // computer-two: storefront and its api repo, each its own Computer, api's with no commands and so no image.
-// computer-runs-on: Runs on picked as boat.dev · 4 vCPU / 8 GB, among boat.dev's sizes.
-// computer-runs-on-gone: Runs on picked as boat.dev · 8 vCPU / 16 GB, then boat.dev disconnected: the row says its agents
+// computer-runs-on: Runs on picked as fleetd's computers · 4 vCPU / 8 GB, among fleetd's computers' sizes.
+// computer-runs-on-gone: Runs on picked as fleetd's computers · 8 vCPU / 16 GB, then fleetd's computers disconnected: the row says its agents
 // wait.
 import { Fixture } from "../kit/fixture.ts";
 import { at } from "../kit/ids.ts";
@@ -120,9 +120,9 @@ export default defineGroup({
     state(base("typical"), "computer-new", "A bot's Computer: commands saved, its image not built yet.", () => ({ state: "none", where: "boat" })),
     // A machine that can't build one (a self-hosted hub's): none, kept nowhere.
     state(base("typical"), "computer-nowhere", "A bot's Computer on a machine that builds no images: its setup alone, no image row.", () => ({ state: "none" })),
-    runsOn(base("typical"), "computer-runs-on", "A bot's Computer: Runs on is boat.dev · 4 vCPU / 8 GB, one pick of provider and size.", { kind: "boat", cpu: 4, memGb: 8 }, sized("boat", "boat.dev", [[2, 4], [4, 8], [8, 16], [16, 32]])),
+    runsOn(base("typical"), "computer-runs-on", "A bot's Computer: Runs on is fleetd's computers · 4 vCPU / 8 GB, one pick of provider and size.", { kind: "boat", cpu: 4, memGb: 8 }, sized("boat", "fleetd's computers", [[2, 4], [4, 8], [8, 16], [16, 32]])),
     runsOn(base("typical"), "computer-runs-on-gone", "A bot's Computer: its pick's provider was disconnected, so its agents wait and the row says why.", { kind: "boat", cpu: 8, memGb: 16 }, [
-      { kind: "boat", cpu: 8, memGb: 16, label: "boat.dev · 8 vCPU / 16 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
+      { kind: "boat", cpu: 8, memGb: 16, label: "fleetd's computers · 8 vCPU / 16 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines" },
     ]),
     (() => {
       const f = Fixture.from(base("typical"), "computer-two", "A bot with two repos: each its own Computer; api has no commands, so no image.");

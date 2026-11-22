@@ -7,7 +7,7 @@
 // revoked token, a bad key) wakes nothing, which would be refused the same way: the person reads where to reconnect it,
 // and the lead carries on once they do (`signed_out`, ./signed_in.ts).
 import type { ClaudeAccount, HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
-import { ASIDE_MS, RATE_MS, RATE_WORDS } from "../../shared/sandbox.ts";
+import { ASIDE_MS, providerName, RATE_MS, RATE_WORDS } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
@@ -121,8 +121,8 @@ export function retryWaitMs(n: number, message?: string): number | undefined {
 }
 
 /** The chat's line when the lead's `n`-th start in a row didn't come up (the node's words: "… no hosted sandbox came
- * up at boat.dev: …"): why, and that it is tried again by itself with the person's message kept, or, past
- * START_RETRIES, that their next message tries again. In the person's words: the provider's own error stays in the
+ * up at fleetd's computers: …", an older node's supplier name read as fleetd's computers): why, and that it is tried
+ * again by itself with the person's message kept, or, past START_RETRIES, that their next message tries again. In the person's words: the provider's own error stays in the
  * run's failure, and the node's "try again" and its clock time (UTC, the node's) go, since this line says when. A box
  * that came up but couldn't start the lead (Claude out of its reach) has the node's own sentence, which says what to do,
  * without the node's wrapper (its claude's path, its cwd). */
@@ -132,7 +132,8 @@ export function notStartedLine(message: string, n: number): string {
     minutes === undefined
       ? `It was tried again ${START_RETRIES} times by itself; your message is kept, and the lead tries again when you send another.`
       : `It tries again by itself in about ${minutes === 1 ? "a minute" : `${minutes} minutes`}, and your message is kept for it.`;
-  const at = /no hosted sandbox came up at ([^\s:]+)/.exec(message)?.[1];
+  const sent = /no hosted sandbox came up at ([^:]+?):/.exec(message)?.[1];
+  const at = sent === undefined ? undefined : providerName(sent);
   if (at) return `The lead couldn't start: no sandbox came up for it at ${at}. ${again} If it keeps failing, check ${at} in ${settingsPath()} › Machines.`;
   const own = (/^could not start \S+: ([\s\S]*?)(?: \(cwd [^)]*\))?$/.exec(message.trim())?.[1] ?? message)
     // A path the node names (its settings file's) is for the log, not the person.

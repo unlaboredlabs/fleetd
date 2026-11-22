@@ -34,7 +34,6 @@ export type Dial = {
 export function dial(d: Dial): Promise<Duplex> {
   const WS = d.WebSocket ?? WebSocket;
   const url = d.url.replace(/^http/, "ws");
-  const shown = d.secrets.reduce((u, s) => scrub(u, s, 400), url.replace(/([?&]_token=)[^&]*/, "$1…"));
   return new Promise((resolve, reject) => {
     // Bun's client takes headers; the browser's constructor doesn't, which never runs here.
     const ws = new (WS as any)(url, { headers: d.headers }) as WebSocket;
@@ -54,7 +53,7 @@ export function dial(d: Dial): Promise<Duplex> {
       try {
         ws.close();
       } catch {}
-      reject(new ProviderError("unreachable", `couldn't open ${d.name}'s link to the box (${shown}): ${why}`));
+      reject(new ProviderError("unreachable", `couldn't open the link to the box at ${d.name}: ${why}`));
     }
 
     ws.onopen = () => {

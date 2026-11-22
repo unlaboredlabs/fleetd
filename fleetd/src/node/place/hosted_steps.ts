@@ -4,7 +4,6 @@
 // "working" and the agents panel on the agent.
 import type { ProviderId } from "../../sandbox/providers/index.ts";
 import type { StartStep } from "../../shared/contracts.ts";
-import { NAMES } from "../../shared/sandbox.ts";
 
 /** `computer`: its box is being made; `template`: and the provider's template is built first (the account has none
  * yet); `older`: it starts from the last good template, saved on that day, since this release's is still being built
@@ -51,18 +50,17 @@ export function startStep(step: HostedStep): StartStep {
   }
 }
 
-/** The step in a person's words. */
-export function stepWords(step: HostedStep, provider: ProviderId): string {
-  const at = NAMES[provider] ?? provider;
+/** The step in a person's words; the computer's provider unnamed, as every hosted computer is one of fleetd's. */
+export function stepWords(step: HostedStep, _provider: ProviderId): string {
   if (typeof step === "object")
-    return `Starting its computer at ${at} (a newer computer image ${step.building ? "is still being made" : "didn't build"}; using the one from ${step.older})`;
+    return `Starting its computer (a newer computer image ${step.building ? "is still being made" : "didn't build"}; using the one from ${step.older})`;
   switch (step) {
     case "computer":
-      return `Starting its computer at ${at}`;
+      return "Starting its computer";
     case "template":
-      return `Starting its computer at ${at} (first time: a few minutes)`;
+      return "Starting its computer (first time: a few minutes)";
     case "again":
-      return `Starting its computer at ${at} again`;
+      return "Starting its computer again";
     case "clone":
       return "Cloning the repo";
     case "files":

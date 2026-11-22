@@ -381,7 +381,7 @@ function failed(provider: ProviderId, error: unknown): HostedDown {
     const logged = error instanceof StartStep ? `${error.plain}: ${error.detail}` : detail;
     console.warn(`${nowIso()} WARN a hosted box didn't come up {"provider":"${provider}","error":${JSON.stringify(logged)}}`);
     return error instanceof StartStep
-      ? new BoxNotReady(`its ${NAMES[provider]} sandbox came up, but ${error.plain}`)
+      ? new BoxNotReady(`its sandbox at ${NAMES[provider]} came up, but ${error.plain}`)
       : new HostedDown(`no hosted sandbox came up at ${NAMES[provider]}: fleetd couldn't start it`);
   }
   const b = boxes();
@@ -644,7 +644,7 @@ export function boxEnd(session: string): string | undefined {
 /** What a session whose box was lost is told: since when its work is gone. */
 function lostWords(r: HostedRecord): string {
   const since = r.since ? ` since ${r.since.slice(11, 16)} UTC` : "";
-  return `its sandbox stopped (${NAMES[r.provider]}), so its work${since} was lost; it goes on from its work as of then`;
+  return `its sandbox at ${NAMES[r.provider]} stopped, so its work${since} was lost; it goes on from its work as of then`;
 }
 
 /** The session ends, its work brought back while its box still answers, and the box goes; `why` is what it hears. */
@@ -698,9 +698,9 @@ function notKept(error: unknown, name: string): string {
     case "invalid_key":
       return `${name} refused the team's key`;
     case "billing":
-      return `${name} wants the account's billing sorted out`;
+      return `${name} want the account's billing sorted out`;
     case "limit":
-      return `the ${name} account is at its plan's limit`;
+      return `${name} are at the account's plan limit`;
     default:
       return `${name} didn't answer`;
   }
@@ -789,7 +789,7 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
     stages.done("claude check");
     const notUp = (detail: string) => {
       console.warn(`${nowIso()} WARN fleetd's session host didn't come up in a hosted box {"sessionId":"${session}","error":${JSON.stringify(detail)}}`);
-      return new BoxNotReady(`its ${NAMES[provider]} sandbox came up, but fleetd didn't start in it`);
+      return new BoxNotReady(`its sandbox at ${NAMES[provider]} came up, but fleetd didn't start in it`);
     };
     let info: Awaited<ReturnType<Box["start"]>>;
     try {

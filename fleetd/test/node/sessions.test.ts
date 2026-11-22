@@ -412,7 +412,7 @@ test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its mes
     // The bot's picked size goes with its place, kept for the session's next start.
     expect(other.store.session("s-boxed")?.local.size).toEqual({ cpu: 4, memGb: 8 });
     expect(run.failure?.class).toBe("sandbox");
-    expect(run.failure?.message).toContain("no hosted sandbox came up at boat.dev");
+    expect(run.failure?.message).toContain("no hosted sandbox came up at fleetd's computers");
     await go("send", { sessionId: "s-boxed", runId: "rb2", text: "the note", place: "local" });
     await completed("s-boxed", "rb2");
     expect(other.store.session("s-boxed")?.local.size).toBeUndefined();

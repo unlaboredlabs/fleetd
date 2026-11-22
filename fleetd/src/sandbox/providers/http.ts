@@ -54,10 +54,10 @@ export function byStatus(name: string, a: Answer, words: string): ProviderError 
   const s = a.status;
   if (s === 401) return new ProviderError("invalid_key", `${name} refused the key: it is wrong, expired or revoked (${words}).`, s);
   if (s === 402) return new ProviderError("billing", `${name} won't run sandboxes on this account until its billing is sorted out (${words}).`, s);
-  if (s === 403) return new ProviderError("invalid_key", `${name} says the key may not do this: it lacks a permission (${words}).`, s);
-  if (s === 429) return new ProviderError("limit", `${name}'s limit for this account is reached (${words}).`, s);
+  if (s === 403) return new ProviderError("invalid_key", `${name} say the key may not do this: it lacks a permission (${words}).`, s);
+  if (s === 429) return new ProviderError("limit", `the limit of ${name} for this account is reached (${words}).`, s);
   if (s === 502 || s === 504) return new ProviderError("unreachable", `${name} didn't answer in time (${words}); try again in a minute.`, s);
-  if (s >= 500) return new ProviderError("failed", `${name} failed on its side (${words}); try again in a minute.`, s);
+  if (s >= 500) return new ProviderError("failed", `${name} failed on their side (${words}); try again in a minute.`, s);
   return new ProviderError("failed", `${name} refused the call (${words}).`, s);
 }
 
@@ -143,17 +143,10 @@ export class Http {
     return new ProviderError(e.reason, e.message, a.status, codeOf(a));
   }
 
-  unreachable(url: string, e: Error, own?: AbortSignal): ProviderError {
+  unreachable(_url: string, e: Error, own?: AbortSignal): ProviderError {
     if (own?.aborted || this.o.signal?.aborted) return new ProviderError("failed", `the call to ${this.name} was cancelled`);
-    const host = (() => {
-      try {
-        return new URL(url).host;
-      } catch {
-        return url;
-      }
-    })();
     const why = e.name === "TimeoutError" ? `no answer within ${CALL_MS / 1000} seconds` : scrub(e.message, this.o.key, 160);
-    return new ProviderError("unreachable", `couldn't reach ${this.name} at ${host}: ${why}`);
+    return new ProviderError("unreachable", `couldn't reach ${this.name}: ${why}`);
   }
 }
 

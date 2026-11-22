@@ -3,10 +3,10 @@
 // machine's line, and the fleetd's computers group's words. Apart from providers.ts and billing.ts, which the web app's
 // first load carries, so only the Settings that shows them loads them.
 import { hours, money, topLine, type BillingState } from "./billing";
-import { YOURS, type Choice } from "./providers";
+import { FLEETD_COMPUTERS, YOURS, type Choice } from "./providers";
 
 /** A fleetd cloud team's provider (SandboxState.provided): fleetd's own computers, never its provider's name. */
-export const FLEETD = "fleetd's computers";
+export const FLEETD = FLEETD_COMPUTERS;
 
 /**
  * The Linux machine's choices on a fleetd cloud team (sandbox_get's `provided`): with a machine of the team's that runs

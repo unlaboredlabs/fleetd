@@ -130,7 +130,7 @@ describe("machines and setup", () => {
     expect(machinesLine([], true)).toBeNull();
   });
 
-  it("says boat.dev isn't ready and why, with its fix's own button, opening its row, never the runner's machine page", () => {
+  it("says fleetd's computers aren't ready and why, with its fix's own button, opening its row, never the runner's machine page", () => {
     const hosted = { machineId: "hosted", name: "Hosted sandboxes", runner: true } as const;
     const boat = [{ provider: "boat", limit: 20, running: 3 }];
     // Ready: nothing to say, and the runner is no machine of the team's.
@@ -140,26 +140,26 @@ describe("machines and setup", () => {
     expect(hostedLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, true)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "boat.dev isn't ready: it needs a Claude account",
+      text: "fleetd's computers aren't ready: it needs a Claude account",
       action: "Connect",
       does: { to: "accounts" },
     });
     // A refusal: its reason, and Try again, which tests the key on the row.
-    const trouble = { what: "start", reason: "billing", message: "boat.dev refused: billing isn't set up on the account", fix: "set up billing in boat.dev's dashboard" };
+    const trouble = { what: "start", reason: "billing", message: "fleetd's computers refused: billing isn't set up on the account", fix: "try again later" };
     expect(hostedLine([{ ...hosted, status: "online" }], [{ provider: "boat", limit: 20, running: 3, trouble }], true)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "boat.dev isn't ready: billing isn't set up",
+      text: "fleetd's computers aren't ready: billing isn't set up",
       action: "Try again",
       does: { to: "hosted", retry: "boat" },
     });
     // Starting: a quiet line that marks nothing.
     const starting = hostedLine([{ ...hosted, status: "degraded", degradedCause: "starting", degradedReason: "Starting…" }], boat, true);
-    expect(starting).toEqual({ key: "hosted", mark: "quiet", text: "boat.dev is starting…", does: { to: "hosted" } });
+    expect(starting).toEqual({ key: "hosted", mark: "quiet", text: "fleetd's computers are starting…", does: { to: "hosted" } });
     expect(workMark([starting], null)).toBeNull();
     // Stuck for another reason: that, with Open.
     expect(hostedLine([{ ...hosted, status: "degraded", degradedReason: "its network has no IPv4 address. Fix: reconnect it" }], boat, true)).toMatchObject({
-      text: "boat.dev isn't ready: it didn't start",
+      text: "fleetd's computers aren't ready: it didn't start",
       action: "Open",
       does: { to: "hosted" },
     });
@@ -168,7 +168,7 @@ describe("machines and setup", () => {
     expect(hostedLine([{ ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, false)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "boat.dev isn't ready: it needs a Claude account",
+      text: "fleetd's computers aren't ready: it needs a Claude account",
       aside: "Ask an admin",
     });
   });

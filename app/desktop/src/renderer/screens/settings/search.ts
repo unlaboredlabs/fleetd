@@ -152,7 +152,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.roles", label: "Machine roles", tab: "hub.machines", keywords: ["role", "sessions", "browser", "android", "desktop", "mac", "hosts"] },
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
-  { key: "hub.sandboxes", label: "Providers", tab: "hub.machines", keywords: ["providers", "sandbox", "sandboxes", "hosted", "boat", "boat.dev", "api key", "limit", "at once", "cloud", "capacity", "connect"] },
+  { key: "hub.sandboxes", label: "Providers", tab: "hub.machines", keywords: ["providers", "sandbox", "sandboxes", "hosted", "api key", "limit", "at once", "cloud", "capacity", "connect"] },
   {
     key: "hub.provided",
     label: "fleetd's computers",

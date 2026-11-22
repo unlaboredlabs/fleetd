@@ -5,6 +5,10 @@
 import type { ComputerChoice, ComputerPick, KnownSandboxCheckReason, KnownSandboxProvider, ProviderTrouble, SandboxProviderState, SlotSandbox } from "./contracts.ts";
 import { notOffered, SIZES, sizeText } from "../sandbox/providers/common.ts";
 import { settingsPath } from "./settings_path.ts";
+import { FLEETD_COMPUTERS } from "../../../app/desktop/src/shared/providers.ts";
+
+/** A provider as a person reads it, from its id or the name an older node or cloud put in its words ("boat.dev"). */
+export { providerName } from "../../../app/desktop/src/shared/providers.ts";
 
 /** The capability a node lists when it creates agents' sandboxes, so the hub tests keys and sends limits there. */
 export const CAP_SANDBOX = "sandbox";
@@ -31,12 +35,14 @@ export const runnerRefused = (what: string) => `Hosted sandboxes are the hub's o
  */
 export const ORDER: readonly KnownSandboxProvider[] = ["boat"];
 
-export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { boat: "boat.dev" };
+/** Each provider as a person reads it, in every line of the hub's, the node's and fleetd cloud's: fleetd's computers,
+ * never the supplier's own name (the apps' one mapping, app/desktop/src/shared/providers.ts). */
+export const NAMES: Readonly<Record<KnownSandboxProvider, string>> = { boat: FLEETD_COMPUTERS };
 
 /** How long a provider that failed to make a box is left out of placement (the node's boxes.ts), and so how long a
  * lead whose box didn't come up waits before a message can start it there again (the hub's leads/cut_off.ts). */
 export const ASIDE_MS = 10 * 60_000;
-/** How long one that refused for its start rate (`rate`: boat.dev's starts a minute) is left out: its starts free by
+/** How long one that refused for its start rate (`rate`: its starts a minute) is left out: its starts free by
  * themselves, so it is asked again in a minute, and a lead whose start it refused is started again then. */
 export const RATE_MS = 60_000;
 /** The few words a start-rate refusal reads as, after the provider's name (`refusalWords`); the hub's chat line for a
@@ -68,17 +74,16 @@ export const REASONS: readonly KnownSandboxCheckReason[] = ["invalid_key", "limi
 /** A check's reason as one this build knows; anything else is `failed`. */
 export const reasonOf = (r: unknown): KnownSandboxCheckReason => (REASONS.includes(r as KnownSandboxCheckReason) ? (r as KnownSandboxCheckReason) : "failed");
 
-/** What fixes a failed check of `provider`'s key, by its reason (the hub's and fleetd cloud's words): the dashboard to
- * go to, else trying again; nothing for a start rate, which frees by itself. */
-export function checkFix(provider: KnownSandboxProvider, reason: string): string {
-  const name = NAMES[provider];
+/** What fixes a failed check of `provider`'s key, by its reason (the hub's and fleetd cloud's words): trying again,
+ * later for what only fleetd fixes; lowering the limit; nothing for a start rate, which frees by itself. The supplier's
+ * own dashboard is never named: the account is fleetd's. */
+export function checkFix(_provider: KnownSandboxProvider, reason: string): string {
   switch (reason) {
     case "invalid_key":
-      return `make a new key in ${name}'s dashboard and connect it again`;
-    case "limit":
-      return `raise the plan at ${name}, or lower the limit here`;
     case "billing":
-      return `set up billing in ${name}'s dashboard`;
+      return "try again later";
+    case "limit":
+      return "lower the limit here, or try again later";
     case "rate":
       return "";
     default:
@@ -110,7 +115,7 @@ export function refusalWords(provider: KnownSandboxProvider, reason: string, why
     case "limit":
       return `${name} refused: the account is at its plan's limit`;
     case "rate":
-      return `${name}'s ${RATE_WORDS}`;
+      return `${name} are at their ${RATE_WORDS}`;
     case "unreachable":
       return `${name} didn't answer`;
     default:
@@ -124,22 +129,22 @@ export function troubleOf(provider: KnownSandboxProvider, t: { what: string; rea
   const reason = reasonOf(t.reason);
   const message =
     t.what === "keep_alive"
-      ? `${NAMES[provider]} couldn't keep its sandboxes running: ${reason === "failed" ? plainWhy(t.why) || "no reason given" : refusalWords(provider, reason, t.why)}`
+      ? `${NAMES[provider]} couldn't keep their sandboxes running: ${reason === "failed" ? plainWhy(t.why) || "no reason given" : refusalWords(provider, reason, t.why)}`
       : refusalWords(provider, reason, t.why);
   const fix = checkFix(provider, reason);
   return { what: t.what, reason, message, ...(fix ? { fix } : {}), ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}) };
 }
 
 /** A trouble's line where a person reads why an agent waits or didn't start: what is wrong, its fix, and when it is
- * tried again ("boat.dev refused: billing isn't set up on the account (set up billing in boat.dev's dashboard); trying
- * again at 12:45", the hub's clock, UTC, as its other lines). A start rate's own words say when: "in a minute". */
+ * tried again ("fleetd's computers refused: billing isn't set up on the account (try again later); trying again at
+ * 12:45", the hub's clock, UTC, as its other lines). A start rate's own words say when: "in a minute". */
 export const troubleLine = (t: Pick<ProviderTrouble, "message" | "fix" | "until"> & { reason?: string }): string =>
   `${t.message}${t.fix ? ` (${t.fix})` : ""}${t.until && t.reason !== "rate" ? `; trying again at ${t.until.slice(11, 16)}` : ""}`;
 
 /** One connected provider's limit, as the hub sends it to the team's machines (`sandbox_limits`), in ORDER. */
 export type Limit = { provider: KnownSandboxProvider; max: number };
 
-/** A bot's computer as a person reads it: "boat.dev · 4 vCPU / 8 GB". */
+/** A bot's computer as a person reads it: "fleetd's computers · 4 vCPU / 8 GB". */
 export const computerLabel = (p: { kind: string; cpu: number; memGb: number }): string => `${isProvider(p.kind) ? NAMES[p.kind] : p.kind} · ${sizeText(p)}`;
 
 /** Why a bot's agents can't have a hosted sandbox: they'd run on their machine's own Claude login, which never leaves it. */
@@ -160,14 +165,14 @@ export function computerChoices(o: { providers: readonly SandboxProviderState[];
     const st = o.providers.find((x) => x.provider === p);
     if (!st?.connected) continue;
     const off =
-      st.check && !st.check.ok ? `${NAMES[p]}'s key failed its last test: ${st.check.message ?? `test it again in ${settingsPath()} › Machines`}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
+      st.check && !st.check.ok ? `the key for ${NAMES[p]} failed its last test: ${st.check.message ?? `test it again in ${settingsPath()} › Machines`}` : o.account ? undefined : NO_ACCOUNT_HOSTED;
     for (const size of SIZES[p]) out.push({ kind: p, cpu: size.cpu, memGb: size.memGb, label: computerLabel({ kind: p, ...size }), ...(off ? { unavailable: off } : {}) });
   }
   const pick = o.pick;
   if (pick && !out.some((c) => c.kind === pick.kind && c.cpu === pick.cpu && c.memGb === pick.memGb)) {
     const why = !isProvider(pick.kind)
       ? `this hub doesn't know ${pick.kind}`
-      : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} isn't connected: an admin connects it in ${settingsPath()} › Machines`);
+      : (notOffered(pick.kind, pick, NAMES[pick.kind]) ?? `${NAMES[pick.kind]} aren't connected: an admin connects them in ${settingsPath()} › Machines`);
     out.push({ kind: pick.kind, cpu: pick.cpu, memGb: pick.memGb, label: computerLabel(pick), unavailable: why });
   }
   return out;

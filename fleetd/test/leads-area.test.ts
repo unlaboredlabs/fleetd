@@ -206,26 +206,26 @@ test("a lead cut off by its node is woken every time; one whose own turn hung, o
   expect(end(ev("thread.completed", {}), leadsList)?.end.kind).toBe("completed");
   expect(end({ ...ev("thread.failed", {}), threadId: "other" }, leadsList)).toBeUndefined();
   // Its hosted sandbox didn't come up, so its claude never started: a line for the person, and a start again later.
-  const boxless = end(ev("thread.failed", { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at boat.dev: HTTP 402" } }), leadsList)?.end;
-  expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", message: "no hosted sandbox came up at boat.dev: HTTP 402" });
-  expect(notStartedLine((boxless as { message: string }).message, 1)).toStartWith("The lead couldn't start: no sandbox came up for it at boat.dev.");
+  const boxless = end(ev("thread.failed", { runId: "r1", endCause: "failed", error: { class: "sandbox", message: "no hosted sandbox came up at fleetd's computers: HTTP 402" } }), leadsList)?.end;
+  expect(boxless).toMatchObject({ kind: "not_started", runId: "r1", message: "no hosted sandbox came up at fleetd's computers: HTTP 402" });
+  expect(notStartedLine((boxless as { message: string }).message, 1)).toStartWith("The lead couldn't start: no sandbox came up for it at fleetd's computers.");
   // A box that came up but couldn't start it: the node's own sentence, without its wrapper.
-  const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections (cwd /srv/p)" } }), leadsList)?.end;
+  const unreached = end(ev("thread.failed", { runId: "r2", endCause: "failed", error: { class: "sandbox", message: "could not start /opt/claude/.local/bin/claude: a sandbox at fleetd's computers couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections (cwd /srv/p)" } }), leadsList)?.end;
   expect(unreached?.kind).toBe("not_started");
   expect(notStartedLine((unreached as { message: string }).message, 1)).toBe(
-    "The lead couldn't start: a boat.dev sandbox couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections. It tries again by itself in about 10 minutes, and your message is kept for it.",
+    "The lead couldn't start: a sandbox at fleetd's computers couldn't reach the hub's Claude account at devbox.tail1234.ts.net: it is on a private network. Connect Tailscale in Connections. It tries again by itself in about 10 minutes, and your message is kept for it.",
   );
 });
 
-test("a lead boat.dev's start rate refused is started again in a minute, and its line says so (W8)", () => {
+test("a lead fleetd's computers' start rate refused is started again in a minute, and its line says so (W8)", () => {
   // The node's words for it (shared/sandbox.ts troubleLine of a `rate` refusal): no clock time, no plan to raise.
-  const line = troubleLine(troubleOf("boat", { what: "start", reason: "rate", why: "boat.dev's limit on sandbox starts is reached for now (12 per minute).", until: Date.parse("2026-11-20T19:21:00Z") }));
-  expect(line).toBe("boat.dev's start rate: trying again in a minute");
-  expect(notStartedLine(line, 1)).toBe("The lead couldn't start: boat.dev's start rate: trying again in a minute. It tries again by itself in about a minute, and your message is kept for it.");
+  const line = troubleLine(troubleOf("boat", { what: "start", reason: "rate", why: "the limit of fleetd's computers on sandbox starts is reached for now (12 per minute).", until: Date.parse("2026-11-20T19:21:00Z") }));
+  expect(line).toBe("fleetd's computers are at their start rate: trying again in a minute");
+  expect(notStartedLine(line, 1)).toBe("The lead couldn't start: fleetd's computers are at their start rate: trying again in a minute. It tries again by itself in about a minute, and your message is kept for it.");
   expect(retryWaitMs(1, line)).toBe(90_000);
   expect(retryWaitMs(2, line)).toBe(90_000);
   // Any other refusal keeps the provider's set-aside, doubled.
-  expect(retryWaitMs(2, "no hosted sandbox came up at boat.dev: HTTP 402")).toBe(20 * 60_000 + 30_000);
+  expect(retryWaitMs(2, "no hosted sandbox came up at fleetd's computers: HTTP 402")).toBe(20 * 60_000 + 30_000);
 });
 
 test("workstream_list and project_set", async () => {

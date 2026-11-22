@@ -159,8 +159,8 @@ it("hosted sandboxes that don't get ready within the wait say why, the fix and T
     expect(host.textContent).toContain("Getting the sandboxes ready");
     await act(() => new Promise((r) => setTimeout(r, 120)));
     expect(screen()).toBe("setup.machine.hosted.not-ready");
-    expect(host.querySelector("[role=alert]")?.textContent).toBe("boat.dev's sandboxes didn't get ready.");
-    expect(host.textContent).toContain("If it keeps failing, check boat.dev in Settings › Team › Machines.");
+    expect(host.querySelector("[role=alert]")?.textContent).toBe("fleetd's computers didn't get ready.");
+    expect(host.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Team › Machines.");
     expect(host.textContent).not.toContain("runner");
     const again = [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "Try again");
     if (again === undefined) throw new Error(`no Try again in: ${host.textContent}`);
@@ -173,10 +173,10 @@ it("hosted sandboxes that don't get ready within the wait say why, the fix and T
     expect(screen()).toBe("setup.machine.hosted");
     // A reason of the hub's own is shown in the words the boat.dev row says (shared/hostedRow.ts).
     await act(async () => {
-      send({ t: "snapshot", snapshot: { cursor: 3, attention: [], machines: [{ ...runner, degradedReason: "boat.dev refused: billing isn't set up on the account" }], projects: [] } } as never);
+      send({ t: "snapshot", snapshot: { cursor: 3, attention: [], machines: [{ ...runner, degradedReason: "fleetd's computers refused: billing isn't set up on the account" }], projects: [] } } as never);
       await new Promise((r) => setTimeout(r, 120));
     });
-    expect(host.querySelector("[role=alert]")?.textContent).toBe("Couldn't start: boat.dev refused: billing isn't set up on the account.");
+    expect(host.querySelector("[role=alert]")?.textContent).toBe("Couldn't start: fleetd's computers refused: billing isn't set up on the account.");
     stop();
   } finally {
     HOSTED_WAIT.ms = was;

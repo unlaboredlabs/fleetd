@@ -1,4 +1,4 @@
-// A provider the team connects with its own key, as Hub › Machines' Providers lists every one of them (boat.dev): one
+// A provider the team connects with its own key, as Hub › Machines' Providers lists every one of them (fleetd's computers): one
 // row, its state a dot, what it can run quietly beside its name. Not connected, Connect; it opens
 // the key's sealed field in the row. Connected, what it has to set (a sandbox provider's limit) and one menu with Test
 // and Disconnect; the line under its name says only what a check found, or while a run goes.

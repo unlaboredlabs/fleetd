@@ -151,7 +151,7 @@ function body(id: StepId, view: StartView, actions: StartActions): ReactNode {
 
 function Computer({ step, actions }: { step: ComputerStep; actions: StartActions }) {
   const [copied, setCopied] = useState(false);
-  if (step.at === "hosted_wait") return <Waiting>{`Getting ${step.provider}'s sandboxes ready`}</Waiting>;
+  if (step.at === "hosted_wait") return <Waiting>{`Getting ${step.provider} ready`}</Waiting>;
   if (step.at === "computers_held")
     return (
       <>

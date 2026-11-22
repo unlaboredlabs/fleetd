@@ -32,7 +32,7 @@
           "type": "string"
         },
         "message": {
-          "description": "What is wrong: \"boat.dev refused: billing isn't set up on the account\".",
+          "description": "What is wrong: \"fleetd's computers refused: billing isn't set up on the account\".",
           "type": "string"
         },
         "reason": {

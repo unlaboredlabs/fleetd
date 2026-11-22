@@ -346,8 +346,8 @@ describe("Settings → Bots", () => {
         ...settings,
         computer: boat,
         computers: [
-          { kind: "boat", cpu: 2, memGb: 4, label: "boat.dev · 2 vCPU / 4 GB" },
-          { ...boat, label: "boat.dev · 4 vCPU / 8 GB", unavailable: "boat.dev isn't connected: an admin connects it in Settings › Hub › Machines" },
+          { kind: "boat", cpu: 2, memGb: 4, label: "fleetd's computers · 2 vCPU / 4 GB" },
+          { ...boat, label: "fleetd's computers · 4 vCPU / 8 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines" },
         ],
       },
     ];
@@ -355,9 +355,9 @@ describe("Settings → Bots", () => {
     const row = document.querySelector<HTMLElement>('section[aria-label="Runs on"]');
     if (row === null) throw new Error("no Runs on row");
     expect(row.dataset.computer).toBe("boat:4:8");
-    expect(row.querySelector('[role="combobox"]')?.textContent).toContain("boat.dev · 4 vCPU / 8 GB");
+    expect(row.querySelector('[role="combobox"]')?.textContent).toContain("fleetd's computers · 4 vCPU / 8 GB");
     // Its agents wait for it, and the row says why; no small/medium/large anywhere.
-    expect(row.textContent).toContain("Its agents wait: boat.dev isn't connected: an admin connects it in Settings › Hub › Machines.");
+    expect(row.textContent).toContain("Its agents wait: fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines.");
     expect(row.textContent).not.toMatch(/small|medium|large/i);
   });
 
@@ -416,7 +416,7 @@ describe("Settings → Bots", () => {
     };
     expect(row().getAttribute("data-image-state")).toBe("failed");
     expect(row().textContent).toContain("Failed 12m ago · last built 3h ago");
-    expect(row().textContent).toContain("Kept as a boat.dev snapshot.");
+    expect(row().textContent).toContain("Kept as a snapshot at fleetd's computers.");
     // Its log only behind Log.
     expect(row().querySelector("pre")).toBeNull();
     await click(button("Log"));

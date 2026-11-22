@@ -24,7 +24,7 @@ export interface HostedRow {
   /** What fixes it, in plain words, when there is something to fix. */
   readonly fix?: string;
   readonly action?: HostedAction;
-  /** Why it isn't ready, in a few words for the hub menu's "boat.dev isn't ready: <why>" (one short line, the row
+  /** Why it isn't ready, in a few words for the hub menu's "fleetd's computers aren't ready: <why>" (one short line, the row
    * saying the whole of it); only while it isn't. */
   readonly why?: string;
 }
@@ -92,6 +92,6 @@ export const runnerOf = (machines: Iterable<{ runner?: boolean | undefined } & H
   return undefined;
 };
 
-/** The line and its fix as the row shows them: "Couldn't start: boat.dev refused the key. Make a new key…". */
+/** The line and its fix as the row shows them: "Couldn't start: fleetd's computers refused the key. Try again later.". */
 export const rowWords = (row: Pick<HostedRow, "text" | "fix">): string | null =>
   row.text === null ? null : row.fix === undefined ? row.text : `${sentence(row.text)} ${sentence(cap(row.fix))}`;

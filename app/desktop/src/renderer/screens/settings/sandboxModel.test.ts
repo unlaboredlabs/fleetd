@@ -3,7 +3,7 @@ import { keyOf, limitChoices, providerHint, providerName } from "./sandboxModel"
 
 describe("the providers", () => {
   it("names each as people know it, and a newer hub's as it names it", () => {
-    expect(["boat", "modal"].map(providerName)).toEqual(["boat.dev", "modal"]);
+    expect(["boat", "modal"].map(providerName)).toEqual(["fleetd's computers", "modal"]);
     expect(providerHint("boat")).toContain("browser, Linux desktop and Android");
   });
 });

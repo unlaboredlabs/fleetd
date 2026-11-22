@@ -18,9 +18,10 @@ import { type Answer, Http, pause, ProviderError } from "./http.ts";
 import { parse } from "./recipe.ts";
 import { envFile, envPath, launcher, noQuery, shq } from "./shell.ts";
 import { dial } from "./stream.ts";
+import { specOf } from "../../../../app/desktop/src/shared/providers.ts";
 
-/** Its name in every message: NAMES.boat (shared/sandbox.ts). */
-const NAME = "boat.dev";
+/** Its name in every message a person may read: fleetd's computers (shared/sandbox.ts NAMES), never the supplier's. */
+const NAME = specOf("boat").name;
 export const API = "https://boat.dev/api/v1";
 /** Where a detached command's output goes in the box. */
 const LOG = "/tmp/.fleetd-start.log";
@@ -51,7 +52,7 @@ mkdir -p /etc/apt/apt.conf.d && printf 'Acquire::AllowReleaseInfoChange "true";\
 /** The boat type of exactly `size`; a size boat has no type of is refused, never rounded up to a larger one. */
 export function typeFor(size: Size): string {
   const t = TYPES.find((t) => sameSize(t, size));
-  if (!t) throw new ProviderError("failed", notOffered("boat", size, "boat.dev")!);
+  if (!t) throw new ProviderError("failed", notOffered("boat", size, NAME)!);
   return t.type;
 }
 
@@ -107,13 +108,13 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
     const pid = started.body?.processId;
     const until = now() + STEP_MS;
     for (;;) {
-      if (now() > until) throw new ProviderError("unreachable", `a step of boat.dev's sandbox build didn't finish within ${STEP_MS / 60_000} minutes`);
+      if (now() > until) throw new ProviderError("unreachable", `a step of the sandbox build at ${NAME} didn't finish within ${STEP_MS / 60_000} minutes`);
       await pause(pollMs, signal);
       const st = await http.call("GET", `${box(id)}/commands/${pid}`, { query: { tailBytes: "2000" }, signal });
       if (st.body?.running) continue;
       if (st.body?.exitCode === 0) return;
       const tail = noQuery(String(st.body?.stderr || st.body?.stdout || "").trim().split("\n").slice(-3).join(" / "));
-      throw new ProviderError("failed", `a step failed in boat.dev's build box (exit ${st.body?.exitCode ?? st.body?.status})${step ? `, ${step}` : ""}: ${tail.slice(0, 300)}`);
+      throw new ProviderError("failed", `a step failed in the build box at ${NAME} (exit ${st.body?.exitCode ?? st.body?.status})${step ? `, ${step}` : ""}: ${tail.slice(0, 300)}`);
     }
   }
 
@@ -135,8 +136,8 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       const g = await http.call("GET", `/saved-snapshots/${encodeURIComponent(name)}`, { signal });
       const status = g.body?.snapshot?.status;
       if (status === "ready") return name;
-      if (status === "failed") throw new ProviderError("failed", `boat.dev couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
-      if (now() > until) throw new ProviderError("unreachable", `boat.dev didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`);
+      if (status === "failed") throw new ProviderError("failed", `${NAME} couldn't save the snapshot ${name} (${g.body?.snapshot?.error ?? "no reason given"})`);
+      if (now() > until) throw new ProviderError("unreachable", `${NAME} didn't finish saving a sandbox within ${SAVE_MS / 60_000} minutes`);
       await pause(pollMs, signal);
     }
   }
@@ -197,7 +198,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       if (!url) {
         const a = await onBox("POST", `${box(id)}/host`, { body: { port }, signal: c.signal });
         url = String(a.body?.url ?? "");
-        if (!url) throw new ProviderError("failed", `boat.dev gave no address for port ${port} of the box`);
+        if (!url) throw new ProviderError("failed", `${NAME} gave no address for port ${port} of the box`);
         hosted.set(`${id}:${port}`, url);
       }
       const token = new URL(url).searchParams.get("_token") ?? "";
@@ -209,7 +210,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
       try {
         a = await onBox("GET", `${box(id)}/files`, { query: { path, encoding: "base64" }, signal: r.signal });
       } catch (e) {
-        if (e instanceof ProviderError && e.status === 413) throw new ProviderError("failed", `${path} in the box is larger than boat.dev reads (5 MiB)`, 413);
+        if (e instanceof ProviderError && e.status === 413) throw new ProviderError("failed", `${path} in the box is larger than ${NAME} read (5 MiB)`, 413);
         if (e instanceof ProviderError && e.status === 404) throw new ProviderError("failed", `the box has no file ${path}`, 404);
         throw e;
       }
@@ -245,7 +246,7 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
 
     async build(dockerfile: string, b: BuildOptions) {
       const r = parse(dockerfile);
-      b.onLog?.(`boat builds no images: the recipe's steps run on boat's own Ubuntu 24.04 image, not ${r.from}`);
+      b.onLog?.(`${NAME} build no images: the recipe's steps run on their own Ubuntu 24.04 image, not ${r.from}`);
       // One key per build: boat keeps a key 24 hours and answers its box again, so a key reused after a failed build
       // would answer the box that build already deleted. Retries inside this call share it, and make no second box.
       const key = `build-${crypto.randomUUID().slice(0, 8)}-${b.name}`.slice(0, 63).replace(/-+$/, "");
@@ -262,11 +263,11 @@ export function boat(auth: ProviderAuth, o: ClientOptions = {}): Provider {
           const g = await http.call("GET", box(id), { signal: b.signal });
           const state = String(g.body?.sandbox?.state ?? "");
           if (READY.has(state)) break;
-          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `boat.dev's build box didn't start (${g.body?.sandbox?.error ?? state})`);
-          if (now() > until) throw new ProviderError("failed", "boat.dev's build box didn't start within 10 minutes");
+          if (state === "error" || state === "cancelled") throw new ProviderError("failed", `the build box at ${NAME} didn't start (${g.body?.sandbox?.error ?? state})`);
+          if (now() > until) throw new ProviderError("failed", `the build box at ${NAME} didn't start within 10 minutes`);
           await pause(pollMs, b.signal);
         }
-        b.onLog?.("dropping the apt sources boat's image adds besides Ubuntu's own");
+        b.onLog?.("dropping the apt sources the base image adds besides Ubuntu's own");
         await run(id, `sudo bash -c ${shq(`set -e; ${APT_OWN}`)}`, true, b.signal);
         const env: [string, string][] = [];
         let cwd = "/";
@@ -308,30 +309,30 @@ function refine(a: Answer, words: string): { reason: "billing" | "limit" | "rate
   switch (code) {
     case "billing_required":
     case "credit_required":
-      return { reason: "billing", message: `boat.dev won't start sandboxes on this account until its billing is sorted out (${words}).` };
+      return { reason: "billing", message: `${NAME} won't start sandboxes on this account until its billing is sorted out (${words}).` };
     case "team_member_cap_reached":
     case "member_limit_reached":
-      return { reason: "limit", message: `boat.dev's organization owner has capped this member's use (${words}).` };
+      return { reason: "limit", message: `the organization owner at ${NAME} has capped this member's use (${words}).` };
     case "org_suspended":
-      return { reason: "billing", message: `boat.dev has suspended the organization's wallet (${words}).` };
+      return { reason: "billing", message: `${NAME} have suspended the organization's wallet (${words}).` };
     case "trial_machine_class_not_allowed":
     case "machine_class_plan_required":
-      return { reason: "billing", message: `boat.dev's plan for this account doesn't include that sandbox size (${words}).` };
+      return { reason: "billing", message: `the plan at ${NAME} for this account doesn't include that sandbox size (${words}).` };
     case "trial_compute_limit_reached":
-      return { reason: "billing", message: `boat.dev's free trial hours are used up (${words}).` };
+      return { reason: "billing", message: `the free trial hours at ${NAME} are used up (${words}).` };
     case "rate_limited": {
       // It names the window whose starts are used up (docs.boat.dev/limits): a minute's free by themselves within one,
       // so asked again then (`rate`); an hour's or a day's don't, and a retry each minute wouldn't help: the plan's
       // limit, with its wait.
       const b = a.body;
       const window = String(b?.window ?? b?.error?.window ?? b?.details?.window ?? b?.error?.details?.window ?? "");
-      if (window === "minute") return { reason: "rate", message: `boat.dev's limit on sandbox starts a minute is reached for now (${words}).` };
-      return { reason: "limit", message: `boat.dev's limit on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached (${words}).` };
+      if (window === "minute") return { reason: "rate", message: `the limit of ${NAME} on sandbox starts a minute is reached for now (${words}).` };
+      return { reason: "limit", message: `the limit of ${NAME} on sandbox starts${window ? ` a${window === "hour" ? "n" : ""} ${window}` : ""} is reached (${words}).` };
     }
     case "limit_reached":
-      return { reason: "limit", message: `boat.dev's limit on sandboxes at once is reached (${words}).` };
+      return { reason: "limit", message: `the limit of ${NAME} on sandboxes at once is reached (${words}).` };
     case "snapshot_not_found":
-      return { reason: "failed", message: `boat.dev has no saved snapshot by that name (${words}): build it first.` };
+      return { reason: "failed", message: `${NAME} have no saved snapshot by that name (${words}): build it first.` };
   }
   return undefined;
 }

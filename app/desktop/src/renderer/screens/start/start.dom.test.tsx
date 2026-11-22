@@ -321,7 +321,7 @@ it("a provider connected and no computer: step 1 is done on it, and Claude takes
   const sandbox = [{ provider: "boat", connected: true, ok: true }];
   let stop = await render({ machines: [runner], sandbox });
   expect(screen()).toBe("start.claude");
-  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
   // The key first, Anthropic's endpoint prefilled; the subscription one click over.
   expect(host.querySelector<HTMLInputElement>("input[aria-label='Endpoint']")?.value).toBe("https://api.anthropic.com");
   await click("Subscription");
@@ -333,7 +333,7 @@ it("a provider connected and no computer: step 1 is done on it, and Claude takes
   const { degradedReason: _was, degradedCause: _cause, ...online } = runner;
   stop = await render({ machines: [{ ...online, status: "online" }], sandbox });
   expect(screen()).toBe("start.github");
-  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("boat.dev");
+  expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
   stop();
 }, 20_000);
 
@@ -344,16 +344,16 @@ it("a provider whose sandboxes don't get ready within the wait says why, the fix
     const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "degraded", degradedReason: "checking the node's runner" });
     const stop = await render({ machines: [runner], sandbox: [{ provider: "boat", connected: true, ok: true }] });
     expect(screen()).toBe("start.computer");
-    expect(host.textContent).toContain("Getting boat.dev's sandboxes ready");
+    expect(host.textContent).toContain("Getting fleetd's computers ready");
     await act(() => new Promise((r) => setTimeout(r, 120)));
     const step = host.querySelector('[data-step="computer"]');
-    expect(step?.querySelector("[role=alert]")?.textContent).toBe("boat.dev's sandboxes didn't get ready.");
-    expect(step?.textContent).toContain("If it keeps failing, check boat.dev in Settings › Team › Machines.");
+    expect(step?.querySelector("[role=alert]")?.textContent).toBe("fleetd's computers didn't get ready.");
+    expect(step?.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Team › Machines.");
     expect(step?.textContent).not.toContain("runner");
-    expect(step?.textContent).not.toContain("Getting boat.dev's sandboxes ready");
+    expect(step?.textContent).not.toContain("Getting fleetd's computers ready");
     await click("Try again");
     expect(calls.some((c) => c.tool === "sandbox_test" && (c.input as { provider: string }).provider === "boat")).toBe(true);
-    expect(host.textContent).toContain("Getting boat.dev's sandboxes ready");
+    expect(host.textContent).toContain("Getting fleetd's computers ready");
     stop();
   } finally {
     HOSTED_WAIT.ms = was;

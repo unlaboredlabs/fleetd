@@ -361,7 +361,7 @@ export class Boxes {
         console.warn(`${nowIso()} WARN the hosted sandbox template didn't build {"provider":"${p}","name":"${name}","error":${JSON.stringify((error as Error).message)}}`);
         // A step's own output (its exit code, stderr's tail) is for the log; a person reads that it didn't build.
         if (!(error instanceof ProviderError) || error.reason !== "failed") throw error;
-        throw new ProviderError("failed", `${NAMES[p]}'s sandbox template didn't build`);
+        throw new ProviderError("failed", `the sandbox template at ${NAMES[p]} didn't build`);
       });
     run.done.catch(() => {});
     this.#runs.set(key, run);

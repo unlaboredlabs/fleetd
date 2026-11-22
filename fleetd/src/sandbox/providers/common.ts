@@ -1,5 +1,6 @@
 // The provider interface's shared types and constants (index.ts says what it is), apart so the clients can import them.
 import type { Duplex } from "./stream.ts";
+import { specOf } from "../../../../app/desktop/src/shared/providers.ts";
 
 export type ProviderId = "boat";
 export const PROVIDERS: readonly ProviderId[] = ["boat"];
@@ -43,9 +44,9 @@ export const sameSize = (a: Size, b: Size) => a.cpu === b.cpu && a.memGb === b.m
 export const sizeText = (s: Size) => `${s.cpu} vCPU / ${s.memGb} GB`;
 
 /** Why `kind` can't make a computer of `size` exactly, or undefined when it can. */
-export function notOffered(kind: ComputerKind, size: Size, name: string = kind): string | undefined {
+export function notOffered(kind: ComputerKind, size: Size, name: string = specOf(kind).name): string | undefined {
   if (SIZES[kind].some((s) => sameSize(s, size))) return undefined;
-  return `${name} comes in no ${sizeText(size)}: its sizes are ${SIZES[kind].map(sizeText).join(", ")}`;
+  return `${name} come in no ${sizeText(size)}: their sizes are ${SIZES[kind].map(sizeText).join(", ")}`;
 }
 
 export type Box = { id: string; labels: Record<string, string> };
