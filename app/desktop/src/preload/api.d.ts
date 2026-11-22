@@ -3,7 +3,7 @@ import type { MenuCommand } from "../shared/menu";
 import type { BrowserInput } from "../shared/contracts";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { HubColor, HubEntry, HubId, PairTarget } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { ChatScope, ClaudeAccountRequest, ErrorReport, FileRequest, GithubAppRequest, McpOauthClientRequest, McpServerRequest, OnePasswordRequest, OrderFocus, ProjectEnvRequest, SandboxKeyRequest, SecretRequest, SessionWindowRequest, VaultCopyRequest, VaultRevealOutcome, VaultRevealRequest, VaultSaveRequest, VaultUnlockRequest } from "../shared/ipc";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacPane, MacRedeemOutcome, MacRedeemRequest, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -173,8 +173,11 @@ export interface FleetdApi {
   /** fleetd cloud's Sign in (src/main/cloud). A build without the cloud's values answers `available: false`. */
   readonly cloud: {
     state(): Promise<CloudState>;
-    /** The browser's part of a sign-in and the service's answer, held until finish or notMe; resolves when it ends. Never rejects. */
-    signIn(): Promise<SignInOutcome>;
+    /**
+     * The browser's part of a sign-in and the service's answer, held until finish or notMe; resolves when it ends.
+     * `move`: Move to the cloud's sign-in, whose answer says which of the person's teams are empty (moveTargets). Never rejects.
+     */
+    signIn(opts?: { move: true }): Promise<SignInOutcome>;
     /** It's them: connects the account's teams and the invitations joined, by their places in the arrival, and with `make` a team of their own the arrival offered. Never rejects. */
     finish(join: number[], make?: boolean): Promise<FinishOutcome>;
     /** Not them: drops the answer held and ends its session; nothing was connected. */
@@ -188,6 +191,10 @@ export interface FleetdApi {
     signOut(): Promise<SignOutOutcome>;
     /** Connect this computer to `hub`: its join line in a terminal. Never rejects. */
     connectComputer(hub: HubId): Promise<ConnectComputerOutcome>;
+    /** The empty teams the last sign-in with `move` connected, to move a hub into. */
+    moveTargets(): Promise<MoveTarget[]>;
+    /** Moves hub `from` into the team `to`: main hands `from` the team's address and this device's key there. Never rejects. */
+    move(from: HubId, to: HubId): Promise<MoveOutcome>;
     /** A cloud team's open invites by email; refused for a hub that didn't come with the account. Never rejects. */
     invites(hub: HubId): Promise<InvitesOutcome>;
     /** Invites an email to a cloud team. Never rejects. */

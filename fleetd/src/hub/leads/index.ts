@@ -452,6 +452,8 @@ export class Leads {
     const held = this.archived(r);
     if (held) throw held;
     const wiring = leadWiring(this.hub);
+    const moved = wiring.hooks.moved?.();
+    if (moved !== undefined) throw new ToolError("invalid", `The lead was not started: ${moved}.`, "Its bots run on fleetd cloud now. To run them here again, press Undo on this hub's banner.");
     // No lead turn goes into a login fleetd knows is exhausted.
     const paused = wiring.hooks.usageGate?.(r);
     if (paused !== undefined) {

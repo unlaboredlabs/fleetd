@@ -233,7 +233,7 @@ export const registerIpc = (
   handle(IPC.pairStore, () => pairing.store());
   handle(IPC.pairSetup, () => pairing.setup());
   handle(IPC.cloudState, () => cloud.state());
-  handle(IPC.cloudSignIn, () => cloud.signIn());
+  handle(IPC.cloudSignIn, (_event, ...args) => cloud.signIn(args[0]?.move === true));
   handle(IPC.cloudFinish, (_event, ...[join, make]) => cloud.finish(join, make === true));
   handle(IPC.cloudNotMe, () => cloud.notMe());
   handle(IPC.cloudCancel, () => cloud.cancel());
@@ -241,6 +241,8 @@ export const registerIpc = (
   handle(IPC.cloudLink, () => cloud.link());
   handle(IPC.cloudSignOut, () => cloud.signOut());
   handle(IPC.cloudConnectComputer, (_event, id) => cloud.connectComputer(id));
+  handle(IPC.cloudMoveTargets, () => cloud.moveTargets());
+  handle(IPC.cloudMove, (_event, from, to) => cloud.move(from, to));
   handle(IPC.cloudInvites, (_event, id) => cloud.invites(id));
   handle(IPC.cloudInvite, (_event, id, request) => cloud.invite(id, request));
   handle(IPC.cloudRevokeInvite, (_event, id, inviteId) => cloud.revokeInvite(id, inviteId));

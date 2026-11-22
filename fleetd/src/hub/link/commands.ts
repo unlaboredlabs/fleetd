@@ -16,6 +16,8 @@ const UPDATE_WAIT_SEC = 600;
 const CLAUDE_WAIT_SEC = 45 * 60 + 60;
 /** A node's login: 30 s for its URL, or a minute to end once it has the code, and a grace. */
 const LOGIN_WAIT_SEC = 90;
+/** A node's rejoin: it enrols at the new hub first, which has a minute to answer (node/rejoin.ts), and a grace. */
+const REJOIN_WAIT_SEC = 90;
 /** How long the hub waits for a node to write a secret. */
 const SECRET_REPLY_SEC = 30;
 /** A session call's default wait, as the executor's READ_TIMEOUT. */
@@ -289,6 +291,8 @@ function defaultWait(frame: HubFrame): number {
           return LOGIN_WAIT_SEC;
         case "update":
           return UPDATE_WAIT_SEC;
+        case "rejoin":
+          return REJOIN_WAIT_SEC;
         default:
           return 30;
       }

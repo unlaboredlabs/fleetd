@@ -419,7 +419,8 @@ export function hubTaskPorts(hub: Hub): TaskPorts {
       }
     },
     policy: (r) => policy(hub).get(r),
-    usageGate: (m, account) => usage(hub).gateFor(m, account),
+    // A hub that moved to fleetd cloud (hub/transfer/move.ts) starts no agents here: they run there.
+    usageGate: (m, account) => hub.peek<{ hold(): string | undefined }>("hub_move")?.hold() ?? usage(hub).gateFor(m, account),
     parkedOf: (event) => {
       const parked = parkedOfEvent(event) as UsageParked | undefined;
       if (!parked || event.machineId === undefined || event.threadId === undefined) return parked;
