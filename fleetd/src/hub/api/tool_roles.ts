@@ -226,7 +226,7 @@ export const TOOLS = {
 
 export type ToolName = keyof typeof TOOLS;
 
-/** The tools only fleetd's cloud serves: a self-hosted hub runs no hosted sandboxes, gateway or computer images. */
+/** The tools only fleetd's cloud serves: a self-hosted hub runs no hosted sandboxes or computer images. */
 export const CLOUD: ReadonlySet<ToolName> = new Set<ToolName>([
   "sandbox_get",
   "sandbox_connect",
@@ -234,8 +234,5 @@ export const CLOUD: ReadonlySet<ToolName> = new Set<ToolName>([
   "sandbox_where_set",
   "sandbox_test",
   "sandbox_disconnect",
-  "tailnet_get",
-  "tailnet_connect",
-  "tailnet_disconnect",
   "project_image_rebuild",
 ]);

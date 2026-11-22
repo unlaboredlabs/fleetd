@@ -5,7 +5,18 @@
 // A node's call carries its machine id, the time, a fresh nonce and a signature by the node's own identity key over
 // all of them and the call itself (`signedMessage`); the hub checks it against the key it enrolled for that machine,
 // which every host of a hub can read, so the call needs no token handed out first.
-import { isIP } from "node:net";
+
+/** Whether `s` is an IPv4 address (4), looks like an IPv6 one (6: a name never holds a colon), or is a name (0); as
+ * `node:net`'s isIP for what the tailnet's checks ask, without the import, so this module stays pure for fleetd
+ * cloud. */
+function isIP(s: string): 0 | 4 | 6 {
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(s)) return s.split(".").every((p) => Number(p) <= 255 && (p === "0" || !p.startsWith("0"))) ? 4 : 0;
+  if (!s.includes(":") || !/^[0-9a-f:.]+$/iu.test(s) || (s.match(/::/gu) ?? []).length > 1) return 0;
+  const tail = s.slice(s.lastIndexOf(":") + 1);
+  if (tail.includes(".") && isIP(tail) !== 4) return 0;
+  const groups = s.split(":");
+  return groups.length <= 8 && groups.every((g) => g.length <= 4 || g === tail) ? 6 : 0;
+}
 
 /** One tailnet connection: a websocket, `?host=&port=`. The hub's first message says how the dial went
  * (`{"ok":true}` or `{"error","retry"?}`); the bytes follow as binary messages, the hub's acks (WINDOW) as text. */

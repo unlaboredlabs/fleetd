@@ -11,9 +11,12 @@ import { VERSION } from "../shared/version.ts";
 import { sendToNode } from "./agent_mcp/socket.ts";
 
 type Json = Record<string, unknown>;
-type Headers_ = { transport: { type: string; url?: string }; headers: Record<string, string>; fingerprint: string };
+type Headers_ = { transport: { type: string; url?: string }; headers: Record<string, string>; fingerprint: string; signsIn?: boolean; viaHub?: boolean };
 /** The node's answer to `mcp_header` and `mcp_renew`. */
 type NodeAnswer = Headers_ | { refused: string; signedOut: boolean };
+/** The node's answer to `mcp_fetch`: a tailnet server's answer through the hub's Tailscale route, read to its end. */
+type Fetched = { status: number; headers: [string, string][]; body: string } | { refused: string; signedOut: boolean };
+const NO_BODY = new Set([101, 204, 205, 304]);
 /** Why a message couldn't go: the words the agent reads. */
 class Failed extends Error {}
 
@@ -57,6 +60,8 @@ export class Relay {
   #owed = new Map<unknown, Json>();
   #waiting = new Map<unknown, () => void>();
   #mask = new Masker([]);
+  /** A tailnet server this machine isn't on: each request goes through the node and the hub's Tailscale route. */
+  #viaHub = false;
 
   constructor(
     readonly name: string,
@@ -79,6 +84,7 @@ export class Relay {
   #answer(a: NodeAnswer): Headers_ {
     if ("refused" in a) throw new Failed(a.signedOut ? signedOutText(this.name, a.refused) : notNowText(this.name, a.refused));
     this.#mask = new Masker(Object.entries(a.headers));
+    this.#viaHub = a.viaHub === true;
     return a;
   }
 
@@ -99,7 +105,8 @@ export class Relay {
         const why = e.name === "TimeoutError" || e.name === "AbortError" ? `it didn't answer within ${Math.round((this.deps.timeoutMs ?? REQUEST_TIMEOUT_MS) / 60_000)} min` : e.message;
         throw new Failed(notNowText(this.name, this.#mask.text(why)));
       }
-      if (response.status !== 401) return response;
+      // A server with no sign-in to renew: its 401 is its answer.
+      if (response.status !== 401 || h.signsIn === false) return response;
       await response.body?.cancel().catch(() => {});
       if (round >= 2) throw new Failed(signedOutText(this.name, `${this.name} turned away fleetd's renewed sign-in`));
       h = this.#answer(await this.#ask({ op: "mcp_renew", server: this.name, fingerprint: h.fingerprint, ...(round === 1 ? { refused: true } : {}) }));
@@ -113,7 +120,7 @@ export class Relay {
     const origin = new URL(url).origin;
     let at = url;
     for (let hop = 0; ; hop++) {
-      const response = await this.deps.fetch(at, { ...init, redirect: "manual" });
+      const response = this.#viaHub ? await this.#throughNode(at, init) : await this.deps.fetch(at, { ...init, redirect: "manual" });
       const location = response.headers.get("location");
       if (response.status < 300 || response.status >= 400 || !location || hop >= 10) return response;
       const next = new URL(location, at);
@@ -121,6 +128,19 @@ export class Relay {
       await response.body?.cancel().catch(() => {});
       at = next.toString();
     }
+  }
+
+  /** One request through the node, which sends it on through the hub's Tailscale route. */
+  async #throughNode(url: string, init: RequestInit): Promise<Response> {
+    const body = typeof init.body === "string" ? init.body : undefined;
+    let a: Fetched;
+    try {
+      a = (await this.deps.node({ op: "mcp_fetch", server: this.name, url, method: init.method ?? "GET", headers: init.headers ?? {}, ...(body !== undefined ? { body } : {}) })) as Fetched;
+    } catch (why) {
+      throw new Failed(notNowText(this.name, `fleetd's node didn't answer: ${String(why)}`));
+    }
+    if ("refused" in a) throw new Failed(notNowText(this.name, a.refused));
+    return new Response(NO_BODY.has(a.status) ? null : a.body, { status: a.status, headers: a.headers });
   }
 
   async #post(url: string, message: Json, h: Headers_): Promise<Response> {

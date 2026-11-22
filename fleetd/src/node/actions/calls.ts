@@ -19,6 +19,7 @@ import { ghRepoList, repoClone } from "./clone.ts";
 import { landedLog } from "./landed.ts";
 import { applySecrets, MissingSecrets, resolve } from "./mcp.ts";
 import { probe } from "./mcp_probe.ts";
+import { routeFetch, viaHub } from "./mcp_tailnet.ts";
 import { spawnGroup } from "./mcp_spawn.ts";
 import { applyToken, importedFields, importKind, OnePassword, readToken, TOKEN_ENV } from "./onepassword.ts";
 import { CallRefusal, invalid, notFound } from "./refusal.ts";
@@ -149,7 +150,12 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
         for (const [k, v] of projectVars(home, call.projectId)) if (!(k in env) && k !== TOKEN_ENV) env[k] = v;
       }
       try {
-        return { kind: "mcp_tested", ...(await probe(resolve(home, call.server), { fetch, spawn: spawnGroup, cwd, env, version: VERSION })) };
+        // A tailnet server from a machine that isn't on the tailnet: through the hub's Tailscale route, as its agents reach it.
+        const routed = call.server.tailnet === true && call.server.transport.type !== "stdio" && viaHub();
+        if (routed && call.server.transport.type === "sse") {
+          return { kind: "mcp_tested", tools: [], error: "an SSE server on the tailnet is reached only from a machine on it: put this machine on the tailnet" };
+        }
+        return { kind: "mcp_tested", ...(await probe(resolve(home, call.server), { fetch: routed ? routeFetch() : fetch, spawn: spawnGroup, cwd, env, version: VERSION })) };
       } catch (error) {
         if (!(error instanceof MissingSecrets)) throw error;
         return { kind: "mcp_tested", tools: [], error: `this machine doesn't hold its ${error.message}: save the server again` };

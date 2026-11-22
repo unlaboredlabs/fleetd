@@ -10,6 +10,7 @@ import { start as s8 } from "../link/loops.ts";
 import { start as s9 } from "../machine_roles/loops.ts";
 import { start as s10 } from "../mcp_oauth/loops.ts";
 import { start as s11 } from "../mcp_servers/loops.ts";
+import { start as sTailnet } from "../tailnet/loops.ts";
 import { start as s12 } from "../memory/loops.ts";
 import { start as s13 } from "../metrics/loops.ts";
 import { start as s14 } from "../project_lead/loops.ts";
@@ -44,6 +45,7 @@ export function startAll(hub: Hub): void {
   s9(hub); // hub/machine_roles
   s10(hub); // hub/mcp_oauth
   s11(hub); // hub/mcp_servers
+  sTailnet(hub); // hub/tailnet
   s12(hub); // hub/memory
   s13(hub); // hub/metrics
   s14(hub); // hub/project_lead

@@ -287,8 +287,8 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   return { server: s.get(scope, input.name) ?? server, ...(missingOn.length > 0 ? { missingOn } : {}), next };
 }
 
-/** Whether a save gives the server a key of its own: any header or env that isn't plain. */
-const hasKey = (input: McpServerSetInput) => [...(input.headers ?? []), ...(input.env ?? [])].some((v) => v.kind !== "plain");
+/** Whether a save gives the server a key or headers of its own: then it isn't asked whether it signs in. */
+const hasKey = (input: McpServerSetInput) => (input.headers ?? []).length > 0 || (input.env ?? []).length > 0;
 
 /** How long a save waits to learn whether a new URL signs in. */
 export const DISCOVER_WAIT_MS = 5_000;

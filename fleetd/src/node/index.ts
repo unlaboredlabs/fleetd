@@ -23,6 +23,7 @@ import { boxOf, inBox, runnerProvider, useRunner } from "./place/index.ts";
 import { Images, useImages } from "./place/image.ts";
 import { Boxes, boxes, setBoxes } from "./sandbox/remote/boxes.ts";
 import { NodeTailnet, nodeTailnet, setNodeTailnet } from "./sandbox/tailnet.ts";
+import { start as startMcpTailnet } from "./actions/mcp_tailnet.ts";
 import { BOX_CLAUDE, boxWork, hasBox, HOSTED_NO_MAC, hostedBackend } from "./place/hosted.ts";
 import { runNode, type LinkContext } from "./link/index.ts";
 import { read as readLoad } from "./load/index.ts";
@@ -75,7 +76,7 @@ export const CAPABILITIES = [
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
-  CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT, CAP.LAUNCH_AHEAD, CAP.REJOIN,
+  CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT, CAP.LAUNCH_AHEAD, CAP.REJOIN, CAP.MCP_TAILNET,
 ];
 
 /** A hash of the OS's id for this computer (fingerprint.rs): the hub never enrolls a second computer under one id. */
@@ -402,9 +403,11 @@ export async function startNode(
   // Hosted boxes too: the sessions re-adopt theirs as they start (node/place/hosted.ts).
   if (process.platform === "linux" && !isAgentsMac(config)) {
     setBoxes(o.boxes?.(home, config.machineId, boxKey) ?? new Boxes(home, config.machineId, boxKey));
-    // The team's tailnet for those boxes, through the hub's gateway: off until the hub says it is on.
-    setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
   }
+  // The team's tailnet, through the hub's Tailscale route, for those boxes and for a tailnet MCP server when this
+  // machine isn't on the tailnet itself (actions/mcp_tailnet.ts): off until the hub says it is on.
+  setNodeTailnet(new NodeTailnet(config.hub, config.machineId, identity));
+  await startMcpTailnet();
   const sessions = await SessionService.start(sessionConfig);
   // A hosted box whose work didn't come back: the server it links to (fleetd's cloud) tells the task's lead.
   boxWork.said = (e) => sessions.boxWork(e);
