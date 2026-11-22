@@ -31,6 +31,12 @@
   position: absolute;
   inset: 0;
   overflow-y: hidden;
+  pointer-events: none;
+}
+/* Drawn ahead, until a swipe brings it: laid out once and kept, never painted. */
+.beside:not([data-shown]) {
+  visibility: hidden;
+  content-visibility: hidden;
 }
 /* Nothing under the fingers lights up or opens a tooltip while it moves. */
 .pages[data-moving] > .list {
