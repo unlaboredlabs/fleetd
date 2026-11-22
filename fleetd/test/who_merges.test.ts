@@ -38,6 +38,14 @@ test("a glob: ** spans folders, * stays in one name, one with no slash matches a
 test("the named kinds: docs and tests by path, the person kinds by path, a rename judged on both its names", () => {
   expect(matches("docs", file("docs/guide.md"))).toBe(true);
   expect(matches("docs", file("requirements.txt"))).toBe(false);
+  // Docs are docs folders and READMEs, never Markdown that steers agents: their instructions, skills and prompts.
+  expect(matches("docs", file("docs/site/src/content/docs/merge-train.md"))).toBe(true);
+  expect(matches("docs", file("app/mobile/README.md"))).toBe(true);
+  expect(matches("docs", file("notes/plan.md"))).toBe(false);
+  for (const steer of ["CLAUDE.md", "fleetd/AGENTS.md", "fleetd/src/hub/prompts/defaults/lead.start.md", "docs/prompts/review.md", ".claude/skills/x/SKILL.md", ".cursor/rules/a.md", ".github/copilot-instructions.md", "docs/x.instructions.md"]) {
+    expect([steer, matches("docs", file(steer))]).toEqual([steer, false]);
+  }
+  expect(decide("people", DEFAULT_RISK_RULES, [file("fleetd/src/hub/prompts/defaults/lead.start.md")]).by).toBe("person");
   expect(matches("tests", file("fleetd/test/train.test.ts"))).toBe(true);
   expect(matches("tests", file("src/login_test.go"))).toBe(true);
   expect(matches("migrations", file("src/hub/store/migrations/1_x.sql"))).toBe(true);
@@ -80,8 +88,12 @@ test("lockfile-bumps: versions move within a major, or within a minor below 1.0.
   expect(lockfileBumpsOnly(undefined)).toBe(false);
 });
 
-test("formatting: only whitespace moves; a binary or too big a diff never counts", () => {
-  expect(formattingOnly("@@ -1,2 +1,3 @@\n-const a=1\n-  b()\n+const a = 1\n+\n+b()")).toBe(true);
+test("formatting: only blank lines and spaces at a line's end; indentation, inner spaces and binaries never count", () => {
+  expect(formattingOnly("@@ -1,2 +1,4 @@\n-const a = 1;   \n-b();\r\n+const a = 1;\n+\n+b();\n+   ")).toBe(true);
+  // A re-indent moves Python's return out of its if; a space inside a string changes what runs.
+  expect(formattingOnly("@@ -1,2 +1,2 @@\n if x:\n-        return x\n+    return x")).toBe(false);
+  expect(formattingOnly('@@ -1 +1 @@\n-run("rm -rf / tmp")\n+run("rm -rf /tmp")')).toBe(false);
+  expect(formattingOnly("@@ -1 +1 @@\n-const a=1\n+const a = 1")).toBe(false);
   expect(formattingOnly("@@ -1 +1 @@\n-const a = 1\n+const a = 2")).toBe(false);
   expect(formattingOnly(undefined)).toBe(false);
 });
@@ -98,7 +110,7 @@ test("decide: fleetd merges all; people hold unless every file merges itself; an
     why: "people merge this bot's PRs, and src/app.ts matches no merges-itself rule",
   });
   // Formatting-only code merges itself, unless it is under an always-a-person rule.
-  const fmt = file("src/app.ts", "@@ -1 +1 @@\n-a=1\n+a = 1");
+  const fmt = file("src/app.ts", "@@ -1 +1,2 @@\n-a = 1  \n+a = 1\n+");
   expect(decide("people", DEFAULT_RISK_RULES, [fmt]).by).toBe("rule");
   expect(decide("people", DEFAULT_RISK_RULES, [{ ...fmt, path: "src/auth/app.ts" }]).by).toBe("person");
   // Files that couldn't be read, none at all, or no merges-itself rules: a person merges.

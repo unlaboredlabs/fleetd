@@ -628,10 +628,10 @@ both its names. The kinds:
 
 | Kind | Matches |
 |---|---|
-| `docs` | `*.md`, `*.mdx`, `*.rst`, `*.adoc` |
-| `tests` | files under `test/`, `tests/`, `__tests__/` or `spec/`, and `*.test.*`, `*.spec.*`, `*_test.go`, `*_test.py`, `test_*.py` |
+| `docs` | `*.md`, `*.mdx`, `*.rst` and `*.adoc` files in a `docs/` or `doc/` folder, and READMEs; never Markdown that steers agents: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `SKILL.md`, `*.instructions.md`, `*.prompt.md`, and anything under `.claude/`, `.cursor/`, `.github/`, `.fleetd/`, `prompts/` or `skills/` |
+| `tests` | files under `test/`, `tests/`, `__tests__/` or `spec/`, and `*.test.*`, `*.spec.*`, `*_test.go`, `*_test.py`, `test_*.py`. They ship nothing, though a helper or fixture can change what CI checks; take `tests` out where a test folder holds code the product ships |
 | `lockfile-bumps` | a lockfile (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `go.sum`, `poetry.lock`, `uv.lock` and the like) whose diff only moves versions within a major, and within a minor below 1.0.0, with their hashes; a package added or removed doesn't count, and the PR's `package.json` or other manifest is a file of its own that must match a rule too |
-| `formatting` | a changed file whose diff changes only whitespace |
+| `formatting` | a changed file whose diff only adds or removes blank lines, or spaces at a line's end; indentation and spaces within a line count as code, since Python, YAML and string literals read them |
 | `auth` | `auth/`, `oauth/`, `login/` and `sessions/` folders, and `auth.*`, `oauth.*`, `login.*` files |
 | `billing` | `billing/`, `payments/`, `stripe/`, `checkout/` and `invoices/` folders, and `billing.*`, `payment*.*`, `stripe.*`, `invoice*.*` files |
 | `migrations` | `migrations/` and `migrate/` folders, `*.sql`, `schema.prisma` |

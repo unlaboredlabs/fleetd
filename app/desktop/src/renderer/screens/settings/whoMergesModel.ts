@@ -18,7 +18,7 @@ export const WHO_MERGES_WORDS: Readonly<Record<Merger, string>> = {
 
 /** The rules' explanation: what a rule may be. */
 export const RULES_WORDS =
-  "One a line: a path such as docs/** or *.sql, or a kind. Merges itself: docs, tests, lockfile-bumps (lockfile-only patch or minor bumps), formatting (whitespace only). Always a person: auth, billing, migrations, infra, ci, secrets.";
+  "One a line: a path such as docs/** or *.sql, or a kind. Merges itself: docs, tests, lockfile-bumps (lockfile-only patch or minor bumps), formatting (blank lines and spaces at a line's end only). Always a person: auth, billing, migrations, infra, ci, secrets.";
 
 /** The rules as lines of text. */
 export const rulesText = (rules: readonly string[]) => rules.join("\n");

@@ -21,13 +21,14 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const saved = mergesOf(state.projects?.[key]);
   const read = useRead(() => readRules(session, ref), [session, key]);
   const rules = read.value?.ok === true ? read.value.value : undefined;
-  const [picked, setPicked] = useState<Merger | null>(null);
+  // A pick shows at once, until the hub's own word on it comes back (as the desktop's).
+  const [picked, setPicked] = useState<{ to: Merger; over: Merger } | null>(null);
   const [itself, setItself] = useState<string | null>(null);
   const [person, setPerson] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const live = state.hub.phase === "live";
-  const shown = picked ?? saved;
+  const shown = picked !== null && picked.over === saved ? picked.to : saved;
   const itselfText = itself ?? (rules === undefined ? "" : rulesText(rules.itself));
   const personText = person ?? (rules === undefined ? "" : rulesText(rules.person));
   const dirty = rules !== undefined && (itselfText !== rulesText(rules.itself) || personText !== rulesText(rules.person));
@@ -35,11 +36,12 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const pick = async (to: Merger) => {
     if (busy || to === shown) return;
     haptics.select();
-    setPicked(to);
+    const mine = { to, over: saved };
+    setPicked(mine);
     setError(null);
     const r = await setWhoMerges(session, ref, to);
-    setPicked(null);
     if (!r.ok) {
+      setPicked((p) => (p === mine ? null : p));
       haptics.warning();
       setError(r.error);
     }

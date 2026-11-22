@@ -45,7 +45,7 @@ const LOCKFILES = [
 ];
 
 const KIND_GLOBS: Record<string, string[]> = {
-  docs: ["*.md", "*.mdx", "*.rst", "*.adoc"],
+  docs: ["**/docs/**/*.{md,mdx,rst,adoc}", "**/doc/**/*.{md,mdx,rst,adoc}", "README", "README.{md,mdx,rst,adoc,txt}"],
   tests: ["**/test/**", "**/tests/**", "**/__tests__/**", "**/spec/**", "*.test.*", "*.spec.*", "*_test.go", "*_test.py", "test_*.py"],
   auth: ["**/auth/**", "auth.*", "*[._-]auth.*", "**/oauth/**", "oauth.*", "**/login/**", "login.*", "**/sessions/**"],
   billing: ["**/billing/**", "billing.*", "**/payments/**", "payment*.*", "**/stripe/**", "stripe.*", "**/checkout/**", "**/invoices/**", "invoice*.*"],
@@ -54,6 +54,28 @@ const KIND_GLOBS: Record<string, string[]> = {
   ci: [".github/**", ".gitlab-ci.yml", ".circleci/**", ".buildkite/**", "Jenkinsfile", "azure-pipelines.yml", ".fleetd/**"],
   secrets: [".env*", "*secret*", "*credential*", "*.pem", "*.key", ".sops.yaml", "*.sops.*"],
 };
+
+/**
+ * Markdown that steers agents rather than documents: an agent's instructions, rules, skills and prompt templates. It
+ * changes what fleetd's (or any) agents do, so it is never docs, wherever it sits.
+ */
+const INSTRUCTIONS = [
+  "CLAUDE.md",
+  "CLAUDE.local.md",
+  "AGENTS.md",
+  "GEMINI.md",
+  "SKILL.md",
+  ".cursorrules",
+  ".windsurfrules",
+  "*.instructions.md",
+  "*.prompt.md",
+  "**/.claude/**",
+  "**/.cursor/**",
+  "**/.github/**",
+  "**/.fleetd/**",
+  "**/prompts/**",
+  "**/skills/**",
+];
 
 /** What a rule is called in words: a kind by its name, a glob as written. */
 const KIND_WORDS: Record<string, string> = { "lockfile-bumps": "lockfile-only patch or minor bumps", formatting: "formatting only", ci: "CI" };
@@ -195,34 +217,48 @@ export function lockfileBumpsOnly(patch: string | undefined): boolean {
   return true;
 }
 
-/** A diff that changes only whitespace: each hunk's lines read the same with it taken out. */
+/**
+ * A diff that changes only whitespace no language reads: blank lines, and spaces or a carriage return at a line's end.
+ * Each hunk's lines, those ends taken off and blank lines left out, are the same lines in the same order. Indentation
+ * and spaces within a line are left as they are, since Python, YAML or a string literal read them.
+ */
 export function formattingOnly(patch: string | undefined): boolean {
   if (patch === undefined) return false;
   const all = hunks(patch);
   if (all.length === 0) return false;
-  const bare = (lines: string[]) => lines.join("").replace(/\s+/g, "");
-  return all.every((h) => bare(h.removed) === bare(h.added));
+  const kept = (lines: string[]) => lines.map((l) => l.replace(/\s+$/u, "")).filter((l) => l !== "");
+  return all.every((h) => {
+    const [was, now] = [kept(h.removed), kept(h.added)];
+    return was.length === now.length && was.every((l, i) => l === now[i]);
+  });
 }
 
 const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** A file's paths: a rename's old one too. */
+const pathsOf = (file: MergeFile) => (file.previousPath !== undefined ? [file.path, file.previousPath] : [file.path]);
+
+/** Whether `path` matches one of `globs`; one that doesn't compile matches nothing. */
+function anyGlob(globs: readonly string[], path: string): boolean {
+  for (const g of globs) {
+    try {
+      if (globRegex(g).test(path)) return true;
+    } catch {
+      // A glob that doesn't compile matches nothing.
+    }
+  }
+  return false;
+}
 
 /** Whether the file matches `rule`: a named kind's globs or its check of the diff, else the rule as a glob. */
 export function matches(rule: string, file: MergeFile): boolean {
   const r = rule.trim();
   if (r === "lockfile-bumps") return LOCKFILES.includes(nameOf(file.path)) && file.status === "modified" && lockfileBumpsOnly(file.patch);
   if (r === "formatting") return file.status === "modified" && formattingOnly(file.patch);
+  // Markdown that steers agents is never docs: it changes what they do.
+  if (r === "docs" && pathsOf(file).some((p) => anyGlob(INSTRUCTIONS, p))) return false;
   const globs = KIND_GLOBS[r] ?? [r];
-  const paths = file.previousPath !== undefined ? [file.path, file.previousPath] : [file.path];
-  return paths.every((p) => {
-    for (const g of globs) {
-      try {
-        if (globRegex(g).test(p)) return true;
-      } catch {
-        // A glob that doesn't compile matches nothing.
-      }
-    }
-    return false;
-  });
+  return pathsOf(file).every((p) => anyGlob(globs, p));
 }
 
 /** Whether any of the file's paths (a rename's old one too) matches `rule`: an "always a person" rule holds on either. */
