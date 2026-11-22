@@ -5,6 +5,12 @@
 //
 // Each simulator lent is a screen of the agent's too (sim_screen.ts), when the hub made one for the step that lent it:
 // a person watches and takes it over in Screens, and it ends with the simulator.
+//
+// A node restart (an update installs as soon as it is ready) ends none of them: the clones run on in CoreSimulator,
+// their agent-device daemons and runners and their videos' recordVideo in process groups of their own, and who holds
+// which is kept in `<ios dir>/held.json`. The next node takes each one over (`adopt`), its screen under the same ids;
+// one it can't take over goes, and its agent's next agent-device says why (`env`).
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ToolError } from "../../../shared/errors.ts";
 import { simBudget } from "../../mac_tool/protocol.ts";
@@ -12,11 +18,12 @@ import { Queue } from "../../mac_tool/queue.ts";
 import type { SimScreen as SimScreenKey } from "../../../shared/screens_wire.ts";
 import { controlPath, release, sessionDir } from "../agent_device.ts";
 import { blocksSimulators } from "../../agents_mac/checks.ts";
+import { writeAtomic } from "../../secrets/files.ts";
 import { simWaiting, type Simulators } from "./index.ts";
-import type { Lent } from "./pool.ts";
+import { Lent } from "./pool.ts";
 import type { Runner } from "./screen.ts";
-import type { SimScreens } from "./sim_screen.ts";
-import { binDir, iosEnv, setDir, writeConfig } from "./wrapper.ts";
+import type { KeptScreen, SimScreens } from "./sim_screen.ts";
+import { binDir, iosDir, iosEnv, setDir, writeConfig } from "./wrapper.ts";
 
 /** A simulator nobody sent a step for this long goes. */
 export const SIM_IDLE = 30 * 60_000;
@@ -25,6 +32,30 @@ export const SIM_IDLE = 30 * 60_000;
 export const simKey = (agent: string) => `mac-${agent}`;
 
 type Held = { lent: Lent; device: string; project: string; sinceMs: number; used: number };
+
+/** A held simulator as `<ios dir>/held.json` keeps it for the next node: its clone, holder and screen. */
+type Kept = {
+  agent: string;
+  udid: string;
+  /** The clone's own agent-device home, and whether the pool started its runner there. */
+  home: string;
+  runner: boolean;
+  scale: number;
+  device: string;
+  project: string;
+  sinceMs: number;
+  used: number;
+  screen?: KeptScreen;
+};
+
+export const heldPath = (home: string) => join(iosDir(home), "held.json");
+
+/** Where an agent's simulator that went with a node restart says why, until its next `mac sim start` or `end`. */
+export const endedPath = (home: string, agent: string) => join(sessionDir(home, simKey(agent)), "sim-ended");
+/** The directory whose `agent-device` says so, first on the agent's PATH meanwhile. */
+const endedBin = (home: string) => join(iosDir(home), "ended-bin");
+/** The stand-in agent-device: it prints why the agent's simulator ended, and fails as agent-device unavailable. */
+const ENDED_SCRIPT = '#!/bin/sh\ncat "$FLEETD_MAC_SIM_ENDED" >&2 2>/dev/null || echo "Your iOS simulator on the agents\' Mac ended: run mac sim start again." >&2\nexit 69\n';
 type Started = { step: "sim_start"; udid: string; device: string };
 type Queued = { step: "sim_queued"; place: number; secs: number | null; why: string };
 const WAIT_FIX = "mac sim start without --no-wait waits its turn, or carry on without one";
@@ -136,6 +167,7 @@ export class MacSims {
       void lent.discard();
       throw new ToolError("failed", `agent-device wasn't pointed at the simulator: ${(e as Error).message}`);
     }
+    rmSync(endedPath(this.home, agent.name), { force: true });
     this.held.set(agent.name, { lent, device: named, project: agent.project, sinceMs: Date.now(), used: Date.now() });
     if (screen) {
       this.screens?.open({
@@ -148,19 +180,126 @@ export class MacSims {
         controlFile: controlPath(this.home, key),
       });
     }
+    this.save();
     return { step: "sim_start", udid: lent.udid, device: named };
   }
 
-  /** The agent's simulator goes: deleted with its clone. Waiting for one, it leaves the line. Whether it held one. */
-  end(agent: string): boolean {
+  /**
+   * The agent's simulator goes: deleted with its clone. Waiting for one, it leaves the line. Whether it held one.
+   * `note`: why it went, on its screen's recording.
+   */
+  end(agent: string, note?: string): boolean {
     this.queue.leave(agent);
+    if (note === undefined) rmSync(endedPath(this.home, agent), { force: true });
     const held = this.held.get(agent);
     if (!held) return false;
     this.held.delete(agent);
+    this.save();
     release(this.home, simKey(agent));
     // Its screen's video is finished before the simulator goes.
-    void (this.screens?.close(agent) ?? Promise.resolve()).finally(() => held.lent.discard());
+    void (this.screens?.close(agent, note) ?? Promise.resolve()).finally(() => held.lent.discard());
     return true;
+  }
+
+  /** Writes who holds which simulator, and their screens, for the next node (`adopt`). */
+  save(): void {
+    const screens = this.screens?.kept() ?? new Map<string, KeptScreen>();
+    const kept: Kept[] = [...this.held].map(([agent, h]) => ({
+      agent,
+      udid: h.lent.udid,
+      home: h.lent.home,
+      runner: h.lent.runner,
+      scale: h.lent.scale,
+      device: h.device,
+      project: h.project,
+      sinceMs: h.sinceMs,
+      used: h.used,
+      ...(screens.has(agent) ? { screen: screens.get(agent)! } : {}),
+    }));
+    try {
+      mkdirSync(iosDir(this.home), { recursive: true });
+      writeAtomic(heldPath(this.home), `${JSON.stringify(kept, null, 2)}\n`);
+    } catch (e) {
+      console.warn(`${new Date().toISOString()} WARN the held iOS simulators were not written {"error":${JSON.stringify(String(e))}}`);
+    }
+  }
+
+  /**
+   * Takes over the simulators a stopped node left held (held.json), then starts the pool, which deletes every other
+   * clone. Each is its agent's again at once, its screen too, so a step or a sweep meanwhile finds it; one whose clone
+   * isn't booted any more, or that the pool's start deleted, then goes, and its agent is told why.
+   */
+  async adopt(): Promise<void> {
+    let kept: Kept[] = [];
+    try {
+      kept = JSON.parse(readFileSync(heldPath(this.home), "utf8")) as Kept[];
+    } catch {
+      // None held, or a node before this file.
+    }
+    for (const k of kept) {
+      if (this.held.has(k.agent)) continue;
+      const lent = new Lent(k.udid, k.home, this.simulators.simctl);
+      lent.runner = k.runner;
+      lent.scale = k.scale;
+      this.held.set(k.agent, { lent, device: k.device, project: k.project, sinceMs: k.sinceMs, used: k.used });
+      if (k.screen) {
+        this.screens?.resume(
+          {
+            screen: { sessionId: k.screen.sessionId, hostKey: k.screen.hostKey },
+            agent: k.agent,
+            udid: k.udid,
+            device: k.device,
+            scale: k.scale,
+            runner: this.runner(k.agent, k.udid),
+            controlFile: controlPath(this.home, simKey(k.agent)),
+          },
+          k.screen,
+        );
+      }
+    }
+    const adopted = kept.filter((k) => this.held.get(k.agent)?.lent.udid === k.udid);
+    const left = await this.simulators.start(adopted.map((k) => k.udid));
+    let booted: Set<string> | string;
+    try {
+      booted = new Set((await this.simulators.simctl.devices()).filter((d) => d.state === "Booted").map((d) => d.udid));
+    } catch (e) {
+      booted = `simctl didn't list it: ${(e as Error).message}`;
+    }
+    let taken = 0;
+    for (const k of adopted) {
+      if (this.held.get(k.agent)?.lent.udid !== k.udid) continue;
+      const why = !left.has(k.udid)
+        ? "the Mac made its golden simulator again"
+        : typeof booted === "string"
+          ? booted
+          : !booted.has(k.udid)
+            ? "it wasn't running any more"
+            : undefined;
+      if (why === undefined) {
+        taken++;
+        continue;
+      }
+      this.lose(k.agent, why);
+    }
+    this.save();
+    if (taken > 0) console.info(`${new Date().toISOString()} INFO took over ${taken} iOS simulators agents held through the node's restart`);
+  }
+
+  /** The agent's simulator went with the node's restart: it ends, and the agent's next agent-device says why. */
+  private lose(agent: string, why: string): void {
+    const at = new Date().toISOString().slice(11, 19);
+    const message = `Your iOS simulator ended when the agents' Mac's fleetd node restarted (${at} UTC): ${why}. Run \`mac sim start\` again, then retry.`;
+    console.warn(`${new Date().toISOString()} WARN an iOS simulator held through the node's restart went {"agent":${JSON.stringify(agent)},"why":${JSON.stringify(why)}}`);
+    try {
+      mkdirSync(endedBin(this.home), { recursive: true });
+      writeAtomic(join(endedBin(this.home), "agent-device"), ENDED_SCRIPT);
+      chmodSync(join(endedBin(this.home), "agent-device"), 0o755);
+      mkdirSync(sessionDir(this.home, simKey(agent)), { recursive: true });
+      writeAtomic(endedPath(this.home, agent), `${message}\n`);
+    } catch (e) {
+      console.warn(`${new Date().toISOString()} WARN why an iOS simulator went was not written {"error":${JSON.stringify(String(e))}}`);
+    }
+    this.end(agent, `the simulator ended with the node's restart: ${why}`);
   }
 
   /** How a person's commands on the agent's simulator run: its wrapper, in the agent's own agent-device home (its
@@ -197,7 +336,12 @@ export class MacSims {
    */
   env(agent: string, path?: string): [string, string][] | undefined {
     const held = this.held.get(agent);
-    if (!held) return undefined;
+    if (!held) {
+      // Its simulator went with a node restart: its agent-device says so, rather than that there is none.
+      const ended = endedPath(this.home, agent);
+      if (!existsSync(ended)) return undefined;
+      return [["PATH", path ? `${endedBin(this.home)}:${path}` : endedBin(this.home)], ["FLEETD_MAC_SIM_ENDED", ended]];
+    }
     return [...iosEnv(this.home, simKey(agent), path), ["FLEETD_MAC_SIM", held.lent.udid], ["FLEETD_MAC_SIM_SET", setDir(this.home)]];
   }
 
@@ -208,7 +352,17 @@ export class MacSims {
       .sort((a, b) => a.sinceMs - b.sinceMs || a.agent.localeCompare(b.agent));
   }
 
-  /** Every held simulator goes, and the pool's (the node stops). */
+  /**
+   * The node stops: the pool's waiting clones go, and every held simulator runs on, its screen's live view stopped, for
+   * the next node to take over (`adopt`).
+   */
+  async stop(): Promise<void> {
+    this.save();
+    this.screens?.letGo();
+    await this.simulators.shutdown();
+  }
+
+  /** Every held simulator goes, and the pool's. */
   async shutdown(): Promise<void> {
     await this.screens?.shutdown();
     for (const agent of [...this.held.keys()]) this.end(agent);

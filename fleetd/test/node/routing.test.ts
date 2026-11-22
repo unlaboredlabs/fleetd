@@ -39,3 +39,26 @@ test("an agent can't make the node's vault fills itself: only the node hosting i
   expect(await answerLine(line({ op: "vault_items", kind: "login" }), 42, hooks)).toEqual({ t: "lead_result", id: "m1", result: { items: [] } });
   expect(sent).toEqual([{ op: "vault_items", kind: "login" }]);
 });
+
+test("a hosted box's own `fleetd mac` sends mac_where and mac_send as its session, sealed and unmasked; a session on the machine can't", async () => {
+  const sent: { call: Record<string, unknown>; threadId?: string; waitMs?: number }[] = [];
+  const relay = new LeadRelay();
+  relay.call = async (frame, waitMs) => (sent.push({ call: frame.call, threadId: frame.threadId, waitMs }), { id: frame.id, result: { ok: true } });
+  const hooks = { relay, identify: () => ({ kind: "session" as const, session: "t1" }), maskFor: () => new Masker([["K", "S3CRET-VALUE"]]) };
+  const box = { box: "t1" };
+  // A push's 2 MB piece, past the 256 KiB other calls may be.
+  const sealed = `S3CRET-VALUE${"A".repeat(3 << 20)}`;
+  expect(await answerLine(line({ op: "mac_where" }), box, hooks)).toEqual({ t: "lead_result", id: "m1", result: { ok: true } });
+  // The step names the box's session, whatever the call says: the Mac checks its envelope against it.
+  expect(await answerLine(line({ op: "mac_send", machineId: "mac", threadId: "t2", sealed }), box, hooks)).toEqual({ t: "lead_result", id: "m1", result: { ok: true } });
+  expect(sent.map((s) => [s.call.op, s.threadId, s.call.threadId, s.waitMs])).toEqual([
+    ["mac_where", "t1", undefined, 180_000],
+    ["mac_send", "t1", "t1", 180_000],
+  ]);
+  expect(sent[1]?.call.sealed).toBe(sealed);
+  // On the machine itself the node makes them, never a session.
+  for (const op of ["mac_where", "mac_send"]) {
+    expect(await answerLine(line({ op, sealed: "x" }), 42, hooks)).toMatchObject({ error: { code: "forbidden", message: `${op} is the node's own call for a browser session` } });
+  }
+  expect(sent).toHaveLength(2);
+});

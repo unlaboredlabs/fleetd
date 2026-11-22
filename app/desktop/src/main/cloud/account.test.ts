@@ -441,3 +441,49 @@ describe("signing in to fleetd cloud", () => {
     expect(hubs.map((h) => h.label)).toEqual(["kims"]);
   });
 });
+
+describe("signing in to move a hub to fleetd cloud", () => {
+  let fake: FakeAccounts;
+  beforeEach(async () => {
+    fake = await new FakeAccounts().start();
+  });
+  afterEach(async () => {
+    await fake.stop();
+  });
+
+  it("the page may ask for a move's sign-in, and nothing else of it", () => {
+    expect(parseRequest(IPC.cloudSignIn, [{ move: true }]).ok).toBe(true);
+    expect(parseRequest(IPC.cloudSignIn, [{ move: false }]).ok).toBe(false);
+    expect(parseRequest(IPC.cloudMove, ["hub", "team"]).ok).toBe(true);
+    expect(parseRequest(IPC.cloudMove, ["hub", "team", "fld_key"]).ok).toBe(false);
+  });
+
+  it("an empty team of the person's own is the move's target, connected like any other", async () => {
+    await fake.team("acme", ["sam@acme.example"]);
+    const { account, hubs } = setup(fake);
+    const arrived = await account.signIn(true);
+    expect(arrived.ok).toBe(true);
+    expect(fake.signIns.at(-1)?.move).toBe(true);
+    expect((await account.finish([])).ok).toBe(true);
+    expect(account.moveTargets().map((t) => t.name)).toEqual(["acme"]);
+    expect(account.moveTargets()[0]?.hub.id).toBe(hubs.find((h) => h.label === "acme")?.id);
+  });
+
+  it("a person whose teams all hold data gets a new team made for the move", async () => {
+    await fake.team("acme", ["sam@acme.example"], { hasData: true });
+    const { account } = setup(fake);
+    await signInAll(account);
+    expect(account.moveTargets()).toEqual([]);
+    expect((await account.signIn(true)).ok).toBe(true);
+    await account.finish([]);
+    expect(account.moveTargets().map((t) => t.name)).toEqual(["sam-2"]);
+  });
+
+  it("a plain sign-in asks nothing of a move and offers no target", async () => {
+    await fake.team("acme", ["sam@acme.example"]);
+    const { account } = setup(fake);
+    await signInAll(account);
+    expect(fake.signIns.at(-1)?.move).toBeUndefined();
+    expect(account.moveTargets()).toEqual([]);
+  });
+});

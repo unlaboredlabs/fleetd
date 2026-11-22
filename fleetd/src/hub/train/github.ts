@@ -24,6 +24,9 @@ const READ_RETRY_FIRST_MS = 1000;
 
 export type GhErrorKind = "auth" | "missing" | "failed" | "unavailable";
 
+/** GitHub's 403 for rules and branch protection on a plan that has none: a private repo of a free account. */
+const NO_RULES_ON_PLAN = /upgrade to github pro|make this repository public/i;
+
 export class GhError extends Error {
   constructor(
     readonly kind: GhErrorKind,
@@ -1054,6 +1057,19 @@ export class TrainGitHub {
   }
 
   /**
+   * `branch`'s rules: none where the repo's plan has no rules (a private repo of a free account, which GitHub answers
+   * with a 403 that says to upgrade), as nothing can be required there. Any other refusal is an error.
+   */
+  private async branchRules(repo: string, branch: string): Promise<unknown> {
+    const path = `repos/${repo}/rules/branches/${branch}`;
+    const r = await this.call("GET", path);
+    if (r.ok && r.value !== null && typeof r.value === "object") return r.value;
+    if (r.ok) throw GhError.failed(`gh api ${path} returned an unexpected shape`);
+    if (r.status === 403 && NO_RULES_ON_PLAN.test(r.message)) return [];
+    throw TrainGitHub.failed(path, r.status, r.message);
+  }
+
+  /**
    * The repo's workflows, the checks `branch` requires and its rules. A read of the workflows or the required checks
    * failing is an error, never "no CI"; one of the rules' own reads failing is named in `rules.unread`.
    */
@@ -1061,7 +1077,7 @@ export class TrainGitHub {
     const obj = (v: unknown) => (v !== null && typeof v === "object" ? v : undefined);
     const workflows = await this.json("GET", `repos/${repo}/actions/workflows?per_page=100`, [], obj);
     const protection = await this.json("GET", `repos/${repo}/branches/${branch}`, [], obj);
-    const rules = await this.json("GET", `repos/${repo}/rules/branches/${branch}`, [], obj);
+    const rules = await this.branchRules(repo, branch);
     const unread: string[] = [];
     const soft = async <T>(what: string, read: () => Promise<T>): Promise<T | undefined> => {
       try {

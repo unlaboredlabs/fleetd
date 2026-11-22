@@ -15,28 +15,14 @@ import { iosDir } from "../device/ios/wrapper.ts";
 import { pinSelf } from "../self_exe.ts";
 import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
-import { type MacCall, MacClient } from "./client.ts";
+import { type MacCall, MacClient, worktreeOf } from "./client.ts";
 import { FOLDER_DAYS, Host, sweep } from "./host.ts";
 import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 
+export { worktreeOf } from "./client.ts";
+
 /** Whether this node is the agents' Mac (agents_mac/mod.rs `is_agents_mac`). */
 export const isAgentsMac = (node: Node) => (node.config as { agentsMac?: boolean }).agentsMac === true;
-
-/** The top of the git checkout `dir` is in. */
-function checkoutOf(dir: string): string | undefined {
-  const out = Bun.spawnSync(["git", "-C", dir, "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
-  return out.exitCode === 0 ? out.stdout.toString().trim() : undefined;
-}
-
-/**
- * The worktree a call comes from: the top of the git checkout its cwd is in, else of the folder the node started the
- * session in (`started`, its record's: a restarted task's is the worktree it took over), for a call from its scratch dir.
- */
-export function worktreeOf(cwd: string, started: string | undefined): string {
-  const top = checkoutOf(cwd) ?? (started ? checkoutOf(started) : undefined);
-  if (top) return top;
-  throw new ToolError("invalid", `${cwd} is in no git checkout, and this session has no worktree of its own`, "Run mac from inside a worktree.");
-}
 
 /** The folder the node started a session in, from its record; undefined where the node has no sessions. */
 export function startedIn(node: Node, session: string): string | undefined {
@@ -50,7 +36,8 @@ export function startedIn(node: Node, session: string): string | undefined {
 // Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
 export const host = (node: Node, given?: Host) =>
   node.area("mac_tool.host", (n) => given ?? new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home)));
-export const client = (node: Node) => node.area("mac_tool.client", (n) => new MacClient(n, () => self(n)));
+export const client = (node: Node) =>
+  node.area("mac_tool.client", (n) => new MacClient({ home: n.home, call: (op, args, opts) => hubCall(n, op, args, opts) }, () => self(n)));
 /** The command agents' `mac` and agent-device forwarder run: this node's own binary, pinned once per node. */
 export const self = (node: Node) => node.area("mac_tool.self", (n) => pinSelf(n.home));
 
@@ -95,9 +82,13 @@ export function start(node: Node): void {
 export function startSims(node: Node, h: Host, simulators: Simulators, setting?: number): MacSims {
   const sims = new MacSims(node.home, simulators, setting);
   h.sims = sims;
-  void simulators.start();
   sims.screens = simScreens(node, simulators);
   const screens = sims.screens;
+  // A screen's video starting is kept at once: a node that dies without its stop still leaves it to the next.
+  screens.changed = () => sims.save();
+  // The simulators the node before left held are their agents' again, screens too, before the sweep below looks for
+  // recordings a stopped node left; the pool starts once they are known.
+  void sims.adopt();
   void screens.housekeep();
   sweeps.set(
     h,
@@ -169,12 +160,12 @@ function startHousekeeping(node: Node, h: Host): void {
   housekeeping.set(h, [setInterval(clean, SWEEP_EVERY), setInterval(write, ACTIVITY_EVERY)]);
 }
 
-/** Every job on the Mac ends with its node, and every simulator it lent. */
+/** Every job on the Mac ends with its node; the simulators it lent run on, for the next node to take over. */
 export async function stop(node: Node): Promise<void> {
   if (!isAgentsMac(node)) return;
   const h = host(node);
   h.stop();
   clearInterval(sweeps.get(h));
   for (const t of housekeeping.get(h) ?? []) clearInterval(t);
-  await h.sims?.shutdown();
+  await h.sims?.stop();
 }

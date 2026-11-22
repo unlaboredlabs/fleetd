@@ -159,6 +159,8 @@ export type AccountsSignInInput = {
   codeVerifier: string;
   /** Names the key each team's /pair makes: the computer's or phone's name. */
   deviceName: string;
+  /** Move to the cloud's sign-in: each team the person owns comes with `empty`, and when none of them is empty the service makes them a new one for the move (the same one again on a retry). */
+  move?: boolean;
   /** Exactly the redirect_uri the authorize URL carried: a loopback `http://127.0.0.1:<port>/signin/callback` or `fleetd://signin/callback`. */
   redirectUri: string;
 };
@@ -183,6 +185,8 @@ export type AccountsSignOutInput = {
 
 /** One team of the person's. */
 export type AccountsTeam = {
+  /** Answered to a sign-in with `move`, for a team the person owns: true while it holds no data, so a hub's move may go into it. */
+  empty?: boolean;
   /** The team's id in the service. */
   id: string;
   /** True: the person made this team, at their own first sign-in. False: they joined it (an invitation accepted, here or on another device). The apps open a team on Connect a computer only when it is true; absent, as an older service answers, only a team not joined through POST /v1/app/accept at this sign-in. */
@@ -3455,6 +3459,93 @@ export type HubInfoOutput = {
   /** The hub's fleetd version, as `fleetd --version` prints it. "0.0.0" for a local build. */
   version: string;
 };
+
+/** Move to the cloud (hub_move_*): where this hub's move into a fleetd cloud team stands, and its pause. */
+export type HubMove = {
+  /** While uploading: the bytes fleetd cloud has of the hub's export. */
+  bytes?: number;
+  failure?: HubMoveFailure;
+  /** This hub's machines, each rejoining the cloud team by itself once the import is done. */
+  machines: HubMoveMachine[];
+  paused?: HubMovePaused;
+  phase: HubMovePhase;
+  /** Done: what fleetd cloud's import left out, a line each. */
+  skipped?: string[];
+  /** The cloud team it moves or moved into, by name. */
+  team?: string;
+  /** While uploading: the export's size. */
+  totalBytes?: number;
+  /** That team's address. */
+  url?: string;
+};
+
+export type HubMoveCancelInput = { [key: string]: unknown };
+
+/** Why a move stopped, in plain words, and the one way forward. Nothing changed on either side. */
+export type HubMoveFailure = {
+  fix: string;
+  message: string;
+  reason: HubMoveReason;
+};
+
+export type HubMoveMachine = {
+  machineId: MachineId;
+  name: string;
+  state: HubMoveMachineState;
+  /** What holds it up, in plain words: an older fleetd being updated, a rejoin the team refused. */
+  why?: string;
+};
+
+/**
+ * waiting: not handed over yet; offline: rejoins when it's back online; updating: its fleetd is too old to move by
+ * itself, so it updates first; rejoining: it has the team's address and code; joined: it is the team's.
+ */
+export type KnownHubMoveMachineState = "waiting" | "offline" | "updating" | "rejoining" | "joined";
+/** KnownHubMoveMachineState, or a value from a newer hub. */
+export type HubMoveMachineState = KnownHubMoveMachineState | (string & {});
+
+export type HubMoveOutput = {
+  move: HubMove;
+};
+
+/**
+ * This hub's leads, agents and automations wait: it moved (or is moving) to fleetd cloud. Its data stays;
+ * hub_move_resume lifts it.
+ */
+export type HubMovePaused = {
+  since: Timestamp;
+  team: string;
+  url: string;
+};
+
+export type HubMovePhase = "idle" | "packing" | "uploading" | "loading" | "done" | "failed";
+
+export type KnownHubMoveReason =
+  | "offline"
+  | "signed_out"
+  | "refused"
+  | "not_empty"
+  | "too_large"
+  | "newer"
+  | "vault_locked"
+  | "cancelled"
+  | "restarted"
+  | "failed";
+/** KnownHubMoveReason, or a value from a newer hub. */
+export type HubMoveReason = KnownHubMoveReason | (string & {});
+
+export type HubMoveResumeInput = { [key: string]: unknown };
+
+export type HubMoveStartInput = {
+  /** A device key of an owner of the team: the move uses it, kept sealed to this hub until every machine has rejoined, then forgotten. */
+  key: string;
+  /** The team's name, as the move shows it. */
+  team: string;
+  /** The team's address: https://<team>.<cloud domain>. */
+  url: string;
+};
+
+export type HubMoveStatusInput = { [key: string]: unknown };
 
 export type HubRestartInput = { [key: string]: unknown };
 
@@ -10229,6 +10320,10 @@ export interface ToolMap {
   github_connect: { input: GithubConnectInput; output: GithubConnectOutput };
   github_disconnect: { input: GithubDisconnectInput; output: GithubDisconnectOutput };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
+  hub_move_cancel: { input: HubMoveCancelInput; output: HubMoveOutput };
+  hub_move_resume: { input: HubMoveResumeInput; output: HubMoveOutput };
+  hub_move_start: { input: HubMoveStartInput; output: HubMoveOutput };
+  hub_move_status: { input: HubMoveStatusInput; output: HubMoveOutput };
   hub_restart: { input: HubRestartInput; output: HubRestartOutput };
   hub_update: { input: HubUpdateInput; output: HubUpdateOutput };
   hub_update_settings: { input: HubUpdateSettingsInput; output: HubUpdateOutput };

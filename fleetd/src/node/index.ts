@@ -15,6 +15,7 @@ import { current as currentScope } from "./runner/scope.ts";
 import { REFUSED, runCmdCheck } from "./cmd/index.ts";
 import { notRunResult } from "./cmd/refusal.ts";
 import { defaultNodeHome, isMachineId, readConfig, writeConfig, type NodeConfig } from "./config.ts";
+import { enrolAt, movedConfig, readRejoin } from "./rejoin.ts";
 import { GatedRuns } from "./gated/index.ts";
 import { loadOrCreateBoxKey, loadOrCreateIdentity, type NodeBoxKey } from "./identity.ts";
 import { LeadRelay, leadSocketPath, serveLeadSocket, type LeadResultFrame, type LeadSocketHooks } from "./lead/index.ts";
@@ -66,7 +67,7 @@ const RUNNER_NO_COMMANDS =
 
 /** What the hub's runner leaves out of the core's capabilities: installing, signing in to or updating a Claude Code or
  * fleetd of its machine's (its boxes have their own, and it updates with the hub that starts it). */
-const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH];
+const NOT_ON_RUNNER: readonly string[] = [CAP.CLAUDE_INSTALL, CAP.CLAUDE_LOGIN, CAP.SELF_UPDATE, CAP.UPDATE_FETCH, CAP.REJOIN];
 
 /** Every capability the Bun node lists in its hello: what its modules take. */
 export const CAPABILITIES = [
@@ -74,7 +75,7 @@ export const CAPABILITIES = [
   CAP.SESSION_SEAL, CAP.PROFILE_NAMES, CAP.SYSTEM_PROMPT, CAP.ASSISTANT, CAP.FOLDER_MAKE, CAP.ISOLATED,
   CAP.PROJECT_ERASE, CAP.ONE_LEAD_MODE, CAP.LINK_DEFLATE, CAP.GATED_RESUME, CAP.HAS_FILE,
   CAP.LANDED_LOG, CAP.MCP_SERVERS, CAP.SKILLS, CAP.SIGNINS_FORGET, CAP.CLAUDE_ACCOUNTS, CAP.CLAUDE_RESEAL, CAP.ONEPASSWORD,
-  CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT, CAP.LAUNCH_AHEAD,
+  CAP.ONEPASSWORD_CARDS, CAP.CLAUDE_MODELS, CAP.BUILD_BUN, CAP.VAULT, CAP.LAUNCH_AHEAD, CAP.REJOIN,
 ];
 
 /** A hash of the OS's id for this computer (fingerprint.rs): the hub never enrolls a second computer under one id. */
@@ -546,6 +547,7 @@ export async function startNode(
         return;
       case "node_action":
         if (frame.action === "update" || frame.action === "fetch") return void nodeUpdate(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
+        if (frame.action === "rejoin" && !config.runner) return void nodeRejoin(frame as unknown as NodeAction, ctx).catch(logFailed("node_action"));
         // The hub's runner: the hub's GitHub tokens for its own clones and fetches.
         if (frame.action === "github_tokens" && config.runner) {
           const kept = keepTokens(home, (frame as unknown as NodeAction).tokens ?? {}, boxKey);
@@ -588,6 +590,24 @@ export async function startNode(
         // that take them; without one they are dropped, as a node without the capability never gets them.
         return;
     }
+  };
+
+  /** `rejoin` (rejoin.ts): enrolled at the new hub, node.json names it and the node ends, its service starting it there. */
+  const nodeRejoin = async (frame: NodeAction, ctx: LinkContext) => {
+    const answer = (ok: boolean, message: string) => ctx.send({ t: "node_action_result", id: frame.id, ok, message: message.slice(0, 500) });
+    const ask = readRejoin(frame.rejoin, config.hub);
+    if (typeof ask === "string") return answer(false, ask);
+    const enrolled = await enrolAt(ask, { config, identity, boxPubKey: boxKey.publicKey(), machineFingerprint: machineFingerprint(), nodeVersion: VERSION });
+    if (!enrolled.ok) return answer(false, enrolled.message);
+    try {
+      writeConfig(home, movedConfig(config, ask.hub));
+    } catch (error) {
+      return answer(false, `enrolled at the new hub, but node.json couldn't be written: ${String((error as Error).message)}`);
+    }
+    console.log(`${new Date().toISOString()} INFO enrolled with ${ask.hub}; starting again there`);
+    answer(true, `enrolled with ${ask.hub}`);
+    await Promise.race([ctx.flush(), Bun.sleep(ANSWER_WAIT_MS)]);
+    resolveDone(0);
   };
 
   /** `update` and `fetch`: answered before the restart, which waits for the answer to be on the link. */

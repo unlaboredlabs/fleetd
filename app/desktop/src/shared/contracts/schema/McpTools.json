@@ -8259,6 +8259,203 @@
       ],
       "type": "object"
     },
+    "HubMove": {
+      "description": "Move to the cloud (hub_move_*): where this hub's move into a fleetd cloud team stands, and its pause.",
+      "properties": {
+        "bytes": {
+          "description": "While uploading: the bytes fleetd cloud has of the hub's export.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failure": {
+          "$ref": "#/$defs/HubMoveFailure"
+        },
+        "machines": {
+          "description": "This hub's machines, each rejoining the cloud team by itself once the import is done.",
+          "items": {
+            "$ref": "#/$defs/HubMoveMachine"
+          },
+          "type": "array"
+        },
+        "paused": {
+          "$ref": "#/$defs/HubMovePaused"
+        },
+        "phase": {
+          "$ref": "#/$defs/HubMovePhase"
+        },
+        "skipped": {
+          "description": "Done: what fleetd cloud's import left out, a line each.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "team": {
+          "description": "The cloud team it moves or moved into, by name.",
+          "type": "string"
+        },
+        "totalBytes": {
+          "description": "While uploading: the export's size.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "That team's address.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machines",
+        "phase"
+      ],
+      "type": "object"
+    },
+    "HubMoveCancelInput": {
+      "type": "object"
+    },
+    "HubMoveFailure": {
+      "description": "Why a move stopped, in plain words, and the one way forward. Nothing changed on either side.",
+      "properties": {
+        "fix": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/HubMoveReason"
+        }
+      },
+      "required": [
+        "fix",
+        "message",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "HubMoveMachine": {
+      "properties": {
+        "machineId": {
+          "$ref": "#/$defs/MachineId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/HubMoveMachineState"
+        },
+        "why": {
+          "description": "What holds it up, in plain words: an older fleetd being updated, a rejoin the team refused.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId",
+        "name",
+        "state"
+      ],
+      "type": "object"
+    },
+    "HubMoveMachineState": {
+      "description": "waiting: not handed over yet; offline: rejoins when it's back online; updating: its fleetd is too old to move by itself, so it updates first; rejoining: it has the team's address and code; joined: it is the team's.",
+      "enum": [
+        "waiting",
+        "offline",
+        "updating",
+        "rejoining",
+        "joined"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "HubMoveOutput": {
+      "properties": {
+        "move": {
+          "$ref": "#/$defs/HubMove"
+        }
+      },
+      "required": [
+        "move"
+      ],
+      "type": "object"
+    },
+    "HubMovePaused": {
+      "description": "This hub's leads, agents and automations wait: it moved (or is moving) to fleetd cloud. Its data stays; hub_move_resume lifts it.",
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "team": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "team",
+        "url"
+      ],
+      "type": "object"
+    },
+    "HubMovePhase": {
+      "enum": [
+        "idle",
+        "packing",
+        "uploading",
+        "loading",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "HubMoveReason": {
+      "enum": [
+        "offline",
+        "signed_out",
+        "refused",
+        "not_empty",
+        "too_large",
+        "newer",
+        "vault_locked",
+        "cancelled",
+        "restarted",
+        "failed"
+      ],
+      "type": "string",
+      "x-open": true
+    },
+    "HubMoveResumeInput": {
+      "type": "object"
+    },
+    "HubMoveStartInput": {
+      "properties": {
+        "key": {
+          "description": "A device key of an owner of the team: the move uses it, kept sealed to this hub until every machine has rejoined, then forgotten.",
+          "type": "string"
+        },
+        "team": {
+          "description": "The team's name, as the move shows it.",
+          "type": "string"
+        },
+        "url": {
+          "description": "The team's address: https://<team>.<cloud domain>.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "team",
+        "url"
+      ],
+      "type": "object"
+    },
+    "HubMoveStatusInput": {
+      "type": "object"
+    },
     "HubRestartInput": {
       "type": "object"
     },
@@ -11386,6 +11583,30 @@
         "hub_info.output": {
           "$ref": "#/$defs/HubInfoOutput"
         },
+        "hub_move_cancel.input": {
+          "$ref": "#/$defs/HubMoveCancelInput"
+        },
+        "hub_move_cancel.output": {
+          "$ref": "#/$defs/HubMoveOutput"
+        },
+        "hub_move_resume.input": {
+          "$ref": "#/$defs/HubMoveResumeInput"
+        },
+        "hub_move_resume.output": {
+          "$ref": "#/$defs/HubMoveOutput"
+        },
+        "hub_move_start.input": {
+          "$ref": "#/$defs/HubMoveStartInput"
+        },
+        "hub_move_start.output": {
+          "$ref": "#/$defs/HubMoveOutput"
+        },
+        "hub_move_status.input": {
+          "$ref": "#/$defs/HubMoveStatusInput"
+        },
+        "hub_move_status.output": {
+          "$ref": "#/$defs/HubMoveOutput"
+        },
         "hub_restart.input": {
           "$ref": "#/$defs/HubRestartInput"
         },
@@ -12394,6 +12615,14 @@
         "github_disconnect.output",
         "hub_info.input",
         "hub_info.output",
+        "hub_move_cancel.input",
+        "hub_move_cancel.output",
+        "hub_move_resume.input",
+        "hub_move_resume.output",
+        "hub_move_start.input",
+        "hub_move_start.output",
+        "hub_move_status.input",
+        "hub_move_status.output",
         "hub_restart.input",
         "hub_restart.output",
         "hub_update.input",

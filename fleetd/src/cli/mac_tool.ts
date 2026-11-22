@@ -1,6 +1,12 @@
 // `fleetd mac`, the `mac` on every agent session's PATH: the agents' Mac, from an
 // agent on any machine. Each command goes to the agent's own node, which seals it to the Mac. `mac run` prints the
 // command's output as it comes and exits with its exit code.
+//
+// In a hosted box (fleetd's computers), the worktree is in the box and no node is: there the node's half runs in this
+// process (`FLEETD_MAC_HOME`, its folder), and only its `mac_where` and `mac_send` go up the box's node.sock.
+import type { ErrorCode, ErrorReason } from "../shared/contracts.ts";
+import { ToolError } from "../shared/errors.ts";
+import { type MacCall, MacClient, type MacSide, worktreeOf } from "../node/mac_tool/client.ts";
 import { ASK_EVERY } from "../node/mac_tool/queue.ts";
 import { nodeCall, why } from "./node_call.ts";
 import { MAC_HELP } from "./usages.ts";
@@ -133,11 +139,50 @@ export const shQuote = (arg: string) =>
 
 type Answer = { ok: any } | { text: string; code: number };
 
+/** Where the node's half of `mac` runs in this process: a hosted box's folder for it, which the box's session sets. */
+export const MAC_HOME_ENV = "FLEETD_MAC_HOME";
+/** A hub call's backstop past the wait the client gives it: the box's link may be moving to another host. */
+const RELINK_MS = 50_000;
+
 async function call(step: Record<string, unknown>, waitMs: number): Promise<Answer> {
   try {
-    return answer(await nodeCall({ ...step, op: "mac" }, waitMs));
+    const home = process.env[MAC_HOME_ENV];
+    return answer(home ? await here(home, step, process.env.FLEETD_THREAD_ID, process.cwd()) : await nodeCall({ ...step, op: "mac" }, waitMs));
   } catch (error) {
     return { text: `mac: ${why(error)}\n`, code: UNAVAILABLE };
+  }
+}
+
+/** The node's answer to `step`, made here: the session's Mac client, from the worktree `cwd` is in, its hub calls sent
+ * with `send` (up the box's node.sock). */
+export async function here(
+  home: string,
+  step: Record<string, unknown>,
+  thread: string | undefined,
+  cwd: string,
+  send: (call: Record<string, unknown>, waitMs: number) => Promise<Record<string, unknown>> = nodeCall,
+): Promise<Record<string, unknown>> {
+  try {
+    if (!thread) throw new ToolError("forbidden", "The agents' Mac is for agents' sessions, and this call comes from none.", "run fleetd mac from an agent's session");
+    const side: MacSide = {
+      home,
+      async call(op, args, opts) {
+        let frame: Record<string, unknown>;
+        try {
+          frame = await send({ ...args, op }, opts.waitMs + RELINK_MS);
+        } catch (e) {
+          // The box's node.sock not reached, or no answer: what the node's own call meets as its hub link away, so it's
+          // sent again where a step may be, and said as it is.
+          throw new ToolError("machine_offline", why(e), "try again shortly");
+        }
+        const error = frame.error as { code?: string; message?: string; fix?: string; reason?: ErrorReason } | undefined;
+        if (error) throw new ToolError((error.code ?? "failed") as ErrorCode, error.message ?? "the hub sent no answer", error.fix, error.reason);
+        return (frame.result ?? {}) as Record<string, unknown>;
+      },
+    };
+    return { result: { op: "mac", ...(await new MacClient(side).call(thread, worktreeOf(cwd, undefined), step as MacCall)) } };
+  } catch (e) {
+    return { error: e instanceof ToolError ? e.toJSON() : { code: "failed", message: why(e) } };
   }
 }
 

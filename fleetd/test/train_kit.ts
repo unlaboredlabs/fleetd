@@ -89,8 +89,10 @@ export class FakeGh implements GhRunner {
   methods: string[] = ["squash", "rebase", "merge"];
   /** The merge methods main's ruleset allows, when it names them. */
   ruleMethods?: string[];
-  /** What GitHub doesn't show the train: `classic` (branch protection) and `decision` (a PR's reviews), refused; `methods`, the repo's merge methods, left out of its answer. */
+  /** What GitHub doesn't show the train: `classic` (branch protection), `decision` (a PR's reviews) and `rules` (the base's), refused; `methods`, the repo's merge methods, left out of its answer. */
   unreadable: string[] = [];
+  /** A private repo of a free account: GitHub refuses its rules with a 403 that says to upgrade. */
+  planless = false;
   /** The commit statuses only main's commits have, [context, state], as a provider that reports on the default branch alone. */
   mainProvider: [string, string][] = [];
   /** When set, the commit statuses every head has, [context, state], as another CI provider reports them. */
@@ -507,6 +509,8 @@ export class FakeGh implements GhRunner {
     }
     if (a === "branches") return ok({ name: "main", protected: false, protection: { enabled: false, required_status_checks: { contexts: [] } } });
     if (a === "rules") {
+      if (this.planless) return httpError(403, "Upgrade to GitHub Pro or make this repository public to enable this feature.");
+      if (this.unreadable.includes("rules")) return httpError(403, "Resource not accessible by integration");
       const rules: unknown[] = [];
       if (this.required.length > 0) {
         rules.push({ type: "required_status_checks", ruleset_id: 1, parameters: { required_status_checks: this.required.map((context) => ({ context })) } });

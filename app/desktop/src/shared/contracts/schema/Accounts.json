@@ -201,6 +201,10 @@
           "minLength": 1,
           "type": "string"
         },
+        "move": {
+          "description": "Move to the cloud's sign-in: each team the person owns comes with `empty`, and when none of them is empty the service makes them a new one for the move (the same one again on a retry).",
+          "type": "boolean"
+        },
         "redirectUri": {
           "description": "Exactly the redirect_uri the authorize URL carried: a loopback `http://127.0.0.1:<port>/signin/callback` or `fleetd://signin/callback`.",
           "maxLength": 200,
@@ -280,6 +284,10 @@
     "AccountsTeam": {
       "description": "One team of the person's.",
       "properties": {
+        "empty": {
+          "description": "Answered to a sign-in with `move`, for a team the person owns: true while it holds no data, so a hub's move may go into it.",
+          "type": "boolean"
+        },
         "id": {
           "description": "The team's id in the service.",
           "maxLength": 64,

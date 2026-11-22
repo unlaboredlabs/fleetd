@@ -46,6 +46,8 @@ export type LeadHooks = {
     /** Live tasks that work in a repo of their project. */
     liveInRepos?(): { taskId: string; projectRef: ProjectRef; repoId: string }[];
   };
+  /** Why no lead may start or take a turn on this hub now: it moved to fleetd cloud (hub/transfer/move.ts). */
+  moved?(): string | undefined;
   /** The usage layer: the pause on the project's machine, a thread's park and hold, and when a hold clears. */
   usageGate?(r: ProjectRef): string | undefined;
   parkedOf?(thread: ThreadRef): UsageParked | undefined;

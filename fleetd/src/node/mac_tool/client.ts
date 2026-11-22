@@ -7,13 +7,15 @@
 //
 // While the session holds a simulator, its `agent-device` is the forwarder (./shim.ts), which runs each command there.
 //
+// It runs where the worktree is: on the agent's node (./index.ts), or in a hosted box, where fleetd's computers keep
+// it, as the box's own `fleetd mac` (cli/mac_tool.ts), its hub calls up the box's node.sock.
+//
 // TODO(bun): the action log of the session's runs, and following a background run to its end.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readdirSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
 import { selfArgv } from "../util.ts";
-import { hubCall, type Node } from "../browser/node.ts";
 import { type Done, type Envelope, openAnswer, PIECE, PULL_MAX, PUSH_MAX, sealStep, type Step } from "./protocol.ts";
 import { installForwarder, removeForwarder } from "./shim.ts";
 
@@ -37,6 +39,12 @@ export type MacCall =
 
 type Mac = { machineId: string; key: Uint8Array };
 
+/** Where the client runs: the folder its scratch files and forwarders go in, and its session's lead call to the hub. */
+export type MacSide = {
+  home: string;
+  call(op: string, args: Record<string, unknown>, opts: { threadId: string; cwd: string; waitMs: number }): Promise<Record<string, unknown>>;
+};
+
 const WHO = { GIT_AUTHOR_NAME: "fleetd mac", GIT_AUTHOR_EMAIL: "mac@fleetd.invalid", GIT_COMMITTER_NAME: "fleetd mac", GIT_COMMITTER_EMAIL: "mac@fleetd.invalid" };
 
 /** `argv`, awaited: its exit code, stdout and stderr. */
@@ -56,6 +64,22 @@ async function git(dir: string, args: string[], env: Record<string, string> = {}
   const out = await run(["git", "-C", dir, ...args], { env });
   if (out.code !== 0) throw new Error(`git ${args[0]} failed: ${out.stderr.trim()}`);
   return out.stdout.trim();
+}
+
+/** The top of the git checkout `dir` is in. */
+function checkoutOf(dir: string): string | undefined {
+  const out = Bun.spawnSync(["git", "-C", dir, "rev-parse", "--show-toplevel"], { stdout: "pipe", stderr: "pipe" });
+  return out.exitCode === 0 ? out.stdout.toString().trim() : undefined;
+}
+
+/**
+ * The worktree a call comes from: the top of the git checkout its cwd is in, else of the folder the node started the
+ * session in (`started`, its record's: a restarted task's is the worktree it took over), for a call from its scratch dir.
+ */
+export function worktreeOf(cwd: string, started: string | undefined): string {
+  const top = checkoutOf(cwd) ?? (started ? checkoutOf(started) : undefined);
+  if (top) return top;
+  throw new ToolError("invalid", `${cwd} is in no git checkout, and this session has no worktree of its own`, "Run mac from inside a worktree.");
 }
 
 /** The worktree's files as one commit, on its own index: the snapshot the Mac checks out (push.rs `snapshot`). */
@@ -160,13 +184,13 @@ const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 export class MacClient {
   constructor(
-    private readonly node: Node,
+    private readonly side: MacSide,
     /** The command the forwarder runs: the node's pinned binary (mac_tool/index.ts `self`). */
     private readonly self: () => string[] = selfArgv,
   ) {}
 
   private async find(thread: string, cwd: string): Promise<Mac> {
-    const r = await hubCall(this.node, "mac_where", {}, { threadId: thread, cwd, waitMs: SEND_WAIT });
+    const r = await this.side.call("mac_where", {}, { threadId: thread, cwd, waitMs: SEND_WAIT });
     const key = Buffer.from(String(r.boxPubKey ?? ""), "base64");
     if (key.length !== 32) throw failed("the Mac's key is not 32 bytes");
     return { machineId: String(r.machineId), key };
@@ -179,7 +203,7 @@ export class MacClient {
     const sealed = sealStep(mac.key, envelope, raw);
     // A simulator start goes with the screen the hub makes for it: the simulator it lends is the agent's screen.
     const sim = step.step === "sim_start" ? { sim: true } : {};
-    const r = await hubCall(this.node, "mac_send", { machineId: mac.machineId, threadId: thread, sealed, ...sim }, { threadId: thread, cwd, waitMs: SEND_WAIT });
+    const r = await this.side.call("mac_send", { machineId: mac.machineId, threadId: thread, sealed, ...sim }, { threadId: thread, cwd, waitMs: SEND_WAIT });
     const opened = openAnswer(answerKey, String(r.sealed ?? ""));
     answerKey.fill(0);
     if (!opened) throw failed("the Mac's answer did not open", "run the command again");
@@ -207,7 +231,7 @@ export class MacClient {
   /** Puts the forwarding agent-device first on the session's PATH, as the session now holds a simulator. */
   private forward(thread: string): void {
     try {
-      installForwarder(this.node.home, thread, this.self());
+      installForwarder(this.side.home, thread, this.self());
     } catch (e) {
       throw failed(`agent-device wasn't put on your PATH: ${(e as Error).message}`);
     }
@@ -257,7 +281,7 @@ export class MacClient {
         const done = one({ step: "sim_end" }, "sim_end");
         // Whatever the Mac answers, agent-device is this machine's own again.
         await done.catch(() => {});
-        removeForwarder(this.node.home, thread);
+        removeForwarder(this.side.home, thread);
         return { step: "sim_end", ended: (await done).ended };
       }
       default:
@@ -266,7 +290,7 @@ export class MacClient {
   }
 
   private scratch(thread: string): string {
-    const dir = join(this.node.home, "tmp", `mac-${thread.slice(0, 12).replace(/[^A-Za-z0-9-]/g, "")}`);
+    const dir = join(this.side.home, "tmp", `mac-${thread.slice(0, 12).replace(/[^A-Za-z0-9-]/g, "")}`);
     mkdirSync(dir, { recursive: true });
     return dir;
   }
