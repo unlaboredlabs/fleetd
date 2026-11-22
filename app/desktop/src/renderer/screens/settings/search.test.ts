@@ -85,6 +85,18 @@ describe("settings search", () => {
     expect(found.filter((k) => !marked.has(k)), "in search, marked on no page").toEqual([]);
   });
 
+  it("finds fleetd's computers on a cloud team that has them, and the providers a team keys itself everywhere else", () => {
+    const keys = (q: string, billing: boolean) => searchSettings(q, optionsFor(true, true, billing)).map((o) => o.key);
+    // A cloud team with fleetd's computers on: no Providers, which its Machines page doesn't show.
+    for (const q of ["hosted", "boat", "at once", "cloud", "providers"]) expect(keys(q, true), q).not.toContain("hub.sandboxes");
+    expect(keys("computer time", true)).toEqual(["hub.billing.usage", "hub.provided"]);
+    expect(keys("fleetd's computers", true)[0]).toBe("hub.provided");
+    expect(keys("size", true)).toContain("hub.provided");
+    // A self-hosted hub, or a team before them: the providers, never fleetd's computers.
+    expect(keys("hosted", false)).toContain("hub.sandboxes");
+    expect(keys("fleetd's computers", false)).not.toContain("hub.provided");
+  });
+
   it("finds one place once: one result each for MCP, Claude and the hub's API key (W467)", () => {
     const keys = (q: string, admin = false) => searchSettings(q, optionsFor(admin)).map((o) => o.key);
     expect(keys("mcp")).toEqual(["connections.own", "connections"]);
