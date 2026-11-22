@@ -12,6 +12,8 @@ setDefaultTimeout(120_000);
 const home = tempHome();
 const units: string[] = [];
 const hosts: number[] = [];
+/** The scoped hosts' own transient scopes, read at launch. */
+const hostScopes: string[] = [];
 
 const run = (argv: string[]) => Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
 const scopes = process.platform === "linux" && Bun.which("systemctl") !== null && (await current()) !== undefined;
@@ -25,16 +27,19 @@ afterAll(() => {
       process.kill(pid, "SIGKILL");
     } catch {}
   }
-  for (const unit of units) run(["systemctl", "--user", "stop", unit]);
+  // Run inside an agent's session, the signals above don't reach a host systemd started (its signal fence,
+  // src/node/runner/host/fence.ts): stopping the host's own scope does.
+  for (const unit of [...hostScopes, ...units]) run(["systemctl", "--user", "stop", unit]);
   home.done();
 });
 
+/** Whether pid exists: EPERM is one this process may not signal, as a session's fence refuses a process outside it. */
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
   }
 };
 
@@ -89,7 +94,9 @@ test.skipIf(!scopes)("an agent's host in its own scope survives its node's resta
   const n = await node("scoped");
   expect(alive(n.pid)).toBe(true);
   // Its own transient scope, outside the node's unit.
-  expect(cgroup(n.pid)).toMatch(/\/run-[^/]+\.scope\n/);
+  const scope = /\/(run-[^/]+\.scope)\n/.exec(cgroup(n.pid))?.[1];
+  expect(scope).toBeDefined();
+  hostScopes.push(scope!);
   expect(cgroup(n.pid)).not.toContain(n.unit);
   const restarted = run(["systemctl", "--user", "restart", n.unit]);
   expect(restarted.exitCode).toBe(0);
