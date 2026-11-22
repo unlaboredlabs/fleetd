@@ -9,6 +9,8 @@
 //   at once and the rest plays as a normal start.
 // - wake-starting, wake-slow, wake-failed: one moment each for the screen checks: 5 s into the box, 34 s into it, and a
 //   failed try that goes again in 9 s.
+// - wake-stale: you asked 3 s ago, and the hub's start says it began 42 min before (W836, a start it kept from long
+//   before your message): the wait counts from your message, never "Still waking up 42m 40s".
 import { firstProject, writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -149,9 +151,9 @@ const send = (base: Fixture, name: string, note: string, shape: "normal" | "slow
 };
 
 /** One moment of a start, for the screen checks: you asked, and its computer is starting. */
-const moment = (base: Fixture, name: string, note: string, lane: (iso: (ms: number) => string) => JsonObject): Fixture => {
+const moment = (base: Fixture, name: string, note: string, lane: (iso: (ms: number) => string) => JsonObject, askedMinutesAgo?: number): Fixture => {
   const { f, ref, frame, iso } = scene(base, name, note);
-  chatOf(f, ref, [{ author: "human", text: ASK }], { asleep: false, working: true });
+  chatOf(f, ref, [{ author: "human", text: ASK, ...(askedMinutesAgo === undefined ? {} : { minutesAgo: askedMinutesAgo }) }], { asleep: false, working: true });
   f.live = [frame(lane(iso))];
   return f;
 };
@@ -166,5 +168,6 @@ export default defineGroup({
     moment(base("typical"), "wake-failed", "A cloud bot's computer that fleetd's computers refused; the cloud tries again in 9 s by itself.", (iso) =>
       starting(iso, "box", -10_000, -1_000, { reason: REASON, retryAt: iso(9_000) }),
     ),
+    moment(base("typical"), "wake-stale", "A cloud bot waking for an ask sent 3 s ago, whose hub says its start began 42 min before.", (iso) => starting(iso, "box", -(42 * 60 + 40) * 1000, -3_000), 0.05),
   ],
 });

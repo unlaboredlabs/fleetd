@@ -32,6 +32,8 @@ export interface WakeIn {
   readonly cold: boolean;
   /** The lead's reply streams now. */
   readonly writing: boolean;
+  /** When the person's newest message came (hub epoch ms, `askedAt`): a wake counts from there at the earliest. */
+  readonly asked?: number | undefined;
 }
 
 /** Past this, a start is slow: its word says so, with the time so far. */
@@ -49,7 +51,10 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   const a = i.activity;
   if (i.working && a?.kind === "starting") {
     if (a.failed !== undefined) return { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
-    return { phase: "waking", step: a.step, since: ms(a.startedAt) };
+    // A start older than the person's message (one it joined, or a hub that kept an old start's time) counts from
+    // the message: the wait they see is this one.
+    const since = ms(a.startedAt);
+    return { phase: "waking", step: a.step, since: since === undefined || i.asked === undefined ? since : Math.max(since, i.asked) };
   }
   if (!i.working) return i.asleep ? { phase: "asleep" } : undefined;
   if (!i.cold) return undefined;
@@ -140,6 +145,15 @@ export class ColdTurns {
     return this.cold.has(key);
   }
 }
+
+/** When the person's newest message in the chat came (hub epoch ms); undefined before any. Oldest first. */
+export const askedAt = (messages: readonly { readonly author: string; readonly createdAt: string }[] | undefined): number | undefined => {
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const m = messages?.[i];
+    if (m?.author === "human") return ms(m.createdAt);
+  }
+  return undefined;
+};
 
 /** The lead's reply has landed: the chat's newest message is the lead's, whole. Oldest first, as the chat holds them. */
 export const replied = (messages: readonly { readonly author: string; readonly state: string }[] | undefined): boolean => {

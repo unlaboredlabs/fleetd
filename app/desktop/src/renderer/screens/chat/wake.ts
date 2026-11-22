@@ -4,7 +4,7 @@
 // in every list agree.
 import { useEffect, useMemo, useState } from "react";
 import { leadLaneId } from "../../../shared/turnWords";
-import { ColdTurns, replied, wakeOf, type Wake } from "../../../shared/wake";
+import { askedAt, ColdTurns, replied, wakeOf, type Wake } from "../../../shared/wake";
 import { useData } from "../../src/data/react";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
@@ -24,8 +24,9 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const activity = useData((s) => activityOf(s, key));
   // Its reply landed (none of yours still on its way): the wake is over, though the lead may work on.
   const landed = useData((s) => replied(s.chats[key]?.messages) && (s.chatSends[key]?.length ?? 0) === 0);
+  const asked = useData((s) => askedAt(s.chats[key]?.messages));
   const isCold = cold.see(key, working, activity, landed);
-  return useMemo(() => wakeOf({ asleep, working, activity, cold: isCold, writing }), [asleep, working, activity, isCold, writing]);
+  return useMemo(() => wakeOf({ asleep, working, activity, cold: isCold, writing, asked }), [asleep, working, activity, isCold, writing, asked]);
 }
 
 /** The hub's clock, ticking each second while `on`: a slow start's count and Try again's countdown. */

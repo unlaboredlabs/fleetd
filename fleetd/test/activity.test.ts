@@ -136,6 +136,33 @@ test("a hosted start's step, when it began and a failed try's reason and retry r
   expect(t.now(T0 + 60)?.activity).toMatchObject({ failed: { reason: "Your team is out of credits." } });
 });
 
+// W836: a start item left running by a run that ended (a stop mid-start, its run switched) came back on the next
+// snapshot, over the lead's real work, with that old start's time: "Still waking up 42m 37s" on a fresh message.
+test("a start item of a run that ended never comes back over the current turn", () => {
+  const old = "2026-10-18T10:00:00.000Z";
+  const stale = { id: "start-r1", runId: "r1", status: "running", title: "", startedAt: old, updatedAt: old, kind: { type: "starting", text: "Starting its computer", step: "box", startedAt: old } };
+  const snapshot = (runs: unknown[], items: unknown[]) =>
+    ({ type: "snapshot", summary: { sessionId: "s1", projectId: "p1", title: "t", status: "running", activeRunId: "r2" }, messages: [], items, runs, truncated: false }) as unknown as ThreadEvent;
+  const t = new ActivityTracker();
+  t.apply(snapshot([{ id: "r1", status: "interrupted", ordinal: 1 }, { id: "r2", status: "running", ordinal: 2 }], [stale]), T0);
+  expect(t.now(T0 + 10)?.activity).toEqual({ kind: "thinking" });
+  // One whose run isn't in the snapshot at all is as old.
+  t.apply(snapshot([{ id: "r2", status: "running", ordinal: 2 }], [stale]), T0 + 20);
+  expect(t.now(T0 + 30)?.activity).toEqual({ kind: "thinking" });
+  // The current run's own start is still what it does.
+  t.apply(snapshot([{ id: "r2", status: "running", ordinal: 2 }], [{ ...stale, id: "start-r2", runId: "r2" }]), T0 + 40);
+  expect(t.now(T0 + 50)?.activity).toMatchObject({ kind: "starting", step: "box" });
+});
+
+test("a run that ends closes its own start item, whichever run was the newest", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  t.apply(item("start-r1", "running", { type: "starting", text: "Starting its computer", step: "box" }), T0 + 10);
+  t.apply({ type: "run", id: "r2", status: "queued", ordinal: 2 } as ThreadEvent, T0 + 20);
+  t.apply(run("interrupted"), T0 + 30);
+  expect(t.now(T0 + 40)?.activity).toEqual({ kind: "thinking" });
+});
+
 test("live usage counts until the run reports its own", () => {
   const t = new ActivityTracker();
   t.apply(run("running"), T0);

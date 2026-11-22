@@ -54,7 +54,7 @@ export class StreamText {
 
 export type DoneText = { messageId: string; text: string };
 
-type Open = { activity: Activity; startedMs: number };
+type Open = { activity: Activity; startedMs: number; runId: string | undefined };
 type Bucket = { index: number; items: number; chars: number; tokens: number };
 
 const emptyBucket = (index = 0): Bucket => ({ index, items: 0, chars: 0, tokens: 0 });
@@ -92,8 +92,10 @@ export class ActivityTracker {
         for (const run of event.runs) this.run(run, nowMs);
         const active = this.activeRun;
         if (active !== undefined) for (const m of event.messages) if (m.runId === active) this.message(m);
+        // An item still running whose run ended, or is gone, was left so (a stop mid-start): nothing does it now.
+        const going = new Set(event.runs.filter((r) => runActive(r.status)).map((r) => r.id));
         for (const item of event.items) {
-          if (item.status !== "running") continue;
+          if (item.status !== "running" || (item.runId !== undefined && !going.has(item.runId))) continue;
           const parsed = Date.parse(item.startedAt);
           this.openItem(item, Math.min(Number.isNaN(parsed) ? nowMs : parsed, nowMs));
         }
@@ -155,6 +157,8 @@ export class ActivityTracker {
     }
     if (run.usage) this.runUsage.set(run.id, run.usage);
     if (this.liveUsage?.[0] === run.id) this.liveUsage = undefined;
+    // Its items end with it, though a newer run is the active one by now.
+    for (const [id, o] of this.open) if (o.runId === run.id) this.open.delete(id);
     if (this.activeRun === run.id) {
       this.activeRun = undefined;
       this.open.clear();
@@ -175,7 +179,7 @@ export class ActivityTracker {
   private openItem(item: ThreadItem, startedMs: number): void {
     const activity = activityOf(item.kind, this.root);
     if (!activity) return;
-    this.open.set(item.id, { activity, startedMs: this.open.get(item.id)?.startedMs ?? startedMs });
+    this.open.set(item.id, { activity, startedMs: this.open.get(item.id)?.startedMs ?? startedMs, runId: item.runId });
   }
 
   private bump(nowMs: number, items: number, chars: number, tokens: number): void {

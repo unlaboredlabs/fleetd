@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { botStateOf } from "./bot";
 import type { Activity } from "./contracts";
-import { ColdTurns, replied, SLOW_MS, tryAgainNote, tryAgainNow, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
+import { askedAt, ColdTurns, replied, SLOW_MS, tryAgainNote, tryAgainNow, tryAgainLabel, wakeOf, wakePose, wakeShown, wakeWords, type Wake, type WakeIn } from "./wake";
 
 const T = Date.parse("2026-11-22T10:00:00.000Z");
 const iso = (ms: number) => new Date(T + ms).toISOString();
@@ -25,6 +25,23 @@ describe("a cloud bot waking", () => {
     expect(wakeWords({ phase: "waking", step: "session", since: T }, T + 14_500)).toEqual({ words: "Getting ready" });
     // A hub that names no step: it is waking all the same.
     expect(wakeWords(some({ working: true, activity: starting() }), T)).toEqual({ words: "Waking up" });
+  });
+
+  // W836: right after a message, "Still waking up 42m 37s", from a start the hub kept from long before it.
+  test("a wake counts from the person's message at the earliest, never from an older start", () => {
+    const asked = askedAt([
+      { author: "human", createdAt: iso(-60_000) },
+      { author: "lead", createdAt: iso(-50_000) },
+      { author: "human", createdAt: iso(42 * 60_000) },
+    ]);
+    expect(asked).toBe(T + 42 * 60_000);
+    const w = some({ working: true, activity: starting({ step: "box", startedAt: iso(0) }), asked });
+    expect(w).toEqual({ phase: "waking", step: "box", since: T + 42 * 60_000 });
+    expect(wakeWords(w, T + 42 * 60_000 + 5_000)).toEqual({ words: "Waking up" });
+    // A start that began after the message counts from its own start.
+    expect(some({ working: true, activity: starting({ startedAt: iso(5_000) }), asked: T })).toMatchObject({ since: T + 5_000 });
+    expect(askedAt([{ author: "lead", createdAt: iso(0) }])).toBeUndefined();
+    expect(askedAt(undefined)).toBeUndefined();
   });
 
   test("past 30 s it says it is still waking up, with the time so far, never an estimate", () => {
