@@ -320,17 +320,24 @@ export interface SwipeOptions {
   readonly hubs: readonly string[];
   /** The hub on show, among them. */
   readonly at: number;
+  /** The list's frame, marked data-moving while the list moves (nothing in it then takes the pointer). */
+  readonly frame: RefObject<HTMLElement | null>;
   /** Draws the list `offset` px from its place, the hub beside it there too; called on every frame of a swipe. */
   readonly paint: (offset: number, beside: Beside | null, width: number) => void;
+  /**
+   * The sidebar has that hub drawn already, ready beside the list (its neighbours, once it is idle): a swipe toward it
+   * starts with no render at all. Any other comes in Swipe.beside, for the sidebar to draw.
+   */
+  readonly drawn: (beside: Beside) => boolean;
 }
 
 /**
- * The swipe over `area`: what it draws beside the list (null while nothing slides) and whether a swipe or a slide is
- * under way. Settling on a hub opens it (sidebarLayout.ts openHub), as the switcher does.
+ * The swipe over `area`: the hub it needs drawn beside the list, one the sidebar hasn't drawn already (null while
+ * none). Settling on a hub opens it (sidebarLayout.ts openHub), as the switcher does. Whether it moves it marks on the
+ * frame itself, and where it draws the list it paints: a swipe re-renders nothing on its way.
  */
 export interface Swipe {
   readonly beside: Beside | null;
-  readonly moving: boolean;
   /** For the list's frame: a press while a slide settles lands it at once, and goes to what is under it then. */
   readonly press: { readonly onPointerDownCapture: () => void; readonly onClickCapture: (e: MouseEvent<HTMLElement>) => void };
 }
@@ -351,8 +358,10 @@ const frame = { current: 0 };
 // A settle on the way: where to, and the hub it lands on there (null: back where it was).
 const settling = { current: null as { to: number; hub: number | null; v: number; t: number } | null };
 // `at` is the hub the sidebar has drawn, which the layout effect below keeps in step.
-const live = { current: { hubs: [] as readonly string[], paint: ((): void => undefined) as SwipeOptions["paint"], at: 0 } };
-const view = { current: { beside: null as Beside | null, moving: false, show: (_: Beside | null): void => undefined, move: (_: boolean): void => undefined } };
+const live = {
+  current: { hubs: [] as readonly string[], paint: ((): void => undefined) as SwipeOptions["paint"], at: 0, frame: null as HTMLElement | null, drawn: ((): boolean => false) as SwipeOptions["drawn"] },
+};
+const view = { current: { beside: null as Beside | null, moving: false, show: (_: Beside | null): void => undefined } };
 const pressed = { current: false };
 // A spring held still under a new touch going sideways, until it is taken up or turns out to be no swipe.
 const held = { current: false };
@@ -363,7 +372,7 @@ const setBeside = (b: Beside | null): void => {
 };
 const setMoving = (m: boolean): void => {
   view.current.moving = m;
-  view.current.move(m);
+  live.current.frame?.toggleAttribute("data-moving", m);
 };
 
 /** For tests: a window with no swipe yet. */
@@ -379,21 +388,24 @@ export const resetHubSwipe = (): void => {
   view.current = { ...view.current, beside: null, moving: false };
 };
 
-export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swipe {
+export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }: SwipeOptions): Swipe {
   const [beside, show] = useState<Beside | null>(view.current.beside);
-  const [moving, move] = useState(view.current.moving);
   useLayoutEffect(() => {
-    live.current = { hubs, paint, at };
+    live.current = { hubs, paint, at, frame: list.current, drawn };
   });
   useLayoutEffect(() => {
-    view.current = { ...view.current, show, move };
-  }, []);
+    view.current = { ...view.current, show };
+    // Mounted afresh mid-swipe (it landed on a hub): still moving.
+    list.current?.toggleAttribute("data-moving", view.current.moving);
+  }, [list]);
 
   const draw = useCallback(() => live.current.paint(offset.current, near.current, width.current), []);
   const place = useCallback((b: Beside | null) => {
     if (near.current?.to === b?.to && near.current?.side === b?.side) return;
     near.current = b;
-    setBeside(b);
+    // One the sidebar has drawn ahead needs no render: it is only shown, by paint.
+    const need = b !== null && !live.current.drawn(b) ? b : null;
+    if (view.current.beside?.to !== need?.to || view.current.beside?.side !== need?.side) setBeside(need);
   }, []);
 
   /**
@@ -651,5 +663,5 @@ export function useHubSwipe({ area, pane, hubs, at, paint }: SwipeOptions): Swip
     [finish],
   );
 
-  return { beside, moving, press };
+  return { beside, press };
 }

@@ -958,7 +958,7 @@ const inPlace = () => {
   const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
   expect(list?.style.transform).toBe("");
   expect(list?.parentElement?.hasAttribute("data-moving")).toBe(false);
-  expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+  expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
 };
 const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Hubs'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
 const twoHubs = async () => {
@@ -1324,6 +1324,31 @@ describe("a Mac trackpad's swipe, told where the fingers lift (W813)", () => {
     }
   });
 
+  it("starts a swipe toward a neighbour drawn ahead with nothing to render: the list is only shown", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      // Acme, drawn ahead once the sidebar was idle, hidden.
+      const ahead = host.querySelector<HTMLElement>("nav [aria-hidden][inert]");
+      expect(ahead?.textContent).toContain("billing");
+      expect(ahead?.hasAttribute("data-shown")).toBe(false);
+      const added: Node[] = [];
+      const watch = new MutationObserver((records) => records.forEach((r) => added.push(...r.addedNodes)));
+      watch.observe(host, { childList: true, subtree: true });
+      replay(swipeFingers(1), true);
+      watch.disconnect();
+      expect(added).toEqual([]);
+      expect(ahead?.hasAttribute("data-shown")).toBe(true);
+      expect(host.querySelector("nav[aria-label='Sidebar'] [data-moving]")).not.toBeNull();
+      replay(momentum([12, 0], { count: 2 }), true);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
   it("gives a swipe let go of under still fingers back to them when they move on, and switches", async () => {
     await twoHubs();
     const { lift, done } = swiping();
@@ -1518,7 +1543,7 @@ it("with one hub, a swipe does nothing and there are no marks", async () => {
     lift();
     expect(free.every((f) => f)).toBe(true);
     expect(bots("storefront")).toEqual(["storefront"]);
-    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+    expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
   } finally {
     done();
   }
@@ -1533,7 +1558,7 @@ it("with reduced motion, switches without the slide once a swipe has gone far en
     swipe([[4, 0], [20, 0], [20, 0]]);
     // Still, with nothing beside it.
     expect(list()?.style.transform).toBe("");
-    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+    expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
     expect(bots("storefront", "billing")).toEqual(["storefront"]);
     swipe([[20, 0], [20, 0], [20, 0]]);
     expect(bots("storefront", "billing")).toEqual(["billing"]);
