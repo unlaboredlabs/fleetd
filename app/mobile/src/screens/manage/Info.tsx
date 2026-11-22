@@ -28,7 +28,7 @@ import { ListRow, ListSection } from "../../ui/List";
 import { EmptyState } from "../../ui/States";
 import { useNow } from "../time";
 import { deleteProject, forgetSignins, readForDelete, readInfo, setArchived, withPart, type Info as InfoRead } from "./api";
-import { agentLines, checklist, deleteBlocked, deleteWords, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
+import { agentLines, checklist, deleteBlocked, deleteWords, leadValue, machineName, merges, orderLines, profilesValue, subtitle, type DeleteWords, type Tone } from "./model";
 import { confirmDestructive, errorWords, Problem } from "./parts";
 import { skillsShown } from "./skillsModel";
 import { artifactsShown } from "../artifacts/model";
@@ -315,6 +315,9 @@ function Page({ project: p, navigation }: { project: ProjectSummary; navigation:
         <ListRow title="Name" value={p.title} {...(live ? { onPress: () => navigation.navigate("Rename", { key }) } : {})} />
         {profiles !== undefined && profiles.profiles.length > 1 ? (
           <ListRow title="Agent profiles" value={profilesValue(profiles)} {...(live ? { onPress: () => navigation.navigate("Profiles", { key }) } : {})} />
+        ) : null}
+        {profiles !== undefined && profiles.profiles.length > 1 ? (
+          <ListRow title="Lead model" value={leadValue(profiles)} {...(live ? { onPress: () => navigation.navigate("LeadModel", { key }) } : {})} />
         ) : null}
         <ListRow title="Machine" value={machine} />
         <ListRow title="Folder" value={tilde(p.workspaceRoot)} selectable />

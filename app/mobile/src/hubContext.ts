@@ -88,6 +88,8 @@ export type ChatInfoParams = {
   Info: { key: Key };
   Rename: { key: Key };
   Profiles: { key: Key };
+  /** The profile its lead starts on, and Restart Lead while it runs on another (LeadModel.tsx). */
+  LeadModel: { key: Key };
   /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
   Approvals: { key: Key };
   /** All that ran without asking, read in pages as it scrolls (ApprovedLog.tsx). */

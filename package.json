@@ -186,6 +186,7 @@
     "./hub/metrics/compute": "./fleetd/src/hub/metrics/compute.ts",
     "./hub/metrics/github": "./fleetd/src/hub/metrics/github.ts",
     "./hub/metrics/human": "./fleetd/src/hub/metrics/human.ts",
+    "./hub/metrics/pipeline": "./fleetd/src/hub/metrics/pipeline.ts",
     "./hub/metrics/rows": "./fleetd/src/hub/metrics/rows.ts",
     "./hub/metrics/rules": "./fleetd/src/hub/metrics/rules.ts",
     "./hub/metrics/source": "./fleetd/src/hub/metrics/source.ts",

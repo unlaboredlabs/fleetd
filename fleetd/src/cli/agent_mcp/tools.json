@@ -1557,7 +1557,7 @@
    "lead": false,
    "worker": true,
    "browser": false,
-   "description": "Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. fleetd fills in your task and the head you reviewed.",
+   "description": "Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. A finding is blocking only when it names what triggers it today and what breaks, or a miss against the brief; the rest is non-blocking. fleetd fills in your task and the head you reviewed.",
    "inputSchema": {
     "properties": {
      "blocking": {

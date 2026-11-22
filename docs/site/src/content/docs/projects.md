@@ -864,7 +864,8 @@ profile.
 |---|---|
 | Which profiles a bot allows | Settings → Bots → Agents → **Allowed profiles**: a checkbox each, the default checked for good. Or `fleetd project set <machine>/<project> --profiles medium,quick` (`none`: the default alone). |
 | A profile's model, effort, fast mode or note, or which is the default | Settings → Hub → Bot defaults → **Profiles** (owners and admins): New profile, Edit and Delete. Or `fleetd project profile <name> --model claude-sonnet-5-5 --effort xhigh --key-file <your human key>`: a name that doesn't exist yet makes a new profile; `--delete` removes one. |
-| Which profile leads run on | Settings → Hub → Bot defaults → Agents → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every bot's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs & devices; reviews and tasks that name no profile stay on the default. Members see it on a bot's Agents page, under Allowed profiles, with who to ask. |
+| Which profile leads run on | Settings → Hub → Bot defaults → Agents → **Lead runs on** (owners and admins): any of the hub's profiles, the default until another is picked. Or `fleetd project profile <name> --lead --key-file <your human key>`. Every bot's lead starts on it at its next start, or when an admin [restarts the hub](#lead-profile) from Settings › Hubs & devices; reviews and tasks that name no profile stay on the default. |
+| Which profile one bot's lead runs on | Settings → Bots → Agents → **Lead model**: **Hub default** (the one above) or any of the hub's profiles, from its lead's next start; **Restart lead** starts it on it now. On the phone: the bot's page › Lead model. Or `project_set` with `leadProfile` (`leadDefault: true` goes back, `leadRestart: true` restarts). |
 | How the lead picks | Edit the **Task profiles** prompt (`lead.profiles`) like any [prompt](/docs/what-agents-are-told), or a profile's note. It takes effect at the lead's next start. |
 
 ### What a profile runs on {#profile-settings}
@@ -892,8 +893,8 @@ name, ended ones show the name they ran on.
 
 ### The lead's profile {#lead-profile}
 
-Leads start on the profile picked under **Lead runs on**, the default until someone picks another. It is one setting
-for the whole hub, not one per bot, and applies at each lead's next start: a lead already running keeps the model
+Leads start on the profile picked under **Lead runs on**, the default until someone picks another, unless their bot
+picks its own under **Lead model**. Either applies at each lead's next start: a lead already running keeps the model
 and effort it started on (`lead_start {fresh: true}` starts it again now). Each lead's
 lane, and its time by profile, name the profile its session started on.
 

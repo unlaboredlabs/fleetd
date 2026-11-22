@@ -1,14 +1,12 @@
 // Task profiles (W146): Settings › Hub › Every project › Agents lists the hub's profiles, each with its model, effort,
 // fast mode and note, and creates, edits, renames and deletes them and marks the default (profile_create,
 // profile_update, profile_delete: an owner's or admin's), and picks the one leads start on (Lead runs on: profile_update's
-// `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and says which leads run on.
+// `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and its lead's own (Lead model).
 import { useState } from "react";
-import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef } from "../../../shared/contracts";
+import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef, ProjectSetInput } from "../../../shared/contracts";
 import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
 import { useCloudTeam, useToolQuery } from "../../src/data/react";
-import { toHash } from "../shell/routes";
-import { adminNames, adminWho } from "../sessions/pickScreen";
-import { useHubRole, useServes } from "../admin/role";
+import { useServes } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
   allowedAfter,
@@ -31,6 +29,8 @@ import s from "./settings.module.css";
 import { adminGroup } from "../../../shared/settingsPages";
 
 const noInput = {};
+/** The Lead model option that follows the hub's lead profile: no profile can be named it. */
+const HUB_LEAD = "@hub";
 
 /** Which profile is open in the editor: a new one, or one by id. */
 type Editing = { kind: "new" } | { kind: "edit"; id: number };
@@ -117,7 +117,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      hint={`Every bot's lead. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
+      hint={`Every bot's lead but those that pick their own on their Agents page. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={
@@ -281,32 +281,37 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
 
 /**
  * A project's Agents page: a checkbox for each of the hub's profiles, checked for each its agents may run on
- * (project_set). The default is always allowed: checked, and can't be unchecked. Under them, which profile leads start
- * on: an owner or admin gets the way to change it, anyone else who to ask.
+ * (project_set). The default is always allowed: checked, and can't be unchecked. Under them, Lead model: the profile
+ * its lead starts on, the hub's lead profile until it picks its own (project_set leadProfile, any of the hub's but
+ * one claude refused), with Restart lead while its lead runs on another (leadRestart).
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const cloud = useCloudTeam();
   const live = useLive();
-  const { administers } = useHubRole();
-  const people = useToolQuery("people_list", noInput, { enabled: live && !administers });
   const call = useHubCall();
   const refetch = useRefetch();
   const list = useToolQuery("profiles_list", { projectRef }, { enabled: live });
-  const [busy, setBusy] = useState<ProfileName | undefined>(undefined);
+  const [busy, setBusy] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const view = list.data;
   if (view === undefined) return list.error ? <Text tone="danger">{`Not read: ${errorText(list.error)}`}</Text> : null;
   const allowed = view.allowed ?? [];
   const defaultName = view.profiles.find((p) => p.default)?.name;
   const lead = leadOf(view.profiles);
-  const toggle = (name: ProfileName, on: boolean) => {
-    setBusy(name);
+  const set = (busyWith: string, input: Omit<ProjectSetInput, "machineId" | "projectId">) => {
+    setBusy(busyWith);
     setError(undefined);
-    call("project_set", { ...projectRef, profiles: allowedAfter(allowed, defaultName, name, on) })
+    call("project_set", { ...projectRef, ...input })
       .then(() => refetch(["profiles_list", "project_get"]))
       .catch((e: unknown) => setError(errorText(e)))
       .finally(() => setBusy(undefined));
   };
+  const toggle = (name: ProfileName, on: boolean) => set(name, { profiles: allowedAfter(allowed, defaultName, name, on) });
+  const pickLead = (name: string) => {
+    if (name === (view.leadProfile ?? HUB_LEAD)) return;
+    set("lead", name === HUB_LEAD ? { leadDefault: true } : { leadProfile: name });
+  };
+  const restart = () => set("lead", { leadRestart: true });
   return (
     <SettingsSection
       title="Allowed profiles"
@@ -339,19 +344,40 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
       ))}
       {lead === undefined ? null : (
         <SettingsRow
-          title="Leads run on"
-          hint={administers ? undefined : `Ask ${adminWho(adminNames(people.data?.people ?? []))} to change it.`}
-          data={{ "data-lead-profile": lead.name }}
+          title="Lead model"
+          data={{ "data-lead-profile": view.leadProfile ?? lead.name }}
           control={
-            administers ? (
-              <Button size="sm" variant="ghost" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.profiles" }))}>
-                <Text mono>{lead.name}</Text>
-              </Button>
-            ) : (
-              <Text mono tone="quiet">
-                {lead.name}
-              </Text>
-            )
+            <span className={s.leadControl}>
+              {view.leadRestarting ? (
+                <Text size="sm" tone="quiet">
+                  Restarts after its turn
+                </Text>
+              ) : view.leadRestart ? (
+                <Button size="sm" variant="ghost" disabled={!live || busy !== undefined} onClick={restart}>
+                  Restart lead
+                </Button>
+              ) : null}
+              <Select
+                aria-label="Lead model"
+                value={view.leadProfile ?? HUB_LEAD}
+                disabled={!live || busy !== undefined}
+                options={[
+                  { value: HUB_LEAD, label: `Hub default (${lead.name})`, textValue: `Hub default (${lead.name})` },
+                  ...view.profiles.map((p) => ({
+                    value: p.name,
+                    label: (
+                      <>
+                        <Text mono>{p.name}</Text>
+                        <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}`}</Text>
+                      </>
+                    ),
+                    textValue: p.name,
+                    ...(p.refused === undefined ? {} : { disabled: true, title: p.refused }),
+                  })),
+                ]}
+                onValueChange={pickLead}
+              />
+            </span>
           }
         />
       )}

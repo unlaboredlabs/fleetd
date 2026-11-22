@@ -126,7 +126,7 @@ export {
   type RepoDraft,
   type RepoJob,
 } from "../../desktop/src/renderer/screens/projects/create";
-export { allowedAfter, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
+export { allowedAfter, leadOf, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
 export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export {
   connectedOf,
