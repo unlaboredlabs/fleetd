@@ -342,7 +342,8 @@ function runLinkOnce(
     const write = (text: string, onCrossed?: () => void) => {
       writes = writes.then(async () => {
         if (ended) return;
-        let bytes = text.length;
+        // In UTF-8 bytes, as it goes on the wire, not the string's length.
+        let bytes = Buffer.byteLength(text);
         if (deflate && text.length >= MIN_DEFLATE_BYTES) {
           const data = await deflater.deflate(text);
           if (ended) return;

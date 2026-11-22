@@ -416,7 +416,9 @@ export class Link {
     const text = JSON.stringify(frame);
     // The node hears a frame only once it is whole, and one this big may take seconds on a slow link: told first, it
     // waits for it rather than take the silence for a dead link.
-    if (text.length >= LINK_BULK_BYTES) this.write(ws, state, { t: "hb", at: this.nowIso(), bulk: text.length });
+    // In UTF-8 bytes, as it goes on the wire: a string's length undercounts non-ASCII text up to 3 times.
+    const bytes = Buffer.byteLength(text);
+    if (bytes >= LINK_BULK_BYTES) this.write(ws, state, { t: "hb", at: this.nowIso(), bulk: bytes });
     const deflater = state.deflater;
     if (!deflater) return ws.send(text) >= 0;
     // Once compressed, every frame goes through the queue, so a short Text one never overtakes a deflating one.

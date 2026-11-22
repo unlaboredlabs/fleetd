@@ -441,6 +441,21 @@ test("after a big frame of its own the node waits the heartbeats' time, until th
   home.done();
 });
 
+test("a frame of its own big in UTF-8 bytes, though short in characters, gets the longer bound too", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET);
+  await until("the welcome", () => n.links.length === 1);
+  const outputTail = "é漢".repeat(BULK_BYTES / 4);
+  expect(outputTail.length).toBeLessThan(BULK_BYTES);
+  n.hop.state.dark = true;
+  const cut = Date.now();
+  n.links[0]!.send({ t: "cmd_result", id: "c1", exitCode: 0, outputTail, timedOut: false });
+  await until("the loss", () => n.lost.length === 1, 5000);
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
+  n.done();
+  home.done();
+});
+
 test("a heartbeat that says a big frame comes keeps the longer bound until a frame arrives", async () => {
   const home = tempHome();
   const n = cutNode(home.dir, QUIET);

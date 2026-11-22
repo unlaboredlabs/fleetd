@@ -196,11 +196,20 @@ test("a frame big enough to take seconds on a slow link is announced by a heartb
   const bigAsked = await node.next((f) => f.t === "node_action" && f.id !== asked.id);
   const at = node.frames.indexOf(bigAsked);
   const { binary: _binary, ...sent } = bigAsked as Record<string, unknown>;
-  expect(node.frames[at - 1]).toMatchObject({ t: "hb", bulk: JSON.stringify(sent).length });
+  expect(node.frames[at - 1]).toMatchObject({ t: "hb", bulk: Buffer.byteLength(JSON.stringify(sent)) });
   // Only the big one: the small request came with no heartbeat before it.
   expect(node.frames.filter((f) => f.t === "hb" && "bulk" in f)).toHaveLength(1);
   node.send({ t: "node_action_result", id: bigAsked.id, ok: true, message: "ok" });
   await big;
+  // Counted in UTF-8 bytes: a frame of non-ASCII text under the bound in characters but over it on the wire is announced.
+  const wide = "é漢".repeat(LINK_BULK_BYTES / 4);
+  const multi = links.request("worker-bulk", { t: "node_action", action: "probe", padding: wide });
+  const multiAsked = await node.next((f) => f.t === "node_action" && f.id !== asked.id && f.id !== bigAsked.id);
+  const { binary: _b, ...multiSent } = multiAsked as Record<string, unknown>;
+  expect(JSON.stringify(multiSent).length).toBeLessThan(LINK_BULK_BYTES);
+  expect(node.frames[node.frames.indexOf(multiAsked) - 1]).toMatchObject({ t: "hb", bulk: Buffer.byteLength(JSON.stringify(multiSent)) });
+  node.send({ t: "node_action_result", id: multiAsked.id, ok: true, message: "ok" });
+  await multi;
   node.close();
   await node.closed;
 });
