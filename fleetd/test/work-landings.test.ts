@@ -55,9 +55,16 @@ class LocalGit implements LandingPorts {
   noNetwork = new Set<string>();
   pulls: MergedPull[] = [];
   commitPulls = new Map<string, MergedPull[]>();
+  /** How many fetches still lose a ref-update race to another git in the checkout. */
+  raced = 0;
+  slept: number[] = [];
 
   async git(machine: string, cwd: string, args: string[]) {
     if (this.offline.has(machine)) return undefined;
+    if (args[0] === "fetch" && this.raced > 0) {
+      this.raced--;
+      return { code: 1, out: "error: cannot lock ref 'refs/remotes/origin/main': is at 1111111 but expected 2222222\nfatal: incorrect old value provided" };
+    }
     if (this.noNetwork.has(machine) && (args[0] === "ls-remote" || args[0] === "fetch")) {
       return { code: 128, out: "fatal: unable to access 'https://github.com/acme/shop.git/': Could not resolve host: github.com" };
     }
@@ -72,6 +79,10 @@ class LocalGit implements LandingPorts {
 
   async mergedPullsOf(_repo: string, sha: string) {
     return this.commitPulls.get(sha) ?? [];
+  }
+
+  async sleep(ms: number) {
+    this.slept.push(ms);
   }
 }
 
@@ -142,9 +153,13 @@ class Repo {
 function rig() {
   const k = kit(START_MS);
   const woken: ProjectRef[] = [];
-  leadWakes(k.hub).trigger = (r: ProjectRef, _t: Trigger) => void woken.push(r);
+  const told: string[] = [];
+  leadWakes(k.hub).trigger = (r: ProjectRef, t: Trigger) => {
+    woken.push(r);
+    told.push(t.text);
+  };
   const pending = (r: ProjectRef) => woken.some((w) => w.machineId === r.machineId && w.projectId === r.projectId);
-  return { ...k, woken, pending };
+  return { ...k, woken, told, pending };
 }
 
 const project = (hub: Hub, machineId: string, projectId: string, root: string, at = AT): ProjectRef => {
@@ -393,6 +408,39 @@ test("a remote git can't reach is told to the lead once per outage", async () =>
   expect(work(hub).scanFailure(shop)).toBe(why);
   clock.ms += OUTAGE_GAP_MS;
   expect(work(hub).scanFailed(shop, why)).toBe(true);
+});
+
+test("a fetch that loses a ref-lock race to another git is run again, and only a lock that stays is told, without blaming access", async () => {
+  const { hub, told, pending } = rig();
+  const repo = new Repo(GITLAB);
+  const shop = project(hub, "devbox", "shop", repo.checkout("shop"));
+  const git = new LocalGit();
+  const s = scope(GITLAB);
+  await scan(hub, git);
+  const first = repo.commit("ada@example.com", "one", [["a.txt", "1\n"]]);
+  repo.push();
+  git.raced = 2;
+  await scan(hub, git);
+  expect(git.slept).toEqual([1_000, 4_000]);
+  expect(landings(hub, s).map((l) => l.sha)).toEqual([first]);
+  expect(work(hub).scanFailure(shop)).toBeUndefined();
+  expect(told.filter((t) => t.includes("can't see"))).toEqual([]);
+  const second = repo.commit("ada@example.com", "two", [["a.txt", "2\n"]]);
+  repo.push();
+  git.raced = 3;
+  git.slept = [];
+  await scan(hub, git);
+  expect(git.slept).toEqual([1_000, 4_000]);
+  expect(landings(hub, s).map((l) => l.sha)).toEqual([first]);
+  expect(pending(shop)).toBe(true);
+  const line = told.find((t) => t.includes("can't see"))!;
+  expect(line).toContain("kept finding a lock");
+  expect(line).toContain("cannot lock ref");
+  expect(line).not.toContain("reach origin");
+  expect(line).not.toContain("ssh-agent");
+  await scan(hub, git);
+  expect(landings(hub, s).map((l) => l.sha)).toEqual([first, second]);
+  expect(work(hub).scanFailure(shop)).toBeUndefined();
 });
 
 test("an offline node makes the watch wait, and another checkout of the repo reads it", async () => {

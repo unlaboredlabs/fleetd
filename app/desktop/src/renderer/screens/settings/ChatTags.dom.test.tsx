@@ -78,7 +78,7 @@ const render = async (chatTags: boolean | undefined) => {
       if (tool === "project_settings_set" && refuse) {
         return Promise.resolve({ ok: false, error: { code: "forbidden", message: "Only its owner changes it." } });
       }
-      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
+      if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [] } });
       const section = sectionRead(tool);
       if (section !== undefined) return Promise.resolve(section);
       return Promise.resolve({ ok: true, output: { settings } });

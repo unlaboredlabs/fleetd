@@ -351,7 +351,6 @@
         "mcp_server_set",
         "mcp_server_test",
         "mcp_servers_get",
-        "mcp_settings_set",
         "memory_get",
         "memory_import",
         "memory_refresh_run",

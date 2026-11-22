@@ -314,15 +314,24 @@ export type Base = {
   note?: string;
 };
 
-/** Why a fetch failed, from git's stderr (worktree.rs `FetchError::of`). */
-function fetchError(message: string): { kind: BaseErrorKind; message: string } {
+/** Git's words when another git in the checkout holds a lock the fetch needs (a fetch beside it): a race, not access. */
+const LOCK_RACE = /incorrect old value provided|reference already exists|cannot lock ref|could not lock|unable to update local ref|some local refs could not be updated|\.lock': file exists|another git process seems to be running/;
+/** The waits before a fetch that lost a lock race runs again: only a lock that outlasts them all fails it. */
+export const LOCK_RETRY_MS = [1_000, 4_000];
+
+/** Why a fetch failed, from git's stderr (worktree.rs `FetchError::of`). The network is blamed only for its own words, and
+ * a lock race is `failed`, with git's line: never access or the network. */
+export function fetchError(message: string): { kind: BaseErrorKind; message: string } {
   const m = message.toLowerCase();
   const first = message.split("\n").find((l) => l.trim()) ?? message;
-  if (/could not resolve host|connection refused|connection reset|timed out|network is unreachable|no route to host|connection timed out|could not read from remote/.test(m) && !/permission denied|authentication/.test(m))
+  if (/could not resolve host|connection refused|connection reset|timed out|network is unreachable|no route to host|connection timed out/.test(m) && !/permission denied|authentication/.test(m))
     return { kind: "offline", message: "offline" };
   if (/authentication failed|permission denied|could not read username|terminal prompts disabled/.test(m)) return { kind: "auth", message: first };
   if (/repository not found|does not appear to be a git repository/.test(m)) return { kind: "no_access", message: first };
   if (/ssh: not found|cannot run ssh/.test(m)) return { kind: "no_ssh", message: first };
+  if (LOCK_RACE.test(m)) return { kind: "failed", message: message.split("\n").find((l) => LOCK_RACE.test(l.toLowerCase()))?.trim() ?? first };
+  // ssh's own "Could not read from remote repository", with nothing above it saying why: the connection dropped.
+  if (m.includes("could not read from remote")) return { kind: "offline", message: "offline" };
   return { kind: "failed", message: first };
 }
 
@@ -330,7 +339,7 @@ const rfc3339 = (ms: number) => new Date(Math.floor(ms / 1000) * 1000).toISOStri
 
 /** Where a new writer's branch starts: the remote's `name`, freshly fetched; offline or refused, the last fetched
  * copy, else the local branch, each with an error saying so. With no remote, the local `name` or the current branch. */
-export async function freshBase(root: string, name: string): Promise<Base> {
+export async function freshBase(root: string, name: string, sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<Base> {
   const r = await remote(root);
   if (!r) {
     const local = (await refSha(root, `refs/heads/${name}`)) ? name : await currentBranch(root);
@@ -341,10 +350,18 @@ export async function freshBase(root: string, name: string): Promise<Base> {
   }
   const tracking = `${r}/${name}`;
   let why: { kind: BaseErrorKind; message: string } | undefined;
-  try {
-    await gitRemote(root, ["fetch", "--no-tags", r, `+refs/heads/${name}:refs/remotes/${r}/${name}`], FETCH_TIMEOUT_MS);
-  } catch (error) {
-    why = fetchError((error as Error).message);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await gitRemote(root, ["fetch", "--no-tags", r, `+refs/heads/${name}:refs/remotes/${r}/${name}`], FETCH_TIMEOUT_MS);
+      why = undefined;
+      break;
+    } catch (error) {
+      const text = (error as Error).message;
+      why = fetchError(text);
+      const wait = LOCK_RETRY_MS[attempt];
+      if (wait === undefined || !LOCK_RACE.test(text.toLowerCase())) break;
+      await sleep(wait);
+    }
   }
   const sha = await refSha(root, `refs/remotes/${tracking}`);
   if (!why && sha) {

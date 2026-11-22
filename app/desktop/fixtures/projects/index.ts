@@ -308,7 +308,7 @@ export default defineGroup({
           worktrees: { dir: "/home/dev/.fleetd/node/worktrees/field-notes", worktrees: [] },
         },
       });
-      f.answer("mcp_servers_get", undefined, { global: [], project: [], userServers: true });
+      f.answer("mcp_servers_get", undefined, { global: [], project: [] });
       projectSections(f, { machineId: "devbox", projectId: "field-notes" });
       // Its chat: no messages yet.
       writeChat(f, { machineId: "devbox", projectId: "field-notes" }, []);

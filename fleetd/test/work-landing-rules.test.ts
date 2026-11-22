@@ -10,6 +10,7 @@ import {
   parseCommit,
   remoteHead,
   rewriteKey,
+  scanFailedLine,
   wakeLine,
 } from "../src/hub/work/landing_rules.ts";
 import { exported, findings, line, readRepo } from "./pkg/purity.ts";
@@ -32,6 +33,47 @@ test("a base's head, a commit as git prints it, and where its message says it ca
   expect(originOf("Merge pull request #12 from acme/dark-mode", "")).toEqual({ host: "github", pr: 12, head: "dark-mode" });
   expect(onGithub({ repoKey: "github.com/acme/shop", base: "main" })).toBe(true);
   expect(fetchError("git fetch failed: ssh: Could not resolve hostname github.com").kind).toBe("offline");
+});
+
+test("why a fetch failed: a lock race is busy, and only auth's line gives SSH or credential advice", () => {
+  const kinds = (texts: string[]) => texts.map((t) => fetchError(`git fetch failed: ${t}`).kind);
+  expect(
+    kinds([
+      "error: cannot lock ref 'refs/remotes/origin/main': is at 1111111 but expected 2222222",
+      "fatal: incorrect old value provided",
+      "error: fetching ref refs/remotes/origin/main failed: reference already exists",
+      "error: some local refs could not be updated; try running 'git remote prune origin'",
+      " ! 1111111..2222222  main -> origin/main  (unable to update local ref)",
+      "fatal: Unable to create '/w/shop/.git/index.lock': File exists.\n\nAnother git process seems to be running in this repository",
+      "error: could not lock config file .git/config: File exists",
+    ]),
+  ).toEqual(["busy", "busy", "busy", "busy", "busy", "busy", "busy"]);
+  expect(
+    kinds([
+      "ssh: connect to host github.com port 22: Connection timed out\nfatal: Could not read from remote repository.",
+      "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.",
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+      "error: cannot run ssh: No such file or directory",
+      "ERROR: Repository not found.\nfatal: Could not read from remote repository.",
+      "fatal: bad object refs/remotes/origin/main",
+    ]),
+  ).toEqual(["offline", "auth", "auth", "no_ssh", "no_access", "other"]);
+  const s = { repoKey: "github.com/acme/shop", base: "main" };
+  const line = (text: string) => scanFailedLine(s, "devbox", "/w/shop", fetchError(`git fetch failed: ${text}`));
+  const advice = "an SSH key in ssh-agent, or a credential helper";
+  expect(line("fatal: incorrect old value provided")).toBe(
+    "fleetd can't see what lands on main of github.com/acme/shop: git on devbox kept finding a lock in /w/shop across 3 tries " +
+      "(fatal: incorrect old value provided): another git there may be stuck, or have left a stale .lock file. " +
+      "Merges and pushes made outside fleetd stay unseen until it clears.",
+  );
+  expect(line("git@github.com: Permission denied (publickey).")).toContain(advice);
+  expect(line("error: cannot run ssh: No such file or directory")).toContain(advice);
+  for (const text of ["Could not resolve host: github.com", "ERROR: Repository not found.", "fatal: bad object refs/remotes/origin/main"]) {
+    expect(line(text)).not.toContain(advice);
+  }
+  expect(line("Could not resolve host: github.com")).toContain("the network there is down");
+  expect(line("ERROR: Repository not found.")).toContain("check the remote's address");
+  expect(line("fatal: bad object refs/remotes/origin/main")).toContain("failed to read origin from /w/shop (fatal: bad object refs/remotes/origin/main)");
 });
 
 test("a landing ends the claim on its branch, and the lead reads it in a line", () => {

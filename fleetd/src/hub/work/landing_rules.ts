@@ -84,8 +84,16 @@ export const onGithub = (scope: WorkScope) => scope.repoKey.startsWith("github.c
 export type GitOut = { code: number | null; out: string };
 export const gitOk = (o: GitOut) => o.code === 0;
 
+/**
+ * The waits before git runs again while another git in the same checkout holds a lock (a fetch beside the scanner's):
+ * only a lock that outlasts them all is told.
+ */
+export const LOCK_RETRY_MS = [1_000, 4_000];
+
+export type FetchError = { kind: "offline" | "busy" | "no_ssh" | "auth" | "no_access" | "other"; why: string };
+
 /** Why a fetch failed, from git's output (node/worktree.rs `FetchError::of_text`), and its words. */
-export function fetchError(text: string): { kind: "offline" | "no_ssh" | "auth" | "no_access" | "other"; why: string } {
+export function fetchError(text: string): FetchError {
   const has = (needles: string[]) => needles.some((n) => text.includes(n));
   // The first line git explains itself on, without our "git … failed: " prefix.
   const at = text.indexOf(" failed: ");
@@ -112,12 +120,46 @@ export function fetchError(text: string): { kind: "offline" | "no_ssh" | "auth" 
   ) {
     return { kind: "offline", why: "offline" };
   }
+  // Another git in the checkout is updating the same ref or index: a race, not access.
+  const race = [
+    "incorrect old value provided",
+    "reference already exists",
+    "cannot lock ref",
+    "could not lock",
+    "unable to update local ref",
+    "some local refs could not be updated",
+    ".lock': File exists",
+    "Another git process seems to be running",
+  ];
+  if (has(race)) return { kind: "busy", why: (rest.split("\n").find((l) => race.some((n) => l.includes(n))) ?? line).trim() };
   if (has(["ssh: not found", "cannot run ssh", "ssh: No such file or directory"])) return { kind: "no_ssh", why: line };
   if (has(["Authentication failed", "Permission denied (publickey", "could not read Username", "could not read Password", "error: 403", "Host key verification failed"])) {
     return { kind: "auth", why: line };
   }
   if (has(["Repository not found", "does not appear to be a git repository", "could not be found"])) return { kind: "no_access", why: line };
   return { kind: "other", why: line };
+}
+
+/** The lead's line when the scanner can't read `scope`'s base from `root` on `machine`: advice only where git's words point. */
+export function scanFailedLine(scope: WorkScope, machine: string, root: string, error: FetchError): string {
+  const unseen = `fleetd can't see what lands on ${scope.base} of ${scope.repoKey}: `;
+  const until = "Merges and pushes made outside fleetd stay unseen until";
+  switch (error.kind) {
+    case "offline":
+      return `${unseen}git on ${machine} can't reach origin from ${root}: the network there is down. ${until} it's back.`;
+    case "busy":
+      return (
+        `${unseen}git on ${machine} kept finding a lock in ${root} across ${LOCK_RETRY_MS.length + 1} tries (${error.why}): ` +
+        `another git there may be stuck, or have left a stale .lock file. ${until} it clears.`
+      );
+    case "auth":
+    case "no_ssh":
+      return `${unseen}git on ${machine} can't reach origin from ${root} (fetch failed: ${error.why}). ${until} it can (an SSH key in ssh-agent, or a credential helper).`;
+    case "no_access":
+      return `${unseen}origin doesn't show the repo to git on ${machine} from ${root} (${error.why}): check the remote's address and that its login can read the repo.`;
+    case "other":
+      return `${unseen}git on ${machine} failed to read origin from ${root} (${error.why}). ${until} it can.`;
+  }
 }
 
 /** The lead's line: "abc1234 "feat: dark mode" was pushed straight to main by ada@example.com; it ended claim C7." */

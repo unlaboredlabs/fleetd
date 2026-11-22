@@ -79,13 +79,11 @@ with **Connect Tailscale** for an admin.
 ## Your own MCP servers {#your-own}
 
 Agents also get the MCP servers of each machine's own claude setup (`~/.claude.json`, a repo's `.mcp.json`), as
-before. Turn **Machines' own MCP servers** off at the foot of Connections (owners and admins) to give them only
-fleetd's tools and the servers configured here: claude then runs with `--strict-mcp-config`. fleetd's own tools
-(`report`, `ask_lead`, the lead's tools) are always there and can't be replaced.
+claude gives them anyway. fleetd's own tools (`report`, `ask_lead`, the lead's tools) are always there and can't be
+replaced.
 
 ## From an MCP client {#tools}
 
 `mcp_servers_get` lists the servers, `mcp_server_set` adds or replaces one (each secret sealed to each machine's
-`boxPubKey`), `mcp_server_remove` removes one, `mcp_settings_set` turns your own servers on or off, and
-`mcp_server_test` tests one, and `mcp_oauth_start` opens a bot server's [sign-in](/docs/integrations#sign-in). All
-but `mcp_servers_get` take a human key.
+`boxPubKey`), `mcp_server_remove` removes one, `mcp_server_test` tests one, and `mcp_oauth_start` opens a bot
+server's [sign-in](/docs/integrations#sign-in). All but `mcp_servers_get` take a human key.

@@ -60,7 +60,7 @@ const connections = (base: Fixture, name: string, note: string, opts: { team: Js
   const f = Fixture.from(base, name, note);
   const admin = (opts.me ?? sam) === sam;
   answerHub(f, opts.me ?? sam, admin);
-  f.answer("mcp_servers_get", undefined, { global: opts.team, project: [], userServers: true });
+  f.answer("mcp_servers_get", undefined, { global: opts.team, project: [] });
   f.answer("tailnet_get", undefined, opts.tailnet);
   f.answer("vault_list", {}, { items: items(f) });
   f.answer("mcp_server_test", { scope: TEAM, name: "paper" }, { machineId: "devbox", result: { server: "Paper MCP 0.4.0", tools: [{ name: "get_basic_info" }, { name: "write_html" }, { name: "get_screenshot" }] } });

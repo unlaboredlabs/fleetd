@@ -122,7 +122,7 @@ const render = async (node: React.ReactNode) => {
           : tool === "setup_list"
             ? { steps: [], requiredLeft: 2 }
             : tool === "mcp_servers_get"
-              ? { global: [], userServers: true }
+              ? { global: [] }
               : tool === "skills_list"
                 ? { skills: [] }
                 : tool === "machine_roles_get"
