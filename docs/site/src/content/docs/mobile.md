@@ -19,7 +19,8 @@ and the hub's other admin pages stay in the desktop app.
 
 On a screen with room for two, such as the iPhone Duo unfolded or an iPad, Chats stays on the left with the open chat
 beside it, as Messages does on an iPad. Picking another chat swaps it in, and the list marks the open one. Folded, or on
-any other phone, a chat opens over the list as usual.
+any other phone, a chat opens over the list as usual. Where the iPhone Duo shows its status in a column at the side,
+every screen keeps its content out of that column, and iOS puts the screen's Back and buttons there.
 
 fleetd doesn't publish the app in Apple's or Google's stores yet. You build it from the repository on GitHub's
 runners: no Expo account and no EAS.
@@ -433,6 +434,10 @@ until you [set one up](#own-updates).
 The runtime version is a fingerprint of the app's native side and its build settings. A build whose native code
 differs gets a different one, so it never loads a bundle made for another. **Mobile release** fails a build with a
 certificate whose runtime version isn't the one releases publish its commit's updates for.
+
+Only a build from `main` takes updates. A build from another branch has no certificate, so it keeps that branch's
+JavaScript until you install a newer build. With one, a branch that changes no native code would get `main`'s runtime
+version, and `main`'s next update would replace the branch's screens.
 
 ### Channels {#channels}
 
