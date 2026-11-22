@@ -2,9 +2,9 @@
 // screencast JPEGs): x264 in the static ffmpeg the node pins for Android (../device/pins.ts), fetched the first time a
 // screen needs it. It runs while someone watches with H.264, and for a Linux desktop's recording all along (its
 // frames are the video's too: one encode for both), one frame in, one frame out at once (`zerolatency`, no B-frames,
-// no keyframe but the first), and comes out as FLV: its tags say their length, so each frame is whole as
-// soon as it is written (raw Annex B would be whole only once the next one starts). A keyframe on demand is a new
-// encoder: ~90 ms.
+// a keyframe each KEY_EVERY frames so a recording seeks without decoding from its start), and comes out as FLV: its
+// tags say their length, so each frame is whole as soon as it is written (raw Annex B would be whole only once the
+// next one starts). A keyframe on demand is a new encoder: ~90 ms.
 
 import { type Encoded, type Input, kbpsFor, type LiveEncoding, type MakeEncoder } from "./live.ts";
 
@@ -79,6 +79,10 @@ export function paramSets(record: Uint8Array): Uint8Array[] {
   return out;
 }
 
+/** A keyframe at least each this many frames: a recording seeks to any point by decoding at most this many (≈ 0.4 s of
+ * 1280×800), and a screen that moves costs one more keyframe each 5 s of motion; a still one makes no frames at all. */
+export const KEY_EVERY = 150;
+
 /** ffmpeg's arguments for `input` at `kbps` at most. */
 export function encoderArgs(input: Input, kbps: number): string[] {
   const from = "raw" in input ? ["-f", "rawvideo", "-pix_fmt", "bgra", "-s", `${input.raw[0]}x${input.raw[1]}`, "-framerate", "30"] : ["-f", "mjpeg", "-framerate", "30"];
@@ -87,7 +91,7 @@ export function encoderArgs(input: Input, kbps: number): string[] {
     "-c:v", "libx264", "-preset", "superfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
     // Even sizes, as 4:2:0 needs them.
     "-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2",
-    "-g", "100000", "-bf", "0", "-crf", "26", "-maxrate", `${kbps}k`, "-bufsize", `${Math.max(Math.round(kbps / 2), 50)}k`,
+    "-g", String(KEY_EVERY), "-bf", "0", "-crf", "26", "-maxrate", `${kbps}k`, "-bufsize", `${Math.max(Math.round(kbps / 2), 50)}k`,
     "-threads", "2", "-flush_packets", "1", "-f", "flv", "pipe:1",
   ];
 }

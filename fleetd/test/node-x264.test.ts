@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chmodSync, writeFileSync } from "node:fs";
-import { encoderArgs, FlvReader, kbpsFor, LiveEncoder, paramSets, X264, type Encoded } from "../src/node/screen/x264.ts";
+import { encoderArgs, FlvReader, KEY_EVERY, kbpsFor, LiveEncoder, paramSets, X264, type Encoded } from "../src/node/screen/x264.ts";
 import { avcConfig, H264Video, mkvFrame, nalUnits } from "../src/node/browser/recording.ts";
 import { Mp4Sink } from "../src/node/browser/record.ts";
 import { tempHome } from "./helpers.ts";
@@ -41,11 +41,11 @@ test("FLV's video tags come out as Annex B access units, the parameter sets befo
   expect(() => new FlvReader(() => {}).push(new Uint8Array(13))).toThrow("not FLV");
 });
 
-test("the encoder's arguments: raw pixels or JPEGs in, no B-frames, no keyframe but the first, the bit rate bounded", () => {
+test("the encoder's arguments: raw pixels or JPEGs in, no B-frames, a keyframe each KEY_EVERY frames, the bit rate bounded", () => {
   const raw = encoderArgs({ raw: [1280, 800] }, 1000);
   expect(raw.slice(raw.indexOf("-f"), raw.indexOf("-f") + 6)).toEqual(["-f", "rawvideo", "-pix_fmt", "bgra", "-s", "1280x800"]);
   expect(raw).toContain("zerolatency");
-  expect(raw.join(" ")).toContain("-g 100000 -bf 0 -crf 26 -maxrate 1000k -bufsize 500k");
+  expect(raw.join(" ")).toContain(`-g ${KEY_EVERY} -bf 0 -crf 26 -maxrate 1000k -bufsize 500k`);
   expect(raw.at(-2)).toBe("flv");
   const jpeg = encoderArgs({ jpeg: [1280, 800] }, 2500);
   expect(jpeg.slice(jpeg.indexOf("-f"), jpeg.indexOf("-f") + 2)).toEqual(["-f", "mjpeg"]);
@@ -154,30 +154,41 @@ test("a video of H.264 starts at a keyframe with its parameter sets as the track
   expect(await none.finish(10)).toBe("the screen sent no keyframe");
 });
 
-test.skipIf(!existsSync(ffmpeg))("a real x264's frames copied into an MP4 play back whole, at the times they were put", async () => {
+test.skipIf(!existsSync(ffmpeg))("a real x264's frames copied into an MP4 play back whole, at the times they were put, a keyframe each KEY_EVERY frames", async () => {
   const home = tempHome();
   const out = join(home.dir, "video.mp4");
   const sink = new Mp4Sink(ffmpeg, out);
   let n = 0;
+  const keys: number[] = [];
   const x = new X264(ffmpeg, { raw: [64, 48] }, 500, (f, atMs) => {
+    if (f.key) keys.push(n);
     n++;
     sink.frame(f.data, f.key, [64, 48], atMs);
   });
+  // A screen that changes a little each frame (no scene cut): only the keyframe interval makes keyframes.
   const screen = new Uint8Array(64 * 48 * 4);
-  for (let i = 0; i < 6; i++) {
-    screen.fill(i * 40);
-    x.put(screen, i * 200);
+  const count = 2 * KEY_EVERY + 1;
+  for (let i = 0; i < count; i++) {
+    screen.fill(128);
+    screen.fill(255, (i % 48) * 64 * 4, ((i % 48) + 1) * 64 * 4);
+    x.put(screen, i * 10);
     const deadline = Date.now() + 5_000;
-    while (n <= i && Date.now() < deadline) await Bun.sleep(2);
+    while (n <= i && Date.now() < deadline) await Bun.sleep(1);
   }
   x.stop();
-  expect(await sink.finish(2_000)).toBeUndefined();
-  // Decoded again: every frame, and the last shown until the end.
-  const probe = Bun.spawnSync([ffmpeg, "-v", "error", "-i", out, "-f", "framemd5", "-"], { stdout: "pipe" });
-  const lines = probe.stdout.toString().split("\n").filter((l) => /^0,/.test(l));
-  expect(lines.length).toBe(6);
+  expect(await sink.finish(count * 10 + 1_000)).toBeUndefined();
+  // Decoded again: every frame, the last shown until the end, and a keyframe to seek to each KEY_EVERY frames.
+  const decoded = (extra: string[]) =>
+    Bun.spawnSync([ffmpeg, "-v", "error", ...extra, "-i", out, "-fps_mode", "passthrough", "-f", "framemd5", "-"], { stdout: "pipe" })
+      .stdout.toString()
+      .split("\n")
+      .filter((l) => /^0,/.test(l)).length;
+  expect(decoded([])).toBe(count);
+  expect(keys[0]).toBe(0);
+  expect(Math.max(...keys.slice(1).map((k, i) => k - keys[i]!), count - keys.at(-1)!)).toBeLessThanOrEqual(KEY_EVERY);
+  expect(decoded(["-skip_frame", "nokey"])).toBe(keys.length);
   const info = Bun.spawnSync([ffmpeg, "-i", out], { stderr: "pipe" }).stderr.toString();
   expect(info).toContain("Video: h264");
-  expect(info).toMatch(/Duration: 00:00:02\.0/);
+  expect(info).toMatch(/Duration: 00:00:04\.0/);
   home.done();
 });

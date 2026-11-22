@@ -40,7 +40,7 @@ export type Opened = {
 };
 
 /** A session's running stream: scrcpy's, or a test's. */
-export type LiveStream = Pick<Stream, "send" | "stop" | "key" | "jpegs">;
+export type LiveStream = Pick<Stream, "send" | "stop" | "key" | "still" | "jpegs">;
 /** How a session's stream starts. */
 export type StreamStarter = (...args: Parameters<typeof Stream.start>) => Promise<LiveStream>;
 
@@ -64,8 +64,7 @@ export class Session {
   private readonly scrub: Scrub;
   private readonly steps: Steps;
   private lastActive = Date.now();
-  /** The newest JPEG, and who wants each new frame (live view). */
-  newest: Frame | undefined;
+  /** Who wants each new frame (live view). */
   private readonly watchers = new Set<(frame: Frame) => void>();
   /** Whether the watchers get the H.264 (every one decodes it and their links carry it), else JPEGs. */
   private videoNow = false;
@@ -103,7 +102,7 @@ export class Session {
         session.video?.frame(frame.video.data, frame.video.key, [frame.width, frame.height], frame.atMs);
         // JPEG watchers get the decoder's frames instead.
         if (!session.videoNow) return;
-      } else session.newest = frame;
+      }
       for (const watcher of session.watchers) watcher(frame);
     };
     void startStream(sdk, lent.emulator.serial, lent.emulator.pushed, sdk.ffmpeg, session.start, onFrame).then(
@@ -117,6 +116,7 @@ export class Session {
         session.tellStream();
         // A watcher that came first gets its first picture now.
         if (session.videoNow && session.watchers.size) stream.key();
+        else if (session.watchers.size) stream.still();
       },
       (e: Error) => {
         console.warn(`device ${session.id}: stream not started: ${e.message}`);
@@ -169,13 +169,13 @@ export class Session {
   }
 
   /**
-   * Each new frame of the screen to `fn`, until the returned function is called: with JPEG the newest so far at once;
-   * with H.264 (`want`) the watcher's first picture comes from `key`.
+   * Each new frame of the screen to `fn`, until the returned function is called: with JPEG a still of the screen now
+   * first (the Screens page's pictures take only that one); with H.264 (`want`) the first picture comes from `key`.
    */
   watch(fn: (frame: Frame) => void): () => void {
     this.watchers.add(fn);
     this.tellStream();
-    if (!this.videoNow && this.newest) fn(this.newest);
+    if (!this.videoNow) this.stream?.still();
     return () => {
       this.watchers.delete(fn);
       this.tellStream();

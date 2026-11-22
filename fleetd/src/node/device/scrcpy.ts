@@ -115,7 +115,7 @@ export class Stream {
   private config: Uint8Array | undefined;
   private seq = 0;
   /** Every frame as JPEG, while a watcher can't decode H.264: fed from a keyframe on. */
-  private decoder: { proc: Decoder; fed: boolean } | undefined;
+  private decoder: { proc: Decoder; fed: boolean; replayed: number } | undefined;
   /** The frames since the last keyframe (that one first), for a still or a decoder that starts. */
   private gop: { units: Uint8Array[]; bytes: number } | undefined;
   /** Whether a frame came yet. */
@@ -213,6 +213,11 @@ export class Stream {
       this.stillNext = false;
       this.stillOf([au]);
     }
+    this.out(frame);
+  }
+
+  /** A frame out, or held back while a still is being decoded. */
+  private out(frame: Omit<Frame, "seq">): void {
     if (this.held) this.held.push(frame);
     else this.emit(frame);
   }
@@ -234,7 +239,7 @@ export class Stream {
   }
 
   /** The last of `units` (a keyframe first) as a JPEG, by an ffmpeg of its own; undefined if it can't in STILL_MS. */
-  private async still(units: Uint8Array[]): Promise<Uint8Array | undefined> {
+  private async lastOf(units: Uint8Array[]): Promise<Uint8Array | undefined> {
     let proc: Decoder;
     try {
       proc = Bun.spawn([this.ffmpeg, ...stillArgs(units.length)], { stdin: "pipe", stdout: "pipe", stderr: "ignore" });
@@ -257,7 +262,11 @@ export class Stream {
     }
   }
 
-  /** JPEGs of every frame from now on (a watcher that can't decode H.264), or no more. */
+  /**
+   * JPEGs of every frame from now on (a watcher that can't decode H.264), or no more. The decoder starts from the
+   * frames kept since the last keyframe; what they decode to goes as one still of the screen now, not picture by
+   * picture from the keyframe, which may be long before it.
+   */
   jpegs(on: boolean): void {
     if (this.stopped || on === (this.decoder !== undefined)) return;
     if (!on) return this.endDecoder(true);
@@ -268,12 +277,16 @@ export class Stream {
       console.warn(`scrcpy ${this.serial}: no JPEGs: cannot start ${this.ffmpeg}: ${(e as Error).message}`);
       return;
     }
-    const decoder = { proc, fed: false };
+    const units = this.gop?.units ?? [];
+    const decoder = { proc, fed: false, replayed: units.length };
     this.decoder = decoder;
     void this.decoded(decoder);
-    // It starts from the last keyframe, as far as the screen is now; with none kept, from the next, asked for now.
-    const units = this.gop?.units;
-    if (!units) return this.reset();
+    // With none kept, it starts at the next keyframe, asked for now, whose JPEG is the still.
+    if (!units.length) {
+      this.reset();
+      return this.still();
+    }
+    this.stillOf([...units]);
     units.forEach((u, i) => this.toDecoder(u, i === 0));
   }
 
@@ -289,8 +302,9 @@ export class Stream {
     }
   }
 
-  /** The decoder's JPEGs, each a frame but the same picture again. */
-  private async decoded(decoder: { proc: Decoder }): Promise<void> {
+  /** The decoder's JPEGs, each a frame but the same picture again, and but those of the frames it started from (one
+   * out for each in, in order): a still stands for them. */
+  private async decoded(decoder: { proc: Decoder; replayed: number }): Promise<void> {
     const jpegs = new Jpegs();
     let last: number | bigint | undefined;
     try {
@@ -298,9 +312,11 @@ export class Stream {
         for (const jpeg of jpegs.push(chunk)) {
           const size = jpegSize(jpeg);
           const hash = Bun.hash(jpeg);
+          const replay = decoder.replayed > 0;
+          if (replay) decoder.replayed--;
           if (!size || hash === last || this.decoder !== decoder) continue;
           last = hash;
-          this.emit({ jpeg, width: size[0], height: size[1], atMs: this.atMs() });
+          if (!replay) this.out({ jpeg, width: size[0], height: size[1], atMs: this.atMs() });
         }
       }
     } catch {
@@ -328,6 +344,13 @@ export class Stream {
   key(): void {
     if (this.stopped) return;
     this.reset();
+    this.still();
+  }
+
+  /** The screen now as a JPEG, sent before any frame that comes meanwhile: a new JPEG watcher's first picture. With
+   * no keyframe yet, the first one's. */
+  still(): void {
+    if (this.stopped) return;
     const units = this.gop?.units;
     if (units) this.stillOf([...units]);
     else this.stillNext = true;
@@ -339,7 +362,7 @@ export class Stream {
     if (this.held || !size) return;
     this.held = [];
     const atMs = this.atMs();
-    void this.still(units).then((jpeg) => this.release(jpeg, size, atMs));
+    void this.lastOf(units).then((jpeg) => this.release(jpeg, size, atMs));
   }
 
   /** Restarts the device's encoder: its size, parameter sets and a keyframe come next. Not before its first frame,

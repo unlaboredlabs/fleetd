@@ -337,6 +337,7 @@ exit 0
   script(
     sdk.ffmpeg,
     `for a in "$@"; do last="$a"; done
+echo "ffmpeg $*" >> '${log}'
 case "$*" in
   *image2pipe*) head -c 1 > /dev/null; printf '${[...JPEG].map((b) => `\\${b.toString(8).padStart(3, "0")}`).join("")}'; cat > /dev/null ;;
   *) cat > "$last" ;;
@@ -418,9 +419,22 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   expect(readFileSync(log, "utf8")).toContain("push");
   expect(readFileSync(log, "utf8")).toContain("send_frame_meta=true");
 
+  // Watched for a moment in JPEG (the Screens page's picture): its first frame is a still of the screen now, the last
+  // of the frames kept since the keyframe, not the keyframe the decoder starts from.
+  const frames = () => t.link.sent.filter((f) => f.t === "browser_frame") as unknown as { jpegB64?: string; h264B64?: string; key?: boolean; seq: number }[];
+  await until(() => readFileSync(log, "utf8").includes("-c:v copy"));
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: true });
+  await until(() => frames().length > 0);
+  expect(frames()[0]).toMatchObject({ jpegB64: expect.any(String), width: 576, height: 1280 });
+  expect(readFileSync(log, "utf8")).toContain("select=eq(n\\,1)");
+  await Bun.sleep(100);
+  // The decoder's one picture so far is of the frames it started from: the still stands for it.
+  expect(frames().length).toBe(1);
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: false });
+  t.link.sent.length = 0;
+
   // Watched by an app that decodes H.264: the screen now as a JPEG (from the frames kept since the keyframe), then the
   // H.264 from a keyframe, the device's encoder reset for it.
-  const frames = () => t.link.sent.filter((f) => f.t === "browser_frame") as unknown as { jpegB64?: string; h264B64?: string; key?: boolean; seq: number }[];
   t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, key: true });
   await until(() => frames().some((f) => f.h264B64 !== undefined));
   expect(frames()[0]).toMatchObject({ sessionId: id, width: 576, height: 1280, control: "agent", jpegB64: expect.any(String) });
