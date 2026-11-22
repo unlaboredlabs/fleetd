@@ -16,7 +16,7 @@ from a terminal on the hub.
 A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
 yet.
 A profile on [Google Antigravity](/docs/projects#antigravity) runs `agy` instead, which fleetd installs where it's
-needed; a machine's page signs it in (**Google Antigravity › Sign in…** under Agents).
+needed; **Settings › Hub › Providers** signs it in (**Sign in with Google** on Google's row), as does a machine's own page.
 
 Local VMs (each agent in a VM of its own) and hosted sandboxes on a sandbox key of your own were removed from fleetd:
 a hub updated from a fleetd that had them runs every agent on its machine again, deletes the keys it kept, and tells

@@ -2,7 +2,8 @@
 // shown to nobody else; the hub refuses anyone else's change too. People (roles, Invite someone and the invites open);
 // Machines (the machines, Add machine at the title's end or in the empty list, each machine's
 // page with Repair while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
-// where the hub and each machine stand, Update now and Update automatically; and recordings); Every project, laid out
+// where the hub and each machine stand, Update now and Update automatically; and recordings); Providers (what agents
+// run on, Anthropic and Google, each with how it is connected and its setup: settings/AgentProviders.tsx); Every project, laid out
 // as a project's own pages are: Agents (the profiles and the skills), Instructions (and the hub-wide
 // built-in prompts from its foot) and Vault (the vault key, settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
 // Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
@@ -15,6 +16,7 @@ import { HubScope, useHub, useHubs, useSeveralHubs } from "../../src/data/react"
 import { HUB_COLOR } from "../shell/hubColor";
 import { AddMachine, type View } from "../addMachine";
 import { ProvidersGroup, WhatRunsWhere } from "../settings/Places";
+import { ProvidersPage } from "../settings/AgentProviders";
 import { BuiltInPrompts, HubInstructions } from "../settings/Instructions";
 import { EveryProjectFrame, Part } from "../settings/Frames";
 import { PageHead, SettingsSection } from "../settings/parts";
@@ -139,6 +141,8 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
   switch (tab) {
     case "hub.people":
       return <People me={me} />;
+    case "hub.providers":
+      return <ProvidersPage me={me} />;
     case "hub.billing":
       return <Billing />;
     case "hub.machines":

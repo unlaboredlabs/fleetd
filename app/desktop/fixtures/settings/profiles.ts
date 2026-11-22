@@ -11,7 +11,7 @@ export const PROFILES: JsonObject[] = [
   { id: 3, name: "quick", note: "Small, clear fixes where speed matters.", model: "claude-opus-5-5", effort: "low", fast: true, default: false, updatedAt: PROFILE_AT },
 ];
 
-/** fleetd's own model list, as a hub without an API key answers. */
+/** fleetd's own model list, as a hub without an API key answers: Claude's, then Google Antigravity's. */
 const MODELS: JsonObject[] = [
   ["claude-opus-5-5", "Claude Opus 5.5", true],
   ["claude-fable-5-1", "Claude Fable 5.1", false],
@@ -21,6 +21,10 @@ const MODELS: JsonObject[] = [
   ["claude-opus-5", "Claude Opus 5", true],
   ["claude-sonnet-5", "Claude Sonnet 5", false],
   ["claude-opus-4-8", "Claude Opus 4.8", true],
+  ["gemini-4-neon", "Gemini 4 Neon (Antigravity)", false],
+  ["gemini-4-argon", "Gemini 4 Argon (Antigravity)", false],
+  ["gemini-4-hydrogen", "Gemini 4 Hydrogen (Antigravity)", false],
+  ["gemini-3.8-flash", "Gemini 3.8 Flash (Antigravity)", false],
 ].map(([id, displayName, fast]) => ({ id, displayName, fast }) as JsonObject);
 
 export const profilesList = (allowed?: string[]): JsonObject => ({

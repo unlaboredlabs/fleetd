@@ -508,6 +508,25 @@ export type KnownAndroidState = "installing" | "ready" | "wanted" | "unavailable
 /** KnownAndroidState, or a value from a newer hub. */
 export type AndroidState = KnownAndroidState | (string & {});
 
+export type AntigravityMachine = {
+  /** Its node said: false while it is offline, or its fleetd is too old to say without starting a sign-in. */
+  checked: boolean;
+  machineId: MachineId;
+  /** Antigravity on the machine is signed in, on this plan ("Google AI Pro"). */
+  signedIn?: string;
+};
+
+export type AntigravityStatusInput = { [key: string]: unknown };
+
+export type AntigravityStatusOutput = {
+  /** The bots whose Vault holds a GEMINI_API_KEY: their agents on Antigravity run on it. */
+  keyIn: ProjectRef[];
+  /** Each machine agents run on that signs Antigravity in from the app (machine_antigravity_login). */
+  machines: AntigravityMachine[];
+  next?: string;
+  truncated?: boolean;
+};
+
 export type AppClientMessage = {
   /** What the client takes beyond the base protocol: [`APP_DEFLATE`]. An older hub ignores it. */
   features?: string[];
@@ -10684,6 +10703,7 @@ export interface ToolMap {
   agent_messages: { input: AgentMessagesInput; output: AgentMessagesOutput };
   agent_work: { input: AgentWorkInput; output: AgentWorkOutput };
   agents_list: { input: AgentsListInput; output: AgentsListOutput };
+  antigravity_status: { input: AntigravityStatusInput; output: AntigravityStatusOutput };
   approval_answer: { input: ApprovalAnswerInput; output: ApprovalAnswerOutput };
   artifact_get: { input: ArtifactGetInput; output: ArtifactGetOutput };
   artifacts_list: { input: ArtifactsListInput; output: ArtifactsListOutput };
