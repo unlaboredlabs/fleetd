@@ -6,8 +6,10 @@
 // A person's input goes through agent-device on the agent's own home, so through its daemon and the XCTest runner it
 // already started: a tap is `press`, a drag `swipe`, a held tap `longpress`, the wheel a `swipe`, typing `type`, and
 // Enter, Home and Back their own commands. Inputs queue and run one at a time; scrolls and typing that pile up behind a
-// slow command go as one. agent-device runs them only in a session of its own: on a simulator no agent opened one on,
-// the first input it refuses opens one (`open`, no app), then goes again.
+// slow command go as one. agent-device runs them only in a session, and keeps its sessions per working folder: the
+// agent's is its job folder's, never the node's. So the first input it refuses opens one (`open`, no app): refused as
+// the agent's session holds the simulator, the inputs go to that session by name (`--session`); opened, the inputs
+// go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
 import { jpegSize } from "../../browser/fit.ts";
 
@@ -23,6 +25,14 @@ const TAP_SLOP = 8;
 export const COMMAND = 30_000;
 /** What agent-device says when no session of its own is open on the simulator. */
 export const NO_SESSION = "SESSION_NOT_FOUND";
+
+/** The session holding the simulator, as agent-device names it when it refuses an `open` (`DEVICE_IN_USE`). */
+export function heldBy(said: string): string | undefined {
+  return /in use by workspace session "([^"]+)"/.exec(said)?.[1];
+}
+
+/** A command run in a session by name: the flag right after the verb, before any `--`. */
+export const inSession = (args: string[], session: string | undefined) => (session ? [args[0]!, "--session", session, ...args.slice(1)] : args);
 
 /** Takes one screenshot of the simulator as JPEG. */
 export type Shoot = () => Promise<Uint8Array>;
@@ -196,6 +206,11 @@ export class Hands {
   private readonly gestures: Gestures;
   private working = false;
   private stopped = false;
+  /** The agent's session the inputs go to, by name, once an `open` was refused for it. */
+  private session: string | undefined;
+  /** Whether the inputs opened a session of their own, which hand-back closes. */
+  private opened = false;
+  private releasing = false;
 
   constructor(
     private readonly runner: Runner,
@@ -218,6 +233,13 @@ export class Hands {
     this.queue.length = 0;
   }
 
+  /** The person handed the simulator back: after what is queued, a session the inputs opened is closed. */
+  release(): void {
+    if (this.stopped) return;
+    this.releasing = true;
+    if (!this.working) void this.work();
+  }
+
   /** Resolves once everything queued has run (tests). */
   async idle(): Promise<void> {
     while (this.working) await Bun.sleep(5);
@@ -231,16 +253,38 @@ export class Hands {
           if (this.stopped) return;
           const args = this.gestures.feed(input, performance.now());
           if (!args) continue;
-          let ran = await this.run(this.runner, args);
-          // A simulator no agent opened a session on: press, swipe and type each need one, and agent-device refuses
-          // them all. Open one on the simulator, with no app, and go again.
-          if (!ran.ok && ran.said.includes(NO_SESSION) && (await this.run(this.runner, ["open"])).ok) ran = await this.run(this.runner, args);
+          let ran = await this.run(this.runner, inSession(args, this.session));
+          if (!ran.ok && ran.said.includes(NO_SESSION)) ran = await this.reopen(args);
           if (!ran.ok) console.warn(`a person's input did not reach the iOS simulator (${args.join(" ")}): ${[...ran.said.trim()].slice(0, 300).join("")}`);
           this.onRan(args, ran);
+        }
+      }
+      if (this.releasing && !this.stopped) {
+        this.releasing = false;
+        this.session = undefined;
+        if (this.opened) {
+          this.opened = false;
+          const ran = await this.run(this.runner, ["close"]);
+          if (!ran.ok) console.warn(`the person's agent-device session on the iOS simulator did not close: ${[...ran.said.trim()].slice(0, 300).join("")}`);
         }
       }
     } finally {
       this.working = false;
     }
+  }
+
+  /**
+   * press, swipe and type each need a session, and agent-device refuses them all without one: the input's own folder
+   * has none. Open one on the simulator, with no app: refused for the agent's session, go to that one by name.
+   */
+  private async reopen(args: string[]): Promise<Ran> {
+    this.session = undefined;
+    const open = await this.run(this.runner, ["open"]);
+    if (open.ok) {
+      this.opened = true;
+      return this.run(this.runner, args);
+    }
+    this.session = heldBy(open.said);
+    return this.session ? this.run(this.runner, inSession(args, this.session)) : open;
   }
 }

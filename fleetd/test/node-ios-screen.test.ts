@@ -5,7 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Input } from "../src/node/device/scrcpy.ts";
-import { coalesce, commandArgs, Gestures, Hands, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
+import { coalesce, commandArgs, Gestures, Hands, heldBy, inSession, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
 import { fileGrowing, screenName, startRecording } from "../src/node/device/ios/sim_screen.ts";
 import { recordingStarted } from "../src/node/device/ios/simctl.ts";
 import { tempHome } from "./helpers.ts";
@@ -95,8 +95,62 @@ test("a person's taps, drags and typing reach a simulator no agent opened a sess
     "swipe --platform ios --udid U1 100 500 100 200",
   ]);
   expect(ran).toEqual(["press ok", "type ok", "swipe ok"]);
+  // Handed back: the session the person's inputs opened closes, so the agent's own `open` isn't refused.
+  hands.release();
+  await hands.idle();
+  expect(readFileSync(log, "utf8").trim().split("\n").at(-1)).toBe("close --platform ios --udid U1");
   hands.stop();
   expect(hands.send(touch("down", 1, 1))).toBe(false);
+});
+
+/**
+ * agent-device 0.21.31 on a simulator the agent opened from its job folder: its session holds the simulator, an `open`
+ * from any other folder (the node's) is refused naming it, and only a command that names it (`--session`) goes.
+ */
+function agentsSession(dir: string, name: string): Runner {
+  const wrapper = join(dir, "agent-device");
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+echo "$*" >> "$LOG"
+case "$*" in *"--session ${name}"*) exit 0 ;; esac
+if [ "$1" = open ]; then echo 'Error (DEVICE_IN_USE): Device is already in use by workspace session "${name}".' >&2; exit 1; fi
+echo 'Error (SESSION_NOT_FOUND): No active session. Run open first.' >&2; exit 1
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  return { wrapper, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LOG: join(dir, "log") }, udid: "U1" };
+}
+
+test("a person's taps reach a simulator the agent's own session holds: in that session, by name", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  const ran: string[] = [];
+  const hands = new Hands(agentsSession(home.dir, "cwd:f659d6f3f36057dc:ios"), 3, (args, r) => ran.push(`${args.join(" ")} ${r.ok ? "ok" : "failed"}`));
+  cleanups.push(() => hands.stop());
+  for (const input of [touch("down", 300, 600), touch("up", 300, 600), { kind: "text", text: "-x" } as Input]) hands.send(input);
+  const log = join(home.dir, "log");
+  const deadline = Date.now() + 20_000;
+  while ((existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0) < 4 && Date.now() < deadline) await Bun.sleep(20);
+  await hands.idle();
+  hands.release();
+  await hands.idle();
+  expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+    "press --platform ios --udid U1 100 200",
+    "open --platform ios --udid U1",
+    "press --platform ios --udid U1 --session cwd:f659d6f3f36057dc:ios 100 200",
+    // Remembered: the next input goes straight to it, and hand-back closes nothing of the agent's.
+    "type --platform ios --udid U1 --session cwd:f659d6f3f36057dc:ios -- -x",
+  ]);
+  // The screen's log keeps the person's command as they made it.
+  expect(ran).toEqual(["press 100 200 ok", "type -- -x ok"]);
+});
+
+test("agent-device's refusal names the session holding the simulator", () => {
+  expect(heldBy('Error (DEVICE_IN_USE): Device is already in use by workspace session "cwd:8a5edab282632443:ios".\nHint: …')).toBe("cwd:8a5edab282632443:ios");
+  expect(heldBy("Error (SESSION_NOT_FOUND): No active session.")).toBeUndefined();
+  expect(commandArgs(inSession(["type", "--", "hi"], "s1"), "U1")).toEqual(["type", "--platform", "ios", "--udid", "U1", "--session", "s1", "--", "hi"]);
+  expect(inSession(["home"], undefined)).toEqual(["home"]);
 });
 
 test("the live view shoots only while someone watches, at most one frame each 100 ms, and skips a still screen", async () => {

@@ -30,7 +30,7 @@ import type { SessionsArea } from "../api.ts";
 import { hubCall, type Node, toHub } from "../browser/node.ts";
 import { findFfmpeg, Steps } from "../browser/record.ts";
 import { installDir as browserInstallDir } from "../browser/chrome.ts";
-import { deviceDir, sdkAt } from "../device/sdk.ts";
+import { sdkAt } from "../device/sdk.ts";
 import { router, type Screens } from "../device/router.ts";
 import { router as sessionRoute } from "../session_route/index.ts";
 import { homeDir } from "../util.ts";
@@ -105,9 +105,6 @@ const health = (state: DesktopHealth["state"], backend: Backend | undefined, mes
 export const desktopDir = (home: string) => join(home, "desktop");
 /** Where the node keeps desktop recordings until the hub has them. */
 export const recordingsDir = (home: string) => join(desktopDir(home), "recordings");
-/** Where a Rust node kept iOS screens' recordings (device/ios/session.rs): iOS screens are gone, but what one left
- * still goes to the hub. */
-export const iosRecordingsDir = (home: string) => join(deviceDir(home), "ios", "recordings");
 const statePath = (home: string) => join(desktopDir(home), "state.json");
 
 /** The fix a person runs on a machine with neither docker nor Xvfb that works: Xvfb, with its package manager. */
@@ -270,7 +267,6 @@ export class Desktops extends DesktopSessions implements Screens {
       recordingsDir(node.home),
       (thread, cwd, op, args) => hubCall(node, op, args, { threadId: thread, cwd }),
       () => late.d!.ffmpeg(),
-      [iosRecordingsDir(node.home)],
     );
     super({
       call: (op, args, opts) => hubCall(node, op, args, opts),

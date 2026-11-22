@@ -68,8 +68,13 @@ export function start(hub: Hub): void {
     holdMessage: (taskId: string, text: string) => t.holdMessage(taskId, text),
     askedAt: (taskId: string) => t.askedAt(taskId),
     answered: (taskId: string) => t.answered(taskId),
-    hasCiWait: (taskId: string) =>
-      (hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM ci_waits WHERE task_id = ?").get(taskId)?.n ?? 0) > 0,
+    wakeWaiting: (taskId: string) => {
+      const on = t.waitingOn(taskId);
+      if (on === undefined) return undefined;
+      t.wakeHeld(taskId);
+      return { on, inMs: t.wakeInMs(taskId) };
+    },
+    wakeDue: (taskId: string) => t.wakeDue(taskId),
     closedOrder: (taskId: string) => {
       const task = t.get(taskId);
       return task ? t.closedOrder(task) : undefined;
