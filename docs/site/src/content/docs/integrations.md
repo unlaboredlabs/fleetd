@@ -60,8 +60,8 @@ approved at 09:12". The tool may still refuse or fail; what it did is in the bot
 from the vault ([MCP servers](/docs/mcp-servers#add)). A service that signs you in with your account instead takes no
 key: leave the headers empty, and **Add and test** goes to [Sign in](#sign-in).
 
-**Test** in a row's menu runs the test again: one plain line says it works and how many tools it lists, that it wants
-a sign-in, or why it failed.
+**Test** in a row's menu runs the test again: one plain line says it works and how many tools it lists (and, for a
+URL with no key, that it needs no sign-in), that it asks you to sign in, or why it failed.
 
 ## Sign in with your account {#sign-in}
 

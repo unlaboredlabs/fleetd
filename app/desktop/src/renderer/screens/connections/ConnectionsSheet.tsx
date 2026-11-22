@@ -419,7 +419,7 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
       : tested === "testing"
         ? { text: "Testing…", tone: "quiet" as const }
         : result !== undefined && !signIn
-          ? testLine(result, machine("machineId" in result ? result.machineId : ""))
+          ? testLine(result, machine("machineId" in result ? result.machineId : ""), server)
           : signIn && server.oauth?.problem !== undefined
             ? { text: server.oauth.problem, tone: "danger" as const }
             : unreached

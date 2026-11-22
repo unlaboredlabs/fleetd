@@ -39,8 +39,9 @@ export function mayChange(caller: AgentKeyInfo, scope: McpScope): void {
 }
 
 /**
- * A server reached by URL with no key of its own: it signs in with an account. Such a server is connected once for the
- * whole team (scope global, D592), and any person on the hub connects it, as anyone adds to the team vault.
+ * A server reached by URL with no key of its own: it signs in with an account, or asks no one to sign in. One that
+ * signs in is connected once for the whole team (scope global, D592), and any person on the hub connects it, as anyone
+ * adds to the team vault; one that asks no one is the admins' (`mayAddPlain`).
  */
 export const signsInOnly = (input: Pick<McpServerSetInput, "transport" | "env" | "headers">) =>
   input.transport.type !== "stdio" &&
@@ -60,6 +61,26 @@ export function mayConnect(caller: AgentKeyInfo, server: McpServer | undefined):
     "forbidden",
     `${server.name} was connected for the team by someone else: only they or an admin change or disconnect it.`,
     "Ask them or an admin. You can still sign in to it again with Sign in.",
+  );
+}
+
+/**
+ * Whether `caller` may add for the team a server reached by `transport` with no key that asks no one to sign in: it
+ * reaches every bot's agents as it is, so only the hub's owners and admins add one, as with a key.
+ */
+export function mayAddPlain(caller: AgentKeyInfo, transport: McpServer["transport"]): void {
+  if (caller.kind !== "human" || allowsEverywhere(caller, "admin")) return mayChange(caller, { kind: "global" });
+  const at = transport.type === "stdio" ? "It" : (() => {
+    try {
+      return new URL(transport.url).host;
+    } catch {
+      return "It";
+    }
+  })();
+  throw new ToolError(
+    "forbidden",
+    `${at} doesn't ask anyone to sign in, so every bot's agents would get it as it is: only the hub's owners and admins add such a server.`,
+    "Ask an owner or admin to add it in Connections.",
   );
 }
 

@@ -112,17 +112,19 @@ export const toggleBot = (list: ReadonlyArray<ProjectRef> | undefined, bot: Proj
 const count = (n: number, one: string, many: string): string => `${String(n)} ${n === 1 ? one : many}`;
 
 /** A Test in one plain line: it works (with how many tools, and through Tailscale), wants a sign-in, or why it failed. */
-export const testLine = (t: Tested, machine: string): { text: string; tone: "success" | "warning" | "danger" } => {
+export const testLine = (t: Tested, machine: string, server?: McpServer): { text: string; tone: "success" | "warning" | "danger" } => {
   if ("error" in t) return { text: `Test failed: ${t.error}`, tone: "danger" };
   const r = t.result;
-  if (r.signIn === true) return { text: "Wants you to sign in.", tone: "warning" };
+  if (r.signIn === true) return { text: "Asks you to sign in.", tone: "warning" };
   if (r.error !== undefined) {
     const stop = /[.!?]$/u.test(r.error) ? "" : ".";
     return { text: `Failed on ${machine}: ${r.error}${stop}`, tone: "danger" };
   }
   const tools = (r.tools ?? []).length;
   const via = r.via === "tailnet" ? " through Tailscale" : "";
-  return { text: tools === 0 ? `Reached on ${machine}${via}, but it lists no tools.` : `Works on ${machine}${via}: ${count(tools, "tool", "tools")}.`, tone: tools === 0 ? "warning" : "success" };
+  // A URL with no key and no sign-in that answered: it asks no one to sign in.
+  const open = server !== undefined && server.transport.type !== "stdio" && server.oauth === undefined && (server.headers ?? []).length === 0 ? ", no sign-in needed" : "";
+  return { text: tools === 0 ? `Reached on ${machine}${via}, but it lists no tools.` : `Works on ${machine}${via}: ${count(tools, "tool", "tools")}${open}.`, tone: tools === 0 ? "warning" : "success" };
 };
 
 /** Where a custom MCP stands, beside its name: off, mid sign-in, wanting one, or a sign-in fleetd can't renew. Nothing when it simply works. */

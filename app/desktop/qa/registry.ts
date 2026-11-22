@@ -5069,7 +5069,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "URL" }).fill("http://docs.tail4f2e.ts.net:8080/mcp");
       await expect(page.locator("[data-tailnet-line]")).toContainText("reached through Tailscale");
       await page.getByRole("button", { name: "Add and test" }).click();
-      await expect(page.locator("[data-result]")).toContainText("Works on devbox through Tailscale: 2 tools.");
+      await expect(page.locator("[data-result]")).toContainText("Works on devbox through Tailscale: 2 tools, no sign-in needed.");
     },
   },
   // ...the same URL while Tailscale isn't connected: the form says so, with Connect Tailscale.

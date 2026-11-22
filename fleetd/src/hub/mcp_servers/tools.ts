@@ -14,6 +14,8 @@ import { suffix as tailnetSuffix } from "../tailnet/index.ts";
 import { vault } from "../vault/index.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs } from "../store/time.ts";
+import { administers } from "../people/roles.ts";
+import { people } from "../people/store.ts";
 import {
   forSession,
   type McpField,
@@ -30,7 +32,7 @@ import {
 } from "./index.ts";
 import { syncVault } from "./vault_sync.ts";
 import { keptVaultValue, vaultProblem } from "./vault_values.ts";
-import { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkInput, checkScope, mayChange, mayConnect, notFound, sameTransport, signsInOnly } from "./rules.ts";
+import { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkInput, checkScope, mayAddPlain, mayChange, mayConnect, notFound, sameTransport, signsInOnly } from "./rules.ts";
 
 export { CAP_MCP_SERVERS, CAP_ONE_LEAD_MODE, checkScope, mayChange, notFound } from "./rules.ts";
 
@@ -118,10 +120,27 @@ const byMachine = (a: { machineId: string }, b: { machineId: string }) => (a.mac
 async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   const input = toTeamsOwn(hub, given);
   const scope = checkScope(input.scope);
-  // A service the team signs in to (no key of its own) is connected once for every bot, by any person (D592).
-  const team = scope.kind === "global" && signsInOnly(input);
-  const existing = team ? mcpServers(hub).get(scope, input.name) : undefined;
-  if (team && (existing === undefined || existing.oauth !== undefined || existing.connectedBy !== undefined)) mayConnect(caller, existing);
+  const s = mcpServers(hub);
+  const before = s.get(scope, input.name);
+  // A server signed in with OAuth keeps its sign-in through a save that leaves its URL and its Authorization header
+  // alone; a new URL, or a typed Authorization, ends it.
+  const typedToken = (input.headers ?? []).some((v) => v.name.toLowerCase() === OAUTH_HEADER.toLowerCase());
+  const hadSignIn = before?.oauth !== undefined;
+  const signsIn = hadSignIn && !typedToken && sameTransport(before.transport, input.transport);
+  // A URL with no key saved for the team is asked whether it signs in. One that asks (MCP's OAuth) is a service the
+  // team signs in to, connected once for every bot by any person (D592); one that asks no one is a plain server,
+  // which reaches every bot's agents as it is, so it is the admins' like any team server.
+  const keyless = scope.kind === "global" && signsInOnly(input);
+  let asked: McpServer["oauth"];
+  const knocked = keyless && !signsIn && !typedToken && !hasKey(input);
+  if (knocked) {
+    if (caller.kind !== "human" || caller.person === undefined) mayChange(caller, scope);
+    checkInput(input);
+    asked = await offered(input.transport);
+  }
+  const team = keyless && (signsIn || asked !== undefined);
+  if (team && (before === undefined || before.oauth !== undefined || before.connectedBy !== undefined)) mayConnect(caller, before);
+  else if (keyless && !team) mayAddPlain(caller, input.transport);
   else mayChange(caller, scope);
   checkInput(input);
   const project = projectOf(hub, scope);
@@ -141,8 +160,6 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
       `Run fleetd update on ${project.machineId}, then add it again.`,
     );
   }
-  const s = mcpServers(hub);
-  const before = s.get(scope, input.name);
   if (!before && s.list(scope).length >= MCP_SERVERS_MAX) {
     const place = scope.kind === "global" ? "for every bot" : "in this bot";
     throw new ToolError("invalid", `There are already ${MCP_SERVERS_MAX} MCP servers ${place}, the most fleetd takes.`, "Remove one first.");
@@ -161,11 +178,6 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
       if (problem !== undefined) throw new ToolError("invalid", `${v.name}: ${problem}`);
     }
   }
-  // A server signed in with OAuth keeps its sign-in through a save that leaves its URL and its Authorization header
-  // alone; a new URL, or a typed Authorization, ends it.
-  const typedToken = (input.headers ?? []).some((v) => v.name.toLowerCase() === OAUTH_HEADER.toLowerCase());
-  const hadSignIn = before?.oauth !== undefined;
-  const signsIn = hadSignIn && !typedToken && sameTransport(before.transport, input.transport);
   const env: McpValueSet[] = [...(input.env ?? [])];
   const headers: McpValueSet[] = [...(input.headers ?? [])];
   if (signsIn && savedSecret("header", OAUTH_HEADER)) headers.push({ kind: "keep", name: OAUTH_HEADER });
@@ -252,7 +264,7 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   const connectedBy = !team ? undefined : before ? before.connectedBy : caller.person?.personId;
   // Read again: a renewal may have changed the sign-in while the nodes answered. A new URL with no key of its own
   // that offers OAuth is saved as signed out, so the app offers Sign in before any Test.
-  const signIn = signsIn ? s.get(scope, input.name)?.oauth : typedToken || hasKey(input) ? undefined : await offered(input.transport);
+  const signIn = signsIn ? s.get(scope, input.name)?.oauth : knocked ? asked : typedToken || hasKey(input) ? undefined : await offered(input.transport);
   const server: McpServer = {
     scope,
     name: input.name,
@@ -286,13 +298,15 @@ const hasKey = (input: McpServerSetInput) => (input.headers ?? []).length > 0 ||
 /** How long a save waits to learn whether a new URL signs in. */
 export const DISCOVER_WAIT_MS = 5_000;
 
-/** A URL server's sign-in, signed out, when it offers OAuth; undefined when it doesn't, or doesn't say in time. */
+/** A URL server's sign-in, signed out, when it asks for OAuth as MCP's spec has it (a 401 with a Bearer challenge or
+ * resource metadata); undefined when it asks no one to sign in, or doesn't say in time. */
 async function offered(t: McpServer["transport"]): Promise<McpServer["oauth"]> {
   if (t.type === "stdio") return undefined;
+  const sse = t.type === "sse";
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const found = await Promise.race([
-      discover(t.url, t.type === "sse"),
+      offersSignIn(t.url, sse).then((asks) => (asks ? discover(t.url, sse) : undefined)),
       new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), DISCOVER_WAIT_MS))),
     ]);
     return found ? { status: "signed_out", issuer: found.issuer } : undefined;
@@ -347,7 +361,7 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   if (server.oauth && !signedIn(server)) {
     return {
       machineId,
-      result: { tools: [], error: server.oauth.problem ?? `${server.name} isn't signed in yet: sign in with your own account.`, signIn: true },
+      result: { tools: [], error: server.oauth.problem ?? `${server.name} asks you to sign in: sign in with your own account.`, signIn: true },
       next: "mcp_oauth_start opens its sign-in.",
     };
   }
@@ -355,15 +369,18 @@ async function test(hub: Hub, caller: Caller, scopeIn: McpScope, name: string, a
   const missing = secretsMissingOn(server, machineId);
   const session = forSession(server, machineId, tailnetSuffix(hub));
   if (!session) {
-    // Why no agent gets it: a vault item that can't be used, a secret the machine doesn't hold, or a team server with
-    // no key that nobody signed in to.
+    // Why no agent gets it: a vault item that can't be used, a secret the machine doesn't hold, a sign-in with no
+    // token yet, or a keyless team server a member added before fleetd asked whether it signs in (`plainKeyless`).
     const problem = valuesOf(server).find(([, v]) => v.kind === "vault" && v.problem !== undefined)?.[1];
-    const error = problem
-      ? `${problem.name}: ${problem.problem}`
-      : missing.length > 0
-        ? `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.`
-        : `${server.name} has no key and isn't signed in, so no agent gets it: sign in to it in Connections, or add a key.`;
-    return { machineId, result: { tools: [], error, ...(problem === undefined && missing.length === 0 ? { signIn: true } : {}) } };
+    if (problem !== undefined) return { machineId, result: { tools: [], error: `${problem.name}: ${problem.problem}` } };
+    if (missing.length > 0) {
+      return { machineId, result: { tools: [], error: `${missing.join(", ")} isn't on ${machineId}: save the server again while ${machineId} is online.` } };
+    }
+    if (server.oauth !== undefined) {
+      return { machineId, result: { tools: [], error: `${server.name} asks you to sign in: sign in with your own account.`, signIn: true } };
+    }
+    const error = `${server.name} asks no one to sign in, and only an owner or admin gives every bot a server with no key: ask one to save it again in Connections.`;
+    return { machineId, result: { tools: [], error } };
   }
   const projectId = project?.projectId;
   let result = await mcpTest(hub, machineId, projectId, session);
@@ -421,5 +438,24 @@ async function turnedAway(
   if (at && !keyed && (await offersSignIn(at[0], at[1]))) {
     return { ...result, error: `${server.name} asks you to sign in with your own account, not a key.`, signIn: true };
   }
+  if (at && (server.headers ?? []).length === 0) {
+    return { ...result, error: `${server.name} turned fleetd away (HTTP 401) without asking anyone to sign in: it wants a key, added under Headers.` };
+  }
   return result;
+}
+
+/**
+ * A keyless team server saved as a sign-in before fleetd asked whether it signs in: every one a person added was held
+ * back as a sign-in that never came. One an owner or admin added, with no sign-in of its own, is the plain server their
+ * save makes now; a member's stays off until an owner or admin saves it (Test says so).
+ */
+export function plainKeyless(hub: Hub): void {
+  const s = mcpServers(hub);
+  for (const server of s.list({ kind: "global" })) {
+    if (server.connectedBy === undefined || server.oauth !== undefined) continue;
+    const by = people(hub).get(server.connectedBy);
+    if (by === undefined || by.removedAt !== undefined || !administers(by.role)) continue;
+    const { connectedBy: _by, ...plain } = server;
+    s.put(plain);
+  }
 }

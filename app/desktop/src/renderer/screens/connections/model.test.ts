@@ -113,6 +113,11 @@ describe("Connections", () => {
       tone: "danger",
     });
     expect(testLine({ machineId: "devbox", result: { signIn: true } }, "devbox").tone).toBe("warning");
+    expect(testLine({ machineId: "devbox", result: { signIn: true } }, "devbox").text).toBe("Asks you to sign in.");
+    // A URL with no key and no sign-in that answered needs none; one with a header says nothing of it.
+    const open: McpServer = { scope: { kind: "global" }, name: "tiny", enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: "http://100.104.1.2:8765/mcp" }, env: [], headers: [], updatedAt: "2026-11-22T00:00:00.000Z" };
+    expect(testLine({ machineId: "devbox", result: { tools: [{ name: "a" }], via: "tailnet" } }, "devbox", open).text).toBe("Works on devbox through Tailscale: 1 tool, no sign-in needed.");
+    expect(testLine({ machineId: "devbox", result: { tools: [{ name: "a" }] } }, "devbox", { ...open, headers: [{ name: "X-Key", kind: "vault", itemId: "V0" }] }).text).toBe("Works on devbox: 1 tool.");
     expect(testLine({ error: "The hub is offline." }, "devbox").text).toBe("Test failed: The hub is offline.");
   });
 
