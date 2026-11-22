@@ -140,7 +140,7 @@ describe("machines and setup", () => {
     expect(hostedLine([machine("devbox"), { ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, true)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "fleetd's computers aren't ready: it needs a Claude account",
+      text: "fleetd's computers: it needs a Claude account",
       action: "Connect",
       does: { to: "accounts" },
     });
@@ -149,7 +149,7 @@ describe("machines and setup", () => {
     expect(hostedLine([{ ...hosted, status: "online" }], [{ provider: "boat", limit: 20, running: 3, trouble }], true)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "fleetd's computers aren't ready: billing isn't set up",
+      text: "fleetd's computers: billing isn't set up",
       action: "Try again",
       does: { to: "hosted", retry: "boat" },
     });
@@ -159,7 +159,7 @@ describe("machines and setup", () => {
     expect(workMark([starting], null)).toBeNull();
     // Stuck for another reason: that, with Open.
     expect(hostedLine([{ ...hosted, status: "degraded", degradedReason: "its network has no IPv4 address. Fix: reconnect it" }], boat, true)).toMatchObject({
-      text: "fleetd's computers aren't ready: it didn't start",
+      text: "fleetd's computers: it didn't start",
       action: "Open",
       does: { to: "hosted" },
     });
@@ -168,7 +168,7 @@ describe("machines and setup", () => {
     expect(hostedLine([{ ...hosted, status: "degraded", degradedCause: "claude_login" }], boat, false)).toEqual({
       key: "hosted",
       mark: "warning",
-      text: "fleetd's computers aren't ready: it needs a Claude account",
+      text: "fleetd's computers: it needs a Claude account",
       aside: "Ask an admin",
     });
   });

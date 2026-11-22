@@ -168,8 +168,8 @@ export const machinesLine = (all: readonly MenuMachine[] | undefined, admin: boo
 };
 
 /**
- * The hosted provider while it isn't ready, in the words its row says (shared/hostedRow.ts): "fleetd's computers aren't
- * ready: <why>" with its fix's own button (Connect, Try again), opening its row; starting, a quiet line that marks nothing.
+ * The hosted provider while it isn't ready, in the words its row says (shared/hostedRow.ts): "fleetd's computers:
+ * <why>" with its fix's own button (Connect, Try again), opening its row; starting, a quiet line that marks nothing.
  * Ready, none. A member reads it only when the runner is all the team has, with who to ask instead of the button.
  */
 export const hostedLine = (machines: readonly MenuMachine[] | undefined, hosted: readonly SlotHosted[] | undefined, admin: boolean): MenuLine | null => {
@@ -185,10 +185,10 @@ export const hostedLine = (machines: readonly MenuMachine[] | undefined, hosted:
   const open = { to: "hosted" } as const;
   if (!admin) {
     const alone = machines?.every((m) => m.runner === true) ?? false;
-    return alone && row.state !== "starting" ? { key: "hosted", mark: "warning", text: `${name} aren't ready: ${row.why ?? "they didn't start"}`, aside: ASK } : null;
+    return alone && row.state !== "starting" ? { key: "hosted", mark: "warning", text: `${name}: ${row.why ?? "they didn't start"}`, aside: ASK } : null;
   }
   if (row.state === "starting") return { key: "hosted", mark: "quiet", text: `${name} are starting…`, does: open };
-  const text = `${name} aren't ready: ${row.why ?? "they didn't start"}`;
+  const text = `${name}: ${row.why ?? "they didn't start"}`;
   if (row.action === "connect") return { key: "hosted", mark: "warning", text, action: "Connect", does: { to: "accounts" } };
   if (row.action === "retry" || row.action === "test") return { key: "hosted", mark: "warning", text, action: "Try again", does: { to: "hosted", retry: p.provider } };
   return { key: "hosted", mark: "warning", text, action: "Open", does: open };

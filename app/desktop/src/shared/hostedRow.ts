@@ -24,7 +24,7 @@ export interface HostedRow {
   /** What fixes it, in plain words, when there is something to fix. */
   readonly fix?: string;
   readonly action?: HostedAction;
-  /** Why it isn't ready, in a few words for the hub menu's "fleetd's computers aren't ready: <why>" (one short line, the row
+  /** Why it isn't ready, in a few words for the hub menu's "fleetd's computers: <why>" (one short line, the row
    * saying the whole of it); only while it isn't. */
   readonly why?: string;
 }
