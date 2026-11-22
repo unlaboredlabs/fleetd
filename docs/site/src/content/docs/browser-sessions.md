@@ -130,7 +130,8 @@ to, so it has no Hand back. You need operate on the bot's machine to open one, a
 
 A browser you open on a bot's own machine runs on the profile the bot keeps
 ([Bots › Sign-ins](/docs/projects#sign-ins)): a site you sign in to there stays signed in for its lead. While the
-lead's browser is on that profile, yours opens on a fresh one, and so does one on another machine. One browser at a
+lead's browser is on that profile, yours opens on a fresh one (the Browser tile says `Fresh profile`), and so does one
+on another machine. One browser at a
 time runs on the profile, so close yours before the lead needs its own.
 
 ### When a machine is full {#yours-full}

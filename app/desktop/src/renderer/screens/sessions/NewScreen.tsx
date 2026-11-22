@@ -18,7 +18,8 @@
 // Machines that fixes it (there is no switch per kind to turn on); a member's says who to ask.
 //
 // At rest it is the title, the tiles, the machine and Open (W796): no explaining lines. When it ends (the machine's idle
-// timeout) and a PR build going in first are a hover on Open; the browser's saved sign-ins are its tile's line.
+// timeout) and a PR build going in first are a hover on Open; the browser's profile (saved sign-ins, or a fresh one
+// while the bot's is in use) is its tile's line.
 import { Globe, Laptop, Monitor, Plus, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, Tooltip, cx } from "../../ui";
@@ -39,12 +40,14 @@ import {
   idleFor,
   idleWords,
   KINDS,
+  kindLine,
   newScreenOf,
   NO_PR,
   openingLine,
   openWord,
   pickHost,
   prChoices,
+  profileBusy,
   slotLine,
   startingLine,
   takesBuild,
@@ -196,6 +199,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     navigate(panelRoute(project, { tab: "sessions", session: ready.sessionId }));
   }, [ready, onClose, project]);
   const failed = row?.stage === "failed";
+  // The browser's tile says which profile it opens on: the bot's, signed in, or a fresh one while that one is in use.
+  const busyProfile = profileBusy(listed.data?.sessions ?? [], home);
 
   const close = () => {
     // A failed one is said here: its row in Screens goes with the picker.
@@ -333,7 +338,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
                   {k.label}
                 </Text>
                 <Text size="xs" tone={off === null ? "quiet" : "warning"}>
-                  {off === null ? k.line : off.short}
+                  {off === null ? kindLine(k, busyProfile) : off.short}
                 </Text>
               </button>
             );

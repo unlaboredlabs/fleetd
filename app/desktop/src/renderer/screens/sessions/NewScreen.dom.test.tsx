@@ -222,6 +222,16 @@ it("opens a screen on the machine picked, from the plus at Screens, and goes to 
   expect(window.location.hash).toContain(OPENED.sessionId);
 });
 
+it("says the browser opens on a fresh profile while the lead's browser holds the bot's", async () => {
+  // The lead's browser, live on the bot's machine: no task, no person.
+  const { openedBy: _person, ...lead } = { ...OPENED, sessionId: "B00000000000000000000000000000008", threadId: "lead", kind: "browser", control: "agent", purpose: "Lead's browser" };
+  sessions = [lead];
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  expect(button("Browser")?.textContent).toBe("BrowserFresh profile");
+});
+
 it("opens a screen the hub's answer left out straight into its live view, once the list has it", async () => {
   // A screen of the person's from before, still live: not the one this open made.
   const before = { ...OPENED, sessionId: "B00000000000000000000000000000009", kind: "browser" };

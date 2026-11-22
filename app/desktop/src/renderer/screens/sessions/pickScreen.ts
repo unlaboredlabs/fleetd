@@ -19,6 +19,16 @@ export const KINDS: readonly { readonly kind: ScreenKind; readonly label: string
   { kind: "mac", label: "Agents’ Mac", line: "One at a time" },
 ];
 
+/**
+ * Whether the bot's kept profile, its sign-ins, is taken: its lead's browser or a person's screen (neither has a task)
+ * is live on the bot's own machine. One browser at a time runs on it, so the next opens on a fresh one, signed out.
+ */
+export const profileBusy = (sessions: readonly BrowserSession[], home: string): boolean =>
+  sessions.some((x) => x.state === "live" && x.taskId === undefined && (x.kind ?? "browser") === "browser" && (x.machineId ?? x.projectRef.machineId) === home);
+
+/** A kind's line on its tile: the browser's says which profile it opens on. */
+export const kindLine = (kind: (typeof KINDS)[number], busy: boolean): string => (kind.kind === "browser" && busy ? "Fresh profile" : kind.line);
+
 /** A kind's word in machine_roles' host checks. */
 const HOST: Readonly<Record<ScreenKind, string>> = { browser: "browser", android: "android", linux_desktop: "desktop", mac: "mac" };
 
