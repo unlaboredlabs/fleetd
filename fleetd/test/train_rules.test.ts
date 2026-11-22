@@ -516,6 +516,29 @@ test("CI that reports only on PRs, not yet on the head a rebase made: the PR wai
   expect(k.host.told).toEqual([]);
 });
 
+test("a private repo of a free account, whose rules GitHub refuses until an upgrade, has none: with no CI, a reviewed PR merges on review alone", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.gh.planless = true;
+  k.pr(48, "fleetd/T48-x", { "x.md": "x\n" });
+  await k.enqueue(48);
+  await k.settle();
+  expect(k.change(48).state).toBe("merged");
+  expect(k.host.told).toEqual([`PR #48 in ${REPO} merged on its review alone: the repo has no CI.`]);
+});
+
+test("rules refused for another reason are unknown, never no CI: the PR waits", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.gh.unreadable = ["rules"];
+  k.pr(49, "fleetd/T49-x", { "x.md": "x\n" });
+  await k.enqueue(49);
+  await passes(k, 3);
+  expect(k.change(49).state).not.toBe("merged");
+  expect(mergeCalls(k)).toEqual([]);
+  expect(k.host.told).toEqual([]);
+});
+
 test("a repo whose CI can't be read is never taken for one with no CI", async () => {
   const k = kit();
   k.gh.noCi = true;
