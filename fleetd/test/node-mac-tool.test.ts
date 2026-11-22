@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { activityFile, COMMAND_MAX, writeActivity } from "../src/node/mac_tool/activity.ts";
 import { MacClient } from "../src/node/mac_tool/client.ts";
 import { FOLDER_DAYS, Host, sweep } from "../src/node/mac_tool/host.ts";
-import { self, start as startMac } from "../src/node/mac_tool/index.ts";
+import { self, start as startMac, startedIn, worktreeOf } from "../src/node/mac_tool/index.ts";
 import { binDir, forwarder, forwarderDir, installForwarder, launchEnv, shim } from "../src/node/mac_tool/shim.ts";
 import { sealStep } from "../src/node/mac_tool/protocol.ts";
 import { NodeBoxKey } from "../src/node/identity.ts";
@@ -222,4 +222,29 @@ test("an agent node writes `mac` at its start and puts it on every session's PAT
   expect(path).toBe(`${forwarderDir(agent.node.home, "t9")}:${binDir(agent.node.home)}:/usr/bin`);
   expect(shim(["/opt/it's/fleetd"])).toContain(`exec '/opt/it'\\''s/fleetd' mac "$@"`);
   expect(forwarder(["/b/bun", "/src/main.ts"])).toContain(`exec '/b/bun' '/src/main.ts' mac agent-device "$@"`);
+});
+
+test("mac from a session's scratch dir works on the worktree its record names, a taken-over one's too", () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  // A task restarted fresh: its session t2 works in t1's worktree, and its scratch dir is named after t1's id.
+  const wt = join(home.dir, "worktrees", "p1", "t1");
+  mkdirSync(wt, { recursive: true });
+  expect(Bun.spawnSync(["git", "init", "-q", wt]).exitCode).toBe(0);
+  const scratch = join(home.dir, "tmp", new Bun.CryptoHasher("sha256").update("t1").digest("hex").slice(0, 16));
+  mkdirSync(scratch, { recursive: true });
+  const agent = testNode("devbox");
+  cleanups.push(agent.done);
+  const started = new Map([["t2", wt]]);
+  agent.node.area("sessions", () => ({ maskFor: () => { throw new Error("none"); }, secretsFor: () => [], sessionCwd: (t: string) => started.get(t) }));
+  expect(startedIn(agent.node, "t2")).toBe(wt);
+  expect(worktreeOf(scratch, startedIn(agent.node, "t2"))).toBe(wt);
+  // From inside the worktree, its checkout, as before.
+  mkdirSync(join(wt, "src"));
+  expect(worktreeOf(join(wt, "src"), undefined)).toBe(wt);
+  // A session the node has no record of, or a node with no sessions: it says where to run mac from.
+  expect(() => worktreeOf(scratch, startedIn(agent.node, "t3"))).toThrow(`${scratch} is in no git checkout, and this session has no worktree of its own`);
+  const bare = testNode("devbox");
+  cleanups.push(bare.done);
+  expect(startedIn(bare.node, "t2")).toBeUndefined();
 });
