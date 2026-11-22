@@ -129,8 +129,17 @@ export function streamTransport(s: Duplex): Transport {
 }
 
 /** How a box's Chrome starts: on a kept profile at `profile` (a folder in the box) rather than a throwaway one, and
- * the browser at `chrome` rather than the box's $CHROME. */
-export type BoxChromeOptions = { profile?: string; chrome?: string };
+ * the browser at `chrome` rather than the box's $CHROME. A machine's own Chrome held this way (../browser/held.ts) gives
+ * its folder (`dir`), Chrome's sandbox where the machine allows it, its own grace, and how the launcher is started
+ * (`start`: in a scope of its own, so it outlives the node). */
+export type BoxChromeOptions = {
+  profile?: string;
+  chrome?: string;
+  dir?: string;
+  sandboxed?: boolean;
+  graceMs?: number;
+  start?: (script: string, pidFile: string) => Promise<void>;
+};
 
 /** Chrome on the FIFOs, its stderr to its log. */
 const chromeLine = (dir: string, chrome: string, argv: string[]) =>
@@ -218,17 +227,17 @@ async function connected(box: ScreenBox, handle: ChromeHandle, kept: string | un
  * own sandbox: the box is the sandbox, and its user may be root, whom Chrome's refuses.
  */
 export async function boxChrome(box: KeptBox, extra: string[] = [], o: BoxChromeOptions = {}): Promise<Launched> {
-  const dir = `/tmp/fleetd-browser-${hex(6)}`;
+  const dir = o.dir ?? `/tmp/fleetd-browser-${hex(6)}`;
   const at = port();
   const profile = o.profile ?? `${dir}/profile`;
-  const argv = chromeArgs("chrome-headless-shell", profile, false, extra);
+  const argv = chromeArgs(o.chrome ?? "chrome-headless-shell", profile, o.sandboxed ?? false, extra);
   await sh(box, `mkdir -p ${shq(o.profile ? dir : profile)} && chmod 700 ${shq(dir)}`);
   if (o.profile) await readyKeptInBox(box, o.profile);
   const chrome = o.chrome ? shq(o.chrome) : `"\${CHROME:-${CHROME}}"`;
   await box.write(`${dir}/chrome.sh`, enc(chromeLine(dir, chrome, argv)), 0o700);
-  await box.write(`${dir}/start.sh`, enc(launcher(dir, at, Math.max(1, Math.ceil(timing.graceMs / 1000)))), 0o700);
+  await box.write(`${dir}/start.sh`, enc(launcher(dir, at, Math.max(1, Math.ceil((o.graceMs ?? timing.graceMs) / 1000)))), 0o700);
   try {
-    await detach(box, `${dir}/start.sh`, `${dir}/session.pid`);
+    await (o.start ?? ((script, pidFile) => detach(box, script, pidFile)))(`${dir}/start.sh`, `${dir}/session.pid`);
     return await connected(box, { dir, port: at }, o.profile, 1, timing.upMs);
   } catch (e) {
     const said = await sh(box, `tail -c 600 ${shq(`${dir}/chrome.log`)} 2>/dev/null || true`).catch(() => "");

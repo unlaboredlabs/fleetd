@@ -154,7 +154,7 @@ async function defaultAddress(broker: Broker, session: Session): Promise<string>
 export async function fillAddress(broker: Broker, thread: string, call: FillAddressCall): Promise<{ message: string }> {
   const started = performance.now();
   const session = broker.live(thread);
-  if (!session) throw new ToolError("not_found", "No browser session is open.", "start one with session_start, open the form, then fill");
+  if (!session) throw broker.endedRefusal(thread) ?? new ToolError("not_found", "No browser session is open.", "start one with session_start, open the form, then fill");
   if (session.control() === "human") throw new ToolError("invalid", PAUSED, "fill once they hand it back");
   const part = call.part === "shipping" || call.part === "billing" ? call.part : undefined;
   const target = typeof call.target === "string" && call.target ? call.target : undefined;

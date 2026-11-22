@@ -108,10 +108,13 @@ export class Session implements GuardSession {
 
   /** Where the driver's answers and events go (the proxy's socket), on this connection and the next. */
   private driver: ((message: Record<string, unknown>) => void) | undefined;
+  /** Closes the driver's socket: at the session's end, so its next command connects again and hears why. */
+  private dropDriver: (() => void) | undefined;
 
-  /** The driver's listener of its answers and the events it may see: one at a time. */
-  proxyTo(fn: ((message: Record<string, unknown>) => void) | undefined): void {
+  /** The driver's listener of its answers and the events it may see, and its socket's close: one at a time. */
+  proxyTo(fn: ((message: Record<string, unknown>) => void) | undefined, close?: () => void): void {
     this.driver = fn;
+    this.dropDriver = fn ? close : undefined;
     this.cdp.proxyEvents(fn);
   }
 
@@ -187,6 +190,11 @@ export class Session implements GuardSession {
 
   /** When a step, a person's input or a change of control last touched the session: what its idle end goes by. */
   touched = Date.now();
+
+  /** A command of the driver's came: whatever ran agent-browser, the session is in use. */
+  used(): void {
+    this.touched = Date.now();
+  }
 
   /** How long nothing touched it; none while it waits on a person (`hold`). */
   idleFor(now = Date.now()): number {
@@ -577,6 +585,9 @@ export class Session implements GuardSession {
     clearTimeout(this.flushTimer);
     clearInterval(this.ticker);
     this.watcher = undefined;
+    const drop = this.dropDriver;
+    this.dropDriver = undefined;
+    drop?.();
   }
 }
 

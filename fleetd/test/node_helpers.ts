@@ -20,8 +20,9 @@ export type TestNode = {
   done(): void;
 };
 
-export function testNode(machineId = "devbox", config: Record<string, unknown> = {}): TestNode {
-  const home = tempHome();
+/** `on`: the home of a node before, which this one starts on as a restarted node does (the test removes it). */
+export function testNode(machineId = "devbox", config: Record<string, unknown> = {}, on?: string): TestNode {
+  const home = on ? { dir: on, done: () => {} } : tempHome();
   const link: TestNode["link"] = {
     sent: [],
     calls: [],
