@@ -49,6 +49,9 @@ describe("a hub frame, checked", () => {
     expect(parseServerFrame('{"t":"live","full":"yes"}')).toBeNull();
     expect(parseServerFrame('{"t":"chat_delta","messageId":"m","offset":1.5,"append":"a"}')).toBeNull();
     expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":0,"jpegB64":"","width":0,"height":1,"control":"agent"}')).toBeNull();
+    // A screen's frame comes as JPEG or as H.264 (with whether it is a key frame), never needing both.
+    expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":1,"h264B64":"AA","key":true,"width":2,"height":2,"control":"agent"}')).toMatchObject({ seq: 1 });
+    expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":1,"h264B64":"AA","key":"yes","width":2,"height":2,"control":"agent"}')).toBeNull();
     expect(parseServerFrame('{"t":"screen_thumb","sessionId":"s","jpegB64":"","width":1,"height":1}')).toMatchObject({ t: "screen_thumb" });
     expect(parseServerFrame('{"t":"newer_kind"}')).toBeNull();
     expect(parseServerFrame("[1]")).toBeNull();
