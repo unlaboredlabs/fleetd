@@ -1,23 +1,32 @@
 // Mounted once by the shell: the keymap, the default commands, the theme switches, the project list, whichever
-// overlay is up, and the New screen picker with its "New screen…" (sessions/NewScreen). The palette and the shortcuts
-// sheet are chunks of their own, loaded once the chat has shown: the first chat draws neither (web-check.ts's budget).
+// overlay is up, and the New screen picker with its "New screen…" (sessions/NewScreen). The palette, the shortcuts
+// sheet and the picker (it brings the Screens page's model) are chunks of their own: the first chat draws none of them
+// (web-check.ts's budget). The palette and the sheet load once the chat has shown; the picker at once on the desktop,
+// once the first chat has shown on the web.
 
 import { Suspense, useEffect, useMemo } from "react";
 import { Boundary } from "../../src/Boundary";
 import { useHubSet } from "../../src/data/react";
-import { preloadable, preloadWhenIdle, useTheme } from "../../ui";
+import { onWeb } from "../../src/web";
+import { preloadable, preloadWhenIdle, useShownYet, useTheme } from "../../ui";
 import { defaultCommands, themeCommands } from "./defaults";
 import { installKeymap } from "./keymap";
 import { projectSource } from "./projects";
 import { registerCommands, useCommands, useSource } from "./registry";
 import { closeOverlay, paletteOpen, useOverlay } from "./state";
-import { NewScreenHost } from "../sessions/NewScreen";
+
+const NewScreenHost = preloadable(() => import("../sessions/NewScreen").then((m) => m.NewScreenHost));
+if (onWeb()) preloadWhenIdle(NewScreenHost);
+else NewScreenHost.preload().catch(() => undefined);
+/** On the web, the picker mounts once the first chat has shown (or this long), so it never shares the first load. */
+const PICKER_AFTER_CHAT_MAX_MS = 30_000;
 
 const Palette = preloadable(() => import("./Palette").then((m) => m.Palette));
 const ShortcutsSheet = preloadable(() => import("./ShortcutsSheet").then((m) => m.ShortcutsSheet));
 
 export function PaletteHost() {
   const overlay = useOverlay();
+  const picker = useShownYet(PICKER_AFTER_CHAT_MAX_MS) || !onWeb();
   const hubs = useHubSet();
   useSource(useMemo(() => (hubs === undefined ? null : projectSource(hubs)), [hubs]));
   const { mode, setMode } = useTheme();
@@ -42,7 +51,11 @@ export function PaletteHost() {
   return (
     <>
       <Boundary part="the New screen picker">
-        <NewScreenHost />
+        {picker ? (
+          <Suspense fallback={null}>
+            <NewScreenHost />
+          </Suspense>
+        ) : null}
       </Boundary>
       {body === null ? null : (
         <Boundary part={overlay.kind === "palette" ? "the command palette" : "the shortcuts sheet"} overlay={{ onError: closeOverlay }}>

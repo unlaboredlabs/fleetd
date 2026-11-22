@@ -2,14 +2,15 @@ import { memo, useEffect, useState } from "react";
 import { cx } from "../lib/cx";
 import { Button } from "../primitives/Button";
 import s from "./Markdown.module.css";
+import { plainWords } from "./plain";
 import type MarkdownBody from "./MarkdownBody";
 
 type Body = typeof MarkdownBody;
 
-// Its own chunk (the parser is most of it), loaded as the app starts (preloadMarkdown, and named in index.html so it
-// is fetched beside the entry) rather than when the first message renders. Not React's lazy: a row that mounts before
+// Its own chunk (the parser is most of it). The desktop loads it as the app starts (preloadMarkdown); the web once the
+// first chat has shown, so on a slow link it never holds that chat back. Not React's lazy: a row that mounts before
 // it has loaded would suspend, and React holds a suspended list's reveal back ~300 ms after the chunk is in. Here the
-// row shows its busy box and fills in as soon as the parser is there.
+// row shows the message's plain words (busy, for the QA gate) and takes its formatting as soon as the parser is there.
 let loaded: Body | undefined;
 let loading: Promise<Body> | undefined;
 const loadBody = (): Promise<Body> =>
@@ -86,7 +87,13 @@ export const Markdown = memo(function Markdown({ source, className, rawToggle, i
     ) : (
       <div className={cx(s.root, !rawToggle && className)} data-text="wrap">
         {/* aria-busy until the parser has loaded, which the QA gate waits out. */}
-        {ready ? <Parsed source={source} blocks={blocks} breaks={breaks} /> : <div aria-busy="true" />}
+        {ready ? (
+          <Parsed source={source} blocks={blocks} breaks={breaks} />
+        ) : (
+          <p className={s.plain} aria-busy="true">
+            {plainWords(source, blocks)}
+          </p>
+        )}
       </div>
     );
   if (!rawToggle) return body;

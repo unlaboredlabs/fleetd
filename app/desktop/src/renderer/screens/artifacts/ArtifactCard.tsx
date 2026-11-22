@@ -4,7 +4,7 @@ import type { ArtifactPublished } from "../../../shared/contracts";
 import { Text } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { FormatIcon } from "./ArtifactsPane";
+import { FormatIcon } from "./FormatIcon";
 import { formatWord } from "./model";
 import s from "./artifacts.module.css";
 

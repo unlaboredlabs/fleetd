@@ -5,6 +5,7 @@
 //
 //   bun scripts/net-app/web-load.ts --rig $TMPDIR/hub.out [--profiles 3g,satellite] [--runs 3] [--out file.json]
 import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { startNetem } from "../netem.ts";
 
 const flag = (name: string, d?: string) => {
@@ -33,7 +34,6 @@ const evalJson = async <T>(js: string): Promise<T | undefined> => {
 };
 
 const last = ((await (await fetch(`http://127.0.0.1:${rig.control}/truth`)).json()) as Array<{ text: string }>).at(-1)!.text.trim().slice(-30);
-const USABLE = `JSON.stringify({ ok: !!document.querySelector('[aria-label="Message the lead"]') && document.body.innerText.includes(${JSON.stringify(last)}), at: performance.now(), url: location.href })`;
 /** The side panel filled (its tab row there), and where the composer sits: a panel that fills in place moves nothing. */
 const PANEL = `JSON.stringify({ ok: !!document.querySelector('[role="tablist"][aria-label="Panel"]'), at: performance.now(), box: (() => { const r = document.querySelector('[aria-label="Message the lead"]')?.getBoundingClientRect(); return r ? [Math.round(r.x), Math.round(r.width)] : null; })() })`;
 const boxAt = async () => (await evalJson<{ box: number[] | null }>(PANEL))?.box?.join(",") ?? "";
@@ -48,15 +48,25 @@ const panelFilled = async (box: string, timeoutMs = 120_000) => {
   }
 };
 
-/** Navigates (without waiting on load) and polls until the chat is usable; ms from navigation start. */
+// The page notes the moment itself (an observer from its first byte, registered as an init script, checking once a
+// frame): a poll from here is late by as long as the page's main thread is busy, which would count a page that works
+// harder after its chat against it.
+const initScript = path.join(process.env.TMPDIR ?? "/tmp", `web-load-usable-${process.pid}.js`);
+writeFileSync(
+  initScript,
+  `(() => { const tail = ${JSON.stringify(last)}; let queued = false; const check = () => { queued = false; if (window.__usableAt !== undefined || document.body === null) return; if (document.querySelector('[aria-label="Message the lead"]') && document.body.textContent.replace(/\\s+/g, " ").includes(tail)) { window.__usableAt = performance.now(); obs.disconnect(); } }; const obs = new MutationObserver(() => { if (!queued) { queued = true; requestAnimationFrame(check); } }); obs.observe(document, { childList: true, subtree: true, characterData: true }); })();\n`,
+);
+await browser("--init-script", initScript, "open", "about:blank");
+
+/** Navigates (without waiting on load) until the page says its chat was usable; ms from navigation start. */
 const load = async (url: string, timeoutMs = 120_000) => {
   await browser("eval", `setTimeout(() => location.assign(${JSON.stringify(url)}), 0); 1`);
   const t0 = performance.now();
   // An eval sent while the old page is going waits out CDP's own timeout: start once the new one has begun.
   await Bun.sleep(150);
   for (;;) {
-    const r = await evalJson<{ ok: boolean; at: number; url: string }>(USABLE);
-    if (r?.ok === true && r.url.startsWith(url)) return r.at;
+    const r = await evalJson<{ at: number | null; url: string }>(`JSON.stringify({ at: window.__usableAt ?? null, url: location.href })`);
+    if (r !== undefined && r.at !== null && r.url.startsWith(url)) return r.at;
     if (performance.now() - t0 > timeoutMs) return Number.NaN;
     await Bun.sleep(100);
   }

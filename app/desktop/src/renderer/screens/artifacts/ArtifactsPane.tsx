@@ -6,9 +6,9 @@
 // Markdown rendered in the app's own style (no raw HTML), HTML in a sandboxed frame of its own (HtmlFrame) with its
 // scripts on and no network or reach into the app. Reads artifacts_list and artifact_get; artifacts.changed reads
 // both again, so a new version shows while it is open.
-import { Download, FileCode2, FileText } from "lucide-react";
+import { Download } from "lucide-react";
 import { useLayoutEffect, useState } from "react";
-import type { ArtifactFormat, ChatFile, ProjectRef } from "../../../shared/contracts";
+import type { ChatFile, ProjectRef } from "../../../shared/contracts";
 import { glyphOf } from "../../../shared/files";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Markdown, Select, Text, Tooltip, toast } from "../../ui";
@@ -17,6 +17,7 @@ import { errorText } from "../settings/hub";
 import { GroupLabel, PanelEmpty } from "../panel/folds";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
+import { FormatIcon } from "./FormatIcon";
 import { HtmlFrame } from "./HtmlFrame";
 import { fileDetail, formatWord, metaLine, rowDetail, versionLabel } from "./model";
 import { when } from "../live/when";
@@ -27,10 +28,7 @@ const refOf = (p: ProjectKey): ProjectRef => ({ machineId: p.machineId, projectI
 const open = (project: ProjectKey, artifact: string | null, version?: number) =>
   navigate(panelRoute(project, { tab: "artifacts", artifact, ...(version === undefined ? {} : { version }) }));
 
-export function FormatIcon({ format, className }: { format: ArtifactFormat; className?: string | undefined }) {
-  const Icon = format === "html" ? FileCode2 : FileText;
-  return <Icon aria-hidden className={className} />;
-}
+export { FormatIcon };
 
 /** One artifact asks for the frame's wide width, so a report reads at a comfortable measure. */
 export function ArtifactsTabView(props: { project: ProjectKey; artifact: string | null; version: number | undefined; onWide: (wide: boolean) => void }) {

@@ -112,6 +112,18 @@ const start = async (session: WebSession) => {
   // Removed from a team since the last sign-in, and no gate said so: one plain line, once.
   const line = removed.app();
   if (line !== undefined) toast({ title: line, key: "removed" });
+  keepShell();
+};
+
+/**
+ * The service worker (public/sw.js) that serves this page's own files from the browser on the next load: asked for
+ * once the page has loaded, so it never shares the first one. Built pages only (the dev server's files change).
+ */
+const keepShell = () => {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  const register = () => void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => undefined);
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register, { once: true });
 };
 
 const boot = async () => {

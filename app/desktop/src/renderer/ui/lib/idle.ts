@@ -98,8 +98,12 @@ export function preloadable<P>(load: () => Promise<ComponentType<P>>): Preloadab
  * (the render that needs it tries again).
  */
 export const preloadWhenIdle = (...each: ReadonlyArray<{ readonly preload: () => Promise<unknown> }>): void =>
+  afterShown(() => {
+    for (const p of each) p.preload().catch(() => undefined);
+  });
+
+/** Runs `fn` once the app has shown what it opened on (markShown, or SHOWN_WAIT_MS) and is idle. */
+export const afterShown = (fn: () => void): void =>
   void Promise.race([shownOnce, new Promise((resolve) => setTimeout(resolve, SHOWN_WAIT_MS))])
     .then(nextIdle)
-    .then(() => {
-      for (const p of each) p.preload().catch(() => undefined);
-    });
+    .then(fn);

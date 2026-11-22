@@ -1,16 +1,26 @@
-/* Fonts are bundled (OFL, licences beside them); the renderer loads nothing remote. Each is cut in two by alphabet, so a
-   page loads only what its text uses: -latin holds Latin, punctuation, symbols and box drawing, -more the extended
-   Latin, Greek and Cyrillic. Both keep every layout feature and the whole font's metrics, so text draws as from the
-   whole font. Cut with fontTools: pyftsubset <whole font> --flavor=woff2 --layout-features='*' --name-IDs='*'
-   --name-languages='*' --notdef-glyph --notdef-outline --recommended-glyphs --glyph-names --symbol-cmap --legacy-cmap
-   --unicodes=<the file's unicode-range>. */
+/* Fonts are bundled (OFL, licences beside them); the renderer loads nothing remote. Each is cut in three by alphabet, so a
+   page loads only what its text uses: -basic holds ASCII, Latin-1 and everyday punctuation (what nearly every screen
+   draws, and all the web's first load names), -latin the rest of Latin's symbols, arrows and box drawing, -more the
+   extended Latin, Greek and Cyrillic. Each keeps the whole font's metrics, so text draws as from the whole font.
+   -latin and -more keep every layout feature; -basic the default ones and tnum (the only other the app asks for),
+   which takes it from ~31 KB to ~18. Cut with fontTools: pyftsubset <whole font> --flavor=woff2 --layout-features='*'
+   (-basic: --layout-features+=tnum) --name-IDs='*' --name-languages='*' --notdef-glyph --notdef-outline
+   --recommended-glyphs --glyph-names (not for -basic) --symbol-cmap --legacy-cmap --unicodes=<the file's unicode-range>. */
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/Geist-Regular-basic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 @font-face {
   font-family: "Geist";
   src: url("./fonts/Geist-Regular-latin.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02B0-036F, U+0530-1C7F, U+1C90-1DFF, U+2000-2DDF, U+2E00-A63F, U+A6A0-10FFFF;
+  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
 }
 @font-face {
   font-family: "Geist";
@@ -22,11 +32,19 @@
 }
 @font-face {
   font-family: "Geist";
+  src: url("./fonts/Geist-Medium-basic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
   src: url("./fonts/Geist-Medium-latin.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02B0-036F, U+0530-1C7F, U+1C90-1DFF, U+2000-2DDF, U+2E00-A63F, U+A6A0-10FFFF;
+  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
 }
 @font-face {
   font-family: "Geist";
@@ -38,11 +56,19 @@
 }
 @font-face {
   font-family: "Geist";
+  src: url("./fonts/Geist-SemiBold-basic.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
   src: url("./fonts/Geist-SemiBold-latin.woff2") format("woff2");
   font-weight: 600;
   font-style: normal;
   font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02B0-036F, U+0530-1C7F, U+1C90-1DFF, U+2000-2DDF, U+2E00-A63F, U+A6A0-10FFFF;
+  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
 }
 @font-face {
   font-family: "Geist";
@@ -54,11 +80,19 @@
 }
 @font-face {
   font-family: "Geist Mono";
+  src: url("./fonts/GeistMono-Regular-basic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono";
   src: url("./fonts/GeistMono-Regular-latin.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02B0-036F, U+0530-1C7F, U+1C90-1DFF, U+2000-2DDF, U+2E00-A63F, U+A6A0-10FFFF;
+  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
 }
 @font-face {
   font-family: "Geist Mono";
@@ -70,11 +104,19 @@
 }
 @font-face {
   font-family: "Geist Mono";
+  src: url("./fonts/GeistMono-Medium-basic.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono";
   src: url("./fonts/GeistMono-Medium-latin.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: block;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02B0-036F, U+0530-1C7F, U+1C90-1DFF, U+2000-2DDF, U+2E00-A63F, U+A6A0-10FFFF;
+  unicode-range: U+02B0-02BA, U+02BD-02C5, U+02C7-02D9, U+02DB, U+02DD-036F, U+0530-1C7F, U+1C90-1DFF, U+2070-20AB, U+20AD-2121, U+2123-218F, U+2194-2211, U+2213-2214, U+2216-2DDF, U+2E00-A63F, U+A6A0-FEFE, U+FF00-FFFC, U+FFFE-10FFFF;
 }
 @font-face {
   font-family: "Geist Mono";
