@@ -96,7 +96,8 @@ export function NewScreenDialog({ project: start, anyBot = false, onClose }: { p
   const [prPicked, setPr] = useState(NO_PR);
   const pr = offersPr ? choices.find((c) => c.value === prPicked) : undefined;
   // An open with a PR's build going in, followed until the screen is the person's.
-  const [opening, setOpening] = useState<{ readonly waitId: string; readonly threadId?: string; readonly pr: number; readonly machine: string } | null>(null);
+  // An open followed until the screen is the person's: a PR's build going in, or an iPhone starting on the Mac.
+  const [opening, setOpening] = useState<{ readonly waitId: string; readonly threadId?: string; readonly pr?: number; readonly machine: string } | null>(null);
   // Read while the picker is open: the screens there at the press, then the one it opened, when the answer leaves it out.
   const listed = useToolQuery("browser_sessions", { projectRef });
   const row = opening === null ? undefined : listed.data?.waits?.find((w) => w.waitId === opening.waitId);
@@ -191,9 +192,15 @@ export function NewScreenDialog({ project: start, anyBot = false, onClose }: { p
       return;
     }
     setBusy(false);
-    // Past its wait already (a PR's build going in): followed here until it is yours.
-    if (waiting !== undefined && waiting.stage !== undefined && waiting.stage !== "waiting" && pr !== undefined) {
-      setOpening({ waitId: waiting.waitId, ...(waiting.threadId === undefined ? {} : { threadId: waiting.threadId }), pr: pr.number, machine: host.name });
+    // Past its wait already (a PR's build going in), or an iPhone, which the hub starts in its own time, in the Mac's
+    // line: followed here until it is yours.
+    if (waiting !== undefined && ((pr !== undefined && waiting.stage !== undefined && waiting.stage !== "waiting") || kind === "ios")) {
+      setOpening({
+        waitId: waiting.waitId,
+        ...(waiting.threadId === undefined ? {} : { threadId: waiting.threadId }),
+        ...(pr === undefined ? {} : { pr: pr.number }),
+        machine: host.name,
+      });
       return;
     }
     if (session !== undefined) {

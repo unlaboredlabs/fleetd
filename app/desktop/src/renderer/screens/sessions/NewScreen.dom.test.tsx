@@ -57,6 +57,9 @@ const WAIT = { waitId: "W1", projectRef: project, kind: "mac", machineId: "mac",
 // An Android screen with #12's build, past its wait from the answer on.
 const OPENING = { ...WAIT, waitId: "W2", kind: "android", machineId: "devbox", stage: "starting", threadId: "screen-2", pr: { repo: "acme/app", number: 12 } };
 const MINE = { ...OPENED, sessionId: "B00000000000000000000000000000002", threadId: "screen-2", kind: "android" };
+// An iPhone the hub starts in its own time: its row, starting, then the person's screen in its thread.
+const IPHONE_STARTING = { ...WAIT, waitId: "W3", kind: "ios", machineId: "studio", stage: "starting", threadId: "screen-3" };
+const IPHONE = { ...OPENED, sessionId: "B00000000000000000000000000000003", threadId: "screen-3", kind: "ios", purpose: "iPhone 17 · Ada" };
 
 let host: HTMLDivElement;
 let root: Root | undefined;
@@ -145,6 +148,10 @@ const mount = async () => {
           return Promise.resolve({ ok: false, error: { code: "failed", message: "GitHub can’t be reached" } });
         }
         return Promise.resolve({ ok: true, output: { prs: PRS } });
+      }
+      if (tool === "screen_open" && (input as { kind?: string }).kind === "ios") {
+        waits = [IPHONE_STARTING];
+        return Promise.resolve({ ok: true, output: { waiting: IPHONE_STARTING } });
       }
       if (tool === "screen_open" && (input as { pr?: unknown }).pr !== undefined) {
         waits = [OPENING];
@@ -511,6 +518,21 @@ it("opens an iPhone on the agents' Mac, on the model and OS picked, and says why
     wait: false,
     sim: { model: "iPhone-17", runtime: "iOS-27.2" },
   });
+  // Answered at once, its start in the hub's own time (a cold boot takes minutes): the picker follows it, no error.
+  expect(picker()?.textContent).toContain("Starting the iPhone on studio…");
+  expect(document.querySelector("[role='alert']")).toBeNull();
+  // The Mac full meanwhile: still in its line, ahead of agents.
+  waits = [{ ...IPHONE_STARTING, stage: "waiting" }];
+  act(() => send(event(2, "screen.wait", { projectRef: project, waitId: "W3", stage: "waiting" })));
+  await eventSettle();
+  expect(picker()?.textContent).toContain("Waiting for a free simulator on studio, ahead of agents…");
+  // Theirs: the picker goes, and the panel shows its live view.
+  waits = [];
+  sessions = [IPHONE];
+  act(() => send(event(3, "screen.wait", { projectRef: project, waitId: "W3" })));
+  await eventSettle();
+  expect(picker()).toBeNull();
+  expect(window.location.hash).toContain(IPHONE.sessionId);
 });
 
 it("says an iPhone needs the agents' Mac, with its one fix", async () => {

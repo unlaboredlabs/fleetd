@@ -5,8 +5,12 @@
 // (node/mac_tool/protocol.ts), in the name of a thread of the person's screen's own, with the screen's place (a sim
 // place with the person on it) in the `mac_call`. The Mac lends it ahead of every agent waiting (D239), within its
 // simulator budget, and reports its screen live; the hub then hands control to the person, as for any screen of
-// theirs. It ends with `screen_end` or the hub's idle end, as a sealed `mac sim end`. With `wait`, a full Mac keeps
-// the person first in its line while the hub asks again every ASK_EVERY, the person's wait row saying so.
+// theirs. It ends with `screen_end` or the hub's idle end, as a sealed `mac sim end`.
+//
+// It goes on in the hub's own time, as a PR's build does: `screen_open` answers at once with the person's wait row, and
+// the hub follows the start (a model the Mac has no clone of is a create and a cold boot: minutes), always in the
+// Mac's line, so a Mac that is full or still booting the next clone keeps the person first while the hub asks again
+// every ASK_EVERY. The row says how far it is until the screen is theirs, or why it failed.
 import type { BrowserSession, PersonRef, ProjectRef, ScreenControl, ScreenSim, SimModel } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_SCREEN_CONTROL, type MacResultFrame, type ScreenControlResult } from "../../shared/screens_wire.ts";
@@ -27,6 +31,12 @@ import { WAIT_MS } from "./screen_rules.ts";
 
 /** How long a person's control waits for its machine: a fold or a screenshot takes seconds. */
 export const CONTROL_WAIT = 45_000;
+
+/**
+ * How long a person's `sim_start` waits for the Mac: a model it has no warm clone of is created and cold-booted (pool.ts
+ * OWN_BOOT, 150 s), then settled (a Duo's first fold builds its helpers).
+ */
+export const START_WAIT = 300_000;
 
 /** The model a person picked from the Mac's `sims`, or why not; none picked: the Mac's plain iPhone. */
 export function modelOf(models: SimModel[] | undefined, sim: ScreenSim | undefined): { model?: SimModel; runtime?: string } {
@@ -55,8 +65,8 @@ export function sealFor(macKey: Uint8Array, thread: string, step: Step, now: num
 /** A person's simulator on its way: its place on the Mac, for project `origin`, and its `sim_start`. */
 type SimStart = { mac: string; place: Place; origin: ProjectRef; person: PersonRef; step?: Step };
 
-/** Sends one sealed step for a person's simulator to the Mac and opens its answer. */
-async function macStep(hub: Hub, s: SimStart, step: Step): Promise<Done> {
+/** Sends one sealed step for a person's simulator to the Mac and opens its answer, waiting up to `waitMs`. */
+async function macStep(hub: Hub, s: SimStart, step: Step, waitMs = SEND_WAIT): Promise<Done> {
   const key = Buffer.from(store(hub).machineGet(s.mac)?.boxPubKey ?? "", "base64");
   if (key.length !== 32) throw new ToolError("failed", "The agents' Mac has no key to seal to.", "An admin updates fleetd on the Mac.");
   const { sealed, answerKey } = sealFor(key, s.place.originThread, step, hub.clock.now());
@@ -72,7 +82,7 @@ async function macStep(hub: Hub, s: SimStart, step: Step): Promise<Done> {
         sealed,
         screen: { hostKey: s.place.key, sessionId: s.place.sessionId! },
       },
-      SEND_WAIT,
+      waitMs,
     );
   } catch (e) {
     throw new ToolError("machine_offline", `The agents' Mac did not answer: ${(e as Error).message}.`, "Try again shortly.");
@@ -90,18 +100,11 @@ async function macStep(hub: Hub, s: SimStart, step: Step): Promise<Done> {
 export type SimOpened = { session: BrowserSession } | { queued: { place: number; why: string } };
 
 /**
- * Starts a person's iPhone on the agents' Mac `machineId` for project `r`: their screen, theirs from the start. A full
- * Mac answers `queued` with `wait` (the caller asks again), else refuses.
+ * A person's iPhone on the agents' Mac `machineId` for project `r`, checked and given its place: what `followSim` then
+ * starts. A Mac that can't (not the agents' Mac, too old, not ready) or a model it doesn't list is refused here, before
+ * anything starts.
  */
-export async function openSim(
-  hub: Hub,
-  caller: Caller,
-  r: ProjectRef,
-  person: PersonRef,
-  machineId: string,
-  sim: ScreenSim | undefined,
-  wait: boolean,
-): Promise<{ start: SimStart; opened: SimOpened }> {
+export function prepareSim(hub: Hub, caller: Caller, r: ProjectRef, person: PersonRef, machineId: string, sim: ScreenSim | undefined): SimStart {
   const mac = macMachine(hub);
   if (!mac || mac !== machineId) {
     throw new ToolError(
@@ -126,26 +129,20 @@ export async function openSim(
     c.query("UPDATE session_places SET person_id = ?2 WHERE place_id = ?1").run(p.key, person.personId);
     return p;
   });
+  // Always in the Mac's line: a person's start waits for a free simulator, or the next clone's boot, ahead of agents.
   const step: Step = {
     step: "sim_start",
     ...(model ? { device: model.id } : {}),
     ...(runtime ? { runtime } : {}),
-    wait,
+    wait: true,
     person: person.name,
   };
-  const start: SimStart = { mac, place, origin: r, person, step };
-  return { start, opened: await simAgain(hub, start, step, caller.name) };
+  return { mac, place, origin: r, person, step };
 }
 
-/** The start's step, sent (again): theirs once the Mac lends it, else its place in line. A refusal frees its place. */
-async function simAgain(hub: Hub, start: SimStart, step: Step, device: string): Promise<SimOpened> {
-  let done: Done;
-  try {
-    done = await macStep(hub, start, step);
-  } catch (e) {
-    hub.db.transaction((c) => endPlace(c, start.place.key, hub.clock.now()));
-    throw e;
-  }
+/** The start's step, sent (again): theirs once the Mac lends it, else its place in line. */
+async function simAgain(hub: Hub, start: SimStart, device: string): Promise<SimOpened> {
+  const done = await macStep(hub, start, start.step!, START_WAIT);
   if (done.step === "sim_queued") return { queued: { place: done.place, why: done.why } };
   if (done.step !== "sim_start") throw new ToolError("failed", "The agents' Mac answered with another step's answer.");
   const id = start.place.sessionId!;
@@ -170,20 +167,22 @@ async function reported(hub: Hub, id: string): Promise<BrowserSession | undefine
 }
 
 /**
- * A person's start waiting in the Mac's line, in the hub's own time: asked again every ASK_EVERY (keeping its place)
- * until it is theirs, `gone` says the person gave up, or WAIT_MS passed. Theirs or failed, `done` hears.
+ * A person's start, in the hub's own time: sent now, then, while the Mac keeps it in line (full, or booting the next
+ * clone), asked again every ASK_EVERY (keeping its place) until it is theirs, `gone` says the person gave up, or
+ * WAIT_MS passed. `queued` hears each place in line; theirs or failed, `done` hears.
  */
-export async function waitForSim(
+export async function followSim(
   hub: Hub,
   start: SimStart,
   device: string,
   gone: () => boolean,
+  queued: (q: { place: number; why: string }) => void,
   done: (outcome: { session: BrowserSession } | { error: string }) => void,
 ): Promise<void> {
   const until = hub.clock.now() + WAIT_MS;
   try {
-    for (;;) {
-      await Bun.sleep(ASK_EVERY);
+    for (let first = true; ; first = false) {
+      if (!first) await Bun.sleep(ASK_EVERY);
       // The hub stopping: the Mac's line forgets the person by itself (queue.ts GONE).
       if (hub.shutdown.signal.aborted) return;
       if (gone()) {
@@ -192,8 +191,9 @@ export async function waitForSim(
         return;
       }
       if (hub.clock.now() > until) throw new ToolError("failed", "No simulator on the agents' Mac freed up in 30 minutes.");
-      const opened = await simAgain(hub, start, { ...start.step!, wait: true } as Step, device);
+      const opened = await simAgain(hub, start, device);
       if ("session" in opened) return done(opened);
+      queued(opened.queued);
     }
   } catch (e) {
     if (hub.shutdown.signal.aborted) return;
