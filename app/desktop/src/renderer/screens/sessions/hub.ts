@@ -462,7 +462,8 @@ export function useRecording(session: BrowserSession): { readonly data?: Recordi
         return (await read(file)).map((p) => decoder.decode(p, { stream: true })).join("") + decoder.decode();
       };
       const [actions, doms] = await Promise.all([text("actions"), text("dom")]);
-      // A browser's or an Android emulator's video is WebM; an iOS simulator's is simctl's own MP4.
+      // A browser's video is WebM; an Android emulator's, a Linux desktop's (fragmented, from their H.264) and an iOS
+      // simulator's (simctl's own) are MP4.
       const [file, type] = files?.includes("video_mp4") === true ? (["video_mp4", "video/mp4"] as const) : (["video", "video/webm"] as const);
       // Made from the pieces as they are, without joining them into one more copy of the whole video first.
       const video = files?.includes(file) === true ? new Blob(await read(file), { type }) : undefined;

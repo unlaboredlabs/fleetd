@@ -47,6 +47,8 @@ export type DesktopHost = {
   changed?: (thread: string) => void;
   /** What makes a watched display's H.264 (x264, ../screen/x264.ts); absent: JPEG only. */
   encoder?: MakeEncoder;
+  /** The machine's load per core, which a display's frame rate follows (../screen/live.ts fpsFor); absent: 0. */
+  load?: () => number;
 };
 
 /** What carries a session to another holder (`snapshot`, `adopt`): plain JSON. The display's cookie opens only that
@@ -95,8 +97,8 @@ export class DesktopSessions {
   constructor(protected readonly host: DesktopHost) {}
 
   /** A display session's H.264 encoder, where the host has one. */
-  protected encodes(): { encoder?: MakeEncoder } {
-    return this.host.encoder ? { encoder: this.host.encoder } : {};
+  protected encodes(): { encoder?: MakeEncoder; load?: () => number } {
+    return { ...(this.host.encoder ? { encoder: this.host.encoder } : {}), ...(this.host.load ? { load: this.host.load } : {}) };
   }
 
   count(): number {
@@ -323,9 +325,10 @@ export class DesktopSessions {
     const session = this.byId(frame.sessionId);
     if (!session) return false;
     if (!frame.on) session.setWatcher(undefined);
-    else if (!session.watched()) session.setWatcher({ kbps: frame.kbps, video: frame.video === true, send: (f) => this.host.send({ t: "browser_frame", ...f }) });
-    else {
-      session.setBudget(frame.kbps, frame.video === true);
+    else if (!session.watched()) {
+      session.setWatcher({ kbps: frame.kbps, video: frame.video === true, ...(frame.fps === undefined ? {} : { fps: frame.fps }), send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+    } else {
+      session.setBudget(frame.kbps, frame.video === true, frame.fps);
       if (frame.key) session.key();
     }
     return true;

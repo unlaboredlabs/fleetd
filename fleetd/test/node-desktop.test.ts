@@ -220,14 +220,18 @@ test("with DAMAGE a grab reads only what changed, patched into the screen before
   // `whole` reads every pixel again.
   await x.grabRaw(true);
   expect(server.pixelsRead - still).toBe(64 * 40);
-  // A grab's pixels stay as they were when the next grab patches the screen.
-  server.paint(1, 2, 3, [0, 0, 1, 1]);
+  // Each grab says which rows really changed: a whole read of a screen that changed in one pixel, that pixel's row; a
+  // read of a box that was painted the same again, none.
+  server.paint(1, 2, 3, [5, 7, 1, 1]);
   await until("damage", () => x.changed());
-  const kept = await x.grabRaw(true);
-  server.paint(9, 9, 9, [0, 0, 1, 1]);
+  expect((await x.grabRaw(true)).changed).toEqual([0, 7, 64, 8]);
+  server.paint(1, 2, 3, [5, 7, 1, 1]);
   await until("damage", () => x.changed());
-  await x.grabRaw();
-  expect([...kept.data.subarray(0, 3)]).toEqual([1, 2, 3]);
+  expect((await x.grabRaw()).changed).toBeNull();
+  expect((await x.grabRaw()).changed).toBeNull();
+  server.paint(9, 9, 9, [2, 3, 4, 2]);
+  await until("damage", () => x.changed());
+  expect((await x.grabRaw()).changed).toEqual([2, 3, 6, 5]);
 });
 
 test("a watched desktop sends a frame when its screen changes, read as only the part that changed, and none while still", async () => {
@@ -361,6 +365,103 @@ test("a Linux desktop encodes each grab once: its video is the encoder's H.264, 
   await until("a JPEG", () => frames.at(-1)?.h264 === false && jpegs > 1);
   await until("its frame recorded", () => recorded.length > both);
   expect(recorded.every((r) => r.kind === "h264")).toBe(true);
+});
+
+test("a slow H.264 viewer gets an encode of its own at its link's rate, and the video keeps its own; back on a fast link, the video's again from a keyframe", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // Stand-in encoders, each noting the bit rate it was put at and marking its frames; each one's first frame a keyframe.
+  type Made = { n: number; kbps: (number | undefined)[]; stopped: boolean };
+  const made: Made[] = [];
+  const encoder: MakeEncoder = (onFrame) => {
+    const me: Made = { n: made.length, kbps: [], stopped: false };
+    made.push(me);
+    let keyNext = true;
+    return {
+      key: () => void (keyNext = true),
+      put: (input, _data, kbps, atMs) => {
+        me.kbps.push(kbps);
+        onFrame({ data: Uint8Array.of(me.n), key: keyNext }, input, atMs ?? 0);
+        keyNext = false;
+        return true;
+      },
+      stop: () => void (me.stopped = true),
+      ready: async () => true,
+    };
+  };
+  const recorded: number[] = [];
+  const recording = {
+    append: () => {},
+    filled: () => {},
+    end: async () => ({ files: [] }),
+    video: { frame: () => {}, h264: (au: Uint8Array) => (recorded.push(au[0]!), true), tick: () => {}, finish: async () => undefined },
+  };
+  const session = new Session(lent, x, { id: "d4", thread: "t1", cwd: dir, purpose: "slow", secrets: [], kind: "linux_desktop", encoder, recording });
+  cleanups.push(() => void session.close());
+  session.open();
+  await until("the video's first frame", () => recorded.length > 0);
+  const frames: { from: number; key: boolean }[] = [];
+  const paint = (i: number) => server.paint(i * 20, 0, 0, [3, 4, 5, 6]);
+  // A link of 1 Mbit/s: H.264 at 700 kbit/s, far under the video's 2.5 Mbit/s.
+  session.setWatcher({ kbps: 1_000, video: true, send: (f) => f.h264B64 && frames.push({ from: Buffer.from(f.h264B64, "base64")[0]!, key: f.key === true }) });
+  for (let i = 1; !frames.some((f) => f.from === 1) && i < 200; i++) {
+    paint(i);
+    await Bun.sleep(40);
+  }
+  // Its own encoder (the second made) at the link's rate, from a keyframe; the video's still at its own (undefined:
+  // the most), and only the video's frames recorded.
+  expect(made).toHaveLength(2);
+  expect(made[1]!.kbps.every((k) => k === 1_000)).toBe(true);
+  expect(made[0]!.kbps.every((k) => k === undefined)).toBe(true);
+  expect(frames.find((f) => f.from === 1)).toMatchObject({ key: true });
+  expect(recorded.every((n) => n === 0)).toBe(true);
+  // A fast link again: the watcher's encoder stops, and its frames are the video's from the video's next keyframe.
+  session.setBudget(undefined, true);
+  const at = frames.length;
+  for (let i = 1; !frames.slice(at).some((f) => f.from === 0) && i < 200; i++) {
+    paint(i + 100);
+    await Bun.sleep(40);
+  }
+  expect(made[1]!.stopped).toBe(true);
+  expect(frames.slice(at).find((f) => f.from === 0)).toMatchObject({ key: true });
+});
+
+test("an H.264 watcher back after a spell with no encoding sees the screen now, not as they left it", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // A stand-in encoder that keeps the last picture it was given (NV12: luma first).
+  let last: Uint8Array | undefined;
+  const encoder: MakeEncoder = (onFrame) => ({
+    key: () => {},
+    put: (input, data) => {
+      last = data.slice();
+      onFrame({ data: Uint8Array.of(0), key: true }, input, 0);
+      return true;
+    },
+    stop: () => {},
+  });
+  // A video that takes no H.264 (its JPEG sink started first): nothing is encoded while nobody watches.
+  const recording = { append: () => {}, filled: () => {}, end: async () => ({ files: [] }), video: { frame: () => {}, tick: () => {}, finish: async () => undefined } };
+  const session = new Session(lent, x, { id: "d5", thread: "t1", cwd: dir, purpose: "stale", secrets: [], kind: "linux_desktop", encoder, recording });
+  cleanups.push(() => void session.close());
+  session.open();
+  const watch = () => session.setWatcher({ kbps: undefined, video: true, send: () => {} });
+  watch();
+  await until("a picture encoded", () => last !== undefined);
+  session.setWatcher(undefined);
+  // While nobody watches, the whole screen turns white.
+  server.paint(255, 255, 255);
+  await Bun.sleep(300);
+  last = undefined;
+  watch();
+  server.paint(0, 0, 0, [0, 0, 2, 2]);
+  await until("a picture encoded again", () => last !== undefined);
+  // Away from the box that changed last, the picture is the white screen (luma 235), not the one they left.
+  expect(last![40 * 64 - 1]).toBe(235);
 });
 
 test("without DAMAGE the screen counts as changed at every look", async () => {

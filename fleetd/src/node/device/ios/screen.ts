@@ -15,14 +15,11 @@
 // go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
 import { jpegSize } from "../../browser/fit.ts";
-import type { StreamFrame, StreamRun } from "../../screen/live.ts";
+import { fpsFor, HARDWARE_FPS, kbpsFor, type StreamFrame, type StreamRun } from "../../screen/live.ts";
 import { type Direct, Touches } from "./hid.ts";
 
 /** The live view's frames come no closer together than this. */
 export const MIN_GAP = 100;
-/** The H.264 bit rate at most, in kbit/s, and the share of the watchers' links it takes when they are the bound. */
-const VIDEO_KBPS = 2_500;
-const VIDEO_SHARE = 0.7;
 /** How often a stream looks whether someone still watches: it stops this long after the last one left. */
 const WATCHED_EVERY = 250;
 /** After a failed screenshot, the next comes this much later. */
@@ -66,8 +63,8 @@ export class Shooter {
   private streaming: LiveRun | undefined;
   /** Why the stream failed, once it has: screenshots from then on. */
   private liveFailed: string | undefined;
-  /** What the watchers take: H.264 (every one decodes it), and their links' budget. */
-  private wants: { video: boolean; kbps: number | undefined } = { video: false, kbps: undefined };
+  /** What the watchers take: H.264 (every one decodes it), their links' budget, and the frame rate they asked for. */
+  private wants: { video: boolean; kbps: number | undefined; fps?: number } = { video: false, kbps: undefined };
   /** The screen's size in pixels, as the stream's last frame said. */
   private screen: [number, number] | undefined;
 
@@ -100,10 +97,10 @@ export class Shooter {
   }
 
   /** H.264 from now on (every watcher decodes it), or JPEG; with H.264, `kbps` (undefined: the links keep up) is its
-   * bit rate's bound. Only a stream sends H.264: screenshots stay JPEG. */
-  want(video: boolean, kbps: number | undefined): boolean {
+   * bit rate's bound, and `fps` the rate they asked for at most. Only a stream sends H.264: screenshots stay JPEG. */
+  want(video: boolean, kbps: number | undefined, fps?: number): boolean {
     const switched = this.wants.video !== video;
-    this.wants = { video, kbps };
+    this.wants = { video, kbps, ...(fps === undefined ? {} : { fps }) };
     this.tellWants();
     return switched;
   }
@@ -124,9 +121,11 @@ export class Shooter {
   private tellWants(): void {
     const run = this.streaming;
     if (!run) return;
-    run.tell(this.wants.video ? "h264" : "jpeg");
-    const kbps = this.wants.kbps;
-    run.tell(`kbps ${kbps === undefined ? VIDEO_KBPS : Math.min(VIDEO_KBPS, Math.max(100, Math.round(kbps * VIDEO_SHARE)))}`);
+    const { video, kbps, fps } = this.wants;
+    run.tell(video ? "h264" : "jpeg");
+    run.tell(`kbps ${kbpsFor(kbps)}`);
+    // VideoToolbox's 60 a second, fewer for a slow link (live.ts fpsFor): the Mac's load is its own, not counted.
+    if (video) run.tell(`fps ${fpsFor(HARDWARE_FPS, kbpsFor(kbps), 0, fps)}`);
   }
 
   /** The stream, until nobody watches; screenshots instead if it can't start or stops by itself. */

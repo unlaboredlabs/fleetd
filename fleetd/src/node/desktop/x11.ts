@@ -7,7 +7,7 @@
 // FakeInput and DAMAGE's QueryVersion, Create and Subtract.
 import { connect as netConnect } from "node:net";
 import type { Duplex } from "node:stream";
-import { jpeg, type Raw, type Screen } from "./screen.ts";
+import { type Box, jpeg, type Raw, type Screen } from "./screen.ts";
 
 const NO_SYMBOL = 0;
 const SHIFT_L = 0xffe1;
@@ -259,7 +259,27 @@ function connectSocket(path: string): Promise<Duplex> {
 }
 
 /** A screen's changed part: its left, top, right and bottom edges (right and bottom exclusive). */
-type Box = [number, number, number, number];
+/**
+ * `part`, the pixels of `box` as the server sent them, into `kept`, a screen `width` wide: only the rows that differ,
+ * compared in place. The box of those rows, or null when none does.
+ */
+export function patch(kept: Uint8Array, width: number, part: Uint8Array, box: Box): Box | null {
+  const [x0, y0, x1, y1] = box;
+  const row = (x1 - x0) * 4;
+  const into = Buffer.from(kept.buffer, kept.byteOffset, kept.length);
+  const from = Buffer.from(part.buffer, part.byteOffset, part.length);
+  let first = -1;
+  let last = -1;
+  for (let y = y0; y < y1; y++) {
+    const at = (y * width + x0) * 4;
+    const src = (y - y0) * row;
+    if (from.compare(into, at, at + row, src, src + row) === 0) continue;
+    into.set(from.subarray(src, src + row), at);
+    if (first < 0) first = y;
+    last = y;
+  }
+  return first < 0 ? null : [x0, first, x1, last + 1];
+}
 
 /** DAMAGE on the root window. */
 type Damage = { major: number; event: number; id: number };
@@ -273,6 +293,7 @@ export class X implements Screen {
   private dirty: Box | "all" | undefined = "all";
   /** The screen as the last grab left it, which a grab of only what changed patches. */
   private kept: Uint8Array | undefined;
+  private keptWidth = 0;
   /** Who waits for the screen to change (nextChange). */
   private wake: (() => void) | undefined;
   private keys: Keymap;
@@ -420,8 +441,9 @@ export class X implements Screen {
 
   /**
    * The screen's pixels as the server sends them (32 bits each). With DAMAGE, only the part that changed since the
-   * last grab is read and patched into the screen that grab left: typing in a terminal reads a few KB, not 4 MB.
-   * `whole` reads all of it anyway.
+   * last grab is read and patched into the screen that grab left: typing in a terminal reads a few KB, not 4 MB. What
+   * comes is compared with what is kept row by row, so `changed` is the rows that really differ (a whole read of a still
+   * screen: none). `whole` reads all of it anyway. The pixels are the kept screen itself, good until the next grab.
    */
   async grabRaw(whole = false): Promise<Raw> {
     const [width, height] = this.size();
@@ -433,19 +455,16 @@ export class X implements Screen {
       this.subtract();
     }
     try {
-      if (!this.damage || whole || dirty === "all" || !kept || kept.length !== width * height * 4) {
-        const data = await this.getImage(0, 0, width, height);
-        this.kept = this.damage ? new Uint8Array(data) : undefined;
-        return { data, width, height };
+      if (!this.damage) return { data: await this.getImage(0, 0, width, height), width, height };
+      if (!kept || this.keptWidth !== width || kept.length !== width * height * 4) {
+        this.kept = new Uint8Array(await this.getImage(0, 0, width, height));
+        this.keptWidth = width;
+        return { data: this.kept, width, height, changed: [0, 0, width, height] };
       }
-      if (dirty) {
-        const [x0, y0, x1, y1] = dirty;
-        const part = await this.getImage(x0, y0, x1 - x0, y1 - y0);
-        const row = (x1 - x0) * 4;
-        for (let y = y0; y < y1; y++) kept.set(part.subarray((y - y0) * row, (y - y0 + 1) * row), (y * width + x0) * 4);
-      }
-      // A copy: the kept screen changes with the next grab, maybe while this one is still being encoded.
-      return { data: new Uint8Array(kept), width, height };
+      if (whole || dirty === "all") return { data: kept, width, height, changed: patch(kept, width, await this.getImage(0, 0, width, height), [0, 0, width, height]) };
+      if (!dirty) return { data: kept, width, height, changed: null };
+      const [x0, y0, x1, y1] = dirty;
+      return { data: kept, width, height, changed: patch(kept, width, await this.getImage(x0, y0, x1 - x0, y1 - y0), dirty) };
     } catch (e) {
       // Read again whole next time: the part that changed is not known to be in the kept screen.
       this.dirty = "all";

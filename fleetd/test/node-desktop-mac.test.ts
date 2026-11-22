@@ -242,7 +242,8 @@ test("a watched Mac screen's live view is its own stream: H.264 to a watcher tha
   session.setWatcher({ kbps: undefined, video: true, send: (f) => sent.push({ seq: f.seq, jpeg: f.jpegB64 !== undefined, width: f.width, ...(f.h264B64 ? { h264: true, key: f.key === true } : {}) }) });
   const deadline = Date.now() + 5_000;
   while (!told.length && Date.now() < deadline) await Bun.sleep(2);
-  expect(told).toEqual(["h264", "kbps 2500"]);
+  // H.264 at VideoToolbox's 60 a second, fewer for a slow link (700 kbit/s: 15).
+  expect(told).toEqual(["h264", "kbps 2500", "fps 60"]);
   // While the stream runs, the session doesn't read the screen itself.
   await Bun.sleep(150);
   const read = grabs;
@@ -261,11 +262,11 @@ test("a watched Mac screen's live view is its own stream: H.264 to a watcher tha
   told.length = 0;
   session.key();
   session.setBudget(1000, true);
-  expect(told).toEqual(["still", "h264", "kbps 700"]);
+  expect(told).toEqual(["still", "h264", "kbps 700", "fps 15"]);
   told.length = 0;
   session.setBudget(1000, false);
   session.setBudget(1000, true);
-  expect(told).toEqual(["jpeg", "kbps 700", "still", "h264", "kbps 700", "still"]);
+  expect(told).toEqual(["jpeg", "kbps 700", "still", "h264", "kbps 700", "fps 15", "still"]);
   // The stream ends by itself: the session reads the screen for the live view again.
   end("fleetd-frames: the screen's capture stopped");
   while (grabs === read && Date.now() < deadline) await Bun.sleep(5);
