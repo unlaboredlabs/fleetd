@@ -5,10 +5,22 @@ import type { Change, TrainState } from "../../shared/contracts.ts";
 import { TOOLS_FAILED } from "../reviews/rules.ts";
 import { parseMs } from "../store/time.ts";
 import { WAITING_FOR_RUNNERS } from "./next_rules.ts";
-import { APPROVAL, HELD, LEFT_OUT, timedOut } from "./notes.ts";
+import { APPROVAL, BLOCKED_PREFIX, HELD, LEFT_OUT, timedOut } from "./notes.ts";
 import { DRAFT, isDraft } from "./states.ts";
 
-export type TrainFacts = { trains: TrainState[]; changes: Change[] };
+export type TrainFacts = {
+  trains: TrainState[];
+  changes: Change[];
+  /** Now, for how long a parked Change has gone with no push; absent, no such line. */
+  nowMs?: number;
+  /** When each parked Change went back to its author, by its id (back.ts); else its last update. */
+  backSince?: Record<string, number>;
+  /** Its writer task's state in words ("is running", "ended, waiting on nothing"). */
+  writer?: (taskId: string) => string | undefined;
+};
+
+/** How long a sent-back PR goes with no push before the lead's digest flags it (back.ts `BACK_IDLE_MS`). */
+const BACK_IDLE_MS = 30 * 60_000;
 
 const PARKED = ["needs_rebase", "ci_failed"];
 
@@ -58,6 +70,15 @@ function stateOf(changes: Change[], train: TrainState): string {
   return parts.join("; ");
 }
 
+/** A sent-back Change with no push for `BACK_IDLE_MS`: for how long, and its writer's state. */
+function idle(facts: TrainFacts, c: Change): string {
+  if (facts.nowMs === undefined) return "";
+  const since = facts.backSince?.[c.changeId] ?? parseMs(c.updatedAt);
+  if (since === undefined || facts.nowMs - since < BACK_IDLE_MS) return "";
+  const writer = c.taskId === undefined ? "it has no writer task" : `its writer ${c.taskId} ${facts.writer?.(c.taskId) ?? "is unknown"}`;
+  return `. No push for ${Math.round((facts.nowMs - since) / 60_000)} min; ${writer}`;
+}
+
 /** The lead digest's "Merge train" lines. `since` is the lead's last wake. */
 export function leadTrainLines(facts: TrainFacts, since?: string): string[] {
   // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
@@ -71,7 +92,12 @@ export function leadTrainLines(facts: TrainFacts, since?: string): string[] {
     const then = timedOut(c)
       ? "No push needed; the train puts it back in the queue once its checks finish green"
       : "Back with its author; the train retries its next push";
-    lines.push(`- ${c.changeId} ${c.state}: ${pr(c)}${by(c)}; ${oneLine(c.lastError ?? "", 160)}. ${then}`);
+    lines.push(`- ${c.changeId} ${c.state}: ${pr(c)}${by(c)}; ${oneLine(c.lastError ?? "", 160)}. ${then}${timedOut(c) ? "" : idle(facts, c)}`);
+  }
+  // Held by its review's blocking findings, its queue entry says only "reviewing": one left with no push says more.
+  for (const c of facts.changes.filter((c) => c.state === "reviewing" && c.lastError?.startsWith(BLOCKED_PREFIX))) {
+    const left = idle(facts, c);
+    if (left !== "") lines.push(`- ${c.changeId} reviewing: ${pr(c)}${by(c)}; ${oneLine(c.lastError ?? "", 160)}${left}`);
   }
   return lines;
 }

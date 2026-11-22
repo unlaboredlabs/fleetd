@@ -23,6 +23,7 @@
 // their threads were resolved. Each verdict is also posted on the PR (post.ts).
 import type { Database } from "bun:sqlite";
 import type { Change, ChangeReview } from "../../shared/contracts.ts";
+import { tellWriter } from "../train/back.ts";
 import { prNote, prReviewNotRecorded, prReviewStalled } from "../train/events.ts";
 import type { TrainGitHub } from "../train/github.ts";
 import type { EventView, TrainHost } from "../train/host.ts";
@@ -182,11 +183,8 @@ export class Reviews implements ReviewGate {
     }
     const problem = `people reviewed it on GitHub: ${holdWhy(fresh)}`;
     const text = fixYourPr(this.train.prompts.forTask(change.projectRef, author), change, problem, findingsText(change, fresh));
-    try {
-      await this.host.messageTask(change.projectRef, REVIEWS_BY, author, text);
-    } catch (error) {
-      return this.holdNote(change, `${why}; sending them to ${author} failed: ${(error as Error).message}`);
-    }
+    const failed = await tellWriter(this.train, change, author, text, REVIEWS_BY);
+    if (failed !== undefined) return this.holdNote(change, `${why}; sending them to ${author} failed: ${failed}`);
     this.people.markSent(change.prUrl, fresh);
     this.holdNote(change, `${why}; sent to ${author}`);
   }
@@ -668,11 +666,8 @@ export class Reviews implements ReviewGate {
         nonBlocking,
         summary: `${summary}\n\n\`review_read\` reads these findings again, whole.`,
       });
-      try {
-        await this.host.messageTask(change.projectRef, REVIEWS_BY, author, text);
-      } catch (error) {
-        note(`${waiting}; sending them to ${author} failed: ${(error as Error).message}`);
-      }
+      const failed = await tellWriter(this.train, change, author, text, REVIEWS_BY);
+      if (failed !== undefined) note(`${waiting}; sending them to ${author} failed: ${failed}`);
       return;
     }
     await this.evaluate(round.changeId);

@@ -8,6 +8,7 @@
 // (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
 import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared/contracts.ts";
+import * as back from "./back.ts";
 import * as batch from "./batch.ts";
 import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
@@ -20,7 +21,7 @@ import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BACK, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
@@ -511,12 +512,9 @@ export class Train {
     const all = [details.trim(), open].filter((d) => d !== "").join("\n\n");
     const text = fixYourPr(set, change, problem, all);
     if (change.taskId !== undefined) {
-      try {
-        await this.host.messageTask(change.projectRef, TRAIN_BY, change.taskId, text);
-        return;
-      } catch (error) {
-        this.warnHourly([`train: author ${change.taskId} of ${change.changeId} not messaged`], (error as Error).message, `train: author ${change.taskId} of ${change.changeId} not messaged: ${(error as Error).message}`);
-      }
+      const why = await back.tellWriter(this, change, change.taskId, text);
+      if (why === undefined) return;
+      this.warnHourly([`train: author ${change.taskId} of ${change.changeId} not messaged`], why, `train: author ${change.taskId} of ${change.changeId} not messaged: ${why}`);
     }
     await this.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, text));
   }
@@ -1424,7 +1422,7 @@ export class Train {
   async refresh(repo: string): Promise<void> {
     const changes = this.records.inTrain(repo, ["queued", "reviewing", "ready", "needs_rebase", "ci_failed"]);
     const ids = new Set(changes.map((c) => c.changeId));
-    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON], [...ids]);
+    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON, WAIT_BACK], [...ids]);
     for (const id of [...this.lateReruns.keys()]) if (!ids.has(id)) this.lateReruns.delete(id);
     person.forget(this, repo, ids);
     const live = [...this.records.inTrain(repo, ["rebasing", "ci", "merging"]), ...changes].map((c) => c.changeId);
@@ -1460,10 +1458,12 @@ export class Train {
         if (v.kind === "ready") this.setReady(change, v.reviews);
         else {
           await this.stillBlocked(change, v.kind === "blocked");
+          if (v.kind === "blocked") await back.stillBack(this, change);
           if (inLine) await this.unstartedChecks(change, pull.base.ref);
         }
       } else if (timedOut(change)) await this.afterTimeout(change);
       else if (inLine) await this.unstartedChecks(change, pull.base.ref);
+      else if (change.state === "needs_rebase" || change.state === "ci_failed") await back.stillBack(this, change);
     }
   }
 

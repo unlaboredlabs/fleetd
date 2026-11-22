@@ -553,6 +553,10 @@ export class FakeGh implements GhRunner {
 export class FakeHost implements TrainHost {
   readonly tasks = new Map<string, TaskView>();
   readonly sends: [string, string][] = [];
+  /** What each ended task still waits on (its wait_ci, a Monitor), by task. */
+  readonly waits = new Map<string, string>();
+  /** The messages kept for a waiting task's next run, without starting it. */
+  readonly held: [string, string][] = [];
   readonly events: EventView[] = [];
   readonly wakes: string[] = [];
   /** The lines the train posted in the project's chat. */
@@ -579,6 +583,12 @@ export class FakeHost implements TrainHost {
   }
   async messageTask(_r: ProjectRef, _by: string, taskId: string, text: string) {
     this.sends.push([taskId, text]);
+  }
+  waitingOn(taskId: string) {
+    return this.tasks.get(taskId)?.state === "done" ? this.waits.get(taskId) : undefined;
+  }
+  async holdMessage(_r: ProjectRef, _by: string, taskId: string, text: string) {
+    this.held.push([taskId, text]);
   }
   async cancelTask(_r: ProjectRef, _by: string, taskId: string, reason: string) {
     const t = this.tasks.get(taskId);
