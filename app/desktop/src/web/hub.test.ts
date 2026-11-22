@@ -1,6 +1,6 @@
 // The browser's WebSocket as the hub client's transport, with the socket faked.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HubClient, PING_EVERY_MS, QUIET_PING_MS, QUIET_PONG_MS } from "../main/hub/client";
+import { HubClient, PING_EVERY_MS, PONG_WAIT_MS, QUIET_PING_MS, QUIET_PONG_MS } from "../main/hub/client";
 import type { ConnectionEvents } from "../main/hub/link";
 import type { HubFrame } from "../shared/hub";
 import { browserTransport } from "./hub";
@@ -122,7 +122,22 @@ describe("the hub client over the browser's WebSocket", () => {
     expect(FakeSocket.made).toHaveLength(1);
   });
 
-  it("gives up a link that died under calls within seconds: answers due never hold the quiet ping", () => {
+  it("keeps a slow link whose call's answer takes past the quiet ping's wait to cross", async () => {
+    const { client, socket, hub } = live();
+    hub({ t: "snapshot", cursor: 41, machines: [] });
+    // A page of long messages at 256 kbit/s: seconds on its way, heard only once it has all come, the ping behind it.
+    const answer = client.call({ tool: "chat_history", input: {} });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
+    expect(client.state.phase).toBe("live");
+    const asked = JSON.parse(socket.sent.find((t) => t.includes("chat_history")) ?? "{}") as { id: string };
+    hub({ t: "result", id: asked.id, output: { messages: [] } });
+    hub({ t: "pong" });
+    await expect(answer).resolves.toMatchObject({ ok: true });
+    expect(client.state.phase).toBe("live");
+    expect(FakeSocket.made).toHaveLength(1);
+  });
+
+  it("gives up a link that died under calls at the steady ping's wait, not its whole cycle", () => {
     const { client, hub } = live();
     hub({ t: "snapshot", cursor: 41, machines: [] });
     // A reply streaming, then the link dies; the page's reads go into it and are never answered.
@@ -130,7 +145,17 @@ describe("the hub client over the browser's WebSocket", () => {
     void client.call({ tool: "agents_list", input: {} });
     void client.call({ tool: "chat_history", input: {} });
     vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
-    expect(QUIET_PING_MS + QUIET_PONG_MS).toBeLessThan(PING_EVERY_MS);
+    expect(client.state.phase).toBe("live");
+    vi.advanceTimersByTime(PONG_WAIT_MS - QUIET_PONG_MS);
+    expect(client.state.phase).toBe("retrying");
+    expect(QUIET_PING_MS + PONG_WAIT_MS).toBeLessThan(PING_EVERY_MS + PONG_WAIT_MS);
+  });
+
+  it("gives up a link that died after traffic with nothing due within the quiet ping's seconds", () => {
+    const { client, hub } = live();
+    hub({ t: "snapshot", cursor: 41, machines: [] });
+    hub({ t: "event", seq: 42, type: "task.started" });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
     expect(client.state.phase).toBe("retrying");
   });
 
