@@ -87,6 +87,8 @@ export interface DataState {
    * decoder hadn't had it.
    */
   readonly browserVideo?: { readonly sessionId: string; readonly frames: readonly BrowserFrame[]; readonly dropped: number } | undefined;
+  /** The session whose frames come on the window's own peer now (screens/sessions/rtc.ts): main's of it are dropped. */
+  readonly browserRtc?: string | undefined;
   /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
   readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
   /**
@@ -310,9 +312,12 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     case "chat_delta":
       return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
     case "browser_frame": {
+      const f = frame.frame;
+      // On the window's peer, the frames main still had on their way are dropped; the first of the peer's says so.
+      if (frame.rtc !== true && s.browserRtc === f.sessionId) return [s, {}];
+      if (frame.rtc === true && s.browserRtc !== f.sessionId) s = { ...s, browserRtc: f.sessionId };
       // A frame older than one already shown (a slow link's) is dropped.
       const shown = s.browserFrame;
-      const f = frame.frame;
       if (shown !== undefined && shown.sessionId === f.sessionId && shown.seq >= f.seq) return [s, {}];
       if (f.h264B64 === undefined) return [{ ...s, browserFrame: f }, {}];
       const before = s.browserVideo?.sessionId === f.sessionId ? s.browserVideo : { sessionId: f.sessionId, frames: [], dropped: -1 };
@@ -324,6 +329,9 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
     }
     case "screen_thumb":
       return [{ ...s, screenThumbs: withThumb(s.screenThumbs, frame.thumb) }, {}];
+    // The peer's, not the store's (screens/sessions/rtc.ts).
+    case "browser_rtc":
+      return [s, {}];
     case "live":
       return [{ ...s, live: applyLive(s.live, frame.frame, nowMs) }, {}];
     case "error":

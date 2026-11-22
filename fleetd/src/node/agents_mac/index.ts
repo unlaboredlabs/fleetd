@@ -19,6 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import {
   CAP_AGENTS_MAC,
   CAP_BROWSER,
+  CAP_BROWSER_RTC,
   CAP_BUILD_BUN,
   CAP_BUILD_RUST,
   CAP_LINK_DEFLATE,
@@ -74,6 +75,7 @@ const KEPT = new Set([
   CAP_SESSION_HOST,
   CAP_SESSION_SEAL,
   CAP_BROWSER,
+  CAP_BROWSER_RTC,
   CAP_SESSION_IOS,
   CAP_LINK_DEFLATE,
 ]);

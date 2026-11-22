@@ -23,6 +23,10 @@ export const IPC = {
   hubThumbs: "hub:thumbs",
   /** invoke(BrowserSessionId, BrowserInput) → void. A person's input to a session they took over; never answered. */
   hubInput: "hub:input",
+  /** invoke(BrowserSessionId, peer, offer | null) → void. A screen peer's offer, or its close; the answer comes as a frame. */
+  hubRtc: "hub:rtc",
+  /** invoke(BrowserSessionId, peer | null) → void. The peer the watched session's frames come on now, or none. */
+  hubRtcWatch: "hub:rtc-watch",
   /** invoke() → void. A fresh snapshot, then events from its cursor. */
   hubResync: "hub:resync",
   /** invoke() → void. Dials the hub now instead of at the next retry. */

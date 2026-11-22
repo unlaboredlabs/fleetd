@@ -461,6 +461,35 @@
             "t"
           ],
           "type": "object"
+        },
+        {
+          "description": "The answer to a `browser_rtc` offer, or why there is none; also sent when the node closes the peer.",
+          "properties": {
+            "answer": {
+              "description": "The node's SDP answer, its ICE candidates gathered.",
+              "type": "string"
+            },
+            "error": {
+              "description": "Why there is no peer (a node too old, a refusal, a closed one): the screen stays on the socket.",
+              "type": "string"
+            },
+            "peer": {
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/$defs/BrowserSessionId"
+            },
+            "t": {
+              "const": "browser_rtc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "peer",
+            "session"
+          ],
+          "type": "object"
         }
       ]
     },

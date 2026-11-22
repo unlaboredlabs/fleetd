@@ -81,6 +81,10 @@ export interface DataLayer {
   focus(workstreamId: OrderFocus | null): void;
   /** Start applying main's frames; returns the stop. */
   start(): () => void;
+  /** A frame from elsewhere than main (a screen's peer, screens/sessions/rtc.ts), applied as main's are. */
+  frame(frame: HubFrame): void;
+  /** Each `browser_rtc` frame from main from now on, until the returned stop. */
+  onRtc(fn: (frame: Extract<HubFrame, { t: "browser_rtc" }>) => void): () => void;
 }
 
 /** `window.fleetd.hub` for one hub: every call names it. */
@@ -327,7 +331,12 @@ export const createDataLayer = (
     cancelBatch?.();
     flush();
   };
+  const rtcListeners = new Set<(frame: Extract<HubFrame, { t: "browser_rtc" }>) => void>();
   const onFrame = (frame: HubFrame) => {
+    if (frame.t === "browser_rtc") {
+      for (const fn of [...rtcListeners]) fn(frame);
+      return;
+    }
     if (frame.t === "state" || frame.t === "snapshot") {
       flushNow();
       apply([[frame, now()]]);
@@ -350,6 +359,11 @@ export const createDataLayer = (
     retryNow: () => void hub.retryNow?.(),
     resync: () => void hub.resync(),
     focus: (workstreamId) => void hub.focus(workstreamId),
+    frame: onFrame,
+    onRtc: (fn) => {
+      rtcListeners.add(fn);
+      return () => void rtcListeners.delete(fn);
+    },
     start: () => {
       // The first connect's quiet seconds (DataState.starting), until the hub's first state ends them sooner.
       if (!store.getState().fresh) store.setState({ starting: true });

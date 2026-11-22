@@ -43,4 +43,8 @@ export interface HubSource {
   thumbs(on: boolean): void;
   /** A person's input to a session they have taken over; dropped while the link is down. */
   input(session: string, input: BrowserInput): void;
+  /** A screen peer's offer, or null to close it (HubClient's); a source without peers answers none. */
+  rtc?(session: string, peer: string, offer: string | null): void;
+  /** The peer the watched session's frames come on now, or null for the hub. */
+  rtcWatch?(session: string, peer: string | null): void;
 }

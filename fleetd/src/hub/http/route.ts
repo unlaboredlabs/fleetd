@@ -24,7 +24,7 @@ export interface SocketHandler {
   message(ws: Socket, message: string | Buffer): void | Promise<void>;
   close?(ws: Socket, code: number, reason: string): void | Promise<void>;
   drain?(ws: Socket): void;
-  /** A pong to the hub's ping: live screens' pacing times round trips with them (browser/app.ts `pong`). */
+  /** A pong to the hub's ping. */
   pong?(ws: Socket, data: Buffer): void;
 }
 

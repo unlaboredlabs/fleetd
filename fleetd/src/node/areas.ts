@@ -9,6 +9,7 @@ import { start as startMcpRelay } from "./actions/mcp_relay.ts";
 import { start as startDesktop, stop as stopDesktop } from "./desktop/index.ts";
 import { start as startHosts } from "./hosts/index.ts";
 import { start as startScreens } from "./screens/index.ts";
+import { start as startRtc } from "./rtc/index.ts";
 import { start as startSandboxes } from "./sandbox/hosted.ts";
 import { start as startSessionRoute } from "./session_route/index.ts";
 
@@ -25,6 +26,7 @@ export function registerAreas(node: Node): void {
     startScreens(node);
     startDevices(node);
     startDesktop(node);
+    startRtc(node);
     return;
   }
   startBrowser(node);
@@ -37,6 +39,8 @@ export function registerAreas(node: Node): void {
   // After the browser's: the desktops take the hub's live-view frames for their own ids and hand on the rest.
   startDesktop(node);
   startAgentsMac(node);
+  // After every screen area: its peers see the hub's watch frames before the screens do, and the screens' frames.
+  startRtc(node);
   // Last: the heartbeat's `load.hosts` goes around the lines the areas above added (the desktop's).
   startHosts(node);
 }

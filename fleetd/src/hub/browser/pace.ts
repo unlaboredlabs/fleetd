@@ -1,3 +1,5 @@
+// Kept for the package's importers (fleetd-cloud's screen relay) until they move to ./flow.ts, which the hub's own
+// socket and the node's peers pace with since W837.
 // A live screen's pacing for one app connection that acks its frames: frames go
 // only as fast as the link delivers them, at most two round trips' worth in flight, so a slow phone sees the newest
 // frame late by one frame's time rather than by a queue. The acks measure what the link carries; while frames wait

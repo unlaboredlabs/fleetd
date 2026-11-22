@@ -21,7 +21,8 @@ export type ClientMessage =
   | { t: "live"; board: boolean; focus?: string }
   | { t: "chat"; project?: { machineId: string; projectId: string } }
   | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
-  | { t: "browser_watch"; session?: string; acks?: true; video?: true }
+  | { t: "browser_watch"; session?: string; acks?: true; video?: true; rtc?: string }
+  | { t: "browser_rtc"; session: string; peer: string; offer?: string }
   | { t: "browser_frame_ack"; seq: number }
   | { t: "browser_input"; session: string; input: BrowserInput }
   | { t: "screen_thumbs"; on: boolean };
@@ -56,6 +57,8 @@ const readable = (f: Fields): boolean => {
       );
     case "screen_thumb":
       return isText(f["sessionId"]) && isText(f["jpegB64"]) && isInt(f["width"], 1) && isInt(f["height"], 1);
+    case "browser_rtc":
+      return isText(f["session"]) && isText(f["peer"], 1, 64) && isOptional(f["answer"], isText) && isOptional(f["error"], isText);
     default:
       return false;
   }

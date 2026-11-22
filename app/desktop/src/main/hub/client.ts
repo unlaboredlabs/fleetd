@@ -173,6 +173,12 @@ export class HubClient implements HubSource {
   #frameAcks = false;
   /** The hub sends H.264 to a watch that asks (ready's `h264_frames`). */
   #h264 = false;
+  /** The hub passes screen peers' offers on (ready's `browser_rtc`). */
+  #rtcServed = false;
+  /** The peers asked on this connection, by id: each ends with it. */
+  readonly #peers = new Map<string, string>();
+  /** The watched session's peer its frames come on now: the watch says so (`rtc`) while it is the session watched. */
+  #rtc: { session: string; peer: string } | null = null;
   /** The windows decode H.264: the option, until `setVideo` says otherwise. */
   #video: boolean;
   /** The hub sends the Screens page's pictures (ready's `screen_thumbs`). */
@@ -422,6 +428,31 @@ export class HubClient implements HubSource {
     if (this.#ready && this.#browser) this.#send({ t: "browser_input", session, input });
   }
 
+  /** A screen peer's offer for `session`, or null to close it: the answer, or why there is none, comes as a frame. */
+  rtc(session: string, peer: string, offer: string | null): void {
+    if (offer === null) {
+      if (this.#peers.delete(peer) && this.#ready) this.#send({ t: "browser_rtc", session, peer });
+      if (this.#rtc?.peer === peer) this.rtcWatch(session, null);
+      return;
+    }
+    if (!this.#ready || !this.#rtcServed) {
+      const error = this.#ready ? "This hub doesn't pass screen peers on." : "Not connected to the hub.";
+      this.#options.emit({ t: "browser_rtc", session, peer, error });
+      return;
+    }
+    this.#peers.set(peer, session);
+    this.#send({ t: "browser_rtc", session, peer, offer });
+  }
+
+  /** The peer `session`'s frames come on now, or null: through the hub again. */
+  rtcWatch(session: string, peer: string | null): void {
+    const next = peer === null || !this.#peers.has(peer) ? null : { session, peer };
+    if (next?.peer === this.#rtc?.peer && next?.session === this.#rtc?.session) return;
+    if (next === null && this.#rtc?.session !== session) return;
+    this.#rtc = next;
+    if (this.#ready && this.#browser && this.#watch === session) this.#sendWatch();
+  }
+
   presence(frame: PresenceFrame): void {
     if (!this.#ready || !this.#presence) return;
     // Its own id, which the hub echoes only on an error for a frame it can't read; calls' ids start with "c".
@@ -526,6 +557,7 @@ export class HubClient implements HubSource {
         this.#browser = frame.features?.includes("browser_sessions") ?? false;
         this.#frameAcks = frame.features?.includes("frame_acks") ?? false;
         this.#h264 = frame.features?.includes("h264_frames") ?? false;
+        this.#rtcServed = frame.features?.includes("browser_rtc") ?? false;
         this.#thumbsServed = frame.features?.includes("screen_thumbs") ?? false;
         this.#deflateUp = frame.features?.includes("deflate") ?? false;
         if (this.#readyTimer !== null) clearTimeout(this.#readyTimer);
@@ -582,6 +614,21 @@ export class HubClient implements HubSource {
         // As it comes: the hub sends the next frames as these arrive, so a slow link shows the newest, not a backlog.
         if (this.#frameAcks) this.#send({ t: "browser_frame_ack", seq: browser.seq });
         this.#options.emit({ t: "browser_frame", frame: browser });
+        return;
+      }
+      case "browser_rtc": {
+        if (!this.#peers.has(frame.peer)) return;
+        if (frame.error !== undefined) {
+          this.#peers.delete(frame.peer);
+          if (this.#rtc?.peer === frame.peer) this.#rtc = null;
+        }
+        this.#options.emit({
+          t: "browser_rtc",
+          session: frame.session,
+          peer: frame.peer,
+          ...(frame.answer === undefined ? {} : { answer: frame.answer }),
+          ...(frame.error === undefined ? {} : { error: frame.error }),
+        });
         return;
       }
       case "screen_thumb": {
@@ -677,6 +724,12 @@ export class HubClient implements HubSource {
     this.#firstSnapshot = false;
     this.#snapshotDue = false;
     this.#failPending("disconnected", "The connection to the hub dropped before it answered.");
+    // The hub closes each peer with the connection: the windows take their frames from the next one.
+    this.#rtc = null;
+    for (const [peer, session] of [...this.#peers]) {
+      this.#peers.delete(peer);
+      this.#options.emit({ t: "browser_rtc", session, peer, error: "The connection to the hub dropped." });
+    }
     return wasReady;
   }
 
@@ -731,6 +784,7 @@ export class HubClient implements HubSource {
             session: this.#watch,
             ...(this.#frameAcks ? { acks: true as const } : {}),
             ...(this.#h264 && this.#video ? { video: true as const } : {}),
+            ...(this.#rtc !== null && this.#rtc.session === this.#watch ? { rtc: this.#rtc.peer } : {}),
           },
     );
   }

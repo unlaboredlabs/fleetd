@@ -168,6 +168,12 @@
               "minimum": 1,
               "type": "integer"
             },
+            "rtc": {
+              "description": "Sent only to a hub whose `ready` names `browser_rtc`. The client's peer (`browser_rtc`) whose `frames` channel\ncarries this watch's frames now, so the hub sends none on the socket. Absent: they come on the socket.",
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
             "session": {
               "$ref": "#/$defs/BrowserSessionId"
             },
@@ -222,6 +228,35 @@
             "t",
             "session",
             "input"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Sent only to a hub whose `ready` names `browser_rtc` in its features.\nA peer for a watched session's frames and input, straight to its node: the hub passes the offer on and sends back a\n`browser_rtc` with the node's answer, or why there is none. Without `offer`, the peer closes.",
+          "properties": {
+            "offer": {
+              "description": "An SDP offer with its ICE candidates gathered, for the session's node to answer: frames, then input, go\npeer to peer while it holds. Absent: the peer closes.",
+              "maxLength": 32768,
+              "type": "string"
+            },
+            "peer": {
+              "description": "The client's own id for the peer, which the answer and a close name.",
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "session": {
+              "$ref": "#/$defs/BrowserSessionId"
+            },
+            "t": {
+              "const": "browser_rtc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "peer",
+            "session"
           ],
           "type": "object"
         },

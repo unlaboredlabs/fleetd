@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { live } from "../src/hub/browser/live.ts";
-import { endOutlived, get, prune, tellNodes } from "../src/hub/browser/store.ts";
 import { Pace } from "../src/hub/browser/pace.ts";
+import { endOutlived, get, prune, tellNodes } from "../src/hub/browser/store.ts";
 import { handedBackLine, tellHandedBack } from "../src/hub/browser/tools.ts";
 import { steerTasks } from "../src/hub/steer/index.ts";
 import { TaskRecords } from "../src/hub/tasks/records.ts";
@@ -155,10 +155,10 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   const frame = (seq: number) => ({ t: "browser_frame", sessionId: S1, seq, jpegB64: "AAAA", width: 1, height: 1, control: "agent" });
   for (let seq = 1; seq <= 5; seq++) t.link.deliver("devbox", frame(seq));
   expect(fast.sent.map((f) => (f as { seq: number }).seq)).toEqual([1, 2, 3, 4, 5]);
-  // The acking one has two in flight, then waits: its slot keeps only the newest.
-  expect(slow.sent.map((f) => (f as { seq: number }).seq)).toEqual([1, 2]);
-  await t.app.deliver(as(slow, person), { t: "browser_frame_ack", seq: 2 });
-  expect(slow.sent.map((f) => (f as { seq: number }).seq)).toEqual([1, 2, 5]);
+  // The acking one has one on its way until its first ack, and what waits is only the newest picture.
+  expect(slow.sent.map((f) => (f as { seq: number }).seq)).toEqual([1]);
+  await t.app.deliver(as(slow, person), { t: "browser_frame_ack", seq: 1 });
+  expect(slow.sent.map((f) => (f as { seq: number }).seq)).toEqual([1, 5]);
   // A frame of a node that isn't the session's goes nowhere.
   t.link.link("other", ["browser"]);
   t.link.deliver("other", frame(6));
@@ -172,7 +172,7 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   expect(live(t.hub).watchers(S1)).toBe(0);
 });
 
-test("H.264 goes to a session's node only while every watch decodes it, and a watch that lost a frame of it waits for a keyframe the node is asked for", async () => {
+test("H.264 goes to a session's node only while every watch decodes it, and its frames wait in order for the acks' window", async () => {
   setup();
   await t.calls.call(agent("devbox", "p1"), report("live"));
   const person = caller("read", { kind: "human" });
@@ -194,19 +194,19 @@ test("H.264 goes to a session's node only while every watch decodes it, and a wa
   const seqs = () => app.sent.map((f) => (f as { seq: number }).seq);
   t.link.deliver("devbox", still(1));
   t.link.deliver("devbox", h264(2, true));
-  // Two in flight: the third waits in the slot, and the fourth would replace it unsent.
+  // One on its way before the first ack: the H.264 frames wait in order behind it, none dropped.
   t.link.deliver("devbox", h264(3));
   t.link.deliver("devbox", h264(4));
-  expect(seqs()).toEqual([1, 2]);
-  expect(watches().at(-1)).toEqual({ t: "browser_watch", sessionId: S1, on: true, video: true, key: true });
-  await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 2 });
-  // Nothing made from the lost frame goes; the keyframe does, and what follows it.
-  t.link.deliver("devbox", h264(5));
+  expect(seqs()).toEqual([1]);
+  // The first ack's round trip sizes the window: what waited goes.
   await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 1 });
-  expect(seqs()).toEqual([1, 2]);
-  t.link.deliver("devbox", h264(6, true));
-  t.link.deliver("devbox", h264(7));
-  expect(seqs()).toEqual([1, 2, 6, 7]);
+  expect(seqs()).toEqual([1, 2, 3, 4]);
+  await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 4 });
+  // A JPEG is a whole picture: the deltas after it are made from the frames before, which went, so they go too.
+  t.link.deliver("devbox", still(5));
+  await t.app.deliver(as(app, person), { t: "browser_frame_ack", seq: 5 });
+  t.link.deliver("devbox", h264(6));
+  expect(seqs()).toEqual([1, 2, 3, 4, 5, 6]);
   // The node links again: its frames meanwhile are lost, so the watch goes on from a keyframe.
   t.link.link("devbox", ["browser"]);
   expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true, video: true, key: true }]);

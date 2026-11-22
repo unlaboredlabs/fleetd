@@ -665,6 +665,46 @@ describe("HubClient", () => {
     expect(frames.filter((f) => f.t === "browser_frame").map((f) => (f as { frame: { key?: boolean } }).frame.key)).toEqual([true]);
   });
 
+  it("passes a window's screen peer on to a hub that serves peers, names it in the watch, and ends it with the connection", () => {
+    const { hub, frames, client } = setup();
+    const session = "B68722f97b065412024c7cda6c636fd9a";
+    const rtc = () => frames.filter((f) => f.t === "browser_rtc");
+    const sent = () => hub.sent.filter((m) => m["t"] === "browser_rtc" || m["t"] === "browser_watch");
+    client.watch(session);
+    client.start();
+    hub.open();
+    // A hub that doesn't serve peers: the window hears so at once, and stays on the socket.
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions"] });
+    client.rtc(session, "w1", "v=0 offer");
+    expect(rtc()).toEqual([{ t: "browser_rtc", session, peer: "w1", error: "This hub doesn't pass screen peers on." }]);
+    hub.close(1006);
+    vi.advanceTimersByTime(500);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "browser_rtc"] });
+    client.rtc(session, "w2", "v=0 offer");
+    expect(sent().at(-1)).toEqual({ t: "browser_rtc", session, peer: "w2", offer: "v=0 offer" });
+    // Its answer reaches the windows; one for a peer this connection never asked doesn't.
+    hub.frame({ t: "browser_rtc", session, peer: "w2", answer: "v=0 answer" });
+    hub.frame({ t: "browser_rtc", session, peer: "w9", answer: "v=0 answer" });
+    expect(rtc().slice(1)).toEqual([{ t: "browser_rtc", session, peer: "w2", answer: "v=0 answer" }]);
+    // Its frames come on the peer now: the watch says so, and says so no more once the peer hands back.
+    client.rtcWatch(session, "w2");
+    expect(sent().at(-1)).toEqual({ t: "browser_watch", session, rtc: "w2" });
+    client.rtcWatch(session, null);
+    expect(sent().at(-1)).toEqual({ t: "browser_watch", session });
+    client.rtcWatch(session, "w2");
+    // The connection drops: the hub ends its peers, so the windows hear the peer is gone, and the next watch has none.
+    hub.close(1006);
+    expect(rtc().at(-1)).toEqual({ t: "browser_rtc", session, peer: "w2", error: "The connection to the hub dropped." });
+    vi.advanceTimersByTime(10_000);
+    hub.open();
+    hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "browser_rtc"] });
+    expect(sent().at(-1)).toEqual({ t: "browser_watch", session });
+    // A close is sent only for a peer the hub knows.
+    client.rtc(session, "w2", null);
+    expect(sent().at(-1)).toEqual({ t: "browser_watch", session });
+  });
+
   it("asks for the Screens page's pictures only from a hub that sends them, again on each connection, and drops them once off", () => {
     const { hub, frames, client } = setup();
     const asks = () => hub.sent.filter((m) => m["t"] === "screen_thumbs");
