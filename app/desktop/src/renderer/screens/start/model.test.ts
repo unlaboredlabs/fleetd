@@ -65,6 +65,12 @@ describe("GitHub's way back", () => {
     expect(githubReturnOf("?github=elsewhere")).toBeNull();
   });
 
+  it("never says an address: only the words around it", () => {
+    const why = (text: string) => githubReturnOf(`?github=failed&why=${encodeURIComponent(text)}`);
+    expect(why("GitHub refused (https://docs.github.com/rest). Install again in a while.")).toEqual({ at: "failed", why: "GitHub refused. Install again in a while." });
+    expect(why("https://github.com/x")).toEqual({ at: "failed", why: "GitHub didn't finish connecting." });
+  });
+
   it("leaves the rest of the address as it was", () => {
     expect(withoutGithubReturn("?github=failed&why=x")).toBe("");
     expect(withoutGithubReturn("?a=1&github=installed")).toBe("?a=1");

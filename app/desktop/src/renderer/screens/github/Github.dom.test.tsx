@@ -9,6 +9,7 @@ import type { GithubAppRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider, HubScope, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
+import { resetReturn } from "../start/kept";
 import { AdminGithub, appName, reachWords } from "./AdminGithub";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -388,6 +389,89 @@ describe("Hub › Setup › GitHub on a fleetd cloud team", () => {
     expect(document.body.textContent).not.toContain("No App yet");
     await click(button("Uninstall on GitHub"));
     expect(opened).toEqual([ACME_INSTALL]);
+  });
+
+  describe("back from GitHub's trip to this page", () => {
+    /** The web app's address as GitHub's trip came back to Settings › Hub › Setup with `search`. */
+    const backWith = (search: string) => {
+      window.history.replaceState(null, "", `/${search}#/settings/hub/setup`);
+      resetReturn();
+    };
+    /** What Get started keeps in this browser for the team. */
+    const kept = (): string | undefined => {
+      const key = Object.keys(window.localStorage).find((k) => k.startsWith("fleetd.start."));
+      return key === undefined ? undefined : (window.localStorage.getItem(key) ?? undefined);
+    };
+    beforeEach(() => window.localStorage.clear());
+    afterEach(() => {
+      window.history.replaceState(null, "", "/");
+      resetReturn();
+    });
+
+    it("a failed install says why in one line, with no address in it, and the address forgets it", async () => {
+      backWith("?github=failed&why=You%20don%27t%20administer%20acme%20on%20GitHub%20(https%3A%2F%2Fgithub.com%2Forgs%2Facme).%20Ask%20an%20owner%20to%20install%20it.");
+      await render();
+      expect(document.querySelector('[role="alert"]')?.textContent).toBe("You don't administer acme on GitHub. Ask an owner to install it.");
+      expect(document.body.textContent).not.toContain("https://");
+      expect(window.location.search).toBe("");
+      expect(window.location.hash).toBe("#/settings/hub/setup");
+      // Said once: the page opened again says nothing of it.
+      act(() => root.unmount());
+      root = createRoot(host);
+      await render();
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+    });
+
+    it("a failed install with no reason still says it didn't finish", async () => {
+      backWith("?github=failed");
+      await render();
+      expect(document.querySelector('[role="alert"]')?.textContent).toBe("GitHub didn't finish connecting.");
+    });
+
+    it("an install an organization's owner must approve says who, and that it carries on once they do", async () => {
+      backWith("?github=requested");
+      await render();
+      expect(document.querySelector('[role="status"]')?.textContent).toBe("An owner of the organization must approve fleetd on GitHub. Once they do, it's installed here.");
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(kept()).toBe(JSON.stringify({ github: "requested" }));
+      expect(window.location.search).toBe("");
+      // Installed since: the line goes.
+      app = { ...fleetdApp, installations: [{ installationId: 7, account: "acme", allRepositories: true, repositoryCount: 12 }] };
+      await act(async () => {
+        window.dispatchEvent(new Event("focus"));
+        await Promise.resolve();
+      });
+      await settle();
+      await settle();
+      expect(document.body.textContent).toContain("acme: all 12 repositories");
+      expect(document.body.textContent).not.toContain("must approve");
+    });
+
+    it("an install that went through says nothing more than where it is installed", async () => {
+      app = { ...fleetdApp, installations: [{ installationId: 7, account: "acme", allRepositories: true, repositoryCount: 12 }] };
+      backWith("?github=installed");
+      await render();
+      expect(document.body.textContent).toContain("acme: all 12 repositories");
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(document.querySelector('[role="status"]')).toBeNull();
+      expect(kept()).toBe("{}");
+      expect(window.location.search).toBe("");
+    });
+
+    it("with no word from GitHub in the address, says nothing", async () => {
+      backWith("");
+      await render();
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(document.querySelector('[role="status"]')).toBeNull();
+      expect(kept()).toBeUndefined();
+    });
+
+    it("GitHub's words for Get started are never this page's", async () => {
+      window.history.replaceState(null, "", "/?github=failed&why=Cancelled.#/start");
+      resetReturn();
+      await render();
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+    });
   });
 
   it("says GitHub isn't set up when the service has no App", async () => {
