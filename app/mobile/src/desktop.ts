@@ -174,3 +174,5 @@ export {
   type OffReason,
   type ScreenKind,
 } from "../../desktop/src/renderer/screens/sessions/pickScreen";
+export { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES, shotName, stripOf, type StripControl } from "../../desktop/src/renderer/screens/sessions/strip";
+export { moveOf, turnBetween } from "../../desktop/src/renderer/screens/sessions/turn";

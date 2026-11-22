@@ -37,6 +37,16 @@ const systemNotifications = (app: ElectronApplication, supported: boolean) =>
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
+/** New screen's iPhone Duo, opened from the Agents tab's plus: its live view, closed, with its strip. */
+const openDuo = async (page: Page) => {
+  await page.getByRole("button", { name: "New screen", exact: true }).click();
+  await page.getByRole("radio", { name: /^iPhone/u }).click();
+  await page.getByRole("combobox", { name: "Model" }).click();
+  await page.getByRole("option", { name: "iPhone Duo" }).click();
+  await page.getByRole("button", { name: "Open screen" }).click();
+  await expect(page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Fold" })).toBeVisible();
+};
+
 export const fixtures = [
   "empty",
   "typical",
@@ -3761,8 +3771,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
-  // W266: an iOS simulator of your own on the Mac from before iOS screens were gone (D298), still shown: the phone in its
-  // bezel the panel's full height under one line.
+  // W266, D652: an iPhone of your own on the Mac, the phone in its bezel the panel's full height under one line, its
+  // control strip just off its right edge: icons only, what the Mac says works there (no fold on a plain iPhone).
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.phone),
@@ -3771,6 +3781,32 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeVisible();
       await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
+      const strip = page.getByRole("toolbar", { name: "Device" });
+      await expect(strip.getByRole("button")).toHaveCount(8);
+      await expect(strip.getByRole("button", { name: "Fold" })).toHaveCount(0);
+    },
+  },
+  // ...turned left from its strip: its frame comes on its side, and the phone turns there, its island along the left.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.phone),
+    fixtures: ["sessions-preview"],
+    variant: "ios-landscape",
+    open: async (page) => {
+      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Rotate left" }).click();
+      await expect(page.locator('[data-kind="ios"][data-island="left"]')).toBeVisible();
+    },
+  },
+  // ...an Android of your own: its strip is an Android's (rotate, home, back, screenshot).
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.android),
+    fixtures: ["sessions-preview"],
+    variant: "android-strip",
+    open: async (page) => {
+      const strip = page.getByRole("toolbar", { name: "Device" });
+      await expect(strip.getByRole("button")).toHaveCount(5);
+      await expect(strip.getByRole("button", { name: "Back" })).toBeVisible();
     },
   },
   // D305: the Screens page, the wall: needs you on top with Take over, the live ones as pictures with their kind, machine
@@ -3787,7 +3823,7 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "screens", route: "#/screens", fixtures: ["typical"] },
-  // ...New screen, one sentence under the title.
+  // ...New screen, the same picker as a bot's Screens tab, its first pick the bot.
   {
     id: "screens",
     route: "#/screens",
@@ -3795,7 +3831,8 @@ export const screens: readonly Screen[] = [
     variant: "new",
     open: async (page) => {
       await page.getByRole("button", { name: "New screen", exact: true }).click();
-      await expect(page.getByRole("group", { name: "New screen" })).toBeVisible();
+      await expect(page.locator('[data-screen="sessions.new"]')).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Bot" })).toBeVisible();
     },
   },
   // ...and one open: D278's view takes the page, with a way back to the wall.
@@ -3815,6 +3852,44 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("button", { name: "New screen", exact: true }).click();
       await expect(page.getByRole("radio", { name: /^Browser/u })).toHaveAttribute("aria-checked", "true");
+    },
+  },
+  // D652: an iPhone, picked: the Mac, one of its two simulators booted, then the model and the OS side by side, the
+  // OS the model's newest; the iPhone Duo runs only its own.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-iphone",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("radio", { name: /^iPhone/u }).click();
+      await expect(page.getByRole("combobox", { name: "Model" })).toHaveText("iPhone 17");
+      await expect(page.getByRole("combobox", { name: "OS" })).toHaveText("iOS 27.2");
+      await expect(page.getByText("1 of 2 in use")).toBeVisible();
+    },
+  },
+  // ...the Duo picked and opened: its live view, yours, closed, with its strip and the fold among it.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-duo",
+    open: async (page) => {
+      await openDuo(page);
+    },
+  },
+  // ...and opened: the inner panel, wide, the phone growing to it.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "duo-open",
+    open: async (page) => {
+      await openDuo(page);
+      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Fold" }).click();
+      await page.getByRole("menuitemradio", { name: "Open", exact: true }).click();
+      await expect(page.locator('[data-kind="ios"][data-shape]')).toHaveCount(0);
     },
   },
   // ...the machines that can host it with their slots; the agents' Mac, its one screen in use, offers to wait, and the
@@ -3841,6 +3916,18 @@ export const screens: readonly Screen[] = [
       await page.getByRole("radio", { name: /^Agents’ Mac/u }).click();
       await page.getByRole("button", { name: "Wait for a slot" }).click();
       await expect(page.getByText("waiting for a free slot · next in line")).toBeVisible();
+    },
+  },
+  // ...a Linux desktop: devbox, with room.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-linux",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await page.getByRole("radio", { name: /^Linux desktop/u }).click();
+      await expect(page.getByRole("radio", { name: /^Linux desktop/u })).toHaveAttribute("aria-checked", "true");
     },
   },
   // An Android screen on devbox takes an open PR's build: picked from storefront's open PRs, said in one line.

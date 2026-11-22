@@ -9,7 +9,8 @@
 // held a moment presses and drags, for a slider or a press-and-hold check; the keyboard button types into the page.
 // Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting. A browser that's yours
 // has Safari's moves too: tap its site at the top to type where it goes (screen.ts addressOf), reload beside it, and
-// back and forward by the keyboard button.
+// back and forward by the keyboard button. A phone screen of yours has its control strip over those actions
+// (DeviceStrip), and when its device turns or a Duo opens, the page turns or grows to its new shape (turn.ts).
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
@@ -19,7 +20,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
-import { zoomAbout, type BrowserFrame } from "../desktop";
+import { moveOf, turnBetween, zoomAbout, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
 import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
@@ -28,6 +29,7 @@ import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
+import { DeviceStrip } from "./DeviceStrip";
 
 const SETTLE = { damping: 26, stiffness: 260, mass: 1 } as const;
 /** How far past its bounds a pinch goes before it springs back. */
@@ -54,8 +56,10 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   // The frames: watched while this is open, drawn at most MAX_FPS a second, into whichever image isn't on top.
   const [slots, setSlots] = useState<{ readonly a?: BrowserFrame; readonly b?: BrowserFrame; readonly top: "a" | "b" }>({ top: "a" });
   const [newest, setNewest] = useState<BrowserFrame | undefined>(undefined);
+  const newestRef = useRef<BrowserFrame | undefined>(undefined);
   useEffect(() => {
     const pacer = new FramePacer<BrowserFrame>((f) => {
+      newestRef.current = f;
       setNewest(f);
       setSlots((s) => (s.top === "a" ? { ...s, b: f } : { ...s, a: f }));
     });
@@ -69,7 +73,10 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
       session.watch(null);
     };
   }, [session, sessionId]);
-  const loaded = (slot: "a" | "b", seq: number) => setSlots((s) => (s[slot]?.seq === seq && s.top !== slot ? { ...s, top: slot } : s));
+  // A slot goes on top once its frame has drawn, and only while that frame is the newest: an older one loads again when
+  // the page changes size (a Duo opened), and must not cover the frame that did.
+  const loaded = (slot: "a" | "b", frame: BrowserFrame) =>
+    setSlots((s) => (s[slot] === frame && s.top !== slot && frame === newestRef.current ? { ...s, top: slot } : s));
   const shownFrame = slots[slots.top] ?? slots.a ?? slots.b;
 
   const card = listed === undefined ? undefined : cardOf(listed);
@@ -294,9 +301,37 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     return () => clearTimeout(timer);
   }, [yours]);
 
-  // The page at rest: the whole frame, fit in the box, its corners rounded.
+  // The page at rest: the whole frame, fit in the box, its corners rounded. When its device turns or a Duo opens, it
+  // turns or grows to its new shape from where it stood (the orientation, a moment ahead of the frame, says which way).
   const fit = Math.min(box.width / frameSize.width, box.height / frameSize.height);
   const page = { width: frameSize.width * fit, height: frameSize.height * fit };
+  const spin = useSharedValue(0);
+  const growX = useSharedValue(1);
+  const growY = useSharedValue(1);
+  const stood = useRef<{ page: Size; orientation: string | undefined } | null>(null);
+  const orientation = listed?.orientation;
+  const drawn = newest !== undefined;
+  useEffect(() => {
+    const now = { width: page.width, height: page.height };
+    const was = stood.current;
+    const same = was !== null && Math.abs(was.page.width - now.width) < 1 && Math.abs(was.page.height - now.height) < 1;
+    stood.current = { page: now, orientation: same ? was.orientation : orientation };
+    if (was === null || same || !drawn) return;
+    const move = moveOf(was.page, now, turnBetween(was.orientation, orientation));
+    if (move === null) return;
+    if (move.kind === "turn") {
+      spin.value = move.degrees;
+      growX.value = move.scale;
+      growY.value = move.scale;
+    } else {
+      growX.value = move.scaleX;
+      growY.value = move.scaleY;
+    }
+    spin.value = withSpring(0, SETTLE);
+    growX.value = withSpring(1, SETTLE);
+    growY.value = withSpring(1, SETTLE);
+  }, [page.width, page.height, orientation, drawn, spin, growX, growY]);
+  const turning = useAnimatedStyle(() => ({ transform: [{ rotate: `${String(spin.value)}deg` }, { scaleX: growX.value }, { scaleY: growY.value }] }));
   const host = hostOf(newest?.url);
   const canGo = addressable(state.hub.phase === "live" && state.hub.features?.includes(NAVIGATE) === true, card?.kind, control, ended);
   const keyboardUp = typing || editing;
@@ -307,6 +342,8 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
   useAnnounce(status);
   const ground = t.dark ? "#000000" : t.grouped;
+  // A phone screen of yours has its control strip over the actions, which the touch hint stands clear of.
+  const strip = yours && !ended && listed !== undefined && (card?.kind === "ios" || card?.kind === "android") && (listed.controls?.length ?? 0) > 0;
 
   const image = (slot: "a" | "b") => {
     const f = slots[slot];
@@ -315,7 +352,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
       <Image
         key={slot}
         source={{ uri: `data:image/jpeg;base64,${f.jpegB64}` }}
-        onLoad={() => loaded(slot, f.seq)}
+        onLoad={() => loaded(slot, f)}
         fadeDuration={0}
         style={[StyleSheet.absoluteFill, { zIndex: slots.top === slot ? 1 : 0 }]}
         accessibilityIgnoresInvertColors
@@ -336,7 +373,14 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               accessibilityLabel={`${who}'s ${kind}${host === "" ? "" : `, ${host}`}. ${yours ? "Tap to click, drag to scroll, touch and hold to drag." : "Pinch to zoom."}`}
             >
               <Animated.View style={[{ width: page.width, height: page.height }, moved]}>
-                <View style={[styles.page, { borderRadius: PAGE_RADIUS, backgroundColor: t.dark ? "#1C1C1E" : "#FFFFFF" }, yours && { borderColor: t.accent, borderWidth: 2 }]}>
+                <Animated.View
+                  style={[
+                    styles.page,
+                    { borderRadius: PAGE_RADIUS, backgroundColor: t.dark ? "#1C1C1E" : "#FFFFFF" },
+                    yours && { borderColor: t.accent, borderWidth: 2 },
+                    turning,
+                  ]}
+                >
                   {image("a")}
                   {image("b")}
                   {shownFrame === undefined && !ended ? (
@@ -345,7 +389,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
                       <Text style={[type.footnote, { color: t.secondary }]}>{`Connecting to ${who}'s ${kind}…`}</Text>
                     </View>
                   ) : null}
-                </View>
+                </Animated.View>
               </Animated.View>
             </View>
           </GestureDetector>
@@ -460,7 +504,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
         {/* The touch hint, a moment after it's yours. */}
         {hint && !typing ? (
-          <View style={[styles.hint, { bottom: insets.bottom + TOOLBAR + space.lg }]} pointerEvents="none">
+          <View style={[styles.hint, { bottom: insets.bottom + TOOLBAR + space.lg + (strip ? STRIP : 0) }]} pointerEvents="none">
             <Glass appear style={styles.hintGlass}>
               <Text style={[type.footnote, { color: t.label }]}>Tap to click · drag to scroll · hold to drag</Text>
             </Glass>
@@ -469,6 +513,9 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
         {/* The one control, and the keyboard while it's yours. */}
         <View style={[styles.toolbar, { paddingBottom: keyboardUp ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
+          {strip && listed !== undefined && card !== undefined ? (
+            <DeviceStrip screen={listed} name={card.kind === "ios" ? "iPhone" : "Android"} onChanged={() => void session.readScreens(key)} />
+          ) : null}
           {ended ? (
             <Action label="Done" onPress={() => navigation.goBack()} prominent />
           ) : yours ? (
@@ -558,6 +605,8 @@ function Action({ label, icon, onPress, prominent = false, destructive = false, 
 /** The bar's height under the status bar, and the toolbar's over the home indicator. */
 const BAR = 52;
 const TOOLBAR = 52;
+/** The control strip's height and the gap under it (DeviceStrip). */
+const STRIP = 54;
 
 const ASK_ICON = 18;
 

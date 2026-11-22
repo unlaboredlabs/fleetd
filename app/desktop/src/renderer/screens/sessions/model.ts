@@ -117,6 +117,17 @@ export interface BrowserSession {
   readonly note?: string;
   /** The person who opened it themselves (New screen): theirs to drive, with no agent to hand it back to. */
   readonly openedBy?: string;
+  /** A phone's device, as its machine last said: the controls it takes (D652) and how it stands. */
+  readonly device?: PhoneDevice;
+}
+
+/** A phone screen's device: the controls its machine checked work there, which way it is turned, folded, light or dark. */
+export interface PhoneDevice {
+  readonly controls: readonly string[];
+  readonly orientation?: string;
+  readonly fold?: string;
+  readonly folds?: readonly string[];
+  readonly appearance?: string;
 }
 
 /**

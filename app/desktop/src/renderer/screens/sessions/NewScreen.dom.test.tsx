@@ -2,10 +2,11 @@
 // New screen (D239): the plus at the Agents tab's Screens label opens the picker; it lists the machines that can host the kind picked,
 // opens the screen there and goes to its live view; a full machine waits for a slot, and the wait shows in the list
 // with Cancel. An Android screen takes an open PR's build: the picker follows it in the hub until the screen is
-// yours, or says why it failed. No iOS screen is offered (D298): the agents' Mac is the one Apple kind. The palette's "New screen…" opens the same picker.
+// yours, or says why it failed. An iPhone (D652) opens on the agents' Mac, its model and OS picked from what the Mac
+// reports, and says why where no agents' Mac is joined. The palette's "New screen…" opens the same picker.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, event, live, project, snapshot } from "../../src/data/fixtures.test-util";
@@ -85,6 +86,11 @@ const heightOf = (el: Element) => {
 };
 const proto = HTMLElement.prototype;
 const realRect = proto.getBoundingClientRect.bind(proto);
+
+// The picker loads on first use (NewScreen.tsx): its module is read once here, so opening it renders at once.
+beforeAll(async () => {
+  await import("./NewScreenDialog");
+});
 
 beforeEach(() => {
   vi.spyOn(proto, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
@@ -200,12 +206,12 @@ it("opens a screen on the machine picked, from the plus at Screens, and goes to 
   // A browser by default: both machines can host one.
   const machines = () => [...document.querySelectorAll("[role='radiogroup'] label")].map((l) => l.textContent);
   expect(machines().some((m) => m.startsWith("devbox"))).toBe(true);
-  // No iOS screen: the agents' Mac is the one Apple kind.
-  expect(button("iOS")).toBeUndefined();
+  // No Mac here offers its simulators: the iPhone says so on its tile, still pickable.
+  expect(button("iPhone")?.textContent).toBe("iPhoneNeeds a Mac");
   // The agents' Mac: only the Mac, full, so the picker offers to wait.
   act(() => button("Agents’ Mac")?.click());
   await settle();
-  expect(machines()).toEqual(["macFull: 2 of 2 screens in use. You can wait for the next one."]);
+  expect(machines()).toEqual(["macFull · 2 of 2 in use"]);
   expect(button("Wait for a slot")).toBeDefined();
   // The desktop: devbox, with room.
   act(() => button("Linux desktop")?.click());
@@ -459,3 +465,61 @@ it("tells a member who to ask, with no button", async () => {
   expect(button("Open updates")).toBeUndefined();
 });
 
+it("opens an iPhone on the agents' Mac, on the model and OS picked, and says why without one", async () => {
+  const runtime = (v: string) => ({ id: `iOS-${v}`, name: `iOS ${v}` });
+  const studio = {
+    ...machine("studio", ["mac"]),
+    mac: { on: true, ready: true },
+    hosts: [
+      { host: "mac", ready: true, detail: "as tested" },
+      {
+        host: "ios",
+        ready: true,
+        detail: "as tested",
+        sims: {
+          live: 1,
+          max: 2,
+          models: [
+            { id: "iPhone-Duo", name: "iPhone Duo", family: "foldable", runtimes: [{ id: "iOS-27-2-duo", name: "iOS 27.2" }] },
+            { id: "iPhone-17", name: "iPhone 17", family: "iphone", runtimes: [runtime("27.2"), runtime("26.4")] },
+          ],
+        },
+      },
+    ],
+  };
+  machines = [MACHINES[0], studio];
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  expect(button("iPhone")?.textContent).toBe("iPhoneSimulator");
+  act(() => button("iPhone")?.click());
+  await settle();
+  // The Mac with its simulators' slots, then the model and the OS: an iPhone 17 on its newest by default.
+  const fields = [...(picker()?.querySelectorAll("[class*='field'] > span:first-child") ?? [])].map((l) => l.textContent);
+  expect(fields).toEqual(["Machine", "Model", "OS"]);
+  expect(picker()?.textContent).toContain("studio1 of 2 in use");
+  expect(document.querySelector("[aria-label='Model']")?.textContent).toBe("iPhone 17");
+  expect(document.querySelector("[aria-label='OS']")?.textContent).toBe("iOS 27.2");
+  // No PR build on an iPhone.
+  expect(document.querySelector("[aria-label='PR build']")).toBeNull();
+  act(() => button("Open screen")?.click());
+  await settle();
+  expect(calls.find((c) => c.tool === "screen_open")?.input).toEqual({
+    projectRef: { machineId: project.machineId, projectId: project.projectId },
+    kind: "ios",
+    machineId: "studio",
+    wait: false,
+    sim: { model: "iPhone-17", runtime: "iOS-27.2" },
+  });
+});
+
+it("says an iPhone needs the agents' Mac, with its one fix", async () => {
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  act(() => button("iPhone")?.click());
+  await settle();
+  expect(document.querySelector("[data-off-reason='add']")?.textContent).toContain("iPhone simulators need a Mac joined as the agents’ Mac.");
+  expect(button("Add machine")).toBeDefined();
+  expect(document.querySelector("[aria-label='Model']")).toBeNull();
+});

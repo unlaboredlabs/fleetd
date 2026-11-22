@@ -2,7 +2,31 @@
 // machine it starts on, and each machine's slots in words, a full one offering to wait.
 import { describe, expect, it } from "vitest";
 import type { BrowserSession, MachineRolesEntry, PrRow } from "../../../shared/contracts";
-import { KINDS, adminNames, askLine, canOpen, fixLabel, fixPlace, hostsFor, idleFor, idleWords, kindLine, newScreenOf, openingLine, openWord, pickHost, prChoices, profileBusy, slotLine, startingLine, takesBuild, whyOff } from "./pickScreen";
+import {
+  KINDS,
+  adminNames,
+  askLine,
+  canOpen,
+  fixLabel,
+  fixPlace,
+  hostsFor,
+  idleFor,
+  idleWords,
+  kindLine,
+  newScreenOf,
+  openingLine,
+  openWord,
+  pickHost,
+  pickModel,
+  pickRuntime,
+  prChoices,
+  profileBusy,
+  simModels,
+  slotLine,
+  startingLine,
+  takesBuild,
+  whyOff,
+} from "./pickScreen";
 
 const machine = (machineId: string, ready: readonly string[], more: Partial<MachineRolesEntry> = {}): MachineRolesEntry => ({
   machineId,
@@ -58,6 +82,65 @@ describe("the agents' Mac", () => {
   });
 });
 
+describe("an iPhone (D652)", () => {
+  const runtime = (v: string) => ({ id: `iOS-${v}`, name: `iOS ${v}` });
+  const ipad = { id: "iPad-Pro", name: "iPad Pro 13-inch (M5)", family: "ipad", runtimes: [runtime("27.2")] };
+  const duo = { id: "iPhone-Duo", name: "iPhone Duo", family: "foldable", runtimes: [{ id: "iOS-27-2-duo", name: "iOS 27.2" }] };
+  const iphone = { id: "iPhone-17", name: "iPhone 17", family: "iphone", runtimes: [runtime("27.2"), runtime("26.4")] };
+  const sims = { live: 2, max: 2, models: [ipad, duo, iphone] };
+  const studio = machine("studio", ["mac"], {
+    roles: ["sessions"],
+    mac: { on: true, ready: true },
+    sessionsLive: 0,
+    maxSessions: 1,
+    hosts: [
+      { host: "mac", ready: true, detail: "as tested" },
+      { host: "ios", ready: true, detail: "as tested", sims },
+    ],
+  });
+
+  it("opens only on the agents' Mac, its slots the Mac's simulator budget", () => {
+    // An older Mac of a person's that still says iOS is ready is no agents' Mac.
+    const old = machine("old-mac", ["browser"], { hosts: [{ host: "ios", ready: true, detail: "as tested" }] });
+    expect(hostsFor([MACHINES[0] as MachineRolesEntry, old, studio], "ios").map((h) => h.machineId)).toEqual(["studio"]);
+    const [host] = hostsFor([studio], "ios");
+    expect(host === undefined ? undefined : slotLine(host)).toBe("Full · 2 of 2 in use");
+    expect(openWord(host)).toBe("Wait for a slot");
+    // The Mac's own screen keeps its own slots.
+    expect(hostsFor([studio], "mac").map(slotLine)).toEqual(["0 of 1 in use"]);
+  });
+
+  it("says why without an agents' Mac, or with one too old to start them", () => {
+    expect(whyOff(MACHINES, "ios")).toEqual({ why: "iPhone simulators need a Mac joined as the agents’ Mac.", short: "Needs a Mac", fix: "add" });
+    const older = machine("studio", ["mac"], { mac: { on: true, ready: true } });
+    expect(whyOff([older], "ios")).toMatchObject({ short: "Needs an update", fix: "update" });
+    expect(askLine({ why: "", short: "", fix: "add" }, "ios", ["Sam"])).toBe("Ask Sam to add a Mac set aside for agents.");
+  });
+
+  it("lists iPhones, then foldables, then iPads, and starts on the first", () => {
+    const models = simModels([studio], "studio");
+    expect(models.map((m) => m.name)).toEqual(["iPhone 17", "iPhone Duo", "iPad Pro 13-inch (M5)"]);
+    expect(pickModel(models, null)?.name).toBe("iPhone 17");
+    expect(pickModel(models, "iPhone-Duo")?.name).toBe("iPhone Duo");
+    expect(pickModel(models, "gone")?.name).toBe("iPhone 17");
+    expect(simModels([studio], "devbox")).toEqual([]);
+    expect(simModels([MACHINES[0] as MachineRolesEntry], "devbox")).toEqual([]);
+  });
+
+  it("starts on the model's newest OS, and keeps the one picked while the model runs it", () => {
+    expect(pickRuntime(iphone, null)?.name).toBe("iOS 27.2");
+    expect(pickRuntime(iphone, "iOS-26.4")?.name).toBe("iOS 26.4");
+    // The Duo runs only its own: an OS picked for another model gives way to it.
+    expect(pickRuntime(duo, "iOS-26.4")?.id).toBe("iOS-27-2-duo");
+    expect(pickRuntime(undefined, null)).toBeUndefined();
+  });
+
+  it("says what is starting", () => {
+    expect(startingLine("ios")).toBe("Starting the simulator…");
+    expect(takesBuild("ios")).toBe(false);
+  });
+});
+
 describe("a machine's slots", () => {
   it("starts on the picked machine, else the first online one with a free slot", () => {
     const hosts = hostsFor(MACHINES, "browser");
@@ -67,7 +150,7 @@ describe("a machine's slots", () => {
   });
 
   it("says a full machine is full and offers to wait", () => {
-    expect(hostsFor(MACHINES, "browser").map(slotLine)).toEqual(["0 of 2 screens in use", "Full: 2 of 2 screens in use. You can wait for the next one.", "Offline"]);
+    expect(hostsFor(MACHINES, "browser").map(slotLine)).toEqual(["0 of 2 in use", "Full · 2 of 2 in use", "Offline"]);
     const [devbox, mac] = hostsFor(MACHINES, "browser");
     expect(openWord(devbox)).toBe("Open screen");
     expect(openWord(mac)).toBe("Wait for a slot");
@@ -209,7 +292,7 @@ describe("why a kind can't open", () => {
   });
 
   it("offers no iOS screen: the agents' Mac is the one Apple kind", () => {
-    expect(KINDS.map((k) => k.kind)).toEqual(["browser", "android", "linux_desktop", "mac"]);
+    expect(KINDS.map((k) => k.kind)).toEqual(["browser", "ios", "android", "linux_desktop", "mac"]);
     expect(KINDS.find((k) => k.kind === "mac")?.label).toBe("Agents’ Mac");
   });
 

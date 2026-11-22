@@ -236,11 +236,22 @@
 }
 
 /* The page in its frame, never coloured by who has it. A phone in its bezel: the bezel `--b` of its width all round, its
-   outer corner its screen's plus the bezel, a hairline of metal at its edge and a soft shadow under it; its width the
-   most its stage holds at its shape. */
+   outer corner its screen's plus the bezel, a hairline of metal at its edge and a soft shadow under it. It stands
+   centred on its stage, its control strip just off its right edge (room kept for it on both sides, so the phone stays
+   centred). Its width `--w` is the most the stage holds at its shape (`--k` its height over its width, bezel and all). */
+.phoneAt {
+  --beside: 0px;
+  --k: calc((1 - 2 * var(--b)) / var(--aspect) + 2 * var(--b));
+  --w: min(100cqw - var(--beside), (100cqh - var(--below, 0px)) / var(--k));
+  position: relative;
+  flex: none;
+  display: flex;
+}
+.phoneAt[data-strip] {
+  --beside: 88px;
+}
 .phone {
-  --w: min(100cqw, (100cqh - var(--below, 0px)) / ((1 - 2 * var(--b)) / var(--aspect) + 2 * var(--b)));
-  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * 0.137);
+  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * var(--short) * 0.137);
   position: relative;
   flex: none;
   width: var(--w);
@@ -254,28 +265,90 @@
     0 18px 40px -16px #00000059;
 }
 .phone[data-kind="android"] {
-  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * 0.085);
+  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * var(--short) * 0.085);
 }
 .phone .screen {
   border-radius: var(--screen-r);
 }
-/* An iPhone's island over the top of its screen; an Android's camera, a dot. Clicks go through to the screen. */
+/* An iPhone's island over the top of its screen, sized by the phone's short side (`--s`); on its side, along the edge
+   its top turned to. An Android's camera, a dot. A wide panel otherwise (an open Duo's inner one) has none over it.
+   Clicks go through to the screen. */
 .camera {
+  --s: calc(var(--w) * var(--short));
   position: absolute;
-  top: calc(var(--w) * (var(--b) + 0.026));
+  top: calc(var(--w) * var(--b) + var(--s) * 0.026);
   left: 50%;
-  width: calc(var(--w) * 0.29);
-  height: calc(var(--w) * 0.085);
+  width: calc(var(--s) * 0.29);
+  height: calc(var(--s) * 0.085);
   border-radius: 999px;
   background: #000;
   transform: translateX(-50%);
   pointer-events: none;
 }
-.phone[data-kind="android"] .camera {
-  top: calc(var(--w) * (var(--b) + 0.03));
-  width: calc(var(--w) * 0.032);
-  height: calc(var(--w) * 0.032);
+.phone[data-wide]:not([data-island]) .camera {
+  display: none;
 }
+.phone[data-island] .camera {
+  top: 50%;
+  width: calc(var(--s) * 0.085);
+  height: calc(var(--s) * 0.29);
+  transform: translateY(-50%);
+}
+.phone[data-island="left"] .camera {
+  left: calc(var(--w) * var(--b) + var(--s) * 0.026);
+}
+.phone[data-island="right"] .camera {
+  left: auto;
+  right: calc(var(--w) * var(--b) + var(--s) * 0.026);
+}
+.phone[data-kind="android"] .camera {
+  top: calc(var(--w) * var(--b) + var(--s) * 0.03);
+  width: calc(var(--s) * 0.032);
+  height: calc(var(--s) * 0.032);
+}
+/* A phone's control strip: quiet icons in a slim column, no box; its groups a little apart. */
+.strip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + var(--space-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transform: translateY(-50%);
+}
+.stripGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stripButton {
+  color: var(--quiet);
+}
+.stripButton:hover:not(:disabled) {
+  color: var(--text);
+}
+.stripButton svg {
+  width: 16px;
+  height: 16px;
+}
+/* Location: places in one press, then one typed. */
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 200px;
+  padding: var(--space-1);
+}
+.place {
+  justify-content: flex-start;
+}
+.placeTyped {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+}
+
 /* A browser or a desktop: a plain window, its bar saying where it is; as wide as its stage, or as its height allows. */
 .pageWindow {
   --bar: 32px;
@@ -813,7 +886,7 @@
   grid-column: 3;
 }
 
-/* The New screen picker: the kind as four tiles, then the machines. */
+/* The New screen picker: the kind as five tiles in a row, then its picks, each a quiet label over its control. */
 .picker {
   display: flex;
   flex-direction: column;
@@ -821,7 +894,7 @@
 }
 .kinds {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .kind {
@@ -884,10 +957,17 @@
   border-radius: var(--radius-md);
   background: var(--hover);
 }
-.hosts {
+.field {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
+}
+/* Two picks side by side (an iPhone's model and OS), each half the row. */
+.fieldRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
 }
 .prError {
   display: flex;
