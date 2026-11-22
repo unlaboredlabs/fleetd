@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import source from "./frames.swift" with { type: "file" };
+import type { Command, StreamFrame, StreamRun } from "./live.ts";
 
 /** One frame as the helper sends it. `screen` is the screen's own size (input coordinates are in it); `picture` the
  * frame's, which may be smaller. */
@@ -65,9 +66,7 @@ export class FrameReader {
   }
 }
 
-/** What the helper is told: frames as JPEG or H.264, a keyframe next, a still now, the H.264 bit rate, the frame
- * rate, the picture's longer side. */
-export type Command = "jpeg" | "h264" | "key" | "still" | `kbps ${number}` | `fps ${number}` | `side ${number}`;
+export type { Command, StreamFrame, StreamRun } from "./live.ts";
 
 /** Where the helper is built, for its source as it is in this build. */
 export function helperPath(dir: string, text: string = readFileSync(source, "utf8")): string {
@@ -120,11 +119,17 @@ export class MacFrames {
     const reader = new FrameReader(onFrame);
     const stderr = new Response(proc.stderr).text();
     this.ended = (async () => {
+      let broken: string | undefined;
       try {
         for await (const chunk of proc.stdout) reader.push(chunk);
-      } catch {}
+      } catch (e) {
+        // A frame that doesn't read: the stream can't be trusted from here, so it ends (the screen falls back).
+        broken = (e as Error).message;
+        proc.kill();
+      }
       const code = await proc.exited;
       if (this.stopped) return undefined;
+      if (broken !== undefined) return broken;
       const said = (await stderr).trim();
       return said || `fleetd-frames exited (${code})`;
     })();
@@ -148,17 +153,25 @@ export class MacFrames {
   }
 }
 
-/** JPEG a second at most, where only JPEG goes: a phone-sized picture is ~60-100 KB, so ~1.5 MB/s while it moves. */
+
+/** Frames a second at most: JPEG's a phone-sized picture of ~40-100 KB (~1.5 MB/s while it moves), H.264's a few KB. */
 export const JPEG_FPS = 20;
+export const H264_FPS = 30;
 
 /**
- * A screen as JPEGs, one as it changes (JPEG_FPS a second at most), each with the screen's own size: `args` say which
+ * A screen as frames, one as it changes, JPEG until told `h264`, each with the screen's own size: `args` say which
  * screen (`sim <set> <udid>`, `screen`). The helper is built into `dir` first if it isn't there.
  */
-export async function jpegStream(dir: string, args: string[], onFrame: (jpeg: Uint8Array, width: number, height: number) => void) {
-  const helper = new MacFrames(await ensureHelper(dir), args, (f) => {
-    if (f.kind === "jpeg") onFrame(f.data, f.screen[0], f.screen[1]);
-  });
+export async function stream(dir: string, args: string[], onFrame: (frame: StreamFrame) => void): Promise<StreamRun> {
+  const helper = new MacFrames(await ensureHelper(dir), args, onFrame);
   helper.tell(`fps ${JPEG_FPS}`);
-  return { still: () => helper.tell("still"), stop: () => helper.stop(), ended: helper.ended };
+  return {
+    still: () => helper.tell("still"),
+    tell: (command: Command) => {
+      helper.tell(command);
+      if (command === "h264" || command === "jpeg") helper.tell(`fps ${command === "h264" ? H264_FPS : JPEG_FPS}`);
+    },
+    stop: () => helper.stop(),
+    ended: helper.ended,
+  };
 }

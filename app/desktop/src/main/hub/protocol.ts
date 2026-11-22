@@ -20,7 +20,7 @@ export type ClientMessage =
   | { t: "live"; board: boolean; focus?: string }
   | { t: "chat"; project?: { machineId: string; projectId: string } }
   | { t: "presence"; id: string; focused: boolean; input: boolean; project?: { machineId: string; projectId: string } }
-  | { t: "browser_watch"; session?: string; acks?: true }
+  | { t: "browser_watch"; session?: string; acks?: true; video?: true }
   | { t: "browser_frame_ack"; seq: number }
   | { t: "browser_input"; session: string; input: BrowserInput }
   | { t: "screen_thumbs"; on: boolean };
@@ -51,7 +51,9 @@ export const ServerFrame = z.discriminatedUnion("t", [
     t: z.literal("browser_frame"),
     sessionId: z.string(),
     seq: z.int().min(0),
-    jpegB64: z.string(),
+    jpegB64: z.string().optional(),
+    h264B64: z.string().optional(),
+    key: z.boolean().optional(),
     width: z.int().min(1),
     height: z.int().min(1),
     control: z.string(),

@@ -324,7 +324,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       call: (hub, tool, input, options) => hubs.get(hub)?.call({ tool, input: input as CallRequest["input"], ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) }) ?? Promise.resolve(gone),
       chat: (hub, project) => Promise.resolve(hubs.get(hub)?.chat(project)),
       focus: (hub, workstreamId) => Promise.resolve(hubs.get(hub)?.focus(workstreamId)),
-      watch: (hub, s) => Promise.resolve(hubs.get(hub)?.watch(s)),
+      watch: (hub, s, video) => Promise.resolve(hubs.get(hub)?.watch(s, video)),
       input: (hub, s, input) => Promise.resolve(hubs.get(hub)?.input(s, input)),
       thumbs: (hub, on) => Promise.resolve(hubs.get(hub)?.thumbs(on)),
       resync: (hub) => Promise.resolve(hubs.get(hub)?.resync()),

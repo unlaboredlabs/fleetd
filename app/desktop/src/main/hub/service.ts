@@ -154,8 +154,10 @@ export class HubService {
     if (this.#thumbs.delete(contents)) this.#source?.thumbs(this.#thumbs.size > 0);
   }
 
-  /** The browser session `contents` shows live, or null when it shows none. */
-  watch(contents: WebContents, session: string | null): void {
+  /** The browser session `contents` shows live, or null when it shows none. `video` false: its decoder failed, so
+   * H.264 is asked no more on this hub (every window gets JPEG). */
+  watch(contents: WebContents, session: string | null, video?: boolean): void {
+    if (video === false) this.#source?.setVideo?.(false);
     // Asked again, it is the newest ask.
     this.#watches.delete(contents);
     if (session !== null) this.#watches.set(contents, session);
@@ -282,7 +284,8 @@ export class HubService {
     this.#source?.stop();
     this.#held = null;
     this.#paired = { url: hub, key };
-    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame) });
+    // The app's windows are Chromium's: WebCodecs decodes H.264 there.
+    const client = new HubClient({ hub, key, transport: this.#mode.transport, emit: (frame) => this.#broadcast(frame), video: true });
     this.#source = client;
     client.chat(this.#chat);
     client.focus(this.#focus);

@@ -43,7 +43,8 @@ import {
 } from "./model";
 import { structureOf } from "./dom";
 import { useRecording, useSessions } from "./hub";
-import { addressOf, NAVIGATE, pageNav, setControl, useFrameInput, useLiveFrame, type PageNav } from "./live";
+import { addressOf, NAVIGATE, pageNav, pictureOf, setControl, useFrameInput, useLiveFrame, useWatchAgain, type PageNav } from "./live";
+import { useVideo } from "./video";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
 import s from "./sessions.module.css";
@@ -180,6 +181,9 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const away = useInItsWindow(x.id) && !windowed;
   // This window watches the page, unless the session's own window has it (that one watches it).
   const frame = useLiveFrame(x.id, !away);
+  const picture = pictureOf(frame, x.id);
+  const { again, jpeg } = useWatchAgain(x.id);
+  const { canvas: videoCanvas, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg);
   // Until its first frame: the empty page, quiet; words only once it is slow to come.
   const slow = useAfter(frame === undefined && !away, SLOW_MS);
   const takes = yours && !away;
@@ -291,7 +295,11 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
         {/* What the agent does sits right under the screen, which leaves it its room. */}
         <div className={cx(s.stageFit, !phone && s.stageTop)} style={doing === undefined ? undefined : ({ "--below": "26px" } as CSSProperties)}>
           <Frame
-            {...(frame === undefined ? {} : { image: { src: `data:image/jpeg;base64,${frame.jpegB64}`, seq: frame.seq, url: frame.url, width: frame.width, height: frame.height } })}
+            {...(frame === undefined || picture?.jpegB64 === undefined
+              ? {}
+              : { image: { src: `data:image/jpeg;base64,${picture.jpegB64}`, seq: picture.seq, url: frame.url ?? picture.url, width: frame.width, height: frame.height } })}
+            videoCanvas={videoCanvas}
+            videoOn={videoOn}
             kind={x.kind}
             yours={yours}
             pageRef={page}
@@ -334,7 +342,12 @@ function Frame({
   input,
   pageRef,
   nav,
+  videoCanvas,
+  videoOn = false,
 }: {
+  /** Where the live screen's H.264 is drawn (video.ts), over `image` while `videoOn` (it has a newer picture). */
+  videoCanvas?: (el: HTMLCanvasElement | null) => void;
+  videoOn?: boolean;
   /** The page now: a live frame, in its own pixels. */
   image?: { readonly src: string; readonly seq?: number; readonly url?: string | undefined; readonly width: number; readonly height: number };
   kind: BrowserSession["kind"];
@@ -381,6 +394,7 @@ function Frame({
         ) : (
           <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
         ))}
+      {media === undefined && videoCanvas !== undefined ? <canvas ref={videoCanvas} className={s.video} data-on={videoOn ? "" : undefined} /> : null}
       {mark === undefined ? null : (
         <span
           className={s.mark}

@@ -380,7 +380,7 @@ function hop(target: number) {
 }
 
 /** A node behind a hop to a fake hub, its losses logged with when they came. */
-function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }, bulk = true) {
+function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }, bulk = true, handled: unknown[] = []) {
   const hub = fakeHub({ deflate: false, bulk });
   const h = hop(hub.server.port!);
   const stop = new AbortController();
@@ -389,7 +389,7 @@ function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs:
   const log = (_level: string, msg: string, fields?: Record<string, unknown>) => {
     if (msg === "hub link lost; reconnecting until it is back") lost.push({ at: Date.now(), why: String(fields?.why) });
   };
-  void runNode(options(h.url, home, { attach: (l) => (links.push(l), () => {}), log, quiet, signal: stop.signal }));
+  void runNode(options(h.url, home, { attach: (l) => (links.push(l), () => {}), handle: (f) => void handled.push(f), log, quiet, signal: stop.signal }));
   const done = () => (stop.abort(), h.stop(), hub.server.stop(true));
   return { hub, hop: h, lost, links, done };
 }
@@ -482,6 +482,34 @@ test("a hub that doesn't announce its big frames (an older hub or cloud) keeps t
   // Timed from the last pong, up to a probe before the cut: far past the 400 ms bound either way.
   expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
   expect(n.lost[0]!.why).toBe("nothing from the hub for 3 s, and no answer to a ping");
+  n.done();
+  home.done();
+});
+
+test("a screen's H.264 frames wait in order for a slow link; past a few, its stream drops until a keyframe, which the screen is asked for", async () => {
+  const home = tempHome();
+  const handled: unknown[] = [];
+  const n = cutNode(home.dir, { probeMs: 5000, deadMs: 10_000, bulkMs: 10_000 }, true, handled);
+  await until("the welcome", () => n.links.length === 1);
+  const frame = (seq: number, key = false) => ({ t: "browser_frame", sessionId: "b", seq, h264B64: "AAAB", ...(key ? { key: true } : {}), width: 1, height: 1 }) as const;
+  n.hop.state.held = true;
+  const link = n.links[0]!;
+  link.send(frame(1, true));
+  // Behind 1, three wait in order; a fourth can't: the stream drops, 5 and 6 go nowhere, and a keyframe is asked for.
+  link.send(frame(2));
+  link.send(frame(3));
+  link.send(frame(4));
+  link.send(frame(5));
+  link.send(frame(6));
+  // The keyframe replaces whatever waits; what follows it waits behind it.
+  link.send(frame(7, true));
+  link.send(frame(8));
+  await Bun.sleep(100);
+  expect(handled.filter((f) => (f as { t: string }).t === "browser_watch")).toEqual([{ t: "browser_watch", sessionId: "b", on: true, video: true, key: true }]);
+  n.hop.release();
+  const got = () => n.hub.conns[0]!.frames.filter((f) => f.t === "browser_frame").map((f) => f.seq);
+  await until("the stream again", () => got().includes(8));
+  expect(got()).toEqual([1, 7, 8]);
   n.done();
   home.done();
 });

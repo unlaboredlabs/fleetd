@@ -9,6 +9,7 @@
 import { dlopen, FFIType, ptr } from "bun:ffi";
 import { jpeg, type Raw, type Screen, type Shot } from "../screen.ts";
 import { parseChord } from "../x11.ts";
+import { stream, type StreamFrame, type StreamRun } from "../../screen/mac_frames.ts";
 import { Capture } from "./capture.ts";
 import { ofChar, ofSym, SHIFT } from "./keys.ts";
 
@@ -85,10 +86,20 @@ export class MacScreen implements Screen {
 
   private readonly capture = new Capture();
 
-  private constructor(private readonly api: Api) {}
+  private constructor(
+    private readonly api: Api,
+    private readonly framesDir: string | undefined,
+  ) {}
 
-  static open(): MacScreen {
-    return new MacScreen(open());
+  /** `framesDir`: where fleetd-frames is built, for the live view's stream. */
+  static open(framesDir?: string): MacScreen {
+    return new MacScreen(open(), framesDir);
+  }
+
+  /** The display through ScreenCaptureKit's own stream (fleetd-frames), a frame as it changes, cursor drawn. */
+  stream(onFrame: (frame: StreamFrame) => void): Promise<StreamRun> {
+    if (this.framesDir === undefined) return Promise.reject(new Error("no folder to build fleetd-frames in"));
+    return stream(this.framesDir, ["screen"], onFrame);
   }
 
   size(): [number, number] {

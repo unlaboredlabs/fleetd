@@ -78,6 +78,13 @@ printf '#!/bin/sh\\nread line\\nprintf "\\\\001\\\\001\\\\000\\\\000\\\\002\\\\0
   // It ended by itself: why, as it said.
   expect(await h.ended).toBe("fleetd-frames exited (0)");
 
+  // A frame that doesn't read ends the stream, saying why, and the helper with it.
+  const garbled = join(home.dir, "garbled");
+  writeFileSync(garbled, "#!/bin/sh\nprintf '\\011\\001\\000\\000\\001\\000\\000\\000\\001\\000\\000\\000\\001\\000\\000\\000\\001\\000\\000\\000\\000\\000\\000\\000\\001\\000\\000\\000'\nsleep 30\n");
+  chmodSync(garbled, 0o755);
+  const bad = new MacFrames(garbled, [], () => {});
+  expect(await bad.ended).toBe("fleetd-frames sent a frame of kind 9");
+
   const broken = join(home.dir, "broken");
   writeFileSync(broken, "#!/bin/sh\necho 'frames.swift:3:1: error: cannot find SCStream' >&2\nexit 1\n");
   chmodSync(broken, 0o755);

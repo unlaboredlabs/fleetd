@@ -4,6 +4,7 @@
 // The JPEG is Bun's own (`Bun.Image`, libjpeg-turbo), from the screen's BGRA wrapped as a top-down 32-bit BMP: no
 // native helper. Bun's encoder takes no chroma table, so colour goes 4:2:0 at QUALITY, where the Rust node keeps it
 // 4:4:4 at a coarser quality (red or blue text on a dark terminal comes out a little softer here).
+import type { StreamFrame, StreamRun } from "../screen/live.ts";
 
 /** The screen every session gets, in pixels. */
 export const SIZE: [number, number] = [1280, 800];
@@ -59,12 +60,17 @@ export async function jpeg(bgra: Uint8Array, width: number, height: number): Pro
 export interface Screen {
   /** Its size now. */
   size(): [number, number];
+  /** Its raw pixels are BGRA in memory, as x264 takes them (an X display's, on a little-endian server). */
+  readonly bgra?: boolean;
   /** Whether it may have changed since the last grab: always, where the screen can't say. */
   changed(): boolean;
   /** Resolves once it changes, or after `ms`; absent where the screen can't say (it is read on a timer). */
   nextChange?(ms: number): Promise<void>;
   /** Its pixels now; `whole` reads every one again, where a screen reads only what changed. */
   grabRaw(whole?: boolean): Promise<Raw>;
+  /** The screen as a stream for the live view, a frame as it changes (JPEG or H.264); absent where there is none (an X
+   * display's frames come from grabs). */
+  stream?(onFrame: (frame: StreamFrame) => void): Promise<StreamRun>;
   encode(raw: Raw): Promise<Uint8Array>;
   /** The whole screen, as a JPEG. */
   grab(): Promise<Shot>;

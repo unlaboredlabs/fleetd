@@ -67,7 +67,7 @@ refused=$(printf '%s\\n' "$input" | {
     [ -z "$background" ] || [ -z "$wait_for" ] ||
       long="Too long for one command? Start \\\`$background\\\`, then wait for it with the Monitor tool running \\\`$wait_for\\\`, never a sleep loop."
   done
-  echo "Run it in this worktree after your final rebase, commit exactly what it checked, then push again."
+  echo "Run it in this worktree on what you push, commit exactly what it checked, then push again."
   echo "\${long:-Too long for one command? Run it in the background and wait for it with the Monitor tool, never a sleep loop.}"
 })
 case $refused in "fleetd: push refused: "*)

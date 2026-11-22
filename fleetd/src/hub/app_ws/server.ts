@@ -65,6 +65,7 @@ export const APP_FEATURES = [
   "deflate",
   "frame_acks",
   "chat_find_pins",
+  "h264_frames",
 ] as const;
 export const APP_DEFLATE = "deflate";
 /** The upgrade's `auth`: the key as `Authorization: Bearer`, the features comma-separated in this header. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFrame, applyLive, ingest, initialState, type DataState } from "./store";
+import { applyFrame, applyLive, ingest, initialState, VIDEO_KEPT, type DataState } from "./store";
 import { projectStateWord, selectConnection, selectLiveAgents, selectNeedsYou, selectProjectList, selectProjectRow, selectProjectWork } from "./selectors";
 import type { AgentRow } from "../../../shared/contracts";
 import { card, event, lane, live, liveLane, project, snapshot } from "./fixtures.test-util";
@@ -136,6 +136,25 @@ describe("connection", () => {
     const s = run([live(), frame(2), frame(1)]);
     expect(s.browserFrame?.jpegB64).toBe("f2");
     expect(run([frame(3)], s).browserFrame?.jpegB64).toBe("f3");
+  });
+
+  it("keeps every H.264 frame since the last keyframe, in order, for the decoder, however many land in one render", () => {
+    const h264 = (seq: number, key = false) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, h264B64: `h${String(seq)}`, ...(key ? { key: true } : {}), width: 2, height: 2, control: "agent" } });
+    const seqs = (s: DataState) => s.browserVideo?.frames.map((f) => f.seq);
+    // Three in one batch: the picture is the newest, the decoder has all three.
+    let s = run([live(), h264(1, true), h264(2), h264(3)]);
+    expect(s.browserFrame?.seq).toBe(3);
+    expect(seqs(s)).toEqual([1, 2, 3]);
+    expect(s.browserVideo?.dropped).toBe(-1);
+    // A JPEG between is the picture, not the decoder's; a keyframe starts the list again.
+    s = run([{ t: "browser_frame", frame: { sessionId: "B1", seq: 4, jpegB64: "j", width: 2, height: 2, control: "agent" } }, h264(5), h264(6, true), h264(7)], s);
+    expect(seqs(s)).toEqual([6, 7]);
+    // Past VIDEO_KEPT, the oldest go, and the newest of them is said.
+    s = run(Array.from({ length: VIDEO_KEPT + 2 }, (_, i) => h264(8 + i)), s);
+    expect(s.browserVideo?.frames).toHaveLength(VIDEO_KEPT);
+    expect(s.browserVideo?.dropped).toBe(9);
+    // Another session's starts its own list.
+    expect(run([{ ...h264(1, true), frame: { ...h264(1, true).frame, sessionId: "B2" } }], s).browserVideo).toMatchObject({ sessionId: "B2", dropped: -1 });
   });
 
   it("ignores an event it already applied", () => {

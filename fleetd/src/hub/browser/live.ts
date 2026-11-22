@@ -44,11 +44,16 @@ class Budgets {
   }
 }
 
-const watchFrame = (sessionId: string, on: boolean, kbps: number | undefined) => ({
+/** A key asked of the node again this soon after the last for the same screen goes untold: one is on its way. */
+const KEY_EVERY = 250;
+
+const watchFrame = (sessionId: string, on: boolean, kbps: number | undefined, video = false, key = false) => ({
   t: "browser_watch" as const,
   sessionId,
   on,
   ...(kbps === undefined ? {} : { kbps }),
+  ...(video ? { video: true } : {}),
+  ...(key ? { key: true } : {}),
 });
 
 /** One app connection's watch of a session; `end()` ends it. */
@@ -60,7 +65,14 @@ export class Watch {
     readonly session: string,
     readonly id: number,
     readonly onFrame: (frame: BrowserFrame) => void,
+    /** Whether it decodes H.264: undefined for either (the Screens page's pictures take a JPEG the node sends first). */
+    readonly video: boolean | undefined,
   ) {}
+
+  /** A frame of its was dropped on the way (an H.264 one): the node sends a keyframe next. */
+  key(): void {
+    if (!this.ended) this.live.key(this.session);
+  }
 
   /** The watch's link carries `kbps` (undefined: it keeps up). */
   budget(kbps: number | undefined): void {
@@ -86,6 +98,8 @@ export class Live {
   /** Each live session's latest step, and the machine whose heartbeat said it. */
   private readonly steps = new Map<string, { machine: string; step: BrowserAction }>();
   private readonly budgets = new Map<string, Budgets>();
+  /** When a keyframe was last asked of each session's node. */
+  private readonly keyed = new Map<string, number>();
   private ids = 0;
   readonly thumbs = new Thumbs();
 
@@ -96,19 +110,22 @@ export class Live {
     const watched = this.watched.get(frame.sessionId);
     if (!watched || watched.machine !== machine) return;
     this.first.delete(frame.sessionId);
-    this.thumbs.offer(frame);
+    if (frame.jpegB64 !== undefined) this.thumbs.offer(frame);
     for (const w of watched.watches) w.onFrame(frame);
   }
 
-  /** Starts watching `session` on `machine`: its node starts sending frames, and sends its newest again for each. */
-  watch(machine: string, session: string, onFrame: (frame: BrowserFrame) => void): Watch {
+  /**
+   * Starts watching `session` on `machine`: its node starts sending frames, and sends its newest again for each (as a
+   * JPEG). `video`: the watch decodes H.264; the node sends it only while every watch of the session does.
+   */
+  watch(machine: string, session: string, onFrame: (frame: BrowserFrame) => void, video?: boolean): Watch {
     let watched = this.watched.get(session);
     if (!watched) {
       watched = { machine, watches: new Set() };
       this.watched.set(session, watched);
       this.first.set(session, performance.now());
     }
-    const w = new Watch(this, watched.machine, session, ++this.ids, onFrame);
+    const w = new Watch(this, watched.machine, session, ++this.ids, onFrame, video);
     watched.watches.add(w);
     let b = this.budgets.get(session);
     if (!b) {
@@ -116,8 +133,28 @@ export class Live {
       this.budgets.set(session, b);
     }
     b.byWatch.set(w.id, undefined);
-    link(this.hub).send(watched.machine, watchFrame(session, true, b.told));
+    // A new watch of an H.264 screen starts from a keyframe (`key`); a watch frame again without it (a budget told
+    // anew, a relink) changes only what it says.
+    const h264 = this.video(session);
+    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264));
     return w;
+  }
+
+  /** Whether `session`'s node sends H.264: some watch decodes it, and none can't. */
+  private video(session: string): boolean {
+    const watches = [...(this.watched.get(session)?.watches ?? [])];
+    return watches.some((w) => w.video === true) && !watches.some((w) => w.video === false);
+  }
+
+  /** A watch lost an H.264 frame: the node sends a keyframe next, asked once per KEY_EVERY. */
+  key(session: string): void {
+    const watched = this.watched.get(session);
+    if (!watched || !this.video(session)) return;
+    const now = performance.now();
+    const last = this.keyed.get(session);
+    if (last !== undefined && now - last < KEY_EVERY) return;
+    this.keyed.set(session, now);
+    link(this.hub).send(watched.machine, watchFrame(session, true, this.budgets.get(session)?.told, true, true));
   }
 
   budget(w: Watch, kbps: number | undefined): void {
@@ -130,7 +167,7 @@ export class Live {
 
   private tell(session: string, kbps: number | undefined): void {
     const machine = this.watched.get(session)?.machine;
-    if (machine) link(this.hub).send(machine, watchFrame(session, true, kbps));
+    if (machine) link(this.hub).send(machine, watchFrame(session, true, kbps, this.video(session)));
   }
 
   unwatch(w: Watch): void {
@@ -145,18 +182,26 @@ export class Live {
       }
     }
     const watched = this.watched.get(w.session);
+    const video = this.video(w.session);
     if (!watched || !watched.watches.delete(w)) return;
     if (watched.watches.size === 0) {
       this.watched.delete(w.session);
       this.first.delete(w.session);
+      this.keyed.delete(w.session);
       link(this.hub).send(watched.machine, watchFrame(w.session, false, undefined));
+    } else if (this.video(w.session) !== video) {
+      // The one watch that couldn't decode H.264 left, or the last that could: the node switches.
+      link(this.hub).send(watched.machine, watchFrame(w.session, true, this.budgets.get(w.session)?.told, !video));
     }
   }
 
   /** A node linked (again): the sessions watched there, so it sends their frames. */
   rewatch(machine: string): void {
     for (const [session, w] of this.watched) {
-      if (w.machine === machine) link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told));
+      if (w.machine !== machine) continue;
+      // Frames sent while the link was down are lost: an H.264 screen starts again from a keyframe.
+      const h264 = this.video(session);
+      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, h264, h264));
     }
   }
 
@@ -218,7 +263,7 @@ const noSession = (id: string) =>
 export const runsOn = (hub: Hub, s: BrowserSession) => runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;
 
 /** The app's `browser_watch` of a live session: any key that can read its project's machine. */
-export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame: BrowserFrame) => void): Watch {
+export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame: BrowserFrame) => void, video = false): Watch {
   const s = get(hub, id);
   if (!s || !allows(caller, "read", s.projectRef.machineId)) throw noSession(id);
   if (s.state !== "live") {
@@ -232,7 +277,7 @@ export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame
   if (!link(hub).can(machine, CAP_BROWSER)) {
     throw new ToolError("machine_offline", `${machine}'s node isn't connected, or is too old for live view.`);
   }
-  return live(hub).watch(machine, id, onFrame);
+  return live(hub).watch(machine, id, onFrame, video);
 }
 
 /** The app's `browser_input`: a person's device with operate on the machine, on a session they took over. */

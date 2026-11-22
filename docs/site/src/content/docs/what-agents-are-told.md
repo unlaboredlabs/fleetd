@@ -111,7 +111,10 @@ Most of this is also enforced by the hub, which refuses a call that breaks it an
 
 ### Writers push only what passed the repo's check {#pre-push}
 
-Writers are told to run the repo's quick pre-push checks after their final rebase. When the repo names its check in
+Writers are told to run the repo's quick pre-push checks on what they push, and to push the tree they passed on: a
+main that moved since but merges cleanly isn't a reason to rebase, since the merge train rebases, regenerates generated
+files and runs CI on the merged tree itself. They rebase, onto main only, for a real conflict or when the train sends
+the PR back, and check again. When the repo names its check in
 [`.fleetd/pre-push.json`](/docs/config-and-files#pre-push), fleetd enforces it: a writer's push of a tree the check
 hasn't passed on is refused with what to do, and `git push --no-verify` is denied to task agents. A check too long for
 one command is started in the background and waited on with Claude's Monitor tool ([below](#waiting)), never a sleep

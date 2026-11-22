@@ -261,6 +261,35 @@ export async function installClient(home: string): Promise<Sdk> {
   return sdk;
 }
 
+let fetchingFfmpeg: Promise<string> | undefined;
+
+/**
+ * The pinned static ffmpeg (Android's own, the same file), fetched alone if it isn't there: what a Linux desktop's and a
+ * browser's live view encode H.264 with (../screen/x264.ts). Seconds, once: about 40 MB.
+ */
+export function ensureFfmpeg(home: string): Promise<string> {
+  const path = sdkAt(home).ffmpeg;
+  if (isFile(path)) return Promise.resolve(path);
+  if (process.platform !== "linux" || process.arch !== "x64") return Promise.reject(new Error("the pinned ffmpeg is Linux x86_64's"));
+  fetchingFfmpeg ??= (async () => {
+    const pkg = PACKAGES.find((p) => p.dest === "ffmpeg");
+    if (!pkg) throw new Error("no ffmpeg pinned");
+    const dir = deviceDir(home);
+    const downloads = join(dir, "downloads-ffmpeg");
+    mkdirSync(downloads, { recursive: true });
+    try {
+      const file = join(downloads, pkg.url.split("/").at(-1) ?? "download");
+      await download(pkg, file);
+      await unpackTo(file, join(dir, pkg.dest), pkg.unpack);
+      return path;
+    } finally {
+      rmSync(downloads, { recursive: true, force: true });
+      fetchingFfmpeg = undefined;
+    }
+  })();
+  return fetchingFfmpeg;
+}
+
 /** Downloads a package to `file`, checking its digest as it comes. */
 async function download(pkg: Package, file: string): Promise<void> {
   const name = pkg.url.split("/").at(-1) ?? pkg.url;

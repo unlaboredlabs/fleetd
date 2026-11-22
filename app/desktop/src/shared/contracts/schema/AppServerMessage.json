@@ -521,15 +521,24 @@
         "control": {
           "$ref": "#/$defs/BrowserControl"
         },
+        "h264B64": {
+          "description": "H.264, one access unit in Annex B, base64: only to a `browser_watch` with `video`. A decoder starts at a `key`\\nframe; a JPEG or a gap before a frame means a keyframe comes next. Exactly one of this and `jpegB64`.",
+          "minLength": 1,
+          "type": "string"
+        },
         "height": {
           "maximum": 8192,
           "minimum": 1,
           "type": "integer"
         },
         "jpegB64": {
-          "description": "A JPEG, base64.",
+          "description": "A JPEG, base64: every frame but an H.264 one.",
           "minLength": 1,
           "type": "string"
+        },
+        "key": {
+          "description": "An H.264 keyframe.",
+          "type": "boolean"
         },
         "seq": {
           "description": "1, 2, ... per watch; a frame older than one already shown is dropped.",
@@ -546,7 +555,7 @@
           "type": "string"
         },
         "width": {
-          "description": "The image's size in pixels: `browser_input` coordinates are in it.",
+          "description": "The screen's size in pixels, which the picture is shown at (it may be smaller): `browser_input` coordinates are\nin it.",
           "maximum": 8192,
           "minimum": 1,
           "type": "integer"
@@ -555,7 +564,6 @@
       "required": [
         "sessionId",
         "seq",
-        "jpegB64",
         "width",
         "height",
         "control"

@@ -56,7 +56,7 @@ DevTools-driven tests; never ship one. `pnpm debug-guard-check` checks both.
 ## Checks
 
 Before every push, run `scripts/check.sh`; its header says what each check runs, and `ci.yml`'s comments say what
-CI runs. Run it after your last commit and rebase: it checks the worktree against `origin/main` as it fetches it then,
+CI runs. Run it after your last commit: it checks the worktree against `origin/main` as it fetches it then,
 so a migration main gained since, a stale generated file, a fixture with no answer for a screen's new call, or the
 host name in a new file fails there instead of in CI.
 
