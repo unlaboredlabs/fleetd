@@ -290,14 +290,14 @@ export const endSession = async (fetch: Fetch, config: CloudConfig, sessionId: s
   await post(fetch, `${config.accountsUrl}${ACCOUNTS_SIGN_OUT_PATH}`, { sessionId }).catch(() => undefined);
 };
 
-/**
- * The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. `dropped`,
- * each hub whose key goes: a team's key a new one replaces, and the earlier teams this sign-in didn't bring.
- */
 /** The hub to show after a sign-in: the team picked on the sign-in page, else the first team. */
 export const shownAfterSignIn = (hubs: readonly KeptHub[], picked: string | undefined): KeptHub | null =>
   (picked === undefined ? undefined : hubs.find((h) => h.cloud === true && h.hub === picked)) ?? hubs.find((h) => h.cloud === true) ?? null;
 
+/**
+ * The hubs kept once signed in: the person's own hubs stay, the account's teams replace any it had before. `dropped`,
+ * each hub whose key goes: a team's key a new one replaces, and the earlier teams this sign-in didn't bring.
+ */
 export const afterSignIn = (kept: readonly KeptHub[], teams: readonly TeamOutcome[]): { hubs: KeptHub[]; dropped: KeptHub[] } => {
   const fresh = teams.flatMap((t) => (t.ok ? [t.hub] : []));
   const origins = new Set(fresh.map((h) => h.hub));

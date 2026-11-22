@@ -1,12 +1,19 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, RUNNER_ID, tilde, type AgentRow, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { deleteWords as eraseWords, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
-/** A machine's name, else its id. */
 /** A machine by its name; on a fleetd cloud team, its hosted runner is fleetd's computers, not a machine of the team's. */
 export const machineName = (machines: readonly Machine[], machineId: string, cloud = false): string =>
   cloud && machineId === RUNNER_ID ? "fleetd's computers" : (machines.find((m) => m.machineId === machineId)?.name ?? machineId);
+
+/** Under why a screen kind can't open: a member's who to ask, or where an admin fixes it. An update is pressed on
+ * Machines' Updates, as the desktop's Settings has it. */
+export const offFooter = (off: OffReason, admin: boolean, ask: string | null, cloud: boolean): { footer?: string } => {
+  if (!admin) return ask === null ? {} : { footer: ask };
+  if (off.fix === "none") return {};
+  return { footer: `Fix it in the desktop app, under ${settingsPath(cloud, "Machines", ...(off.fix === "update" ? ["Updates"] : []))}.` };
+};
 
 /** The line under its name on its screen. */
 export const subtitle = (p: ProjectSummary, machine: string): string => {
