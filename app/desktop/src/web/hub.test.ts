@@ -122,20 +122,27 @@ describe("the hub client over the browser's WebSocket", () => {
     expect(FakeSocket.made).toHaveLength(1);
   });
 
-  it("still gives a link up within seconds when it goes quiet with nothing due, and a call's answer is waited for", () => {
-    const { client, socket, hub } = live();
+  it("gives up a link that died under calls within seconds: answers due never hold the quiet ping", () => {
+    const { client, hub } = live();
     hub({ t: "snapshot", cursor: 41, machines: [] });
-    // A call's answer due: the steady ping judges the link, not the quiet ping.
-    const answer = client.call({ tool: "chat_history", input: {} });
-    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
-    expect(client.state.phase).toBe("live");
-    const asked = JSON.parse(socket.sent.find((t) => t.includes("chat_history")) ?? "{}") as { id: string };
-    hub({ t: "result", id: asked.id, output: {} });
-    void answer;
-    // Nothing due, and the link goes dead after traffic: found in the quiet ping's seconds, before the steady ping.
+    // A reply streaming, then the link dies; the page's reads go into it and are never answered.
     hub({ t: "event", seq: 42, type: "task.started" });
+    void client.call({ tool: "agents_list", input: {} });
+    void client.call({ tool: "chat_history", input: {} });
     vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
     expect(QUIET_PING_MS + QUIET_PONG_MS).toBeLessThan(PING_EVERY_MS);
+    expect(client.state.phase).toBe("retrying");
+  });
+
+  it("holds the quiet ping for a snapshot asked for again, until it comes", () => {
+    const { client, hub } = live();
+    hub({ t: "snapshot", cursor: 41, machines: [] });
+    client.resync();
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS + 1000);
+    expect(client.state.phase).toBe("live");
+    hub({ t: "snapshot", cursor: 43, machines: [] });
+    // Come, nothing is due: a link quiet after it is judged in the quiet ping's seconds again.
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
     expect(client.state.phase).toBe("retrying");
   });
 });
