@@ -57,7 +57,7 @@ test("a node on another protocol is told which side to update", async () => {
 test("an enroll token links once; the machine is online once its runner answers", async () => {
   const node = await linked("worker-1", { capabilities: ["browser", "session_host"], fingerprint: "fp1" });
   const welcome = await node.tag("welcome");
-  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once"] });
+  expect(welcome).toMatchObject({ hubId: links.hubId, protocol: 1, capabilities: ["session_route", "link_deflate", "lead_call_once", "link_bulk"] });
   await until(() => types().includes("machine.online worker-1"));
   expect(links.can("worker-1", "browser")).toBe(true);
   expect(links.can("worker-1", "mac_tool")).toBe(false);

@@ -7,7 +7,8 @@
 // Unlike the Rust node, silence is timed from the last whole message or pong, not the last byte read: Bun's client
 // WebSocket doesn't surface partial frames. So while a big frame may still be crossing a slow link (one the node sent,
 // until the ping behind it is answered; one the hub said is coming, until it arrives), the bound is BULK_DEAD (30 s),
-// heartbeats from the other side keeping it alive. A large frame that takes longer than that to arrive still counts
+// heartbeats from the other side keeping it alive. A hub that doesn't list `link_bulk` (an older hub or cloud) never
+// says a frame is coming, so its link always has BULK_DEAD. A large frame that takes longer than that to arrive still counts
 // as silence, where the Rust node waits for it. A watched screen's frames go one at a time, each once the one before
 // it has crossed, so a screen faster than the machine's uplink never queues up ahead of its agents' output.
 import { HUB_TO_NODE } from "../../shared/wire_tags.ts";
@@ -272,6 +273,9 @@ function runLinkOnce(
     // hub said is coming (its heartbeat's `bulk`), until the next frame arrives.
     let bulkOut = 0;
     let inbound = false;
+    // Whether the hub announces its big frames (`link_bulk`): one that doesn't (an older hub or cloud) may send one
+    // unannounced at any time, so its link keeps the heartbeats' bound.
+    let announces = false;
     // What runs once the hub answered the ping written behind a frame: that frame has crossed the link.
     const crossed = new Map<string, () => void>();
     let pings = 0;
@@ -381,7 +385,7 @@ function runLinkOnce(
     const watchQuiet = () => {
       if (ended) return;
       const now = Date.now();
-      const deadMs = bulkOut > 0 || inbound ? quiet.bulkMs : quiet.deadMs;
+      const deadMs = !announces || bulkOut > 0 || inbound ? quiet.bulkMs : quiet.deadMs;
       if (now >= heard + deadMs)
         return finish({ kind: "lost", why: `nothing from the hub for ${Math.round(deadMs / 1000)} s, and no answer to a ping` });
       if (now >= heard + quiet.probeMs && pinged !== heard) {
@@ -426,6 +430,7 @@ function runLinkOnce(
           if (handshake) clearTimeout(handshake);
           const caps = Array.isArray(frame.capabilities) ? (frame.capabilities as string[]) : [];
           deflate = compresses(hello, caps);
+          announces = caps.includes(HUB_CAP.LINK_BULK);
           const hubId = String(frame.hubId ?? "");
           stage = "live";
           live = ctx(hubId, caps);

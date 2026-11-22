@@ -36,6 +36,7 @@ import {
   closeReason,
   HEARTBEAT_INTERVAL_SECS,
   HEARTBEAT_TIMEOUT_SECS,
+  HUB_CAP_LINK_BULK,
   HUB_CAP_LINK_DEFLATE,
   HUB_CAP_SESSION_ROUTE,
   LINK_BULK_BYTES,
@@ -605,7 +606,7 @@ export class Link {
       hubId: this.hubId,
       machineId,
       protocol: PROTOCOL_VERSION,
-      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE, LEAD_CALL_ONCE],
+      capabilities: [HUB_CAP_SESSION_ROUTE, HUB_CAP_LINK_DEFLATE, LEAD_CALL_ONCE, HUB_CAP_LINK_BULK],
     });
     // Compressed both ways from here on, for a node that asked.
     if (caps.includes(CAP_LINK_DEFLATE)) {

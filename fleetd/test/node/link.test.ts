@@ -13,7 +13,7 @@ import { tempHome } from "../helpers.ts";
 type Conn = { frames: Record<string, any>[]; ws: Bun.ServerWebSocket<unknown> };
 
 /** A hub: answers each hello with `welcome` (or closes with `refuse`), and keeps every frame its nodes send. */
-function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string } = {}) {
+function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId?: string; bulk?: boolean } = {}) {
   const conns: Conn[] = [];
   const upgrades: Headers[] = [];
   const inflaters = new Map<unknown, Inflater>();
@@ -41,7 +41,7 @@ function fakeHub(opts: { refuse?: [number, string]; deflate?: boolean; machineId
         conn.frames.push(frame);
         if (frame.t !== "hello") return;
         if (opts.refuse) return ws.close(opts.refuse[0], opts.refuse[1]);
-        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: opts.deflate ? ["session_route", "link_deflate"] : [], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
+        ws.send(JSON.stringify({ t: "welcome", hubId: "fleetd-devbox", protocol: 1, capabilities: [...(opts.deflate ? ["session_route", "link_deflate"] : []), ...(opts.bulk === false ? [] : ["link_bulk"])], ...(opts.machineId ? { machineId: opts.machineId } : {}) }));
   };
   return { url: `http://127.0.0.1:${server.port}`, conns, upgrades, server };
 }
@@ -380,8 +380,8 @@ function hop(target: number) {
 }
 
 /** A node behind a hop to a fake hub, its losses logged with when they came. */
-function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }) {
-  const hub = fakeHub({ deflate: false });
+function cutNode(home: string, quiet: { probeMs: number; deadMs: number; bulkMs: number }, bulk = true) {
+  const hub = fakeHub({ deflate: false, bulk });
   const h = hop(hub.server.port!);
   const stop = new AbortController();
   const lost: { at: number; why: string }[] = [];
@@ -451,6 +451,22 @@ test("a heartbeat that says a big frame comes keeps the longer bound until a fra
   n.hop.state.dark = true;
   await until("the loss", () => n.lost.length === 1, 5000);
   expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 100);
+  n.done();
+  home.done();
+});
+
+test("a hub that doesn't announce its big frames (an older hub or cloud) keeps the heartbeats' bound on its link", async () => {
+  const home = tempHome();
+  const n = cutNode(home.dir, QUIET, false);
+  await until("the welcome", () => n.links.length === 1);
+  // Quiet and nothing big seen: an unannounced frame may still be crossing, so the node waits the longer bound.
+  await Bun.sleep(200);
+  const cut = Date.now();
+  n.hop.state.dark = true;
+  await until("the loss", () => n.lost.length === 1, 5000);
+  // Timed from the last pong, up to a probe before the cut: far past the 400 ms bound either way.
+  expect(n.lost[0]!.at - cut).toBeGreaterThanOrEqual(QUIET.bulkMs - 2 * QUIET.probeMs);
+  expect(n.lost[0]!.why).toBe("nothing from the hub for 3 s, and no answer to a ping");
   n.done();
   home.done();
 });

@@ -107,6 +107,10 @@ export const CAP_BUILD_BUN = "build_bun";
 /** What the hub lists in its welcome. */
 export const HUB_CAP_SESSION_ROUTE = "session_route";
 export const HUB_CAP_LINK_DEFLATE = "link_deflate";
+/** The hub sends a heartbeat with `bulk` before each frame of LINK_BULK_BYTES or more: the node may give a quiet link up
+ * at QUIET_DEAD (12 s). A hub or cloud that doesn't list it gets the heartbeats' bound (30 s), so a big frame it sends
+ * unannounced over a slow link never reads as a dead link. */
+export const HUB_CAP_LINK_BULK = "link_bulk";
 
 /** A node's first frame (`NodeHello`). */
 export type NodeHello = {
