@@ -8,7 +8,7 @@ import { browserDeps } from "./browser";
 import { clearWebCache } from "./cache";
 import type { GateView } from "./Gate";
 import { createWebShell, followBrowser } from "./shell";
-import { readSession, removedLine, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
+import { readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -27,6 +27,8 @@ const here = () => `${window.location.pathname}${window.location.search}${window
 let answered = false;
 /** The team last joined in this tab: the app opens on its Get started, its bots first (screens/start). */
 let joinedTeam: string | null = null;
+/** Whom the person was removed from since their last sign-in, until a screen has said it. */
+const removed = removedNotice();
 
 const teamOf = (body: unknown): string | null => {
   const team = typeof body === "object" && body !== null ? (body as { team?: unknown }).team : undefined;
@@ -102,8 +104,9 @@ const start = async (session: WebSession) => {
   if (joined !== undefined) window.location.hash = toHash(startScreen(joined));
   // The desktop's renderer, as it starts in the app: it reads window.fleetd as its modules load.
   await import("../renderer/src/main");
-  // Removed from a team since the last sign-in: one plain line, once (the cloud forgets it as it answers).
-  if (session.removed.length > 0) toast({ title: removedLine(session.removed), key: "removed" });
+  // Removed from a team since the last sign-in, and no gate said so: one plain line, once.
+  const line = removed.app();
+  if (line !== undefined) toast({ title: line, key: "removed" });
 };
 
 const boot = async () => {
@@ -115,9 +118,12 @@ const boot = async () => {
     return;
   }
   const { session } = read;
-  if (session.invitations.length > 0 && !answered) void show({ at: "invited", email: session.email, invitations: session.invitations });
-  else if (session.teams.length === 0) void show({ at: "no-team", email: session.email });
-  else await start(session);
+  const said = removed.read(session);
+  const line = said === undefined ? {} : { removed: said };
+  if (session.invitations.length > 0 && !answered) void show({ at: "invited", email: session.email, invitations: session.invitations, ...line });
+  else if (session.teams.length === 0) void show({ at: "no-team", email: session.email, ...line });
+  else return start(session);
+  removed.shown();
 };
 
 void boot();

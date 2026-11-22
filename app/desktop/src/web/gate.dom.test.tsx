@@ -85,12 +85,18 @@ it("each invitation in turn: Join, a refusal said in the box, then Not now goes 
 it("no team (one who came by an invitation and passed), and a failure, each with its way on", async () => {
   await show({ at: "no-team", email: "lee@example.com" });
   expect(host.textContent).toContain("lee@example.com isn't in a fleetd team");
-  // A team of their own, on asking; a refusal says why, in place.
-  await press("Make a team");
-  expect(actions.makeTeam).toHaveBeenCalledOnce();
+  // A team of their own, on asking; a refusal says why, in place, and it can be asked again.
   actions.makeTeam.mockResolvedValueOnce({ code: "rate_limited", message: "fleetd cloud is taking in too many new teams right now.", fix: "Try again in an hour." });
   await press("Make a team");
   expect(host.textContent).toContain("fleetd cloud is taking in too many new teams right now. Try again in an hour.");
+  actions.makeTeam.mockResolvedValueOnce(null);
+  await press("Make a team");
+  expect(actions.makeTeam).toHaveBeenCalledTimes(2);
+  // Made: the app opens on it, and a second press in the meantime would make another, so the button stays off.
+  const make = [...host.querySelectorAll("button")].find((b) => b.textContent === "Make a team");
+  expect(make?.disabled).toBe(true);
+  await press("Make a team");
+  expect(actions.makeTeam).toHaveBeenCalledTimes(2);
   await press("Sign out");
   expect(actions.signOut).toHaveBeenCalledOnce();
   await show({
@@ -104,4 +110,20 @@ it("no team (one who came by an invitation and passed), and a failure, each with
   expect(host.textContent).toContain("Check your connection");
   await press("Try again");
   expect(actions.retry).toHaveBeenCalledOnce();
+});
+
+it("removed from a team since the last sign-in: the no-team and invited screens say it, in one line", async () => {
+  await show({ at: "no-team", email: "lee@example.com", removed: "You were removed from acme." });
+  expect(host.textContent).toContain("You were removed from acme.");
+  expect(host.textContent).toContain("lee@example.com isn't in a fleetd team");
+  await show({
+    at: "invited",
+    email: "lee@example.com",
+    invitations: [{ name: "side", invitedBy: "ada@example.com", role: "member", accept: "a1" }],
+    removed: "You were removed from acme.",
+  });
+  expect(host.textContent).toContain("You were removed from acme.");
+  expect(host.textContent).toContain("Invited by ada@example.com");
+  await show({ at: "no-team", email: "lee@example.com" });
+  expect(host.textContent).not.toContain("removed");
 });

@@ -3,13 +3,15 @@
 //
 // The index is kept by temporary triggers on this connection (a trigger in the schema would need a place in an
 // export's import), so a message is indexed as it is written, again when its text changes, and once a streamed one is
-// final; a message still being written is in no search. A plain FTS5 table, which every SQLite a hub runs on has
+// final; a message still being written is in no search. SQL can't read a message as the chat shows it (a block by its
+// words, a link by its label: find_rules' `indexedText`), so the triggers put its stored text and its tags, and the
+// chat's own writes (`showIndexed`) and `fillStep` then put the words it shows in place of that text. A plain FTS5 table, which every SQLite a hub runs on has
 // (macOS 12's 3.37 among them): it keeps its own copy of the text, so a row goes by its rowid alone. The messages written before the index, or by an import, are filled in by `fill` from the newest down, a batch
 // at a time between the hub's other work; until it is done a search says `indexing` and finds in what is filled.
 import type { Database } from "bun:sqlite";
 import type { ChatAuthor, ChatFindHas, ChatMessage, PersonId, ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
-import { FIND_COUNT_CAP, type Term } from "./find_rules.ts";
+import { FIND_COUNT_CAP, indexed as isIndexed, indexedText, type Term } from "./find_rules.ts";
 import { parse } from "./rules.ts";
 
 /** A search: its terms and filters, newest first from before message number `beforeN`. */
@@ -37,8 +39,8 @@ const HAS_TAG: Record<string, string> = { link: "hlink", image: "himage", file: 
 const indexed = (data: string) => `(json_extract(${data}, '$.messageId') IS NOT NULL AND json_extract(${data}, '$.state') IS NOT 'streaming')`;
 
 /**
- * What `chat_find` holds of a message row, by find_rules' `indexedText` and `holds` (the same rules, in SQL): its text,
- * and its tags: its bot, author and person, what it holds, and its UTC day and month, which a date filter narrows by.
+ * What the triggers put in `chat_find` for a message row: its stored text, which `showIndexed` then replaces with
+ * find_rules' `indexedText`, and its tags by find_rules' `holds` (the same rules, in SQL): its bot, author and person, what it holds, and its UTC day and month, which a date filter narrows by.
  */
 const textOf = (data: string) => `COALESCE(json_extract(${data}, '$.text'), '')`;
 const tagsOf = (row: string) => {
@@ -70,6 +72,12 @@ const TRIGGERS = `
   CREATE TEMP TRIGGER IF NOT EXISTS chat_find_delete AFTER DELETE ON main.chat_messages BEGIN
     DELETE FROM chat_find WHERE rowid = OLD.n; END;`;
 
+/** After the chat writes message row `n`: the index holds the words the chat shows of it, not its stored text. */
+export function showIndexed(conn: Database, n: number, message: { text: string; state: string }): void {
+  if (!isIndexed(message)) return;
+  conn.query("UPDATE chat_find SET text = ?1 WHERE rowid = ?2").run(indexedText(message), n);
+}
+
 /** The messages filled per step, and the pause between steps. */
 export const FILL_BATCH = 1000;
 const FILL_PAUSE_MS = 5;
@@ -97,6 +105,11 @@ export function fillStep(conn: Database, batch = FILL_BATCH): boolean {
          FROM chat_messages m WHERE m.n >= ?1 AND m.n < ?2 AND ${indexed("m.data")}`,
       )
       .run(lo, below);
+    const rows = conn.query<{ n: number; data: string }, [number, number]>(`SELECT n, data FROM chat_messages m WHERE m.n >= ?1 AND m.n < ?2 AND ${indexed("m.data")}`).all(lo, below);
+    for (const row of rows) {
+      const text = (JSON.parse(row.data) as { text?: unknown }).text;
+      showIndexed(conn, row.n, { text: typeof text === "string" ? text : "", state: "final" });
+    }
     conn.query("UPDATE chat_find_built SET below = ?1").run(lo);
   })();
   return lo > 1;

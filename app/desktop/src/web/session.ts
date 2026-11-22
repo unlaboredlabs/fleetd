@@ -150,3 +150,30 @@ export const teamFromAddress = (address: { readonly search: string; readonly has
 
 /** The one line a person removed from teams reads at their next sign-in. */
 export const removedLine = (teams: readonly string[]): string => `You were removed from ${teams.join(", ")}.`;
+
+/**
+ * Whom the person was removed from, as the session says it once (the cloud forgets it as it answers), kept until a
+ * screen has said it: the gates (no team left, an invitation) as a line, else the app as a toast. A second read after
+ * Join or Not now doesn't lose it, and the app doesn't say it again after a gate did.
+ */
+export function removedNotice() {
+  let teams: readonly string[] | null = null;
+  let said = false;
+  return {
+    /** A session read; the line a gate shows, while there is one to say. */
+    read(session: Pick<WebSession, "removed">): string | undefined {
+      if (session.removed.length > 0) teams = session.removed;
+      return teams === null ? undefined : removedLine(teams);
+    },
+    /** A gate showed the line. */
+    shown(): void {
+      if (teams !== null) said = true;
+    },
+    /** The app opens: its toast's line when no gate said it, once. */
+    app(): string | undefined {
+      const line = teams !== null && !said ? removedLine(teams) : undefined;
+      teams = null;
+      return line;
+    },
+  };
+}

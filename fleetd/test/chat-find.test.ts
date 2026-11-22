@@ -294,6 +294,31 @@ test("a hit, a pin and the index read a message as the chat shows it: a block by
   // A block with no words of its own says what it is; code a person wrote stays as written.
   expect(hitText('```fleetd-block\n{"v":1,"kind":"diff","patch":"x"}\n```', undefined, []).text).toBe("A diff");
   expect(hitText("run `bun test` again", undefined, []).text).toBe("run `bun test` again");
+  // Bold marks go, but not underscores in code or inside a word.
+  expect(hitText("fix **this** and __that__ in `__init__.py`, not my__var__name", undefined, []).text).toBe("fix this and that in `__init__.py`, not my__var__name");
+});
+
+test("the index holds the words the chat shows: a block's JSON or a link's target finds nothing, its words do, and the fill redoes old rows so", async () => {
+  const { call, say, hub, done } = setup();
+  const file = '```fleetd-block\n{"v":1,"kind":"file","attachmentId":"F3","caption":"QA CSV, two rows"}\n```\n\nAll three are done: the [QA report](artifact:qa-report) is **published**.';
+  say(file, { author: "lead" });
+  say('```fleetd-block\n{"v":1,"kind":"diff","patch":"x"}\n```', { author: "lead" });
+  // A streamed message is indexed by what it shows once it is final.
+  const { message } = chat(hub).add(PROJECT, { author: "lead", text: "", streaming: true, createdMs: Date.parse("2026-10-02T00:00:00Z") });
+  chat(hub).finish(chat(hub).byId(message.messageId)!, "see [the PR](https://github.com/acme/app/pull/12)");
+  const found = async (words: string) => texts(await find(call, { words }));
+  for (const hidden of ["attachmentId", "artifact", "fleetd", "github", "acme", "patch"]) expect(await found(hidden)).toEqual([]);
+  expect(await found("CSV published")).toEqual(["QA CSV, two rows All three are done: the QA report is published."]);
+  expect(await found("diff")).toEqual(["A diff"]);
+  expect(await found("PR")).toEqual(["see the PR"]);
+  // Rows indexed before this (their stored text) are filled again from the newest down, as the migration asks.
+  hub.db.conn.run("UPDATE chat_find SET text = 'attachmentId artifact github'");
+  expect((await found("github")).length).toBe(3);
+  hub.db.conn.run("UPDATE chat_find_built SET below = (SELECT MAX(n) + 1 FROM chat_messages)");
+  while (fillStep(hub.db.conn, 2));
+  expect(await found("github")).toEqual([]);
+  expect(await found("diff")).toEqual(["A diff"]);
+  done();
 });
 
 test("a pin reaches every open app of the bot live; a person without the bot is refused and hears nothing", async () => {

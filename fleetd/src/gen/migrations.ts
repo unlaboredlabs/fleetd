@@ -183,6 +183,7 @@ import m179 from "../hub/store/migrations/202611202100_own_machines_only.sql" wi
 import m180 from "../hub/store/migrations/202611211534_chat_find_pins.sql" with { type: "text" };
 import m181 from "../hub/store/migrations/202611211653_project_avatar_shape.sql" with { type: "text" };
 import m182 from "../hub/store/migrations/202611221330_hub_links_gone.sql" with { type: "text" };
+import m183 from "../hub/store/migrations/202611221400_chat_find_shown.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -368,4 +369,5 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611211534_chat_find_pins", sql: m180 },
   { name: "202611211653_project_avatar_shape", sql: m181 },
   { name: "202611221330_hub_links_gone", sql: m182 },
+  { name: "202611221400_chat_find_shown", sql: m183 },
 ];

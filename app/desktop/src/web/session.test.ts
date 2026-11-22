@@ -1,6 +1,6 @@
 // The web app's calls to fleetd cloud's /web/* (session.ts), with fetch faked.
 import { describe, expect, it } from "vitest";
-import { readSession, removedLine, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
+import { readSession, removedLine, removedNotice, signInPath, teamFromAddress, teamHubId, teamHubIds, webCall, type Fetch } from "./session";
 
 const answering =
   (response: () => Response, seen: Array<RequestInit | undefined> = []): Fetch =>
@@ -19,6 +19,28 @@ describe("readSession", () => {
     expect(removed.ok && removed.session.removed).toEqual(["acme", "side"]);
     expect(removedLine(["acme"])).toBe("You were removed from acme.");
     expect(removedLine(["acme", "side"])).toBe("You were removed from acme, side.");
+  });
+
+  it("keeps whom the person was removed from until a screen says it: every gate, then never the app after a gate did", () => {
+    // Removed from their only team: the no-team gate says it, a second read (the cloud has forgotten) still does,
+    // and the app made from there doesn't say it again.
+    const gate = removedNotice();
+    expect(gate.read({ removed: ["acme"] })).toBe("You were removed from acme.");
+    gate.shown();
+    expect(gate.read({ removed: [] })).toBe("You were removed from acme.");
+    gate.shown();
+    expect(gate.app()).toBeUndefined();
+    expect(gate.read({ removed: [] })).toBeUndefined();
+    // Still in another team, no gate: the app says it once.
+    const app = removedNotice();
+    expect(app.read({ removed: ["acme", "side"] })).toBe("You were removed from acme, side.");
+    expect(app.app()).toBe("You were removed from acme, side.");
+    expect(app.app()).toBeUndefined();
+    // Never removed: nothing anywhere.
+    const none = removedNotice();
+    expect(none.read({ removed: [] })).toBeUndefined();
+    none.shown();
+    expect(none.app()).toBeUndefined();
   });
 
   it("is signed out on a 401, and says what went wrong otherwise, never a bare fetch error", async () => {

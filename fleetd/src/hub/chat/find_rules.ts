@@ -39,7 +39,10 @@ export function shownText(text: string): string {
   return text
     .replace(/^ {0,3}(`{3,}|~{3,})[ \t]*fleetd-block[^\n]*\n([\s\S]*?)(?:^ {0,3}\1[ \t]*$|(?![\s\S]))/gmu, (_all, _fence: string, json: string) => `${blockWords(json)}\n`)
     .replace(/!?\[([^\]\n]*)\]\([^)\s]*\)/gu, "$1")
-    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/gu, "$2");
+    // Bold marks go, but never inside code (`__init__.py` stays) nor `__` within a word, which Markdown keeps too.
+    .split(/(`+[^`]*?`+)/u)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*|(?<![\p{L}\p{N}_])__(?=\S)([\s\S]*?\S)__(?![\p{L}\p{N}_])/gu, (_all, a?: string, b?: string) => a ?? b ?? "")))
+    .join("");
 }
 
 /** What the index holds of a message: its text as the chat shows it. */
