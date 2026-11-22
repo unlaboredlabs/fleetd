@@ -3,9 +3,12 @@
 // 27.2, Nov 2026) on simulators in fleetd's own device set, where Device Hub and `devicectl` see none:
 //
 // - rotate: agent-device's `orientation`, which turns the device through its XCTest runner (XCUIDevice); the app on
-//   screen turns, and simctl's screenshots with it (an iPhone 17's 1206x2622 becomes 2622x1206).
+//   screen turns, and simctl's screenshots with it (an iPhone 17's 1206x2622 becomes 2622x1206). An iPhone Duo's UI
+//   doesn't follow XCUIDevice: it turns with the orientation picker Xcode's CoreDevice sends it, a vendor HID event as
+//   its hinge's is (`orientation-picker-control`, an enum of portrait, pud, landscape-left and landscape-right), sent
+//   from inside the simulator by the DEVICE helper below.
 // - shake: the Darwin notification Simulator's own Shake posts (`notifyutil -p com.apple.UIKit.SimulatorShake`).
-// - home and lock: the Home and Power buttons as HID key presses inside the simulator (BUTTON below, `simctl spawn`):
+// - home and lock: the Home and Power buttons as HID key presses inside the simulator (DEVICE below, `simctl spawn`):
 //   agent-device's `home` takes seconds and it has no lock on a simulator.
 // - light/dark: `simctl ui appearance`; location: `simctl location set`; screenshot: `simctl io screenshot`.
 // - fold (the iPhone Duo): the hinge as agent-device's own fold helper sets it (its Fold.m, `simctl spawn`). agent-device's
@@ -31,6 +34,13 @@ export const FOLDS = ["closed", "half-open", "open"] as const;
 export type Fold = (typeof FOLDS)[number];
 /** The orientations a left turn steps through, from upright. */
 const TURNS: readonly ScreenOrientation[] = ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"];
+/** The Duo's orientation picker's word for each. */
+const PICKER: Record<string, string> = {
+  portrait: "portrait",
+  landscape_left: "landscape-left",
+  portrait_upside_down: "pud",
+  landscape_right: "landscape-right",
+};
 /** agent-device's word for each. */
 const AGENT_DEVICE: Record<string, string> = {
   portrait: "portrait",
@@ -74,7 +84,7 @@ export function latLon(value: string | undefined): [number, number] {
 /** What one control does: simctl commands (on the node's set), helper runs inside the simulator, an agent-device command. */
 export type Step =
   | { simctl: string[] }
-  | { helper: "fold" | "button"; arg: string }
+  | { helper: "fold" | "device"; args: string[] }
   | { agentDevice: string[] };
 
 /** The device as fleetd last set it. */
@@ -92,13 +102,14 @@ export function plan(device: string, udid: string, state: DeviceState, control: 
     case "rotate_left":
     case "rotate_right": {
       const orientation = turned(state.orientation, control === "rotate_left" ? "left" : "right");
-      return { steps: [{ agentDevice: ["orientation", AGENT_DEVICE[orientation]!] }], next: { ...state, orientation } };
+      const step: Step = foldable(device) ? { helper: "device", args: ["turn", PICKER[orientation]!] } : { agentDevice: ["orientation", AGENT_DEVICE[orientation]!] };
+      return { steps: [step], next: { ...state, orientation } };
     }
     case "shake":
       return { steps: [{ simctl: ["spawn", udid, "notifyutil", "-p", "com.apple.UIKit.SimulatorShake"] }], next: state };
     case "home":
     case "lock":
-      return { steps: [{ helper: "button", arg: control }], next: state };
+      return { steps: [{ helper: "device", args: [control] }], next: state };
     case "appearance": {
       const to = value ?? (state.appearance === "dark" ? "light" : "dark");
       if (to !== "light" && to !== "dark") throw new ToolError("invalid", `Appearance is light or dark, not ${JSON.stringify(value)}.`);
@@ -111,7 +122,8 @@ export function plan(device: string, udid: string, state: DeviceState, control: 
     case "fold": {
       const fold = FOLDS.find((f) => f === value);
       if (!fold) throw new ToolError("invalid", `A fold is one of ${FOLDS.join(", ")}, not ${JSON.stringify(value ?? "")}.`);
-      return { steps: [{ helper: "fold", arg: fold }], next: { ...state, fold } };
+      // The pose a turn left on one panel isn't the other's: the panel now lit is turned as the session says.
+      return { steps: [{ helper: "fold", args: [fold] }, { helper: "device", args: ["turn", PICKER[state.orientation] ?? "portrait"] }], next: { ...state, fold } };
     }
     case "screenshot":
       return { steps: [], next: state };
@@ -120,30 +132,49 @@ export function plan(device: string, udid: string, state: DeviceState, control: 
   }
 }
 
-/** The Home and Power buttons, pressed as HID keys from inside the simulator (consumer page: Menu 0x40, Power 0x30). */
-export const BUTTON = `#import <Foundation/Foundation.h>
+/**
+ * HID events from inside the simulator: `home` and `lock` press the Home and Power buttons (consumer page: Menu 0x40,
+ * Power 0x30); `turn <orientation>` is a foldable's orientation picker, the vendor event its hinge's is (0xff61/0x5b).
+ */
+export const DEVICE = `#import <Foundation/Foundation.h>
 #import <mach/mach_time.h>
 #include <unistd.h>
 
+extern CFDataRef IOCFSerialize(CFTypeRef object, CFOptionFlags options);
 extern CFTypeRef IOHIDEventCreateKeyboardEvent(CFAllocatorRef allocator, uint64_t timestamp, uint32_t usagePage,
     uint32_t usage, Boolean down, uint32_t flags);
+extern CFTypeRef IOHIDEventCreateVendorDefinedEvent(CFAllocatorRef allocator, uint64_t timestamp, uint32_t usagePage,
+    uint32_t usage, uint32_t version, const uint8_t *data, CFIndex length, uint32_t options);
 extern CFTypeRef IOHIDEventSystemClientCreate(CFAllocatorRef allocator);
 extern void IOHIDEventSystemClientDispatchEvent(CFTypeRef client, CFTypeRef event);
 
+static int dispatch(CFTypeRef client, CFTypeRef event) {
+  if (!event) return 1;
+  IOHIDEventSystemClientDispatchEvent(client, event);
+  CFRelease(event);
+  return 0;
+}
+
 int main(int argc, const char *argv[]) {
   @autoreleasepool {
-    uint32_t usage = argc == 2 && strcmp(argv[1], "home") == 0 ? 0x40 : argc == 2 && strcmp(argv[1], "lock") == 0 ? 0x30 : 0;
-    if (!usage) { fprintf(stderr, "home or lock\\n"); return 2; }
     CFTypeRef client = IOHIDEventSystemClientCreate(kCFAllocatorDefault);
     if (!client) return 1;
+    if (argc == 3 && strcmp(argv[1], "turn") == 0) {
+      NSDictionary *payload = @{@"provider": @"com.apple.Virtualization.VirtualMachines", @"source": @"orientation-picker-control",
+        @"type": @"enum", @"value": @(argv[2])};
+      CFDataRef data = IOCFSerialize((__bridge CFTypeRef)payload, 1);
+      if (!data) return 1;
+      int failed = dispatch(client, IOHIDEventCreateVendorDefinedEvent(kCFAllocatorDefault, mach_absolute_time(), 0xff61, 0x5b, 0,
+        CFDataGetBytePtr(data), CFDataGetLength(data), 0));
+      CFRelease(data);
+      return failed;
+    }
+    uint32_t usage = argc == 2 && strcmp(argv[1], "home") == 0 ? 0x40 : argc == 2 && strcmp(argv[1], "lock") == 0 ? 0x30 : 0;
+    if (!usage) { fprintf(stderr, "home, lock or turn <orientation>\\n"); return 2; }
     for (int down = 1; down >= 0; down--) {
-      CFTypeRef event = IOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, mach_absolute_time(), 0x0c, usage, down, 0);
-      if (!event) { CFRelease(client); return 1; }
-      IOHIDEventSystemClientDispatchEvent(client, event);
-      CFRelease(event);
+      if (dispatch(client, IOHIDEventCreateKeyboardEvent(kCFAllocatorDefault, mach_absolute_time(), 0x0c, usage, down, 0))) return 1;
       if (down) usleep(100000);
     }
-    CFRelease(client);
     return 0;
   }
 }
@@ -168,7 +199,7 @@ export const helperArgv = (source: string, out: string) => [
 
 /** The node's helpers, built at their first use into a folder named for their sources and Xcode. */
 export class Helpers {
-  private built: Promise<Record<"fold" | "button", string>> | undefined;
+  private built: Promise<Record<"fold" | "device", string>> | undefined;
 
   constructor(
     private readonly home: string,
@@ -176,7 +207,7 @@ export class Helpers {
   ) {}
 
   /** The helpers' paths, built once (again after a build that failed). */
-  paths(): Promise<Record<"fold" | "button", string>> {
+  paths(): Promise<Record<"fold" | "device", string>> {
     this.built ??= this.build().catch((e) => {
       this.built = undefined;
       throw e;
@@ -184,7 +215,7 @@ export class Helpers {
     return this.built;
   }
 
-  private async build(): Promise<Record<"fold" | "button", string>> {
+  private async build(): Promise<Record<"fold" | "device", string>> {
     const foldSource = join(packageDir(this.home), "apple", "fold-helper", "Fold.m");
     let fold: string;
     try {
@@ -192,16 +223,16 @@ export class Helpers {
     } catch {
       throw new ToolError("failed", "agent-device's fold helper isn't on the Mac.", "an admin updates fleetd on the agents' Mac");
     }
-    const key = createHash("sha256").update(fold).update(BUTTON).update(this.xcode()).digest("hex").slice(0, 16);
+    const key = createHash("sha256").update(fold).update(DEVICE).update(this.xcode()).digest("hex").slice(0, 16);
     const dir = join(iosDir(this.home), "helpers", key);
-    const out = { fold: join(dir, "fold-helper"), button: join(dir, "button") };
-    if (existsSync(out.fold) && existsSync(out.button)) return out;
+    const out = { fold: join(dir, "fold-helper"), device: join(dir, "device") };
+    if (existsSync(out.fold) && existsSync(out.device)) return out;
     const scratch = `${dir}.${process.pid}.tmp`;
     rmSync(scratch, { recursive: true, force: true });
     mkdirSync(scratch, { recursive: true });
     writeFileSync(join(scratch, "Fold.m"), fold);
-    writeFileSync(join(scratch, "Button.m"), BUTTON);
-    for (const [name, source] of [["fold-helper", "Fold.m"], ["button", "Button.m"]] as const) {
+    writeFileSync(join(scratch, "Device.m"), DEVICE);
+    for (const [name, source] of [["fold-helper", "Fold.m"], ["device", "Device.m"]] as const) {
       const ran = await run(helperArgv(join(scratch, source), join(scratch, name)), 120_000);
       if (!ran.ok) {
         rmSync(scratch, { recursive: true, force: true });
@@ -258,7 +289,7 @@ export type Shot = { png: Uint8Array; width: number; height: number };
 /** The tools a simulator's controls use: simctl's, the helpers, agent-device on the simulator. A test's stand-ins. */
 export type ControlTools = {
   simctl: (args: string[], within: number) => Promise<string>;
-  helpers: () => Promise<Record<"fold" | "button", string>>;
+  helpers: () => Promise<Record<"fold" | "device", string>>;
   agentDevice: (args: string[]) => Promise<Ran>;
   /** Where a screenshot is written before it is read. */
   shots: string;
@@ -331,7 +362,7 @@ export class SimDevice {
         });
       } else if ("helper" in step) {
         const helpers = await this.tools.helpers();
-        await this.tools.simctl(["spawn", this.udid, helpers[step.helper], step.arg], CONTROL_WAIT).catch((e: Error) => {
+        await this.tools.simctl(["spawn", this.udid, helpers[step.helper], ...step.args], CONTROL_WAIT).catch((e: Error) => {
           throw new ToolError("failed", `The simulator's ${control} didn't go: ${clip(e.message)}`);
         });
       } else {

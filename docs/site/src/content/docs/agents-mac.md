@@ -125,7 +125,7 @@ control; an agent runs the same ones as `mac sim` commands. Each was checked on 
 
 | Control | `mac sim` | How it runs |
 |---|---|---|
-| Rotate left / right | `mac sim rotate left` | agent-device's `orientation` (its XCTest runner): the app turns, and the live picture with it |
+| Rotate left / right | `mac sim rotate left` | agent-device's `orientation` (its XCTest runner); an iPhone Duo, whose UI doesn't follow that, the orientation picker event Xcode's own tools send it. The app turns, and the live picture with it |
 | Shake | `mac sim shake` | the shake notification Simulator itself posts (an app's shake-to-undo) |
 | Home | `mac sim home` | the Home button, pressed inside the simulator |
 | Lock | `mac sim lock` | the side button: once locks, again wakes |
