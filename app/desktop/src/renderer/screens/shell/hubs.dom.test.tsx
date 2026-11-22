@@ -16,6 +16,7 @@ import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
+import { resetHubSwipe } from "./hubSwipe";
 import { FINGERS, fingers, JITTERY_MAC_SWIPE, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 import { resetSidebarView, showHub } from "./sidebarLayout";
 
@@ -185,6 +186,7 @@ beforeEach(() => {
   fake.badge.length = 0;
   fake.chats.length = 0;
   resetSidebarView();
+  resetHubSwipe();
 });
 afterEach(() => {
   // New bot's state outlives the window, as it does the dialog: the next test opens a fresh one.
@@ -275,37 +277,151 @@ it("opens a bot on its own hub, and that hub alone gets its calls", async () => 
   expect(currentRoute()).toMatchObject({ id: "factory", at: "a1b2" });
 });
 
-it("in the web app, picking another team in the switcher leaves the chat of the one left: that team's home is on screen, never a chat to write into the other", async () => {
+/** The chats streaming, as `<hub>:<bot>`: what each hub was last asked for, the one on screen; none, one hub left. */
+const streaming = () => {
+  const last = new Map(fake.chats);
+  const on = [...last].flatMap(([at, p]) => (p === null || p === undefined ? [] : [`${at}:${(p as { projectId: string }).projectId}`]));
+  return on.length === 1 ? on[0] : on.length === 0 ? null : on.join(" + ");
+};
+/** Two hubs of two bots each: Personal's storefront and Ada (newer), Acme's billing and ledger (newer). */
+const twoByTwo = () =>
+  act(() => {
+    hub("hub").send(live());
+    hub("hub").send(withTwo("devbox", "storefront", "Ada"));
+    hub("a1b2").send(live());
+    hub("a1b2").send(withTwo("laptop", "billing", "ledger"));
+  });
+const open = async (hash: string) => {
+  act(() => {
+    window.location.hash = hash;
+  });
+  await settle();
+};
+
+describe.each([
+  ["desktop", "desktop"],
+  ["web", "web"],
+])("switching hubs in the %s app", (_, shell) => {
+  const fleetd = window.fleetd as { shell?: string };
+  beforeEach(() => {
+    Object.assign(fleetd, { shell });
+  });
+  afterEach(() => {
+    delete fleetd.shell;
+  });
+
+  it("opens the hub switched to with its list, from the switcher, the marks, ⇧⌘[ / ⇧⌘] and a swipe: the chat of the hub just left never stays on screen", async () => {
+    await mount([
+      { id: "hub", label: "Personal" },
+      { id: "a1b2", label: "Acme" },
+    ]);
+    twoByTwo();
+    await settle();
+    await open("#/project/devbox/storefront?at=hub");
+    expect(streaming()).toBe("hub:storefront");
+    // Acme has no chat of its own yet: its home, its newest.
+    pickHub("Acme");
+    await settle();
+    expect(currentRoute()).toMatchObject({ id: "project", project: { projectId: "ledger" }, at: "a1b2" });
+    expect(streaming()).toBe("a1b2:ledger");
+    expect(bots("storefront", "Ada", "billing", "ledger")).toEqual(["ledger", "billing"]);
+    // Picking the hub already on screen changes nothing.
+    pickHub("Acme");
+    await settle();
+    expect(window.location.hash).toBe("#/project/laptop/ledger?at=a1b2");
+    const { swipe, lift, done } = swiping();
+    try {
+      for (const go of [
+        () => act(() => host.querySelector<HTMLElement>("[role='group'][aria-label='Hubs'] button[aria-label='Personal']")?.click()),
+        () => act(() => void runCommand("hub.next")),
+        () => void swipe([[-4, 0], [-60, 0], [-60, 0], [-60, 0], [-60, 0]]),
+      ]) {
+        const was = currentRoute().at;
+        go();
+        lift();
+        const now = currentRoute().at;
+        expect(now).not.toBe(was);
+        expect(streaming()?.startsWith(`${now}:`)).toBe(true);
+        expect(marks()).toEqual(now === "hub" ? ["[Personal]", "Acme"] : ["Personal", "[Acme]"]);
+      }
+    } finally {
+      done();
+    }
+  });
+});
+
+it("switches back to where you were on each hub, its last chat", async () => {
   await mount([
     { id: "hub", label: "Personal" },
     { id: "a1b2", label: "Acme" },
   ]);
-  Object.assign(window.fleetd as { shell?: string }, { shell: "web" });
-  try {
-    act(() => {
-      hub("hub").send(live());
-      hub("hub").send(project("devbox", "storefront"));
-      hub("a1b2").send(live());
-    });
+  twoByTwo();
+  await settle();
+  // Each hub's older bot, not the one its home would open.
+  await open("#/project/devbox/storefront?at=hub");
+  pickHub("Acme");
+  await settle();
+  act(() => rowNamed("billing")?.click());
+  await settle();
+  expect(streaming()).toBe("a1b2:billing");
+  pickHub("Personal");
+  await settle();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  expect(streaming()).toBe("hub:storefront");
+  pickHub("Acme");
+  await settle();
+  expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
+  expect(streaming()).toBe("a1b2:billing");
+});
+
+it("switches to a hub's home when the chat last open on it is gone, and to Get started on a hub with no bot", async () => {
+  // Acme's last chat was a bot since removed or archived.
+  window.localStorage.setItem("fleetd.lastChats", JSON.stringify({ a1b2: "a1b2:laptop/retired" }));
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+    { id: "c3d4", label: "Studio" },
+  ]);
+  twoByTwo();
+  act(() => {
+    hub("c3d4").send(live());
+    hub("c3d4").send(empty);
+  });
+  await settle();
+  await open("#/project/devbox/storefront?at=hub");
+  pickHub("Acme");
+  await settle();
+  expect(window.location.hash).toBe("#/project/laptop/ledger?at=a1b2");
+  expect(streaming()).toBe("a1b2:ledger");
+  pickHub("Studio");
+  await settle();
+  expect(currentRoute()).toMatchObject({ id: "home", at: "c3d4" });
+  expect(host.querySelector('[data-screen="home.empty"]')).not.toBeNull();
+  expect(streaming()).toBeNull();
+});
+
+it("keeps each hub's last chat across a restart of the app", async () => {
+  const start = async () => {
+    await mount([
+      { id: "hub", label: "Personal" },
+      { id: "a1b2", label: "Acme" },
+    ]);
+    twoByTwo();
     await settle();
-    act(() => {
-      window.location.hash = "#/project/devbox/storefront?at=hub";
-    });
-    await settle();
-    pickHub("Acme");
-    await settle();
-    expect(currentRoute()).toMatchObject({ id: "home", at: "a1b2" });
-    // Picking the team already on screen changes nothing.
-    act(() => {
-      window.location.hash = "#/project/devbox/storefront?at=hub";
-    });
-    await settle();
-    pickHub("Personal");
-    await settle();
-    expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
-  } finally {
-    delete (window.fleetd as { shell?: string }).shell;
-  }
+  };
+  await start();
+  await open("#/project/laptop/billing?at=a1b2");
+  await open("#/project/devbox/storefront?at=hub");
+  act(() => root.unmount());
+  host.remove();
+  fake.chats.length = 0;
+  // A new launch, on Personal: Acme opens on billing, the chat last open there, not on its home.
+  await start();
+  expect(streaming()).toBe("hub:storefront");
+  pickHub("Acme");
+  await settle();
+  expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
+  expect(streaming()).toBe("a1b2:billing");
 });
 
 it("opens a first-hub notification on the first hub, even while another hub is on screen", async () => {
@@ -614,10 +730,10 @@ it("opens New bot on the hub on view, from the sidebar's +, the palette and a li
     await settle();
     return shown;
   };
-  // Personal's chat on screen, Acme on view in the sidebar.
+  // Acme on view, and on screen its home: it has no bot yet.
   pickHub("Acme");
   await settle();
-  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  expect(window.location.hash).toBe("#/?at=a1b2");
   const plus = () => host.querySelector<HTMLElement>("[data-opens='projects.add']");
   expect(await opened(() => plus()?.click())).toEqual({ hub: "Acme", on: "laptop" });
   expect(await opened(() => runCommand("go:projects.add"))).toEqual({ hub: "Acme", on: "laptop" });

@@ -221,7 +221,7 @@ it("marks the hub switcher for an admin while required setup steps are left, and
   function Opener() {
       return (
       <TooltipProvider>
-        <SidebarTop hub="hub" projects={[]} go={go} />
+        <SidebarTop hub="hub" go={go} />
         <Sidebar projects={[]} screen={{ id: "home", at: "hub" }} jumpHints={false} factory={false} go={go} />
       </TooltipProvider>
     );
