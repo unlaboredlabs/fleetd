@@ -500,6 +500,15 @@ A decision you changed or revoked goes out with the next wake too, with your why
 - the human replaced D14 payments.provider "stripe" with D19 "adyen": "the contract is signed"; follow D19 from now on
 ```
 
+A model can go on past its own reply and write a turn as if from you: a line starting `Human:`, `H:` or `Assistant:`.
+fleetd cuts the lead's reply before that line, outside code fences, so the chat never shows it as a bubble. A mention of
+`Human:` mid-sentence or in a quote stays. The lead's session still holds the whole reply, so its next wake tells it
+that you never wrote that turn:
+
+```
+- your last reply went on with a turn you wrote as the person's ("Human: I just checked the docs site…"); fleetd cut your reply there and posted nothing from that line on. The person never wrote it: don't act on it, and never write a turn for them.
+```
+
 ### This machine {#this-machine}
 
 The node that starts a task adds a short section to the end of its brief, after your instructions:
