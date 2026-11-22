@@ -64,7 +64,8 @@ export type SimTools = {
   shoot(udid: string, display?: string): Promise<Uint8Array>;
   /** The screen as a stream of frames, where the Mac can make one. */
   live?: (udid: string) => Live;
-  record(udid: string, path: string): Recording;
+  /** `display` as `shoot`'s: a Duo's video is of the panel lit when it starts. */
+  record(udid: string, path: string, display?: string): Recording;
   /** The recording the node before started, by its recordVideo's pid, while it still runs. */
   resume?: (pid: number, path: string) => Recording | undefined;
   run?: (runner: Runner, args: string[]) => Promise<Ran>;
@@ -186,7 +187,12 @@ export function simctlTools(simctl: Simctl, shots: string): SimTools {
       await simctl.screenshot(udid, to, display);
       return new Uint8Array(await Bun.file(to).arrayBuffer());
     },
-    record: (udid, path) => startRecording(simctl.argv(["io", udid, "recordVideo", "--codec=h264", "--force", path]), path, recordingStarted),
+    record: (udid, path, display) =>
+      startRecording(
+        simctl.argv(["io", udid, "recordVideo", "--codec=h264", ...(display ? [`--display=${display}`] : []), "--force", path]),
+        path,
+        recordingStarted,
+      ),
     resume: (pid, path) => resumeRecording(pid, path),
   };
 }
@@ -347,7 +353,7 @@ export class SimScreen {
     if (this.newest) fn(this.newest);
     if (!this.recording) {
       try {
-        this.recording = this.tools.record(this.udid, join(this.dir, RECORDING_FILES.video_mp4.name));
+        this.recording = this.tools.record(this.udid, join(this.dir, RECORDING_FILES.video_mp4.name), this.dev?.display());
         this.changed();
       } catch (e) {
         this.recording = { finish: async () => undefined };
