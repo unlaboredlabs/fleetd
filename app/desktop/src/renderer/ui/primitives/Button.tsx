@@ -10,7 +10,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   /** A square button holding only an icon; give it an aria-label. */
   iconOnly?: boolean;
-  /** With iconOnly: a circle, for a box's own send and stop. */
+  /** With iconOnly: a circle (the composer's Stop, a capsule's ×). */
   round?: boolean;
   /** An icon before the label. */
   icon?: ReactNode;
