@@ -52,15 +52,17 @@ test("each iOS control's commands, as tried on the real Mac", () => {
     next: { ...upright, orientation: "landscape_left" },
   });
   expect(plan(IPHONE, UDID, upright, "rotate_right").steps).toEqual([{ agentDevice: ["orientation", "landscape-right"] }]);
+  expect(plan(DUO, UDID, { ...upright, fold: "closed" }, "rotate_left").steps).toEqual([{ helper: "device", args: ["turn", "landscape-left"] }]);
+  expect(plan(DUO, UDID, { ...upright, orientation: "landscape_left", fold: "closed" }, "rotate_left").steps).toEqual([{ helper: "device", args: ["turn", "pud"] }]);
   expect(plan(IPHONE, UDID, upright, "shake").steps).toEqual([{ simctl: ["spawn", UDID, "notifyutil", "-p", "com.apple.UIKit.SimulatorShake"] }]);
-  expect(plan(IPHONE, UDID, upright, "home").steps).toEqual([{ helper: "button", arg: "home" }]);
-  expect(plan(IPHONE, UDID, upright, "lock").steps).toEqual([{ helper: "button", arg: "lock" }]);
+  expect(plan(IPHONE, UDID, upright, "home").steps).toEqual([{ helper: "device", args: ["home"] }]);
+  expect(plan(IPHONE, UDID, upright, "lock").steps).toEqual([{ helper: "device", args: ["lock"] }]);
   expect(plan(IPHONE, UDID, upright, "appearance", "dark")).toEqual({ steps: [{ simctl: ["ui", UDID, "appearance", "dark"] }], next: { ...upright, appearance: "dark" } });
   // No value: the other one.
   expect(plan(IPHONE, UDID, { ...upright, appearance: "dark" }, "appearance").next.appearance).toBe("light");
   expect(plan(IPHONE, UDID, upright, "location", "48.8584, 2.2945").steps).toEqual([{ simctl: ["location", UDID, "set", "48.8584,2.2945"] }]);
   expect(plan(DUO, UDID, { ...upright, fold: "closed" }, "fold", "half-open")).toEqual({
-    steps: [{ helper: "fold", arg: "half-open" }],
+    steps: [{ helper: "fold", args: ["half-open"] }, { helper: "device", args: ["turn", "portrait"] }],
     next: { ...upright, fold: "half-open" },
   });
   expect(plan(IPHONE, UDID, upright, "screenshot").steps).toEqual([]);
@@ -89,7 +91,7 @@ function tools(opts: { noSession?: boolean } = {}) {
       if (args[1] === UDID && args[2] === "screenshot") await Bun.write(args.at(-1)!, png(1398, 2034));
       return "";
     },
-    helpers: async () => ({ fold: "/h/fold-helper", button: "/h/button" }),
+    helpers: async () => ({ fold: "/h/fold-helper", device: "/h/device" }),
     async agentDevice(args) {
       ran.push(["agent-device", ...args]);
       if (args[0] === "open") opened = true;
@@ -115,6 +117,7 @@ test("a Duo settles closed with its appearance read, folds, turns, and screensho
     expect(ran).toEqual([
       ["simctl", "ui", UDID, "appearance"],
       ["simctl", "spawn", UDID, "/h/fold-helper", "closed"],
+      ["simctl", "spawn", UDID, "/h/device", "turn", "portrait"],
     ]);
     expect(dev.display()).toBe("primary");
     await dev.apply("fold", "open");
@@ -122,9 +125,11 @@ test("a Duo settles closed with its appearance read, folds, turns, and screensho
     await dev.apply("rotate_left");
     const shot = await dev.apply("screenshot");
     expect(shot).toMatchObject({ width: 1398, height: 2034 });
-    expect(ran.slice(2).map((r) => r.slice(0, 5))).toEqual([
+    expect(ran.slice(3).map((r) => r.slice(0, 5))).toEqual([
       ["simctl", "spawn", UDID, "/h/fold-helper", "open"],
-      ["agent-device", "orientation", "landscape-left"],
+      ["simctl", "spawn", UDID, "/h/device", "turn"],
+      // A Duo turns with its orientation picker, not XCUIDevice.
+      ["simctl", "spawn", UDID, "/h/device", "turn"],
       ["simctl", "io", UDID, "screenshot", "--display=primary-1"],
     ]);
     expect(dev.report()).toMatchObject({ orientation: "landscape_left", fold: "open" });
