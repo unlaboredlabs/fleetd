@@ -1632,6 +1632,8 @@ it("with reduced motion, switches without the slide once a swipe has gone far en
     expect(bots("storefront", "billing")).toEqual(["billing"]);
     lift();
     expect(marks()).toEqual(["Personal", "[Acme]"]);
+    // Nothing slides, so no hub is drawn ahead beside it.
+    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
   } finally {
     done();
     media.mockRestore();
