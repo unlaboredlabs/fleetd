@@ -654,18 +654,25 @@ function SettingsScreens() {
   const t = useTheme();
   const root = useNavigation();
   const stripBars = useStripBars(t.grouped);
+  // A page with a large title of its own has the Settings page's bar, not a pushed page's ground: iOS 26 draws a large
+  // title invisible over a bar with a ground, a blank gap where Connections' title stood (W822). Elsewhere, as pushed.
+  const large = (title: string): NativeStackNavigationOptions => ({
+    ...pushed(t, title),
+    headerLargeTitleEnabled: true,
+    ...(Platform.OS === "ios" ? { headerStyle: {}, headerLargeStyle: {}, ...stripBars } : {}),
+  });
   return (
     <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="Memory" component={Memory} options={{ ...pushed(t, "Memory"), headerLargeTitleEnabled: true }} />
+      <SettingsStack.Screen name="Memory" component={Memory} options={large("Memory")} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="Connections" component={Connections} options={{ ...pushed(t, "Connections"), headerLargeTitleEnabled: true }} />
-      <SettingsStack.Screen name="Machines" component={Machines} options={{ ...pushed(t, "Machines"), headerLargeTitleEnabled: true }} />
-      <SettingsStack.Screen name="Billing" component={Billing} options={{ ...pushed(t, "Billing"), headerLargeTitleEnabled: true }} />
+      <SettingsStack.Screen name="Connections" component={Connections} options={large("Connections")} />
+      <SettingsStack.Screen name="Machines" component={Machines} options={large("Machines")} />
+      <SettingsStack.Screen name="Billing" component={Billing} options={large("Billing")} />
       <SettingsStack.Screen name="Claude" component={Claude} options={{ ...pushed(t, "Claude"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
-      <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
+      <SettingsStack.Screen name="Vault" component={Vault} options={large("Vault")} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultEdit" component={VaultEdit} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="VaultImport" component={VaultImport} layout={sheetRoom} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
