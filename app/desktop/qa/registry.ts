@@ -178,6 +178,7 @@ export const fixtures = [
   "cloud-sign-in-timeout",
   "cloud-signed-in",
   "cloud-invited",
+  "cloud-no-team",
   "cloud-connect",
   "cloud-connect-no-terminal",
   "cloud-hosted-stuck",
@@ -3038,6 +3039,19 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByText("eve@example.com invited you to security").waitFor({ timeout: 10_000 });
+    },
+  },
+  // In no team of their own (they came by an invitation): Not now on it leaves No team yet, with Make a team.
+  {
+    id: "onboarding",
+    route: "#/onboarding",
+    fixtures: ["cloud-no-team"],
+    variant: "no-team",
+    open: async (page) => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Not now" }).click();
+      await page.getByText("No team yet").waitFor({ timeout: 10_000 });
     },
   },
   {

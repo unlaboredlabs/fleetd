@@ -32,7 +32,7 @@
       "description": "A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written.",
       "properties": {
         "code": {
-          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
+          "description": "Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Team: invalid (400), make_refused (401: a make value unknown, used before or run out), already_own (409: the person has a team of their own), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in).",
           "minLength": 1,
           "type": "string"
         },
@@ -246,6 +246,13 @@
           },
           "maxItems": 50,
           "type": "array"
+        },
+        "make": {
+          "description": "Makes a team of the person's own when sent to POST /v1/app/team: offered only to someone in no team of their own (one who came by an invitation), one use, 15 minutes; each sign-in answers a fresh one.",
+          "maxLength": 200,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
         }
       },
       "required": [
@@ -306,6 +313,34 @@
         "name",
         "url",
         "pairingCode"
+      ],
+      "type": "object"
+    },
+    "AccountsTeamInput": {
+      "additionalProperties": false,
+      "description": "POST /v1/app/team: a team of the person's own, by the make value the sign-in answered. No auth header.",
+      "properties": {
+        "make": {
+          "maxLength": 200,
+          "minLength": 16,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "make"
+      ],
+      "type": "object"
+    },
+    "AccountsTeamOutput": {
+      "description": "200: the team made, as the sign-in answers its teams, with a pairing code for its /pair.",
+      "properties": {
+        "team": {
+          "$ref": "#/$defs/AccountsTeam"
+        }
+      },
+      "required": [
+        "team"
       ],
       "type": "object"
     },

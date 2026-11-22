@@ -234,7 +234,7 @@ export const registerIpc = (
   handle(IPC.pairSetup, () => pairing.setup());
   handle(IPC.cloudState, () => cloud.state());
   handle(IPC.cloudSignIn, () => cloud.signIn());
-  handle(IPC.cloudFinish, (_event, join) => cloud.finish(join));
+  handle(IPC.cloudFinish, (_event, ...[join, make]) => cloud.finish(join, make === true));
   handle(IPC.cloudNotMe, () => cloud.notMe());
   handle(IPC.cloudCancel, () => cloud.cancel());
   handle(IPC.cloudReopen, () => cloud.reopen());

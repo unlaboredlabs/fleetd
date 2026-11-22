@@ -394,7 +394,7 @@ export const REQUESTS = {
   [IPC.pairSetup]: none,
   [IPC.cloudState]: none,
   [IPC.cloudSignIn]: none,
-  [IPC.cloudFinish]: z.tuple([z.array(z.number().int().min(0).max(49)).max(50)]),
+  [IPC.cloudFinish]: z.union([z.tuple([z.array(z.number().int().min(0).max(49)).max(50)]), z.tuple([z.array(z.number().int().min(0).max(49)).max(50), z.boolean()])]),
   [IPC.cloudNotMe]: none,
   [IPC.cloudCancel]: none,
   [IPC.cloudReopen]: none,
