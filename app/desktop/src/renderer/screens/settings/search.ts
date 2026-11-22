@@ -152,6 +152,12 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.screens", label: "Screens", tab: "hub.machines", keywords: ["screens", "browser", "android", "emulator", "linux desktop", "agents’ mac", "mac", "turn on", "at once", "idle"] },
   { key: "hub.caps", label: "Machine max agents", tab: "hub.machines", keywords: ["max agents", "machine cap", "limit", "at once"] },
   { key: "hub.sandboxes", label: "Providers", tab: "hub.machines", keywords: ["providers", "sandbox", "sandboxes", "hosted", "boat", "boat.dev", "api key", "limit", "at once", "cloud", "capacity", "connect"] },
+  {
+    key: "hub.provided",
+    label: "fleetd's computers",
+    tab: "hub.machines",
+    keywords: ["fleetd's computers", "computers", "computer time", "hosted", "cloud", "size", "asleep", "awake", "at once", "plan", "vm", "sandbox"],
+  },
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
@@ -174,10 +180,17 @@ const VAULT_TABS: ReadonlyArray<Tab> = ["vault", "project-vault", "hub.vault"];
 
 /**
  * What `administers` may find: everyone gets You and Projects; only an owner or admin, the Hub group too. The Vault's
- * pages only on a hub that serves it (`vault`); Billing only on a fleetd cloud team (`billing`).
+ * pages only on a hub that serves it (`vault`); Billing only on a fleetd cloud team (`billing`), where Machines holds
+ * fleetd's computers in place of the providers a team connects with its own key (admin/Provided.tsx).
  */
 export const optionsFor = (administers: boolean, vault = true, billing = false): ReadonlyArray<SettingsOption> =>
-  OPTIONS.filter((o) => (administers || !isHubTab(o.tab)) && (vault || !VAULT_TABS.includes(o.tab)) && (billing || o.tab !== "hub.billing"));
+  OPTIONS.filter(
+    (o) =>
+      (administers || !isHubTab(o.tab)) &&
+      (vault || !VAULT_TABS.includes(o.tab)) &&
+      (billing || o.tab !== "hub.billing") &&
+      o.key !== (billing ? "hub.sandboxes" : "hub.provided"),
+  );
 
 const words = (q: string) => q.toLowerCase().split(/\s+/u).filter(Boolean);
 
