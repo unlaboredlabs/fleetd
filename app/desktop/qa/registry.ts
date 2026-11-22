@@ -478,6 +478,48 @@ const CHAT = "#/project/devbox/dcffccea-c5a7-40a6-940d-7f70239ffa22";
 /** One of storefront's browser sessions, open in the panel (fixtures/sessions). */
 const SESSION_ROUTE = (id: string) => `${CHAT}/sessions/${id}`;
 
+/** The chat at its narrowest: the narrow window with the sidebar and the panel open beside it. */
+const narrowest = async (page: Page) => {
+  await page.keyboard.press("ControlOrMeta+B");
+  await page.getByRole("navigation", { name: "Sidebar" }).waitFor();
+  const pill = page.locator('[data-opens="panel"]');
+  if ((await pill.getAttribute("aria-pressed")) !== "true") await pill.click();
+  await page.getByRole("complementary", { name: "Bot panel" }).waitFor();
+};
+
+/**
+ * Hovers a bubble of bubbles-casual's, the lead's with the pointer on Reply (so its tooltip shows) or one of yours, and
+ * measures its hover strip: beside the bubble's foot on its outer side, a gap off it, on none of it, inside the chat;
+ * Reply's tooltip whole in the window.
+ */
+const hoverStrip = async (page: Page, side: "theirs" | "mine") => {
+  const bubble = page.locator('[data-bubble="text"]').filter({ hasText: side === "theirs" ? "One flaky retry on checkout" : "how did the nightly go?" });
+  const line = bubble.locator("..");
+  const strip = line.locator('> [class*="aside"]');
+  await bubble.hover();
+  await expect(strip).toHaveCSS("opacity", "1");
+  if (side === "theirs") {
+    await strip.getByRole("button", { name: "Reply" }).hover();
+    await page.locator("[data-side]").filter({ hasText: /^Reply$/u }).waitFor();
+  }
+  const [b, s, log] = await Promise.all([bubble.boundingBox(), strip.boundingBox(), page.getByLabel("Conversation with the lead").boundingBox()]);
+  if (b === null || s === null || log === null) throw new Error("the bubble, its strip or the chat has no box");
+  // Soft, so a size that fails is still shot for the contact sheet.
+  expect.soft(Math.abs(s.y + s.height - (b.y + b.height)), "the strip's foot on the bubble's").toBeLessThanOrEqual(1);
+  const gap = side === "theirs" ? s.x - (b.x + b.width) : b.x - (s.x + s.width);
+  expect.soft(gap, "the strip beside the bubble, a 4 px gap off it").toBeCloseTo(4, 0);
+  expect.soft(s.x, "the strip inside the chat").toBeGreaterThanOrEqual(log.x);
+  expect.soft(s.x + s.width, "the strip inside the chat").toBeLessThanOrEqual(log.x + log.width);
+  if (side === "theirs") {
+    const tip = await page.locator("[data-side]").filter({ hasText: /^Reply$/u }).boundingBox();
+    // An Electron page has no viewport size of Playwright's.
+    const width = await page.evaluate(() => window.innerWidth);
+    if (tip === null) throw new Error("Reply's tooltip has no box");
+    expect.soft(tip.y, "Reply's tooltip whole in the window").toBeGreaterThanOrEqual(0);
+    expect.soft(tip.x + tip.width, "Reply's tooltip whole in the window").toBeLessThanOrEqual(width);
+  }
+};
+
 /** Makes a part throw while rendering, in the QA build (src/renderer/src/Boundary.tsx), so its error card shows. */
 const crash = (part: string) => async (page: Page) => {
   await page.evaluate((p) => window.dispatchEvent(new CustomEvent("fleetd:qa-crash", { detail: p })), part);
@@ -847,7 +889,7 @@ export const screens: readonly Screen[] = [
       await expect(page.locator('[data-receipt="queued"]')).toHaveCount(1);
       await page.locator('[data-composer] input[type="file"]').setInputFiles({ name: "checkout-error.png", mimeType: "image/png", buffer: PNG });
       await expect(page.getByText(/checkout-error\.png · \d+ B/)).toBeVisible();
-      // The receipts at rest: off the bubbles, whose hover strip floats over the line above in a narrow chat.
+      // The receipts at rest: off the bubbles, whose hover strip would show beside them.
       await page.mouse.move(0, 0);
     },
   },
@@ -2517,6 +2559,32 @@ export const screens: readonly Screen[] = [
       await bubble.getByRole("button", { name: "Reply" }).click();
       await page.getByRole("textbox", { name: "Message the lead" }).fill("merge the dates one first");
       await page.mouse.move(0, 0);
+    },
+  },
+  // W803 (F1179): a bubble's hover strip (tapback, Reply, the time) at every chat width: the window's widths, and the
+  // narrow one with the sidebar and the panel open, the chat at its narrowest. The lead's wrapped bubble with Reply's
+  // tooltip, and one of yours: each strip beside its bubble's foot, on its outer side, on none of its words.
+  ...(["theirs", "mine"] as const).flatMap((side): Screen[] => [
+    { id: "chat", route: CHAT, fixtures: ["bubbles-casual"], variant: `hover-${side}`, check: (page) => hoverStrip(page, side) },
+    { id: "chat", route: CHAT, fixtures: ["bubbles-casual"], variant: `hover-${side}-narrow`, sizes: ["narrow"], open: narrowest, check: (page) => hoverStrip(page, side) },
+  ]),
+  // ...and a table, which keeps the whole column there: its strip under its foot, from its left edge, never on it.
+  {
+    id: "chat",
+    route: CHAT,
+    fixtures: ["bubbles-charts"],
+    variant: "hover-wide-narrow",
+    sizes: ["narrow"],
+    open: narrowest,
+    check: async (page) => {
+      const table = page.locator('[data-bubble="table"]');
+      const strip = table.locator("..").locator('> [class*="aside"]');
+      await table.hover();
+      await expect(strip).toHaveCSS("opacity", "1");
+      const [b, s] = await Promise.all([table.boundingBox(), strip.boundingBox()]);
+      if (b === null || s === null) throw new Error("the table or its strip has no box");
+      expect.soft(s.y, "the strip under the table").toBeGreaterThanOrEqual(b.y + b.height);
+      expect.soft(Math.abs(s.x - b.x), "the strip from the table's left edge").toBeLessThanOrEqual(1);
     },
   },
   // UX-1 [23]: a long reply streams in with the chat open, the typing bubble standing in for it; checked after its last
