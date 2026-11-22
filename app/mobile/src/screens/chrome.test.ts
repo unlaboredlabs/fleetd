@@ -36,6 +36,13 @@ describe("iOS 26 chrome", () => {
     expect(chat.match(/<EdgeEffect\b/gu)?.length).toBe(2);
   });
 
+  it("marks the chat open beside the list with a faint box inset from the row's edges, never a slab across it", () => {
+    const chats = read("src/screens/Chats.tsx");
+    expect(chats).not.toMatch(/open \? \{ backgroundColor/u);
+    expect(chats).toMatch(/\{open \? <View pointerEvents="none" style=\{\[styles\.open, \{ backgroundColor: t\.fillQuiet \}\]\} \/> : null\}/u);
+    expect(chats).toMatch(/open: \{ position: "absolute", left: space\.sm, right: space\.sm, [^}]*borderRadius/u);
+  });
+
   it("opens the composer's + as iOS's own menu, not a drawn one", () => {
     const composer = read("src/ui/Composer.tsx");
     expect(composer).toMatch(/<MenuButton\s+icon="plus"/u);

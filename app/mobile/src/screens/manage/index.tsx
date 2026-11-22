@@ -47,8 +47,12 @@ export const sheet = (t: Palette, title: string): NativeStackNavigationOptions =
   headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
-  // iOS 26's bar is glass over the page, its glyphs in the label's ink; elsewhere, the page's ground.
-  ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }),
+  // The bar on the page's own ground, on iOS too: left to iOS, an opaque bar takes the system's white, a white band
+  // over the grey page (seen on the agents' Mac's simulator). A bar with no ground would lay every page out under it,
+  // and a page's spinner, error or web view isn't in a scroll view that keeps clear of it. Its glyphs in the label's ink.
+  headerStyle: { backgroundColor: t.grouped },
+  // The large title's too, which iOS draws from the scroll edge's look while the title is expanded.
+  headerLargeStyle: { backgroundColor: t.grouped },
   contentStyle: { backgroundColor: t.grouped },
 });
 
@@ -59,8 +63,9 @@ export const pushed = (t: Palette, title: string): NativeStackNavigationOptions 
   headerTintColor: t.label,
   headerTitleStyle: { color: t.label },
   headerShadowVisible: false,
-  // iOS 26's bar is glass over the page, its glyphs in the label's ink; elsewhere, the page's ground.
-  ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }),
+  // The bar as a sheet's.
+  headerStyle: { backgroundColor: t.grouped },
+  headerLargeStyle: { backgroundColor: t.grouped },
   contentStyle: { backgroundColor: t.grouped },
 });
 

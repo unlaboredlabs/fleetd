@@ -8,7 +8,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { adminNames, askLine, hostsFor, idleFor, idleWords, openWord, pickHost, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, kindLine, openWord, pickHost, profileBusy, SCREEN_KINDS, slotLine, whyOff, type HubError, type OffReason, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
@@ -23,11 +23,12 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const t = useTheme();
   const { session, state } = useHub();
   const key = route.params.key;
-  const project = state.projects?.[key];
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
   const machines = roles.value?.ok === true ? roles.value.output.machines : [];
   // Its own browser opens on its machine, on the profile that keeps its sign-ins.
   const home = refOf(key).machineId;
+  // The browser's row says which profile it opens on: the bot's, signed in, or a fresh one while that one is in use.
+  const busyProfile = profileBusy(state.screens[key] ?? [], home);
   const [kind, setKind] = useState<ScreenKind>("browser");
   const shownKind = kind;
   const off = whyOff(machines, shownKind, home);
@@ -110,17 +111,14 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
         <Text style={[type.footnote, styles.none, { color: t.secondary }]}>{errorWords(failed)}</Text>
       ) : (
         <>
-          <ListSection
-            header="Kind"
-            footer={shownKind === "browser" ? `It opens on ${project?.title ?? "the bot"}'s own browser profile: a site you sign in to stays signed in for it. Close yours before it needs its own.` : `Yours from the start. It's recorded like an agent's, and ends ${idleWords(idleFor(machines, host?.machineId, shownKind))}.`}
-          >
+          <ListSection header="Kind">
             {SCREEN_KINDS.map((k) => {
               const kindOff = whyOff(machines, k.kind, home);
               return (
                 <CheckRow
                   key={k.kind}
                   title={k.label}
-                  detail={kindOff === null ? k.line : kindOff.short}
+                  detail={kindOff === null ? kindLine(k, busyProfile) : kindOff.short}
                   checked={k.kind === shownKind}
                   disabled={busy || wait !== null}
                   onPress={() => {

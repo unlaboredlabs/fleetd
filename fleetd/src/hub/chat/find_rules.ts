@@ -133,7 +133,7 @@ export function cut(text: string, max: number): string {
 
 /**
  * A hit's line: the message on one line (whitespace folded), at most LINE_CHARS characters starting a little before
- * its first mark, `…` where cut; a message with no text shows its first attachment's name. Its marks are in that line.
+ * its first mark (shorter near the message's end), `…` where cut; a message with no text shows its first attachment's name. Its marks are in that line.
  */
 export function hitText(text: string, attachments: AttachmentRef[] | undefined, terms: Term[]): { text: string; marks: [number, number][] } {
   const line = shownText(text).replace(/\s+/gu, " ").trim() || (attachments?.[0]?.name ?? "");
@@ -149,12 +149,13 @@ export function hitText(text: string, attachments: AttachmentRef[] | undefined, 
   }
   at.push(u);
   const firstCp = marks.length === 0 ? 0 : at.findIndex((x) => x >= marks[0]![0]);
-  let start = Math.min(Math.max(0, firstCp - Math.floor(LINE_CHARS / 3)), chars.length - LINE_CHARS);
+  // Never pulled back from the message's end for more words before: the match stays near the line's start, where an
+  // app that shows two lines of it (the phone's search) still shows it, and is never cut by the end's `…`.
+  const start = Math.max(0, firstCp - Math.floor(LINE_CHARS / 3));
   // Room for the `…`s inside the line's characters.
   const head = start > 0 ? 1 : 0;
-  let take = LINE_CHARS - head;
+  let take = Math.min(LINE_CHARS - head, chars.length - start);
   if (start + take < chars.length) take -= 1;
-  if (start > 0 && start + take >= chars.length) start = chars.length - take;
   const lo = at[start]!;
   const hi = at[start + take]!;
   const lead = head ? "…" : "";
