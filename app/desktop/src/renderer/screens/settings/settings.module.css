@@ -413,9 +413,9 @@
 .sandboxLimit {
   width: 132px;
 }
-/* What runs where's Linux machine: room for its longest, "Your machines first, then boat.dev". */
+/* What runs where's Linux machine: room for its longest, "Your machines first, then fleetd's computers". */
 .linuxChoice {
-  width: 260px;
+  width: 320px;
 }
 /* Your name, at its row's right end: room for a full name, and no wider than a narrow window. */
 .nameField {

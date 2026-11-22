@@ -66,6 +66,11 @@ describe("Runs on", () => {
   it("says it is where the lead's agents run, and where the lead itself runs", () => {
     expect(runsOnHint("devbox", "devbox")).toBe("Where the agents the lead starts run. The lead itself runs on devbox.");
     expect(runsOnHint("hosted", "Hosted sandboxes")).toBe("Where the agents the lead starts run. The lead itself runs in a boat.dev sandbox.");
+    expect(runsOnHint("hosted", "Hosted sandboxes", true)).toBe("Where the agents the lead starts run. The lead itself runs on fleetd's computers.");
+  });
+
+  it("on a fleetd cloud team, reads each of fleetd's computers by its size alone", () => {
+    expect(pickOptions({ computers: choices }, true)?.map((o) => o.label)).toEqual(["Automatic", "2 CPU · 4 GB", "4 CPU · 8 GB"]);
   });
 
   const choices = [
