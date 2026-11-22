@@ -1,5 +1,5 @@
 // The MCP servers fleetd gives its agents: one `mcp_servers` row per
-// server (a global one's machine and project are empty) and `mcp_settings.user_servers`. A secret value is sealed in
+// server (a global one's machine and project are empty). A secret value is sealed in
 // the desktop app to each machine's box key; the hub relays each box to its node and keeps only the fingerprint that
 // node computed, per machine. A session's launch carries its project's servers with each secret by name only.
 import { createHash } from "node:crypto";
@@ -108,18 +108,6 @@ export class McpServerStore {
     this.db.conn.query("DELETE FROM mcp_secret_forgets WHERE machine_id = ? AND project_id = ? AND name = ?").run(machineId, p, name);
   }
 
-  /** Whether agents also get the person's own MCP servers: on until a person turns it off. */
-  userServers(): boolean {
-    const row = this.db.conn.query<{ value: number }, []>("SELECT value FROM mcp_settings WHERE key = 'user_servers'").get();
-    return row === null || row.value !== 0;
-  }
-
-  setUserServers(on: boolean): void {
-    this.db.conn
-      .query("INSERT INTO mcp_settings (key, value) VALUES ('user_servers', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-      .run(on ? 1 : 0);
-  }
-
   /**
    * The servers a project's sessions are configured from, by name: the global ones, the project's own over them, and
    * in a repo checkout another project holds that project's servers too; with several, the one that added it first
@@ -135,10 +123,11 @@ export class McpServerStore {
     return [...by.keys()].sort().map((k) => by.get(k)!);
   }
 
-  /** What a session of the project gets: `serversFor`'s enabled ones with a role, whose secrets are on its machine. */
+  /** What a session of the project gets: `serversFor`'s enabled ones with a role, whose secrets are on its machine, and
+   * the MCP servers of its machine's own claude setup, as claude gives them anyway (W817: no switch for them). */
   sessionConfig(r: ProjectRef): McpSessionConfig {
     return {
-      userServers: this.userServers(),
+      userServers: true,
       servers: this.serversFor(r)
         .filter((s) => s.enabled && anyRole(s) && forBot(s, r))
         .map((s) => forSession(s, r.machineId, this.suffix()))
@@ -163,7 +152,7 @@ export class McpServerStore {
       const what = { secrets: session.secrets, transport: session.transport, env: session.env, headers: session.headers, keys, ...(session.oauth ? { oauth: true } : {}) };
       servers[s.name] = createHash("sha256").update(JSON.stringify(sortedValue(what))).digest("hex");
     }
-    return { userServers: this.userServers(), servers };
+    return { userServers: true, servers };
   }
 }
 
