@@ -10,8 +10,10 @@ import { MAC_PANES } from "./macSetup";
 import { IPC, type InvokeChannel } from "./channels";
 import type { HubError } from "./hub";
 
-/** A call's input as JSON, at most; the hub has no use for more, and main shouldn't buffer it. */
-export const MAX_CALL_INPUT_BYTES = 1024 * 1024;
+// A call's input as JSON, at most: in hub.ts, which has no zod, so the hub client reads it without these schemas
+// (the web's first load would otherwise carry zod for one number).
+import { MAX_CALL_INPUT_BYTES } from "./hub";
+export { MAX_CALL_INPUT_BYTES };
 export const MAX_CALL_INPUT_DEPTH = 64;
 export const MAX_CALL_INPUT_NODES = 10_000;
 

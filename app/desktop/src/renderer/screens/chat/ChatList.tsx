@@ -3,9 +3,10 @@
 // (the follow rule is T3 Code's: apps/web MessagesTimeline.logic.ts). Scrolling to the top loads older pages; the
 // list keeps its place while they arrive above. Scrolled up, a button counts what arrived below and goes back to it.
 import type { Virtualizer } from "@tanstack/react-virtual";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Button, cx, Text, VirtualList } from "../../ui";
+import { Button, cx, preloadable, preloadWhenIdle, Text, VirtualList } from "../../ui";
+import { onWeb } from "../../src/web";
 import { useData } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import type { ChatItem } from "../../src/data/chat";
@@ -23,7 +24,11 @@ import { RefreshedChanges, RememberedUndo } from "./Remembered";
 import { KeptWorktrees } from "./KeptWorktrees";
 import { SetupChangedLine } from "./SetupChanged";
 import { SkillSavedLine } from "./SkillSaved";
-import { VaultImportCardView } from "./VaultImportCard";
+// The vault's import card draws from Settings' vault parts: a chunk of its own, asked for at once on the desktop and
+// once the chat has shown on the web (a card is rare; its place is busy the moment it takes to come).
+const VaultImportCardView = preloadable(() => import("./VaultImportCard").then((m) => m.VaultImportCardView));
+if (onWeb()) preloadWhenIdle(VaultImportCardView);
+else VaultImportCardView.preload().catch(() => undefined);
 import type { ChatItem as InlineItem } from "../../../shared/contracts";
 import { TOP_BAR } from "../../../shared/frame";
 import { ArtifactCard } from "../artifacts/ArtifactCard";
@@ -218,7 +223,9 @@ const RowView = memo(function RowView(props: {
       if (r.item.message?.vaultImport !== undefined) {
         return (
           <div className={s.quietRow} data-entry="event">
-            <VaultImportCardView card={r.item.message.vaultImport} at={shortClock(r.item.at)} />
+            <Suspense fallback={<div aria-busy="true" />}>
+              <VaultImportCardView card={r.item.message.vaultImport} at={shortClock(r.item.at)} />
+            </Suspense>
           </div>
         );
       }

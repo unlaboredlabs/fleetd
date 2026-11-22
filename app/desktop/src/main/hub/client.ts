@@ -13,8 +13,8 @@
 // doesn't answer in WAKE_PROBE_MS, as a plain unlock leaves a healthy link: an attempt that went out before the tailnet was
 // back would otherwise hold the next one off for all of READY_TIMEOUT_MS, though a fresh dial gets through at once.
 import type { BrowserInput } from "../../shared/contracts";
-import { WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
-import { MAX_CALL_INPUT_BYTES, type CallRequest, type ChatScope, type OrderFocus } from "../../shared/ipc";
+import { MAX_CALL_INPUT_BYTES, WAKE_QUIET_MS, type CallOutcome, type HubError, type HubFrame, type HubState } from "../../shared/hub";
+import type { CallRequest, ChatScope, OrderFocus } from "../../shared/ipc";
 import {
   appUrl,
   backoff,

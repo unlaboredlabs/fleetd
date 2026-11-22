@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { sendKept } from "../screens/checklist/removal";
-import { registerSettingsCommands } from "../screens/settings/commands";
-import { applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
+import { addLaterFonts, afterShown, applySeeThrough, applyTheme, preloadMarkdown, storedMode, UiProvider, type ThemeMode } from "../ui";
+import { onWeb } from "./web";
 import { App } from "./App";
 import { Boundary, reportError } from "./Boundary";
 import { FIRST_HUB } from "../../shared/hubs";
@@ -34,13 +34,22 @@ window.addEventListener("unhandledrejection", (e) => reportError("Unhandled reje
 const initial = window.fleetd.hubs.initial;
 const hubs = createHubSet(window.fleetd, initial.length > 0 ? initial : [{ id: FIRST_HUB, label: "" }]);
 const first = hubs.getState().hubs[0]?.layer;
-if (first !== undefined) registerSettingsCommands(first);
+// Settings' palette commands, a chunk of their own: the desktop asks for them at once, the web once the first chat has
+// shown, so they never share its first load.
+const settingsCommands = () => void import("../screens/settings/commands").then((m) => first !== undefined && m.registerSettingsCommands(first));
+if (onWeb()) afterShown(settingsCommands);
+else settingsCommands();
 // Checklist removals the last run quit before sending, each to its own hub.
 sendKept((hub) => hubs.getState().hubs.find((h) => h.id === hub)?.layer);
 
-// The chat's messages are markdown: its parser loads alongside the first render and the hub's first data, not after.
-// Asked for before the render is, so it is handled first.
-preloadMarkdown();
+// The chat's messages are markdown. On the desktop its parser loads alongside the first render and the hub's first data
+// (from disk, at once), asked for before the render so it is handled first. On the web it loads once the first chat
+// has shown, which draws its messages' plain words meanwhile: on a slow link the chat comes seconds sooner.
+if (onWeb()) afterShown(preloadMarkdown);
+else preloadMarkdown();
+// Geist's Medium and SemiBold: the desktop's as the page starts, the web's once the first chat has shown (ui/laterFonts).
+if (onWeb()) afterShown(() => addLaterFonts("swap"));
+else addLaterFonts("block");
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("index.html has no #root");

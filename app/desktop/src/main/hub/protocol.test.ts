@@ -36,3 +36,24 @@ describe("parseServerFrame", () => {
     expect(parseServerFrame('{"t":"event","seq":-1,"type":"x"}')).toBeNull();
   });
 });
+
+describe("a hub frame, checked", () => {
+  it("is read when its kind's fields are as the protocol says, and skipped otherwise", () => {
+    expect(parseServerFrame('{"t":"ready","protocol":1,"features":["deflate"]}')).toMatchObject({ t: "ready" });
+    expect(parseServerFrame(`{"t":"ready","protocol":1,"version":"${"x".repeat(201)}"}`)).toBeNull();
+    expect(parseServerFrame(`{"t":"ready","protocol":1,"features":${JSON.stringify(Array(65).fill("f"))}}`)).toBeNull();
+    expect(parseServerFrame('{"t":"snapshot","cursor":-1}')).toBeNull();
+    expect(parseServerFrame('{"t":"event","seq":3,"type":"x","data":{}}')).toMatchObject({ seq: 3 });
+    expect(parseServerFrame('{"t":"result","id":"c1"}')).toMatchObject({ id: "c1" });
+    expect(parseServerFrame('{"t":"error","code":"x","message":"y","reason":"' + "r".repeat(65) + '"}')).toBeNull();
+    expect(parseServerFrame('{"t":"live","full":"yes"}')).toBeNull();
+    expect(parseServerFrame('{"t":"chat_delta","messageId":"m","offset":1.5,"append":"a"}')).toBeNull();
+    expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":0,"jpegB64":"","width":0,"height":1,"control":"agent"}')).toBeNull();
+    // A screen's frame comes as JPEG or as H.264 (with whether it is a key frame), never needing both.
+    expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":1,"h264B64":"AA","key":true,"width":2,"height":2,"control":"agent"}')).toMatchObject({ seq: 1 });
+    expect(parseServerFrame('{"t":"browser_frame","sessionId":"s","seq":1,"h264B64":"AA","key":"yes","width":2,"height":2,"control":"agent"}')).toBeNull();
+    expect(parseServerFrame('{"t":"screen_thumb","sessionId":"s","jpegB64":"","width":1,"height":1}')).toMatchObject({ t: "screen_thumb" });
+    expect(parseServerFrame('{"t":"newer_kind"}')).toBeNull();
+    expect(parseServerFrame("[1]")).toBeNull();
+  });
+});

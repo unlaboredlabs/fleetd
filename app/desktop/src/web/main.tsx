@@ -5,10 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { applyTheme, toast, UiProvider } from "../renderer/ui";
 import "../renderer/src/styles.css";
 import { browserDeps } from "./browser";
-import { clearWebCache } from "./cache";
+import { clearWebCache, keepSession, keptSession } from "./cache";
 import type { GateView } from "./Gate";
-import { createWebShell, followBrowser } from "./shell";
-import { NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
+import { createWebShell, followBrowser, followFreshBuild } from "./shell";
+import { afterKeptStart, NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
 
@@ -17,6 +17,8 @@ const VERSION = (import.meta.env["VITE_FLEETD_VERSION"] as string | undefined) ?
 
 document.documentElement.dataset["shell"] = "web";
 applyTheme();
+
+followFreshBuild(window);
 
 const element = document.getElementById("root");
 if (element === null) throw new Error("index.html has no #root");
@@ -98,6 +100,8 @@ const start = async (session: WebSession) => {
   gate = null;
   const { api, hubs } = createWebShell(session, browserDeps(VERSION));
   Object.defineProperty(window, "fleetd", { value: api, configurable: false, writable: false });
+  // The account the next page opens from at once (cache.ts), now the cache is this account's (createWebShell).
+  keepSession(window.localStorage, session);
   followBrowser(hubs, window);
   // GitHub's trip back (`?github=…`): read before the app starts, the address cleaned whichever screen it came back to.
   takeGithubReturn();
@@ -112,6 +116,45 @@ const start = async (session: WebSession) => {
   // Removed from a team since the last sign-in, and no gate said so: one plain line, once.
   const line = removed.app();
   if (line !== undefined) toast({ title: line, key: "removed" });
+  keepShell();
+};
+
+/**
+ * The service worker (public/sw.js) that serves this page's own files from the browser on the next load: asked for
+ * once the page has loaded, so it never shares the first one. Built pages only (the dev server's files change).
+ */
+const keepShell = () => {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  const register = () => void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => undefined);
+  if (document.readyState === "complete") register();
+  else window.addEventListener("load", register, { once: true });
+};
+
+/** Set before a reload that must read the session before it starts (afterKeptStart said `fresh`). */
+const FRESH = "fleetd.web.fresh";
+
+/**
+ * A page opened again starts at once from the account this browser kept (cache.ts): the app shows the kept bot list
+ * and chats, marked offline, while its sockets connect, and offline it opens all the same. The session is read behind
+ * it; when it says something a gate must (signed out, another account, invitations, a removal), the page starts again
+ * from the session.
+ */
+const bootKept = (): boolean => {
+  const fresh = window.sessionStorage.getItem(FRESH) !== null;
+  window.sessionStorage.removeItem(FRESH);
+  const kept = fresh ? null : keptSession(window.localStorage);
+  if (kept === null) return false;
+  void start({ email: kept.email, teams: kept.teams, invitations: [], removed: [] });
+  void readSession(window.fetch.bind(window)).then((read) => {
+    const next = afterKeptStart(kept, read);
+    if (next === "keep" && read.ok) keepSession(window.localStorage, read.session);
+    else if (next === "fresh") {
+      if (!read.ok && read.signedOut === true) clearWebCache(window.localStorage);
+      window.sessionStorage.setItem(FRESH, "1");
+      window.location.reload();
+    }
+  });
+  return true;
 };
 
 const boot = async () => {
@@ -131,4 +174,4 @@ const boot = async () => {
   removed.shown();
 };
 
-void boot();
+if (!bootKept()) void boot();

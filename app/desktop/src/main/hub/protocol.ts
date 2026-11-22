@@ -1,6 +1,7 @@
 // The /app WebSocket protocol as main speaks it. Server frames are checked at
 // the fields the client relies on; payloads go on to the renderer as they came.
-import { z } from "zod";
+// Plain checks, not zod: the web app reads every frame through this before its first chat (shared/check.ts).
+import { isFields, isInt, isList, isOptional, isText, type Fields } from "../../shared/check";
 import type { AppServerMessage, BrowserInput } from "../../shared/contracts";
 
 /** The hub's close code for a refused key. */
@@ -25,41 +26,40 @@ export type ClientMessage =
   | { t: "browser_input"; session: string; input: BrowserInput }
   | { t: "screen_thumbs"; on: boolean };
 
-const cursor = z.int().min(0);
-
-export const ServerFrame = z.discriminatedUnion("t", [
-  z.object({
-    t: z.literal("ready"),
-    protocol: z.int(),
-    version: z.string().max(200).optional(),
-    features: z.array(z.string().max(64)).max(64).optional(),
-  }),
-  z.looseObject({ t: z.literal("snapshot"), cursor }),
-  z.looseObject({ t: z.literal("event"), seq: cursor, type: z.string() }),
-  z.object({ t: z.literal("result"), id: z.string(), output: z.unknown() }),
-  z.object({
-    t: z.literal("error"),
-    id: z.string().optional(),
-    code: z.string(),
-    message: z.string(),
-    fix: z.string().optional(),
-    reason: z.string().max(64).optional(),
-  }),
-  z.looseObject({ t: z.literal("live"), full: z.boolean() }),
-  z.looseObject({ t: z.literal("chat_delta"), messageId: z.string(), offset: z.int().min(0), append: z.string() }),
-  z.looseObject({
-    t: z.literal("browser_frame"),
-    sessionId: z.string(),
-    seq: z.int().min(0),
-    jpegB64: z.string().optional(),
-    h264B64: z.string().optional(),
-    key: z.boolean().optional(),
-    width: z.int().min(1),
-    height: z.int().min(1),
-    control: z.string(),
-  }),
-  z.looseObject({ t: z.literal("screen_thumb"), sessionId: z.string(), jpegB64: z.string(), width: z.int().min(1), height: z.int().min(1) }),
-]);
+/** Whether `f` has the fields this build reads of its kind (the rest is typed by the contracts the hub checked). */
+const readable = (f: Fields): boolean => {
+  switch (f["t"]) {
+    case "ready":
+      return isInt(f["protocol"]) && isOptional(f["version"], (v) => isText(v, 0, 200)) && isOptional(f["features"], (v) => isList(v, 64, (x) => isText(x, 0, 64)));
+    case "snapshot":
+      return isInt(f["cursor"], 0);
+    case "event":
+      return isInt(f["seq"], 0) && isText(f["type"]);
+    case "result":
+      return isText(f["id"]);
+    case "error":
+      return isOptional(f["id"], isText) && isText(f["code"]) && isText(f["message"]) && isOptional(f["fix"], isText) && isOptional(f["reason"], (v) => isText(v, 0, 64));
+    case "live":
+      return typeof f["full"] === "boolean";
+    case "chat_delta":
+      return isText(f["messageId"]) && isInt(f["offset"], 0) && isText(f["append"]);
+    case "browser_frame":
+      return (
+        isText(f["sessionId"]) &&
+        isInt(f["seq"], 0) &&
+        isOptional(f["jpegB64"], isText) &&
+        isOptional(f["h264B64"], isText) &&
+        isOptional(f["key"], (v): v is boolean => typeof v === "boolean") &&
+        isInt(f["width"], 1) &&
+        isInt(f["height"], 1) &&
+        isText(f["control"])
+      );
+    case "screen_thumb":
+      return isText(f["sessionId"]) && isText(f["jpegB64"]) && isInt(f["width"], 1) && isInt(f["height"], 1);
+    default:
+      return false;
+  }
+};
 /** Checked at the fields above; the rest is typed by the contracts the hub validated it against. */
 export type ServerFrame = AppServerMessage;
 
@@ -71,8 +71,7 @@ export const parseServerFrame = (text: string): ServerFrame | null => {
   } catch {
     return null;
   }
-  const parsed = ServerFrame.safeParse(json);
-  return parsed.success ? (parsed.data as ServerFrame) : null;
+  return isFields(json) && readable(json) ? (json as ServerFrame) : null;
 };
 
 /**

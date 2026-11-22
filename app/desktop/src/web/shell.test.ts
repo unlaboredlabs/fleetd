@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../shared/hub";
 import type { ConnectionEvents, Transport } from "../main/hub/link";
-import { createWebShell, followBrowser, frameUrl, NEEDS_DESKTOP, platformOf, SLEEP_GAP_MS, SLEEP_TICK_MS, socketUrl, type WebDeps } from "./shell";
+import { createWebShell, followBrowser, followFreshBuild, frameUrl, NEEDS_DESKTOP, platformOf, SLEEP_GAP_MS, SLEEP_TICK_MS, socketUrl, type WebDeps } from "./shell";
 import type { WebHub } from "./hub";
 import type { WebSession } from "./session";
 
@@ -491,5 +491,44 @@ describe("followBrowser", () => {
     pass(SLEEP_TICK_MS);
     pass(60_000);
     expect(hub.woke).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("followFreshBuild", () => {
+  const page = (href: string) => {
+    const kept = new Map<string, string>();
+    let failed: ((e: Event) => void) | undefined;
+    const went: string[] = [];
+    const shown: string[] = [];
+    const target = {
+      location: { href, replace: (u: string) => void went.push(u) } as unknown as Location,
+      history: { state: null, replaceState: (_s: unknown, _t: string, u: string) => void shown.push(u) } as unknown as History,
+      sessionStorage: { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) },
+      addEventListener: (_t: "vite:preloadError", l: (e: Event) => void) => void (failed = l),
+    };
+    followFreshBuild(target);
+    const fail = () => {
+      const e = new Event("vite:preloadError", { cancelable: true });
+      failed?.(e);
+      return e.defaultPrevented;
+    };
+    return { kept, went, shown, fail, target };
+  };
+
+  it("loads the page once more, fresh, when a chunk of an older build fails to load", () => {
+    const p = page("https://app.fleetd.dev/?team=t1#/project/a/b");
+    expect(p.fail()).toBe(true);
+    expect(p.went).toEqual(["https://app.fleetd.dev/?team=t1&fresh=1#/project/a/b"]);
+  });
+
+  it("takes `fresh` off the address, and doesn't reload again in that load: a second failure shows its error card", () => {
+    const first = page("https://app.fleetd.dev/#/x");
+    first.fail();
+    const again = page("https://app.fleetd.dev/?fresh=1#/x");
+    // The same tab's storage: the flag the first load set is still there.
+    for (const [k, v] of first.kept) again.kept.set(k, v);
+    expect(again.shown).toEqual(["/#/x"]);
+    expect(again.fail()).toBe(false);
+    expect(again.went).toEqual([]);
   });
 });

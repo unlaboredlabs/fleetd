@@ -9,6 +9,11 @@
   font-size: var(--prose-size, var(--text-md));
   line-height: var(--prose-leading, var(--leading-md));
 }
+/* The words before the parser has come: as written, line breaks kept, in the prose's own size. */
+.plain {
+  margin: 0;
+  white-space: pre-wrap;
+}
 .root > * + * {
   margin-top: var(--prose-gap, var(--space-2));
 }

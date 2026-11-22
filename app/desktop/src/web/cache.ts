@@ -85,3 +85,38 @@ export const webCache = (storage: CacheStorage, email: string, teams: readonly s
     },
   };
 };
+
+/**
+ * The account a page opened again starts from, before its session is read (main.tsx): the email and the teams' ids,
+ * names and addresses, nothing more. Kept with the cache, under its owner, and gone with it at sign-out.
+ */
+export interface KeptSession {
+  readonly email: string;
+  readonly teams: ReadonlyArray<{ readonly id: string; readonly name: string; readonly url: string }>;
+}
+const SESSION_KEY = `${PREFIX}.session`;
+
+export const keepSession = (storage: CacheStorage, session: KeptSession): void => {
+  const index = readIndex(storage);
+  // Only for the account the cache is kept for (webCache wrote the index as the app started).
+  if (index?.owner !== session.email) return;
+  try {
+    storage.setItem(SESSION_KEY, JSON.stringify({ email: session.email, teams: session.teams.map(({ id, name, url }) => ({ id, name, url })) }));
+  } catch {
+    // Over the quota: the next page reads its session first, as before.
+  }
+};
+
+/** The kept account, while the cache is still its own; null otherwise (none, another account's, unreadable). */
+export const keptSession = (storage: CacheStorage): KeptSession | null => {
+  try {
+    const raw: unknown = JSON.parse(storage.getItem(SESSION_KEY) ?? "null");
+    if (raw === null || typeof raw !== "object") return null;
+    const { email, teams } = raw as { email?: unknown; teams?: unknown };
+    if (typeof email !== "string" || !Array.isArray(teams) || teams.length === 0 || readIndex(storage)?.owner !== email) return null;
+    const ok = teams.every((t: unknown) => typeof t === "object" && t !== null && ["id", "name", "url"].every((k) => typeof (t as Record<string, unknown>)[k] === "string"));
+    return ok ? { email, teams: teams as KeptSession["teams"] } : null;
+  } catch {
+    return null;
+  }
+};

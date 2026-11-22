@@ -16,24 +16,28 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
 
 /**
  * The first load's budget, gzip (level 9) of every file index.html names: 641 KB / 47 files when set (W701), down from
- * 827 KB / 50 files in 3-4 waves; 613 KB / 34 once the side panel loaded after the chat (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
+ * 827 KB / 50 files in 3-4 waves; 613 KB / 34 once the side panel loaded after the chat, 441 KB / 28 once the fonts'
+ * everyday cut, the markdown parser and the chat's cards of other screens came after it too, 373 KB / 29 once the
+ * hub's frames and the session were read without zod and Medium and SemiBold came after the chat (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
  * loaded on use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
  */
-const FIRST_LOAD_KB = 630;
-const FIRST_LOAD_FILES = 40;
+const FIRST_LOAD_KB = 390;
+const FIRST_LOAD_FILES = 32;
 /** Chunks and files that load on use or once the chat has shown, never with the first load. */
 const NOT_FIRST: ReadonlyArray<readonly [RegExp, string]> = [
   [/^Settings(Screen|Sheet)-/u, "Settings, loaded once the chat has shown"],
   [/^(core|engine-javascript|typescript|tsx|javascript)-/u, "Shiki, loaded once the chat has painted"],
   [/^libsodium/u, "libsodium, loaded on the first secret"],
   [/^(ProjectPanel|panes|ChecklistPane)-[\w-]+\.js$/u, "the side panel, loaded once the chat has shown"],
-  [/-more-[\w-]+\.woff2$/u, "a font's extended half, loaded when the text uses it"],
+  [/-(more|latin)-[\w-]+\.woff2$/u, "a font's symbols or extended Latin, loaded when the text uses them"],
+  [/^MarkdownBody-[\w-]+\.js$/u, "the markdown parser, loaded once the chat has shown its plain words"],
+  [/^Geist-(Medium|SemiBold)-/u, "Geist's Medium and SemiBold, added once the chat has shown (ui/laterFonts.ts)"],
+  [/^GeistMono-/u, "the mono font, loaded when code or an id shows"],
 ];
 /** What the first chat draws, loaded by import(): named in index.html, or it comes a wave (a round trip) later. */
 const FIRST: ReadonlyArray<readonly [RegExp, string]> = [
   [/^main-[\w-]+\.js$/u, "the app"],
-  [/^MarkdownBody-[\w-]+\.js$/u, "the messages' markdown"],
-  [/^Geist-Regular-latin-[\w-]+\.woff2$/u, "the text's font"],
+  [/^Geist-Regular-basic-[\w-]+\.woff2$/u, "the text's font"],
 ];
 
 const found: string[] = [];
@@ -88,6 +92,8 @@ for (const icon of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
   if (!fs.existsSync(path.join(dir, icon))) found.push(`the build holds no ${icon}`);
   else if (!html.includes(`href="/${icon}"`)) found.push(`index.html doesn't link /${icon}`);
 }
+// The service worker that serves a page opened again from the browser (src/web/public/sw.js), at the origin's root.
+if (!fs.existsSync(path.join(dir, "sw.js"))) found.push("the build holds no sw.js: a page opened again would wait on the network");
 const kb = Math.round(bytes / 1024);
 if (kb > FIRST_LOAD_KB) found.push(`the first load is ${kb} KB gzip, over its ${FIRST_LOAD_KB} KB budget`);
 if (first.size > FIRST_LOAD_FILES) found.push(`the first load is ${first.size} files, over its ${FIRST_LOAD_FILES}`);

@@ -4,9 +4,9 @@ import type { ArtifactPublished } from "../../../shared/contracts";
 import { Text } from "../../ui";
 import { navigate } from "../shell/navigation";
 import { panelRoute, type ProjectKey } from "../shell/routes";
-import { FormatIcon } from "./ArtifactsPane";
+import { FormatIcon } from "./FormatIcon";
 import { formatWord } from "./model";
-import s from "./artifacts.module.css";
+import s from "./artifactCard.module.css";
 
 export function ArtifactCard({ project, published, at }: { project: ProjectKey; published: ArtifactPublished; at: string }) {
   const line = [formatWord(published.format), ...(published.version > 1 ? [`version ${String(published.version)}`] : []), published.by].join(" · ");

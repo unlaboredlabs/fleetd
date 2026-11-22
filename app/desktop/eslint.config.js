@@ -8,7 +8,7 @@ import tseslint from "typescript-eslint";
 // tsconfig.tools.json), so no process holds all three TypeScript programs at once. Together they peaked at 2.2 GB of
 // heap (1.95 GB live) and ran out of Node's default 2.16 GB on a 4 GB machine; apart, 1.5 GB (1.2 GB live) and 1.1 GB.
 export default defineConfig(
-  { ignores: ["out/", "dist/", "dist-test/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/", "fixtures/*.json", "src/shared/contracts/contracts.ts"] },
+  { ignores: ["out/", "dist/", "dist-test/", "node_modules/", "eslint.config.js", "qa-results/", "test-results/", "fixtures/*.json", "src/shared/contracts/contracts.ts", "src/web/public/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
