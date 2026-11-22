@@ -1497,7 +1497,7 @@ Search this bot's decisions (and the global ones) by words, or read one by its i
 
 ### report
 
-Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. fleetd fills in your task and the head you reviewed.
+Record your review verdict once, before your final message: the number of blocking and non-blocking findings and a summary of each. A finding is blocking only when it names what triggers it today and what breaks, or a miss against the brief; the rest is non-blocking. fleetd fills in your task and the head you reviewed.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|

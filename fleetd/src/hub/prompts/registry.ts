@@ -231,6 +231,7 @@ export const ENTRIES: RegistryEntry[] = [
     rules: [
       { id: "read-only", label: "changes no files", needle: "do not change, commit or push", enforced: "prompt" },
       { id: "one-verdict", label: "ends with one review verdict (the `report` tool)", needle: "`report` tool", enforced: "code" },
+      { id: "reachable-blocking", label: "blocks only on a defect reachable today or a miss against the brief", needle: "input or state that triggers it", enforced: "prompt" },
     ],
   },
   {
@@ -246,6 +247,7 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "independent-review", label: "does not read the PR description or comments", needle: "do not read the PR description", enforced: "prompt" },
       { id: "read-only", label: "changes no files", needle: "do not change, commit or push", enforced: "prompt" },
       { id: "one-verdict", label: "ends with one review verdict (the `report` tool)", needle: "`report` tool", enforced: "code" },
+      { id: "reachable-blocking", label: "blocks only on a defect reachable today or a miss against the brief", needle: "input or state that triggers it", enforced: "prompt" },
     ],
   },
   {

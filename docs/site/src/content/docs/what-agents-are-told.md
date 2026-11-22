@@ -579,14 +579,14 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `task.brief.write` | every write task attempt | never merges; the train does (prompt only); a refused GitHub token: keeps its work committed and tries again before asking its lead (prompt only) |
 | `task.brief.read` | every read task attempt | changes no files (prompt only) |
-| `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `task.brief.review` | every attempt of a review task the lead spawns (the train's reviews use Reviewer) | changes no files (prompt only); ends with one review verdict (the \`report\` tool); blocks only on a defect reachable today or a miss against the brief (prompt only) |
 | `task.handoff` | after the task's brief, when fleetd restarts an agent in a new thread (its context filled up again, or its thread could not resume) |  |
 
 ### Reviews and checks
 
 | Id | Sent | Safety rules |
 |---|---|---|
-| `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
+| `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool); blocks only on a defect reachable today or a miss against the brief (prompt only) |
 | `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
 | `review.conflicts` | instead of Reviewer when a rebase of an approved PR changed its own lines only where the base changed them too | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
