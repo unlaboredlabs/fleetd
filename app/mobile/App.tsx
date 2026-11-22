@@ -10,15 +10,17 @@
 // search field and filters in a toolbar at the bottom, no tab bar; the person's avatar at its top left pushes
 // Settings, a stack with a large title of its own, and a chat is pushed over the list, which a swipe from the edge
 // takes back. An approval has no screen of its own: its chat floats to the top of Chats, and its card in the chat
-// answers it.
-import { createNavigationContainerRef, NavigationContainer, useNavigation, type InitialState } from "@react-navigation/native";
+// answers it. A window with room for two (the iPhone Duo unfolded, an iPad: src/split.ts) has Chats beside the chat,
+// as Messages on an iPad: the list in a pane of its own on the left, the root stack on the right, where a chat picked
+// in the list takes the open one's place.
+import { createNavigationContainerRef, NavigationContainer, NavigationIndependentTree, useNavigation, type InitialState } from "@react-navigation/native";
 import { createNativeStackNavigator, type NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { requireOptionalNativeModule } from "expo";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, View } from "react-native";
+import { ActionSheetIOS, Alert, AppState, Linking, Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -54,10 +56,13 @@ import { VaultItem } from "./src/screens/vault/VaultItem";
 import { VaultMove } from "./src/screens/vault/VaultMove";
 import { parseShortcutLink, type ShortcutLink } from "./src/shortcutLink";
 import { Session } from "./src/session";
-import type { State } from "./src/store";
+import type { Key, State } from "./src/store";
+import { onHome, openChatKey, splitOf } from "./src/split";
 import { devicesStack, tapGoesNowhere, tappedStack } from "./src/tapped";
-import { navigationTheme, useTheme, type Palette } from "./src/theme";
+import { navigationTheme, type, useTheme, type Palette } from "./src/theme";
 import { haptics } from "./src/ui/haptics";
+import { BesideContext, PaneSide, PaneWidth, useBeside, useStrip, type Beside } from "./src/ui/pane";
+import { ownRoom, sheetRoom, stripRoom, useStripBars } from "./src/ui/StripRoom";
 import { SwipeGroup, useSwipeGroup } from "./src/ui/SwipeRow";
 import { forgetPaired, forgetPush, loadAccount, loadHubs, loadPaired, pairWith, saveAccount, saveHubs } from "./src/vault";
 
@@ -257,8 +262,9 @@ const PairStack = createNativeStackNavigator<PairParams>();
 
 function Pairing({ note, onPaired, onSignedIn }: { note: string | undefined; onPaired: (p: KeptHub) => Promise<void>; onSignedIn: OnSignedIn }) {
   const t = useTheme();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <PairStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped } }}>
+    <PairStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, headerTitleStyle: { color: t.label }, headerShadowVisible: false, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.grouped } }), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <PairStack.Screen name="Welcome" options={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={note} onSignedIn={onSignedIn} />}
       </PairStack.Screen>
@@ -291,6 +297,19 @@ const go = (route: Route, state: Pick<State, "requests" | "requestsRead" | "proj
   // A screen that won't let go (an edited skill's "Discard changes?") keeps the stack as it is.
   nav.reset(tappedStack(nav.getRootState()?.routes ?? [], at, ++taps) as Parameters<typeof nav.reset>[0]);
   return true;
+};
+
+/** Where Open Approvals' link sets the list beside the chat's pane on Needs You, while it is there (Root). */
+let askBeside: ((asked: { filter: "needsYou"; at: number }) => void) | null = null;
+
+/**
+ * Open Approvals' link: Chats on Needs You. Beside the chat's pane, the list there, whatever the pane shows staying
+ * as it is; elsewhere, the root stack's Home.
+ */
+const openApprovals = (): void => {
+  const asked = { filter: "needsYou" as const, at: ++taps };
+  if (askBeside !== null) askBeside(asked);
+  else nav.navigate("Home", { screen: "Chats", params: asked });
 };
 
 /** Asks before a destructive step, as iOS does: an action sheet, or Android's alert. */
@@ -335,7 +354,7 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
     if (!nav.isReady()) return;
     if (approvals.current) {
       approvals.current = false;
-      nav.navigate("Home", { screen: "Chats", params: { filter: "needsYou", at: ++taps } });
+      openApprovals();
     }
     if (pending.current === null) return;
     if (go(pending.current, session.getState(), paired.hub)) pending.current = null;
@@ -473,17 +492,130 @@ const RootStack = createNativeStackNavigator<RootParams>();
 
 function Root() {
   const t = useTheme();
+  const split = splitOf(useWindowDimensions().width);
+  const wide = split !== undefined;
+  const openKey = useOpenChatKey(wide);
+  const [asked, setAsked] = useState<Beside["asked"]>(undefined);
+  useEffect(() => {
+    if (!wide) return;
+    askBeside = setAsked;
+    return () => {
+      askBeside = null;
+      // Taken by the list it was for: one beside the chat again later starts on All.
+      setAsked(undefined);
+    };
+  }, [wide]);
+  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey, asked } : null), [wide, openKey, asked]);
   return (
-    // A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed reply
-    // changes the state with every word.
-    <RootStack.Navigator screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
-      <RootStack.Screen name="Home" component={ChatsHome} options={{ headerShown: false, title: "Chats" }} />
-      <RootStack.Screen name="Settings" component={SettingsScreens} options={{ headerShown: false }} />
-      {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place. */}
-      <RootStack.Screen name="Chat" component={Chat} getId={({ params }) => params.key} options={({ route }) => ({ ...chatOptions(t), ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })) })} />
-      <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
-      {manageScreens(RootStack, t)}
-    </RootStack.Navigator>
+    <BesideContext.Provider value={beside}>
+      <View style={styles.panes}>
+        {split === undefined ? null : (
+          <View style={[styles.list, { width: split.list, borderRightColor: t.separator }]}>
+            <PaneWidth.Provider value={split.list}>
+              <PaneSide.Provider value="list">
+                <ChatsBeside />
+              </PaneSide.Provider>
+            </PaneWidth.Provider>
+          </View>
+        )}
+        <View style={styles.fill}>
+          <PaneWidth.Provider value={split?.chat}>
+            <PaneSide.Provider value={split === undefined ? undefined : "chat"}>
+            {/* A screen under another (the chats list under a chat) doesn't draw again while it's covered: a streamed
+                reply changes the state with every word. */}
+            {/* Each screen keeps out of the iPhone Duo's side strip (ui/StripRoom.tsx), but those holding a stack of their
+                own, whose screens keep out themselves, and the chat, which puts its buttons in the strip. */}
+            <RootStack.Navigator screenLayout={stripRoom} screenListeners={{ transitionEnd: firstScreen }} screenOptions={{ headerTintColor: t.label, contentStyle: { backgroundColor: t.bg }, freezeOnBlur: true }}>
+              <RootStack.Screen name="Home" component={Home} layout={ownRoom} options={{ headerShown: false, title: "Chats" }} />
+              <RootStack.Screen name="Settings" component={SettingsScreens} layout={ownRoom} options={{ headerShown: false }} />
+              {/* One screen per chat, and per live screen: opening another pushes it, never swaps the open one's in place.
+                  Beside the list, one picked there takes the open one's place at once, as Messages' on an iPad, and one
+                  straight on Home has nothing behind it to swipe back to. */}
+              <RootStack.Screen
+                name="Chat"
+                component={Chat}
+                layout={ownRoom}
+                getId={({ params }) => params.key}
+                options={({ route, navigation }) => ({
+                  ...chatOptions(t),
+                  ...infoOptions(t, () => nav.navigate("ChatInfo", { screen: "Info", params: { key: route.params.key } })),
+                  ...(wide ? { animation: "none" as const, ...(besideList(navigation.getState().routes, route.key) ? { gestureEnabled: false, headerBackVisible: false } : {}) } : {}),
+                })}
+              />
+              <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
+              {manageScreens(RootStack, t)}
+            </RootStack.Navigator>
+            </PaneSide.Provider>
+          </PaneWidth.Provider>
+        </View>
+      </View>
+    </BesideContext.Provider>
+  );
+}
+
+/** Whether the chat whose route is `key` stands straight on Home, beside the list. */
+const besideList = (routes: readonly { name: string; key: string }[], key: string): boolean =>
+  onHome(
+    routes,
+    routes.findIndex((r) => r.key === key),
+  );
+
+/**
+ * A chat picked in the list beside the chat's pane: the one open already takes the new params (a search hit in it),
+ * any other takes the pane's whole stack, over Home, in place of whatever was there.
+ */
+const openBeside = (key: Key, messageId?: string): void => {
+  if (!nav.isReady()) return;
+  const params = messageId === undefined ? { key } : { key, messageId };
+  const routes = nav.getRootState()?.routes ?? [];
+  const top = routes[routes.length - 1];
+  if (top?.name === "Chat" && openChatKey(routes) === key) return void nav.navigate("Chat", params);
+  const home = routes[0];
+  nav.reset({ index: 1, routes: [home ?? { name: "Home" }, { name: "Chat", params }] } as Parameters<typeof nav.reset>[0]);
+};
+
+/** The chat open in the root stack while the list is beside it, so the list marks its row. */
+const useOpenChatKey = (on: boolean): Key | undefined => {
+  const [key, setKey] = useState<Key | undefined>(undefined);
+  useEffect(() => {
+    if (!on) return;
+    const read = () => setKey(nav.isReady() ? openChatKey(nav.getRootState()?.routes ?? []) : undefined);
+    read();
+    return nav.addListener("state", read);
+  }, [on]);
+  return on ? key : undefined;
+};
+
+/** Home: the chats list, or beside the list, what the chat's pane shows with no chat open. */
+function Home() {
+  return useBeside() === null ? <ChatsHome /> : <NoChatOpen />;
+}
+
+/** The chat's pane with no chat in it, as Messages' on an iPad: its own ground, and one quiet line. */
+function NoChatOpen() {
+  const t = useTheme();
+  // Centred in the room the iPhone Duo's side strip leaves (ui/StripRoom.tsx), its ground under the strip too.
+  const strip = useStrip();
+  return (
+    <View style={[styles.fill, styles.center, { backgroundColor: t.thread, paddingLeft: strip?.left ?? 0, paddingRight: strip?.right ?? 0 }]}>
+      <Text style={[type.subhead, { color: t.tertiary }]}>No chat selected</Text>
+    </View>
+  );
+}
+
+/**
+ * The chats list in the pane beside the chat: a navigation tree of its own, for its bars, whose chats, Settings and +
+ * go to the root stack beside it (Chats reads them from useBeside).
+ */
+function ChatsBeside() {
+  const t = useTheme();
+  const theme = useMemo(() => navigationTheme(t), [t]);
+  return (
+    <NavigationIndependentTree>
+      <NavigationContainer theme={theme}>
+        <ChatsHome />
+      </NavigationContainer>
+    </NavigationIndependentTree>
   );
 }
 
@@ -499,7 +631,7 @@ function ChatsHome() {
       {/* A touch on the screen away from the rows closes the open one: the list's space, and the native bars' avatar,
           +, filters button and search field, which only a view around the navigator hears. */}
       <View style={styles.fill} onTouchStart={swiped.touched}>
-        <ChatsStack.Navigator screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
+        <ChatsStack.Navigator screenLayout={stripRoom} screenOptions={{ headerTintColor: t.label, headerShadowVisible: false, contentStyle: { backgroundColor: t.bg }, ...(Platform.OS === "ios" ? {} : { headerStyle: { backgroundColor: t.bg } }) }}>
           <ChatsStack.Screen name="Chats" component={Chats} options={{ headerSearchBarOptions: searchBar, ...newChatOptions(t, () => nav.navigate("NewProject")) }} />
         </ChatsStack.Navigator>
       </View>
@@ -515,8 +647,9 @@ function ChatsHome() {
 function SettingsScreens() {
   const t = useTheme();
   const root = useNavigation();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <SettingsStack.Navigator screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped } }}>
+    <SettingsStack.Navigator screenLayout={stripRoom} screenOptions={{ ...largeTitle(t), contentStyle: { backgroundColor: t.grouped }, ...stripBars }}>
       <SettingsStack.Screen name="Settings" component={Settings} options={backTo(t, () => root.goBack())} />
       <SettingsStack.Screen name="Devices" component={Devices} options={{ ...pushed(t, "Devices"), headerLargeTitleEnabled: false }} />
       <SettingsStack.Screen name="ImportMemory" component={ImportMemory} options={{ ...pushed(t, "Import Memory"), headerLargeTitleEnabled: false }} />
@@ -526,13 +659,16 @@ function SettingsScreens() {
       <SettingsStack.Screen name="Provider" component={Provider} options={({ route }) => ({ ...pushed(t, providerName(route.params.id)), headerLargeTitleEnabled: false })} />
       <SettingsStack.Screen name="Vault" component={Vault} options={{ ...pushed(t, "Vault"), headerLargeTitleEnabled: true }} />
       <SettingsStack.Screen name="VaultItem" component={VaultItem} options={{ ...pushed(t, ""), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultEdit" component={VaultEdit} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultImport" component={VaultImport} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
-      <SettingsStack.Screen name="VaultMove" component={VaultMove} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultEdit" component={VaultEdit} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultImport" component={VaultImport} layout={sheetRoom} options={{ ...sheet(t, "Import from 1Password"), headerLargeTitleEnabled: false }} />
+      <SettingsStack.Screen name="VaultMove" component={VaultMove} layout={sheetRoom} options={{ ...sheet(t, ""), headerLargeTitleEnabled: false }} />
     </SettingsStack.Navigator>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  center: { alignItems: "center", justifyContent: "center" },
+  panes: { flex: 1, flexDirection: "row" },
+  list: { borderRightWidth: StyleSheet.hairlineWidth },
 });

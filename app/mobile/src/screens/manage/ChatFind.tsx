@@ -35,6 +35,7 @@ import { Button } from "../../ui/Button";
 import { haptics } from "../../ui/haptics";
 import { Icon, type IconName } from "../../ui/Icon";
 import { PRESSED_OPACITY } from "../../ui/motion";
+import { SheetRoom } from "../../ui/StripRoom";
 import { useNow } from "../time";
 
 /**
@@ -266,7 +267,7 @@ export function DaySheet({ open, onClose, onPick }: { open: boolean; onClose: ()
   );
   return (
     <Modal visible animationType="slide" presentationStyle="formSheet" onRequestClose={onClose}>
-      <View style={[styles.fill, { backgroundColor: t.grouped }]} onAccessibilityEscape={onClose}>
+      <SheetRoom style={[styles.fill, { backgroundColor: t.grouped }]} onAccessibilityEscape={onClose}>
         <View style={styles.sheetHead}>
           <Text style={[type.headline, { color: t.label }]} accessibilityRole="header">
             Pick a Day
@@ -319,7 +320,7 @@ export function DaySheet({ open, onClose, onPick }: { open: boolean; onClose: ()
             </View>
           ))}
         </View>
-      </View>
+      </SheetRoom>
     </Modal>
   );
 }

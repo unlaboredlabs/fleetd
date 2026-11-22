@@ -5,7 +5,7 @@
 // working glyph takes the bubble's place; an approval waiting is an orange dot on the avatar, as the rows mark it (pinnedGrid.ts). A tap
 // opens the chat; held, the avatar lifts for the row's own actions (Mark as Read, Unpin, Mute, Move to Section…) in
 // iOS's menu. A pin grows into its place and an unpinned one shrinks away, on the app's snap curve.
-import { StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Animated, { withTiming, type EntryAnimationsValues, type ExitAnimationsValues } from "react-native-reanimated";
 import { phaseOf } from "../desktop";
 import type { ChatRow } from "../lists";
@@ -13,6 +13,7 @@ import { gridSize, pinFace } from "../pinnedGrid";
 import { space, type, useTheme } from "../theme";
 import { Avatar } from "../ui/Avatar";
 import { useBot } from "../ui/botState";
+import { usePaneWidth } from "../ui/pane";
 import { HoldMenu } from "../ui/HoldMenu";
 import { Icon } from "../ui/Icon";
 import type { MenuItem } from "../ui/Menu";
@@ -37,7 +38,7 @@ const pinOut = (_: ExitAnimationsValues) => {
 export function PinnedGrid({ rows, arrived, onOpen, menu, label }: { rows: readonly ChatRow[]; arrived: ReadonlySet<string>; onOpen: (row: ChatRow) => void; menu: (row: ChatRow) => readonly MenuItem[]; label: (row: ChatRow) => string }) {
   const t = useTheme();
   const reduce = useReduceMotion();
-  const { cell, avatar, row: across } = gridSize(useWindowDimensions().width);
+  const { cell, avatar, row: across } = gridSize(usePaneWidth());
   return (
     // Three cells across, centred: a wide screen has room for a fourth, which would wrap up into the row.
     <View style={[styles.grid, { width: across }]}>

@@ -17,6 +17,7 @@ import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { Icon, type IconName } from "./Icon";
+import { usePaneWidth, useStrip } from "./pane";
 import { SkeletonBlock } from "./Skeleton";
 
 /**
@@ -68,7 +69,7 @@ export function ImageBubble({
   onOpen: (a: OpenedImage) => void;
 }) {
   const t = useTheme();
-  const screen = useWindowDimensions();
+  const pane = usePaneWidth();
   const { got: read, retry } = usePreview(chatKey, attachmentId);
   const got = read?.ok === true ? read.output : undefined;
   // Its shape from its header, at once; from the decoded image only for a header that can't be read.
@@ -90,7 +91,7 @@ export function ImageBubble({
         </Text>
       </Pressable>
     );
-  const { width, height } = photoSize(screen.width, aspect ?? 4 / 3);
+  const { width, height } = photoSize(pane, aspect ?? 4 / 3);
   if (got === undefined || aspect === undefined) return <SkeletonBlock width={width} height={height} radius={bubble.radius} />;
   return (
     <Pressable
@@ -131,7 +132,7 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: {
   // undefined: not read yet, or shared; "reading"; or why the hub couldn't give it (a tap reads it again).
   const [got, setGot] = useState<"reading" | HubError | undefined>(undefined);
   const failed = typeof got === "object" ? got : undefined;
-  const screen = useWindowDimensions();
+  const pane = usePaneWidth();
   const ink = mine ? t.onAccentDeep : t.label;
   const fill = mine ? t.accentDeep : t.bubble;
   const glyph = GLYPHS[glyphOf(mime)];
@@ -150,7 +151,7 @@ export function FileBubble({ chatKey, attachmentId, name, mime, bytes, mine }: {
           if (read.ok) void shareFile(read.output).catch(() => undefined);
         });
       }}
-      style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(screen.width), FILE_WIDTH) }, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.file, { backgroundColor: fill, width: Math.min(bubbleMax(pane), FILE_WIDTH) }, pressed && styles.pressed]}
     >
       <View style={[styles.fileIcon, { backgroundColor: mine ? "rgba(255,255,255,0.22)" : glyph.tint(t) }]}>
         <Icon name={glyph.icon} size={20} color="#FFFFFF" />
@@ -178,6 +179,8 @@ const FILE_WIDTH = 288;
 export function ImageViewer({ image: opened, onClose }: { image: OpenedImage | null; onClose: () => void }) {
   const screen = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  // Its buttons keep out of the iPhone Duo's side strip; the picture fills the screen under it.
+  const strip = useStrip();
   const session = useSession();
   const [chrome, setChrome] = useState(true);
   const [full, setFull] = useState<AttachmentGetOutput | null>(null);
@@ -211,7 +214,7 @@ export function ImageViewer({ image: opened, onClose }: { image: OpenedImage | n
           </Pressable>
         </ScrollView>
         {chrome ? (
-          <View style={[styles.viewerBar, { top: insets.top + space.sm }]}>
+          <View style={[styles.viewerBar, { top: insets.top + space.sm, left: space.lg + (strip?.left ?? 0), right: space.lg + (strip?.right ?? 0) }]}>
             <Glass interactive style={styles.viewerButton}>
               <Pressable accessibilityRole="button" accessibilityLabel="Done" onPress={onClose} style={styles.viewerHit}>
                 <Icon name="close" size={17} color="#FFFFFF" weight="semibold" />

@@ -11,6 +11,7 @@ import { Button } from "../ui/Button";
 import { Glass } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
+import { SheetRoom } from "../ui/StripRoom";
 import { useNow } from "./time";
 
 /** The capsule's height, and the room it takes under the bar with its gap. */
@@ -86,7 +87,7 @@ export function PinnedSheet({
   };
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.fill, { backgroundColor: t.grouped }]} onAccessibilityEscape={onClose}>
+      <SheetRoom style={[styles.fill, { backgroundColor: t.grouped }]} onAccessibilityEscape={onClose}>
         <View style={styles.head}>
           <Text style={[type.headline, { color: t.label }]} accessibilityRole="header">
             Pinned
@@ -138,7 +139,7 @@ export function PinnedSheet({
             </View>
           )}
         </ScrollView>
-      </View>
+      </SheetRoom>
     </Modal>
   );
 }

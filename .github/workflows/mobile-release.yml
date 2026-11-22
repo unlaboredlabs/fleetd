@@ -28,6 +28,10 @@ permissions:
   contents: read
 
 env:
+  # Over-the-air updates only for a build from main. A build from another branch takes none: one that changes no native
+  # file has main's runtime version, so main's next update would replace its JavaScript within a launch (TestFlight
+  # build 27 of #1871 ran main's, not its own). It keeps its branch's until a newer build is installed.
+  UPDATES_CERT_PEM: ${{ github.ref == 'refs/heads/main' && vars.UPDATES_CERT_PEM || '' }}
   FLEETD_APP_ID: ${{ vars.FLEETD_APP_ID }}
   FLEETD_UPDATES_CHANNEL: ${{ inputs.channel }}
   FLEETD_UPDATES_URL: ${{ vars.FLEETD_UPDATES_URL }}
@@ -93,7 +97,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Build settings
         env:
-          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
           GOOGLE_SERVICES_JSON: ${{ vars.GOOGLE_SERVICES_JSON }}
         run: ../../.github/release/mobile-env.sh ios android
       - id: runtime
@@ -126,7 +129,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Build settings
         env:
-          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
           GOOGLE_SERVICES_JSON: ${{ vars.GOOGLE_SERVICES_JSON }}
         run: ../../.github/release/mobile-env.sh android
       - name: Keystore
@@ -177,7 +179,9 @@ jobs:
     name: ios
     needs: [signing, runtime]
     if: needs.signing.outputs.ios == 'true'
-    runs-on: macos-latest
+    # Xcode 27's iOS 27 SDK: one built against an older SDK runs letterboxed, phone-sized, on the iPhone Duo unfolded,
+    # and App Store Connect takes none older from April 2027 (ITMS-90725). macos-latest's default is still Xcode 26.
+    runs-on: xcode-27
     timeout-minutes: 60
     defaults:
       run:
@@ -198,8 +202,6 @@ jobs:
           cache-dependency-path: app/mobile/package-lock.json
       - run: npm ci --no-audit --no-fund
       - name: Build settings
-        env:
-          UPDATES_CERT_PEM: ${{ vars.UPDATES_CERT_PEM }}
         run: ../../.github/release/mobile-env.sh ios
       - run: npx expo prebuild --platform ios --clean
       - name: Signing keychain

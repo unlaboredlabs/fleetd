@@ -38,6 +38,7 @@ import { VaultEdit } from "../vault/VaultEdit";
 import { VaultImport } from "../vault/VaultImport";
 import { VaultItem } from "../vault/VaultItem";
 import { VaultMove } from "../vault/VaultMove";
+import { ownRoom, sheetRoom, stripRoom, useStripBars } from "../../ui/StripRoom";
 
 type RootStack = ReturnType<typeof createNativeStackNavigator<RootParams>>;
 
@@ -67,10 +68,10 @@ export const pushed = (t: Palette, title: string): NativeStackNavigationOptions 
 /** The root stack's screens for these. */
 export const manageScreens = (Stack: RootStack, t: Palette) => (
   <Stack.Group>
-    <Stack.Screen name="NewProject" component={NewProject} options={sheet(t, "New Bot")} />
-    <Stack.Screen name="NewScreen" component={NewScreen} options={sheet(t, "New Screen")} />
-    <Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />
-    <Stack.Screen name="Icon" component={IconPicker} options={sheet(t, "Icon")} />
+    <Stack.Screen name="NewProject" component={NewProject} layout={sheetRoom} options={sheet(t, "New Bot")} />
+    <Stack.Screen name="NewScreen" component={NewScreen} layout={sheetRoom} options={sheet(t, "New Screen")} />
+    <Stack.Screen name="ChatInfo" component={ChatInfo} layout={ownRoom} options={{ headerShown: false }} />
+    <Stack.Screen name="Icon" component={IconPicker} layout={sheetRoom} options={sheet(t, "Icon")} />
     <Stack.Screen name="Photo" component={Photo} options={{ presentation: "fullScreenModal", animation: "fade", headerShown: false, gestureEnabled: false, contentStyle: { backgroundColor: "#000000" } }} />
   </Stack.Group>
 );
@@ -119,8 +120,9 @@ const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 function ChatInfo() {
   const t = useTheme();
   const root = useNavigation();
+  const stripBars = useStripBars(t.grouped);
   return (
-    <InfoStack.Navigator>
+    <InfoStack.Navigator screenLayout={stripRoom} screenOptions={stripBars}>
       <InfoStack.Screen name="Info" component={Info} options={{ ...pushed(t, "Info"), ...backTo(t, () => root.goBack()) }} />
       <InfoStack.Screen name="Rename" component={Rename} options={pushed(t, "Name")} />
       <InfoStack.Screen name="Profiles" component={Profiles} options={pushed(t, "Agent Profiles")} />
@@ -130,7 +132,7 @@ function ChatInfo() {
       <InfoStack.Screen name="LinkedHubs" component={LinkedHubs} options={pushed(t, "Linked Hubs")} />
       <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />
       <InfoStack.Screen name="Skill" component={Skill} options={pushed(t, "")} />
-      <InfoStack.Screen name="SkillEdit" component={SkillEdit} options={({ route }) => sheet(t, route.params.name)} />
+      <InfoStack.Screen name="SkillEdit" component={SkillEdit} layout={sheetRoom} options={({ route }) => sheet(t, route.params.name)} />
       <InfoStack.Screen name="SkillHistory" component={SkillHistory} options={pushed(t, "History")} />
       <InfoStack.Screen name="SkillVersion" component={SkillVersion} options={({ route }) => pushed(t, `Version ${String(route.params.version)}`)} />
       <InfoStack.Screen name="Artifacts" component={Artifacts} options={pushed(t, "Artifacts")} />
@@ -142,9 +144,9 @@ function ChatInfo() {
       <InfoStack.Screen name="ComputerLog" component={ComputerLog} options={pushed(t, "Log")} />
       <InfoStack.Screen name="Vault" component={Vault} options={pushed(t, "Vault")} />
       <InfoStack.Screen name="VaultItem" component={VaultItem} options={pushed(t, "")} />
-      <InfoStack.Screen name="VaultEdit" component={VaultEdit} options={sheet(t, "")} />
-      <InfoStack.Screen name="VaultImport" component={VaultImport} options={sheet(t, "Import from 1Password")} />
-      <InfoStack.Screen name="VaultMove" component={VaultMove} options={sheet(t, "")} />
+      <InfoStack.Screen name="VaultEdit" component={VaultEdit} layout={sheetRoom} options={sheet(t, "")} />
+      <InfoStack.Screen name="VaultImport" component={VaultImport} layout={sheetRoom} options={sheet(t, "Import from 1Password")} />
+      <InfoStack.Screen name="VaultMove" component={VaultMove} layout={sheetRoom} options={sheet(t, "")} />
     </InfoStack.Navigator>
   );
 }

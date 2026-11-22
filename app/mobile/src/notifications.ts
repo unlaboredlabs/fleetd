@@ -44,6 +44,9 @@ export const pushDeps: PushDeps = {
   deviceName: Device.deviceName ?? (Platform.OS === "ios" ? "iPhone" : "Android phone"),
   keys: pushKeys,
   token: async () => {
+    // Never asks in the screens run's simulator build (mac.yml's ios screens, app/mobile/scripts/screens.sh): its
+    // driver can't answer a system prompt on the iPhone Duo simulator. Unset, and so gone, in every other build.
+    if (process.env.EXPO_PUBLIC_FLEETD_SCREENS === "1") return null;
     // Asks once; a phone that said no gets nothing, so isn't registered.
     if (!(await Notifications.requestPermissionsAsync()).granted) return null;
     const token = await Notifications.getDevicePushTokenAsync();

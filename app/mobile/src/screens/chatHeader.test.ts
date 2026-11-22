@@ -17,24 +17,44 @@ const fn = (src: string, name: string): string => {
 
 describe("the chat's top bar", () => {
   it("is never the stack's on iOS, over a chat as over the chats list", () => {
-    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{ChatsHome\} options=\{\{ headerShown: false/u);
-    expect(app).toMatch(/<RootStack\.Screen name="Chat" component=\{Chat\}[^\n]* options=\{[^\n]*\.\.\.chatOptions\(t\)/u);
+    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{Home\} layout=\{ownRoom\} options=\{\{ headerShown: false/u);
+    expect(app).toContain("return useBeside() === null ? <ChatsHome /> : <NoChatOpen />;");
+    expect(app).toMatch(/<RootStack\.Screen\s+name="Chat"\s+component=\{Chat\}[^]*?options=\{[^]*?\.\.\.chatOptions\(t\)/u);
     expect(chat).toMatch(/export const chatOptions = \(t: Palette\): NativeStackNavigationOptions =>\s*Platform\.OS === "ios" \? \{ headerShown: false \} :/u);
   });
 
   it("is drawn in the chat on iOS, with Back and Info either side of the title", () => {
-    expect(chat).toMatch(/Platform\.OS === "ios" \? \([^]*?<EdgeEffect[^]*?>\s*<ChatBar top=\{insets\.top\} onBack=\{\(\) => navigation\.goBack\(\)\} onInfo=\{openInfo\}>\s*<ChatTitle /u);
+    expect(chat).toMatch(/Platform\.OS === "ios" \? \([^]*?<EdgeEffect[^]*?>\s*\{inStrip \? null : \(\s*<ChatBar top=\{barTop\} onBack=\{goBack\} onInfo=\{openInfo\}>\s*<ChatTitle /u);
+    expect(chat).toContain("const goBack = besideList ? undefined : () => navigation.goBack();");
     const bar = fn(chat, "ChatBar");
-    expect(bar).toContain('button("Back", "chevron.left", onBack)');
-    expect(bar).toContain('button("Info", "info.circle", onInfo)');
+    expect(bar).toContain('<BarButton label="Info" symbol="info.circle" onPress={onInfo} />');
+    // Beside the list (src/split.ts), a chat straight on Home has no Back: its room stays, so the title holds still.
+    expect(bar).toContain('{onBack === undefined ? <View style={styles.barButton} /> : <BarButton label="Back" symbol="chevron.left" onPress={onBack} />}');
+    // The iPhone Duo unfolded has no top inset: the bar stands where iOS's own bars do there.
+    expect(chat).toContain("const barTop = insets.top > 0 ? insets.top : BAR_TOP_BARE;");
+  });
+
+  it("puts Back and Info in the iPhone Duo's side strip through iOS's own bar, and keeps the thread out of it", () => {
+    // Where the Duo's controls are a column at the side (ui/pane.ts useStrip), iOS's own bar stands its buttons in the
+    // column under the status, as it does every bar's there; how far down the status reaches differs between poses
+    // (folded, it runs to ~150 pt, where a button at a fixed 124 pt sat on the signal), and only iOS knows it.
+    expect(chat).toContain("const strip = useStrip();");
+    expect(chat).toContain("<View style={[styles.fill, { marginLeft: stripLeft, marginRight: stripRight }]}>");
+    expect(chat).toMatch(/navigation\.setOptions\(inStrip \? stripBar\(t, \(\) => <ChatTitle [^]*?, openInfo\) : \{ headerShown: false \}\);/u);
+    expect(chat).toMatch(/export const stripBar = [^]*?headerShown: true,\s*headerTransparent: true,[^]*?headerBackButtonDisplayMode: "minimal",[^]*?unstable_headerRightItems: \(\) => \[\{ type: "button", label: "Info", icon: \{ type: "sfSymbol", name: "info\.circle" \}/u);
+    expect(chat).not.toContain("STRIP_TOP");
+    expect(chat).not.toContain("function StripButtons(");
+  });
+
+  it("starts the thread under the bar", () => {
     // The thread starts under it, as it did under the stack's, and under the pins' and a lens's capsules while they show.
-    expect(chat).toContain('const barEnd = Platform.OS === "ios" ? insets.top + BAR : 0;');
+    expect(chat).toContain('const barEnd = Platform.OS === "ios" ? barTop + BAR : 0;');
     expect(chat).toContain("const top = barEnd + pinRoom + (lens === null ? 0 : LENS_ROOM);");
     expect(chat).not.toContain("useHeaderHeight");
   });
 
   it("never shows or hides the root stack's bar between the chat and its Info", () => {
-    expect(manage).toContain('<Stack.Screen name="ChatInfo" component={ChatInfo} options={{ headerShown: false }} />');
+    expect(manage).toContain('<Stack.Screen name="ChatInfo" component={ChatInfo} layout={ownRoom} options={{ headerShown: false }} />');
     expect(manage).not.toMatch(/<Stack\.Screen name="(Info|Rename|Profiles)"/u);
     const stack = fn(manage, "ChatInfo");
     for (const name of ["Info", "Rename", "Profiles"]) expect(stack).toContain(`<InfoStack.Screen name="${name}" component={${name}}`);
@@ -44,7 +64,8 @@ describe("the chat's top bar", () => {
 
   it("opens the chat's Info when its name or picture is tapped", () => {
     expect(chat).toContain('const openInfo = useCallback(() => navigation.navigate("ChatInfo", { screen: "Info", params: { key: chatKey } }), [navigation, chatKey]);');
-    expect((chat.match(/<ChatTitle [^>]*onPress=\{openInfo\} \/>/gu) ?? []).length).toBe(2);
+    // In the bar over the thread, in the side strip's iOS bar, and Android's.
+    expect((chat.match(/<ChatTitle [^>]*onPress=\{openInfo\} \/>/gu) ?? []).length).toBe(3);
     const title = fn(chat, "ChatTitle");
     expect(title).toMatch(/^\s*<Pressable onPress=\{onPress\} accessibilityRole="button"/mu);
     expect(title).toContain("<Avatar ");

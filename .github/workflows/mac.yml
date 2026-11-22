@@ -9,7 +9,8 @@ name: Nightly
 #
 # A manual run's `only` picks a part: `all` (the default) runs the Mac checks, `ios` builds just the iOS simulator app
 # (with `metro` for a Debug build), `links` runs just the link check, `hosted` just the hosted template's build at
-# boat.dev (below), `swipe` just the sidebar's swipe on a Mac's input path (Actions › Nightly › Run workflow, or
+# boat.dev (below), `swipe` just the sidebar's swipe on a Mac's input path, `screens` the phone app's screens on iOS
+# simulators (app/mobile/scripts/screens.sh) (Actions › Nightly › Run workflow, or
 # `gh workflow run mac.yml --ref <branch> -f only=ios -f metro=<host:port>`). No EAS, no Expo service and no secret:
 # signed builds are mobile-release.yml's.
 #
@@ -24,10 +25,15 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "What to run: the Mac checks, only the iOS simulator build, only the site's external link check, only the hosted template's build, or only the sidebar's swipe."
+        description: "What to run: the Mac checks, only the iOS simulator build, the phone app's screens on iOS simulators, only the site's external link check, only the hosted template's build, or only the sidebar's swipe."
         type: choice
-        options: [all, ios, links, hosted, swipe]
+        options: [all, ios, screens, links, hosted, swipe]
         default: all
+      screens:
+        description: "With only=screens, which: the iPhone Duo, the ordinary iPhone (the branch's and main's), or both."
+        type: choice
+        options: [both, duo, phone]
+        default: both
       metro:
         description: >-
           A Metro server (host:port) the iOS simulator build loads its JavaScript from: a Debug build, for trying
@@ -199,7 +205,7 @@ jobs:
     # extension's crypto against the hub's sealed boxes, the share extension's decisions and the Shortcuts actions'.
     # Its name is an after-merge check in .fleetd/train.json: rename them in one PR.
     name: mobile (ios)
-    if: ${{ (inputs.only || 'all') != 'links' && inputs.only != 'swipe' }}
+    if: ${{ (inputs.only || 'all') != 'links' && inputs.only != 'swipe' && inputs.only != 'screens' }}
     # A newer manual run on a branch cancels this job in its running one; main's runs and release.yml's call each get
     # a group of their own.
     concurrency:
@@ -274,6 +280,68 @@ jobs:
           name: fleetd-ios-simulator
           path: ${{ runner.temp }}/fleetd-ios-simulator.zip
           if-no-files-found: error
+          retention-days: 14
+
+  ios-screens:
+    # The phone app's screens on iOS simulators, by hand (only: screens), for judging a phone change while no agents'
+    # Mac is joined: app/mobile/scripts/screens.sh pairs each simulator with a phone lab on the runner and takes Chats, a
+    # chat and its Info on an ordinary iPhone, the branch's app beside main's, which shows what it looked like before. The
+    # iPhone Duo (the xcode-27 image has its simulator) folds and unfolds, but doesn't pair on the runner, so its shots
+    # stop at the signed-out screens (the script's header says why).
+    name: ios screens (${{ matrix.app }}, ${{ matrix.devices }})
+    if: ${{ inputs.only == 'screens' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: >-
+          ${{ fromJSON(inputs.screens == 'duo' && '[{"app":"branch","devices":"duo"}]'
+          || inputs.screens == 'phone' && '[{"app":"branch","devices":"phone"},{"app":"main","devices":"phone"}]'
+          || '[{"app":"branch","devices":"duo"},{"app":"branch","devices":"phone"},{"app":"main","devices":"phone"}]') }}
+    runs-on: xcode-27
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # main's app, built with this branch's tools (the script, the lab), which main's checkout of app/mobile leaves.
+      - if: matrix.app == 'main'
+        run: git checkout origin/main -- app/mobile
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: fleetd
+        working-directory: fleetd
+        run: bun install --frozen-lockfile && bun run compile
+      - run: npm ci --no-audit --no-fund
+        working-directory: tests/lab
+      - name: Build
+        working-directory: app/mobile
+        env:
+          # The app never asks for notifications (src/notifications.ts): a system prompt the screens' driver can't
+          # answer on the iPhone Duo simulator. Only this job's build sets it.
+          EXPO_PUBLIC_FLEETD_SCREENS: "1"
+        run: |
+          set -o pipefail
+          npm ci --no-audit --no-fund
+          npx expo prebuild --platform ios --clean
+          xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build | tail -n 50
+      - name: Screens
+        run: |
+          app/mobile/scripts/screens.sh app/mobile/build/Build/Products/Release-iphonesimulator/fleetd.app \
+            "$RUNNER_TEMP/screens-out" "${{ matrix.app }}" ${{ matrix.devices }}
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screens-${{ matrix.app }}-${{ matrix.devices }}
+          path: |
+            ${{ runner.temp }}/screens-out
+            ~/.agent-device/logs/
+          if-no-files-found: ignore
           retention-days: 14
 
   site-external-links:

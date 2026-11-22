@@ -3,16 +3,17 @@
 // No time inside it, as Messages has none: bubbles size to their words alone. A few emoji alone draw big, with no
 // bubble (Jumbo).
 import type { ReactNode } from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { bubble, bubbleMax } from "../bubble";
 import { useTheme } from "../theme";
+import { usePaneWidth } from "./pane";
 
 export function Bubble({ side, children, tone }: { side: "me" | "them"; children: ReactNode; tone?: "accent" | "neutral" | "danger" }) {
   const t = useTheme();
   const shade = tone ?? (side === "me" ? "accent" : "neutral");
   const fill = shade === "accent" ? t.accentDeep : shade === "danger" ? t.danger : t.bubble;
   const mine = side === "me";
-  const { width } = useWindowDimensions();
+  const width = usePaneWidth();
   return (
     <View style={[styles.bubble, { backgroundColor: fill, maxWidth: bubbleMax(width) }, mine ? styles.mine : styles.theirs]}>
       {children}
