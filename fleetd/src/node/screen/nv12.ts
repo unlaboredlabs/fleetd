@@ -12,6 +12,12 @@ export class Nv12 {
   height = 0;
   data: Uint8Array = new Uint8Array(0);
 
+  /** The picture no longer follows the screen (a grab went by without it): the next update converts it all. */
+  forget(): void {
+    this.width = 0;
+    this.height = 0;
+  }
+
   /**
    * A screen's BGRA pixels (`width` × `height`) into the picture, `box` only (where only it changed) unless the size
    * changed: the picture, good until the next update.

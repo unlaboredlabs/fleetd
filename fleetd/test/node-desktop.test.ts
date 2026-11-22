@@ -428,6 +428,42 @@ test("a slow H.264 viewer gets an encode of its own at its link's rate, and the 
   expect(frames.slice(at).find((f) => f.from === 0)).toMatchObject({ key: true });
 });
 
+test("an H.264 watcher back after a spell with no encoding sees the screen now, not as they left it", async () => {
+  const dir = scratch();
+  const { server, socket, cookie } = await fakeX(dir);
+  const x = await X.connect(socket, cookie);
+  const lent = { launch: async () => ({ pid: 0 }), drop: async () => {} };
+  // A stand-in encoder that keeps the last picture it was given (NV12: luma first).
+  let last: Uint8Array | undefined;
+  const encoder: MakeEncoder = (onFrame) => ({
+    key: () => {},
+    put: (input, data) => {
+      last = data.slice();
+      onFrame({ data: Uint8Array.of(0), key: true }, input, 0);
+      return true;
+    },
+    stop: () => {},
+  });
+  // A video that takes no H.264 (its JPEG sink started first): nothing is encoded while nobody watches.
+  const recording = { append: () => {}, filled: () => {}, end: async () => ({ files: [] }), video: { frame: () => {}, tick: () => {}, finish: async () => undefined } };
+  const session = new Session(lent, x, { id: "d5", thread: "t1", cwd: dir, purpose: "stale", secrets: [], kind: "linux_desktop", encoder, recording });
+  cleanups.push(() => void session.close());
+  session.open();
+  const watch = () => session.setWatcher({ kbps: undefined, video: true, send: () => {} });
+  watch();
+  await until("a picture encoded", () => last !== undefined);
+  session.setWatcher(undefined);
+  // While nobody watches, the whole screen turns white.
+  server.paint(255, 255, 255);
+  await Bun.sleep(300);
+  last = undefined;
+  watch();
+  server.paint(0, 0, 0, [0, 0, 2, 2]);
+  await until("a picture encoded again", () => last !== undefined);
+  // Away from the box that changed last, the picture is the white screen (luma 235), not the one they left.
+  expect(last![40 * 64 - 1]).toBe(235);
+});
+
 test("without DAMAGE the screen counts as changed at every look", async () => {
   const dir = scratch();
   const { socket, cookie } = await fakeX(dir, { damage: false });

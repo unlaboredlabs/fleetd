@@ -365,6 +365,8 @@ export class Session {
     if ((!live && !record) || !this.encoder || this.screen.bgra !== true) {
       this.encoder?.stop();
       this.stopSlow();
+      // This grab's change isn't in the picture: the next one it takes is converted whole.
+      this.nv12.forget();
       return false;
     }
     const picture = this.nv12.update(raw.data, raw.width, raw.height, raw.changed ?? undefined);
