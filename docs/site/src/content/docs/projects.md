@@ -289,7 +289,10 @@ of its own; while you hold it there, the chat says where it would go. A section 
 away with its last.
 
 In the sidebar, the chats in no section come first under the pins, under a quiet **Bots** label, then each section
-under its quiet label, in your order, its chats in the list's order. None of them folds. Right-click a label, or
+under its quiet label, in your order, its chats in the list's order. Click a section's label to fold it to one line:
+its name, how many chats it holds, and a dot when one of them needs you or is unread. Click again to open it. Which
+sections are folded is kept on this computer (or this browser) only. Opening a chat in a folded section, from a
+notification, ⌘K or a hub switch, opens the section too. Right-click a label, or
 click its **⋯**, for **Rename…**, **Move up**, **Move down** and **Remove section**, which puts its chats back on top
 and deletes none of them. A pinned chat shows among the pins only, and keeps its section for when you
 unpin it. With several hubs, each hub has its own pins, chats in no section, and sections.

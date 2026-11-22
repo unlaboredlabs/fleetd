@@ -31,7 +31,7 @@ import { Boundary } from "../../src/Boundary";
 import { preloadScreens, ScreenHost, screenPart, SettingsSheet } from "./screens";
 import { Sidebar, SidebarTop } from "./Sidebar";
 import { useHeldRows, useSidebar } from "./sidebarState";
-import { showHub, shownRows, useSidebarView, viewedHub } from "./sidebarLayout";
+import { showHub, shownRows, unfold, useFolded, useSidebarView, viewedHub } from "./sidebarLayout";
 import { useSidebarWidth } from "./sidebarWidth";
 import { switchHubBy } from "./hubSwipe";
 import { SidebarEdge } from "./ResizeEdge";
@@ -169,7 +169,8 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
   // ⌘1–9 open the rows the sidebar numbers: those on show (sidebarLayout.ts), in its order.
   const view = useSidebarView();
   const viewHub = viewedHub(view, hubs, route.at);
-  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub)), [projects, view, viewHub]);
+  const folded = useFolded();
+  const onShow = useMemo(() => (projects === undefined ? undefined : shownRows(projects, view, viewHub, folded)), [projects, view, viewHub, folded]);
   // A bot opened on another hub (the palette, a notification) brings its hub on show.
   useEffect(() => showHub(route.at), [route.at]);
   const modHeld = useModHeld();
@@ -240,6 +241,20 @@ function Frame({ route, away, hubs, sidebar, sheetHub }: { route: Routed; away: 
       // Without storage the app opens on the first project instead; nothing else depends on it.
     }
   }, [openKey, sheet, route.at]);
+  // A chat opened in a folded section (a notification, ⌘K, a hub's last chat) unfolds it, so it shows where it lives:
+  // once each time it is opened, so its section folded while it is open stays folded.
+  const openRow = openKey === null || sheet ? undefined : projects?.find((p) => p.key === openKey);
+  const unfoldFor = openRow === undefined || openRow.pinned || openRow.section === undefined ? null : `${openRow.hub}\0${openRow.section}`;
+  const unfolded = useRef<string | null>(null);
+  useEffect(() => {
+    unfolded.current = null;
+  }, [openKey]);
+  useEffect(() => {
+    if (unfoldFor === null || unfoldFor === unfolded.current) return;
+    unfolded.current = unfoldFor;
+    const [hubId = "", section = ""] = unfoldFor.split("\0");
+    unfold(hubId, section);
+  }, [openKey, unfoldFor]);
 
   // Before pairing, after a refused key, or on a hub of another protocol there is nothing to navigate; the
   // onboarding screen has the window to itself. With several hubs, only when none of them can be used: one with a
