@@ -201,6 +201,7 @@ const NOT_HERE: Readonly<Record<string, string>> = {
   vault_import: "not called: a machine holding the person's 1Password token reads 1Password, and no node joins, so no machine holds one",
   screen_open: "not called: it needs a node that hosts screens, and no node joins",
   screen_end: "not called: it ends a person's screen, which only screen_open on a node makes",
+  screen_control: "not called: it drives a phone screen's device, which only a node with a simulator or emulator hosts",
   pr_get: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   pr_files: "not called: it reads a pull request from GitHub, which a run doesn't reach",
   pr_diff: "not called: it reads a pull request from GitHub, which a run doesn't reach",

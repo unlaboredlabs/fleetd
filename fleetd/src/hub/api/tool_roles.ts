@@ -142,6 +142,7 @@ export const TOOLS = {
   browser_control: { scope: "operate", module: "src/hub/browser" },
   screen_open: { scope: "operate", module: "src/hub/machine_roles" },
   screen_end: { scope: "operate", module: "src/hub/machine_roles" },
+  screen_control: { scope: "operate", module: "src/hub/machine_roles" },
   browser_retention_set: { scope: "admin", module: "src/hub/browser" },
   machine_roles: { scope: "read", module: "src/hub/machine_roles" },
   machine_roles_set: { scope: "admin", module: "src/hub/machine_roles" },
