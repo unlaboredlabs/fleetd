@@ -1,14 +1,14 @@
 // The agents' Mac's iOS simulators on the Bun node, against a stand-in `xcrun` (a shell script that keeps a log and
 // prints what simctl would): nothing here starts a real simulator, and none of it needs a Mac.
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { binDir as androidBin, controlPath, entry, LENT, sessionDir, VERSION } from "../src/node/device/agent_device.ts";
 import { blocksSimulators } from "../src/node/agents_mac/checks.ts";
 import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.ts";
 import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Pool, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
-import { endedPath, heldPath, MacSims, simConfig, simKey } from "../src/node/device/ios/sims.ts";
+import { endedPath, heldPath, MacSims, SIM_IDLE, simConfig, simKey } from "../src/node/device/ios/sims.ts";
 import { recordingsDir, resumeRecording, SimScreens, type SimTools, startRecording } from "../src/node/device/ios/sim_screen.ts";
 import { builtXctestrun, installWrapper, iosEnv, runnerDir, setDir, writeConfig, wrapperScript } from "../src/node/device/ios/wrapper.ts";
 import { Host, jobEnv } from "../src/node/mac_tool/host.ts";
@@ -769,4 +769,54 @@ test("recordVideo writes its output to a file, not the node's pipe, and the next
   expect(await again.finish()).toBeUndefined();
   expect(readFileSync(video, "utf8")).toBe("mp4\n");
   expect(readFileSync(`${video}.log`, "utf8")).toContain("Wrote video");
+});
+
+test("a simulator taken over after a node that died starts its idle time again, and one that can't be says the real why", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  fakeAgentDevice(home.dir);
+  const xctestrun = join(home.dir, "runner.xctestrun");
+  writeFileSync(xctestrun, "");
+  const { xcrun } = fakeXcrun(home.dir);
+  const udid = "AD0B7ED0-0000-0000-0000-000000000000";
+  writeFileSync(join(home.dir, "devices.json"), JSON.stringify({ devices: { r: [{ udid, name: "fleetd-a", state: "Booted" }] } }));
+  // What a node that died left: T1 holds a simulator it was lent two hours ago, and used since, untold.
+  const lentAt = Date.now() - 2 * 3600_000;
+  const held = () => {
+    mkdirSync(dirname(heldPath(home.dir)), { recursive: true });
+    writeFileSync(
+      heldPath(home.dir),
+      JSON.stringify([{ agent: "T1", udid, home: join(home.dir, "ios-clones", udid), runner: true, scale: 3, device: "iPhone 18 on iOS 27.0", project: "p1", sinceMs: lentAt, used: lentAt }]),
+    );
+  };
+  const node = (config: { enabled: boolean }, prepare?: () => Promise<Golden>) =>
+    new MacSims(
+      home.dir,
+      new Simulators(home.dir, config, { simctl: new Simctl(setDir(home.dir), xcrun), runner: async () => {}, ...(prepare ? { prepare } : {}) }),
+      2,
+    );
+
+  // With its golden, the next node keeps it: the first sweep finds it used just now, not two hours ago.
+  writeGolden(home.dir, xctestrun);
+  held();
+  const one = node({ enabled: true });
+  await one.adopt();
+  expect(one.endIdle(SIM_IDLE)).toEqual([]);
+  expect(one.held.get("T1")?.lent.udid).toBe(udid);
+  expect(one.held.get("T1")?.sinceMs).toBe(lentAt);
+  await one.stop();
+
+  // A node that finds no golden makes it again, and that deletes every clone: the agent hears so.
+  rmSync(goldenPath(home.dir));
+  const two = node({ enabled: true }, () => new Promise(() => {}));
+  await two.adopt();
+  expect(two.held.has("T1")).toBe(false);
+  expect(readFileSync(endedPath(home.dir, "T1"), "utf8")).toContain(": the Mac is making its golden simulator again. Run `mac sim start` again");
+
+  // One whose simulators are off says that instead.
+  held();
+  const three = node({ enabled: false });
+  await three.adopt();
+  expect(three.held.has("T1")).toBe(false);
+  expect(readFileSync(endedPath(home.dir, "T1"), "utf8")).toContain(": this Mac isn't set up for iOS simulators any more. Run `mac sim start` again");
 });
