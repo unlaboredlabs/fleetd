@@ -5114,6 +5114,8 @@ export type MetricsDay = {
   merged: RouteCounts;
   /** Bots and other merges not counted that day. */
   notCounted: SkipCount[];
+  /** Absent from a hub before the train's figures. */
+  pipeline?: PipelineDay;
 };
 
 export type MetricsGetInput = {
@@ -5128,6 +5130,8 @@ export type MetricsGetInput = {
 };
 
 export type MetricsGetOutput = {
+  /** The range's slowest GitHub Actions jobs, slowest first; absent from a hub before the train's figures. */
+  ciJobs?: CiJob[];
   compare?: MetricsComparePeriod;
   coverage: MetricsCoverage;
   /** Every calendar day of the range in `tz`, oldest first, empty days included. */
@@ -5168,6 +5172,8 @@ export type MetricsMerge = {
   requestedBasis?: RequestedBasis;
   reviewPassedAt?: Timestamp;
   route: MergeRoute;
+  /** Its time in the train and its CI runs, from the train's own records; absent when the hub kept none. */
+  pipeline?: MergePipeline;
   /** The ledger claim of a human session that saw this work before it landed. */
   seenClaim?: string;
   /** The merge, squash or pushed commit on the default branch. */
@@ -5199,7 +5205,133 @@ export type MetricsTiles = {
   human: HumanTile;
   merged: MergedTile;
   orderToMerged: OrderToMergedTile;
+  /** The train's row under it; absent from a hub before the train's figures. */
+  pipeline?: PipelineTiles;
   throughFleetd: ThroughFleetdTile;
+};
+
+/** The train's KPI row: CI, CI passing first time, review rounds and PRs sent back, over its merged PRs. */
+export type PipelineTiles = {
+  ci: CiTile;
+  firstPass: FirstPassTile;
+  reviews: ReviewsTile;
+  sentBack: SentBackTile;
+};
+
+/** GitHub Actions per merged PR: the wall time of the run it merged on, and its share of runner time. */
+export type CiTile = {
+  /** Absent when `n` is 0. */
+  medianMs?: number;
+  /** Merged PRs with a CI run the train read. */
+  n: number;
+  p90Ms?: number;
+  previousMedianMs?: number;
+  previousRunnerPerPrMs?: number;
+  runnerMedianMs?: number;
+  /** Runner time over `n`: every job's run time, a batch's split over the PRs in it. */
+  runnerPerPrMs?: number;
+  runnerTotalMs: number;
+  spark: SparkPoint[];
+};
+
+/** Merged PRs whose first CI run passed. */
+export type FirstPassTile = {
+  /** Jobs that failed and passed when the train re-ran them. */
+  flaky: number;
+  n: number;
+  pct?: number;
+  previousPct?: number;
+  spark: SparkPoint[];
+};
+
+/** Review rounds per merged PR, and the blocking findings they raised. */
+export type ReviewsTile = {
+  blockingPerPr?: number;
+  n: number;
+  perPr?: number;
+  previousPerPr?: number;
+  spark: SparkPoint[];
+};
+
+/** Merged PRs the train sent back to their writer at least once: for a conflict, or for red CI. */
+export type SentBackTile = {
+  /** PRs sent back for a conflict. */
+  conflicts: number;
+  n: number;
+  pct?: number;
+  previousPct?: number;
+  /** PRs sent back for red CI. */
+  redCi: number;
+  spark: SparkPoint[];
+};
+
+/** A day's merged PRs the train kept records for: their stage times summed, and how many went back to their writer. */
+export type PipelineDay = {
+  /** The median CI wall time of its PRs with a CI run, for the trend. */
+  ciMedianMs?: number;
+  n: number;
+  /** The median of its PRs' shares of runner time. */
+  runnerMedianMs?: number;
+  sentBack: SentBack;
+  stages: StageMs;
+};
+
+/** Time in each of the train's stages, ms. */
+export type StageMs = {
+  /** Back with its writer, for a conflict or red CI. */
+  back: number;
+  ci: number;
+  merge: number;
+  /** Waiting in the train's line, and its rebases. */
+  queue: number;
+  /** In review, and the fixes its findings asked for. */
+  review: number;
+};
+
+/** How many times a PR went back to its writer, or how many PRs did, by why. */
+export type SentBack = {
+  conflicts: number;
+  redCi: number;
+};
+
+/** One landed change's time in the train and its CI runs. */
+export type MergePipeline = {
+  blocking: number;
+  /** Every head the train ran CI on for it. */
+  ciRuns: number;
+  /** GitHub Actions wall time of the run it merged on: its first job's start to its last job's end. */
+  ciWallMs?: number;
+  /** Its first CI run passed. */
+  firstPass?: boolean;
+  flaky: number;
+  redRuns: number;
+  reviews: number;
+  /** Its share of the run time of every job run for it; a batch's runs are split over its PRs. */
+  runnerMs?: number;
+  sentBack: SentBack;
+  /** The slowest job of the run it merged on. */
+  slowestJob?: CiJobTime;
+  stages: StageMs;
+  /** The run it merged on: the train's push to its first job's start. */
+  waitMs?: number;
+};
+
+export type CiJobTime = {
+  ms: number;
+  name: string;
+};
+
+/** One GitHub Actions job over the range's CI runs, each run counted once. */
+export type CiJob = {
+  /** Runs it failed in. */
+  failed: number;
+  /** Over the runs it passed in. */
+  medianMs: number;
+  name: string;
+  p90Ms: number;
+  previousMedianMs?: number;
+  repo: RemoteRepo;
+  runs: number;
 };
 
 export type ModelName = string;

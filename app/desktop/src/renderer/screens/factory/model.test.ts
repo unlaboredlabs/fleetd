@@ -25,8 +25,10 @@ import {
   sortMerges,
   sparkPath,
   stack,
+  stageMean,
   stages,
 } from "./model";
+import { dayMedians, reach } from "./charts/Ci";
 
 const day = (d: string, train = 0, outside = 0): MetricsDay => ({
   day: d,
@@ -193,6 +195,50 @@ describe("the merge list", () => {
     expect(head?.split(",")[0]).toBe("merged_at");
     expect(row).toContain('"Say ""hi"", then go"');
     expect(row).toContain(",90,");
+  });
+});
+
+describe("the train's figures", () => {
+  const pipe = (n: number, ci: number, conflicts = 0) => ({
+    n,
+    stages: { review: 10 * n, back: 0, queue: 0, ci: ci * n, merge: 0 },
+    sentBack: { conflicts, redCi: 0 },
+    ciMedianMs: ci,
+  });
+  const MIN = 60_000;
+
+  it("sums a week's stage times and averages them over its PRs", () => {
+    const days = Array.from({ length: 40 }, (_, i) => ({ ...day(`2026-09-${String((i % 30) + 1).padStart(2, "0")}`), ...(i < 7 ? { pipeline: pipe(i + 1, 5 * MIN, 1) } : {}) }));
+    const [week, next] = columnsOf(days);
+    expect(week?.pipeline?.n).toBe(28);
+    expect(week?.pipeline?.sentBack.conflicts).toBe(7);
+    expect(week === undefined ? undefined : stageMean(week, "ci")).toBe(5 * MIN);
+    expect(next?.pipeline).toBeUndefined();
+    expect(next === undefined ? undefined : stageMean(next, "ci")).toBe(0);
+  });
+
+  it("draws the trend from the hub's day medians, and doesn't let one stuck run set the axis", () => {
+    const days = [{ ...day("2026-10-01"), pipeline: pipe(3, 9 * MIN) }, day("2026-10-02"), { ...day("2026-10-03"), pipeline: pipe(2, 6 * MIN) }];
+    expect(dayMedians(days, "wall")).toEqual([
+      { day: "2026-10-01", ms: 9 * MIN },
+      { day: "2026-10-03", ms: 6 * MIN },
+    ]);
+    expect(dayMedians(days, "runner")).toEqual([]);
+    const values = [...Array.from({ length: 99 }, () => 6 * MIN), 40 * MIN];
+    expect(reach(values, [9 * MIN])).toBe(9 * MIN);
+  });
+
+  it("sorts and copies each merge's CI", () => {
+    const p = { stages: { review: 0, back: 0, queue: 0, ci: 0, merge: 0 }, ciRuns: 2, redRuns: 1, flaky: 0, reviews: 3, blocking: 1, sentBack: { conflicts: 1, redCi: 1 } };
+    const fast = merge({ prNumber: 1, pipeline: { ...p, ciWallMs: 5 * MIN, runnerMs: 20 * MIN } });
+    const slow = merge({ prNumber: 2, pipeline: { ...p, ciWallMs: 9 * MIN } });
+    const none = merge({ prNumber: 3 });
+    expect(sortMerges([none, fast, slow], { key: "ci", desc: true }).map((m) => m.prNumber)).toEqual([2, 1, 3]);
+    const [head, row] = mergesCsv([fast]).trim().split("\n");
+    const cols = head?.split(",") ?? [];
+    const cells = row?.split(",") ?? [];
+    const at = (c: string) => cells[cols.indexOf(c)];
+    expect([at("ci_wall_min"), at("ci_runner_min"), at("ci_runs"), at("review_rounds"), at("blocking_findings"), at("sent_back")]).toEqual(["5", "20", "2", "3", "1", "2"]);
   });
 });
 

@@ -1,16 +1,18 @@
 // The Factory's words, figures and chart geometry, pure so they are tested on their own. Every number is the hub's
 // (metrics_get); this lays them out: route and source names in their fixed order, the tiles' values and deltas, the
-// days folded into columns, stacks with their surface gaps, the log axis of order to merged, and the merge list's
-// sort and copy.
+// days folded into columns, stacks with their surface gaps, the log axis of order to merged, the train's stages, and
+// the merge list's sort and copy.
 import type {
   HumanSource,
   KnownMergeRoute,
   MergeRoute,
   MetricsDay,
   MetricsMerge,
+  PipelineDay,
   RepoCoverage,
   RouteCounts,
   SparkPoint,
+  StageMs,
 } from "../../../shared/contracts";
 import { fmtDur } from "../time/format.ts";
 
@@ -62,6 +64,29 @@ export const SOURCE_SLOT: Record<HumanSource, 1 | 2 | 3 | 4 | 5> = { chat: 1, re
 
 /** Its minutes come from a floor per act, not from watching: git hosts keep when a review was sent, not how long. */
 export const ESTIMATED: ReadonlySet<HumanSource> = new Set(["reviews"]);
+
+/** The train's stages, in the order a PR goes through them, bottom up. */
+export const STAGES = ["review", "back", "queue", "ci", "merge"] as const satisfies readonly (keyof StageMs)[];
+export type Stage = (typeof STAGES)[number];
+
+export const STAGE_LABEL: Record<Stage, string> = {
+  review: "Review",
+  back: "Back with the writer",
+  queue: "In the train's line",
+  ci: "CI",
+  merge: "Merge",
+};
+
+/** What each stage holds, for its hover. */
+export const STAGE_HINT: Record<Stage, string> = {
+  review: "review, and the fixes its findings asked for",
+  back: "back with its writer, for a conflict or red CI",
+  queue: "waiting in the train's line, and its rebases",
+  ci: "the train's CI runs, red ones too",
+  merge: "the merge itself",
+};
+
+export const STAGE_SLOT: Record<Stage, 1 | 2 | 3 | 4 | 5> = { review: 1, back: 2, queue: 3, ci: 4, merge: 5 };
 
 const SKIP_WORD: Record<string, [string, string]> = {
   bot: ["bot PR", "bot PRs"],
@@ -193,6 +218,8 @@ export interface Column {
   /** Merges not counted, by why. */
   readonly notCounted: ReadonlyMap<string, number>;
   readonly human: ReadonlyMap<HumanSource, { readonly ms: number; readonly touches: number }>;
+  /** The train's merged PRs' stage times summed; absent from a hub before the train's figures. */
+  readonly pipeline?: PipelineDay;
 }
 
 /** Past this many days a column is a week (dataviz: ~30 columns at most before they read as noise). */
@@ -212,7 +239,9 @@ export const columnsOf = (days: readonly MetricsDay[]): Column[] => {
     const merged = zero();
     const notCounted = new Map<string, number>();
     const human = new Map<HumanSource, { ms: number; touches: number }>();
+    let pipeline: PipelineDay | undefined;
     for (const d of chunk) {
+      if (d.pipeline !== undefined) pipeline = addPipeline(pipeline, d.pipeline);
       for (const r of ROUTES) merged[ROUTE_FIELD[r]] += d.merged[ROUTE_FIELD[r]];
       for (const s of d.notCounted) notCounted.set(s.why, (notCounted.get(s.why) ?? 0) + s.n);
       for (const h of d.human) {
@@ -228,10 +257,21 @@ export const columnsOf = (days: readonly MetricsDay[]): Column[] => {
       merged,
       notCounted,
       human,
+      ...(pipeline === undefined ? {} : { pipeline }),
     });
   }
   return out;
 };
+
+const addPipeline = (a: PipelineDay | undefined, b: PipelineDay): PipelineDay => {
+  if (a === undefined) return { n: b.n, stages: { ...b.stages }, sentBack: { ...b.sentBack } };
+  const stages = { ...a.stages };
+  for (const k of STAGES) stages[k] += b.stages[k];
+  return { n: a.n + b.n, stages, sentBack: { conflicts: a.sentBack.conflicts + b.sentBack.conflicts, redCi: a.sentBack.redCi + b.sentBack.redCi } };
+};
+
+/** A column's average time per PR in `stage`; 0 with no PRs. */
+export const stageMean = (c: Column, stage: Stage): number => (c.pipeline === undefined || c.pipeline.n === 0 ? 0 : c.pipeline.stages[stage] / c.pipeline.n);
 
 export const routeTotal = (c: RouteCounts): number => c.train + c.fleetdByHand + c.outside + c.direct;
 export const humanTotal = (c: Column): number => [...c.human.values()].reduce((a, h) => a + h.ms, 0);
@@ -355,7 +395,7 @@ export const mergeName = (m: MetricsMerge, coverage: readonly RepoCoverage[]): s
   return `${repoName(m.repo)}, pushed to ${branch ?? "the default branch"}`;
 };
 
-export const SORTS = ["date", "change", "route", "order", "toMerged", "prOpen", "lines", "touches"] as const;
+export const SORTS = ["date", "change", "route", "order", "toMerged", "prOpen", "ci", "lines", "touches"] as const;
 export type SortKey = (typeof SORTS)[number];
 export interface Sort {
   readonly key: SortKey;
@@ -379,6 +419,8 @@ const sortValue = (m: MetricsMerge, key: SortKey): number | string | undefined =
       return m.orderToMergedMs;
     case "prOpen":
       return m.prOpenToMergedMs;
+    case "ci":
+      return m.pipeline?.ciWallMs;
     case "lines":
       return m.additions === undefined && m.deletions === undefined ? undefined : (m.additions ?? 0) + (m.deletions ?? 0);
     case "touches":
@@ -429,7 +471,25 @@ export const csvCell = (v: string | number | undefined): string => {
 export const mergesCsv = (merges: readonly MetricsMerge[]): string => {
   const mins = (ms: number | undefined) => (ms === undefined ? undefined : Math.round(ms / MIN));
   const rows: (string | number | undefined)[][] = [
-    ["merged_at", "repo", "pr", "title", "route", "order", "order_to_merged_min", "pr_open_to_merged_min", "additions", "deletions", "touches"],
+    [
+      "merged_at",
+      "repo",
+      "pr",
+      "title",
+      "route",
+      "order",
+      "order_to_merged_min",
+      "pr_open_to_merged_min",
+      "ci_wall_min",
+      "ci_runner_min",
+      "ci_runs",
+      "review_rounds",
+      "blocking_findings",
+      "sent_back",
+      "additions",
+      "deletions",
+      "touches",
+    ],
     ...merges.map((m) => [
       m.mergedAt,
       m.repo,
@@ -439,6 +499,12 @@ export const mergesCsv = (merges: readonly MetricsMerge[]): string => {
       m.workstreamId,
       mins(m.orderToMergedMs),
       mins(m.prOpenToMergedMs),
+      mins(m.pipeline?.ciWallMs),
+      mins(m.pipeline?.runnerMs),
+      m.pipeline?.ciRuns,
+      m.pipeline?.reviews,
+      m.pipeline?.blocking,
+      m.pipeline === undefined ? undefined : m.pipeline.sentBack.conflicts + m.pipeline.sentBack.redCi,
       m.additions,
       m.deletions,
       m.touches,
