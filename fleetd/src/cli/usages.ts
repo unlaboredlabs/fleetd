@@ -340,7 +340,7 @@ export const MAC_HELP = `mac: the agents' Mac, from wherever you run (fleetd's s
                                    until they hand it back); it never uses the Mac's own screen. In
                                    mac run, $FLEETD_MAC_SIM is its udid and $FLEETD_MAC_SIM_SET the device set plain
                                    simctl needs: xcrun simctl --set "$FLEETD_MAC_SIM_SET" <command> "$FLEETD_MAC_SIM"
-  mac sim rotate left|right        turns it a quarter (the UI turns; screenshots keep the panel's shape)
+  mac sim rotate left|right        turns it a quarter, its screenshots with it
   mac sim shake | home | lock      shakes it (an app's shake-to-undo), presses Home, presses the side button
   mac sim appearance [light|dark]  sets light or dark (no word: the other one)
   mac sim location <lat>,<lon>     moves its location (48.8584,2.2945)
