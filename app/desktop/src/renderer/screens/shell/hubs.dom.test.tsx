@@ -275,6 +275,39 @@ it("opens a bot on its own hub, and that hub alone gets its calls", async () => 
   expect(currentRoute()).toMatchObject({ id: "factory", at: "a1b2" });
 });
 
+it("in the web app, picking another team in the switcher leaves the chat of the one left: that team's home is on screen, never a chat to write into the other", async () => {
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  Object.assign(window.fleetd as { shell?: string }, { shell: "web" });
+  try {
+    act(() => {
+      hub("hub").send(live());
+      hub("hub").send(project("devbox", "storefront"));
+      hub("a1b2").send(live());
+    });
+    await settle();
+    act(() => {
+      window.location.hash = "#/project/devbox/storefront?at=hub";
+    });
+    await settle();
+    pickHub("Acme");
+    await settle();
+    expect(currentRoute()).toMatchObject({ id: "home", at: "a1b2" });
+    // Picking the team already on screen changes nothing.
+    act(() => {
+      window.location.hash = "#/project/devbox/storefront?at=hub";
+    });
+    await settle();
+    pickHub("Personal");
+    await settle();
+    expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  } finally {
+    delete (window.fleetd as { shell?: string }).shell;
+  }
+});
+
 it("opens a first-hub notification on the first hub, even while another hub is on screen", async () => {
   await mount([
     { id: "hub", label: "Personal" },

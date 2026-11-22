@@ -42,10 +42,10 @@ import { useHubRows } from "./hubRows";
 import { HUB_COLOR } from "./hubColor";
 import { HubText } from "../projects/HubText";
 import { projectId, routeOf, type SidebarProject } from "./model";
-import type { Routed } from "./navigation";
+import { currentRoute, navigate, type Routed } from "./navigation";
 import { useOfflineAsOf } from "./offline";
 import { changePins, inOrder, pinnedAt, PINS_MAX, unpinned } from "./pins";
-import { sameProject, type ProjectKey, type Screen } from "./routes";
+import { HOME, sameProject, type ProjectKey, type Screen } from "./routes";
 import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./SectionLabel";
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
@@ -172,6 +172,16 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
  * setup left) with the one thing to do (HubStatus.tsx HubLines). Hubs live here, not in the menu under your name. Add
  * a hub at its foot (the desktop app's; the web app's teams come with the sign-in).
  */
+/**
+ * Another hub picked in the switcher: its list. In the web app, where each is a team of the account, its home too in
+ * place of what was open, so no chat or page of the team just left stays on screen to be written to (W791). The
+ * desktop keeps the chat on screen beside another hub's list.
+ */
+const pickHub = (hub: string): void => {
+  showHub(hub);
+  if (onWeb() && currentRoute().at !== hub) navigate({ ...HOME, at: hub });
+};
+
 function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArray<Placed> | undefined }) {
   const hubs = useHubs();
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
@@ -199,7 +209,7 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
         <MenuLabel>{teams ? "Teams" : "Hubs"}</MenuLabel>
         {hubs.map((h) => (
           <HubScope key={h.id} hub={h}>
-            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => showHub(h.id)}>
+            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => pickHub(h.id)}>
               {h.label}
             </MenuItem>
             <HubLines />
