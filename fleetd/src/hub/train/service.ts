@@ -7,7 +7,7 @@
 // The base's own rules on GitHub decide the rest (`rules`): where it requires a person's approval, a PR waits for it
 // (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
-import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared/contracts.ts";
+import type { Change, ChangeReview, ChangeState, Merger, ProjectRef, RiskRules } from "../../shared/contracts.ts";
 import * as back from "./back.ts";
 import * as batch from "./batch.ts";
 import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
@@ -16,6 +16,7 @@ import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, lim
 import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
+import { decide, type MergeDecision, type MergeFile } from "./merge_rules.ts";
 import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
@@ -64,6 +65,7 @@ import {
   CI_WATCHED,
   NEVER_RAN_WAIT_MS,
   NO_CI_REQUEUED,
+  PEOPLE,
   PIPELINE_DEPTH,
   REMOVED_PROJECT,
   REVIEW_WAIT_MS,
@@ -269,6 +271,8 @@ export class Train {
   readonly personChecks = new Map<string, number>();
   /** Per Change a person merges, when the train last brought it up to date with its base. */
   readonly heldUpdates = new Map<string, number>();
+  /** Per Change on a bot whose people merge its PRs, its files as last read, and the head they were read at. */
+  readonly pullFiles = new Map<string, [string, MergeFile[] | undefined]>();
   readonly nextLabels = new next.NextLabels();
   readonly sync = new GithubSync();
   readonly scheduledReads = new Map<string, number>();
@@ -350,6 +354,54 @@ export class Train {
 
   wakeLead(projectRef: ProjectRef, line: string): Promise<void> {
     return this.host.wakeLead(projectRef, line);
+  }
+
+  /** Whether people merge the Change's bot's PRs (its Who merges); false when that can't be read. */
+  peopleMerge(change: Change): boolean {
+    try {
+      return this.host.whoMerges?.(change.projectRef).merges === "people";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Who merges the Change, by its bot's Who merges and risk rules (merge_rules.ts `decide`): the one decision every
+   * merge path asks right before it merges, and the batch's pick before it takes a PR. Merge only when `by` isn't
+   * `person`. Where people merge, the PR's files are read from GitHub once per head. What can't be read holds the PR.
+   */
+  async mergeDecision(change: Change): Promise<MergeDecision> {
+    let who: { merges: Merger; rules: RiskRules } | undefined;
+    try {
+      who = this.host.whoMerges?.(change.projectRef);
+    } catch (error) {
+      // Unread, it merges nothing: a merge can't be taken back, a wait for the next pass can.
+      console.warn(`train: who merges ${change.changeId} not read, so it waits this pass: ${error}`);
+      return { by: "person", why: "who merges its bot's PRs couldn't be read" };
+    }
+    if (who === undefined || who.merges === "fleetd") return { by: "fleetd" };
+    const kept = this.pullFiles.get(change.changeId);
+    let files = kept?.[0] === change.headSha ? kept[1] : undefined;
+    if (kept?.[0] !== change.headSha) {
+      try {
+        files = await this.github.pullFiles(change.repo, change.prNumber);
+        this.pullFiles.set(change.changeId, [change.headSha, files]);
+      } catch (error) {
+        this.warnHourly([`train: files of ${change.changeId} not read`], (error as Error).message, `train: files of ${change.changeId} not read, so it waits for a person this pass: ${(error as Error).message}`);
+        files = undefined;
+      }
+    }
+    return decide(who.merges, who.rules, files);
+  }
+
+  /** Keeps the decision's words on the Change for the PR panel; a bot fleetd merges keeps none. */
+  noteDecision(change: Change, decided: MergeDecision): void {
+    const words = decided.by === "rule" ? `merges itself: ${decided.rule}` : decided.by === "person" ? `waits for a person: ${decided.why}` : undefined;
+    if (words === change.mergeRule) return;
+    this.update(change.changeId, undefined, (c) => {
+      const { mergeRule: _, ...rest } = c;
+      return words === undefined ? rest : { ...rest, mergeRule: words };
+    });
   }
 
   /** One line in the project's chat, from fleetd itself. */
@@ -1375,6 +1427,14 @@ export class Train {
     const repo = inCi.repo;
     const headSha = inCi.headSha;
     const noted = [inCi.changeId];
+    // Asked again right before the merge: its bot may have come to people merging, or its rules changed, while it
+    // was in CI. Then it waits in line for a person, as any such PR does.
+    const decided = await this.mergeDecision(inCi);
+    this.noteDecision(inCi, decided);
+    if (decided.by === "person") {
+      this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "ready", lastError: PEOPLE }));
+      return;
+    }
     const merging = this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }));
     if (!merging) return;
     await this.github.postTrainStatus(repo, headSha, `${inCi.changeId}: rebased onto ${base}, ${noCi ? "reviewed; the repo has no CI" : "CI green"}`);

@@ -14,6 +14,8 @@ import type {
   KnownBotColor,
   EnvVarSet,
   MachineId,
+  Merger,
+  RiskRules,
   ProjectEnvVar,
   ProjectRef,
   ProjectRepo,
@@ -37,7 +39,8 @@ import { projectEnv, projectUpsert, projectWorktrees } from "../executor/project
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { issueOrders } from "../issues/index.ts";
-import { chatTagsOn, issueOrdersOn, setAvatarColor, setAvatarShape, setChatTags, setIssueOrders } from "../project_lead/store.ts";
+import { chatTagsOn, issueOrdersOn, mergesOf, riskRulesOf, setAvatarColor, setAvatarShape, setChatTags, setIssueOrders, setMerges, setRiskRules } from "../project_lead/store.ts";
+import { rulesProblems, tidyRules } from "../train/merge_rules.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -262,6 +265,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     workspaceRoot: project.workspaceRoot,
     ...(repo ? { repo: repo.name } : {}),
     env: s.env(r),
+    mergeRules: riskRulesOf(hub.db.conn, r),
     setup,
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
@@ -308,6 +312,44 @@ export function setShape(hub: Hub, project: ProjectSummary, shape: BotShape): vo
   announce(hub, r, `${project.title}'s bot is a ${shape} now`, { avatarShape: shape });
 }
 
+/**
+ * Who merges the project's PRs from now on, a person's pick only: the merge train reads it at each pass, so a PR in
+ * line is held or taken at its next one. Tells every app; false when it was already so.
+ */
+export function setWhoMerges(hub: Hub, caller: Caller, project: ProjectSummary, merges: Merger): boolean {
+  if (merges !== "people" && merges !== "fleetd") throw new ToolError("invalid", `${merges as string} isn't who merges.`, "Give people or fleetd.");
+  if (!isHuman(caller)) {
+    throw new ToolError("forbidden", "Only a person picks who merges a bot's PRs.", "Ask the human to set Who merges in the bot's settings.");
+  }
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  if (mergesOf(hub.db.conn, r) === merges) return false;
+  setMerges(hub.db.conn, r, merges);
+  announce(hub, r, merges === "people" ? `People merge ${project.title}'s PRs now` : `fleetd merges ${project.title}'s PRs now`, { merges });
+  return true;
+}
+
+/**
+ * Replaces the project's risk rules, a person's pick only, once each rule is a named kind of its list or a glob:
+ * the train reads them before each merge. Tells every app.
+ */
+export function setRules(hub: Hub, caller: Caller, project: ProjectSummary, rules: RiskRules): void {
+  if (!isHuman(caller)) {
+    throw new ToolError("forbidden", "Only a person sets which PRs of a bot merge themselves.", "Ask the human to edit the rules under Who merges in the bot's settings.");
+  }
+  const tidy = tidyRules(rules);
+  const problems = rulesProblems(tidy);
+  if (problems.length > 0) throw new ToolError("invalid", `These rules can't be saved: ${problems.slice(0, 5).join("; ")}.`, "Write each rule as a path glob or one of the named kinds.");
+  const r = { machineId: project.machineId, projectId: project.projectId };
+  setRiskRules(hub.db.conn, r, tidy);
+  announce(hub, r, `${project.title}'s merge rules changed`, { mergeRules: tidy });
+}
+
+/** What a change of who merges means, as a call's `next`. */
+export const whoMergesNext = (merges: Merger) =>
+  merges === "people"
+    ? "The merge train still reviews its PRs and keeps them up to date, and merges one itself only when every file matches its merges-itself rules; its lead says when each of the rest is reviewed and green, for a person to merge on GitHub."
+    : "The merge train merges each of its PRs once it is reviewed and green; one with the `hold` label waits for a person.";
+
 export function register(tools: Registry): void {
   tools.add("project_settings_get", async (hub, caller, input) => {
     requireRole(caller, "read", input.machineId);
@@ -340,6 +382,8 @@ export function register(tools: Registry): void {
       if (input.issueOrders) issueOrders(hub).rewatch(r);
       announce(hub, r, `${project.title}'s GitHub issues labelled fleetd ${input.issueOrders ? "open orders" : "no longer open orders"}`, { issueOrders: input.issueOrders });
     }
+    if (input.merges !== undefined) setWhoMerges(hub, caller, project, input.merges);
+    if (input.mergeRules !== undefined) setRules(hub, caller, project, input.mergeRules);
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     // A self-hosted hub's bots run on their machine: there is no computer to pick (an app made for fleetd's cloud may
     // still send one).
@@ -350,6 +394,10 @@ export function register(tools: Registry): void {
     if ((input.avatarColor !== undefined || input.avatarShape !== undefined) && input.setup === undefined && input.title === undefined) {
       const look = [input.avatarShape !== undefined ? `a ${input.avatarShape}` : undefined, input.avatarColor !== undefined ? (botColorOf(input.avatarColor) ?? input.avatarColor) : undefined];
       next = `Its bot is ${look.filter((w) => w !== undefined).join(" in ")} on every device now.`;
+    } else if (input.merges !== undefined && input.setup === undefined && input.title === undefined) {
+      next = whoMergesNext(input.merges);
+    } else if (input.mergeRules !== undefined && input.setup === undefined && input.title === undefined) {
+      next = "The merge train reads these rules before its next merge of the bot's PRs.";
     } else if (input.setup !== undefined && !isEmptySetup(input.setup) && !link(hub).can(m, CAP_WORKTREE_SETUP)) {
       next = `New tasks of the bot use these settings. ${m}'s node is too old to run setup commands: update fleetd there.`;
     }

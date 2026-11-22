@@ -70,6 +70,14 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "Merger": {
+      "description": "Who merges a bot's PRs: people (on GitHub; the default for a new bot), or fleetd's merge train.",
+      "enum": [
+        "people",
+        "fleetd"
+      ],
+      "type": "string"
+    },
     "PersonId": {
       "pattern": "^p_[a-z2-7]{8}$",
       "type": "string"
@@ -199,6 +207,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "merges": {
+          "$ref": "#/$defs/Merger",
+          "description": "Who merges its PRs, from the hub: people, the default for a new bot (the train reviews them and keeps them\nup to date, never merges one), or fleetd's merge train. Absent from an older hub: fleetd."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

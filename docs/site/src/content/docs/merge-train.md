@@ -43,7 +43,7 @@ repo's first workflow waits for it. When the train can't read one of those, it w
 its PRs wait for it again. A repo whose checks exist but haven't started on a PR still waits, flagged after 15 minutes
 as above.
 
-To keep a PR off the train, [hold it](#hold).
+To keep a PR off the train, [hold it](#hold). To have people merge a bot's PRs, set its [Who merges](#who-merges).
 
 ## Which checks it waits for {#fast-set}
 
@@ -585,30 +585,67 @@ If the upstream PR fails CI or review, is refused, or leaves the train without m
 held. The lead is told once, with the reason. Once the upstream PR is fixed and merges, the downstream PR goes on its
 own. A PR merged outside the train also counts as merged.
 
-## Hold a PR {#hold}
+## Who merges {#who-merges}
 
-Add the `hold` label to a PR to keep the train from taking it, alone or in a batch. Remove the label and it goes in
-its turn. To hold every PR of a repo, label each one.
+Each bot has one setting, **Who merges**, in its settings on the desktop, the web and the phone:
 
-### People merge here {#people-merge}
+- **You**, the default for a bot made since the setting came: people merge its PRs on GitHub, except those its risk
+  rules let merge themselves.
+- **fleetd**: the train merges each PR once it is reviewed and green. Every bot made before the setting came stays on
+  fleetd, so nothing changed under it.
 
-When people merge the PRs, not the train, say so in the bot's
-[instructions](/docs/what-agents-are-told#instructions):
+`fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key>` sets it too. Only a person picks it:
+an agent's or a lead's key is refused.
 
-```text
-People merge here: open every PR with the `hold` label and tell me when it's reviewed and green.
-```
+### When you merge {#people-merge}
 
-There is no setting for it; the repo needs a `hold` label. Each writer then opens its PR with the label, and for a
-held PR:
+The train enforces it; no label or instruction is needed. For each PR of the bot:
 
 - The agent reviewer reviews it as any other, and findings and red CI go back to its writer.
-- The train never merges it.
+- The train merges it only when its [risk rules](#risk-rules) let it merge itself. It never merges any other.
 - The lead tells you once per reviewed patch that it is reviewed and green, with its link.
 - The train keeps it up to date with its base while it waits, once an hour at most, since each update runs its CI
   again. Where the base drops approvals on new commits, an approved PR is left as it is, and any other gets the base
   merged in, so an update never costs an approval.
 - When you merge it on GitHub, the merge is [recorded](#outside), and the PRs behind it carry on.
+
+Switching the bot to fleetd lets its waiting PRs go at the train's next pass. Switching to You while a PR is in CI
+keeps it from merging: it goes back in line for you. The PR's page on the desktop says, under **Who merges**, which
+rule decided.
+
+### Risk rules {#risk-rules}
+
+On a bot you merge, **Rules** under Who merges opens two lists, one rule a line:
+
+| List | A PR | Defaults |
+|---|---|---|
+| Merges itself when every file matches | merges by the train when every one of its files matches one of these | `docs`, `tests`, `lockfile-bumps`, `formatting` |
+| Always a person when any file matches | waits for you when any of its files matches one of these, whatever the other list says | `auth`, `billing`, `migrations`, `infra`, `ci`, `secrets` |
+
+A rule is a path glob or a named kind. In a glob `**` spans folders and `*` stays within one name, and one with no
+`/` matches a file's name in any folder (`*.sql`, `Dockerfile*`); matching ignores case. A renamed file is judged on
+both its names. The kinds:
+
+| Kind | Matches |
+|---|---|
+| `docs` | `*.md`, `*.mdx`, `*.rst`, `*.adoc` |
+| `tests` | files under `test/`, `tests/`, `__tests__/` or `spec/`, and `*.test.*`, `*.spec.*`, `*_test.go`, `*_test.py`, `test_*.py` |
+| `lockfile-bumps` | a lockfile (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `go.sum`, `poetry.lock`, `uv.lock` and the like) whose diff only moves versions within a major, and within a minor below 1.0.0, with their hashes; a package added or removed doesn't count, and the PR's `package.json` or other manifest is a file of its own that must match a rule too |
+| `formatting` | a changed file whose diff changes only whitespace |
+| `auth` | `auth/`, `oauth/`, `login/` and `sessions/` folders, and `auth.*`, `oauth.*`, `login.*` files |
+| `billing` | `billing/`, `payments/`, `stripe/`, `checkout/` and `invoices/` folders, and `billing.*`, `payment*.*`, `stripe.*`, `invoice*.*` files |
+| `migrations` | `migrations/` and `migrate/` folders, `*.sql`, `schema.prisma` |
+| `infra` | `infra/`, `terraform/`, `k8s/`, `kubernetes/`, `helm/`, `deploy/`, `ansible/` and `pulumi/` folders, `*.tf`, `*.tfvars`, `Dockerfile*`, compose files |
+| `ci` | `.github/`, `.circleci/`, `.buildkite/`, `.fleetd/`, `.gitlab-ci.yml`, `Jenkinsfile`, `azure-pipelines.yml` |
+| `secrets` | `.env*`, `*secret*`, `*credential*`, `*.pem`, `*.key`, `.sops.yaml`, `*.sops.*` |
+
+A PR with no files, or whose files GitHub can't list (more than 3,000), waits for you. Empty both lists and every PR
+waits for you. The rules apply only while you merge; a bot fleetd merges merges every PR.
+
+## Hold a PR {#hold}
+
+Add the `hold` label to a PR to keep the train from taking it, alone or in a batch, on any bot. Remove the label and
+it goes in its turn. It is for a one-off hold; for every PR of a bot, set [Who merges](#who-merges) to You.
 
 ## What never relaxes {#guarantees}
 

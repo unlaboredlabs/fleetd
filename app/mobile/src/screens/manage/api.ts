@@ -1,11 +1,11 @@
 // The hub calls behind a bot's screens, each as the desktop makes it: New Bot (project_discover, then the desktop's
 // create flow: project_add for the bot, project_repo_add for each of its repos), its screen's reads (agents_list, orders_board,
 // checklist_get, pr_list, profiles_list, skills_list, agent_messages' count), Rename (project_settings_set's title),
-// Archive, its bot's shape and color (avatarShape, avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
+// Who merges and its risk rules (project_settings_get, project_settings_set), Archive, its bot's shape and color (avatarShape, avatarColor) or picture (attachment_put, then project_avatar_set), the person's own picture
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -203,6 +203,24 @@ export const pickComputer = async (hub: Hub, p: ProjectRef, pick: ComputerPick |
 export const rebuildImage = async (hub: Hub, p: ProjectRef, repo?: string): Promise<Result<ComputerImage>> => {
   const r = await hub.call("project_image_rebuild", { ...ref(p), ...(repo === undefined ? {} : { repo }) });
   return r.ok ? { ok: true, value: r.output.image } : r;
+};
+
+/** Who merges its PRs from now on: people (You) or fleetd's merge train. */
+export const setWhoMerges = async (hub: Hub, p: ProjectRef, merges: Merger): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), merges });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** Its risk rules, as the hub keeps them (the defaults until a person edits them); an older hub's are none. */
+export const readRules = async (hub: Hub, p: ProjectRef): Promise<Result<RiskRules | undefined>> => {
+  const r = await hub.call("project_settings_get", ref(p));
+  return r.ok ? { ok: true, value: r.output.settings.mergeRules } : r;
+};
+
+/** Replaces its risk rules; the hub says which rule it can't take. */
+export const setRules = async (hub: Hub, p: ProjectRef, mergeRules: RiskRules): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), mergeRules });
+  return r.ok ? { ok: true, value: null } : r;
 };
 
 /** Its settings fresh from its machine, so the confirm names every worktree with uncommitted changes. */

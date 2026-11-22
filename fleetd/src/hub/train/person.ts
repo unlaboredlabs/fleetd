@@ -1,8 +1,9 @@
 // Ready PRs that wait on a person: one whose base requires an approving review on GitHub, which the train merges by
-// itself once it is approved, and one with the `hold` label, which a person merges. The train never approves a PR and
-// never goes around a rule: it reads GitHub's own answer on the PR's reviews, waits, and says so once.
+// itself once it is approved, and one a person merges: every PR of a bot whose people merge its PRs (its Who merges),
+// and one with the `hold` label. The train never approves a PR and never goes around a rule: it reads GitHub's own
+// answer on the PR's reviews, waits, and says so once.
 import type { Change } from "../../shared/contracts.ts";
-import { HELD, ownCiRed, reviewed, tellOwnRed } from "./batch.ts";
+import { HELD, ownCiRed, PEOPLE, reviewed, tellOwnRed } from "./batch.ts";
 import { prNote } from "./events.ts";
 import type { Pull } from "./github.ts";
 import { APPROVAL } from "./notes.ts";
@@ -70,9 +71,9 @@ export async function refusedUnapproved(t: Train, merging: Change, base: string)
 }
 
 /**
- * A ready Change that waits on a person, for the reason in `note` (`HELD` or `APPROVAL`), looked at every
+ * A ready Change that waits on a person, for the reason in `note` (`PEOPLE`, `HELD` or `APPROVAL`), looked at every
  * `readyEveryMs`: its author hears of red CI on its own head, once per head, and the lead hears that it is reviewed
- * and green, once per patch. One with the label is first brought up to date with its base (`keepCurrent`).
+ * and green, once per patch. One a person merges is first brought up to date with its base (`keepCurrent`).
  */
 export async function waits(t: Train, change: Change, pull: Pull, note: string): Promise<void> {
   if (change.state !== "ready" || !reviewed(change) || change.patchId === undefined) return;
@@ -84,13 +85,16 @@ export async function waits(t: Train, change: Change, pull: Pull, note: string):
   const own = await ownCiRed(t, change.repo, change, base);
   if (own.red.length > 0) return tellOwnRed(t, change, own.red, "it waits for a person, and no one merges it red");
   if (own.why !== undefined) return;
-  if (note === HELD && (await keepCurrent(t, change, pull))) return;
+  if ((note === PEOPLE || note === HELD) && (await keepCurrent(t, change, pull))) return;
   if (!t.records.startWait(change, WAIT_PERSON, change.patchId, now, "told")) return;
   const at = `reviewed and green at ${short(change.headSha)}`;
+  const why = (t.records.get(change.changeId)?.mergeRule ?? "people merge this bot's PRs").replace(/^waits for a person: /, "");
   const text =
-    note === HELD
-      ? `${at}, and held by its \`hold\` label. If a person merges it, tell them it is ready, this once`
-      : `${at}, and waiting for a person's approval on GitHub, which its base requires: tell them, this once. The train merges it by itself once it is approved`;
+    note === PEOPLE
+      ? `${at}, and ready for a person to merge on GitHub (${why}), so the train never merges it. Tell the human it is ready, this once, with its link: ${change.prUrl}`
+      : note === HELD
+        ? `${at}, and held by its \`hold\` label. If a person merges it, tell them it is ready, this once`
+        : `${at}, and waiting for a person's approval on GitHub, which its base requires: tell them, this once. The train merges it by itself once it is approved`;
   await t.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, text));
 }
 
@@ -127,5 +131,5 @@ async function keepCurrent(t: Train, change: Change, pull: Pull): Promise<boolea
 /** Forgets what is kept in memory for `repo`'s Changes that left the line. */
 export function forget(t: Train, repo: string, live: Set<string>): void {
   const gone = (id: string) => !live.has(id) && (t.records.get(id)?.repo ?? repo) === repo;
-  for (const map of [t.decisions, t.personChecks, t.heldUpdates]) for (const id of [...map.keys()]) if (gone(id)) map.delete(id);
+  for (const map of [t.decisions, t.personChecks, t.heldUpdates, t.pullFiles]) for (const id of [...map.keys()]) if (gone(id)) map.delete(id);
 }

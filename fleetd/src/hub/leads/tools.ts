@@ -1,5 +1,6 @@
-// lead_start, project_set (the profiles a bot's agents may run on, and its lead's own) and workstream_list.
+// lead_start, project_set (the profiles a bot's agents may run on, its lead's own, and who merges) and workstream_list.
 import { allows } from "../auth/index.ts";
+import { setWhoMerges, whoMergesNext } from "../projects/settings.ts";
 import { requireRole } from "../api/grants.ts";
 import type { Registry } from "../api/registry.ts";
 import { profiles } from "../projects/profiles.ts";
@@ -26,6 +27,10 @@ export function register(tools: Registry): void {
     if (!project) throw unknownProject(r);
     const area = leads(hub);
     const said: string[] = [];
+    if (input.merges !== undefined) {
+      setWhoMerges(hub, caller, project, input.merges);
+      said.push(whoMergesNext(input.merges));
+    }
     let allowed = area.allowedProfiles(r);
     if (input.profiles !== undefined) {
       allowed = area.setAllowedProfiles(r, project.title, input.profiles);

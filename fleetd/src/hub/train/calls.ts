@@ -43,8 +43,9 @@ function enqueueCall(call: LeadCall): EnqueueCall {
 /** `change_enqueue`: the Change and what the lead does next. */
 export async function changeEnqueue(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Record<string, unknown>> {
   try {
-    const change = await trainArea(hub).train.enqueue(caller.projectRef, enqueueCall(call));
-    return { change, next: changeNext(change) };
+    const train = trainArea(hub).train;
+    const change = await train.enqueue(caller.projectRef, enqueueCall(call));
+    return { change, next: changeNext(change, train.peopleMerge(change)) };
   } catch (error) {
     if (isTrainError(error)) throw toolError(error);
     throw error;

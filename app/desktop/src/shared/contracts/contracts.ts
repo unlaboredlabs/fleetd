@@ -1477,6 +1477,11 @@ export type Change = {
   lastError?: string;
   /** The squash commit on the base; set on merge. */
   mergedSha?: CommitSha;
+  /**
+   * Where people merge its bot's PRs: the rule that decided who merges it, in words (every file matches docs, or
+   * a file matches an always-a-person rule). Absent on a bot fleetd merges.
+   */
+  mergeRule?: string;
   patchId?: PatchId;
   /** 0-based index into its train's queue; absent when not queued. */
   position?: number;
@@ -6044,6 +6049,8 @@ export type PrQueue = {
   changeId: ChangeId;
   /** PRs waiting in the same queue. */
   length: number;
+  /** Where people merge its bot's PRs: which of its rules decided who merges it, in words. */
+  mergeRule?: string;
   /** 0-based place in the queue; absent when not waiting in it. */
   position?: number;
   /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
@@ -6790,6 +6797,20 @@ export type ProjectRepoRemoveOutput = {
   truncated?: boolean;
 };
 
+/** Who merges a bot's PRs: people (on GitHub; the default for a new bot), or fleetd's merge train. */
+export type Merger = "people" | "fleetd";
+
+/**
+ * A bot's risk rules where people merge its PRs: the train merges a PR itself when every file matches a rule of
+ * `itself`, and never when any file matches one of `person`. A rule is a path glob (`docs/**`, `*.sql`; one with no `/`
+ * matches a file's name in any folder) or a named kind: docs, tests, lockfile-bumps or formatting for `itself`, auth,
+ * billing, migrations, infra, ci or secrets for `person`.
+ */
+export type RiskRules = {
+  itself: string[];
+  person: string[];
+};
+
 /** What a project is doing, in one word. */
 export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "idle";
 /** KnownProjectRowState, or a value from a newer hub. */
@@ -6803,6 +6824,9 @@ export type ProjectSetInput = {
   /** Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends. */
   leadRestart?: boolean;
   machineId: MachineId;
+  /** Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's
+   * key only. */
+  merges?: Merger;
   /** Which profiles its agents may run on besides the default; absent: unchanged. */
   profiles?: ProfileName[];
   projectId: ProjectId;
@@ -6833,6 +6857,9 @@ export type ProjectSettings = {
    */
   image?: ComputerImage;
   machineId: MachineId;
+  /** Its risk rules, used while people merge its PRs; the defaults until a person edits them. Absent from older
+   * hubs. */
+  mergeRules?: RiskRules;
   projectId: ProjectId;
   /** The repo `setup` is for; absent when it is the project's own directory's, and from older hubs. */
   repo?: RepoName;
@@ -6881,6 +6908,11 @@ export type ProjectSettingsSetInput = {
   /** Drop its pick: its agents are placed and sized by default again. */
   computerDefault?: boolean;
   machineId: MachineId;
+  /** Replaces its risk rules (a person's key only); the defaults are kept as none. */
+  mergeRules?: RiskRules;
+  /** Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's
+   * key only. */
+  merges?: Merger;
   projectId: ProjectId;
   /**
    * The repo whose own setup to set, no commands turning it off; absent, or the project's own directory: the
@@ -7044,6 +7076,11 @@ export type ProjectSummary = {
   icon?: ProjectIcon;
   lastActivityAt: Timestamp;
   machineId: MachineId;
+  /**
+   * Who merges its PRs, from the hub: people, the default for a new bot (the train reviews them and keeps them
+   * up to date, never merges one), or fleetd's merge train. Absent from an older hub: fleetd.
+   */
+  merges?: Merger;
   projectId: ProjectId;
   /** The git repos it holds, from the hub; none for a plain directory, from a node, and from an older hub. */
   repos?: ProjectRepo[];

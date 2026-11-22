@@ -91,6 +91,7 @@ export function encode(c: Change): string {
   if (c.position !== undefined) out.position = c.position;
   if (c.lastError !== undefined) out.lastError = c.lastError;
   if (c.mergedSha !== undefined) out.mergedSha = c.mergedSha;
+  if (c.mergeRule !== undefined) out.mergeRule = c.mergeRule;
   if (c.after !== undefined && c.after.length > 0) out.after = c.after;
   out.createdAt = c.createdAt;
   out.updatedAt = c.updatedAt;

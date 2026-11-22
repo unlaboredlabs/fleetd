@@ -2966,6 +2966,10 @@
           "maxLength": 2000,
           "type": "string"
         },
+        "mergeRule": {
+          "description": "Where people merge its bot's PRs: the rule that decided who merges it, in words (every file matches docs, or\na file matches an always-a-person rule). Absent on a bot fleetd merges.",
+          "type": "string"
+        },
         "mergedSha": {
           "$ref": "#/$defs/CommitSha",
           "description": "The squash commit on the base; set on merge."
@@ -14198,6 +14202,14 @@
       ],
       "type": "object"
     },
+    "Merger": {
+      "description": "Who merges a bot's PRs: people (on GitHub; the default for a new bot), or fleetd's merge train.",
+      "enum": [
+        "people",
+        "fleetd"
+      ],
+      "type": "string"
+    },
     "MetricsComparePeriod": {
       "description": "The previous period of the same length, for the compare toggle.",
       "properties": {
@@ -16254,6 +16266,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "mergeRule": {
+          "description": "Where people merge its bot's PRs: which of its rules decided who merges it, in words.",
+          "type": "string"
+        },
         "position": {
           "description": "0-based place in the queue; absent when not waiting in it.",
           "maximum": 9007199254740991,
@@ -18171,6 +18187,10 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "merges": {
+          "$ref": "#/$defs/Merger",
+          "description": "Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's\nkey only."
+        },
         "profiles": {
           "items": {
             "$ref": "#/$defs/ProfileName"
@@ -18243,6 +18263,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "mergeRules": {
+          "$ref": "#/$defs/RiskRules",
+          "description": "Its risk rules, used while people merge its PRs; the defaults until a person edits them. Absent from older\nhubs."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -18348,6 +18372,14 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "mergeRules": {
+          "$ref": "#/$defs/RiskRules",
+          "description": "Replaces its risk rules (a person's key only); the defaults are kept as none."
+        },
+        "merges": {
+          "$ref": "#/$defs/Merger",
+          "description": "Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's\nkey only."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -18737,6 +18769,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "merges": {
+          "$ref": "#/$defs/Merger",
+          "description": "Who merges its PRs, from the hub: people, the default for a new bot (the train reviews them and keeps them\nup to date, never merges one), or fleetd's merge train. Absent from an older hub: fleetd."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"
@@ -20052,6 +20088,34 @@
       "required": [
         "n",
         "spark"
+      ],
+      "type": "object"
+    },
+    "RiskRules": {
+      "description": "A bot's risk rules where people merge its PRs: the train merges a PR itself when every file matches a rule of\n`itself`, and never when any file matches one of `person`. A rule is a path glob (`docs/**`, `*.sql`; one with no `/`\nmatches a file's name in any folder) or a named kind: docs, tests, lockfile-bumps or formatting for `itself`, auth,\nbilling, migrations, infra, ci or secrets for `person`.",
+      "properties": {
+        "itself": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "person": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        }
+      },
+      "required": [
+        "itself",
+        "person"
       ],
       "type": "object"
     },

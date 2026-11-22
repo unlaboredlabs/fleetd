@@ -269,6 +269,7 @@
     "./hub/train/digest_lines": "./fleetd/src/hub/train/digest_lines.ts",
     "./hub/train/events": "./fleetd/src/hub/train/events.ts",
     "./hub/train/input": "./fleetd/src/hub/train/input.ts",
+    "./hub/train/merge_rules": "./fleetd/src/hub/train/merge_rules.ts",
     "./hub/train/next_rules": "./fleetd/src/hub/train/next_rules.ts",
     "./hub/train/notes": "./fleetd/src/hub/train/notes.ts",
     "./hub/train/prompts": "./fleetd/src/hub/train/prompts.ts",

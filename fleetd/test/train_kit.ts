@@ -9,7 +9,7 @@ import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
-import type { Change, ProjectRef } from "../src/shared/contracts.ts";
+import type { Change, Merger, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
 
 export const REPO = "acme/storefront";
 export const PROJECT: ProjectRef = { machineId: "devbox", projectId: "storefront" };
@@ -358,7 +358,11 @@ export class FakeGh implements GhRunner {
           .filter(Boolean)
           .map((l) => {
             const [status, filename] = l.split("\t") as [string, string];
-            return { filename, status: status === "A" ? "added" : "modified" };
+            // GitHub's `patch`: the file's diff from its first hunk.
+            const diff = git(this.origin, ["diff", `refs/heads/${p.base}...refs/heads/${p.branch}`, "--", filename]);
+            const at = diff.indexOf("\n@@");
+            const patch = at < 0 ? undefined : diff.slice(at + 1);
+            return { filename, status: status === "A" ? "added" : status === "D" ? "removed" : "modified", ...(patch === undefined ? {} : { patch }) };
           }),
       );
     }
@@ -566,6 +570,8 @@ export class FakeHost implements TrainHost {
   /** The commands the train ran on a node, each its argv. */
   readonly nodeRuns: string[][] = [];
   wsClosed = false;
+  /** The bot's Who merges and risk rules; undefined: the host has none to give, and fleetd merges. */
+  who: { merges: Merger; rules: RiskRules } | undefined;
   private listeners: (() => void)[] = [];
 
   eventsOf(type: string): any[] {
@@ -644,6 +650,9 @@ export class FakeHost implements TrainHost {
   }
   async wakeLead(_r: ProjectRef, line: string) {
     this.wakes.push(line);
+  }
+  whoMerges(): { merges: Merger; rules: RiskRules } {
+    return this.who ?? { merges: "fleetd", rules: { itself: [], person: [] } };
   }
   tellPerson(_r: ProjectRef, text: string) {
     this.told.push(text);
