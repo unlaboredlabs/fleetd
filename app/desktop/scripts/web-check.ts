@@ -16,24 +16,23 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
 
 /**
  * The first load's budget, gzip (level 9) of every file index.html names: 641 KB / 47 files when set (W701), down from
- * 827 KB / 50 files in 3-4 waves. A change that needs more moves what the first chat doesn't draw out of it (a chunk
+ * 827 KB / 50 files in 3-4 waves; 613 KB / 34 once the side panel loaded after the chat (W793). A change that needs more moves what the first chat doesn't draw out of it (a chunk
  * loaded on use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
  */
-const FIRST_LOAD_KB = 660;
-const FIRST_LOAD_FILES = 50;
+const FIRST_LOAD_KB = 630;
+const FIRST_LOAD_FILES = 40;
 /** Chunks and files that load on use or once the chat has shown, never with the first load. */
 const NOT_FIRST: ReadonlyArray<readonly [RegExp, string]> = [
   [/^Settings(Screen|Sheet)-/u, "Settings, loaded once the chat has shown"],
   [/^(core|engine-javascript|typescript|tsx|javascript)-/u, "Shiki, loaded once the chat has painted"],
   [/^libsodium/u, "libsodium, loaded on the first secret"],
+  [/^(ProjectPanel|panes|ChecklistPane)-[\w-]+\.js$/u, "the side panel, loaded once the chat has shown"],
   [/-more-[\w-]+\.woff2$/u, "a font's extended half, loaded when the text uses it"],
 ];
 /** What the first chat draws, loaded by import(): named in index.html, or it comes a wave (a round trip) later. */
 const FIRST: ReadonlyArray<readonly [RegExp, string]> = [
   [/^main-[\w-]+\.js$/u, "the app"],
   [/^MarkdownBody-[\w-]+\.js$/u, "the messages' markdown"],
-  [/^ProjectPanel-[\w-]+\.js$/u, "the panel"],
-  [/^panes-[\w-]+\.js$/u, "the panel's panes"],
   [/^Geist-Regular-latin-[\w-]+\.woff2$/u, "the text's font"],
 ];
 

@@ -7,6 +7,8 @@
 // reads from the hub. Its way in is the chat's pill at the top row's start (no panel icon), ⌥⌘B and the View menu.
 import { createContext, lazy, memo, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { Boundary } from "../../src/Boundary";
+import { onWeb } from "../../src/web";
+import { useShownYet } from "../../ui";
 import { navigate } from "./navigation";
 import { ResizeEdge } from "./ResizeEdge";
 import { shownWidth, usePanelWidths, useWindowWidth, widthBounds, type PanelMode } from "./panelWidth";
@@ -17,6 +19,14 @@ import s from "./shell.module.css";
 const ProjectPanel = memo(lazy(() => import("../panel/ProjectPanel").then((m) => ({ default: m.ProjectPanel }))));
 
 export const PANEL_LABEL = "Bot panel";
+
+/**
+ * On the web the panel's code is asked for once the chat has shown (its rows, or its error), or after this long, a
+ * backstop only: on a slow link the chat takes many seconds, and the panel's code would otherwise share the link with
+ * it. Its slot, at its width, is there from the start, so it fills in place. The desktop reads its files from disk and
+ * loads it at once.
+ */
+export const PANEL_AFTER_CHAT_MAX_MS = 60_000;
 
 export interface ProjectPanelState {
   /** The project on screen; the panel is only ever beside a project's chat. */
@@ -72,6 +82,9 @@ export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; side
   const [widths, setWidth] = usePanelWidths();
   const bounds = widthBounds(mode, useWindowWidth(), sidebarPx);
   const width = shownWidth(widths[mode], bounds);
+  const chatFirst = onWeb();
+  const after = useShownYet(PANEL_AFTER_CHAT_MAX_MS);
+  const load = !chatFirst || after;
 
   if (!shown || project === null) return null;
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
@@ -101,7 +114,7 @@ export function PanelSlot({ panel, sidebarPx }: { panel: ProjectPanelState; side
     >
       <Boundary key="panel" part="the panel">
         <Suspense fallback={<div className={s.panelLoading} aria-busy="true" />}>
-          <ProjectPanel project={project} view={view} onWide={setWide} />
+          {load ? <ProjectPanel project={project} view={view} onWide={setWide} /> : <div className={s.panelLoading} aria-busy="true" />}
         </Suspense>
       </Boundary>
       {/* After the panel: its tab row is a drag box, and Electron takes app-region boxes in document order, so an edge
