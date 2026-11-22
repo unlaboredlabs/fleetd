@@ -44,7 +44,7 @@ test("the history read and the mirror skip a reply that is only a made-up turn a
   const out = leadMessages("lead-1", [
     { id: "a", role: "assistant", text: FAKE, createdAt: at },
     { id: "b", role: "assistant", text: `No such page.\n\n${FAKE}`, createdAt: at },
-  ]);
+  ], new Set());
   expect(out.map((m) => [m.source, m.text])).toEqual([["lead:lead-1:b", "No such page."]]);
 });
 
@@ -63,7 +63,7 @@ async function lead() {
 /** The lead's session holding `text` as its turn's reply, said now, and the mirror that lands it. */
 function holds(t: Awaited<ReturnType<typeof lead>>, text: string) {
   const reply = { id: "a", role: "assistant", text, createdAt: new Date(t.clock.ms).toISOString() };
-  Object.assign(executors(t.hub).views, { messages: async () => [reply] });
+  Object.assign(executors(t.hub).views, { messages: async () => [reply], runs: async () => [] });
   return () => mirror(t.hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
 }
 
@@ -111,7 +111,7 @@ test("a made-up turn the mirror lands once its run ended wakes the lead once, an
   const thread = { machineId: PROJECT.machineId, threadId: "lead-1" };
   clock.ms += 1000;
   const reply = { id: "a", role: "assistant", text: FAKE, createdAt: new Date(clock.ms).toISOString() };
-  Object.assign(executors(hub).views, { messages: async () => [reply] });
+  Object.assign(executors(hub).views, { messages: async () => [reply], runs: async () => [] });
   await mirror(hub, PROJECT, thread);
   await mirror(hub, PROJECT, thread);
   expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toBeUndefined();
@@ -121,7 +121,7 @@ test("a made-up turn the mirror lands once its run ended wakes the lead once, an
   const later = await lead();
   later.hub.db.conn.run("UPDATE leads SET last_wake_at = ?1", [new Date(clock.ms).toISOString()]);
   later.clock.ms = clock.ms + 1000;
-  Object.assign(executors(later.hub).views, { messages: async () => [reply] });
+  Object.assign(executors(later.hub).views, { messages: async () => [reply], runs: async () => [] });
   await mirror(later.hub, PROJECT, thread);
   expect(later.woken).toEqual([]);
   later.done();

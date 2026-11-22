@@ -155,10 +155,14 @@ export function turnTexts(messages: ThreadMessage[]): ThreadMessage[] {
 }
 
 /**
- * The lead's own words from its session, before the chat: each turn's message (turnTexts), but none of `skip`'s, a run
- * still going or one that was stopped, whose last text so far may be narration.
+ * The lead's own words from its session, before the chat: each turn's message (turnTexts), of the runs in `completed`
+ * only. A run still going, stopped or failed posts none, ever: its last text so far may be narration before a tool call.
  */
-export const leadMessages = (threadId: string, messages: ThreadMessage[], skip?: string): NewMessage[] =>
+export const leadMessages = (threadId: string, messages: ThreadMessage[], completed: ReadonlySet<string>): NewMessage[] =>
   turnTexts(messages)
-    .filter((m) => (skip === undefined || m.runId !== skip) && said(m.text))
+    .filter((m) => (m.runId === undefined || completed.has(m.runId)) && said(m.text))
     .map((m) => entry("lead", "lead_message", leadSource(threadId, m.id), leadText(m.text), parseMs(m.createdAt) ?? 0));
+
+/** The ids of the runs that completed, for leadMessages. */
+export const completedRuns = (runs: { id: string; status: string }[]): ReadonlySet<string> =>
+  new Set(runs.filter((r) => r.status === "completed").map((r) => r.id));

@@ -889,12 +889,18 @@ export class Chat {
 
   /**
    * Flags the message `source` names once it lands, for a reply the lead nudged before the chat had it. A lead's thread
-   * (`leadSource(thread, "")`) names its turn's message, the next of that thread's to land.
+   * (`leadSource(thread, "")`) names its turn's message, the next of that thread's to land: that one waits as long as
+   * the turn runs, however long, and goes as it ends (flow's `mirror`).
    */
   nudgeOnLanding(source: string, reason: string): void {
     const now = this.now();
-    for (const [k, [, at]] of this.pendingNudges) if (now - at >= PENDING_MS) this.pendingNudges.delete(k);
+    for (const [k, [, at]] of this.pendingNudges) if (!this.waits(k, at, now)) this.pendingNudges.delete(k);
     this.pendingNudges.set(source, [reason, now]);
+  }
+
+  /** A pending nudge still waits: a turn's, or one younger than PENDING_MS. */
+  private waits(key: string, at: number, now: number): boolean {
+    return key.endsWith(":") || now - at < PENDING_MS;
   }
 
   /** A nudge waiting on `source` that will never land. */
@@ -912,7 +918,7 @@ export class Chat {
       if (key === undefined || waited !== undefined) continue;
       const pending = this.pendingNudges.get(key);
       this.pendingNudges.delete(key);
-      if (pending && now - pending[1] < PENDING_MS) waited = pending[0];
+      if (pending && this.waits(key, pending[1], now)) waited = pending[0];
     }
     const reason = nudge ?? waited;
     if (reason === undefined) return;

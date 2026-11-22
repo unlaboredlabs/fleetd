@@ -36,7 +36,7 @@ test("the history read and the mirror take a reply's (quiet) line out, and skip 
     { id: "a", role: "assistant", text: "Still running, T4725 gets woken when it ends.\n\n(quiet)", createdAt: at },
     { id: "b", role: "assistant", text: "  (quiet)\n", createdAt: at },
     { id: "c", role: "assistant", text: `Quoted:\n\n${FENCE}\n(quiet)\n${FENCE}`, createdAt: at },
-  ]);
+  ], new Set());
   expect(out.map((m) => [m.source, m.text])).toEqual([
     ["lead:lead-1:a", "Still running, T4725 gets woken when it ends."],
     ["lead:lead-1:c", `Quoted:\n\n${FENCE}\n(quiet)\n${FENCE}`],
@@ -48,7 +48,10 @@ async function lead(messages: ThreadMessage[]) {
   const t = testHub();
   leads(t.hub).records.leadPut({ projectRef: PROJECT, threadId: "lead-1", startedAt: "2026-11-08T10:00:00Z", sessionGeneration: 1 });
   await chat(t.hub).readHistory(PROJECT, () => []);
-  Object.assign(executors(t.hub).views, { messages: async () => messages });
+  Object.assign(executors(t.hub).views, {
+    messages: async () => messages,
+    runs: async () => messages.flatMap((m) => (m.runId ? [{ id: m.runId, status: "completed" }] : [])),
+  });
   const land = () => mirror(t.hub, PROJECT, { machineId: PROJECT.machineId, threadId: "lead-1" });
   return { ...t, land };
 }

@@ -21,6 +21,7 @@ import type {
   ThreadRef,
 } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { runActive } from "../../shared/sessions.ts";
 import { zone } from "../attention/index.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Hub } from "../api/hub.ts";
@@ -47,7 +48,7 @@ import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, turnTexts } from "./history.ts";
+import { completedRuns, leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, type ThreadMessage } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
 import { humanAbout, settleEnded, tagsOn } from "./tags.ts";
 import { unshown as unshownBlocks } from "./parts.ts";
@@ -77,17 +78,6 @@ const midTurn = (hub: Hub, thread: ThreadRef) => {
   const status = store(hub).threadGet(thread)?.thread.status;
   return status === "running" || status === "waiting";
 };
-
-/**
- * The lead's run that has no message to post yet or ever: the one still going, or its last one when that ended
- * stopped or failed. Either one's last text so far may be narration before a tool call, never its turn's message.
- */
-function unfinishedRun(hub: Hub, thread: ThreadRef): string | undefined {
-  const t = store(hub).threadGet(thread);
-  if (!t) return undefined;
-  const going = t.thread.status === "running" || t.thread.status === "waiting";
-  return going || (t.lastRunStatus !== undefined && t.lastRunStatus !== "completed") ? t.lastRunId : undefined;
-}
 
 /**
  * Whether the project's lead is mid-turn, as its thread last said. A prompt holds the turn, not ends it: when the hub
@@ -147,13 +137,17 @@ async function past(hub: Hub, r: ProjectRef): Promise<NewMessage[]> {
   }
   const thread = leadThread(hub, r);
   if (thread) {
-    const messages = await within(
-      executors(hub).views.messages(thread).catch(() => undefined),
-      LEAD_READ_WAIT_MS,
-    );
-    if (messages) out.push(...leadMessages(thread.threadId, messages, unfinishedRun(hub, thread)));
+    const read = await within(turnsOf(hub, thread), LEAD_READ_WAIT_MS);
+    if (read) out.push(...leadMessages(thread.threadId, read.messages, read.completed));
   }
   return out;
+}
+
+/** The lead session's messages and the runs that completed, the ones whose last text posts; undefined unread. */
+async function turnsOf(hub: Hub, thread: ThreadRef): Promise<{ messages: ThreadMessage[]; completed: ReadonlySet<string>; going: boolean } | undefined> {
+  const views = executors(hub).views;
+  const [messages, runs] = await Promise.all([views.messages(thread), views.runs(thread)]).catch(() => [undefined, undefined]);
+  return messages && runs ? { messages, completed: completedRuns(runs), going: runs.some((r) => runActive(r.status)) } : undefined;
 }
 
 /** Reads the project's past into its chat, once. */
@@ -645,12 +639,11 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
     console.warn("chat: history not read:", error);
     return false;
   }
-  const messages = await executors(hub)
-    .views.messages(thread)
-    .catch(() => undefined);
+  const read = await turnsOf(hub, thread);
+  const messages = read?.messages;
   const c = chat(hub);
   const since = c.historyMs(r) ?? 0;
-  for (const m of leadMessages(thread.threadId, messages ?? [], unfinishedRun(hub, thread))) {
+  for (const m of leadMessages(thread.threadId, messages ?? [], read?.completed ?? new Set())) {
     try {
       const existing = c.bySource(r, m.source ?? "");
       if (existing) {
@@ -671,9 +664,9 @@ export async function mirror(hub: Hub, r: ProjectRef, thread: ThreadRef): Promis
     const at = parseMs(m.createdAt);
     if (m.role === "assistant" && at !== undefined && at >= since) madeUp(hub, r, leadSource(thread.threadId, m.id), m.text, at);
   }
+  // A nudge of a turn that posted nothing flags no later turn's message.
+  if (read && !read.going) c.dropNudge(leadSource(thread.threadId, ""));
   if (runOver(hub, thread)) {
-    // A nudge of a turn that posted nothing flags no later turn's message.
-    c.dropNudge(leadSource(thread.threadId, ""));
     for (const cut of c.streamingFrom(r, leadSource(thread.threadId, ""))) {
       try {
         c.finish(cut, leadText(cut.text));

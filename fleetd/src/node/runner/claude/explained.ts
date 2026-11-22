@@ -150,7 +150,11 @@ export const WORKER_ENV_WHY: Why<readonly [string, string]> = [
   ],
 ];
 
-/** Set for a lead, with or without repos; also in its settings overlay. */
+/**
+ * Set for a lead, with or without repos; also in its settings overlay. claude (2.1.302 to 2.1.314) reads
+ * CLAUDE_CODE_SILENT_TURN_REMINDER as on, off or unset: "0", "false", "no" and "off" are off, and set it wins over
+ * claude's own default for the reminder.
+ */
 export const LEAD_ENV_WHY: Why<readonly [string, string]> = [
   [
     ["CLAUDE_CODE_SILENT_TURN_REMINDER", "0"],
