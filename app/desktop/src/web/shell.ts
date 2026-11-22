@@ -127,6 +127,17 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   const ids = teamHubIds(session.teams.map((t) => t.id));
   for (const team of session.teams) teams.set(ids.get(team.id) ?? teamHubId(team.id), team);
   let names = readNames(deps.storage);
+  // Skip for now pressed on another device: this browser's Get started (start/kept.ts) knows it before the app starts.
+  for (const team of session.teams) {
+    if (team.later !== true) continue;
+    const key = `fleetd.start.${ids.get(team.id) ?? teamHubId(team.id)}`;
+    try {
+      const was: unknown = JSON.parse(deps.storage.getItem(key) ?? "{}");
+      deps.storage.setItem(key, JSON.stringify({ ...(typeof was === "object" && was !== null ? was : {}), later: true }));
+    } catch {
+      // A storage that keeps nothing shows Get started once more: nothing else is lost.
+    }
+  }
   const cache = webCache(deps.storage, session.email, session.teams.map((t) => t.id));
   const entries = (): readonly HubEntry[] =>
     [...teams].map(([id, team]) => {
@@ -382,6 +393,10 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       billingOpen: (hub, what) => {
         const team = keyed(hub);
         return team === null ? Promise.resolve(notTeam) : openBilling(teamFetch, team, what, (url) => Promise.resolve(deps.go(url)));
+      },
+      startLater: async (hub) => {
+        const team = teams.get(hub);
+        if (team !== undefined) await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/start"), { json: {} });
       },
       billingCap: (hub, capCents) => {
         const team = keyed(hub);

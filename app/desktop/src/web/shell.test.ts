@@ -226,6 +226,16 @@ describe("the web shell", () => {
     expect(JSON.parse(stored.get("fleetd.web.teams") ?? "{}")).toEqual({ [team]: { color: "green" } });
   });
 
+  it("knows a Skip for now pressed on another device before the app starts, and sends this one's to the team", async () => {
+    const team = SESSION.teams[0]?.id ?? "";
+    const stored = new Map<string, string>();
+    const { api, calls } = setup(undefined, { ...SESSION, teams: SESSION.teams.map((t, i) => (i === 0 ? { ...t, later: true as const } : t)) }, stored);
+    expect(JSON.parse(stored.get(`fleetd.start.${ACME}`) ?? "{}")).toEqual({ later: true });
+    expect(stored.has("fleetd.start.9a8b7c6d00004000")).toBe(false);
+    await api.cloud.startLater?.(ACME);
+    expect(calls.find((c) => c.path === `/t/${team}/accounts/v1/start`)?.init?.method).toBe("POST");
+  });
+
   it("keeps two teams whose ids begin alike as two hubs, each with its own socket", () => {
     const twins: WebSession = {
       ...SESSION,

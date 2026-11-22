@@ -16,7 +16,7 @@ export const WEB_HEADER = { "x-fleetd-web": "1" } as const;
 
 const CALL_TIMEOUT_MS = 20_000;
 
-const Team = z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(100), url: z.string().min(1).max(300) });
+const Team = z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(100), url: z.string().min(1).max(300), later: z.literal(true).optional() });
 export type WebTeam = z.infer<typeof Team>;
 const Invitation = z.object({ name: z.string().min(1).max(100), invitedBy: z.string().max(320), role: z.string().max(32), accept: z.string().min(1).max(200) });
 export type WebInvitation = z.infer<typeof Invitation>;

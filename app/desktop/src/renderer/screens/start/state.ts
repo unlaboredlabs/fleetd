@@ -503,6 +503,8 @@ export function useStart(
     },
     onSkip: () => {
       writeKept(hub.id, { later: true });
+      // Kept with the person too, so another browser or device doesn't open on Get started again.
+      void window.fleetd.cloud.startLater?.(hub.id);
       navigate({ id: "home", at: hub.id });
     },
   };

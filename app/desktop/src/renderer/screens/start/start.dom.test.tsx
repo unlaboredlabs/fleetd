@@ -91,6 +91,7 @@ const shell = {
   connectGithub: vi.fn(() => Promise.resolve({ ok: true as const })),
   openExternal: vi.fn(() => Promise.resolve({ ok: true as const })),
   billing: vi.fn(() => Promise.resolve({ ok: true as const, billing })),
+  startLater: vi.fn(() => Promise.resolve()),
 };
 
 const render = async (team: Team, at: "start" | "first-run" = "start") => {
@@ -553,6 +554,14 @@ it("a teammate's page: the team's bots first, their own GitHub one row under the
   });
   expect(window.location.hash).toContain("devbox");
   expect(window.location.hash).toContain("bill");
+  stop();
+});
+
+it("Skip for now is kept in this browser and with the person, for their other devices", async () => {
+  const stop = await render({});
+  await click("Skip for now");
+  expect(readKept("sam").later).toBe(true);
+  expect(shell.startLater).toHaveBeenCalledWith("sam");
   stop();
 });
 

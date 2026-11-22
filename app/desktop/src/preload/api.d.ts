@@ -202,6 +202,8 @@ export interface FleetdApi {
     billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
     /** Sets a cloud team's monthly spend cap in cents, null for none. Never rejects. */
     billingCap(hub: HubId, capCents: number | null): Promise<BillingCapOutcome>;
+    /** Skip for now on a cloud team's Get started, kept with the person on every device; the web app's alone. Never rejects. */
+    startLater?(hub: HubId): Promise<void>;
     /** The repositories fleetd's GitHub App reaches for a cloud team, for Get started's picker; the web app's alone for now. Never rejects. */
     githubRepos(hub: HubId): Promise<GithubReposOutcome>;
     /**
