@@ -65,7 +65,7 @@ function whose(hub: Hub, caller: LeadCaller, scope: MemoryScope): PersonId | und
 
 export function answer(hub: Hub, caller: LeadCaller, call: LeadCall): Record<string, unknown> {
   const r = caller.projectRef;
-  const memory = Memory.of(hub);
+  const memory = Memory.of(hub, caller.agent.kind === "memory_refresh" ? caller.agent.person : undefined);
   if (call.op === "remember") {
     const scope = scopeOf(call);
     if (!entryOk(call.text)) throw invalid("remember call: text is one line of 1 to 1000 characters");

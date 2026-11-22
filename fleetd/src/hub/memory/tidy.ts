@@ -168,7 +168,10 @@ function chatOf(hub: Hub, r: ProjectRef, person: PersonId, only: boolean, waterm
   return [`${cut > 0 ? `(${cut} older messages left out.)\n` : ""}${lines.join("\n")}`, readTo];
 }
 
-/** The bot to run `person`'s tidy on: the one they wrote in last that can hold the session now. */
+/**
+ * The bot to run `person`'s tidy on, whose chat gets its line: of the bots they wrote in where nobody else did (their
+ * entries are theirs alone, D212), the one they wrote in last that can hold the session now.
+ */
 function host(hub: Hub, person: PersonId, bots: Bot[], only: boolean): Bot | undefined {
   const last = new Map<string, number>();
   const rows = hub.db.all<{ machine_id: string; project_id: string; seq: number }>(
@@ -179,9 +182,20 @@ function host(hub: Hub, person: PersonId, bots: Bot[], only: boolean): Bot | und
     [person, only ? 1 : 0],
   );
   for (const row of rows) last.set(botKey({ machineId: row.machine_id, projectId: row.project_id }), row.seq);
+  const shared = new Set(
+    hub.db
+      .all<{ machine_id: string; project_id: string }>(
+        `SELECT DISTINCT machine_id, project_id FROM chat_messages
+         WHERE held = 0 AND json_extract(data, '$.author') = 'human'
+           AND (json_extract(data, '$.person.personId') IS NOT ?1 AND NOT (?2 = 1 AND json_extract(data, '$.person') IS NULL))`,
+        [person, only ? 1 : 0],
+      )
+      .map((row) => botKey({ machineId: row.machine_id, projectId: row.project_id })),
+  );
   const ports = refreshPorts(hub);
-  return [...bots]
-    .sort((a, b) => (last.get(botKey(b.r)) ?? -1) - (last.get(botKey(a.r)) ?? -1))
+  return bots
+    .filter((b) => last.has(botKey(b.r)) && !shared.has(botKey(b.r)))
+    .sort((a, b) => (last.get(botKey(b.r)) as number) - (last.get(botKey(a.r)) as number))
     .find((b) => ports.can(b.r.machineId, CAP_ALLOWED_ONLY) && held(hub, b.r) === undefined);
 }
 
@@ -232,7 +246,7 @@ async function start(hub: Hub, launcher: Launcher, person: PersonId, t: Tidy, bo
     console.warn(`memory tidy of ${name}: not started:`, (error as Error).message);
     return failed(`It didn't start: ${(error as Error).message}`);
   }
-  Object.assign(t, { host: on.r, threadId, startedMs: now, trigger, readTo, items: [], before });
+  Object.assign(t, { host: on.r, threadId, startedMs: now, trigger, readTo, items: [], before, outside: false });
   t.lastRun = outcome(now, trigger, "running", []);
   putTidy(hub.db, person, t);
   return true;
@@ -246,10 +260,12 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
   const started = t.startedMs ?? hub.clock.now();
   const trigger = t.trigger ?? "schedule";
   const after: Snapshot = Memory.of(hub).snapshot(person);
-  if (items.length > 0) {
+  // A bot erased while it ran gets no line; the changes stay, and Settings shows them.
+  if (items.length > 0 && store(hub).projectGet(t.host)) {
     const { message } = chat(hub).add(t.host, { author: "system", text: refreshedSummary(items), memoryRefreshed: listed(items) });
     putLineItems(hub.db, t.host, message.messageId, items);
-    putLineSnapshot(hub.db, message.messageId, { person, before: t.before ?? {}, after });
+    // Undo all restores the files exactly only when the tidy alone wrote them meanwhile; else it goes item by item.
+    if (t.outside !== true) putLineSnapshot(hub.db, message.messageId, { person, before: t.before ?? {}, after });
     t.messageId = message.messageId;
   }
   if (completed && t.readTo !== undefined) {
@@ -259,7 +275,7 @@ export function finish(hub: Hub, person: PersonId, completed: boolean): void {
   t.lastRun = completed
     ? outcome(started, trigger, "done", items)
     : outcome(started, trigger, "failed", items, "It failed or ran past its hour, and was stopped; the next one reads the same chat again.");
-  for (const k of ["host", "threadId", "startedMs", "trigger", "readTo", "before"] as const) delete t[k];
+  for (const k of ["host", "threadId", "startedMs", "trigger", "readTo", "before", "outside"] as const) delete t[k];
   t.items = [];
   putTidy(hub.db, person, t);
 }

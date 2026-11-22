@@ -24,6 +24,8 @@ export type Tidy = {
   readTo?: Record<string, number>;
   /** What the running tidy changed so far. */
   items: RememberedItem[];
+  /** Whether anything but the running tidy wrote the person's memory while it ran: Undo all then can't restore `before`. */
+  outside?: boolean;
   /** The person's files as the running tidy found them. */
   before?: Snapshot;
   /** `snapshotKey` of the files as the last tidy left them. */
@@ -44,6 +46,7 @@ type Row = {
   trigger: string | null;
   read_to: string | null;
   items: string;
+  outside: number;
   before: string | null;
   seen: string | null;
   last_run: string | null;
@@ -71,6 +74,7 @@ export function getTidy(db: HubDb, person: PersonId): Tidy {
   if (row.trigger !== null) t.trigger = row.trigger;
   const readTo = parseOr<Record<string, number> | undefined>(row.read_to, undefined);
   if (readTo) t.readTo = readTo;
+  if (row.outside === 1) t.outside = true;
   const before = parseOr<Snapshot | undefined>(row.before, undefined);
   if (before) t.before = before;
   if (row.seen !== null) t.seen = row.seen;
@@ -85,12 +89,12 @@ export function putTidy(db: HubDb, person: PersonId, t: Tidy): void {
   db.conn
     .query(
       `INSERT INTO memory_tidies (person_id, watermarks, night_ms, due_ms, host_machine, host_project, thread_id,
-         started_ms, trigger, read_to, items, before, seen, last_run, message_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         started_ms, trigger, read_to, items, outside, before, seen, last_run, message_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (person_id) DO UPDATE SET watermarks = excluded.watermarks, night_ms = excluded.night_ms,
          due_ms = excluded.due_ms, host_machine = excluded.host_machine, host_project = excluded.host_project,
          thread_id = excluded.thread_id, started_ms = excluded.started_ms, trigger = excluded.trigger,
-         read_to = excluded.read_to, items = excluded.items, before = excluded.before, seen = excluded.seen,
+         read_to = excluded.read_to, items = excluded.items, outside = excluded.outside, before = excluded.before, seen = excluded.seen,
          last_run = excluded.last_run, message_id = excluded.message_id`,
     )
     .run(
@@ -105,6 +109,7 @@ export function putTidy(db: HubDb, person: PersonId, t: Tidy): void {
       t.trigger ?? null,
       json(t.readTo),
       JSON.stringify(t.items),
+      t.outside === true ? 1 : 0,
       json(t.before),
       t.seen ?? null,
       json(t.lastRun),
@@ -123,6 +128,11 @@ export function askTidy(db: HubDb, person: PersonId, nowMs: number): void {
        ON CONFLICT (person_id) DO UPDATE SET due_ms = ?2 WHERE thread_id IS NULL AND due_ms IS NULL`,
     )
     .run(person, nowMs);
+}
+
+/** Something other than `person`'s running tidy wrote their memory: Undo all of its line goes item by item. */
+export function noteOutsideWrite(db: HubDb, person: PersonId): void {
+  db.conn.query("UPDATE memory_tidies SET outside = 1 WHERE person_id = ? AND thread_id IS NOT NULL").run(person);
 }
 
 /** Whose running tidy is in `thread`, and the bot it runs on: its calls are held to that person's memory. */

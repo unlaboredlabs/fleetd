@@ -17,8 +17,9 @@ import { checkCall } from "../src/hub/lead_calls/policy.ts";
 import type { LaunchInput } from "../src/hub/executor/sessions.ts";
 import type { LeadCall } from "../src/hub/leads/seams.ts";
 import { events } from "../src/hub/store/events.ts";
+import { store } from "../src/hub/store/hub_store.ts";
 import { isoMs } from "../src/hub/store/time.ts";
-import type { ChatMessage } from "../src/shared/contracts.ts";
+import type { ChatMessage, ProjectSummary } from "../src/shared/contracts.ts";
 import { CAP_ALLOWED_ONLY } from "../src/shared/node_link.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -153,21 +154,40 @@ test("a write past the core's cap lands, and starts a tidy a minute later instea
   expect(() => leadCall(hub, "remember", { scope: "project", text: "One more." })).toThrow("past its cap");
 });
 
-test("the night's tidy runs after the bots' refreshes and reads the person's whole memory and own words", async () => {
-  const { hub, launches } = setup(true);
+test("the night's tidy runs after the bots' refreshes, in the person's own bot, and reads their whole memory and own words", async () => {
+  const { hub, clock, launches } = setup(true);
+  // Ada's own bot, where nobody else writes; Shop is shared with Ben.
+  const NOTES = { machineId: PROJECT.machineId, projectId: "p2" };
+  store(hub).projectsUpsertMany(PROJECT.machineId, [
+    { ...NOTES, title: "Notes", workspaceRoot: "/srv/notes", lastActivityAt: isoMs(clock.ms), threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as unknown as ProjectSummary,
+  ]);
   put(hub, "- Keep answers short.\n- Use npm.\n- Prefers tabs.\n- [site](site.md)\n");
   put(hub, "- Bold type, one kinetic moment.\n", "site");
+  chat(hub).add(NOTES, { author: "human", text: "Notes for me.", person: ADA });
   says(hub, ADA, "No npm, pnpm only.");
   chat(hub).add(PROJECT, { author: "lead", text: "Got it, pnpm." });
   says(hub, BEN, "I like npm, Ben here.");
-  const input = await toTheTidy(hub, launches);
+  // Each bot's refresh first, a minute apart; only then Ada's tidy.
+  for (let i = 0; i < 2; i++) {
+    await refreshTick(hub);
+    await tick(hub);
+    clock.ms += 60_000;
+  }
+  expect(launches.map((l) => l.title).sort()).toEqual(["fleetd memory refresh: Notes", "fleetd memory refresh: Shop"]);
+  complete(hub, "session-1");
+  events(hub).append({ at: isoMs(hub.clock.now()), type: "thread.completed", machineId: NOTES.machineId, projectId: NOTES.projectId, threadId: "session-2", summary: "completed", data: { threadId: "session-2" } });
+  await refreshTick(hub);
+  await tick(hub);
+  expect(launches.length).toBe(3);
+  const input = launches[2]!;
   expect(input.title).toBe("fleetd memory tidy: Ada");
+  expect(input.projectId).toBe("p2");
   expect(input.prompt).toContain("tidying Ada's own memory");
   expect(input.prompt).toContain("Remove a rule because it didn't come up lately");
   expect(input.prompt).toContain("### user.md (core)\n- Keep answers short.");
   expect(input.prompt).toContain("### site.md (topic site)\n- Bold type, one kinetic moment.");
   expect(input.prompt).toContain("### Shop\nHuman: No npm, pnpm only.");
-  // Ben wrote there too: his words, and the lead's answers, stay out of Ada's tidy.
+  // Ben wrote in Shop too: his words, and the lead's answers there, stay out of Ada's tidy.
   expect(input.prompt).not.toContain("Ben here");
   expect(input.prompt).not.toContain("Got it, pnpm.");
 
@@ -180,17 +200,30 @@ test("the night's tidy runs after the bots' refreshes and reads the person's who
   // Nothing goes to the chat until it ends.
   expect(refreshedLines(hub)).toEqual([]);
 
-  complete(hub, "session-2");
+  events(hub).append({ at: isoMs(hub.clock.now()), type: "thread.completed", machineId: NOTES.machineId, projectId: NOTES.projectId, threadId: "session-3", summary: "completed", data: { threadId: "session-3" } });
   await tick(hub);
   const line = refreshedLines(hub);
-  expect(line.map((m) => m.text)).toEqual(["Memory refreshed: +1 ~1 −1"]);
+  expect(line.map((m) => [m.text, m.projectRef.projectId])).toEqual([["Memory refreshed: +1 ~1 −1", "p2"]]);
   expect(line[0]!.memoryRefreshed!.items.every((i) => i.person === ADA.personId)).toBe(true);
   expect(getTidy(hub.db, ADA.personId).lastRun).toMatchObject({ state: "done", trigger: "schedule", added: 1, replaced: 1, removed: 1 });
-  // Ben's memory had nothing; his night is a session of its own, never Ada's.
+  // Ben wrote only in a bot Ada shares: his tidy has no bot of his own to run in, and never posts in another's chat.
+  await tick(hub);
   expect(launches.length).toBe(3);
-  expect(launches[2]!.title).toBe("fleetd memory tidy: Ben");
-  expect(launches[2]!.prompt).toContain("Human: I like npm, Ben here.");
-  expect(launches[2]!.prompt).not.toContain("No npm, pnpm only.");
+});
+
+test("Undo all of a tidy goes item by item when something else wrote the memory while it ran, and keeps that", async () => {
+  const { hub, launches, tool } = setup();
+  put(hub, "- Use npm.\n- Prefers tabs.\n");
+  says(hub, ADA, "pnpm, not npm.");
+  await toTheTidy(hub, launches);
+  tidyCall(hub, "remember", { scope: "user", text: "pnpm, never npm.", replaces: "Use npm." });
+  // Meanwhile a lead remembers a rule for Ada in her chat.
+  leadCall(hub, "remember", { scope: "user", text: "Short commits." });
+  complete(hub, "session-2");
+  await tick(hub);
+  const line = tool("memory_get", {}).tidied as ChatMessage;
+  tool("memory_undo", { projectRef: PROJECT, messageId: line.messageId });
+  expect(mine(hub)).toBe("- Use npm.\n- Prefers tabs.\n- Short commits.\n");
 });
 
 test("the per-bot refresh still only adds to user memory; the tidy may replace and remove", () => {

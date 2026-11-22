@@ -25,7 +25,7 @@ import { isoMs } from "../store/time.ts";
 import { redact } from "./redact.ts";
 import { CAP_MIN, coreOf, DEFAULT_CAPS, FILE_CAP_MAX, type ForgetCall, INDEX_FILE, isTopic, linesOf, nameOf, PEOPLE_DIR, PROJECT_CAP_MAX, projectDirName, projectTarget, type RememberCall, scopeOf, SHARED_TOPICS_DIR, type Target, USER_FILE, userTarget, type You, youTarget } from "./target.ts";
 import type { Snapshot } from "./tidy_rules.ts";
-import { askTidy } from "./tidy_store.ts";
+import { askTidy, noteOutsideWrite } from "./tidy_store.ts";
 
 const MIGRATED_KEY = "user_migrated";
 
@@ -90,12 +90,14 @@ export class Memory {
     private readonly db: HubDb,
     private readonly dir: string | undefined,
     private readonly now: () => number = Date.now,
+    /** The person whose tidy makes these writes, which aren't outside writes to its run. */
+    private readonly tidying?: PersonId,
   ) {
     this.caps = memoryCaps(db);
   }
 
-  static of(hub: Hub): Memory {
-    return new Memory(hub.db, memoryDir(hub), () => hub.clock.now());
+  static of(hub: Hub, tidying?: PersonId): Memory {
+    return new Memory(hub.db, memoryDir(hub), () => hub.clock.now(), tidying);
   }
 
   /** The cap of file `t`: a core's (`user.md`, `MEMORY.md`) or a topic's. */
@@ -187,6 +189,7 @@ export class Memory {
     this.root();
     secretRefusal(text);
     const [len, cap] = [chars(text), this.cap(t)];
+    if (personal(t) && t.person !== this.tidying) noteOutsideWrite(this.db, t.person as PersonId);
     if (len > cap && personal(t)) askTidy(this.db, t.person as PersonId, this.now());
     else if (len > cap) {
       throw invalid(
@@ -385,6 +388,7 @@ export class Memory {
   /** Puts `person`'s own memory back to `files` exactly, as a snapshot took them: a file it lacks goes. */
   restore(person: PersonId, files: Snapshot): void {
     this.root();
+    noteOutsideWrite(this.db, person);
     const names = new Set([...Object.keys(this.snapshot(person)), ...Object.keys(files)]);
     for (const name of names) {
       const t = name === USER_FILE ? userTarget(person) : userTarget(person, name.slice(0, -3));
