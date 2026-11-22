@@ -46,12 +46,11 @@ class FirstFrameVideo implements Video {
 export class DiskDesktopRecordings implements RecordingStore {
   private readonly uploads: Uploads;
 
-  /** `root`: where this kind's recordings are kept; `left`: folders of recordings others left, sent too. */
+  /** `root`: where this kind's recordings are kept. */
   constructor(
     readonly root: string,
     hub: HubCall,
     private readonly ffmpeg: () => string | undefined,
-    private readonly left: string[] = [],
   ) {
     this.uploads = new Uploads(hub, "desktop");
   }
@@ -110,6 +109,5 @@ export class DiskDesktopRecordings implements RecordingStore {
 
   async sweep(live: string[], now: number): Promise<void> {
     await this.uploads.sweep(this.root, live, now);
-    for (const root of this.left) await this.uploads.sweep(root, [], now);
   }
 }
