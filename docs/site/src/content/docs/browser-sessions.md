@@ -57,7 +57,8 @@ once the task is cancelled (its order closed, say), or has stayed done or failed
 the hub ends any screen it left open and the node kills it, wherever it runs. A task waiting between turns (on
 `wait_ci`, or a message from its lead) keeps its screen, and its claude, for the screen's 30 minutes: a next turn
 within them picks the screen up. Any `agent-browser` command counts as use, including one a script runs. When a node
-starts, it kills any Chrome or other process an earlier session left running in its scratch folder.
+starts, it kills any Chrome or other process an earlier session left running in its scratch folder, never one of a
+session that runs on through the restart.
 
 A screen outlives a node restart (an update): its Chrome runs outside the node, and the next node takes it over, the
 agent's browser as it was, signed in, at the same address. This needs Linux with `socat`; elsewhere, and for a
