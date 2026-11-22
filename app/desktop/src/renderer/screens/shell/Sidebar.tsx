@@ -181,6 +181,8 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
   const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(projects, h.id) > 0);
+  // Only fleetd cloud teams here: they are the person's teams, not hubs.
+  const teams = hubs.every((h) => h.cloud === true);
   return (
     <Menu>
       <Tooltip content={off?.why ?? update ?? undefined}>
@@ -193,8 +195,8 @@ function HubSwitcher({ hub: id, projects }: { hub: string; projects: ReadonlyArr
           </button>
         </MenuTrigger>
       </Tooltip>
-      <MenuContent align="start" className={s.hubCard} aria-label="Hubs">
-        <MenuLabel>Hubs</MenuLabel>
+      <MenuContent align="start" className={s.hubCard} aria-label={teams ? "Teams" : "Hubs"}>
+        <MenuLabel>{teams ? "Teams" : "Hubs"}</MenuLabel>
         {hubs.map((h) => (
           <HubScope key={h.id} hub={h}>
             <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(projects, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => showHub(h.id)}>

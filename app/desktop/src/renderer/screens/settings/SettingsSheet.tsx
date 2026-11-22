@@ -292,6 +292,8 @@ function Group({
 /** The sheet's index: its title on the page title's line, a search, then the three groups. */
 function Index() {
   const { you, bots, hub, administers, vault, billing } = useEntries();
+  // A fleetd cloud team is a team to the person, never a hub.
+  const cloud = useHub().cloud === true;
   const [query, setQuery] = useState("");
   const searching = query.trim() !== "";
   const results = searchSettings(query, optionsFor(administers, vault, billing));
@@ -330,7 +332,7 @@ function Index() {
           <Group id="settings-you" label="You" entries={you} />
           <Group id="settings-bots" label="Bots" entries={bots} />
           {hub === null ? null : (
-            <Group id="settings-hub" label="Hub" entries={hub} />
+            <Group id="settings-hub" label={cloud ? "Team" : "Hub"} entries={hub} />
           )}
         </>
       )}
