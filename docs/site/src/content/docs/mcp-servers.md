@@ -19,9 +19,11 @@ In Connections, click **+** beside **Custom MCP** (with none yet, **Add a custom
 | Headers or Environment | Each a name and a value picked from the [vault](/docs/vault): a team login's password or a variable. `Authorization` takes **Bearer** before the value unless you pick **As is**. See [Secrets](#secrets). |
 | Bots | **Every bot** (bots made later too), or the ones you tick. Every agent of a bot that uses it gets it, its lead included. |
 
-**Add and test** saves it and tests it at once; the line under the form says what came back. A server that offers
-OAuth goes to its sign-in first ([Integrations](/docs/integrations#sign-in)), then is tested. Owners and admins add a
-command or headers; anyone adds a URL that signs in.
+**Add and test** saves it and tests it at once; the line under the form says what came back. A URL with no headers
+is asked whether it signs in: one that asks for OAuth (a 401 with a Bearer challenge or resource metadata, as MCP's
+spec has it) goes to its sign-in first ([Integrations](/docs/integrations#sign-in)), then is tested; one that asks no
+one is a plain server, which agents get as it is, and the test line says **no sign-in needed**. Owners and admins add
+a command, headers or a URL that asks no one to sign in; anyone adds a URL that signs in.
 
 A server you saved before Connections, for one bot alone, stays that bot's: its row says which bot, and **Edit** keeps
 it there. A bot's server replaces a global one of the same name in that bot, for every role, even while the bot's
@@ -65,8 +67,8 @@ that server. The list says which machines lack its secrets: save the server agai
 would, and list its tools within 30 seconds. A bot's server is tested on its machine in the bot's checkout; a
 global one on the first machine online. On failure it says why: a command that isn't on the machine's `PATH`, the
 command's error output (secrets masked), an HTTP status such as 401 when a header is wrong, or no answer in time. A
-server given no key that answers 401 and asks for OAuth sign-in says so; a signed-in server whose token it turns away
-has the token renewed and is tested again.
+server given no key that answers 401 and asks for OAuth sign-in says so, and one that answers 401 with no sign-in to
+offer is said to want a key; a signed-in server whose token it turns away has the token renewed and is tested again.
 
 ## On your tailnet {#tailnet}
 

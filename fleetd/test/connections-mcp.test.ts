@@ -156,10 +156,13 @@ test("a URL that signs in is saved signed out with its issuer, before any Test, 
   const out = await set({ scope: team, name: "notion", transport: { type: "http", url: `${oauthService.base}/mcp` } });
   expect(out.server.oauth).toEqual({ status: "signed_out", issuer: `${oauthService.base}/as` });
   expect(names(PROJECT)).toEqual([]);
-  // A team server with no key that nobody signed in to: its Test names it and offers Sign in.
-  await set({ scope: team, name: "linear", transport: { type: "http", url: "http://127.0.0.1:9/mcp" } });
+  // A team server with no key that asks no one to sign in (here, none the hub reaches to ask) is a plain one: agents
+  // get it, and its Test runs on the machine.
+  const plain = await set({ scope: team, name: "linear", transport: { type: "http", url: "http://127.0.0.1:9/mcp" } });
+  expect([plain.server.oauth, plain.server.connectedBy]).toEqual([undefined, undefined]);
+  expect(names(PROJECT)).toEqual(["linear"]);
   const tested = await k.call<{ result: McpTestResult }>(k.ownerDevice, "mcp_server_test", { scope: team, name: "linear", machineId: M });
-  expect(tested.result).toEqual({ tools: [], error: "linear has no key and isn't signed in, so no agent gets it: sign in to it in Connections, or add a key.", signIn: true });
+  expect(tested.result.signIn).toBeUndefined();
   // One with a key of its own isn't asked.
   const keyed = await set({ scope: team, name: "keyed", transport: { type: "http", url: `${oauthService.base}/mcp` }, headers: [{ kind: "plain", name: "X-Api", value: "v" }] });
   expect(keyed.server.oauth).toBeUndefined();

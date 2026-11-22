@@ -111,7 +111,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
   const tested = phase.kind === "tested" ? phase.tested : null;
   const signInWanted = phase.kind === "tested" && needsSignIn(phase.server, phase.tested);
   const works = tested !== null && !("error" in tested) && tested.result.error === undefined && tested.result.signIn !== true;
-  const result = tested === null || signInWanted ? null : testLine(tested, "machineId" in tested ? (machines[tested.machineId]?.name ?? tested.machineId) : "");
+  const result = tested === null || signInWanted ? null : testLine(tested, "machineId" in tested ? (machines[tested.machineId]?.name ?? tested.machineId) : "", phase.kind === "tested" ? phase.server : undefined);
   const busy = phase.kind === "saving" || phase.kind === "testing" || phase.kind === "signin";
   const putValue = (ix: number, value: DraftValue) => change({ values: draft.values.map((v, i) => (i === ix ? value : v)) });
   const setValue = (ix: number, next: Partial<DraftValue>) => change({ values: draft.values.map((v, i) => (i === ix ? { ...v, ...next } : v)) });
@@ -236,7 +236,7 @@ export function CustomForm(props: { editing: McpServer | null; taken: ReadonlyAr
           {signInWanted ? (
             <span className={c.signInLine} role="status">
               <span className={c.line} data-tone="warning">
-                {phase.server.name} wants you to sign in.
+                {phase.server.name} asks you to sign in.
               </span>
               <Button size="sm" variant="primary" onClick={() => setPhase({ kind: "signin", server: phase.server })}>
                 Sign in

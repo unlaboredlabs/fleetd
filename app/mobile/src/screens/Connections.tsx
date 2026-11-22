@@ -215,7 +215,7 @@ function CustomRow({ server, line, tell, reload }: { server: McpServer; line: Li
       haptics.warning();
       return setLine({ text: `Test failed: ${errorWords(out.error)}`, tone: "danger" });
     }
-    const l = connectionTestLine(out.value, machineName(hub.machines, out.value.machineId));
+    const l = connectionTestLine(out.value, machineName(hub.machines, out.value.machineId), server);
     if (l.tone === "success") haptics.success();
     else haptics.warning();
     setLine(l);
@@ -318,7 +318,7 @@ function AddRow({ taken, tell, reload }: { taken: string[]; tell: (name: string,
         return;
       }
       const tested = await test(session, server);
-      const l: Line = tested.ok ? connectionTestLine(tested.value, machineName(hub.machines, tested.value.machineId)) : { text: `Test failed: ${errorWords(tested.error)}`, tone: "danger" };
+      const l: Line = tested.ok ? connectionTestLine(tested.value, machineName(hub.machines, tested.value.machineId), server) : { text: `Test failed: ${errorWords(tested.error)}`, tone: "danger" };
       tell(free, l);
       if (l.tone === "success") haptics.success();
       else haptics.warning();
