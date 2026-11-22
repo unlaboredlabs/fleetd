@@ -134,7 +134,7 @@ control; an agent runs the same ones as `mac sim` commands. Each was checked on 
 | Fold (iPhone Duo) | `mac sim fold half-open` | the hinge, as agent-device's fold helper sets it: `closed` lights the outer panel, `half-open` and `open` the inner |
 | Screenshot | `mac sim screenshot shot.png` | the lit panel's PNG, into the agent's worktree |
 
-A Duo starts closed. After a fold, refs and coordinates from before it are stale: take a new `agent-device snapshot`.
+A Duo starts closed. Its screen's recording is of the panel lit when someone first watched. After a fold, refs and coordinates from before it are stale: take a new `agent-device snapshot`.
 `agent-device fold` and `agent-device screenshot` don't work on the Mac's simulators (they look the simulator up
 through CoreDevice, which doesn't see fleetd's own simulators); `mac sim fold` and `mac sim screenshot` do. While a person has
 control, `mac sim` controls refuse, as agent-device does.

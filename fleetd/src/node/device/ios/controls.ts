@@ -20,7 +20,7 @@ import type { ScreenAppearance, ScreenControl, ScreenOrientation } from "../../.
 import { ToolError } from "../../../shared/errors.ts";
 import type { ScreenDevice } from "../../../shared/screens_wire.ts";
 import { packageDir } from "../agent_device.ts";
-import type { Ran } from "./screen.ts";
+import { heldBy, inSession, NO_SESSION, type Ran } from "./screen.ts";
 import type { Simctl } from "./simctl.ts";
 import { iosDir } from "./wrapper.ts";
 
@@ -38,6 +38,9 @@ const AGENT_DEVICE: Record<string, string> = {
   portrait_upside_down: "portrait-upside-down",
   landscape_right: "landscape-right",
 };
+/** What agent-device says while its XCTest runner still finishes an earlier command; tried again BUSY_TRIES times. */
+const RUNNER_BUSY = "still finishing a previous command";
+const BUSY_TRIES = 4;
 /** How long a helper or a simctl control may take. */
 const CONTROL_WAIT = 15_000;
 /** A screenshot's bound. */
@@ -280,6 +283,8 @@ export class SimDevice {
     /** "iPhone Duo on iOS 27.2". */
     readonly device: string,
     private readonly tools: ControlTools,
+    /** How long a busy runner is given before the next try. */
+    private readonly busyWait = 3_000,
   ) {
     this.state = { orientation: "portrait", appearance: "light", ...(foldable(device) ? { fold: "closed" as Fold } : {}) };
   }
@@ -330,14 +335,42 @@ export class SimDevice {
           throw new ToolError("failed", `The simulator's ${control} didn't go: ${clip(e.message)}`);
         });
       } else {
-        let ran = await this.tools.agentDevice(step.agentDevice);
-        // A simulator nobody opened an agent-device session on: one is opened for it, as a person's taps do.
-        if (!ran.ok && ran.said.includes("SESSION_NOT_FOUND") && (await this.tools.agentDevice(["open"])).ok) ran = await this.tools.agentDevice(step.agentDevice);
+        const ran = await this.inASession(step.agentDevice);
         if (!ran.ok) throw new ToolError("failed", `The simulator's ${control} didn't go: ${clip(ran.said)}`);
       }
     }
     this.state = next;
     return control === "screenshot" ? this.shoot() : undefined;
+  }
+
+  /**
+   * An agent-device command, which runs only in a session, kept per working folder (screen.ts): run here, then, with
+   * none, in the agent's session by name when it holds the simulator, else in one opened for it alone and closed
+   * right after, so the agent's own `open` is never refused.
+   */
+  private async inASession(args: string[]): Promise<Ran> {
+    const ran = await this.whenFree(args);
+    if (ran.ok || !ran.said.includes(NO_SESSION)) return ran;
+    const open = await this.tools.agentDevice(["open"]);
+    if (!open.ok) {
+      const session = heldBy(open.said);
+      return session ? this.tools.agentDevice(inSession(args, session)) : open;
+    }
+    try {
+      return await this.tools.agentDevice(args);
+    } finally {
+      await this.tools.agentDevice(["close"]);
+    }
+  }
+
+  /** An agent-device command, run again while its runner is still finishing an earlier command (a capture of a busy
+   * screen, its watchdog's seconds). */
+  private async whenFree(args: string[]): Promise<Ran> {
+    for (let tries = 1; ; tries++) {
+      const ran = await this.tools.agentDevice(args);
+      if (ran.ok || !ran.said.includes(RUNNER_BUSY) || tries === BUSY_TRIES) return ran;
+      await Bun.sleep(this.busyWait);
+    }
   }
 
   /** The lit panel's screenshot, as PNG. */
