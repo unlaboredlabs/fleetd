@@ -16,8 +16,8 @@ import { closeAddProject } from "../projects/store";
 import { onItsHub } from "./effects";
 import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
-import { resetHubSwipe } from "./hubSwipe";
-import { FINGERS, fingers, JITTERY_MAC_SWIPE, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
+import { resetHubSwipe, REST_HUB_MS, REST_MS } from "./hubSwipe";
+import { FINGERS, fingers, JITTERY_MAC_SWIPE, MOMENTUM, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
 import { resetFolded, resetSidebarView, showHub } from "./sidebarLayout";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -958,7 +958,7 @@ const inPlace = () => {
   const list = host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
   expect(list?.style.transform).toBe("");
   expect(list?.parentElement?.hasAttribute("data-moving")).toBe(false);
-  expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+  expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
 };
 const marks = () => [...host.querySelectorAll<HTMLElement>("[role='group'][aria-label='Hubs'] button")].map((b) => (b.getAttribute("aria-current") === null ? b.getAttribute("aria-label") : `[${b.getAttribute("aria-label") ?? ""}]`));
 const twoHubs = async () => {
@@ -1010,10 +1010,22 @@ it("switches to the next hub on a swipe across the sidebar, once a gesture howev
 });
 
 /**
+ * Chromium's WheelEvent.momentum, which jsdom lacks: while `on`, each event says whether it is a glide's (lifting), as
+ * Chromium 152 says on a Mac. The swipe reads whether it is there when it starts listening.
+ */
+let lifting = false;
+const sayMomentum = (on: boolean) => {
+  lifting = on;
+  if (on) Object.defineProperty(WheelEvent.prototype, "momentum", { configurable: true, get: function (this: { glide?: boolean }) { return this.glide === true; } });
+  else Reflect.deleteProperty(WheelEvent.prototype, "momentum");
+};
+
+/**
  * Plays a Mac trackpad's scrolls (hubSwipe.samples.ts) over a row of the list on show, on the clock, the pointer never
  * moving: the wheel events the page gets of them, each cancelable as `mac` says. On a Mac, Chromium makes a touch's
  * first event cancelable, and the rest of it only if the page cancelled that first one (the app is told it is on one);
- * elsewhere every one is. Whether the page let the list scroll with each.
+ * elsewhere every one is. Each says whether it is the glide's too, while Chromium says so (sayMomentum). Whether the
+ * page let the list scroll with each.
  */
 const replay = (scrolls: readonly Scroll[], mac: boolean): boolean[] => {
   const free: boolean[] = [];
@@ -1023,6 +1035,7 @@ const replay = (scrolls: readonly Scroll[], mac: boolean): boolean[] => {
       if (s.dx !== 0 || s.dy !== 0) {
         const first = s.phase === FINGERS.began;
         const e = new WheelEvent("wheel", { deltaX: s.dx, deltaY: s.dy, bubbles: true, cancelable: !mac || first || held });
+        if (lifting) Object.assign(e, { glide: s.momentum !== MOMENTUM.none });
         (host.querySelector("nav[aria-label='Sidebar'] [data-reorder-row] button") ?? host.querySelector("nav"))?.dispatchEvent(e);
         if (first) held = e.defaultPrevented;
         free.push(!e.defaultPrevented);
@@ -1048,16 +1061,19 @@ const threeHubs = async () => {
 };
 
 describe.each([
-  ["on a Mac, where Chromium says where a touch begins", true],
-  ["where only the deltas tell", false],
-])("a trackpad's swipes %s", (_, mac) => {
+  ["on a Mac, where Chromium says where a touch begins and where its fingers lift", true, true],
+  ["on a Mac, where Chromium says only where a touch begins", true, false],
+  ["where only the deltas tell", false, false],
+])("a trackpad's swipes %s", (_, mac, lifts) => {
   const fleetd = window.fleetd as { shell?: string; platform: string };
   beforeEach(() => {
     if (mac) Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
+    sayMomentum(lifts);
   });
   afterEach(() => {
     delete fleetd.shell;
     fleetd.platform = "linux";
+    sayMomentum(false);
   });
 
   it("swipes back at once, while the last swipe's momentum is still arriving, the pointer never moving", async () => {
@@ -1203,6 +1219,215 @@ describe.each([
       replay(fingers([2, 6, 12, 16, 16, 12, 8, 4, -4, -10, -16, -16, -10, -6].map((d) => [d, 0] as const)), mac);
       lift();
       expect(marks()).toEqual(["[Personal]", "Acme"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+});
+
+describe("a Mac trackpad's swipe, told where the fingers lift (W813)", () => {
+  const fleetd = window.fleetd as { shell?: string; platform: string };
+  beforeEach(() => {
+    Object.assign(fleetd, { shell: "desktop", platform: "darwin" });
+    sayMomentum(true);
+  });
+  afterEach(() => {
+    delete fleetd.shell;
+    fleetd.platform = "linux";
+    sayMomentum(false);
+  });
+  /** Where the list on show is drawn (px, + to the right). */
+  const offset = () => Number(/translate3d\((-?[\d.]+)px/.exec(host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']")?.style.transform ?? "")?.[1] ?? 0);
+  const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+  // Fingers going right on the first hub: toward no hub.
+  const pull = swipeFingers(-1);
+
+  it("follows the fingers 1:1 toward a hub up to their last event, however they slow before the lift", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      const deltas = [2, 8, 16, 20, 12, 8, 5, 4, 3, 2, 1, 1];
+      replay(fingers(deltas.map((d) => [d, 0] as const)), true);
+      expect(offset()).toBe(-deltas.reduce((a, b) => a + b, 0));
+      replay(momentum([1, 0]), true);
+      lift();
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("springs back from an end as soon as the fingers lift, never further out first, and is still within a third of a second", async () => {
+    await twoHubs();
+    const { done } = swiping();
+    try {
+      replay(pull, true);
+      const stretched = offset();
+      expect(stretched).toBeGreaterThan(20);
+      // The glide's first event: the lift.
+      replay(momentum([-12, 0], { count: 1 }), true);
+      const after: number[] = [];
+      for (let t = 0; t < 320; t += 16) {
+        wait(16);
+        after.push(offset());
+      }
+      expect(after[0]).toBeLessThan(stretched);
+      expect(Math.max(...after)).toBeLessThanOrEqual(stretched);
+      expect(after.at(-1)).toBe(0);
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("holds a stretch while the fingers stand still, then settles REST_MS on, with no glide to say they lifted", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      replay(pull.slice(0, -1), true);
+      const stretched = offset();
+      wait(REST_MS - 20);
+      expect(offset()).toBe(stretched);
+      wait(40);
+      expect(offset()).toBeLessThan(stretched);
+      lift();
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("gives a list springing back from an end to fingers that touch again, from where it is", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      replay([...pull, ...momentum([-12, 0], { count: 1 })], true);
+      wait(48);
+      // Fingers down (the page hears nothing of it until they move), and where the list is when they first do.
+      const [down, ...moves] = fingers([[-2, 0], [-6, 0], [-6, 0]]).slice(0, -1);
+      replay(down === undefined ? [] : [down], true);
+      const mid = offset();
+      expect(mid).toBeGreaterThan(5);
+      replay(moves, true);
+      // Taken up there, and moved on a little: never back to its place first, nor a jump.
+      expect(offset()).toBeGreaterThan(mid);
+      expect(offset()).toBeLessThan(mid + 14);
+      replay(momentum([-6, 0], { count: 1 }), true);
+      lift();
+      expect(marks()).toEqual(["[Personal]", "Acme"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  describe("fingers that stop past halfway and go on, the same touch", () => {
+    /** Fingers down, `n` events of 12 px each (+ toward the next hub), still down: no lift. */
+    const across = (n: number, side: 1 | -1 = 1, first = true) => {
+      const run = fingers(Array.from({ length: n }, () => [12 * side, 0] as const)).slice(first ? 0 : 1, -1);
+      return first ? run : run.map((e) => ({ ...e, phase: FINGERS.changed }));
+    };
+
+    it("holds the list under them a short pause long, and one touch moves one hub at most", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        const there = offset();
+        expect(there).toBe(-144);
+        wait(120);
+        expect(offset()).toBe(there);
+        replay(across(10, 1, false), true);
+        replay(momentum([12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
+
+    it("gives them back a list settling on the next hub after a longer pause, without the switch, so they can go back", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        wait(REST_HUB_MS + 60);
+        // Let go of, on its way to Acme, not there yet.
+        const settling = offset();
+        expect(settling).toBeLessThan(-144);
+        expect(settling).toBeGreaterThan(-256);
+        replay(across(1, -1, false), true);
+        // Taken up where it was, nothing switched.
+        expect(Math.abs(offset() - (settling + 12))).toBeLessThan(2);
+        expect(marks()).toEqual(["[Personal]", "Acme", "Studio"]);
+        replay(across(10, -1, false), true);
+        replay(momentum([-12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["[Personal]", "Acme", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
+
+    it("spends the touch once a pause has landed the next hub: going on never switches a second", async () => {
+      await threeHubs();
+      const { lift, done } = swiping();
+      try {
+        replay(across(12), true);
+        wait(1000);
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        replay(across(14, 1, false), true);
+        replay(momentum([12, 0], { count: 3 }), true);
+        lift();
+        expect(marks()).toEqual(["Personal", "[Acme]", "Studio"]);
+        inPlace();
+      } finally {
+        done();
+      }
+    });
+  });
+
+  it("starts a swipe toward a neighbour drawn ahead with nothing to render: the list is only shown", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      // Acme, drawn ahead once the sidebar was idle, hidden.
+      const ahead = host.querySelector<HTMLElement>("nav [aria-hidden][inert]");
+      expect(ahead?.textContent).toContain("billing");
+      expect(ahead?.hasAttribute("data-shown")).toBe(false);
+      const added: Node[] = [];
+      const watch = new MutationObserver((records) => records.forEach((r) => added.push(...r.addedNodes)));
+      watch.observe(host, { childList: true, subtree: true });
+      replay(swipeFingers(1), true);
+      watch.disconnect();
+      expect(added).toEqual([]);
+      expect(ahead?.hasAttribute("data-shown")).toBe(true);
+      expect(host.querySelector("nav[aria-label='Sidebar'] [data-moving]")).not.toBeNull();
+      replay(momentum([12, 0], { count: 2 }), true);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+      inPlace();
+    } finally {
+      done();
+    }
+  });
+
+  it("gives a swipe let go of under still fingers back to them when they move on, and switches", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    try {
+      replay(fingers([4, 8, 12, 12, 8].map((d) => [d, 0] as const)).slice(0, -1), true);
+      // Still long enough to settle back a little, then on across.
+      wait(160);
+      replay(fingers(Array.from({ length: 12 }, () => [16, 0] as const)).slice(1, -1).map((s) => ({ ...s, phase: FINGERS.changed })), true);
+      replay(momentum([16, 0], { count: 3 }), true);
+      lift();
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
       inPlace();
     } finally {
       done();
@@ -1386,7 +1611,7 @@ it("with one hub, a swipe does nothing and there are no marks", async () => {
     lift();
     expect(free.every((f) => f)).toBe(true);
     expect(bots("storefront")).toEqual(["storefront"]);
-    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+    expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
   } finally {
     done();
   }
@@ -1401,12 +1626,14 @@ it("with reduced motion, switches without the slide once a swipe has gone far en
     swipe([[4, 0], [20, 0], [20, 0]]);
     // Still, with nothing beside it.
     expect(list()?.style.transform).toBe("");
-    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
+    expect(host.querySelector("nav [aria-hidden][inert][data-shown]")).toBeNull();
     expect(bots("storefront", "billing")).toEqual(["storefront"]);
     swipe([[20, 0], [20, 0], [20, 0]]);
     expect(bots("storefront", "billing")).toEqual(["billing"]);
     lift();
     expect(marks()).toEqual(["Personal", "[Acme]"]);
+    // Nothing slides, so no hub is drawn ahead beside it.
+    expect(host.querySelector("nav [aria-hidden][inert]")).toBeNull();
   } finally {
     done();
     media.mockRestore();
