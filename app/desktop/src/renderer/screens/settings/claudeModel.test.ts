@@ -2,7 +2,7 @@
 // chose, where a secret is sealed, and a pause on one account only.
 import { describe, expect, it } from "vitest";
 import type { PersonClaude, UsageStatus } from "../../../shared/contracts";
-import { accountWords, boxesOf, missingOn, pauseLine, runsOnLine, sealedLine, shownChoice, theirRunsOn } from "./claudeModel";
+import { accountWords, boxesOf, missingOn, pauseLine, runsOnLine, sealedLine, shownChoice, testLine, theirRunsOn } from "./claudeModel";
 
 const bob = { personId: "p_cccccccc", name: "Bob Okafor" };
 const sam = { personId: "p_aaaaaaaa", name: "Sam Rivera" };
@@ -49,5 +49,22 @@ describe("Claude accounts in words", () => {
     ];
     expect(pauseLine({ kind: "hub" }, usage, 0)).toBe("Paused on devbox: Rate limited.");
     expect(pauseLine({ kind: "person", personId: bob.personId }, usage, 0)).toBeNull();
+  });
+});
+
+describe("on fleetd's computers", () => {
+  it("names the hosted runner as fleetd's computers, never its id", () => {
+    expect(sealedLine([{ machineId: "hosted" } as never])).toBe("Sealed on fleetd's computers.");
+    expect(testLine({ at: "2026-10-27T12:14:00.000Z", machineId: "hosted", ok: true }, Date.parse("2026-10-27T12:20:00.000Z")).text).toMatch(/^Worked on fleetd's computers, /u);
+    expect(sealedLine([{ machineId: "devbox" } as never])).toBe("Sealed on devbox.");
+  });
+});
+
+describe("a cloud team's words", () => {
+  it("calls the shared key the team's", () => {
+    const team = { kind: "account", account: { kind: "hub" } } as const;
+    expect(runsOnLine(team, [], undefined, false, true)).toBe("The team's API key.");
+    expect(theirRunsOn(team, false, true)).toBe("Team API key");
+    expect(runsOnLine(team, [])).toBe("The hub's API key.");
   });
 });

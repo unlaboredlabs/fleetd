@@ -18,7 +18,7 @@ import { currentRoute } from "./navigation";
 import { Shell } from "./Shell";
 import { resetHubSwipe } from "./hubSwipe";
 import { FINGERS, fingers, JITTERY_MAC_SWIPE, momentum, scrollDown, SLOW_MAC_SWIPE, swipe, swipeFingers, type Scroll } from "./hubSwipe.samples";
-import { resetSidebarView, showHub } from "./sidebarLayout";
+import { resetFolded, resetSidebarView, showHub } from "./sidebarLayout";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,8 +28,8 @@ interface FakeHub {
 }
 
 const fake = vi.hoisted(() => {
-  // `discover` and `add`: what project_discover and project_add answer, when a test sets them.
-  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown; add?: unknown }>();
+  // `discover`, `add` and `sections`: what project_discover, project_add and chat_sections_get answer, when a test sets them.
+  const hubs = new Map<string, { listeners: Set<(frame: unknown) => void>; calls: Array<{ tool: string; input: unknown }>; discover?: unknown; add?: unknown; sections?: unknown }>();
   const badge: number[] = [];
   // The chat each hub streams, as the page last asked (hub.chat): a project, or null for none.
   const chats: Array<[string, unknown]> = [];
@@ -72,6 +72,8 @@ const fake = vi.hoisted(() => {
         if (tool === "project_discover" && discover !== undefined) return Promise.resolve({ ok: true, output: discover });
         const add = of(id).add;
         if (tool === "project_add" && add !== undefined) return Promise.resolve({ ok: true, output: add });
+        const sections = of(id).sections;
+        if (tool === "chat_sections_get" && sections !== undefined) return Promise.resolve({ ok: true, output: { sections } });
         return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
       },
       chat: (id: string, project: unknown) => (chats.push([id, project]), done()),
@@ -186,6 +188,7 @@ beforeEach(() => {
   fake.badge.length = 0;
   fake.chats.length = 0;
   resetSidebarView();
+  resetFolded();
   resetHubSwipe();
 });
 afterEach(() => {
@@ -372,6 +375,47 @@ it("switches back to where you were on each hub, its last chat", async () => {
   await settle();
   expect(window.location.hash).toBe("#/project/laptop/billing?at=a1b2");
   expect(streaming()).toBe("a1b2:billing");
+});
+
+it("unfolds a folded section when one of its chats opens from elsewhere: a link, or a hub's last chat on a switch", async () => {
+  // Acme's billing sits in Clients, folded on this device; Personal's storefront in Shop, folded too.
+  fake.of("a1b2").sections = [{ id: "s1", name: "Clients", chats: [{ machineId: "laptop", projectId: "billing" }] }];
+  fake.of("hub").sections = [{ id: "s2", name: "Shop", chats: [{ machineId: "devbox", projectId: "storefront" }] }];
+  window.localStorage.setItem("fleetd.foldedSections", JSON.stringify(["a1b2/s1", "hub/s2"]));
+  resetFolded();
+  await mount([
+    { id: "hub", label: "Personal" },
+    { id: "a1b2", label: "Acme" },
+  ]);
+  twoByTwo();
+  await settle();
+  const folded = () => JSON.parse(window.localStorage.getItem("fleetd.foldedSections") ?? "[]") as string[];
+  const clients = () => host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [data-section-label='s1']");
+  // Personal's home is Ada, in no section: Shop stays folded.
+  await settle();
+  expect(bots("Ada", "storefront")).toEqual(["Ada"]);
+  expect(folded()).toEqual(["a1b2/s1", "hub/s2"]);
+
+  // A notification or ⌘K opens billing: Clients unfolds, so the chat shows where it lives.
+  await open("#/project/laptop/billing?at=a1b2");
+  await settle();
+  expect(folded()).toEqual(["hub/s2"]);
+  expect(clients()?.getAttribute("aria-expanded")).toBe("true");
+  expect(bots("billing", "ledger")).toEqual(["ledger", "billing"]);
+  // Folded again with billing open, it stays folded.
+  act(() => clients()?.click());
+  await settle();
+  expect(clients()?.getAttribute("aria-expanded")).toBe("false");
+  expect(bots("billing", "ledger")).toEqual(["ledger"]);
+
+  // Back on Personal, storefront was its last chat: the switch opens it, and Shop unfolds.
+  window.localStorage.setItem("fleetd.lastChats", JSON.stringify({ ...(JSON.parse(window.localStorage.getItem("fleetd.lastChats") ?? "{}") as object), hub: "devbox/storefront" }));
+  pickHub("Personal");
+  await settle();
+  await settle();
+  expect(window.location.hash).toBe("#/project/devbox/storefront?at=hub");
+  expect(folded()).toEqual(["a1b2/s1"]);
+  expect(bots("Ada", "storefront")).toEqual(["Ada", "storefront"]);
 });
 
 it("switches to a hub's home when the chat last open on it is gone, and to Get started on a hub with no bot", async () => {

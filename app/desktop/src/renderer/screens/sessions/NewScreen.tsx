@@ -16,13 +16,16 @@
 // A kind no machine can host stays pickable: its tile says why in a word or two, and picked, the machine list gives way
 // to the reason from the machines' nodes and its one fix. An admin's is a button to the place in Settings › Hub ›
 // Machines that fixes it (there is no switch per kind to turn on); a member's says who to ask.
+//
+// At rest it is the title, the tiles, the machine and Open (W796): no explaining lines. When it ends (the machine's idle
+// timeout) and a PR build going in first are a hover on Open; the browser's profile (saved sign-ins, or a fresh one
+// while the bot's is in use) is its tile's line.
 import { Globe, Laptop, Monitor, Plus, TabletSmartphone } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, Radio, RadioGroup, Select, Text, Tooltip, cx } from "../../ui";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { useCommands } from "../palette";
 import { HubText } from "../projects/HubText";
-import { projectKey } from "../../src/data/store";
 import { currentRoute, navigate } from "../shell/navigation";
 import { useHubRole } from "../admin/role";
 import { revealNext } from "../settings/reveal";
@@ -37,12 +40,14 @@ import {
   idleFor,
   idleWords,
   KINDS,
+  kindLine,
   newScreenOf,
   NO_PR,
   openingLine,
   openWord,
   pickHost,
   prChoices,
+  profileBusy,
   slotLine,
   startingLine,
   takesBuild,
@@ -131,7 +136,6 @@ const noInput = {};
 
 export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onClose: () => void }) {
   const layer = useDataLayer();
-  const title = useData((d) => d.projects[projectKey(project)]?.title);
   const roles = useToolQuery("machine_roles", noInput);
   const machines = roles.data?.machines ?? [];
   // A browser opens on the project's own machine, with its saved sign-ins.
@@ -195,6 +199,8 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
     navigate(panelRoute(project, { tab: "sessions", session: ready.sessionId }));
   }, [ready, onClose, project]);
   const failed = row?.stage === "failed";
+  // The browser's tile says which profile it opens on: the bot's, signed in, or a fresh one while that one is in use.
+  const busyProfile = profileBusy(listed.data?.sessions ?? [], home);
 
   const close = () => {
     // A failed one is said here: its row in Screens goes with the picker.
@@ -259,11 +265,12 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
           if (!o) close();
         }}
         title="New screen"
-        description="It’s yours once the build is in. Close this and it carries on: it shows under Screens until then."
         footer={
-          <Button variant={failed ? "primary" : "quiet"} onClick={close}>
-            Close
-          </Button>
+          <Tooltip prose content={failed ? "Its row under Screens goes with it." : "It carries on under Screens until it’s yours."}>
+            <Button variant={failed ? "primary" : "quiet"} onClick={close}>
+              Close
+            </Button>
+          </Tooltip>
         }
       >
         <div className={s.picker} data-screen="sessions.new" data-opening={row?.stage ?? "ready"}>
@@ -288,11 +295,6 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
         if (!o) onClose();
       }}
       title="New screen"
-      description={
-        title !== undefined && kind === "browser"
-          ? `A browser on ${title}’s saved sign-ins: sites you sign in to stay signed in for ${title}. You’re in control; it ends when you close it or ${idle}.`
-          : `You’re in control from the start. It’s recorded like agents’ screens, and ends when you close it or ${idle}.`
-      }
       footer={
         <>
           {busy && slow ? (
@@ -305,9 +307,11 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={busy || host === undefined || !host.online} onClick={() => void open()}>
-            {busy ? "Opening…" : openWord(host)}
-          </Button>
+          <Tooltip prose content={`${pr === undefined ? "" : `#${String(pr.number)}’s newest CI build goes in first. `}It ends when you close it or ${idle}.`}>
+            <Button variant="primary" disabled={busy || host === undefined || !host.online} onClick={() => void open()}>
+              {busy ? "Opening…" : openWord(host)}
+            </Button>
+          </Tooltip>
         </>
       }
     >
@@ -334,7 +338,7 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
                   {k.label}
                 </Text>
                 <Text size="xs" tone={off === null ? "quiet" : "warning"}>
-                  {off === null ? k.line : off.short}
+                  {off === null ? kindLine(k, busyProfile) : off.short}
                 </Text>
               </button>
             );
@@ -392,17 +396,11 @@ export function NewScreenDialog({ project, onClose }: { project: ProjectKey; onC
                   {prs.isFetching ? "Retrying…" : "Retry"}
                 </Button>
               </div>
-            ) : (
+            ) : prs.data === undefined || choices.length === 0 ? (
               <Text size="xs" tone="quiet">
-                {prs.data === undefined
-                  ? "Reading the bot’s PRs…"
-                  : pr !== undefined
-                    ? "Its newest CI build is installed before you get control."
-                    : choices.length === 0
-                      ? (prs.data.githubError ?? "The bot has no open PRs.")
-                      : "Optional: an open PR whose CI build to install."}
+                {prs.data === undefined ? "Reading the bot’s PRs…" : (prs.data.githubError ?? "The bot has no open PRs.")}
               </Text>
-            )}
+            ) : null}
           </div>
         ) : null}
         {error === null ? null : (

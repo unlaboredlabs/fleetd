@@ -21,7 +21,10 @@
 // The chats in none of your sections come first (under a quiet Bots label once you have sections), then your sections
 // (sections.ts), each under its quiet label, in your order: a row's menu moves it to one, out of them, or into a new
 // one you name; dragging it onto a section's label or one of its chats moves it there too, and onto a chat in none
-// takes it out, the held row saying where it would go where its time was. A label never folds; its menu (right-click, or its ⋯ under the pointer)
+// takes it out, the held row saying where it would go where its time was. A label's click (or Enter) folds its section
+// to the label alone, which then says how many chats it holds and has a dot while one of them wants you or has a new
+// message; the rows under it glide up on the spring, and a chat opened from elsewhere unfolds its own (Shell.tsx).
+// Which are folded is this device's (sidebarLayout.ts useFolded). Its menu (right-click, or its ⋯ under the pointer)
 // renames the section, moves it up or down, or removes it (its chats go back on top). A pinned chat shows among the pins
 // only, and keeps its section.
 import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
@@ -50,7 +53,7 @@ import { MoveToSection, SectionLabel, SectionNameDialog, type Naming } from "./S
 import { addSection, changeSections, moveChat, moveSection, newSectionId, removeSection, renameSection, sectionLines, useSections } from "./sections";
 import type { Placed } from "./Shell";
 import { holdRows } from "./sidebarState";
-import { openHub, setListView, shownRows, SORTS, sortRows, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
+import { foldKey, openHub, setListView, shownRows, SORTS, sortRows, toggleFold, useFolded, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
 import { PlaceIcons, useHubsMark, You } from "./You";
@@ -433,7 +436,8 @@ export function Sidebar({ projects, screen, jumpHints, factory, go, ...given }: 
   const windowView = useSidebarView();
   const view = given.view ?? windowView;
   const hub = given.hub ?? viewedHub(view, hubs, screen.at);
-  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub));
+  const folded = useFolded();
+  const shown = given.shown ?? (projects === undefined ? undefined : shownRows(projects, view, hub, folded));
   const loaded = useHubRows();
   const jumpOf = (p: Placed): number | null => {
     const at = shown?.indexOf(p) ?? -1;
@@ -642,7 +646,7 @@ function useBotMenu(rows: ReadonlyArray<Placed>, at: { at?: string }, go: (scree
 
 /**
  * One hub's chats: its pins, then the chats in none of your sections under a quiet Bots label, then each section under
- * its label, always open, each in the list's order (sidebarLayout.ts sortRows).
+ * its label, unless folded, each in the list's order (sidebarLayout.ts sortRows).
  */
 function ProjectGroup(props: {
   rows: ReadonlyArray<Placed> | undefined;
@@ -664,6 +668,7 @@ function ProjectGroup(props: {
   const { layer, sections, change, pinned, pinOn, openRow, menu } = bot;
   // Under the pins: the chats in none of your sections under Bots, then each section's label and its chats.
   const { sort, compact } = props.view;
+  const folded = useFolded();
   const lines = useMemo(() => {
     const below = sectionLines(
       sortRows(
@@ -671,12 +676,12 @@ function ProjectGroup(props: {
         sort,
       ),
       sections,
-      () => false,
+      (id) => folded.has(foldKey(hub.id, id)),
     );
     // With sections on show, the chats in none get a label of their own too; with none, no label at all.
     const labelled = below[0]?.t === "chat" && below.some((l) => l.t === "section");
     return labelled ? [{ t: "section" as const, section: BOTS, folded: false, count: 0, dot: undefined }, ...below] : below;
-  }, [rows, sections, sort]);
+  }, [rows, sections, sort, folded, hub.id]);
   // Your sections on show, in order: what a label's Move up and Move down pass (Bots is none of them).
   const labelled = lines.flatMap((l) => (l.t === "section" && l.section !== BOTS ? [l.section.id] : []));
   const rowsByKey = useMemo(() => new Map((rows ?? []).map((p) => [p.key, p])), [rows]);
@@ -796,7 +801,7 @@ function ProjectGroup(props: {
                     {own ? (
                       <>
                         <ContextMenu menu={labelMenu(line.section)}>
-                          <SectionLabel line={line} taking={reorder.onto === line.section.id} />
+                          <SectionLabel line={line} taking={reorder.onto === line.section.id} onClick={() => toggleFold(hub.id, line.section.id)} />
                         </ContextMenu>
                         <span className={s.labelTools}>
                           <Tooltip content="Section options">
@@ -807,7 +812,7 @@ function ProjectGroup(props: {
                         </span>
                       </>
                     ) : (
-                      <SectionLabel line={line} taking={false} />
+                      <SectionLabel line={line} taking={false} folds={false} />
                     )}
                   </div>
                 );

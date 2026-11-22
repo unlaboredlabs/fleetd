@@ -15,7 +15,7 @@ import { DataProvider, useDataLayer } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { useSidebarProjects } from "./data";
 import { Sidebar, SPRING } from "./Sidebar";
-import { resetSidebarView } from "./sidebarLayout";
+import { resetFolded, resetSidebarView } from "./sidebarLayout";
 
 vi.hoisted(() => {
   (window as unknown as { fleetd: object }).fleetd = {
@@ -60,7 +60,7 @@ beforeEach(() => {
   window.localStorage.clear();
   // These cover the Hubs layout's sections, pins and order; List, the default, has its own (sidebarLayout.test.ts).
   resetSidebarView();
-  resetSidebarView();
+  resetFolded();
   pins = [];
   stored = [];
   sets = [];
@@ -198,9 +198,10 @@ describe("your sections in the sidebar", () => {
     await mount();
     expect(pinned()).toEqual(["web"]);
     expect(lines()).toEqual(["[Bots]", "new", "docs", "[Work]", "api", "[Home]", "garden", "old"]);
-    // A label is a quiet word that never folds: no open or shut, no count.
-    expect(label("Work").hasAttribute("aria-expanded")).toBe(false);
+    // A label is a button that says it is open; no count while it is, and Bots doesn't fold.
+    expect(label("Work").getAttribute("aria-expanded")).toBe("true");
     expect(label("Work").hasAttribute("aria-description")).toBe(false);
+    expect(label("Bots").hasAttribute("aria-expanded")).toBe(false);
     // The pinned chat kept its section: its menu has it ticked.
     expect(await moveTo("web")).toEqual(["Work*", "All pinned", "Home", "No section", "New section…"]);
   });
@@ -215,14 +216,31 @@ describe("your sections in the sidebar", () => {
     expect(sets).toEqual([]);
   });
 
-  it("never folds a section: a label's click leaves its chats on show, each with its ⌘ number", async () => {
+  it("folds a section to its label, which says what it holds, kept on this device, its chats without a ⌘ number", async () => {
     stored = [section("s1", "Work", "api", "web"), section("s2", "Home", "garden")];
     await mount(true);
     const jumps = () => [...host.querySelectorAll("[class*=jump]")].map((j) => j.textContent);
     expect(jumps()).toEqual(["1", "2", "3", "4", "5", "6"]);
     act(() => label("Work").click());
+    // Folded: its name and how many chats, no chevron at rest (the hint shows only under the pointer).
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work2]", "[Home]", "garden"]);
+    expect(label("Work").getAttribute("aria-expanded")).toBe("false");
+    expect(label("Work").getAttribute("aria-description")).toBe("2 chats");
+    expect(label("Work").querySelector("[data-section-dot]")).toBeNull();
+    // The numbers go on past it: garden is the fourth chat on show.
+    expect(jumps()).toEqual(["1", "2", "3", "4"]);
+    expect(window.localStorage.getItem("fleetd.foldedSections")).toBe(JSON.stringify([`${layer.hub}/s1`]));
+    // Nothing goes to the hub: a fold is this device's alone.
+    expect(sets).toEqual([]);
+
+    // The next launch finds it folded; open again, its chats are back.
+    act(() => root.unmount());
+    root = createRoot(host);
+    resetFolded();
+    await mount();
+    expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work2]", "[Home]", "garden"]);
+    act(() => label("Work").click());
     expect(lines()).toEqual(["[Bots]", "new", "docs", "old", "[Work]", "web", "api", "[Home]", "garden"]);
-    expect(jumps()).toEqual(["1", "2", "3", "4", "5", "6"]);
   });
 
   it("moves a chat to a section, out of them, and into a new one it asks the name of", async () => {

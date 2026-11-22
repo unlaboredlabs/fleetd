@@ -192,6 +192,8 @@ export interface StepLine {
   readonly tone: "quiet" | "danger";
   /** After the machine text: "failed", "exit 1". */
   readonly outcome?: string | undefined;
+  /** Words, not a command or path (a start's step, a retry, an error): wrapped whole, never cut in the middle. */
+  readonly prose?: true | undefined;
 }
 
 const VERB: Readonly<Record<string, readonly [running: string, done: string]>> = {
@@ -205,8 +207,9 @@ export const actionLine = (step: Extract<WorkStep, { kind: "action" }>): StepLin
   const { action } = step;
   const [running, done] = VERB[action.kind] ?? ["", ""];
   const words = action.status === "running" ? running : done;
-  if (!action.failed) return { words, machine: action.summary, tone: "quiet" };
-  return { words, machine: action.summary, tone: "danger", outcome: action.exitCode === undefined ? "failed" : `failed, exit ${String(action.exitCode)}` };
+  const prose = action.kind === "other" ? { prose: true as const } : {};
+  if (!action.failed) return { words, machine: action.summary, tone: "quiet", ...prose };
+  return { words, machine: action.summary, tone: "danger", outcome: action.exitCode === undefined ? "failed" : `failed, exit ${String(action.exitCode)}`, ...prose };
 };
 
 /**

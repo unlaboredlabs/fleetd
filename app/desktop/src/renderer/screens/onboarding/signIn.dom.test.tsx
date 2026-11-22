@@ -154,7 +154,7 @@ it("Sign in waits on the browser; Cancel comes back quietly, and a refusal says 
 });
 
 /** Sign in, and the browser comes back with this answer. */
-const arriveWith = async (arrival: { email: string; invitations: Array<{ name: string; invitedBy: string; role: string }> }) => {
+const arriveWith = async (arrival: { email: string; invitations: Array<{ name: string; invitedBy: string; role: string }>; canMake?: true }) => {
   click("Sign in");
   await act(async () => {
     cloud.arrive({ ok: true, arrival });
@@ -212,6 +212,30 @@ it("no team of their own and one invitation: still asked, and Not now joins noth
   expect(cloud.finish).toHaveBeenCalledWith([]);
   expect(screen()).toBe("onboarding.ways");
   expect(host.textContent).toContain("You didn't join a team, so you aren't signed in.");
+});
+
+it("in no team of their own, passing on every invitation: No team yet, with Make a team, which asks for one", async () => {
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({ email: "new@example.com", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }], canMake: true });
+  click("Continue");
+  click("Not now");
+  expect(screen()).toBe("onboarding.no-team");
+  expect(host.querySelector("h1")?.textContent).toBe("No team yet");
+  expect(host.textContent).toContain("Make one of your own for new@example.com, or ask a teammate to invite this email.");
+  expect(cloud.finish).not.toHaveBeenCalled();
+  click("Make a team");
+  await settle();
+  expect(cloud.finish).toHaveBeenCalledWith([], true);
+});
+
+it("no team yet, and Not now: nothing is made", async () => {
+  await mount(<OnboardingScreen />, unpaired);
+  await arriveWith({ email: "new@example.com", invitations: [{ name: "acme", invitedBy: "eve@other.example", role: "member" }], canMake: true });
+  click("Continue");
+  click("Not now");
+  click("Not now");
+  await settle();
+  expect(cloud.finish).toHaveBeenCalledWith([]);
 });
 
 it("a pairing link to a team of fleetd cloud says anyone can make one; a link to another hub doesn't", async () => {

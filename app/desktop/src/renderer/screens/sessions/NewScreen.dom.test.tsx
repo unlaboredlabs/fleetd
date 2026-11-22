@@ -191,6 +191,12 @@ it("opens a screen on the machine picked, from the plus at Screens, and goes to 
   act(() => button("New screen")?.click());
   await settle();
   expect(picker()).not.toBeNull();
+  // At rest: the title, the tiles, the machine and Open, no explaining lines (W796). The browser's sign-ins are its
+  // tile's line; when a screen ends is Open's hover.
+  expect(document.querySelector("[role='dialog']")?.hasAttribute("aria-describedby")).toBe(false);
+  expect(button("Browser")?.textContent).toBe("BrowserSaved sign-ins");
+  act(() => button("Open screen")?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toMatch(/^It ends when you close it or (after \d+ minutes idle|once it sits idle)\.$/u);
   // A browser by default: both machines can host one.
   const machines = () => [...document.querySelectorAll("[role='radiogroup'] label")].map((l) => l.textContent);
   expect(machines().some((m) => m.startsWith("devbox"))).toBe(true);
@@ -214,6 +220,16 @@ it("opens a screen on the machine picked, from the plus at Screens, and goes to 
   });
   expect(picker()).toBeNull();
   expect(window.location.hash).toContain(OPENED.sessionId);
+});
+
+it("says the browser opens on a fresh profile while the lead's browser holds the bot's", async () => {
+  // The lead's browser, live on the bot's machine: no task, no person.
+  const { openedBy: _person, ...lead } = { ...OPENED, sessionId: "B00000000000000000000000000000008", threadId: "lead", kind: "browser", control: "agent", purpose: "Lead's browser" };
+  sessions = [lead];
+  await mount();
+  act(() => button("New screen")?.click());
+  await settle();
+  expect(button("Browser")?.textContent).toBe("BrowserFresh profile");
 });
 
 it("opens a screen the hub's answer left out straight into its live view, once the list has it", async () => {
@@ -297,7 +313,8 @@ it("installs an open PR's build into an Android screen, following it until the s
   expect(document.querySelector("[aria-label='PR build']")?.textContent).toBe("None");
   // Only open PRs.
   expect(await pickPr("#12 Swipe to reply")).toEqual(["None", "#12 Swipe to reply"]);
-  expect(picker()?.textContent).toContain("Its newest CI build is installed before you get control.");
+  act(() => button("Open screen")?.focus());
+  expect(document.querySelector("[role='tooltip']")?.textContent).toMatch(/^#12’s newest CI build goes in first\. It ends when you close it or /u);
   act(() => button("Open screen")?.click());
   await settle();
   const opened = calls.find((c) => c.tool === "screen_open");
@@ -366,7 +383,7 @@ it("says plainly when the bot's PRs can't be read, and reads them again on Retry
   act(() => button("Retry")?.click());
   await settle();
   expect(picker()?.textContent).not.toContain("couldn’t be read");
-  expect(picker()?.textContent).toContain("Optional: an open PR whose CI build to install.");
+  expect(document.querySelector<HTMLButtonElement>("[aria-label='PR build']")?.disabled).toBe(false);
 });
 
 it("says so when the call fails before the hub, and can be tried again", async () => {

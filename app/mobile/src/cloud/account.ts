@@ -18,6 +18,7 @@ import {
   ACCOUNTS_APP_REDIRECT,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
+  ACCOUNTS_TEAM_PATH,
   madeTeam,
   readAccepted,
   readSignIn,
@@ -156,6 +157,8 @@ export interface AfterSignInAsk {
   readonly signedInAs: (email: string) => Promise<boolean>;
   /** "<invitedBy> invited you to <name>", Join or Not now: true is Join. */
   readonly invitation: (invitation: AccountsInvitation) => Promise<boolean>;
+  /** No team yet (every invitation passed on, none of their own): Make a Team or Not Now; true makes one. */
+  readonly makeTeam?: (email: string) => Promise<boolean>;
 }
 
 /** Asks who signed in, then about each invitation in turn; null when it isn't them. */
@@ -175,7 +178,9 @@ export const signInAsking = async (ports: SignInPorts, ask: AfterSignInAsk): Pro
     void endSession(ports.fetch, ports.config, arrived.answer.sessionId);
     return { ok: false, cancelled: true };
   }
-  return finish(ports, arrived.answer, join);
+  // In no team of their own and joining none: a team of their own, if they want one.
+  const make = join.length === 0 && arrived.answer.make !== undefined && ask.makeTeam !== undefined && (await ask.makeTeam(arrived.answer.email).catch(() => false));
+  return finish(ports, arrived.answer, join, make);
 };
 
 /** The browser's part and the service's answer, held for the questions: nothing is paired yet. */
@@ -224,13 +229,17 @@ const exchange = async (ports: SignInPorts, body: AccountsSignInInput): Promise<
  * It's them: a key from each team's /pair, and from each invitation at `join` once the service has joined it. With
  * nothing paired, the session ends.
  */
-export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonly number[]): Promise<SignInOutcome> => {
+export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonly number[], make = false): Promise<SignInOutcome> => {
   const teams: TeamOutcome[] = [];
   for (const team of answer.teams) teams.push(await pairTeam(ports, team, !madeTeam(team, false)));
+  if (make && answer.make !== undefined) {
+    const made = await call(ports, ACCOUNTS_TEAM_PATH, { make: answer.make });
+    teams.push(made.ok ? await pairTeam(ports, made.team, !madeTeam(made.team, false)) : { name: "Your team", ok: false, failure: made.failure });
+  }
   for (const at of join) {
     const invitation = answer.invitations[at];
     if (invitation === undefined) continue;
-    const joined = await accept(ports, invitation.accept);
+    const joined = await call(ports, ACCOUNTS_ACCEPT_PATH, { accept: invitation.accept });
     teams.push(joined.ok ? await pairTeam(ports, joined.team, !madeTeam(joined.team, true)) : { name: invitation.name, ok: false, failure: joined.failure });
   }
   if (!teams.some((t) => t.ok)) {
@@ -242,11 +251,11 @@ export const finish = async (ports: SignInPorts, answer: SignedIn, join: readonl
   return { ok: true, account: { email: answer.email, sessionId: answer.sessionId }, teams };
 };
 
-/** The service joins an invitation the person chose, and answers the team with its pairing code. */
-const accept = async (ports: SignInPorts, value: string): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> => {
+/** The service joins an invitation the person chose (accept) or makes their own team (team), and answers the team with its pairing code. */
+const call = async (ports: SignInPorts, path: string, body: { accept: string } | { make: string }): Promise<{ ok: true; team: AccountsTeam } | { ok: false; failure: PairFailure }> => {
   let response: Response;
   try {
-    response = await post(ports.fetch, `${ports.config.accountsUrl}${ACCOUNTS_ACCEPT_PATH}`, { accept: value });
+    response = await post(ports.fetch, `${ports.config.accountsUrl}${path}`, body);
   } catch {
     return { ok: false, failure: OFFLINE_FAILURE };
   }

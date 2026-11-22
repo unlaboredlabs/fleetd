@@ -135,6 +135,9 @@ export default defineGroup({
     unpaired("invited", "Back from the browser with an invitation from someone else's team: asked before it connects.", {
       signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }] } },
     }),
+    unpaired("no-team", "Back from the browser in no team of their own, with one invitation: Not now leaves No team yet, with Make a team.", {
+      signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }], canMake: true } },
+    }),
     unpaired("sign-in-timeout", "The sign-in page was left unfinished and ran out.", {
       signIn: { failure: { code: "timeout", message: "The sign-in page wasn't finished, so it ran out after 10 minutes." } },
     }),

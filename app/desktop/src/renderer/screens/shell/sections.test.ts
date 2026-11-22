@@ -1,7 +1,7 @@
 // Your sections of chats: each change to them, and the lines the sidebar draws of them.
 import { describe, expect, it } from "vitest";
 import type { ChatSection, ProjectRef } from "../../../shared/contracts";
-import { addSection, moveChat, moveSection, removeSection, renameSection, roomForSection, sectionLines, sectionNameProblem, sectionOf, SECTIONS_MAX } from "./sections";
+import { addSection, foldedWords, moveChat, moveSection, removeSection, renameSection, roomForSection, sectionLines, sectionNameProblem, sectionOf, SECTIONS_MAX } from "./sections";
 
 const chat = (projectId: string): ProjectRef => ({ machineId: "devbox", projectId });
 const section = (id: string, name: string, ...chats: string[]): ChatSection => ({ id, name, chats: chats.map(chat) });
@@ -103,5 +103,11 @@ describe("the list under the pins", () => {
     // One that waits on you speaks over a new message.
     expect(said(sectionLines([...rows, row("docs", "s1", { want: "approve" })], [WORK, HOME], folded))).toEqual(["[Work 3 you]", "[Home]", "garden"]);
     expect(said(sectionLines([row("api", "s1")], [WORK], folded))).toEqual(["[Work 1]"]);
+  });
+
+  it("names what a folded label holds for a screen reader", () => {
+    expect(foldedWords(1, undefined)).toBe("1 chat");
+    expect(foldedWords(3, "new")).toBe("3 chats, something new inside");
+    expect(foldedWords(2, "you")).toBe("2 chats, one waits on you");
   });
 });

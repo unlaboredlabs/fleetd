@@ -1,10 +1,12 @@
-// What the sidebar draws of your sections (sections.ts): a section's quiet label over its chats; a row's Move to
-// section, with a tick on its own; and the small dialog that names a new section or renames one.
-import { Plus } from "lucide-react";
+// What the sidebar draws of your sections (sections.ts): a section's quiet label over its chats, which a click folds to
+// the label alone (W798): then its name, how many chats it holds in the quiet colour, and a dot while one of them waits
+// on you or has a new message, no chevron (one hints under the pointer); a row's Move to section, with a tick on its
+// own; and the small dialog that names a new section or renames one.
+import { ChevronDown, Plus } from "lucide-react";
 import { useState, type ComponentProps } from "react";
 import type { ChatSection, ProjectRef } from "../../../shared/contracts";
 import { Button, ContextMenuItem, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator, ContextMenuSub, Dialog, Field, Input, toast, Truncate } from "../../ui";
-import { roomForSection, sectionNameProblem, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
+import { foldedWords, roomForSection, sectionNameProblem, sectionOf, SECTIONS_MAX, type SectionLine } from "./sections";
 import { projectId } from "./model";
 import s from "./sidebar.module.css";
 
@@ -12,16 +14,32 @@ interface LabelProps extends Omit<ComponentProps<"button">, "children"> {
   readonly line: Extract<SectionLine<unknown>, { t: "section" }>;
   /** A chat dragged over the section would join it if let go. */
   readonly taking: boolean;
+  /** Its click folds it: one of your sections, not the Bots over the chats in none. */
+  readonly folds?: boolean | undefined;
 }
 
-/** A section's label: its name, quiet, over its chats; never folds (W694). The menu's trigger props go on it. */
-export function SectionLabel({ line, taking, ...rest }: LabelProps) {
-  const { section } = line;
+/** A section's label, a button that folds it. The menu's trigger props go on it. */
+export function SectionLabel({ line, taking, folds = true, ...rest }: LabelProps) {
+  const { section, folded, count, dot } = line;
   return (
-    <button type="button" className={s.sectionHead} data-section-label={section.id} data-taking={taking || undefined} {...rest}>
+    <button
+      type="button"
+      className={s.sectionHead}
+      {...(folds ? { "aria-expanded": !folded, "aria-description": folded ? foldedWords(count, dot) : undefined, "data-folds": "" } : {})}
+      data-section-label={section.id}
+      data-taking={taking || undefined}
+      {...rest}
+    >
       <Truncate size="sm" tone="inherit" expand="none" className={s.sectionName}>
         {section.name}
       </Truncate>
+      {folds && folded ? (
+        <span className={s.sectionCount} aria-hidden>
+          {count}
+        </span>
+      ) : null}
+      {folds ? <ChevronDown className={s.sectionHint} data-folded={folded || undefined} aria-hidden /> : null}
+      {folds && folded && dot !== undefined ? <span className={s.dot} data-want={dot === "you" ? "you" : undefined} data-section-dot="" aria-hidden /> : null}
     </button>
   );
 }
