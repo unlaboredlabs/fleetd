@@ -71,6 +71,13 @@ describe("netem", () => {
     expect(n.stats().wireUp).toBeGreaterThan(20_000);
   });
 
+  test("connections share the bottleneck: two at once take twice as long as one", async () => {
+    const n = await rig({ overrides: { upBps: 400e3, downBps: 4e9, queue: 8 * 1024 } });
+    const [a, b] = await Promise.all([roundTrip(n, 20_000), roundTrip(n, 20_000)]);
+    // 40 kB plus headers at 400 kbit/s is ~840 ms: the later of the two finishes no sooner.
+    expect(Math.max(a.ms!, b.ms!)).toBeGreaterThan(760);
+  });
+
   test("a cut loses open connections silently and lets new ones through after", async () => {
     const n = await rig({});
     const first = await roundTrip(n, 10);

@@ -9,7 +9,8 @@
 // The model, per direction of each connection:
 // - delay: half the RTT each way plus jitter (uniform ±jitter, in order: TCP never delivers out of order), and one RTT
 //   for the TCP handshake before the first byte;
-// - bandwidth: bytes serialise at the direction's rate, with 52 bytes of TCP/IP header per 1448-byte segment;
+// - bandwidth: bytes serialise at the direction's rate, with 52 bytes of TCP/IP header per 1448-byte segment, through
+//   one bottleneck all connections share (a browser's six at once get the link's rate between them, not six times it);
 // - loss: a lost segment stalls its direction for an RTO plus a trip (head-of-line, as TCP sees it), counted twice;
 // - queue: the bottleneck holds at most `queue` bytes waiting; past that the proxy stops reading, so the sender's
 //   socket fills as behind a real router (0: unbounded);
@@ -120,6 +121,8 @@ export const startNetem = async (opts: {
   const random = rng(opts.seed ?? 1);
   const stats: Stats = { up: 0, down: 0, wireUp: 0, wireDown: 0, conns: 0, killed: 0 };
   const flows = new Set<Flow>();
+  /** When each direction of the link next has room: one bottleneck that every connection shares, as a real link is. */
+  const lane = { up: 0, down: 0 };
   /** Every socket the proxy holds, dead flows' half-open ones too, for close(). */
   const sockets = new Set<net.Socket>();
   /** Until when (performance.now() ms) the link is down, and how. */
@@ -162,7 +165,6 @@ export const startNetem = async (opts: {
 
   /** Carries one direction: from `from` to `to`, delayed, paced and lossy as the link says. */
   const pipe = (from: net.Socket, to: net.Socket, flow: Flow, dir: "up" | "down") => {
-    let free = 0; // when the link next has room (serialisation), ms
     let last = 0; // in order: nothing arrives before what was sent earlier
     const queue: Array<{ at: number; data: Buffer }> = [];
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -183,11 +185,23 @@ export const startNetem = async (opts: {
       else if (ended && !flow.dead) to.end();
       resume();
     };
-    const resume = () => {
-      if (link.queue <= 0 || !from.isPaused()) return;
+    /** Bytes waiting at the shared bottleneck in this direction. */
+    const backlog = () => {
       const rate = dir === "down" ? link.downBps : link.upBps;
-      const backlog = rate > 0 ? ((free - now()) / 1000) * (rate / 8) : 0;
-      if (backlog <= link.queue) from.resume();
+      return rate > 0 ? ((lane[dir] - now()) / 1000) * (rate / 8) : 0;
+    };
+    let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+    /** Reads again once the bottleneck has drained to its queue: checked when it should have, and after each delivery. */
+    const resume = () => {
+      if (link.queue <= 0 || !from.isPaused() || from.destroyed) return;
+      const over = backlog() - link.queue;
+      if (over <= 0) {
+        from.resume();
+        return;
+      }
+      const rate = dir === "down" ? link.downBps : link.upBps;
+      clearTimeout(resumeTimer);
+      resumeTimer = setTimeout(resume, Math.max(1, (over * 8 * 1000) / rate));
     };
     from.on("data", (chunk: Buffer) => {
       const t = now();
@@ -205,7 +219,7 @@ export const startNetem = async (opts: {
         const wire = seg.length + HDR;
         stats[dir] += seg.length;
         stats[dir === "up" ? "wireUp" : "wireDown"] += wire;
-        free = rate > 0 ? Math.max(t, free) + (wire * 8 * 1000) / rate : t;
+        const free = (lane[dir] = rate > 0 ? Math.max(t, lane[dir]) + (wire * 8 * 1000) / rate : t);
         const jitter = link.jitter > 0 ? (random() * 2 - 1) * link.jitter * 1000 : 0;
         let at = free + Math.max(0, (link.rtt * 1000) / 2 + jitter);
         if (link.loss > 0 && random() < link.loss) {
@@ -216,7 +230,10 @@ export const startNetem = async (opts: {
         queue.push({ at, data: Buffer.from(seg) });
       }
       if (timer === undefined) timer = setTimeout(pump, Math.max(0, queue[0]!.at - t));
-      if (link.queue > 0 && rate > 0 && ((free - t) / 1000) * (rate / 8) > link.queue) from.pause();
+      if (link.queue > 0 && rate > 0 && backlog() > link.queue) {
+        from.pause();
+        resume();
+      }
     });
     from.on("end", () => {
       ended = true;
