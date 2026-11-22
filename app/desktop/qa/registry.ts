@@ -3604,8 +3604,20 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-page"],
     variant: "view",
   },
-  // D239: New screen, the plus beside Screens in the Agents list: the kind as four tiles (no iOS, D298), the machines that can host it with
-  // their slots; the agents' Mac, its one screen in use, offers to wait, and the wait shows in the list until cancelled.
+  // D239: New screen, the plus beside Screens in the Agents list, as it opens: the title, the kind as four tiles (no
+  // iOS, D298) with Browser picked, the machine and Open, and no explaining lines under the title (W796).
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "new-screen-browser",
+    open: async (page) => {
+      await page.getByRole("button", { name: "New screen", exact: true }).click();
+      await expect(page.getByRole("radio", { name: /^Browser/u })).toHaveAttribute("aria-checked", "true");
+    },
+  },
+  // ...the machines that can host it with their slots; the agents' Mac, its one screen in use, offers to wait, and the
+  // wait shows in the list until cancelled.
   {
     id: "sessions",
     route: `${CHAT}/sessions`,
@@ -3641,7 +3653,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("radio", { name: /^Android/u }).click();
       await page.getByRole("combobox", { name: "PR build" }).click();
       await page.getByRole("option", { name: "#14 Checkout keeps the cart after sign-in" }).click();
-      await expect(page.getByText("Its newest CI build is installed before you get control.")).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "PR build" })).toHaveText("#14 Checkout keeps the cart after sign-in");
     },
   },
   // ...opened: it goes on in the hub, and the picker follows it (here, the build going in) until the screen is yours.
