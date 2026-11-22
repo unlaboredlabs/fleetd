@@ -35,9 +35,10 @@
 # kept under its key, the hash of its inputs: fleetd .github/fleetd-scope.sh's paths, the site those and its own,
 # desktop and qa the whole tree (their tests read files across it), each with this script. So a run with none named
 # skips a check that already passed on the same inputs, and says so: a desktop fix on a branch whose fleetd passed
-# doesn't run the fleetd check again. So run it after your final rebase onto origin/main, and commit exactly what it
-# checked. One too long for a command's time limit runs with --background, and --wait, run with Claude's Monitor tool,
-# says how it ended (never a sleep loop): it records its pass when it ends either way.
+# doesn't run the fleetd check again. So run it on the tree you push, and commit exactly what it checked: a main that
+# moved since but merges cleanly needs no rebase, as the merge train rebases and runs CI itself. One too long for a
+# command's time limit runs with --background, and --wait, run with Claude's Monitor tool, says how it ended (never a
+# sleep loop): it records its pass when it ends either way.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
