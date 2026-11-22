@@ -1,0 +1,511 @@
+<!doctype html>
+<!-- fleetd.sh/pricing: what fleetd cloud costs, and how it differs from a hub you run yourself. The same page as home.html
+     in type, colour and header, set denser: plain tables you read at a glance. The plans, agents at once, sizes and
+     credits are read at load from fleetd cloud's public plans (accounts.fleetd.dev/v1/plans), which ops sets; the
+     values written here are today's, shown until it answers and whenever it doesn't. Keep them in step with
+     fleetd-cloud (src/billing/stripe/prices.ts, src/billing/rates.ts) and the docs' Billing page. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Pricing · fleetd</title>
+<meta name="description" content="fleetd is open source and free to run yourself. On fleetd cloud you pay only for the computers we run, from $20 a month. Plans, pay as you go, and self-hosted or cloud side by side.">
+<meta property="og:title" content="Pricing · fleetd">
+<meta property="og:description" content="Open source and free to run yourself. On fleetd cloud you pay only for the computers we run. No seats and no tokens.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+
+:root{
+  color-scheme:dark;
+  --paper:#121212;
+  --tone:#1c1c1c;
+  --ink:#ededeb;
+  --grey:#a2a3a5;
+  --faint:#76787b;
+  --rule:#2c2c2e;
+  --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
+  --pad:clamp(20px,4.4vw,64px);
+  --max:1280px;
+  --snap:cubic-bezier(.2,0,0,1);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --paper:#f4f4f1;
+  --tone:#e9e9e5;
+  --ink:#17181a;
+  --grey:#5b5d61;
+  --faint:#8a8c8f;
+  --rule:#d6d6d1;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);font-kerning:normal;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.22em;text-decoration-color:var(--rule)}
+a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:2px}
+p,h1,h2,h3,table{margin:0}
+.w{max-width:var(--max);margin:0 auto;padding:0 var(--pad)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+/* header, as on home.html */
+.top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:24px;padding-bottom:24px}
+.mark{font-weight:600;font-size:19px;letter-spacing:-.015em;text-decoration:none}
+.nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
+.nav a{text-decoration:none}
+.nav a:hover,.nav a[aria-current]{color:var(--ink)}
+.theme{display:flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
+.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
+.theme button:hover{color:var(--ink)}
+.theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
+.nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
+.nav .up:hover{color:var(--paper);opacity:.88}
+
+/* the headline: the page's one idea, set big */
+.head{padding-top:clamp(40px,6vw,96px);padding-bottom:clamp(40px,5vw,72px)}
+h1{font-weight:600;letter-spacing:-.04em;line-height:1.23;font-size:clamp(34px,4.24vw,61px);text-wrap:balance;max-width:899px}
+.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:590px;text-wrap:balance}
+
+/* blocks: a small label on the left, its content on the right, a hairline above each */
+.blk{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,9fr);gap:20px clamp(32px,4.4vw,72px);padding-top:clamp(36px,4vw,56px);padding-bottom:clamp(36px,4vw,56px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
+.blk>div:first-child h2{font-weight:600;font-size:clamp(22px,1.9vw,27px);line-height:1.12;letter-spacing:-.022em;text-wrap:balance}
+.blk>div:first-child p{margin-top:10px;font-size:15px;color:var(--grey);max-width:20em;text-wrap:pretty}
+.after{margin-top:18px;font-size:14px;color:var(--grey);max-width:44em;text-wrap:pretty}
+.after a{color:var(--ink)}
+.after.wide{max-width:720px}
+
+/* the plans: three columns between hairlines, the price the biggest thing in each */
+.plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.plan{padding:22px 24px 24px 0}
+.plan+.plan{padding-left:24px;border-left:1px solid var(--rule)}
+.plan h3{font-weight:500;font-size:15px;color:var(--grey);letter-spacing:0}
+.price{margin-top:10px;display:flex;align-items:baseline;gap:6px}
+.price b{font-weight:600;font-size:clamp(36px,3.4vw,48px);line-height:1;letter-spacing:-.035em}
+.price span{color:var(--grey);font-size:15px}
+.plan ul{list-style:none;margin:20px 0 0;padding:0;font-size:15px}
+.plan li{padding:7px 0;border-top:1px solid var(--rule)}
+.plan li span:not([data-f]){color:var(--grey)}
+
+/* tables: plain rows, numbers right-aligned in the price tables */
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:11px 16px 11px 0;border-bottom:1px solid var(--rule)}
+thead th{font-weight:500;color:var(--grey);font-size:13px;padding-top:0;padding-bottom:9px}
+tbody th{font-weight:500}
+.num{text-align:right;padding-right:0;white-space:nowrap}
+.duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px clamp(28px,3.2vw,48px)}
+.duo h3{font-weight:600;font-size:15px;margin-bottom:10px}
+.duo p{font-size:15px;color:var(--grey);text-wrap:pretty}
+.duo p+p{margin-top:8px}
+code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
+
+/* A two- or three-way switch, the header's Light/Dark one: computer time per hour or per month, the calculator's size. */
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
+.seg button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer;white-space:nowrap}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
+.duo .unit{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:10px}
+.duo .unit h3{margin:0}
+
+/* The estimate: a row per input, its label on the left and its control on the right, then the month in big type. */
+.calc .row{display:flex;align-items:center;justify-content:space-between;gap:10px 24px;padding:13px 0;border-bottom:1px solid var(--rule);font-size:15px}
+.calc .row:first-child{border-top:1px solid var(--rule)}
+.calc label,.calc .lab{color:var(--grey)}
+.calc .ctl{display:flex;align-items:center;gap:14px;width:min(380px,58%)}
+.calc output{min-width:2.4ch;text-align:right;font-weight:500;color:var(--ink)}
+.calc input[type=range]{flex:1;min-width:0;height:22px;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer}
+.calc input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(var(--ink),var(--ink)) no-repeat 0 0/var(--fill,50%) 100%,var(--rule);border-radius:1px}
+.calc input[type=range]::-moz-range-track{height:2px;background:var(--rule);border-radius:1px}
+.calc input[type=range]::-moz-range-progress{height:2px;background:var(--ink);border-radius:1px}
+.calc input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-6px;border-radius:50%;background:var(--ink);border:0}
+.calc input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ink);border:0}
+.calc input[type=range]:focus-visible{outline:none}
+.calc input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px var(--paper),0 0 0 5px var(--ink)}
+.calc .total{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap;padding-top:22px}
+.calc .total span{color:var(--grey);font-size:15px}
+.calc .total b{font-weight:600;font-size:clamp(44px,4.4vw,64px);line-height:1;letter-spacing:-.035em}
+.calc .how{margin-top:12px;font-size:14px;color:var(--grey);max-width:44em;text-wrap:pretty}
+.calc .how b{font-weight:500;color:var(--ink)}
+
+/* self-hosted or cloud: three columns, the row's question first */
+.vs th[scope="row"]{width:22%;color:var(--grey);font-weight:400}
+.vs thead th{font-size:15px;color:var(--ink);font-weight:600}
+.vs thead th>span{display:block;font-weight:400;font-size:13px;color:var(--grey);margin-top:2px}
+.vs td{width:39%;text-wrap:pretty}
+.vs td>span:not([data-f]){color:var(--grey)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
+.foot nav{display:flex;gap:20px}
+.foot a{text-decoration:none}
+.foot a:hover{color:var(--ink)}
+
+@media (max-width:1000px){
+  .blk{grid-template-columns:minmax(0,1fr)}
+  .blk>div:first-child p{max-width:34em}
+}
+@media (max-width:640px){
+  .nav{gap:14px}
+  .nav .gh,.nav .in{display:none}
+  .plans{grid-template-columns:minmax(0,1fr);border-bottom:0}
+  .plan,.plan+.plan{padding:18px 0 20px;border-left:0;border-bottom:1px solid var(--rule)}
+  .plan ul{display:flex;flex-direction:column}
+  .duo{grid-template-columns:minmax(0,1fr)}
+  .calc .row{flex-direction:column;align-items:stretch}
+  .calc .ctl{width:100%}
+  .calc .seg{align-self:flex-start}
+  /* Each row's question becomes a line of its own above the two answers, so both answers keep half the width. */
+  .vs thead th:first-child{display:none}
+  .vs thead tr,.vs tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px}
+  .vs thead th{padding-right:0}
+  .vs tbody th[scope="row"]{grid-column:1/-1;width:auto;padding:14px 0 2px;border-bottom:0;font-size:13px}
+  .vs td{width:auto;padding:2px 0 14px}
+}
+/* The narrowest phones: Docs stays in the footer and under the install line. */
+@media (max-width:400px){
+  .nav .docs{display:none}
+}
+@media (prefers-reduced-motion:no-preference){
+  .nav a,a,.theme button{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
+}
+</style>
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing" aria-current="page">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <div class="theme" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
+    </div>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main>
+<section class="w head" aria-labelledby="h">
+  <h1 id="h">fleetd cloud is ready to orchestrate thousands of agents.</h1>
+  <p class="sub">fleetd is open source and free to run yourself. On fleetd cloud you pay only for the computers we run. No seats and no tokens.</p>
+</section>
+
+<section class="w blk" id="plans" aria-labelledby="plans-h">
+  <div>
+    <h2 id="plans-h">fleetd cloud</h2>
+    <p>For agents that run on our computers. Every plan covers the whole team.</p>
+  </div>
+  <div>
+    <div class="plans">
+      <div class="plan" data-plan="solo">
+        <h3 data-f="name">Solo</h3>
+        <p class="price"><b data-f="price">$20</b><span>a month</span></p>
+        <ul>
+          <li><span data-f="hours">500 hours</span> <span>of computer time</span></li>
+          <li><span data-f="agents">3</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
+        </ul>
+      </div>
+      <div class="plan" data-plan="team">
+        <h3 data-f="name">Team</h3>
+        <p class="price"><b data-f="price">$50</b><span>a month</span></p>
+        <ul>
+          <li><span data-f="hours">1,000 hours</span> <span>of computer time</span></li>
+          <li><span data-f="agents">10</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
+        </ul>
+      </div>
+      <div class="plan" data-plan="scale">
+        <h3 data-f="name">Scale</h3>
+        <p class="price"><b data-f="price">$200</b><span>a month</span></p>
+        <ul>
+          <li><span data-f="hours">4,300 hours</span> <span>of computer time</span></li>
+          <li><span data-f="agents">40</span> agents <span>at once</span></li>
+          <li data-f="largest" hidden></li>
+        </ul>
+      </div>
+    </div>
+    <p class="after wide">Hours are for the smallest computer. Unused time doesn’t roll over. Prices exclude VAT. <a href="/docs/billing">Billing details</a></p>
+  </div>
+</section>
+
+<section class="w blk" id="usage" aria-labelledby="usage-h">
+  <div>
+    <h2 id="usage-h">Pay as you go</h2>
+    <p>Extra time beyond a plan, or no plan at all.</p>
+  </div>
+  <div class="duo">
+    <div>
+      <div class="unit">
+        <h3>Computer time</h3>
+        <div class="seg" role="group" aria-label="Price per second, per hour or per month" id="per">
+          <button type="button" data-per="second" aria-pressed="false">Per second</button>
+          <button type="button" data-per="hour" aria-pressed="true">Per hour</button>
+          <button type="button" data-per="month" aria-pressed="false">Per month</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th scope="col">Size</th><th scope="col" class="num" id="per-h">Per hour</th></tr></thead>
+        <tbody id="sizes">
+          <tr><th scope="row">2 CPU, 4 GB</th><td class="num">$0.06</td></tr>
+          <tr><th scope="row">4 CPU, 8 GB</th><td class="num">$0.12</td></tr>
+          <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:12px" id="per-note">Metered to the millisecond, only while a computer is running.</p>
+    </div>
+    <div>
+      <h3>Credits</h3>
+      <p>Prepaid computer time, from <span data-f="credits-min">$10</span>, valid for <span data-f="credits-months">12</span> months.</p>
+      <p>Without a plan, credits run up to <span data-f="credits-agents">3</span> agents at once.</p>
+    </div>
+  </div>
+</section>
+
+<section class="w blk" id="estimate" aria-labelledby="estimate-h">
+  <div>
+    <h2 id="estimate-h">Estimate a month</h2>
+    <p>Agents sleep when they’re idle, so a computer is billed only while its agent works.</p>
+  </div>
+  <div class="calc">
+    <div class="row"><span class="lab" id="c-size-l">Computer</span><div class="seg" role="group" aria-labelledby="c-size-l" id="c-size"><button type="button" data-i="0" aria-pressed="true">2 CPU · 4 GB</button><button type="button" data-i="1" aria-pressed="false">4 CPU · 8 GB</button><button type="button" data-i="2" aria-pressed="false">8 CPU · 16 GB</button></div></div>
+    <div class="row"><label for="c-agents">Agents at once</label><div class="ctl"><input type="range" id="c-agents" min="1" max="40" step="1" value="25"><output for="c-agents" id="c-agents-o">25</output></div></div>
+    <div class="row"><label for="c-hours">Hours each agent works a day</label><div class="ctl"><input type="range" id="c-hours" min="1" max="24" step="1" value="3"><output for="c-hours" id="c-hours-o">3</output></div></div>
+    <div class="row"><label for="c-days">Days a month</label><div class="ctl"><input type="range" id="c-days" min="1" max="31" step="1" value="22"><output for="c-days" id="c-days-o">22</output></div></div>
+    <div class="total"><span>Estimated monthly cost</span><b id="c-total" aria-live="polite">$200</b></div>
+    <p class="how" id="c-how">The <b>Scale</b> plan, $200 a month, runs up to 40 agents at once. Your 1,650 hours of computer time ($99) fit in the $260 it includes.</p>
+  </div>
+</section>
+
+<section class="w blk" id="compare" aria-labelledby="compare-h">
+  <div>
+    <h2 id="compare-h">Self-hosted or cloud</h2>
+    <p>The same product either way. The difference is who runs it.</p>
+  </div>
+  <div>
+    <table class="vs">
+      <thead>
+        <tr><th scope="col"><span class="sr">&nbsp;</span></th><th scope="col">Self-hosted <span>Free, open source</span></th><th scope="col">fleetd cloud <span>From <span data-f="from">$20</span> a month</span></th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Who runs it</th><td>You, on your own machine.</td><td>We do, in the EU.</td></tr>
+        <tr><th scope="row">Agents run on</th><td>Your own machines.</td><td>Our computers, or your own.</td></tr>
+        <tr><th scope="row">Apps</th><td>Desktop and phone.</td><td>Desktop, phone and web.</td></tr>
+        <tr><th scope="row">Models and GitHub</th><td>Your own accounts.</td><td>Your own accounts.</td></tr>
+        <tr><th scope="row">Runs without us</th><td>Yes.</td><td>No.</td></tr>
+        <tr><th scope="row">Costs</th><td>Free.</td><td>From <span data-f="from">$20</span> a month. <span>Agents on your own machines stay free.</span></td></tr>
+      </tbody>
+    </table>
+    <p class="after">Start self-hosted and <a href="/docs/moving-a-hub#cloud">move to cloud</a> later; your projects and history come with you. <a href="/docs/install">Install fleetd</a></p>
+  </div>
+</section>
+</main>
+
+<footer class="w foot">
+  <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+  <nav aria-label="Footer">
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+// The plans as ops sets them: fleetd cloud's public plans (no sign-in), read at load, fill the plans, the computer
+// time table and the estimate. The page and `model` below hold today's values, so it never shows blank: a part the
+// answer lacks, an answer that never comes (4 s), or one that isn't what this page expects keeps today's.
+(() => {
+  const PLANS_URL = "https://accounts.fleetd.dev/v1/plans";
+  /** A month of computer time, for prices per month: 730 hours, a year's 8,760 over twelve. */
+  const MONTH_HOURS = 730;
+  const int = (n) => Number.isSafeInteger(n) && n >= 0;
+  const sized = (s) => s && int(s.cpu) && int(s.memGb);
+  const commas = (n) => n.toLocaleString("en-US");
+  /** Whole dollars bare ($20, $1,650), else with cents ($99.50); a rate always with cents ($0.06). */
+  const money = (cents) => "$" + (cents % 100 === 0 ? commas(cents / 100) : commas(Math.floor(cents / 100)) + "." + String(cents % 100).padStart(2, "0"));
+  const rate = (cents) => "$" + (cents / 100).toFixed(2);
+  const size = (s, sep) => s.cpu + " CPU" + sep + s.memGb + " GB";
+  const put = (root, f, text) => root.querySelectorAll('[data-f="' + f + '"]').forEach((el) => { el.textContent = text; });
+  const fits = (s, largest) => !sized(largest) || (s.cpu <= largest.cpu && s.memGb <= largest.memGb);
+
+  // Today's values, what the page shows until the live answer comes, and for any part of it that is missing or odd.
+  const model = {
+    plans: [
+      { key: "solo", name: "Solo", priceCents: 2000, includedCents: 3000, agentsAtOnce: 3, largest: { cpu: 8, memGb: 16 } },
+      { key: "team", name: "Team", priceCents: 5000, includedCents: 6000, agentsAtOnce: 10, largest: { cpu: 8, memGb: 16 } },
+      { key: "scale", name: "Scale", priceCents: 20000, includedCents: 26000, agentsAtOnce: 40, largest: { cpu: 8, memGb: 16 } },
+    ],
+    credits: { agentsAtOnce: 3, minCents: 1000, months: 12, largest: { cpu: 8, memGb: 16 } },
+    sizes: [
+      { cpu: 2, memGb: 4, centsPerHour: 6 },
+      { cpu: 4, memGb: 8, centsPerHour: 12 },
+      { cpu: 8, memGb: 16, centsPerHour: 24 },
+    ],
+  };
+  const take = (d) => {
+    if (!d || d.currency !== "usd") return;
+    const plans = Array.isArray(d.plans) ? d.plans.filter((p) => p && typeof p.key === "string" && int(p.priceCents) && int(p.includedCents) && int(p.agentsAtOnce) && p.agentsAtOnce > 0) : [];
+    if (plans.length) model.plans = plans.map((p) => ({ ...p, name: typeof p.name === "string" && p.name ? p.name : p.key }));
+    const c = d.credits;
+    if (c && int(c.agentsAtOnce) && int(c.minCents) && int(c.months)) model.credits = c;
+    const sizes = Array.isArray(d.sizes) ? d.sizes.filter((s) => sized(s) && int(s.centsPerHour) && s.centsPerHour > 0) : [];
+    if (sizes.length) model.sizes = sizes.toSorted((a, b) => a.centsPerHour - b.centsPerHour);
+  };
+
+  // A plan's time as hours of the smallest computer, rounded down to two figures: 500, 1,000, 4,300.
+  const hours = (cents) => {
+    const h = cents / model.sizes[0].centsPerHour;
+    const step = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(h, 1))) - 1);
+    return commas(Math.floor(h / step) * step) + " hours";
+  };
+
+  let per = "hour";
+  let pick = 0;
+  const calc = {
+    agents: document.getElementById("c-agents"),
+    hours: document.getElementById("c-hours"),
+    days: document.getElementById("c-days"),
+  };
+
+  const renderPlans = () => {
+    // A plan's largest size shows only when the plans differ in it; the same for all, the sizes table says it.
+    const largest = new Set(model.plans.filter((p) => sized(p.largest)).map((p) => size(p.largest, ", ")));
+    for (const p of model.plans) {
+      const el = document.querySelector('[data-plan="' + p.key + '"]');
+      if (!el) continue;
+      put(el, "name", p.name);
+      put(el, "price", money(p.priceCents));
+      put(el, "hours", hours(p.includedCents));
+      put(el, "agents", String(p.agentsAtOnce));
+      const li = el.querySelector('[data-f="largest"]');
+      if (li && largest.size > 1 && sized(p.largest)) {
+        const words = document.createElement("span");
+        words.textContent = "Computers up to ";
+        li.replaceChildren(words, size(p.largest, ", "));
+        li.hidden = false;
+      }
+    }
+    put(document, "from", money(Math.min(...model.plans.map((p) => p.priceCents))));
+    put(document, "credits-min", money(model.credits.minCents));
+    put(document, "credits-months", String(model.credits.months));
+    put(document, "credits-agents", String(model.credits.agentsAtOnce));
+  };
+
+  const renderSizes = () => {
+    document.getElementById("per-h").textContent = { second: "Per second", hour: "Per hour", month: "Per month" }[per];
+    document.getElementById("per-note").textContent = "Metered to the millisecond, only while a computer is running." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
+    document.querySelectorAll("[data-per]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === per)));
+    document.getElementById("sizes").replaceChildren(...model.sizes.map((s) => {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th");
+      th.scope = "row";
+      th.textContent = size(s, ", ");
+      const td = document.createElement("td");
+      td.className = "num";
+      // A second's price is a fraction of a cent (fleetd-cloud sums each computer's milliseconds before rounding): three figures.
+      td.textContent = per === "second" ? "$" + (s.centsPerHour / 360000).toPrecision(3) : per === "hour" ? rate(s.centsPerHour) : money(s.centsPerHour * MONTH_HOURS);
+      tr.append(th, td);
+      return tr;
+    }));
+  };
+
+  const renderCalc = () => {
+    const box = document.getElementById("c-size");
+    if (box.children.length !== model.sizes.length || [...box.children].some((b, i) => b.textContent !== size(model.sizes[i], " · "))) {
+      box.replaceChildren(...model.sizes.map((s, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.i = String(i);
+        b.textContent = size(s, " · ");
+        return b;
+      }));
+    }
+    pick = Math.min(pick, model.sizes.length - 1);
+    [...box.children].forEach((b, i) => b.setAttribute("aria-pressed", String(i === pick)));
+    const top = Math.max(model.credits.agentsAtOnce, ...model.plans.map((p) => p.agentsAtOnce));
+    calc.agents.max = String(top);
+    if (Number(calc.agents.value) > top) calc.agents.value = String(top);
+    for (const [k, input] of Object.entries(calc)) {
+      document.getElementById("c-" + k + "-o").textContent = input.value;
+      input.style.setProperty("--fill", ((input.value - input.min) / (input.max - input.min || 1)) * 100 + "%");
+    }
+
+    const s = model.sizes[pick];
+    const agents = Number(calc.agents.value);
+    const used = agents * Number(calc.hours.value) * Number(calc.days.value);
+    const usedCents = used * s.centsPerHour;
+    // Every way to run it: credits alone, or a plan that runs that many agents at once on that size, with credits for
+    // the time past what the plan includes. The cheapest one is the estimate.
+    const ways = [];
+    if (agents <= model.credits.agentsAtOnce && fits(s, model.credits.largest)) ways.push({ cents: usedCents });
+    for (const p of model.plans) {
+      if (agents <= p.agentsAtOnce && fits(s, p.largest)) ways.push({ plan: p, cents: p.priceCents + Math.max(0, usedCents - p.includedCents) });
+    }
+    const how = document.getElementById("c-how");
+    const total = document.getElementById("c-total");
+    if (!ways.length) {
+      total.textContent = "–";
+      how.textContent = "No plan runs " + agents + " agents at once on " + size(s, ", ") + " computers.";
+      return;
+    }
+    const best = ways.reduce((a, b) => (b.cents < a.cents ? b : a));
+    total.textContent = money(best.cents);
+    const time = commas(used) + " hours of computer time (" + money(usedCents) + ")";
+    const strong = (t) => { const b = document.createElement("b"); b.textContent = t; return b; };
+    if (!best.plan) {
+      how.replaceChildren("No plan needed: up to " + model.credits.agentsAtOnce + " agents at once run on ", strong("credits"), ", bought from " + money(model.credits.minCents) + ". Your " + time + " come out of them.");
+      return;
+    }
+    const p = best.plan;
+    const past = usedCents - p.includedCents;
+    how.replaceChildren("The ", strong(p.name), " plan, " + money(p.priceCents) + " a month, runs up to " + p.agentsAtOnce + " agents at once. Your " + time + (past > 0 ? " go " + money(past) + " past the " + money(p.includedCents) + " it includes, paid from credits." : " fit in the " + money(p.includedCents) + " it includes."));
+  };
+
+  const render = () => { renderPlans(); renderSizes(); renderCalc(); };
+  document.getElementById("per").addEventListener("click", (e) => { const b = e.target.closest("[data-per]"); if (b) { per = b.dataset.per; renderSizes(); } });
+  document.getElementById("c-size").addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) { pick = Number(b.dataset.i); renderCalc(); } });
+  for (const input of Object.values(calc)) input.addEventListener("input", renderCalc);
+  render();
+
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 4000);
+  fetch(PLANS_URL, { signal: stop.signal, credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { take(d); render(); }, () => {})
+    .catch(() => {});
+})();
+
+(() => {
+  const buttons = [...document.querySelectorAll("[data-theme-set]")];
+  const show = () => { const t = fleetdTheme.get(); buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
+  buttons.forEach((b) => b.addEventListener("click", () => { fleetdTheme.set(b.dataset.themeSet); show(); }));
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

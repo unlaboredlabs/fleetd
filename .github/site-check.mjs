@@ -19,7 +19,7 @@ const DOCS = fs
   .filter((n) => /\.mdx?$/u.test(n) && !GENERATED.has(n))
   .sort()
   .map((n) => `${CONTENT}/${n}`);
-const FILES = ["site/home.html", "site/fleetd.txt", "site/README.md", ...DOCS];
+const FILES = ["site/home.html", "site/pricing.html", "site/fleetd.txt", "site/README.md", ...DOCS];
 const help = fs.readFileSync(process.argv[2], "utf8");
 const errors = [];
 

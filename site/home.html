@@ -33,9 +33,9 @@
 })();
 </script>
 <title>fleetd: a software factory on your own machines</title>
-<meta name="description" content="fleetd is a software factory on your own machines. You set the direction. Agents build, review and ship it while you sleep.">
+<meta name="description" content="fleetd is a software factory. Other tools give developers more threads; fleetd gives the whole team one lead agent.">
 <meta property="og:title" content="fleetd: a software factory on your own machines">
-<meta property="og:description" content="You set the direction. Agents build, review and ship it while you sleep.">
+<meta property="og:description" content="Other tools give developers more threads. fleetd gives the whole team one lead agent.">
 <meta property="og:image" content="https://fleetd.sh/showcase-lead-dark.jpg">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="alternate" type="text/plain" href="/fleetd.txt" title="fleetd.sh as plain text">
@@ -64,6 +64,8 @@
   --well-lift:inset 0 1px 0 rgba(255,255,255,.025);
   --well-hover:rgba(255,255,255,.07);
   --well-press:rgba(255,255,255,.11);
+  --soft:#b9b9b9;
+  --dim:rgba(162,163,165,.7);
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
@@ -86,6 +88,8 @@
   --well-lift:0 1px 2px rgba(0,0,0,.04);
   --well-hover:rgba(0,0,0,.055);
   --well-press:rgba(0,0,0,.09);
+  --soft:#3d3f43;
+  --dim:#8a8c8f;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -107,6 +111,9 @@ p,h1,h2,figure{margin:0}
 .theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
 .theme button:hover{color:var(--ink)}
 .theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
+/* Sign up: the one filled control on the page, ink on paper, sized to the theme switch beside it. */
+.nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
+.nav .up:hover{color:var(--paper);opacity:.88}
 
 /* hero: the headline set as large as the measure allows, the bot the one thing that moves */
 .hero{padding-top:clamp(40px,7vw,104px);padding-bottom:clamp(64px,9vw,136px)}
@@ -117,7 +124,6 @@ p,h1,h2,figure{margin:0}
 .pb canvas{position:absolute;left:-25%;top:-25%;width:150%;height:150%;pointer-events:none}
 #hero-bot{width:var(--av);height:var(--av)}
 h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
-.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:26em;text-wrap:balance}
 .install{margin-top:clamp(28px,3.2vw,44px);max-width:31em}
 /* The install command: one quiet surface sized to it, the prompt dim and left out of a selection, a small copy icon
    inside on the right that turns into a check once copied. */
@@ -147,6 +153,24 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .sec p{margin-top:16px;color:var(--grey);max-width:25em;text-wrap:pretty}
 .sec .more{display:inline-block;margin-top:14px;font-size:14px;color:var(--grey)}
 .sec .more:hover{color:var(--ink)}
+/* the last section has words, not a clip: the two ways to run fleetd side by side, each a name, a price and a sentence */
+.ways{display:grid;grid-template-columns:1fr 1fr;margin-top:6px}
+.ways>div{padding:0 24px 4px 0}
+.ways>div+div{padding-left:24px;border-left:1px solid var(--rule)}
+.ways h3{margin:0;font-weight:600;font-size:19px;letter-spacing:-.012em}
+.ways .cost{margin-top:2px;font-size:15px;color:var(--faint)}
+.ways p:not(.cost){margin-top:12px;max-width:none}
+/* the models: a row per provider, what you connect by subscription and by API key, each with its maker's mark */
+.models{width:100%;border-collapse:collapse;font-size:16px;margin-top:6px}
+.models th,.models td{text-align:left;vertical-align:middle;padding:13px 16px 13px 0;border-bottom:1px solid var(--rule)}
+.models thead th{font-weight:500;font-size:13px;color:var(--grey);padding-top:0;padding-bottom:9px}
+.models tbody th{font-weight:600;width:28%;letter-spacing:-.005em}
+.models td{width:36%}
+.models .m{display:inline-flex;align-items:center;gap:10px}
+.models .mk{width:20px;height:20px;flex:none}
+.models .soon{display:block;font-weight:400;font-size:13px;color:var(--grey);margin-top:1px}
+.models .later td{color:var(--grey)}
+.sec .after{margin-top:16px;font-size:14px;max-width:44em}
 
 /* a clip: 1400x900 windows at 2x. The poster is the picture; the recording plays over it once it can, never with
    reduced motion until Play. A still: a part of the window at 2x. */
@@ -163,10 +187,12 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 
 /* the philosophy: three lines set big, then the paragraph at a reading measure */
 .phil{padding-top:clamp(56px,7vw,112px);padding-bottom:clamp(64px,8vw,120px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px}
-.say{font-weight:600;font-size:clamp(32px,4.6vw,66px);line-height:1.02;letter-spacing:-.04em}
+.say{font-weight:600;font-size:clamp(30px,4.03vw,58px);line-height:1.02;letter-spacing:-.04em;text-wrap:balance}
 .say>span{display:block}
-.say .rest{color:var(--faint)}
-.phil p{margin-top:clamp(22px,2.4vw,34px);max-width:36em;color:var(--grey);font-size:clamp(17px,1.35vw,19px);line-height:1.55;text-wrap:pretty}
+.say .then{color:var(--faint)}
+/* The paragraph set large: its first sentence a step quieter than the rest. */
+.phil p{margin-top:clamp(22px,2.4vw,34px);max-width:684px;color:var(--soft);font-size:clamp(19px,1.8vw,26px);line-height:1.12;letter-spacing:-.008em;text-wrap:pretty}
+.phil p .then{color:var(--dim)}
 .note{padding-top:8px;padding-bottom:clamp(40px,5vw,72px);font-size:13px;color:var(--faint)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
@@ -179,14 +205,29 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .sec p{max-width:34em}
 }
 @media (max-width:640px){
+  /* The provider becomes a line of its own above its two ways in, so each keeps half the width. */
+  .models thead th:first-child{display:none}
+  .models thead tr,.models tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px}
+  .models thead th{padding-right:0}
+  .models tbody th{grid-column:1/-1;width:auto;padding:14px 0 4px;border-bottom:0}
+  .models .soon{display:inline;margin:0 0 0 8px}
+  .models td{width:auto;padding:4px 0 14px}
+  .ways{grid-template-columns:minmax(0,1fr)}
+  .ways>div,.ways>div+div{padding:0 0 18px;border-left:0}
+  .ways>div+div{padding-top:18px;border-top:1px solid var(--rule)}
   .lockup{grid-template-columns:minmax(0,1fr);--av:150px}
   .nav{gap:14px}
-  .nav .gh{display:none}
+  .nav .gh,.nav .in{display:none}
+  .phil p{line-height:1.35}
   .cmd code{font-size:13px}
   .shot{border-radius:5px}
   .play{right:6px;bottom:6px;padding:4px 7px}
 }
 /* Snappy, as in the app (app/desktop/src/renderer/ui/DESIGN.md): state changes in 140 ms, only colour and opacity. */
+/* The narrowest phones: Docs stays in the footer and under the install line. */
+@media (max-width:400px){
+  .nav .docs{display:none}
+}
 @media (prefers-reduced-motion:no-preference){
   .nav a,a,.theme button{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
   .shot video,.play{transition:opacity .14s var(--snap),visibility .14s var(--snap)}
@@ -198,12 +239,15 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 <header class="w top">
   <a class="mark" href="/">fleetd</a>
   <nav class="nav" aria-label="Site">
-    <a href="/docs">Docs</a>
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
     <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <div class="theme" role="group" aria-label="Colour theme">
       <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
       <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
     </div>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
   </nav>
 </header>
 
@@ -213,19 +257,18 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <span class="pb" id="hero-bot" role="img" aria-label="fleetd’s bot, the face every bot and agent has in the app"></span>
     <div>
       <h1 id="h">Software factories, reinvented as fast as the models improve.</h1>
-      <p class="sub">You set the direction. Agents build, review and ship it while you sleep.</p>
       <div class="install">
         <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd">curl -fsSL https://fleetd.sh | sh</span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
-        <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a></p>
+        <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a> · <a href="/pricing">Pricing</a></p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- The philosophy: software is an experiment, not an asset. -->
+<!-- What fleetd is, against what else there is: one lead for the whole team. -->
 <section class="w phil" aria-labelledby="phil">
-  <h2 class="say" id="phil"><span>Software isn’t an asset.</span> <span>It’s a dozen experiments.</span> <span>Keep one. <span class="rest">Drop the rest.</span></span></h2>
-  <p>Agents made building cheap, so stop polishing one bet for months. Ship a dozen experiments tonight, see what people actually use, and drop the rest without regret. fleetd is built for that pace: a lead plans the work, agents build it in parallel, and every change is reviewed before it lands.</p>
+  <h2 class="say" id="phil"><span class="then">Other tools give developers more threads.</span> <span>fleetd gives the whole team one lead agent.</span></h2>
+  <p><span class="then">fleetd puts one lead on each project.</span> It orchestrates thousands of agents, lands changes autonomously and learns from all requests, retaining all context of your work.</p>
 </section>
 
 <!-- Each section's clip or still: `pnpm site:showcase` in app/desktop records them (site/README.md). Keep each alt text
@@ -296,11 +339,50 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   <figure class="shot" data-clip="screens">
     <picture>
       <source data-light srcset="/showcase-screens-light-small.jpg 1400w, /showcase-screens-light.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" media="not all">
-      <img src="/showcase-screens-dark.jpg" srcset="/showcase-screens-dark-small.jpg 1400w, /showcase-screens-dark.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront in the fleetd app. The lead says the iPhone app’s sign-in texts a code to a test number, so its agent can’t go on alone, and asks you to take over its screen. The panel shows that screen live: an iPhone simulator on the app’s sign-in code page with the code 418093 typed in, its bar saying you’re in control, and Hand back under it.">
+      <img src="/showcase-screens-dark.jpg" srcset="/showcase-screens-dark-small.jpg 1400w, /showcase-screens-dark.jpg 2800w" sizes="(min-width: 1001px) 60vw, 100vw" width="2800" height="1800" loading="lazy" decoding="async" alt="storefront in the fleetd app. The lead says the iPhone app’s sign-in texts a code to a test number, so its agent can’t go on alone, and asks you to take over its screen. The panel shows that screen live: an iPhone simulator on the app’s sign-in code page with the code 418093 typed in, its bar saying you’re in control, and Hand back beside it.">
     </picture>
     <video muted loop playsinline preload="none" disablepictureinpicture aria-hidden="true" tabindex="-1"></video>
     <button class="play" type="button">Pause</button>
   </figure>
+</section>
+
+<!-- The models agents run on, by provider: what you connect, and what's next. Each mark is the company's own (Anthropic's
+     press kit, Google's own sites, OpenAI's brand kit), in site/brand/models or inline in the text colour. -->
+<section class="w sec" aria-labelledby="models">
+  <div>
+    <h2 id="models">Bring the models you already pay for</h2>
+    <p>fleetd sells no tokens. Agents run on your own subscription or API key.</p>
+  </div>
+  <div>
+    <table class="models">
+      <thead><tr><th scope="col"><span class="sr">Provider</span></th><th scope="col">Subscription</th><th scope="col">API key</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Anthropic</th><td><span class="m"><img class="mk" src="/brand/models/claude.svg" alt="" width="20" height="20">Claude</span></td><td><span class="m"><svg class="mk" viewBox="0 0 92 64" aria-hidden="true"><path d="M66.4915 0H52.5029L78.0115 64H92.0001L66.4915 0Z" fill="currentColor"/><path d="M26.08 0L0.571472 64H14.8343L20.0512 50.56H46.7374L51.9543 64H66.2172L40.7086 0H26.08ZM24.6647 38.6743L33.3943 16.1829L42.1239 38.6743H24.6647Z" fill="currentColor"/></svg>Anthropic API</span></td></tr>
+        <tr><th scope="row">Google</th><td><span class="m"><img class="mk" src="/brand/models/antigravity.svg" alt="" width="20" height="20">Antigravity</span></td><td><span class="m"><img class="mk" src="/brand/models/gemini.svg" alt="" width="20" height="20">Gemini API</span></td></tr>
+        <tr class="later"><th scope="row">OpenAI <span class="soon">Coming soon</span></th><td><span class="m"><svg class="mk" viewBox="176 176 364 364" aria-hidden="true"><path d="M508.749 317.399C516.777 287.314 508.991 253.884 485.389 230.282C461.788 206.681 428.36 198.895 398.273 206.923C376.231 184.928 343.39 174.956 311.148 183.596C278.906 192.234 255.45 217.292 247.36 247.361C217.291 255.451 192.233 278.91 183.595 311.149C174.957 343.391 184.927 376.232 206.924 398.274C198.896 428.359 206.683 461.789 230.284 485.391C253.885 508.992 287.313 516.779 317.401 508.75C339.442 530.745 372.286 540.717 404.525 532.079C436.767 523.441 460.223 498.384 468.313 468.315C498.383 460.224 523.44 436.766 532.078 404.526C540.716 372.285 530.747 339.443 508.749 317.402V317.399ZM470.899 244.776C486.892 260.77 493.488 282.601 490.687 303.412L415.577 260.046C412.411 258.218 408.509 258.218 405.345 260.046L317.401 310.82V277.526C317.401 275.191 318.652 273.005 320.676 271.837L387.644 233.174C414.178 218.353 448.346 222.223 470.901 244.776H470.899ZM357.837 311.144L398.275 334.491V381.185L357.837 404.532L317.398 381.185V334.491L357.837 311.144ZM264.776 269.693C265.207 239.305 285.644 211.649 316.453 203.393C338.3 197.54 360.505 202.744 377.127 215.573L302.014 258.937C298.848 260.764 296.898 264.144 296.898 267.798V369.346L268.065 352.699C266.043 351.531 264.776 349.353 264.776 347.017V269.691V269.693ZM203.391 316.454C209.244 294.608 224.854 277.978 244.276 269.999V356.73C244.276 360.384 246.226 363.763 249.392 365.591L337.337 416.365L308.503 433.013C306.481 434.181 303.961 434.188 301.939 433.02L234.971 394.357C208.868 378.789 195.138 347.261 203.391 316.454ZM244.775 470.9C228.781 454.906 222.186 433.075 224.986 412.264L300.096 455.63C303.263 457.457 307.164 457.457 310.328 455.63L398.273 404.856V438.149C398.273 440.485 397.022 442.671 394.997 443.839L328.029 482.502C301.495 497.322 267.327 493.452 244.772 470.9H244.775ZM450.897 445.982C450.466 476.371 430.029 504.027 399.22 512.283C377.373 518.136 355.168 512.932 338.547 500.102L413.659 456.738C416.826 454.911 418.775 451.532 418.775 447.877V346.329L447.609 362.977C449.631 364.145 450.897 366.323 450.897 368.659V445.985V445.982ZM512.282 399.221C506.429 421.068 490.819 437.697 471.397 445.676V358.946C471.397 355.292 469.448 351.912 466.281 350.085L378.336 299.311L407.17 282.663C409.192 281.495 411.712 281.487 413.734 282.655L480.702 321.318C506.805 336.887 520.536 368.415 512.282 399.221Z" fill="currentColor"/></svg>ChatGPT</span></td><td><span class="m"><svg class="mk" viewBox="176 176 364 364" aria-hidden="true"><path d="M508.749 317.399C516.777 287.314 508.991 253.884 485.389 230.282C461.788 206.681 428.36 198.895 398.273 206.923C376.231 184.928 343.39 174.956 311.148 183.596C278.906 192.234 255.45 217.292 247.36 247.361C217.291 255.451 192.233 278.91 183.595 311.149C174.957 343.391 184.927 376.232 206.924 398.274C198.896 428.359 206.683 461.789 230.284 485.391C253.885 508.992 287.313 516.779 317.401 508.75C339.442 530.745 372.286 540.717 404.525 532.079C436.767 523.441 460.223 498.384 468.313 468.315C498.383 460.224 523.44 436.766 532.078 404.526C540.716 372.285 530.747 339.443 508.749 317.402V317.399ZM470.899 244.776C486.892 260.77 493.488 282.601 490.687 303.412L415.577 260.046C412.411 258.218 408.509 258.218 405.345 260.046L317.401 310.82V277.526C317.401 275.191 318.652 273.005 320.676 271.837L387.644 233.174C414.178 218.353 448.346 222.223 470.901 244.776H470.899ZM357.837 311.144L398.275 334.491V381.185L357.837 404.532L317.398 381.185V334.491L357.837 311.144ZM264.776 269.693C265.207 239.305 285.644 211.649 316.453 203.393C338.3 197.54 360.505 202.744 377.127 215.573L302.014 258.937C298.848 260.764 296.898 264.144 296.898 267.798V369.346L268.065 352.699C266.043 351.531 264.776 349.353 264.776 347.017V269.691V269.693ZM203.391 316.454C209.244 294.608 224.854 277.978 244.276 269.999V356.73C244.276 360.384 246.226 363.763 249.392 365.591L337.337 416.365L308.503 433.013C306.481 434.181 303.961 434.188 301.939 433.02L234.971 394.357C208.868 378.789 195.138 347.261 203.391 316.454ZM244.775 470.9C228.781 454.906 222.186 433.075 224.986 412.264L300.096 455.63C303.263 457.457 307.164 457.457 310.328 455.63L398.273 404.856V438.149C398.273 440.485 397.022 442.671 394.997 443.839L328.029 482.502C301.495 497.322 267.327 493.452 244.772 470.9H244.775ZM450.897 445.982C450.466 476.371 430.029 504.027 399.22 512.283C377.373 518.136 355.168 512.932 338.547 500.102L413.659 456.738C416.826 454.911 418.775 451.532 418.775 447.877V346.329L447.609 362.977C449.631 364.145 450.897 366.323 450.897 368.659V445.985V445.982ZM512.282 399.221C506.429 421.068 490.819 437.697 471.397 445.676V358.946C471.397 355.292 469.448 351.912 466.281 350.085L378.336 299.311L407.17 282.663C409.192 281.495 411.712 281.487 413.734 282.655L480.702 321.318C506.805 336.887 520.536 368.415 512.282 399.221Z" fill="currentColor"/></svg>OpenAI API</span></td></tr>
+      </tbody>
+    </table>
+    <p class="after">Your agents run on what you connect. A subscription keeps its own usage limits; a key is billed by its provider. fleetd adds nothing on top.</p>
+  </div>
+</section>
+
+<section class="w sec" aria-labelledby="where">
+  <div>
+    <h2 id="where">Run it yourself, or on fleetd cloud</h2>
+    <a class="more" href="/pricing">Pricing, and how they differ</a>
+  </div>
+  <div class="ways">
+    <div>
+      <h3>Self-hosted</h3>
+      <p class="cost">Free, open source</p>
+      <p>The hub and its agents run on your own machines, with your own Claude and GitHub. Nothing fleetd runs is needed.</p>
+    </div>
+    <div>
+      <h3>fleetd cloud</h3>
+      <p class="cost">From $20 a month</p>
+      <p>fleetd runs the hub for your team, in the EU. Agents run on fleetd’s computers, or on your own machines at no cost.</p>
+    </div>
+  </div>
 </section>
 
 <p class="w note">Each clip and still is the fleetd app on sample data, with the waits cut short.</p>
@@ -309,6 +391,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 <footer class="w foot">
   <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
   <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <a href="/fleetd.txt" type="text/plain">Plain text</a>
