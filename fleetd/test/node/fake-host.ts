@@ -4,7 +4,8 @@
 // RunStarted, an AssistantText "ok: <text>", RunEnded Completed. A Send whose text holds `ask:` asks permission for
 // Bash first and ends its run once answered; one with `auth:` fails as a refused login; one with `print:<NAME>` runs a
 // command that prints that variable whole and line by line (as `env | cut -d= -f1` does), files it in claude's own
-// conversation file as claude would, and answers with what it printed. Shutdown exits. Its environment goes to
+// conversation file as claude would, and answers with what it printed; one with `stream:<A>,<B>` streams those
+// variables' values as live text in 7-character Deltas, 10 ms apart, then answers. Shutdown exits. Its environment goes to
 // <dir>/env.json, its arguments to <dir>/argv.json. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
 import { appendFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -125,6 +126,24 @@ Bun.listen({
               appendFileSync(join(project, `${session}.jsonl`), `${JSON.stringify(entry)}\n`);
             emit({ AssistantText: { message_id: `msg-${run_id}`, text: `it printed:\n${output}` } });
             emit({ RunEnded: { run_id, outcome: { Completed: { text: `it printed:\n${output}` } }, usage: null } });
+            continue;
+          }
+          const streamed = /stream:([A-Z_,]+)/.exec(text)?.[1];
+          if (streamed !== undefined) {
+            const said = streamed.split(",").map((name) => `${name} is ${process.env[name] ?? ""} there`).join("\n");
+            const pieces = said.match(/[\s\S]{1,7}/g) ?? [];
+            waiting = { run: run_id, text: "" };
+            const next = (i: number) => {
+              if (i < pieces.length) {
+                emit({ Delta: { message_id: `msg-${run_id}`, append: pieces[i] } });
+                setTimeout(() => next(i + 1), 10);
+                return;
+              }
+              waiting = undefined;
+              emit({ AssistantText: { message_id: `msg-${run_id}`, text: said } });
+              emit({ RunEnded: { run_id, outcome: { Completed: { text: said } }, usage: null } });
+            };
+            next(0);
             continue;
           }
           if (text.includes("ask:")) {

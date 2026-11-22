@@ -1734,7 +1734,9 @@ export class SessionService {
         filled = more;
         masker = maskerNow();
       }
-      const event = masker.value(raw);
+      // Live text is masked as it goes out (flushDelta), whole across its pieces: a form or a key's block cut between
+      // two Deltas matches in neither.
+      const event = typeof raw === "object" && raw !== null && "Delta" in raw ? raw : masker.value(raw);
       live.lastActive = Date.now();
       try {
         if (typeof event === "string") continue;
@@ -2050,7 +2052,7 @@ export class SessionService {
       const row = this.store.session(id);
       if (!row || row.local.hosted || antigravity.agyModel(row.summary.model) !== undefined) return;
       const file = claude.sessionFile(row.local.configDir, row.local.cwd, id);
-      if (file) scrubTranscript(file, [...this.#secrets(row), ...filled]);
+      if (file) scrubTranscript(file, this.#secrets(row), filled);
     } catch (error) {
       console.warn(`${nowIso()} WARN couldn't scrub a session's transcript {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
     }

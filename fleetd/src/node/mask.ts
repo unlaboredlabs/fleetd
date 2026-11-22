@@ -8,8 +8,19 @@ export const MIN_LINE = 8;
 export const HIDDEN = "[secret hidden]";
 
 const pemArmor = (line: string) => (line.startsWith("-----BEGIN ") || line.startsWith("-----END ")) && line.endsWith("-----");
-/** A private key's PEM block, or its start up to the end of a text cut short. */
-const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$(?![\s\S]))/g;
+// A line break as printed, or as JSON escapes it.
+const NL = String.raw`(?:\r?\n|(?:\\r)?\\n)`;
+/** A private key's PEM block: its header, the base64 lines after it (the first of 16 characters or more, so prose
+ * that names the header isn't one), and its END line if the text has it. */
+const PRIVATE_KEY = new RegExp(
+  String.raw`-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:\s|\\[rn])+[A-Za-z0-9+/=]{16,}(?:${NL}[A-Za-z0-9+/=]+)*(?:${NL}-----END [A-Z0-9 ]*PRIVATE KEY-----)?`,
+  "g",
+);
+/** What could still become a private key's block as more text comes: its header so far, or the header and base64
+ * lines only, to the end of the text. */
+const OPENING = new RegExp(
+  String.raw`^-----BEGIN (?:[A-Z0-9 ]*-{0,5}|[A-Z0-9 ]*PRIVATE KEY-----(?:\s|\\[rn])*(?:[A-Za-z0-9+/=]+(?:${NL}[A-Za-z0-9+/=]*)*)?(?:${NL}-{0,5}[A-Z0-9 ]*-{0,4})?)$`,
+);
 const BEGIN = "-----BEGIN ";
 const utf8 = (s: string) => Buffer.from(s, "utf8");
 
@@ -122,15 +133,27 @@ export class Masker {
   held(text: string): number {
     // A private key's block not yet closed, or what could still become its header.
     const open = text.lastIndexOf(BEGIN);
-    if (open >= 0 && !text.includes("-----END ", open) && (text.length - open < 64 || text.slice(open, open + 64).includes("PRIVATE KEY"))) return text.length - open;
-    let held = 0;
-    for (let at = Math.max(0, text.length - (BEGIN.length - 1)); at < text.length && !held; at++) if (BEGIN.startsWith(text.slice(at))) held = text.length - at;
+    if (open >= 0 && OPENING.test(text.slice(open))) return text.length - open;
+    let cut = text.length;
+    for (let at = Math.max(0, text.length - (BEGIN.length - 1)); at < cut; at++) if (BEGIN.startsWith(text.slice(at))) cut = at;
     const longest = this.patterns[0]?.[0].length ?? 0;
-    for (let at = Math.max(0, text.length - (longest - 1)); at < text.length - held; at++) {
+    for (let at = Math.max(0, text.length - (longest - 1)); at < cut; at++) {
       const tail = text.slice(at);
-      if (this.patterns.some(([p]) => p.length > tail.length && p.startsWith(tail))) return text.length - at;
+      if (this.patterns.some(([p]) => p.length > tail.length && p.startsWith(tail))) cut = at;
     }
-    return held;
+    // Never inside a form or a key's block whole in the text: the cut goes back to its start, so neither half goes out
+    // unmasked (a value's end can be another form's start).
+    const spans: [number, number][] = [...text.matchAll(PRIVATE_KEY)].map((m) => [m.index, m.index + m[0].length]);
+    for (const [p] of this.patterns) for (let at = text.indexOf(p); at >= 0; at = text.indexOf(p, at + 1)) spans.push([at, at + p.length]);
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const [start, end] of spans)
+        if (start < cut && cut < end) {
+          cut = start;
+          moved = true;
+        }
+    }
+    return text.length - cut;
   }
 }
 

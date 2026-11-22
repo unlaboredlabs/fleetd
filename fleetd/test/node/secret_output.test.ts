@@ -1,7 +1,8 @@
 // A command that prints a session's secret by accident: whole, or line by line as `env | cut -d= -f1` prints a
 // multi-line value (a PEM key's body lines, the last one cut at its `=` padding). The node's stored transcript, the
 // agent's chat text, a call it posts, a screen recording's action log and claude's own conversation file (once its
-// claude exits) show only the marker, and the session resumes from that file as before. Made-up values only.
+// claude exits) show only the marker, and the session resumes from that file as before. Live text streamed in small
+// pieces leaks none of it either, nor a private key the session doesn't hold. Made-up values only.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync } from "node:fs";
@@ -33,9 +34,13 @@ const TOKEN = "made-up-token-Qx7Lw2Vb9Rt4";
 const BODY = Buffer.from("not a real key, only filler for a test of fleetd's masking: ".repeat(7) + "end.").toString("base64");
 const KEY = ["-----BEGIN PRIVATE KEY-----", ...(BODY.match(/.{1,64}/g) ?? []), "-----END PRIVATE KEY-----"].join("\n");
 const BODY_LINES = KEY.split("\n").slice(1, -1);
+// Another made-up key the session doesn't hold as a secret (a plain variable): masked only by its shape.
+const OTHER_BODY = Buffer.from("some other filler, also not a key at all, for the same test: ".repeat(5)).toString("base64").match(/.{1,64}/g)!;
+const OTHER_KEY = ["-----BEGIN RSA PRIVATE KEY-----", ...OTHER_BODY, "-----END RSA PRIVATE KEY-----"].join("\n");
 
 /** Whether `text` holds any of the made-up values, or a piece of one. */
-const leaks = (text: string) => [TOKEN, ...BODY_LINES, ...BODY_LINES.map((l) => l.replace(/=+$/, ""))].filter((v) => text.includes(v));
+const leaks = (text: string) =>
+  [TOKEN, ...BODY_LINES, ...BODY_LINES.map((l) => l.replace(/=+$/, "")), ...OTHER_BODY.map((l) => l.slice(0, 24))].filter((v) => text.includes(v));
 
 beforeAll(async () => {
   expect(BODY_LINES.length).toBeGreaterThan(3);
@@ -54,7 +59,7 @@ beforeAll(async () => {
     boxKey,
   });
   await ok("project_upsert", { projectId: "p1", title: "p1", workspaceRoot: repo });
-  await ok("project_env", { projectId: "p1", set: [{ name: "DEPLOY_TOKEN", sealed: sealed(TOKEN) }, { name: "APP_KEY", sealed: sealed(KEY) }], remove: [] });
+  await ok("project_env", { projectId: "p1", set: [{ name: "DEPLOY_TOKEN", sealed: sealed(TOKEN) }, { name: "APP_KEY", sealed: sealed(KEY) }, { name: "OTHER_KEY", value: OTHER_KEY }], remove: [] });
 });
 
 afterAll(async () => {
@@ -105,4 +110,22 @@ test("a command printing a secret, whole and line by line, leaves only the marke
   await until("the resumed run", () => service.store.session("s1")?.summary.latestRun?.id === "r3" && service.store.session("s1")?.summary.latestRun?.status === "completed");
   const argv = JSON.parse(readFileSync(join(nodeHome, "hosts", "s1", "argv.json"), "utf8")) as string[];
   expect(argv[argv.indexOf("--resume") + 1]).toBe("s1");
+});
+
+test("live text streamed in pieces shows no secret and no private key, even one the session doesn't hold", async () => {
+  const frames: Record<string, any>[] = [];
+  service.attach((f) => frames.push(f as never));
+  await ok("launch", { sessionId: "s2", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hello", runId: "q1" });
+  await until("the first run", () => service.store.session("s2")?.summary.latestRun?.status === "completed");
+  await ok("follow", { sessionId: "s2" });
+  await ok("send", { sessionId: "s2", runId: "q2", text: "stream:APP_KEY,OTHER_KEY,DEPLOY_TOKEN" });
+  await until("the streamed run", () => service.store.session("s2")?.summary.latestRun?.id === "q2" && service.store.session("s2")?.summary.latestRun?.status === "completed");
+  const live = frames.filter((f) => f.t === "thread_event" && f.sessionId === "s2" && f.event.type === "delta").map((f) => f.event.append as string);
+  expect(live.length).toBeGreaterThan(1);
+  const shown = live.join("");
+  expect(leaks(shown)).toEqual([]);
+  expect(shown).toContain("APP_KEY is ***APP_KEY*** there");
+  expect(shown).toContain("OTHER_KEY is [secret hidden] there");
+  const [messages] = service.store.newestMessages("s2", 50);
+  expect(leaks(messages.map((m) => m.text).join("\n"))).toEqual([]);
 });

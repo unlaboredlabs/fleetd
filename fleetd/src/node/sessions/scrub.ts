@@ -6,9 +6,9 @@
 import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { Masker } from "../mask.ts";
 
-/** Masks `file`'s lines that hold one of `secrets` (in any form claude's JSON may write it) or a private key. Whether
- * it changed. */
-export function scrubTranscript(file: string, secrets: [name: string, value: string][]): boolean {
+/** Masks `file`'s lines that hold one of `secrets` (in any form claude's JSON may write it) or a private key, and the
+ * values `filled` into its browsers in every form a page shows them, as its pump masked them. Whether it changed. */
+export function scrubTranscript(file: string, secrets: [name: string, value: string][], filled: [name: string, value: string][] = []): boolean {
   let text: string;
   try {
     text = readFileSync(file, "utf8");
@@ -16,10 +16,10 @@ export function scrubTranscript(file: string, secrets: [name: string, value: str
     return false;
   }
   // The thorough masker's forms include each value JSON-escaped: they find a line, the plain masker masks its strings.
-  const finder = Masker.thorough(secrets);
+  const finder = Masker.thorough([...secrets, ...filled]);
   const hit = (s: string) => s.includes("PRIVATE KEY-----") || finder.patterns.some(([p]) => s.includes(p));
   if (!hit(text)) return false;
-  const masker = new Masker(secrets);
+  const masker = filled.length ? new Masker(secrets).and(Masker.thorough(filled)) : new Masker(secrets);
   const lines = text.split("\n");
   let changed = false;
   for (const [i, line] of lines.entries()) {
