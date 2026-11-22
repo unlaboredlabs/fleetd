@@ -3864,7 +3864,7 @@ export type KnownInsightRule = "full_suite_repeat" | "repeat_no_change" | "slow_
 /** KnownInsightRule, or a value from a newer hub. */
 export type InsightRule = KnownInsightRule | (string & {});
 
-export type KnownIntakeChannel = "app" | "mcp" | "lead" | "automation" | "train";
+export type KnownIntakeChannel = "app" | "mcp" | "lead" | "automation" | "train" | "issue";
 /** KnownIntakeChannel, or a value from a newer hub. */
 export type IntakeChannel = KnownIntakeChannel | (string & {});
 
@@ -6822,6 +6822,11 @@ export type ProjectSettingsSetInput = {
   avatarShape?: BotShape;
   /** Turns its chat's tags on or off (a trial; off by default). */
   chatTags?: boolean;
+  /**
+   * Turns on or off whether a GitHub issue labelled `fleetd` in its repos opens an order (on by default). A person's
+   * alone.
+   */
+  issueOrders?: boolean;
   /** Its agents' computer from now on: one of `computers`, exactly. */
   computer?: ComputerPick;
   /** Drop its pick: its agents are placed and sized by default again. */
@@ -6972,6 +6977,11 @@ export type ProjectSummary = {
   avatarShape?: BotShape;
   /** Its chat's tags are on (a trial): the hub tags each message with its order (`ChatMessage.about`). Absent: off. */
   chatTags?: boolean;
+  /**
+   * Whether a GitHub issue labelled `fleetd` in its repos opens an order (on unless a person turned it off), from the
+   * hub. Absent for a bot with no repo on GitHub, and from an older hub.
+   */
+  issueOrders?: boolean;
   /**
    * The key that created it, from the hub. Absent for a project the hub didn't make, and for a project made before it
    * was recorded.

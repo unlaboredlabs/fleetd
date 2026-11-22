@@ -33,6 +33,8 @@ export const CARRIED = [
   "github_accounts",
   "github_app",
   "github_order_tokens",
+  "issue_orders",
+  "issue_watch",
   "landing_watch",
   "landings",
   "lead_mcp",

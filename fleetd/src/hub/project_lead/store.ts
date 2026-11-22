@@ -15,6 +15,8 @@ export type Kept = {
   avatarShape?: BotShape;
   /** Its chat's tags trial is on; absent: off. */
   chatTags?: true;
+  /** A person turned its issues-as-orders switch off; absent: on. */
+  issueOrdersOff?: true;
 };
 
 type KeptRow = {
@@ -24,13 +26,14 @@ type KeptRow = {
   avatar_color: string | null;
   avatar_shape: string | null;
   chat_tags: number | null;
+  issue_orders: number | null;
 };
 
 /** Undefined for a project with no row of its own. */
 export function kept(db: Database, r: ProjectRef): Kept | undefined {
   const row = db
     .query<KeptRow, [string, string]>(
-      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags FROM project_settings
+      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags, issue_orders FROM project_settings
          WHERE machine_id = ? AND project_id = ?`,
     )
     .get(r.machineId, r.projectId);
@@ -41,7 +44,24 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.avatar_color !== null) out.avatarColor = row.avatar_color;
   if (row.avatar_shape !== null) out.avatarShape = row.avatar_shape;
   if (row.chat_tags === 1) out.chatTags = true;
+  if (row.issue_orders === 0) out.issueOrdersOff = true;
   return out;
+}
+
+/** Whether a GitHub issue labelled `fleetd` in the bot's repos opens an order (hub/issues): on unless turned off. */
+export function issueOrdersOn(db: Database, r: ProjectRef): boolean {
+  const row = db
+    .query<{ v: number | null }, [string, string]>("SELECT issue_orders AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return row?.v !== 0;
+}
+
+/** Turns the bot's issues-as-orders switch on or off; on, the default, is kept as none. */
+export function setIssueOrders(db: Database, r: ProjectRef, on: boolean): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, issue_orders) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET issue_orders = excluded.issue_orders`,
+  ).run(r.machineId, r.projectId, on ? null : 0);
 }
 
 /** Whether the project's chat tags trial is on. */

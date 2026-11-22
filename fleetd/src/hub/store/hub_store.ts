@@ -182,6 +182,7 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
     avatarColor: _avatarColor,
     avatarShape: _avatarShape,
     chatTags: _chatTags,
+    issueOrders: _issueOrders,
     icon: _icon,
     ...project
   } = stored;
@@ -194,6 +195,8 @@ function withRepos(conn: Database, stored: ProjectSummary): ProjectSummary {
   if (kept.avatarColor !== undefined) out.avatarColor = kept.avatarColor;
   if (kept.avatarShape !== undefined) out.avatarShape = kept.avatarShape;
   if (kept.chatTags) out.chatTags = true;
+  // Its issues-as-orders switch, shown once it has a repo on GitHub to watch.
+  if (held.some((x) => x.repoKey?.startsWith("github.com/"))) out.issueOrders = kept.issueOrdersOff !== true;
   const picture = avatar.of(conn, r);
   if (picture !== undefined) out.avatar = picture;
   out.icon = icon.of(conn, r);
@@ -210,6 +213,7 @@ function nodeRow(machineId: MachineId, project: ProjectSummary): ProjectSummary 
     avatarColor: _avatarColor,
     avatarShape: _avatarShape,
     chatTags: _chatTags,
+    issueOrders: _issueOrders,
     icon: _icon,
     ...row
   } = project;

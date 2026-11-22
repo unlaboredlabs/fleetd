@@ -36,7 +36,8 @@ import { executors } from "../executor/index.ts";
 import { projectEnv, projectUpsert, projectWorktrees } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
-import { chatTagsOn, setAvatarColor, setAvatarShape, setChatTags } from "../project_lead/store.ts";
+import { issueOrders } from "../issues/index.ts";
+import { chatTagsOn, issueOrdersOn, setAvatarColor, setAvatarShape, setChatTags, setIssueOrders } from "../project_lead/store.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -330,6 +331,14 @@ export function register(tools: Registry): void {
     if (input.chatTags !== undefined && input.chatTags !== chatTagsOn(hub.db.conn, r)) {
       setChatTags(hub.db.conn, r, input.chatTags);
       announce(hub, r, `${project.title}'s chat tags are ${input.chatTags ? "on" : "off"}`, { chatTags: input.chatTags });
+    }
+    if (input.issueOrders !== undefined && input.issueOrders !== issueOrdersOn(hub.db.conn, r)) {
+      // Only a person flips it: an order's text (an issue's, among others) never reaches a bot's settings.
+      if (!isHuman(caller)) throw new ToolError("forbidden", "Only a person turns issues as orders on or off.", "Ask the person to flip it in Settings › Bots.");
+      setIssueOrders(hub.db.conn, r, input.issueOrders);
+      // Labels its repos got while it was off stay as they are: only a labelling from now on opens an order.
+      if (input.issueOrders) issueOrders(hub).rewatch(r);
+      announce(hub, r, `${project.title}'s GitHub issues labelled fleetd ${input.issueOrders ? "open orders" : "no longer open orders"}`, { issueOrders: input.issueOrders });
     }
     if (input.setup !== undefined) projectSettings(hub).setSetupIn(r, repo?.repoId, input.setup);
     // A self-hosted hub's bots run on their machine: there is no computer to pick (an app made for fleetd's cloud may

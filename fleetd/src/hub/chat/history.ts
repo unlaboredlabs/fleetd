@@ -18,7 +18,9 @@ export function order(w: Workstream): NewMessage[] {
   const out: NewMessage[] = [];
   const id = w.workstreamId;
   const created = parseMs(w.createdAt) ?? 0;
-  if (w.source.channel !== "lead") out.push(entry("human", "order", `order:${id}`, w.source.text, created));
+  // An issue's order quotes text from GitHub, not the person's: its title shows as a line of fleetd's.
+  if (w.source.channel === "issue") out.push(entry("system", "order", `order:${id}`, w.title, created));
+  else if (w.source.channel !== "lead") out.push(entry("human", "order", `order:${id}`, w.source.text, created));
   const how = w.state === "done" ? "done" : w.state === "stopped" ? "stopped" : undefined;
   if (how) out.push(entry("system", "order_outcome", `outcome:${id}`, `${w.title} is ${how}.`, parseMs(w.updatedAt) ?? created));
   return out;

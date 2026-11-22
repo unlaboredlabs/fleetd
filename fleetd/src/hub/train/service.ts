@@ -593,6 +593,21 @@ export class Train {
     if (reviewing) await this.toGate(reviewing);
   }
 
+  /** The `Fixes` lines of the Changes whose orders are GitHub issues' (hub/issues), for the squash that lands them. */
+  fixesOf(changes: Change[]): string[] {
+    const out: string[] = [];
+    for (const c of changes) {
+      let line: string | undefined;
+      try {
+        line = this.host.issueFixes?.(c.workstreamId, c.repo);
+      } catch (error) {
+        console.warn(`train: ${c.changeId}'s issue not read:`, error);
+      }
+      if (line !== undefined && !out.includes(line)) out.push(line);
+    }
+    return out;
+  }
+
   /** When an order is stopped, its PRs not merged and not on their way in leave the train with `why`. */
   takeLeftovers(projectRef: ProjectRef, workstreamId: string, why: string): Change[] {
     const changes = this.records.unlanded(projectRef, workstreamId);
@@ -1354,11 +1369,12 @@ export class Train {
     // The squash message GitHub would write by the repo's settings, with the Change's trailer added. A merge commit
     // carries the PR's title and the trailer; a rebase lands the PR's own commits as they are.
     let title = "";
-    let body = batch.withTrailers(rebased.title.trim(), [merging]);
+    const fixes = this.fixesOf([merging]);
+    let body = batch.withTrailers(rebased.title.trim(), [merging], fixes);
     if (method === "squash") {
       const [squashTitle, body0] = await this.github.squashMessage(repo, rebased);
       title = squashTitle;
-      body = batch.withTrailers(body0, [merging]);
+      body = batch.withTrailers(body0, [merging], fixes);
     }
     const mergingSince = this.nowMs();
     let retryWait = MERGE_RETRY_FIRST_MS;
