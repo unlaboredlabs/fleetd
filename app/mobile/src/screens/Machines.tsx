@@ -62,8 +62,10 @@ export function Machines() {
   const navigation = useNavigation<NavigationProp<SettingsParams>>();
   const sandboxes = useRead(() => session.call("sandbox_get", {}), [session]);
   const roles = useRead(() => session.call("machine_roles", {}), [session]);
-  const billing = useRead(() => (paired.cloud === true ? readTeamBilling(paired) : Promise.resolve(undefined)), [paired]);
   const sb = sandboxes.value?.ok === true ? (sandboxes.value.output as SandboxState) : undefined;
+  const provided = sb?.provided === true;
+  // A team on fleetd cloud: signed in to it, or (paired by a code, which doesn't say so) its answer is fleetd's computers.
+  const billing = useRead(() => (paired.cloud === true || provided ? readTeamBilling(paired) : Promise.resolve(undefined)), [paired, provided]);
   const mr = roles.value?.ok === true ? (roles.value.output as MachineRolesOutput) : undefined;
   const reload = () => {
     sandboxes.reload();
@@ -72,7 +74,6 @@ export function Machines() {
   };
   // fleetd's computers: the cloud's pick, or (a cloud that doesn't answer it yet) Billing's word that they are on.
   const bill = billing.value?.ok === true ? billing.value.value : undefined;
-  const provided = sb?.provided === true;
   const fleetd = provided || (paired.cloud === true && billingOn(bill));
   const providers = provided ? [] : providersOf(sb);
   const runner = runnerOf(state.machines);
