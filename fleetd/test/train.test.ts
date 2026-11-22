@@ -303,6 +303,28 @@ test("a PR left out for its own red head tells its writer once per head, with th
   expect(told()).toHaveLength(2);
 });
 
+test("a PR left out for its own red head is told once per head across a hub restart", async () => {
+  const k = kit();
+  k.pr(20, "fleetd/T20-red", { FAIL: "x\n" });
+  await k.enqueue(20);
+  const told = () => k.host.sends.filter(([to]) => to === "T20").map(([, m]) => m);
+  const pair = async (train: typeof k.train, a: number, b: number) => {
+    for (const n of [a, b]) {
+      k.pr(n, `fleetd/T${n}-green`, { [`g${n}.md`]: `${n}\n` });
+      await train.enqueue(PROJECT, { taskId: `T${n}`, prUrl: `https://github.com/${REPO}/pull/${n}` });
+    }
+  };
+  await pair(k.train, 21, 22);
+  expect(await k.train.step(REPO)).toBe(true);
+  expect(told()).toHaveLength(1);
+  // The hub restarts: the new train knows it told the writer of this head already.
+  const again = k.restarted();
+  await pair(again, 23, 24);
+  expect(await again.step(REPO)).toBe(true);
+  expect([k.change(23).state, k.change(24).state]).toEqual(["merged", "merged"]);
+  expect(told()).toHaveLength(1);
+});
+
 test("enqueue refuses a PR with no workstream brief, a closed PR, and a fork's branch, with their fixes", async () => {
   const k = kit();
   k.pr(15, "fleetd/T15-x", { "x.md": "x\n" });

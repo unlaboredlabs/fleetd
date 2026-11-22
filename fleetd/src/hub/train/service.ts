@@ -21,7 +21,7 @@ import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BACK, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BACK, WAIT_BLOCKED, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
@@ -247,8 +247,6 @@ export class Train {
   private readonly overdue = new Set<string>();
   /** The upstream failures the lead was told of, each Change's with its hold. */
   readonly afterTold = new Set<string>();
-  /** Per ready Change, the red head its author was told of (`tellOwnRed`), until its own CI goes green. */
-  readonly ownRedTold = new Map<string, string>();
   /** Held by an enqueue with `after` from its loop check until its Change records them. */
   private readonly afterLock = new Mutex();
   /** GitHub's answer for an upstream PR with no open Change, by URL, and when it was read. */
@@ -1455,7 +1453,7 @@ export class Train {
   async refresh(repo: string): Promise<void> {
     const changes = this.records.inTrain(repo, ["queued", "reviewing", "ready", "needs_rebase", "ci_failed"]);
     const ids = new Set(changes.map((c) => c.changeId));
-    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON, WAIT_BACK], [...ids]);
+    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON, WAIT_BACK, WAIT_OWN_RED], [...ids]);
     for (const id of [...this.lateReruns.keys()]) if (!ids.has(id)) this.lateReruns.delete(id);
     person.forget(this, repo, ids);
     const live = [...this.records.inTrain(repo, ["rebasing", "ci", "merging"]), ...changes].map((c) => c.changeId);
