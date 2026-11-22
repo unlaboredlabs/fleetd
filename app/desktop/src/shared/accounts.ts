@@ -24,10 +24,10 @@ const record = (v: unknown): Record<string, unknown> | null => (typeof v === "ob
 const team = (v: unknown): AccountsTeam | null => {
   const t = record(v);
   if (t === null) return null;
-  const { id, name, url, pairingCode, made } = t;
+  const { id, name, url, pairingCode, made, empty } = t;
   if (!text(id, 1, 64) || !text(name, 1, 63) || !text(url, 1, 253) || typeof pairingCode !== "string" || !PAIRING_CODE.test(pairingCode)) return null;
-  // `made` that isn't a boolean reads as absent, as an older service answers.
-  return { id, name, url, pairingCode, ...(typeof made === "boolean" ? { made } : {}) };
+  // `made` or `empty` that isn't a boolean reads as absent, as an older service answers.
+  return { id, name, url, pairingCode, ...(typeof made === "boolean" ? { made } : {}), ...(typeof empty === "boolean" ? { empty } : {}) };
 };
 
 /**

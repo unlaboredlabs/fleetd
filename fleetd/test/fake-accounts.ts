@@ -38,6 +38,8 @@ export type FakeTeamOptions = {
   roles?: Record<string, HubRole>;
   /** People and open invites together never go past this (ops' per-team limit). Absent: 50. */
   peopleLimit?: number;
+  /** It holds bots or other data: a sign-in for a move answers it not empty. */
+  hasData?: boolean;
 };
 
 type Team = {
@@ -55,6 +57,7 @@ type Team = {
   /** Who made the team: the first person named. */
   maker: string | undefined;
   limit: number;
+  hasData: boolean;
 };
 
 /** A key one of the teams' /pair handed out. */
@@ -165,6 +168,7 @@ export class FakeAccounts {
       invitedBy: new Map(),
       maker: emails[0],
       limit: options.peopleLimit ?? 50,
+      hasData: options.hasData === true,
     });
     for (const email of emails) this.#people.set(email, [...(this.#people.get(email) ?? []), name]);
     return url;
@@ -285,6 +289,7 @@ export class FakeAccounts {
       codeVerifier: str(body, "codeVerifier"),
       redirectUri: str(body, "redirectUri"),
       deviceName: str(body, "deviceName"),
+      ...((body as { move?: unknown } | null)?.move === true ? { move: true as const } : {}),
     };
     if (input.code === undefined || input.codeVerifier === undefined || input.redirectUri === undefined || input.deviceName === undefined) {
       return fail(res, 400, { code: "invalid", message: "A sign-in needs code, codeVerifier, redirectUri and deviceName." });
@@ -305,6 +310,11 @@ export class FakeAccounts {
     if (this.teamsOf(grant.email).length === 0 && invitations.length === 0) {
       await this.team(grant.email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team", [grant.email]);
     }
+    // A sign-in for a move: each team the person owns says whether it is empty, and a new one is made when none is.
+    const owns = (name: string) => this.#teams.get(name)!.roles.get(grant.email) === "owner";
+    if (input.move === true && !this.teamsOf(grant.email).some((name) => owns(name) && !this.#teams.get(name)!.hasData)) {
+      await this.team(`${grant.email.split("@")[0]!.replace(/[^a-z0-9]/gu, "") || "team"}-2`, [grant.email]);
+    }
     const sessionId = `session_${randomBytes(8).toString("hex")}`;
     this.sessions.add(sessionId);
     // In no team: a team of their own is theirs to ask for.
@@ -316,7 +326,10 @@ export class FakeAccounts {
     const answer: AccountsSignInOutput = {
       email: grant.email,
       sessionId,
-      teams: this.teamsOf(grant.email).map((name) => this.#entry(this.#teams.get(name)!, grant.email)),
+      teams: this.teamsOf(grant.email).map((name) => {
+        const entry = this.#entry(this.#teams.get(name)!, grant.email);
+        return input.move === true && owns(name) ? { ...entry, empty: !this.#teams.get(name)!.hasData } : entry;
+      }),
       ...(invitations.length === 0 ? {} : { invitations }),
       ...(make === undefined ? {} : { make }),
     };

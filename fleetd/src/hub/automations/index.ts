@@ -513,7 +513,12 @@ export class Automations {
       else if (going === undefined && waiting > 0) keptWhy = "Kept: it goes with the calls kept while the last run was open.";
     }
     let skipped: string | undefined;
-    if (keptWhy === undefined) {
+    // The hub moved to fleetd cloud (hub/transfer/move.ts): its automations run there, never here as well.
+    const moved = this.hub.peek<{ hold(): string | undefined }>("hub_move")?.hold();
+    if (moved !== undefined) {
+      keptWhy = undefined;
+      skipped = moved;
+    } else if (keptWhy === undefined) {
       if (start.kind !== "manual" && a.paused) skipped = "the automation is paused";
       else if (start.kind === "webhook" && going !== undefined) skipped = `${going}, and ${QUEUED_MAX} webhook calls already wait for it`;
       else if (start.kind === "schedule" && going !== undefined && a.schedule?.at !== undefined) {

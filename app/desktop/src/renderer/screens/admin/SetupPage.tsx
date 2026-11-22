@@ -19,6 +19,7 @@ import { revealNext, useWanted } from "../settings/reveal";
 import { StepGuide, useSetupSteps } from "../setup/SetupScreen";
 import { doneWords, needWords, requiredLeft, setupLayout, type SetupStep } from "../setup/steps";
 import { stepControls } from "../setup/accounts";
+import { MoveRow } from "./MoveToCloud";
 import s from "../settings/settings.module.css";
 
 /** The hub's own accounts, whose controls their step's page holds: by the step's id, each with its name. */
@@ -103,6 +104,7 @@ export function SetupPage({ me }: { me: Person | undefined }) {
             </SettingsList>
           </SettingsSection>
         </Part>
+        <MoveRow />
       </div>
     </div>
   );

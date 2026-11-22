@@ -4,7 +4,7 @@ import { IPC } from "../shared/channels";
 import type { CallOutcome, ConnectOutcome, DownloadOutcome, DropInfo, HubError, HubFrame, OpenOutcome, SecretOutcome } from "../shared/hub";
 import type { VaultRevealOutcome } from "../shared/ipc";
 import type { HubEntry, HubId } from "../shared/hubs";
-import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
+import type { BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, ConnectGithubOutcome, FinishOutcome, GithubReposOutcome, InstallGithubOutcome, InviteOutcome, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../shared/cloud";
 import type { JoinHere, ThisComputer } from "../shared/joinHere";
 import type { MacMenuBarRead } from "../shared/macMenuBar";
 import type { MacHealthRead, MacHubUpdateOutcome, MacJoin, MacRedeemOutcome, MacRestartOutcome, MacSetupStatus } from "../shared/macSetup";
@@ -152,7 +152,7 @@ const api: FleetdApi = {
   },
   cloud: {
     state: () => ipcRenderer.invoke(IPC.cloudState) as Promise<CloudState>,
-    signIn: () => ipcRenderer.invoke(IPC.cloudSignIn) as Promise<SignInOutcome>,
+    signIn: (opts) => (opts === undefined ? ipcRenderer.invoke(IPC.cloudSignIn) : ipcRenderer.invoke(IPC.cloudSignIn, opts)) as Promise<SignInOutcome>,
     finish: (join, make) => (make === true ? ipcRenderer.invoke(IPC.cloudFinish, join, true) : ipcRenderer.invoke(IPC.cloudFinish, join)) as Promise<FinishOutcome>,
     notMe: () => ipcRenderer.invoke(IPC.cloudNotMe) as Promise<void>,
     cancel: () => ipcRenderer.invoke(IPC.cloudCancel) as Promise<void>,
@@ -160,6 +160,8 @@ const api: FleetdApi = {
     link: () => ipcRenderer.invoke(IPC.cloudLink) as Promise<string | null>,
     signOut: () => ipcRenderer.invoke(IPC.cloudSignOut) as Promise<SignOutOutcome>,
     connectComputer: (hub) => ipcRenderer.invoke(IPC.cloudConnectComputer, hub) as Promise<ConnectComputerOutcome>,
+    moveTargets: () => ipcRenderer.invoke(IPC.cloudMoveTargets) as Promise<MoveTarget[]>,
+    move: (from, to) => ipcRenderer.invoke(IPC.cloudMove, from, to) as Promise<MoveOutcome>,
     invites: (hub) => ipcRenderer.invoke(IPC.cloudInvites, hub) as Promise<InvitesOutcome>,
     invite: (hub, request) => ipcRenderer.invoke(IPC.cloudInvite, hub, request) as Promise<InviteOutcome>,
     revokeInvite: (hub, inviteId) => ipcRenderer.invoke(IPC.cloudRevokeInvite, hub, inviteId) as Promise<RevokeInviteOutcome>,

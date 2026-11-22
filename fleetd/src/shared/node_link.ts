@@ -68,6 +68,8 @@ export const CAP_SESSION_HOST = "session_host";
 export const CAP_ASSISTANT = "assistant";
 /** `signins_forget`: the node forgets a project's kept browser sign-ins. */
 export const CAP_SIGNINS_FORGET = "signins_forget";
+/** `node_action` `rejoin`: the node moves to another hub with a code from it (Move to the cloud). */
+export const CAP_REJOIN = "rejoin";
 export const CAP_FOLDER_MAKE = "folder_make";
 export const CAP_SESSION_END = "session_end";
 export const CAP_SESSION_SEAL = "session_seal";
@@ -259,7 +261,8 @@ export type NodeActionKind =
   | "sandbox_check"
   | "sandbox_limits"
   | "github_tokens"
-  | "tailnet";
+  | "tailnet"
+  | "rejoin";
 
 /** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
@@ -291,6 +294,11 @@ export type NodeAction = {
    * it and holds every one, answering no `hosted`.
    */
   unhosted?: boolean;
+  /**
+   * `rejoin`, to a node that lists CAP_REJOIN: its hub moved to `hub` (Move to the cloud), and `code` enrols this
+   * machine there under its id. The node enrols, then links to that hub from its next start; it answers ok once enrolled.
+   */
+  rejoin?: { hub: string; code: string };
 };
 
 /** How long a `hold` lasts unless the hub asks again. */
