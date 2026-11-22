@@ -44,35 +44,35 @@ export function TypedDelete({ words, name, onCancel, onDelete }: { words: Delete
     >
       {words === null ? null : (
         <SheetRoom style={{ flex: 1, backgroundColor: t.grouped }}>
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={() => close(false)}>
-          <View style={styles.head}>
-            <Symbol ios="exclamationmark.triangle.fill" android="warning" size={40} color={t.danger} />
-            <Text style={[type.title3, styles.center, { color: t.label }]}>{words.title}</Text>
-            <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{words.message}</Text>
-          </View>
-          {words.unsaved.length > 0 ? (
-            <ListSection header={words.unsaved.length === 1 ? "Uncommitted changes lost in" : "Uncommitted changes lost in these"}>
-              {words.unsaved.map((w) => (
-                <ListRow key={w} title={w} />
-              ))}
+          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" onAccessibilityEscape={() => close(false)}>
+            <View style={styles.head}>
+              <Symbol ios="exclamationmark.triangle.fill" android="warning" size={40} color={t.danger} />
+              <Text style={[type.title3, styles.center, { color: t.label }]}>{words.title}</Text>
+              <Text style={[type.subhead, styles.center, { color: t.secondary }]}>{words.message}</Text>
+            </View>
+            {words.unsaved.length > 0 ? (
+              <ListSection header={words.unsaved.length === 1 ? "Uncommitted changes lost in" : "Uncommitted changes lost in these"}>
+                {words.unsaved.map((w) => (
+                  <ListRow key={w} title={w} />
+                ))}
+              </ListSection>
+            ) : null}
+            <ListSection footer={words.folder.note}>
+              <ListRow
+                title={words.folder.label}
+                detail={words.folder.path}
+                accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={`${words.folder.label}, ${words.folder.path}`} />}
+              />
             </ListSection>
-          ) : null}
-          <ListSection footer={words.folder.note}>
-            <ListRow
-              title={words.folder.label}
-              detail={words.folder.path}
-              accessory={<Switch value={folderToo} onValueChange={setFolderToo} accessibilityLabel={`${words.folder.label}, ${words.folder.path}`} />}
-            />
-          </ListSection>
-          {/* A footnote, not a header: headers are capitals, and the name is typed as it is. */}
-          <ListSection footer={`Type “${name}” to delete it.`}>
-            <FieldRow value={typed} onChangeText={setTyped} placeholder={name} autoCapitalize="none" autoFocus accessibilityLabel={`Type ${name} to confirm`} />
-          </ListSection>
-          <View style={styles.actions}>
-            <Button label={words.button} destructive size="large" disabled={!ready} onPress={() => close(true)} />
-            <Button label="Cancel" kind="plain" size="large" onPress={() => close(false)} />
-          </View>
-        </ScrollView>
+            {/* A footnote, not a header: headers are capitals, and the name is typed as it is. */}
+            <ListSection footer={`Type “${name}” to delete it.`}>
+              <FieldRow value={typed} onChangeText={setTyped} placeholder={name} autoCapitalize="none" autoFocus accessibilityLabel={`Type ${name} to confirm`} />
+            </ListSection>
+            <View style={styles.actions}>
+              <Button label={words.button} destructive size="large" disabled={!ready} onPress={() => close(true)} />
+              <Button label="Cancel" kind="plain" size="large" onPress={() => close(false)} />
+            </View>
+          </ScrollView>
         </SheetRoom>
       )}
     </Modal>

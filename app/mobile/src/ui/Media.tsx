@@ -17,9 +17,8 @@ import { space, type, useTheme, type Palette } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { Icon, type IconName } from "./Icon";
-import { usePaneWidth } from "./pane";
+import { usePaneWidth, useStrip } from "./pane";
 import { SkeletonBlock } from "./Skeleton";
-import { useStrip } from "./pane";
 
 /**
  * A picture's preview for its bubble, read from the hub or the disk: undefined while it comes, else the preview or why

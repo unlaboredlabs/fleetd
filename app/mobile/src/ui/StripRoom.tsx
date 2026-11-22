@@ -22,7 +22,9 @@ export function StripRoom({ children }: { children: ReactElement }) {
  * background covers only its own frame, so the page showed above it as a grey band over a white bar (F1153). Elsewhere
  * iOS's own glass, as before.
  */
-export const useStripBars = (ground: string): NativeStackNavigationOptions => (useStrip() === undefined ? {} : { headerStyle: { backgroundColor: ground } });
+export const useStripBars = (ground: string): NativeStackNavigationOptions =>
+  // Both the bar and its large title's, which iOS draws from the scroll edge's look while the title is expanded.
+  useStrip() === undefined ? {} : { headerStyle: { backgroundColor: ground }, headerLargeStyle: { backgroundColor: ground } };
 
 /** A navigator's screenLayout: its screens in StripRoom. */
 export const stripRoom = ({ children }: { children: ReactElement }): ReactElement => <StripRoom>{children}</StripRoom>;

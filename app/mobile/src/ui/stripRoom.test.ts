@@ -68,7 +68,8 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
   it("puts a stack of grouped pages' bars on the page's ground in the strip poses, so no band shows above them", () => {
     // Folded, iOS stands the bar lower with no status above it, and its background covers only its own frame: the
     // grey page showed above a white bar (F1153). Each stack of grouped pages passes its ground; elsewhere it's {}.
-    expect(room).toContain("export const useStripBars = (ground: string): NativeStackNavigationOptions => (useStrip() === undefined ? {} : { headerStyle: { backgroundColor: ground } });");
+    // Its large title's too (Settings), which iOS draws from the scroll edge's look while the title is expanded.
+    expect(room).toContain("useStrip() === undefined ? {} : { headerStyle: { backgroundColor: ground }, headerLargeStyle: { backgroundColor: ground } };");
     const grouped = all(/\w+\.Navigator/u).filter((n) => !/ChatsStack|RootStack/u.test(n.tag));
     expect(grouped.map((n) => /<(\w+)\.Navigator/u.exec(n.tag)?.[1])).toEqual(["PairStack", "SettingsStack", "InfoStack"]);
     for (const n of grouped) expect(n.tag).toMatch(/screenOptions=\{(stripBars|\{[^]*\.\.\.stripBars \})\}/u);
