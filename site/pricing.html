@@ -125,7 +125,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 .seg button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer;white-space:nowrap}
 .seg button:hover{color:var(--ink)}
 .seg button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
-.duo .unit{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.duo .unit{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin-bottom:10px}
 .duo .unit h3{margin:0}
 
 /* The estimate: a row per input, its label on the left and its control on the right, then the month in big type. */
@@ -261,7 +261,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     <div>
       <div class="unit">
         <h3>Computer time</h3>
-        <div class="seg" role="group" aria-label="Price per hour or per month" id="per">
+        <div class="seg" role="group" aria-label="Price per second, per hour or per month" id="per">
+          <button type="button" data-per="second" aria-pressed="false">Per second</button>
           <button type="button" data-per="hour" aria-pressed="true">Per hour</button>
           <button type="button" data-per="month" aria-pressed="false">Per month</button>
         </div>
@@ -274,7 +275,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
           <tr><th scope="row">8 CPU, 16 GB</th><td class="num">$0.24</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:12px" id="per-note">Billed only while a computer is running.</p>
+      <p style="margin-top:12px" id="per-note">Metered to the millisecond, only while a computer is running.</p>
     </div>
     <div>
       <h3>Credits</h3>
@@ -415,8 +416,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   };
 
   const renderSizes = () => {
-    document.getElementById("per-h").textContent = per === "hour" ? "Per hour" : "Per month";
-    document.getElementById("per-note").textContent = "Billed only while a computer is running." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
+    document.getElementById("per-h").textContent = { second: "Per second", hour: "Per hour", month: "Per month" }[per];
+    document.getElementById("per-note").textContent = "Metered to the millisecond, only while a computer is running." + (per === "month" ? " A month here is " + MONTH_HOURS + " hours." : "");
     document.querySelectorAll("[data-per]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.per === per)));
     document.getElementById("sizes").replaceChildren(...model.sizes.map((s) => {
       const tr = document.createElement("tr");
@@ -425,7 +426,8 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
       th.textContent = size(s, ", ");
       const td = document.createElement("td");
       td.className = "num";
-      td.textContent = per === "hour" ? rate(s.centsPerHour) : money(s.centsPerHour * MONTH_HOURS);
+      // A second's price is a fraction of a cent (fleetd-cloud sums each computer's milliseconds before rounding): three figures.
+      td.textContent = per === "second" ? "$" + (s.centsPerHour / 360000).toPrecision(3) : per === "hour" ? rate(s.centsPerHour) : money(s.centsPerHour * MONTH_HOURS);
       tr.append(th, td);
       return tr;
     }));
