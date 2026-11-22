@@ -338,3 +338,18 @@ export const withBots = (server: McpServer, bots: ReadonlyArray<ProjectRef> | un
   };
   return bots === undefined ? rest : { ...rest, projects: bots.map((b) => ({ machineId: b.machineId, projectId: b.projectId })) };
 };
+
+/** A saved server turned on or off: everything else, its bots included, sent again as it is. */
+export const withEnabled = (server: McpServer, enabled: boolean): McpServerSetInput => ({
+  ...withBots(server, server.scope.kind === "global" ? server.projects : undefined),
+  enabled,
+});
+
+/** `name`, or the first of name-2, name-3… no saved server has (names compare without case). */
+export const freeName = (name: string, taken: ReadonlyArray<string>): string => {
+  const lower = new Set(taken.map((t) => t.toLowerCase()));
+  if (!lower.has(name.toLowerCase())) return name;
+  let n = 2;
+  while (lower.has(`${name}-${String(n)}`.toLowerCase())) n++;
+  return `${name}-${String(n)}`;
+};

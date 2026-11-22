@@ -35,6 +35,7 @@ import {
   urlOf,
   whereOf,
   withBots,
+  withEnabled,
   type StripItem,
   type Tested,
 } from "./model";
@@ -374,7 +375,10 @@ function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: R
             ) : null}
             <RowMenu
               label={entry.label}
-              items={[{ label: "Test", onSelect: () => void props.tests.run(server) }]}
+              items={[
+                { label: "Test", onSelect: () => void props.tests.run(server) },
+                ...(state.kind === "off" ? [] : [{ label: "Turn off", onSelect: () => run("on", requestOf(withEnabled(server, false))) }]),
+              ]}
               bots={<BotsSub server={server} bots={props.bots} onPick={(next) => run("bots", requestOf(withBots(server, next)))} />}
               onDisconnect={() => props.onDialog({ kind: "disconnect", server, label: entry.label })}
             />
@@ -396,7 +400,9 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
   const url = urlOf(server);
   // By its host, or by a Test that reached it through Tailscale (a MagicDNS name under the tailnet's own domain).
   const onTailnet = (url !== null && isTailnetHost(url)) || (result !== undefined && !("error" in result) && result.result.via === "tailnet");
-  const state = stateOf(server);
+  // Off is the switch's to say.
+  const said = stateOf(server);
+  const state = said?.text === "Off" ? null : said;
   const bots = botsText(server, props.bots);
   const word = state ?? (bots === "Every bot" ? null : { text: bots, tone: "quiet" as const });
   // On the tailnet while Tailscale isn't connected: the one thing to do, said where it shows.
@@ -440,6 +446,15 @@ function CustomRow(props: { server: McpServer; bots: ReadonlyArray<Bot>; tests: 
               Sign in
             </Button>
           ) : null}
+          <Switch
+            label=""
+            aria-label={`${server.name} on`}
+            checked={server.enabled}
+            onCheckedChange={(on) => {
+              setProblem(null);
+              save(requestOf(withEnabled(server, on))).catch((e: unknown) => setProblem(errorText(e)));
+            }}
+          />
           <RowMenu
             label={server.name}
             items={[

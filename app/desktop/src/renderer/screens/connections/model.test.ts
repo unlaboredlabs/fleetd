@@ -19,6 +19,8 @@ import {
   toInput,
   usedBy,
   withBots,
+  withEnabled,
+  freeName,
   type Draft,
 } from "./model";
 
@@ -224,6 +226,19 @@ describe("Connections", () => {
     expect(built.ok && built.input).toMatchObject({ enabled: false, roles: lead, integration: { readTools: ["list"] } });
     const fresh = toInput({ ...emptyDraft(), url: "https://mail.example/mcp" }, null, []);
     expect(fresh.ok && fresh.input).toMatchObject({ enabled: true, roles: { lead: true, writers: true, reviewers: true } });
+  });
+
+  it("turns a saved server on or off, keeping its bots, roles and values", () => {
+    const lead = { lead: true, writers: false, reviewers: false };
+    const saved = server("linear", "https://mcp.linear.app/mcp", { roles: lead, projects: [ada], headers: [{ kind: "vault", name: "Authorization", itemId: "V2", prefix: "Bearer " }] });
+    expect(withEnabled(saved, false)).toMatchObject({ enabled: false, roles: lead, projects: [{ machineId: "devbox", projectId: "ada" }], headers: [{ kind: "vault", name: "Authorization", itemId: "V2", prefix: "Bearer " }] });
+    expect("projects" in withEnabled(server("x", "https://x.example"), true)).toBe(false);
+  });
+
+  it("finds a free name: the suggested one, else the first -n no server has", () => {
+    expect(freeName("linear", [])).toBe("linear");
+    expect(freeName("linear", ["Linear"])).toBe("linear-2");
+    expect(freeName("linear", ["linear", "linear-2"])).toBe("linear-3");
   });
 
   it("changes only the bots of a saved server", () => {

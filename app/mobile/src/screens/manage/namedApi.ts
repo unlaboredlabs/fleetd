@@ -3,7 +3,7 @@
 // mcp_server_set (the record the manual form saves, with no key: namedInput), mcp_oauth_start for its sign-in page,
 // mcp_server_test, Turn On (mcp_server_set again) and Disconnect (mcp_server_remove). And what each row shows and does
 // on a tap.
-import { namedInput, turnOnInput, type McpServer, type McpTestResult, type Named, type NamedState } from "../../desktop";
+import { namedInput, turnOnInput, withEnabled, type McpServer, type McpTestResult, type Named, type NamedState } from "../../desktop";
 import type { Hub, Result } from "./api";
 
 /** A test reaches the server from the project's machine, as the desktop's waits for it. */
@@ -35,6 +35,9 @@ export const connect = (hub: Hub, entry: Named, servers: readonly McpServer[]): 
 
 /** On again as it was: a key it was saved with is kept, so there is never one to seal here. */
 export const turnOn = (hub: Hub, server: McpServer): Promise<Result<McpServer>> => save(hub, turnOnInput(server));
+
+/** On or off as it otherwise is: its bots, roles and keys kept. */
+export const setOn = (hub: Hub, server: McpServer, on: boolean): Promise<Result<McpServer>> => save(hub, withEnabled(server, on));
 
 /**
  * Its sign-in page, to open in the browser. The hub picks where the service sends the browser back (its https

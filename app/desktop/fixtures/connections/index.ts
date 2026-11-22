@@ -1,6 +1,6 @@
 // Connections (D653), on the typical hub as Sam (its owner). connections-empty: nothing connected, Tailscale off.
-// connections-some: Paper and Tailscale connected, Notion not yet; three custom MCPs: linear (OAuth, storefront
-// only), github (a command, its token from the vault) and docs on the tailnet (a header from the vault).
+// connections-some: Paper and Tailscale connected, Notion not yet; four custom MCPs: linear (OAuth, storefront
+// only), github (a command, its token from the vault), docs on the tailnet (a header from the vault) and sentry, off.
 // connections-failing: the same, github's Test failing. connections-oauth: Notion's Connect waiting on its sign-in,
 // and linear signed out. connections-tailnet: a custom MCP on the tailnet added and tested through Tailscale;
 // connections-tailnet-off the same URL while Tailscale isn't connected. connections-member: the same as some, as Bob.
@@ -69,7 +69,9 @@ const connections = (base: Fixture, name: string, note: string, opts: { team: Js
   return f;
 };
 
-const SOME = [paper, linear, github, docs];
+// A custom MCP turned off: its switch says so, and nothing else on its row.
+const sentry = server("sentry", { type: "http", url: "https://mcp.sentry.dev/mcp" }, { enabled: false, oauth: signedIn("https://sentry.io") });
+const SOME = [paper, linear, github, docs, sentry];
 
 export default defineGroup({
   fixtures: (base) => {
