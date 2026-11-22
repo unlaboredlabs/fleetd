@@ -24,6 +24,8 @@ export type LineKind =
   | "retag"
   /** The lead's own turn was cut off by its node stopping or restarting. */
   | "cut_off"
+  /** The lead's reply went on with a turn it made up for the person (`Human: …`): cut there, and the lead told (chat/flow). */
+  | "made_up"
   /** Work a project asked another project for opened, closed, merged or failed (hub/project_lead/bridge.rs). */
   | "factory";
 
