@@ -95,6 +95,8 @@ export type ChatInfoParams = {
   Watcher: { key: Key; automationId?: string };
   /** How its risky actions are approved, and what ran without asking (Approvals.tsx). */
   Approvals: { key: Key };
+  /** Who merges its PRs, and its risk rules (WhoMerges.tsx). */
+  WhoMerges: { key: Key };
   /** All that ran without asking, read in pages as it scrolls (ApprovedLog.tsx). */
   ApprovedLog: { key: Key };
   /** The card it pays with and what it bought (Payments.tsx). */

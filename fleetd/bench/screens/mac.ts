@@ -2,8 +2,9 @@
 // (a ScreenCaptureKit screenshot or `simctl io screenshot` per frame, then JPEG) and as fleetd-frames does
 // (src/node/screen: read when it changes, JPEG or the Mac's hardware H.264). Prints one JSON line per way.
 //
-//   mac run -- 'cd fleetd && BUN_BE_BUN=1 ~/.fleetd/bin/fleetd bench/screens/mac.ts [sim]'
+//   mac run -- 'cd fleetd && BUN_BE_BUN=1 ~/.fleetd/bin/fleetd bench/screens/mac.ts [sim] [--fps N]'
 //
+// `--fps` is the H.264 frame rate at most (the node's is 60, VideoToolbox's: src/node/screen/live.ts HARDWARE_FPS).
 // With `sim`, the simulator is the agent's own (`mac sim start`: $FLEETD_MAC_SIM in $FLEETD_MAC_SIM_SET). The Mac's
 // display changes while measured only if something moves on it; a simulator's shows a moving page in Safari.
 import { join } from "node:path";
@@ -16,6 +17,8 @@ const sim = process.env.FLEETD_MAC_SIM;
 const set = process.env.FLEETD_MAC_SIM_SET;
 if (which === "sim" && (!sim || !set)) throw new Error("no simulator: mac sim start first");
 const dir = join(process.env.TMPDIR ?? tmpdir(), "screens-bench");
+const fpsAt = process.argv.indexOf("--fps");
+const h264Fps = fpsAt < 0 ? undefined : Number(process.argv[fpsAt + 1]);
 
 /** CPU of `pids` and their children, in ms, by ps (macOS has no /proc). */
 async function cpuMs(pids: number[]): Promise<number> {
@@ -65,6 +68,7 @@ async function helper(kind: "jpeg" | "h264") {
     frames.push({ at: performance.now(), bytes: f.data.length, key: f.key });
   });
   h.tell(kind);
+  if (kind === "h264" && h264Fps !== undefined) h.tell(`fps ${h264Fps}`);
   const pid = (h as unknown as { proc: { pid: number } }).proc.pid;
   while (!first && performance.now() - tBuilt < 10_000) await Bun.sleep(5);
   const tFirst = performance.now();
@@ -96,12 +100,12 @@ async function helper(kind: "jpeg" | "h264") {
   await Bun.sleep(1500);
   const bytes = (fs: typeof frames, secs: number) => round(fs.reduce((n, f) => n + f.bytes, 0) / secs);
   return {
-    way: `fleetd-frames ${kind}`,
+    way: `fleetd-frames ${kind}${kind === "h264" && h264Fps !== undefined ? ` at ${h264Fps} fps` : ""}`,
     screen: first?.screen,
     picture: first?.picture,
     startup: { buildMs: round(tBuilt - t0), firstFrameMs: round(tFirst - tBuilt) },
     idle: { fps: round(idle.length / idleSecs, 1), bytesPerSec: bytes(idle, idleSecs), cpu: round(idleCpu, 1) },
-    active: { fps: round(active.length / activeSecs, 1), kbPerFrame: round(active.reduce((n, f) => n + f.bytes, 0) / Math.max(active.length, 1) / 1024, 1), bytesPerSec: bytes(active, activeSecs), cpu: round(activeCpu, 1) },
+    active: { fps: round(active.length / activeSecs, 1), kbPerFrame: round(active.reduce((n, f) => n + f.bytes, 0) / Math.max(active.length, 1) / 1024, 1), bytesPerSec: bytes(active, activeSecs), cpu: round(activeCpu, 1), cpuMsPerFrame: round((activeCpu * 10) / Math.max(active.length / activeSecs, 0.1), 2) },
     stillMs: spread(stills),
   };
 }

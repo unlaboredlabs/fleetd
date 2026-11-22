@@ -1,12 +1,19 @@
 // One live desktop session: the display it was lent (or the Mac's lease),
-// the node's connection to its screen (x11.ts, mac/screen.ts), the screen it reads ten times a second while anything
-// changes (the video, and the frames a person watches), and the action log, a line per `desktop` action and session
+// the node's connection to its screen (x11.ts, mac/screen.ts), the screen it reads as it changes (the video, and the
+// frames a person watches), and the action log, a line per `desktop` action and session
 // tool call as a browser session keeps it, each scrubbed of the session's secrets. Both go to the `Recording` it is
 // given (node/browser/recording.ts): the node's keeps them on its disk (disk_recordings.ts), a service's its own.
 //
 // A Linux desktop with an H.264 encoder (x264) encodes each grab once: its frames are the video's (copied into MP4)
-// and those of a watcher that decodes H.264. A JPEG is made only for what needs one: a watcher that can't decode it,
-// a new watcher's first picture or a lost frame's (from the last grab, when asked), or a video that can't take H.264.
+// and those of a watcher that decodes H.264. Only a watcher whose link carries clearly less than the video's rate gets
+// an encode of its own, so a slow viewer doesn't blur the recording. Each grab goes in as NV12, only the part that
+// changed converted (../screen/nv12.ts). A JPEG is made only for what needs one: a watcher that can't decode H.264, a
+// new watcher's first picture or a lost frame's (from the last grab, when asked), or a video that can't take H.264.
+//
+// Frames come as the screen changes, at most at a rate fixed rules give (../screen/live.ts fpsFor): 30 a second while
+// someone watches, 10 for the video alone, fewer when the watchers' link or the machine's load says so; none while the
+// screen is still. Two frames are kept in reserve (../screen/live.ts Pace): a change that comes alone, a key's echo,
+// goes at once, and only a run of changes is paced.
 //
 // A Mac screen session that holds neither the Mac's lease nor an app's claim only observes: it reads the screen only
 // while a person watches it, and records no video meanwhile.
@@ -14,7 +21,8 @@ import type { BrowserAction, BrowserControl, BrowserFrame, BrowserInput } from "
 import { Pacer } from "../browser/fit.ts";
 import type { Meta, Recording, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
-import { type Encoded, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, type StreamFrame, type StreamRun } from "../screen/live.ts";
+import { type Encoded, fpsFor, HARDWARE_FPS, type Input, kbpsFor, type LiveEncoding, type MakeEncoder, MAX_KBPS, Pace, type StreamFrame, type StreamRun } from "../screen/live.ts";
+import { Nv12 } from "../screen/nv12.ts";
 import type { App, Launched, Lent, Raw, Screen, Target } from "./screen.ts";
 import { charKeysym, keysym } from "./x11.ts";
 
@@ -26,9 +34,10 @@ const RESULT_CHARS = 500;
 /** How often the node looks at a screen that can't say when it changed (the Mac's): a look starts this long after the
  * last one started, or at once when it took longer. */
 export const FRAME_EVERY = 100;
-/** A screen that says when it changes (an X display's DAMAGE) is read as soon as it does, a frame each FRAME_GAP at
- * most (30 a second). */
-export const FRAME_GAP = 33;
+/** A screen that says when it changes (an X display's DAMAGE) is read as soon as it does, at most this many frames a
+ * second while someone watches (x264's: the frames are encoded in software), and this many for the video alone. */
+export const LIVE_FPS = 30;
+export const RECORD_FPS = 10;
 /** Reading and encoding take at most this share of the time, so a screen changing all over (a video) costs a third of
  * a core, at fewer frames, rather than a whole one. */
 const WORK_SHARE = 1 / 3;
@@ -55,8 +64,9 @@ export type DesktopCall = {
 /** `DesktopDone`: what the action did, and the screen for a screenshot. */
 export type DesktopDone = { message: string; jpegB64?: string; width?: number; height?: number };
 
-/** Where a watched session's frames go, the budget the hub last named for it, and whether every watcher decodes H.264. */
-export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean };
+/** Where a watched session's frames go, the budget the hub last named for it, whether every watcher decodes H.264, and
+ * the frame rate they asked for at most. */
+export type Watcher = { send: (frame: BrowserFrame) => void; kbps: number | undefined; video?: boolean; fps?: number };
 
 export type Opened = {
   id: string;
@@ -79,6 +89,8 @@ export type Opened = {
   resumed?: { startedAt: string; seq: number; control: BrowserControl; note?: string };
   /** What turns the grabs into H.264 for watchers that decode it (x264, ../screen/x264.ts); absent: JPEG only. */
   encoder?: MakeEncoder;
+  /** The machine's load per core now (../screen/live.ts BUSY); absent: 0, never busy. */
+  load?: () => number;
 };
 
 export class Session {
@@ -100,9 +112,22 @@ export class Session {
   private starting = false;
   /** Why the stream failed, once it has: the grabs' frames from then on. */
   private streamFailed: string | undefined;
-  /** The grabs as H.264 while every watcher decodes it (a screen without a stream of its own), and for the video
-   * where it takes them; absent: JPEG only. */
+  /** The grabs as H.264 for the video where it takes them, and for watchers that decode it (a screen without a
+   * stream of its own) while their link carries the video's rate; absent: JPEG only. */
   private readonly encoder: LiveEncoding | undefined;
+  private readonly makeEncoder: MakeEncoder | undefined;
+  /** The watchers' encoder of their own, at their link's rate, while the video's runs at its own (slowLink); it serves
+   * them once ready. */
+  private slow: { enc: LiveEncoding; ready: boolean } | undefined;
+  /** Why the watchers' own encoder failed, once it has: they get the video's frames from then on. */
+  private slowFailed = false;
+  /** The watchers' next H.264 frame must be a keyframe: they just moved to the video's encoder from their own. */
+  private keyWanted = false;
+  /** The grabs as NV12, for the encoders. */
+  private readonly nv12 = new Nv12();
+  private readonly load: () => number;
+  /** The frame rate last told the screen's stream. */
+  private toldFps: number | undefined;
   /** Whether the video is the encoder's H.264 (it takes it, and the encoder can), decided before the first grab. */
   private videoH264 = false;
   /** The last grab, not yet made a JPEG: `last` is made of it when a watcher needs a picture. */
@@ -147,8 +172,10 @@ export class Session {
     this.recording = opened.recording;
     this.latest = opened.steps;
     this.launchRefusal = opened.launchRefusal;
+    this.makeEncoder = opened.encoder;
+    this.load = opened.load ?? (() => 0);
     this.encoder = opened.encoder?.(
-      (f, input, atMs) => this.encoded(f, input, atMs),
+      (f, input, atMs) => this.encoded(f, input, atMs, false),
       (why) => {
         console.warn(`desktop ${this.id}: the live view stays JPEG: ${why}`);
         this.videoH264 = false;
@@ -169,7 +196,11 @@ export class Session {
   /** Starts reading the screen, and keeps a still screen's frame showing in the video. */
   open(): void {
     this.capturing = this.capture();
-    this.ticker = setInterval(() => this.recording?.video?.tick(this.offsetMs()), 1_000);
+    this.ticker = setInterval(() => {
+      this.recording?.video?.tick(this.offsetMs());
+      // The machine's load moves the stream's frame rate too.
+      if (this.streaming && this.streamFps() !== this.toldFps) this.tellStream();
+    }, 1_000);
   }
 
   /** How far its steps went: the last one's number, for a new holder. */
@@ -244,10 +275,11 @@ export class Session {
   /** Sends this session's frames to the hub from now on, the newest at once, or no more. */
   setWatcher(watcher: Watcher | undefined): void {
     this.watcher = watcher;
-    this.encoder?.key();
+    this.liveEncoder()?.key();
     if (!watcher) {
       this.streaming?.stop();
       this.streaming = undefined;
+      this.stopSlow();
       // The video's encoding goes on.
       if (!this.videoH264) this.encoder?.stop();
       return;
@@ -264,12 +296,14 @@ export class Session {
 
   /** The watchers' budget and whether they all decode H.264, as the hub says it. Only a switch between H.264 and
    * JPEG sends the screen anew: a budget told again (each few seconds on a varying link) costs nothing. */
-  setBudget(kbps: number | undefined, video = this.watcher?.video): void {
+  setBudget(kbps: number | undefined, video = this.watcher?.video, fps = this.watcher?.fps): void {
     const w = this.watcher;
     if (!w) return;
     const switched = (w.video === true) !== (video === true);
     w.kbps = kbps;
     w.video = video;
+    w.fps = fps;
+    if (!this.slowLink()) this.stopSlow();
     this.tellStream();
     if (switched) this.key();
   }
@@ -279,7 +313,7 @@ export class Session {
   key(): void {
     if (!this.watcher) return;
     if (this.streaming) return this.streaming.still();
-    this.encoder?.key();
+    this.liveEncoder()?.key();
     if (this.last) this.last = { ...this.last, seq: ++this.liveSeq, control: this.controlNow };
     this.sendLive(true);
   }
@@ -294,26 +328,100 @@ export class Session {
     return this.videoH264 && !this.observingNow;
   }
 
-  /** A grab to the H.264 encoder, for a watcher that decodes it or the video: true if it went (their frames come from
-   * there); false for JPEG (none wanted, no BGRA grabs, or no encoder yet or at all). The video's bit rate is the
-   * watchers' while they watch with H.264: one encode for both. */
-  private toEncoder(raw: Raw): boolean {
-    const live = this.liveH264();
-    if ((!live && !this.recordsH264()) || !this.encoder || this.screen.bgra !== true) {
-      this.encoder?.stop();
-      return false;
-    }
-    return this.encoder.put({ raw: [raw.width, raw.height] }, raw.data, live ? this.watcher!.kbps : undefined, this.offsetMs());
+  /** Whether the watchers' link carries clearly less than the video's rate (by the encoders' own margin, 1.5×), while
+   * both are H.264: they get an encode of their own then. */
+  private slowLink(): boolean {
+    return this.liveH264() && this.recordsH264() && !this.slowFailed && kbpsFor(this.watcher!.kbps) * 1.5 < MAX_KBPS;
   }
 
-  private encoded(f: Encoded, input: Input, atMs: number): void {
-    if (this.closed || !("raw" in input)) return;
-    const [width, height] = input.raw;
+  /** Whether the watchers' H.264 comes from their own encoder now. */
+  private ownLive(): boolean {
+    return this.slow?.ready === true && this.slowLink();
+  }
+
+  /** The encoder the watchers' H.264 comes from now. */
+  private liveEncoder(): LiveEncoding | undefined {
+    return this.ownLive() ? this.slow!.enc : this.encoder;
+  }
+
+  private stopSlow(): void {
+    if (!this.slow) return;
+    const wasOwn = this.slow.ready;
+    this.slow.enc.stop();
+    this.slow = undefined;
+    // Back on the video's frames: from its next keyframe.
+    if (wasOwn && this.liveH264()) {
+      this.keyWanted = true;
+      this.encoder?.key();
+    }
+  }
+
+  /** A grab to the H.264 encoders, for a watcher that decodes it or the video: true if it went (their frames come from
+   * there); false for JPEG (none wanted, no BGRA grabs, or no encoder yet or at all). The video's bit rate is its own;
+   * the watchers' is their link's, from the same encoder while their link carries the video's. */
+  private toEncoder(raw: Raw): boolean {
+    const live = this.liveH264();
+    const record = this.recordsH264();
+    if ((!live && !record) || !this.encoder || this.screen.bgra !== true) {
+      this.encoder?.stop();
+      this.stopSlow();
+      // This grab's change isn't in the picture: the next one it takes is converted whole.
+      this.nv12.forget();
+      return false;
+    }
+    const picture = this.nv12.update(raw.data, raw.width, raw.height, raw.changed ?? undefined);
+    const input: Input = { nv12: [this.nv12.width, this.nv12.height] };
+    const at = this.offsetMs();
+    // Before the video's frame: once the watchers are back on its frames, they wait for its keyframe.
+    if (!this.slowLink()) this.stopSlow();
+    const went = this.encoder.put(input, picture, record ? undefined : this.watcher!.kbps, at);
+    if (this.slowLink()) {
+      if (!this.slow && this.makeEncoder) {
+        const enc = this.makeEncoder(
+          (f, i, atMs) => this.encoded(f, i, atMs, true),
+          (why) => {
+            console.warn(`desktop ${this.id}: the watchers share the video's H.264: ${why}`);
+            this.slowFailed = true;
+            this.stopSlow();
+          },
+        );
+        const slow = { enc, ready: false };
+        this.slow = slow;
+        // Its first frame, a keyframe, is the watchers' first from it; the video's serve them until then.
+        void (enc.ready?.() ?? Promise.resolve(true)).then((ok) => {
+          if (this.slow === slow) slow.ready = ok;
+        });
+      }
+      if (this.slow?.ready) this.slow.enc.put(input, picture, this.watcher!.kbps, at);
+    }
+    return went;
+  }
+
+  /** An encoded frame: the video's encoder's into the video, and to the watchers from the encoder that serves them. */
+  private encoded(f: Encoded, input: Input, atMs: number, own: boolean): void {
+    if (this.closed || "jpeg" in input) return;
+    const [width, height] = "nv12" in input ? input.nv12 : input.raw;
     // A video that started as JPEG (the encoder came late) can't take it: from then on it is JPEG's.
-    if (this.recordsH264() && this.recording?.video?.h264?.(f.data, f.key, [width, height], atMs) === false) this.videoH264 = false;
+    if (!own && this.recordsH264() && this.recording?.video?.h264?.(f.data, f.key, [width, height], atMs) === false) this.videoH264 = false;
     const w = this.watcher;
-    if (!w || !this.liveH264()) return;
+    if (!w || !this.liveH264() || own !== this.ownLive()) return;
+    if (this.keyWanted) {
+      if (!f.key) return;
+      this.keyWanted = false;
+    }
     w.send({ sessionId: this.id, seq: ++this.liveSeq, width, height, control: this.controlNow, h264B64: Buffer.from(f.data).toString("base64"), key: f.key });
+  }
+
+  /** The least time between frames now (fpsFor's rules). */
+  private frameGap(): number {
+    const w = this.watcher;
+    return 1000 / fpsFor(w ? LIVE_FPS : RECORD_FPS, this.liveH264() ? kbpsFor(w!.kbps) : undefined, this.load(), w?.fps);
+  }
+
+  /** The frame rate for the screen's stream's H.264 (hardware: up to 60). */
+  private streamFps(): number {
+    const w = this.watcher;
+    return fpsFor(HARDWARE_FPS, kbpsFor(w?.kbps), this.load(), w?.fps);
   }
 
   /** The screen's stream, where it has one, for as long as someone watches; the grabs' frames if it can't run. */
@@ -348,6 +456,9 @@ export class Session {
     if (!run || !w) return;
     run.tell(w.video ? "h264" : "jpeg");
     run.tell(`kbps ${kbpsFor(w.kbps)}`);
+    if (!w.video) return void (this.toldFps = undefined);
+    this.toldFps = this.streamFps();
+    run.tell(`fps ${this.toldFps}`);
   }
 
   /** A frame of the stream, to the watcher: with H.264 every frame at once and in order (the JPEG still before a
@@ -429,10 +540,14 @@ export class Session {
       this.videoH264 = await Promise.race([this.encoder.ready(), new Promise<boolean>((r) => (timer = setTimeout(() => r(false), READY_MS)))]);
       clearTimeout(timer);
     }
+    // Where the screen doesn't say what changed: whether it did, by its pixels' hash.
     let lastHash: bigint | undefined;
     let lastFull = performance.now() - FULL_EVERY;
     // When a read of only what changed last came, until a whole read: its settle read is due SETTLE after.
     let partial: number | undefined;
+    // Frames at the rate with two in reserve: a key's echo goes at once, a run of changes is paced.
+    const pace = new Pace(performance.now(), this.frameGap());
+    let sent = false;
     while (!this.closed) {
       // An observer reads the screen only for a person watching it, and not while the screen's stream shows it them.
       if (this.observingNow && (!this.watched() || this.streaming)) {
@@ -449,9 +564,14 @@ export class Session {
             lastFull = performance.now();
             partial = undefined;
           } else if (this.screen.nextChange) partial = performance.now();
-          const hash = Bun.hash.xxHash64(raw.data) ^ BigInt(raw.width * 65536 + raw.height);
-          if (hash !== lastHash && !this.closed) {
+          let fresh = raw.changed !== null;
+          if (raw.changed === undefined) {
+            const hash = Bun.hash.xxHash64(raw.data) ^ BigInt(raw.width * 65536 + raw.height);
+            fresh = hash !== lastHash;
             lastHash = hash;
+          }
+          sent = fresh;
+          if (fresh && !this.closed) {
             const encoded = this.toEncoder(raw);
             const live = encoded && this.liveH264();
             // A JPEG for a watcher that can't decode H.264, or for a video that isn't H.264; else only once a watcher
@@ -477,7 +597,12 @@ export class Session {
         await Bun.sleep(Math.max(0, FRAME_EVERY - spent));
         continue;
       }
-      await Bun.sleep(Math.max(0, FRAME_GAP - spent, spent / WORK_SHARE - spent));
+      // Only a frame spends: a read that found nothing (a settle read, a still screen's) leaves the next change free.
+      const gap = this.frameGap();
+      const read = performance.now();
+      if (sent) pace.spend(read, gap);
+      await Bun.sleep(Math.max(pace.waitMs(read, gap), sent ? spent / WORK_SHARE - spent : 0));
+      sent = false;
       // Then nothing until the screen changes, or a whole read is due (the settle read, or the one every FULL_EVERY).
       const now = performance.now();
       const due = Math.min(FULL_EVERY - (now - lastFull), partial === undefined ? FULL_EVERY : SETTLE - (now - partial));
@@ -585,6 +710,7 @@ export class Session {
     clearInterval(this.ticker);
     await this.capturing;
     this.encoder?.stop();
+    this.stopSlow();
     this.screen.close();
     this.lent = undefined;
   }
@@ -600,6 +726,7 @@ export class Session {
     clearInterval(this.ticker);
     await this.capturing;
     this.encoder?.stop();
+    this.stopSlow();
     this.screen.close();
     const lent = this.lent;
     this.lent = undefined;

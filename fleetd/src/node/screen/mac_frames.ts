@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import source from "./frames.swift" with { type: "file" };
-import type { Command, StreamFrame, StreamRun } from "./live.ts";
+import { type Command, HARDWARE_FPS, type StreamFrame, type StreamRun } from "./live.ts";
 
 /** One frame as the helper sends it. `screen` is the screen's own size (input coordinates are in it); `picture` the
  * frame's, which may be smaller. A `word` is the helper speaking (`input`, `noinput <why>`), its text in `data`. */
@@ -154,9 +154,10 @@ export class MacFrames {
 }
 
 
-/** Frames a second at most: JPEG's a phone-sized picture of ~40-100 KB (~1.5 MB/s while it moves), H.264's a few KB. */
+/** Frames a second at most: JPEG's a phone-sized picture of ~40-100 KB (~1.5 MB/s while it moves), H.264's a few KB
+ * from VideoToolbox, in hardware (a session may tell it fewer: live.ts fpsFor). */
 export const JPEG_FPS = 20;
-export const H264_FPS = 30;
+export const H264_FPS = HARDWARE_FPS;
 
 /**
  * A screen as frames, one as it changes, JPEG until told `h264`, each with the screen's own size: `args` say which

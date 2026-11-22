@@ -241,15 +241,24 @@ const adaSkills = (f: Fixture): void => {
 /** Ada's settings page, as Settings › Projects reads it. */
 const adaSettings = (f: Fixture): void => {
   f.answer("project_settings_get", { ...ADA }, {
-    settings: { ...ADA, title: "Ada", workspaceRoot: "/home/dev/projects/ada", env: [], setup: { commands: [], inputs: [] } },
+    settings: {
+      ...ADA,
+      title: "Ada",
+      workspaceRoot: "/home/dev/projects/ada",
+      env: [],
+      setup: { commands: [], inputs: [] },
+      mergeRules: { itself: ["docs", "tests", "lockfile-bumps", "formatting"], person: ["auth", "billing", "migrations", "infra", "ci", "secrets"] },
+    },
   });
   f.answer("mcp_servers_get", undefined, { global: [], project: [] });
 };
 
 /** Ada's settings page, whole, for the screens that open it. */
 const settings = (from: Fixture): Fixture => {
-  const f = Fixture.from(from, "no-repo-settings", "No repo: Ada's settings page.");
+  const f = Fixture.from(from, "no-repo-settings", "No repo: Ada's settings page, a bot whose people merge its PRs.");
   adaSettings(f);
+  // Made since Who merges came: people merge its PRs.
+  for (const p of ((f.snapshot as { projects?: JsonObject[] } | undefined)?.projects ?? [])) if (p.projectId === ADA.projectId) p.merges = "people";
   projectSections(f, ADA);
   return f;
 };

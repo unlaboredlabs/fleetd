@@ -183,6 +183,7 @@ export function queue(change: Change, length: number): PrQueue {
   const held = change.state === "needs_rebase" || change.state === "ci_failed" || change.state === "refused";
   const out: PrQueue = { changeId: change.changeId, state: change.state, length };
   if (change.position !== undefined) out.position = change.position;
+  if (change.mergeRule !== undefined) out.mergeRule = clip(change.mergeRule, 500);
   if (held && change.lastError !== undefined) out.reason = clip(redact(change.lastError), 2000);
   // A ready PR the train holds back says why: its label, or a person's approval it waits for.
   else if (change.state === "ready" && change.lastError?.startsWith(HELD)) out.reason = clip(redact(change.lastError.slice(HELD.length)), 2000);

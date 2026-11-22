@@ -33,8 +33,11 @@ export const BLOCKED_PREFIX = "waiting for a new head: ";
 /** A Change in `ci_failed` because its CI timed out, not because a check went red. */
 export const timedOut = (change: Change) => change.state === "ci_failed" && (change.lastError?.startsWith(CI_TIMED_OUT) ?? false);
 
-/** What the lead does next about a Change: almost always nothing, since the train and reviews move it on. */
-export function changeNext(change: Change): string {
+/**
+ * What the lead does next about a Change: almost always nothing, since the train and reviews move it on.
+ * `peopleMerge`: people merge its bot's PRs, so the train never merges it.
+ */
+export function changeNext(change: Change, peopleMerge = false): string {
   switch (change.state) {
     case "merged":
       return "nothing; it is merged.";
@@ -46,10 +49,14 @@ export function changeNext(change: Change): string {
     case "abandoned":
       return "fix what it says and enqueue the PR again, or drop it.";
     default:
+      if (peopleMerge || change.lastError === PEOPLE)
+        return "nothing: people merge this bot's PRs, and the train merges this one only if every file matches its merges-itself rules. It reviews it and keeps it up to date either way, and says when one waiting for a person is reviewed and green: tell the human then, once. Never merge it yourself.";
       return "don't merge it yourself or post the fleetd/train status; the train merges it and the outcome arrives in a wake.";
   }
 }
 
+/** A ready Change's `lastError` while people merge its bot's PRs (its Who merges). */
+export const PEOPLE = "held: it waits for a person to merge it on GitHub, by its bot's Who merges and risk rules; a merge there is recorded";
 /** A ready Change's `lastError` while its PR has the `hold` label. */
 export const HELD = "held: the PR has the `hold` label; the train takes it once the label is gone";
 /** The start of a ready Change's `lastError` while the batch forming left it out, followed by why. */

@@ -25,6 +25,9 @@ export const recordingsDir = (home: string) => join(deviceDir(home), "recordings
  * comes: its bit rate (scrcpy_wire.ts VIDEO_BIT_RATE) at the share of a link H.264 may take. A slower one gets JPEGs
  * fitted to it. */
 export const PASSTHROUGH_KBPS = Math.ceil(MAX_KBPS / LINK_SHARE);
+/** Once on H.264, the watchers keep it down to this share of PASSTHROUGH_KBPS: a link that wavers around it doesn't flip
+ * between the two, each flip a reset of the device's encoder or a decoder started. */
+export const KEEP_SHARE = 0.8;
 
 export type Opened = {
   id: string;
@@ -185,7 +188,7 @@ export class Session {
   /** H.264 to the watchers from now on (every one decodes it, and `kbps`, their slowest link, carries it), or JPEG:
    * whether that switched. A switch to H.264 then wants a `key`. */
   want(video: boolean, kbps: number | undefined): boolean {
-    const now = video && (kbps === undefined || kbps >= PASSTHROUGH_KBPS);
+    const now = video && (kbps === undefined || kbps >= PASSTHROUGH_KBPS * (this.videoNow ? KEEP_SHARE : 1));
     const switched = now !== this.videoNow;
     this.videoNow = now;
     this.tellStream();

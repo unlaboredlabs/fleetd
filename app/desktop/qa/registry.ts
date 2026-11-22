@@ -1817,6 +1817,19 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Delete bot" }).waitFor();
     },
   },
+  // A bot whose people merge its PRs: Who merges on You, with its risk rules open.
+  {
+    id: "settings.projects",
+    variant: "who-merges",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["no-repo-settings"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "Who merges", exact: true });
+      await row.getByRole("button", { name: "Rules" }).click();
+      await row.getByRole("textbox", { name: "Merges itself" }).waitFor();
+      await row.scrollIntoViewIfNeeded();
+    },
+  },
   // Settings › Bots: Taxes archived, in its own group under the others, with Bring back.
   {
     id: "settings.projects",

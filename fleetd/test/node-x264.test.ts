@@ -4,7 +4,8 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { chmodSync, writeFileSync } from "node:fs";
-import { encoderArgs, FlvReader, KEY_EVERY, kbpsFor, LiveEncoder, paramSets, X264, type Encoded } from "../src/node/screen/x264.ts";
+import { encoderArgs, FlvReader, KEY_EVERY, kbpsFor, LiveEncoder, ONE_THREAD_PIXELS, paramSets, threadsFor, X264, type Encoded } from "../src/node/screen/x264.ts";
+import { Nv12 } from "../src/node/screen/nv12.ts";
 import { avcConfig, H264Video, mkvFrame, nalUnits } from "../src/node/browser/recording.ts";
 import { Mp4Sink } from "../src/node/browser/record.ts";
 import { tempHome } from "./helpers.ts";
@@ -49,6 +50,16 @@ test("the encoder's arguments: raw pixels or JPEGs in, no B-frames, a keyframe e
   expect(raw.at(-2)).toBe("flv");
   const jpeg = encoderArgs({ jpeg: [1280, 800] }, 2500);
   expect(jpeg.slice(jpeg.indexOf("-f"), jpeg.indexOf("-f") + 2)).toEqual(["-f", "mjpeg"]);
+  // NV12 goes in as it is: no conversion, no crop.
+  const nv12 = encoderArgs({ nv12: [1280, 800] }, 2500, 8);
+  expect(nv12.slice(nv12.indexOf("-f"), nv12.indexOf("-f") + 6)).toEqual(["-f", "rawvideo", "-pix_fmt", "nv12", "-s", "1280x800"]);
+  expect(nv12).not.toContain("-vf");
+  expect(nv12.filter((a) => a === "-pix_fmt")).toHaveLength(1);
+  // One thread up to ONE_THREAD_PIXELS (the least CPU a frame); two past it, where the machine has cores to spare.
+  expect(nv12[nv12.indexOf("-threads") + 1]).toBe("1");
+  expect(threadsFor(1920 * 1080, 8)).toBe(1);
+  expect(threadsFor(ONE_THREAD_PIXELS + 1, 8)).toBe(2);
+  expect(threadsFor(2560 * 1600, 2)).toBe(1);
 });
 
 // The pinned ffmpeg, where a node has fetched it (Android's, the same file) or $FLEETD_TEST_FFMPEG names it: a real
@@ -67,6 +78,29 @@ test.skipIf(!existsSync(ffmpeg))("a real x264 makes a keyframe first, then one f
   x.stop();
   expect(frames.map((f) => f.key)).toEqual([true, false, false, false, false]);
   expect([...frames[0]!.data.subarray(0, 5)]).toEqual([0, 0, 0, 1, 0x67]);
+});
+
+test.skipIf(!existsSync(ffmpeg))("a screen's NV12 through a real x264 decodes to its colours", async () => {
+  // Left half red, right half blue, in BGRA.
+  const [w, h] = [64, 48];
+  const bgra = new Uint8Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) bgra.set(i % w < w / 2 ? [0, 0, 255, 255] : [255, 0, 0, 255], i * 4);
+  const nv12 = new Nv12();
+  const frames: Encoded[] = [];
+  const x = new X264(ffmpeg, { nv12: [w, h] }, 2500, (f) => frames.push(f));
+  x.put(nv12.update(bgra, w, h));
+  const deadline = Date.now() + 5_000;
+  while (!frames.length && Date.now() < deadline) await Bun.sleep(2);
+  x.stop();
+  const decode = Bun.spawn([ffmpeg, "-hide_banner", "-loglevel", "error", "-f", "h264", "-i", "pipe:0", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { stdin: "pipe", stdout: "pipe" });
+  decode.stdin.write(frames[0]!.data);
+  decode.stdin.end();
+  const rgb = new Uint8Array(await new Response(decode.stdout).arrayBuffer());
+  expect(rgb.length).toBe(w * h * 3);
+  const at = (px: number, py: number) => [...rgb.subarray((py * w + px) * 3, (py * w + px) * 3 + 3)];
+  const near = (got: number[], want: number[]) => got.every((v, i) => Math.abs(v - want[i]!) <= 12);
+  expect(near(at(8, 24), [255, 0, 0])).toBe(true);
+  expect(near(at(56, 24), [0, 0, 255])).toBe(true);
 });
 
 test("a live view's encoder: JPEG until ffmpeg is here, a new encoder for a keyframe, a new size or a bit rate half again off, JPEG for good once one fails", async () => {

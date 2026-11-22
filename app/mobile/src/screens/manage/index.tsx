@@ -11,6 +11,7 @@ import type { ChatInfoParams, RootParams } from "../../hubContext";
 import { useTheme, type Palette } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { Approvals } from "./Approvals";
+import { WhoMerges } from "./WhoMerges";
 import { Computer, ComputerLog } from "./Computer";
 import { ApprovedLog } from "./ApprovedLog";
 import { IconPicker } from "./IconPicker";
@@ -117,7 +118,7 @@ export const newChatOptions = (t: Palette, open: () => void): NativeStackNavigat
 const InfoStack = createNativeStackNavigator<ChatInfoParams>();
 
 /**
- * A project's screen, Rename, Agent Profiles, Lead Model, Watching, Approvals, Payments and Skills (a skill's editor a sheet),
+ * A project's screen, Rename, Agent Profiles, Lead Model, Watching, Who merges, Approvals, Payments and Skills (a skill's editor a sheet),
  * pushed over its chat as one screen of the root stack, with a bar of their own that slides in and out with them. The root stack's bar stays
  * hidden over the chat and these, as over the chats list: one it shows and hides again on the way back stood over the
  * screen sliding in, then slid off late (Chat's chatOptions). Info, first in this stack, has a back button of its own
@@ -136,6 +137,7 @@ function ChatInfo() {
       <InfoStack.Screen name="Watching" component={Watching} options={pushed(t, "Watching")} />
       <InfoStack.Screen name="Watcher" component={Watcher} options={pushed(t, "")} />
       <InfoStack.Screen name="Approvals" component={Approvals} options={pushed(t, "Approvals")} />
+      <InfoStack.Screen name="WhoMerges" component={WhoMerges} options={pushed(t, "Who Merges")} />
       <InfoStack.Screen name="ApprovedLog" component={ApprovedLog} options={pushed(t, "Ran Without Asking")} />
       <InfoStack.Screen name="Payments" component={Payments} options={pushed(t, "Payments")} />
       <InfoStack.Screen name="Skills" component={Skills} options={pushed(t, "Skills")} />

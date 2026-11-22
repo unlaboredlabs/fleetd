@@ -143,7 +143,8 @@ test("bots keep the node's report and wear what the hub keeps of them", () => {
   expect(store.projectsList("other")).toEqual([]);
 
   const app = { machineId: "devbox", projectId: "app" };
-  expect(store.projectGet(app)).toEqual({ ...project("app", "2026-10-17T10:00:00.000Z"), icon: derived(app) });
+  // Made since Who merges came, with no settings of its own: people merge its PRs.
+  expect(store.projectGet(app)).toEqual({ ...project("app", "2026-10-17T10:00:00.000Z"), icon: derived(app), merges: "people" });
 
   // Its maker, archive, picture and icon come from the hub's rows; a former Only me project's mark and owner are no
   // longer read (D491).
@@ -157,6 +158,7 @@ test("bots keep the node's report and wear what the hub keeps of them", () => {
     archivedAt: "1970-01-01T00:00:00.000Z",
     avatar: "abc",
     icon: { face: "joy", color: "sun" },
+    merges: "people",
   });
 
   // A project bound to a repo gets its own repo row, and a checkout another holds is left out of what people see.

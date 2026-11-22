@@ -28,6 +28,10 @@
           "maxLength": 2000,
           "type": "string"
         },
+        "mergeRule": {
+          "description": "Where people merge its bot's PRs: the rule that decided who merges it, in words (every file matches docs, or\na file matches an always-a-person rule). Absent on a bot fleetd merges.",
+          "type": "string"
+        },
         "mergedSha": {
           "$ref": "#/$defs/CommitSha",
           "description": "The squash commit on the base; set on merge."

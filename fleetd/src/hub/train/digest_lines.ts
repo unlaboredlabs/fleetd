@@ -5,7 +5,7 @@ import type { Change, TrainState } from "../../shared/contracts.ts";
 import { TOOLS_FAILED } from "../reviews/rules.ts";
 import { parseMs } from "../store/time.ts";
 import { WAITING_FOR_RUNNERS } from "./next_rules.ts";
-import { APPROVAL, BACK_IDLE_MS, BLOCKED_PREFIX, HELD, LEFT_OUT, PASSED_WAITING, timedOut } from "./notes.ts";
+import { APPROVAL, BACK_IDLE_MS, BLOCKED_PREFIX, HELD, LEFT_OUT, PASSED_WAITING, PEOPLE, timedOut } from "./notes.ts";
 import { DRAFT, isDraft } from "./states.ts";
 
 export type TrainFacts = {
@@ -17,7 +17,13 @@ export type TrainFacts = {
   backSince?: Record<string, number>;
   /** Its writer task's state in words ("is running", "ended, waiting on nothing"). */
   writer?: (taskId: string) => string | undefined;
+  /** People merge the bot's PRs (its Who merges), so the train merges one only by its risk rules. */
+  peopleMerge?: boolean;
 };
+
+/** The section's first line on a bot whose people merge its PRs. */
+export const PEOPLE_MERGE_LINE =
+  "- People merge this bot's PRs: the train reviews each and keeps it up to date, and merges one itself only when every file matches the bot's merges-itself rules. Tell the human once when one waiting for a person is reviewed and green, with its link; never say such a PR is queued to merge.";
 
 
 const PARKED = ["needs_rebase", "ci_failed"];
@@ -47,6 +53,7 @@ function stateOf(changes: Change[], train: TrainState): string {
     if (isDraft(c)) return `${id} ${DRAFT}`;
     // A ready PR that waits on a person says so.
     if (c.state === "ready" && c.lastError === APPROVAL) return `${id} waiting for a person's approval`;
+    if (c.state === "ready" && c.lastError === PEOPLE) return `${id} reviewed, for a person to merge`;
     if (c.state === "ready" && c.lastError === HELD) return `${id} held by its \`hold\` label`;
     // A ready PR the batch left out says why.
     if (c.state === "ready" && c.lastError?.startsWith(LEFT_OUT)) return `${id} ready (${oneLine(c.lastError, 100)})`;
@@ -83,6 +90,7 @@ export function leadTrainLines(facts: TrainFacts, since?: string): string[] {
   // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
   const sinceMs = since === undefined ? undefined : (parseMs(since) ?? Number.MAX_SAFE_INTEGER);
   const lines = facts.trains.map((t) => `- ${t.repo}: ${stateOf(facts.changes, t)}`);
+  if (facts.peopleMerge && lines.length > 0) lines.unshift(PEOPLE_MERGE_LINE);
   const when = since !== undefined ? " since your last wake" : "";
   for (const c of facts.changes.filter((c) => c.state === "merged" && updatedAfter(c, sinceMs))) {
     lines.push(`- ${c.changeId} merged${when}: ${pr(c)}${shortSha(c.mergedSha)}${c.taskId !== undefined ? ` (by ${c.taskId})` : ""}`);

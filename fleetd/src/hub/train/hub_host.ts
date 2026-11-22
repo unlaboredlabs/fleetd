@@ -3,11 +3,12 @@
 // as if there were nothing while it is absent: Tasks' spawn, message and cancel (`tasks`), the order intake (`intake`,
 // the leads area's), the project policy's branch prefix (`policy`), the work ledger's landings (`work`) and machine
 // roles (`machine_roles`).
-import type { ProjectRef, Task } from "../../shared/contracts.ts";
+import type { Merger, ProjectRef, RiskRules, Task } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes, trainLine } from "../api/leads.ts";
 import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
+import { mergesOf, riskRulesOf } from "../project_lead/store.ts";
 import { time as timeArea } from "../time/index.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
 import * as seams from "./seams.ts";
@@ -206,6 +207,10 @@ export class HubHost implements TrainHost {
       await seams.sleep(1000, this.hub.shutdown.signal);
       return { events: [], cursor };
     }
+  }
+
+  whoMerges(r: ProjectRef): { merges: Merger; rules: RiskRules } {
+    return { merges: mergesOf(this.hub.db.conn, r), rules: riskRulesOf(this.hub.db.conn, r) };
   }
 
   projectRemoved(r: ProjectRef): boolean {

@@ -5,6 +5,7 @@
 import type { CiInfo } from "../../shared/contracts.ts";
 import { type GhOut, type GhRunner, GhStartError } from "./gh.ts";
 import { type FreshLike, freshGithub, parseMs } from "./seams.ts";
+import type { MergeFile } from "./merge_rules.ts";
 import { BATCH_MARKER, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
 import { type ClosedPull, MERGED_PAGE, MERGED_PAGES, type MergedPull, merged } from "../work/landing_rules.ts";
 
@@ -974,6 +975,30 @@ export class TrainGitHub {
       if (files.length < 100) break;
     }
     return added;
+  }
+
+  /**
+   * A PR's files as GitHub lists them, each with its diff's hunks where GitHub gives them; undefined past the 3,000
+   * GitHub lists at most, as the list is cut there.
+   */
+  async pullFiles(repo: string, n: number): Promise<MergeFile[] | undefined> {
+    const out: MergeFile[] = [];
+    for (let page = 1; page <= 30; page++) {
+      const files = await this.json<{ filename: string; previous_filename?: string; status: string; patch?: string }[]>(
+        "GET",
+        `repos/${repo}/pulls/${n}/files?per_page=100&page=${page}`,
+        [],
+        (v) => (Array.isArray(v) ? v : undefined),
+      );
+      for (const f of files) {
+        const file: MergeFile = { path: f.filename, status: f.status };
+        if (typeof f.previous_filename === "string") file.previousPath = f.previous_filename;
+        if (typeof f.patch === "string") file.patch = f.patch;
+        out.push(file);
+      }
+      if (files.length < 100) return out;
+    }
+    return undefined;
   }
 
   /** The repo's open PRs that carry the label `name` (one page). */

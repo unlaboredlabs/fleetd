@@ -1,9 +1,10 @@
 // What the hub keeps of a project beyond its node's report, in its own `project_settings` columns (D310): the key that
-// made it, when it was archived, its bot's color and shape and the card it pays with. Every project is everyone's on its hub
-// (D491): `only_me` and `owner_person` are no longer read.
+// made it, when it was archived, its bot's color and shape, who merges its PRs and by which risk rules, and the card
+// it pays with. Every project is everyone's on its hub (D491): `only_me` and `owner_person` are no longer read.
 import type { Database } from "bun:sqlite";
-import { botLookOf, type BotColor, type BotShape, type ProjectCreator, type ProjectRef, type ProjectSite, type Timestamp } from "../../shared/contracts.ts";
+import { botLookOf, type BotColor, type BotShape, type Merger, type ProjectCreator, type RiskRules, type ProjectRef, type ProjectSite, type Timestamp } from "../../shared/contracts.ts";
 import { isoMs } from "../store/time.ts";
+import { DEFAULT_RISK_RULES } from "../train/merge_rules.ts";
 
 /** What the hub keeps of any project: its maker and archive. */
 export type Kept = {
@@ -17,6 +18,8 @@ export type Kept = {
   chatTags?: true;
   /** A person turned its issues-as-orders switch off; absent: on. */
   issueOrdersOff?: true;
+  /** fleetd's merge train merges its PRs; absent: people do, the default. */
+  merges?: "fleetd";
 };
 
 type KeptRow = {
@@ -27,13 +30,14 @@ type KeptRow = {
   avatar_shape: string | null;
   chat_tags: number | null;
   issue_orders: number | null;
+  merges: string | null;
 };
 
 /** Undefined for a project with no row of its own. */
 export function kept(db: Database, r: ProjectRef): Kept | undefined {
   const row = db
     .query<KeptRow, [string, string]>(
-      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags, issue_orders FROM project_settings
+      `SELECT created_by_key, created_by_name, archived_ms, avatar_color, avatar_shape, chat_tags, issue_orders, merges FROM project_settings
          WHERE machine_id = ? AND project_id = ?`,
     )
     .get(r.machineId, r.projectId);
@@ -45,6 +49,7 @@ export function kept(db: Database, r: ProjectRef): Kept | undefined {
   if (row.avatar_shape !== null) out.avatarShape = row.avatar_shape;
   if (row.chat_tags === 1) out.chatTags = true;
   if (row.issue_orders === 0) out.issueOrdersOff = true;
+  if (mergerOf(row.merges) === "fleetd") out.merges = "fleetd";
   return out;
 }
 
@@ -70,6 +75,50 @@ export function chatTagsOn(db: Database, r: ProjectRef): boolean {
     .query<{ v: number | null }, [string, string]>("SELECT chat_tags AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
     .get(r.machineId, r.projectId);
   return row?.v === 1;
+}
+
+/** A row's `merges`: NULL is people, the default for a bot made since who merges was a setting. */
+const mergerOf = (v: string | null | undefined): Merger => (v === "fleetd" ? "fleetd" : "people");
+
+/** Who merges the project's PRs: people for a project with no row of its own, as a new one has none. */
+export function mergesOf(db: Database, r: ProjectRef): Merger {
+  const row = db
+    .query<{ v: string | null }, [string, string]>("SELECT merges AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  return mergerOf(row?.v);
+}
+
+/** Sets who merges the project's PRs; people, the default, is kept as none. */
+export function setMerges(db: Database, r: ProjectRef, merges: Merger): void {
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, merges) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET merges = excluded.merges`,
+  ).run(r.machineId, r.projectId, merges === "fleetd" ? "fleetd" : null);
+}
+
+/** The project's risk rules: the defaults until a person edits them (or for a row that can't be read). */
+export function riskRulesOf(db: Database, r: ProjectRef): RiskRules {
+  const row = db
+    .query<{ v: string | null }, [string, string]>("SELECT merge_rules AS v FROM project_settings WHERE machine_id = ? AND project_id = ?")
+    .get(r.machineId, r.projectId);
+  if (!row?.v) return DEFAULT_RISK_RULES;
+  try {
+    const kept = JSON.parse(row.v) as Partial<RiskRules>;
+    const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined);
+    return { itself: list(kept.itself) ?? DEFAULT_RISK_RULES.itself, person: list(kept.person) ?? DEFAULT_RISK_RULES.person };
+  } catch {
+    return DEFAULT_RISK_RULES;
+  }
+}
+
+/** Replaces the project's risk rules; the defaults are kept as none. */
+export function setRiskRules(db: Database, r: ProjectRef, rules: RiskRules): void {
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const isDefault = same(rules.itself, DEFAULT_RISK_RULES.itself) && same(rules.person, DEFAULT_RISK_RULES.person);
+  db.query(
+    `INSERT INTO project_settings (machine_id, project_id, merge_rules) VALUES (?1, ?2, ?3)
+         ON CONFLICT (machine_id, project_id) DO UPDATE SET merge_rules = excluded.merge_rules`,
+  ).run(r.machineId, r.projectId, isDefault ? null : JSON.stringify({ itself: rules.itself, person: rules.person }));
 }
 
 /** Turns the project's chat tags trial on or off; off is kept as none. */

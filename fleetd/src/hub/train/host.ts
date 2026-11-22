@@ -1,7 +1,7 @@
 // What the train and the review gate take from other hub areas: tasks,
 // workstreams, the event log and wakes. One port, so the logic tests run on a fake and the hub provides it from its
 // services (`HubHost`, hub_host.ts).
-import type { ProjectRef } from "../../shared/contracts.ts";
+import type { Merger, ProjectRef, RiskRules } from "../../shared/contracts.ts";
 
 /** The parts of a Task the train and reviews read. */
 export type TaskView = {
@@ -76,6 +76,12 @@ export interface TrainHost {
   repoProjects(repo: string): ProjectRef[];
   /** Runs `argv` in `cwd` on the machine of `checkout`, at most `timeoutSec`; throws why it can't run there now. */
   nodeRun(checkout: ProjectRef, cwd: string, argv: string[], timeoutSec: number): Promise<NodeRun>;
+  /**
+   * Who merges the project's PRs (its Who merges) and its risk rules: where people merge, the train reviews them and
+   * keeps them up to date, and merges only one its rules let merge itself (merge_rules.ts `decide`). Throws when it
+   * can't be read. Absent: fleetd merges.
+   */
+  whoMerges?(projectRef: ProjectRef): { merges: Merger; rules: RiskRules };
   /** LeadWakes.trigger(ref, { kind: "train", line }). */
   wakeLead(projectRef: ProjectRef, line: string): Promise<void>;
   /** One author=system line in the project's chat (Chat.systemLine); never throws. Absent: the chat gets none. */

@@ -342,9 +342,9 @@ export class SimScreen {
     for (const watcher of this.watchers) watcher(frame);
   }
 
-  /** H.264 from now on (every watcher decodes it) within `kbps`, or JPEG: whether that switched. */
-  want(video: boolean, kbps: number | undefined): boolean {
-    return this.shooter.want(video, kbps);
+  /** H.264 from now on (every watcher decodes it) within `kbps` and `fps`, or JPEG: whether that switched. */
+  want(video: boolean, kbps: number | undefined, fps?: number): boolean {
+    return this.shooter.want(video, kbps, fps);
   }
 
   /** A watcher lost an H.264 frame: the screen now as a JPEG, then H.264 from a keyframe. */
@@ -627,7 +627,7 @@ export class SimScreens {
     const screen = this.byId(frame.sessionId);
     if (!screen) return;
     if (!frame.on) return this.unwatch(screen.id);
-    const switched = screen.want(frame.video === true, frame.kbps);
+    const switched = screen.want(frame.video === true, frame.kbps, frame.fps);
     const on = this.pumps.get(screen.id);
     if (on) {
       on.pump.kbps = frame.kbps;

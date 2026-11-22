@@ -17,7 +17,7 @@ import { router } from "../src/node/device/router.ts";
 import { Jpegs, keycode, messages, metaState, Packets, serverArgs } from "../src/node/device/scrcpy.ts";
 import { stillArgs } from "../src/node/device/scrcpy_wire.ts";
 import { AVD, findSdk, kvmAt, markers, packageUrls, PINS, quoted, SCRCPY_VERSION, sdkAt, writeAvd } from "../src/node/device/sdk.ts";
-import { recordingsDir } from "../src/node/device/session.ts";
+import { PASSTHROUGH_KBPS, recordingsDir } from "../src/node/device/session.ts";
 import { tempHome } from "./helpers.ts";
 import { testNode } from "./node_helpers.ts";
 
@@ -443,6 +443,11 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   expect([...Buffer.from(keyframe.h264B64!, "base64")]).toEqual([...CONFIG, ...IDR]);
   expect(keyframe.seq).toBeGreaterThan(frames()[0]!.seq);
   expect(control.some((c) => c[0] === 17)).toBe(true);
+  // A link just under the bar keeps H.264 (KEEP_SHARE), so one that wavers around it doesn't flip each time.
+  const nearBar = Math.round(PASSTHROUGH_KBPS * 0.9);
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, kbps: nearBar });
+  await Bun.sleep(50);
+  expect(devices.session("t1")?.wantsVideo()).toBe(true);
   // A link too slow for the device's bit rate: JPEGs, decoded on the node, and no more H.264.
   t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, kbps: 500 });
   const sent = frames().length;
@@ -450,6 +455,10 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   await until(() => frames().length > sent);
   expect(frames().slice(sent).every((f) => f.jpegB64 !== undefined)).toBe(true);
   expect(readFileSync(log, "utf8")).not.toContain("raw_stream");
+  // Back just under the bar: still JPEG, until the link carries the whole of it.
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, kbps: nearBar });
+  await Bun.sleep(50);
+  expect(devices.session("t1")?.wantsVideo()).toBe(false);
 
   // A person takes over: the wrapper's control file is there, and their tap reaches scrcpy as a finger.
   t.link.deliver({ t: "browser_control", sessionId: id, control: "human", by: "a person" });

@@ -3,6 +3,7 @@
 // wake, and what is parked with its author.
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
+import { mergesOf } from "../project_lead/store.ts";
 import { backSince } from "./back.ts";
 import { leadTrainLines, type TrainFacts } from "./digest_lines.ts";
 import type { TrainHost } from "./host.ts";
@@ -48,7 +49,7 @@ export function trainDigest(hub: Hub, r: ProjectRef, since?: string): string[] |
   const now = { nowMs: hub.clock.now(), writer: (taskId: string) => writerState(host, taskId) };
   const facts = trainFacts(changeRecords(hub), (x) => x.machineId === r.machineId && x.projectId === r.projectId, now);
   if (facts.trains.length === 0 && facts.changes.length === 0) return undefined;
-  return leadTrainLines(facts, since);
+  return leadTrainLines({ ...facts, peopleMerge: mergesOf(hub.db.conn, r) === "people" }, since);
 }
 
 /** The workstream's PRs on the train that are not merged or abandoned, as `#<n> <state>`. */

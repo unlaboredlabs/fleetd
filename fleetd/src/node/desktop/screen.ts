@@ -15,8 +15,12 @@ export type Target = { app?: string; snapshot?: string };
 /** An app on the Mac's screen: every name it goes by, and the one it was asked for (mac/index.ts). */
 export type App = { keys: string[]; name: string };
 
-/** One read of the screen: its pixels as the screen gives them, at its size then. */
-export type Raw = { data: Uint8Array; width: number; height: number };
+/** A part of a screen: x0, y0 to x1, y1 (not included), in its pixels. */
+export type Box = [number, number, number, number];
+
+/** One read of the screen: its pixels as the screen gives them, at its size then. `changed`, where the screen knows it:
+ * the part that differs from the read before (null: nothing does). */
+export type Raw = { data: Uint8Array; width: number; height: number; changed?: Box | null };
 
 /** One grab of the screen, as a JPEG. */
 export type Shot = { jpeg: Uint8Array; width: number; height: number };
@@ -66,7 +70,8 @@ export interface Screen {
   changed(): boolean;
   /** Resolves once it changes, or after `ms`; absent where the screen can't say (it is read on a timer). */
   nextChange?(ms: number): Promise<void>;
-  /** Its pixels now; `whole` reads every one again, where a screen reads only what changed. */
+  /** Its pixels now; `whole` reads every one again, where a screen reads only what changed. They may be the screen's
+   * own kept copy, good until the next grab: what keeps them longer copies them. */
   grabRaw(whole?: boolean): Promise<Raw>;
   /** The screen as a stream for the live view, a frame as it changes (JPEG or H.264); absent where there is none (an X
    * display's frames come from grabs). */
