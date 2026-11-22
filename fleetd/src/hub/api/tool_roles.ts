@@ -104,6 +104,7 @@ export const TOOLS = {
   decisions_overturn: { scope: "operate", module: "src/hub/ledger" },
   tasks_list: { scope: "read", module: "src/hub/tasks" },
   task_get: { scope: "read", module: "src/hub/tasks" },
+  task_stop: { scope: "operate", module: "src/hub/tasks" },
   cap_set: { scope: "operate", module: "src/hub/tasks" },
   usage_status: { scope: "read", module: "src/hub/usage" },
   usage_resume: { scope: "operate", module: "src/hub/usage" },

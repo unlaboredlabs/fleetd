@@ -8703,6 +8703,16 @@ export type TaskGetOutput = {
 
 export type TaskId = string;
 
+export type TaskStopInput = {
+  taskId: TaskId;
+};
+
+/** The task, stopped: cancelled, its slot free. */
+export type TaskStopOutput = {
+  next?: string;
+  task: Task;
+};
+
 /** Every task gets its own worktree: a writer on its own branch, a reader or reviewer detached. */
 export type TaskKind = "write" | "read" | "review";
 
@@ -10411,6 +10421,7 @@ export interface ToolMap {
   tailnet_disconnect: { input: TailnetDisconnectInput; output: TailnetState };
   tailnet_get: { input: TailnetGetInput; output: TailnetState };
   task_get: { input: TaskGetInput; output: TaskGetOutput };
+  task_stop: { input: TaskStopInput; output: TaskStopOutput };
   tasks_list: { input: TasksListInput; output: TasksListOutput };
   thread_tail: { input: ThreadTailInput; output: ThreadTailOutput };
   thread_window: { input: ThreadWindowInput; output: ThreadWindowOutput };

@@ -212,6 +212,17 @@
   display: flex;
   min-width: 0;
 }
+/* Stop, at the end of its state's row: plain, no ask. */
+.stop {
+  flex: none;
+  margin: -4px 0;
+}
+/* A media stop: a small solid square, never a hollow one that reads as a checkbox. */
+.stop > svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 0;
+}
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -238,12 +249,29 @@
 .nowWaiting {
   background: color-mix(in srgb, var(--warning) 9%, transparent);
 }
+/* Its work and the steer pill floating over its end: the steps scroll on under the pill (AgentWork's dock). */
+.stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .feed {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   padding: var(--space-2) var(--space-4) 0;
+}
+.dock {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 0 var(--space-3) var(--space-3);
+  pointer-events: none;
+}
+.dock > * {
+  pointer-events: auto;
 }
 .message {
   display: flex;

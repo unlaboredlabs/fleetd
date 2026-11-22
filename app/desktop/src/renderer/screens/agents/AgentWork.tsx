@@ -2,12 +2,13 @@
 // doing now and the browser it has open, and its newest steps (what it wrote, what it ran and edited), with the message
 // it is writing streaming in at the end. The DMs it sent other agents and got from them stand among its steps as quiet
 // cards, where they happened (screens/dms). Under it, a box steers it directly. Its head opens what it was told at its
-// start: its first message and the prompts it pinned.
-import { useMemo, useState } from "react";
+// start (its first message and the prompts it pinned), and Stop ends it, as its lead's stop_agent would.
+import { Square } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { WorkStep } from "../../../shared/contracts";
-import { useAgentWork, useData } from "../../src/data/react";
+import { useAgentWork, useData, useDataLayer } from "../../src/data/react";
 import { selectLiveAgent, selectLiveAgents } from "../../src/data/selectors";
-import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, Truncate, VirtualList } from "../../ui";
+import { Button, cx, EmptyState, Markdown, profileLine, ROLE_WORD, Text, toast, Truncate, VirtualList } from "../../ui";
 import { roleWords } from "../chat/told";
 import { ToldPanel } from "../chat/ToldPanel";
 import { MiddleCut, SteadyActivityLine } from "../live/parts";
@@ -30,6 +31,29 @@ type FeedItem =
 
 const NO_PROJECT = { machineId: "", projectId: "" };
 
+// The agents stopped from this app, by their id in the live list: each shows as stopped at once, before the hub's
+// task.cancelled reads the list again without it.
+const stoppedHere = new Set<string>();
+
+/** Stop: ends task `taskId` at once, no ask (task_stop). Its slot frees and its lead hears it at its next wake. */
+function StopAgent({ id, taskId, title, onStopped }: { id: string; taskId: string; title: string; onStopped: () => void }) {
+  const { call } = useDataLayer();
+  const [busy, setBusy] = useState(false);
+  const stop = async () => {
+    setBusy(true);
+    const out = await call("task_stop", { taskId });
+    setBusy(false);
+    if (!out.ok) return void toast({ title: `Couldn’t stop ${title}`, description: out.error.message, tone: "danger" });
+    stoppedHere.add(id);
+    onStopped();
+  };
+  return (
+    <Button variant="quiet" size="sm" className={s.stop} icon={<Square aria-hidden fill="currentColor" />} disabled={busy} onClick={() => void stop()}>
+      {busy ? "Stopping…" : "Stop"}
+    </Button>
+  );
+}
+
 export function AgentWork({ id }: { id: string }) {
   const agent = useData(selectLiveAgent(id));
   const listed = useData((st) => selectLiveAgents(st) !== undefined);
@@ -38,6 +62,21 @@ export function AgentWork({ id }: { id: string }) {
   const order = useData((st) => (workstream === undefined ? undefined : st.orders?.[workstream]?.title));
   const work = useAgentWork(agent);
   const [told, setTold] = useState(false);
+  const [, stopped] = useState(0);
+  // The steer pill floats over the end of its work, as the chat's composer does: the steps scroll on under it, and the
+  // list's end clears it.
+  const dock = useRef<HTMLDivElement>(null);
+  const [clear, setClear] = useState(0);
+  const steerable = agent?.row.taskId !== undefined && agent.row.workstreamId !== undefined && work.hasThread;
+  useLayoutEffect(() => {
+    const el = dock.current;
+    if (el === null) return setClear(0);
+    const measure = () => setClear(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [steerable]);
   const row = agent?.row;
   const taskId = row?.taskId;
   const dms = useAgentDms(row?.projectRef ?? NO_PROJECT, taskId);
@@ -59,10 +98,17 @@ export function AgentWork({ id }: { id: string }) {
       </div>
     );
   }
+  if (stoppedHere.has(id)) {
+    return (
+      <div className={s.workBody} data-screen="agents.work">
+        <EmptyState title="Stopped" />
+      </div>
+    );
+  }
   if (agent === undefined || row === undefined) {
     return (
       <div className={s.workBody} data-screen="agents.work">
-        <EmptyState title="This agent isn’t running now">It finished, or the lead stopped it. The chat says how it went.</EmptyState>
+        <EmptyState title="This agent isn’t running now">It finished, or was stopped. The chat says how it went.</EmptyState>
       </div>
     );
   }
@@ -78,13 +124,16 @@ export function AgentWork({ id }: { id: string }) {
             {STATE_WORD[row.status]}
           </Text>
           <RolePill role={row.role} />
-          {order === undefined ? null : (
-            <span className={s.order}>
+          <span className={s.order}>
+            {order === undefined ? null : (
               <Truncate size="xs" tone="quiet">
                 {order}
               </Truncate>
-            </span>
-          )}
+            )}
+          </span>
+          {row.taskId !== undefined && row.role !== "lead" ? (
+            <StopAgent id={id} taskId={row.taskId} title={row.title} onStopped={() => stopped((n) => n + 1)} />
+          ) : null}
         </span>
         <Text as="h2" size="md" strong>
           {row.title}
@@ -116,32 +165,48 @@ export function AgentWork({ id }: { id: string }) {
         </div>
         <AgentSession project={row.projectRef} laneId={row.laneId} />
       </div>
-      <div className={s.feed}>
-        {!work.hasThread ? (
-          <Text size="sm" tone="quiet">
-            It hasn’t started yet.
-          </Text>
-        ) : work.error !== null && feed === undefined ? (
-          <p role="alert">
-            <Text size="sm" tone="danger">
-              Couldn’t read its work. The agent keeps going; this reads again at its next step.
+      <div className={s.stage}>
+        <div className={s.feed}>
+          {!work.hasThread ? (
+            <Text size="sm" tone="quiet">
+              It hasn’t started yet.
             </Text>
-          </p>
-        ) : feed === undefined && !fresh ? (
-          <Text size="sm" tone="quiet">
-            Its work shows once you’re connected.
-          </Text>
-        ) : feed === undefined ? (
-          <div aria-busy="true" aria-label="Loading its work" />
-        ) : feed.length === 0 ? (
-          <Text size="sm" tone="quiet">
-            Nothing yet.
-          </Text>
-        ) : (
-          <VirtualList items={feed} getKey={(item) => item.id} renderItem={(item) => (item.kind === "dm" ? <DmCard dm={item.dm} self={row.taskId ?? ""} project={row.projectRef} /> : <Step item={item} />)} estimateSize={28} followOutput startAtEnd aria-label="Its work" />
-        )}
+          ) : work.error !== null && feed === undefined ? (
+            <p role="alert">
+              <Text size="sm" tone="danger">
+                Couldn’t read its work. The agent keeps going; this reads again at its next step.
+              </Text>
+            </p>
+          ) : feed === undefined && !fresh ? (
+            <Text size="sm" tone="quiet">
+              Its work shows once you’re connected.
+            </Text>
+          ) : feed === undefined ? (
+            <div aria-busy="true" aria-label="Loading its work" />
+          ) : feed.length === 0 ? (
+            <Text size="sm" tone="quiet">
+              Nothing yet.
+            </Text>
+          ) : (
+            <VirtualList
+              items={feed}
+              getKey={(item) => item.id}
+              renderItem={(item) => (item.kind === "dm" ? <DmCard dm={item.dm} self={row.taskId ?? ""} project={row.projectRef} /> : <Step item={item} />)}
+              estimateSize={28}
+              paddingEnd={clear}
+              followOutput
+              startAtEnd
+              aria-label="Its work"
+            />
+          )}
+        </div>
+        {steerable && row.taskId !== undefined && row.workstreamId !== undefined ? (
+          // It floats over the steps by design (data-floats, for the QA checks).
+          <div ref={dock} className={s.dock} data-floats="">
+            <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} />
+          </div>
+        ) : null}
       </div>
-      {row.taskId !== undefined && row.workstreamId !== undefined && work.hasThread ? <SteerBox key={row.taskId} workstreamId={row.workstreamId} taskId={row.taskId} /> : null}
       <ToldPanel
         open={told && thread !== undefined ? { thread, name: roleWords(row.role), who: { project: row.projectTitle, role: ROLE_WORD[row.role] } } : undefined}
         projectRef={row.projectRef}

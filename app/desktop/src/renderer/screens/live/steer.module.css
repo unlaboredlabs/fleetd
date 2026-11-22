@@ -1,40 +1,69 @@
-/* The steer box under an agent's live work, and the receipts above it. Static. */
+/* The steer pill over the end of an agent's work: the chat's composer (chat/composer.module.css) sized for the panel.
+   One glass pill, your steers and a refusal on rows over the words, Send beside them on their last line. Static. */
 .steer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-4) var(--space-3);
-  border-top: 1px solid var(--hairline);
-  flex: none;
-}
-/* The rule spans the pane; what is in it keeps the feed's measure. */
-.steer > * {
   max-width: var(--measure);
 }
 
 .box {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
+  position: relative;
+  /* Its glass under its words (::before) and its lift under that (::after), as the composer's: a key press never
+     blurs the page again. */
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-1) var(--space-1) var(--space-1) 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--raised);
+  padding: 4px;
+  border-radius: var(--radius-lg);
 }
-/* Focused, its edge darkens to a control's, as the chat's composer does (chat/composer.module.css). */
-.box:has(> .input:focus-visible) {
-  border-color: var(--control-border);
+.box::before,
+.box::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
+.box::before {
+  z-index: -1;
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
+    inset 0 1px 0 var(--glass-rim);
+}
+.box::after {
+  z-index: -2;
+  box-shadow: var(--glass-lift);
+}
+.box > :not(.input, .tools) {
+  grid-column: 1 / -1;
+}
+/* Focused, its edge darkens a step towards a control's, as the composer's. */
+.box:has(> .input:focus-visible)::before {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text) 16%, transparent),
+    inset 0 1px 0 var(--glass-rim);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .box::before {
+    background: var(--raised);
+    backdrop-filter: none;
+  }
+}
+
 .input {
-  flex: 1;
+  display: block;
+  width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  /* One line as tall as Send beside it; it grows with its text to six lines, then scrolls. */
   field-sizing: content;
-  min-height: 28px;
+  min-height: var(--control);
   max-height: calc(6 * var(--leading-sm) + 8px);
-  padding: var(--space-1) var(--space-2);
+  padding: 4px var(--space-2);
   resize: none;
   border: none;
   background: transparent;
@@ -51,9 +80,25 @@
   color: var(--faint);
 }
 
+/* Send: the composer's solid key, a step smaller; with nothing to send, the same key faded, never an outline. */
+.tools {
+  display: flex;
+}
+.tools > button:disabled {
+  border-color: transparent;
+  background: var(--selected);
+  color: var(--faint);
+  opacity: 1;
+  box-shadow: none;
+}
+.tools > button > svg {
+  width: 14px;
+  height: 14px;
+}
+
 .note {
   min-width: 0;
-  padding: 0 var(--space-1);
+  padding: 2px var(--space-2) 0;
 }
 .note:empty {
   display: none;
@@ -65,7 +110,7 @@
   flex-direction: column;
   gap: var(--space-1);
   margin: 0;
-  padding: 0;
+  padding: var(--space-1) var(--space-2) var(--space-1);
   list-style: none;
   min-width: 0;
 }
