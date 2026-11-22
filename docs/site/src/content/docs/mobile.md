@@ -189,11 +189,17 @@ command or headers from the vault are the desktop's to add.
 An admin has **Machines** in Settings, the desktop app's [Machines page](/docs/machines#page) in three groups: the
 machines and how each is; and what runs where, **Mac machine**, then how long recordings are kept. Members don't see it.
 
-## Claude {#claude}
+## Providers {#claude}
 
-An admin has **Claude** under Machines in Settings, as the desktop app's Settings › Hub › Setup › Claude: the hub's API
-key in a secure field, sealed on the phone to every machine, and its endpoint, Anthropic's own filled in. **Save and
-Test** saves and tries it at once; Test and Remove are there once it is set.
+An admin has **Providers** under Machines in Settings, as the desktop app's Settings › Hub › Providers: a row per
+provider with how it is connected and the models it offers. **Anthropic** opens the hub's API key in a secure field,
+sealed on the phone to every machine, and its endpoint, Anthropic's own filled in. **Save and Test** saves and tries it
+at once; Test and Remove are there once it is set. **Google** lists each machine agents run on with **Sign In with
+Google**, which opens Google's page; paste the code it shows. Under it, the bots whose Vault holds a Gemini key.
+
+A bot's **Lead Model** lists its profiles under their provider, and for an admin each Gemini model no profile runs on
+yet: tapping one makes a profile on it and starts the lead on it. While its lead runs on Google and Google isn't
+connected, **Sign In with Google** is right under them.
 
 ## Update fleetd {#update}
 

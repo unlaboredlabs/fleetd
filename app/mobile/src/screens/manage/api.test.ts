@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStep, initialCreate, PROJECT_TOOLS, type CreateMsg, type CreateState, type HubEvent, type ProfilesListOutput } from "../../desktop";
 import { fakeHub } from "../../hub/fake";
 import { Session } from "../../session";
-import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, rebuildImage, REMOVE_MS, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, restartLead, setLeadProfile, setPicture, setProfile, withPart } from "./api";
+import { createCall, deleteProject, discover, FORGET_MS, forgetSignins, readApprovals, readApprovedPage, readForDelete, readInfo, readComputer, rebuildImage, REMOVE_MS, removePicture, rename, setApprovalMode, setArchived, setBotColor, setBotShape, setMyName, restartLead, setLeadProfile, startLeadOn, setPicture, setProfile, withPart } from "./api";
 
 const AT = "2026-10-28T10:00:00Z";
 const NOW = Date.parse(AT);
@@ -169,6 +169,17 @@ describe("A bot's screen", () => {
     expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadDefault: true });
     void restartLead(session, SHOP);
     expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadRestart: true });
+  });
+
+  it("starts its lead on a Gemini model no profile runs on: a profile named for it first, then the lead's pick", async () => {
+    const { hub, session, calls } = setup();
+    const started = startLeadOn(session, SHOP, "gemini-4-neon", [{ name: "high" }, { name: "gemini-4-neon" }]);
+    expect(calls("profile_create").at(-1)?.input).toEqual({ name: "gemini-4-neon-2", note: "", model: "gemini-4-neon", effort: "high", fast: false });
+    hub.answer("profile_create", { profile: { id: 9, name: "gemini-4-neon-2" } });
+    await flush();
+    expect(calls("project_set").at(-1)?.input).toEqual({ ...REF, leadProfile: "gemini-4-neon-2" });
+    hub.answer("project_set", { profiles: ["high"], leadProfile: "gemini-4-neon-2" });
+    await expect(started).resolves.toEqual({ ok: true, value: null });
   });
 });
 

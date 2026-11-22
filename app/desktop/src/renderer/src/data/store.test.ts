@@ -157,6 +157,20 @@ describe("connection", () => {
     expect(run([{ ...h264(1, true), frame: { ...h264(1, true).frame, sessionId: "B2" } }], s).browserVideo).toMatchObject({ sessionId: "B2", dropped: -1 });
   });
 
+  it("once the window's peer brings a session's frames, drops main's of it, until the peer hands it back", () => {
+    const frame = (seq: number, rtc?: true) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, jpegB64: `f${String(seq)}`, width: 2, height: 2, control: "agent" }, ...(rtc ? { rtc } : {}) });
+    let s = run([live(), frame(1), frame(2, true)]);
+    expect(s.browserRtc).toBe("B1");
+    // Main's, still on their way, don't come between the peer's.
+    s = run([frame(3), frame(4, true)], s);
+    expect(s.browserFrame?.seq).toBe(4);
+    // The peer handed the screen back (rtc.ts sets it so): main's show again.
+    s = run([frame(5)], { ...s, browserRtc: undefined });
+    expect(s.browserFrame?.seq).toBe(5);
+    // A peer's answer is the peer's business, not the store's.
+    expect(run([{ t: "browser_rtc", session: "B1", peer: "w1", answer: "v=0" }], s)).toBe(s);
+  });
+
   it("ignores an event it already applied", () => {
     const s = run([live(), snapshot(10), event(9, "workstream.state", { workstreamId: "W1", state: "stopped" })]);
     expect(s.cursor).toBe(10);

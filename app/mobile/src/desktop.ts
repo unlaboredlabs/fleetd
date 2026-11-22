@@ -3,7 +3,7 @@
 // project flow, a project's allowed profiles, its watchers' words, its approvals', who merges' and payments' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
 // state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking (wake.ts),
-// and fleetd cloud's accounts call. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
+// fleetd cloud's accounts call, and the agent providers (Anthropic, Google) with their models. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
   AgentKeyInfo,
@@ -57,6 +57,7 @@ export type {
   OrderCard,
   PrRow,
   ProfilesListOutput,
+  AntigravityStatusOutput,
   ProjectSettings,
   Merger,
   RiskRules,
@@ -132,7 +133,8 @@ export {
   type RepoDraft,
   type RepoJob,
 } from "../../desktop/src/renderer/screens/projects/create";
-export { allowedAfter, leadOf, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
+export { allowedAfter, leadChoices, leadOf, MODEL_CHOICE, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
+export { googleConnected, googleWords, modelShort, profileNameFor, providerOf, runsWords } from "../../desktop/src/shared/agentProviders";
 export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export {
   connectedOf,

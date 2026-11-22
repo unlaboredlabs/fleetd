@@ -4,10 +4,12 @@
 // runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
 // page, where the default is checked for good and another is allowed with project_set, and its Lead model: the hub's
 // lead profile until the bot picks its own (project_set leadProfile), with Restart lead while its lead runs on another.
+// Both pickers list models by provider, Google's beside Anthropic's: a pick of Google's while Google isn't connected
+// offers Sign in with Google right there, and Lead model starts a lead on a Gemini model no profile runs on yet.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Profile, ProfileModel } from "../../../shared/contracts";
+import type { AntigravityStatusOutput, Profile, ProfileModel } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
@@ -24,6 +26,7 @@ const storefront = { machineId: "devbox", projectId: "storefront" };
 const MODELS: ProfileModel[] = [
   { id: "claude-opus-5-5", displayName: "Claude Opus 5.5", fast: true },
   { id: "claude-sonnet-5-5", displayName: "Claude Sonnet 5.5", fast: false },
+  { id: "gemini-4-neon", displayName: "Gemini 4 Neon (Antigravity)", fast: false },
 ];
 const profile = (id: number, name: string, extra: Partial<Profile> = {}): Profile => ({
   id,
@@ -49,6 +52,8 @@ let midTurn: boolean;
 let leadRestarting: boolean;
 /** hub_info's person: undefined for a hub from before it (the app lets them try). */
 let me: { name: string; role: string } | undefined;
+/** antigravity_status's answer; undefined: a hub that doesn't serve it (machine_roles says who can sign in). */
+let google: AntigravityStatusOutput | undefined;
 /** The writes, in turn; the page's reads aside. */
 let calls: { tool: string; input: Record<string, unknown> }[];
 
@@ -65,6 +70,7 @@ beforeEach(() => {
   midTurn = false;
   leadRestarting = false;
   me = undefined;
+  google = { machines: [{ machineId: "devbox", checked: true }], keyIn: [] };
   calls = [];
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -94,7 +100,14 @@ const render = async (page: "editor" | "project") => {
         ];
         return Promise.resolve({ ok: true, output: { people } });
       }
-      if (tool.startsWith("profile_") || tool === "project_set") calls.push({ tool, input });
+      if (tool === "antigravity_status" && google !== undefined) return Promise.resolve({ ok: true, output: google });
+      if (tool === "machine_roles") return Promise.resolve({ ok: true, output: { machines: [{ machineId: "devbox", antigravityLogin: true }] } });
+      if (tool.startsWith("profile_") || tool === "project_set" || tool === "machine_antigravity_login") calls.push({ tool, input });
+      if (tool === "machine_antigravity_login") {
+        if (input["code"] === undefined) return Promise.resolve({ ok: true, output: { machineId: "devbox", message: "sign in", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" } });
+        google = { machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }], keyIn: [] };
+        return Promise.resolve({ ok: true, output: { machineId: "devbox", message: "signed in", signedIn: "Google AI Pro" } });
+      }
       if (tool === "profile_create") {
         const made = profile(9, String(input["name"]), input);
         profiles = [...profiles, made];
@@ -351,4 +364,71 @@ it("allows a bot the default for good and another with project_set", async () =>
   expect(allow("wide").getAttribute("aria-checked")).toBe("true");
   await click(allow("medium"));
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, profiles: ["wide"] } });
+});
+
+/** The open picker's groups, each its word and its options' words. */
+const groups = () =>
+  [...document.querySelectorAll<HTMLElement>("[role='group']")].map((g) => [g.querySelector("[id]")?.textContent ?? "", ...[...g.querySelectorAll("[role='option']")].map((o) => o.textContent)]);
+
+it("lists a profile's models by provider; on Google's while it isn't connected, Sign in with Google signs devbox in right there", async () => {
+  await render("editor");
+  await click(edit("medium"));
+  await openPicker("Model");
+  expect(groups()).toEqual([
+    ["Anthropic", "Claude Opus 5.5", "Claude Sonnet 5.5"],
+    ["Google", "Gemini 4 Neon"],
+  ]);
+  // Claude's model: nothing about Google.
+  act(() => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  await settle();
+  expect(host.querySelector("[data-google-connect]")).toBeNull();
+  await pickLead("Gemini 4 Neon", "Model");
+  expect(host.querySelector("[data-google-connect]")?.textContent).toContain("Google isn't connected");
+  await click(button("Sign in with Google"));
+  expect(calls).toEqual([{ tool: "machine_antigravity_login", input: { machineId: "devbox" } }]);
+  expect(host.textContent).toContain("https://accounts.google.com/o/oauth2/auth?state=g1");
+  type(field("The code the page shows"), " g#1 ");
+  await click(button("Sign in"));
+  expect(calls.at(-1)).toEqual({ tool: "machine_antigravity_login", input: { machineId: "devbox", code: "g#1" } });
+  // Connected now: the row goes, and the profile saves on Gemini.
+  expect(host.querySelector("[data-google-connect]")).toBeNull();
+  await click(button("Save"));
+  expect(calls.at(-1)).toEqual({ tool: "profile_update", input: { id: 2, model: "gemini-4-neon" } });
+});
+
+it("says nothing about Google once it is connected, and on a hub without antigravity_status still offers the sign-in", async () => {
+  google = { machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }], keyIn: [] };
+  await render("editor");
+  await click(edit("medium"));
+  await pickLead("Gemini 4 Neon", "Model");
+  expect(host.querySelector("[data-google-connect]")).toBeNull();
+  act(() => root.unmount());
+  root = createRoot(host);
+  google = undefined;
+  await render("editor");
+  await click(edit("medium"));
+  await pickLead("Gemini 4 Neon", "Model");
+  expect(button("Sign in with Google", host.querySelector("[data-google-connect]") ?? host)).toBeDefined();
+});
+
+it("starts a bot's lead on a Gemini model no profile runs on: a profile is made on it, and the lead picks it", async () => {
+  google = { machines: [{ machineId: "devbox", checked: true }], keyIn: [storefront] };
+  await render("project");
+  await openPicker("Lead model");
+  expect(groups()).toEqual([
+    ["Anthropic", "high Claude Opus 5.5 · high effort", "medium Claude Opus 5.5 · medium effort", "wide Claude Sonnet 5.5 · extra high effort"],
+    ["Google", "Gemini 4 Neon"],
+  ]);
+  const neon = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Gemini 4 Neon");
+  if (neon === undefined) throw new Error("no option Gemini 4 Neon");
+  await click(neon);
+  expect(calls).toEqual([
+    { tool: "profile_create", input: { name: "gemini-4-neon", note: "", model: "gemini-4-neon", effort: "high", fast: false } },
+    { tool: "project_set", input: { ...storefront, leadProfile: "gemini-4-neon" } },
+  ]);
+  expect(leadPicker("Lead model").textContent).toMatch(/^gemini-4-neon/u);
+  // This bot holds a Gemini key: Google is connected for it, though no machine is signed in.
+  expect(host.querySelector("[data-google-connect]")).toBeNull();
 });

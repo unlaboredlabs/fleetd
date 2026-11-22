@@ -11,6 +11,8 @@ import { tempHome } from "../helpers.ts";
 
 setDefaultTimeout(30_000);
 const linux = process.platform === "linux";
+/** The socket of the node a restart's sweep runs in, which each of its spawns names. */
+const SOCK = "/n/node/lead.sock";
 
 test("an orphan is a browser of a profile or a process of a scratch dir", () => {
   const roots = orphanRoots("/n");
@@ -137,10 +139,10 @@ describe.if(linux)("on Linux", () => {
 
   test("a restart kills the recorded claude and its tool children only", async () => {
     const session = `restart-${process.pid}`;
-    const claude = await leftover({ FLEETD_RUNNER_SESSION: marker(session) }, "setsid", [], true);
-    const bystander = await leftover({ FLEETD_RUNNER_SESSION: marker("another") }, "setsid", [], true);
+    const claude = await leftover({ FLEETD_RUNNER_SESSION: marker(session), FLEETD_NODE_SOCK: SOCK }, "setsid", [], true);
+    const bystander = await leftover({ FLEETD_RUNNER_SESSION: marker("another"), FLEETD_NODE_SOCK: SOCK }, "setsid", [], true);
     try {
-      await killRecorded(claude.child.pid, String(statOf(claude.child.pid)!.start), session, 5_000);
+      await killRecorded(claude.child.pid, String(statOf(claude.child.pid)!.start), session, SOCK, 5_000);
       await claude.child.exited;
       expect(await goneSoon([claude.sleep])).toEqual([]);
       expect(alive(bystander.sleep)).toBe(true);
@@ -150,14 +152,34 @@ describe.if(linux)("on Linux", () => {
     }
   });
 
-  test("a restart finds tool children orphaned by a claude that already died", async () => {
+  /** On Nov 22 two runs of a test side by side each had a session `a-lost`: one node's restart stopped the other's
+   * host, whose Monitor then read as lost with its claude. */
+  test("a restart leaves a session of the same id that another node on the machine spawned", async () => {
+    const session = `same-${process.pid}`;
+    const died = await leftover({ FLEETD_RUNNER_SESSION: marker(session), FLEETD_NODE_SOCK: SOCK }, "setsid", [], true);
+    const start = String(statOf(died.child.pid)!.start);
+    died.child.kill("SIGKILL");
+    await died.child.exited;
+    const others = await leftover({ FLEETD_RUNNER_SESSION: marker(session), FLEETD_NODE_SOCK: "/elsewhere/node/lead.sock" }, "setsid", [], true);
+    try {
+      await killRecorded(died.child.pid, start, session, SOCK, 5_000);
+      expect(await goneSoon([died.sleep])).toEqual([]);
+      expect(alive(others.child.pid)).toBe(true);
+      expect(alive(others.sleep)).toBe(true);
+    } finally {
+      others.child.kill("SIGKILL");
+      process.kill(others.sleep, "SIGKILL");
+    }
+  });
+
+  test("a restart finds tool children orphaned by a claude that already died, one from before nodes named themselves too", async () => {
     const session = `died-${process.pid}`;
     const claude = await leftover({ FLEETD_RUNNER_SESSION: marker(session) }, "setsid", [], true);
     const start = String(statOf(claude.child.pid)!.start);
     claude.child.kill("SIGKILL");
     await claude.child.exited;
     expect(alive(claude.sleep)).toBe(true);
-    await killRecorded(claude.child.pid, start, session, 5_000);
+    await killRecorded(claude.child.pid, start, session, SOCK, 5_000);
     expect(await goneSoon([claude.sleep])).toEqual([]);
   });
 

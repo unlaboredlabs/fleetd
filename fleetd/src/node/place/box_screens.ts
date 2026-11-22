@@ -12,10 +12,15 @@
 //
 // A box's display outlives the connection to it: Xvfb and socat run in their own process session, so another holder
 // (another instance of a service) takes it over from its `handle` with `BoxDisplay.reattach`.
+//
+// Its picture is read in the box: `picture` starts the box's own fleetd as `box-frames` there (../desktop/box_frames.ts, the wire ../desktop/picture_link.ts),
+// in the display's process session, and only its frames cross. The node's X11 connection carries input alone.
 import { randomBytes } from "node:crypto";
-import { type Launched as AppLaunched, type Lent, SIZE } from "../desktop/screen.ts";
+import { openPicture } from "../desktop/picture_link.ts";
+import { type Launched as AppLaunched, type Lent, type LiveFrame, type PictureRun, SIZE, type VideoFrame, type VideoKind } from "../desktop/screen.ts";
+import { BOX_DIR } from "../sandbox/remote/bootstrap.ts";
 import { X, xauth } from "../desktop/x11.ts";
-import { detach, dialUntil, enc, hex, PATH, port, type ScreenBox, sh, shq, sweep } from "./box_chrome.ts";
+import { detach, dialUntil, enc, hex, PATH, port, type ScreenBox, sh, shq, sweep, timing } from "./box_chrome.ts";
 
 export { boxChrome, dialUntil, reattachChrome, type ScreenBox, streamTransport, timing } from "./box_chrome.ts";
 
@@ -143,6 +148,26 @@ export class BoxDisplay implements Lent {
     const pid = Number(pidLine.trim()) || 0;
     // A launch that ended at once says what it printed; its exit code is the box's, which the node doesn't see.
     return state.trim() === "running" ? { pid } : { pid, exited: { code: null, output: output.join("\n").trim() } };
+  }
+
+  /** The display's picture, read and encoded in the box by its fleetd (`box-frames`), on a connection of its own. */
+  async picture(video: VideoKind, on: { live(frame: LiveFrame): void; video(frame: VideoFrame): void }): Promise<PictureRun> {
+    if (this.#dropped) throw new Error("the desktop is gone");
+    const n = hex(4);
+    const at = port();
+    const log = `${this.dir}/frames-${n}.log`;
+    await this.box.write(
+      `${this.dir}/frames-${n}.sh`,
+      enc(`exec ${shq(`${BOX_DIR}/fleetd`)} box-frames --display ${shq(this.name)} --port ${at} --video ${video} >${shq(log)} 2>&1\n`),
+      0o700,
+    );
+    await detach(this.box, `${this.dir}/frames-${n}.sh`, `${this.dir}/frames-${n}.pid`, { FLEETD_FRAMES_COOKIE: Buffer.from(this.cookie).toString("hex") });
+    try {
+      return await openPicture(await dialUntil(this.box, at, timing.upMs), this.cookie, on);
+    } catch (e) {
+      const said = await sh(this.box, `tail -c 400 ${shq(log)} 2>/dev/null || true`).catch(() => "");
+      throw new Error(`the box's fleetd didn't serve the desktop's picture: ${(e as Error).message}${said.trim() ? ` (${said.trim()})` : ""}`);
+    }
   }
 
   async drop(): Promise<void> {

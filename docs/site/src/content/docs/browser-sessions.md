@@ -94,10 +94,18 @@ On the [phone](/docs/mobile#screens), a live screen shows as a card in its chat,
 **Take Over**, then a tap clicks, a drag scrolls and a held touch presses and drags; the keyboard button types into the
 page, the site at the top is its address bar, and **Hand Back** returns it. It's the same live view and takeover, at most 12 frames a second.
 
-On a slow link the live view shows the newest frame, not a backlog. The app acks each frame, and the hub sends the next
-one as the link is about to finish the last, so what you see and what your keys do lag by about a frame's trip, not by
-seconds of queued frames. When frames have to wait, the hub tells the screen's machine how much the slowest watcher's
-link carries, and the machine sends less. An app or hub from before this paces nothing, as before.
+On a slow link the live view shows the newest frame, not a backlog. The app acks each frame as it lands, and the hub
+keeps only a round trip's worth of frames on the way, so what you see and what your keys do lag by about a frame's
+trip, not by seconds of queued frames. When a queue stands, the hub takes a quarter off what it tells the screen's
+machine to send, and adds a tenth back each second once the link is clear. An app or hub from before this paces
+nothing, as before.
+
+The desktop and web apps also try to reach the screen's machine directly, peer to peer, over WebRTC. The hub only
+passes the two ends' offer and answer between them. Once the direct link brings its first frame, the frames and your
+mouse and keys go over it, and the hub carries none. It uses public STUN servers only, with no relay of fleetd's: two
+networks that can't reach each other directly stay on the hub. If the direct link fails or goes quiet for a few
+seconds, the screen goes back to the hub's frames without a gap, and the app tries again later. The phone app always
+uses the hub.
 
 Once it has ended, the screen plays its recording, the panel's whole width. **Steps**, at the end of the player's
 controls, opens its steps beside the recording (under it in a narrow panel). Each step jumps the recording to its
@@ -202,6 +210,8 @@ the share sheet. MCP clients use `screen_control`; agents run `mac sim <control>
 - **An agent in a hosted sandbox gets a screen in its sandbox.** Its browser (a fresh Chrome on a throwaway profile),
   its Linux desktop (an X display of its own) and its Android emulator run in the sandbox, beside its files and on its network; the machine
   drives, records and shows them over the sandbox's link, and takeover works as anywhere. On fleetd's cloud only.
+  A Linux desktop's picture is read and encoded in the sandbox itself, by its own fleetd, as a node reads one: only
+  frames cross the link, and your keys and clicks land as fast as on a machine of your own.
   Ending the screen kills it and what was launched on it.
 
 Agents aren't sandboxed on their machine (see [Security](/docs/security#keys)). These measures keep screens apart and

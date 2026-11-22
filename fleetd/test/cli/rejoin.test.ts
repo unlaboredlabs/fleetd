@@ -37,11 +37,17 @@ test("a Mac removed from the hub stops as that machine, and joined again with a 
     expect(joined.code).toBe(0);
     writeFileSync(join(home, "node.json"), JSON.stringify({ ...config(), mac: { enabled: true }, agentsMac: true }));
   };
-  /** The node as its service starts it: stderr piped, so a node with no enrolled config waits rather than exits. */
+  /** The node as its service starts it: stderr piped, so a node with no enrolled config waits rather than exits.
+   * `saying`: what it said so far. */
   const start = () => {
     const proc = Bun.spawn([process.execPath, SRC, "node", "run", "--home", home], { cwd: mac.cwd, env: mac.env(), stdout: "ignore", stderr: "pipe" });
-    const said = new Response(proc.stderr).text();
-    return { proc, said };
+    let text = "";
+    const said = (async () => {
+      const decoder = new TextDecoder();
+      for await (const chunk of proc.stderr) text += decoder.decode(chunk, { stream: true });
+      return text;
+    })();
+    return { proc, said, saying: () => text };
   };
   const checks = async (after: number) => {
     for (const end = Date.now() + 30_000; Date.now() < end; await Bun.sleep(100)) if (checked() > after) return true;
@@ -63,10 +69,13 @@ test("a Mac removed from the hub stops as that machine, and joined again with a 
   expect(await node.said).toContain("mac-1 was removed from this hub");
   expect(config()).toMatchObject({ enrolled: false, removed: true, machineId: "mac-1", agentsMac: true });
 
-  // Its service starts it again: it waits for a new join, and runs no checks as the removed machine.
+  // Its service starts it again: it waits for a new join, and runs no checks as the removed machine. Stopped once it
+  // says it waits, however long a loaded machine takes to start it: a stop before then is a process that never waited.
   since = Date.now();
   node = start();
-  await Bun.sleep(3000);
+  const waiting = node;
+  for (const end = Date.now() + 60_000; !waiting.saying().includes("trying again in") && waiting.proc.exitCode === null && Date.now() < end; ) await Bun.sleep(50);
+  expect(node.saying()).toContain("trying again in");
   expect(node.proc.exitCode).toBeNull();
   expect(checked()).toBeLessThan(since);
   node.proc.kill("SIGTERM");

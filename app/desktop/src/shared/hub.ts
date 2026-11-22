@@ -86,8 +86,11 @@ export type HubFrame =
   | { readonly t: "live"; readonly frame: LiveFrame }
   /** Streamed text of the subscribed chat's lead message (see hub.chat). */
   | { readonly t: "chat_delta"; readonly delta: ChatDelta }
-  /** The watched browser session's newest page (see hub.watch); never kept, only shown. */
-  | { readonly t: "browser_frame"; readonly frame: BrowserFrame }
+  /** The watched browser session's newest page (see hub.watch); never kept, only shown. `rtc`: it came on the
+   * window's own peer (renderer/screens/sessions/rtc.ts), not from main. */
+  | { readonly t: "browser_frame"; readonly frame: BrowserFrame; readonly rtc?: true }
+  /** A screen peer's answer from the session's node (see hub.rtc), or why it has none or no more. */
+  | { readonly t: "browser_rtc"; readonly session: string; readonly peer: string; readonly answer?: string; readonly error?: string }
   /** A live screen's picture for the Screens page (see hub.thumbs); never kept on disk. */
   | { readonly t: "screen_thumb"; readonly thumb: ScreenThumb }
   /** A session-level hub error (not an answer to a call). */

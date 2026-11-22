@@ -77,8 +77,9 @@ export const CallRequest = z.strictObject({
   input: z.custom<z.core.util.JSONType>(isBoundedJson, {
     message: `Input must be plain JSON, at most ${MAX_CALL_INPUT_BYTES} bytes and ${MAX_CALL_INPUT_DEPTH} levels deep.`,
   }),
-  /** Defaults to 30 s. Long-polls such as events_wait pass their own. */
-  timeoutMs: z.int().min(100).max(300_000).optional(),
+  /** Defaults to 30 s. Long-polls such as events_wait pass their own; the longest, Google's first sign-in on a machine,
+   * which may install agy first, waits 10 minutes (GoogleSignIn.tsx's AGY_SIGN_IN_WAIT_MS). */
+  timeoutMs: z.int().min(100).max(600_000).optional(),
 });
 export type CallRequest = z.infer<typeof CallRequest>;
 
@@ -332,6 +333,8 @@ const MenuState = z.array(z.enum(MENU_COMMANDS)).max(MENU_COMMANDS.length);
 
 /** A browser session's id, as the node mints it. */
 export const BrowserSessionId = z.string().regex(/^B[0-9a-f]{32}$/u);
+/** A screen peer's id, the window's own (renderer/screens/sessions/rtc.ts). */
+const RtcPeer = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u);
 
 const coord = z.number().min(-100_000).max(100_000);
 const modifiers = z.int().min(0).max(15);
@@ -389,6 +392,8 @@ export const REQUESTS = {
   [IPC.hubFocus]: z.tuple([HubId, OrderFocus.nullable()]),
   [IPC.hubWatch]: z.tuple([HubId, BrowserSessionId.nullable(), z.boolean().optional()]),
   [IPC.hubInput]: z.tuple([HubId, BrowserSessionId, BrowserInput]),
+  [IPC.hubRtc]: z.tuple([HubId, BrowserSessionId, RtcPeer, z.string().max(32_768).nullable()]),
+  [IPC.hubRtcWatch]: z.tuple([HubId, BrowserSessionId, RtcPeer.nullable()]),
   [IPC.hubThumbs]: z.tuple([HubId, z.boolean()]),
   [IPC.hubResync]: z.tuple([HubId]),
   [IPC.hubRetryNow]: z.tuple([HubId]),

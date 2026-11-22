@@ -89,6 +89,9 @@ describe("parseRequest", () => {
     expect(parseRequest(IPC.hubCall, ["hub", { tool: "x", input: {} }, "extra"]).ok).toBe(false);
     expect(parseRequest(IPC.hubCall, ["hub", { tool: "x", input: {}, timeoutMs: 0 }]).ok).toBe(false);
     expect(parseRequest(IPC.hubCall, ["hub", { tool: "x", input: {}, timeoutMs: 1.5 }]).ok).toBe(false);
+    // The longest wait the app asks for, Google's first sign-in on a machine (which may install agy), passes; past it doesn't.
+    expect(parseRequest(IPC.hubCall, ["hub", { tool: "machine_antigravity_login", input: { machineId: "lab" }, timeoutMs: 600_000 }]).ok).toBe(true);
+    expect(parseRequest(IPC.hubCall, ["hub", { tool: "x", input: {}, timeoutMs: 600_001 }]).ok).toBe(false);
   });
 
   it("takes an order to focus or null, and nothing else", () => {

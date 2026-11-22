@@ -83,7 +83,7 @@ export const backView = (view: PanelView): PanelView | null => (hasItem(view) ? 
 /**
  * Settings' pages, in one window (D211): You (General, Your accounts, Vault, Your memory, Hubs & devices); a project's (Project, Agents,
  * Instructions & memory, Automations and Vault), all of the one project picked under Projects (`for`); and the Hub group, for the
- * hub's owners and admins only: People, Machines, Every project's Agents, Instructions and Vault, and Setup. A Hub
+ * hub's owners and admins only: People, Machines, Providers, Every project's Agents, Instructions and Vault, and Setup. A Hub
  * page's tab is `hub.<page>`, its path `#/settings/hub/<page>`. Four tabs are parts of another's page now, and still open there
  * (settings/route.ts's PART_OF): `devices` on Hubs & devices, `hub.updates` on Machines, `hub.tools` on Every project's Agents,
  * `hub.accounts` (Hub accounts) on Setup.
@@ -104,6 +104,7 @@ export const SETTINGS_TABS = [
   "project-vault",
   "hub.people",
   "hub.machines",
+  "hub.providers",
   "hub.billing",
   "hub.updates",
   "hub.profiles",

@@ -110,6 +110,12 @@ export async function ensure(get?: Fetch): Promise<string> {
   }
 }
 
+/** The agy already on this machine, without installing one: the one found last, else the first of ensure's that is there. */
+export function found(): string | undefined {
+  if (checked !== undefined && existsSync(checked)) return checked;
+  return [agyBinary(), localBinary()].find((candidate) => existsSync(candidate));
+}
+
 const SIGNED_IN_WAIT_MS = 30_000;
 
 /** Whether the machine's agy is signed in: its plan's name ("Google AI Pro"), or undefined when it isn't. Asks

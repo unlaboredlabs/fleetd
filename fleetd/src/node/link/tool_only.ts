@@ -33,7 +33,7 @@ export function refusedOnMac(frame: HubFrame): NodeFrame | undefined {
         },
       } as NodeFrame;
     case "node_action":
-      if (!["claude", "claude_login", "claude_login_code", "antigravity_login", "antigravity_login_code"].includes(String(frame.action))) return undefined;
+      if (!["claude", "claude_login", "claude_login_code", "antigravity_login", "antigravity_login_code", "antigravity_status"].includes(String(frame.action))) return undefined;
       return { t: "node_action_result", id, ok: false, message: TOOL_ONLY };
     default:
       return undefined;

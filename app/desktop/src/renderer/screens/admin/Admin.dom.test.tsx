@@ -205,7 +205,7 @@ it("lists the Hub group's pages flat, and Setup always, saying how many required
   setupLeft = 2;
   await render({ me: sam, admin: true }, "settings");
   const rows = () => [...(hubGroup()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-  expect(rows()).toEqual(["People", "Machines", "Bot defaults", "Setup2 left"]);
+  expect(rows()).toEqual(["People", "Machines", "Providers", "Bot defaults", "Setup2 left"]);
   act(() => root.unmount());
   root = createRoot(host);
   setupLeft = 0;
