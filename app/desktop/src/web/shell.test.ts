@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HubFrame } from "../shared/hub";
 import type { ConnectionEvents, Transport } from "../main/hub/link";
-import { createWebShell, frameUrl, NEEDS_DESKTOP, platformOf, socketUrl, type WebDeps } from "./shell";
+import { createWebShell, followBrowser, frameUrl, NEEDS_DESKTOP, platformOf, SLEEP_GAP_MS, SLEEP_TICK_MS, socketUrl, type WebDeps } from "./shell";
+import type { WebHub } from "./hub";
 import type { WebSession } from "./session";
 
 const ORIGIN = "https://app.fleetd.dev";
@@ -373,5 +374,50 @@ describe("socketUrl and platformOf", () => {
     expect(platformOf("Win32")).toBe("win32");
     expect(platformOf("Linux x86_64")).toBe("linux");
     expect(platformOf("")).toBe("other");
+  });
+});
+
+describe("followBrowser", () => {
+  const page = () => {
+    const on = new Map<string, Array<(e: { persisted?: boolean }) => void>>();
+    let tick: () => void = () => undefined;
+    let clock = 1_000_000;
+    const doc = { visibilityState: "visible" as DocumentVisibilityState, addEventListener: (k: string, f: () => void) => void on.set(k, [...(on.get(k) ?? []), f]) };
+    const target = {
+      document: doc,
+      addEventListener: (k: string, f: (e: { persisted?: boolean }) => void) => void on.set(k, [...(on.get(k) ?? []), f]),
+      setInterval: (f: () => void) => ((tick = f), 1),
+    };
+    const hub = { probe: vi.fn(), check: vi.fn(), woke: vi.fn(), shown: vi.fn() };
+    followBrowser([hub as unknown as WebHub], target as unknown as Parameters<typeof followBrowser>[1], () => clock);
+    const fire = (k: string, e: { persisted?: boolean } = {}) => {
+      for (const f of on.get(k) ?? []) f(e);
+    };
+    const pass = (ms: number) => {
+      clock += ms;
+      tick();
+    };
+    return { hub, doc, fire, pass };
+  };
+
+  it("checks the link when the window is focused, and probes it when the network is back", () => {
+    const { hub, fire } = page();
+    fire("focus");
+    expect(hub.check).toHaveBeenCalledTimes(1);
+    fire("online");
+    expect(hub.probe).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a clock that jumped while the page showed as a sleep, and dials again", () => {
+    const { hub, doc, pass } = page();
+    pass(SLEEP_TICK_MS);
+    expect(hub.woke).not.toHaveBeenCalled();
+    pass(SLEEP_GAP_MS + 1);
+    expect(hub.woke).toHaveBeenCalledTimes(1);
+    // A hidden tab's timers are slowed: its gaps aren't sleeps.
+    doc.visibilityState = "hidden";
+    pass(SLEEP_TICK_MS);
+    pass(60_000);
+    expect(hub.woke).toHaveBeenCalledTimes(1);
   });
 });

@@ -7,6 +7,8 @@ import {
   MAX_FRAME_BYTES,
   PING_EVERY_MS,
   PONG_WAIT_MS,
+  QUIET_PING_MS,
+  QUIET_PONG_MS,
   READY_TIMEOUT_MS,
   RESUME_MAX_EVENTS,
   STABLE_MS,
@@ -26,6 +28,8 @@ class FakeHub {
   events: ConnectionEvents | null = null;
   closedByClient = 0;
   pings = 0;
+  /** A hub's WebSocket answers every ping with a pong by itself; a dead link (false) answers none. */
+  answers = true;
 
   readonly transport: Transport = (url, events, headers) => {
     this.urls.push(url);
@@ -40,6 +44,7 @@ class FakeHub {
       },
       ping: () => {
         this.pings++;
+        if (this.answers) events.onHeard();
       },
       close: () => {
         this.closedByClient++;
@@ -333,14 +338,18 @@ describe("HubClient", () => {
     const { hub, client } = setup();
     client.start();
     hub.ready();
-    vi.advanceTimersByTime(PING_EVERY_MS);
+    // The quiet ping after the ready's frames is answered; from then on the link answers only what the test says.
+    vi.advanceTimersByTime(QUIET_PING_MS);
     expect(hub.pings).toBe(1);
+    hub.answers = false;
+    vi.advanceTimersByTime(PING_EVERY_MS - QUIET_PING_MS);
+    expect(hub.pings).toBe(2);
     // Anything heard in time keeps it: bytes of a long frame still arriving count as much as the pong.
     vi.advanceTimersByTime(PONG_WAIT_MS - 1);
     hub.pong();
     vi.advanceTimersByTime(PING_EVERY_MS - PONG_WAIT_MS + 1);
     expect(client.state.phase).toBe("live");
-    expect(hub.pings).toBe(2);
+    expect(hub.pings).toBe(3);
     vi.advanceTimersByTime(PONG_WAIT_MS - 1);
     expect(client.state.phase).toBe("live");
     // Nothing since the second ping: given up then, not a silence's 30 s later.
@@ -349,6 +358,81 @@ describe("HubClient", () => {
     expect(hub.closedByClient).toBe(1);
     vi.advanceTimersByTime(500);
     expect(hub.urls).toHaveLength(2);
+  });
+
+  it("pings a link that goes quiet mid-reply, once, and gives it up when nothing answers: seconds, not a steady ping's 25", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    client.chat({ machineId: "m", projectId: "p" });
+    hub.frame({ t: "chat_delta", projectRef: { machineId: "m", projectId: "p" }, messageId: "m1", seq: 1, offset: 0, append: "Hel" });
+    // The link goes: nothing comes after the delta, nor answers.
+    hub.answers = false;
+    const pings = hub.pings;
+    vi.advanceTimersByTime(QUIET_PING_MS - 1);
+    expect(hub.pings).toBe(pings);
+    vi.advanceTimersByTime(1);
+    expect(hub.pings).toBe(pings + 1);
+    vi.advanceTimersByTime(QUIET_PONG_MS - 1);
+    expect(client.state.phase).toBe("live");
+    vi.advanceTimersByTime(1);
+    expect(client.state).toMatchObject({ phase: "retrying", reason: expect.stringContaining("stopped answering") as string });
+    expect(QUIET_PING_MS + QUIET_PONG_MS).toBeLessThan((PING_EVERY_MS + PONG_WAIT_MS) / 3);
+  });
+
+  it("keeps a quiet link that answers, and pings it no more until traffic comes again", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(QUIET_PING_MS);
+    const pings = hub.pings;
+    expect(pings).toBe(1);
+    // Quiet from here: only the steady ping.
+    vi.advanceTimersByTime(PING_EVERY_MS - QUIET_PING_MS - 1);
+    expect(hub.pings).toBe(pings);
+    expect(client.state.phase).toBe("live");
+    // Frames that keep coming push the quiet ping back; it goes once they stop.
+    for (let i = 0; i < 5; i++) {
+      hub.frame({ t: "event", seq: 11 + i, type: "x" });
+      vi.advanceTimersByTime(QUIET_PING_MS - 1);
+    }
+    expect(hub.pings).toBe(pings + 1); // the steady one, at PING_EVERY_MS
+    vi.advanceTimersByTime(1);
+    expect(hub.pings).toBe(pings + 2);
+  });
+
+  it("gives up a link a call went out on and nothing came back on, failing the call", async () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(QUIET_PING_MS);
+    hub.answers = false;
+    const answer = client.call({ tool: "chat_send", input: {} });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
+    await expect(answer).resolves.toMatchObject({ ok: false, error: { code: "disconnected" } });
+    expect(client.state.phase).toBe("retrying");
+  });
+
+  it("checks the link when a window comes to the front: kept when it answers, given up when it doesn't", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.ready();
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
+    const pings = hub.pings;
+    client.check();
+    expect(hub.pings).toBe(pings + 1);
+    vi.advanceTimersByTime(QUIET_PONG_MS);
+    expect(client.state.phase).toBe("live");
+    hub.answers = false;
+    client.check();
+    vi.advanceTimersByTime(QUIET_PONG_MS - 1);
+    expect(client.state.phase).toBe("live");
+    vi.advanceTimersByTime(1);
+    expect(client.state.phase).toBe("retrying");
+    // Not live: nothing to check, the retry dials.
+    const before = hub.pings;
+    client.check();
+    expect(hub.pings).toBe(before);
   });
 
   it("gives up a connection that never gets ready", () => {
@@ -806,6 +890,7 @@ describe("HubClient after a wake", () => {
 
   it("redials a link that doesn't answer the unlock's ping, then as fast as after a wake", () => {
     const t = asleep();
+    t.hub.answers = false;
     const usableAt = Date.now();
     t.client.probe();
     vi.advanceTimersByTime(WAKE_PROBE_MS - 1);
@@ -817,6 +902,22 @@ describe("HubClient after a wake", () => {
     t.hub.ready(11);
     expect(t.client.state.phase).toBe("live");
     expect(Date.now() - usableAt).toBe(WAKE_PROBE_MS);
+  });
+
+  it("gives an unlock's ping as long as the last link took to get ready, on a slow link", () => {
+    const { hub, client } = setup();
+    client.start();
+    hub.open();
+    vi.advanceTimersByTime(3_000);
+    hub.frame({ t: "ready", protocol: 1 });
+    hub.frame({ t: "snapshot", cursor: 10, machines: [] });
+    vi.advanceTimersByTime(QUIET_PING_MS + QUIET_PONG_MS);
+    hub.answers = false;
+    client.probe();
+    vi.advanceTimersByTime(2_999);
+    expect(hub.urls).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(hub.urls).toHaveLength(2);
   });
 
   it("dials at once on an unlock or the network back while the link is down", () => {

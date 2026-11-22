@@ -229,6 +229,7 @@ export class HubService {
 
   windowFocused(): void {
     this.#source?.refreshLive();
+    this.#source?.check();
   }
 
   windowsShown(on: boolean): void {
