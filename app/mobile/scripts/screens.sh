@@ -68,7 +68,10 @@ udid_of() {
 }
 
 UDID=
-ad() { "$AD" "$@" --platform ios --udid "$UDID" --session "screens-$UDID"; }
+# Each agent-device command is stopped after 4 minutes (macOS has no timeout(1)): one that hangs costs one screen.
+ad() { perl -e 'alarm shift; exec @ARGV' 240 "$AD" "$@" --platform ios --udid "$UDID" --session "screens-$UDID"; }
+# A boot or the runner's first build, which take minutes: 16 at most.
+adlong() { perl -e 'alarm shift; exec @ARGV' 960 "$AD" "$@" --platform ios --udid "$UDID" --session "screens-$UDID"; }
 # A step that may fail without stopping the rest.
 try() { "$@" >>"$LOG" 2>&1 || say "  failed: $*"; }
 
@@ -89,18 +92,18 @@ start() {
   found=$(udid_of "$device") || { say "no $device simulator on this image"; return 1; }
   UDID=${found%% *}
   say "$device: $found"
-  try ad boot --timeout 900000
+  try adlong boot --timeout 900000
   try ad install "$APP"
   # agent-device's XCTest runner, built and started once, before any wait counts on it.
-  try ad prepare ios-runner --timeout 900000
-  try ad open sh.fleetd.app --timeout 900000
+  try adlong prepare ios-runner --timeout 900000
+  try adlong open sh.fleetd.app --timeout 900000
   try ad open "$(pair_link "$device")"
   # iOS's "Open in “fleetd”?" (Open), then the app's own "Connect" to the hub, then notifications (Don't Allow).
   if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert accept; fi
   try ad wait 'label="Connect"' 120000
   try ad press 'label="Connect"'
   if ad alert wait 60000 >>"$LOG" 2>&1; then try ad alert get; try ad alert dismiss; fi
-  try ad wait text "inventory" 180000
+  try ad wait text "inventory" 120000
 }
 
 open_chat() { try ad find "inventory" click --first; try ad wait text "Low-stock alerts" 30000; }
@@ -117,7 +120,7 @@ others() {
   try ad press 'label="New Bot"'
   sleep 2
   shot "$1-newbot"
-  try ad swipe 200 120 200 700
+  try ad press 'label="Cancel"'
   sleep 2
 }
 

@@ -282,14 +282,16 @@ jobs:
     # Mac is joined: app/mobile/scripts/screens.sh pairs each simulator with a phone lab on the runner and takes Chats, a
     # chat and its Info on an ordinary iPhone and on the iPhone Duo in each pose. The branch's app beside main's on the ordinary
     # iPhone, which shows what it looked like before. The xcode-27 image is the one with the iPhone Duo simulator.
-    name: ios screens (${{ matrix.app }})
+    name: ios screens (${{ matrix.app }}, ${{ matrix.devices }})
     if: ${{ inputs.only == 'screens' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - app: branch
-            devices: phone duo
+            devices: duo
+          - app: branch
+            devices: phone
           - app: main
             devices: phone
     runs-on: xcode-27
@@ -328,7 +330,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: screens-${{ matrix.app }}
+          name: screens-${{ matrix.app }}-${{ matrix.devices }}
           path: |
             ${{ runner.temp }}/screens-out
             ~/.agent-device/logs/
