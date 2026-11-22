@@ -1,6 +1,7 @@
 // Delete team: the last row of Settings' Team group, red, for a fleetd cloud team's owner only. One confirm, the
-// team's name typed again, which the team checks too (fleetd cloud's POST ACCOUNTS_TEAM_DELETE_PATH); it refuses
-// anyone but an owner and while any of its agents runs, in its own words, shown as written. Once deleted, main
+// team's name typed again, which the team checks (fleetd cloud's POST ACCOUNTS_TEAM_DELETE_PATH), never this app: the
+// label here may be this computer's own, or the team renamed since. It refuses a wrong name (saying the right one),
+// anyone but an owner, a plan that still renews and agents running, in its own words, shown as written. Once deleted, main
 // forgets the team (the web app goes back to its start).
 
 import { Trash2 } from "lucide-react";
@@ -9,8 +10,8 @@ import { Button, Dialog, Field, Input, Text, toast } from "../../ui";
 import { useHub } from "../../src/data/react";
 import { useHubRole } from "./role";
 
-/** The confirm: the team's name exactly, around spaces. */
-export const teamConfirmed = (typed: string, name: string): boolean => typed.trim() === name.trim() && name.trim() !== "";
+/** Something typed to send: the team itself says whether it is its name. */
+export const teamTyped = (typed: string): boolean => typed.trim() !== "";
 
 /** Whether this app's person may delete the team in scope: a fleetd cloud team's owner. */
 export function useDeletesTeam(): boolean {
@@ -58,7 +59,7 @@ export function DeleteTeamDialog({ open, onClose }: { open: boolean; onClose: ()
           <Button onClick={close} disabled={busy}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={busy || !teamConfirmed(typed, label)} onClick={() => void remove()}>
+          <Button variant="danger" disabled={busy || !teamTyped(typed)} onClick={() => void remove()}>
             {busy ? "Deleting…" : "Delete team"}
           </Button>
         </>

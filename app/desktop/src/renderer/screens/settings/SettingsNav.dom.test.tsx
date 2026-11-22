@@ -283,7 +283,7 @@ it("ends a fleetd cloud team's Team group with its owner's Delete team: one conf
   const dialog = () => [...document.querySelectorAll<HTMLElement>("[role='dialog']")].find((d) => d.textContent.includes("Type acme to confirm")) ?? null;
   expect(dialog()?.textContent).toContain("Delete acme?");
   const go = () => button("Delete team", dialog() as HTMLElement);
-  // Nothing is asked of the team until the name typed is its name.
+  // Nothing is asked of the team until a name is typed; the team, not this app, says whether it is its name.
   expect(go().disabled).toBe(true);
   const type = async (text: string) => {
     const input = dialog()?.querySelector("input") as HTMLInputElement;
@@ -293,15 +293,16 @@ it("ends a fleetd cloud team's Team group with its owner's Delete team: one conf
       await Promise.resolve();
     });
   };
-  await type("acm");
+  await type("  ");
   expect(go().disabled).toBe(true);
-  await type(" acme ");
+  // Its name for everyone, which this computer's own label (acme) needn't be.
+  await type(" Acme Inc ");
   expect(go().disabled).toBe(false);
   await click(go());
   // The team's refusal, in its words, and the dialog stays.
   expect(dialog()?.querySelector("[role='alert']")?.textContent).toBe("An agent is running in this team.Stop them, then delete the team.");
   await click(go());
-  expect(deleteTeam.mock.calls.map((c) => c[1])).toEqual([" acme ", " acme "]);
+  expect(deleteTeam.mock.calls.map((c) => c[1])).toEqual([" Acme Inc ", " Acme Inc "]);
   expect(dialog()).toBeNull();
 });
 
