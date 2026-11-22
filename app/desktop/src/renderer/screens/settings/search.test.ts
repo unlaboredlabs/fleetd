@@ -146,6 +146,12 @@ describe("settings search", () => {
     expect(first("fleetd init")).toEqual(["hub.setup", "hub.setup", "Hub › Setup"]);
   });
 
+  it("finds Version only where General shows it: not in the web app on fleetd cloud, which updates itself", () => {
+    expect(searchSettings("version", optionsFor(false)).map((o) => o.key)).toContain("general.updates");
+    expect(searchSettings("version", optionsFor(true, true, true, false)).map((o) => o.key)).not.toContain("general.updates");
+    expect(searchSettings("check for updates", optionsFor(false, true, false, false))).toEqual([]);
+  });
+
   it("gives every option a unique key", () => {
     expect(new Set(OPTIONS.map((o) => o.key)).size).toBe(OPTIONS.length);
   });

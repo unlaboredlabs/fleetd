@@ -56,7 +56,8 @@ list of your hubs: pick one to show it. A dot by its name means a bot on another
 with a hub. Under it, that hub's pins, its bots, then your sections under their labels.
 
 To go to the next or previous hub, swipe left or right with two fingers anywhere on the sidebar: the list follows your
-fingers, the next hub's slides in beside it, and it settles on whichever is nearer when you let go. The next swipe back
+fingers, the next hub's slides in beside it, and it settles on whichever is nearer when you let go. Past the first or
+last hub, the list stretches and springs back, as lists on a Mac do. The next swipe back
 works straight away, without moving the pointer, and on a Mac so does the next one on; elsewhere, let the list come to
 rest before swiping on the same way again. A scroll up or down the list never switches, and one swipe moves one hub at
 most. At the bottom of the sidebar, a small square for each hub shows which one you're on; click one to go to it. ⇧⌘]

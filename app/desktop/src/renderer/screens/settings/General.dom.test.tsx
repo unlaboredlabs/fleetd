@@ -2,7 +2,8 @@
 // Settings › You › General, the see-through sidebar: the switch shows only where the sidebar can be see-through (the
 // Mac desktop app, preload's vibrancy), never on the web, Linux or Windows; it is on by default, titled with no line
 // under it; turning it off makes the sidebar solid at once (data-solid-sidebar) and the choice holds the next time the
-// app opens.
+// app opens. And Version: left out in the web app on fleetd cloud, which updates itself, where the page has no update
+// of its own to say.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +14,9 @@ vi.mock("./Name", () => ({ YourName: () => null }));
 vi.mock("./Notifications", () => ({ Notifications: () => null }));
 vi.mock("../updates/hooks", () => ({ useUpdateStatus: () => null }));
 vi.mock("../updates/UpdateStatus", () => ({ UpdateStatus: () => null }));
+// Whether the hub updates from here (hub_update): fleetd cloud leaves it out.
+const hub = vi.hoisted(() => ({ updates: true }));
+vi.mock("../admin/role", () => ({ useServes: () => hub.updates }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -33,6 +37,7 @@ const stub = (fleetd: { vibrancy: boolean }) => {
 };
 
 beforeEach(() => {
+  hub.updates = true;
   window.localStorage.clear();
   delete document.documentElement.dataset["solidSidebar"];
   host = document.createElement("div");
@@ -109,4 +114,18 @@ it.each([
   expect(host.querySelector("[data-screen='settings.general']")).not.toBeNull();
   expect(toggle).toThrow();
   expect(host.textContent).not.toContain("See-through");
+});
+
+it("leaves Version out in the web app on fleetd cloud, which updates itself; the desktop app keeps its own update there", async () => {
+  const web = { shell: "web", platform: "other", vibrancy: false, fixture: null, app };
+  const version = () => [...host.querySelectorAll("h2, h3")].some((h) => h.textContent === "Version");
+  stub(web);
+  await render();
+  expect(version()).toBe(true);
+  hub.updates = false;
+  await render();
+  expect(version()).toBe(false);
+  stub(MAC);
+  await render();
+  expect(version()).toBe(true);
 });

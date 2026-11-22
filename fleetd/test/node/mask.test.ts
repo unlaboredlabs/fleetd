@@ -152,17 +152,33 @@ test("a private key is hidden however a tool prints its lines: numbered, indente
 test("a long whitespace run after a key's header or line is matched in linear time, and the key still hidden", () => {
   const body = Buffer.from("made-up filler for the whitespace test, not a key: ".repeat(4)).toString("base64").match(/.{1,64}/g)!;
   const m = new Masker();
-  const run = " ".repeat(50_000);
-  for (const text of [
-    `-----BEGIN PRIVATE KEY-----\n${run}.`,
-    `-----BEGIN PRIVATE KEY-----\n${body[0]}\n${run}.`,
-    `-----BEGIN PRIVATE KEY-----\n${run}${body.join(`\n${run}`)}\n-----END PRIVATE KEY-----`,
-    `-----BEGIN PRIVATE KEY-----\n${body.join("\n")}${"\t".repeat(50_000)}`,
-  ]) {
-    const started = performance.now();
-    const shown = m.text(text);
-    m.held(text);
-    expect(performance.now() - started).toBeLessThan(500);
-    expect(body.filter((l) => shown.includes(l))).toEqual([]);
+  const shapes = (n: number) => {
+    const run = " ".repeat(n);
+    return [
+      `-----BEGIN PRIVATE KEY-----\n${run}.`,
+      `-----BEGIN PRIVATE KEY-----\n${body[0]}\n${run}.`,
+      // As JSON escapes a tab: the prefix's alternation over a long run.
+      `-----BEGIN PRIVATE KEY-----\\n${body.join("\\n")}\\n${"\\t".repeat(n)}.`,
+      `-----BEGIN PRIVATE KEY-----\n${body.join("\n")}${"\t".repeat(n)}`,
+    ];
+  };
+  // Its growth, not a time budget a loaded machine could miss: the fastest of three tries at 30k and at 150k. Linear
+  // takes ~5x as long for 5x the input, quadratic ~25x; a floor of 2 ms keeps a sub-millisecond base from counting. At
+  // 150k an unbounded run also made the regex engine give up, so the key went through unmasked.
+  const fastest = (text: string) => {
+    let best = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const started = performance.now();
+      m.text(text);
+      m.held(text);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  const [small, large] = [shapes(30_000), shapes(150_000)];
+  for (const [i, text] of large.entries()) {
+    expect(body.filter((l) => m.text(text).includes(l))).toEqual([]);
+    const ratio = fastest(text) / Math.max(fastest(small[i]!), 2);
+    expect({ shape: i, linear: ratio < 15 }).toEqual({ shape: i, linear: true });
   }
 });

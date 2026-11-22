@@ -1,10 +1,10 @@
 // Whether this app's person sees Settings' Hub group: its sidebar rows, the palette's commands and the pages ask
 // here. Small and in the shell's chunk; the page is its own.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { Person } from "../../../shared/contracts";
 import { lacksTool } from "../../src/data/errors";
 import { CallError } from "../../src/data/queries";
-import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { resetLeftOut, useData, useLeftOut, useToolQuery } from "../../src/data/react";
 import { serves } from "../../../shared/hub";
 import { administers } from "./model";
 
@@ -52,12 +52,8 @@ export function useSettledAdministers(): boolean {
   return role.pending ? settled : role.administers;
 }
 
-/** Each hub's last word on what it leaves out, by the hub's id: kept through a refetch and a remount, never another's. */
-const lastLeftOut = new Map<string, readonly string[]>();
-const NONE: readonly string[] = [];
-
-/** Forgets every hub's last word (tests). */
-export const resetServes = (): void => lastLeftOut.clear();
+/** Forgets every hub's last word on what it leaves out (tests). */
+export const resetServes = (): void => resetLeftOut();
 
 /**
  * Whether the hub in scope serves `tool` (shared/hub.ts `serves`): fleetd cloud leaves out self-update, restart,
@@ -66,11 +62,5 @@ export const resetServes = (): void => lastLeftOut.clear();
  * too old to have hub_info) serves everything, so a self-run hub never looks like a cloud team.
  */
 export function useServes(tool: string): boolean {
-  const { hub } = useDataLayer();
-  const info = useToolQuery("hub_info", noInput);
-  const leftOut = info.data === undefined ? undefined : (info.data.leftOut ?? NONE);
-  useEffect(() => {
-    if (leftOut !== undefined) lastLeftOut.set(hub, leftOut);
-  }, [hub, leftOut]);
-  return serves({ leftOut: leftOut ?? lastLeftOut.get(hub) }, tool);
+  return serves({ leftOut: useLeftOut() }, tool);
 }

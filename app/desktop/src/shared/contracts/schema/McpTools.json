@@ -4778,6 +4778,135 @@
       ],
       "type": "object"
     },
+    "CiJob": {
+      "description": "One GitHub Actions job over the range's CI runs, each run counted once.",
+      "properties": {
+        "failed": {
+          "description": "Runs it failed in.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "medianMs": {
+          "description": "Over the runs it passed in.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "p90Ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "previousMedianMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "repo": {
+          "$ref": "#/$defs/RemoteRepo"
+        },
+        "runs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "repo",
+        "name",
+        "runs",
+        "failed",
+        "medianMs",
+        "p90Ms"
+      ],
+      "type": "object"
+    },
+    "CiJobTime": {
+      "properties": {
+        "ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "ms"
+      ],
+      "type": "object"
+    },
+    "CiTile": {
+      "description": "GitHub Actions per merged PR: the wall time of the run it merged on, and its share of runner time.",
+      "properties": {
+        "medianMs": {
+          "description": "Absent when `n` is 0.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "description": "Merged PRs with a CI run the train read.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "p90Ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "previousMedianMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "previousRunnerPerPrMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runnerMedianMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runnerPerPrMs": {
+          "description": "Runner time over `n`: every job's run time, a batch's split over the PRs in it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runnerTotalMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "runnerTotalMs",
+        "spark"
+      ],
+      "type": "object"
+    },
     "Claim": {
       "description": "Intent fleetd can't otherwise see: a free-text title plus optional exact keys and paths.",
       "properties": {
@@ -6786,6 +6915,43 @@
         "both"
       ],
       "type": "string"
+    },
+    "FirstPassTile": {
+      "description": "Merged PRs whose first CI run passed.",
+      "properties": {
+        "flaky": {
+          "description": "Jobs that failed and passed when the train re-ran them.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pct": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "previousPct": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "flaky",
+        "spark"
+      ],
+      "type": "object"
     },
     "FleetdStatusInput": {
       "type": "object"
@@ -13774,6 +13940,79 @@
       ],
       "type": "object"
     },
+    "MergePipeline": {
+      "description": "One landed change's time in the train and its CI runs.",
+      "properties": {
+        "blocking": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ciRuns": {
+          "description": "Every head the train ran CI on for it.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ciWallMs": {
+          "description": "GitHub Actions wall time of the run it merged on: its first job's start to its last job's end.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "firstPass": {
+          "description": "Its first CI run passed.",
+          "type": "boolean"
+        },
+        "flaky": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "redRuns": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reviews": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runnerMs": {
+          "description": "Its share of the run time of every job run for it; a batch's runs are split over its PRs.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sentBack": {
+          "$ref": "#/$defs/SentBack"
+        },
+        "slowestJob": {
+          "$ref": "#/$defs/CiJobTime",
+          "description": "The slowest job of the run it merged on."
+        },
+        "stages": {
+          "$ref": "#/$defs/StageMs"
+        },
+        "waitMs": {
+          "description": "The run it merged on: the train's push to its first job's start.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "stages",
+        "ciRuns",
+        "redRuns",
+        "flaky",
+        "reviews",
+        "blocking",
+        "sentBack"
+      ],
+      "type": "object"
+    },
     "MergeRoute": {
       "description": "How a landed change reached the default branch. The fixed order, bottom up on every chart, is the order here.",
       "oneOf": [
@@ -13954,6 +14193,10 @@
           },
           "maxItems": 8,
           "type": "array"
+        },
+        "pipeline": {
+          "$ref": "#/$defs/PipelineDay",
+          "description": "Absent from a hub before the train's figures."
         }
       },
       "required": [
@@ -13994,6 +14237,14 @@
     },
     "MetricsGetOutput": {
       "properties": {
+        "ciJobs": {
+          "description": "The range's slowest GitHub Actions jobs, slowest first; absent from a hub before the train's figures.",
+          "items": {
+            "$ref": "#/$defs/CiJob"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
         "compare": {
           "$ref": "#/$defs/MetricsComparePeriod"
         },
@@ -14095,6 +14346,10 @@
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
+        },
+        "pipeline": {
+          "$ref": "#/$defs/MergePipeline",
+          "description": "Its time in the train and its CI runs, from the train's own records; absent when the hub kept none."
         },
         "prCreatedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -14238,6 +14493,10 @@
         },
         "orderToMerged": {
           "$ref": "#/$defs/OrderToMergedTile"
+        },
+        "pipeline": {
+          "$ref": "#/$defs/PipelineTiles",
+          "description": "The train's row under it; absent from a hub before the train's figures."
         },
         "throughFleetd": {
           "$ref": "#/$defs/ThroughFleetdTile"
@@ -15305,6 +15564,64 @@
       },
       "required": [
         "person"
+      ],
+      "type": "object"
+    },
+    "PipelineDay": {
+      "description": "A day's merged PRs the train kept records for: their stage times summed, and how many went back to their writer.",
+      "properties": {
+        "ciMedianMs": {
+          "description": "The median CI wall time of its PRs with a CI run, for the trend.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "runnerMedianMs": {
+          "description": "The median of its PRs' shares of runner time.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sentBack": {
+          "$ref": "#/$defs/SentBack"
+        },
+        "stages": {
+          "$ref": "#/$defs/StageMs"
+        }
+      },
+      "required": [
+        "n",
+        "stages",
+        "sentBack"
+      ],
+      "type": "object"
+    },
+    "PipelineTiles": {
+      "description": "The train's KPI row: CI, CI passing first time, review rounds and PRs sent back, over its merged PRs.",
+      "properties": {
+        "ci": {
+          "$ref": "#/$defs/CiTile"
+        },
+        "firstPass": {
+          "$ref": "#/$defs/FirstPassTile"
+        },
+        "reviews": {
+          "$ref": "#/$defs/ReviewsTile"
+        },
+        "sentBack": {
+          "$ref": "#/$defs/SentBackTile"
+        }
+      },
+      "required": [
+        "ci",
+        "firstPass",
+        "reviews",
+        "sentBack"
       ],
       "type": "object"
     },
@@ -19580,6 +19897,40 @@
       "type": "string",
       "x-open": true
     },
+    "ReviewsTile": {
+      "description": "Review rounds per merged PR, and the blocking findings they raised.",
+      "properties": {
+        "blockingPerPr": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "perPr": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "previousPerPr": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "spark"
+      ],
+      "type": "object"
+    },
     "Role": {
       "enum": [
         "read",
@@ -20383,6 +20734,70 @@
       "required": [
         "domain",
         "name"
+      ],
+      "type": "object"
+    },
+    "SentBack": {
+      "description": "How many times a PR went back to its writer, or how many PRs did, by why.",
+      "properties": {
+        "conflicts": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "redCi": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "conflicts",
+        "redCi"
+      ],
+      "type": "object"
+    },
+    "SentBackTile": {
+      "description": "Merged PRs the train sent back to their writer at least once: for a conflict, or for red CI.",
+      "properties": {
+        "conflicts": {
+          "description": "PRs sent back for a conflict.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "n": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pct": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "previousPct": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "redCi": {
+          "description": "PRs sent back for red CI.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spark": {
+          "items": {
+            "$ref": "#/$defs/SparkPoint"
+          },
+          "maxItems": 12,
+          "type": "array"
+        }
+      },
+      "required": [
+        "n",
+        "conflicts",
+        "redCi",
+        "spark"
       ],
       "type": "object"
     },
@@ -22296,6 +22711,47 @@
     },
     "SshHost": {
       "type": "string"
+    },
+    "StageMs": {
+      "description": "Time in each of the train's stages, ms.",
+      "properties": {
+        "back": {
+          "description": "Back with its writer, for a conflict or red CI.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ci": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "merge": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "queue": {
+          "description": "Waiting in the train's line, and its rebases.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "review": {
+          "description": "In review, and the fixes its findings asked for.",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "review",
+        "back",
+        "queue",
+        "ci",
+        "merge"
+      ],
+      "type": "object"
     },
     "StaleMark": {
       "description": "Why a part is not live: its source went quiet past its cadence.",

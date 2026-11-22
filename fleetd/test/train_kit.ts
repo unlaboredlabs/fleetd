@@ -652,8 +652,10 @@ export class FakeHost implements TrainHost {
   landingsWatched() {
     return false;
   }
+  /** The spans the train wrote, in order. */
+  spans: Parameters<TimeSink["span"]>[0][] = [];
   time(): TimeSink | undefined {
-    return undefined;
+    return { span: (s) => void this.spans.push(s), close: () => {} };
   }
 }
 

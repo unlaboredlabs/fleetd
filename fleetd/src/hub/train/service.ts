@@ -873,7 +873,7 @@ export class Train {
         if (reported.kind === "green") {
           const cancelled = cancelledRequired(all, required);
           if (cancelled.length === 0) {
-            this.checkSpans(change, sha, runs);
+            this.checkSpans(change, sha, runs, flaky);
             await flakyNote(this, change, sha, flaky);
             return { kind: "green" };
           }
@@ -1104,8 +1104,11 @@ export class Train {
     }
   }
 
-  /** One `ci.check` span per check run of the deciding poll, and `ci.queue` spans from the train's own push. */
-  private checkSpans(change: Change, sha: string, runs: CheckRun[]): void {
+  /**
+   * One `ci.check` span per check run of the deciding poll, and `ci.queue` spans from the train's own push. A check in
+   * `flaky` failed and passed when the train re-ran it, and says so (`reran`) for the Factory's figures.
+   */
+  private checkSpans(change: Change, sha: string, runs: CheckRun[], flaky: Flaky[] = []): void {
     const time = this.host.time();
     if (!time) return;
     const now = this.nowMs();
@@ -1117,7 +1120,11 @@ export class Train {
       if (startMs === undefined) continue;
       const end = r.completed_at ? parseMs(r.completed_at) : undefined;
       const status = end === undefined ? "incomplete" : ["success", "neutral", "skipped"].includes(r.conclusion ?? "") ? "ok" : r.conclusion === "cancelled" ? "cancelled" : "failed";
-      const extra = { check: r.name.slice(0, 200), ...(r.html_url ? { url: r.html_url.slice(0, 500) } : {}) };
+      const extra = {
+        check: r.name.slice(0, 200),
+        ...(r.html_url ? { url: r.html_url.slice(0, 500) } : {}),
+        ...(flaky.some((f) => f.check === r.name) ? { reran: true } : {}),
+      };
       const lane = `${changeLane(change)}/ci`;
       time.span({ srcKey: `check/${change.changeId}/${sha}/${r.name}`, kind: "ci.check", startMs, endMs: Math.max(end ?? now, startMs), ids: changeIds(change), lane, label: r.name, status, extra });
       if (push !== undefined && push <= startMs) {

@@ -17,12 +17,46 @@ const HubsContext = createContext<HubSetStore | undefined>(undefined);
 
 /** One hub's layer, and what it is (its id, label and colour), for everything inside. */
 export const HubScope = ({ hub, children }: { hub: HubView; children: ReactNode }) => (
-  <HubContext.Provider value={hub}>
-    <DataContext.Provider value={hub.layer}>
-      <QueryClientProvider client={hub.layer.queryClient}>{children}</QueryClientProvider>
-    </DataContext.Provider>
-  </HubContext.Provider>
+  <DataContext.Provider value={hub.layer}>
+    <QueryClientProvider client={hub.layer.queryClient}>
+      <HubSaid hub={hub}>{children}</HubSaid>
+    </QueryClientProvider>
+  </DataContext.Provider>
 );
+
+/**
+ * The hub as it says it is: a fleetd cloud team paired with a code is the cloud's too, as its hub_info's `leftOut` says
+ * (only fleetd cloud leaves tools out), so its Team, Billing and fleetd's computers show as on a team that came with
+ * the account. The hubs kept stay as they are: signing out never drops a key the account didn't bring.
+ */
+const HubSaid = ({ hub, children }: { hub: HubView; children: ReactNode }) => {
+  const said = (useLeftOut()?.length ?? 0) > 0;
+  const shown = useMemo((): HubView => (said && hub.cloud !== true ? { ...hub, cloud: true, codePaired: true } : hub), [hub, said]);
+  return <HubContext.Provider value={shown}>{children}</HubContext.Provider>;
+};
+
+/** Each hub's last word on what it leaves out, by the hub's id: kept through a refetch and a remount, never another's. */
+const lastLeftOut = new Map<string, readonly string[]>();
+const NONE: readonly string[] = [];
+const noInput = {};
+
+/** Forgets every hub's last word (tests). */
+export const resetLeftOut = (): void => lastLeftOut.clear();
+
+/**
+ * The tools the hub in scope doesn't serve (hub_info's `leftOut`; fleetd cloud's self-update, restart, doctor, setup and
+ * SSH machine add): while hub_info hasn't answered or keeps failing, the hub's last answer holds; undefined for a hub
+ * never heard, which serves everything, so a self-run hub never looks like a cloud team.
+ */
+export const useLeftOut = (): readonly string[] | undefined => {
+  const { hub } = useDataLayer();
+  const info = useToolQuery("hub_info", noInput);
+  const leftOut = info.data === undefined ? undefined : (info.data.leftOut ?? NONE);
+  useEffect(() => {
+    if (leftOut !== undefined) lastLeftOut.set(hub, leftOut);
+  }, [hub, leftOut]);
+  return leftOut ?? lastLeftOut.get(hub);
+};
 
 /** Every hub's layer, started by the set; the board each hub's sidebar marks need is read whatever is open. */
 export const HubsProvider = ({ hubs, children }: { hubs: HubSetStore; children: ReactNode }) => {

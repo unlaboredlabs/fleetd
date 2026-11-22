@@ -163,7 +163,7 @@ function inDays(rows: MergeRow[], ds: Day[]): MergeRow[] {
 }
 
 /** Up to SPARK_POINTS runs of whole days, as even as they divide. */
-function slices(ds: Day[]): Day[][] {
+export function slices(ds: Day[]): Day[][] {
   const k = Math.min(ds.length, SPARK_POINTS);
   const out: Day[][] = [];
   for (let i = 0; i < k; i++) out.push(ds.slice(Math.floor((i * ds.length) / k), Math.floor(((i + 1) * ds.length) / k)));

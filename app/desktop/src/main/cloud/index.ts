@@ -72,12 +72,15 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     await systemCAs();
     return globalThis.fetch(url, init);
   };
-  /** A hub that came with the account, at a team address, with its key; null for any other. */
+  /**
+   * A hub at a team address, with its key; null for any other. One that came with the account, or one paired with a
+   * code (Pair a phone or a device on the team): its key goes only to its own address, which already holds it.
+   */
   const team = (id: HubId): KeyedTeam | null => {
-    const hub = config === null ? undefined : hubs.cloudHubs().find((h) => h.id === id);
-    const keyed = hub?.service.keyed() ?? null;
+    const service = config === null ? undefined : hubs.get(id);
+    const keyed = service?.keyed() ?? null;
     const origin = keyed === null || config === null ? null : teamOrigin(keyed.url, config.accountsUrl, local);
-    return hub === undefined || keyed === null || origin === null ? null : { origin, key: keyed.key, name: hub.label };
+    return keyed === null || origin === null ? null : { origin, key: keyed.key, name: hubs.list().find((h) => h.id === id)?.label ?? "Hub" };
   };
   const cloudHub = ({ id, label, service }: { id: HubId; label: string; service: HubService }): CloudHub => ({
     id,

@@ -9,6 +9,7 @@ import { event, live, project, snapshot } from "../../src/data/fixtures.test-uti
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { FactoryScreen } from "./FactoryScreen";
 import { metricsAnswer } from "./fixture";
+import { fmtMs } from "./model";
 import type { ProjectKey } from "../shell/routes";
 
 const NOW = Date.parse("2026-10-19T09:03:00.000Z");
@@ -84,6 +85,38 @@ it("shows the four tiles, the bots table and every merge for all bots", async ()
   expect(host.querySelectorAll("#factory-list ~ * tbody tr, section[aria-labelledby='factory-list'] tbody tr")).toHaveLength(Math.min(100, out.merges.length));
   expect(asked[0]).toMatchObject({ compare: false });
   expect(asked[0]?.projectRef).toBeUndefined();
+});
+
+it("shows the train's tiles, CI time per PR with its slowest jobs, and time in the train by stage", async () => {
+  const out = metricsAnswer({ now: new Date(NOW).toISOString(), projects });
+  await mount(() => out);
+  for (const label of ["CI per PR", "CI green first time", "Review rounds per PR", "Sent back"]) {
+    expect(host.querySelector(`[role="group"][aria-label="${label}"]`)).not.toBeNull();
+  }
+  expect(host.querySelector("section[aria-labelledby='factory-ci']")).not.toBeNull();
+  expect(host.querySelectorAll("ul[aria-labelledby='factory-jobs'] li")).toHaveLength(5);
+  expect(host.querySelector("section[aria-labelledby='factory-stages']")).not.toBeNull();
+  // Runner time: the same PRs, measured the other way.
+  const runner = [...host.querySelectorAll("button")].find((b) => b.textContent === "Runner time");
+  act(() => runner?.click());
+  expect(runner?.getAttribute("aria-pressed")).toBe("true");
+  // Each merge's CI wall time is in the list.
+  const wall = out.merges.find((m) => m.pipeline?.ciWallMs !== undefined)?.pipeline?.ciWallMs;
+  expect(wall).toBeDefined();
+  expect(text()).toContain(fmtMs(wall ?? 0));
+});
+
+it("leaves the train's figures out on a hub from before them", async () => {
+  const out = metricsAnswer({ now: new Date(NOW).toISOString(), projects });
+  delete out.tiles.pipeline;
+  delete out.ciJobs;
+  for (const d of out.days) delete d.pipeline;
+  for (const m of out.merges) delete m.pipeline;
+  await mount(() => out);
+  expect(screen()).toBe("factory");
+  expect(host.querySelector('[role="group"][aria-label="CI per PR"]')).toBeNull();
+  expect(host.querySelector("section[aria-labelledby='factory-ci']")).toBeNull();
+  expect(host.querySelector("section[aria-labelledby='factory-stages']")).toBeNull();
 });
 
 it("asks for the route's bot, and leaves out the bots table", async () => {

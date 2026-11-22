@@ -31,6 +31,8 @@ const job = (id: number, run: number, name: string, conclusion: string) => ({
   name,
   status: "completed",
   conclusion,
+  started_at: BEFORE,
+  completed_at: BEFORE,
   html_url: `https://github.com/${REPO}/actions/runs/${run}/job/${id}`,
 });
 
@@ -101,6 +103,9 @@ test("a failed check outside the fast set merges once its re-run passed, called 
   expect(k.change(7).state).toBe("merged");
   expect(k.gh.reruns).toEqual([10]);
   expect(k.host.sends.filter(([, m]) => m.includes("bun (experimental) failed, then passed")).length).toBe(1);
+  // Its check run says so, for the Factory's flaky re-runs.
+  const check = k.host.spans.filter((s) => s.kind === "ci.check" && s.label === "bun (experimental)").at(-1);
+  expect(check?.extra).toMatchObject({ reran: true });
 });
 
 // --- a flaky check's note names the test its failed run's log names, the log read through gh as it answers ---
