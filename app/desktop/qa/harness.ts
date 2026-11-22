@@ -41,6 +41,12 @@ export interface Launched {
   replay: () => Promise<void>;
   // What the page threw or logged as an error so far, for a failure's message.
   errors: string[];
+  // Notes a step of the test in the run's log, which `keep` saves.
+  note: (line: string) => void;
+  // Saves into `dir` what a failed test is read by afterwards, even one that timed out with nothing said: the
+  // Playwright trace (launched with `trace`), the page and the window as they were last, and the log (the test's steps, and the renderer's and
+  // the main process's console, each line timed from the launch). Each part is bounded, so a hung renderer can't hold it.
+  keep: (dir: string) => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -73,7 +79,7 @@ async function launchElectron(options: Parameters<typeof electron.launch>[0], at
 export async function launch(
   fixture: FixtureName | undefined,
   main = appMain,
-  { realClock = false } = {},
+  { realClock = false, trace = false } = {},
 ): Promise<Launched> {
   if (!existsSync(main)) throw new Error(`${main} is missing: run \`pnpm qa:build\` in app/desktop first.`);
   const meta = fixture === undefined ? {} : fixtureMeta(path.join(fixturesDir, `${fixture}.json`));
@@ -104,11 +110,24 @@ export async function launch(
   }
   const app = await launchElectron({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
+  const began = Date.now();
+  const log: string[] = [];
+  const note = (line: string) => void log.push(`${((Date.now() - began) / 1000).toFixed(2).padStart(7)}s ${line}`);
   const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(`${e.name}: ${e.message}`));
+  page.on("pageerror", (e) => {
+    errors.push(`${e.name}: ${e.message}`);
+    note(`renderer threw ${e.name}: ${e.message}`);
+  });
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text().split("\n")[0] ?? "");
+    note(`renderer ${m.type()}: ${m.text()}`);
   });
+  page.on("crash", () => note("renderer crashed"));
+  app.on("console", (m) => note(`main ${m.type()}: ${m.text()}`));
+  // With `trace`, kept only for a test that fails (keep): no screenshots or DOM snapshots in it, which would slow every
+  // screen, but each call the test made, with its time and how it ended, shows where one hung. A spec that traces a
+  // test itself (platform.spec.ts) launches without it: a context traces once at a time.
+  if (trace) await app.context().tracing.start({ title: fixture ?? "stand-in" });
   // Entry animations of the first screen play reduced too.
   await page.emulateMedia({ reducedMotion: "reduce" });
   if (now) {
@@ -130,6 +149,29 @@ export async function launch(
       await new Promise((done) => setTimeout(done, settleMs));
     },
     errors,
+    note,
+    keep: async (dir) => {
+      mkdirSync(dir, { recursive: true });
+      const bounded = (what: string, work: () => Promise<unknown>) =>
+        new Promise<void>((done) => {
+          const timer = setTimeout(() => {
+            note(`${what} not saved: no answer in 10 s`);
+            done();
+          }, 10_000);
+          work().then(
+            () => (clearTimeout(timer), done()),
+            (error: unknown) => (clearTimeout(timer), note(`${what} not saved: ${String(error).split("\n")[0]}`), done()),
+          );
+        });
+      await bounded("the page's last screenshot", () => page.screenshot({ path: path.join(dir, "last-page.png"), timeout: 10_000 }));
+      // The window as its compositor has it, from the main process: there even when the renderer answers nothing.
+      await bounded("the window's last capture", async () => {
+        const png = await app.evaluate(async ({ BrowserWindow }) => (await BrowserWindow.getAllWindows()[0]?.capturePage())?.toPNG().toString("base64"));
+        if (png) writeFileSync(path.join(dir, "last-window.png"), Buffer.from(png, "base64"));
+      });
+      if (trace) await bounded("the trace", () => app.context().tracing.stop({ path: path.join(dir, "trace.zip") }));
+      writeFileSync(path.join(dir, "log.txt"), `${log.join("\n")}\n`);
+    },
     close: async () => {
       // A window stuck on a dead page can hold app.close() forever, and the test's timeout then hides its own error.
       let timer: ReturnType<typeof setTimeout> | undefined;
