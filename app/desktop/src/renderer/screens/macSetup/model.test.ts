@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { MacCheck } from "../../../shared/contracts";
 import type { MacFound, MacHealthRead, MacLink } from "../../../shared/macSetup";
-import { checkView, digitsOf, initial, passes, reduce, setupRows, spaced, STALL_MS, START_MS, statusLine, stepOf, waits, type Event, type State } from "./model";
+import { checkView, digitsOf, initial, passes, reduce, CHECKS_STALL_MS, setupRows, spaced, STALL_MS, START_MS, statusLine, stepOf, waits, type Event, type State } from "./model";
 
 const FOUND: MacFound = { hubUrl: "http://devbox:4790", hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" } };
 const run = (events: Event[], from: State = initial): State => events.reduce(reduce, from);
@@ -265,6 +265,25 @@ describe("every check a row, live", () => {
     expect(reduce(s, { type: "finish" })).toEqual({ step: "status", found: FOUND });
   });
 
+  it("the Test never sits on running with no reason: the node's link counts for the hub, and a stalled run says so", () => {
+    const green = [check("accessibility", "ok"), check("screen_recording", "ok"), check("screen_capture", "ok"), check("xcode", "ok")];
+    const ran = (over: Partial<MacHealthRead>, extra: Partial<MacHealthRead> = {}) =>
+      checking([
+        { type: "health", read: read(green, { writtenAt: 1500, checkedAt: 1500, ...over }) },
+        { type: "health", read: read(green, { writtenAt: 2500, checkedAt: 2500, ...over, ...extra }) },
+      ]);
+    // This app can't reach the hub, but the node is linked: the Test passes.
+    expect(setupRows(ran({ hubAnswers: false, link: { state: "linked", since: 1400 } }), 2600).at(-1)).toMatchObject({ state: "done" });
+    // Neither reaches it (an older node that writes no link): its row says so past its limit, and the Test waits on it.
+    const unreached = Object.fromEntries(setupRows(ran({ hubAnswers: false, link: null }), 1000 + STALL_MS + 1).map((r) => [r.id, r]));
+    expect(unreached["link"]).toMatchObject({ state: "failed", line: "devbox isn't answering this Mac.", action: { kind: "restart" } });
+    expect(unreached["test"]).toMatchObject({ state: "waiting" });
+    // Both permissions on but no run of every check since: running, then after its limit, why.
+    const waiting = ran({ link: { state: "linked", since: 1400 } }, { checkedAt: 1500 });
+    expect(setupRows(waiting, 2600).at(-1)).toMatchObject({ state: "running" });
+    expect(setupRows(waiting, 1500 + CHECKS_STALL_MS + 1).at(-1)).toMatchObject({ state: "failed", line: "The node hasn't run its checks again.", action: { kind: "restart" } });
+  });
+
   it("a node that stopped as this hub's machine sends the window back to a new code, saying why", () => {
     const gone = { message: "devbox doesn't know this Mac any more.", fix: "To set it up again, type a new code." };
     expect(reduce(checking(), { type: "health", read: read([], { gone }) })).toMatchObject({ step: "code", notice: gone });
@@ -277,5 +296,8 @@ describe("every check a row, live", () => {
     expect(status({ state: "down", since: 1 })).toEqual({ text: "Not connected: devbox isn’t answering", tone: "warn" });
     expect(status({ state: "refused", why: "no", since: 1 })).toEqual({ text: "Not connected: devbox refused this Mac", tone: "warn" });
     expect(status({ state: "linked", since: 1 }, { writtenAt: 1 }).text).toContain("isn’t running");
+    // Locked, it says so first: linked, but agents' windows and clicks stop at the lock screen.
+    const locked = statusLine({ found: FOUND, hubId: null, activity: null, disk: null, macBehind: null, health: read([check("screen_lock", "fail")], { writtenAt: 100_000, link: { state: "linked", since: 1 } }) }, 100_000);
+    expect(locked).toEqual({ text: "Screen locked", tone: "warn" });
   });
 });

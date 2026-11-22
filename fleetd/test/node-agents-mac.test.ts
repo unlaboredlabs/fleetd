@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   AgentsMac,
   CAPTURE_RETRY,
+  REHOLD_MS,
   agentsMac,
   heartbeat,
   isAgentsMac,
@@ -15,7 +16,7 @@ import {
   toolOnly,
   TOOL_ONLY,
 } from "../src/node/agents_mac/index.ts";
-import { blocksSimulators, COMMAND_TIMEOUT, HOMEBREW_INSTALL, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run } from "../src/node/agents_mac/checks.ts";
+import { blocksSimulators, COMMAND_TIMEOUT, consoleLocked, HOMEBREW_INSTALL, lockDelay, pane, type Pods, type Probe, type Ran, ran as ranCommand, readMac, run, screenLock } from "../src/node/agents_mac/checks.ts";
 import { healthFile, type MacCheckId, toolsDir, writeHealth, writeLink } from "../src/node/agents_mac/common.ts";
 import { setupRows, STALL_MS } from "../src/node/agents_mac/rows.ts";
 import {
@@ -39,7 +40,7 @@ import {
   seenFile,
   takeUp,
 } from "../src/node/agents_mac/grants.ts";
-import { grant, keepAwake as keepAwakeCheck } from "../src/node/agents_mac/checks.ts";
+import { grant, keepAwake as keepAwakeCheck, screenCapture, sleepMinutes } from "../src/node/agents_mac/checks.ts";
 import { health } from "../src/node/agents_mac/common.ts";
 import { installNode, type ToolsState, versions } from "../src/node/agents_mac/tools.ts";
 import { inApplications, locate } from "../src/node/agents_mac/xcode.ts";
@@ -69,6 +70,8 @@ class Fake implements Probe {
     ["xcodebuild -checkFirstLaunchStatus", ran(0, "")],
     ["xcodebuild -version", ran(0, "Xcode 26.0\nBuild version 17A324\n")],
     ["xcrun simctl list runtimes", ran(0, "== Runtimes ==\niOS 26.0 (26.0 - 23A343) - com.apple.CoreSimulator.SimRuntime.iOS-26-0\n")],
+    ["sysadminctl -screenLock status", ran(0, "2026-11-22 18:53:34.395 sysadminctl[50887:1009887] screenLock is off\n")],
+    ["ioreg -n Root -d1 -a", ran(0, "<dict>\n\t<key>IOConsoleLocked</key>\n\t<false/>\n</dict>\n")],
   ]);
   xcodeList = ["/Applications/Xcode.app"];
   dirs = ["/Applications/Xcode.app/Contents/Developer"];
@@ -97,7 +100,7 @@ function verdict(fake: Fake, id: MacCheckId): [string, string, string | undefine
   return [c.state, c.message, fix];
 }
 
-const ALL = ["developer", "xcode", "ios_runtime", "accessibility", "screen_recording", "gui_session", "tools", "keep_awake"];
+const ALL = ["developer", "xcode", "ios_runtime", "accessibility", "screen_recording", "gui_session", "tools", "keep_awake", "screen_lock"];
 
 test("a Mac set up as the guide says passes every check, in the guide's order", () => {
   const h = run(new Fake());
@@ -404,7 +407,7 @@ test("an agents' Mac's node checks its setup and puts it in each heartbeat; any 
   const hb = { load: { cpus: 1, load1: 0 }, steps: [], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
   await t.node.area("hb").fill(hb as never);
   expect((hb.load as { mac?: { user: string } }).mac?.user).toBe("agents");
-  expect(JSON.parse(readFileSync(healthFile(t.node.home), "utf8")).checks.length).toBe(8);
+  expect(JSON.parse(readFileSync(healthFile(t.node.home), "utf8")).checks.length).toBe(9);
 });
 
 test("the agents' Mac's hello says so, and lists its tool only while it is on", () => {
@@ -465,9 +468,18 @@ test("init's rows on the agents' Mac: the hub link first, a stall said after its
   writeHealth(home.dir, health("agents", [grant("accessibility", false), grant("screen_recording", true)]));
   expect(setupRows(home.dir, "devbox", at).map((r) => [r.title, r.state])).toEqual([
     ["Linked to devbox", "done"],
-    ["accessibility", "needs_you"],
-    ["screen_recording", "done"],
+    ["Accessibility", "needs_you"],
+    ["Screen Recording", "done"],
   ]);
+  // Screen capture is the person's too, once Screen Recording is on; a check with no name of its own reads as words.
+  writeHealth(home.dir, health("agents", [grant("screen_recording", true), screenCapture("declined (code -3801)"), { id: "some_new_check", state: "warn", message: "later" }]));
+  expect(setupRows(home.dir, "devbox", at).slice(1).map((r) => [r.title, r.state, r.fix])).toEqual([
+    ["Screen Recording", "done", undefined],
+    ["Screen capture", "needs_you", "In the fleetd app on this Mac, press Allow next to it"],
+    ["Some new check", "waiting", undefined],
+  ]);
+  writeHealth(home.dir, health("agents", [grant("screen_recording", false), screenCapture(undefined)]));
+  expect(setupRows(home.dir, "devbox", at)[2]).toMatchObject({ title: "Screen capture", state: "waiting" });
 });
 
 test("the screen capture prompt: tried once Screen Recording is on, its Allow seen at the next try, and at once when setup asks", async () => {
@@ -496,4 +508,54 @@ test("the screen capture prompt: tried once Screen Recording is on, its Allow se
   await mac.probeCapture(true, true, at + CAPTURE_RETRY + 1);
   expect(capture()?.state).toBe("fail");
   expect(tries).toBe(3);
+});
+
+test("the Mac stays awake: system sleep off is green, a sleep setting asks for Energy's switch, and a hold that ends is taken again", async () => {
+  expect(sleepMinutes({ out: "System-wide power settings:\nCurrently in use:\n standby 0\n sleep 1 (sleep prevented by caffeinate)\n disksleep 10\n" })).toBe(1);
+  expect(sleepMinutes({ out: " sleep                0\n" })).toBe(0);
+  expect(sleepMinutes({ out: "" })).toBeUndefined();
+  expect(keepAwakeCheck(undefined, 0)).toMatchObject({ state: "ok", message: "The Mac never sleeps, and fleetd's node holds it awake too." });
+  expect(keepAwakeCheck(undefined, 1)).toMatchObject({ state: "warn", command: 'open "x-apple.systempreferences:com.apple.Energy-Settings.extension"' });
+  expect(keepAwakeCheck("caffeinate exited at once")).toMatchObject({ state: "fail" });
+
+  const home = tempHome();
+  cleanups.push(home.done);
+  const mac = new AgentsMac(home.dir, false);
+  let takes = 0;
+  let end: () => void = () => {};
+  const take = async () => {
+    takes++;
+    return { release: () => {}, ended: new Promise<void>((resolve) => (end = resolve)) };
+  };
+  await mac.hold(take);
+  expect(takes).toBe(1);
+  end();
+  await Bun.sleep(REHOLD_MS + 200);
+  expect(takes).toBe(2);
+  // Stopped: a hold outside the node bridges its restart, and a hold that ends then is let go.
+  let bridged = 0;
+  mac.stop(() => bridged++);
+  expect(bridged).toBe(1);
+  end();
+  await Bun.sleep(REHOLD_MS + 200);
+  expect(takes).toBe(2);
+});
+
+test("the lock screen: off is green, a password after the display sleeps warns with Lock Screen's switch, locked now fails", () => {
+  // As the Mac mini said them on Nov 22.
+  expect(lockDelay({ out: "2026-11-22 18:53:34.395 sysadminctl[50887:1009887] screenLock delay is 300 seconds\n" })).toBe(300);
+  expect(lockDelay({ out: "sysadminctl[1:2] screenLock is off\n" })).toBeNull();
+  expect(lockDelay({ out: "" })).toBeUndefined();
+  expect(consoleLocked({ out: "\t<key>IOConsoleLocked</key>\n\t<true/>\n" })).toBe(true);
+  expect(consoleLocked({ out: "" })).toBeUndefined();
+  expect(screenLock(null, false)).toMatchObject({ state: "ok" });
+  expect(screenLock(300, false)).toMatchObject({
+    state: "warn",
+    message: "The screen locks 5 min after the display turns off, and agents' windows and clicks stop at the lock screen.",
+    command: 'open "x-apple.systempreferences:com.apple.Lock-Screen-Settings.extension"',
+  });
+  expect(screenLock(300, true)).toMatchObject({ state: "fail", message: expect.stringContaining("screen is locked") as string });
+  const fake = new Fake();
+  fake.runs.set("sysadminctl -screenLock status", ran(0, "screenLock delay is 300 seconds\n"));
+  expect(verdict(fake, "screen_lock")[0]).toBe("warn");
 });
