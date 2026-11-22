@@ -46,6 +46,20 @@ export const draftOf = (a: Automation, tz: string): Draft => ({
   webhook: a.webhook,
 });
 
+/** What a schedule's Once first offers: tomorrow at 09:00 on this computer's clock, as the date field reads it. */
+export function onceDefault(now: Date): string {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${String(d.getFullYear())}-${two(d.getMonth() + 1)}-${two(d.getDate())}T09:00`;
+}
+
+/** The draft repeating on its cron, or once (`at`). */
+export const withWhen = (d: Draft, when: "repeats" | "once", now: Date): Draft => {
+  if (when === "once") return { ...d, at: d.at ?? onceDefault(now) };
+  const { at: _, ...rest } = d;
+  return rest;
+};
+
 export interface Problems {
   readonly name?: string;
   readonly prompt?: string;
