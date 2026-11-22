@@ -418,7 +418,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       joinHereState: () => Promise.resolve(null),
       onJoinHere: () => () => undefined,
     },
-    macSetup: { open: never, redeem: never, join: never, onJoin: () => () => undefined, health: never, openPane: never, restart: never, status: never, cancel: never, updateHub: never },
+    macSetup: { open: never, redeem: never, join: never, onJoin: () => () => undefined, health: never, openPane: never, restart: never, status: never, cancel: never, updateHub: never, leave: never, exit: never },
     menuBar: { read: () => Promise.resolve(null), fit: never, hide: never, menu: never },
     projects: { pickFolder: () => Promise.resolve(null), readDrop: () => Promise.resolve({ kind: "other" }) },
     updates: {

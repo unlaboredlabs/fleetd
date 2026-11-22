@@ -3,6 +3,7 @@
 // macOS only). Removed, its node stops as that machine, and its next start waits for a new join instead of dialling
 // the hub again; joined again, it runs the Mac's checks, which the app's set-up window waits for.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Fleet } from "./golden.ts";
@@ -79,4 +80,79 @@ test("a Mac removed from the hub stops as that machine, and joined again with a 
   expect(await checks(since)).toBe(true);
   node.proc.kill("SIGTERM");
   await node.proc.exited;
+});
+
+test("an agents' Mac its hub holds no key for says so and waits for a new code, rather than being refused every few seconds", async () => {
+  const hub = fleet("unknown-hub");
+  await hub.startHub();
+  const mac = fleet("unknown-mac");
+  const home = join(mac.home, "node");
+  // Joined once, then forgotten by the hub with no removed key kept (as a hub did before it kept them).
+  const token = /fle_[a-z2-7]{52}/.exec((await hub.run(["pair", "--worker", "mac-2"])).stdout)![0];
+  expect((await mac.run(["node", "join", "--hub", hub.hubUrl, "--token-file", "-", "--machine", "mac-2", "--home", home, "--enroll-only"], { stdin: `${token}\n` })).code).toBe(0);
+  const config = () => JSON.parse(readFileSync(join(home, "node.json"), "utf8"));
+  writeFileSync(join(home, "node.json"), JSON.stringify({ ...config(), machineId: "mac-forgotten", name: "mac-forgotten", agentsMac: true }));
+  const proc = Bun.spawn([process.execPath, SRC, "node", "run", "--home", home], { cwd: mac.cwd, env: mac.env(), stdout: "ignore", stderr: "pipe" });
+  const said = new Response(proc.stderr).text();
+  // It stops as that machine, as a removed one does: its service then waits for a new join.
+  expect(await proc.exited).toBe(0);
+  expect(await said).toContain("mac-forgotten is not enrolled");
+  expect(config()).toMatchObject({ enrolled: false, removed: true, agentsMac: true });
+  // And it wrote why, which the app's setup window shows in place of a wait for checks.
+  expect(JSON.parse(readFileSync(join(home, "mac-link.json"), "utf8"))).toMatchObject({ state: "refused", why: expect.stringContaining("is not enrolled") });
+});
+
+test("Stop being the agents' Mac removes it from its hub and clears the node, and with the hub down still clears it", async () => {
+  const hub = fleet("leave-hub");
+  await hub.startHub();
+  const join_ = async (mac: Fleet, id: string) => {
+    const home = join(mac.home, "node");
+    const token = /fle_[a-z2-7]{52}/.exec((await hub.run(["pair", "--worker", id])).stdout)![0];
+    expect((await mac.run(["node", "join", "--hub", hub.hubUrl, "--token-file", "-", "--machine", id, "--home", home, "--enroll-only"], { stdin: `${token}\n` })).code).toBe(0);
+    const config = JSON.parse(readFileSync(join(home, "node.json"), "utf8"));
+    writeFileSync(join(home, "node.json"), JSON.stringify({ ...config, agentsMac: true }));
+    return home;
+  };
+  /** The machines the hub holds a node key for. */
+  const machines = () => {
+    const db = new Database(join(hub.hubHome, "hub.sqlite"), { readonly: true });
+    try {
+      return db.query<{ machine_id: string }, []>("SELECT machine_id FROM node_keys").all().map((r) => r.machine_id);
+    } finally {
+      db.close();
+    }
+  };
+
+  const mac = fleet("leave-mac");
+  const home = await join_(mac, "mac-3");
+  expect(machines()).toContain("mac-3");
+  const left = await mac.run(["node", "leave", "--home", home]);
+  expect(left.code).toBe(0);
+  expect(left.stdout.trim().split("\n").at(-1)).toBe("left: removed");
+  expect(existsSync(home)).toBe(false);
+  expect(machines()).not.toContain("mac-3");
+
+  // The hub down at that moment: this Mac is clean all the same, and says the hub still lists it.
+  const other = fleet("leave-offline");
+  const otherHome = await join_(other, "mac-4");
+  await hub.stop();
+  const offline = await other.run(["node", "leave", "--home", otherHome]);
+  expect(offline.code).toBe(0);
+  expect(offline.stdout).toContain("wasn't reached: it shows mac-4 offline until an admin removes it there");
+  expect(offline.stdout.trim().split("\n").at(-1)).toBe("left: unreached");
+  expect(existsSync(otherHome)).toBe(false);
+});
+
+test("a worker that isn't the agents' Mac doesn't leave by itself: nothing stops, nothing is told, nothing is deleted", async () => {
+  const hub = fleet("leave-worker-hub");
+  await hub.startHub();
+  const worker = fleet("leave-worker");
+  const home = join(worker.home, "node");
+  const token = /fle_[a-z2-7]{52}/.exec((await hub.run(["pair", "--worker", "box-1"])).stdout)![0];
+  expect((await worker.run(["node", "join", "--hub", hub.hubUrl, "--token-file", "-", "--machine", "box-1", "--home", home, "--enroll-only"], { stdin: `${token}\n` })).code).toBe(0);
+  const refused = await worker.run(["node", "leave", "--home", home]);
+  expect(refused.code).toBe(1);
+  expect(refused.stderr).toContain("box-1 isn't the agents' Mac, so it doesn't leave by itself");
+  expect(existsSync(join(home, "node.json"))).toBe(true);
+  expect(existsSync(join(home, "node-key.pem"))).toBe(true);
 });

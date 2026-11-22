@@ -1,8 +1,8 @@
 // Set up this Mac for agents' steps (model.ts): the code, a replace to confirm, the join, the grants, the Test.
 import { describe, expect, it } from "vitest";
 import type { MacCheck } from "../../../shared/contracts";
-import type { MacFound, MacHealthRead } from "../../../shared/macSetup";
-import { checkView, digitsOf, initial, passes, reduce, spaced, START_MS, stepOf, waits, type Event, type State } from "./model";
+import type { MacFound, MacHealthRead, MacLink } from "../../../shared/macSetup";
+import { checkView, digitsOf, initial, passes, reduce, setupRows, spaced, STALL_MS, START_MS, statusLine, stepOf, waits, type Event, type State } from "./model";
 
 const FOUND: MacFound = { hubUrl: "http://devbox:4790", hubName: "devbox", machineId: "mac", existing: false, here: { kind: "none" } };
 const run = (events: Event[], from: State = initial): State => events.reduce(reduce, from);
@@ -71,16 +71,12 @@ describe("which hub", () => {
 
 describe("opening the window again", () => {
   const at = 5000;
-  it("opens on the join running, a join still to run, or a joined node's checks", () => {
+  it("opens on the join running, a join still to run, or a joined Mac's status", () => {
     expect(reduce(initial, { type: "resume", status: { kind: "joining", found: FOUND }, at })).toEqual({ step: "join", found: FOUND });
     expect(reduce(initial, { type: "resume", status: { kind: "traded", found: FOUND }, at })).toEqual({ step: "confirm", found: FOUND, replaces: undefined, resumed: true });
-    const joined = reduce(initial, { type: "resume", status: { kind: "joined", found: { ...FOUND, existing: true } }, at });
-    expect(joined).toMatchObject({ step: "check", since: 0, resumed: true, waitFrom: at });
-    if (joined.step !== "check") throw new Error(joined.step);
-    // Its node's checks count whenever they ran; a restart is offered only a while after the window opened.
-    expect(checkView(joined, at + 1000)).toEqual({ kind: "starting", late: false });
-    expect(checkView(joined, at + START_MS + 1)).toEqual({ kind: "starting", late: true });
-    expect(checkView(reduce(joined, { type: "health", read: read([check("accessibility", "ok"), check("screen_recording", "fail")], { checkedAt: 1 }) }) as typeof joined, at).kind).toBe("grants");
+    // A Mac joined already opens on its status, never on setup's steps again.
+    expect(reduce(initial, { type: "resume", status: { kind: "joined", found: { ...FOUND, existing: true } }, at })).toEqual({ step: "status", found: { ...FOUND, existing: true } });
+    expect(stepOf({ step: "status", found: FOUND }, at)).toBe("Test");
   });
 
   it("says what became of a code spent with nothing joined, until a new one is typed", () => {
@@ -209,5 +205,77 @@ describe("the checks", () => {
     expect(reduce(s, { type: "restarted", outcome: { ok: true }, at: 77 })).toMatchObject({ restarting: false, since: 77 });
     expect(reduce(s, { type: "restart" })).toBe(s);
     expect(reduce(s, { type: "restarted", outcome: { ok: false, failure: { message: "No LaunchAgent." } }, at: 0 })).toMatchObject({ restarting: false, restartFailure: { message: "No LaunchAgent." } });
+  });
+});
+
+describe("every check a row, live", () => {
+  // The join ended at 1000 by the page's clock; the node writes its files after it.
+  const rowsAt = (r: MacHealthRead | undefined, now: number, extra: Event[] = []) => {
+    const s = checking(r === undefined ? extra : [...extra, { type: "health", read: r }]);
+    return Object.fromEntries(setupRows(s, now).map((row) => [row.id, row]));
+  };
+
+  it("the first checks arrive as the node starts: the permissions show at once, before its slower run of the rest", () => {
+    // Before anything: the node is starting, and every row after it says what it waits on.
+    const before = rowsAt(undefined, 2000);
+    expect(before["node"]).toMatchObject({ state: "running" });
+    expect(before["accessibility"]).toMatchObject({ state: "waiting", line: "Waits for the node" });
+    expect(before["test"]).toMatchObject({ state: "waiting" });
+    // Its first write holds the permissions alone, and its link dialing: each permission is a row with its Allow.
+    const first = rowsAt(read([check("accessibility", "fail"), check("screen_recording", "fail"), check("screen_capture", "unknown")], { writtenAt: 1500, checkedAt: null, link: { state: "linking", since: 1400 } }), 2000);
+    expect(first["node"]).toMatchObject({ state: "done" });
+    expect(first["link"]).toMatchObject({ state: "running", line: "Reaching devbox" });
+    expect(first["accessibility"]).toMatchObject({ state: "needs_you", action: { kind: "grant", pane: "accessibility" } });
+    expect(first["screen_recording"]).toMatchObject({ state: "needs_you", action: { kind: "grant", pane: "screen_recording" } });
+    expect(first["screen_capture"]).toMatchObject({ state: "waiting", line: "Waits for Screen Recording" });
+    expect(first["checks"]).toMatchObject({ state: "running" });
+  });
+
+  it("a step the person does is seen at the next read, with no click here", () => {
+    const off = read([check("accessibility", "fail"), check("screen_recording", "ok"), check("screen_capture", "fail")], { writtenAt: 1500, link: { state: "linked", since: 1400 } });
+    expect(rowsAt(off, 2000)["screen_capture"]).toMatchObject({ state: "needs_you", action: { kind: "grant", pane: "screen_capture" } });
+    const on = read([check("accessibility", "ok"), check("screen_recording", "ok"), check("screen_capture", "ok")], { writtenAt: 1600, link: { state: "linked", since: 1400 } });
+    const rows = rowsAt(on, 2100, [{ type: "health", read: off }]);
+    expect(rows["accessibility"]).toMatchObject({ state: "done", line: "Allowed" });
+    expect(rows["screen_capture"]).toMatchObject({ state: "done", line: "Allowed" });
+  });
+
+  it("a check that stalls says why after a short wait, with one way forward", () => {
+    // The node never writes: past STALL_MS it says so, with its restart.
+    expect(rowsAt(undefined, 1000 + STALL_MS - 1)["node"]?.state).toBe("running");
+    expect(rowsAt(undefined, 1000 + STALL_MS + 1)["node"]).toMatchObject({ state: "failed", line: "The node hasn't started.", action: { kind: "restart" } });
+    // The hub never answers its link.
+    const dialing = read([check("accessibility", "ok")], { writtenAt: 1500, checkedAt: null, link: { state: "linking", since: 1400 } });
+    expect(rowsAt(dialing, 1400 + STALL_MS + 1)["link"]).toMatchObject({ state: "failed", line: "devbox isn't answering this Mac.", action: { kind: "restart" } });
+    // The hub refuses it: only a new code joins it, and the row says so in the hub's words.
+    const refused = read([check("accessibility", "ok")], { writtenAt: 1500, link: { state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the hub", since: 1450 } });
+    expect(rowsAt(refused, 1500)["link"]).toMatchObject({ state: "failed", action: { kind: "newCode" } });
+    expect(rowsAt(refused, 1500)["link"]?.line).toContain("devbox refused this Mac: mac is not enrolled");
+  });
+
+  it("every check green and the Test run since the permissions came on: ready, and Done opens the Mac's status", () => {
+    const green = [check("accessibility", "ok"), check("screen_recording", "ok"), check("screen_capture", "ok"), check("xcode", "ok"), check("tools", "ok")];
+    const s = checking([
+      { type: "health", read: read(green, { writtenAt: 1500, checkedAt: 1500, link: { state: "linked", since: 1400 } }) },
+      { type: "health", read: read(green, { writtenAt: 2500, checkedAt: 2500, link: { state: "linked", since: 1400 } }) },
+    ]);
+    const rows = setupRows(s, 2600);
+    expect(rows.map((r) => r.state).every((st) => st === "done")).toBe(true);
+    expect(rows.map((r) => r.id)).toEqual(["node", "link", "accessibility", "screen_recording", "screen_capture", "xcode", "tools", "test"]);
+    expect(reduce(s, { type: "finish" })).toEqual({ step: "status", found: FOUND });
+  });
+
+  it("a node that stopped as this hub's machine sends the window back to a new code, saying why", () => {
+    const gone = { message: "devbox doesn't know this Mac any more.", fix: "To set it up again, type a new code." };
+    expect(reduce(checking(), { type: "health", read: read([], { gone }) })).toMatchObject({ step: "code", notice: gone });
+  });
+
+  it("the status line: connected while linked, else why not", () => {
+    const status = (link: MacLink, over: Partial<MacHealthRead> = {}) =>
+      statusLine({ found: FOUND, hubId: null, activity: null, disk: null, macBehind: null, health: read([], { writtenAt: 100_000, link, ...over }) }, 100_000);
+    expect(status({ state: "linked", since: 1 })).toEqual({ text: "Connected to devbox", tone: "ok" });
+    expect(status({ state: "down", since: 1 })).toEqual({ text: "Not connected: devbox isn’t answering", tone: "warn" });
+    expect(status({ state: "refused", why: "no", since: 1 })).toEqual({ text: "Not connected: devbox refused this Mac", tone: "warn" });
+    expect(status({ state: "linked", since: 1 }, { writtenAt: 1 }).text).toContain("isn’t running");
   });
 });

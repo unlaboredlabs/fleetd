@@ -188,7 +188,7 @@ export function iosRuntime(ran: Ran): MacCheck {
 
 /** System Settings' pane for a grant, by its URL. */
 export const pane = (id: MacCheckId) =>
-  id === "screen_recording"
+  id === "screen_recording" || id === "screen_capture"
     ? "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
     : "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 
@@ -210,6 +210,19 @@ export function grant(id: MacCheckId, granted: boolean | undefined): MacCheck {
     });
   }
   return check(id, "unknown", `The node can't ask macOS about ${what} here.`);
+}
+
+/**
+ * macOS's own question, from macOS 15 on, whether fleetd may capture the screen directly ("bypass the system private
+ * window picker"): `captured` is the node's last try, true once a capture came back, its error while one fails, and
+ * undefined before Screen Recording is on (it waits for that).
+ */
+export function screenCapture(captured: true | string | undefined): MacCheck {
+  if (captured === true) return check("screen_capture", "ok", "fleetd captures the Mac's screen directly.");
+  if (captured === undefined) return check("screen_capture", "unknown", "Waits for Screen Recording.");
+  return check("screen_capture", "fail", `macOS hasn't let fleetd capture the screen directly yet: ${captured}`, {
+    label: "Press Allow in macOS's prompt that fleetd may bypass the private window picker; Allow here shows it again",
+  });
 }
 
 /** A grant macOS stopped counting with an update to this version (grants.ts `lost`). */

@@ -22,6 +22,7 @@ import {
   HEARTBEAT_INTERVAL_SECS,
   HEARTBEAT_TIMEOUT_SECS,
   HUB_CAP,
+  NOT_ENROLLED,
   protocolBehind,
   REMOVED,
   type HubFrame,
@@ -54,11 +55,12 @@ export const LINK_MAX_FRAME_BYTES = 64 << 20;
 export const LINK_MAX_OTHER_FRAME_BYTES = 16 << 20;
 
 /** The hub refused this node in a way retrying cannot fix (bad key or token, protocol mismatch). `removed`: the hub
- * removed this machine, so the node is no longer enrolled with it. */
+ * removed this machine, so the node is no longer enrolled with it. `unknown`: the hub holds no key for it at all. */
 export class LinkFatal extends Error {
   constructor(
     readonly reason: string,
     readonly removed = false,
+    readonly unknown = false,
   ) {
     super(`hub refused this node: ${reason}`);
   }
@@ -536,7 +538,14 @@ function runLinkOnce(
       // After the frames that came before it.
       reads = reads.then(() => {
         if (code === CLOSE.UNAUTHORIZED || code === CLOSE.PROTOCOL_MISMATCH)
-          return finish({ kind: "fatal", fatal: new LinkFatal(reason || `closed with ${code}`, code === CLOSE.UNAUTHORIZED && reason.includes(REMOVED)) });
+          return finish({
+            kind: "fatal",
+            fatal: new LinkFatal(
+              reason || `closed with ${code}`,
+              code === CLOSE.UNAUTHORIZED && reason.includes(REMOVED),
+              code === CLOSE.UNAUTHORIZED && reason.includes(NOT_ENROLLED),
+            ),
+          });
         const why = `hub closed the link (${code} ${reason})`.trim();
         finish(code === CLOSE.RESTART ? { kind: "restarting", why } : { kind: "lost", why });
       });

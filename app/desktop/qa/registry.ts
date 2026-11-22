@@ -737,6 +737,20 @@ const filterIsOneLine = async (page: Page) => {
 
 /** An entry's name in test titles, shot files and the contact sheet. */
 /** New bot's +: a repo typed into its field and added with Enter. */
+/** Set up this Mac for agents: Allow each permission as its row asks (the screen capture one comes once Screen
+ * Recording is on), until the Mac is ready. */
+const allowAll = async (page: Page) => {
+  const ready = page.getByRole("heading", { name: "This Mac is ready" });
+  for (const end = Date.now() + 30_000; Date.now() < end; ) {
+    if (await ready.isVisible()) return;
+    const allow = page.getByRole("button", { name: "Allow", exact: true }).first();
+    // The rows read the node every second: a button re-rendered mid-click is clicked again on the next pass.
+    if (await allow.isVisible()) await allow.click({ timeout: 2000 }).catch(() => undefined);
+    await page.waitForTimeout(300);
+  }
+  await ready.waitFor({ timeout: 1000 });
+};
+
 const addRepo = async (page: Page, text: string) => {
   await page.getByRole("button", { name: "Add a repo" }).click();
   await page.getByRole("combobox", { name: "Repo to add" }).fill(text);
@@ -3413,7 +3427,7 @@ export const screens: readonly Screen[] = [
     variant: "grants",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("482913");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
     },
   },
   {
@@ -3425,9 +3439,9 @@ export const screens: readonly Screen[] = [
     variant: "one-allowed",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("482913");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
       await page.getByRole("button", { name: "Allow", exact: true }).first().click();
-      await page.getByText("Allowed", { exact: true }).waitFor({ timeout: 20_000 });
+      await page.getByText("Allowed", { exact: true }).first().waitFor({ timeout: 20_000 });
     },
   },
   {
@@ -3439,9 +3453,8 @@ export const screens: readonly Screen[] = [
     variant: "ready",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("482913");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
-      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
+      await allowAll(page);
     },
   },
   // A version difference, one plain line each: a hub newer than this app (222222), and an Edge hub the edge release
@@ -3467,9 +3480,8 @@ export const screens: readonly Screen[] = [
     variant: "hub-behind",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("111111");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
-      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
+      await allowAll(page);
       await page.getByRole("button", { name: "Update the hub" }).waitFor({ timeout: 10_000 });
     },
   },
@@ -3484,9 +3496,8 @@ export const screens: readonly Screen[] = [
     variant: "no-xcode",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("333333");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
-      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
+      await allowAll(page);
       await page.getByRole("button", { name: "Open the App Store" }).waitFor({ timeout: 5_000 });
     },
   },
@@ -3500,14 +3511,13 @@ export const screens: readonly Screen[] = [
     variant: "xcode-beta",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("444444");
-      await page.getByRole("heading", { name: "Let agents use this Mac's screen" }).waitFor({ timeout: 20_000 });
-      for (const button of await page.getByRole("button", { name: "Allow", exact: true }).all()) await button.click();
-      await page.getByRole("heading", { name: "This Mac is ready" }).waitFor({ timeout: 20_000 });
-      await page.getByText("sudo xcode-select -s /Applications/Xcode-beta.app/Contents/Developer").waitFor({ timeout: 5_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
+      await allowAll(page);
+      await page.getByText(/^Xcode-beta\.app is in \/Applications/u).waitFor({ timeout: 5_000 });
     },
   },
-  // A node that never reports its checks (555555): once it's had its time, Restart, and Start over with a new code. The
-  // page's clock runs on from the join, then jumps past the wait.
+  // A node that never reports its checks (555555): once it's had its time, its row says so with Restart. The page's
+  // clock runs on from the join, then jumps past the wait.
   {
     id: "mac-setup",
     route: "#/mac-setup",
@@ -3519,9 +3529,10 @@ export const screens: readonly Screen[] = [
       await page.clock.install();
       await page.reload();
       await page.getByRole("textbox").first().fill("555555");
-      await page.getByRole("heading", { name: "Starting the node" }).waitFor({ timeout: 20_000 });
-      await page.clock.fastForward(46_000);
-      await page.getByRole("button", { name: "Start over with a new code" }).waitFor({ timeout: 10_000 });
+      await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
+      await page.clock.fastForward(21_000);
+      await page.getByText("The node hasn't started.").waitFor({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Restart the node" }).waitFor({ timeout: 10_000 });
     },
   },
   { id: "onboarding.key", route: "#/onboarding?key", fixtures: ["pairing-failed", "onboarding-file-store"] },

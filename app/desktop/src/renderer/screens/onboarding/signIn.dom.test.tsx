@@ -45,6 +45,7 @@ const { cloud } = vi.hoisted(() => {
       setup: () => Promise.resolve({ ok: true, terminal: "a terminal" }),
     },
     cloud,
+    macSetup: { open: vi.fn(() => Promise.resolve()) },
   });
   return { cloud };
 });
@@ -133,6 +134,28 @@ it("offers both ways a line each; Use your own hub is the connect form, with the
   expect(host.textContent).toContain("Hub address");
   click("Back");
   expect(screen()).toBe("onboarding.ways");
+});
+
+it("on a Mac, Set up this Mac for agents is a third way on the first screen, straight into its setup; never inside Use your own hub", async () => {
+  const fleetd = (window as unknown as { fleetd: { platform: string; macSetup: { open: ReturnType<typeof vi.fn> } } }).fleetd;
+  fleetd.platform = "darwin";
+  try {
+    await mount(<OnboardingScreen />, unpaired);
+    expect(screen()).toBe("onboarding.ways");
+    expect(host.querySelector("[data-way='agents-mac']")?.textContent).toContain("For builds and iOS simulators, with a code from your hub.");
+    click(/^Set up this Mac for agents/u);
+    expect(fleetd.macSetup.open).toHaveBeenCalledTimes(1);
+    click(/^Use your own hub/u);
+    expect(host.textContent).not.toContain("Is this the Mac for your agents?");
+    expect(button(/^Set up this Mac for agents/u)).toBeUndefined();
+  } finally {
+    fleetd.platform = "linux";
+  }
+});
+
+it("on Linux, no Mac way", async () => {
+  await mount(<OnboardingScreen />, unpaired);
+  expect(host.querySelector("[data-way='agents-mac']")).toBeNull();
 });
 
 it("Sign in waits on the browser; Cancel comes back quietly, and a refusal says what happened and to sign in again", async () => {

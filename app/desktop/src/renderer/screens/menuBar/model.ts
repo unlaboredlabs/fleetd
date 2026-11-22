@@ -8,7 +8,7 @@
 import type { MacCheck } from "../../../shared/contracts";
 import type { MacMenuBarRead } from "../../../shared/macMenuBar";
 import { HUB_UPDATE_WHERE, type MacPane } from "../../../shared/macSetup";
-import { checkTitle, FRESH_MS } from "../macSetup/model";
+import { checkTitle, FRESH_MS, STALL_MS } from "../macSetup/model";
 import type { SessionState } from "../sessions/model";
 
 export type Tone = "ok" | "warn" | "fail" | "quiet";
@@ -16,7 +16,7 @@ export type Tone = "ok" | "warn" | "fail" | "quiet";
 /** What a row's fix does: a button of the app's, or words with the exact command to paste. */
 export type Fix =
   | { readonly kind: "restart" }
-  | { readonly kind: "grant"; readonly pane: "accessibility" | "screen_recording" }
+  | { readonly kind: "grant"; readonly pane: "accessibility" | "screen_recording" | "screen_capture" }
   | { readonly kind: "open"; readonly pane: Extract<MacPane, "app_store"> }
   | { readonly kind: "command"; readonly where: string; readonly command: string }
   | { readonly kind: "say"; readonly text: string };
@@ -149,9 +149,11 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
   // The node: it writes its checks every 30 s while it runs, and reaches the hub.
   const last = Math.max(h.checkedAt ?? 0, h.writtenAt ?? 0);
   const running = h.health !== null && now - last < FRESH_MS;
+  // The node's own word on its link, where it writes one; else whether the hub answers this app.
+  const linked = h.link === null || h.link === undefined ? h.hubAnswers : h.link.state === "linked" || now - h.link.since < STALL_MS;
   if (!running) {
     rows.push({ id: "node", title: "Node", tone: "fail", word: "Not running", detail: "fleetd's node on this Mac stopped, so agents can't use it.", fix: { kind: "restart" } });
-  } else if (!h.hubAnswers) {
+  } else if (!linked) {
     rows.push({
       id: "node",
       title: "Node",
@@ -164,8 +166,9 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
     rows.push({ id: "node", title: "Node", tone: "ok", word: "Running" });
   }
 
-  // The two grants: one row, the first that is off with its own fix (the node asks macOS, then its pane opens).
-  const grants = (["accessibility", "screen_recording"] as const).map((id) => ({ id, check: find(id) }));
+  // The permissions: one row, the first that is off with its own fix (the node asks macOS, then its pane opens). The
+  // screen capture prompt counts once a node asks it (an older node doesn't).
+  const grants = (["accessibility", "screen_recording", "screen_capture"] as const).flatMap((id) => (id === "screen_capture" && find(id) === undefined ? [] : [{ id, check: find(id) }]));
   const off = grants.find((g) => g.check !== undefined && toneOf(g.check) !== "ok");
   if (off?.check !== undefined) {
     const both = grants.every((g) => g.check !== undefined && toneOf(g.check) !== "ok");
@@ -173,7 +176,7 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
       id: "permissions",
       title: "Permissions",
       tone: "fail",
-      word: both ? "Both off" : `${checkTitle(off.id)} off`,
+      word: both ? (grants.length === 2 ? "Both off" : "All off") : `${checkTitle(off.id)} off`,
       detail: off.check.message,
       fix: { kind: "grant", pane: off.id },
     });

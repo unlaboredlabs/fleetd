@@ -288,6 +288,11 @@ in macOS's prompt first): Accessibility lets agents click and type in the Mac's 
 agents see the screen. You never add fleetd to a list yourself. macOS may ask for an administrator's name and password:
 type it in that System Settings dialog at the Mac itself, never through fleetd's view of its screen.
 
+Once Screen Recording is on, the node tries one capture of the screen, and macOS (15 and later) asks whether fleetd may
+**bypass the system private window picker and directly access your screen and audio**. Press **Allow**. Setup lists it
+as its own row, **Screen capture**, with an **Allow** that shows macOS's prompt again; the node tries again every 5
+seconds while it fails, so the row turns green as you allow it.
+
 Only the node asks, never the line or the app: macOS lists whichever app a prompt comes from, so a prompt from setup
 would list Terminal or the fleetd app instead. Setup asks the node with `fleetd node grants --ask <grant>` (it writes
 `~/.fleetd/node/mac-grant-ask`, the node asks within 2 seconds), which also opens the pane. Run it yourself for a grant
@@ -296,6 +301,7 @@ that's off:
 ```sh
 fleetd node grants --ask accessibility
 fleetd node grants --ask screen_recording
+fleetd node grants --ask screen_capture
 ```
 
 macOS gives a running process a new grant only once it starts again, so the node restarts itself within seconds of
@@ -372,6 +378,7 @@ with no check still in progress (its tools installing), and lists one still in p
 | `mac_xcode` | A full Xcode is selected, its licence accepted and its first launch run. Otherwise it warns: setup still ends, and only simulators wait. | The one command for [what it found](#no-xcode): the App Store, `sudo xcode-select -s` to the Xcode in /Applications, or the licence |
 | `mac_ios_runtime` | `xcrun simctl list runtimes` has an available iOS runtime. While Xcode isn't usable it warns that it waits for it. | `xcodebuild -downloadPlatform iOS` |
 | `mac_accessibility`, `mac_screen_recording` | macOS has given fleetd's node each grant (asked of a fresh process, `fleetd node grants`; reading never prompts). One an update took away [says so](#grants-updates). | `fleetd node grants --ask <grant>` at the Mac, then turn on fleetd in the pane it opens; the node restarts itself to take it up. |
+| `mac_screen_capture` | The node's last capture of the screen came back: macOS let it bypass its private window picker. It waits for Screen Recording. | Press **Allow** in macOS's prompt; `fleetd node grants --ask screen_capture` shows it again. |
 | `mac_gui_session` | The node's account is the one at the Mac's screen (`console`). Behind someone else's session (`background`) it warns: builds and simulators work, the Mac's own apps need that account at the screen. | Switch to that account at the Mac, or use a Mac nobody sits at. |
 | `mac_tools` | The pinned Node.js, agent-device and agent-desktop are installed, and Homebrew's `pod --version` runs. Without CocoaPods it warns: setup still ends. | The Mac must reach nodejs.org and registry.npmjs.org. For CocoaPods, `brew install cocoapods`, after [Homebrew's install line](#join) if there is no `brew` yet. |
 | `mac_keep_awake` | The node holds its keep-awake assertion. | `sudo pmset -a sleep 0` |
@@ -433,8 +440,22 @@ saying the hub removed this Mac; joining with one (the same hub or another) repl
 permissions and the Test as on a new Mac. To take fleetd off the Mac instead, run `launchctl bootout
 gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node` in its account.
 
-A hub that never knew the node's key (one [moved](/docs/moving-a-hub) to a new machine, which leaves the machines' keys
-behind) only says the node isn't enrolled, and the node keeps trying until it joins again.
+A hub that doesn't hold the node's key at all (one [moved](/docs/moving-a-hub) to a new machine, which leaves the
+machines' keys behind, or one that removed the Mac before it kept removed keys) says the node isn't enrolled. The
+agents' Mac takes that as removed too: it stops as that machine and waits for a new join, and **Set up this Mac for
+agents** opens on a new code, saying the hub doesn't know this Mac any more. Its node writes how its link stands in
+`~/.fleetd/node/mac-link.json`, which setup and `fleetd init` show as the **Linked to** row.
+
+## Its own window {#status}
+
+Once the Mac has joined, the fleetd app on it opens only a small window saying **Working as <hub>'s agents' Mac**:
+whether its node is linked, what agents run on it now (simulators, builds, the screen), and its health with a fix each.
+The app's own window never opens there, and opening the app again brings back this window.
+
+**Stop being the agents' Mac** at its foot, after one confirm, runs `fleetd node leave`: the node's LaunchAgent stops
+and goes, the hub removes the machine (as **Remove** does), and the node's key and settings are deleted. A hub that
+isn't reached within a few seconds keeps the machine, offline, until an admin removes it there; the Mac is clean
+either way, and the app goes back to Welcome.
 
 ## What stays shared {#shared}
 

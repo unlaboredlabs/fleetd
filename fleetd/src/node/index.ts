@@ -661,6 +661,7 @@ export async function startNode(
     },
     attach: (ctx) => {
       link.linked(ctx);
+      mac?.link("linked");
       // For the watcher of an update's restart: this build came up and its hub took it.
       markUp(home, VERSION);
       for (const slept of wakes.take()) ctx.send({ t: "slept", ...slept });
@@ -668,6 +669,7 @@ export async function startNode(
       const detachSessions = sessions.attach(ctx.send);
       return () => {
         link.linked(undefined);
+        mac?.link("down");
         detachLead();
         detachSessions();
       };
@@ -680,8 +682,12 @@ export async function startNode(
     (refused) => {
       if (refused) {
         process.stderr.write(`fleetd: ${refused.message}\n`);
+        // Setup on the Mac shows the hub's words, not a wait for checks that never come.
+        mac?.link("refused", refused.reason);
         // Removed: the node stops as that machine. Its service starts it again, to wait for a new join (`enrolled`).
-        if (refused.removed && markRemoved(home)) return resolveDone(0);
+        // The agents' Mac its hub holds no key for is the same: only a new code joins it again, and until then it
+        // waits rather than dial and be refused every few seconds.
+        if ((refused.removed || (mac !== undefined && refused.unknown)) && markRemoved(home)) return resolveDone(0);
         resolveDone(1);
       } else resolveDone(0);
     },

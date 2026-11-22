@@ -271,6 +271,37 @@ describe("opening the window again", () => {
     const stopped = ports({ node: { enrolled: false, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
     expect(await new MacSetup(stopped.p, () => undefined).status()).toEqual({ kind: "fresh" });
   });
+  it("a Mac its hub refused as one it doesn't know says so, and its checks' read carries it, so setup goes to a new code", async () => {
+    const { p, dir } = ports({ node: { enrolled: false, removed: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
+    fs.writeFileSync(path.join(dir, "node", "mac-link.json"), JSON.stringify({ state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the hub", since: 1 }));
+    const setup = new MacSetup(p, () => undefined);
+    expect(await setup.status()).toMatchObject({ kind: "spent", failure: { message: "devbox doesn't know this Mac any more." } });
+    const read = await setup.health("http://devbox.example.ts.net:4790");
+    expect(read.link).toMatchObject({ state: "refused" });
+    expect(read.gone?.message).toBe("devbox doesn't know this Mac any more.");
+  });
+});
+
+describe("Stop being the agents' Mac", () => {
+  const node = { enrolled: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" };
+  it("runs the node's leave and says the hub removed it", async () => {
+    const { p, ran, dir } = ports({ node, output: "mac left http://devbox.example.ts.net:4790.\nleft: removed\n" });
+    expect(await new MacSetup(p, () => undefined).leave()).toEqual({ ok: true, told: "removed", hubName: "devbox", machineId: "mac" });
+    expect(ran.at(-1)).toEqual({ file: path.join(dir, "bin", "fleetd"), args: ["node", "leave", "--home", path.join(dir, "node")] });
+  });
+
+  it("with the hub not reached, it has left all the same and says so", async () => {
+    const { p } = ports({ node, output: "http://devbox.example.ts.net:4790 wasn't reached: it shows mac offline until an admin removes it there.\nleft: unreached\n" });
+    expect(await new MacSetup(p, () => undefined).leave()).toMatchObject({ ok: true, told: "unreached" });
+  });
+
+  it("a node that didn't stop says why, and nothing left", async () => {
+    const { p } = ports({ node, exit: 1, output: "fleetd: the node's service didn't stop: no session. Fix: log in as this user at the Mac's screen, then try again\n" });
+    expect(await new MacSetup(p, () => undefined).leave()).toEqual({
+      ok: false,
+      failure: { message: "The node's service didn't stop: no session.", fix: "log in as this user at the Mac's screen, then try again" },
+    });
+  });
 });
 
 describe("the checks", () => {

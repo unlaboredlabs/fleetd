@@ -281,22 +281,35 @@ void app.whenReady().then(() => {
     void win.loadURL(`${pageUrl()}${hash}`);
     return win;
   });
-  // Set up this Mac for agents: a small window of its own on the page's `#/mac-setup`, never the full interface.
+  // Set up this Mac for agents: a small window of its own on the page's `#/mac-setup`, never the full interface. On
+  // the agents' Mac it is the app's only window: it opens on the Mac's status, and the app's own window never opens
+  // there. Setting up from Welcome closes the app's window, so one window shows at a time; closing this one before
+  // the Mac joined (or after it left) brings Welcome back.
   let macWindow: BrowserWindow | undefined;
+  let appWindow: BrowserWindow | undefined;
+  /** This Mac is the agents' Mac (its node.json), as last read: what a new window opens on. */
+  let agentsMac = false;
+  const readAgentsMac = async () => (agentsMac = (await macSetup.current?.status())?.kind === "joined");
+  const openApp = () => {
+    if (agentsMac) macSetupWindow.show();
+    else if (appWindow === undefined || appWindow.isDestroyed()) appWindow = createWindow(mode);
+    else appWindow.focus();
+  };
   const macSetupWindow = {
     show: () => {
+      if (appWindow !== undefined && !appWindow.isDestroyed()) appWindow.close();
       if (macWindow !== undefined && !macWindow.isDestroyed()) {
         if (macWindow.isMinimized()) macWindow.restore();
         macWindow.focus();
         return;
       }
       const win = new BrowserWindow({
-        width: 560,
-        height: 680,
-        minWidth: 480,
-        minHeight: 560,
+        width: 460,
+        height: 640,
+        minWidth: 400,
+        minHeight: 480,
         show: false,
-        title: "Set up this Mac for agents",
+        title: "fleetd",
         backgroundColor: nativeTheme.shouldUseDarkColors ? "#111214" : "#ffffff",
         titleBarStyle: "hiddenInset" as const,
         trafficLightPosition: TRAFFIC_LIGHTS,
@@ -305,9 +318,18 @@ void app.whenReady().then(() => {
       win.once("ready-to-show", () => win.show());
       win.once("closed", () => {
         if (macWindow === win) macWindow = undefined;
+        // Not (or no longer) the agents' Mac: the app's own window, Welcome until a hub is added.
+        void readAgentsMac().then((joined) => {
+          if (!joined && !quitting && (appWindow === undefined || appWindow.isDestroyed())) openApp();
+        });
       });
       void win.loadURL(`${pageUrl()}#/mac-setup`);
       macWindow = win;
+    },
+    /** Back to the app's own window: after leaving, or from the code step. */
+    exit: () => {
+      if (macWindow === undefined || macWindow.isDestroyed()) return void readAgentsMac().then(openApp);
+      macWindow.close();
     },
   };
   // The agents' Mac's menu bar: an icon once this Mac is joined as the agents' Mac, on macOS; under a fixture with
@@ -344,7 +366,10 @@ void app.whenReady().then(() => {
     },
     area: (at) => screen.getDisplayNearestPoint(at).workArea,
     menu: (items) => Menu.buildFromTemplate(menuTemplate(items)),
-    openApp: () => void opener.focus(),
+    openApp: () => {
+      if (agentsMac) macSetupWindow.show();
+      else opener.focus();
+    },
     quit: () => app.quit(),
     openAtLogin: () => app.getLoginItemSettings().openAtLogin,
     // Never under a fixture: QA leaves the machine it runs on as it was.
@@ -386,18 +411,20 @@ void app.whenReady().then(() => {
     hub.stop();
   });
   opener.setHooks({
-    create: () => void createWindow(mode),
+    // The agents' Mac has no app window: its status window instead.
+    create: openApp,
     activateApp: () => {
       if (process.platform === "darwin") app.focus({ steal: true });
     },
   });
   // The hubs dial as the window opens: the hub answers while the page loads (its renderer is a process of its own
   // starting up), and the page's subscribe gets the snapshot main holds, not a round trip after it asks.
-  createWindow(mode);
+  // On the agents' Mac, its status window alone (node.json says so before any page loads).
+  void readAgentsMac().then(openApp);
   hub.start();
   updater.start();
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(mode);
+    if (BrowserWindow.getAllWindows().every((w) => w.isDestroyed() || !w.isVisible())) void readAgentsMac().then(openApp);
   });
 });
 

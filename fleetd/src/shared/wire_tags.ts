@@ -19,6 +19,7 @@ export const NODE_TO_HUB = [
   "browser_frame",
   "session_host_result",
   "mac_result",
+  "leave",
 ] as const;
 export type NodeToHubTag = (typeof NODE_TO_HUB)[number];
 

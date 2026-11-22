@@ -459,10 +459,18 @@ restart this machine's node service (launchd or systemd)
 ### fleetd node grants {#node-grants}
 
 ```text
-fleetd node grants [--ask accessibility|screen_recording] [--wait <seconds>] [--home <dir>]
+fleetd node grants [--ask accessibility|screen_recording|screen_capture] [--wait <seconds>] [--home <dir>]
 ```
 
 on the agents' Mac: the Accessibility and Screen Recording grants macOS gives a node started now; `--ask` has the running node ask macOS for one (waiting up to `--wait`, default 30, for it to), then opens its pane
+
+### fleetd node leave {#node-leave}
+
+```text
+fleetd node leave [--home <dir>]
+```
+
+stop being the agents' Mac: stops and removes the node's service, has the hub remove this machine when it answers, and deletes the node's key and settings
 
 ### fleetd prompts list {#prompts-list}
 
