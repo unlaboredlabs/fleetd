@@ -119,6 +119,8 @@ export interface BrowserSession {
   readonly openedBy?: string;
   /** A phone's device, as its machine last said: the controls it takes (D652) and how it stands. */
   readonly device?: PhoneDevice;
+  /** Live, and its machine answers a screen peer (`browser_rtc`): the window may watch it peer to peer. */
+  readonly rtc?: true;
 }
 
 /** A phone screen's device: the controls its machine checked work there, which way it is turned, folded, light or dark. */

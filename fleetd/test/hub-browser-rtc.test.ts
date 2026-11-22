@@ -143,3 +143,12 @@ test("a peer whose key lost the right to drive the screen, or to watch it, is cl
   expect(of("browser_rtc").at(-1)).not.toHaveProperty("offer");
   expect(app.sent.at(-1)).toMatchObject({ peer: "a2", error: "Your access to this screen changed." });
 });
+
+test("browser_sessions says a live screen takes a peer only while its node answers one", async () => {
+  await setup(["browser", "session_end"]);
+  const list = async () =>
+    ((await t.tools.call(t.hub, caller("read"), "browser_sessions", { projectRef: { machineId: "devbox", projectId: "p1" } })) as { output: { sessions: { rtc?: boolean }[] } }).output.sessions;
+  expect((await list())[0]).not.toHaveProperty("rtc");
+  t.link.link("devbox", ["browser", "session_end", "browser_rtc"]);
+  expect((await list())[0]).toMatchObject({ rtc: true });
+});

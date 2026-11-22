@@ -182,7 +182,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const yours = x.state === "yours";
   const away = useInItsWindow(x.id) && !windowed;
   // This window watches the page, unless the session's own window has it (that one watches it).
-  const frame = useLiveFrame(x.id, !away);
+  const frame = useLiveFrame(x.id, !away, x.rtc === true);
   const picture = pictureOf(frame, x.id);
   const { again, jpeg } = useWatchAgain(x.id);
   const { canvas: videoCanvas, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg);

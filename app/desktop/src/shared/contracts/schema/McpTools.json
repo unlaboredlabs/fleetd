@@ -2683,6 +2683,10 @@
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
         },
+        "rtc": {
+          "description": "True while it is live and its machine's node answers screen peers (`browser_rtc`): only then does an app offer\none. `browser_sessions` fills it in; absent otherwise and from older hubs.",
+          "type": "boolean"
+        },
         "sessionId": {
           "$ref": "#/$defs/BrowserSessionId"
         },

@@ -73,6 +73,7 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     ...(row.note === undefined ? {} : { note: row.note }),
     ...(row.openedBy === undefined ? {} : { openedBy: row.openedBy.name }),
     ...((row.kind === "ios" || row.kind === "android") && row.controls !== undefined && row.state === "live" ? { device: deviceOf(row) } : {}),
+    ...(row.state === "live" && row.rtc === true ? { rtc: true as const } : {}),
     // What its agent did last, while it is live (a hub that names it: screen_thumbs).
     ...(row.state === "live" && row.step !== undefined ? { now: stepWords(row.step) } : {}),
   };

@@ -10,7 +10,7 @@ import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
 import { toast } from "../../ui";
 import { screenMark } from "./timing";
-import { sendInput, watchPeer } from "./rtc";
+import { RTC_FEATURE, sendInput, watchPeer } from "./rtc";
 
 /** The newest JPEG of the last few sessions shown: a view that comes back shows its page at once, then live again (an
  * H.264 frame is no picture alone). */
@@ -21,21 +21,24 @@ const KEEP = 8;
  * The session's newest frame while this view shows it: the window watches it from mount to unmount. Until the first
  * live one comes, the last one this window showed of it, if any.
  */
-export function useLiveFrame(sessionId: string, on: boolean): BrowserFrame | undefined {
+export function useLiveFrame(sessionId: string, on: boolean, rtc = false): BrowserFrame | undefined {
   const layer = useDataLayer();
   const { hub } = layer;
+  // Read here too, so a hub that comes to serve peers (or stops) starts the view's peer, or ends it.
+  const peer = useData((st) => rtc && st.features.includes(RTC_FEATURE));
   useEffect(() => {
     if (!on) return undefined;
     screenMark("view", sessionId);
     void window.fleetd.hub.watch(hub, sessionId);
     screenMark("watch", sessionId);
-    // Its peer alongside: the frames and input go straight to the screen's machine once it opens.
-    const stopPeer = watchPeer(layer, sessionId);
+    // Its peer alongside, where the hub and the screen's machine take one: the frames and input go straight to the
+    // machine once it opens.
+    const stopPeer = watchPeer(layer, sessionId, peer);
     return () => {
       stopPeer();
       void window.fleetd.hub.watch(hub, null);
     };
-  }, [layer, hub, sessionId, on]);
+  }, [layer, hub, sessionId, on, peer]);
   const frame = useData((st) => (on && st.browserFrame?.sessionId === sessionId ? st.browserFrame : undefined));
   const first = frame !== undefined;
   useEffect(() => {

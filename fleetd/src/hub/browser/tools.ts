@@ -3,6 +3,7 @@
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import type { BrowserControl, BrowserControlTo, BrowserSession } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import { CAP_BROWSER, RECORDING_FILES, RECORDING_PART_BYTES, type RecordingFileName } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman, REPAIR_FIX, requireRole } from "../api/grants.ts";
@@ -195,6 +196,8 @@ async function browserSessions(hub: Hub, caller: Caller, input: { projectRef: { 
     if (s.state === "live") {
       const step = live(hub).step(s.sessionId);
       if (step) s.step = step;
+      // An app offers a peer only to a node that answers one: none builds one, nor asks STUN, for nothing.
+      if (link(hub).can(s.machineId, CAP_BROWSER_RTC)) s.rtc = true;
     }
   }
   return {

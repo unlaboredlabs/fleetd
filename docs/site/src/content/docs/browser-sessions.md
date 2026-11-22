@@ -100,7 +100,8 @@ trip, not by seconds of queued frames. When a queue stands, the hub takes a quar
 machine to send, and adds a tenth back each second once the link is clear. An app or hub from before this paces
 nothing, as before.
 
-The desktop and web apps also try to reach the screen's machine directly, peer to peer, over WebRTC. The hub only
+Where the hub and the screen's machine support it, the desktop and web apps also try to reach the machine directly,
+peer to peer, over WebRTC; elsewhere they make no attempt at all. The hub only
 passes the two ends' offer and answer between them. Once the direct link brings its first frame, the frames and your
 mouse and keys go over it, and the hub carries none. It uses public STUN servers only, with no relay of fleetd's: two
 networks that can't reach each other directly stay on the hub. If the direct link fails or goes quiet for a few
