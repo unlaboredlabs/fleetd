@@ -98,17 +98,18 @@ start() {
   try ad install "$APP"
   # agent-device's XCTest runner, built and started once, before any wait counts on it.
   try adlong prepare ios-runner --timeout 900000
-  # Paired by typing the hub's address and the code into Enter Code Manually, and notifications allowed before the
-  # app asks: no system prompt, which agent-device's runner can't answer on the iPhone Duo (a pairing link raises
-  # "Open in fleetd?").
-  try ad settings permission grant notifications --app sh.fleetd.app
+  # Paired by typing the hub's address and the code into Enter Code Manually: a pairing link raises iOS's "Open in
+  # fleetd?", which agent-device's runner can't answer on the iPhone Duo.
   try adlong open sh.fleetd.app --timeout 900000
   pair_code "$device"
   try ad press 'label="Enter Code Manually"'
-  try ad wait 'label="Hub address"' 30000
-  try ad fill 'label="Hub address"' "$(pair_field "Hub address")"
-  try ad fill 'label="Pairing code"' "$(pair_field "Pairing code")"
-  try ad press 'label="Connect"'
+  # The field, not the caption over it that has the same label.
+  try ad wait 'role=text-field label="Hub address"' 30000
+  try ad fill 'role=text-field label="Hub address"' "$(pair_field "Hub address")"
+  try ad fill 'role=text-field label="Pairing code"' "$(pair_field "Pairing code")"
+  try ad press 'role=button label="Connect"'
+  # Notifications, asked once paired (the runner can't grant them first): its button by label, then as an alert.
+  if ad wait 'label="Allow"' 60000 >>"$LOG" 2>&1; then try ad press 'label="Allow"'; else try ad alert accept; fi
   try ad wait text "inventory" 120000
 }
 
