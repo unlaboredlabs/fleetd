@@ -89,14 +89,18 @@ export function targetOf(t: McpServer["transport"]): DialTarget | undefined {
   }
 }
 
-/** What machine `machineId` may dial through the team's tailnet route: the addresses of the enabled tailnet servers
- * its sessions get (the team's, for the bots it names when it names some, and its own bots'), nothing else on the
- * tailnet. */
+/**
+ * What machine `machineId` may dial through the team's tailnet route: the addresses of the team's tailnet servers its
+ * sessions get, as a session gets them (`forSession`: one connected by a person with no key only once signed in), for
+ * the bots it names when it names some. Nothing else on the tailnet, and no bot's own server: anyone with Operate on
+ * one machine adds those, and lending the hub's tailnet stays the decision of those who change the team's servers.
+ */
 export function tailnetTargets(servers: readonly McpServer[], machineId: string, suffix?: string): DialTarget[] {
   return servers.flatMap((s) => {
-    if (!s.enabled || !anyRole(s) || !onTailnet(s, suffix)) return [];
-    const runs = s.scope.kind === "global" ? s.projects === undefined || s.projects.some((p) => p.machineId === machineId) : s.scope.machineId === machineId;
-    const t = runs ? targetOf(s.transport) : undefined;
+    if (s.scope.kind !== "global" || !s.enabled || !anyRole(s)) return [];
+    if (s.projects !== undefined && !s.projects.some((p) => p.machineId === machineId)) return [];
+    if (forSession(s, machineId, suffix)?.tailnet !== true) return [];
+    const t = targetOf(s.transport);
     return t ? [t] : [];
   });
 }

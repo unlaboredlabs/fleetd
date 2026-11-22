@@ -115,6 +115,10 @@ test("a machine off the tailnet reaches a tailnet MCP server through the hub, an
     const row = (name: string, url: string, scope: McpServer["scope"]): McpServer => ({ scope, name, enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url }, env: [], headers: [], updatedAt: "2026-11-22T00:00:00.000Z" });
     mcpServers(t.hub).put(row("tiny", `http://${NAME}:8765/mcp`, { kind: "global" }));
     mcpServers(t.hub).put(row("theirs", `http://${ADDRESS}:9000/mcp`, { kind: "project", machineId: "desk", projectId: "p9" }));
+    // A bot's own server, even on this machine, and a team one a person connected with no key and nobody signed in to:
+    // neither lends the hub's tailnet.
+    mcpServers(t.hub).put(row("own", `http://${ADDRESS}:22/`, { kind: "project", machineId: "laptop", projectId: "p1" }));
+    mcpServers(t.hub).put({ ...row("unsigned", `http://${ADDRESS}:445/`, { kind: "global" }), connectedBy: "p_bbbbbbbb", oauth: { status: "signed_out", issuer: "https://login.example" } });
     // The route is off until Connect.
     await expect(node.dial(NAME, 8765)).rejects.toThrow();
     await call("tailnet_connect");
@@ -122,10 +126,12 @@ test("a machine off the tailnet reaches a tailnet MCP server through the hub, an
     // machine's bot's server, not a name off the tailnet; and a stranger's call not at all.
     await expect(node.dial(NAME, 22)).rejects.toThrow();
     await expect(node.dial(ADDRESS, 9000)).rejects.toThrow();
+    await expect(node.dial(ADDRESS, 22)).rejects.toThrow();
+    await expect(node.dial(ADDRESS, 445)).rejects.toThrow();
     await expect(node.dial("printer.lan", 80)).rejects.toThrow();
     expect(await tailnetAddress(standIn, "printer.lan")).toEqual({ error: "printer.lan isn't on the tailnet" });
     expect(await tailnetAddress(standIn, NAME)).toEqual({ ip: ADDRESS });
-    expect(tailnetTargets(mcpServers(t.hub).list({ kind: "global" }), "laptop", "tail1234.ts.net")).toEqual([{ host: NAME, port: 8765 }]);
+    expect(tailnetTargets([...mcpServers(t.hub).list({ kind: "global" }), ...mcpServers(t.hub).perBot()], "laptop", "tail1234.ts.net")).toEqual([{ host: NAME, port: 8765 }]);
     expect(mayDial([{ host: NAME, port: 8765 }], NAME.toUpperCase(), 8765)).toBe(true);
     const forged = new NodeTailnet(hubUrl, "laptop", loadOrCreateIdentity(join(home.dir, "other")), { now: () => t.hub.clock.now() });
     forged.set({ suffix: "tail1234.ts.net" });
