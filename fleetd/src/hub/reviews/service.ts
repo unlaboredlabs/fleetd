@@ -326,11 +326,11 @@ export class Reviews implements ReviewGate {
            WHERE t.change_id = ?1 AND b.patch_id != ?2 ORDER BY b.rowid DESC LIMIT 1`,
       )
       .get(change.changeId, patchId);
-    let prTitle: string | undefined;
+    let pull: { title: string; body?: string | null } | undefined;
     try {
-      prTitle = (await this.train.github.pull(change.repo, change.prNumber)).title;
+      pull = await this.train.github.pull(change.repo, change.prNumber);
     } catch {
-      prTitle = undefined;
+      pull = undefined;
     }
     const set = this.train.prompts.current(change.projectRef);
     const resolved = this.resolvedOn(change.changeId, patchId);
@@ -339,14 +339,14 @@ export class Reviews implements ReviewGate {
     const prompt =
       rebased?.outcome.kind === "conflicts"
         ? conflictsPrompt(set, change, { reviewedSha: rebased.fromHead, reviewedBase: rebased.fromBase, base: rebased.base, files: rebased.outcome.files })
-        : reviewPrompt(set, change, reviewed);
+        : reviewPrompt(set, change, reviewed, pull?.body);
     let task;
     try {
       task = await this.host.spawnReview({
         projectRef: change.projectRef,
         by: REVIEWS_BY,
         workstreamId: change.workstreamId,
-        title: reviewTitle(prTitle, change.prNumber),
+        title: reviewTitle(pull?.title, change.prNumber),
         prompt,
         pr: change.prUrl,
       });

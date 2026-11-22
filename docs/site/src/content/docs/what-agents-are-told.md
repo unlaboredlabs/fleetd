@@ -120,6 +120,17 @@ hasn't passed on is refused with what to do, and `git push --no-verify` is denie
 one command is started in the background and waited on with Claude's Monitor tool ([below](#waiting)), never a sleep
 loop. Your own pushes aren't gated.
 
+### Each PR proves itself and stays one concern {#proof}
+
+Writers are told to keep each PR to one concern a person can review in one sitting. Larger work goes out as several
+PRs: a part that stands alone from main, and parts that build on each other as a stack, each PR based on the branch
+of the one before so its diff shows only its own part. The merge train lands a stack bottom up, and points each PR at
+main once the one below it lands. Each PR's description proves it, scaled to the change: screenshots or a clip for
+UI, before and after numbers for performance, the test that failed before a fix and passes with it, and the tests run
+for any code change; a docs or one-line fix needs none of that. It ends with one line, `Unsure: …`, naming what the
+writer wasn't sure about. The train's reviewer, which reads no other part of the description, gets that line and
+judges it in its summary. Your [instructions](#instructions) can change any of this for a bot.
+
 ### Agents wait without polling {#waiting}
 
 An agent never sleeps or polls. To wait on CI, it calls `wait_ci` and ends its turn, and the hub wakes it when the run
@@ -588,6 +599,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool); blocks only on a defect reachable today or a miss against the brief (prompt only) |
 | `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
+| `review.unsure` | after Reviewer, when the PR's description has an \`Unsure:\` line that names a doubt |  |
 | `review.conflicts` | instead of Reviewer when a rebase of an approved PR changed its own lines only where the base changed them too | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Messages
