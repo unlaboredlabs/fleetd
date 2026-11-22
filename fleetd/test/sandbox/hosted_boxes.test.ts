@@ -168,7 +168,10 @@ test("the template is built ahead when the keys come, so a box's start waits on 
   expect(saves(s)).toHaveLength(1);
   // The keys again (the next link): nothing built again.
   boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
-  await Bun.sleep(50);
+  // The keys' build ahead is asked for once the probe answers, before a template() after it: a build it started is the
+  // run ahead() then answers, and is waited for whole.
+  await boxes.template("boat");
+  await boxes.ahead("boat")?.done;
   expect(buildBoxes(s)).toHaveLength(1);
   await boxes.destroy(record);
 }, 60_000);
@@ -372,9 +375,13 @@ test("a new template's build deletes every template named as before builds prove
       },
     });
     await boxes.template("boat");
-    await until(() => !s.saved!.has("fleetd-tcccccccccccc") && !s.saved!.has("fleetd-abcdef012345"));
+    // Each delete is logged once boat answered it, after the stand-in dropped the template: the log lines, not the
+    // stand-in's state, say the prune is done.
+    const deleted = (n: string) => logged.filter((l) => l.includes("INFO an old hosted sandbox template is deleted") && l.includes(`"name":"${n}"`));
+    const unproven = ["fleetd-94251c014f62", "fleetd-0123456789ab", "fleetd-abcdef012345"];
+    await until(() => [...unproven, "fleetd-tcccccccccccc"].every((n) => deleted(n).length > 0));
     expect([...s.saved!.keys()].sort()).toEqual([boxes.templateName(), "fleetd-taaaaaaaaaaaa", "fleetd-p1-0123456789ab", "fleetd-0123456789ab-mine", "fleetd-mybox", "fleetd-0123456789abc"].sort());
-    for (const n of ["fleetd-94251c014f62", "fleetd-0123456789ab", "fleetd-abcdef012345"]) expect(logged.filter((l) => l.includes("INFO an old hosted sandbox template is deleted") && l.includes(`"name":"${n}"`))).toHaveLength(1);
+    for (const n of unproven) expect(deleted(n)).toHaveLength(1);
   } finally {
     console.log = log;
   }
