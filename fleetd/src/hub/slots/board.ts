@@ -598,13 +598,13 @@ export class Board {
     const at = pick.kind;
     const provider = nameOf(at);
     const limit = this.hosted_.find((l) => l.provider === at);
-    if (!limit) return `${picked}, and ${provider} isn't connected: an admin connects it in ${settingsPath()} › Machines, ${other}`;
+    if (!limit) return `${picked}, and ${provider} aren't connected: an admin connects them in ${settingsPath()} › Machines, ${other}`;
     if (!hostable) return `${picked}, but ${NO_ACCOUNT_HOSTED}, ${other}`;
     if (!this.canHost(m, at)) {
       const t = this.trouble(at);
-      return t ? `${picked}, but ${troubleLine(t)}` : `${picked}, and ${name} can't make ${provider} boxes yet: it gets the key at its next heartbeat`;
+      return t ? `${picked}, but ${troubleLine(t)}` : `${picked}, and ${name} can't start ${provider} yet: it gets the key at its next heartbeat`;
     }
-    return `${picked}: ${provider} is full, ${this.hostedUse(at)} of ${limit.max}`;
+    return `${picked}: ${provider} are full, ${this.hostedUse(at)} of ${limit.max}`;
   }
 
   /** Why a task of the project cannot take a slot on machine `m` now, or undefined if it can. */
@@ -923,21 +923,21 @@ const nameOf = (p: string): string => NAMES[p as keyof typeof NAMES] ?? p;
  * make its boxes yet, the agent has no Claude account, or it is at its limit. */
 export function providerOnlyBlocker(provider: string, limit: Limit | undefined, used: number, canHost: boolean, machine: string, hostable: boolean, trouble?: string): string {
   const name = nameOf(provider);
-  if (!limit) return `the team's agents run on ${name} only, and ${name} isn't connected: an admin connects it, or picks your machines for Linux machine, in ${settingsPath()} › Machines`;
+  if (!limit) return `the team's agents run on ${name} only, and they aren't connected: an admin connects them, or picks your machines for Linux machine, in ${settingsPath()} › Machines`;
   if (!hostable) return `the team's agents run on ${name} only, and ${NO_ACCOUNT_HOSTED}`;
   if (!canHost && trouble) return `the team's agents run on ${name} only, and ${trouble}`;
-  if (!canHost) return `the team's agents run on ${name} only, and ${machine} can't make ${name} boxes yet: it gets the key at its next heartbeat`;
-  return `the team's agents run on ${name} only, and it is full: ${used} of ${limit.max}`;
+  if (!canHost) return `the team's agents run on ${name} only, and ${machine} can't start ${name} yet: it gets the key at its next heartbeat`;
+  return `the team's agents run on ${name} only, and they are full: ${used} of ${limit.max}`;
 }
 
 /** Why an agent of a bot no computer runs (the hub's runner) waits: no provider is connected (`connected`), one the
  * runner set aside after a failure (`trouble`, each its line) or none ready on it yet, it has no Claude account, or
- * every provider is at its limit (`full`, one "boat.dev 3 of 3" each). */
+ * every provider is at its limit (`full`, one "fleetd's computers 3 of 3" each). */
 export function runnerBlocker(connected: boolean, full: string[], hostable: boolean, linux = "ours_first", trouble: string[] = []): string {
   if (linux === "ours_only") return `the team's agents run on its own machines only, and no computer of the team's runs this bot: an admin picks a provider for Linux machine in ${settingsPath()} › Machines, or connects a computer`;
-  if (!connected) return `no hosted sandbox provider is connected to run it: an admin connects boat.dev in ${settingsPath()} › Machines`;
+  if (!connected) return `no hosted sandbox provider is connected to run it: an admin connects ${ORDER.map((p) => NAMES[p]).join(" or ")} in ${settingsPath()} › Machines`;
   if (full.length === 0 && trouble.length > 0) return trouble.join("; ");
-  if (full.length === 0) return `${ORDER.map((p) => NAMES[p]).join(" and ")} is starting: the agent starts once it is ready`;
+  if (full.length === 0) return `${ORDER.map((p) => NAMES[p]).join(" and ")} are starting: the agent starts once they are ready`;
   if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings";
   return `hosted sandboxes are full: ${full.join(", ")}`;
 }

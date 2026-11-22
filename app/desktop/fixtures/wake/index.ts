@@ -5,10 +5,12 @@
 // - wake-asleep: at rest, asleep; type the ask and send, and its hub plays a normal start: the computer up in ~15 s,
 //   the lead thinking, then writing, the reply at ~20 s.
 // - wake-slow-send: the same, but the box takes 36 s.
-// - wake-failed-send: boat.dev refuses the box at 9 s (the cloud tries again in 10 s by itself); Try again starts it
+// - wake-failed-send: fleetd's computers refuse the box at 9 s (the cloud tries again in 10 s by itself); Try again starts it
 //   at once and the rest plays as a normal start.
 // - wake-starting, wake-slow, wake-failed: one moment each for the screen checks: 5 s into the box, 34 s into it, and a
 //   failed try that goes again in 9 s.
+// - wake-stale: you asked 3 s ago, and the hub's start says it began 42 min before (W836, a start it kept from long
+//   before your message): the wait counts from your message, never "Still waking up 42m 40s".
 import { firstProject, writeChat, type Ref } from "../kit/chat.ts";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
@@ -22,8 +24,8 @@ const REPLY =
 
 /** The cloud's words for each step (fleetd-cloud src/hosted/start.ts WORDS), the `text` an older app reads. */
 const WORDS = {
-  image: "Getting its computer's image ready at boat.dev",
-  box: "Starting its computer at boat.dev",
+  image: "Getting its computer's image ready",
+  box: "Starting its computer",
   files: "Putting its files on its computer",
   session: "Starting the agent on its computer",
   message: "Handing it your message",
@@ -43,7 +45,7 @@ interface Timeline {
 }
 export const NORMAL: Timeline = { image: 0, box: 300, files: 11_800, session: 14_200, message: 15_200, think: 15_500, words: 18_600, reply: 20_200 };
 export const SLOW: Timeline = { image: 0, box: 300, files: 36_300, session: 38_700, message: 39_700, think: 40_000, words: 43_100, reply: 44_700 };
-/** boat.dev refuses the box this long after the send, and the cloud tries again 10 s later. */
+/** fleetd's computers refuse the box this long after the send, and the cloud tries again 10 s later. */
 export const FAILED_AT = 9_000;
 const REASON = "No computer was free";
 
@@ -90,7 +92,7 @@ const chatOf = (f: Fixture, ref: Ref, more: { text: string; author: "human" }[],
 const starting = (iso: (ms: number) => string, step: Step, startedMs: number, sinceMs: number, failed?: JsonObject): JsonObject => ({
   status: "starting",
   activity: {
-    activity: { kind: "starting", text: failed === undefined ? WORDS[step] : `${WORDS[step]}: boat.dev has no free computers right now. Trying again in 10 s, by itself.`, step, startedAt: iso(startedMs), ...(failed === undefined ? {} : { failed }) },
+    activity: { kind: "starting", text: failed === undefined ? WORDS[step] : `${WORDS[step]}: fleetd's computers have no free computers right now. Trying again in 10 s, by itself.`, step, startedAt: iso(startedMs), ...(failed === undefined ? {} : { failed }) },
     since: iso(sinceMs),
   },
 });
@@ -149,9 +151,9 @@ const send = (base: Fixture, name: string, note: string, shape: "normal" | "slow
 };
 
 /** One moment of a start, for the screen checks: you asked, and its computer is starting. */
-const moment = (base: Fixture, name: string, note: string, lane: (iso: (ms: number) => string) => JsonObject): Fixture => {
+const moment = (base: Fixture, name: string, note: string, lane: (iso: (ms: number) => string) => JsonObject, askedMinutesAgo?: number): Fixture => {
   const { f, ref, frame, iso } = scene(base, name, note);
-  chatOf(f, ref, [{ author: "human", text: ASK }], { asleep: false, working: true });
+  chatOf(f, ref, [{ author: "human", text: ASK, ...(askedMinutesAgo === undefined ? {} : { minutesAgo: askedMinutesAgo }) }], { asleep: false, working: true });
   f.live = [frame(lane(iso))];
   return f;
 };
@@ -160,11 +162,12 @@ export default defineGroup({
   fixtures: (base) => [
     send(base("typical"), "wake-asleep", "A cloud bot asleep with its computer; send the ask and its computer starts in about 15 s, then its lead replies at about 20 s.", "normal"),
     send(base("typical"), "wake-slow-send", "A cloud bot whose computer takes 36 s to start after you send.", "slow"),
-    send(base("typical"), "wake-failed-send", "A cloud bot whose computer boat.dev refuses to start 9 s after you send; Try again starts it at once.", "failed"),
+    send(base("typical"), "wake-failed-send", "A cloud bot whose computer fleetd's computers refuse to start 9 s after you send; Try again starts it at once.", "failed"),
     moment(base("typical"), "wake-starting", "A cloud bot's computer starting, 5 s after you asked.", (iso) => starting(iso, "box", -5_000, -4_700)),
     moment(base("typical"), "wake-slow", "A cloud bot's computer still starting 34 s after you asked.", (iso) => starting(iso, "box", -34_000, -33_700)),
-    moment(base("typical"), "wake-failed", "A cloud bot's computer that boat.dev refused; the cloud tries again in 9 s by itself.", (iso) =>
+    moment(base("typical"), "wake-failed", "A cloud bot's computer that fleetd's computers refused; the cloud tries again in 9 s by itself.", (iso) =>
       starting(iso, "box", -10_000, -1_000, { reason: REASON, retryAt: iso(9_000) }),
     ),
+    moment(base("typical"), "wake-stale", "A cloud bot waking for an ask sent 3 s ago, whose hub says its start began 42 min before.", (iso) => starting(iso, "box", -(42 * 60 + 40) * 1000, -3_000), 0.05),
   ],
 });

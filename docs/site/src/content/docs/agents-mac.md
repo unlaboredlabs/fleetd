@@ -104,15 +104,17 @@ Each simulator an agent holds is a screen of its own, in **Screens** and the bot
 its device and agent ("iPhone 17 · T12") and drawn in an iPhone bezel. It never touches the Mac's own screen and takes
 no turn on it, so several agents' simulators are watched at once, beside an agent on the [Mac's screen](/docs/browser-sessions#mac).
 
-- **Live view.** While someone watches, the Mac takes a screenshot of the simulator (`simctl io screenshot`) at most every
-  100 ms and sends the ones that changed; nobody watching, it takes none.
+- **Live view.** While someone watches, the Mac reads the simulator's screen each time it changes and sends it, as H.264
+  from the Mac's hardware encoder where your app decodes it; nobody watching, it reads nothing.
 - **Recording.** From the first time someone watches until the simulator ends, `simctl io recordVideo` records it. Its
   recording, with a line for each of the agent's `agent-device` commands and for your takeover, lands with the screen's
   others once the simulator ends. A simulator nobody watched has its line log and no video.
-- **Take over.** Your click is an `agent-device press`, a drag a `swipe`, a long press a `longpress`, the wheel a
-  `swipe`, typing a `type`, and Enter, Home and Back their own commands, all through the agent's own agent-device
-  daemon on the Mac. Meanwhile the agent's `agent-device` refuses and says a person has control; its next command after
-  you hand it back drives the simulator again.
+- **Take over.** Your touches, typing and Home go straight into the simulator, as Simulator.app's own do: a tap shows
+  within a frame or two, a drag follows your pointer, the wheel scrolls as a finger would, and a swipe from an edge is
+  the system's gesture (home, Notification Centre, back). Back, and text a US keyboard can't type, go through the
+  agent's own agent-device daemon, as everything does if the simulator can't take input directly. Meanwhile the
+  agent's `agent-device` refuses and says a person has control; its next command after you hand it back drives the
+  simulator again.
 
 The Mac has as many simulator screens as [simulators it boots at once](#sim), plus its own screen. The screen ends with
 the simulator: `mac sim end`, or 30 minutes without a `mac` command from the agent.
@@ -145,7 +147,8 @@ The Mac keeps a folder per agent, `~/work/<task>` in the home of the account its
 - `repo/`: the worktree as the agent's last `mac push` left it. Files git ignores there (builds, `node_modules`, Pods)
   stay between pushes.
 - `DerivedData/`: `xcodebuild`'s build folder for this agent alone. The `xcodebuild` on a job's PATH passes it to
-  build, test and archive unless the command names its own `-derivedDataPath`.
+  every build (an action-less `xcodebuild -workspace … -scheme …`, as `expo run:ios` runs it, included), test and
+  archive unless the command names its own `-derivedDataPath`.
 - `tmp/` (a job's `TMPDIR`) and `jobs/` (each run's output).
 
 A job gets `$FLEETD_MAC_DIR`, `$FLEETD_MAC_REPO`, `$FLEETD_MAC_DERIVED_DATA` and `$FLEETD_MAC_CACHE` (`~/work/.cache`),
@@ -153,7 +156,14 @@ a folder every agent shares (the account's own caches, such as Swift packages', 
 Homebrew's commands (`pod` among them) at the end of its `PATH`; an agent that needs another tool installs it under its
 own folder. A job runs in UTF-8 (`LANG=en_US.UTF-8`) unless the node has a `LANG` of its own.
 
-A folder nothing touched for 3 days goes. Jobs end with the Mac's node: a restart or an update ends them.
+A task's folder goes within minutes of the task ending for good (cancelled, or its worktree removed: a reviewer's at
+once, a writer's when its PR merges), unless it still runs a job or holds a simulator there. Any folder nothing touched
+for 3 days goes too, and so does a build in Xcode's own DerivedData that nothing wrote to for 3 days. Below 30 GB free
+the Mac frees build caches, least recently used first, until it has 50 GB: Xcode's own DerivedData builds, then the
+`DerivedData/` of agents idle for an hour (their next build starts cold); an agent's `repo/` stays. The doctor's
+`<mac>/disk` warns below 30 GB free and fails below 10 GB, where builds and new simulators fail.
+
+Jobs end with the Mac's node: a restart or an update ends them.
 
 ## What crosses {#security}
 

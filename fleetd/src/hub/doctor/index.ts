@@ -172,7 +172,7 @@ export class Doctor {
       const out = [checks.machineOnline(machine, setup)];
       out.push(...checks.macSetup(id, !online, s.load(id)?.mac));
       out.push(checks.macOneNode(id, s.sameComputer(id)));
-      out.push(checks.diskSpace(id, !online, s.load(id)?.disk, undefined));
+      out.push(checks.macDisk(id, !online, s.load(id)?.disk));
       const ios = checks.iosSessions(id, !online, s.load(id)?.ios);
       if (ios) out.push(ios);
       return out;

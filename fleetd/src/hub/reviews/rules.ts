@@ -20,11 +20,34 @@ export function gate(patchId: string, reviews: BoundReview[]): Gate {
     : { ready: false, waitingForHead: false, why: `waiting for a clean review of patch ${short}` };
 }
 
-/** A reviewer's prompt: the PR diff ref; `reviewed`, an earlier round's head, starts a re-review from what changed. */
-export function reviewPrompt(set: PromptSetLike, change: Change, reviewed: string | undefined): string {
-  const text = set.render("review.reviewer", { prUrl: change.prUrl, repo: change.repo, prNumber: change.prNumber, headSha: change.headSha });
-  if (reviewed === undefined || reviewed === change.headSha) return text;
-  return `${text}\n\n${set.render("review.delta", { reviewedSha: reviewed, headSha: change.headSha })}`;
+/**
+ * A reviewer's prompt: the PR diff ref; the author's `Unsure:` line from the PR's `body`, to judge; `reviewed`, an
+ * earlier round's head, starts a re-review from what changed. The body is required so a caller can't drop the line.
+ */
+export function reviewPrompt(set: PromptSetLike, change: Change, reviewed: string | undefined, body: string | null | undefined): string {
+  const parts = [set.render("review.reviewer", { prUrl: change.prUrl, repo: change.repo, prNumber: change.prNumber, headSha: change.headSha })];
+  const unsure = unsureLine(body);
+  if (unsure !== undefined) parts.push(set.render("review.unsure", { unsure }));
+  if (reviewed !== undefined && reviewed !== change.headSha) parts.push(set.render("review.delta", { reviewedSha: reviewed, headSha: change.headSha }));
+  return parts.join("\n\n");
+}
+
+/** The longest `Unsure:` line a reviewer gets, in characters. */
+export const UNSURE_MAX = 400;
+
+const UNSURE = /^[\s>*_-]*unsure[*_]*\s*:[*_]*\s*(.*)$/i;
+const NO_DOUBT = /^(nothing|none|n\/a|-)?[.!]?$/i;
+
+/** What a PR description's last `Unsure:` line names, on one line; nothing when it has none, or it names no doubt. */
+export function unsureLine(body: string | null | undefined): string | undefined {
+  const lines = (typeof body === "string" ? body : "").split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = UNSURE.exec(lines[i]!);
+    if (!m) continue;
+    const said = oneLine(m[1]!.replace(/[*_]+$/, "").replaceAll('"', "'"), UNSURE_MAX);
+    return NO_DOUBT.test(said) ? undefined : said;
+  }
+  return undefined;
 }
 
 /** The follow-up to a reviewer whose turn ended without a verdict: finish in this turn and report. */

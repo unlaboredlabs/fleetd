@@ -226,7 +226,7 @@ export function healthRows(read: MacMenuBarRead, now: number): HealthRow[] {
             title: "Disk",
             tone,
             word: free,
-            detail: `Of ${gb(disk.totalBytes)}. Builds and simulators fail below ${gb(DISK_FULL)}; agents' build folders go by themselves after 3 days.`,
+            detail: `Of ${gb(disk.totalBytes)}. Builds and simulators fail below ${gb(DISK_FULL)}; fleetd frees ended tasks' folders and old builds by itself.`,
             fix: { kind: "command", where: "In Terminal at the Mac, delete the simulators no installed Xcode runs", command: DISK_COMMAND },
           },
     );

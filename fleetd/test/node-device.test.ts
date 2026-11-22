@@ -14,7 +14,8 @@ import { capabilities, health, start as startDevices } from "../src/node/device/
 import { forget, start as startHosts } from "../src/node/hosts/index.ts";
 import { deviceInput, Pump } from "../src/node/device/live.ts";
 import { router } from "../src/node/device/router.ts";
-import { Jpegs, keycode, messages, metaState, serverArgs } from "../src/node/device/scrcpy.ts";
+import { Jpegs, keycode, messages, metaState, Packets, serverArgs } from "../src/node/device/scrcpy.ts";
+import { stillArgs } from "../src/node/device/scrcpy_wire.ts";
 import { AVD, findSdk, kvmAt, markers, packageUrls, PINS, quoted, SCRCPY_VERSION, sdkAt, writeAvd } from "../src/node/device/sdk.ts";
 import { recordingsDir } from "../src/node/device/session.ts";
 import { tempHome } from "./helpers.ts";
@@ -32,6 +33,22 @@ const until = async (what: () => boolean, ms = 5_000) => {
     await Bun.sleep(10);
   }
 };
+
+/** scrcpy's video socket, as the node's own stream asks for it (serverArgs(…, true)): the codec's id, the encoder's
+ * size, then each packet after its header (64 bits of time and flags, 32 of length). */
+const H264_ID = [0x68, 0x32, 0x36, 0x34];
+const sizeMeta = (w: number, h: number) => { const b = new Uint8Array(12); const v = new DataView(b.buffer); v.setUint32(0, 0x8000_0000); v.setUint32(4, w); v.setUint32(8, h); return [...b]; };
+const packet = (kind: "config" | "key" | "delta", data: number[]) => {
+  const b = new Uint8Array(12);
+  const v = new DataView(b.buffer);
+  v.setUint32(0, kind === "config" ? 0x4000_0000 : kind === "key" ? 0x2000_0000 : 0);
+  v.setUint32(4, 1234);
+  v.setUint32(8, data.length);
+  return [...b, ...data];
+};
+const CONFIG = [0, 0, 0, 1, 0x67, 0x42, 0xc0, 0x29, 0, 0, 0, 1, 0x68, 0xce, 0x01];
+const IDR = [0, 0, 0, 1, 0x65, 0x88, 0x84];
+const P = [0, 0, 0, 1, 0x41, 0x9a];
 
 /** A minimal JPEG: SOI, an APP0 segment, SOF0 with height 1280 and width 576, then EOI. */
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x05, 0x00, 0x02, 0x40, 0x01, 0x01, 0x11, 0x00, 0xff, 0xd9]);
@@ -185,6 +202,44 @@ test("its skill becomes a plugin sessions load", () => {
   expect(findAgentDevice(home.dir)).toBeUndefined();
 });
 
+test("the node's own stream asks scrcpy for each packet with its header, and reads them however the socket cuts them", () => {
+  const args = serverArgs("1234abcd", true);
+  expect(args).not.toContain("raw_stream=true");
+  expect(args).toEqual(expect.arrayContaining(["send_frame_meta=true", "send_stream_meta=true", "send_device_meta=false", "send_dummy_byte=true", "video_bit_rate=2500000"]));
+  // A hosted box's part still decodes the bare stream.
+  expect(serverArgs("1234abcd")).toContain("raw_stream=true");
+  const stream = Uint8Array.from([...H264_ID, ...sizeMeta(576, 1280), ...packet("config", CONFIG), ...packet("key", IDR), ...packet("delta", P)]);
+  for (const cut of [1, 3, 7, 13, stream.length]) {
+    const p = new Packets();
+    const got: unknown[] = [];
+    for (let i = 0; i < stream.length; i += cut) for (const k of p.push(stream.subarray(i, i + cut))) got.push(k.kind === "size" ? k : { ...k, data: [...k.data] });
+    expect(got).toEqual([
+      { kind: "size", width: 576, height: 1280 },
+      { kind: "config", data: CONFIG },
+      { kind: "frame", data: IDR, key: true },
+      { kind: "frame", data: P, key: false },
+    ]);
+  }
+  expect(() => new Packets().push(Uint8Array.from([0x68, 0x32, 0x36, 0x35]))).toThrow("not H.264");
+  // A still decodes every frame kept since the keyframe and keeps the last.
+  expect(stillArgs(5).join(" ")).toContain("select=eq(n\\,4)");
+  expect(stillArgs(5).join(" ")).toContain("-frames:v 1");
+});
+
+test("a pump sends a still's JPEG before the H.264 that comes while it is fitted, and the newest JPEG alone", async () => {
+  const sent: string[] = [];
+  const frame = (seq: number, video?: boolean) => ({ seq, jpeg: JPEG, width: 576, height: 1280, atMs: seq, ...(video ? { video: { data: Uint8Array.of(0, 0, 0, 1, 0x65), key: seq === 2 } } : {}) });
+  const pump = new Pump("s1", () => "agent", (f) => sent.push(`${f.seq}${f.h264B64 ? "v" : "j"}`), undefined);
+  pump.offer(frame(1));
+  pump.offer(frame(2, true));
+  pump.offer(frame(3, true));
+  await until(() => sent.length === 3);
+  expect(sent).toEqual(["1j", "2v", "3v"]);
+  pump.offer(frame(4, true));
+  expect(sent.at(-1)).toBe("4v");
+  pump.stop();
+});
+
 test("scrcpy's server gets a dummy byte after raw_stream, and input goes as its control messages", () => {
   const args = serverArgs("1234abcd");
   expect(args[4]).toBe(SCRCPY_VERSION);
@@ -282,6 +337,7 @@ exit 0
   script(
     sdk.ffmpeg,
     `for a in "$@"; do last="$a"; done
+echo "ffmpeg $*" >> '${log}'
 case "$*" in
   *image2pipe*) head -c 1 > /dev/null; printf '${[...JPEG].map((b) => `\\${b.toString(8).padStart(3, "0")}`).join("")}'; cat > /dev/null ;;
   *) cat > "$last" ;;
@@ -298,18 +354,26 @@ esac
 }
 
 test("an android session: lent a warm copy, recorded, watched, taken over and handed back, then uploaded", async () => {
-  // scrcpy's server: the video socket gets the dummy byte and a little stream, the control socket keeps what came.
+  // scrcpy's server: the video socket gets the dummy byte and a little stream, its packets cut anywhere; the control
+  // socket keeps what came, and a reset there starts the encoder again: its size, its parameter sets, a keyframe.
   const control: Uint8Array[] = [];
   let connections = 0;
+  let video: { write(b: Uint8Array): number } | undefined;
+  const restart = () => [...sizeMeta(576, 1280), ...packet("config", CONFIG), ...packet("key", IDR)];
   const scrcpy = Bun.listen({
     hostname: "127.0.0.1",
     port: 0,
     socket: {
       open(s) {
-        if (connections++ === 0) s.write(Uint8Array.from([0, 1, 2, 3]));
+        if (connections++ > 0) return;
+        video = s;
+        const stream = Uint8Array.from([0, ...H264_ID, ...restart(), ...packet("delta", P)]);
+        s.write(stream.subarray(0, 9));
+        setTimeout(() => s.write(stream.subarray(9)), 20);
       },
       data(_s, chunk) {
         control.push(Uint8Array.from(chunk));
+        if (chunk.includes(17)) video?.write(Uint8Array.from([...restart(), ...packet("delta", P)]));
       },
     },
   });
@@ -349,20 +413,50 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   expect(r.open("t1")).toEqual({ kind: "android", id });
   expect(JSON.parse(readFileSync(join(sessionDir(t.node.home, "t1"), "config.json"), "utf8")).serial).toBe(serial);
   await expect(r.handle("t1", { id: "2", cwd: "/w", call: { op: "session_start", purpose: "again", kind: "android" } })).rejects.toThrow("is open");
-  await until(() => devices.session("t1")?.newest !== undefined);
+  // Recorded from its first keyframe: the device's own H.264, copied into MP4.
+  const mp4 = join(recordingsDir(t.node.home), id, "video.mp4");
+  await until(() => existsSync(mp4));
   expect(readFileSync(log, "utf8")).toContain("push");
+  expect(readFileSync(log, "utf8")).toContain("send_frame_meta=true");
 
-  // Watched: the newest frame goes at once.
+  // Watched for a moment in JPEG (the Screens page's picture): its first frame is a still of the screen now, the last
+  // of the frames kept since the keyframe, not the keyframe the decoder starts from.
+  const frames = () => t.link.sent.filter((f) => f.t === "browser_frame") as unknown as { jpegB64?: string; h264B64?: string; key?: boolean; seq: number }[];
+  await until(() => readFileSync(log, "utf8").includes("-c:v copy"));
   t.link.deliver({ t: "browser_watch", sessionId: id, on: true });
-  await until(() => t.link.sent.some((f) => f.t === "browser_frame"));
-  expect(t.link.sent.find((f) => f.t === "browser_frame")).toMatchObject({ sessionId: id, width: 576, height: 1280, control: "agent" });
+  await until(() => frames().length > 0);
+  expect(frames()[0]).toMatchObject({ jpegB64: expect.any(String), width: 576, height: 1280 });
+  expect(readFileSync(log, "utf8")).toContain("select=eq(n\\,1)");
+  await Bun.sleep(100);
+  // The decoder's one picture so far is of the frames it started from: the still stands for it.
+  expect(frames().length).toBe(1);
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: false });
+  t.link.sent.length = 0;
+
+  // Watched by an app that decodes H.264: the screen now as a JPEG (from the frames kept since the keyframe), then the
+  // H.264 from a keyframe, the device's encoder reset for it.
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, key: true });
+  await until(() => frames().some((f) => f.h264B64 !== undefined));
+  expect(frames()[0]).toMatchObject({ sessionId: id, width: 576, height: 1280, control: "agent", jpegB64: expect.any(String) });
+  const keyframe = frames().find((f) => f.h264B64 !== undefined)!;
+  expect(keyframe.key).toBe(true);
+  expect([...Buffer.from(keyframe.h264B64!, "base64")]).toEqual([...CONFIG, ...IDR]);
+  expect(keyframe.seq).toBeGreaterThan(frames()[0]!.seq);
+  expect(control.some((c) => c[0] === 17)).toBe(true);
+  // A link too slow for the device's bit rate: JPEGs, decoded on the node, and no more H.264.
+  t.link.deliver({ t: "browser_watch", sessionId: id, on: true, video: true, kbps: 500 });
+  const sent = frames().length;
+  await until(() => devices.session("t1")?.wantsVideo() === false);
+  await until(() => frames().length > sent);
+  expect(frames().slice(sent).every((f) => f.jpegB64 !== undefined)).toBe(true);
+  expect(readFileSync(log, "utf8")).not.toContain("raw_stream");
 
   // A person takes over: the wrapper's control file is there, and their tap reaches scrcpy as a finger.
   t.link.deliver({ t: "browser_control", sessionId: id, control: "human", by: "a person" });
   expect(existsSync(controlPath(t.node.home, "t1"))).toBe(true);
   t.link.deliver({ t: "browser_input", sessionId: id, input: { kind: "mouse", action: "pressed", x: 100, y: 200, button: "left" } });
-  await until(() => control.length > 0);
-  expect(control[0]![0]).toBe(2);
+  // A finger (touch, 2), after the reset (17) the watch asked for.
+  await until(() => control.some((c) => c[0] === 2));
   // Handed back: the agent's next agent-device command gives it the device again, and is logged.
   t.link.deliver({ t: "browser_control", sessionId: id, control: "agent", by: "a person" });
   expect(devices.session("t1")?.control()).toBe("handing_back");
@@ -380,7 +474,7 @@ test("an android session: lent a warm copy, recorded, watched, taken over and ha
   const ended = await r.handle("t1", { id: "3", cwd: "/w", call: { op: "session_end" } });
   expect(ended).toMatchObject({ op: "session_end", sessionId: id, kind: "android" });
   const files = (ended.files as { file: string }[]).map((f) => f.file).sort();
-  expect(files).toEqual(["actions", "video"]);
+  expect(files).toEqual(["actions", "video_mp4"]);
   expect(r.open("t1")).toBeUndefined();
   await until(() => !existsSync(join(recordingsDir(t.node.home), id)));
   const states = calls.filter((c) => c.op === "browser_session").map((c) => c.args.state);

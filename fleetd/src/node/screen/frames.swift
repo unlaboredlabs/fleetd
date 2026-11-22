@@ -8,12 +8,20 @@
 //   fleetd-frames screen                     the Mac's main display through ScreenCaptureKit, which sends a frame only
 //                                            when something on it changed
 //
-// Each frame on stdout: a 28-byte header, little-endian: kind (u8: 1 JPEG, 2 H.264 access unit, Annex B), key (u8: 1
-// for a keyframe or a JPEG), 2 bytes unused, the screen's own size (u32 width, u32 height: input coordinates are in
-// it), the picture's size (u32, u32), the payload's length (u32), a sequence number (u32); then the payload.
+// Each frame on stdout: a 28-byte header, little-endian: kind (u8: 1 JPEG, 2 H.264 access unit, Annex B, 3 a word
+// from the helper in UTF-8), key (u8: 1 for a keyframe or a JPEG), 2 bytes unused, the screen's own size (u32 width,
+// u32 height: input coordinates are in it), the picture's size (u32, u32), the payload's length (u32), a sequence
+// number (u32); then the payload.
 // Commands on stdin, one a line: `jpeg` or `h264` (what frames are, from the next on; JPEG at first), `key` (the next
 // H.264 frame is a keyframe), `still` (a JPEG of the screen now, changed or not), `kbps <n>` (the H.264 bit rate),
 // `fps <n>`, `side <n>` (the picture's longer side at most). stdin closing ends it.
+//
+// A simulator also takes a person's input straight into its HID service (dtuhidd), as Simulator.app's own does: a
+// word `input` says it can from then on, `noinput <why>` that it can't (the node then sends input through
+// agent-device). `touch down|move|up <x> <y> <edge>` moves one finger, in the screen's pixels (`edge` 0, or 1 top, 2
+// left, 3 bottom, 4 right for a touch that starts at that edge: the system's edge gestures; a down's holds until
+// its finger lifts), `keyboard <usage>
+// down|up` a key (a USB HID keyboard usage), `button home` presses the home button.
 import CoreImage
 import CoreMedia
 import CoreVideo
@@ -22,6 +30,7 @@ import ImageIO
 import IOSurface
 import ScreenCaptureKit
 import VideoToolbox
+import XPC
 
 setvbuf(stdout, nil, _IOFBF, 1 << 20)
 
@@ -69,9 +78,17 @@ final class Wants {
 
 let wants = Wants()
 var onCommand: () -> Void = {}
+/// A person's input (`touch`, `keyboard`, `button`), on the thread that reads stdin, so it goes in the order it came.
+var onInput: (_ words: [Substring]) -> Void = { _ in }
 Thread.detachNewThread {
   while let line = readLine() {
-    wants.command(line.trimmingCharacters(in: .whitespaces))
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let words = trimmed.split(separator: " ")
+    if let first = words.first, ["touch", "keyboard", "button"].contains(first) {
+      onInput(words)
+      continue
+    }
+    wants.command(trimmed)
     onCommand()
   }
   exit(0)
@@ -94,6 +111,11 @@ func emit(kind: UInt8, key: Bool, screen: (Int, Int), picture: (Int, Int), _ pay
     payload.withUnsafeBytes { _ = fwrite($0.baseAddress, 1, payload.count, stdout) }
     fflush(stdout)
   }
+}
+
+/// A word to the node (kind 3): `input`, `noinput <why>`.
+func tell(_ word: String) {
+  emit(kind: 3, key: false, screen: (0, 0), picture: (0, 0), Data(word.utf8))
 }
 
 /// The picture's size for a screen of `w` x `h`: its longer side `side` at most, even numbers (H.264 needs them).
@@ -250,6 +272,9 @@ func simulator(set: String, udid: String) -> Never {
     let device = devices.first(where: { ($0.value(forKey: "UDID") as? NSUUID)?.uuidString == udid.uppercased() })
   else { fail("no simulator \(udid) in \(set)") }
   let renderable = NSProtocolFromString("SimDisplayIOSurfaceRenderable")
+  let hid = Hid(device: device)
+  onInput = { hid.input($0) }
+  Thread.detachNewThread { hid.connect() }
 
   /// The device's display framebuffers now: a rotation or a restart of the display may replace one. A foldable phone
   /// has two panels, only one lit at a time.
@@ -304,6 +329,7 @@ func simulator(set: String, udid: String) -> Never {
       // A change that isn't due yet waits for its time: seen only once it is sent, so the last one always goes.
       if seed != shownSeed || wants.stillWaiting {
         var pixels: Unmanaged<CVPixelBuffer>?
+        hid.screen = (IOSurfaceGetWidth(s), IOSurfaceGetHeight(s))
         if CVPixelBufferCreateWithIOSurface(nil, s, nil, &pixels) == kCVReturnSuccess, let p = pixels?.takeRetainedValue(),
           send(p, screen: (IOSurfaceGetWidth(s), IOSurfaceGetHeight(s)))
         {
@@ -312,6 +338,153 @@ func simulator(set: String, udid: String) -> Never {
       }
     }
     _ = wake.wait(timeout: .now() + .milliseconds(8))
+  }
+}
+
+/// A person's input, straight into the simulator's HID service: dtuhidd's digitizer, which Xcode 27's CoreSimulator
+/// starts in each device (it drops the older Indigo messages), over the XPC connection CoreSimulator vends into the
+/// device, as Simulator.app and idb do. A tap lands within a frame or two of the touch, where agent-device takes a
+/// process and an XCTest round trip (0.4-0.9 s).
+final class Hid {
+  static let service = "com.apple.coredevice.feature.remote.hid.digitizer"
+  private let device: NSObject
+  private let lock = NSLock()
+  private var connection: xpc_connection_t?
+  private var _screen = (0, 0)
+  /// Whether a finger is down, as dtuhidd knows it: a connection it dropped loses the finger.
+  private var down = false
+  /// The edge the finger down started at: every contact of an edge gesture carries it, or iOS ignores it.
+  private var edge: UInt64 = 0
+
+  init(device: NSObject) { self.device = device }
+
+  /// The shown panel's size: touches come in its pixels.
+  var screen: (Int, Int) {
+    get { lock.lock(); defer { lock.unlock() }; return _screen }
+    set { lock.lock(); _screen = newValue; lock.unlock() }
+  }
+
+  /// Connects and waits for dtuhidd to answer, then says `input`. It starts on demand, and one that started before the
+  /// device's display was up dies and is held back by launchd for a few seconds: so a few tries.
+  func connect() {
+    var why = "dtuhidd did not answer"
+    for attempt in 0..<5 {
+      if attempt > 0 { Thread.sleep(forTimeInterval: 3) }
+      guard let c = open(&why) else { continue }
+      let answered = DispatchSemaphore(value: 0)
+      var ok = false
+      xpc_connection_send_message_with_reply(c, message("IndigoKeyboardButtonEvent", barrier: true) { p in
+        // Usage 0 is no key: the guest sees nothing.
+        xpc_dictionary_set_uint64(p, "usageCode", 0)
+        xpc_dictionary_set_uint64(p, "state", 2)
+      }, DispatchQueue.global()) { reply in
+        ok = xpc_get_type(reply) != XPC_TYPE_ERROR
+        answered.signal()
+      }
+      if answered.wait(timeout: .now() + 4) == .success, ok {
+        // The device opens for it just after its answer.
+        Thread.sleep(forTimeInterval: 0.2)
+        lock.lock(); connection = c; lock.unlock()
+        return tell("input")
+      }
+      xpc_connection_cancel(c)
+      why = "dtuhidd did not answer"
+    }
+    tell("noinput \(why)")
+  }
+
+  /// The connection to the device's dtuhidd, made from the service's port in the device's own namespace.
+  private func open(_ why: inout String) -> xpc_connection_t? {
+    typealias Lookup = @convention(c) (AnyObject, Selector, NSString, UnsafeMutablePointer<NSError?>?) -> mach_port_t
+    typealias EndpointFromPort = @convention(c) (mach_port_t, UInt64, UInt64) -> Unmanaged<AnyObject>?
+    typealias ConnectionFromEndpoint = @convention(c) (xpc_object_t) -> Unmanaged<AnyObject>?
+    typealias EnableSim2Host = @convention(c) (xpc_connection_t) -> Void
+    let lookup = NSSelectorFromString("lookup:error:")
+    guard device.responds(to: lookup) else { why = "CoreSimulator has no service lookup"; return nil }
+    let here = dlopen(nil, RTLD_NOW)
+    guard let fromPort = dlsym(here, "xpc_endpoint_create_mach_port_4sim"), let fromEndpoint = dlsym(here, "xpc_connection_create_from_endpoint"),
+      let sim2host = dlsym(here, "xpc_connection_enable_sim2host_4sim")
+    else { why = "no simulator XPC in this macOS"; return nil }
+    var error: NSError?
+    let port = unsafeBitCast(device.method(for: lookup), to: Lookup.self)(device, lookup, Hid.service as NSString, &error)
+    guard port != MACH_PORT_NULL else { why = "no \(Hid.service) in the simulator (\(error?.localizedDescription ?? "no port"))"; return nil }
+    guard let endpoint = unsafeBitCast(fromPort, to: EndpointFromPort.self)(port, 0, 0)?.takeRetainedValue() as? xpc_object_t,
+      let c = unsafeBitCast(fromEndpoint, to: ConnectionFromEndpoint.self)(endpoint)?.takeRetainedValue() as? xpc_connection_t
+    else { why = "no connection to dtuhidd"; return nil }
+    // Without it dtuhidd sees the connection but never a message.
+    unsafeBitCast(sim2host, to: EnableSim2Host.self)(c)
+    xpc_connection_set_target_queue(c, DispatchQueue(label: "hid"))
+    xpc_connection_set_event_handler(c) { [weak self] event in
+      guard let self, xpc_get_type(event) == XPC_TYPE_ERROR else { return }
+      self.lock.lock()
+      // Interrupted: the next message reconnects, but the finger is gone. Invalid: no more input this way.
+      self.down = false
+      let lost = event === XPC_ERROR_CONNECTION_INVALID && self.connection != nil
+      if lost { self.connection = nil }
+      self.lock.unlock()
+      if lost { tell("noinput dtuhidd's connection ended") }
+    }
+    xpc_connection_resume(c)
+    return c
+  }
+
+  private func message(_ type: String, barrier: Bool = false, _ fill: (xpc_object_t) -> Void) -> xpc_object_t {
+    let m = xpc_dictionary_create(nil, nil, 0)
+    xpc_dictionary_set_string(m, "messageType", type)
+    xpc_dictionary_set_bool(m, "isBarrier", barrier)
+    xpc_dictionary_set_string(m, "featureIdentifier", Hid.service)
+    let payload = xpc_dictionary_create(nil, nil, 0)
+    fill(payload)
+    xpc_dictionary_set_value(m, "payload", payload)
+    return m
+  }
+
+  /// One input command, its words as the node wrote them.
+  func input(_ words: [Substring]) {
+    lock.lock()
+    guard let c = connection else { lock.unlock(); return }
+    var m: xpc_object_t?
+    switch (words.first ?? "", words.count) {
+    case ("touch", 5):
+      let (w, h) = _screen
+      guard w > 0, h > 0, let x = Double(words[2]), let y = Double(words[3]) else { break }
+      // A move with no finger down (dtuhidd lost it) starts one; an up with none is nothing.
+      let phase: UInt64
+      switch words[1] {
+      case "down": phase = 0; down = true; edge = UInt64(words[4]) ?? 0
+      case "move": phase = down ? 1 : 0; if !down { edge = 0 }; down = true
+      case "up" where down: phase = 2; down = false
+      default: lock.unlock(); return
+      }
+      let edge = self.edge
+      m = message("IndigoDigitizerEvent") { p in
+        let point = xpc_dictionary_create(nil, nil, 0)
+        xpc_dictionary_set_double(point, "x", min(max(x / Double(w), 0), 1))
+        xpc_dictionary_set_double(point, "y", min(max(y / Double(h), 0), 1))
+        xpc_dictionary_set_value(p, "pointOne", point)
+        xpc_dictionary_set_uint64(p, "eventType", phase)
+        xpc_dictionary_set_uint64(p, "edge", edge)
+        xpc_dictionary_set_uint64(p, "target", 0)
+      }
+    case ("keyboard", 3):
+      guard let usage = UInt64(words[1]) else { break }
+      m = message("IndigoKeyboardButtonEvent") { p in
+        xpc_dictionary_set_uint64(p, "usageCode", usage)
+        xpc_dictionary_set_uint64(p, "state", words[2] == "down" ? 1 : 2)
+      }
+    case ("button", 2) where words[1] == "home":
+      // The consumer page's Menu usage: Home. Down then up.
+      for state: UInt64 in [1, 2] {
+        xpc_connection_send_message(c, message("IndigoButtonEvent") { p in
+          xpc_dictionary_set_uint64(p, "usagePage", 0x0C)
+          xpc_dictionary_set_uint64(p, "usageCode", 0x40)
+          xpc_dictionary_set_uint64(p, "state", state)
+        })
+      }
+    default: break
+    }
+    lock.unlock()
+    if let m { xpc_connection_send_message(c, m) }
   }
 }
 

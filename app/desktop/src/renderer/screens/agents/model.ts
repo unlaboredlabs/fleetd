@@ -7,6 +7,7 @@ import { projectKey, type ProjectKey } from "../../src/data/store";
 import { parseMs } from "../live/format";
 import type { Line } from "../live/words";
 import { agoText } from "../projects/machineText";
+import { providerName } from "../../../shared/providers";
 
 /** A line above agents: the order they work on, or (under Other projects) their project's name. */
 export interface GroupLine {
@@ -139,12 +140,12 @@ export const STATE_WORD: Readonly<Record<LaneStatus, string>> = {
 
 /**
  * What an agent's row leaves to its hover: its role, its profile when it isn't the usual one, the hosted sandbox it
- * runs in when it isn't its machine, and where its work is ("reviewer · #57 in CI", "writer · boat.dev · receipt-dates").
+ * runs in when it isn't its machine, and where its work is ("reviewer · #57 in CI", "writer · fleetd's computers · receipt-dates"); a provider by the one name people read.
  */
 export const agentDetail = (row: Pick<AgentRow, "role" | "profile" | "pr" | "branch" | "sandbox">, roleWord: string): string => {
   const place = workPlace(row);
   const where = place === undefined ? "" : place.state === undefined ? place.text : `${place.text} ${place.state}`;
-  return [roleWord, row.profile === "medium" ? row.profile : "", row.sandbox ?? "", where].filter((part) => part !== "").join(" · ");
+  return [roleWord, row.profile === "medium" ? row.profile : "", row.sandbox === undefined ? "" : providerName(row.sandbox), where].filter((part) => part !== "").join(" · ");
 };
 
 /** Where an agent's work is: its PR and the train's word for it, or else its branch. */

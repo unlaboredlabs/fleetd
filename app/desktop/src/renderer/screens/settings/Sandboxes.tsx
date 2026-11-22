@@ -1,4 +1,4 @@
-// A hosted sandbox provider's row (boat.dev), as Providers.tsx lists every provider: a ProviderRow whose Connect opens
+// A hosted sandbox provider's row (fleetd's computers), as Providers.tsx lists every provider: a ProviderRow whose Connect opens
 // its key's sealed field; connected, its limit and a menu with Test and Disconnect. Its dot and one line are its real
 // state (shared/hostedRow.ts: Starting…, Ready with how many run, Needs a Claude account, Couldn't start with why and
 // its fix), with the one button that fixes it on the line: Connect, Try again or Test again. Connecting checks the key

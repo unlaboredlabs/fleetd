@@ -3,12 +3,14 @@
 // fleetd carries it (./wire.ts). Prints one JSON line: startup by phase, fps, bytes a second and CPU idle and while a
 // terminal scrolls, a person's takeover, and input-to-pixel for typing, clicks and drags.
 //
-//   bun bench/screens/desktop.ts [--video <ffmpeg>]   (needs Xvfb and xterm on the PATH)
+//   bun bench/screens/desktop.ts [--video <ffmpeg>] [--record <ffmpeg>]   (needs Xvfb and xterm on the PATH)
 //
-// With --video, the watcher decodes H.264: the grabs go through x264 in the ffmpeg named (the node's pinned one).
+// With --video, the watcher decodes H.264: the grabs go through x264 in the ffmpeg named (the node's pinned one). With
+// --record, the session is recorded as a node records it (disk_recordings.ts), with the ffmpeg named.
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { DiskDesktopRecordings } from "../../src/node/desktop/disk_recordings.ts";
 import { Display } from "../../src/node/desktop/display.ts";
 import { onPath } from "../../src/node/desktop/paths.ts";
 import { Session } from "../../src/node/desktop/session.ts";
@@ -22,6 +24,8 @@ if (!xvfb || !onPath("xterm")) throw new Error("needs Xvfb and xterm");
 const root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "screens-desktop-"));
 const at = process.argv.indexOf("--video");
 const ffmpeg = at < 0 ? undefined : process.argv[at + 1];
+const rec = process.argv.indexOf("--record");
+const recordWith = rec < 0 ? undefined : process.argv[rec + 1];
 const IDLE_MS = 5_000;
 const ACTIVE_MS = 5_000;
 
@@ -41,6 +45,19 @@ const session = new Session(display, x, {
   secrets: [],
   kind: "linux_desktop",
   ...(ffmpeg ? { encoder: liveEncoder(async () => ffmpeg) } : {}),
+  ...(recordWith
+    ? {
+        recording: new DiskDesktopRecordings(join(root, "recordings"), async () => ({}), () => recordWith).open({
+          sessionId: "bench",
+          kind: "linux_desktop",
+          threadId: "t1",
+          cwd: root,
+          purpose: "bench",
+          startedAt: new Date().toISOString(),
+          credentialsFilled: 0,
+        }),
+      }
+    : {}),
 });
 session.open();
 
@@ -198,6 +215,7 @@ console.log(
   }),
 );
 wire.close();
-await session.close();
+const recorded = await session.close();
+if (recordWith) console.log(JSON.stringify({ recorded }));
 rmSync(root, { recursive: true, force: true });
 process.exit(0);

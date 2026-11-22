@@ -12,8 +12,9 @@
 #   migrations check (the worktree, untracked files too, merged onto origin/main, fetched fresh, as CI checks its merge
 #   commit), every migration on the oldest SQLite fleetd supports, the type check and the tests. CI's `fleetd` job also builds the binary and runs the black-box tests and
 #   the lab scenarios on it.
-# - site: a build of docs/site, the site's pages and links, no personal identifiers, and the landing page fits every
-#   width. The identifier check runs on every call; it reads every tracked file, and the untracked ones not ignored.
+# - site: a build of docs/site, the site's pages and links, no personal identifiers, no supplier name of fleetd's
+#   computers where a person reads it, and the landing page fits every width. The identifier and supplier checks run on
+#   every call; they read every tracked file, and the untracked ones not ignored.
 # - desktop: app/desktop's case clashes, typecheck, lint, unit tests and the web app's bundle.
 # - reverts: on every call, whether HEAD would undo work already on origin/main (scripts/reverts.sh, the merge train's
 #   own check before review): a commit made on a fresh main while its files were an older tree's.
@@ -27,7 +28,9 @@
 #   check.sh: pushable <tree>                                  every check the changes touch passed on the tree
 #   check.sh: passed <check>...; still to pass on <tree>: ...  the checks named passed, others are still to pass
 #   check.sh: failed <check>...                                these failed (their commands are listed above it)
-# It fetches origin/main first, and doesn't install toolchains: bun, node 24 and pnpm.
+# It fetches origin/main first, and doesn't install toolchains: bun, node 24 and pnpm. On a fleetd machine (an agent's
+# PATH has fleetd-check-slot) a run waits its turn for one of the machine's check slots, saying so in one line, so ten
+# writers' checks at once can't load the machine until each other's timing tests fail.
 #
 # A fleetd writer's push of a branch is refused unless its tree passed (.fleetd/pre-push.json): it records the tree it
 # checked (the worktree's, committed or not) in the git dir's fleetd-checked once every check the changes touch has
@@ -66,6 +69,11 @@ if [ "${1:-}" = --wait ]; then
   echo "${end:-check.sh: failed (the background run ended before its last line; its output is in $log)}"
   [[ $end == "check.sh: pushable "* || $end == "check.sh: passed "* ]]
   exit
+fi
+# On a fleetd machine, a run takes one of its check slots first (fleetd/src/node/check_slots.ts): with every slot in
+# use it prints that it is waiting for one and starts by itself once one frees, its time counted from then.
+if [ "${1:-}" != --keys ] && [ -z "${FLEETD_CHECK_SLOT:-}" ] && command -v fleetd-check-slot >/dev/null; then
+  exec fleetd-check-slot "$PWD/scripts/check.sh" "$@"
 fi
 
 all=(fleetd site desktop qa)
@@ -213,6 +221,7 @@ if $site_wanted; then
   step site node .github/site-layout-check.mjs
 fi
 step site node .github/personal-check.mjs --untracked
+step site node .github/supplier-check.mjs --untracked
 step reverts scripts/reverts.sh origin/main
 
 if wanted desktop app/desktop .github/workflows/ci.yml; then

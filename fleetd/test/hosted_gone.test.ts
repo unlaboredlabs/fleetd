@@ -89,9 +89,9 @@ test("each bot that had a VM, a hosted sandbox or lived in one hears it once in 
   try {
     expect(tellOnce(t.hub)).toBe(3);
     expect(lines(t.db, "shop")).toEqual(["fleetd no longer runs agents in VMs on your computers: this bot's agents run directly on devbox again, as before."]);
-    expect(lines(t.db, "api")).toEqual(["fleetd no longer supports hosted sandboxes with your own boat.dev key: this bot's agents run on devbox from now on."]);
+    expect(lines(t.db, "api")).toEqual(["fleetd no longer supports hosted sandboxes with a key of your own: this bot's agents run on devbox from now on."]);
     expect(lines(t.db, "notes")).toEqual([
-      `This bot ran in a hosted sandbox with your own boat.dev key, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine. Add its repo on one of your computers to keep working on it.`,
+      `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine. Add its repo on one of your computers to keep working on it.`,
     ]);
     expect(lines(t.db, "plain")).toEqual([]);
     // Once: the hub's next start says nothing again, even with the rows marked unsaid.
@@ -111,7 +111,7 @@ test("a message to a bot that lived in the hosted sandboxes is answered at once 
     const r = { machineId: "hosted", projectId: "notes" };
     const out = await t.tools.call(t.hub, admin, "chat_send", { projectRef: r, text: "carry on", clientRequestId: "c1" });
     expect(message(out)).toMatchObject({
-      message: `This bot ran in a hosted sandbox with your own boat.dev key, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine.`,
+      message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine.`,
       fix: "Add its repo on one of your computers to keep working on it.",
     });
     await expect(sendAsAgent(t.hub, r, "lead:devbox/shop", "hello", "req1")).rejects.toThrow("which fleetd no longer supports");

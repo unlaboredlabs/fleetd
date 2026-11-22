@@ -15,10 +15,20 @@ export interface ProviderSpec {
   readonly can: ReadonlyArray<Capability>;
 }
 
+/**
+ * fleetd's computers: the one name every provider of fleetd's own computers goes by wherever a person reads it, in the
+ * apps, the docs and fleetd's own lines (fleetd/src/shared/sandbox.ts NAMES reads it from here). A supplier's own name
+ * never shows; .github/supplier-check.mjs fails CI if one does.
+ */
+export const FLEETD_COMPUTERS = "fleetd's computers";
+
 /** Every provider fleetd knows, in the order agents go to the connected ones; one a newer hub has goes last, as named. */
 export const PROVIDERS: ReadonlyArray<ProviderSpec> = [
-  { id: "boat", name: "boat.dev", can: ["agents", "browser", "desktop", "android"] },
+  { id: "boat", name: FLEETD_COMPUTERS, can: ["agents", "browser", "desktop", "android"] },
 ];
+
+/** The words an older hub or cloud may still send for a provider (its supplier's name), by the provider's id. */
+const SENT_AS: Readonly<Record<string, string>> = { "boat.dev": "boat" };
 
 /**
  * The hub's own runner's machine id (fleetd's RUNNER_ID): the hosted sandboxes, a provider's, never a machine of the
@@ -37,6 +47,10 @@ export const hostedReveal = (): string => providerReveal(hostedProvider().id);
 
 /** A provider by its id; an unknown one runs agents (the hub lists it among its sandbox providers) under its own id. */
 export const specOf = (id: string): ProviderSpec => PROVIDERS.find((p) => p.id === id) ?? { id, name: id, can: ["agents"] };
+
+/** A provider as a person reads it, from its id or from the name a hub or cloud sent: "boat" and "boat.dev" both read
+ * fleetd's computers. */
+export const providerName = (idOrName: string): string => specOf(SENT_AS[idOrName] ?? idOrName).name;
 
 /** Whether a provider runs any of `what`: a group lists the providers that serve what it is about. */
 export const serves = (spec: ProviderSpec, what: ReadonlyArray<Capability>): boolean => spec.can.some((c) => what.includes(c));

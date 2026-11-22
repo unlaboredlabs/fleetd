@@ -6,7 +6,9 @@
 // command that prints that variable whole and line by line (as `env | cut -d= -f1` does), files it in claude's own
 // conversation file as claude would, and answers with what it printed; one with `stream:<A>,<B>` streams those
 // variables' values as live text in 7-character Deltas, 10 ms apart, then answers. Shutdown exits. Its environment goes to
-// <dir>/env.json, its arguments to <dir>/argv.json. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
+// <dir>/env.json, its arguments to <dir>/argv.json. One with `monitor-late:` arms a Monitor that ends while the turn's last
+// answer is written, as a check already done does: the turn ends with its notice untold, and 500 ms later claude runs
+// a turn of its own for it (run `woke-<run>`), unless it was shut down first. SIGTERM (its scope stopped with the machine's whole session) kills the scripts
 // of the Monitors it armed: claude queues each one's notice, then exits before any turn takes it.
 import { appendFileSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,11 +38,13 @@ const emit = (event: unknown) => {
 let waiting: { run: string; text: string } | undefined;
 const queued: { run: string; text: string }[] = [];
 const armed: string[] = [];
+let woke: Timer | undefined;
 const answer = (run: string, text: string) => {
   emit({ AssistantText: { message_id: `msg-${run}`, text: `ok: ${text}` } });
   emit({ RunEnded: { run_id: run, outcome: { Completed: { text: `ok: ${text}` } }, usage: null } });
 };
 const exit = () => {
+  clearTimeout(woke);
   emit({ Exited: { code: 0, signal: null, stderr_tail: "" } });
   setTimeout(() => process.exit(0), 200);
 };
@@ -103,6 +107,20 @@ Bun.listen({
             const input = { description: "ci", timeout_ms: monitorMs === undefined ? 600000 : Number(monitorMs) };
             emit({ Item: { id: `mon-${run_id}`, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input } } });
             armed.push(`mon-${run_id}`);
+          }
+          if (text.includes("monitor-late:")) {
+            const at = new Date().toISOString();
+            const tool = `mon-${run_id}`;
+            const input = { description: "check", timeout_ms: 1_800_000 };
+            emit({ Item: { id: tool, runId: run_id, status: "completed", title: "Monitor", startedAt: at, completedAt: at, updatedAt: at, kind: { type: "tool", toolName: "Monitor", input } } });
+            emit({ WatchEnded: { tool_use_id: tool } });
+            emit({ AssistantText: { message_id: `msg-${run_id}`, text: "the Monitor wakes me" } });
+            emit({ RunEnded: { run_id, outcome: { Completed: { text: "the Monitor wakes me" } }, usage: null, untold_watches: [tool] } });
+            woke = setTimeout(() => {
+              emit({ RunStarted: { run_id: `woke-${run_id}` } });
+              answer(`woke-${run_id}`, "the check passed");
+            }, 500);
+            continue;
           }
           if (text.includes("hang:")) {
             // A turn whose stream went quiet: it ends only when interrupted.

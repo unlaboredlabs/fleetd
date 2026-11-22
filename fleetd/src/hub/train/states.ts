@@ -45,12 +45,13 @@ export type Watch = { repo: string; sha: string; base: string; projectRef: Proje
 
 /**
  * The kinds of `train_waits`: no check started on a Change's head yet, its review's findings hold it, its regeneration,
- * and a person it waits on, told of at the patch id in its `head`.
+ * a person it waits on, told of at the patch id in its `head`, and its writer told it is back with them (back.ts).
  */
 export const WAIT_UNSTARTED = "unstarted";
 export const WAIT_BLOCKED = "blocked";
 export const WAIT_REGEN = "regen";
 export const WAIT_PERSON = "person";
+export const WAIT_BACK = "back";
 /** A wait's state before it came to anything. */
 export const WAITING = "waiting";
 

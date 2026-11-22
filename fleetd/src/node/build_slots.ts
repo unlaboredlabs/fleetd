@@ -141,16 +141,20 @@ const quoted = (v: string) => `'${v.replaceAll("'", "'\\''")}'`;
 /** Writes the cargo wrapper, which runs `exe` (fleetd's command line: the binary, or Bun with its entry), unless it
  * already says the same; its path. */
 export function install(home: string, exe: string[]): string {
+  return writeWrapper(home, "cargo", `#!/bin/sh\n${WRAPPER_LINE}\nexec ${exe.map(quoted).join(" ")} ${COMMAND} ${quoted(home)} "$@"\n`);
+}
+
+/** Writes `script` as `name` in binDir, unless it already says the same; its path. */
+export function writeWrapper(home: string, name: string, script: string): string {
   const bin = binDir(home);
   mkdirSync(bin, { recursive: true, mode: 0o700 });
-  const wrapper = join(bin, "cargo");
-  const script = `#!/bin/sh\n${WRAPPER_LINE}\nexec ${exe.map(quoted).join(" ")} ${COMMAND} ${quoted(home)} "$@"\n`;
+  const wrapper = join(bin, name);
   let old: string | undefined;
   try {
     old = readFileSync(wrapper, "utf8");
   } catch {}
   if (old !== script) {
-    const tmp = join(bin, `.cargo-${process.pid}`);
+    const tmp = join(bin, `.${name}-${process.pid}`);
     writeFileSync(tmp, script);
     chmodSync(tmp, 0o755);
     renameSync(tmp, wrapper);
@@ -306,13 +310,14 @@ export function queuedLine(slots: number, ahead: number): string {
   return `fleetd: queued for a build slot (${place}; ${slots === 1 ? "1 slot" : `${slots} slots`} on this machine): it starts once one frees`;
 }
 
-/** Runs cargo with inherited stdio and its signals passed on; its exit code, 128+signal when a signal ended it. */
-async function runCargo(cargo: string, args: string[], env: Record<string, string | undefined>): Promise<number> {
+/** Runs `bin` (cargo, or a check: check_slots.ts) with inherited stdio and its signals passed on; its exit code,
+ * 128+signal when a signal ended it. */
+export async function runInherited(bin: string, args: string[], env: Record<string, string | undefined>): Promise<number> {
   let proc;
   try {
-    proc = Bun.spawn([cargo, ...args], { stdio: ["inherit", "inherit", "inherit"], env });
+    proc = Bun.spawn([bin, ...args], { stdio: ["inherit", "inherit", "inherit"], env });
   } catch (error) {
-    process.stderr.write(`fleetd: cannot run ${cargo}: ${(error as Error).message}\n`);
+    process.stderr.write(`fleetd: cannot run ${bin}: ${(error as Error).message}\n`);
     return 126;
   }
   const forward = (s: NodeJS.Signals) => () => proc.kill(s);
@@ -449,22 +454,22 @@ export async function main(argv: string[]): Promise<number> {
     } catch (error) {
       process.stderr.write(`fleetd: build slots unavailable (${(error as Error).message}): building without waiting\n`);
     }
-    if (!held) return runCargo(cargo, args, process.env);
-    const code = await runCargo(cargo, build ?? args, { ...process.env, [HELD]: "1" });
+    if (!held) return runInherited(cargo, args, process.env);
+    const code = await runInherited(cargo, build ?? args, { ...process.env, [HELD]: "1" });
     held.end();
-    if (build !== undefined && code === 0) return runCargo(cargo, args, process.env);
+    if (build !== undefined && code === 0) return runInherited(cargo, args, process.env);
     return code;
   }
   const slots = waits ? slotsHere(home) : undefined;
-  if (slots === undefined) return runCargo(cargo, args, process.env);
+  if (slots === undefined) return runInherited(cargo, args, process.env);
   let slot: number[] | undefined;
   try {
     slot = await take(dir(home), slots, slotsTaken(args), POLL_MS, (n) => process.stderr.write(`${queuedLine(slots, n)}\n`));
   } catch (error) {
     process.stderr.write(`fleetd: build slots unavailable (${(error as Error).message}): building without waiting\n`);
   }
-  const code = await runCargo(cargo, build ?? args, { ...process.env, [HELD]: "1" });
+  const code = await runInherited(cargo, build ?? args, { ...process.env, [HELD]: "1" });
   for (const fd of slot ?? []) closeSync(fd);
-  if (build !== undefined && code === 0) return runCargo(cargo, args, process.env);
+  if (build !== undefined && code === 0) return runInherited(cargo, args, process.env);
   return code;
 }

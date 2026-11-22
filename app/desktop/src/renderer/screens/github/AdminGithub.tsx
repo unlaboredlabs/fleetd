@@ -27,6 +27,8 @@ import { when } from "../live/when";
 import { dayWords, listWords } from "./words";
 import s from "./github.module.css";
 import { onWeb } from "../../src/web";
+import { sawSetupReturn, setupGithubReturn, writeKept } from "../start/kept";
+import type { GithubReturn } from "../start/model";
 
 const noInput = {};
 
@@ -64,10 +66,20 @@ const installUrl = (app: GithubApp): string => `https://github.com/apps/${app.sl
 
 export function AdminGithub() {
   const live = useLive();
-  const cloud = useHub().cloud === true;
+  const { id: hub, cloud: onCloud } = useHub();
+  const cloud = onCloud === true;
   // fleetd cloud leaves the hub's own App out (hub_info's leftOut): nothing to create there.
   const creates = useServes("github_app_create") && !cloud;
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
+  // How GitHub's trip ended, when this page is where it came back to (Connect GitHub in the web app): said once.
+  const [back] = useState(setupGithubReturn);
+  useEffect(() => {
+    if (back === null) return;
+    sawSetupReturn();
+    // Get started, in this browser, knows it too.
+    if (back.at === "requested") writeKept(hub, { github: "requested" });
+    else if (back.at !== "failed") writeKept(hub, { github: null });
+  }, [back, hub]);
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
   if (!live || read.data === undefined) {
@@ -90,7 +102,7 @@ export function AdminGithub() {
   return (
     <>
       <SettingsSection reveal="admin.github">
-        {app === undefined ? <NoApp removed={removed} /> : cloud ? <CloudApp app={app} me={read.data.me} /> : <AppStatus app={app} onRemoved={setRemoved} />}
+        {app === undefined ? <NoApp removed={removed} /> : cloud ? <CloudApp app={app} me={read.data.me} back={back} /> : <AppStatus app={app} onRemoved={setRemoved} />}
       </SettingsSection>
       {creates ? <Create info={read.data} /> : null}
     </>
@@ -223,12 +235,14 @@ function ProblemLine({ text }: { text: string | null }) {
  * fleetd's App on a cloud team: where the team installed it, Install (after the person's own GitHub is connected,
  * which the team checks), Test and Remove. Read again whenever the window gets focus back, as from GitHub's page.
  */
-function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }) {
+function CloudApp({ app, me, back }: { app: GithubApp; me: GithubAccount | undefined; back: GithubReturn | null }) {
   const { hub } = useDataLayer();
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState<"test" | "install" | "connect" | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(back?.at === "failed" ? back.why : null);
+  // An organization's owner was asked to install it: said until it is installed, or another try.
+  const [asked, setAsked] = useState(back?.at === "requested");
   // The team said the person's own GitHub isn't connected, whatever the last read said.
   const [connectFirst, setConnectFirst] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -257,6 +271,7 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
   const install = async () => {
     setBusy("install");
     setProblem(null);
+    setAsked(false);
     setRemoved(null);
     const out = await window.fleetd.cloud.installGithub(hub);
     setBusy(null);
@@ -267,6 +282,7 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
   const connectGithub = async () => {
     setBusy("connect");
     setProblem(null);
+    setAsked(false);
     if (onWeb()) {
       // The web app's GitHub in one trip: your account, then the install page, and back to this page.
       const out = await window.fleetd.cloud.connectGithub(hub, { back: `${window.location.pathname}${window.location.hash}`, install: true });
@@ -320,6 +336,11 @@ function CloudApp({ app, me }: { app: GithubApp; me: GithubAccount | undefined }
         )}
       </div>
       <LastTest app={app} />
+      {asked && installs.length === 0 ? (
+        <div role="status">
+          <Text size="sm">An owner of the organization must approve fleetd on GitHub. Once they do, it&apos;s installed here.</Text>
+        </div>
+      ) : null}
       <ProblemLine text={problem} />
       {removed === null ? null : (
         <div role="status" className={s.links}>

@@ -16,7 +16,7 @@ const change = {
 } as unknown as Change;
 
 test("the train's reviewer judges intent first and blocks only on a reachable defect or a brief miss", () => {
-  const text = reviewPrompt(SHIPPED_PROMPTS.current(), change, undefined);
+  const text = reviewPrompt(SHIPPED_PROMPTS.current(), change, undefined, undefined);
   for (const line of [
     "Judge intent first",
     "Blocking is only a defect reachable on this head or a miss against the goal and done-when",
@@ -32,7 +32,7 @@ test("the train's reviewer judges intent first and blocks only on a reachable de
   // The old tie-break that turned every doubt into a block is gone.
   expect(text).not.toContain("when unsure whether people would hit it, it is blocking");
   // A re-review keeps the same bar.
-  const again = reviewPrompt(SHIPPED_PROMPTS.current(), change, "a".repeat(40));
+  const again = reviewPrompt(SHIPPED_PROMPTS.current(), change, "a".repeat(40), undefined);
   expect(again).toContain("blocking only for a defect reachable on this head, named with its trigger and what breaks, or a miss against the brief");
 });
 

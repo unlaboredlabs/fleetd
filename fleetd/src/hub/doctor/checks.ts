@@ -684,6 +684,38 @@ export function diskSpace(machineId: string, offline: boolean, disk: NodeDisk | 
   return machineEntry(machineId, "disk", "warn", message);
 }
 
+/** Below this the agents' Mac's disk warns: it frees build caches by itself from here (node/mac_tool `relieve`). */
+export const MAC_DISK_LOW = 30e9;
+/** Below this its builds and new simulators fail (ENOSPC). */
+export const MAC_DISK_FULL = 10e9;
+
+/**
+ * The agents' Mac's free space, from its heartbeat. It runs no agents, so the disk pause means nothing there; its
+ * builds and simulators are what run out (Nov 22: 1.1 GB left, every iOS build failing, and this said ok).
+ */
+export function macDisk(machineId: string, offline: boolean, disk: NodeDisk | undefined): DoctorCheck {
+  if (!disk || offline) {
+    const why = offline ? `${machineId} is offline.` : `${machineId}'s node hasn't reported its free disk space.`;
+    return machineEntry(machineId, "disk", "unknown", why);
+  }
+  const space = `${gb(disk.freeBytes)} free of ${gb(disk.totalBytes)} on ${machineId}`;
+  if (disk.freeBytes >= MAC_DISK_LOW) return machineEntry(machineId, "disk", "ok", `${space}.`);
+  const fix = manual(
+    `Free disk space on ${machineId}: delete what isn't fleetd's, or the simulators no installed Xcode runs`,
+    "xcrun simctl delete unavailable",
+  );
+  if (disk.freeBytes < MAC_DISK_FULL) {
+    return machineEntry(machineId, "disk", "fail", `${space}: iOS builds and new simulators fail for lack of room.`, fix);
+  }
+  return machineEntry(
+    machineId,
+    "disk",
+    "warn",
+    `${space}: below ${gb(MAC_DISK_LOW)} fleetd frees old builds by itself, and builds start failing below ${gb(MAC_DISK_FULL)}.`,
+    fix,
+  );
+}
+
 /** A screen kind's health from the heartbeat: `unavailable` fails, the rest pass. */
 function screen(machineId: string, name: string, offline: boolean, health: ScreenHealth | undefined): DoctorCheck | undefined {
   if (!health || offline) return undefined;

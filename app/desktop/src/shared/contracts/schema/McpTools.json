@@ -288,7 +288,7 @@
           "type": "object"
         },
         {
-          "description": "A hosted agent's computer starting: \"Starting its computer at boat.dev\", \"Cloning the repo\", \"Running setup\".",
+          "description": "A hosted agent's computer starting: \"Starting its computer\", \"Cloning the repo\", \"Running setup\".",
           "properties": {
             "failed": {
               "$ref": "#/$defs/StartFailed",
@@ -452,7 +452,7 @@
           "$ref": "#/$defs/AgentRole"
         },
         "sandbox": {
-          "description": "The hosted sandbox provider it runs in (\"boat.dev\"); absent on its machine's own slots.",
+          "description": "The hosted sandbox provider it runs in (\"fleetd's computers\"); absent on its machine's own slots.",
           "type": "string"
         },
         "startedAt": {
@@ -708,7 +708,7 @@
           "$ref": "#/$defs/AgentRole"
         },
         "sandbox": {
-          "description": "The hosted sandbox provider it runs in (\"boat.dev\"); absent on its machine's own slots.",
+          "description": "The hosted sandbox provider it runs in (\"fleetd's computers\"); absent on its machine's own slots.",
           "type": "string"
         },
         "startedAt": {
@@ -5798,7 +5798,7 @@
           "$ref": "#/$defs/ComputerKind"
         },
         "label": {
-          "description": "As a person reads it: \"boat.dev · 4 vCPU / 8 GB\".",
+          "description": "As a person reads it: \"fleetd's computers · 4 vCPU / 8 GB\".",
           "type": "string"
         },
         "memGb": {
@@ -10064,7 +10064,7 @@
           "type": "string"
         },
         "runner": {
-          "description": "The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (boat.dev), none on\nthe hub's machine. It is no computer of the team's. Absent on every other machine.",
+          "description": "The hub's own runner: it runs a bot's agents only in the team's hosted sandboxes (fleetd's computers), none on\nthe hub's machine. It is no computer of the team's. Absent on every other machine.",
           "type": "boolean"
         },
         "status": {
@@ -19043,7 +19043,7 @@
           "type": "string"
         },
         "message": {
-          "description": "What is wrong: \"boat.dev refused: billing isn't set up on the account\".",
+          "description": "What is wrong: \"fleetd's computers refused: billing isn't set up on the account\".",
           "type": "string"
         },
         "reason": {
@@ -19505,7 +19505,7 @@
         },
         {
           "const": "video_mp4",
-          "description": "`video.mp4`: H.264 from the iOS simulator's own recording (`simctl io recordVideo`), in its screen's pixels.",
+          "description": "`video.mp4`: H.264 as the screen made it, copied in without encoding it again: an iOS simulator's own recording (`simctl io recordVideo`), an Android emulator's encoder (scrcpy), a Linux desktop's x264.",
           "type": "string"
         }
       ]
@@ -20819,7 +20819,7 @@
       "x-open": true
     },
     "SessionKind": {
-      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial), or an X display of its own with a window manager (`linux_desktop`, driven with the agent's\n`desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own screen (`mac`:\nthe GUI session of the Mac's standard `agents` user, shared by agents at once (one per app; one at a time for pointer and keys), driven with the `desktop` tool\nand agent-desktop). `ios` is a legacy value (D298): past iOS screens' rows and recordings still read as it, and a\nnew one is refused with [`IOS_GONE`], since iOS simulators are the agents' Mac's (`mac sim`). Every kind shares the\nsession tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an\niOS one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability and\ndesktop ones when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.",
+      "description": "What a session drives: a fresh Chrome with an empty profile (`browser`, driven with agent-browser), or a fresh\n`-read-only` copy of an Android emulator booted from its Quick Boot snapshot (`android`, driven with agent-device at\nthe copy's serial), or an X display of its own with a window manager (`linux_desktop`, driven with the agent's\n`desktop` tool), in a fresh container or else beside a fresh home directory, or the agents' Mac's own screen (`mac`:\nthe GUI session of the Mac's standard `agents` user, shared by agents at once (one per app; one at a time for pointer and keys), driven with the `desktop` tool\nand agent-desktop). `ios` is a legacy value (D298): past iOS screens' rows and recordings still read as it, and a\nnew one is refused with [`IOS_GONE`], since iOS simulators are the agents' Mac's (`mac sim`). Every kind shares the\nsession tools, the action log, the video and the hub's storage; only a browser recording has a `dom` file, and an\niOS, Android or Linux desktop one's video is `video_mp4`. A node hosts android sessions when it lists the `session_android` capability and\ndesktop ones when it lists `session_linux_desktop`; a Mac screen where its `mac` host check is ready.",
       "enum": [
         "browser",
         "android",
@@ -21226,7 +21226,7 @@
         },
         {
           "const": "sandboxes",
-          "description": "Hosted sandboxes from the team's own boat.dev account: optional.",
+          "description": "Hosted sandboxes from a key of the team's own: optional.",
           "type": "string"
         },
         {

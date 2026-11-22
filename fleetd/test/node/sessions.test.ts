@@ -354,6 +354,25 @@ test("a turn after a Monitor's time ran out has told the agent: the claude's lat
   }
 });
 
+/** T4888 and T4830 on 2026-11-22: a check already done made each one's Monitor end within a second, while the agent
+ * wrote its last answer. The turn ended with the notice still queued in claude, the task's end closed claude as its
+ * own turn for the notice began, and nothing woke the agent again. */
+test("a Monitor that ends while the turn's last answer is written survives the task's end, and its notice's turn runs", async () => {
+  await ok("launch", { sessionId: "s-late", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "monitor-late: wait for the check", runId: "rl1", role: "lead" });
+  await until("the turn", () => summary("s-late")?.latestRun?.id === "rl1" && summary("s-late")?.latestRun?.status === "completed");
+  // Kept till its notice's turn starts: the hub still counts the agent as waiting on it.
+  expect(service.store.session("s-late")?.local.monitors).toMatchObject([{ id: "mon-rl1", ended: true }]);
+  expect(summary("s-late")?.watching).toEqual(["check"]);
+  // The task ended with that turn: the hub has the node close its agent unless it may still go on by itself.
+  const pid = service.store.session("s-late")!.local.pid;
+  expect(await ok("stop", { sessionId: "s-late", idle: true })).toEqual({ kind: "done" });
+  await until("the notice's own turn", () => service.store.runs("s-late").find((r) => r.id === "woke-rl1" && r.status === "completed"));
+  expect(service.store.session("s-late")?.local.pid).toBe(pid);
+  expect(service.store.session("s-late")?.local.monitors).toBeUndefined();
+  expect(summary("s-late")?.watchingUntil).toBeUndefined();
+  await ok("stop", { sessionId: "s-late" });
+});
+
 test("a session whose host ran on through a node restart is re-adopted and keeps going", async () => {
   const pid = service.store.session("s1")?.local.pid;
   await service.shutdown();
@@ -412,7 +431,7 @@ test("a run whose hosted sandbox doesn't come up fails as `sandbox`, and its mes
     // The bot's picked size goes with its place, kept for the session's next start.
     expect(other.store.session("s-boxed")?.local.size).toEqual({ cpu: 4, memGb: 8 });
     expect(run.failure?.class).toBe("sandbox");
-    expect(run.failure?.message).toContain("no hosted sandbox came up at boat.dev");
+    expect(run.failure?.message).toContain("no hosted sandbox came up at fleetd's computers");
     await go("send", { sessionId: "s-boxed", runId: "rb2", text: "the note", place: "local" });
     await completed("s-boxed", "rb2");
     expect(other.store.session("s-boxed")?.local.size).toBeUndefined();

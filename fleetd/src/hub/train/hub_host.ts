@@ -9,7 +9,7 @@ import { leadWakes, trainLine } from "../api/leads.ts";
 import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
 import { time as timeArea } from "../time/index.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "./host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
 import * as seams from "./seams.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { TRAIN_BY } from "./service.ts";
@@ -21,6 +21,8 @@ export type TaskCaller = { projectRef: ProjectRef; by: string };
 export type TasksPort = {
   spawn(caller: TaskCaller, input: { workstreamId: string; title: string; kind: "review"; prompt: string; pr: string }): Promise<Task>;
   message(caller: TaskCaller, taskId: string, text: string): Promise<unknown>;
+  holdMessage(taskId: string, text: string): Promise<void>;
+  waitingOn(taskId: string): string | undefined;
   cancel(caller: TaskCaller, taskId: string, reason?: string): Promise<unknown>;
 };
 
@@ -120,6 +122,21 @@ export class HubHost implements TrainHost {
     return writers;
   }
 
+  /** The write tasks of the project's open orders that are queued, running or idle, each with its title and prompt. */
+  tasksUnderWay(r: ProjectRef): WorkView[] {
+    const out: WorkView[] = [];
+    try {
+      for (const workstreamId of seams.openWorkstreams(this.hub.db.conn, r, WRITERS_MAX)) {
+        for (const t of seams.tasks<Task>(this.hub.db.conn, { projectRef: r, workstreamId, limit: WRITERS_MAX })) {
+          if (t.kind === "write" && ["queued", "running", "idle"].includes(t.state)) out.push({ taskId: t.taskId, workstreamId, text: `${t.title}\n${t.prompt}` });
+        }
+      }
+    } catch (error) {
+      console.warn(`train: tasks under way not read: ${error}`);
+    }
+    return out;
+  }
+
   private tasks(): TasksPort {
     const tasks = this.hub.peek<TasksPort>("tasks");
     if (!tasks) throw notPorted("Tasks");
@@ -128,6 +145,14 @@ export class HubHost implements TrainHost {
 
   async messageTask(r: ProjectRef, by: string, taskId: string, text: string): Promise<void> {
     await this.tasks().message({ projectRef: r, by }, taskId, text);
+  }
+
+  waitingOn(taskId: string): string | undefined {
+    return this.hub.peek<TasksPort>("tasks")?.waitingOn(taskId);
+  }
+
+  async holdMessage(_r: ProjectRef, _by: string, taskId: string, text: string): Promise<void> {
+    await this.tasks().holdMessage(taskId, text);
   }
 
   async cancelTask(r: ProjectRef, by: string, taskId: string, reason: string): Promise<void> {

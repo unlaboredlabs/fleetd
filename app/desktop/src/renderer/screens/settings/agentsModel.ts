@@ -107,7 +107,7 @@ export function sourceLine(slots: SlotState, a: ProjectAgents, machineId?: strin
   if (fleet) return "Follows the default: the hub's fleet cap.";
   if (hold.provided) return "Follows the default: the team's plan.";
   const provider = providerHolding(machineId, hold);
-  return provider !== undefined ? `Follows the default: ${provider}'s limit.` : "Follows the default: its machine's cap.";
+  return provider !== undefined ? `Follows the default: the limit of ${provider}.` : "Follows the default: its machine's cap.";
 }
 
 /** The provider whose limit alone holds the bot: the one its Runs on picked, or on the hub's runner the hosted one. */
@@ -127,7 +127,7 @@ export function machineHolds(a: ProjectAgents, value: number, machineId: string,
       : `This team's plan runs ${n} agents at once, so this bot runs ${n} until an admin picks a bigger plan in Billing.`;
   }
   const provider = providerHolding(machineId, hold);
-  if (provider !== undefined) return `${provider} runs at most ${n} agents at once, so this bot runs ${n} until an admin raises ${provider}'s limit.`;
+  if (provider !== undefined) return `${provider} run at most ${n} agents at once, so this bot runs ${n} until an admin raises their limit.`;
   if (hold.spill.length > 0) {
     const then = hold.spill.map((p) => `${p.name} ${p.limit}`).join(", ");
     return `${machineId} runs at most ${a.machineOwn} agents at once, then ${then}, so this bot runs ${n} until an admin raises one of them.`;
@@ -140,7 +140,7 @@ export const holdsLink = (a: ProjectAgents, machineId: string, hold: Hold = NO_H
   if (hold.provided) return { text: "Plans in Billing", provider: true, billing: true };
   const provider = providerHolding(machineId, hold);
   return provider !== undefined
-    ? { text: `${provider}'s limit (${a.machineCap}) in ${adminGroup(cloud)} › Machines`, provider: true }
+    ? { text: `the limit of ${provider} (${a.machineCap}) in ${adminGroup(cloud)} › Machines`, provider: true }
     : { text: `${machineId}'s max in ${adminGroup(cloud)} › Machines`, provider: false };
 };
 

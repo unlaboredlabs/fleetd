@@ -3,6 +3,7 @@
 // agent's `fleetd mac` (the local call `mac`) goes to the client, from the agent's worktree.
 import { join } from "node:path";
 import { ToolError } from "../../shared/errors.ts";
+import type { NodeAction, NodeActionResult } from "../../shared/node_link.ts";
 import type { MacCallFrame } from "../../shared/screens_wire.ts";
 import { CAP_AGENTS_MAC, CAP_MAC_TOOL } from "../../shared/screens_wire.ts";
 import type { BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
@@ -16,7 +17,7 @@ import { pinSelf } from "../self_exe.ts";
 import { homeDir } from "../util.ts";
 import { writeActivity, type Activity } from "./activity.ts";
 import { type MacCall, MacClient, worktreeOf } from "./client.ts";
-import { FOLDER_DAYS, Host, sweep } from "./host.ts";
+import { Host } from "./host.ts";
 import { installShim, launchEnv, refreshForwarders } from "./shim.ts";
 
 export { worktreeOf } from "./client.ts";
@@ -35,7 +36,12 @@ export function startedIn(node: Node, session: string): string | undefined {
 
 // Agents' folders live in `~/work` as node/mod.rs's: a switch between the builds keeps their pushes, mirrors and cache.
 export const host = (node: Node, given?: Host) =>
-  node.area("mac_tool.host", (n) => given ?? new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home)));
+  node.area("mac_tool.host", (n) => {
+    if (given) return given;
+    const h = new Host(join(homeDir(), "work"), loadOrCreateBoxKey(n.home));
+    h.xcodeData = join(homeDir(), "Library", "Developer", "Xcode", "DerivedData");
+    return h;
+  });
 export const client = (node: Node) =>
   node.area("mac_tool.client", (n) => new MacClient({ home: n.home, call: (op, args, opts) => hubCall(n, op, args, opts) }, () => self(n)));
 /** The command agents' `mac` and agent-device forwarder run: this node's own binary, pinned once per node. */
@@ -135,21 +141,24 @@ function simScreens(node: Node, simulators: Simulators): SimScreens {
   return screens;
 }
 
-/** How often the Mac looks for agents' folders nothing touched for FOLDER_DAYS. */
-export const SWEEP_EVERY = 6 * 3600_000;
+/** How often the Mac looks for old folders and builds, and for a disk short of room (host.ts `housekeep`): a cold
+ * iOS build writes gigabytes in minutes. */
+export const SWEEP_EVERY = 10 * 60_000;
 /** How often the Mac looks for a change to the menu bar's activity. */
 export const ACTIVITY_EVERY = 2_000;
 const housekeeping = new WeakMap<Host, Timer[]>();
 
-/** The Mac's own upkeep while the node runs (host.rs `Host::start`): old agents' folders swept now and every
- * SWEEP_EVERY, and what agents do on it written for the menu bar whenever it changes (activity.rs). */
+/** The Mac's own upkeep while the node runs (host.rs `Host::start`): old folders and builds swept, and caches freed
+ * while the disk is short, now and every SWEEP_EVERY; what agents do on it written for the menu bar whenever it
+ * changes (activity.rs). */
 function startHousekeeping(node: Node, h: Host): void {
   // One sweep at a time: a slow one (a big build's folder, a mirror's gc) is never started again under itself.
   let sweeping = false;
   const clean = () => {
     if (sweeping) return;
     sweeping = true;
-    sweep(h.root, FOLDER_DAYS)
+    h.housekeep()
+      .then((gone) => gone.length > 0 && console.info(`${new Date().toISOString()} INFO the Mac swept ${gone.join(", ")}`))
       .catch((e) => console.warn(`${new Date().toISOString()} WARN the Mac's agent folders were not swept {"error":${JSON.stringify(String(e))}}`))
       .finally(() => (sweeping = false));
   };
@@ -158,6 +167,13 @@ function startHousekeeping(node: Node, h: Host): void {
   clean();
   write();
   housekeeping.set(h, [setInterval(clean, SWEEP_EVERY), setInterval(write, ACTIVITY_EVERY)]);
+}
+
+/** `node_action` mac_ended: the tasks the hub says ended for good; their folders here go (host.ts `ended`). */
+export async function ended(node: Node, action: NodeAction): Promise<NodeActionResult> {
+  const gone = await host(node).ended(action.tasks ?? []);
+  if (gone.length > 0) console.info(`${new Date().toISOString()} INFO the Mac removed ended tasks' folders: ${gone.join(", ")}`);
+  return { id: action.id, ok: true, message: gone.length === 0 ? "no ended task's folder here" : `removed ${gone.join(", ")}` };
 }
 
 /** Every job on the Mac ends with its node; the simulators it lent run on, for the next node to take over. */

@@ -34,6 +34,7 @@ import { type HostedStep, startStep, stepNow, stepped, stepWords, watchSteps } f
 import { NAMES } from "../../shared/sandbox.ts";
 import { PROVIDERS, type ProviderId } from "../../sandbox/providers/index.ts";
 import { addToPath, briefLine, slotsHere } from "../build_slots.ts";
+import * as checkSlots from "../check_slots.ts";
 import { buildJobsHere } from "../load/index.ts";
 import { removePartials } from "../repos/index.ts";
 import { applyProjectEnv, copyProjectEnv, forgetOrderVars, forgetProjectEnv, orderEnvFile, orderVarsForSpawn, projectSecrets, projectVars } from "../secrets/env.ts";
@@ -1286,7 +1287,8 @@ export class SessionService {
   #machineNote(): string {
     const n = buildJobsHere();
     const slots = slotsHere(this.home);
-    return briefNote(jobsEnv(runnerEnv(this.config), n), n) + (slots === undefined ? "" : briefLine(slots));
+    const checks = checkSlots.slotsHere(this.home);
+    return briefNote(jobsEnv(runnerEnv(this.config), n), n) + (slots === undefined ? "" : briefLine(slots)) + (checks === undefined ? "" : checkSlots.briefLine(checks));
   }
 
   /** Records a run and its user message; false when it was recorded before (a retry). */
@@ -1659,10 +1661,15 @@ export class SessionService {
         console.warn(`${nowIso()} WARN pushes won't wait for the repo's pre-push check {"sessionId":"${id}","error":${JSON.stringify(String(error))}}`);
       }
     }
-    // Its builds and test runners held to its share of the CPUs, and its cargo builds taking turns for the machine's
-    // build slots.
+    // Its builds and test runners held to its share of the CPUs, its cargo builds taking turns for the machine's
+    // build slots and its repo's full pre-push check for the check slots.
     for (const [k, v] of jobsEnv(env, buildJobsHere())) env[k] = v;
     addToPath(this.home, selfArgv(), env);
+    try {
+      checkSlots.install(this.home, selfArgv());
+    } catch (error) {
+      console.warn(`${nowIso()} WARN pre-push checks won't take turns: the check wrapper was not written: ${(error as Error).message}`);
+    }
     const scratch = join(this.home, "tmp", scratchName(scratchOwner(row)));
     mkdirPrivate(scratch);
     for (const k of ["TMPDIR", "TMP", "TEMP", "CLAUDE_CODE_TMPDIR"]) env[k] = scratch;
@@ -1820,9 +1827,10 @@ export class SessionService {
             break;
           }
           case "WatchEnded":
-            // Its notice is queued in claude, so nothing more of it can fire; but only a turn that starts or completes
-            // after it tells the agent. A claude killed first (the Monitor's script went with it, as when the whole
-            // machine's session stops) never did, so it stays kept for the wake that says it was lost.
+            // Its notice is queued in claude, so nothing more of it can fire; but only a turn that starts after it, or
+            // one that asks the model again after it, tells the agent. A claude killed first (the Monitor's script went
+            // with it, as when the whole machine's session stops) never did, so it stays kept for the wake that says it
+            // was lost.
             live.watching.delete(body.tool_use_id);
             this.update(id, (c) => {
               c.row.local.monitors = (c.row.local.monitors ?? []).map((m) => (m.id === body.tool_use_id ? { ...m, ended: true as const } : m));
@@ -1838,7 +1846,7 @@ export class SessionService {
             const ended = this.#resolve(live, body.run_id);
             // A call cut off with its run never reports its end.
             live.tools.clear();
-            this.#runEnded(id, live, ended, body.outcome, body.usage);
+            this.#runEnded(id, live, ended, body.outcome, body.usage, body.untold_watches ?? []);
             // A run the node retries stays active: its steers wait for the retry.
             if (!this.store.runs(id).some((r) => r.id === ended && isActive(r.status)))
               this.#steers.ended(ended, typeof body.outcome === "object" && "Failed" in body.outcome ? body.outcome.Failed.message : undefined);
@@ -1927,7 +1935,7 @@ export class SessionService {
     if (decision) live.link.send({ Answer: { request_id: requestId, decision, by: "policy" } });
   }
 
-  #runEnded(id: string, live: Live, runId: string, outcome: state.RunOutcome, usage: unknown): void {
+  #runEnded(id: string, live: Live, runId: string, outcome: state.RunOutcome, usage: unknown, untold: string[] = []): void {
     // A hosted session's turn ended: its box's work comes back to the machine, while the next turn goes on.
     if (hasBox(id)) void checkpoint(id);
     // The node cut it after the machine woke: a network failure, which the node's retry resumes.
@@ -1995,8 +2003,10 @@ export class SessionService {
         if (endedBy && end === "requested") run.endedBy = endedBy;
         else delete run.endedBy;
       }
-      // A turn that went through to its end took in the notice of a Monitor whose time ran out during it.
-      if (typeof outcome === "object" && "Completed" in outcome) this.#dropRunOut(c, live);
+      // A turn that went through to its end took in the notice of a Monitor whose time ran out during it, unless the
+      // Monitor ended after the turn's last request: that notice starts a turn of its own, which the task's end must
+      // not cut off, so it stays kept until that turn starts.
+      if (typeof outcome === "object" && "Completed" in outcome) this.#dropRunOut(c, live, untold);
       if (!c.runs.some((r) => isActive(r.status))) this.#cancelPending(c);
     });
   }
@@ -2084,10 +2094,11 @@ export class SessionService {
 
   /** A turn starting, or completing, once a Monitor ended or its time ran out carries claude's notice of it (claude
    * gives a notice not yet given in the turn under way or the next one), and a wake's turn says it was lost: the
-   * agent has been told, so that Monitor goes from the row and wakes nobody later. */
-  #dropRunOut(c: Change, live: Live): void {
+   * agent has been told, so that Monitor goes from the row and wakes nobody later. Those in `untold` ended after the
+   * completing turn's last request: their notice comes in the next turn, and they stay till it starts. */
+  #dropRunOut(c: Change, live: Live, untold: string[] = []): void {
     const now = this.#now();
-    const kept = (c.row.local.monitors ?? []).filter((m) => !m.ended && m.untilMs - MONITOR_GRACE_MS > now);
+    const kept = (c.row.local.monitors ?? []).filter((m) => (!m.ended || untold.includes(m.id)) && m.untilMs - MONITOR_GRACE_MS > now);
     for (const m of c.row.local.monitors ?? []) if (!kept.includes(m)) live.watching.delete(m.id);
     if (kept.length) c.row.local.monitors = kept;
     else delete c.row.local.monitors;

@@ -524,19 +524,27 @@ export class Devices implements Screens {
 
   // ---- live view ----
 
-  /** Starts or stops sending a session's screen to the hub; a watch already on takes the new budget. */
+  /**
+   * Starts or stops sending a session's screen to the hub; a watch already on takes the new budget. H.264 goes while
+   * every watcher decodes it (`video`) and the budget carries it: a new watch, a relink or a lost frame (`key`) gets
+   * the screen now as a JPEG, then a keyframe.
+   */
   watch(frame: BrowserWatchFrame): void {
     const session = this.byId(frame.sessionId);
     if (!session) return;
     const on = this.pumps.get(session.id);
     if (!frame.on) return this.unwatch(session.id);
+    const switched = session.want(frame.video === true, frame.kbps);
     if (on) {
       on.pump.kbps = frame.kbps;
+      // A budget told again costs nothing; a switch to JPEG gets the decoder's first frame.
+      if (session.wantsVideo() && (frame.key || switched)) session.key();
       return;
     }
     const pump = new Pump(session.id, () => session.control(), (f) => toHub(this.node, { t: "browser_frame", ...f }), frame.kbps);
     const stop = session.watch((f) => pump.offer(f));
     this.pumps.set(session.id, { pump, stop });
+    if (session.wantsVideo()) session.key();
   }
 
   private unwatch(id: string): void {

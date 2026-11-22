@@ -58,13 +58,17 @@ export function deviceInput(input: BrowserInput, pressed: { down: boolean }): In
 /**
  * Sends each new frame to the hub, the newest at once, then each as the watcher's link has room for it (`kbps`, the
  * hub's word for its slowest viewer); the frames that come meanwhile wait, and only the newest of them goes. An H.264
- * frame goes at once, in order: its encoder keeps to the budget, and one skipped would break the ones after it.
+ * frame goes at once, in order: its encoder keeps to the budget, and one skipped would break the ones after it. One
+ * that comes while a JPEG is being fitted (a still before its keyframe) goes right after that JPEG.
  */
 export class Pump {
   private readonly pacer = new Pacer();
   private next: Frame | undefined;
   private busy = false;
   private stopped = false;
+  /** H.264 frames waiting for the JPEG being fitted. */
+  private after: Frame[] = [];
+  private fitting = false;
 
   constructor(
     private readonly sessionId: string,
@@ -77,6 +81,7 @@ export class Pump {
     if (this.stopped) return;
     if (frame.video) {
       this.next = undefined;
+      if (this.fitting) return void this.after.push(frame);
       return this.send(browserFrame(this.sessionId, frame, this.control()));
     }
     this.next = frame;
@@ -89,9 +94,13 @@ export class Pump {
       while (this.next && !this.stopped) {
         const frame = this.next;
         this.next = undefined;
-        const fitted = await this.pacer.fit(this.kbps, browserFrame(this.sessionId, frame, this.control()));
+        this.fitting = true;
+        const fitted = await this.pacer.fit(this.kbps, browserFrame(this.sessionId, frame, this.control())).finally(() => (this.fitting = false));
         if (this.stopped) return;
         this.send(fitted);
+        const after = this.after;
+        this.after = [];
+        for (const f of after) this.send(browserFrame(this.sessionId, f, this.control()));
         const wait = this.pacer.wait(this.kbps);
         if (wait > 0) await Bun.sleep(wait);
       }
@@ -103,5 +112,6 @@ export class Pump {
   stop(): void {
     this.stopped = true;
     this.next = undefined;
+    this.after = [];
   }
 }

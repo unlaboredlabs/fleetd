@@ -5,9 +5,12 @@
 // fails is re-run once, its own job only: a flake or a GitHub blip passes then, and opens nothing. One that fails again
 // opens a fix order for the project's lead, once per failure: the same check failing on later merges, while its order
 // is still open, is that order's, not a new one, and isn't re-run. Runs a person or a schedule started on the commit
-// aren't the merge's: the watch leaves them. What it did is kept per commit, so a restart re-runs nothing twice. A
-// watch ends once every check on the commit has finished, no re-run is still to show, and after `WATCH_MAX_MS` at most.
+// aren't the merge's: the watch leaves them. Nor does it open one for a failure a fix is already under way for: an open
+// PR or a write task under way that names the failing test or the run. What it did is kept per commit, so a restart
+// re-runs nothing twice. A watch ends once every check on the commit has finished, no re-run is still to show, and
+// after `WATCH_MAX_MS` at most.
 import type { WorkstreamId } from "../../shared/contracts.ts";
+import { failedTests, testLeaf } from "./flaky.ts";
 import { type CheckRun, jobOf, TRAIN_CONTEXT, workflowRun } from "./github.ts";
 import { batchNames, gatedName, workflows } from "./next.ts";
 import type { Watch } from "./records.ts";
@@ -27,6 +30,10 @@ const NOT_THE_MERGES = ["workflow_dispatch", "schedule"];
 const RERAN = "reran";
 const RECOVERED = "recovered";
 const MANUAL = "manual";
+/** A fix already under way named its failure: kept once per check and commit, as run 0. */
+const FIXING = "fixing";
+/** A test name shorter than this names nothing reliably in a PR's or a task's words. */
+const NAME_MIN = 8;
 
 /**
  * The checks on a merged commit that failed, in its fast set or not, or that a batch skips: the ones a fix order is
@@ -132,6 +139,7 @@ async function failedCheck(t: Train, w: Watch, check: CheckRun, onBatch: boolean
   const now = t.nowMs();
   if (t.records.fixOrderAt(repo, name, sha) !== undefined) return false;
   const seen = t.records.watchChecks(repo, sha).filter((s) => s.name === name);
+  if (seen.some((s) => s.did === FIXING)) return false;
   const mine = seen.find((s) => s.runId === check.id);
   if (mine) {
     if (mine.did !== RERAN) return false;
@@ -200,15 +208,60 @@ export function rerunning(t: Train, repo: string, rawSha: string): string[] {
   const seen = t.records.watchChecks(repo, sha);
   const names: string[] = [];
   for (const { name, did } of seen) {
-    const settled = seen.some((s) => s.name === name && s.did === RECOVERED) || t.records.fixOrderAt(repo, name, sha) !== undefined;
+    const settled = seen.some((s) => s.name === name && [RECOVERED, FIXING].includes(s.did)) || t.records.fixOrderAt(repo, name, sha) !== undefined;
     if (did === RERAN && !settled && !names.includes(name)) names.push(name);
   }
   return names;
 }
 
+/** The checks failing on merged commit `sha` that a fix already under way names: what the status says is being fixed. */
+export function fixing(t: Train, repo: string, rawSha: string): string[] {
+  const names = t.records.watchChecks(repo, rawSha.toLowerCase()).filter((s) => s.did === FIXING).map((s) => s.name);
+  return [...new Set(names)];
+}
+
+/**
+ * The fix already under way for `check` failing on `w`'s commit: the first open PR (`#n`) or write task under way
+ * (its id) whose words name a failing test its job's log names, or its workflow run's id. Undefined for none, and when
+ * the open PRs can't be read: a fix order then rather than none.
+ */
+export async function fixUnderWay(t: Train, w: Watch, check: CheckRun): Promise<string | undefined> {
+  const names: string[] = [];
+  const run = workflowRun(check);
+  if (run !== undefined) names.push(String(run));
+  const job = jobOf(check);
+  if (job !== undefined) {
+    try {
+      for (const test of failedTests(await t.github.jobLog(w.repo, job))) {
+        const leaf = testLeaf(test);
+        if ([...leaf].length >= NAME_MIN && !names.includes(leaf)) names.push(leaf);
+      }
+    } catch (error) {
+      console.warn(`train: job log not read (${w.repo} job ${job}): ${(error as Error).message}`);
+    }
+  }
+  if (names.length === 0) return undefined;
+  const named = (text: string) => names.some((n) => text.includes(n));
+  const task = (t.host.tasksUnderWay?.(w.projectRef) ?? []).find((v) => named(v.text));
+  if (task) return task.taskId;
+  try {
+    const pull = (await t.github.openPulls(w.repo)).find((p) => named(`${p.title}\n${p.body}`));
+    return pull ? `#${pull.number}` : undefined;
+  } catch (error) {
+    console.warn(`train: open PRs of ${w.repo} not read for a fix under way: ${(error as Error).message}`);
+    return undefined;
+  }
+}
+
 /** Opens the fix order for `check` failing on `w`'s commit (`reran`: again, after its re-run; `onBatch`: it passed on the batch), and records it. */
 async function fixOrder(t: Train, w: Watch, check: CheckRun, reran: boolean, onBatch: boolean): Promise<void> {
   const repo = w.repo;
+  const fix = await fixUnderWay(t, w, check);
+  if (fix !== undefined) {
+    console.info(`train: ${check.name} failed after the merge of ${repo}@${w.sha}; ${fix} already names it, so no fix order`);
+    t.records.putWatchCheck(repo, w.sha, check.name, 0, FIXING, t.nowMs());
+    return;
+  }
   try {
     const order = await t.host.openOrder(w.projectRef, fixOrderText(w, check, reran, onBatch), `train-fix:${repo}:${w.sha}:${check.name}`);
     console.info(`train: ${check.name} failed after the merge of ${repo}@${w.sha}; fix order ${order} opened`);

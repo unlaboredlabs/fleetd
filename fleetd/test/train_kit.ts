@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { HubDb } from "../src/hub/store/db.ts";
 import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
-import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView } from "../src/hub/train/host.ts";
+import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
 import type { Change, ProjectRef } from "../src/shared/contracts.ts";
 
@@ -553,6 +553,10 @@ export class FakeGh implements GhRunner {
 export class FakeHost implements TrainHost {
   readonly tasks = new Map<string, TaskView>();
   readonly sends: [string, string][] = [];
+  /** What each ended task still waits on (its wait_ci, a Monitor), by task. */
+  readonly waits = new Map<string, string>();
+  /** The messages kept for a waiting task's next run, without starting it. */
+  readonly held: [string, string][] = [];
   readonly events: EventView[] = [];
   readonly wakes: string[] = [];
   /** The lines the train posted in the project's chat. */
@@ -579,6 +583,12 @@ export class FakeHost implements TrainHost {
   }
   async messageTask(_r: ProjectRef, _by: string, taskId: string, text: string) {
     this.sends.push([taskId, text]);
+  }
+  waitingOn(taskId: string) {
+    return this.tasks.get(taskId)?.state === "done" ? this.waits.get(taskId) : undefined;
+  }
+  async holdMessage(_r: ProjectRef, _by: string, taskId: string, text: string) {
+    this.held.push([taskId, text]);
   }
   async cancelTask(_r: ProjectRef, _by: string, taskId: string, reason: string) {
     const t = this.tasks.get(taskId);
@@ -656,6 +666,11 @@ export class FakeHost implements TrainHost {
   spans: Parameters<TimeSink["span"]>[0][] = [];
   time(): TimeSink | undefined {
     return { span: (s) => void this.spans.push(s), close: () => {} };
+  }
+  /** The write tasks under way, with what each was asked. */
+  readonly underWay: WorkView[] = [];
+  tasksUnderWay(): WorkView[] {
+    return this.underWay;
   }
 }
 

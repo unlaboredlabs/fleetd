@@ -8,9 +8,10 @@
 // (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
 import type { Change, ChangeReview, ChangeState, ProjectRef } from "../../shared/contracts.ts";
+import * as back from "./back.ts";
 import * as batch from "./batch.ts";
 import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
-import { type Flaky, flakyNote, rerunFailed } from "./flaky.ts";
+import { type Flaky, flakyNote, type Mine, ownTests, ownText, rerunFailed } from "./flaky.ts";
 import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
 import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
@@ -20,7 +21,7 @@ import { Locks, Mutex } from "./mutex.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BACK, WAIT_BLOCKED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
@@ -47,7 +48,7 @@ import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
-import { rerunning, watchMerge, watchPass } from "./watch.ts";
+import { fixing, rerunning, watchMerge, watchPass } from "./watch.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { openBlocking } from "../reviews/read.ts";
 import type { HubDb } from "../store/db.ts";
@@ -183,7 +184,7 @@ const REBASE_FIRST_WAIT_MS = 1000;
 /** How the wait for a re-review alongside CI ended. */
 export type ReviewWait = { kind: "clean"; reviews: ChangeReview[] } | { kind: "blocked" } | { kind: "waiting" };
 
-export type CiOutcome = { kind: "green" } | { kind: "red"; runs: CheckRun[] } | { kind: "timeout"; stall: Stall } | { kind: "moved" };
+export type CiOutcome = { kind: "green" } | { kind: "red"; runs: CheckRun[]; own?: Flaky[] } | { kind: "timeout"; stall: Stall } | { kind: "moved" };
 
 /** What a wait on CI does between its reads of the checks. */
 export type Between = () => Promise<void>;
@@ -511,12 +512,9 @@ export class Train {
     const all = [details.trim(), open].filter((d) => d !== "").join("\n\n");
     const text = fixYourPr(set, change, problem, all);
     if (change.taskId !== undefined) {
-      try {
-        await this.host.messageTask(change.projectRef, TRAIN_BY, change.taskId, text);
-        return;
-      } catch (error) {
-        this.warnHourly([`train: author ${change.taskId} of ${change.changeId} not messaged`], (error as Error).message, `train: author ${change.taskId} of ${change.changeId} not messaged: ${(error as Error).message}`);
-      }
+      const why = await back.tellWriter(this, change, change.taskId, text);
+      if (why === undefined) return;
+      this.warnHourly([`train: author ${change.taskId} of ${change.changeId} not messaged`], why, `train: author ${change.taskId} of ${change.changeId} not messaged: ${why}`);
     }
     await this.wakeLead(change.projectRef, prNote(change.changeId, change.prUrl, text));
   }
@@ -650,7 +648,7 @@ export class Train {
   }
 
   /** `stall` when CI ran out of time rather than went red: the train keeps reading its head's checks. */
-  async ciFailed(change: Change, failing: CheckRun[], stall?: Stall): Promise<void> {
+  async ciFailed(change: Change, failing: CheckRun[], stall?: Stall, own: Flaky[] = []): Promise<void> {
     const names = failing.map((r) => `${r.name} (${r.conclusion ?? r.status})`);
     const logUrl = failing.find((r) => r.html_url)?.html_url ?? undefined;
     const min = (ms: number) => Math.round(ms / 60_000);
@@ -700,6 +698,7 @@ export class Train {
       why = `${CI_TIMED_OUT} on ${short(change.headSha)}: ${what}`;
     } else {
       why = `CI failed on ${short(change.headSha)}: ${names.join(", ")}${logUrl ? ` (log: ${logUrl})` : ""}`;
+      if (own.length > 0) why += `; ${ownText(own)}`;
     }
     const parked = this.update(change.changeId, ["ci", "ci_failed"], (c) => ({ ...c, state: "ci_failed", lastError: errorText(why) }));
     if (!parked) return;
@@ -754,6 +753,22 @@ export class Train {
     const reruns: next.Reruns = new Map();
     const failedReruns: next.Reruns = new Map();
     const flaky: Flaky[] = [];
+    // The PR's diff against its base, read once a failing test needs it.
+    let diff: Promise<string> | undefined;
+    const mine: Mine = {
+      of: async (names) => {
+        diff ??= this.github.diff(repo, base, sha);
+        try {
+          return ownTests(await diff, names);
+        } catch (error) {
+          diff = undefined;
+          console.warn(`train: diff of ${repo}@${short(sha)} not read; its failing tests count as old flakes: ${ghMessage(error)}`);
+          return [];
+        }
+      },
+      tests: new Map(),
+      own: [],
+    };
     const cancelRead = { n: 0 };
     let triedLabel = start;
     let told = false;
@@ -816,10 +831,10 @@ export class Train {
         if (await this.superseded(change, repo, sha, judged.runs, cancelRead)) return { kind: "moved" };
         if ((await this.rerunCancelled(repo, judged.runs, all, reruns)) === true) start = this.nowMs();
       } else if (judged.kind === "red" && alone) {
-        const now = await rerunFailed(this, repo, judged.runs, all, failedReruns, flaky);
+        const now = await rerunFailed(this, repo, judged.runs, all, failedReruns, flaky, mine);
         if (now === undefined) {
           this.checkSpans(change, sha, runs);
-          return { kind: "red", runs: judged.runs };
+          return mine.own.length > 0 ? { kind: "red", runs: judged.runs, own: mine.own } : { kind: "red", runs: judged.runs };
         }
         if (now) {
           // The re-run's time is its own, and it has had none yet.
@@ -1326,7 +1341,7 @@ export class Train {
             ? "didn't pass: its CI timed out"
             : "was pushed to during its CI";
     if (failed) batch.dropBehind(this, chain, failed, base);
-    if (outcome.kind === "red") return this.ciFailed(inCi, outcome.runs);
+    if (outcome.kind === "red") return this.ciFailed(inCi, outcome.runs, undefined, outcome.own);
     if (outcome.kind === "timeout") return this.ciFailed(inCi, [], outcome.stall);
     if (outcome.kind === "moved") return this.putBack(inCi, CI_SUPERSEDED);
     // CI passed: the merge also waits for a re-review still at work.
@@ -1385,7 +1400,7 @@ export class Train {
       // GitHub may require a check the cached config doesn't name yet: read the base's rules again.
       this.ciConfigs.delete(`${repo}\u0000${base}`);
       const o = await this.waitCi(backInCi, repo, headSha, base, undefined, noted);
-      if (o.kind === "red") return this.ciFailed(backInCi, o.runs);
+      if (o.kind === "red") return this.ciFailed(backInCi, o.runs, undefined, o.own);
       if (o.kind === "timeout") return this.ciFailed(backInCi, [], o.stall);
       if (o.kind === "moved") return this.putBack(backInCi, CI_SUPERSEDED);
       if (!this.update(inCi.changeId, ["ci"], (c) => ({ ...c, state: "merging" }))) return;
@@ -1424,7 +1439,7 @@ export class Train {
   async refresh(repo: string): Promise<void> {
     const changes = this.records.inTrain(repo, ["queued", "reviewing", "ready", "needs_rebase", "ci_failed"]);
     const ids = new Set(changes.map((c) => c.changeId));
-    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON], [...ids]);
+    this.records.keepWaits(repo, [WAIT_UNSTARTED, WAIT_BLOCKED, WAIT_PERSON, WAIT_BACK], [...ids]);
     for (const id of [...this.lateReruns.keys()]) if (!ids.has(id)) this.lateReruns.delete(id);
     person.forget(this, repo, ids);
     const live = [...this.records.inTrain(repo, ["rebasing", "ci", "merging"]), ...changes].map((c) => c.changeId);
@@ -1460,10 +1475,12 @@ export class Train {
         if (v.kind === "ready") this.setReady(change, v.reviews);
         else {
           await this.stillBlocked(change, v.kind === "blocked");
+          if (v.kind === "blocked") await back.stillBack(this, change);
           if (inLine) await this.unstartedChecks(change, pull.base.ref);
         }
       } else if (timedOut(change)) await this.afterTimeout(change);
       else if (inLine) await this.unstartedChecks(change, pull.base.ref);
+      else if (change.state === "needs_rebase" || change.state === "ci_failed") await back.stillBack(this, change);
     }
   }
 
@@ -1859,8 +1876,8 @@ export class Train {
 
   /**
    * While main-branch CI is red, a note for the status view: which checks, and whether a fix is under way (an open fix
-   * order for the check) or the watch re-runs them once; while it waits on that re-run, which checks. The train
-   * doesn't hold merges for it, so it is a warning, not a block.
+   * order for the check, or a PR or task the watch found naming it) or the watch re-runs them once; while it waits on
+   * that re-run, which checks. The train doesn't hold merges for it, so it is a warning, not a block.
    */
   mainCiNote(rawRepo: string): string | undefined {
     const repo = rawRepo.toLowerCase();
@@ -1872,19 +1889,20 @@ export class Train {
     if (ci.state !== "red") {
       return ci.state === "pending" && again.length > 0 ? `${again.map((n) => `\`${n}\``).join(", ")} failed on ${base} after the merge, re-running once` : undefined;
     }
-    const fixing = ci.failing.filter((name) => {
+    const linked = fixing(this, repo, ci.sha);
+    const fixed = ci.failing.filter((name) => {
       const order = this.records.fixOrder(repo, name)?.order;
-      return order !== undefined && this.host.workstream(order)?.open === true;
+      return linked.includes(name) || (order !== undefined && this.host.workstream(order)?.open === true);
     });
     const quoted = (names: string[]) => names.map((n) => `\`${n}\``).join(", ");
     const what =
       ci.failing.length === 0 ? `CI is red on ${base}` : ci.failing.length === 1 ? `${quoted(ci.failing)} is red on ${base}` : `${quoted(ci.failing)} are red on ${base}`;
     const fix =
-      fixing.length === 0 && ci.failing.some((n) => again.includes(n))
+      fixed.length === 0 && ci.failing.some((n) => again.includes(n))
         ? "re-running once"
-        : fixing.length === 0
+        : fixed.length === 0
           ? "no fix under way"
-          : fixing.length === ci.failing.length ? "fix in progress" : `fix in progress for ${quoted(fixing)}`;
+          : fixed.length === ci.failing.length ? "fix in progress" : `fix in progress for ${quoted(fixed)}`;
     return `${what}, ${fix}`;
   }
 

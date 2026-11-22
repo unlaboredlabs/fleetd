@@ -18,6 +18,7 @@ export {
   TERMINAL_STATES,
   type TrainRow,
   type Wait,
+  WAIT_BACK,
   WAIT_BLOCKED,
   WAIT_PERSON,
   WAIT_REGEN,

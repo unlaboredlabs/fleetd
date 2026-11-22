@@ -97,7 +97,7 @@ for (const id of ["boat"] as const) {
   });
 }
 
-test("boat: a machine whose home was wiped finds the template at boat.dev by its name and builds none", async () => {
+test("boat: a machine whose home was wiped finds the template at fleetd's computers by its name and builds none", async () => {
   const { s, boxes, home } = await world("boat");
   const name = await boxes.template("boat");
   const builds = () => s.calls.filter((c) => c.method === "POST" && String(c.body?.name ?? "").startsWith("fleetd build")).length;
@@ -141,7 +141,7 @@ test("boat: a bot's picked size is the box's own, exactly, and one boat doesn't 
   await boxes.destroy(record);
   const before = s.calls.length;
   const odd = await boxes.create("boat", "sess-odd", [], [], { cpu: 3, memGb: 6 }).catch((e) => e);
-  expect(odd.message).toContain("comes in no 3 vCPU / 6 GB");
+  expect(odd.message).toContain("come in no 3 vCPU / 6 GB");
   expect(s.calls.length).toBe(before);
 }, 60_000);
 
@@ -192,7 +192,7 @@ test("a template saved before builds proved it is never one to start from, howev
   await only.ahead("boat")?.done.catch(() => {});
   const steps: HostedStep[] = [];
   const unwatch = watchSteps("sess-unproven", (step) => steps.push(step));
-  await expect(only.create("boat", "sess-unproven", [], [])).rejects.toThrow("boat.dev's sandbox template didn't build");
+  await expect(only.create("boat", "sess-unproven", [], [])).rejects.toThrow("the sandbox template at fleetd's computers didn't build");
   unwatch();
   expect(steps).toEqual(["template"]);
 }, 60_000);
@@ -216,7 +216,7 @@ test("a template this recipe's build fails on: boxes start from the newest ready
   const record = await boxes.create("boat", "sess-older", [], []);
   unwatch();
   expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
-  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image didn't build; using the one from Nov 18)"]);
+  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer (a newer computer image didn't build; using the one from Nov 18)"]);
   // The start built nothing, and nothing was set aside: the provider takes the next box.
   expect(buildBoxes(s)).toHaveLength(1);
   expect(boxes.usable()).toEqual(["boat"]);
@@ -237,7 +237,7 @@ test("while this recipe's template is still being built, a box starts from the l
   const record = await boxes.create("boat", "sess-mid", [], []);
   unwatch();
   expect(s.boxes.get(record.boxId).req.from).toBe("fleetd-taaaaaaaaaaaa");
-  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer at boat.dev (a newer computer image is still being made; using the one from Nov 18)"]);
+  expect(steps.map((st) => stepWords(st, "boat"))).toEqual(["Starting its computer (a newer computer image is still being made; using the one from Nov 18)"]);
   await boxes.destroy(record);
 }, 60_000);
 
@@ -253,7 +253,7 @@ test("only a team with no template at all waits on a build, with the first-time 
   await boxes.ahead("boat")?.done.catch(() => {});
   const steps: HostedStep[] = [];
   const unwatch = watchSteps("sess-first", (step) => steps.push(step));
-  await expect(boxes.create("boat", "sess-first", [], [])).rejects.toThrow("boat.dev's sandbox template didn't build");
+  await expect(boxes.create("boat", "sess-first", [], [])).rejects.toThrow("the sandbox template at fleetd's computers didn't build");
   unwatch();
   expect(steps).toEqual(["template"]);
 }, 60_000);
@@ -458,15 +458,15 @@ test("a box whose noted template was deleted looks again and starts, never set a
   await boxes.destroy(record);
 }, 60_000);
 
-test("boat.dev's start rate sets it aside for a minute, in its own words, not the plan's limit (W8)", () => {
+test("fleetd's computers' start rate sets it aside for a minute, in its own words, not the plan's limit (W8)", () => {
   const boxes = new Boxes(join(root, "rate"), "devbox", { open: (b) => b }, {});
   boxes.setKeys({ boat: Buffer.from(JSON.stringify({ provider: "boat", key: KEY })).toString("base64") });
   const now = Date.parse("2026-11-20T19:20:00Z");
-  boxes.setAside("boat", "boat.dev's limit on sandbox starts is reached for now (12 per minute).", now, "rate");
+  boxes.setAside("boat", "the limit of fleetd's computers on sandbox starts is reached for now (12 per minute).", now, "rate");
   expect(boxes.usable(now + 30_000)).toEqual([]);
   expect(boxes.usable(now + 61_000)).toEqual(["boat"]);
   const t = boxes.trouble(now)[0]!;
-  expect(troubleLine(troubleOf("boat", t))).toBe("boat.dev's start rate: trying again in a minute");
+  expect(troubleLine(troubleOf("boat", t))).toBe("fleetd's computers are at their start rate: trying again in a minute");
   // A plan's limit is still set aside for DOWN_MS, with its fix.
   boxes.setAside("boat", "at once", now, "limit");
   expect(boxes.usable(now + 61_000)).toEqual([]);

@@ -23,6 +23,7 @@
 // their threads were resolved. Each verdict is also posted on the PR (post.ts).
 import type { Database } from "bun:sqlite";
 import type { Change, ChangeReview } from "../../shared/contracts.ts";
+import { tellWriter } from "../train/back.ts";
 import { prNote, prReviewNotRecorded, prReviewStalled } from "../train/events.ts";
 import type { TrainGitHub } from "../train/github.ts";
 import type { EventView, TrainHost } from "../train/host.ts";
@@ -182,11 +183,8 @@ export class Reviews implements ReviewGate {
     }
     const problem = `people reviewed it on GitHub: ${holdWhy(fresh)}`;
     const text = fixYourPr(this.train.prompts.forTask(change.projectRef, author), change, problem, findingsText(change, fresh));
-    try {
-      await this.host.messageTask(change.projectRef, REVIEWS_BY, author, text);
-    } catch (error) {
-      return this.holdNote(change, `${why}; sending them to ${author} failed: ${(error as Error).message}`);
-    }
+    const failed = await tellWriter(this.train, change, author, text, REVIEWS_BY);
+    if (failed !== undefined) return this.holdNote(change, `${why}; sending them to ${author} failed: ${failed}`);
     this.people.markSent(change.prUrl, fresh);
     this.holdNote(change, `${why}; sent to ${author}`);
   }
@@ -328,11 +326,11 @@ export class Reviews implements ReviewGate {
            WHERE t.change_id = ?1 AND b.patch_id != ?2 ORDER BY b.rowid DESC LIMIT 1`,
       )
       .get(change.changeId, patchId);
-    let prTitle: string | undefined;
+    let pull: { title: string; body?: string | null } | undefined;
     try {
-      prTitle = (await this.train.github.pull(change.repo, change.prNumber)).title;
+      pull = await this.train.github.pull(change.repo, change.prNumber);
     } catch {
-      prTitle = undefined;
+      pull = undefined;
     }
     const set = this.train.prompts.current(change.projectRef);
     const resolved = this.resolvedOn(change.changeId, patchId);
@@ -341,14 +339,14 @@ export class Reviews implements ReviewGate {
     const prompt =
       rebased?.outcome.kind === "conflicts"
         ? conflictsPrompt(set, change, { reviewedSha: rebased.fromHead, reviewedBase: rebased.fromBase, base: rebased.base, files: rebased.outcome.files })
-        : reviewPrompt(set, change, reviewed);
+        : reviewPrompt(set, change, reviewed, pull?.body);
     let task;
     try {
       task = await this.host.spawnReview({
         projectRef: change.projectRef,
         by: REVIEWS_BY,
         workstreamId: change.workstreamId,
-        title: reviewTitle(prTitle, change.prNumber),
+        title: reviewTitle(pull?.title, change.prNumber),
         prompt,
         pr: change.prUrl,
       });
@@ -668,11 +666,8 @@ export class Reviews implements ReviewGate {
         nonBlocking,
         summary: `${summary}\n\n\`review_read\` reads these findings again, whole.`,
       });
-      try {
-        await this.host.messageTask(change.projectRef, REVIEWS_BY, author, text);
-      } catch (error) {
-        note(`${waiting}; sending them to ${author} failed: ${(error as Error).message}`);
-      }
+      const failed = await tellWriter(this.train, change, author, text, REVIEWS_BY);
+      if (failed !== undefined) note(`${waiting}; sending them to ${author} failed: ${failed}`);
       return;
     }
     await this.evaluate(round.changeId);

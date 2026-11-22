@@ -120,6 +120,17 @@ hasn't passed on is refused with what to do, and `git push --no-verify` is denie
 one command is started in the background and waited on with Claude's Monitor tool ([below](#waiting)), never a sleep
 loop. Your own pushes aren't gated.
 
+### Each PR proves itself and stays one concern {#proof}
+
+Writers are told to keep each PR to one concern a person can review in one sitting. Larger work goes out as several
+PRs: a part that stands alone from main, and parts that build on each other as a stack, each PR based on the branch
+of the one before so its diff shows only its own part. The merge train lands a stack bottom up, and points each PR at
+main once the one below it lands. Each PR's description proves it, scaled to the change: screenshots or a clip for
+UI, before and after numbers for performance, the test that failed before a fix and passes with it, and the tests run
+for any code change; a docs or one-line fix needs none of that. It ends with one line, `Unsure: …`, naming what the
+writer wasn't sure about. The train's reviewer, which reads no other part of the description, gets that line and
+judges it in its summary. Your [instructions](#instructions) can change any of this for a bot.
+
 ### Agents wait without polling {#waiting}
 
 An agent never sleeps or polls. To wait on CI, it calls `wait_ci` and ends its turn, and the hub wakes it when the run
@@ -541,10 +552,11 @@ The node that starts a task adds a short section to the end of its brief, after 
 - Test runners get 4 workers: VITEST_MAX_WORKERS is set to it. Keep any other test runner to 4 workers too.
 - Scratch files go in $TMPDIR, a directory of your own on disk; never in /tmp, which may be held in memory. Its files last until you can no longer be continued (they go with your worktree: once your PR merges with nothing of yours waiting (a wait_ci, a Monitor, a question to your lead), else 3 days after your task ends), but what you started there (a database, a server) ends when your session is reaped idle, 10 minutes after a turn ends: after a wait, start it again from the data you kept there.
 - Cargo builds, tests, checks and clippy runs take turns for this machine's 3 build slots, one each; a `cargo test` takes two (a lib's tests beside the lib) unless it builds only `--lib` of one package or only named targets (`--test <name>`), so pick one of those when you can. One with too few free prints that it is queued for a build slot and starts by itself once they free, within the same command: give it Bash's longest timeout, since one stopped and started again goes to the back of the queue.
+- The repo's full pre-push check (`.fleetd/pre-push.json`) takes turns for this machine's 4 check slots. One that prints it is waiting for a check slot starts by itself once one frees: don't stop it or start another. Your own partial test commands never wait.
 ```
 
 The jobs and test lines name only the variables fleetd set: one you set in `claude.env` stands, and drops out of its line. The
-turns line goes when node.json's `buildSlots` is `0`. See
+build turns line goes when node.json's `buildSlots` is `0`, and the check turns line when its `checkSlots` is. See
 [A fair share for each agent](/docs/machines#fair-share).
 
 ### Tool texts {#tool-texts}
@@ -588,6 +600,7 @@ Generated from the registry in the binary this site was built with. `fleetd prom
 |---|---|---|
 | `review.reviewer` | once per PR patch, fresh, blocking findings only | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool); blocks only on a defect reachable today or a miss against the brief (prompt only) |
 | `review.delta` | after Reviewer, when an earlier round reviewed another head of the PR |  |
+| `review.unsure` | after Reviewer, when the PR's description has an \`Unsure:\` line that names a doubt |  |
 | `review.conflicts` | instead of Reviewer when a rebase of an approved PR changed its own lines only where the base changed them too | does not read the PR description or comments (prompt only); changes no files (prompt only); ends with one review verdict (the \`report\` tool) |
 
 ### Messages
