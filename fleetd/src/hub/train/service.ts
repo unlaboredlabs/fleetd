@@ -982,13 +982,14 @@ export class Train {
 
   /**
    * Whether PRs into `base` get CI: the repo has a workflow, `base` requires a check other than the train's own, or
-   * some CI reports, a check run or a commit status of any provider but the train, on `head` or on one of the default
-   * branch's last `CI_HISTORY` commits (the cloud's rule too). Throws while one of those can't be read.
+   * some CI reports, a check run or a commit status of any provider but the train, on one of `heads` (a PR's, earlier
+   * ones too) or on one of the default branch's last `CI_HISTORY` commits (the cloud's rule too). Throws while one of
+   * those can't be read.
    */
-  async hasCi(repo: string, base: string, head?: string): Promise<boolean> {
+  async hasCi(repo: string, base: string, heads: string[] = []): Promise<boolean> {
     const ci = await this.ciConfig(repo, base);
     if (ci.workflows.length > 0 || ci.requiredChecks.some((c) => c !== TRAIN_CONTEXT)) return true;
-    if (head !== undefined && (await this.reported(repo, head))) return true;
+    for (const head of heads) if (await this.reported(repo, head)) return true;
     const known = this.ciHistory.get(repo);
     if (known && this.nowMs() - known[0] < CI_CONFIG_TTL_MS) return known[1];
     const main = await this.github.defaultBranch(repo);
@@ -1005,18 +1006,21 @@ export class Train {
   }
 
   /**
-   * Whether PRs into `base` get no CI at all (`hasCi` turned over, with what reports on `head`): nothing will ever
+   * Whether PRs into `base` get no CI at all (`hasCi` turned over, with what reports on the Change's head and on each
+   * head it was reviewed at: CI that reports only on PRs, not yet on a fresh rebase, still counts): nothing will ever
    * report on them, so each merges once its review approves it (D642). False while that can't be read: an unread repo
    * is never taken for one with no CI. `fresh`: never on the base's rules as read up to `CI_CONFIG_TTL_MS` ago, for a
    * merge with no CI, as the repo may just have gained some.
    */
-  async withoutCi(repo: string, base: string, head: string, fresh = false): Promise<boolean> {
+  async withoutCi(change: Change, base: string, fresh = false): Promise<boolean> {
+    const repo = change.repo;
+    const heads = [...new Set([change.headSha, ...change.reviews.map((r) => r.prHeadSha)].map((s) => s.toLowerCase()))];
     try {
-      if (await this.hasCi(repo, base, head)) return false;
+      if (await this.hasCi(repo, base, heads)) return false;
       if (!fresh) return true;
       this.ciConfigs.delete(`${repo}\u0000${base}`);
       this.ciHistory.delete(repo);
-      return !(await this.hasCi(repo, base, head));
+      return !(await this.hasCi(repo, base, heads));
     } catch {
       return false;
     }
@@ -1297,7 +1301,7 @@ export class Train {
     const stack = (await this.oneAtATime(repo, base)) === undefined ? batch.stacker(this, repo, base, chain) : undefined;
     // A repo with no CI at all goes on its review alone. One whose checks exist but haven't started waits for them, its
     // author and the lead told after `checksStartWaitMs` (`unstartedChecks`).
-    const noCi = await this.withoutCi(repo, base, headSha, true);
+    const noCi = await this.withoutCi(inCi, base, true);
     const outcome: CiOutcome = noCi
       ? { kind: "green" }
       : ((await this.watchCi(inCi, repo, headSha, base, lone, noted, undefined, stack)) ?? { kind: "timeout", stall: { kind: "running" } });

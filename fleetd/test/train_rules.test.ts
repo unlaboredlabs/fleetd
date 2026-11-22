@@ -467,6 +467,26 @@ test("a required check is CI even with no workflow and nothing reported yet: the
   expect(k.host.told).toEqual([]);
 });
 
+test("CI that reports only on PRs, not yet on the head a rebase made: the PR waits for it there, never merging on review alone", async () => {
+  const k = kit();
+  k.gh.noCi = true;
+  k.pr(45, "fleetd/T45-x", { "x.md": "x\n" });
+  const first = k.gh.headOf("fleetd/T45-x")!;
+  let rebased = false;
+  // CircleCI reported on the PR's own head; on the head the train's rebase makes, only once told to.
+  k.gh.provider = (sha) => (sha === first || rebased ? [["ci/circleci: build", "success"]] : []);
+  k.commitMain({ "other.md": "o\n" });
+  await k.enqueue(45);
+  await passes(k, 3);
+  expect(k.change(45).headSha).not.toBe(first);
+  expect(k.change(45).state).not.toBe("merged");
+  expect(mergeCalls(k)).toEqual([]);
+  rebased = true;
+  await k.settle();
+  expect(k.change(45).state).toBe("merged");
+  expect(k.host.told).toEqual([]);
+});
+
 test("a repo whose CI can't be read is never taken for one with no CI", async () => {
   const k = kit();
   k.gh.noCi = true;

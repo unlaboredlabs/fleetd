@@ -182,7 +182,7 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   const members: Candidate[] = [];
   const left: [Candidate, string][] = [];
   const reds = new Map<string, Red[]>();
-  const single = (await t.withoutCi(repo, base, head.change.headSha)) ? NO_CI_ALONE : await t.oneAtATime(repo, base);
+  const single = (await t.withoutCi(head.change, base)) ? NO_CI_ALONE : await t.oneAtATime(repo, base);
   if (single !== undefined) {
     // No batch: each PR merges as itself.
     for (const c of cands.slice(1)) left.push([c, `${head.change.changeId} goes first: ${single}`]);
