@@ -73,6 +73,8 @@ export interface TrainHost {
    * project's work off the train (it is looked at again on the next pass). Absent: it has no checkout left.
    */
   projectRemoved?(projectRef: ProjectRef): boolean;
+  /** Whether the project is archived (its lead stopped, its chat read-only): its repo's train moves to a live bot. Absent: never. */
+  projectArchived?(projectRef: ProjectRef): boolean;
   /** The project's repos on GitHub, each `owner/name` lowercased, with the node checkout holding its files. */
   githubRepos(projectRef: ProjectRef): [string, ProjectRef][];
   /** The projects still on their machines that have `repo` as one of their repos. */

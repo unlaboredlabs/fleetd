@@ -493,17 +493,30 @@ export class Train {
     return this.records.positioned([change])[0]!;
   }
 
-  /** The project the repo's train runs in: the one it was created for, or `fallback` once that one is removed. */
+  /**
+   * The project the repo's train runs in: the one it was created for while it is live. Once that one is removed or
+   * archived, a live bot sharing the repo takes it (`fallback` first), so a person's pick of how it merges keeps reaching
+   * its PRs (W845); with none live, a removed one's goes to `fallback` as before.
+   */
   trainProject(repo: string, fallback: ProjectRef): ProjectRef {
     const t = this.records.train(repo);
     if (!t) return fallback;
-    const same = t.projectRef.machineId === fallback.machineId && t.projectRef.projectId === fallback.projectId;
-    if (same || this.host.projectRoot(t.projectRef) !== undefined) return t.projectRef;
-    if (this.host.projectRoot(fallback) !== undefined) {
+    const there = (r: ProjectRef) => this.host.projectRoot(r) !== undefined;
+    const live = (r: ProjectRef) => there(r) && this.host.projectArchived?.(r) !== true;
+    const bound = t.projectRef;
+    const isBound = (r: ProjectRef) => r.machineId === bound.machineId && r.projectId === bound.projectId;
+    if (live(bound)) return bound;
+    const to = [fallback, ...(this.host.projectArchived ? this.host.repoProjects(repo) : [])].find((r) => !isBound(r) && live(r));
+    if (to) {
+      this.records.rebindTrain(repo, to);
+      console.info(`train: ${repo} moved to ${to.machineId}/${to.projectId}, its bot ${bound.projectId} ${there(bound) ? "was archived" : "was removed"}`);
+      return to;
+    }
+    if (!there(bound) && !isBound(fallback) && there(fallback)) {
       this.records.rebindTrain(repo, fallback);
       return fallback;
     }
-    return t.projectRef;
+    return bound;
   }
 
   /**

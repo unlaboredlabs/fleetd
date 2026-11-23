@@ -87,3 +87,19 @@ test("a bot that takes a repo other bots share takes its train's mode, and its P
   setMergeMode(k.hub.db.conn, shop, "test_first");
   expect(repoVerifying(train, "acme/shop", shop)).toBe(true);
 });
+
+test("when the bot a repo's train is bound to is archived, the train moves to a live bot sharing it, so a pick reaches its PRs", async () => {
+  const k = await twoBots();
+  const { train } = trainArea(k.hub);
+  // The repo's train is Shop's; then Shop is archived, and Web, still on the repo, picks how it merges.
+  train.records.ensureTrain("acme/shop", shop, 0);
+  setArchived(k.hub.db.conn, shop, 1);
+  await k.ok(person, "project_settings_set", { ...web, mergeMode: "verify_after" });
+  expect(mergeModeOf(k.hub.db.conn, shop)).toBe("test_first");
+  // Web's PRs go by Web's pick: the train is Web's now.
+  expect(repoVerifying(train, "acme/shop", web)).toBe(true);
+  expect(train.records.train("acme/shop")?.projectRef).toEqual(web);
+  // A step that names only the train's own bot finds the live one too.
+  train.records.rebindTrain("acme/shop", shop);
+  expect(train.trainProject("acme/shop", shop)).toEqual(web);
+});
