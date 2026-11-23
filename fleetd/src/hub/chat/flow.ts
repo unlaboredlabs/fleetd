@@ -46,7 +46,7 @@ import { descriptionOf } from "../skills/frontmatter.ts";
 import { Skills } from "../skills/index.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
-import { nowMs, parseMs } from "../store/time.ts";
+import { isoMs, nowMs, parseMs } from "../store/time.ts";
 import { TaskRecords } from "../tasks/records.ts";
 import { completedRuns, leadMessages, leadSource, leadText, madeUpAt, madeUpLine, order, question, steer, type ThreadMessage } from "./history.ts";
 import { AGENT_PER_MINUTE, chat, type NewMessage } from "./index.ts";
@@ -97,13 +97,35 @@ export const leadAsleep = (hub: Hub, r: ProjectRef) => {
 };
 
 /**
- * When the project's lead's latest turn ended, while it isn't mid-turn: its thread's last progress. The apps take a
- * person's message from before it as one a turn had, answered or not, so the bot leaves the reply's place.
+ * When each lead's latest run ended, on the hub's own clock (when the hub appended its end), by thread: read once from
+ * the log, then kept as ends are appended. Never the node's time, which may run behind the hub's: a quiet turn that
+ * ended after a message must never read as older than it.
+ */
+class LeadEnds {
+  private readonly at = new Map<string, number | null>();
+  constructor(private readonly hub: Hub) {
+    events(hub).subscribe((e) => {
+      if (RUN_ENDS.includes(e.type) && e.machineId !== undefined && e.threadId !== undefined) this.at.set(`${e.machineId}/${e.threadId}`, nowMs(hub.clock));
+    });
+  }
+
+  of(r: ProjectRef, thread: ThreadRef): number | undefined {
+    const k = `${thread.machineId}/${thread.threadId}`;
+    if (!this.at.has(k)) this.at.set(k, events(this.hub).appendedMs(r, thread, RUN_ENDS) ?? null);
+    return this.at.get(k) ?? undefined;
+  }
+}
+const leadEnds = (hub: Hub) => hub.area("chat_lead_ends", (h) => new LeadEnds(h));
+
+/**
+ * When the project's lead's latest turn ended, while it isn't mid-turn, on the hub's clock. The apps take a person's
+ * message from before it as one a turn had, answered or not, so the bot leaves the reply's place.
  */
 export const leadIdleAt = (hub: Hub, r: ProjectRef): string | undefined => {
   const thread = leadThread(hub, r);
   if (thread === undefined || midTurn(hub, thread)) return undefined;
-  return store(hub).threadGet(thread)?.thread.lastProgressAt;
+  const ms = leadEnds(hub).of(r, thread);
+  return ms === undefined ? undefined : isoMs(ms);
 };
 
 /** The project's chat state, as the lead's thread says it now. */
