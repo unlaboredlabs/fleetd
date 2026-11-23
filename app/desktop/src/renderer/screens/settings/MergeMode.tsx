@@ -2,16 +2,18 @@
 // default), or "Merge, then verify", each PR on its own green CI with a revert when main goes red (hub train/lanes.ts,
 // verify.ts). While it merges, then verifies, a repo whose main requires branches up to date says so in one line: PRs
 // still land one at a time there. An admin, where fleetd's GitHub access may, turns that one setting off from here.
-// Reads the project's summary (`mergeMode`) and project_settings_get (`upToDate`); writes project_settings_set. Until
+// While other bots share one of its repos, that repo's train has one mode for all of them: the row shows it and says so
+// (`mergeShared`), and a pick here changes it for them too.
+// Reads the project's summary (`mergeMode`) and project_settings_get (`upToDate`, `mergeShared`); writes project_settings_set. Until
 // project_settings_get answers, the line this device last showed holds its place, its Turn off off.
 import { useEffect, useState } from "react";
-import type { MergeMode, UpToDateRule } from "../../../shared/contracts";
+import type { MergeMode, MergeShared, UpToDateRule } from "../../../shared/contracts";
 import { useAdministers } from "../admin/role";
 import { Button, Segmented } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import { keep, keptOf } from "./HoldsPlace";
 import { HintLines, SettingsRow } from "./parts";
-import { MERGE_MODE_WORDS, MERGE_MODES, upToDateText } from "./mergeModeModel";
+import { MERGE_MODE_WORDS, MERGE_MODES, sharedText, upToDateText } from "./mergeModeModel";
 
 type Ref = { machineId: string; projectId: string };
 
@@ -28,7 +30,10 @@ function keptRule(id: string): UpToDateRule | undefined {
 }
 
 /** `upToDate` undefined: project_settings_get hasn't answered yet. */
-export function MergeModeSetting({ projectRef, mode, upToDate }: { projectRef: Ref; mode: MergeMode; upToDate: readonly UpToDateRule[] | undefined }) {
+export function MergeModeSetting(props: { projectRef: Ref; mode: MergeMode; upToDate: readonly UpToDateRule[] | undefined; shared?: MergeShared | undefined }) {
+  const { projectRef, upToDate, shared } = props;
+  // Shared: the repo's train's mode, the one its PRs go by.
+  const mode = shared?.mode ?? props.mode;
   const live = useLive();
   const hubCall = useHubCall();
   const refetch = useRefetch();
@@ -77,8 +82,8 @@ export function MergeModeSetting({ projectRef, mode, upToDate }: { projectRef: R
       reveal="projects.merge_mode"
       title="How it merges"
       hint={<HintLines lines={HINT} />}
-      line={problem ?? (rule === undefined ? undefined : upToDateText(rule, admin))}
-      lineTone={problem !== null ? "danger" : "warning"}
+      line={problem ?? ([shared === undefined ? undefined : sharedText(shared), rule === undefined ? undefined : upToDateText(rule, admin)].filter(Boolean).join(" ") || undefined)}
+      lineTone={problem !== null ? "danger" : rule !== undefined ? "warning" : "quiet"}
       lineAction={
         problem === null && rule !== undefined && rule.canTurnOff && admin ? (
           <Button variant="ghost" disabled={!live || turningOff || reading} onClick={() => turnOff(rule.repo)}>

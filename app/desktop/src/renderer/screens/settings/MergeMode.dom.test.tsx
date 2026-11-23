@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Settings › Bot › How it merges over a fake hub: an older hub's silence reads "Test, then merge"; a pick saves
 // mergeMode with project_settings_set and shows at once; a main that requires branches up to date says so in one line,
-// with Turn off for an admin where fleetd may, and who to ask otherwise.
+// with Turn off for an admin where fleetd may, and who to ask otherwise; a repo another bot shares says so, with its
+// train's mode.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ const RULE = {
   canTurnOff: true,
 };
 let upToDate: (typeof RULE)[] | undefined;
+let shared: Settings["mergeShared"];
 let admin: boolean;
 
 const snapshot = (mergeMode: "test_first" | "verify_after" | undefined, cursor = 1): HubFrame => ({
@@ -70,6 +72,7 @@ beforeEach(() => {
   calls = [];
   refuse = false;
   upToDate = undefined;
+  shared = undefined;
   admin = true;
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", { platform: "linux" });
@@ -95,7 +98,7 @@ const render = async (mode: "test_first" | "verify_after" | undefined) => {
       if (tool === "mcp_servers_get") return Promise.resolve({ ok: true, output: { global: [], project: [], userServers: true } });
       const section = sectionRead(tool);
       if (section !== undefined) return Promise.resolve(section);
-      return Promise.resolve({ ok: true, output: { settings: upToDate === undefined ? settings : { ...settings, upToDate } } });
+      return Promise.resolve({ ok: true, output: { settings: { ...settings, ...(upToDate === undefined ? {} : { upToDate }), ...(shared === undefined ? {} : { mergeShared: shared }) } } });
     },
     subscribe: (l) => ((listener = l), () => undefined),
     resync: () => Promise.resolve(),
@@ -189,4 +192,14 @@ it("says why when the hub refuses, and shows the saved pick again", async () => 
   await click(button("Merge, then verify"));
   expect(pressed()).toBe("Test, then merge");
   expect(document.body.textContent).toContain("Only a person picks how a bot's PRs merge.");
+});
+
+it("while another bot shares the repo, shows the train's mode and says a change goes for both", async () => {
+  // The bot's own stored mode is from before; the repo's train goes by the shared one.
+  shared = { bots: ["checkout"], mode: "verify_after" };
+  await render("test_first");
+  expect(pressed()).toBe("Merge, then verify");
+  expect(document.body.textContent).toContain("Shared with checkout (same repo): a change here changes it there too.");
+  await click(button("Test, then merge"));
+  expect(sets()).toEqual([{ machineId: "devbox", projectId: "p1", mergeMode: "test_first" }]);
 });

@@ -407,6 +407,8 @@ export const fixtures = [
   "no-repo-chats",
   // Ada's settings page (fixtures/no-repo).
   "no-repo-settings",
+  // Ada's settings while storefront shares her repo, so its merge train (fixtures/no-repo, W845).
+  "no-repo-shared-train",
   // Files both ways in a no-repo project's chat (fixtures/no-repo): a lease and a bank export in, a trip PDF and
   // receipts out.
   "no-repo-files",
@@ -1840,6 +1842,18 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const row = page.getByRole("region", { name: "How it merges", exact: true });
       await row.getByRole("button", { name: "Turn off" }).waitFor();
+      await row.scrollIntoViewIfNeeded();
+    },
+  },
+  // W845: storefront shares Ada's repo, so its merge train: How it merges shows that train's mode and says so.
+  {
+    id: "settings.projects",
+    variant: "shared-train",
+    route: `#/settings/projects?for=${ADA.machineId}/${ADA.projectId}`,
+    fixtures: ["no-repo-shared-train"],
+    open: async (page) => {
+      const row = page.getByRole("region", { name: "How it merges", exact: true });
+      await row.getByText(/Shared with storefront/u).waitFor();
       await row.scrollIntoViewIfNeeded();
     },
   },

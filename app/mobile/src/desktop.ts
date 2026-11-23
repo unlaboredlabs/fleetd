@@ -61,6 +61,7 @@ export type {
   ProjectSettings,
   Merger,
   MergeMode,
+  MergeShared,
   RiskRules,
   UpToDateRule,
   ComputerChoice,
@@ -185,7 +186,7 @@ export { canConnect as tailnetCanConnect, lineOf as tailnetLineOf, MACHINES_URL 
 export { FLOORS, logWhy, MODES as APPROVAL_MODES } from "../../desktop/src/renderer/screens/settings/approvalsModel";
 export { EVERY_OPTIONS, isWatcher, kindLabel, offered, SENTENCE_MAX, sentenceProblem, watcherInput, watchLine } from "../../desktop/src/renderer/screens/automations/watchModel";
 export { linesOf, mergesOf, RULES_WORDS, rulesText, WHO_MERGES, WHO_MERGES_WORDS } from "../../desktop/src/renderer/screens/settings/whoMergesModel";
-export { MERGE_MODE_WORDS, MERGE_MODES, mergeModeOf, upToDateText } from "../../desktop/src/renderer/screens/settings/mergeModeModel";
+export { MERGE_MODE_WORDS, MERGE_MODES, mergeModeOf, sharedText, upToDateText } from "../../desktop/src/renderer/screens/settings/mergeModeModel";
 export { cardLabel, cardOptions, NO_CARD, PAYMENTS_HELP, purchaseLine, purchaseState } from "../../desktop/src/renderer/screens/projects/payments";
 export { addPage as addApprovedPage, FIRST_PAGE as APPROVED_FIRST_PAGE, fold as foldApproved, hasMore as moreApproved, PAGE as APPROVED_PAGE, SHOWN as APPROVED_SHOWN, showAllWord, timesWord, type LogRow as ApprovedRow, type Pages as ApprovedPages } from "../../desktop/src/renderer/screens/settings/approvedLog";
 export { diffLines, type DiffLine, type Piece as DiffPiece } from "../../desktop/src/renderer/screens/settings/diff";
