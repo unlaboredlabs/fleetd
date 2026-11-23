@@ -235,101 +235,138 @@
   min-height: 0;
 }
 
-/* The page in its frame, never coloured by who has it. A phone in its bezel: the bezel `--b` of its width all round, its
-   outer corner its screen's plus the bezel, a hairline of metal at its edge and a soft shadow under it. It stands
-   centred on its stage, its control strip just off its right edge (room kept for it on both sides, so the phone stays
-   centred). Its width `--w` is the most the stage holds at its shape (`--k` its height over its width, bezel and all). */
-.phoneAt {
-  --beside: 0px;
-  --k: calc((1 - 2 * var(--b)) / var(--aspect) + 2 * var(--b));
-  --w: min(100cqw - var(--beside), (100cqh - var(--below, 0px)) / var(--k));
+/* The page in its frame, never coloured by who has it. A phone as its device (DeviceStage): the stage's whole room
+   less what goes under it, the device in the middle, its toolbar at the right edge. */
+.deviceAt {
   position: relative;
   flex: none;
   display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  width: 100cqw;
+  height: calc(100cqh - var(--below, 0px));
 }
-.phoneAt[data-strip] {
-  --beside: 88px;
+/* In 3D: the model's canvas takes the room; a drag on it (off the display while it's yours) turns the device. */
+.model {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  cursor: grab;
+  touch-action: none;
 }
-.phone {
-  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * var(--short) * 0.137);
+.model:active {
+  cursor: grabbing;
+}
+.model[role="application"] {
+  cursor: default;
+}
+.modelCanvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.modelCaption {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+/* The flat device while 3D shows: still there (its picture's elements keep loading and playing), out of sight and
+   out of the way; the model shows their picture. */
+.flatAt[data-away] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Flat: the device face on, as large as the room holds it at its shape (`--aspect`, bezel and all): its bezel and
+   corners the device's own (set inline from deviceModel), a hairline of its metal at its edge, a soft shadow under it. */
+.flatAt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+}
+.flat {
+  --w: min(100cqw, 100cqh * var(--aspect));
   position: relative;
   flex: none;
   width: var(--w);
-  padding: calc(var(--w) * var(--b));
-  border-radius: calc(var(--screen-r) + var(--w) * var(--b));
   background: #0c0c0d;
   box-shadow:
     inset 0 0 0 1px #ffffff1a,
-    0 0 0 1px #4a4a4e,
+    0 0 0 1.5px var(--finish),
     0 1px 2px #0000001f,
     0 18px 40px -16px #00000059;
 }
-.phone[data-kind="android"] {
-  --screen-r: calc(var(--w) * (1 - 2 * var(--b)) * var(--short) * 0.085);
-}
-.phone .screen {
-  border-radius: var(--screen-r);
-}
-/* An iPhone's island over the top of its screen, sized by the phone's short side (`--s`); on its side, along the edge
-   its top turned to. An Android's camera, a dot. A wide panel otherwise (an open Duo's inner one) has none over it.
-   Clicks go through to the screen. */
-.camera {
-  --s: calc(var(--w) * var(--short));
+/* An iPhone's island, a Duo cover's camera: over the display, where the device has it. Clicks go through. */
+.island {
   position: absolute;
-  top: calc(var(--w) * var(--b) + var(--s) * 0.026);
-  left: 50%;
-  width: calc(var(--s) * 0.29);
-  height: calc(var(--s) * 0.085);
   border-radius: 999px;
   background: #000;
-  transform: translateX(-50%);
   pointer-events: none;
 }
-.phone[data-wide]:not([data-island]) .camera {
-  display: none;
-}
-.phone[data-island] .camera {
-  top: 50%;
-  width: calc(var(--s) * 0.085);
-  height: calc(var(--s) * 0.29);
-  transform: translateY(-50%);
-}
-.phone[data-island="left"] .camera {
-  left: calc(var(--w) * var(--b) + var(--s) * 0.026);
-}
-.phone[data-island="right"] .camera {
-  left: auto;
-  right: calc(var(--w) * var(--b) + var(--s) * 0.026);
-}
-.phone[data-kind="android"] .camera {
-  top: calc(var(--w) * var(--b) + var(--s) * 0.03);
-  width: calc(var(--s) * 0.032);
-  height: calc(var(--s) * 0.032);
-}
-/* A phone's control strip: quiet icons in a slim column, no box; its groups a little apart. */
-.strip {
+/* An open Duo's crease: a faint line where its halves meet. */
+.crease {
   position: absolute;
+  background: #00000024;
+  pointer-events: none;
+}
+.crease[data-crease="down"] {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+}
+.crease[data-crease="across"] {
+  left: 0;
+  right: 0;
   top: 50%;
-  left: calc(100% + var(--space-3));
+  height: 1px;
+}
+/* The toolbar: capsules of quiet icons in a slim column at the stage's right edge, T3 Code's. */
+.rail {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  transform: translateY(-50%);
+  justify-content: center;
+  gap: var(--space-2);
 }
-.stripGroup {
+.railGroup {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--raised) 86%, transparent);
+  box-shadow: 0 0 0 1px var(--hairline);
 }
-.stripButton {
+.railButton {
   color: var(--quiet);
+  border-radius: 999px;
 }
-.stripButton:hover:not(:disabled) {
+.railButton:hover:not(:disabled),
+.railButton[aria-pressed="true"] {
   color: var(--text);
 }
-.stripButton svg {
+.railButton[aria-pressed="true"] {
+  background: var(--hover);
+}
+.railButton svg {
   width: 16px;
   height: 16px;
+}
+.railAnchor {
+  display: block;
+  width: 0;
+  height: 0;
 }
 /* Location: places in one press, then one typed. */
 .places {

@@ -7,7 +7,12 @@ Code adapted from other projects into app/desktop, with its license. npm depende
 
 Used in `src/renderer/screens/chat/`: the chat list's follow-at-end rule
 (`apps/web/src/components/chat/MessagesTimeline.logic.ts` → `ChatList.tsx`) and the large-paste rule
-(`attachments.ts`).
+(`attachments.ts`). Used in `src/renderer/screens/sessions/scene.ts`: the approach of its device viewer
+(`packages/client-runtime/src/device/`): a Duo's halves turning `(180 - angle) / 2` each about the hinge, the live
+picture as the displays' texture, presses mapped through the display's texture coordinates, and drawing only when
+something changed. No code or models are copied. T3 Code's `.glb` device models are converted from Apple's AR files,
+which carry no license to redistribute (its `models/sources.json`), so fleetd's devices are built in code from the
+simulator's own display sizes instead.
 
 ```
 MIT License

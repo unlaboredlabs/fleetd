@@ -120,15 +120,21 @@ A simulator is recorded from its start to its end, watched or not. The recording
 frame: upright as the simulator's screen is, and on an iPhone Duo the panel its fold lights. Its replay notes each turn
 and fold.
 
+The simulator shows inside a 3D model of its device: an iPhone Duo with its hinge, an iPhone with its island and
+camera, and a plain phone for an Android. The model folds, opens and turns with the simulator, and the picture fills
+its screen exactly. Drag around the screen to turn the model; double-click or **Face front** turns it back. The cube
+button switches between 3D and a flat frame. A computer without WebGL shows the flat frame, and one that draws WebGL
+without a graphics card starts flat until you pick 3D.
+
 ### Device controls {#sim-controls}
 
-While you have control, a strip beside the simulator offers these. Agents run the same as `mac sim` commands:
+While you have control, a toolbar beside the simulator offers these. Agents run the same as `mac sim` commands:
 
-- Rotate left or right, Home, Lock, Shake
+- Home and Rotate; Rotate right, Lock, Shake and Location under **More**
 - Light or dark appearance
 - Text size (`mac sim text-size extra-large`)
 - Location (`mac sim location 48.8584,2.2945`)
-- Fold, on an iPhone Duo: closed, half-open, open, or laptop (half-open on its side) (`mac sim fold laptop`)
+- Posture, on an iPhone Duo: Closed, Book (half-open), Open or Laptop (half-open on its side) (`mac sim fold laptop`)
 - Screenshot (`mac sim screenshot shot.png`)
 
 ## Turn it off {#switch}

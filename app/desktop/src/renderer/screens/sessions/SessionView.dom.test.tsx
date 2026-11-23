@@ -153,9 +153,9 @@ it("waits for a live screen's first frame quietly, then says what it waits for: 
   act(() => root?.unmount());
   root = undefined;
   await mount("bs-ios");
-  // A phone's stands up from the start.
-  expect(host.querySelector<HTMLElement>("[data-control='agent']")?.dataset["shape"]).toBe("portrait");
   await act(() => new Promise((done) => setTimeout(done, 1_050)));
+  // A phone's device stands up from the start (flat here, once 3D finds this DOM has no WebGL).
+  expect(host.querySelector<HTMLElement>("[data-mode='flat'] [data-kind='phone']")?.dataset["roll"]).toBe("0");
   expect(host.textContent).toContain("Waiting for the simulator…");
   expect(host.textContent).not.toContain("Waiting for the page");
 });
@@ -327,13 +327,14 @@ it("has no address bar while the agent drives, nor on a device's screen", async 
   expect(address()).toBeNull();
 });
 
-it("puts a phone in its bezel, the island over its screen, and its page takes your clicks through the island", async () => {
+it("puts a phone in its device, the island over its screen, and its page takes your clicks through the island", async () => {
   await mount("bs-ios-yours");
   act(() => send({ t: "browser_frame", frame: { sessionId: "bs-ios-yours", seq: 1, jpegB64: "AAAA", width: 603, height: 1311, control: "human" } }));
   await settle();
-  const phone = host.querySelector<HTMLElement>("[data-kind='ios']");
-  expect(phone?.dataset["shape"]).toBe("portrait");
-  expect(phone?.querySelector("[role='application']")).not.toBeNull();
+  const phone = host.querySelector<HTMLElement>("[data-kind='phone']");
+  expect(phone?.dataset["roll"]).toBe("0");
+  // The display is the picture's shape: nothing letterboxed inside the frame.
+  expect(parseFloat(phone?.querySelector<HTMLElement>("[role='application']")?.style.aspectRatio ?? "")).toBeCloseTo(603 / 1311, 6);
   // The island is drawn over the screen, outside it: the page's own element takes the pointer.
   const island = phone?.querySelector("[aria-hidden='true']:not(img)");
   expect(island?.closest("[role='application']")).toBeNull();
@@ -344,21 +345,27 @@ it("puts a phone in its bezel, the island over its screen, and its page takes yo
 
 const strip = () => host.querySelector("[role='toolbar'][aria-label='Device']");
 
-it("gives a phone of yours a slim strip of the controls its machine says work, each press one screen_control", async () => {
+it("gives a phone of yours a slim toolbar of the controls its machine says work and a Duo's postures, each press one screen_control", async () => {
   pressed = [];
   await mount("bs-duo");
   act(() => send({ t: "browser_frame", frame: { sessionId: "bs-duo", seq: 1, jpegB64: "AAAA", width: 1398, height: 2034, control: "human" } }));
   await settle();
-  // Icons only, named by their tooltips: no words in the strip.
+  // A Duo's cover in a Duo, never a plain iPhone (F1391).
+  expect(host.querySelector<HTMLElement>("[data-kind='duo']")?.dataset["panel"]).toBe("cover");
+  // Icons only, named by their tooltips: no words in the toolbar.
   const buttons = [...(strip()?.querySelectorAll("button") ?? [])];
-  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Rotate left", "Rotate right", "Fold", "Home", "Lock", "Shake", "Dark appearance", "Location", "Screenshot"]);
+  expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["Home", "Rotate", "Dark appearance", "Screenshot", "More", "3D needs WebGL, which this computer doesn’t have", "Closed", "Book", "Open"]);
   expect(strip()?.textContent).toBe("");
-  act(() => buttons[0]?.click());
-  act(() => buttons.find((b) => b.getAttribute("aria-label") === "Dark appearance")?.click());
+  expect(buttons.find((b) => b.getAttribute("aria-label") === "Closed")?.getAttribute("aria-pressed")).toBe("true");
+  const press = (label: string) => act(() => buttons.find((b) => b.getAttribute("aria-label") === label)?.click());
+  press("Rotate");
+  press("Dark appearance");
+  press("Book");
   await settle();
   expect(pressed).toEqual([
     { sessionId: "bs-duo", control: "rotate_left" },
     { sessionId: "bs-duo", control: "appearance", value: "dark" },
+    { sessionId: "bs-duo", control: "fold", value: "half-open" },
   ]);
 });
 
@@ -367,11 +374,15 @@ it("shows a phone's frame at its own shape, its island along the edge its top tu
   // A turned iPhone's frame comes on its side: nothing turns it again.
   act(() => send({ t: "browser_frame", frame: { sessionId: "bs-duo-left", seq: 1, jpegB64: "AAAA", width: 2622, height: 1206, control: "human" } }));
   await settle();
-  const phone = host.querySelector<HTMLElement>("[data-kind='ios']");
+  const phone = host.querySelector<HTMLElement>("[data-kind='phone']");
   expect(phone?.style.transform ?? "").toBe("");
-  expect(phone?.dataset["island"]).toBe("left");
+  // Turned its top to the left: its island goes along that edge with it.
+  expect(phone?.dataset["roll"]).toBe("90");
   act(() => root?.unmount());
   root = undefined;
   await mount("bs-duo-agent");
-  expect(strip()).toBeNull();
+  // The view's own buttons only: the device's controls are the agent's.
+  expect(strip()?.querySelector("[aria-label='Home']")).toBeNull();
+  // This DOM has no WebGL: flat only, and the 3D button says why.
+  expect(strip()?.querySelector("[aria-label^='3D needs WebGL']")).not.toBeNull();
 });

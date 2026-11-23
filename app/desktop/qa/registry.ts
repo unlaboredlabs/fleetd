@@ -37,14 +37,14 @@ const systemNotifications = (app: ElectronApplication, supported: boolean) =>
 /** A 1×1 PNG, for the composer's attach step. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64");
 
-/** New screen's iPhone Duo, opened from the Agents tab's plus: its live view, closed, with its strip. */
+/** New screen's iPhone Duo, opened from the Agents tab's plus: its live view, closed, with its toolbar. */
 const openDuo = async (page: Page) => {
   await page.getByRole("button", { name: "New screen", exact: true }).click();
   await page.getByRole("radio", { name: /^iPhone/u }).click();
   await page.getByRole("combobox", { name: "Model" }).click();
   await page.getByRole("option", { name: "iPhone Duo" }).click();
   await page.getByRole("button", { name: "Open screen" }).click();
-  await expect(page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Fold" })).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Closed" })).toBeVisible();
 };
 
 export const fixtures = [
@@ -3836,8 +3836,8 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
-  // W266, D652: an iPhone of your own on the Mac, the phone in its bezel the panel's full height under one line, its
-  // control strip just off its right edge: icons only, what the Mac says works there (no fold on a plain iPhone).
+  // W266, D652, W859: an iPhone of your own on the Mac, the phone as its device the panel's full height under one line,
+  // its toolbar at the right edge: icons only, what the Mac says works there (no postures on a plain iPhone), and 3D.
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.phone),
@@ -3847,22 +3847,22 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeVisible();
       await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
       const strip = page.getByRole("toolbar", { name: "Device" });
-      await expect(strip.getByRole("button")).toHaveCount(8);
-      await expect(strip.getByRole("button", { name: "Fold" })).toHaveCount(0);
+      await expect(strip.getByRole("button")).toHaveCount(6);
+      await expect(strip.getByRole("button", { name: "Closed" })).toHaveCount(0);
     },
   },
-  // ...turned left from its strip: its frame comes on its side, and the phone turns there, its island along the left.
+  // ...turned from its toolbar: its frame comes on its side, and the phone turns there, its island along the left.
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.phone),
     fixtures: ["sessions-preview"],
     variant: "ios-landscape",
     open: async (page) => {
-      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Rotate left" }).click();
-      await expect(page.locator('[data-kind="ios"][data-island="left"]')).toBeVisible();
+      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Rotate", exact: true }).click();
+      await expect(page.locator('[data-kind="phone"][data-roll="90"]')).toBeVisible();
     },
   },
-  // ...an Android of your own: its strip is an Android's (rotate, home, back, screenshot).
+  // ...an Android of your own: its toolbar is an Android's (home, rotate, screenshot; rotate right and back under More).
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.android),
@@ -3871,7 +3871,8 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const strip = page.getByRole("toolbar", { name: "Device" });
       await expect(strip.getByRole("button")).toHaveCount(5);
-      await expect(strip.getByRole("button", { name: "Back" })).toBeVisible();
+      await strip.getByRole("button", { name: "More" }).click();
+      await expect(page.getByRole("menuitem", { name: "Back" })).toBeVisible();
     },
   },
   // D305: the Screens page, the wall: needs you on top with Take over, the live ones as pictures with their kind, machine
@@ -3952,9 +3953,32 @@ export const screens: readonly Screen[] = [
     variant: "duo-open",
     open: async (page) => {
       await openDuo(page);
-      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Fold" }).click();
-      await page.getByRole("menuitemradio", { name: "Open", exact: true }).click();
-      await expect(page.locator('[data-kind="ios"][data-shape]')).toHaveCount(0);
+      await page.getByRole("toolbar", { name: "Device" }).getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.locator('[data-kind="duo"][data-panel="inner"]')).toBeVisible();
+    },
+  },
+  // W859: the Duo in 3D from its toolbar, half open as a book, turned by a drag off its display: a model of the real
+  // device, the picture its display.
+  {
+    id: "sessions",
+    route: `${CHAT}/sessions`,
+    fixtures: ["sessions-preview"],
+    variant: "duo-3d",
+    open: async (page) => {
+      await openDuo(page);
+      const toolbar = page.getByRole("toolbar", { name: "Device" });
+      await toolbar.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.locator('[data-kind="duo"][data-panel="inner"]')).toBeVisible();
+      await toolbar.getByRole("button", { name: "Show it in 3D" }).click();
+      const model = page.locator('[data-mode="3d"] > [role="application"]');
+      await expect(model).toBeVisible();
+      const at = await model.boundingBox();
+      if (at === null) throw new Error("the 3D device has no box");
+      await page.mouse.move(at.x + 8, at.y + 8);
+      await page.mouse.down();
+      await page.mouse.move(at.x + 68, at.y + 28, { steps: 6 });
+      await page.mouse.up();
+      await expect(toolbar.getByRole("button", { name: "Face front" })).toBeVisible();
     },
   },
   // ...the machines that can host it with their slots; the agents' Mac, its one screen in use, offers to wait, and the

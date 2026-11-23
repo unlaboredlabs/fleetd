@@ -4,7 +4,7 @@
 // as browser_input, in the frame's own pixels (on the window's peer while one is open: rtc.ts). ⌘⇧↩ never does: the
 // app's keymap catches it before the page's handlers.
 // A browser that is theirs takes their address bar too: an address to go to, back, forward and reload.
-import { useCallback, useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type WheelEvent } from "react";
+import { useCallback, useEffect, useRef, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type RefObject, type WheelEvent } from "react";
 import type { BrowserFrame, BrowserInput, BrowserSessionsOutput } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
@@ -155,7 +155,13 @@ export const keyInput = (e: { key: string; code: string; altKey: boolean; ctrlKe
  * The handlers that send a person's input from the frame to the page while `enabled` (the page is theirs): presses,
  * releases and moves (one a frame), wheel, keys and pastes, each in the frame's pixels.
  */
-export function useFrameInput(sessionId: string, frame: { width: number; height: number } | undefined, enabled: boolean) {
+export function useFrameInput(
+  sessionId: string,
+  frame: { width: number; height: number } | undefined,
+  enabled: boolean,
+  /** Where a viewport point falls on the picture when a 3D device shows it (DeviceStage), as fractions; else the element's box. */
+  place?: RefObject<((clientX: number, clientY: number) => { x: number; y: number } | null) | null>,
+) {
   const pending = useRef<BrowserInput | null>(null);
   const raf = useRef<number | undefined>(undefined);
   useEffect(() => () => {
@@ -164,7 +170,10 @@ export function useFrameInput(sessionId: string, frame: { width: number; height:
   const { hub } = useDataLayer();
   if (!enabled || frame === undefined) return undefined;
   const send = (input: BrowserInput) => sendInput(hub, sessionId, input);
-  const at = (e: PointerEvent<HTMLElement> | WheelEvent<HTMLElement>) => framePoint(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), frame);
+  const at = (e: PointerEvent<HTMLElement> | WheelEvent<HTMLElement>) => {
+    const p = place?.current?.(e.clientX, e.clientY);
+    return p === null || p === undefined ? framePoint(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), frame) : { x: Math.round(p.x * frame.width), y: Math.round(p.y * frame.height) };
+  };
   const button = (n: number) => BUTTONS[n] ?? "none";
   return {
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
