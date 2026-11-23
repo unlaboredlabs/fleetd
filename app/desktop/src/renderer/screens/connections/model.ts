@@ -228,13 +228,15 @@ const NAME = /^[A-Za-z0-9_-]{1,64}$/u;
 const HEADER = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/u;
 const ENV = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
-/** A name made from what the person typed: the URL's host's first word, or the package or program the command runs. */
+/** A name made from what the person typed: the URL's host's first word (an address whole), or the package or program
+ * the command runs. */
 export const suggestedName = (draft: Pick<Draft, "kind" | "url" | "command">): string => {
   let raw: string;
   if (draft.kind === "url") {
     try {
-      const parts = new URL(draft.url.trim()).hostname.split(".").filter((p) => !["mcp", "www", "api"].includes(p));
-      raw = parts[0] ?? "";
+      const host = new URL(draft.url.trim()).hostname;
+      const address = host.startsWith("[") || /^\d+(\.\d+){3}$/u.test(host);
+      raw = address ? host : (host.split(".").filter((p) => !["mcp", "www", "api"].includes(p))[0] ?? "");
     } catch {
       raw = "";
     }

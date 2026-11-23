@@ -140,7 +140,8 @@ async function set(hub: Hub, caller: Caller, given: McpServerSetInput) {
   }
   const team = keyless && (signsIn || asked !== undefined);
   if (team && (before === undefined || before.oauth !== undefined || before.connectedBy !== undefined)) mayConnect(caller, before);
-  else if (keyless && !team) mayAddPlain(caller, input.transport);
+  // A kept Authorization is a key already saved, not a server that asks no one: refused as any team server is.
+  else if (keyless && !team && !hasKey(input)) mayAddPlain(caller, input.transport);
   else mayChange(caller, scope);
   checkInput(input);
   const project = projectOf(hub, scope);
