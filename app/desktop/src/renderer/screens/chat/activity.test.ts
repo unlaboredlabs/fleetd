@@ -94,7 +94,7 @@ describe("the lead's activity line", () => {
 // reply read "Worked for 8s", the last run alone.
 describe("how long the lead worked toward its reply", () => {
   const t = (m: number, sec = 0) => `2026-10-19T10:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.000Z`;
-  const say = (author: "human" | "lead", at: string, n: number) => ({ messageId: `m${String(n)}`, author, state: "final" as const, text: "x", createdAt: at });
+  const say = (author: "human" | "lead", at: string, n: number) => ({ messageId: `m${String(n)}`, projectRef: ref, seq: n, author, state: "final" as const, text: "x", createdAt: at });
   const lead = (on: boolean, seq: number, at: string) => ev(seq, "chat.waiting", working(on), ref.projectId, at);
   const of = (events: HubEvent[], messages: ReturnType<typeof say>[]) => state({ events, chats: { [KEY]: { ...emptyChat, messages } } });
 
