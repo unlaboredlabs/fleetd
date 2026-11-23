@@ -2,7 +2,7 @@
 // rules, a file's trip to and from the hub, the chat reducers, whose a project is and the tools it calls, the Add
 // project flow, a project's allowed profiles, its watchers' words, its approvals', who merges' and payments' words, the prose
 // diff a skill's history shows, the Update button's run and its wording, the characters an approval card marks, the
-// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking (wake.ts),
+// state glyph's frames, the lead's turn line's words and how it holds steady, the New screen picker's machines, the device a phone screen shows (deviceModel), Connections' named services (Paper, Notion), custom MCPs and Tailscale's words, a cloud bot waking (wake.ts),
 // fleetd cloud's accounts call, and the agent providers (Anthropic, Google) with their models. Pure modules that import no packages, so Metro and vitest read them as they are (metro.config.js); ci.yml
 // runs this app's checks when they change.
 export type {
@@ -230,11 +230,14 @@ export {
   kindLine,
   openWord,
   pickHost,
+  pickModel,
   profileBusy,
+  simModels,
   slotLine,
   whyOff,
   type OffReason,
   type ScreenKind,
 } from "../../desktop/src/renderer/screens/sessions/pickScreen";
-export { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES, shotName, stripOf, type StripControl } from "../../desktop/src/renderer/screens/sessions/strip";
+export { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES, POSTURE, railOf, shotName, stripOf, TEXT_SIZES, textSizeWord, type StripControl } from "../../desktop/src/renderer/screens/sessions/strip";
+export { bodyOf, flatOf, poseOf, type Body, type Pose } from "../../desktop/src/renderer/screens/sessions/deviceModel";
 export { moveOf, turnBetween } from "../../desktop/src/renderer/screens/sessions/turn";

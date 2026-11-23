@@ -56,6 +56,11 @@ notification and a card in the chat. Tap **Open**.
 
 Pinch to zoom. In a browser you control, tap the site at the top to type an address.
 
+A phone screen shows inside its own device, in 3D: an iPhone Duo folds and opens with its simulator. While you watch,
+drag it to turn it; it turns back when you let go. While you control it, the strip under it has Home, Rotate, light or
+dark, Text Size, Screenshot, **More**, an iPhone Duo's **Posture** (Closed, Book, Open, Laptop), and the 3D or flat
+switch.
+
 To open a screen of your own, tap **New Screen** on the bot's page. **End Screen** closes it.
 
 ## Artifacts {#artifacts}

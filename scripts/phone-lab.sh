@@ -3,7 +3,14 @@
 #
 #   scripts/phone-lab.sh up      start it, seeded, and print what the simulator needs to pair
 #   scripts/phone-lab.sh pair    a new pairing code and link (single use, 15 minutes) for one more pairing
-#   scripts/phone-lab.sh down    stop what `up` started and delete its folder
+#   scripts/phone-lab.sh mac [<frames dir>]
+#                                a stand-in for the agents' Mac on the lab hub (fleetd/scripts/screen-lab.ts), so a
+#                                person's New screen › iPhone opens an iPhone Duo or an iPhone 17 Pro there, its
+#                                pictures real simulator screenshots (closed.jpg, half-open.jpg, open.jpg, laptop.jpg,
+#                                iphone.jpg, iphone-left.jpg in the folder, else the desktop app's fixtures);
+#                                PHONE_LAB_WATCH=1 keeps its screens their agent's, to try what a person watching sees;
+#                                PHONE_LAB_CYCLE=<ms> folds an iPhone Duo through its postures by itself, one each <ms>
+#   scripts/phone-lab.sh down    stop what `up` and `mac` started and delete its folder
 #
 # It is the factory lab's offline fleet (tests/lab/factory/kit.ts): a hub and a node of their own, run in the
 # foreground with no service, under $TMPDIR/phone-lab (FLEETD_HOME and HOME both there, never ~/.fleetd), the hub on
@@ -72,7 +79,24 @@ up() {
   pair
 }
 
+mac() {
+  running && [[ -f $DIR/lab.json ]] || { echo "phone-lab: not up; run scripts/phone-lab.sh up" >&2; exit 1; }
+  if [[ -f $DIR/mac.pid ]] && kill -0 "$(cat "$DIR/mac.pid")" 2>/dev/null; then echo "phone-lab: the lab's Mac is already up"; return; fi
+  local home code
+  home=$(lab_field fleetdHome)
+  # A worker's code from the lab hub itself, never the real hub's.
+  code=$(FLEETD_HOME=$home HOME=$home/hub-user "$(cat "$DIR/fleetd.bin")" pair --worker lab-mac | sed -n 's/.*--code \([^ ]*\).*/\1/p' | head -n1)
+  [[ -n $code ]] || { echo "phone-lab: the lab hub gave no enrolment code" >&2; exit 1; }
+  setsid bun "$REPO/fleetd/scripts/screen-lab.ts" --hub "$(lab_field hubUrl)" --code "$code" --fallback "$REPO/app/desktop/fixtures/sessions/media" ${1:+--frames "$1"} ${PHONE_LAB_WATCH:+--watch} ${PHONE_LAB_CYCLE:+--cycle "$PHONE_LAB_CYCLE"} >"$DIR/mac.log" 2>&1 </dev/null &
+  echo $! >"$DIR/mac.pid"
+  for _ in $(seq 30); do grep -q 'screen-lab: linked' "$DIR/mac.log" 2>/dev/null && break; sleep 1; done
+  grep -q 'screen-lab: linked' "$DIR/mac.log" || { tail -n 20 "$DIR/mac.log" >&2; echo "phone-lab: the lab's Mac didn't link" >&2; exit 1; }
+  echo "phone-lab: the lab's Mac is up (log: $DIR/mac.log): New screen › iPhone opens an iPhone Duo or an iPhone 17 Pro"
+}
+
 down() {
+  # The lab's Mac first: only the PID `mac` started.
+  [[ -f $DIR/mac.pid ]] && kill -TERM "$(cat "$DIR/mac.pid")" 2>/dev/null || true
   if running; then
     local pid
     pid=$(cat "$PID_FILE")
@@ -89,6 +113,7 @@ down() {
 case ${1:-} in
   up) up ;;
   pair) pair ;;
+  mac) mac "${2:-}" ;;
   down) down ;;
-  *) echo "usage: scripts/phone-lab.sh up|pair|down" >&2; exit 2 ;;
+  *) echo "usage: scripts/phone-lab.sh up|pair|mac [<frames dir>]|down" >&2; exit 2 ;;
 esac

@@ -10,7 +10,9 @@
 // Leaving while it's yours asks whether to hand it back first, so its agent isn't left waiting. A browser that's yours
 // has Safari's moves too: tap its site at the top to type where it goes (screen.ts addressOf), reload beside it, and
 // back and forward by the keyboard button. A phone screen of yours has its control strip over those actions
-// (DeviceStrip), and when its device turns or a Duo opens, the page turns or grows to its new shape (turn.ts).
+// (DeviceStrip), and when its device turns or a Duo opens, the page turns or grows to its new shape (turn.ts). A phone
+// screen shows inside its own device (DeviceFrame): in 3D by default, a drag while you watch turning it, which springs
+// back to face you when you let go.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
@@ -20,7 +22,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
-import { moveOf, turnBetween, zoomAbout, type BrowserFrame } from "../desktop";
+import { bodyOf, flatOf, moveOf, poseOf, turnBetween, zoomAbout, type BrowserFrame } from "../desktop";
 import { useHub, type RootParams } from "../hubContext";
 import { addressable, addressOf, BACKSPACE, cardOf, clampView, controlLine, controlOf, ENTER, FramePacer, hostOf, KIND_WORD, MAX_ZOOM, NAVIGATE, PageTouches, pixelsPerPoint, toFrame, typed, type Navigation, type Size } from "../screen";
 import { space, type, useTheme } from "../theme";
@@ -29,9 +31,29 @@ import { Avatar } from "../ui/Avatar";
 import { Glass, GlassGroup } from "../ui/Glass";
 import { haptics } from "../ui/haptics";
 import { Icon } from "../ui/Icon";
+import { DeviceFrame } from "./DeviceFrame";
 import { DeviceStrip } from "./DeviceStrip";
 
 const SETTLE = { damping: 26, stiffness: 260, mass: 1 } as const;
+/**
+ * Where the page goes in `box` for a picture of `size`: a phone screen's device (its body, pose and frame, the picture
+ * inside its bezel), else the picture itself fitted to the box; and the picture's points per pixel there.
+ */
+function layoutOf(kind: "ios" | "android" | undefined, model: string | undefined, fold: string | undefined, orientation: string | undefined, size: Size | undefined, box: Size) {
+  const frame = size ?? { width: 1280, height: 800 };
+  const body = bodyOf(kind, model, size);
+  const pose = body === undefined ? undefined : poseOf(body, fold, orientation, size);
+  const shape = body === undefined || pose === undefined ? undefined : flatOf(body, pose);
+  const deviceWidth = shape === undefined ? 0 : Math.min(box.width, box.height * shape.aspect);
+  const device = shape === undefined ? undefined : { width: deviceWidth, height: deviceWidth / shape.aspect };
+  const bezel = shape === undefined ? 0 : deviceWidth * shape.bezelX;
+  const fitted = Math.min(box.width / frame.width, box.height / frame.height);
+  const page = device === undefined ? { width: frame.width * fitted, height: frame.height * fitted } : { width: device.width - 2 * bezel, height: device.height - 2 * bezel };
+  return { body, pose, shape, device, page, fit: page.width / frame.width };
+}
+
+/** A device pose's turn (deviceModel's roll, anticlockwise) as the orientation word turn.ts reads. */
+const ROLL_WORD: Readonly<Record<number, string>> = { 0: "portrait", 90: "landscape_left", [-90]: "landscape_right", 180: "portrait_upside_down" };
 /** How far past its bounds a pinch goes before it springs back. */
 const OVERZOOM = 1.25;
 /** The page's corners at rest, inset from the screen's edges. */
@@ -75,8 +97,20 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   }, [session, sessionId]);
   // A slot goes on top once its frame has drawn, and only while that frame is the newest: an older one loads again when
   // the page changes size (a Duo opened), and must not cover the frame that did.
-  const loaded = (slot: "a" | "b", frame: BrowserFrame) =>
+  // A device whose display is drawn in two halves (an iPhone Duo's inner one, DeviceFrame) has each picture twice: it
+  // goes on top once both have drawn, or one half would show the picture before it for a moment.
+  const copies = useRef(1);
+  const loads = useRef(new WeakMap<BrowserFrame, number>());
+  const loaded = (slot: "a" | "b", frame: BrowserFrame) => {
+    const n = (loads.current.get(frame) ?? 0) + 1;
+    loads.current.set(frame, n);
+    if (n < copies.current) return;
+    // Its move to the new shape is set up now, as it goes on top, so the first frame at the new size already starts
+    // from the old one.
+    if (frame === newestRef.current) moveTo.current(frame);
     setSlots((s) => (s[slot] === frame && s.top !== slot && frame === newestRef.current ? { ...s, top: slot } : s));
+  };
+  const moveTo = useRef<(frame: BrowserFrame) => void>(() => {});
   const shownFrame = slots[slots.top] ?? slots.a ?? slots.b;
 
   const card = listed === undefined ? undefined : cardOf(listed);
@@ -134,7 +168,24 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
   // The page's box and the frame's size, which the gestures read on the UI thread.
   const [box, setBox] = useState<Size>({ width: 1, height: 1 });
-  const frameSize: Size = useMemo(() => ({ width: newest?.width ?? 1280, height: newest?.height ?? 800 }), [newest?.width, newest?.height]);
+  // The page takes the shape of the picture that shows (the one on top), never of one still loading under it: a device
+  // that took the new shape a frame early would stretch the old picture across it.
+  const sized = shownFrame ?? newest;
+  const frameSize: Size = useMemo(() => ({ width: sized?.width ?? 1280, height: sized?.height ?? 800 }), [sized?.width, sized?.height]);
+  // A phone screen's device around its picture (DeviceFrame): the frame fits the box, the picture inside its bezel;
+  // any other screen's picture fits the box itself. The picture's shape says which device and how it stands.
+  const phoneKind = card?.kind === "ios" || card?.kind === "android" ? card.kind : undefined;
+  const placed = (size: Size | undefined) => layoutOf(phoneKind, listed?.model, listed?.fold, listed?.orientation, size, box);
+  const { body, pose, shape, device, page, fit } = placed(sized === undefined ? undefined : frameSize);
+  // 3D (the default) or flat, and a drag's turn while you watch.
+  const [three, setThree] = useState(true);
+  copies.current = three && body?.kind === "duo" && pose?.panel === "inner" ? 2 : 1;
+  const yaw = useSharedValue(0);
+  const pitch = useSharedValue(0);
+  const turnsV = useSharedValue(false);
+  useEffect(() => {
+    turnsV.value = three && device !== undefined;
+  }, [turnsV, three, device]);
   const boxV = useSharedValue<Size>(box);
   const frameV = useSharedValue<Size>(frameSize);
   useEffect(() => {
@@ -184,8 +235,8 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   // One finger. Its gesture runs on the UI thread, where what it captured stays as the view first drew it (the page
   // not yet yours): it only moves the zoomed page while you watch (yoursV, a shared value) and hands each touch to the
   // JS thread, where PageTouches (screen.ts) reads whether the page is yours as the touch lands.
-  const latest = useRef({ yours, box, frameSize });
-  latest.current = { yours, box, frameSize };
+  const latest = useRef({ yours, box, frameSize, fit });
+  latest.current = { yours, box, frameSize, fit };
   const yoursV = useSharedValue(yours);
   useEffect(() => {
     yoursV.value = yours;
@@ -195,10 +246,10 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
       new PageTouches({
         yours: () => latest.current.yours,
         where: (px, py) => {
-          const { box: b, frameSize: f } = latest.current;
-          return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, { zoom: zoom.value, x: x.value, y: y.value }), t: Date.now() };
+          const { box: b, frameSize: f, fit: k } = latest.current;
+          return { at: { x: px, y: py }, frame: toFrame({ x: px, y: py }, b, f, { zoom: zoom.value, x: x.value, y: y.value }, k), t: Date.now() };
         },
-        scale: () => pixelsPerPoint(latest.current.box, latest.current.frameSize, { zoom: zoom.value, x: x.value, y: y.value }),
+        scale: () => pixelsPerPoint(latest.current.box, latest.current.frameSize, { zoom: zoom.value, x: x.value, y: y.value }, latest.current.fit),
         send: (input) => {
           session.input(sessionId, input);
           if (input.kind === "mouse" && input.action === "pressed") haptics.tap();
@@ -228,6 +279,12 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         scheduleOnRN(touchMove, e.x, e.y, e.numberOfPointers);
         return;
       }
+      // A device in 3D at rest turns under the finger; zoomed in, the finger moves the page.
+      if (turnsV.value && zoom.value < 1.01) {
+        yaw.value = Math.max(-80, Math.min(80, yaw.value + e.changeX * 0.5));
+        pitch.value = Math.max(-50, Math.min(50, pitch.value - e.changeY * 0.5));
+        return;
+      }
       x.value += e.changeX;
       y.value += e.changeY;
     },
@@ -235,6 +292,8 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
       "worklet";
       scheduleOnRN(touchUp, e.x, e.y);
       if (!yoursV.value) settle();
+      yaw.value = withSpring(0, SETTLE);
+      pitch.value = withSpring(0, SETTLE);
     },
   });
   // Handed back, ended or closed mid-touch: the finger lets go.
@@ -303,34 +362,40 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
   // The page at rest: the whole frame, fit in the box, its corners rounded. When its device turns or a Duo opens, it
   // turns or grows to its new shape from where it stood (the orientation, a moment ahead of the frame, says which way).
-  const fit = Math.min(box.width / frameSize.width, box.height / frameSize.height);
-  const page = { width: frameSize.width * fit, height: frameSize.height * fit };
   const spin = useSharedValue(0);
   const growX = useSharedValue(1);
   const growY = useSharedValue(1);
   const stood = useRef<{ page: Size; orientation: string | undefined } | null>(null);
-  const orientation = listed?.orientation;
-  const drawn = newest !== undefined;
+  // A device's turn is its pose's, read from the picture itself (deviceModel): the session's orientation can come late
+  // or early, and a fold (a Duo opened, folded, stood as a laptop) is not a turn: it grows to its new shape, the
+  // device's own halves moving (DeviceFrame).
+  const orientation = pose === undefined ? listed?.orientation : ROLL_WORD[pose.roll];
+  // Where it stands now, for the next picture's move.
   useEffect(() => {
-    const now = { width: page.width, height: page.height };
+    stood.current = { page: { width: page.width, height: page.height }, orientation };
+  });
+  moveTo.current = (frame) => {
     const was = stood.current;
-    const same = was !== null && Math.abs(was.page.width - now.width) < 1 && Math.abs(was.page.height - now.height) < 1;
-    stood.current = { page: now, orientation: same ? was.orientation : orientation };
-    if (was === null || same || !drawn) return;
-    const move = moveOf(was.page, now, turnBetween(was.orientation, orientation));
+    const next = placed({ width: frame.width, height: frame.height });
+    const turnedTo = next.pose === undefined ? listed?.orientation : ROLL_WORD[next.pose.roll];
+    if (was === null) return;
+    const move = moveOf(was.page, next.page, turnBetween(was.orientation, turnedTo));
     if (move === null) return;
     if (move.kind === "turn") {
       spin.value = move.degrees;
       growX.value = move.scale;
       growY.value = move.scale;
     } else {
-      growX.value = move.scaleX;
-      growY.value = move.scaleY;
+      // Grown from the old size keeping the new shape's proportions: scaled apart, a Duo opening (its tall cover to its
+      // wide inner display) would squash the picture for the move's first frames.
+      const k = Math.min(move.scaleX, move.scaleY);
+      growX.value = k;
+      growY.value = k;
     }
     spin.value = withSpring(0, SETTLE);
     growX.value = withSpring(1, SETTLE);
     growY.value = withSpring(1, SETTLE);
-  }, [page.width, page.height, orientation, drawn, spin, growX, growY]);
+  };
   const turning = useAnimatedStyle(() => ({ transform: [{ rotate: `${String(spin.value)}deg` }, { scaleX: growX.value }, { scaleY: growY.value }] }));
   const host = hostOf(newest?.url);
   const canGo = addressable(state.hub.phase === "live" && state.hub.features?.includes(NAVIGATE) === true, card?.kind, control, ended);
@@ -363,6 +428,20 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     );
   };
 
+  // The page's pictures, and what it says before its first.
+  const pageContent = (
+    <>
+      {image("a")}
+      {image("b")}
+      {shownFrame === undefined && !ended ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={t.secondary} />
+          <Text style={[type.footnote, { color: t.secondary }]}>{`Connecting to ${who}'s ${kind}…`}</Text>
+        </View>
+      ) : null}
+    </>
+  );
+
   return (
     <View style={[styles.fill, { backgroundColor: ground }]}>
       <StatusBar style={t.dark ? "light" : "dark"} />
@@ -375,24 +454,23 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
               accessible
               accessibilityLabel={`${who}'s ${kind}${host === "" ? "" : `, ${host}`}. ${yours ? "Tap to click, drag to scroll, touch and hold to drag." : "Pinch to zoom."}`}
             >
-              <Animated.View style={[{ width: page.width, height: page.height }, moved]}>
-                <Animated.View
-                  style={[
-                    styles.page,
-                    { borderRadius: PAGE_RADIUS, backgroundColor: t.dark ? "#1C1C1E" : "#FFFFFF" },
-                    yours && { borderColor: t.accent, borderWidth: 2 },
-                    turning,
-                  ]}
-                >
-                  {image("a")}
-                  {image("b")}
-                  {shownFrame === undefined && !ended ? (
-                    <View style={styles.center}>
-                      <ActivityIndicator color={t.secondary} />
-                      <Text style={[type.footnote, { color: t.secondary }]}>{`Connecting to ${who}'s ${kind}…`}</Text>
-                    </View>
-                  ) : null}
-                </Animated.View>
+              <Animated.View style={[device ?? page, moved]}>
+                {device !== undefined && body !== undefined && pose !== undefined ? (
+                  <Animated.View style={turning}>
+                    <DeviceFrame body={body} pose={pose} size={device} three={three} folds={!yours} yaw={yaw} pitch={pitch} screen={<View style={styles.fill}>{pageContent}</View>} />
+                  </Animated.View>
+                ) : (
+                  <Animated.View
+                    style={[
+                      styles.page,
+                      { borderRadius: PAGE_RADIUS, backgroundColor: t.dark ? "#1C1C1E" : "#FFFFFF" },
+                      yours && { borderColor: t.accent, borderWidth: 2 },
+                      turning,
+                    ]}
+                  >
+                    {pageContent}
+                  </Animated.View>
+                )}
               </Animated.View>
             </View>
           </GestureDetector>
@@ -517,7 +595,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         {/* The one control, and the keyboard while it's yours. */}
         <View style={[styles.toolbar, { paddingBottom: keyboardUp ? space.sm : Math.max(insets.bottom, space.md) }]} pointerEvents="box-none">
           {strip && listed !== undefined && card !== undefined ? (
-            <DeviceStrip screen={listed} name={card.kind === "ios" ? "iPhone" : "Android"} onChanged={() => void session.readScreens(key)} />
+            <DeviceStrip screen={listed} name={listed.model ?? (card.kind === "ios" ? "iPhone" : "Android")} three={three} onThree={setThree} onChanged={() => void session.readScreens(key)} />
           ) : null}
           {ended ? (
             <Action label="Done" onPress={() => navigation.goBack()} prominent />

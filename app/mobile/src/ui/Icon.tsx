@@ -105,6 +105,10 @@ const SYMBOLS = {
   shake: ["iphone.radiowaves.left.and.right", "vibration"],
   location: ["location", "location_on"],
   screenshot: ["camera.viewfinder", "screenshot"],
+  textSize: ["textformat.size", "format_size"],
+  more: ["ellipsis", "more_horiz"],
+  threeD: ["cube", "deployed_code"],
+  flat: ["iphone", "smartphone"],
   darkMode: ["moon", "dark_mode"],
   lightMode: ["sun.max", "light_mode"],
 } as const satisfies Record<string, readonly [Extract<SymbolViewProps["name"], string>, AndroidSymbol]>;

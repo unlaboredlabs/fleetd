@@ -4,11 +4,12 @@
 // Updates for an update). There is no switch per kind to turn on (D574). The machine, when
 // more than one can (its browser is only its own machine's, on the profile that keeps its sign-ins), each with its
 // slots in words. Open puts them in its live view, in control, with End Screen; a full machine offers Wait for a Slot,
-// which this sheet follows until the screen opens (or Cancel gives it up). A PR's build is the desktop's.
+// which this sheet follows until the screen opens (or Cancel gives it up). An iPhone's model is the Mac's to offer
+// (an iPhone Duo among them), the first, a plain iPhone, unless picked. A PR's build is the desktop's.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Keyboard, ScrollView, StyleSheet, Text, View } from "react-native";
-import { adminNames, askLine, hostsFor, kindLine, openWord, pickHost, profileBusy, SCREEN_KINDS, slotLine, whyOff, type HubError, type ScreenKind } from "../../desktop";
+import { adminNames, askLine, hostsFor, kindLine, openWord, pickHost, pickModel, profileBusy, SCREEN_KINDS, simModels, slotLine, whyOff, type HubError, type ScreenKind } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { waitLine, waitOutcome, type Wait } from "../../screen";
 import { refOf } from "../../store";
@@ -38,6 +39,10 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   const [picked, setPicked] = useState<string | null>(null);
   const hosts = hostsFor(machines, shownKind, home);
   const host = pickHost(hosts, picked);
+  // An iPhone's model, as its Mac offers them.
+  const [pickedModel, setPickedModel] = useState<string | null>(null);
+  const models = shownKind === "ios" ? simModels(machines, host?.machineId) : [];
+  const model = pickModel(models, pickedModel);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const [wait, setWait] = useState<{ readonly wait: Wait; readonly since: string; readonly machine: string } | null>(null);
@@ -60,7 +65,11 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
     setBusy(true);
     setError(null);
     const since = new Date().toISOString();
-    const r = await session.call("screen_open", { projectRef: refOf(key), kind: shownKind, machineId: host.machineId, ...(host.full ? { wait: true } : {}) }, 120_000);
+    const r = await session.call(
+      "screen_open",
+      { projectRef: refOf(key), kind: shownKind, machineId: host.machineId, ...(host.full ? { wait: true } : {}), ...(model === undefined ? {} : { sim: { model: model.id } }) },
+      120_000,
+    );
     setBusy(false);
     if (!r.ok) {
       haptics.warning();
@@ -100,7 +109,7 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
   useLayoutEffect(() => {
     navigation.setOptions(sheetOptions(t, cancel, { label, enabled: host !== undefined && host.online && wait === null, busy: busy || wait !== null, onPress: () => void start() }, true));
     // `start` and `cancel` read what these are.
-  }, [navigation, t, busy, host?.machineId, host?.full, host?.online, shownKind, wait, label]);
+  }, [navigation, t, busy, host?.machineId, host?.full, host?.online, shownKind, wait, label, model?.id]);
 
   const reading = roles.value === undefined;
   const failed = roles.value?.ok === false ? roles.value.error : undefined;
@@ -146,6 +155,22 @@ export function NewScreen({ navigation, route }: NativeStackScreenProps<RootPara
                   onPress={() => {
                     haptics.select();
                     setPicked(h.machineId);
+                  }}
+                />
+              ))}
+            </ListSection>
+          )}
+          {off !== null || models.length < 2 ? null : (
+            <ListSection header="Model">
+              {models.map((m) => (
+                <CheckRow
+                  key={m.id}
+                  title={m.name}
+                  checked={m.id === model?.id}
+                  disabled={busy || wait !== null}
+                  onPress={() => {
+                    haptics.select();
+                    setPickedModel(m.id);
                   }}
                 />
               ))}

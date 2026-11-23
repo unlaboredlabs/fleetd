@@ -47,3 +47,10 @@ mac run -- 'xcrun simctl --set "$FLEETD_MAC_SIM_SET" openurl "$FLEETD_MAC_SIM" "
 The app asks to pair with that hub; once it has, the chats list shows the four projects. A code works once, for 15
 minutes: `scripts/phone-lab.sh pair` prints a new one. `scripts/phone-lab.sh down` stops only what `up` started and
 deletes its folder.
+
+To try a phone screen (an iPhone Duo or an iPhone in its device, its controls, a replay), `scripts/phone-lab.sh mac`
+adds a stand-in for the agents' Mac to the lab hub (`fleetd/scripts/screen-lab.ts`): **New Screen › iPhone** then
+opens one, its pictures real simulator screenshots that follow its rotation, posture and controls. Give it a folder of
+your own (`scripts/phone-lab.sh mac <dir>` with `closed.jpg`, `half-open.jpg`, `open.jpg`, `laptop.jpg`, `iphone.jpg`,
+`iphone-left.jpg`) to change them. The lab hub runs this checkout's fleetd: set `FLEETD_BIN=fleetd/dist/fleetd` after
+`bun run compile` in `fleetd/` when a change reaches the hub.

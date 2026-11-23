@@ -176,10 +176,11 @@ export const clampView = (box: Size, frame: Size, v: View): View => {
 
 /**
  * Where a point in the box (from its top left) is in the frame's pixels, through the view; null off the frame (the
- * bars beside a frame narrower than the box).
+ * bars beside a frame narrower than the box). `fit`: the frame's points per pixel at rest when it is drawn smaller
+ * than the box fits it (a phone's picture inside its device's bezel).
  */
-export const toFrame = (p: { x: number; y: number }, box: Size, frame: Size, v: View): { x: number; y: number } | null => {
-  const s = fitScale(box, frame) * v.zoom;
+export const toFrame = (p: { x: number; y: number }, box: Size, frame: Size, v: View, fit = fitScale(box, frame)): { x: number; y: number } | null => {
+  const s = fit * v.zoom;
   const x = (p.x - box.width / 2 - v.x) / s + frame.width / 2;
   const y = (p.y - box.height / 2 - v.y) / s + frame.height / 2;
   if (x < 0 || y < 0 || x > frame.width || y > frame.height) return null;
@@ -187,7 +188,7 @@ export const toFrame = (p: { x: number; y: number }, box: Size, frame: Size, v: 
 };
 
 /** Frame pixels per point at this view: a finger's move in points, in the page's pixels. */
-export const pixelsPerPoint = (box: Size, frame: Size, v: View): number => 1 / Math.max(1e-6, fitScale(box, frame) * v.zoom);
+export const pixelsPerPoint = (box: Size, frame: Size, v: View, fit = fitScale(box, frame)): number => 1 / Math.max(1e-6, fit * v.zoom);
 
 // ---- a finger on the page: tap, drag to scroll, hold to press and drag ----
 
