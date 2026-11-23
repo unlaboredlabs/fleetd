@@ -108,6 +108,8 @@ export class WriteQueue {
   /** Rows a flusher is sending right now; the expiry timer leaves them to it. */
   private readonly inFlight = new Set<number>();
   private readonly flushers = new Set<string>();
+  /** Per machine, the wait its flusher is in: aborted when the queue changes under it, so it reads it again. */
+  private readonly waits = new Map<string, AbortController>();
   private readonly stopped = new AbortController();
   private expiryTimer: ReturnType<typeof setTimeout> | undefined;
   private expiryWake: (() => void) | undefined;
@@ -154,8 +156,11 @@ export class WriteQueue {
     // Linked but unusable (logged out, claude out of range): fail now in the runner's words.
     const refused = this.writer.refusal?.(target.machineId, target.threadId);
     if (refused) throw refused;
+    // Only the thread's own queued writes come first: another thread's that can't go now holds nothing up.
     const behind =
-      this.hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM queued_writes WHERE machine_id = ?").get(target.machineId)?.n ?? 0;
+      this.hub.db.conn
+        .query<{ n: number }, [string, string]>("SELECT COUNT(*) AS n FROM queued_writes WHERE machine_id = ? AND thread_id = ?")
+        .get(target.machineId, target.threadId)?.n ?? 0;
     if (behind > 0 || !this.writer.isConnected(target.machineId, target.threadId)) return this.enqueue(target, message, clientRequestId, wakeId, opts);
     let sent: Sent | typeof TIMED_OUT;
     try {
@@ -189,6 +194,7 @@ export class WriteQueue {
       c.query<{ expires_ms: number }, [string]>("SELECT expires_ms FROM queued_writes WHERE client_request_id = ?").get(clientRequestId)
         ?.expires_ms ?? now + this.ttlMs;
     this.startFlusher(target.machineId);
+    this.changed(target.machineId);
     this.expiryWake?.();
     return { queued: true, queuedUntil: isoMs(expires) };
   }
@@ -204,8 +210,20 @@ export class WriteQueue {
     return this.hub.db.conn.query("DELETE FROM queued_writes WHERE write_id = ?").run(row.write_id).changes > 0;
   }
 
+  /** The machine's queue changed: its flusher, if it waits, reads it again. */
+  private changed(machineId: string): void {
+    this.waits.get(machineId)?.abort();
+  }
+
   private stillQueued = (writeId: number) =>
     this.hub.db.conn.query("SELECT 1 FROM queued_writes WHERE write_id = ?").get(writeId) !== null;
+
+  /** Each thread's oldest queued write on the machine, oldest first: a thread's writes go in order, one at a time. */
+  private heads = (machineId: string) =>
+    this.hub.db.all<Row>(
+      "SELECT * FROM queued_writes WHERE write_id IN (SELECT MIN(write_id) FROM queued_writes WHERE machine_id = ? GROUP BY thread_id) ORDER BY write_id",
+      [machineId],
+    );
 
   private head = (machineId: string) =>
     this.hub.db.conn.query<Row, [string]>("SELECT * FROM queued_writes WHERE machine_id = ? ORDER BY write_id LIMIT 1").get(machineId) ??
@@ -263,20 +281,31 @@ export class WriteQueue {
     this.flush(machineId).catch((error) => console.error(`write queue: the flusher for ${machineId} stopped:`, error));
   }
 
-  /** Delivers one machine's queue in order, waiting for its connection as needed. Ends when the queue is empty. */
+  /**
+   * Delivers one machine's queue, each thread's writes in order, waiting for its connection as needed. A thread that
+   * can't take a write now (claude logged out under a Gemini lead's) holds back only its own. Ends when it is empty.
+   */
   private async flush(machineId: string): Promise<void> {
     const signal = this.stopped.signal;
     try {
       while (!signal.aborted) {
-        const row = this.head(machineId);
-        if (!row) return;
-        if (row.expires_ms <= this.now()) {
-          this.expired(row, "ttl");
+        // Armed before the read, so a change between the read and the wait still ends the wait.
+        const wait = new AbortController();
+        this.waits.set(machineId, wait);
+        const heads = this.heads(machineId);
+        if (heads.length === 0) return;
+        const row = heads.find((h) => this.writer.isConnected(machineId, h.thread_id));
+        if (!row) {
+          // Until one can go, or the queue changes (a new write, one expired): then it is read again.
+          const stop = () => wait.abort();
+          signal.addEventListener("abort", stop, { once: true });
+          await Promise.race(heads.map((h) => this.writer.awaitLive(machineId, wait.signal, h.thread_id)));
+          wait.abort();
+          signal.removeEventListener("abort", stop);
           continue;
         }
-        if (!this.writer.isConnected(machineId, row.thread_id)) {
-          // The head may expire meanwhile, so it is read again once the machine is back.
-          await this.writer.awaitLive(machineId, signal, row.thread_id);
+        if (row.expires_ms <= this.now()) {
+          this.expired(row, "ttl");
           continue;
         }
         // Withdrawn between the read and now: nothing to send.
@@ -301,6 +330,7 @@ export class WriteQueue {
       }
     } finally {
       this.flushers.delete(machineId);
+      this.waits.delete(machineId);
       // An enqueue racing this exit starts a new flusher.
       try {
         if (!signal.aborted && this.head(machineId)) this.startFlusher(machineId);
@@ -316,7 +346,9 @@ export class WriteQueue {
     while (!signal.aborted) {
       const now = this.now();
       for (const row of this.hub.db.all<Row>("SELECT * FROM queued_writes WHERE expires_ms <= ? ORDER BY write_id", [now])) {
-        if (!this.inFlight.has(row.write_id)) this.expired(row, "ttl");
+        if (this.inFlight.has(row.write_id)) continue;
+        this.expired(row, "ttl");
+        this.changed(row.machine_id);
       }
       const next = this.hub.db.conn
         .query<{ next: number | null }, [number]>("SELECT MIN(expires_ms) AS next FROM queued_writes WHERE expires_ms > ?")

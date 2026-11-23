@@ -15,16 +15,22 @@ class FakeWriter implements ThreadWriter {
   refuse = new Map<string, WriteError>();
   behind = false;
   unusable: WriteError | undefined;
+  /** Threads that take no write on a live machine (a Claude thread where claude is logged out). */
+  held = new Set<string>();
   private waiters: (() => void)[] = [];
   goLive(m: string) {
     this.live.add(m);
     for (const w of this.waiters.splice(0)) w();
   }
-  isConnected(m: string) {
-    return this.live.has(m);
+  release(t: string) {
+    this.held.delete(t);
+    for (const w of this.waiters.splice(0)) w();
   }
-  awaitLive(m: string, signal?: AbortSignal) {
-    if (this.live.has(m)) return Promise.resolve();
+  isConnected(m: string, t?: string) {
+    return this.live.has(m) && !(t !== undefined && this.held.has(t));
+  }
+  awaitLive(m: string, signal?: AbortSignal, t?: string) {
+    if (this.isConnected(m, t)) return Promise.resolve();
     return new Promise<void>((resolve) => {
       this.waiters.push(resolve);
       signal?.addEventListener("abort", () => resolve(), { once: true });
@@ -122,6 +128,32 @@ test("a linked machine whose runner can't run refuses at once; a refused queued 
     ["write.expired", "refused"],
     ["write.delivered", undefined],
   ]);
+  queue.stop();
+});
+
+test("a write that can't go now holds back only its own thread's, and expires on time", async () => {
+  const { clock, writer, queue, events } = kit(60);
+  const claude: ThreadRef = { machineId: "lab-a", threadId: "claude-lead" };
+  const gemini: ThreadRef = { machineId: "lab-a", threadId: "gemini-lead" };
+  queue.start();
+  // Queued while the machine is away: the Claude thread's write first.
+  await queue.send(claude, "c1", "r1");
+  await queue.send(gemini, "g1", "r2");
+  writer.held.add(claude.threadId);
+  writer.goLive("lab-a");
+  await settle();
+  expect(writer.sent).toEqual(["g1"]);
+  // Connected, with the Claude write still waiting: a new one to the Gemini thread goes straight through.
+  expect(await queue.send(gemini, "g2", "r3")).toMatchObject({ queued: false });
+  // The Claude thread's next one waits behind its first.
+  await queue.send(claude, "c2", "r4");
+  expect(writer.sent).toEqual(["g1", "g2"]);
+  clock.ms += 61;
+  await new Promise((r) => setTimeout(r, 120));
+  expect(events().filter((e) => e.type === "write.expired").map((e) => e.data.clientRequestId)).toEqual(["r1", "r4"]);
+  writer.release(claude.threadId);
+  expect(await queue.send(claude, "c3", "r5")).toMatchObject({ queued: false });
+  expect(writer.sent).toEqual(["g1", "g2", "c3"]);
   queue.stop();
 });
 
