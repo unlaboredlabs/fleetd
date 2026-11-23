@@ -136,7 +136,7 @@ const ANSWER =
   `When you are done, end with one line and nothing after it: OK when nothing is off; otherwise, in at most ${LINE_MAX} ` +
   "characters, what is off and its evidence (names, times, a link), in plain words and no markdown, for the person " +
   "who owns this software. " +
-  "One problem per line: name the worst one, and say how many more there are.";
+  "One problem per line: name the worst one, and only when there are others, how many more.";
 
 /** The run's message: what to watch, its evidence or the tools it has, and how to answer. */
 export function message(w: AutomationWatch, prompt: string, evidence: Evidence | undefined, tools: string[]): string {
