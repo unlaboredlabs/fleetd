@@ -202,7 +202,8 @@ mirror() {
   # Edge's blockmap, once its builds publish one.
   [ ! -f "$work/edge/$asset.blockmap" ] || copy+=("$work/edge/$asset.blockmap")
   gh release upload nightly "${copy[@]}" --clobber
-  gh release upload nightly "$work/nightly/$feed" --clobber
+  # A feed naming a build's own release is the rollout's (rollout.ts tick writes nightly's too): left as it is.
+  grep -q 'https://' "$work/edge/$feed" || gh release upload nightly "$work/nightly/$feed" --clobber
   gh release upload nightly "$work/edge/SHA256SUMS" --clobber
   echo "copied edge's $asset to nightly"
 }

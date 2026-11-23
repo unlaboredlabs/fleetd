@@ -15,15 +15,16 @@ import { versionLabel } from "../../update/version.ts";
 import { TESTED } from "../../node/runner/claude.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
 import type { TrainArea } from "../train/index.ts";
-import { CAP_BUILD_BUN, CAP_BUILD_RUST } from "../../shared/node_link.ts";
+import { CAP_BUILD_BUN, CAP_BUILD_RUST, CAP_UPDATE_BUILD } from "../../shared/node_link.ts";
 import { leads } from "../leads/index.ts";
 import { leadWorking } from "../chat/flow.ts";
+import { death } from "../leads/cut_off.ts";
 import { runGh } from "../train/gh.ts";
 import { buildFeed } from "../../update/rollout.ts";
 import type { HubEventType } from "../../shared/contracts.ts";
 import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
 
-const LEAD_ENDS: HubEventType[] = ["thread.completed", "thread.failed"];
+const LEAD_ENDS: HubEventType[] = ["thread.completed", "thread.failed", "thread.interrupted"];
 
 /** The Claude Code version this fleetd was tested with. */
 export const CLAUDE_TESTED = TESTED;
@@ -91,7 +92,9 @@ export function hubPorts(hub: Hub): UpdatePorts {
           for (const e of page.events) {
             if (!threads.has(`${e.machineId}/${e.threadId}`)) continue;
             if (e.type === "thread.completed") completed++;
-            else failed++;
+            // Only a turn cut off by its machine's link to the hub dropping, which a hub's build can cause; never one
+            // Claude or its provider ended (a sign-in, an outage, a limit).
+            else if (death(e.type, e.data as Record<string, unknown> | undefined, e.machineId ?? "").kind === "node_lost") failed++;
           }
           if (!page.more) break;
           after = page.cursor;
@@ -119,6 +122,7 @@ export function hubPorts(hub: Hub): UpdatePorts {
             canUpdate: l.can(m.machineId, "self_update"),
             canFetch: l.can(m.machineId, "update_fetch"),
             canHold: l.can(m.machineId, "update_hold"),
+            canPickBuild: l.can(m.machineId, CAP_UPDATE_BUILD),
             canInstallClaude: l.can(m.machineId, "claude_install"),
             agentsMac: l.can(m.machineId, "agents_mac"),
           };

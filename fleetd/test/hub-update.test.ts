@@ -63,6 +63,7 @@ class Fake implements UpdatePorts {
       canUpdate: true,
       canFetch: true,
       canHold: true,
+      canPickBuild: true,
       canInstallClaude: true,
       agentsMac: false,
       claude: "2.0.0 (Claude Code)",
@@ -809,4 +810,54 @@ test("fleetd's own hub (ring first) tells the rollout each build its self-check 
   await updatesIn(dir, fake).resume();
   await until(() => told.length === 1);
   expect(told).toEqual(["unlaboredlabs/fleetd 2026.11.23.4"]);
+});
+
+test("after `fleetd update` put a build in place by hand, its nodes still get that build's own files from the rollout", async () => {
+  const dir = join(home.dir, "by-hand");
+  const fake = new Fake(dir, [{}]);
+  fake.now = Date.parse("2026-11-23T12:00:00Z");
+  const one = new TextEncoder().encode("fleetd 1");
+  const r = rolledOut([{ build: "2026.11.23.1", version: NEW, bytes: one, passedAt: "2026-11-23T05:00:00Z" }]);
+  fake.release = r.edge;
+  fake.buildFeed = r.of;
+  // The hub runs NEW already (installed by hand), and its target.json names an older pick.
+  fake.version = NEW;
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  writeFileSync(join(dir, "update", "target.json"), JSON.stringify({ version: OLD }));
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => u.status()?.finishedAt !== undefined);
+  expect(byMachine(u.status()!).get("m0")!.state).toBe("done");
+  expect(fake.sent.at(-1)).toMatchObject({ version: NEW, build: "2026.11.23.1", sha256: { "fleetd-linux-x64": sha256Hex(one) } });
+});
+
+test("a node from before rollouts waits, saying why, while the hub's build isn't the newest; it takes the newest", async () => {
+  const dir = join(home.dir, "old-node");
+  const fake = new Fake(dir, [{ name: "lab", canPickBuild: false }, { name: "new" }]);
+  fake.now = Date.parse("2026-11-23T12:00:00Z");
+  const two = new TextEncoder().encode("fleetd 2"), one = new TextEncoder().encode("fleetd 1");
+  // The newest build hasn't reached this hub's bucket yet; the one before has.
+  const r = rolledOut([
+    { build: "2026.11.23.2", version: NEWER, bytes: two },
+    { build: "2026.11.23.1", version: NEW, bytes: one, passedAt: "2026-11-23T05:00:00Z" },
+  ]);
+  fake.release = r.edge;
+  fake.buildFeed = r.of;
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  fake.version = NEW;
+  const after = updatesIn(dir, fake);
+  await after.resume();
+  const run = after.status()!;
+  expect(byMachine(run).get("m0")).toMatchObject({
+    state: "skipped",
+    message: `its fleetd (${OLD}) only takes fleetd's newest build (${NEWER}), not the hub's ${NEW} yet: it updates once the hub runs the newest, or run \`fleetd update\` on lab now`,
+  });
+  expect(byMachine(run).get("m1")!.state).toBe("done");
+  expect(fake.updated).toEqual(["m1"]);
+  // Not asked again at each automatic look while the hub's build isn't the newest.
+  await after.prefetch();
+  expect(after.autoAt()).toBeUndefined();
 });

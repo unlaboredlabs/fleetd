@@ -77,6 +77,10 @@ test("Update speed Steady takes only builds out 2 days and never halted; old cha
     builds: [b(3, { passedAt: ago(5) }), b(2, { publishedAt: ago(49), passedAt: ago(48), haltedAt: ago(40) }), b(1, { publishedAt: ago(50), passedAt: ago(49) })],
   };
   expect(pick(r, steady, "0.0.0-edge.202611200000.1+abc", NOW)).toMatchObject({ kind: "move", build: { build: "2026.11.23.1" } });
+  // Halted once and resumed: Fast hubs take it again, Steady ones never.
+  const resumed: Rollout = { builds: [b(2, { publishedAt: ago(49), passedAt: ago(48), wasHalted: true }), b(1, { publishedAt: ago(50), passedAt: ago(49) })] };
+  expect(pick(resumed, steady, "0.0.0-edge.202611200000.1+abc", NOW)).toMatchObject({ kind: "move", build: { build: "2026.11.23.1" } });
+  expect(pick(resumed, fast(0), "0.0.0-edge.202611200000.1+abc", NOW)).toMatchObject({ kind: "move", build: { build: "2026.11.23.2" } });
   expect(parseSpeed("stable")).toBe("steady");
   expect(parseSpeed("edge")).toBe("fast");
   expect(parseSpeed("nightly")).toBe("fast");

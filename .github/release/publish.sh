@@ -213,10 +213,12 @@ if [ "$CHANNEL" = edge ]; then
 fi
 
 if [ "$CHANNEL" = edge ]; then
-  # The copy for builds from before the rename (see the top): the same files, with a nightly-named app version.
+  # The copy for builds from before the rename (see the top): the same files, with a nightly-named app version. A
+  # numbered build's feeds go there only once it reached everyone (rollout.ts tick), as edge's latest-*.yml do.
   mkdir -p "$prev/nightly" "$prev/nightly-was"
   nightly_feeds=()
   for feed in latest-*.yml; do
+    if [ "$numbered" = true ]; then break; fi
     unpinned "$feed" | sed 's/^\(version: .*\)-edge\./\1-nightly./' > "$prev/nightly/$feed"
     nightly_feeds+=("$prev/nightly/$feed")
   done
@@ -231,7 +233,7 @@ if [ "$CHANNEL" = edge ]; then
   notes+=" from here to Edge, and follow https://github.com/${GITHUB_REPOSITORY:-unlaboredlabs/fleetd}/releases/tag/edge"
   notes+=" from then on."
   rolling nightly "Nightly (now Edge)" "$notes"
-  upload nightly "$prev/nightly" "${nightly_feeds[@]}"
+  upload nightly "$prev/nightly" ${nightly_feeds[@]+"${nightly_feeds[@]}"}
 fi
 
 if [ "$numbered" = true ]; then
