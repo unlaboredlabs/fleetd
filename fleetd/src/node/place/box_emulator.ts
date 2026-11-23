@@ -225,6 +225,18 @@ export function toolsScript(): string {
  * start, before any session boots the emulator. */
 export const toolsIn = (box: Pick<Box, "run">) => sh(box, toolsScript(), 900).then(() => undefined);
 
+/**
+ * What an agent's own box needs when its emulator runs in another box (../device/devices.ts DeviceHost `agentBox`):
+ * the tools (toolsScript) and adb (the SDK's platform-tools alone, no emulator or image), whose server is the other
+ * box's, reached at ADB_SERVER_PORT on this box's loopback through its host's relay.
+ */
+export function agentToolsScript(): string {
+  const lines = [...HEAD];
+  for (const p of CLIENT_PACKAGES()) if (p.dest === "sdk" || p.dest.startsWith("sdk/")) lines.push(...fetchLines(p));
+  return `${lines.join("\n")}\n${toolsScript()}`;
+}
+export const agentToolsIn = (box: Pick<Box, "run">) => sh(box, agentToolsScript(), 900).then(() => undefined);
+
 // ---- the emulator ----
 
 const PID_FILE = `${BOX_ROOT}/emulator.pid`;

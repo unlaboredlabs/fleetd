@@ -285,6 +285,48 @@ test("an Android session is driven, watched, taken over and recorded through a s
   await until(() => running.every((pid) => !alive(pid)));
 }, BOX_TEST_MS);
 
+test("an agent whose own box is too small for the emulator: the emulator runs in a box of its own, agent-device and its files stay in the agent's", async () => {
+  timing.pollMs = 10;
+  const emu = await standInBox();
+  const own = await standInBox();
+  const { store, recs } = standInStore();
+  const h = standInHost(emu.box, store);
+  h.host.agentBox = () => own.box;
+  const d = sessions(h.host);
+
+  const id = ((await d.handle(THREAD, startFrame())) as { sessionId: string }).sessionId;
+  // The emulator and the part run in the emulator's box alone; the agent's box got adb and agent-device, no emulator.
+  expect(emu.pids()).toHaveLength(2);
+  expect(own.pids()).toEqual([]);
+  expect(own.runs.some((r) => r.includes("platform-tools") && r.includes("agent-device"))).toBe(true);
+  expect(own.runs.some((r) => r.includes("system-images") || r.includes("emulator -avd"))).toBe(false);
+  // agent-device is pointed at the device from the agent's box, where it runs.
+  expect(JSON.parse(readFileSync(join(own.root, `sessions/${THREAD}/agent-device/config.json`), "utf8"))).toEqual({ platform: "android", serial: "emulator-5554" });
+  expect(existsSync(join(emu.root, `sessions/${THREAD}/agent-device/config.json`))).toBe(false);
+  await until(() => (recs.get(id)?.frames.length ?? 0) > 2);
+
+  // A person's takeover is the agent's wrapper's to read: written in the agent's box.
+  d.control({ sessionId: id, control: "human", by: "human:desk" } as never);
+  await until(() => existsSync(own.here(boxControlPath(THREAD))));
+  expect(existsSync(emu.here(boxControlPath(THREAD)))).toBe(false);
+
+  // A next holder adopts it: the takeover is written again in the agent's box.
+  const snap = d.snapshot(THREAD)!;
+  d.letGo();
+  rmSync(own.here(boxControlPath(THREAD)));
+  const h2 = standInHost(emu.box, store);
+  h2.host.agentBox = () => own.box;
+  const d2 = sessions(h2.host);
+  expect(await d2.adopt(THREAD, snap)).toEqual({ adopted: true, sessionId: id });
+  await until(() => existsSync(own.here(boxControlPath(THREAD))));
+
+  // Its end releases the agent's agent-device there and stops the emulator in its box.
+  await d2.handle(THREAD, { cwd: "/work", call: { op: "session_end" } } as never);
+  expect(existsSync(own.here(boxControlPath(THREAD)))).toBe(false);
+  expect(existsSync(join(own.root, `sessions/${THREAD}/agent-device/config.json`))).toBe(false);
+  expect(emu.parts()).toEqual([]);
+}, BOX_TEST_MS);
+
 test("a holder that drops and a new one that adopts carry the session on, the person still driving", async () => {
   timing.pollMs = 10;
   const b = await standInBox();
