@@ -45,7 +45,7 @@ const settings: Settings = {
   },
 };
 
-const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
+const snapshotWith = (repos: ProjectRepo[], extra: Record<string, unknown> = {}): HubFrame => ({
   t: "snapshot",
   snapshot: {
     cursor: 1,
@@ -60,6 +60,7 @@ const snapshotWith = (repos: ProjectRepo[]): HubFrame => ({
         threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
         lastActivityAt: AT,
         ...(repos.length > 0 ? { repos } : {}),
+        ...extra,
       },
     ],
   },
@@ -100,6 +101,8 @@ let features: string[];
 let send: (frame: HubFrame) => void;
 /** How long the hub takes over a call that ends the list above. */
 let readMs: number;
+/** What the snapshot adds to the project's summary. */
+let summaryExtra: Record<string, unknown>;
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -113,6 +116,7 @@ beforeEach(() => {
   repoAnswers = {};
   approvalsFail = 0;
   readMs = 0;
+  summaryExtra = {};
   features = [];
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
@@ -195,7 +199,7 @@ const render = async (page: "project" | "instructions" = "project") => {
     subscribe: (l) => ((listener = l), () => undefined),
     // As main's hub client: a resync asks for a snapshot, which comes on the same link.
     resync: () => {
-      setTimeout(() => listener(snapshotWith(repos)), 0);
+      setTimeout(() => listener(snapshotWith(repos, summaryExtra)), 0);
       return Promise.resolve();
     },
     focus: () => Promise.resolve(),
@@ -219,7 +223,7 @@ const render = async (page: "project" | "instructions" = "project") => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4710", protocol: 1, features } });
-    listener(snapshotWith(repos));
+    listener(snapshotWith(repos, summaryExtra));
     await new Promise((r) => setTimeout(r, 0));
   });
   // project_settings_get's answer.
@@ -323,6 +327,25 @@ describe("Settings → Bots", () => {
     expect(button("Delete bot…").disabled).toBe(false);
     expect([...page.querySelectorAll("section")].length).toBe(sections);
     expect(document.querySelector('[data-screen="settings.projects"]')).toBe(page);
+  });
+
+  it("holds each computer at the height it last had, and the merge line it last showed, until the hub answers", async () => {
+    readMs = 300;
+    repos = [web];
+    summaryExtra = { mergeMode: "verify_after" };
+    const rule = { repo: "acme/web", base: "main", line: "acme/web's main requires branches to be up to date, so PRs still land one at a time.", canTurnOff: true };
+    window.localStorage.setItem("fleetd.settings.kept", JSON.stringify({ "computer:devbox/p1/": 412, "upToDate:devbox/p1": rule }));
+    answers = [{ ...settings, upToDate: [rule] }];
+    await render();
+    const page = document.querySelector<HTMLElement>('[data-screen="settings.projects"]');
+    if (page === null) throw new Error("no page");
+    const computer = [...page.querySelectorAll("section")].find((x) => x.getAttribute("aria-label") === "Computer");
+    expect(computer?.parentElement?.style.minHeight).toBe("412px");
+    expect(page.textContent).toContain("PRs still land one at a time");
+    await act(async () => new Promise((r) => setTimeout(r, 400)));
+    expect(computer?.parentElement?.style.minHeight ?? "").toBe("");
+    expect(page.textContent).toContain("PRs still land one at a time");
+    window.localStorage.removeItem("fleetd.settings.kept");
   });
 
   it("keeps the page on screen through the resync a saved setting brings, never Loading… or a remount", async () => {
@@ -611,7 +634,7 @@ describe("Settings → Bots", () => {
     await click(button("Archive"));
     await settle();
     expect(calls.find((c) => c.tool === PROJECT_TOOLS.archive)?.input).toEqual({ machineId: "devbox", projectId: "p1", archived: true });
-    const archived = snapshotWith(repos);
+    const archived = snapshotWith(repos, summaryExtra);
     if (archived.t !== "snapshot") throw new Error("not a snapshot");
     await act(async () => {
       send({ ...archived, snapshot: { ...archived.snapshot, projects: archived.snapshot.projects.map((p) => ({ ...p, archivedAt: AT })) } });

@@ -59,7 +59,7 @@ export function RepoSection({ project, settings, children }: { project: Project;
         {children}
       </SettingsSection>
       {own !== undefined || others.length === 0 ? (
-        <Computer settings={settings} title={others.length === 0 ? "Computer" : `Computer: ${own?.name ?? project.title}`} reveal="projects.computer" />
+        <Computer project={project} settings={settings} title={others.length === 0 ? "Computer" : `Computer: ${own?.name ?? project.title}`} reveal="projects.computer" />
       ) : null}
       {others.map((repo) => (
         <RepoComputer key={repo.repoId} project={project} repo={repo.name} />

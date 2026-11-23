@@ -12,6 +12,7 @@ import { useNow } from "../live";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
+import { HoldsPlace } from "./HoldsPlace";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, runsOnHint, setupFrom, whereOf, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
@@ -20,7 +21,7 @@ import s from "./settings.module.css";
 export function RepoComputer({ project, repo }: { project: { machineId: string; projectId: string }; repo: RepoName }) {
   const read = useToolQuery("project_settings_get", { machineId: project.machineId, projectId: project.projectId, repo });
   if (read.isError) return null;
-  return <Computer settings={read.data?.settings} title={`Computer: ${repo}`} repo={repo} />;
+  return <Computer project={project} settings={read.data?.settings} title={`Computer: ${repo}`} repo={repo} />;
 }
 
 const COMPUTER_HINT = "What each agent's computer has before it starts. Setup runs once in a clean box, and agents start from the image it leaves.";
@@ -33,21 +34,31 @@ const SKIP_HINT =
  * A repo's computer, its image and its setup: the project's own directory's without `repo`. Until the hub answers
  * (`settings` undefined) its rows hold their place, empty and off.
  */
-export function Computer(props: { settings: Settings | undefined; title: string; repo?: RepoName; reveal?: string }) {
-  const { settings, title, reveal } = props;
-  if (settings === undefined) {
-    return (
-      <SettingsSection title={title} reveal={reveal} hint={COMPUTER_HINT}>
-        <SettingsRow title="Setup" hint={SETUP_HINT}>
-          <Textarea mono aria-label="Setup commands" minRows={2} value="" disabled placeholder="…" onChange={() => undefined} />
-        </SettingsRow>
-        <SettingsRow title="Skip when unchanged" hint={SKIP_HINT}>
-          <Textarea mono aria-label="Skip when unchanged" minRows={1} value="" disabled placeholder="…" onChange={() => undefined} />
-        </SettingsRow>
-      </SettingsSection>
-    );
-  }
-  return <ComputerRead {...props} settings={settings} />;
+export function Computer(props: {
+  project: { machineId: string; projectId: string };
+  settings: Settings | undefined;
+  title: string;
+  repo?: RepoName;
+  reveal?: string;
+}) {
+  const { project, settings, title, repo, reveal } = props;
+  // As tall as it was when last shown here until the hub answers, so its image and setup rows move nothing under them.
+  return (
+    <HoldsPlace id={`computer:${project.machineId}/${project.projectId}/${repo ?? ""}`} ready={settings !== undefined}>
+      {settings === undefined ? (
+        <SettingsSection title={title} reveal={reveal} hint={COMPUTER_HINT}>
+          <SettingsRow title="Setup" hint={SETUP_HINT}>
+            <Textarea mono aria-label="Setup commands" minRows={2} value="" disabled placeholder="…" onChange={() => undefined} />
+          </SettingsRow>
+          <SettingsRow title="Skip when unchanged" hint={SKIP_HINT}>
+            <Textarea mono aria-label="Skip when unchanged" minRows={1} value="" disabled placeholder="…" onChange={() => undefined} />
+          </SettingsRow>
+        </SettingsSection>
+      ) : (
+        <ComputerRead settings={settings} title={title} {...(repo === undefined ? {} : { repo })} {...(reveal === undefined ? {} : { reveal })} />
+      )}
+    </HoldsPlace>
+  );
 }
 
 function ComputerRead({ settings, title, repo, reveal }: { settings: Settings; title: string; repo?: RepoName; reveal?: string }) {

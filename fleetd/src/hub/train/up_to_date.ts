@@ -117,9 +117,12 @@ export function knownRuleOf(t: Train, repo: string, base: string | undefined): U
   return { repo, base: at, line: upToDateLine(repo, at, u), canTurnOff: own && kept.rules.admin === true };
 }
 
-/** Turns the rule off on `repo`'s default branch, as `turnOff`, and reads its rules again. */
-export async function turnOffOn(t: Train, repo: string): Promise<void> {
-  const base = await t.github.defaultBranch(repo);
+/**
+ * Turns the rule off on `base` of `repo` (the base its line names: undefined, the repo's default branch), as
+ * `turnOff`, and reads its rules again.
+ */
+export async function turnOffOn(t: Train, repo: string, base = reading.get(t)?.bases.get(repo)): Promise<void> {
+  base ??= await t.github.defaultBranch(repo);
   const u = (await t.rules(repo, base)).upToDate ?? NONE;
   if (!required(u)) return;
   await turnOff(t.github, repo, base, u);

@@ -3,7 +3,7 @@
 // reverted first and sent back to its writer; a flake on the base reverts nothing; a base that requires branches up to
 // date makes a PR go again, never fail. Counts, not milliseconds, measure what the line saves.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { knownRuleOf } from "../src/hub/train/up_to_date.ts";
+import { knownRuleOf, turnOffOn } from "../src/hub/train/up_to_date.ts";
 import { gitOut, Kit, REPO } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -234,4 +234,23 @@ test("a repo whose base isn't known yet has its default branch asked in the back
   if (config === undefined || config instanceof Error) throw new Error("main's rules were not read");
   k.train.ciConfigs.set(`${REPO}\u0000main`, [k.clock.ms, { ...config, rules: { ...config.rules, upToDate: { rulesets: [], orgRulesets: [9], classic: false } } }]);
   expect(knownRuleOf(k.train, REPO, undefined)).toMatchObject({ base: "main", canTurnOff: false });
+});
+
+test("Turn off changes the rule on the base its line names, never the repo's default branch", async () => {
+  const k = new Kit();
+  kits.push(k);
+  // The bot's work lands on release, which requires up-to-date branches by classic protection; main is the default.
+  expect(knownRuleOf(k.train, REPO, "release")).toBeUndefined();
+  await held(k, "release");
+  const config = k.train.ciConfigs.get(`${REPO}\u0000release`)?.[1];
+  if (config === undefined || config instanceof Error) throw new Error("release's rules were not read");
+  k.train.ciConfigs.set(`${REPO}\u0000release`, [k.clock.ms, { ...config, rules: { ...config.rules, admin: true, upToDate: { rulesets: [], orgRulesets: [], classic: true } } }]);
+  expect(knownRuleOf(k.train, REPO, "release")?.base).toBe("release");
+  const before = k.gh.calls.length;
+  await turnOffOn(k.train, REPO, "release").catch(() => undefined);
+  const asked = k.gh.calls.slice(before).map((c) => c.join(" "));
+  expect(asked.some((c) => c.includes(`repos/${REPO}/branches/release/protection/required_status_checks`))).toBe(true);
+  expect(asked.some((c) => c.includes("branches/main"))).toBe(false);
+  // Nor is the default branch asked, which would be the base before the line named one.
+  expect(asked.some((c) => / repos\/acme\/storefront( |$)/.test(c))).toBe(false);
 });

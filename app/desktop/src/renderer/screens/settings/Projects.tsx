@@ -175,13 +175,25 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
         ) : settings ? (
           <EnvSetting env={settings.env} projectRef={ref} />
         ) : (
-          <SettingsRow reveal="projects.env" title="Environment variables" line="…" />
+          <SettingsRow
+            reveal="projects.env"
+            title="Environment variables"
+            hint="Given to every agent the bot starts. Secrets are never shown again."
+            control={
+              <>
+                <Button variant="ghost" disabled>
+                  Paste .env
+                </Button>
+                <AddButton label="Add variable" disabled onClick={() => undefined} />
+              </>
+            }
+          />
         )}
         {summary?.issueOrders !== undefined ? <IssueOrdersSetting projectRef={ref} on={summary.issueOrders} /> : null}
       </RepoSection>
       <SettingsSection title="Safety">
         <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} />
-        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings?.upToDate} />
+        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} />
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">

@@ -392,14 +392,17 @@ export const mergeModeNext = (mode: MergeMode) =>
 function upToDateRules(hub: Hub, r: ProjectRef): UpToDateRule[] {
   if (mergeModeOf(hub.db.conn, r) !== "verify_after") return [];
   const { train, host } = trainArea(hub);
-  const bases = new Map(repos.of(hub.db.conn, r).map((x) => [x.repoKey?.toLowerCase(), x.base]));
   const out: UpToDateRule[] = [];
   for (const [repo] of host.githubRepos(r)) {
-    const rule = knownRuleOf(train, repo, bases.get(`github.com/${repo}`.toLowerCase()));
+    const rule = knownRuleOf(train, repo, baseOf(hub, r, repo));
     if (rule) out.push(rule);
   }
   return out;
 }
+
+/** The branch `repo`'s work lands on, as the project's repo row records it; undefined until fleetd knows it. */
+const baseOf = (hub: Hub, r: ProjectRef, repo: string): string | undefined =>
+  repos.of(hub.db.conn, r).find((x) => x.repoKey?.toLowerCase() === `github.com/${repo}`.toLowerCase())?.base;
 
 /** Turns off up-to-date branches on one of the project's repos, an admin's alone; nothing else of its rules. */
 async function upToDateOff(hub: Hub, caller: Caller, r: ProjectRef, repo: string): Promise<void> {
@@ -408,7 +411,8 @@ async function upToDateOff(hub: Hub, caller: Caller, r: ProjectRef, repo: string
   const name = repo.toLowerCase();
   if (!host.githubRepos(r).some(([x]) => x.toLowerCase() === name)) throw new ToolError("invalid", `${repo} is not one of this bot's repos.`, "Give one of its repos on GitHub.");
   try {
-    await turnOffOn(train, name);
+    // The base its line names, so the rule turned off is the one the person saw.
+    await turnOffOn(train, name, baseOf(hub, r, name));
   } catch (error) {
     throw new ToolError("failed", `GitHub didn't change ${repo}'s rule: ${(error as Error).message}`, "A repo admin turns off \"Require branches to be up to date\" in its ruleset on GitHub.");
   }
