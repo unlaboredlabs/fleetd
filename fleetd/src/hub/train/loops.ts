@@ -59,7 +59,7 @@ export function start(hub: Hub): void {
       .get(thread.machineId, thread.threadId);
     if (!row) return;
     const task = JSON.parse(row.data) as { kind?: string; projectRef?: { machineId: string; projectId: string } };
-    if (task.kind === "write" && task.projectRef) train.writerOpenedPr(task.projectRef);
+    if (task.kind === "write" && task.projectRef) void train.writerOpenedPr(task.projectRef);
   });
   // A stopped order's PRs leave the train (chat_stop, project_stop), through the chat area's hook.
   stopHooks(hub).takeLeftovers = (r, workstreamId, why) => train.takeLeftovers(r, workstreamId, why).map((c) => c.prNumber);

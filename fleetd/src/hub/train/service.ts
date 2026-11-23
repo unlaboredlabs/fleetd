@@ -548,12 +548,25 @@ export class Train {
     this.kicks.get(repo)?.notifyOne();
   }
 
-  /** A writer in the project opened a PR or ended: the project's trains read their open PRs on a pass now. */
-  writerOpenedPr(projectRef: ProjectRef): void {
+  /**
+   * A writer in the project opened a PR or ended: the trains of the project and of its repos read their open PRs on a
+   * pass now, and each of its repos with no train yet is read here, so a writer's first PR there goes on the train too.
+   */
+  async writerOpenedPr(projectRef: ProjectRef): Promise<void> {
+    const repos = new Set(this.host.githubRepos(projectRef).map(([r]) => r));
     for (const t of this.records.trains()) {
-      if (t.projectRef.machineId === projectRef.machineId && t.projectRef.projectId === projectRef.projectId) {
+      if (sameRef(t.projectRef, projectRef) || repos.has(t.repo)) {
         this.lastReadyCheck.delete(t.repo);
         this.kick(t.repo);
+      }
+      repos.delete(t.repo);
+    }
+    for (const repo of repos) {
+      this.lastReadyCheck.delete(repo);
+      try {
+        await this.stepLocks.of(repo).run(() => this.readyPass(repo, projectRef));
+      } catch (error) {
+        console.warn(`train: open PRs of ${repo} not read: ${error}`);
       }
     }
   }
@@ -1719,12 +1732,17 @@ export class Train {
     }
   }
 
-  /** A writer's ready PR is a slice: an open, non-draft PR from its branch goes on the train at once, once per head. */
+  /**
+   * A writer's ready PR is a slice: an open, non-draft PR from one of its branches (`writersBranch`) in the repo goes on
+   * the train at once, as its task's, once per head. The writers are those of the train's project and of every other
+   * project that has the repo.
+   */
   private async readyPass(repo: string, projectRef: ProjectRef): Promise<void> {
     const now = this.nowMs();
     const last = this.lastReadyCheck.get(repo);
     if (last !== undefined && now - last < this.options.readyEveryMs) return;
-    const writers = this.host.writers(projectRef);
+    const projects = [projectRef, ...this.host.repoProjects(repo).filter((p) => !sameRef(p, projectRef))];
+    const writers = projects.flatMap((p) => this.host.writers(p).map(([taskId, branch]) => [p, taskId, branch] as const));
     if (writers.length === 0) return;
     this.lastReadyCheck.set(repo, now);
     let pulls;
@@ -1734,9 +1752,10 @@ export class Train {
       return this.warnHourly([`train: open PRs of ${repo} not read`], ghMessage(error), `train: open PRs of ${repo} not read: ${ghMessage(error)}`);
     }
     for (const pull of pulls.filter((p) => !p.draft)) {
-      const headRef = pull.head.ref;
-      const writer = writers.find(([, b]) => headRef === b || (headRef.startsWith(b) && headRef.slice(b.length).startsWith("-")));
+      const writer = writers.find(([, taskId, branch]) => writersBranch(taskId, branch, pull.head.ref));
       if (!writer) continue;
+      // A fork's PR is a person's, whatever its branch is called.
+      if (pull.head.repo?.full_name.toLowerCase() !== repo) continue;
       if (this.records.openFor(repo, pull.number)) continue;
       // Landed in a batch, its PR not closed yet: reconcile closes it.
       if (this.records.landedAt(repo, pull.number, pull.head.sha)) continue;
@@ -1745,7 +1764,7 @@ export class Train {
       this.readyHeads.add(key);
       const prUrl = `https://github.com/${repo}/pull/${pull.number}`;
       try {
-        const change = await sliceReady(this, projectRef, writer[0], prUrl);
+        const change = await sliceReady(this, writer[0], writer[1], prUrl);
         console.info(`train: a writer's ready PR is a slice: ${change.changeId} ${prUrl}`);
       } catch (error) {
         const e = error as TrainError;
@@ -1754,7 +1773,7 @@ export class Train {
           this.readyHeads.delete(key);
           continue;
         }
-        await this.wakeLead(projectRef, prRefused(prUrl, writer[0], e.message, e.fix));
+        await this.wakeLead(writer[0], prRefused(prUrl, writer[1], e.message, e.fix));
       }
     }
   }
@@ -2242,7 +2261,7 @@ export class Train {
   async onTaskPr(taskId: string): Promise<void> {
     const task = this.host.task(taskId);
     if (!task || task.kind !== "write") return;
-    this.writerOpenedPr(task.projectRef);
+    await this.writerOpenedPr(task.projectRef);
     const prUrl = task.prUrl;
     if (prUrl === undefined || !parsePrUrl(prUrl)) return;
     try {
@@ -2305,6 +2324,18 @@ const changeIds = (c: Change) => ({
   ...(c.taskId !== undefined ? { taskId: c.taskId } : {}),
 });
 
+
+/**
+ * Whether a PR from `headRef` is the writer's: from its own branch, or from any other under the same
+ * `<prefix>T<n>-` (`fleetd/T7-pricing-2`, `fleetd/T7-cloud-pin`), so a second PR in any of the bot's repos is its too.
+ * A branch with no `T<n>-` of its task in it keeps the older rule: the branch itself, or `<branch>-<anything>`.
+ */
+export function writersBranch(taskId: string, branch: string, headRef: string): boolean {
+  if (headRef === branch) return true;
+  const at = branch.indexOf(`${taskId}-`);
+  const own = at >= 0 && (at === 0 || !/[A-Za-z0-9]/.test(branch[at - 1]!)) ? branch.slice(0, at + taskId.length + 1) : `${branch}-`;
+  return headRef.length > own.length && headRef.startsWith(own);
+}
 
 /** A writer's ready PR (a slice): it goes on the train now, as its task's. */
 export async function sliceReady(train: Train, projectRef: ProjectRef, taskId: string, prUrl: string): Promise<Change> {

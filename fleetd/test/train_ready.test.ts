@@ -1,0 +1,90 @@
+// Every PR a writer opens goes on the train as its task's, exactly once (W791). On 2026-11-23 T5178, whose branch was
+// `fleetd/T5178-a-cloud-lead-woken-late-answers-in-about`, opened a second PR from `fleetd/T5178-mcp-skip-unreachable`
+// in the bot's other repo: the ready pass took only the task's own branch and `<branch>-<n>`, so the PR sat open, with
+// no review and no train entry, until the lead enqueued it by hand.
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { Kit, PROJECT, REPO } from "./train_kit.ts";
+
+let kits: Kit[] = [];
+afterEach(() => {
+  for (const k of kits) k.done();
+  kits = [];
+});
+setDefaultTimeout(30_000);
+
+/** A kit whose writer T7, at work on `fleetd/T7-pricing`, has its own PR 7 on the train. */
+async function writer(): Promise<Kit> {
+  const k = new Kit();
+  kits.push(k);
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  k.host.tasks.get("T7")!.state = "running";
+  k.host.branches.set("T7", "fleetd/T7-pricing");
+  await k.enqueue(7);
+  return k;
+}
+
+/** PR `n` from `branch`, opened by no task of its own (`k.pr` makes one: it is dropped). */
+function openPr(k: Kit, n: number, branch: string, extra: Parameters<Kit["pr"]>[3] = {}): void {
+  k.pr(n, branch, { [`${n}.md`]: `${n}\n` }, extra);
+  k.host.tasks.delete(`T${n}`);
+}
+
+/** `n` passes of the train, a minute apart. */
+async function passes(k: Kit, n: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    k.clock.ms += 61_000;
+    await k.train.step(REPO);
+  }
+}
+
+const changesOf = (k: Kit, n: number) => k.train.records.list({ repo: REPO, limit: 50 }).filter((c) => c.prNumber === n);
+
+test("a writer's PR from any branch of its own prefix goes on the train as its task's, once", async () => {
+  const k = await writer();
+  openPr(k, 8, "fleetd/T7-mcp-skip-unreachable");
+  openPr(k, 9, "fleetd/T7-pricing-2");
+  openPr(k, 10, "fleetd/T7-4");
+  await passes(k, 3);
+  for (const n of [8, 9, 10]) {
+    expect(changesOf(k, n).map((c) => [c.taskId, c.workstreamId])).toEqual([["T7", "W1"]]);
+  }
+  expect(changesOf(k, 7)).toHaveLength(1);
+});
+
+test("a person's branch, another task's lookalike branch and a fork's branch stay off the train", async () => {
+  const k = await writer();
+  openPr(k, 8, "sam/pricing-fix");
+  openPr(k, 9, "fleetd/T70-pricing");
+  openPr(k, 10, "fleetd/T7pricing");
+  openPr(k, 11, "fleetd/T7-from-a-fork", { headRepo: "someone/storefront" });
+  await passes(k, 3);
+  for (const n of [8, 9, 10, 11]) expect(changesOf(k, n)).toEqual([]);
+  // A fork's PR is never offered, so the lead hears no refusal of it.
+  expect(k.host.wakes.filter((w) => w.includes("/pull/11"))).toEqual([]);
+});
+
+test("a writer's PR opened after its result went on the train is taken too, once", async () => {
+  const k = await writer();
+  k.host.tasks.get("T7")!.state = "done";
+  await passes(k, 2);
+  openPr(k, 8, "fleetd/T7-cloud-pin");
+  await k.train.writerOpenedPr(PROJECT);
+  await passes(k, 3);
+  expect(changesOf(k, 8).map((c) => c.taskId)).toEqual(["T7"]);
+});
+
+test("a writer's PR in a repo of the bot with no train yet goes on the train when the writer opens it", async () => {
+  const k = new Kit();
+  kits.push(k);
+  k.host.githubRepos = () => [[REPO, PROJECT]];
+  openPr(k, 5, "fleetd/T7-pricing");
+  openPr(k, 8, "fleetd/T7-mcp-skip");
+  k.host.tasks.set("T7", { taskId: "T7", projectRef: PROJECT, workstreamId: "W1", kind: "write", state: "running" });
+  k.host.branches.set("T7", "fleetd/T7-pricing");
+  expect(k.train.records.train(REPO)).toBeUndefined();
+  await k.train.writerOpenedPr(PROJECT);
+  for (const n of [5, 8]) expect(changesOf(k, n).map((c) => c.taskId)).toEqual(["T7"]);
+  await k.train.writerOpenedPr(PROJECT);
+  await passes(k, 2);
+  for (const n of [5, 8]) expect(changesOf(k, n)).toHaveLength(1);
+});
