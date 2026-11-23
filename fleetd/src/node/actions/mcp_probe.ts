@@ -65,13 +65,31 @@ type Found = { server?: string; tools: Json[] };
 type Client = { fetch: Fetch; version: string; signal: AbortSignal };
 
 export async function probe(server: Resolved, io: ProbeIo): Promise<McpTestResult> {
+  // What the server says goes through the mask too: one may echo a key back in its name or a tool's description.
+  const mask = new Masker(server.secrets);
+  try {
+    const found = await listed(server, io, TIMEOUT_MS);
+    const tools = found.tools.flatMap(toolInfo).map((t) => ({ ...t, name: mask.text(t.name), ...(t.description !== undefined ? { description: mask.text(t.description) } : {}) }));
+    return { ...(found.server ? { server: mask.text(found.server) } : {}), tools };
+  } catch (error) {
+    return { tools: [], error: mask.text((error as Error).message) };
+  }
+}
+
+/** The server's tools whole, as its tools/list gives them, within `ms` (what an Antigravity lead's start weighs them
+ * by: runner/antigravity_spec.ts `toolBytes`); throws what went wrong. */
+export async function listTools(server: Resolved, io: ProbeIo, ms = TIMEOUT_MS): Promise<Json[]> {
+  return (await listed(server, io, ms)).tools;
+}
+
+async function listed(server: Resolved, io: ProbeIo, ms: number): Promise<Found> {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       abort.abort();
-      reject(new Error(`no answer within ${TIMEOUT_MS / 1000} s: the server didn't finish starting or listing its tools`));
-    }, TIMEOUT_MS);
+      reject(new Error(`no answer within ${ms / 1000} s: the server didn't finish starting or listing its tools`));
+    }, ms);
   });
   const t = server.transport;
   const c: Client = { fetch: io.fetch, version: io.version ?? "0.0.0", signal: abort.signal };
@@ -81,14 +99,8 @@ export async function probe(server: Resolved, io: ProbeIo): Promise<McpTestResul
       : t.type === "http"
         ? http(t.url, server.values, c)
         : sse(t.url, server.values, c);
-  // What the server says goes through the mask too: one may echo a key back in its name or a tool's description.
-  const mask = new Masker(server.secrets);
   try {
-    const found = await Promise.race([run, timeout]);
-    const tools = found.tools.flatMap(toolInfo).map((t) => ({ ...t, name: mask.text(t.name), ...(t.description !== undefined ? { description: mask.text(t.description) } : {}) }));
-    return { ...(found.server ? { server: mask.text(found.server) } : {}), tools };
-  } catch (error) {
-    return { tools: [], error: mask.text((error as Error).message) };
+    return await Promise.race([run, timeout]);
   } finally {
     clearTimeout(timer);
     abort.abort();
