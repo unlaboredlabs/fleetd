@@ -298,8 +298,14 @@ test("a lead's stopped run its machine never ends starts the lead again, and its
   n.end();
 });
 
-for (const ahead of [true, false]) {
-test(`a second stall that waits for the person, never ended by its machine, starts the lead again ${ahead ? "with no turn" : "with one on a node too old for that, and says it carries on"}`, async () => {
+const CASES = [
+  { ahead: true, asked: false, how: "with no turn" },
+  { ahead: false, asked: false, how: "with one on a node too old for that, and says it carries on" },
+  // The review of #2149: a message sent within the grace went into the frozen turn; a start with no turn left it unanswered.
+  { ahead: true, asked: true, how: "with one when the person wrote meanwhile, which it answers, and says it carries on" },
+];
+for (const { ahead, asked, how } of CASES) {
+test(`a second stall that waits for the person, never ended by its machine, starts the lead again ${how}`, async () => {
   const n = await standIn();
   // Whether its node can start a lead with no turn (CAP_LAUNCH_AHEAD).
   spyOn(link(n.hub), "can").mockImplementation((_machine: string, cap: string) => (cap === CAP_LAUNCH_AHEAD ? ahead : true));
@@ -325,20 +331,24 @@ test(`a second stall that waits for the person, never ended by its machine, star
   // The second, with no completed turn between, waits for the person; and this one its machine never ends.
   await n.set("s1", running("r2"));
   await n.minutes(10);
+  // Within the grace, the person writes, as the line asked: it goes into the frozen turn, which never reads it.
+  if (asked) chat(n.hub).add(r, { author: "human", text: "Are you there?", request: "k:1", by: "a person" });
   await pass();
   const said = () => chat(n.hub).page(r, undefined, undefined, 10).messages.filter((m) => m.author === "system").map((m) => m.text);
   for (let i = 0; i < 200 && !said().includes(FROZEN_LINE); i++) await Bun.sleep(10);
   expect(said()).toEqual([
     "The lead stopped making progress, so fleetd stopped its turn. It carries on by itself.",
     "The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.",
-    ahead ? FROZEN_LINE : FROZEN_CARRIES_LINE,
+    ahead && !asked ? FROZEN_LINE : FROZEN_CARRIES_LINE,
   ]);
   // As the lines said: started again with no turn, its claude waiting for the person's next message; or, on an older
   // node, with one.
   expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(2);
   const launch = n.calls.filter((c) => c.op === "launch").at(-1);
-  if (ahead) expect(launch).toMatchObject({ ahead: true });
+  if (ahead && !asked) expect(launch).toMatchObject({ ahead: true });
   else expect(launch).not.toHaveProperty("ahead");
+  // The person's message is in its first turn, marked for an answer.
+  if (asked) expect(JSON.stringify(launch)).toContain("Are you there?");
   n.end();
 });
 }

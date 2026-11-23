@@ -213,13 +213,18 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
     const thread = { machineId: r.machineId, threadId: lead.threadId };
     const status = store(hub).threadGet(thread)?.thread.status;
     if ((status !== "running" && status !== "waiting") || latestRun(hub, thread)?.runId !== run) return;
-    // A node too old to start a lead with no turn starts it with one: the chat then says it carries on after all.
+    // A node too old to start a lead with no turn starts it with one: the chat then says it carries on after all, as when a
+  // message of the person's waits for an answer as it starts.
     const quiet = !carries && link(hub).can(r.machineId, CAP_LAUNCH_AHEAD);
     try {
       await area.switchSoon(r, { waitForMessage: quiet });
-      // Said only once it really started again: a start that waits (its machine away, a refusal) says nothing yet.
-      if (area.records.leadGet(r)?.threadId === lead.threadId) return;
-      chat(hub).add(r, { author: "system", text: carries || quiet ? FROZEN_LINE : FROZEN_CARRIES_LINE, source: `lead_restarted:${run}` });
+      // Said only once it really started again: a start that waits (its machine away, a refusal) says nothing yet. One
+      // that was to wait for the person but started with a turn (a message of theirs waited for an answer, or its node
+      // can't start a lead with none) says it carries on.
+      const now = area.records.leadGet(r)?.threadId;
+      if (now === undefined || now === lead.threadId) return;
+      const waits = area.startedQuiet(now) === true;
+      chat(hub).add(r, { author: "system", text: carries || waits ? FROZEN_LINE : FROZEN_CARRIES_LINE, source: `lead_restarted:${run}` });
     } catch (error) {
       console.warn(`leads: the frozen lead of ${r.machineId}/${r.projectId} not started again:`, error);
     }
@@ -282,5 +287,6 @@ export const STALL_GRACE_MS = 60_000;
 /** The chat's line when a lead's stopped run never ended on its machine and fleetd started the lead again. */
 export const FROZEN_LINE = "Its machine didn't end the stopped turn, so fleetd started the lead again.";
 
-/** The same, for a lead that was to wait for the person but whose node can only start it with a turn. */
+/** The same, for a lead that was to wait for the person but started with a turn: a message of theirs waited for an
+ * answer, or its node can only start it with one. */
 export const FROZEN_CARRIES_LINE = "Its machine didn't end the stopped turn, so fleetd started the lead again, and it carries on.";

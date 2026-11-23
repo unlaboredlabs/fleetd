@@ -63,6 +63,8 @@ export class Leads {
   private readonly ending = new Map<string, () => void>();
   /** Projects whose next restart starts its lead with no turn: it waits for the person's next message. */
   private readonly waitsForMessage = new Set<string>();
+  /** Whether each lead session a restart started began with no turn, by its thread (`startedQuiet`). */
+  private readonly quietStarts = new Map<string, boolean>();
 
   constructor(private readonly hub: Hub) {
     this.records = new LeadRecords(hub.db);
@@ -337,16 +339,22 @@ export class Leads {
    * a turn under way is stopped first, as the chat's Stop does, then it starts at once; one whose machine doesn't answer
    * starts once its turn ends or its machine is back. Its profile needn't have changed: a stuck lead is started again on
    * the one it runs on. False when the project has no lead; throws why when a launch would be refused now, stopping
-   * nothing. `waitForMessage`: it starts with no turn, and the person's next message starts one.
+   * nothing. `waitForMessage`: it starts with no turn, and the person's next message starts one; unless one of theirs
+   * waits for an answer as it starts, which a turn then takes (`startedQuiet` says which it was).
    */
   async switchSoon(r: ProjectRef, o: { readonly waitForMessage?: boolean } = {}): Promise<boolean> {
     if (!this.records.leadGet(r)) return false;
-    if (o.waitForMessage === true) this.waitsForMessage.add(projectKey(r));
     const refused = this.refusal(r, "restarted");
     if (refused) throw refused;
+    if (o.waitForMessage === true) this.waitsForMessage.add(projectKey(r));
     this.records.leadSwitchSet(r, "asked");
     await this.switchIfDue(r).catch((error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`));
     return true;
+  }
+
+  /** Whether the lead session `threadId` a restart started began with no turn, waiting for the person; undefined when unknown. */
+  startedQuiet(threadId: string): boolean | undefined {
+    return this.quietStarts.get(threadId);
   }
 
   /** The lead's profile switch is due, it still differs (or a person asked for it), and the lead is idle. */
@@ -402,9 +410,13 @@ export class Leads {
     // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
     // nothing to answer, and it made up a message from the person (W787).
     // One started again with no turn (`switchSoon`'s waitForMessage): its claude waits, and what it carries on reads goes in
-    // with the next message, as a lead started ahead.
-    const ahead = this.waitsForMessage.delete(projectKey(r));
-    return { lead: await this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r), ahead) };
+    // with the next message, as a lead started ahead. Not while a message of the person's waits for an answer (one sent
+    // into the turn that never ended): a turn takes it now, or nothing would.
+    const key = projectKey(r);
+    const ahead = this.waitsForMessage.delete(key) && unanswered(this.chatRows(r)).size === 0;
+    const started = await this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r), ahead);
+    this.quietStarts.set(started.threadId, ahead);
+    return { lead: started };
   }
 
   /**
