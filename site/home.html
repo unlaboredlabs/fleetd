@@ -1,7 +1,7 @@
 <!doctype html>
-<!-- Type-led and quiet. One thing moves: the bot beside the headline, drawn by the app's own code (pebble.js, from
-     app/desktop's shared/bot.ts and ui/lib/botLife.ts by `pnpm site:pebble`). Every other bot is a still pose beside the
-     idea it stands for. IBM Plex Sans for every human sentence and Lilex for machine text, the two faces the app itself
+<!-- Type-led and quiet. The bot beside the headline moves, drawn by the app's own code (pebble.js, from app/desktop's
+     shared/bot.ts and ui/lib/botLife.ts by `pnpm site:pebble`), and under it the desktop and phone apps sit on a
+     MacBook Pro and an iPhone Duo that opens once. Every other bot is a still pose beside the idea it stands for. IBM Plex Sans for every human sentence and Lilex for machine text, the two faces the app itself
      renders in, so the page and the recorded app read as one document. Dark unless the reader picks Light. -->
 <html lang="en" data-theme="dark">
 <head>
@@ -10,7 +10,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#121212">
 <script>
-// Light or Dark, from the header's switch; Dark until the reader picks Light. Kept under the docs' own key (Starlight's
+// Light or Dark, from the footer's switch; Dark until the reader picks Light. Kept under the docs' own key (Starlight's
 // starlight-theme: "light", "dark", or empty for its Auto), so the choice carries over between this page and /docs;
 // anything but "light" (the docs' Auto, or an "auto" this page once stored) reads as Dark here. Applied before the
 // first paint; the switch's script applies it again once the posters are parsed. It sets data-theme for the CSS and
@@ -66,6 +66,8 @@
   --well-press:rgba(255,255,255,.11);
   --soft:#b9b9b9;
   --dim:rgba(162,163,165,.7);
+  --floor:#171717;
+  --floor-ring:rgba(255,255,255,.06);
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
@@ -90,6 +92,8 @@
   --well-press:rgba(0,0,0,.09);
   --soft:#3d3f43;
   --dim:#8a8c8f;
+  --floor:#ebebe7;
+  --floor-ring:rgba(0,0,0,.06);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -107,17 +111,13 @@ p,h1,h2,figure{margin:0}
 .nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
 .nav a{text-decoration:none}
 .nav a:hover{color:var(--ink)}
-.theme{display:flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
-.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
-.theme button:hover{color:var(--ink)}
-.theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
-/* Sign up: the one filled control on the page, ink on paper, sized to the theme switch beside it. */
+/* Sign up: the one filled control on the page, ink on paper. */
 .nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
 .nav .up:hover{color:var(--paper);opacity:.88}
 
-/* hero: the headline set as large as the measure allows, the bot the one thing that moves */
-.hero{padding-top:clamp(40px,7vw,104px);padding-bottom:clamp(64px,9vw,136px)}
-.lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,4.4vw,72px);align-items:center;--av:clamp(160px,24vw,330px)}
+/* hero: the bot beside the headline set as large as the measure allows, then the apps on their devices */
+.hero{padding-top:clamp(32px,5vw,80px);padding-bottom:clamp(64px,8vw,120px)}
+.lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,5.5vw,88px);align-items:center;--av:clamp(140px,19vw,272px);padding-left:clamp(0px,2vw,32px)}
 /* The bot as the app draws it: a box, and a canvas a quarter past each side so a hop or a slump is never cut off
    (botLife.ts's PAD, Bot.module.css's .canvas). */
 .pb{position:relative;display:block;flex:none}
@@ -196,9 +196,197 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .note{padding-top:8px;padding-bottom:clamp(40px,5vw,72px);font-size:13px;color:var(--faint)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
-.foot nav{display:flex;gap:20px}
+.foot nav{display:flex;align-items:center;gap:20px}
 .foot a{text-decoration:none}
 .foot a:hover{color:var(--ink)}
+/* Light or Dark: one small icon at the footer's end, the other theme's. */
+.theme{display:grid;place-items:center;width:24px;height:24px;margin:-4px -4px -4px 0;padding:0;border:0;border-radius:6px;background:none;color:var(--faint);cursor:pointer}
+.theme:hover{color:var(--ink);background:var(--well-hover)}
+.theme svg{width:14px;height:14px}
+.theme .i-moon,[data-theme="light"] .theme .i-sun{display:none}
+[data-theme="light"] .theme .i-moon{display:block}
+
+/* The stage: the desktop app on a MacBook Pro and the phone app on an iPhone Duo, side by side on one quiet surface,
+   each screen the app's own layout, words and bots, built here rather than shot so it stays sharp at any size. Every
+   length is a share of the stage (cqw), so the picture scales as one. Each screen lays out at the device's own size in
+   points (1512x982, the Duo's 1000x702 open and 480x698 shut) and is scaled to fit, as a screenshot would be. */
+.stage{position:relative;margin-top:clamp(48px,6vw,88px);container-type:inline-size}
+.floor{position:relative;aspect-ratio:16/10.4;border-radius:clamp(12px,1.5vw,20px);background:var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring);overflow:hidden}
+
+/* MacBook Pro 14", front on: an aluminium lid round black glass, the notch, and the base's front edge with its thumb
+   cut, a touch wider than the lid as the eye sees it. */
+.mac{position:absolute;left:6cqw;top:5.6cqw;width:62cqw}
+.lid{position:relative;aspect-ratio:312.6/215;border-radius:2.1cqw 2.1cqw .55cqw .55cqw;background:linear-gradient(#cfd1d4,#a7aaaf);box-shadow:0 .1cqw .2cqw rgba(0,0,0,.25),0 3cqw 5cqw -2.4cqw rgba(0,0,0,.55)}
+.lid::before{content:"";position:absolute;inset:.17cqw;border-radius:1.95cqw 1.95cqw .4cqw .4cqw;background:#060607;box-shadow:inset 0 0 0 .07cqw #222326}
+.mac .screen{position:absolute;left:1.62%;right:1.62%;top:2.79%;bottom:5.81%;overflow:hidden;border-radius:.75cqw .75cqw 0 0;background:var(--m-frame);container-type:inline-size}
+.mac .ui{position:absolute;left:0;top:0;width:1512px;height:982px;transform-origin:0 0;scale:tan(atan2(100cqw,1512px))}
+.notch{position:absolute;z-index:2;left:43.4cqw;top:0;width:13.2cqw;height:2.15cqw;background:#060607;border-radius:0 0 .85cqw .85cqw}
+.notch::after{content:"";position:absolute;left:50%;top:42%;width:.48cqw;height:.48cqw;margin-left:-.24cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#2b3a52,#0b0f17 60%)}
+/* The glass: one faint sheen across lid and screen, the light of the room on it. */
+.lid::after{content:"";position:absolute;inset:.17cqw;border-radius:inherit;pointer-events:none;background:linear-gradient(112deg,rgba(255,255,255,.07),rgba(255,255,255,0) 34%);z-index:3}
+.hinge{width:84%;height:.32cqw;margin:0 auto;background:linear-gradient(#26272a,#3a3b3f);border-radius:0 0 .2cqw .2cqw}
+.base{position:relative;width:113%;margin-left:-6.5%;height:1.75cqw;border-radius:.2cqw .2cqw 2.4cqw 2.4cqw/.2cqw .2cqw 1.25cqw 1.25cqw;background:linear-gradient(90deg,rgba(0,0,0,.22),rgba(0,0,0,0) 5%,rgba(0,0,0,0) 95%,rgba(0,0,0,.22)),linear-gradient(#e6e7e9 0,#cdd0d3 18%,#b9bcc0 52%,#8d9095 100%);box-shadow:inset 0 .06cqw 0 rgba(255,255,255,.8),inset 0 -.1cqw .15cqw rgba(0,0,0,.25)}
+.base::before{content:"";position:absolute;left:50%;top:0;width:16%;height:.52cqw;transform:translateX(-50%);border-radius:0 0 .7cqw .7cqw;background:linear-gradient(#a9acb1,#c6c9cd);box-shadow:inset 0 .1cqw .14cqw rgba(0,0,0,.28)}
+.base::after{content:"";position:absolute;left:4%;right:4%;bottom:-1.6cqw;height:1.6cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),rgba(0,0,0,0));filter:blur(.3cqw);z-index:-1}
+
+/* iPhone Duo: two halves on a hinge, a titanium band round black glass, one display across both open and a smaller
+   one on the outside. Shut, the left half lies over the right one, its outer display up; it opens on the hinge with
+   a spring (the script, once it's seen), the inner display waking as it goes. Reduced motion, or no script: open. */
+.fold{position:absolute;left:59.5cqw;top:35cqw;width:35.5cqw;aspect-ratio:1.405;perspective:140cqw;perspective-origin:75% 45%}
+.fold .device{position:absolute;inset:0;transform-style:preserve-3d}
+.fold .half{position:absolute;top:0;bottom:0;width:50%;transform-style:preserve-3d}
+.fold .fixed{right:0}
+.fold .leaf{left:0;transform-origin:100% 50%}
+.fold[data-fold="shut"] .leaf{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+/* A half's band, rounded on its outer side; the inner display runs to the hinge with no edge there. */
+.band{position:absolute;inset:0;border-radius:0 2.3cqw 2.3cqw 0;background:linear-gradient(90deg,#3d3e42,#8a8c91 10%,#626468 50%,#8d8f94 90%,#45474b);padding:.2cqw .2cqw .2cqw 0}
+.band::before{content:"";position:absolute;inset:.2cqw .2cqw .2cqw 0;border-radius:0 2.1cqw 2.1cqw 0;background:#050506}
+.leaf .front .band{border-radius:2.3cqw 0 0 2.3cqw;padding:.2cqw 0 .2cqw .2cqw}
+.leaf .front .band::before{inset:.2cqw 0 .2cqw .2cqw;border-radius:2.1cqw 0 0 2.1cqw}
+.fold .screen{position:absolute;inset:.72cqw .72cqw .72cqw 0;overflow:hidden;border-radius:0 1.62cqw 1.62cqw 0;background:var(--p-bg);container-type:inline-size}
+.leaf .front .screen{inset:.72cqw 0 .72cqw .72cqw;border-radius:1.62cqw 0 0 1.62cqw}
+.outer .screen{inset:.95cqw;border-radius:1.4cqw}
+.fold .ui{position:absolute;top:0;left:0;width:1000px;height:702px;transform-origin:0 0;scale:tan(atan2(100cqw,500px))}
+/* Open and still, the right half's screen is the whole display, one piece across the hinge, and the left half's copy
+   is hidden. Shut or turning (data-fold), each half shows its own half of it. */
+.fold:not([data-fold]) :is(.device,.half){transform-style:flat}
+.fold:not([data-fold]) .fixed{z-index:1}
+.fold:not([data-fold]) .fixed .screen{left:calc(-100% + .72cqw);border-radius:1.62cqw}
+.fold:not([data-fold]) .fixed .ui{scale:tan(atan2(100cqw,1000px))}
+.fold:not([data-fold]) .leaf .front .screen{visibility:hidden}
+.fold[data-fold] .fixed .ui{left:-500px;transform-origin:500px 0}
+.outer .ui{width:480px;height:698px;scale:tan(atan2(100cqw,480px))}
+/* The hinge's seam in the band, top and bottom; the display runs across it unbroken (one copy of the screen in each half). */
+.fixed .band::after{content:"";position:absolute;left:-.06cqw;top:0;bottom:0;width:.12cqw;background:linear-gradient(#3a3b3f 0 .2cqw,transparent .2cqw calc(100% - .2cqw),#3a3b3f calc(100% - .2cqw))}
+/* The right half's side button, and the outer display's camera. */
+.fixed .btn{position:absolute;right:-.14cqw;top:24%;width:.2cqw;height:12%;border-radius:0 .12cqw .12cqw 0;background:linear-gradient(90deg,#55575b,#8f9196)}
+.outer .cam{position:absolute;z-index:2;top:1.6cqw;left:50%;width:4.2cqw;height:1.25cqw;margin-left:-2.1cqw;border-radius:1cqw;background:#000}
+/* The leaf's thickness: its free edge and its top and bottom, seen only while it turns. */
+.leaf .edge{position:absolute;left:0;top:2.3cqw;bottom:2.3cqw;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#55575b,#8f9196 40%,#4b4d51)}
+.leaf .rim{position:absolute;left:2.3cqw;right:0;height:.85cqw;background:linear-gradient(#8f9196,#55575b)}
+.leaf .rim.t{top:0;transform-origin:50% 0;transform:rotateX(-90deg)}
+.leaf .rim.b{bottom:0;transform-origin:50% 100%;transform:rotateX(90deg)}
+.leaf .back{transform:translateZ(-.85cqw) rotateY(180deg)}
+.outer .band{border-radius:2.3cqw;padding:.2cqw}
+.outer .band::before{inset:.2cqw;border-radius:2.1cqw}
+/* The inner display, off while shut. */
+.fold .off{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none}
+.fold[data-fold="shut"] .off{opacity:1}
+.fold .shade{position:absolute;left:0;right:0;bottom:-2.2cqw;height:3.2cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.55),rgba(0,0,0,0));filter:blur(.4cqw);transform-origin:100% 50%}
+.fold[data-fold="shut"] .shade{transform:scaleX(.52)}
+
+@container (max-width:620px){
+  .floor{aspect-ratio:1/1.02}
+  .mac{left:4cqw;top:7cqw;width:86cqw}
+  .fold{left:38cqw;top:55cqw;width:58cqw}
+}
+
+/* ---- The desktop app's window (app/desktop: the sidebar, a bot's chat and the panel), in its own tokens. */
+.mui{--m-bg:#121316;--m-side:#0c0d0f;--m-line:#24262b;--m-text:#ecedf0;--m-quiet:#9a9fa8;--m-faint:#5f646c;--m-bubble:#1d1e22;--m-mine:#e3e5e8;--m-on-mine:#0b0d10;--m-link:#74a6ff;--m-ok:#5fc487;--m-row:#ffffff17;--m-field:#ffffff2b;--m-glass:#1a1b1f;--m-glass-edge:#ffffff14;--m-warn:#e2a945;--m-bar:#1c1d21;
+  display:flex;flex-direction:column;font:400 14px/1.45 var(--sans);color:var(--m-text);background:var(--m-bg);letter-spacing:0;text-align:left;-webkit-font-smoothing:antialiased}
+[data-theme="light"] .mui{--m-bg:#ffffff;--m-side:#f4f5f7;--m-line:#eaecef;--m-text:#0b0d10;--m-quiet:#5c626b;--m-faint:#9298a1;--m-bubble:#edeff2;--m-mine:#0b0d10;--m-on-mine:#ffffff;--m-link:#1d5fd3;--m-ok:#1a6c3c;--m-row:#0f172010;--m-field:#c9cdd3;--m-glass:#ffffff;--m-glass-edge:#0f172014;--m-warn:#b07200;--m-bar:#e9eaed}
+.mui svg{display:block;flex:none}
+.mb{display:flex;align-items:center;height:33px;padding:0 18px;gap:20px;background:var(--m-bar);font-size:13.5px;font-weight:500;flex:none}
+.mb b{font-weight:600}
+.mb .r{margin-left:auto;display:flex;align-items:center;gap:16px}
+.win{flex:1;display:flex;min-height:0}
+.side{width:268px;flex:none;display:flex;flex-direction:column;background:var(--m-side);border-right:1px solid var(--m-line);padding:0 10px}
+.lights{display:flex;gap:8px;padding:16px 8px 10px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}
+.lights i+i{background:#febc2e}
+.lights i+i+i{background:#28c840}
+.ws{display:flex;align-items:center;gap:9px;padding:6px 8px 12px;font-weight:600;font-size:15px}
+.ws .a{width:22px;height:22px;border-radius:6px;background:#f2a531;color:#2a1a00;display:grid;place-items:center;font-size:12px;font-weight:600}
+.ws .d{width:6px;height:6px;border-radius:50%;background:var(--m-warn)}
+.ws .more{margin-left:auto;color:var(--m-quiet)}
+.find{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--m-field);border-radius:8px;color:var(--m-quiet);font-size:14px;margin:0 2px 12px}
+.find kbd{margin-left:auto;font:inherit;font-size:12px;border:1px solid var(--m-field);border-radius:5px;padding:0 5px;line-height:18px}
+.row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;column-gap:11px;align-items:center;padding:8px 10px;border-radius:9px;margin-bottom:2px}
+.row.on{background:var(--m-row)}
+.row .pb{width:32px;height:32px;grid-row:span 2}
+.row b{font-weight:600;font-size:14.5px;line-height:20px}
+.row time{font-size:12.5px;color:var(--m-quiet);text-align:right;line-height:20px}
+.row .tx{font-size:13.5px;color:var(--m-quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:19px}
+.row em{font-style:normal;justify-self:end;display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--m-quiet)}
+.row em.dot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--m-warn)}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:14px 8px 16px;font-weight:600;font-size:14px}
+.me .a{width:26px;height:26px;border-radius:50%;background:#1f3b2a;color:#7fdca0;display:grid;place-items:center;font-size:10.5px;font-weight:600}
+.me .ic{margin-left:auto;display:flex;gap:14px;color:var(--m-quiet)}
+.chat{flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 26px 18px;position:relative}
+.pill{align-self:flex-start;display:flex;align-items:center;gap:9px;height:38px;padding:0 13px 0 9px;border-radius:19px;background:var(--m-glass);box-shadow:inset 0 0 0 1px var(--m-glass-edge),0 6px 18px -8px rgba(0,0,0,.35);font-weight:600;font-size:15px}
+.pill .pb{width:24px;height:24px}
+.pill svg{color:var(--m-quiet)}
+.log{flex:1;display:flex;flex-direction:column;gap:10px;padding-top:22px;font-size:15px;line-height:1.5}
+.sys{align-self:center;color:var(--m-quiet);font-size:13.5px}
+.sys b{font-weight:600;color:var(--m-text)}
+.sys a{color:var(--m-link);text-decoration:none}
+.sys .t{color:var(--m-faint)}
+.b{max-width:76%;padding:9px 15px;border-radius:16px;background:var(--m-bubble)}
+.b.mine{align-self:flex-end;background:var(--m-mine);color:var(--m-on-mine)}
+.b a{color:var(--m-link);text-decoration:underline;text-decoration-color:currentColor;text-underline-offset:.18em}
+.at{align-self:center;display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:17px;background:var(--m-glass);box-shadow:inset 0 0 0 1px var(--m-glass-edge);font-size:14px;margin:12px 0}
+.box{display:flex;align-items:center;gap:14px;height:52px;padding:0 10px 0 16px;border:1px solid var(--m-field);border-radius:12px;color:var(--m-faint);font-size:15px}
+.box .send{margin-left:auto;width:32px;height:32px;border-radius:8px;background:var(--m-row);display:grid;place-items:center;color:var(--m-quiet)}
+.panel{width:440px;flex:none;border-left:1px solid var(--m-line);padding:14px 22px;display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;font-size:15px;font-weight:500;color:var(--m-quiet);align-items:center}
+.tabs span{padding:5px 10px;border-radius:7px}
+.tabs .on{background:var(--m-row);color:var(--m-text)}
+.tabs i{font-style:normal;color:var(--m-quiet);font-weight:400}
+.tabs svg{margin-left:auto}
+.grp{margin-top:22px;font-weight:600;font-size:14.5px}
+.grp i{font-style:normal;color:var(--m-quiet);font-weight:400;margin-left:6px}
+.ag{display:grid;grid-template-columns:20px minmax(0,1fr) auto;column-gap:12px;margin-top:12px;font-size:14px;line-height:19px}
+.ag b{font-weight:500}
+.ag .tx{grid-column:2;color:var(--m-quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag em{font-style:normal;color:var(--m-quiet);font-size:13px}
+/* The agents' state glyph (StateGlyph): a 3x3 grid of cells, a working one in the app's green. */
+.g{display:inline-grid;grid-template-columns:repeat(3,4px);grid-auto-rows:4px;gap:1px;color:var(--m-ok);margin-top:2px}
+.g i{background:currentColor}
+.g i:nth-child(2n){opacity:.35}
+.g.q{color:var(--m-quiet)}
+.g.q i{opacity:.3}
+.g.q i:nth-child(5){opacity:1}
+
+/* ---- The phone app (app/mobile), its iOS palette: Chats beside the open chat on the Duo open, Chats alone shut,
+   iOS's status and the app's buttons in the side strip at the right edge (split.ts's sideStrip). */
+.pui{--p-bg:#000;--p-text:#ecedf0;--p-quiet:#9a9fa8;--p-line:#2a2c31;--p-bubble:#222429;--p-mine:#3e4148;--p-link:#74a6ff;--p-glass:#1a1b1f;--p-edge:rgba(255,255,255,.1);--p-dot:#ff9f0a;
+  position:relative;font:400 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",var(--sans);color:var(--p-text);background:var(--p-bg);letter-spacing:-.01em;text-align:left;-webkit-font-smoothing:antialiased;display:flex}
+[data-theme="light"] .pui{--p-bg:#fff;--p-text:#0b0d10;--p-quiet:#5c626b;--p-line:rgba(15,23,32,.14);--p-bubble:#edeff2;--p-mine:#0b0d10;--p-link:#1d5fd3;--p-glass:#fff;--p-edge:rgba(15,23,32,.1);--p-dot:#ff9500}
+[data-theme="light"] .fold .screen{--p-bg:#fff}
+.fold .screen{--p-bg:#000}
+.pui svg{display:block;flex:none}
+.list{width:360px;flex:none;display:flex;flex-direction:column;padding:22px 0 20px 18px;border-right:1px solid var(--p-line)}
+.outer .list{width:auto;flex:1;border-right:0}
+.circ{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge),0 4px 14px -6px rgba(0,0,0,.35);color:var(--p-text);flex:none;position:relative}
+.circ.me{font-size:17px;font-weight:500}
+.circ.me::after{content:"";position:absolute;right:1px;bottom:1px;width:11px;height:11px;border-radius:50%;background:#30d158;box-shadow:0 0 0 2px var(--p-bg)}
+.lhead{display:flex;justify-content:space-between;padding-right:18px;margin-bottom:14px}
+.prow{display:grid;grid-template-columns:52px minmax(0,1fr) auto;column-gap:14px;padding:11px 18px 11px 0;position:relative}
+.prow+.prow::before{content:"";position:absolute;left:66px;right:0;top:0;height:1px;background:var(--p-line)}
+.prow .pb{width:48px;height:48px;grid-row:span 2;align-self:center}
+.prow b{font-weight:600;font-size:17px}
+.prow time{font-size:15px;color:var(--p-quiet)}
+.prow .tx{grid-column:2/4;font-size:15px;color:var(--p-quiet);line-height:1.32;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prow.on{background:var(--p-on,rgba(127,127,127,.14));border-radius:14px;margin-right:10px;padding-left:8px;margin-left:-8px}
+.lfoot{margin-top:auto;display:flex;gap:12px;padding-right:18px}
+.search{flex:1;display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-radius:24px;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge);color:var(--p-quiet)}
+.pchat{flex:1;min-width:0;display:flex;flex-direction:column;padding:22px 18px 20px}
+.phead{align-self:center;display:flex;align-items:center;gap:10px;height:52px;padding:0 18px 0 8px;border-radius:26px;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge),0 4px 14px -6px rgba(0,0,0,.35)}
+.phead .pb{width:34px;height:34px}
+.phead b{display:block;font-weight:600;font-size:17px;line-height:1.1}
+.phead small{display:block;font-size:13px;color:var(--p-quiet)}
+.thread{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:9px;padding:16px 0}
+.pb2{max-width:74%;padding:10px 15px;border-radius:20px;background:var(--p-bubble);font-size:17px;line-height:1.3}
+.pb2.mine{align-self:flex-end;background:var(--p-mine);color:#fff}
+.pb2 a{color:var(--p-link)}
+.pb2.mine a{color:inherit}
+.comp{display:flex;gap:10px;align-items:center}
+.comp .search{color:var(--p-quiet)}
+.strip{width:62px;flex:none;display:flex;flex-direction:column;align-items:center;gap:12px;padding-top:24px;padding-bottom:20px}
+.strip .clock{font-weight:600;font-size:16px}
+.strip .circ{width:46px;height:46px}
+.strip .end{margin-top:auto;display:flex;flex-direction:column;gap:12px}
 
 @media (max-width:1000px){
   .sec{grid-template-columns:minmax(0,1fr)}
@@ -215,7 +403,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .ways{grid-template-columns:minmax(0,1fr)}
   .ways>div,.ways>div+div{padding:0 0 18px;border-left:0}
   .ways>div+div{padding-top:18px;border-top:1px solid var(--rule)}
-  .lockup{grid-template-columns:minmax(0,1fr);--av:150px}
+  .lockup{grid-template-columns:minmax(0,1fr);--av:112px;gap:20px;padding-left:0}
   .nav{gap:14px}
   .nav .gh,.nav .in{display:none}
   .phil p{line-height:1.35}
@@ -229,7 +417,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .nav .docs{display:none}
 }
 @media (prefers-reduced-motion:no-preference){
-  .nav a,a,.theme button{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .nav a,a,.theme{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
   .shot video,.play{transition:opacity .14s var(--snap),visibility .14s var(--snap)}
 }
 </style>
@@ -242,10 +430,6 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <a href="/pricing">Pricing</a>
     <a class="docs" href="/docs">Docs</a>
     <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-    <div class="theme" role="group" aria-label="Colour theme">
-      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
-      <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
-    </div>
     <a class="in" href="https://app.fleetd.dev">Sign in</a>
     <a class="up" href="https://app.fleetd.dev">Sign up</a>
   </nav>
@@ -260,6 +444,126 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
       <div class="install">
         <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd">curl -fsSL https://fleetd.sh | sh</span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
         <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a> · <a href="/pricing">Pricing</a></p>
+      </div>
+    </div>
+  </div>
+  <!-- The device stage: the desktop app and the phone app as they are today, on storefront's work. Built of HTML, its
+       bots drawn by the app's own code like the one above (pebble.js), each in its own colour and body. -->
+  <div class="stage" role="img" aria-label="The fleetd desktop app on a MacBook Pro and the phone app on an iPhone Duo. On the Mac, storefront’s chat: you asked to let shoppers save their cart and pick it up on the web or the iPhone app, the lead split it between three writers, and #231 is up; the panel lists ten agents at work. On the Duo, opened, the same bot’s chat: the lead says #231 merged and the other two parts are in review.">
+    <div class="floor" aria-hidden="true">
+      <div class="mac">
+        <div class="lid">
+          <div class="screen">
+            <div class="ui mui">
+              <div class="mb"><b>fleetd</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
+                <span class="r"><svg width="18" height="13" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><svg width="26" height="13" viewBox="0 0 26 13" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="22" height="12" rx="3.5" opacity=".45"/><rect x="2.5" y="2.5" width="15" height="8" rx="1.8" fill="currentColor" stroke="none"/><path d="M24.5 4.5v4" stroke-linecap="round" opacity=".45"/></svg><span>Mon 23 Nov&nbsp; 9:41</span></span></div>
+              <div class="win">
+                <div class="side">
+                  <div class="lights"><i></i><i></i><i></i></div>
+                  <div class="ws"><span class="a">A</span>Acme<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3.5l3 3 3-3"/></svg><span class="d"></span><svg class="more" width="16" height="4" viewBox="0 0 16 4" fill="currentColor"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="14" cy="2" r="1.6"/></svg></div>
+                  <div class="find"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>Search<kbd>⌘K</kbd></div>
+                  <div class="row on"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:02 AM</time><span class="tx">#231 is up: carts are saved per…</span><em><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>10</em></div>
+                  <div class="row"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02 AM</time><span class="tx">Asks for your approval</span><em class="dot"></em></div>
+                  <div class="row"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01 AM</time><span class="tx">Share card is built. Two checks left.</span><em class="dot"></em></div>
+                  <div class="row"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16 AM</time><span class="tx">Bob, done: #84 merged an hour ago.</span><em></em></div>
+                  <div class="row"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02 AM</time><span class="tx">Stock counts sync from the warehouse now.</span><em></em></div>
+                  <div class="row"><span class="pb" data-av="pink pebble"></span><b>payments</b><time>Yesterday</time><span class="tx">Noted. I’ll ask for the new key when it’s time.</span><em></em></div>
+                  <div class="row"><span class="pb" data-av="green kitty"></span><b>docs</b><time>Yesterday</time><span class="tx">Two typos and a broken link, fixed in #14.</span><em></em></div>
+                  <div class="row"><span class="pb" data-av="red ghost"></span><b>garden-sensors</b><time>Fri</time><span class="tx">The soil probe reads every ten minutes.</span><em></em></div>
+                  <div class="me"><span class="a">SR</span>Sam Rivera<span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></span></div>
+                </div>
+                <div class="chat">
+                  <div class="pill"><span class="pb" data-av="orange kitty working"></span>storefront<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 2L3.5 5l3 3"/></svg></div>
+                  <div class="log">
+                    <p class="sys"><b>Today</b></p>
+                    <p class="sys">Memory tidied: 3 added, 1 updated, 2 removed&nbsp; <a>Undo all</a>&nbsp; <span class="t">08:21</span></p>
+                    <p class="b mine">The checkout should speak the shopper’s language.</p>
+                    <p class="b">On it: one writer translates the checkout, and a QA agent checks the Dutch one in a real browser. <a>#230</a> is up for the first part.</p>
+                    <p class="b mine">Let shoppers save their cart and pick it up on the web or the iPhone app.</p>
+                    <p class="b">On it, in three parts, each with its own writer: carts saved per shopper, the web cart, and the iPhone app’s cart. Each PR gets a reviewer, and the web and iPhone parts are tested on a screen first.</p>
+                    <p class="b"><a>#231</a> is up: carts are saved per shopper. A reviewer is on it.</p>
+                  </div>
+                  <div class="at"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>10 agents working</div>
+                  <div class="box"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M13.5 7.5l-5.6 5.6a3.3 3.3 0 0 1-4.7-4.7l6-6a2.2 2.2 0 0 1 3.1 3.1l-6 6a1.1 1.1 0 0 1-1.6-1.6l5.5-5.5"/></svg>Message the lead. It reads this at its next step.<span class="send"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 12V2M3 6l4-4 4 4"/></svg></span></div>
+                </div>
+                <div class="panel">
+                  <div class="tabs"><span class="on">Agents <i>10</i></span><span>Shipping</span><span>Plan <i>4</i></span><span>History</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.8M8 12.6v1.8M1.6 8h1.8M12.6 8h1.8M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M3.5 12.5l1.3-1.3M11.2 4.8l1.3-1.3"/></svg></div>
+                  <p class="grp">Saved carts on the web and the iPhone app<i>3</i></p>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Bring the saved cart back on the web</b><em>writer</em><span class="tx">editing web/cart/restore.ts</span></div>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Bring the saved cart back in the iPhone app</b><em>writer</em><span class="tx">editing ios/Cart/CartStore.swift</span></div>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Review #231</b><em>reviewer</em><span class="tx">running gh pr diff 231</span></div>
+                  <p class="grp">Checkout in the shopper’s language<i>3</i></p>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Translate the checkout’s buttons</b><em>writer</em><span class="tx">editing src/i18n/checkout.fr.json</span></div>
+                  <div class="ag"><span class="g q"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Check the Dutch checkout</b><em>verifier</em><span class="tx">thinking</span></div>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Pick the checkout language from the browser</b><em>writer</em><span class="tx">reading src/checkout/locale.ts</span></div>
+                  <p class="grp">Gift cards apply before tax<i>2</i></p>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Apply gift cards before tax</b><em>writer</em><span class="tx">running pnpm test checkout/tax</span></div>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Show the gift card balance at checkout</b><em>writer</em><span class="tx">editing web/checkout/GiftCard.tsx</span></div>
+                  <p class="grp">Filter search results by price<i>2</i></p>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Add a price filter to search</b><em>writer</em><span class="tx">editing src/search/filters.tsx</span></div>
+                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Review #229</b><em>reviewer</em><span class="tx">running gh pr diff 229</span></div>
+                </div>
+              </div>
+            </div>
+            <span class="notch"></span>
+          </div>
+        </div>
+        <div class="hinge"></div>
+        <div class="base"></div>
+      </div>
+
+      <div class="fold" id="duo">
+        <script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.getElementById("duo").dataset.fold="shut"</script>
+        <div class="shade"></div>
+        <div class="device">
+          <div class="half fixed">
+            <div class="band"></div><span class="btn"></span>
+            <div class="screen"><div class="ui pui" id="duo-open">
+              <div class="list">
+                <div class="lhead"><span class="circ me">S</span><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span></div>
+                <div class="prow on"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:41</time><span class="tx">#231 merged: carts are saved per shopper.</span></div>
+                <div class="prow"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02</time><span class="tx">Asks for your approval</span></div>
+                <div class="prow"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01</time><span class="tx">Share card is built. Two checks left.</span></div>
+                <div class="prow"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16</time><span class="tx">Bob, done: #84 merged an hour ago.</span></div>
+                <div class="prow"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02</time><span class="tx">Stock counts sync from the warehouse now.</span></div>
+                <div class="lfoot"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6 10h8M8 14h4"/></svg></span><span class="search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>Search</span></div>
+              </div>
+              <div class="pchat">
+                <div class="phead"><span class="pb" data-av="orange kitty working"></span><span><b>storefront</b><small>Acme</small></span></div>
+                <div class="thread">
+                  <p class="pb2 mine">Let shoppers save their cart and pick it up on the web or the iPhone app.</p>
+                  <p class="pb2">On it, in three parts, each with its own writer. Each PR gets a reviewer.</p>
+                  <p class="pb2 mine">How’s the saved cart coming along?</p>
+                  <p class="pb2"><a>#231</a> merged: carts are saved per shopper. The web and iPhone parts are in review, each tested on a screen first.</p>
+                  <p class="pb2 mine">Land them once they’re green.</p>
+                  <p class="pb2">Will do. The train lands them together, and I’ll tell you when they’re live.</p>
+                </div>
+                <div class="comp"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span><span class="search">Message</span></div>
+              </div>
+              <div class="strip"><span class="clock">9:41</span><svg width="22" height="16" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.1" stroke-linecap="round"/></svg></span></div>
+            </div><span class="off"></span></div>
+          </div>
+          <div class="half leaf">
+            <div class="face front"><div class="band"></div><div class="screen" id="duo-left"><span class="off"></span></div></div>
+            <div class="face back outer"><div class="band"></div><span class="cam"></span>
+              <div class="screen"><div class="ui pui">
+                <div class="list">
+                  <div class="lhead"><span class="circ me">S</span></div>
+                  <div class="prow"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:41</time><span class="tx">#231 merged: carts are saved per shopper.</span></div>
+                  <div class="prow"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02</time><span class="tx">Asks for your approval</span></div>
+                  <div class="prow"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01</time><span class="tx">Share card is built. Two checks left.</span></div>
+                  <div class="prow"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16</time><span class="tx">Bob, done: #84 merged an hour ago.</span></div>
+                  <div class="prow"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02</time><span class="tx">Stock counts sync from the warehouse now.</span></div>
+                </div>
+                <div class="strip"><span class="clock">9:41</span><svg width="22" height="16" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span>
+                  <span class="end"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6 10h8M8 14h4"/></svg></span><span class="circ"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg></span></span></div>
+              </div></div>
+            </div>
+            <span class="edge"></span><span class="rim t"></span><span class="rim b"></span>
+          </div>
+        </div>
+        <!-- The open display's left half is the same screen as the right half's: one copy, shown in each. -->
+        <script>(function(){var s=document.getElementById("duo-left"),u=document.getElementById("duo-open").cloneNode(true);u.removeAttribute("id");s.insertBefore(u,s.firstChild)})()</script>
       </div>
     </div>
   </div>
@@ -395,6 +699,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
   </nav>
 </footer>
 
@@ -426,7 +731,7 @@ var fleetdMedia={};
     hero?.release();
     heroBox = box;
     heroRig = newRig(heroState, drawnAt(box), 11, true);
-    hero = bringToLife(canvasIn(heroHost), heroRig, box);
+    hero = bringToLife(canvasIn(heroHost), heroRig, box, ...look);
   };
   const mountStills = () => {
     document.querySelectorAll("[data-bot]").forEach((host, n) => {
@@ -440,9 +745,11 @@ var fleetdMedia={};
     });
   };
 
-  // The hero shows itself early and often, on the rig's own springs: a glance within a second of load, then a change
-  // every 2.6 to 3.4 s through working, done, a glance and needs you. Off screen or in a hidden tab it waits where it
-  // is; with reduced motion it stays still in idle.
+  // The hero shows itself early and often, on the rig's own springs: a first change within a second of load, then one
+  // every 2.4 s or so, through the bots' colours and five bodies and their states (thinking, working, needs you, done,
+  // a glance). A new colour or body pops in: the body takes a squash on its springs, swaps at its lowest, and springs
+  // back up taller with a hop. Off screen or in a hidden tab it waits where it is; with reduced motion it stays still,
+  // grey and idle.
   const glance = (side) => {
     // The rig's own glance (shared/bot.ts's moment): a look aside that springs back at its end, with a blink as it turns.
     const t = heroRig.t;
@@ -451,7 +758,16 @@ var fleetdMedia={};
     heroRig.glanceEnd = t + 1.1;
     heroRig.blinks.push(t, t + 0.075);
   };
-  const PLAN = [["working", 3.2], ["done", 3], ["glance", 2.6], ["needs", 3.4], ["working", 3], ["done", 2.8], ["glance", 2.6], ["needs", 3.2]];
+  // [colour, body, state]: each step changes one or two of them.
+  const PLAN = [
+    ["blue", "pebble", "glance"], ["blue", "kitty", "thinking"], ["orange", "kitty", "done"], ["orange", "bunny", "needs"],
+    ["purple", "bunny", "working"], ["teal", "ghost", "glance"], ["teal", "toast", "done"], ["pink", "toast", "thinking"],
+    ["pink", "pebble", "needs"], ["green", "pebble", "working"], ["green", "ghost", "done"], ["amber", "kitty", "glance"],
+    ["red", "bunny", "thinking"], ["grey", "pebble", "idle"],
+  ];
+  // The rig's channels a pop pushes (shared/bot.ts: SQUASH, LIFT).
+  const SQUASH = 6, LIFT = 7;
+  let look = ["grey", "pebble"];
   let step = -1;
   let side = 1;
   let seen = true;
@@ -461,26 +777,36 @@ var fleetdMedia={};
       heroState = "idle";
       hero.set("idle");
       side = -side;
-      setTimeout(() => glance(side), 260);
+      setTimeout(() => glance(side), 200);
     } else {
       heroState = what;
       hero.set(what);
     }
   };
+  const pop = (color, shape) => {
+    heroRig.v[SQUASH] += 1.5;
+    heroRig.v[LIFT] -= 10;
+    hero.set(heroState);
+    setTimeout(() => {
+      look = [color, shape];
+      hero.paint(color, shape);
+      heroRig.v[SQUASH] -= 2.6;
+      heroRig.v[LIFT] += 34;
+      hero.set(heroState);
+    }, 90);
+  };
   const next = () => {
     if (calm.matches || document.hidden || !seen) { timer = setTimeout(next, 600); return; }
     step = (step + 1) % PLAN.length;
-    act(PLAN[step][0]);
-    timer = setTimeout(next, PLAN[step][1] * 1000);
+    const [color, shape, what] = PLAN[step];
+    if (color !== look[0] || shape !== look[1]) pop(color, shape);
+    act(what);
+    timer = setTimeout(next, 2200 + Math.random() * 500);
   };
   const begin = () => {
     clearTimeout(timer);
     if (calm.matches) return;
-    timer = setTimeout(() => {
-      if (calm.matches) return;
-      glance(-1);
-      timer = setTimeout(next, 1300);
-    }, 700);
+    timer = setTimeout(next, 700);
   };
   new IntersectionObserver((es) => { seen = es[es.length - 1].isIntersecting; }).observe(heroHost);
   calm.addEventListener("change", () => {
@@ -488,17 +814,69 @@ var fleetdMedia={};
     clearTimeout(timer);
     heroState = "idle";
     hero.set("idle");
+    look = ["grey", "pebble"];
+    hero.paint(...look);
   });
   addEventListener("resize", mountHero);
 
-  // ---- Light or Dark, nothing else: the pressed button is the stored choice; a press stores it, and the CSS, the
+  // ---- Light or Dark, nothing else: the footer's icon is the other theme; a press stores it, and the CSS, the
   // theme-color, the pictures, the clips and the bots follow (fleetdTheme, in the head).
-  const themeButtons = [...document.querySelectorAll("[data-theme-set]")];
-  const showTheme = () => { const t = fleetdTheme.get(); themeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
-  themeButtons.forEach((b) => b.addEventListener("click", () => { fleetdTheme.set(b.dataset.themeSet); showTheme(); }));
+  const themeButton = document.getElementById("theme");
+  const showTheme = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; themeButton.setAttribute("aria-label", other); themeButton.title = other; };
+  themeButton.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); showTheme(); });
   // Another tab (this page or the docs) changed it.
   addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); dispatchEvent(new Event("fleetdtheme")); showTheme(); } });
   addEventListener("fleetdtheme", () => setTimeout(mountStills, 0));
+
+  // ---- The stage's bots, one per bot in the apps' lists and headers, each in its colour, body and state and taking its
+  // turns as the app's do. Each lays out at the screen's own size in points, which the scale doesn't change.
+  const mountScreens = () => {
+    document.querySelectorAll("[data-av]").forEach((host, n) => {
+      const [color, shape, state = "idle"] = host.dataset.av.split(" ");
+      const box = host.offsetWidth;
+      bringToLife(canvasIn(host), newRig(state, drawnAt(box), 300 + n, false), box, color, shape);
+    });
+  };
+
+  // ---- The Duo opens once, the first time it's well in view: the left half swings off the right on a spring with a
+  // touch of overshoot, as a hinge settles, the inner display waking as it goes. Shut until then (the inline script
+  // shut it before the first paint, unless reduced motion); after, it is the plain open phone, no transform left on it.
+  const duo = document.getElementById("duo");
+  /** A spring's curve from 0 to 1 (mass 1), for CSS linear(): its points 1/60 s apart, and how long it takes. */
+  const springCurve = (k, c) => {
+    let x = 0, v = 0, t = 0;
+    const pts = [0];
+    for (let i = 1; t < 3; i++) {
+      for (let s = 0; s < 2; s++) { v += (k * (1 - x) - c * v) / 120; x += v / 120; t += 1 / 120; }
+      pts.push(Math.round(x * 1e4) / 1e4);
+      if (Math.abs(1 - x) < 0.004 && Math.abs(v) < 0.05) break;
+    }
+    pts[pts.length - 1] = 1;
+    return { easing: CSS.supports("transition-timing-function", "linear(0, 1)") ? `linear(${pts.join(", ")})` : "cubic-bezier(.2,.9,.25,1)", duration: Math.round(t * 1000) };
+  };
+  const open = () => {
+    if (duo.dataset.fold !== "shut") return;
+    const { easing, duration } = springCurve(72, 14.5);
+    const go = { duration, easing, fill: "both" };
+    const runs = [
+      duo.querySelector(".leaf").animate([{ transform: "rotateY(180deg)" }, { transform: "rotateY(0deg)" }], go),
+      duo.querySelector(".shade").animate([{ transform: "scaleX(.52)" }, { transform: "none" }], go),
+      ...[...duo.querySelectorAll(".off")].map((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, delay: duration * 0.12, easing: "cubic-bezier(.2,0,0,1)", fill: "both" })),
+    ];
+    duo.dataset.fold = "turning";
+    Promise.all(runs.map((r) => r.finished)).then(() => { delete duo.dataset.fold; runs.forEach((r) => r.cancel()); }, () => {});
+  };
+  if (duo.dataset.fold === "shut") {
+    const wait = performance.now() < 1500 ? 900 : 350;
+    const watch = new IntersectionObserver((es) => {
+      if (!es[es.length - 1].isIntersecting) return;
+      watch.disconnect();
+      const when = () => (document.hidden ? addEventListener("visibilitychange", when, { once: true }) : setTimeout(open, wait));
+      when();
+    }, { threshold: 0.6 });
+    watch.observe(duo);
+    calm.addEventListener("change", () => { if (calm.matches) { watch.disconnect(); delete duo.dataset.fold; } });
+  }
 
   // ---- Copy: the clipboard where the page may use it, else the command selected and copied the old way.
   const said = document.getElementById("copied");
@@ -571,6 +949,7 @@ var fleetdMedia={};
   showTheme();
   mountHero();
   mountStills();
+  mountScreens();
   begin();
 })();
 </script>

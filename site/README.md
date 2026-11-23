@@ -2,7 +2,7 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
-with the bot beside the headline and the install line, what fleetd is (two lines set big and a paragraph), then four
+with the bot beside the headline and the install line, then the desktop and phone apps on a MacBook Pro and an iPhone Duo, what fleetd is (two lines set big and a paragraph), then four
 short sections, each with its own clip or still of the app (`showcase-*`), and two last ones in words: the models
 agents run on, and self-hosted or fleetd cloud, linking to `pricing.html` (`/pricing`). The header's Sign in and Sign up
 go to the cloud's web app, app.fleetd.dev. The models section's marks are each company's own (Anthropic's press kit, Google's own
@@ -11,15 +11,23 @@ inline in the text colour. The pricing page's estimate and its per-hour or per-m
 plans as the rest of it. That page holds the cloud's plans, computer time and credits, and
 self-hosted and cloud side by side; its prices are fleetd-cloud's (`src/billing/stripe/prices.ts`, `src/billing/rates.ts`)
 and the docs' Billing page, so change the three together. It is dark until
-the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
+the reader picks Light with the small icon at the footer's end; the choice is kept under the docs' `starlight-theme` key, where anything but
 `light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 The bot is the app's own: `pebble.js` is `app/desktop`'s bot code (`src/shared/bot.ts`, the rig, and
 `src/renderer/ui/lib/botLife.ts`, its canvas and clock) bundled by `pnpm site:pebble` in `app/desktop`, and
-`src/shared/bot.site.test.ts` fails while it is stale, so run that after changing either. The hero's bot takes its first
-glance within a second of load, then changes state every 3 s or so (working, done, a glance, needs you); it waits off
-screen or in a hidden tab, and stays still with reduced motion. The bots beside the sections are still poses.
+`src/shared/bot.site.test.ts` fails while it is stale, so run that after changing either. The hero's bot changes within
+a second of load, then every 2.4 s or so, through the bots' colours, their five bodies and their states (thinking,
+working, needs you, done, a glance); a new colour or body pops in on the rig's own springs. It waits off screen or in a
+hidden tab, and stays still, grey and idle, with reduced motion. The bots beside the sections are still poses.
+
+Under the hero, the stage shows the desktop app on a MacBook Pro and the phone app on an iPhone Duo, both built in
+`home.html` (HTML and CSS, no pictures): each screen lays out at the device's size in points (1512x982 for the Mac,
+1000x702 for the Duo open, 480x698 for its outer display) and is scaled to fit, so it stays sharp at any width. Its
+layout, words and colours are the apps' own (`app/desktop`'s tokens, `app/mobile`'s theme and `src/split.ts`'s panes
+and side strip), and each bot in it is drawn by `pebble.js` in its colour and body. The Duo starts shut and opens once
+it's well in view, on a spring; with reduced motion or no script it is shown open. Keep its words true to the apps.
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
