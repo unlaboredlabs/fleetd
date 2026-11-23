@@ -688,12 +688,19 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
     () => setPlaying(false),
   );
   const picture = useSurfaceSize(replay?.surface, replay?.size);
-  // A WebM plays from a URL for its blob, made for as long as the player shows it.
+  // A WebM plays from a URL for its blob, made for as long as the player shows it; an MP4 the screen player couldn't
+  // decode too, from where that one was.
+  const resumeAt = useRef(0);
+  useEffect(() => {
+    resumeAt.current = at;
+  }, [at]);
   useEffect(() => {
     const el = media.current;
     if (el === null || video === undefined || !fallback) return undefined;
     const url = URL.createObjectURL(video);
     el.src = url;
+    const from = resumeAt.current;
+    if (from > 0) el.addEventListener("loadedmetadata", () => (el.currentTime = from / 1000), { once: true });
     return () => {
       el.removeAttribute("src");
       URL.revokeObjectURL(url);
