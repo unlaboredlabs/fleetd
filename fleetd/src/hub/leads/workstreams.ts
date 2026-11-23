@@ -58,12 +58,17 @@ export class Workstreams {
 
   /**
    * An order opened with its brief at once, no intent wake (the train's, for a PR labelled `fleetd-train`). Once per
-   * clientRequestId while that order is open; after it closed (its PR closed, then reopened), a new one.
+   * clientRequestId while that order is open; after it closed (its PR closed, then reopened), a new one. A stopped
+   * one is final: refused.
    */
   openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string } {
     for (let n = 1; ; n++) {
       const { workstreamId } = this.open(n === 1 ? input : { ...input, clientRequestId: `${input.clientRequestId}#${n}` });
       const w = this.records.workstreamGet(workstreamId);
+      // A person stopped it: that is final for its PR, which stays off the train until its label goes.
+      if (w?.state === "stopped") {
+        throw new ToolError("invalid", `${workstreamId}, this pull request's order, was stopped, so it stays off the train.`, "Its label does nothing more: open a new pull request to put the change on the train again.");
+      }
       if (w && isClosed(w.state)) continue;
       this.briefCreate(input.projectRef, workstreamId, brief);
       return { workstreamId };

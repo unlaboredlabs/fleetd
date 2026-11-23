@@ -273,6 +273,10 @@ test("the intake opens a briefed order for a labelled PR: open with its brief at
   const again = await host.openBriefedOrder(PROJECT, "Bump bun to 1.4", "train-label:acme/storefront#9", brief);
   expect(again).not.toBe(id);
   expect(host.workstream(again)).toMatchObject({ open: true, hasBrief: true, fromLabel: true });
+  // A person stops that one (chat/stop.ts writes it so): final for its PR.
+  const records = leads(hub).records;
+  records.workstreamPut({ ...records.workstreamGet(again)!, state: "stopped" });
+  await expect(host.openBriefedOrder(PROJECT, "Bump bun to 1.4", "train-label:acme/storefront#9", brief)).rejects.toThrow("was stopped, so it stays off the train");
   done();
 });
 

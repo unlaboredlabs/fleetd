@@ -186,6 +186,8 @@ const CI_CONFIG_TTL_MS = 10 * 60_000;
 const CI_HISTORY = 10;
 /** The error code of a task result's PR that already merged: nothing to enqueue, and nothing to tell the lead. */
 const MERGED = "merged";
+/** The `lastError` of a Change whose PR was closed on GitHub. */
+const CLOSED = "was closed";
 const CI_FIRST_WAIT_MS = 2000;
 const MERGE_RETRY_FIRST_MS = 15_000;
 const MERGE_RETRY_MAX_MS = 5 * 60_000;
@@ -1382,7 +1384,7 @@ export class Train {
     const pull = await this.github.pull(repo, change.prNumber);
     this.guardBase(repo, pull.base.ref);
     if (pull.merged) return this.mergedOnGitHub(change, pull);
-    if (pull.state !== "open") return this.abandon(change, "was closed");
+    if (pull.state !== "open") return this.abandon(change, CLOSED);
     if (pull.head.sha.toLowerCase() !== change.headSha) return this.readyMoved(change, pull);
     // A Change in review goes only as a re-review, which runs alongside its CI.
     const rebasing = this.update(change.changeId, ["ready", "reviewing"], (c) => ({ ...c, state: "rebasing" }));
@@ -1595,7 +1597,7 @@ export class Train {
       const moved = pull.head.sha.toLowerCase() !== change.headSha;
       const inLine = !moved && !pull.draft && ["queued", "reviewing", "ready"].includes(change.state);
       if (pull.merged) await this.mergedOnGitHub(change, pull);
-      else if (pull.state !== "open") await this.abandon(change, "was closed");
+      else if (pull.state !== "open") await this.abandon(change, CLOSED);
       else if (change.state === "queued" && pull.draft) this.holdDraft(change);
       else if (inLine && conflicts(pull)) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);
       else if (change.state === "ready") {
@@ -1838,8 +1840,11 @@ export class Train {
     if (!this.host.closeOrder) return;
     const w = this.host.workstream(change.workstreamId);
     if (!w?.fromLabel || !w.open) return;
-    // Reopened at the same head, the PR goes on the train again, under a new order.
-    this.readyHeads.delete(`${change.repo}\u0000${change.prNumber}\u0000${change.headSha.toLowerCase()}`);
+    // Its PR closed: reopened at the same head, it goes on the train again, under a new order. Any other end (its order
+    // stopped, the train's refusal) keeps it off at that head.
+    if (change.state === "abandoned" && change.lastError === CLOSED) {
+      this.readyHeads.delete(`${change.repo}\u0000${change.prNumber}\u0000${change.headSha.toLowerCase()}`);
+    }
     const why = change.state === "merged" ? `${change.prUrl} merged` : `${change.prUrl} left the train (${change.state}${change.lastError ? `: ${change.lastError}` : ""})`;
     this.host.closeOrder(change.projectRef, change.workstreamId, why).catch((error: unknown) => {
       console.warn(`train: ${change.workstreamId}, ${change.prUrl}'s order, not closed: ${(error as Error).message}`);

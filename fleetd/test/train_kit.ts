@@ -706,8 +706,11 @@ export class FakeHost implements TrainHost {
     return "fleetd/";
   }
   /** Orders opened with a brief (a PR's fleetd-train label), by id: their brief, and whether they were closed and why. */
-  readonly briefed = new Map<string, { requestId: string; brief: Brief; closed?: string }>();
+  readonly briefed = new Map<string, { requestId: string; brief: Brief; closed?: string; stopped?: boolean }>();
   async openBriefedOrder(_r: ProjectRef, _text: string, requestId: string, brief: Brief) {
+    // As the intake: a stopped order of the request is final.
+    const stopped = [...this.briefed].find(([, o]) => o.requestId === requestId && o.stopped);
+    if (stopped) throw Object.assign(new Error(`${stopped[0]}, this pull request's order, was stopped, so it stays off the train.`), { code: "invalid" });
     // As the intake: the open order of the request, else a new one (its PR closed, then reopened).
     const found = [...this.briefed].find(([, o]) => o.requestId === requestId && o.closed === undefined);
     if (found) return found[0];

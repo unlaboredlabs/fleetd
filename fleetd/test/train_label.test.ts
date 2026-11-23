@@ -81,6 +81,25 @@ test("a labelled PR closed unmerged leaves the train, and its order closes with 
   expect(k.host.briefed.get("W201")!.closed).toBeUndefined();
 });
 
+test("a labelled PR whose order a person stopped stays off the train: not at the same head, nor at a new one", async () => {
+  const k = await kit();
+  openPr(k, 26, "renovate/x", { labels: [TRAIN_LABEL, "hold"] });
+  await passes(k, 1);
+  expect(changesOf(k, 26).map((c) => c.workstreamId)).toEqual(["W200"]);
+  // The stop flow (chat/stop.ts): its PRs off the train while the order is still open, then the order stopped.
+  k.train.takeLeftovers(k.change(26).projectRef, "W200", "W200 was stopped: by you");
+  Object.assign(k.host.briefed.get("W200")!, { stopped: true, closed: "stopped" });
+  await passes(k, 2);
+  expect(changesOf(k, 26).map((c) => [c.workstreamId, c.state])).toEqual([["W200", "abandoned"]]);
+  // A new push: refused, said to the lead, and still no new order.
+  k.pr(26, "renovate/x", { "26.md": "26 again\n" }, { labels: [TRAIN_LABEL, "hold"] });
+  k.host.tasks.delete("T26");
+  await passes(k, 2);
+  expect(changesOf(k, 26)).toHaveLength(1);
+  expect([...k.host.briefed.keys()]).toEqual(["W200"]);
+  expect(k.host.wakes.some((w) => w.includes("/pull/26") && w.includes("was stopped, so it stays off the train"))).toBe(true);
+});
+
 test("without the label, from a fork, or as a draft, a PR no task opened stays off the train, and opens no order", async () => {
   const k = await kit();
   openPr(k, 22, "sam/pricing-fix");
