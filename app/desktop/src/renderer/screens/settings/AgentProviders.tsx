@@ -1,7 +1,7 @@
 // Settings › Hub › Providers (#/settings/hub/providers): what agents run on, one row per provider (shared/
 // agentProviders.ts), each with how it is connected beside its name, its one action and Add profile at its end, and
-// under it the task profiles that run on it (Profiles.tsx), each opening its editor in its place, or No profiles yet
-// with Add profile; one whose provider isn't connected says it can't be used until it is. The models a provider offers
+// under it the task profiles that run on it (Profiles.tsx), each opening its editor in its place, or No profiles yet;
+// one whose provider isn't connected says it can't be used until it is. The models a provider offers
 // show only in a profile's editor, its Model picker. A row opens its setup under it: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
 // controls Setup's Claude step holds); Google's is a sign-in on each machine agents run on (GoogleSignIn.tsx), the team's
 // Gemini API key, and the bots whose Vault holds a key of their own, which wins there. A link to Google's setup (a model
@@ -141,7 +141,6 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
               unusable={v.mark === "off"}
               editing={editing}
               onEdit={(pid) => edit({ kind: "edit", id: pid })}
-              {...(canAdd && live ? { onAdd: startAdding } : {})}
               onDone={done}
             />
           )}

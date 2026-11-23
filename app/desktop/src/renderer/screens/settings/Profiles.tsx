@@ -74,8 +74,8 @@ export type Editing = { kind: "new"; provider: AgentProvider["id"] } | { kind: "
 /**
  * A provider's profiles, under its row on Providers: each a row that opens its editor in the row's place, and a new
  * one's editor at their end once its provider's Add profile is pressed. While the provider isn't connected
- * (`unusable`), each says so: agents can't run on it until it does. With none, No profiles yet, and Add profile under
- * it (`onAdd`) where the provider has a model to make one on.
+ * (`unusable`), each says so: agents can't run on it until it does. With none, No profiles yet: the provider's row's
+ * plus is the one way to add one.
  */
 export function ProviderProfiles(props: {
   provider: AgentProvider;
@@ -83,7 +83,6 @@ export function ProviderProfiles(props: {
   unusable: boolean;
   editing: Editing | undefined;
   onEdit: (id: number) => void;
-  onAdd?: (() => void) | undefined;
   onDone: (said: string | undefined) => void;
 }) {
   const { provider, view, editing } = props;
@@ -106,20 +105,7 @@ export function ProviderProfiles(props: {
   const after = at === -1 ? [] : mine.slice(at + 1);
   const adding = editing?.kind === "new" && editing.provider === provider.id;
   const label = `${provider.name} profiles`;
-  if (mine.length === 0 && !adding)
-    return (
-      <GroupNote
-        action={
-          props.onAdd === undefined ? undefined : (
-            <Button size="sm" onClick={props.onAdd}>
-              Add profile
-            </Button>
-          )
-        }
-      >
-        No profiles yet
-      </GroupNote>
-    );
+  if (mine.length === 0 && !adding) return <GroupNote>No profiles yet</GroupNote>;
   return (
     <>
       {before.length === 0 ? null : (
