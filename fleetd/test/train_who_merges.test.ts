@@ -8,6 +8,8 @@ import { trainFacts } from "../src/hub/train/digest.ts";
 import { leadTrainLines, PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
 import { DEFAULT_RISK_RULES } from "../src/hub/train/merge_rules.ts";
 import { queue } from "../src/hub/prs/join.ts";
+import { WAITING_ON } from "../src/hub/train/next_rules.ts";
+import { DRAFT } from "../src/hub/train/states.ts";
 import { APPROVAL, changeNext, HELD, PEOPLE } from "../src/hub/train/notes.ts";
 import { git, Kit, REPO, WS } from "./train_kit.ts";
 
@@ -143,6 +145,9 @@ test("a PR waiting for a person takes no place in the merge line, and the PRs be
   expect(queue({ ...held, lastError: HELD }, 1).heldFor).toBe("hold");
   expect(queue({ ...held, lastError: APPROVAL }, 1).heldFor).toBe("approval");
   expect(queue({ ...held, lastError: undefined }, 1)).not.toHaveProperty("heldFor");
+  // Waits that need no one: a stacked PR's upstream, a draft. They stay in line, with no heldFor.
+  expect(queue({ ...held, lastError: `${WAITING_ON}acme/storefront#3: it hasn't merged yet` }, 1)).not.toHaveProperty("heldFor");
+  expect(queue({ ...held, lastError: DRAFT }, 1)).not.toHaveProperty("heldFor");
   expect(queue(k.change(62), 1)).not.toHaveProperty("heldFor");
 });
 
