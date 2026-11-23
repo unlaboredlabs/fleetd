@@ -18,7 +18,7 @@ import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
 import { decide, type MergeDecision, type MergeFile } from "./merge_rules.ts";
-import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
+import { ciState, GithubSync, type MainCi, mergesOwn } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as lanes from "./lanes.ts";
 import { readFixes, redFixes } from "./red_fix.ts";
@@ -39,6 +39,7 @@ import {
   checks,
   Fast,
   gated,
+  isRed,
   mustReport,
   oneLine,
   type Refusal,
@@ -2010,8 +2011,16 @@ export class Train {
     } catch (error) {
       return this.warnHourly([`train: main CI of ${repo} not read`], ghMessage(error), `train: main CI of ${repo} not read: ${ghMessage(error)}`);
     }
-    const [state, failing] = ciState(runs);
     const sha = (runs.find((r) => r.head_sha)?.head_sha ?? "").toLowerCase();
+    // A red check of a run a person or a schedule started there (a release build, a nightly) isn't the base's CI.
+    if (sha !== "" && runs.some(isRed)) {
+      try {
+        runs = mergesOwn(runs, await this.github.shaRunEvents(repo, sha));
+      } catch (error) {
+        this.warnHourly([`train: main CI's runs of ${repo} not read`], ghMessage(error), `train: main CI's runs of ${repo} not read: ${ghMessage(error)}`);
+      }
+    }
+    const [state, failing] = ciState(runs);
     if (this.sync.record(repo, sha, state, failing, this.nowMs())) {
       const failingText = failing.length === 0 ? "" : `: ${failing.join(", ")}`;
       this.emit(projectRef, "ci.main", `main CI ${state} on ${repo}${failingText}`, {

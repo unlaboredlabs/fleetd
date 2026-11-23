@@ -1,10 +1,25 @@
 // What Status needs from GitHub beyond the train's own reads: main-branch CI
 // per train repo, read in the train's pass at most once a minute.
 import type { CiState } from "../../shared/contracts.ts";
-import type { CheckRun } from "./github.ts";
+import { type CheckRun, workflowRun } from "./checks.ts";
 import { checks } from "./rules.ts";
 
 export const MAIN_CI_EVERY_MS = 60_000;
+
+/** The events of workflow runs a person or a schedule started (a release build, a nightly), not a push or a merge. */
+export const NOT_THE_MERGES = ["workflow_dispatch", "schedule"];
+
+/**
+ * The base's own checks among `runs` on its head: without those of the workflow runs a person or a schedule started
+ * there (`events`, the commit's runs and their events), which check nothing the merges did.
+ */
+export function mergesOwn(runs: CheckRun[], events: [number, string][]): CheckRun[] {
+  const theirs = new Set(events.filter(([, event]) => NOT_THE_MERGES.includes(event)).map(([id]) => id));
+  return runs.filter((r) => {
+    const run = workflowRun(r);
+    return run === undefined || !theirs.has(run);
+  });
+}
 
 /** Main-branch CI of one repo as last read. */
 export type MainCi = {
