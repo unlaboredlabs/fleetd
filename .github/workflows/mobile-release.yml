@@ -1,9 +1,11 @@
 name: Mobile release
 
-# Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow), on GitHub runners only: no EAS,
-# no Expo service. Each platform signs only when its secrets are set (.github/release/mobile-sign.sh lists them), so
-# a fork without them still gets a debug-signed APK and skips iOS cleanly, without starting a macOS runner. The
-# guide: docs/site/src/content/docs/mobile.md (fleetd.sh/docs/mobile).
+# Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow) or every 3 hours from main, on
+# GitHub runners only: no EAS, no Expo service. A scheduled run builds and sends to TestFlight only when the phone app
+# changed on main since the last build that went there (.github/release/mobile-due.sh), else it passes saying so in
+# its summary. Each platform signs only when its secrets are set (.github/release/mobile-sign.sh lists them), so a fork
+# without them still gets a debug-signed APK and skips iOS cleanly, without starting a macOS runner. The guide:
+# docs/site/src/content/docs/mobile.md (fleetd.sh/docs/mobile).
 #
 # Repository variables (not secrets): FLEETD_APP_ID, the bundle id and Android package (default sh.fleetd.app; a
 # signed iOS build needs the one its profile names); UPDATES_CERT_PEM, the code signing certificate for over-the-air
@@ -12,6 +14,8 @@ name: Mobile release
 # project's google-services.json for FCM (without it the Android app gets no notifications). build-release.yml
 # publishes the updates on each release, with the same variables (.github/release/mobile-env.sh).
 on:
+  schedule:
+    - cron: "23 */3 * * *"
   workflow_dispatch:
     inputs:
       testflight:
@@ -26,6 +30,14 @@ on:
 
 permissions:
   contents: read
+  # mobile-due.sh lists this workflow's runs.
+  actions: read
+
+# Runs on main one at a time, so a scheduled run that starts while a build by hand is going sees whether it sent the
+# same commit. A branch's builds don't wait.
+concurrency:
+  group: ${{ github.ref == 'refs/heads/main' && 'mobile-release-main' || format('mobile-release-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 env:
   # Over-the-air updates only for a build from main. A build from another branch takes none: one that changes no native
@@ -33,7 +45,7 @@ env:
   # build 27 of #1871 ran main's, not its own). It keeps its branch's until a newer build is installed.
   UPDATES_CERT_PEM: ${{ github.ref == 'refs/heads/main' && vars.UPDATES_CERT_PEM || '' }}
   FLEETD_APP_ID: ${{ vars.FLEETD_APP_ID }}
-  FLEETD_UPDATES_CHANNEL: ${{ inputs.channel }}
+  FLEETD_UPDATES_CHANNEL: ${{ inputs.channel || 'edge' }}
   FLEETD_UPDATES_URL: ${{ vars.FLEETD_UPDATES_URL }}
   FLEETD_BUILD_NUMBER: ${{ github.run_number }}
   # fleetd cloud's Sign in (src/cloud/config.ts): the accounts service and the production WorkOS client id, both
@@ -43,7 +55,8 @@ env:
 
 jobs:
   signing:
-    # Which platforms have their secrets, decided on Linux so a macOS runner starts only to sign.
+    # Which platforms have their secrets, decided on Linux so a macOS runner starts only to sign; on a schedule, whether
+    # there is anything new to build at all (`build`), so a run with nothing new passes here and starts no build.
     name: signing
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -51,6 +64,8 @@ jobs:
       android: ${{ steps.secrets.outputs.android }}
       ios: ${{ steps.secrets.outputs.ios }}
       testflight: ${{ steps.secrets.outputs.testflight }}
+      upload: ${{ steps.upload.outputs.upload }}
+      build: ${{ steps.due.outputs.build || 'true' }}
     steps:
       - uses: actions/checkout@v7
       - id: secrets
@@ -72,11 +87,29 @@ jobs:
           echo "android=$(.github/release/mobile-sign.sh android-enabled)" | tee -a "$GITHUB_OUTPUT"
           echo "ios=$(.github/release/mobile-sign.sh ios-enabled)" | tee -a "$GITHUB_OUTPUT"
           echo "testflight=$(.github/release/mobile-sign.sh testflight-enabled)" | tee -a "$GITHUB_OUTPUT"
+      - id: upload
+        # The iOS build goes to TestFlight: a scheduled one always, one by hand when asked; either needs the key.
+        env:
+          ASKED: ${{ github.event_name == 'schedule' || inputs.testflight }}
+          IOS: ${{ steps.secrets.outputs.ios }}
+          TESTFLIGHT: ${{ steps.secrets.outputs.testflight }}
+        run: |
+          upload=false
+          if [ "$ASKED" = true ] && [ "$IOS" = true ] && [ "$TESTFLIGHT" = true ]; then upload=true; fi
+          echo "upload=$upload" | tee -a "$GITHUB_OUTPUT"
+      - id: due
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPLOAD: ${{ steps.upload.outputs.upload }}
+        run: .github/release/mobile-due.sh due | tee -a "$GITHUB_OUTPUT"
 
   runtime:
     # Each platform's runtime version, resolved as build-release.yml's update job resolves it (on Linux, with no
     # secrets), which each build checks against the one it embeds, so a build whose updates would never arrive fails.
     name: runtime
+    needs: signing
+    if: needs.signing.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -226,10 +259,11 @@ jobs:
         run: |
           built="$(find "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications" -path '*/EXUpdates.bundle/fingerprint' | head -1)"
           ../../.github/release/mobile-env.sh check "${built:-/nonexistent}" "$RUNTIME"
-      - name: Export
+      # mobile-due.sh finds the builds by hand that went to TestFlight by this step's name.
+      - name: ${{ needs.signing.outputs.upload == 'true' && 'Upload to TestFlight' || 'Export' }}
         env:
           TESTFLIGHT: ${{ inputs.testflight }}
-          DESTINATION: ${{ inputs.testflight && needs.signing.outputs.testflight == 'true' && 'upload' || 'export' }}
+          DESTINATION: ${{ needs.signing.outputs.upload == 'true' && 'upload' || 'export' }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}

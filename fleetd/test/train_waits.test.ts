@@ -236,6 +236,9 @@ test("a failed manual or scheduled run on main opens nothing and isn't re-run", 
     for (let i = 0; i < 3; i++) await step(k);
     expect(k.host.orders).toEqual([]);
     expect(k.gh.reruns).toEqual([]);
+    // Nor is it main's CI: main stays green, with no red check in the status or for a PR's wait to blame on main.
+    expect(k.train.mainCi(REPO)?.state).toBe("green");
+    expect(k.train.mainCiNote(REPO)).toBeUndefined();
     await step(k, k.train, 6 * MINUTE);
     expect(k.train.records.watches(REPO)).toEqual([]);
   }

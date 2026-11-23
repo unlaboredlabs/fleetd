@@ -156,8 +156,9 @@ Add these secrets, and one variable, `FLEETD_APP_ID`:
 - An App Store Connect API key, for TestFlight: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64`
 - Your bundle id, such as `com.example.fleetd`: `FLEETD_APP_ID`
 
-Tick **Send the iOS build to TestFlight** to upload it. A build you sign yourself needs
-[its own notification relay](/docs/phone-notifications#own).
+Tick **Send the iOS build to TestFlight** to upload it. With the key set, **Mobile release** also runs every 3 hours
+on `main` and uploads a new build when the phone app changed since the last one that went to TestFlight. A build you
+sign yourself needs [its own notification relay](/docs/phone-notifications#own).
 
 ## Over-the-air updates {#updates}
 

@@ -13,6 +13,7 @@ import type { WorkstreamId } from "../../shared/contracts.ts";
 import { failedTests, testLeaf } from "./flaky.ts";
 import { type CheckRun, jobOf, TRAIN_CONTEXT, workflowRun } from "./github.ts";
 import { batchNames, gatedName, workflows } from "./next.ts";
+import { NOT_THE_MERGES } from "./main_ci.ts";
 import type { Watch } from "./records.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Train } from "./service.ts";
@@ -24,8 +25,6 @@ const WATCH_SETTLE_MS = 5 * 60_000;
 const WATCH_MAX_MS = 6 * 60 * 60_000;
 /** A re-run that shows no newer run of its check this long after the train asked for it counts as failed again. */
 const RERUN_SHOW_MS = 15 * 60_000;
-/** The events of workflow runs a person or a schedule started, not the merge. */
-const NOT_THE_MERGES = ["workflow_dispatch", "schedule"];
 
 /** What the watch did about a check's run on a merged commit: re-ran it once, saw that re-run pass, or left it. */
 const RERAN = "reran";
