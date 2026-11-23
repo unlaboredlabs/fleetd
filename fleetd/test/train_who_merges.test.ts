@@ -8,7 +8,7 @@ import { trainFacts } from "../src/hub/train/digest.ts";
 import { leadTrainLines, PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
 import { DEFAULT_RISK_RULES } from "../src/hub/train/merge_rules.ts";
 import { changeNext, PEOPLE } from "../src/hub/train/notes.ts";
-import { git, Kit, REPO } from "./train_kit.ts";
+import { git, Kit, REPO, WS } from "./train_kit.ts";
 
 let kits: Kit[] = [];
 afterEach(() => {
@@ -86,8 +86,13 @@ test("where people merge, a waiting PR is kept up to date with main, and a merge
   expect(merges(k)).toEqual([]);
   Object.assign(k.gh.pulls.get(52)!, { state: "closed", merged: true, mergedAt: new Date(k.clock.ms + 60_000).toISOString(), mergeSha: "e".repeat(40) });
   await passes(k, 2);
-  expect(k.change(52)).toMatchObject({ state: "abandoned", lastError: "was merged outside the train" });
-  expect(k.host.eventsOf("pr.merged_outside")).toMatchObject([{ repo: REPO, prNumber: 52 }]);
+  // A person's merge counts as merged: the Change, its order and Factory see it land, and the lead isn't told it left.
+  expect(k.change(52)).toMatchObject({ state: "merged", mergedSha: "e".repeat(40), byHand: true });
+  expect(k.change(52).lastError).toBeUndefined();
+  expect(k.host.eventsOf("pr.merged")).toMatchObject([
+    { repo: REPO, prNumber: 52, workstreamId: WS, mergedSha: "e".repeat(40), byHand: true, mergedBy: "ada-lovelace", mergedByKind: "human", base: "main" },
+  ]);
+  expect(wakesWith(k, "left the train")).toEqual([]);
   // The PRs behind it carry on: the next one waits for a person too, and is told once.
   k.pr(53, "fleetd/T53-x", { "src/z.ts": "z\n" });
   await k.enqueue(53);
