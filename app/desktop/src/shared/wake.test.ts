@@ -7,6 +7,7 @@ import {
   heldWords,
   replied,
   restartNote,
+  RETRY_SAID_MS,
   SLOW_MS,
   startOf,
   START_SLOW_MS,
@@ -295,5 +296,31 @@ describe("the bot in the reply's place on every turn", () => {
     expect(some({ working: true, waiting: true, blocked: "x" })).toEqual({ phase: "thinking" });
     // But the hub's word that your message never reached it wins: whatever the lead works on, it isn't that.
     expect(some({ working: true, waiting: true, held: "devbox is offline." })).toEqual({ phase: "held", reason: "devbox is offline." });
+  });
+});
+
+// W791 (F1520): Claude overloaded mid-turn, and the bot in the reply's place showed typing dots alone for minutes.
+describe("Claude not serving the lead's turn", () => {
+  const retrying = (reason: string): Activity => ({ kind: "retrying", attempt: 4, of: 10, reason });
+  const asked = T;
+
+  test("past 20 s of retries, one plain line beside the bot, by why; gone once Claude answers", () => {
+    const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded"), activitySince: T + 1_000 });
+    expect(w).toEqual({ phase: "working", retry: { reason: "overloaded", since: T + 1_000 } });
+    // A blip says nothing: the dots alone.
+    expect(wakeWords(w, T + 1_000 + RETRY_SAID_MS - 1)).toBeUndefined();
+    expect(wakeDots(w)).toBe(true);
+    expect(wakeWords(w, T + 1_000 + RETRY_SAID_MS)).toEqual({ words: "Claude is overloaded, retrying…" });
+    expect(wakeWords(some({ working: true, waiting: true, asked, activity: retrying("429"), activitySince: T }), T + 60_000)?.words).toBe("Claude is busy (rate-limited), retrying…");
+    expect(wakeWords(some({ working: true, waiting: true, asked, activity: retrying("500"), activitySince: T }), T + 60_000)?.words).toBe("Claude isn’t answering, retrying…");
+    // Claude answers: the lead writes, and the line goes with the retries.
+    expect(some({ working: true, waiting: true, asked, activity: { kind: "writing" }, activitySince: T + 70_000 })).toEqual({ phase: "writing" });
+    expect(wakeWords(some({ working: true, waiting: true, asked, activity: { kind: "thinking" }, activitySince: T }), T + 60_000)).toBeUndefined();
+  });
+
+  test("a hub that doesn't say since when: the dots, as before", () => {
+    const w = some({ working: true, waiting: true, asked, activity: retrying("overloaded") });
+    expect(w).toEqual({ phase: "working" });
+    expect(wakeWords(w, T + 600_000)).toBeUndefined();
   });
 });

@@ -22,7 +22,9 @@ export type Wake =
   | { readonly phase: "failed"; readonly reason: string; readonly retryAt: number | undefined }
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
-  | { readonly phase: "working" }
+  /** At work; `retry`: Claude isn't serving its calls, and its claude has retried since then (hub epoch ms), why in
+   * the tracker's words ("overloaded", a status, an error). */
+  | { readonly phase: "working"; readonly retry?: { readonly reason: string; readonly since: number } }
   /** Its first words stream: the bot stays in the reply's place until the reply is whole. */
   | { readonly phase: "writing" }
   /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
@@ -40,6 +42,8 @@ export interface WakeIn {
   readonly working: boolean;
   /** The lead's live lane's activity now. */
   readonly activity: Activity | undefined;
+  /** Since when it does that (hub epoch ms): a run of retries, from the first. */
+  readonly activitySince?: number | undefined;
   /** This turn began with a start (ColdTurns). */
   readonly cold: boolean;
   /** The lead's reply streams now. */
@@ -68,6 +72,8 @@ export interface WakeIn {
 export const SLOW_MS = 30_000;
 /** How long the bot shows still asleep in the reply's place before it stirs, so the wake is seen and not skipped. */
 export const STIR_MS = 900;
+/** Past this of Claude's retries, the bot says in a plain line that Claude isn't answering and the lead retries. */
+export const RETRY_SAID_MS = 20_000;
 /** Past this with no start and no reason, the bot says it waits for the lead to start, with the time so far. */
 export const START_SLOW_MS = 10_000;
 /** Past this, a lead idle since before your message never started on it: the bot says so, and what to do. */
@@ -106,6 +112,7 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && !waiting) return undefined;
     if (i.writing || a?.kind === "writing") return { phase: "writing" };
+    if (a?.kind === "retrying") return { phase: "working", ...(i.activitySince === undefined ? {} : { retry: { reason: a.reason, since: i.activitySince } }) };
     return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
   }
   if (waiting) {
@@ -149,9 +156,14 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
   }
 };
 
+/** Claude's retries in one plain line, by why: overloaded, rate-limited, or not answering. */
+export const retryWords = (reason: string): string =>
+  reason === "overloaded" ? "Claude is overloaded, retrying…" : reason === "429" ? "Claude is busy (rate-limited), retrying…" : "Claude isn’t answering, retrying…";
+
 /** The word beside the bot (`nowMs` on the hub's clock): the step while its computer starts, "Still waking up" past
  * SLOW_MS (with `count`, the time so far), the reason after a failed try or while something holds the lead, that it
- * waits for the lead to start past START_SLOW_MS, that it didn't start past START_STALE_MS; nothing once it thinks. */
+ * waits for the lead to start past START_SLOW_MS, that it didn't start past START_STALE_MS, that Claude isn't serving
+ * it past RETRY_SAID_MS of retries; nothing once it thinks. */
 export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; readonly count?: string } | undefined => {
   switch (w.phase) {
     case "waking": {
@@ -168,6 +180,8 @@ export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; rea
       return { words: "The lead didn’t start on this. Restart it, then send your message again." };
     case "received":
       return w.since !== undefined && nowMs - w.since >= START_SLOW_MS ? { words: "Waiting for the lead to start", count: waited(nowMs - w.since) } : undefined;
+    case "working":
+      return w.retry !== undefined && nowMs - w.retry.since >= RETRY_SAID_MS ? { words: retryWords(w.retry.reason) } : undefined;
     default:
       return undefined;
   }

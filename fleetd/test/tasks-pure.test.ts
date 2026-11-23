@@ -72,12 +72,28 @@ describe("recovery", () => {
     expect([stall.kind, stall.reported, stall.signature]).toEqual(["Stalled", "stalled", "Stalled: inside a tool"]);
   });
 
+  // W791 (F1525): the card read "recovering: API Error: 529 Overloaded. This is a server-side issue…".
+  test("Claude's API failing a run says so in plain words on the card, never its raw error", () => {
+    const raw = "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment.";
+    const d = failed({ endCause: "failed", error: { class: "overloaded", message: raw } });
+    expect([d.kind, d.text]).toEqual(["Unreachable", "Claude was overloaded"]);
+    expect(queuedReason(resume(decide(d, undefined, false, NOW, 0.5, 3)))).toBe("recovering: Claude was overloaded; resumes at 18:01:40 UTC (1 of 3 recoveries used)");
+    const said = (cls: string, message: string) => failed({ endCause: "failed", error: { class: cls, message } }).text;
+    expect(said("overloaded", "API Error: 500 Internal server error.")).toBe("Claude's API failed");
+    expect(said("network", "API Error: Connection refused")).toBe("Claude couldn't be reached");
+    expect(said("rate_limit", "API Error: Request rejected (429)")).toBe("Claude's rate limit was reached");
+    // A node that names no class: Claude's words still read plainly.
+    expect(failed({ error: { message: raw } }).text).toBe("Claude was overloaded");
+    // Anything else keeps its own words.
+    expect(said("process_exited", "killed by signal 9")).toBe("killed by signal 9");
+  });
+
   test("a resumed run that dies within five minutes counts twice, past the max it escalates", () => {
     const d = failed({ error: { class: "network", message: "API unreachable" } });
     const prior: TaskRecovery = { count: 2, max: 3, nodeLost: 0, lastCause: "failed", lastCauseText: "x", streak: 1, resumedAt: new Date(NOW - 60_000).toISOString(), mode: "resume" };
     expect(decide(d, prior, false, NOW, 0, 3)).toEqual({
       kind: "escalate",
-      why: "it died again (API unreachable) after 2 automatic recoveries of at most 3",
+      why: "it died again (Claude couldn't be reached) after 2 automatic recoveries of at most 3",
     });
   });
 

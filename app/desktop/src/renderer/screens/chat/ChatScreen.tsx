@@ -21,7 +21,7 @@ import { useNow } from "../live";
 import { AttentionLine } from "./Attention";
 import { lookingAt, sameLooks, waitingOn, type LookAt } from "./attentionModel";
 import { hideWait, useHiddenWait } from "./hiddenWait";
-import { leadLastTurnSince, leadLastTurnUntil, leadTurnUntil } from "./activity";
+import { leadLastTurnSince, leadLastTurnUntil, leadLastTurnWorkedMs, leadTurnUntil } from "./activity";
 import { ChatList } from "./ChatList";
 import { Island } from "./Island";
 import { useChatData } from "./data";
@@ -65,9 +65,10 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
   const starting = useData((d) => d.starting);
   const workedSince = useData((d) => leadLastTurnSince(d, projectKey(project)));
   const workedUntil = useData((d) => leadLastTurnUntil(d, projectKey(project)));
+  const workedMs = useData((d) => leadLastTurnWorkedMs(d, projectKey(project)));
   const worked = useMemo(
-    () => (workedSince === undefined || workedUntil === undefined ? undefined : { since: workedSince, until: workedUntil }),
-    [workedSince, workedUntil],
+    () => (workedSince === undefined || workedUntil === undefined ? undefined : { since: workedSince, until: workedUntil, ...(workedMs === undefined ? {} : { ms: workedMs }) }),
+    [workedSince, workedUntil, workedMs],
   );
   // What you had seen when the chat opened, read before the sidebar marks it seen (a key per project remounts this),
   // and its newest seq once known: only messages already there then are new, never those arriving while it's open.

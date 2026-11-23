@@ -81,6 +81,17 @@ type Data = Record<string, unknown> | undefined;
 
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
+/**
+ * Claude's API failing a run, in plain words for the agent's card and its lead ("API Error: 529 Overloaded. This is a
+ * server-side issue…" read raw on the card, W791); undefined for any other failure, which keeps its own words.
+ */
+export function apiWords(klass: string, message: string): string | undefined {
+  if (klass === "overloaded" || /\bAPI Error: 529\b|overloaded_error/i.test(message)) return /\bAPI Error: 5(?!29)\d\d\b/.test(message) ? "Claude's API failed" : "Claude was overloaded";
+  if (klass === "rate_limit" || /\bAPI Error: 429\b|rate_limit_error/i.test(message)) return "Claude's rate limit was reached";
+  if (klass === "network") return "Claude couldn't be reached";
+  return undefined;
+}
+
 /** Reads a `thread.failed` or `thread.interrupted` event. `lastTool` is the run's last action, for the signature. */
 export function death(type: HubEventType, data: Data, machine: string, lastTool: string | undefined): Death {
   const error = (data?.error ?? undefined) as Data;
@@ -131,7 +142,7 @@ export function death(type: HubEventType, data: Data, machine: string, lastTool:
         break;
       case "failed":
         [kind, cause] = byClass();
-        text = message;
+        text = apiWords(klass, message) ?? message;
         break;
       // The steer's own run carries on from a superseded one; only one that never ran leaves it as the end.
       case "superseded":
@@ -149,7 +160,7 @@ export function death(type: HubEventType, data: Data, machine: string, lastTool:
         else if (type === "thread.interrupted") [kind, cause, text] = ["NotDead", "requested", message];
         else {
           [kind, cause] = byClass();
-          text = message;
+          text = apiWords(klass, message) ?? message;
         }
     }
   }

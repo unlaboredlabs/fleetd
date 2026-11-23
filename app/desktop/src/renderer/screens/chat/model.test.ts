@@ -186,6 +186,8 @@ describe("the chat's rows", () => {
     expect(stamps(rows([...next.slice(0, -1), item("e", "lead", at(19, 9, 6))], { worked }))).toEqual(["b: Worked for 3m 0s"]);
     // The lead's newest reply is older than the turn: it didn't write in it, so nothing is stamped.
     expect(stamps(rows(lead, { worked: { since: worked.since + 600_000, until: worked.until + 600_000 } }))).toEqual([]);
+    // The runs before it that ended with no reply count too (W791): the stamp says the whole time, beside the same reply.
+    expect(stamps(rows(lead, { worked: { ...worked, ms: 233_000 } }))).toEqual(["b: Worked for 3m 53s"]);
     expect(stamps(rows(lead))).toEqual([]);
   });
 

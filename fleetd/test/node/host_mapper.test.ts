@@ -137,9 +137,15 @@ test("every sent run ends exactly once and the exit comes last", () => {
     const status = new Map<string, ItemStatus>();
     for (const item of items(r.events)) status.set(item.id, item.status);
     expect([...status.values()].includes("running"), name).toBe(false);
-    expect(json(r.replies), `${name}: replies`).toEqual(r.expectedReplies);
+    expect(json(r.replies), `${name}: replies`).toEqual([...r.expectedReplies, ...(STOPS_SINCE[name] ?? [])]);
   }
 });
+
+/** Replies fleetd sends now that the recording, made before, has none of; what claude did next is in it all the same. */
+const STOPS_SINCE: Record<string, unknown[]> = {
+  // A refused sign-in stops the run at its first retry (W791).
+  "claude-2.1.302-auth-expired-401.jsonl": [{ type: "control_request", request_id: "fleetd-int-1", request: { subtype: "interrupt" } }],
+};
 
 test("two turns in one process", () => {
   const r = replay("init-partial-two-turns");
@@ -750,4 +756,27 @@ test("lines that map to nothing still send the run's usage once a minute, so the
   // Between runs nothing goes out.
   mapper.feed(line({ type: "command_lifecycle", command_uuid: "r1", state: "completed" }), nowAt(181_000));
   expect(mapper.feed(thinking, nowAt(400_000)).events.filter(usage)).toEqual([]);
+});
+
+// W791: a refused sign-in (401) is refused on every retry, and claude retried it for about 3 minutes before the lead's
+// line said where to fix the key. The run stops at the first one and fails for it, class `auth`.
+test("a refused sign-in stops the run at its first retry and fails it as a sign-in", () => {
+  const mapper = new StreamMapper("s", classify);
+  mapper.send("task", "work", "plain");
+  mapper.feed(line({ type: "command_lifecycle", command_uuid: "task", state: "started" }), now());
+  const retry = (attempt: number, status: number) => ({ type: "system", subtype: "api_retry", attempt, max_retries: 10, retry_delay_ms: 600, error_status: status, error: "authentication_failed" });
+  const first = mapper.feed(line(retry(1, 401)), now());
+  expect(first.replies.map(request)).toEqual([{ subtype: "interrupt" }]);
+  // One stop is enough: a second retry before it lands asks nothing again.
+  expect(mapper.feed(line(retry(2, 401)), now()).replies).toEqual([]);
+  const end = mapper.feed(line({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming", user_message_uuid: "task" }), now());
+  const [[run, outcome]] = runEnds(end.events) as [[string, RunOutcome]];
+  expect(run).toBe("task");
+  expect(typeof outcome === "object" && "Failed" in outcome ? [outcome.Failed.class, outcome.Failed.apiStatus] : outcome).toEqual(["auth", 401]);
+  // Overloaded or rate-limited is worth claude's retries: nothing is stopped.
+  const busy = new StreamMapper("s", classify);
+  busy.send("task", "work", "plain");
+  busy.feed(line({ type: "command_lifecycle", command_uuid: "task", state: "started" }), now());
+  expect(busy.feed(line(retry(1, 529)), now()).replies).toEqual([]);
+  expect(busy.feed(line(retry(1, 429)), now()).replies).toEqual([]);
 });

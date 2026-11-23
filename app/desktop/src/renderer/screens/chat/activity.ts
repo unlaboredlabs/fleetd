@@ -70,6 +70,51 @@ export const leadLastTurnUntil = (s: DataState, key: ProjectKey): number | undef
   return at === undefined ? undefined : Date.parse(at);
 };
 
+/** The lead's turns that are over, as lastTurn has each, oldest first: hub epoch ms at each end. */
+export const leadTurns = (events: readonly HubEvent[], ref: ProjectRef): { readonly since: number; readonly until: number }[] => {
+  const ours = ofProject(ref);
+  const isIdle = idleAt(ours);
+  const out: { since: number; until: number }[] = [];
+  let idleSeen = false;
+  let start: HubEvent | undefined;
+  for (const e of events) {
+    if (!isEvent(e, "chat.waiting") || !ours(e)) continue;
+    if (isIdle(e)) {
+      if (start !== undefined) out.push({ since: Date.parse(start.at), until: Date.parse(e.at) });
+      start = undefined;
+      idleSeen = true;
+    } else if (idleSeen && start === undefined) start = e;
+  }
+  return out;
+};
+
+/** A reply lands a moment after its turn's end. */
+const REPLY_SLACK_MS = 2_000;
+
+/**
+ * How long the lead worked toward its latest finished turn's reply, ms: that turn, and the turns before it since your
+ * message that ended with no reply of their own (a run Claude failed or cut, which the lead carried on by itself), so a
+ * reply that took minutes across retries never reads as the seconds of its last run (W791, "Worked for 8s").
+ */
+export const leadLastTurnWorkedMs = (s: DataState, key: ProjectKey): number | undefined => {
+  const turns = leadTurns(s.events, refOf(key));
+  const last = turns.at(-1);
+  if (last === undefined) return undefined;
+  const messages = s.chats[key]?.messages ?? [];
+  const asked = messages.findLast((m) => m.author === "human" && Date.parse(m.createdAt) < last.since);
+  let ms = last.until - last.since;
+  if (asked === undefined) return ms;
+  const after = Date.parse(asked.createdAt);
+  for (let i = turns.length - 2; i >= 0; i--) {
+    const t = turns[i];
+    if (t === undefined || t.until <= after) break;
+    const replied = messages.some((m) => m.author === "lead" && m.state === "final" && Date.parse(m.createdAt) >= t.since && Date.parse(m.createdAt) <= t.until + REPLY_SLACK_MS);
+    if (replied) break;
+    ms += t.until - t.since;
+  }
+  return ms;
+};
+
 /** What the lead does this moment ("thinking", "editing `a.ts`"), "working" when nothing more is known; undefined idle. */
 export const leadDoing = (s: DataState, key: ProjectKey): string | undefined => {
   if (selectLeadWorking(key)(s) !== true) return undefined;

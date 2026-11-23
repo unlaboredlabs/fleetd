@@ -227,3 +227,19 @@ test("a tracker idle past its time with no run going is dropped, whoever ends it
   a.onThreadEvent("devbox", frame("fresh", run("running")));
   expect(a.size()).toBe(2);
 });
+
+// W791: Claude overloaded mid-turn retries for minutes; each retry used to restart the wait, so no app could tell a long
+// one from a blip and the person saw typing dots alone.
+test("a run of retries counts from the first, and ends with the work that follows", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  const retry = (n: number) => item(`retry-${n}`, "completed", { type: "api_retry", attempt: n, maxRetries: 10, errorStatus: 529, error: "Overloaded" });
+  t.apply(retry(1), T0 + 1_000);
+  t.apply(retry(2), T0 + 3_000);
+  t.apply(retry(3), T0 + 25_000);
+  expect(t.now(T0 + 26_000)).toEqual({ activity: { kind: "retrying", attempt: 3, of: 10, reason: "overloaded" }, since: isoMs(T0 + 1_000) });
+  // Claude answers: the next retry is a new wait.
+  t.apply(delta("Here"), T0 + 30_000);
+  t.apply(retry(1), T0 + 40_000);
+  expect(t.now(T0 + 41_000)?.since).toBe(isoMs(T0 + 40_000));
+});

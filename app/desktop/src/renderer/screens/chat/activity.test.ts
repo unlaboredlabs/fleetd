@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { HubEvent } from "../../../shared/contracts";
 import { createDataStore, type DataState } from "../../src/data/store";
 import { leadLaneId } from "../../src/data/selectors";
-import { doingWords, leadDoing, leadLastTurnSince, leadLastTurnUntil, leadTurnSince, leadTurnUntil, turnLine, workedFor } from "./activity";
+import { emptyChat } from "../../src/data/chat";
+import { doingWords, leadDoing, leadLastTurnSince, leadLastTurnUntil, leadLastTurnWorkedMs, leadTurnSince, leadTurnUntil, turnLine, workedFor } from "./activity";
 
 const AT = "2026-10-19T10:00:00.000Z";
 const ref = { machineId: "devbox", projectId: "storefront" };
@@ -86,5 +87,33 @@ describe("the lead's activity line", () => {
     expect(turnLine({ since, until: since + 220_000 }, undefined, since + 999_000)).toEqual({ words: "Worked for 3m 40s" });
     expect(turnLine({}, undefined, since)).toBeUndefined();
     expect([workedFor(-5), workedFor(59_999), workedFor(60_000), workedFor(4_330_000)]).toEqual(["0s", "59s", "1m 0s", "1h 12m"]);
+  });
+});
+
+// W791 (F1520): Claude was down for 3 min 45 s of the turn; its run failed, the lead carried on by itself, and the
+// reply read "Worked for 8s", the last run alone.
+describe("how long the lead worked toward its reply", () => {
+  const t = (m: number, sec = 0) => `2026-10-19T10:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.000Z`;
+  const say = (author: "human" | "lead", at: string, n: number) => ({ messageId: `m${String(n)}`, author, state: "final" as const, text: "x", createdAt: at });
+  const lead = (on: boolean, seq: number, at: string) => ev(seq, "chat.waiting", working(on), ref.projectId, at);
+  const of = (events: HubEvent[], messages: ReturnType<typeof say>[]) => state({ events, chats: { [KEY]: { ...emptyChat, messages } } });
+
+  it("counts the runs since your message that ended with no reply, not the idle between them", () => {
+    const events = [lead(false, 1, t(0)), lead(true, 2, t(1)), lead(false, 3, t(4, 45)), lead(true, 4, t(4, 50)), lead(false, 5, t(4, 58))];
+    const s = of(events, [say("lead", t(0), 1), say("human", t(1), 2), say("lead", t(4, 57), 3)]);
+    // 3m 45s of the failed run, and the 8 s of the one that answered.
+    expect(leadLastTurnWorkedMs(s, KEY)).toBe(233_000);
+    expect(workedFor(leadLastTurnWorkedMs(s, KEY) ?? 0)).toBe("3m 53s");
+  });
+
+  it("stops at an earlier turn that answered, and at your message", () => {
+    const events = [lead(false, 1, t(0)), lead(true, 2, t(1)), lead(false, 3, t(2)), lead(true, 4, t(3)), lead(false, 5, t(3, 10))];
+    // The turn before answered your earlier message: the new one counts alone.
+    expect(leadLastTurnWorkedMs(of(events, [say("human", t(0, 30), 1), say("lead", t(2), 2), say("human", t(2, 30), 3), say("lead", t(3, 9), 4)]), KEY)).toBe(10_000);
+    // A quiet turn before your message isn't the one that answered it.
+    expect(leadLastTurnWorkedMs(of(events, [say("human", t(2, 30), 1), say("lead", t(3, 9), 2)]), KEY)).toBe(10_000);
+    // Nothing of yours to answer: the turn's own length.
+    expect(leadLastTurnWorkedMs(of(events, []), KEY)).toBe(10_000);
+    expect(leadLastTurnWorkedMs(of([lead(false, 1, t(0)), lead(true, 2, t(1))], []), KEY)).toBeUndefined();
   });
 });
