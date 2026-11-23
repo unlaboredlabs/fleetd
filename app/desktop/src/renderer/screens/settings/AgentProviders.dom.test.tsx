@@ -134,11 +134,17 @@ const rows = () =>
     return shown.textContent;
   });
 
-it("lists each provider with how it is connected and its models, Google's Sign in with Google at its end", async () => {
+it("lists each provider with how it is connected, never its models, Google's Sign in with Google at its end", async () => {
   await render();
-  expect(rows()).toEqual(["AnthropicAPI keyClaude Opus 5.5 · Claude Sonnet 5.5", "GoogleNot connectedGemini 4 NeonSign in with Google"]);
-  // What a row runs, all of it, is its hover.
-  expect(host.querySelector("[data-provider='anthropic'] [data-hint]")?.textContent).toBe("Runs Claude Opus 5.5, Claude Sonnet 5.5. The models offered are fleetd's own list until a Claude API key is saved in Setup.");
+  expect(rows()).toEqual(["AnthropicAPI key", "GoogleNot connectedSign in with Google"]);
+  // The models are a profile's editor's alone: nowhere on a row, nor in its hover.
+  expect(host.querySelector("[data-provider] [data-hint]")).toBeNull();
+  expect(host.textContent).not.toContain("Claude Sonnet 5.5");
+  // No profile yet under either: each says so, with Add profile.
+  expect([...host.querySelectorAll("[data-provider-group]")].map((g) => g.textContent)).toEqual([
+    expect.stringContaining("No profiles yetAdd profile"),
+    expect.stringContaining("No profiles yetAdd profile"),
+  ]);
   // The setup shows only once a row opens.
   expect(host.querySelector("[data-provider-setup]")).toBeNull();
 });
@@ -170,7 +176,7 @@ it("says in words that a sign-in is starting, never a bare disabled button, unti
 it("says how a connected Google is, and its setup lists each machine's sign-in and the bots holding a key", async () => {
   google = { machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }], keyIn: [{ machineId: "devbox", projectId: "storefront" }] };
   await render();
-  expect(rows()[1]).toBe("GoogleSigned in · Google AI Pro · API key in 1 botGemini 4 Neon");
+  expect(rows()[1]).toBe("GoogleSigned in · Google AI Pro · API key in 1 bot");
   await click(button("Google"));
   const setup = host.querySelector("[data-provider-setup='google']");
   expect(setup?.querySelector("[data-machine='devbox']")?.textContent).toContain("Signed in · Google AI Pro");

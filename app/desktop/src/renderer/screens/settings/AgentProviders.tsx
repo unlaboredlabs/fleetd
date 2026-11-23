@@ -1,16 +1,17 @@
 // Settings › Hub › Providers (#/settings/hub/providers): what agents run on, one row per provider (shared/
-// agentProviders.ts), each with how it is connected beside its name, the models it offers under it, its one action and
-// Add profile at its end, and under it the task profiles that run on it (Profiles.tsx), each opening its editor in its
-// place; one whose provider isn't connected says it can't be used until it is. A row opens its setup under it: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
+// agentProviders.ts), each with how it is connected beside its name, its one action and Add profile at its end, and
+// under it the task profiles that run on it (Profiles.tsx), each opening its editor in its place, or No profiles yet
+// with Add profile; one whose provider isn't connected says it can't be used until it is. The models a provider offers
+// show only in a profile's editor, its Model picker. A row opens its setup under it: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
 // controls Setup's Claude step holds); Google's is a sign-in on each machine agents run on (GoogleSignIn.tsx), the team's
 // Gemini API key, and the bots whose Vault holds a key of their own, which wins there. A link to Google's setup (a model
 // picker's Sign in with Google, a search) lands with Google's row open. Every row reads the same way: a provider fleetd
 // adds is one more entry in AGENT_PROVIDERS and its setup here.
 import { Fragment, useState, type ReactNode } from "react";
-import type { Person, ProfileModel } from "../../../shared/contracts";
-import { AGENT_PROVIDERS, googleConnected, googleWords, runsWords, type AgentProvider, type AgentProviderId } from "../../../shared/agentProviders";
+import type { Person } from "../../../shared/contracts";
+import { AGENT_PROVIDERS, googleConnected, googleWords, providerOf, type AgentProvider, type AgentProviderId } from "../../../shared/agentProviders";
 import { useToolQuery } from "../../src/data/react";
-import { Button, Text } from "../../ui";
+import { Button } from "../../ui";
 import { ClaudeAdmin } from "../admin/Claude";
 import { AntigravityRow, GeminiKeyRow, useGoogle, useMachineName } from "./GoogleSignIn";
 import { errorText, useLive } from "./hub";
@@ -23,9 +24,6 @@ const noInput = {};
 
 /** The reveal key of each provider's row: a link or a search for it opens it. */
 const revealOf = (id: AgentProviderId): string => `hub.providers.${id}`;
-
-/** Where Anthropic's models come from, on its row's hover, while the hub has no Claude API key to list them. */
-const BUILTIN = " The models offered are fleetd's own list until a Claude API key is saved in Setup.";
 
 /** One provider's row at rest: how it is connected, its state as a dot, and its one action. */
 type RowView = { words: string; mark: Mark; action?: ReactNode };
@@ -109,11 +107,11 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
   const provider = (p: AgentProvider, first: boolean) => {
     const id = p.id;
     const v = views[id];
-    const runs = runsWords(models, id);
-    const add =
-      profiles.data === undefined || runs === "" ? null : (
-        <AddButton label={`Add ${p.name} profile`} disabled={!live || (editing?.kind === "new" && editing.provider === id)} onClick={() => edit({ kind: "new", provider: id })} />
-      );
+    // A provider with no model to offer has no profile to add.
+    const canAdd = profiles.data !== undefined && models.some((m) => providerOf(m.id).id === id);
+    const adding = editing?.kind === "new" && editing.provider === id;
+    const startAdding = () => edit({ kind: "new", provider: id });
+    const add = canAdd ? <AddButton label={`Add ${p.name} profile`} disabled={!live || adding} onClick={startAdding} /> : null;
     return (
       <Fragment key={id}>
         <SettingsSection reveal={first ? "hub.profiles" : undefined} data={{ "data-provider-group": id }}>
@@ -123,7 +121,6 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
               label={p.name}
               mark={v.mark}
               meta={v.words}
-              hint={runs === "" ? undefined : `Runs ${runs.replaceAll(" · ", ", ")}.${id === "anthropic" && profiles.data?.modelsFrom === "builtin" ? BUILTIN : ""}`}
               data={{ "data-provider": id }}
               open={{ onClick: () => (setSigning(false), setOpen(open === id ? undefined : id)) }}
               expanded={open === id}
@@ -135,12 +132,18 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
                   </>
                 )
               }
-            >
-              <ModelsLine models={models} provider={id} />
-            </SettingsListRow>
+            />
           </SettingsList>
           {profiles.data === undefined ? null : (
-            <ProviderProfiles provider={p} view={profiles.data} unusable={v.mark === "off"} editing={editing} onEdit={(pid) => edit({ kind: "edit", id: pid })} onDone={done} />
+            <ProviderProfiles
+              provider={p}
+              view={profiles.data}
+              unusable={v.mark === "off"}
+              editing={editing}
+              onEdit={(pid) => edit({ kind: "edit", id: pid })}
+              {...(canAdd && live ? { onAdd: startAdding } : {})}
+              onDone={done}
+            />
           )}
         </SettingsSection>
         {open === id ? setup(id) : null}
@@ -160,18 +163,5 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
         )}
       </div>
     </div>
-  );
-}
-
-/** How many models a row names under its provider; the row's hover names them all. */
-const MODELS_SHOWN = 3;
-
-/** The models a provider offers, quietly under its name: the first few, then how many more. */
-function ModelsLine({ models, provider }: { models: ReadonlyArray<ProfileModel>; provider: AgentProviderId }) {
-  const words = runsWords(models, provider, MODELS_SHOWN);
-  return words === "" ? null : (
-    <Text size="sm" tone="quiet" data-provider-models="">
-      {words}
-    </Text>
   );
 }

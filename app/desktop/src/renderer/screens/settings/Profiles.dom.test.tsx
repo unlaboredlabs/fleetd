@@ -226,11 +226,13 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
   // Each under its provider: Anthropic's three, none under Google.
   expect([...host.querySelectorAll("[data-provider-group='anthropic'] [data-profile]")].map((r) => r.getAttribute("data-profile"))).toEqual(["high", "medium", "wide"]);
   expect(host.querySelector("[data-provider-group='google'] [data-profile]")).toBeNull();
-  // Where the models come from is Anthropic's hover, never a line at rest.
-  expect(host.querySelector("[data-provider='anthropic']")?.textContent).toContain("The models offered are fleetd's own list until a Claude API key is saved in Setup.");
+  // Google has none yet: it says so, with Add profile.
+  expect(host.querySelector("[data-provider-group='google']")?.textContent).toContain("No profiles yetAdd profile");
   expect(host.textContent).not.toContain("the hub has no API key");
   await click(button("Add Anthropic profile"));
   expect(host.textContent).toContain("New Anthropic profile");
+  // Where the models come from is said at the model picker, the only place the models show.
+  expect(host.textContent).toContain("The models are fleetd's own list until a Claude API key is saved in Setup.");
   expect(button("Create profile").disabled).toBe(true);
   type(field("Name"), "Quick fix");
   expect(host.textContent).toContain("Lowercase letters, digits, - _ and ., up to 32.");

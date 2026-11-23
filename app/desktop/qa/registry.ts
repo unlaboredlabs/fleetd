@@ -4648,7 +4648,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("region", { name: "Edit medium" }).waitFor();
     },
   },
-  // Providers: Anthropic and Google, a row each with how it is connected and its models; Google not connected yet
+  // Providers: Anthropic and Google, a row each with how it is connected and its profiles under it; Google not connected yet
   // (Sign in with Google at its end), and connected (signed in, a bot's key). Then Google's row open, and its sign-in
   // started from the row: the Google page to open and the code to paste.
   { id: "settings.hub.providers", route: "#/settings/hub/providers", fixtures: ["admin-owner", "admin-google"] },
