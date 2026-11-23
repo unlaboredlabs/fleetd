@@ -598,6 +598,49 @@ const useNow = (): number => {
 };
 
 /**
+ * A fleetd cloud team's computer joined while its agents run on fleetd's computers only: one line and a button that
+ * moves them to Your machines first. Joining never moves them by itself (the cloud keeps the pick, W791); nothing shows
+ * on a self-hosted hub, or once the team already runs agents on its machines.
+ */
+function OwnMachineOffer({ machineId }: { machineId: string }) {
+  const call = useHubCall();
+  const layer = useDataLayer();
+  const where = useToolQuery("sandbox_get", noInput, { enabled: useServes("sandbox_get") }).data;
+  const [busy, setBusy] = useState(false);
+  const [moved, setMoved] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const fleetds = where?.provided === true ? where.providers[0]?.provider : undefined;
+  if (moved) return <Text size="sm">{`Agents run on ${machineId} first now, then on fleetd's computers.`}</Text>;
+  if (fleetds === undefined || where?.linux !== fleetds) return null;
+  const move = () => {
+    setBusy(true);
+    setProblem(undefined);
+    void call("sandbox_where_set", { linux: "ours_first" })
+      .then(
+        () => {
+          setMoved(true);
+          void layer.queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "call" && q.queryKey[1] === "sandbox_get" });
+        },
+        (e: unknown) => setProblem(`Not changed: ${errorText(e)}`),
+      )
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className={s.wait} data-offer="own-machine">
+      <Text size="sm">{`Agents still run on fleetd's computers. Run them on ${machineId} too?`}</Text>
+      <Button size="sm" disabled={busy} onClick={move}>
+        {busy ? "Moving…" : "Run agents here too"}
+      </Button>
+      {problem === undefined ? null : (
+        <Text size="xs" tone="danger">
+          {problem}
+        </Text>
+      )}
+    </div>
+  );
+}
+
+/**
  * Any other machine: its name, then the one line machine_join makes, with Copy and the code's expiry. Under it, a
  * calm "Waiting for <name>…" that turns into "Joined" once the machine's node is online. A repair (`rejoin`) has its
  * name already, and makes its line at once.
@@ -762,6 +805,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
           </Text>
         </div>
       )}
+      {state === "joined" && !mac && !props.rejoin ? <OwnMachineOffer machineId={made?.join.machineId ?? machineId} /> : null}
       <div className={s.actions}>
         {state === "joined" && mac && guided ? (
           <Button variant="primary" onClick={() => (window.location.hash = "#/setup/mac")}>

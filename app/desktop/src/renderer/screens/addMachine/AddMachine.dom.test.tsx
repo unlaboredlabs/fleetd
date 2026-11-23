@@ -19,6 +19,8 @@ const joinListeners = new Set<(j: JoinHere) => void>();
 const joinHere = vi.fn((_machineId: string) => Promise.resolve<JoinHere | null>(null));
 let hostName = "laptop";
 let computer: ThisComputer = { kind: "none" };
+/** sandbox_get's answer: a self-hosted hub's ({}) unless a test makes it a fleetd cloud team's. */
+let where: object = {};
 /** hub_info's answer, when a test holds it back. */
 let hubInfo: Promise<{ ok: true; output: unknown }> | undefined;
 vi.hoisted(() => {
@@ -188,6 +190,10 @@ const render = async (open?: { view: View; at: number }, page: { closed?: boolea
                     ? ((macCodes += 1), { code: macCodes === 1 ? "482913" : "107355", expiresAt: macExpiresAt, machineId: "mac", hubUrl: "http://devbox.example.ts.net:4790" })
                   : tool === "setup_list"
                     ? { steps: [MAC_STEP], requiredLeft: 0 }
+                  : tool === "sandbox_get"
+                    ? where
+                    : tool === "sandbox_where_set"
+                      ? { ...where, linux: (input as { linux: string }).linux }
                     : {};
       return Promise.resolve({ ok: true, output });
     },
@@ -323,6 +329,44 @@ it("gives any other machine one line to paste, and turns its wait into Joined on
   expect(waitLine()?.textContent).toBe("laptop joined.");
   await click("Open laptop");
   expect(window.location.hash).toBe("#/settings/hub/machines/laptop");
+});
+
+it("offers a fleetd cloud team whose agents run on fleetd's computers to run them on the machine that joined, and moves them only when asked", async () => {
+  where = { boxPubKey: "", placing: true, provided: true, linux: "boat", providers: [{ provider: "boat", connected: true, limit: 3 }] };
+  try {
+    await render();
+    await click("Get the line…");
+    await typeName("laptop");
+    await click("Make the line");
+    expect(host.querySelector("[data-offer='own-machine']")).toBeNull();
+    await snapshot([DEVBOX, { ...DEVBOX, machineId: "laptop", name: "laptop" }]);
+    expect(waitLine()?.getAttribute("data-line")).toBe("joined");
+    for (let i = 0; i < 20 && host.querySelector("[data-offer='own-machine']") === null; i++) await act(() => new Promise((r) => setTimeout(r, 5)));
+    expect(host.querySelector("[data-offer='own-machine']")?.textContent).toContain("Agents still run on fleetd's computers. Run them on laptop too?");
+    // Nothing moved by the join itself.
+    expect(calls.some((c) => c.tool === "sandbox_where_set")).toBe(false);
+    await click("Run agents here too");
+    expect(calls.filter((c) => c.tool === "sandbox_where_set").map((c) => c.input)).toEqual([{ linux: "ours_first" }]);
+    expect(host.textContent).toContain("Agents run on laptop first now, then on fleetd's computers.");
+  } finally {
+    where = {};
+  }
+});
+
+it("offers nothing on a self-hosted hub, or once the team runs agents on its machines", async () => {
+  where = { boxPubKey: "", placing: true, provided: true, linux: "ours_first", providers: [{ provider: "boat", connected: true, limit: 3 }] };
+  try {
+    await render();
+    await click("Get the line…");
+    await typeName("laptop");
+    await click("Make the line");
+    await snapshot([DEVBOX, { ...DEVBOX, machineId: "laptop", name: "laptop" }]);
+    expect(waitLine()?.getAttribute("data-line")).toBe("joined");
+    for (let i = 0; i < 10; i++) await act(() => new Promise((r) => setTimeout(r, 5)));
+    expect(host.querySelector("[data-offer='own-machine']")).toBeNull();
+  } finally {
+    where = {};
+  }
 });
 
 it("says when the code expired before the line ran, and makes a new one", async () => {
