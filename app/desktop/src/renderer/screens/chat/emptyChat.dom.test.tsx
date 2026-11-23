@@ -10,7 +10,7 @@ import { DataProvider } from "../../src/data/react";
 import { AT, live } from "../../src/data/fixtures.test-util";
 import { UiProvider } from "../../ui";
 import { ChatScreen } from ".";
-import { STARTERS } from "./EmptyChat";
+import { NO_REPO_STARTERS, STARTERS } from "./EmptyChat";
 import { ProjectPanel } from "../panel/ProjectPanel";
 import { forgetViews } from "../panel/Sections";
 
@@ -89,6 +89,13 @@ it("asks what the lead should do in the bot, with its starters", async () => {
   expect(host.querySelector("h2")?.textContent).toBe("What should the lead do in shop?");
   const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);
   expect(starters).toEqual([...STARTERS]);
+});
+
+it("offers a bot with no repo no CI or code starters", async () => {
+  await mount(<ChatScreen project={ADA} />);
+  const starters = [...host.querySelectorAll("[data-entry=empty] button")].map((b) => b.textContent);
+  expect(starters).toEqual([...NO_REPO_STARTERS]);
+  expect(starters.join(" ")).not.toMatch(/CI|code/u);
 });
 
 const tabs = () => [...host.querySelectorAll("[data-section]")].map((t) => t.getAttribute("data-section"));

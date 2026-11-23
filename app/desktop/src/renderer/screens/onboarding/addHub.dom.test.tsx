@@ -147,3 +147,32 @@ it("Back to settings goes back to the hubs", async () => {
   expect(host.querySelector("[data-part='hubs.add']")).not.toBeNull();
   expect(window.location.hash).toBe("#/settings/hubs");
 });
+
+it("refuses an empty code at once in a plain line, and never leaves the button on Connecting…", async () => {
+  // Main's request check throws on an empty code: before, the form waited on it for good.
+  redeem.mockImplementationOnce(() => Promise.reject(new Error("pair:redeem: invalid request.")));
+  click("Add a hub");
+  await settle();
+  type("Name", "Acme");
+  type("Hub address", "https://acme.fleetd.dev");
+  click("Connect");
+  await settle();
+  expect(redeem).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Enter a pairing code.");
+  expect(host.querySelector('button[type="submit"]')?.textContent).toBe("Connect");
+});
+
+it("a request main throws on ends as a plain failure, with the button back on Connect", async () => {
+  redeem.mockImplementationOnce(() => Promise.reject(new Error("pair:redeem: invalid request.")));
+  click("Add a hub");
+  await settle();
+  type("Name", "Acme");
+  type("Hub address", "https://acme.fleetd.dev");
+  type("Pairing code", "ABCD2345");
+  click("Connect");
+  await settle();
+  await settle();
+  expect(host.textContent).toContain("couldn't send that request");
+  expect(host.textContent).not.toContain("invalid request");
+  expect(host.querySelector('button[type="submit"]')?.textContent).toBe("Connect");
+});

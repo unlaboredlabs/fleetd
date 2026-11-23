@@ -1157,7 +1157,8 @@ export const screens: readonly Screen[] = [
     },
     check: bandIsOneRow("say"),
   },
-  // An empty chat's starter fills the box (never sends) and gives it the cursor.
+  // An empty chat's starter fills the box (never sends) and gives it the cursor. The bot has no repo, so its
+  // starters ask nothing of code or CI.
   {
     id: "chat",
     route: CHAT,
@@ -1165,9 +1166,10 @@ export const screens: readonly Screen[] = [
     variant: "starter",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await page.getByRole("button", { name: "Explain how this bot's code is put together." }).click();
+      await expect(page.getByRole("button", { name: "Find what’s failing in CI and fix it." })).toHaveCount(0);
+      await page.getByRole("button", { name: "Research something and write it up for me." }).click();
       const box = page.getByRole("textbox", { name: "Message the lead" });
-      await expect(box).toHaveValue("Explain how this bot's code is put together.");
+      await expect(box).toHaveValue("Research something and write it up for me.");
       await expect(box).toBeFocused();
     },
   },

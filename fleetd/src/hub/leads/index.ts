@@ -9,7 +9,7 @@ import { chat } from "../chat/index.ts";
 import { Memory, youForLead } from "../memory/index.ts";
 import { type LeadMcpSet, mcpServers, newSince } from "../mcp_servers/index.ts";
 import { leadPeople } from "../people/store.ts";
-import { profiles } from "../projects/profiles.ts";
+import { profiles, runsOnLabel } from "../projects/profiles.ts";
 import { prompts } from "../prompts/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
@@ -599,6 +599,7 @@ export class Leads {
     const leadProfile = store_.leadProfileFor(r);
     // Read before the launch, as the launch reads it: an edit that lands meanwhile reads as changed.
     const launched = this.launchedNow(r);
+    const before = this.records.leadLaunchedGet(r);
     const start = renderLeadStart(
       set,
       r,
@@ -652,6 +653,15 @@ export class Leads {
     this.records.leadPut(lead);
     // Its lane names the profile this session runs on, not a later pick.
     this.records.leadProfilePut(r, threadId, leadProfile.name, launched);
+    // A new model is said in the chat, in one quiet line; a fresh session on the same one is not.
+    if (before !== undefined && runsOn(before) !== runsOn(launched)) {
+      try {
+        const { profile, model, effort, fast } = store_.chosen(leadProfile.name);
+        chat(this.hub).systemLine(r, `The lead restarted on ${runsOnLabel({ profile, model, effort, fast })}.`);
+      } catch (error) {
+        console.warn("the lead's new profile was not said in the chat:", error);
+      }
+    }
     events(this.hub).append({
       at,
       type: "lead.started",
