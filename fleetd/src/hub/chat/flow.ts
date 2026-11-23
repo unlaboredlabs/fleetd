@@ -44,6 +44,7 @@ import { prompts } from "../prompts/store.ts";
 import { writeQueue } from "../queue/index.ts";
 import { descriptionOf } from "../skills/frontmatter.ts";
 import { Skills } from "../skills/index.ts";
+import { latestRun } from "../executor/sessions.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { isoMs, nowMs, parseMs } from "../store/time.ts";
@@ -74,10 +75,42 @@ export function leadThread(hub: Hub, r: ProjectRef): ThreadRef | undefined {
   return lead ? { machineId: r.machineId, threadId: lead.threadId } : undefined;
 }
 
-/** Whether the thread is mid-turn: running, or held on a permission prompt. */
+/** The run of a thread.failed the stall watchdog appended (watchdog/index.ts), or undefined for any other event. */
+const stalledRunOf = (e: HubEvent | undefined): string | undefined => {
+  const data = e?.data as { reason?: unknown; runId?: unknown } | undefined;
+  return data?.reason === "stalled" && typeof data.runId === "string" ? data.runId : undefined;
+};
+
+/**
+ * The run of each thread the stall watchdog last stopped, by thread: read once from the log, then kept as its stalls are
+ * appended.
+ */
+class Stalls {
+  private readonly run = new Map<string, string | null>();
+  constructor(private readonly hub: Hub) {
+    events(hub).subscribe((e) => {
+      const run = e.type === "thread.failed" ? stalledRunOf(e) : undefined;
+      if (run !== undefined && e.machineId !== undefined && e.threadId !== undefined) this.run.set(`${e.machineId}/${e.threadId}`, run);
+    });
+  }
+
+  of(thread: ThreadRef): string | undefined {
+    const k = `${thread.machineId}/${thread.threadId}`;
+    if (!this.run.has(k)) this.run.set(k, stalledRunOf(events(this.hub).latestOf("thread.failed", thread)) ?? null);
+    return this.run.get(k) ?? undefined;
+  }
+}
+const stalls = (hub: Hub) => hub.area("chat_stalls", (h) => new Stalls(h));
+
+/**
+ * Whether the thread is mid-turn: running, or held on a permission prompt. Never a run the stall watchdog stopped: its
+ * node may never end it (a claude frozen, a host that lost the run), and the chat must not say "working" for ever.
+ */
 const midTurn = (hub: Hub, thread: ThreadRef) => {
   const status = store(hub).threadGet(thread)?.thread.status;
-  return status === "running" || status === "waiting";
+  if (status !== "running" && status !== "waiting") return false;
+  const run = latestRun(hub, thread)?.runId;
+  return run === undefined || stalls(hub).of(thread) !== run;
 };
 
 /**

@@ -2,7 +2,11 @@
 // node and the kit's clock. A run with no frame past its threshold is failed as stalled and interrupted once; a run that
 // is slow, waiting on a person, between turns, or on a machine that came back is left alone.
 import { expect, test } from "bun:test";
+import { leadWorking } from "../src/hub/chat/flow.ts";
+import { chat } from "../src/hub/chat/index.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
+import { leads } from "../src/hub/leads/index.ts";
+import { start as startLeads } from "../src/hub/leads/loops.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { hubWatch, STALL_MS, Watchdog } from "../src/hub/watchdog/index.ts";
 import type { MachineEvent, RunInfo, SessionCall, SessionSummary, ThreadEvent, ThreadItem } from "../src/shared/sessions.ts";
@@ -236,5 +240,33 @@ test("a hub restarted under runs in flight stalls none on its first checks", asy
   await n.watchdog.check();
   await n.minutes(9);
   expect([n.stalls().length, n.interrupts().length]).toEqual([0, 0]);
+  n.end();
+});
+
+// W852: a lead's run the watchdog stopped that its node never ends (a claude frozen, a host that lost the run) read
+// "working" for ever, and the chat's bot sat on its typing dots. It reads idle once stopped, and the chat says so.
+test("a lead's run the watchdog stopped is no longer working, though its node never ends it, and its chat says so", async () => {
+  const n = await standIn();
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  startLeads(n.hub);
+  await n.set("s1", running("r1"));
+  await n.link();
+  expect(leadWorking(n.hub, r)).toBe(true);
+  await n.minutes(10);
+  expect(n.interrupts().length).toBe(1);
+  // The interrupt took nothing: the node still says the run is on.
+  expect(store(n.hub).threadGet({ machineId: "devbox", threadId: "s1" })?.thread.status).toBe("running");
+  expect(leadWorking(n.hub, r)).toBe(false);
+  const said = () => chat(n.hub).page(r, undefined, undefined, 10).messages.filter((m) => m.author === "system");
+  for (let i = 0; i < 100 && said().length === 0; i++) await Bun.sleep(10);
+  expect(said().map((m) => m.text)).toEqual(["The lead stopped making progress, so fleetd stopped its turn. It carries on by itself."]);
+  // Its next run is a turn like any other; stalled again with no completed turn between, it waits for the person.
+  await n.set("s1", running("r2"));
+  expect(leadWorking(n.hub, r)).toBe(true);
+  await n.minutes(10);
+  expect(leadWorking(n.hub, r)).toBe(false);
+  for (let i = 0; i < 100 && said().length < 2; i++) await Bun.sleep(10);
+  expect(said().map((m) => m.text)[1]).toBe("The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.");
   n.end();
 });

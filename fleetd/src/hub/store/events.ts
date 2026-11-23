@@ -70,6 +70,11 @@ const THREAD_LAST = `SELECT created_ms FROM events
     AND type IN (SELECT value FROM json_each($types)) AND json_extract(data, '$.threadId') = $thread
   ORDER BY seq DESC LIMIT 1`;
 
+/** `EventLog.latestOf`'s query: the type's events newest first (`events_by_type`), the thread's. */
+const THREAD_LATEST = `SELECT seq, data FROM events
+  WHERE type = $type AND machine_id = $machine AND json_extract(data, '$.threadId') = $thread
+  ORDER BY seq DESC LIMIT 1`;
+
 export class EventLog {
   private lastPruneMs: number;
   private headSeq: number;
@@ -177,6 +182,12 @@ export class EventLog {
       types: JSON.stringify(types),
     })[0];
     return row?.created_ms;
+  }
+
+  /** The thread's newest event of `type` the log keeps; undefined for none. */
+  latestOf(type: HubEventType, thread: ThreadRef): HubEvent | undefined {
+    const row = this.db.all<Row>(THREAD_LATEST, { type, machine: thread.machineId, thread: thread.threadId })[0];
+    return row === undefined ? undefined : withSeq(JSON.parse(row.data) as NewEvent, row.seq);
   }
 
   /** Returns at once if matching events exist after `cursor`, otherwise waits up to `timeoutSec` for one. */
