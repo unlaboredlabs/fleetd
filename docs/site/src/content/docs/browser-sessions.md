@@ -26,6 +26,9 @@ Click **Screens** in the sidebar, at the bottom. It lists every screen in your b
 
 A bot's own screens are under **Agents › Screens** in the panel beside its chat.
 
+A replay plays at 1×, 2× or 4×. Drag along its line or click a step to jump there: the picture changes straight to
+that moment. A phone's replay keeps the phone's own shape, turned and folded as it was.
+
 ## Watch and take over {#takeover}
 
 1. Open a live screen. You see it as the agent does, as it happens.

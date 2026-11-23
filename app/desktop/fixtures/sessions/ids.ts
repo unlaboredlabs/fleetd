@@ -14,6 +14,8 @@ export const SESSION = {
   phone: "B3c5e7a9b1d3f5a7c9e1b3d5f7a9c1e3d",
   /** The iPhone Duo a person opens from New screen (D652): closed, then turned or opened from its control strip. */
   duo: "B8d0f2a4c6e8b0d2f4a6c8e0b2d4f6a8c",
+  /** An agent's iPhone Duo, recorded open by the node's own stream (its MP4, fragment a frame), with its device steps. */
+  duoReplay: "B6e8a0c2e4f6a8b0c2d4e6f8a0b2c4d6e",
   /** A person's own Android emulator on devbox, with its strip. */
   android: "B2a4c6e8f0b2d4a6c8e0f2b4d6a8c0e2f",
 } as const;

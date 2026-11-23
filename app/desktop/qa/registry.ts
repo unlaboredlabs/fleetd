@@ -4099,6 +4099,29 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("list", { name: /^Its steps/u })).toHaveCount(0);
     },
   },
+  // ...an iPhone Duo's, recorded by the node's own stream: drawn by the screen player into one canvas, the frame the
+  // picture's own shape (no letterbox), every seek landing on its picture with the canvas never blank between.
+  {
+    id: "sessions",
+    route: SESSION_ROUTE(SESSION.duoReplay),
+    fixtures: ["sessions-preview"],
+    variant: "duo-replay",
+    open: async (page) => {
+      const canvas = page.locator("[data-screen='sessions.replay'] canvas");
+      await expect(canvas).toHaveCount(1);
+      await expect(page.locator("video")).toHaveCount(0);
+      // The first picture, at its own size: the open inner panel, landscape.
+      await expect.poll(() => canvas.evaluate((c: HTMLCanvasElement) => c.width)).toBe(900);
+      const shape = await canvas.evaluate((c: HTMLCanvasElement) => {
+        const box = c.getBoundingClientRect();
+        return { drawn: c.width / c.height, shown: box.width / box.height };
+      });
+      expect(Math.abs(shape.drawn - shape.shown)).toBeLessThan(0.02);
+      await page.getByRole("slider", { name: "Where in the recording" }).fill("6000");
+      await expect(page.getByText(/^0:06 \/ /u)).toBeVisible();
+      await expect.poll(() => canvas.evaluate((c: HTMLCanvasElement) => c.width)).toBe(900);
+    },
+  },
   // ...its steps opened with Steps, beside the recording.
   {
     id: "sessions",
