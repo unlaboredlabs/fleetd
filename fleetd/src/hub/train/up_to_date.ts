@@ -82,19 +82,39 @@ export async function turnOff(github: TrainGitHub, repo: string, base: string, u
   }
 }
 
-/** The rule on `repo`'s default branch as the apps show it; undefined where it requires none, or can't be read now. */
-export async function ruleOf(t: Train, repo: string): Promise<UpToDateRule | undefined> {
-  let base: string;
-  try {
-    base = await t.github.defaultBranch(repo);
-  } catch {
-    return undefined;
+/** Each train's reads `knownRuleOf` started and that haven't ended, by repo and base; and the default branches learned. */
+const reading = new WeakMap<Train, { now: Set<string>; bases: Map<string, string> }>();
+
+/**
+ * The rule on `base` of `repo` as the train last read it, never waiting on GitHub: for what a page shows
+ * (project_settings_get, Settings › Bots), where reading it on each open took 1.0-1.4 s, and 5 s for two repos once the
+ * train's copy was older than its 10 minutes. A base it hasn't read, or read too long ago, is read in the background
+ * for the next ask, one read at a time; `base` unknown, the repo's default branch is asked first.
+ */
+export function knownRuleOf(t: Train, repo: string, base: string | undefined): UpToDateRule | undefined {
+  let mine = reading.get(t);
+  if (!mine) reading.set(t, (mine = { now: new Set(), bases: new Map() }));
+  const { now, bases } = mine;
+  const at = base ?? bases.get(repo);
+  const key = `${repo}\u0000${at ?? ""}`;
+  if (!now.has(key)) {
+    now.add(key);
+    const read = async () => {
+      const b = at ?? (await t.github.defaultBranch(repo));
+      bases.set(repo, b);
+      await t.ciConfig(repo, b);
+    };
+    void read()
+      .catch(() => undefined)
+      .finally(() => now.delete(key));
   }
-  const rules = await t.rules(repo, base);
-  const u = rules.upToDate ?? NONE;
+  if (at === undefined) return undefined;
+  const kept = t.ciConfigs.get(`${repo}\u0000${at}`)?.[1];
+  if (kept === undefined || kept instanceof Error) return undefined;
+  const u = kept.rules.upToDate ?? NONE;
   if (!required(u)) return undefined;
   const own = u.rulesets.length > 0 || u.classic;
-  return { repo, base, line: upToDateLine(repo, base, u), canTurnOff: own && rules.admin === true };
+  return { repo, base: at, line: upToDateLine(repo, at, u), canTurnOff: own && kept.rules.admin === true };
 }
 
 /** Turns the rule off on `repo`'s default branch, as `turnOff`, and reads its rules again. */

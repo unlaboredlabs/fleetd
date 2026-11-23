@@ -15,20 +15,22 @@ import { addInput, checkoutPath, isOwn, sourceProblem } from "./repoModel";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
+/** The project as the page knows it before project_settings_get answers. */
+type Project = Pick<Settings, "machineId" | "projectId" | "title">;
 
 /**
  * A project's Code section: its repos, a plus to add one, then what `children` adds (its environment variables); and
  * each repo's Computer, in a section of its own under it: the project's own directory's first, while it is one of them (a
- * project's own repo is listed from its first agent on).
+ * project's own repo is listed from its first agent on). Until `settings` comes, each Computer holds its place unread.
  */
-export function RepoSection({ settings, children }: { settings: Settings; children?: ReactNode }) {
+export function RepoSection({ project, settings, children }: { project: Project; settings: Settings | undefined; children?: ReactNode }) {
   const projects = useProjects() ?? [];
-  const repos = projects.find((p) => p.machineId === settings.machineId && p.projectId === settings.projectId)?.repos ?? [];
+  const repos = projects.find((p) => p.machineId === project.machineId && p.projectId === project.projectId)?.repos ?? [];
   const [echo, setEcho] = useState<Echo | null>(null);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ProjectRepo | null>(null);
-  const own = repos.find((r) => isOwn(r, settings));
-  const others = repos.filter((r) => !isOwn(r, settings));
+  const own = repos.find((r) => isOwn(r, project));
+  const others = repos.filter((r) => !isOwn(r, project));
   return (
     <>
       <SettingsSection title="Code">
@@ -41,11 +43,11 @@ export function RepoSection({ settings, children }: { settings: Settings; childr
           {repos.length === 0 ? null : (
             <SettingsList label="Repos">
               {repos.map((repo) => (
-                <RepoRow key={repo.repoId} repo={repo} projects={projects} onRemove={isOwn(repo, settings) ? null : () => setRemoving(repo)} />
+                <RepoRow key={repo.repoId} repo={repo} projects={projects} onRemove={isOwn(repo, project) ? null : () => setRemoving(repo)} />
               ))}
             </SettingsList>
           )}
-          {adding ? <AddRepo settings={settings} onCancel={() => setAdding(false)} onDone={setEcho} /> : null}
+          {adding ? <AddRepo project={project} onCancel={() => setAdding(false)} onDone={setEcho} /> : null}
           {echo ? (
             <div role={echo.ok ? "status" : "alert"}>
               <Text size="sm" tone={echo.ok ? "quiet" : "danger"}>
@@ -57,14 +59,14 @@ export function RepoSection({ settings, children }: { settings: Settings; childr
         {children}
       </SettingsSection>
       {own !== undefined || others.length === 0 ? (
-        <Computer settings={settings} title={others.length === 0 ? "Computer" : `Computer: ${own?.name ?? settings.title}`} reveal="projects.computer" />
+        <Computer settings={settings} title={others.length === 0 ? "Computer" : `Computer: ${own?.name ?? project.title}`} reveal="projects.computer" />
       ) : null}
       {others.map((repo) => (
-        <RepoComputer key={repo.repoId} settings={settings} repo={repo.name} />
+        <RepoComputer key={repo.repoId} project={project} repo={repo.name} />
       ))}
       <RemoveRepoDialog
         repo={removing}
-        settings={settings}
+        project={project}
         projects={projects}
         onClose={() => setRemoving(null)}
         onDone={(text) => {
@@ -77,14 +79,14 @@ export function RepoSection({ settings, children }: { settings: Settings; childr
 }
 
 /** A path on the project's machine or a GitHub repo, and an optional name; a clone shows here once it lands. */
-function AddRepo({ settings, onCancel, onDone }: { settings: Settings; onCancel: () => void; onDone: (echo: Echo) => void }) {
+function AddRepo({ project, onCancel, onDone }: { project: Project; onCancel: () => void; onDone: (echo: Echo) => void }) {
   const hubCall = useHubCall();
   const live = useLive();
-  const machine = useData((d) => d.machines[settings.machineId]?.name) ?? settings.machineId;
+  const machine = useData((d) => d.machines[project.machineId]?.name) ?? project.machineId;
   const [source, setSource] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  const input = addInput(settings, source, name);
+  const input = addInput(project, source, name);
   const problem = sourceProblem(source);
   const add = () => {
     if (input === null) return;
@@ -134,7 +136,7 @@ function AddRepo({ settings, onCancel, onDone }: { settings: Settings; onCancel:
 
 function RemoveRepoDialog(props: {
   repo: ProjectRepo | null;
-  settings: Settings;
+  project: Project;
   projects: ReadonlyArray<ProjectSummary>;
   onClose: () => void;
   onDone: (text: string) => void;
@@ -147,7 +149,7 @@ function RemoveRepoDialog(props: {
     if (repo === null) return;
     setBusy(true);
     setProblem(null);
-    hubCall("project_repo_remove", { machineId: props.settings.machineId, projectId: props.settings.projectId, name: repo.name }).then(
+    hubCall("project_repo_remove", { machineId: props.project.machineId, projectId: props.project.projectId, name: repo.name }).then(
       (out) => {
         setBusy(false);
         props.onDone(`${repo.name} removed. ${out.next ?? ""}`.trim());
@@ -162,7 +164,7 @@ function RemoveRepoDialog(props: {
     <Dialog
       open={repo !== null}
       onOpenChange={(open) => !open && props.onClose()}
-      title={repo ? `Remove ${repo.name} from ${props.settings.title}?` : ""}
+      title={repo ? `Remove ${repo.name} from ${props.project.title}?` : ""}
       description={repo ? `Its agents stop. Its checkout stays at ${checkoutPath(repo, props.projects)}, files and all.` : ""}
       footer={
         <>

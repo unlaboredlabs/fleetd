@@ -56,7 +56,7 @@ import {
   setRiskRules,
 } from "../project_lead/store.ts";
 import { trainArea } from "../train/index.ts";
-import { ruleOf, turnOffOn } from "../train/up_to_date.ts";
+import { knownRuleOf, turnOffOn } from "../train/up_to_date.ts";
 import { rulesProblems, tidyRules } from "../train/merge_rules.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
@@ -275,7 +275,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   const signinsKept = worktrees?.signinsKept;
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
-  const upToDate = await upToDateRules(hub, r);
+  const upToDate = upToDateRules(hub, r);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -385,13 +385,17 @@ export const mergeModeNext = (mode: MergeMode) =>
     ? "Each reviewed PR merges once its own CI passes on a fresh rebase, side by side (4 at once unless the repo's .fleetd/train.json sets ciAtOnce); a red main afterwards is bisected and its culprit reverted."
     : "Ready PRs merge in batches whose combined tree passed CI first.";
 
-/** The bases of the project's GitHub repos that require up-to-date branches, while it merges, then verifies. */
-async function upToDateRules(hub: Hub, r: ProjectRef): Promise<UpToDateRule[]> {
+/**
+ * The bases of the project's GitHub repos that require up-to-date branches, while it merges, then verifies: as the
+ * train last read them, each at the base its work lands on, never waiting on GitHub (`knownRuleOf`).
+ */
+function upToDateRules(hub: Hub, r: ProjectRef): UpToDateRule[] {
   if (mergeModeOf(hub.db.conn, r) !== "verify_after") return [];
   const { train, host } = trainArea(hub);
+  const bases = new Map(repos.of(hub.db.conn, r).map((x) => [x.repoKey?.toLowerCase(), x.base]));
   const out: UpToDateRule[] = [];
   for (const [repo] of host.githubRepos(r)) {
-    const rule = await ruleOf(train, repo).catch(() => undefined);
+    const rule = knownRuleOf(train, repo, bases.get(`github.com/${repo}`.toLowerCase()));
     if (rule) out.push(rule);
   }
   return out;

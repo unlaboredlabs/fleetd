@@ -295,6 +295,36 @@ describe("Settings → Bots", () => {
     expect(JSON.stringify(calls)).not.toContain(SECRET);
   });
 
+  it("shows the page at once while the hub's read is slow, each row it needs filling in its own place", async () => {
+    // A hub asking GitHub for a bot's merge rules took 1-5 s over this read (W842).
+    readMs = 300;
+    features = ["vault"];
+    repos = [web, api];
+    repoAnswers = { api: { ...settings, projectId: "p9", repo: "api", setup: { commands: ["pnpm install"], inputs: [] } } };
+    await render();
+    const page = document.querySelector<HTMLElement>('[data-screen="settings.projects"]');
+    if (page === null) throw new Error("no page");
+    expect(page.textContent).not.toContain("Loading…");
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Bot name"]')?.value).toBe("storefront");
+    expect(page.textContent).toContain("/home/w/src/storefront");
+    expect(page.textContent).toContain("acme/web");
+    expect(page.textContent).toContain("kept in the bot's vault.…Open Vault");
+    // Its own computer holds its place, off; Delete waits for the worktrees.
+    const setups = [...document.querySelectorAll<HTMLTextAreaElement>('textarea[aria-label="Setup commands"]')];
+    expect(setups.map((t) => [t.disabled, t.value])).toEqual([
+      [true, ""],
+      [false, "pnpm install"],
+    ]);
+    expect(button("Delete bot…").disabled).toBe(true);
+    const sections = [...page.querySelectorAll("section")].length;
+    await act(async () => new Promise((r) => setTimeout(r, 400)));
+    expect(page.textContent).toContain("2 variables.");
+    expect(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Setup commands"]')?.disabled).toBe(false);
+    expect(button("Delete bot…").disabled).toBe(false);
+    expect([...page.querySelectorAll("section")].length).toBe(sections);
+    expect(document.querySelector('[data-screen="settings.projects"]')).toBe(page);
+  });
+
   it("keeps the page on screen through the resync a saved setting brings, never Loading… or a remount", async () => {
     await render();
     const page = document.querySelector('[data-screen="settings.projects"]');
