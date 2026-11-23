@@ -70,9 +70,9 @@ fleetd cloud is ready to orchestrate thousands of agents. fleetd is open source
 and free to run yourself. On fleetd cloud you pay only for the computers we
 run. No seats and no tokens. Every plan covers the whole team.
 
-  Solo    $20 a month      500 hours of computer time    3 agents at once
-  Team    $50 a month    1,000 hours of computer time   10 agents at once
-  Scale  $200 a month    4,300 hours of computer time   40 agents at once
+  Solo    $20 a month      500 hours of computer time     25 agents at once
+  Team    $50 a month    1,000 hours of computer time    100 agents at once
+  Scale  $200 a month    4,300 hours of computer time    300 agents at once
 
 Hours are for the smallest computer. Unused time doesn't roll over. Prices
 exclude VAT. Billing details: https://fleetd.sh/docs/billing
@@ -84,13 +84,14 @@ of the smallest size is $0.0000167):
   4 CPU, 8 GB    $0.12 an hour
   8 CPU, 16 GB   $0.24 an hour
 Credits: prepaid computer time, from $10, valid for 12 months. Without a plan,
-credits run up to 3 agents at once.
+credits run up to 25 agents at once.
 
 Estimate a month on https://fleetd.sh/pricing: pick a computer size, how many
 agents run at once, the hours each works a day and the days a month. Agents
 sleep when they're idle, so a computer is billed only while its agent works.
 For example, 25 agents at once on 2 CPU, 4 GB, 3 hours a day for 22 days, is
-1,650 hours ($99) of computer time: the Scale plan, $200 a month, covers it.
+1,650 hours ($99) of computer time: the Solo plan, $20 a month, runs it, with
+$69 past the $30 it includes paid from credits ($89 in all).
 
 
 SELF-HOSTED OR CLOUD

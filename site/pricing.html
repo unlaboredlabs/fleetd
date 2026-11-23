@@ -225,7 +225,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <p class="price"><b data-f="price">$20</b><span>a month</span></p>
         <ul>
           <li><span data-f="hours">500 hours</span> <span>of computer time</span></li>
-          <li><span data-f="agents">3</span> agents <span>at once</span></li>
+          <li><span data-f="agents">25</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
       </div>
@@ -234,7 +234,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <p class="price"><b data-f="price">$50</b><span>a month</span></p>
         <ul>
           <li><span data-f="hours">1,000 hours</span> <span>of computer time</span></li>
-          <li><span data-f="agents">10</span> agents <span>at once</span></li>
+          <li><span data-f="agents">100</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
       </div>
@@ -243,7 +243,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
         <p class="price"><b data-f="price">$200</b><span>a month</span></p>
         <ul>
           <li><span data-f="hours">4,300 hours</span> <span>of computer time</span></li>
-          <li><span data-f="agents">40</span> agents <span>at once</span></li>
+          <li><span data-f="agents">300</span> agents <span>at once</span></li>
           <li data-f="largest" hidden></li>
         </ul>
       </div>
@@ -280,7 +280,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     <div>
       <h3>Credits</h3>
       <p>Prepaid computer time, from <span data-f="credits-min">$10</span>, valid for <span data-f="credits-months">12</span> months.</p>
-      <p>Without a plan, credits run up to <span data-f="credits-agents">3</span> agents at once.</p>
+      <p>Without a plan, credits run up to <span data-f="credits-agents">25</span> agents at once.</p>
     </div>
   </div>
 </section>
@@ -292,11 +292,11 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   </div>
   <div class="calc">
     <div class="row"><span class="lab" id="c-size-l">Computer</span><div class="seg" role="group" aria-labelledby="c-size-l" id="c-size"><button type="button" data-i="0" aria-pressed="true">2 CPU · 4 GB</button><button type="button" data-i="1" aria-pressed="false">4 CPU · 8 GB</button><button type="button" data-i="2" aria-pressed="false">8 CPU · 16 GB</button></div></div>
-    <div class="row"><label for="c-agents">Agents at once</label><div class="ctl"><input type="range" id="c-agents" min="1" max="40" step="1" value="25"><output for="c-agents" id="c-agents-o">25</output></div></div>
+    <div class="row"><label for="c-agents">Agents at once</label><div class="ctl"><input type="range" id="c-agents" min="1" max="300" step="1" value="25"><output for="c-agents" id="c-agents-o">25</output></div></div>
     <div class="row"><label for="c-hours">Hours each agent works a day</label><div class="ctl"><input type="range" id="c-hours" min="1" max="24" step="1" value="3"><output for="c-hours" id="c-hours-o">3</output></div></div>
     <div class="row"><label for="c-days">Days a month</label><div class="ctl"><input type="range" id="c-days" min="1" max="31" step="1" value="22"><output for="c-days" id="c-days-o">22</output></div></div>
-    <div class="total"><span>Estimated monthly cost</span><b id="c-total" aria-live="polite">$200</b></div>
-    <p class="how" id="c-how">The <b>Scale</b> plan, $200 a month, runs up to 40 agents at once. Your 1,650 hours of computer time ($99) fit in the $260 it includes.</p>
+    <div class="total"><span>Estimated monthly cost</span><b id="c-total" aria-live="polite">$89</b></div>
+    <p class="how" id="c-how">The <b>Solo</b> plan, $20 a month, runs up to 25 agents at once. Your 1,650 hours of computer time ($99) go $69 past the $30 it includes, paid from credits.</p>
   </div>
 </section>
 
@@ -355,11 +355,11 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   // Today's values, what the page shows until the live answer comes, and for any part of it that is missing or odd.
   const model = {
     plans: [
-      { key: "solo", name: "Solo", priceCents: 2000, includedCents: 3000, agentsAtOnce: 3, largest: { cpu: 8, memGb: 16 } },
-      { key: "team", name: "Team", priceCents: 5000, includedCents: 6000, agentsAtOnce: 10, largest: { cpu: 8, memGb: 16 } },
-      { key: "scale", name: "Scale", priceCents: 20000, includedCents: 26000, agentsAtOnce: 40, largest: { cpu: 8, memGb: 16 } },
+      { key: "solo", name: "Solo", priceCents: 2000, includedCents: 3000, agentsAtOnce: 25, largest: { cpu: 8, memGb: 16 } },
+      { key: "team", name: "Team", priceCents: 5000, includedCents: 6000, agentsAtOnce: 100, largest: { cpu: 8, memGb: 16 } },
+      { key: "scale", name: "Scale", priceCents: 20000, includedCents: 26000, agentsAtOnce: 300, largest: { cpu: 8, memGb: 16 } },
     ],
-    credits: { agentsAtOnce: 3, minCents: 1000, months: 12, largest: { cpu: 8, memGb: 16 } },
+    credits: { agentsAtOnce: 25, minCents: 1000, months: 12, largest: { cpu: 8, memGb: 16 } },
     sizes: [
       { cpu: 2, memGb: 4, centsPerHour: 6 },
       { cpu: 4, memGb: 8, centsPerHour: 12 },
