@@ -13,7 +13,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "postinstall": "patch-package",
-    "typecheck": "tsc-rs --noEmit -p .",
+    "typecheck": "tsc-rs --noEmit -p . && tsc --noEmit -p .",
     "test": "vitest run",
     "native": "expo prebuild --clean --no-install",
     "icons": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/icons.ts"

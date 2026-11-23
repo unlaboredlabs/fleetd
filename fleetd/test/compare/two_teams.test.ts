@@ -9,6 +9,7 @@ import { type Leak, Refusal, standIn, type StandInTool } from "../../../tests/co
 import { fromPattern, readIds, reportLines, runTwoTeams, twoTeamCases } from "../../../tests/compare/twoTeams.ts";
 import { decodeInput } from "../../src/hub/api/decode.ts";
 import { inputSchema } from "../../src/hub/mcp/endpoint.ts";
+import { importedText } from "../../src/shared/imported_text.ts";
 
 /** Two teams on a stand-in, A's ids read before B is made; the cases run with A's key against B's ids. */
 async function run(opts: { leak?: Leak; tools?: ReadonlyArray<StandInTool> } = {}) {
@@ -206,7 +207,7 @@ test("a write that sets team A's own name to one of team B's may say so after; o
   expect(failed(await cases("joins")).filter((c) => c.tool === "note_rename")).toEqual([{ tool: "note_rename", ids: "NoteName: B's", verdict: "fail", detail: "the answer holds team B's data (its canary)" }]);
 });
 
-const doc = JSON.parse(mcpToolsText) as { $defs: Record<string, any> };
+const doc = JSON.parse(importedText(mcpToolsText)) as { $defs: Record<string, any> };
 const names = Object.keys(doc.$defs.McpTools.properties).filter((k) => k.endsWith(".input")).map((k) => k.slice(0, -".input".length));
 const hubTools: Array<Tool> = names.map((name) => ({ name, inputSchema: inputSchema(doc, name) }));
 

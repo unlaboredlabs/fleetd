@@ -90,7 +90,8 @@ jobs:
         env:
           FLEETD_OLD_SQLITE_DIR: ${{ runner.temp }}/old-sqlite
         run: bun scripts/old-sqlite-check.ts
-      - name: Type check (tsc-rs)
+      # tsc-rs, then TypeScript's own tsc (about 10 s more): tsc-rs let type errors through that tsc and editors flag.
+      - name: Type check (tsc-rs, tsc)
         if: steps.scope.outputs.run == 'true'
         run: bun run typecheck
       # A worker per runner core, each test file in a fresh process of its own (--parallel implies --isolate).
@@ -247,8 +248,8 @@ jobs:
         # Electron fetches its binary on first launch; fetch it here, where a failed download is tried again.
         run: ../../.github/actions/electron-cache/retry.sh pnpm exec install-electron
       - if: steps.scope.outputs.run == 'true'
-        # tsc-rs on each config, then TypeScript's own tsc on the renderer's: tsc-rs let a type error through there
-        # that tsc and editors flag (store.ts, Nov 23).
+        # tsc-rs on each config, then TypeScript's own tsc on the renderer's (about 2 s more): tsc-rs let a type error
+        # through there that tsc and editors flag (store.ts, Nov 23).
         run: pnpm typecheck
       - if: steps.scope.outputs.run == 'true'
         run: pnpm lint
@@ -548,6 +549,7 @@ jobs:
           cache: npm
           cache-dependency-path: app/mobile/package-lock.json
       - run: npm ci --no-audit --no-fund
+      # tsc-rs, then TypeScript's own tsc (about 5 s more), which flags what tsc-rs lets through.
       - run: npm run typecheck
       - run: npm test
 

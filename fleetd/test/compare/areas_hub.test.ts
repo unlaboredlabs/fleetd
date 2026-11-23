@@ -24,8 +24,9 @@ import { vault } from "../../src/hub/vault/index.ts";
 import type { ProjectSummary } from "../../src/shared/contracts.ts";
 import { openSealed, publicKeyOf } from "../../src/shared/sealed_box_core.ts";
 import { hubHome } from "../helpers.ts";
+import { importedText } from "../../src/shared/imported_text.ts";
 
-const contract = JSON.parse(mcpToolsText);
+const contract = JSON.parse(importedText(mcpToolsText));
 // GitHub, as it answers a code it never gave: every call is Not Found.
 const github = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ message: "Not Found" }, { status: 404 }) });
 const done: Array<() => Promise<void>> = [];

@@ -6,6 +6,7 @@ import schemaText from "../../../app/desktop/src/shared/contracts/schema/McpTool
 import type { Role } from "../shared/contracts.ts";
 import { TOOLS, type ToolName } from "../hub/api/tool_roles.ts";
 import { DESCRIPTIONS } from "../hub/mcp/descriptions.ts";
+import { importedText } from "../shared/imported_text.ts";
 
 export { TOOLS, type ToolName } from "../hub/api/tool_roles.ts";
 export { DESCRIPTIONS } from "../hub/mcp/descriptions.ts";
@@ -14,7 +15,7 @@ export { DecodeError, decodeInput, hasInput } from "../hub/api/decode.ts";
 export type JsonSchema = { [key: string]: unknown };
 
 /** McpTools.json, parsed: a tool's schemas are `$defs.McpTools.properties["<tool>.input"]` and `["<tool>.output"]`. */
-export const SCHEMAS = JSON.parse(schemaText) as { $defs: Record<string, JsonSchema> };
+export const SCHEMAS = JSON.parse(importedText(schemaText)) as { $defs: Record<string, JsonSchema> };
 
 export type Tool = {
   name: ToolName;

@@ -22,12 +22,13 @@ import {
   SESSION_HEADER,
   sortedJson,
 } from "./rpc.ts";
+import { importedText } from "../../shared/imported_text.ts";
 
 export { clip, INSTRUCTIONS, inputSchema, invalidInput, PROTOCOLS, sortedJson } from "./rpc.ts";
 
 /** The tools/list result, built from the registry: the described tools in the table's order, then the rest sorted. */
 export function toolsList(tools: Registry): { tools: JsonObject[] } {
-  const doc = JSON.parse(schemaText) as JsonObject;
+  const doc = JSON.parse(importedText(schemaText)) as JsonObject;
   const described = new Map(DESCRIPTIONS);
   const names: string[] = DESCRIPTIONS.map(([n]) => n).filter((n) => tools.has(n));
   const rest = tools
