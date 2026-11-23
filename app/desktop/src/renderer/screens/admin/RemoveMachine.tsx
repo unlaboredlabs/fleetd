@@ -19,8 +19,9 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
   const hosts = useToolQuery("machine_hosts", noInput, { enabled: useServes("machine_hosts") }).data?.hosts;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  // The hub refused because removing it would stop its projects' leads or undo an add still going: the error says
-  // which, and Remove anyway sends force.
+  // The hub refused because removing it would stop its projects' leads or undo an add still going: its message says
+  // which, and what Remove anyway does there, in a person's words; its fix, the tool and flag to force it, is an
+  // agent's and stays out. Remove anyway sends force.
   const [refused, setRefused] = useState(false);
   const m = props.machine;
   const remove = (force: boolean) => {
@@ -40,8 +41,9 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
           });
         },
         (e: unknown) => {
-          setError(errorText(e));
-          setRefused(!force && e instanceof CallError && e.error.code === "invalid");
+          const refusal = !force && e instanceof CallError && e.error.code === "invalid";
+          setError(refusal ? e.error.message : errorText(e));
+          setRefused(refusal);
         },
       )
       .finally(() => setBusy(false));
@@ -65,7 +67,7 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
     >
       {error === undefined ? null : (
         <p role="alert">
-          <Text size="sm" tone="danger">{`Not removed: ${error}`}</Text>
+          <Text size="sm" tone="danger">{refused ? error : `Not removed: ${error}`}</Text>
         </p>
       )}
     </Dialog>

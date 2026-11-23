@@ -816,15 +816,15 @@ export async function remove(
   return { revoked, remoteOk };
 }
 
-/** What removing the machine stops, when it runs projects' leads; undefined when it runs none. `machine remove` and
- * the app's Remove refuse it unless forced. */
+/** What removing the machine stops, when it runs projects' leads (archived bots' too); undefined when it runs none.
+ * `machine remove` and the app's Remove refuse it unless forced. In a person's words: the app shows it beside Remove
+ * anyway, and the way to force it goes in the refusal's fix. */
 export function leadsOn(hub: HubSide, machineId: string): string | undefined {
   const titles = new HubStore(hub.db).machineLeadProjects(machineId);
   if (titles.length === 0) return undefined;
-  let named = titles.slice(0, 5).join(", ");
-  if (titles.length > 5) named += ` and ${titles.length - 5} more`;
-  const projects = titles.length === 1 ? "1 bot" : `${titles.length} bots`;
-  return `${machineId} runs the leads of ${projects} (${named}): removing it stops them and erases its bots, with their chats and history`;
+  if (titles.length === 1) return `${machineId} still runs ${titles[0]}'s lead. Removing it anyway deletes that bot, with its chat and history`;
+  const named = titles.length > 5 ? `${titles.slice(0, 5).join(", ")} and ${titles.length - 5} more` : `${titles.slice(0, -1).join(", ")} and ${titles.at(-1)}`;
+  return `${machineId} still runs the leads of ${named}. Removing it anyway deletes those bots, with their chats and history`;
 }
 
 /** How to bring a machine back instead of removing it. */

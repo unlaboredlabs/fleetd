@@ -247,7 +247,8 @@ test("a run going for a machine refuses a second add, and a removal without forc
   });
   await expect(call("machine_remove", { machineId: "builder-1" })).rejects.toMatchObject({ code: "invalid" });
   const refused = await call("machine_remove", { machineId: "builder-1" }).catch((e) => e);
-  expect(refused.message).toContain(`is being added right now (run ${out.run.runId}`);
+  expect(refused.message).toBe("builder-1 is still being added. Removing it anyway stops that halfway.");
+  expect(refused.fix).toContain(`the add is run ${out.run.runId}`);
   expect(refused.fix).toContain("force: true");
   release();
   expect((await finished(out.run.runId)).state).toBe("done");
@@ -291,7 +292,7 @@ test("a machine that runs leads is removed only with force, which erases its bot
     .run();
   await expect(call("machine_remove", { machineId: "lab-a" })).rejects.toMatchObject({
     code: "invalid",
-    message: "lab-a runs the leads of 1 bot (Shop): removing it stops them and erases its bots, with their chats and history.",
+    message: "lab-a still runs Shop's lead. Removing it anyway deletes that bot, with its chat and history.",
     fix: "to repair lab-a instead, run fleetd pair --worker lab-a on the hub and the line it prints on lab-a with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
   });
   expect(store(t.hub).machineGet("lab-a")).toBeDefined();

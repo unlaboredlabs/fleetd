@@ -341,7 +341,7 @@ function refuseRemoval(hub: Hub, machineId: string): void {
   const run = machineSetup(hub)
     .runs()
     .find((r) => r.machineId === machineId && r.state === "running");
-  if (run) why.push(`${machineId} is being added right now (run ${run.runId}, since ${run.startedAt}): removing it undoes that run halfway`);
+  if (run) why.push(`${machineId} is still being added. Removing it anyway stops that halfway`);
   let leads: string | undefined;
   try {
     leads = machine.leadsOn(side(hub, "machine_remove"), machineId);
@@ -350,9 +350,10 @@ function refuseRemoval(hub: Hub, machineId: string): void {
   }
   if (leads !== undefined) why.push(leads);
   if (why.length === 0) return;
+  // The message is a person's (the app shows it beside Remove anyway); the run and the way to force it, an agent's.
   throw new ToolError(
     "invalid",
-    `${why.join("; ")}.`,
-    `${machine.repair(machineId)}; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)`,
+    `${why.join(". ")}.`,
+    `${run ? `the add is run ${run.runId}, since ${run.startedAt}; ` : ""}${machine.repair(machineId)}; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)`,
   );
 }

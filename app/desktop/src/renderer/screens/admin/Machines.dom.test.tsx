@@ -122,7 +122,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
           ok: false,
           error: {
             code: "invalid",
-            message: "devbox runs the leads of 2 bots (app, site): removing it stops them and erases its bots, with their chats and history.",
+            message: "devbox still runs the leads of app and site. Removing it anyway deletes those bots, with their chats and history.",
             fix: "to repair devbox instead, run fleetd pair --worker devbox on the hub and the line it prints on devbox with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
           },
         });
@@ -308,12 +308,13 @@ it("asks before it removes a machine, then says it is removed and goes back to t
   expect(window.location.hash).toBe("#/settings/hub/machines");
 });
 
-it("says what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
+it("says plainly what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
   await render(<MachinePage machineId="devbox" />);
   await click(button("Remove…"));
   await click(button("Remove devbox"));
-  const dialog = document.querySelector("[role='dialog']");
-  expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 bots (app, site)");
+  const said = document.querySelector("[role='dialog'] [role='alert']")?.textContent;
+  // The hub's message, as it refused: its fix is an agent's, and the tool and flag to force it never reach the person.
+  expect(said).toBe("devbox still runs the leads of app and site. Removing it anyway deletes those bots, with their chats and history.");
   expect(host.textContent).not.toContain("Removed devbox.");
   await click(button("Remove anyway"));
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "devbox" }, { machineId: "devbox", force: true }]);
