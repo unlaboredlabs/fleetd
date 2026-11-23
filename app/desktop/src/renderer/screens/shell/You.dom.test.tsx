@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// The sidebar's foot (W530, W714): your picture and name alone, and your menu: who you are, Settings, Appearance,
-// Keyboard shortcuts and Help. What is off with a hub (W607) is the hub switcher's: a quiet mark while a hub is really
-// unreachable or refused your key (for an admin, also while a machine is offline or setup steps are left), and, in its
-// menu, one row under the hub for each thing off with the one thing to do (HubLines).
+// The sidebar's foot (W530, W714, W870): your picture alone, your name in its label, and your menu: who you are,
+// Settings, Appearance, Keyboard shortcuts and Help. What is off with a hub (W607) is the hub switcher's: a quiet mark
+// while a hub is really unreachable or refused your key (for an admin, also while a machine is offline or setup steps
+// are left), and, in its menu, one row under the hub for each thing off with the one thing to do (HubLines).
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -122,9 +122,10 @@ const lines = (): string[] => {
 const line = (key: string) => menuOf("Hub lines")?.querySelector<HTMLElement>(`[data-line='${key}']`);
 const MENU = ["Settings · Ctrl+,", "Appearance · Match system", "Keyboard shortcuts · Ctrl+/", "Help & docs"];
 
-it("is your picture and name alone, no second line, and no mark while all is well", async () => {
+it("is your picture alone, your name its label, and no mark while all is well", async () => {
   await mount({ phase: "live", hub: HUB, protocol: 1 }, { me: { name: "Sam", role: "owner" }, machines: [machine("devbox", "online")] });
-  expect(me()?.textContent).toBe("Sam");
+  // No words beside the picture: the name is in its label and tooltip, and at the menu's head.
+  expect(me()?.textContent).toBe("");
   expect(me()?.getAttribute("aria-label")).toBe("Sam");
   expect(mark()?.dataset["mark"]).toBeUndefined();
 });

@@ -1,8 +1,9 @@
 // The sidebar's foot (W530, W714): you, and beside you Connections, Screens and the Factory as three small icons,
-// Screens marked while one needs you. Your picture and name open your menu: who you are, this app's own update when
-// there is one, Settings, Appearance, Keyboard shortcuts and Help; on the web, Sign out. The row is your picture and
-// name alone; this app's update to take, going on or not taken is a small mark on your picture, its words in the
-// tooltip and its row in the menu (AppItem). Hubs, and what is off with them, a hub's update among it, are the hub
+// Screens marked while one needs you. Your picture opens your menu: who you are, this app's own update when there
+// is one, Settings, Appearance, Keyboard shortcuts and Help; on the web, Sign out. The row is your picture alone
+// (W870: a name beside it crowded the foot and was cut short anyway), your name in its tooltip and at the menu's head;
+// this app's update to take, going on or not taken is a small mark on your picture, its words in the tooltip after
+// your name and its row in the menu (AppItem). Hubs, and what is off with them, a hub's update among it, are the hub
 // row's (Sidebar.tsx HubSwitcher), which useHubsMark and useHubUpdate mark.
 import { ArrowUpRight, Blocks, Factory, Keyboard, LifeBuoy, LogOut, Monitor, MonitorSmartphone, Moon, Settings, Sun, SunMoon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -113,9 +114,10 @@ export interface YouProps {
 export const useHubsMark = (): HubMark | null => worst([...useLinkMarks(), useWorkMark()]);
 
 /**
- * You, at the sidebar's foot: your picture and name, which open your menu (W714): who you are, this app's update when
- * there is one, then Settings, Appearance, Keyboard shortcuts and Help, each shortcut at its row's end; on the web,
- * Sign out. Hubs aren't here: they are the hub row's (Sidebar.tsx HubSwitcher), with what is off with each.
+ * You, at the sidebar's foot: your picture, your name in its tooltip and its label, which opens your menu (W714): who
+ * you are, this app's update when there is one, then Settings, Appearance, Keyboard shortcuts and Help, each shortcut
+ * at its row's end; on the web, Sign out. Hubs aren't here: they are the hub row's (Sidebar.tsx HubSwitcher), with
+ * what is off with each.
  */
 export function You({ go }: Pick<YouProps, "go">) {
   const role = useHubRole();
@@ -130,7 +132,7 @@ export function You({ go }: Pick<YouProps, "go">) {
   return (
     <div className={s.you}>
       <Menu>
-        <Tooltip content={app?.text}>
+        <Tooltip content={said} side="top">
           <MenuTrigger asChild>
             <button type="button" className={s.me} aria-label={said} data-opens="you">
               <span className={s.meAvatar}>
@@ -138,7 +140,6 @@ export function You({ go }: Pick<YouProps, "go">) {
                 {/* This app's update to take, going on or not taken: a small mark, its words in the tooltip and its row in the menu. */}
                 {app === null ? null : <span className={s.meMark} data-tone="update" aria-hidden />}
               </span>
-              <span className={s.meName}>{name}</span>
             </button>
           </MenuTrigger>
         </Tooltip>
