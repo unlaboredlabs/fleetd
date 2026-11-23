@@ -182,6 +182,28 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   expect(live(t.hub).watchers(S1)).toBe(0);
 });
 
+test("an app that watches a screen while its node is between links (a restart) is kept watching, and its frames come once the node links", async () => {
+  setup();
+  await t.calls.call(agent("devbox", "p1"), report("live"));
+  const person = caller("read", { kind: "human" });
+  const app = fakeSocket();
+  // The node's link dropped as the hub restarted; the app reconnects first and watches.
+  t.link.unlink("devbox");
+  await t.app.deliver(as(app, person), { t: "browser_watch", session: S1 });
+  expect(app.sent.filter((f) => (f as { t: string }).t === "error")).toEqual([]);
+  // The node links: it hears of the watch, and its frames reach the app.
+  t.link.link("devbox", ["browser"]);
+  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true }]);
+  t.link.deliver("devbox", { t: "browser_frame", sessionId: S1, seq: 1, jpegB64: "AAAA", width: 1, height: 1, control: "agent" });
+  expect(app.sent.map((f) => (f as { seq?: number }).seq)).toEqual([1]);
+  // A node linked but too old for live view is still refused.
+  t.app.close(app);
+  t.link.link("devbox", ["session_end"]);
+  const old = fakeSocket();
+  await t.app.deliver(as(old, person), { t: "browser_watch", session: S1 });
+  expect(old.sent).toEqual([expect.objectContaining({ t: "error", code: "machine_offline" })]);
+});
+
 test("H.264 goes to a session's node only while every watch decodes it, and its frames wait in order for the acks' window", async () => {
   setup();
   await t.calls.call(agent("devbox", "p1"), report("live"));
