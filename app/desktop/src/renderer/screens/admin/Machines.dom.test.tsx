@@ -76,12 +76,17 @@ let opened: string[];
 /** The hub's next frame, once a page is up. */
 let frame: (frame: HubFrame) => void;
 const MACHINES = [machine("devbox"), machine("builder-1"), machine("laptop", "offline")];
+/** The hub's machines and the hosts it reaches, for a test that adds one. */
+let machines: Machine[];
+let hosts: MachineHost[];
 
 beforeEach(() => {
   resetServes();
   calls = [];
   leftOut = undefined;
   checks = LOGGED_OUT;
+  machines = MACHINES;
+  hosts = HOSTS;
   opened = [];
   vi.stubGlobal("fleetd", {
     platform: "linux",
@@ -129,9 +134,11 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
         tool === "hub_info"
           ? { version: "0.9.0", protocol: 1, busy: [], admin: true, ...(leftOut === undefined ? {} : { leftOut }) }
           : tool === "machine_hosts"
-          ? { hosts: HOSTS }
+          ? { hosts }
           : tool === "machine_roles"
             ? { machines: ROLES }
+          : tool === "setup_list"
+            ? { steps: [], requiredLeft: 0 }
           : tool === "doctor_list"
             ? { checks, checkedAt: AT }
             : tool === "machine_remove"
@@ -147,7 +154,13 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
                 : tool === "machine_add_status"
                   ? { runs: [] }
                   : tool === "machine_join"
-                    ? { machineId: "laptop", hubUrl: "http://devbox:4790", code: "K7QM-4XWD", expiresAt: AT, line: "curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --rejoin" }
+                    ? {
+                        machineId: (input as { machineId: string }).machineId,
+                        hubUrl: "http://devbox:4790",
+                        code: "K7QM-4XWD",
+                        expiresAt: AT,
+                        line: `curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox:4790 --rejoin${(input as { mac?: boolean }).mac === true ? " --mac" : ""}`,
+                      }
                     : {};
       return Promise.resolve({ ok: true, output });
     },
@@ -166,7 +179,7 @@ const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
   });
   await act(async () => {
     listener({ t: "state", state: { phase: "live", hub: "devbox:4790", protocol: 1 } });
-    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines: MACHINES, projects } });
+    listener({ t: "snapshot", snapshot: { cursor: 1, attention: [], machines, projects } });
     await new Promise((r) => setTimeout(r, 0));
   });
   // The checks and hosts are read once hub_info says the hub serves them.
@@ -246,6 +259,19 @@ it("says a machine's state first on its page, and offers Repair only while it is
   await render(<MachinePage machineId="builder-1" />);
   expect(host.textContent).toContain("Online · fleetd 0.9.0");
   expect(() => button("Repair…")).toThrow();
+});
+
+it("repairs the agents' Mac with its own line, --mac kept, even where the hub reaches it over SSH", async () => {
+  machines = [...MACHINES, { ...machine("mac", "offline"), agentsMac: true }];
+  hosts = [...HOSTS, { machineId: "mac", host: "mac", source: "tailnet", joined: true }];
+  await render(<MachinePage machineId="mac" />);
+  await click(button("Repair…"));
+  // Not machine_add's SSH steps, nor a line without --mac: either would enrol it as a plain machine.
+  expect(calls.some((c) => c.tool === "machine_add_plan")).toBe(false);
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", rejoin: true, mac: true }]);
+  expect(host.textContent).toContain("Repair mac");
+  expect(host.querySelector("[aria-label='The line'] code")?.textContent).toMatch(/--rejoin --mac$/u);
+  expect(host.textContent).toContain("logged in at its screen (su and ssh won't do)");
 });
 
 it("reads a machine's state from the live feed when it is newer than the snapshot, as the list does", async () => {

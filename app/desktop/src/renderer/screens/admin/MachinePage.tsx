@@ -111,7 +111,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
             aside={
               machine === undefined || machine.status === "online" ? null : (
                 <span className={a.repair}>
-                  <Button title={REPAIR_LINE} onClick={() => setRepair({ view: repairOf(machineId, hosts), at: Date.now() })}>
+                  <Button title={REPAIR_LINE} onClick={() => setRepair({ view: repairOf(machineId, hosts, known?.agentsMac === true), at: Date.now() })}>
                     Repair…
                   </Button>
                 </span>
