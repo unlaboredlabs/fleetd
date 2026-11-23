@@ -527,9 +527,11 @@ export type SessionSummary = {
   worktreePath?: string;
   recreatedFrom?: WorktreeSource;
   recreatedAt?: Timestamp;
-  /** The MCP servers its latest start left out because they didn't answer (node/mcp_reach.ts), and when: a lead's chat
-   * says so in a line of fleetd's own, once per start. Absent: none left out. */
+  /** A lead's: the MCP servers its latest start left out because they didn't answer (node/mcp_reach.ts), none
+   * included; what changed from the start before it (`mcpChange`), which its chat says in a line of fleetd's own; and
+   * when. Absent: not looked at. */
   mcpSkipped?: string[];
+  mcpChange?: { down: string[]; back: string[] };
   mcpSkippedAt?: Timestamp;
   /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
   watchingUntil?: Timestamp;

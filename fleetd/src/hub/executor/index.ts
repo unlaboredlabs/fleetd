@@ -533,13 +533,13 @@ export class Executors {
     }
     const now = isoMs(this.hub.clock.now());
     // Which start's left-out MCP servers each session's summary named before this event (`mcpSkipped`'s time).
-    const skippedBefore = new Map(ids.map((id) => [id, slot.shell.threads.get(id)?.mcpSkipped?.[1]]));
+    const skippedBefore = new Map(ids.map((id) => [id, slot.shell.threads.get(id)?.mcpSkipped?.at]));
     const applied = applyMachineEvent(slot.shell, seq, event, { machineId, now, stored, baseline });
     // A start that left MCP servers out, as its summary first says so (the frame a run's start went on: never the one
     // that carries an older start's fields on, which name the same time): told once, whatever frame brought it.
     for (const id of ids) {
       const skipped = slot.shell.threads.get(id)?.mcpSkipped;
-      if (skipped && skipped[1] !== skippedBefore.get(id)) queueMicrotask(() => executorHooks(this.hub).skippedMcp({ machineId, threadId: id }, skipped[0], skipped[1]));
+      if (skipped && skipped.at !== skippedBefore.get(id)) queueMicrotask(() => executorHooks(this.hub).skippedMcp({ machineId, threadId: id }, skipped.change, skipped.at));
     }
     const upserts: StoredThread[] = [];
     for (const t of applied.threads) {

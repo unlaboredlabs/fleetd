@@ -57,6 +57,22 @@ export function skippedLine(names: readonly string[]): string {
   return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
+/** What a lead's chat says when servers the previous start left out answer again. */
+export function backLine(names: readonly string[]): string {
+  const one = names.length === 1;
+  return `The MCP server${one ? "" : "s"} ${quoted(names)} answer${one ? "s" : ""} again: ${one ? "its" : "their"} tools are back.`;
+}
+
+/**
+ * What changed from the servers the previous start left out, `before`, to this start's, `now`: the ones newly left out
+ * (`down`), and the ones left out before that this start looked at and that answered (`back`). A server that stays down
+ * changes nothing; one no longer looked at (removed, renamed, now stdio) is never back, and once re-added and still down
+ * it is newly down again.
+ */
+export function startChange(before: readonly string[], now: readonly string[], looked: readonly string[]): { down: string[]; back: string[] } {
+  return { down: now.filter((n) => !before.includes(n)), back: before.filter((n) => looked.includes(n) && !now.includes(n)) };
+}
+
 /** What the agent hears ahead of its next message when servers were left out of its start: the person hears it from
  * the agent once, in plain words, inside its reply to them, never as a message of its own. */
 export function skippedNote(names: readonly string[], ms = MCP_REACH_MS): string {

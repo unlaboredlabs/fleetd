@@ -1622,16 +1622,21 @@ export class SessionService {
     if (hostedOf(row.local.hosted) === undefined) {
       const servers = (JSON.parse(sessionMcp.json) as { mcpServers: Record<string, unknown> }).mcpServers;
       const skipped = await reach.unanswered(servers);
-      // A lead's person reads which, in a line of fleetd's own in the lead's chat (the hub's, from these fields of its
-      // summary, once per start); any other agent hears it with its next message. A start that left none out clears them.
+      // A lead's summary says what each start left out, none included, and what changed from the start before it,
+      // which the hub's chat line says (src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it with its next
+      // message.
+      const before = row.summary.mcpSkipped ?? [];
       delete row.summary.mcpSkipped;
+      delete row.summary.mcpChange;
       delete row.summary.mcpSkippedAt;
+      if (role === "lead" || role === "assistant") {
+        row.summary.mcpSkipped = skipped;
+        row.summary.mcpChange = reach.startChange(before, skipped, reach.addressed(servers).map((s) => s.name));
+        row.summary.mcpSkippedAt = nowIso();
+      }
       if (skipped.length) {
         mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, skipped) })}\n`;
-        if (role === "lead" || role === "assistant") {
-          row.summary.mcpSkipped = skipped;
-          row.summary.mcpSkippedAt = nowIso();
-        } else this.#mcpSkipped.set(id, reach.skippedNote(skipped));
+        if (role !== "lead" && role !== "assistant") this.#mcpSkipped.set(id, reach.skippedNote(skipped));
         console.log(`${nowIso()} WARN MCP server left out of this start: it didn't answer within ${reach.MCP_REACH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(skipped)}}`);
       }
     }

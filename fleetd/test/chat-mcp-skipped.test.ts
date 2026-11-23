@@ -14,8 +14,6 @@ import { AT, kit } from "./work-kit.ts";
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const r = { machineId: "devbox", projectId: "p1" };
-const FIRST = "2026-11-23T04:32:31.000Z";
-const SECOND = "2026-11-23T05:00:00.000Z";
 
 /** A session's summary with run `run` at `status` ("starting" reads as running, as the node's settle() makes it). */
 const summary = (id: string, run: string, status: "starting" | "running" | "completed", extra: Partial<SessionSummary> = {}): SessionSummary => ({
@@ -46,7 +44,7 @@ async function node() {
   await settle();
   leads(k.hub).records.leadPut({ projectRef: r, threadId: "lead-1", startedAt: AT, sessionGeneration: 1 });
   // As the leads area wires it (src/hub/leads/loops.ts `start`).
-  executorHooks(k.hub).onMcpSkipped((thread, names, at) => mcpSkipped(k.hub, thread, names, at));
+  executorHooks(k.hub).onMcpSkipped((thread, change, at) => mcpSkipped(k.hub, thread, change, at));
   let seq = 1;
   const updated = async (s: SessionSummary) => {
     ex.handleFrame("devbox", { t: "machine_event", seq: ++seq, at: AT, event: { type: "session_updated", ...s } });
@@ -60,31 +58,40 @@ async function node() {
   return { ...k, updated, systemLines, done: () => k.hub.shutdown.abort() };
 }
 
-test("a lead's start that left an MCP server out says which in the chat once, though the fields come after its run started", async () => {
+/** A start's summary fields as the node writes them (src/node/mcp_reach.ts `startChange`). */
+const left = (now: string[], down: string[], back: string[], at: string): Partial<SessionSummary> => ({ mcpSkipped: now, mcpChange: { down, back }, mcpSkippedAt: at });
+
+test("a lead's chat says what each start changed of its left-out MCP servers, once, though the fields come after the run started", async () => {
   const n = await node();
   // The person's message wakes the lead: its run is "starting" before the start has looked at any server.
   await n.updated(summary("lead-1", "run-1", "starting"));
   expect(n.systemLines()).toEqual([]);
-  // claude's first frame: the run runs, and the summary now names what the start left out.
-  await n.updated(summary("lead-1", "run-1", "running", { mcpSkipped: ["devbox-tailnet"], mcpSkippedAt: FIRST }));
-  // The same fields again (the run's end, a follow's snapshot): never said twice.
-  await n.updated(summary("lead-1", "run-1", "completed", { mcpSkipped: ["devbox-tailnet"], mcpSkippedAt: FIRST }));
+  // claude's first frame: the run runs, and the summary now says what the start changed.
+  await n.updated(summary("lead-1", "run-1", "running", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:32:31.000Z")));
+  // The same fields again (the run's end, a follow's snapshot), and the next wake's "starting" frame carrying them.
+  await n.updated(summary("lead-1", "run-1", "completed", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:32:31.000Z")));
+  await n.updated(summary("lead-1", "run-2", "starting", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:32:31.000Z")));
   expect(n.systemLines()).toEqual(["The MCP server “devbox-tailnet” didn't answer, so its tools are off until the next start."]);
-  // The next wake's "starting" frame still carries the last start's fields: nothing is said for them.
-  await n.updated(summary("lead-1", "run-2", "starting", { mcpSkipped: ["devbox-tailnet"], mcpSkippedAt: FIRST }));
+  // That start leaves it out again: nothing changed, nothing said.
+  await n.updated(summary("lead-1", "run-2", "running", left(["devbox-tailnet"], [], [], "2026-11-23T05:00:00.000Z")));
   expect(n.systemLines()).toHaveLength(1);
-  // That start left two out: a line of its own, in the plural.
-  await n.updated(summary("lead-1", "run-2", "running", { mcpSkipped: ["a", "b"], mcpSkippedAt: SECOND }));
-  expect(n.systemLines().at(-1)).toBe("The MCP servers “a” and “b” didn't answer, so their tools are off until the next start.");
-  expect(n.systemLines()).toHaveLength(2);
+  // It answers again: said once.
+  await n.updated(summary("lead-1", "run-3", "running", left([], [], ["devbox-tailnet"], "2026-11-23T06:00:00.000Z")));
+  expect(n.systemLines().at(-1)).toBe("The MCP server “devbox-tailnet” answers again: its tools are back.");
+  // One start with one back and two down: both said.
+  await n.updated(summary("lead-1", "run-4", "running", left(["a", "b"], ["a", "b"], ["c"], "2026-11-23T07:00:00.000Z")));
+  expect(n.systemLines().slice(2)).toEqual([
+    "The MCP servers “a” and “b” didn't answer, so their tools are off until the next start.",
+    "The MCP server “c” answers again: its tools are back.",
+  ]);
   n.done();
 });
 
-test("a start that left none out, or another thread's start, says nothing", async () => {
+test("a start that changed nothing, or another thread's start, says nothing", async () => {
   const n = await node();
   await n.updated(summary("lead-1", "run-1", "starting"));
-  await n.updated(summary("lead-1", "run-1", "running"));
-  await n.updated(summary("agent-7", "run-9", "running", { mcpSkipped: ["devbox-tailnet"], mcpSkippedAt: FIRST }));
+  await n.updated(summary("lead-1", "run-1", "running", left([], [], [], "2026-11-23T04:00:00.000Z")));
+  await n.updated(summary("agent-7", "run-9", "running", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:00:00.000Z")));
   expect(n.systemLines()).toEqual([]);
   n.done();
 });

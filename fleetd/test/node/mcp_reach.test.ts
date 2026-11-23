@@ -3,7 +3,7 @@
 // is told in a note that has it mention it once, inside its reply to the person. Servers here are this test's own.
 import { afterAll, expect, test } from "bun:test";
 import { createServer, type Server } from "node:net";
-import { addressed, reaches, skippedNote, unanswered, without } from "../../src/node/mcp_reach.ts";
+import { addressed, backLine, reaches, skippedLine, skippedNote, startChange, unanswered, without } from "../../src/node/mcp_reach.ts";
 
 const servers: { stop(): void }[] = [];
 afterAll(() => {
@@ -76,4 +76,20 @@ test("the note names each server left out, and has the agent tell the person onc
   expect(note).toContain("Mention this once, in one plain line, inside your reply the next time the person writes");
   expect(note).toContain("Never send it as a message of its own");
   expect(skippedNote(["a", "b"])).toContain("the MCP servers “a” and “b”: they didn't answer");
+});
+
+test("a start's change from the one before: newly down, and back only when looked at again and answering", () => {
+  const all = ["docs", "crm", "a", "b"];
+  // Down, still down (nothing), back.
+  expect(startChange([], ["docs"], all)).toEqual({ down: ["docs"], back: [] });
+  expect(startChange(["docs"], ["docs"], all)).toEqual({ down: [], back: [] });
+  expect(startChange(["docs"], [], all)).toEqual({ down: [], back: ["docs"] });
+  // Only some back; one more down besides one still down.
+  expect(startChange(["a", "b"], ["a"], all)).toEqual({ down: [], back: ["b"] });
+  expect(startChange(["a"], ["a", "b"], all)).toEqual({ down: ["b"], back: [] });
+  // The review of #2090: "docs" said down, then removed (never back), then re-added and still down (down again).
+  expect(startChange(["docs"], [], ["crm"])).toEqual({ down: [], back: [] });
+  expect(startChange([], ["docs"], ["crm", "docs"])).toEqual({ down: ["docs"], back: [] });
+  expect(skippedLine(["docs"])).toBe("The MCP server “docs” didn't answer, so its tools are off until the next start.");
+  expect(backLine(["a", "b"])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
 });

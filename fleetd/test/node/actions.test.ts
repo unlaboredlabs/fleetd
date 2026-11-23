@@ -124,8 +124,15 @@ test("an MCP server that doesn't answer is left out of a start: a lead's summary
     const lead = service.store.session("s-mcp-lead")!.summary;
     expect(lead.mcpSkipped).toEqual(["devbox-tailnet"]);
     expect(lead.mcpSkippedAt).toBeString();
+    // What changed from the start before it (none, for its first): newly down.
+    expect(lead.mcpChange).toEqual({ down: ["devbox-tailnet"], back: [] });
     expect(lead.latestAssistantTail).toBe("ok: hello");
     await ok("stop", { sessionId: "s-mcp-lead" });
+    // A lead whose servers all answer: its summary says none left out (the hub's "answers again" line reads it).
+    await ok("launch", { sessionId: "s-mcp-up", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hello", runId: "s-mcp-up-1", role: "lead", mcpRole: "lead", mcp: { userServers: false, servers: [servers[0]] } });
+    await until("the all-up lead's first run", () => service.store.session("s-mcp-up")?.summary.latestRun?.status === "completed");
+    expect(service.store.session("s-mcp-up")!.summary).toMatchObject({ mcpSkipped: [], mcpChange: { down: [], back: [] } });
+    await ok("stop", { sessionId: "s-mcp-up" });
     // Another agent: its claude hears it ahead of its first message (the fake host echoes what it was sent), once.
     await launch("s-mcp-writer", "worker", "writer");
     await until("the writer's first run", () => service.store.session("s-mcp-writer")?.summary.latestRun?.status === "completed");

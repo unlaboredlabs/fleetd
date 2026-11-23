@@ -22,9 +22,9 @@ export type PrFoundHook = (thread: { machineId: string; threadId: string }) => v
 /** A session's computer went to sleep or woke (its summary's `asleep`), with no change of status to say so. */
 export type AsleepHook = (thread: { machineId: string; threadId: string; projectId: string }) => void;
 
-/** A session's start left out MCP servers that didn't answer (its summary's `mcpSkipped`, node/mcp_reach.ts): told
- * once for each start that did, as its summary first says so, never again for that start's fields carried on. */
-export type McpSkippedHook = (thread: { machineId: string; threadId: string }, names: string[], at: string | undefined) => void;
+/** What a session's start changed of the MCP servers left out because they didn't answer (its summary's `mcpChange`,
+ * node/mcp_reach.ts): told once per start, as its summary first says so, never again for that start's fields carried on. */
+export type McpSkippedHook = (thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined) => void;
 
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
@@ -39,10 +39,10 @@ export class ToolHooks {
   }
 
   /** Each `onMcpSkipped` hook, a throwing one logged. */
-  skippedMcp(thread: { machineId: string; threadId: string }, names: string[], at: string | undefined): void {
+  skippedMcp(thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined): void {
     for (const hook of this.mcpSkipped) {
       try {
-        hook(thread, names, at);
+        hook(thread, change, at);
       } catch (error) {
         console.warn("executor: an MCP skipped hook failed:", error);
       }
