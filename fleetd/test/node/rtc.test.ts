@@ -133,6 +133,28 @@ test("input reaches the screen only while a person has control, and only from a 
   expect(h.inputs).toHaveLength(2);
 });
 
+test("a person who takes a still screen over drives it at once: the hub's word counts until the screen's next frame", async () => {
+  const h = harness();
+  h.peers.fromHub({ sessionId: "s1", on: true });
+  const a = await app(h);
+  const tap = { kind: "mouse", action: "down", x: 1, y: 2 } as unknown as BrowserInput;
+  h.peers.frame(frame(1, { jpegB64: b64(4, 1) }));
+  // The screen stays still: no frame says the takeover, only the hub's browser_control does.
+  h.peers.fromHubControl({ sessionId: "s1", control: "human", by: "human:desk" });
+  a.input.send(JSON.stringify({ t: "input", input: tap }));
+  await until(() => h.inputs.length === 1);
+  // Handed back: refused again at once, and the screen's own next frame is what counts from then on.
+  h.peers.fromHubControl({ sessionId: "s1", control: "agent", by: "human:desk" });
+  a.input.send(JSON.stringify({ t: "input", input: tap }));
+  await Bun.sleep(100);
+  expect(h.inputs).toHaveLength(1);
+  h.peers.fromHubControl({ sessionId: "s1", control: "human", by: "human:desk" });
+  h.peers.frame(frame(2, { jpegB64: b64(4, 2), control: "agent" }));
+  a.input.send(JSON.stringify({ t: "input", input: tap }));
+  await Bun.sleep(100);
+  expect(h.inputs).toHaveLength(1);
+});
+
 test("an app that goes ends its peer, and the hub hears so", async () => {
   const h = harness();
   h.peers.fromHub({ sessionId: "s1", on: true });
