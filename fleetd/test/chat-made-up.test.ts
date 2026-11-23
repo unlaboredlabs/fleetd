@@ -22,7 +22,7 @@ test("a reply is cut before a line that opens a made-up turn; a mention of Human
   expect(leadText("Done.\n\nAssistant: and more")).toBe("Done.");
   expect(leadText("Done.\n\nHuman (11:49): ok")).toBe("Done.");
   expect(leadText("Done.\n  Human: indented")).toBe("Done.");
-  expect(leadText("Done.\n\n(quiet)\n\nHuman: next")).toBe("Done.");
+  expect(leadText("Done.\n\n(quiet)\n\nHuman: next")).toBe("");
   for (const kept of [
     'The bubble read "Human: [W760] …", which you never wrote.',
     "A line can say Human: mid-sentence.",

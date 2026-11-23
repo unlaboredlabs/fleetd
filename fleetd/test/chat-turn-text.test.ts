@@ -25,7 +25,7 @@ test("a turn's narration before its tool calls never posts: only its last text d
 
 test("a turn that ends with (quiet) posts nothing, whatever it wrote before its tool calls", () => {
   expect(leadMessages("lead-1", [text("a", "r1", "Now the Antigravity order."), text("b", "r1", "(quiet)")], DONE)).toEqual([]);
-  expect(leadMessages("lead-1", [text("a", "r1", "Now the writers."), text("b", "r1", "Still running.\n\n(quiet)")], DONE).map((m) => m.text)).toEqual(["Still running."]);
+  expect(leadMessages("lead-1", [text("a", "r1", "Now the writers."), text("b", "r1", "Still running.\n\n(quiet)")], DONE)).toEqual([]);
 });
 
 test("each completed turn posts its own last text; a turn still going, stopped or failed posts none, whichever came after", () => {

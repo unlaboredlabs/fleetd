@@ -1,5 +1,7 @@
 // The lead's `(quiet)` never reaches a person: not as a bubble of its own after words of the same turn, and not on a
-// retry after the store failed (W785).
+// retry after the store failed (W785). A reply that ends with it posts nothing, the words before it included: on
+// 2026-11-23 a restarted lead with nothing new replied "Already announced and wrapped up in the last message; nothing new
+// since.\n\n(quiet)", and the words posted as a bubble (W868).
 import { expect, test } from "bun:test";
 import { mirror } from "../src/hub/chat/flow.ts";
 import { leadMessages, said, type ThreadMessage, unquiet } from "../src/hub/chat/history.ts";
@@ -11,10 +13,16 @@ import { PROJECT, testHub } from "./hub-helpers.ts";
 
 const FENCE = "```";
 
-test("a (quiet) line or bubble goes with its blank line; in a sentence or a code fence it stays", () => {
-  expect(unquiet("Still running, T4725 gets woken when it ends.\n\n(quiet)")).toBe("Still running, T4725 gets woken when it ends.");
-  expect(unquiet("Still running.\n(quiet)")).toBe("Still running.");
-  expect(unquiet("Still running.\n\n  (quiet)  \n\n")).toBe("Still running.");
+test("a reply that ends with a (quiet) line says nothing; one inside goes with its blank line; in a sentence or a fence it stays", () => {
+  for (const quiet of [
+    "Already announced and wrapped up in the last message; nothing new since.\n\n(quiet)",
+    "Still running.\n(quiet)",
+    "Still running.\n\n  (quiet)  \n\n",
+    "One.\n\n(quiet)\n\nTwo.\n(quiet)",
+  ]) {
+    expect(unquiet(quiet)).toBe("");
+    expect(said(quiet)).toBe(false);
+  }
   expect(unquiet("\n\t(quiet)\r\n\nStill running.")).toBe("Still running.");
   expect(unquiet("One.\n\n(quiet)\n\nTwo.")).toBe("One.\n\nTwo.");
   for (const only of ["(quiet)", " (quiet) ", "\n\n(quiet)\n", "(quiet)\n\n(quiet)"]) {
@@ -25,12 +33,12 @@ test("a (quiet) line or bubble goes with its blank line; in a sentence or a code
   expect(unquiet(sentence)).toBe(sentence);
   const quoted = `The token alone on its line:\n\n${FENCE}\n(quiet)\n${FENCE}`;
   expect(unquiet(quoted)).toBe(quoted);
-  const tagged = `${FENCE}text\n(quiet)\n${FENCE}\n\n(quiet)`;
-  expect(unquiet(tagged)).toBe(`${FENCE}text\n(quiet)\n${FENCE}`);
+  expect(unquiet(`${FENCE}text\n(quiet)\n${FENCE}\n\n(quiet)`)).toBe("");
+  expect(unquiet(`(quiet)\n\n${FENCE}text\n(quiet)\n${FENCE}`)).toBe(`${FENCE}text\n(quiet)\n${FENCE}`);
   expect(said("Done.")).toBe(true);
 });
 
-test("the history read and the mirror take a reply's (quiet) line out, and skip a reply of only (quiet)", () => {
+test("the history read and the mirror skip a reply that ends with (quiet), and keep one that quotes it", () => {
   const at = "2026-11-08T10:00:00Z";
   const out = leadMessages("lead-1", [
     { id: "a", role: "assistant", text: "Still running, T4725 gets woken when it ends.\n\n(quiet)", createdAt: at },
@@ -38,7 +46,6 @@ test("the history read and the mirror take a reply's (quiet) line out, and skip 
     { id: "c", role: "assistant", text: `Quoted:\n\n${FENCE}\n(quiet)\n${FENCE}`, createdAt: at },
   ], new Set());
   expect(out.map((m) => [m.source, m.text])).toEqual([
-    ["lead:lead-1:a", "Still running, T4725 gets woken when it ends."],
     ["lead:lead-1:c", `Quoted:\n\n${FENCE}\n(quiet)\n${FENCE}`],
   ]);
 });
@@ -60,17 +67,18 @@ const at = "2026-11-08T10:00:00Z";
 const turn = (id: string, text: string): ThreadMessage => ({ id, runId: `run-${id}`, role: "assistant", text, createdAt: at });
 const shown = (m: ChatMessage | undefined) => JSON.stringify(m ?? {});
 
-test("a reply of words then a final (quiet) lands as the words alone", async () => {
-  const words = "Still running, T4725 gets woken when it ends.";
-  const { hub, land, done } = await lead([turn("a", `${words}\n\n(quiet)\n`)]);
+test("a wake's reply of words then a final (quiet) posts nothing; an answer after it still posts", async () => {
+  // F1486: the turn a profile switch restarted the lead into, then a real answer in the next turn.
+  const filler = "Already announced and wrapped up in the last message; nothing new since.\n\n(quiet)";
+  const { hub, land, done } = await lead([turn("a", filler), turn("b", "I'm running on Opus 5.5.")]);
   const appended: string[] = [];
   chat(hub).subscribe((d) => appended.push(d.append));
   await land();
-  const m = chat(hub).bySource(PROJECT, "lead:lead-1:a");
-  expect(m).toMatchObject({ state: "final", text: words });
-  expect(m?.parts).toBeUndefined();
+  expect(chat(hub).bySource(PROJECT, "lead:lead-1:a")).toBeUndefined();
+  const m = chat(hub).bySource(PROJECT, "lead:lead-1:b");
+  expect(m).toMatchObject({ state: "final", text: "I'm running on Opus 5.5." });
   expect(shown(m)).not.toContain("(quiet)");
-  expect(appended.join("")).not.toContain("(quiet)");
+  expect(appended.join("")).not.toContain("nothing new since");
   done();
 });
 
@@ -92,7 +100,7 @@ test("(quiet) in a sentence or a code fence lands as written", async () => {
 });
 
 test("a store that fails while the reply lands brings no (quiet) back on the retry", async () => {
-  const { hub, land, done } = await lead([turn("b", "Two landed.\n(quiet)")]);
+  const { hub, land, done } = await lead([turn("b", "(quiet)\nTwo landed.")]);
   const c = chat(hub);
   const add = c.add.bind(c);
   let failAdd = true;
