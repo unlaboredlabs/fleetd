@@ -16,7 +16,7 @@ import { batchNames, gatedName, workflows } from "./next.ts";
 import type { Watch } from "./records.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Train } from "./service.ts";
-import { blame, verifying } from "./verify.ts";
+import { blame, repoVerifying } from "./verify.ts";
 
 /** A merged commit is watched at least this long, so checks that start late are seen. */
 const WATCH_SETTLE_MS = 5 * 60_000;
@@ -103,7 +103,7 @@ export async function watchPass(t: Train, repo: string): Promise<void> {
     // The workflow runs it re-ran a job of in this pass: going again, though `runs` read them done.
     const reranNow = new Set<number>();
     let waiting = false;
-    for (const [check, onBatch] of failedAfter(runs, fast, batch, verifying(t, w.projectRef))) {
+    for (const [check, onBatch] of failedAfter(runs, fast, batch, repoVerifying(t, repo, w.projectRef))) {
       if (await failedCheck(t, w, check, onBatch, runs, events, reranNow)) waiting = true;
     }
     const done = runs.every((r) => r.status === "completed");
@@ -261,7 +261,7 @@ async function fixOrder(t: Train, w: Watch, check: CheckRun, reran: boolean, onB
     return false;
   }
   // "Merge, then verify": the merge that broke it is found and reverted instead, where it can be.
-  if (verifying(t, w.projectRef)) {
+  if (repoVerifying(t, repo, w.projectRef)) {
     const blamed = await blame(t, w, check);
     if (blamed === "waiting") return true;
     if (blamed === "taken") {

@@ -415,6 +415,18 @@ const githubKeys = (hub: Hub, r: ProjectRef): string[] => [
 ];
 
 /**
+ * A bot that just took a repo other bots share takes that repo's train's mode with it, so its row and its PRs go one
+ * way with theirs from the start (W845). Tells its apps when that changed its mode.
+ */
+export function adoptSharedMode(hub: Hub, r: ProjectRef): void {
+  const shared = mergeShared(hub, r);
+  if (shared === undefined || mergeModeOf(hub.db.conn, r) === shared.mode) return;
+  setMergeMode(hub.db.conn, r, shared.mode);
+  const title = store(hub).projectGet(r)?.title ?? r.projectId;
+  announce(hub, r, shared.mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`, { mergeMode: shared.mode });
+}
+
+/**
  * How it merges while another bot shares one of its GitHub repos: that repo's train's mode, the one its PRs go by,
  * and those bots' titles. Undefined while no other bot does.
  */
@@ -425,7 +437,9 @@ function mergeShared(hub: Hub, r: ProjectRef): MergeShared | undefined {
   const db = hub.db.conn;
   const key = githubKeys(hub, r).find((k) => repos.withKey(db, k).some((p) => others.some((o) => o.machineId === p.machineId && o.projectId === p.projectId)));
   const repo = key?.slice("github.com/".length);
-  const mode = mergeModeOf(db, repo === undefined ? r : trainArea(hub).train.trainProject(repo, r));
+  // No train yet: the bots that had the repo first, whose modes a pick keeps as one.
+  const first = others[0] as ProjectRef;
+  const mode = mergeModeOf(db, repo === undefined ? first : trainArea(hub).train.trainProject(repo, first));
   return { mode, bots: others.map((o) => store(hub).projectGet(o)?.title ?? o.projectId) };
 }
 

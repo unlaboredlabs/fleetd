@@ -5,7 +5,8 @@ import { archived, mergeModeOf, setArchived, setMergeMode } from "../src/hub/pro
 import * as repos from "../src/hub/repos/store.ts";
 import { events } from "../src/hub/store/events.ts";
 import { trainArea } from "../src/hub/train/index.ts";
-import { node, settle } from "./project-kit.ts";
+import { repoVerifying } from "../src/hub/train/verify.ts";
+import { type Answer, gh, node, settle } from "./project-kit.ts";
 import { AT, key, kit } from "./work-kit.ts";
 
 const person = key("operate", { human: true, person: { personId: "p-ada", name: "Ada" } });
@@ -14,9 +15,9 @@ const shop = { machineId: "devbox", projectId: "shop" };
 const docs = { machineId: "devbox", projectId: "docs" };
 
 /** Web and Shop, each with acme/shop in a folder of its own; Docs on another repo. */
-async function twoBots() {
+async function twoBots(answer?: Answer) {
   const k = kit();
-  const n = await node(k, []);
+  const n = await node(k, ["repos"], answer);
   for (const [id, title, root] of [["web", "Web", "/home/me/src/shop"], ["shop", "Shop", "/home/me/src/shop-2"], ["docs", "Docs", "/home/me/docs"]] as const) {
     n.event({ type: "project_upserted", projectId: id, title, workspaceRoot: root, updatedAt: AT });
   }
@@ -66,4 +67,23 @@ test("modes that differ from before show the one the repo's train goes by, in bo
   trainArea(k.hub).train.records.ensureTrain("acme/shop", shop, 0);
   expect((await settings(k, web)).mergeShared).toEqual({ bots: ["Shop"], mode: "verify_after" });
   expect((await settings(k, shop)).mergeShared).toEqual({ bots: ["Web"], mode: "verify_after" });
+});
+
+test("a bot that takes a repo other bots share takes its train's mode, and its PRs go by that train's mode", async () => {
+  // Docs takes acme/shop by path: a free checkout of it, cloned before.
+  const k = await twoBots((call) =>
+    call.op === "repo_inspect" && call.path === "/home/me/src/shop-old"
+      ? { ok: { kind: "repo_facts", exists: true, isGit: true, remote: "git@github.com:acme/shop.git", defaultBranch: "main", workflowFiles: [] } }
+      : undefined,
+  );
+  gh(k, { "repos/acme/shop": { default_branch: "main", allow_squash_merge: true } });
+  await k.ok(person, "project_settings_set", { ...web, mergeMode: "verify_after" });
+  await k.ok(person, "project_repo_add", { ...docs, path: "/home/me/src/shop-old" });
+  expect(mergeModeOf(k.hub.db.conn, docs)).toBe("verify_after");
+  expect((await settings(k, docs)).mergeShared).toMatchObject({ mode: "verify_after" });
+  // The train goes by the repo's train for every PR on it, whichever bot it is from.
+  const { train } = trainArea(k.hub);
+  train.records.ensureTrain("acme/shop", web, 0);
+  setMergeMode(k.hub.db.conn, shop, "test_first");
+  expect(repoVerifying(train, "acme/shop", shop)).toBe(true);
 });
