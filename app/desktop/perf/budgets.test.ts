@@ -27,13 +27,26 @@ describe("budgets", () => {
     // A slow runner (both launches slower, the app's overhead the same) and summed RSS doubling are not regressions.
     expect(
       regressions({ firstPaintMs: 900, firstPaintRefMs: 800, firstPaintOverMs: 100, chatShownMs: 1100, chatOverMs: 300, idleMemoryMb: 260, idleRssMb: 1000, scrollFps: 61, streamFps: 59, keyP95Ms: 2 }, base),
-    ).toEqual([{ metric: "idleMemoryMb", value: 260, limit: 230 }]);
+    ).toEqual([{ metric: "idleMemoryMb", value: 260, limit: 230, base: 200 }]);
     expect(regressions({ ...base, firstPaintOverMs: 161, chatOverMs: 391, scrollFps: 50, streamFps: 20, keyP95Ms: 15 }, base).map((r) => r.metric)).toEqual([
       "firstPaintOverMs",
       "chatOverMs",
       "scrollFps",
       "streamFps",
       "keyP95Ms",
+    ]);
+  });
+
+  it("scales the start's baselines to the runner's own bare Electron start", () => {
+    // perf/baseline-linux.json's start, the median EPYC 7763 run of main's.
+    const linux: Results = { ...base, firstPaintMs: 513, firstPaintRefMs: 288, firstPaintOverMs: 225, chatShownMs: 663, chatOverMs: 375 };
+    // The red run on main at 5b4d3ba86 (an EPYC 7763, the slowest runner), whose start loads within a kilobyte of the
+    // green commit before it, and main's next run, on a Xeon 6975P: neither is a regression.
+    expect(regressions({ ...linux, firstPaintRefMs: 285, firstPaintOverMs: 254, chatShownMs: 688, chatOverMs: 403 }, linux)).toEqual([]);
+    expect(regressions({ ...linux, firstPaintRefMs: 211, firstPaintOverMs: 167, chatShownMs: 491, chatOverMs: 280 }, linux)).toEqual([]);
+    // 100 ms more before the chat reads on that Xeon is one, though the 7763's limit in ms is past it.
+    expect(regressions({ ...linux, firstPaintRefMs: 211, firstPaintOverMs: 167, chatShownMs: 591, chatOverMs: 380 }, linux)).toEqual([
+      { metric: "chatOverMs", value: 380, limit: expect.closeTo(357, 0) as number, base: expect.closeTo(275, 0) as number },
     ]);
   });
 });
