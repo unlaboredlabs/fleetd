@@ -668,10 +668,12 @@ export async function place(
   for (const id of ids) {
     const r = row(hub, id);
     if (!r) continue;
-    let name = r.name;
+    // A row a move brought from another hub never went through safeName: its name lists on one line all the same.
+    const base = r.name.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "_");
+    let name = base;
     for (let k = 1; used.has(name); ) {
       k++;
-      name = `${k}-${r.name}`;
+      name = `${k}-${base}`;
     }
     used.add(name);
     const rel = `.fleetd/attachments/${folder}/${name}`;

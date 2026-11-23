@@ -33,7 +33,7 @@ export function forLead(
   if (message.author === "agent" && message.lead !== undefined) {
     // Another bot's lead: its handle and how to answer it go to the lead only, under words the person reads plain.
     const from = message.by ?? "unnamed";
-    return set.render("chat.agent", { agent: `the lead of ${oneLine(from)}`, text: `${quoted(text)}\n\n${leadFooter(from, message.lead)}`, files });
+    return set.render("chat.agent", { agent: `the lead of ${oneLine(from)}`, text: `${quoted(text)}\n\n${leadFooter(oneLine(from), message.lead)}`, files });
   }
   if (message.author === "agent") return set.render("chat.agent", { agent: oneLine(message.by ?? "unnamed"), text: quoted(text), files });
   const about = !tagged ? "" : message.about ? ` about ${message.about.title} (${message.about.workstreamId})` : ", not about an order";
@@ -46,12 +46,15 @@ export function forLead(
  */
 export const quoted = (text: string) =>
   text
-    .split("\n")
-    .map((l) => `> ${l.endsWith("\r") ? l.slice(0, -1) : l}`.trimEnd())
+    .split(LINE_BREAK)
+    .map((l) => `> ${l}`.trimEnd())
     .join("\n");
 
+/** Every break a reader may take for a new line: CRLF, LF, CR, NEL, LS, PS, and the vertical tab and form feed. */
+const LINE_BREAK = /\r\n|[\n\r\u0085\u2028\u2029\v\f]/u;
+
 /** A name on fleetd's own line, on one line: a break in it would end that line early. */
-const oneLine = (name: string) => name.split(/\s+/u).filter(Boolean).join(" ");
+const oneLine = (name: string) => name.split(/[\s\u0085]+/u).filter(Boolean).join(" ");
 
 /** The longest quote of a replied bubble, in characters; a longer one keeps its start and end. */
 export const REPLY_QUOTE_MAX = 1000;
