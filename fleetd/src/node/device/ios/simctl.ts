@@ -121,9 +121,6 @@ export function udidOf(out: string): string | undefined {
   return udid.length === 36 && /^[0-9A-Fa-f-]+$/.test(udid) ? udid : undefined;
 }
 
-/** Whether a line of `recordVideo`'s says it has started recording. */
-export const recordingStarted = (line: string) => line.toLowerCase().includes("recording started");
-
 /** The node's simctl, on its device set. `xcrun` is Xcode's, or a test's stand-in. */
 export class Simctl {
   /** Whether simctl has answered here: CoreSimulator is up, and a call gets its own bound. */

@@ -6,9 +6,8 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Input } from "../src/node/device/scrcpy.ts";
 import { coalesce, commandArgs, Gestures, Hands, heldBy, inSession, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
-import { fileGrowing, screenName, startRecording } from "../src/node/device/ios/sim_screen.ts";
+import { screenName } from "../src/node/device/ios/sim_screen.ts";
 import type { StreamFrame } from "../src/node/screen/mac_frames.ts";
-import { recordingStarted } from "../src/node/device/ios/simctl.ts";
 import { tempHome } from "./helpers.ts";
 
 const cleanups: (() => void | Promise<void>)[] = [];
@@ -313,7 +312,7 @@ test("with every watcher decoding H.264 the stream sends it, the screen anew whe
   shooter.run();
   await until(() => told.length > 0);
   // VideoToolbox's 60 frames a second; a slow link (560 kbit/s of H.264) 10.
-  expect(told).toEqual(["h264", "kbps 2500", "fps 60"]);
+  expect(told).toEqual(["side 1600", "panel -", "h264", "kbps 2500", "fps 60"]);
   onFrame({ kind: "jpeg", key: true, screen: [1206, 2622], data: jpeg(1) });
   onFrame({ kind: "h264", key: true, screen: [1206, 2622], data: new Uint8Array(900) });
   onFrame({ kind: "h264", key: false, screen: [1206, 2622], data: new Uint8Array(40) });
@@ -330,7 +329,7 @@ test("with every watcher decoding H.264 the stream sends it, the screen anew whe
   // A slow watcher's link (800 kbit/s): the video takes 70% of it. One that can't decode H.264: JPEG again.
   shooter.want(true, 800);
   shooter.want(false, undefined);
-  expect(told).toEqual(["still", "h264", "kbps 560", "fps 10", "jpeg", "kbps 2500"]);
+  expect(told).toEqual(["still", "side 1600", "panel -", "h264", "kbps 560", "fps 10", "side 1600", "panel -", "jpeg", "kbps 2500"]);
   watching = false;
   shooter.stop();
 });
@@ -371,30 +370,43 @@ test("a failed screenshot waits a second before the next, and the screen's name 
   expect(screenName("iPhone 17 on iOS 26.1", "T3965")).toBe("iPhone 17 · T3965");
 });
 
-test("simctl's recording is stopped with SIGINT only once it has started, and says when it wrote no video", async () => {
-  const home = tempHome();
-  cleanups.push(home.done);
-  // A stand-in recordVideo: says it started, and on SIGINT writes its file and ends.
-  const script = join(home.dir, "record");
-  writeFileSync(
-    script,
-    `#!/bin/sh
-trap 'printf video > "$1"; exit 0' INT
-echo "Recording started"
-while :; do sleep 0.05; done
-`,
+test("a stream kept for the video runs with nobody watching, H.264 alone, and JPEG beside it for a JPEG watcher", async () => {
+  const told: string[] = [];
+  let watchers = 0;
+  let started = 0;
+  const live = async () => {
+    started += 1;
+    return { still: () => {}, tell: (c: string) => void told.push(c), stop: () => {}, ended: new Promise<string | undefined>(() => {}) };
+  };
+  const shooter = new Shooter(
+    async () => new Uint8Array(0),
+    performance.now(),
+    () => watchers > 0,
+    () => {},
+    async () => Bun.sleep(5),
+    live as never,
+    { keep: () => true, panel: () => "primary-1" },
   );
-  chmodSync(script, 0o755);
-  const path = join(home.dir, "r", "video.mp4");
-  const recording = startRecording([script, path], path, recordingStarted);
-  expect(await recording.finish()).toBeUndefined();
-  expect(readFileSync(path, "utf8")).toBe("video");
-  // One that ends without a file says so.
-  const empty = join(home.dir, "empty");
-  writeFileSync(empty, "#!/bin/sh\necho 'Recording started'\nexit 0\n");
-  chmodSync(empty, 0o755);
-  expect(await startRecording([empty, join(home.dir, "none.mp4")], join(home.dir, "none.mp4"), recordingStarted).finish()).toBe("simctl wrote no video");
-  expect(fileGrowing(undefined, 10)).toBe(false);
-  expect(fileGrowing(10, 20)).toBe(true);
-  expect(fileGrowing(20, 20)).toBe(false);
+  await Bun.sleep(20);
+  // Started at once, for the video: the inner panel, H.264 at the video's rate.
+  expect(started).toBe(1);
+  expect(told).toEqual(["side 1600", "panel primary-1", "h264", "kbps 2500", "fps 30"]);
+  // A JPEG watcher comes: JPEG beside the H.264, and the stream is the same one.
+  watchers = 1;
+  told.length = 0;
+  shooter.run();
+  expect(told.slice(0, 3)).toEqual(["side 1600", "panel primary-1", "both"]);
+  // An H.264 watcher: its own rate.
+  told.length = 0;
+  shooter.want(true, 1000);
+  expect(told).toContain("h264");
+  expect(told).toContain("kbps 700");
+  // It leaves: the video's again, and the stream goes on.
+  watchers = 0;
+  told.length = 0;
+  shooter.refresh();
+  expect(told).toEqual(["side 1600", "panel primary-1", "h264", "kbps 2500", "fps 30"]);
+  await Bun.sleep(20);
+  expect(started).toBe(1);
+  shooter.stop();
 });

@@ -116,6 +116,10 @@ type in it yourself, and **Hand back** when done. See [Screens](/docs/browser-se
 
 To open a simulator of your own, choose **New screen › iPhone** and pick the model.
 
+A simulator is recorded from its start to its end, watched or not. The recording is the live view itself, frame for
+frame: upright as the simulator's screen is, and on an iPhone Duo the panel its fold lights. Its replay notes each turn
+and fold.
+
 ### Device controls {#sim-controls}
 
 While you have control, a strip beside the simulator offers these. Agents run the same as `mac sim` commands:

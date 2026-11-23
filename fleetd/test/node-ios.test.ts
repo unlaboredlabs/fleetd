@@ -9,7 +9,10 @@ import { healthFrom, Simulators, xcodeFrom } from "../src/node/device/ios/index.
 import { backoff, BACKOFF_MAX, deviceCpu, findGolden, type Golden, goldenPath, Pool, Refill, type Waiting, waitingWords } from "../src/node/device/ios/pool.ts";
 import { devices, iosRuntimes, pick, Simctl, udidOf } from "../src/node/device/ios/simctl.ts";
 import { endedPath, heldPath, MacSims, SIM_IDLE, simConfig, simKey } from "../src/node/device/ios/sims.ts";
-import { recordingsDir, resumeRecording, SimScreens, type SimTools, startRecording } from "../src/node/device/ios/sim_screen.ts";
+import { recordingsDir, SimScreens, type SimTools, stopLegacyVideo } from "../src/node/device/ios/sim_screen.ts";
+import type { Live } from "../src/node/device/ios/screen.ts";
+import type { Command } from "../src/node/screen/live.ts";
+import { resumeAt } from "../src/node/screen/mp4.ts";
 import { builtXctestrun, installWrapper, iosEnv, runnerDir, setDir, writeConfig, wrapperScript } from "../src/node/device/ios/wrapper.ts";
 import { Host, jobEnv } from "../src/node/mac_tool/host.ts";
 import { simBudget } from "../src/node/mac_tool/protocol.ts";
@@ -27,6 +30,29 @@ const until = async (what: () => boolean, ms = 5_000) => {
     await Bun.sleep(10);
   }
 };
+
+/** An H.264 access unit as fleetd-frames sends one: SPS and PPS before a keyframe's slice, a P slice alone. */
+const AU = (key: boolean) => Uint8Array.from([...(key ? [0, 0, 0, 1, 0x67, 0x4d, 0, 0x1f, 1, 0, 0, 0, 1, 0x68, 0xee] : []), 0, 0, 0, 1, key ? 0x65 : 0x41, 0x88, 1, 2]);
+
+/** fleetd-frames' stream, a stand-in: it says its display, then a keyframe; each command it hears goes in `told`, and a
+ * still is a JPEG of `jpeg`. */
+function fakeLive(told: Command[], jpeg: Uint8Array): Live {
+  return async (onFrame, onDisplay) => {
+    queueMicrotask(() => {
+      onDisplay?.({ name: "primary", orientation: 1, width: 640, height: 1386 });
+      onFrame({ kind: "h264", key: true, screen: [640, 1386], picture: [640, 1386], data: AU(true) });
+      onFrame({ kind: "h264", key: false, screen: [640, 1386], picture: [640, 1386], data: AU(false) });
+    });
+    return {
+      still: () => onFrame({ kind: "jpeg", key: true, screen: [640, 1386], data: jpeg }),
+      tell: (c) => void told.push(c),
+      stop: () => {},
+      ended: new Promise<string | undefined>(() => {}),
+      input: () => false,
+      inputPending: () => false,
+    };
+  };
+}
 
 const RUNTIMES = JSON.stringify({
   runtimes: [
@@ -543,7 +569,7 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   const calls: { thread: string; op: string; args: Record<string, unknown> }[] = [];
   const frames: Record<string, unknown>[] = [];
   const commands: string[][] = [];
-  const recorded: string[] = [];
+  const told: Command[] = [];
   const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x6a, 0x02, 0x80, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xd9]);
   const screens = new SimScreens(
     home.dir,
@@ -556,10 +582,7 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
     },
     {
       shoot: async () => JPEG,
-      record: (udid, path) => {
-        recorded.push(udid);
-        return { finish: async () => (writeFileSync(path, "mp4"), undefined) };
-      },
+      live: () => fakeLive(told, JPEG),
       run: async (_runner, args) => (commands.push(args), { ok: true, said: "", ms: 3 }),
     },
   );
@@ -587,12 +610,15 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   await host.step(b, { step: "sim_start" });
   expect(screens.of("T2")).toBeUndefined();
 
-  // Nobody watches: no screenshot, no video. A person watches: frames go to the hub, and the video starts.
-  expect(recorded).toEqual([]);
+  // Nobody watches: the stream runs for the video alone, H.264 at the video's rate, and nothing goes to the hub. A
+  // person watches: frames go to the hub, JPEG beside the video's H.264.
+  await until(() => told.includes("fps 30"));
+  expect(told).toContain("h264");
+  expect(frames).toEqual([]);
   screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
   await until(() => frames.length > 0);
   expect(frames[0]).toMatchObject({ t: "browser_frame", sessionId: screen.sessionId, width: 640, height: 1386, control: "agent" });
-  expect(recorded).toEqual([udid]);
+  expect(told).toContain("both");
   // Another viewer gets the newest frame at once; one who leaves and comes back to a still screen sees it again.
   const seen = frames.length;
   screens.watch({ sessionId: screen.sessionId, on: true, kbps: 500 } as never);
@@ -602,7 +628,6 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   const back = frames.length;
   screens.watch({ sessionId: screen.sessionId, on: true, kbps: undefined } as never);
   await until(() => frames.length > back);
-  expect(recorded).toEqual([udid]);
 
   // Their input goes nowhere until they take over; then the agent's agent-device refuses.
   const tap = (action: "pressed" | "released") => ({ sessionId: screen.sessionId, input: { kind: "mouse", action, button: "left", x: 300, y: 600 } }) as never;
@@ -641,7 +666,12 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   expect((recordedCall.args.files as { file: string }[]).map((f) => f.file).sort()).toEqual(["actions", "video_mp4"]);
   const parts = calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "actions");
   const actions = Buffer.from(parts.map((p) => String(p.args.dataB64)).join(""), "base64").toString().trim().split("\n").map((l) => JSON.parse(l).tool);
-  expect(actions).toEqual(["sim_start", "takeover", "agent-device", "handback", "agent-device", "sim_end"]);
+  expect(actions).toEqual(["sim_start", "device", "takeover", "agent-device", "handback", "agent-device", "sim_end"]);
+  // The video is the stream's own H.264, from the screen's start: both its frames, in a file that plays.
+  const video = Buffer.from(calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "video_mp4").map((p) => String(p.args.dataB64)).join(""), "base64");
+  expect(video.subarray(4, 8).toString()).toBe("ftyp");
+  expect(video.includes(Buffer.from("avc3"))).toBe(true);
+  expect(video.toString("latin1").split("moof").length - 1).toBe(2);
   expect(screens.count()).toBe(0);
 });
 
@@ -662,12 +692,9 @@ test("a node restart ends no simulator an agent holds: the next node takes it ov
     send: () => {},
   };
   const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x6a, 0x02, 0x80, 0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xd9]);
-  const finished: string[] = [];
-  // recordVideo: pid 4242 for the first node; the next finds it still recording by that pid.
   const tools: SimTools = {
     shoot: async () => JPEG,
-    record: () => ({ pid: 4242, finish: async () => (finished.push("node 1"), undefined) }),
-    resume: (pid, path) => (pid === 4242 ? { pid, finish: async () => (finished.push("node 2"), writeFileSync(path, "mp4"), undefined) } : undefined),
+    live: () => fakeLive([], JPEG),
     run: async () => ({ ok: true, said: "", ms: 1 }),
   };
   const node = () => {
@@ -701,7 +728,9 @@ test("a node restart ends no simulator an agent holds: the next node takes it ov
     expect(stopped).not.toContain(`shutdown ${held}`);
     expect(stopped).not.toContain(`delete ${held}`);
   }
-  expect(finished).toEqual([]);
+  // Its video so far is whole in its file: both frames, the last shown until the node stopped.
+  const video = join(recordingsDir(home.dir), screen.sessionId, "video.mp4");
+  expect(resumeAt(video)?.sequence).toBe(2);
   expect(existsSync(controlPath(home.dir, simKey("T1")))).toBe(true);
   expect(existsSync(simConfig(home.dir, "T1"))).toBe(true);
   expect(calls.filter((c) => c.op === "browser_session").map((c) => c.args.state)).toEqual(["live", "live"]);
@@ -742,38 +771,29 @@ test("a node restart ends no simulator an agent holds: the next node takes it ov
   expect(existsSync(endedPath(home.dir, "T2"))).toBe(false);
   expect(two.sims.env("T2", "/usr/bin")!.find(([k]) => k === "FLEETD_MAC_SIM")).toBeDefined();
 
-  // T1's mac sim end on the next node finishes the video the first started, and the recording goes on one log.
+  // T1's mac sim end on the next node finishes the video the first started, in the same file, and the recording goes
+  // on one log.
   const a2 = two.host.agent({ machineId: "devbox", projectId: "p1", threadId: "ta", taskId: "T1" });
   await two.host.step(a2, { step: "sim_end" });
   await until(() => calls.some((c) => c.op === "browser_session" && c.args.state === "recorded"));
-  expect(finished).toEqual(["node 2"]);
+  const sent = Buffer.from(calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "video_mp4").map((p) => String(p.args.dataB64)).join(""), "base64");
+  expect(sent.toString("latin1").split("moof").length - 1).toBe(4);
+  expect(sent.toString("latin1").split("moov").length - 1).toBe(1);
   const parts = calls.filter((c) => c.op === "browser_recording_part" && c.args.file === "actions");
   const actions = Buffer.from(parts.map((p) => String(p.args.dataB64)).join(""), "base64").toString().trim().split("\n").map((l) => JSON.parse(l));
-  expect(actions.map((x) => x.tool)).toEqual(["sim_start", "takeover", "sim_resumed", "sim_end"]);
-  expect(actions.map((x) => x.seq)).toEqual([1, 2, 3, 4]);
+  expect(actions.map((x) => x.tool)).toEqual(["sim_start", "device", "takeover", "sim_resumed", "device", "sim_end"]);
+  expect(actions.map((x) => x.seq)).toEqual([1, 2, 3, 4, 5, 6]);
   const recorded = calls.find((c) => c.args.state === "recorded")!;
   expect((recorded.args.files as { file: string }[]).map((f) => f.file).sort()).toEqual(["actions", "video_mp4"]);
 });
 
-test("recordVideo writes its output to a file, not the node's pipe, and the next node finishes it by its pid", async () => {
-  const home = tempHome();
-  cleanups.push(home.done);
-  // A stand-in recordVideo: says it started, and writes its video when interrupted.
-  const script = join(home.dir, "record.sh");
-  writeFileSync(script, `#!/bin/sh\ntrap 'echo mp4 > "$2"; echo "Wrote video"; exit 0' INT\necho "Recording started"\nwhile :; do sleep 0.05; done\n`);
-  chmodSync(script, 0o755);
-  const video = join(home.dir, "rec", "video.mp4");
-  const first = startRecording([script, "recordVideo", video], video, (l) => l.includes("Recording started"));
-  expect(first.pid).toBeGreaterThan(0);
-  await until(() => existsSync(`${video}.log`) && readFileSync(`${video}.log`, "utf8").includes("Recording started"));
-  // Another pid, or one that isn't this video's recordVideo, is no recording to take over.
-  expect(resumeRecording(process.pid, video)).toBeUndefined();
-  expect(resumeRecording(first.pid!, join(home.dir, "other.mp4"))).toBeUndefined();
-  const again = resumeRecording(first.pid!, video)!;
-  expect(again).toBeDefined();
-  expect(await again.finish()).toBeUndefined();
-  expect(readFileSync(video, "utf8")).toBe("mp4\n");
-  expect(readFileSync(`${video}.log`, "utf8")).toContain("Wrote video");
+test("a recordVideo a node of the version before left is stopped only while its pid is still that recordVideo", () => {
+  const video = "/mac/recordings/B1/video.mp4";
+  const lines: Record<number, string> = { 4242: `xcrun simctl io X recordVideo --codec=h264 --force ${video}`, 4343: "/usr/bin/vim notes" };
+  // Another process given the pid since, or a recordVideo of another file, is left alone: nothing is sent to it.
+  expect(stopLegacyVideo(4343, video, (pid) => lines[pid])).toBe(false);
+  expect(stopLegacyVideo(4242, "/mac/recordings/B2/video.mp4", (pid) => lines[pid])).toBe(false);
+  expect(stopLegacyVideo(4545, video, (pid) => lines[pid])).toBe(false);
 });
 
 test("a simulator taken over after a node that died starts its idle time again, and one that can't be says the real why", async () => {

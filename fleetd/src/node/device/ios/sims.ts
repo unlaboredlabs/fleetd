@@ -7,8 +7,9 @@
 // a person watches and takes it over in Screens, and it ends with the simulator.
 //
 // A node restart (an update installs as soon as it is ready) ends none of them: the clones run on in CoreSimulator,
-// their agent-device daemons and runners and their videos' recordVideo in process groups of their own, and who holds
-// which is kept in `<ios dir>/held.json`. The next node takes each one over (`adopt`), its screen under the same ids;
+// their agent-device daemons and runners in process groups of their own, and who holds which is kept in
+// `<ios dir>/held.json`. The next node takes each one over (`adopt`), its screen under the same ids and its video
+// going on in the same file;
 // one it can't take over goes, and its agent's next agent-device says why (`env`).
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";

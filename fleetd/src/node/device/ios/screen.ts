@@ -1,8 +1,9 @@
 // What a person watching an agent's iOS simulator sees, and what they do to
-// it (the Rust node's ios/screen.rs, ported). `simctl io` records video files but can't stream, so the live view is
-// fleetd-frames' stream of the simulator's framebuffer (../../screen/mac_frames.ts: a JPEG as soon as the screen
-// changes), run only while someone watches; where that can't run, a loop of `simctl io screenshot` JPEGs, at most one
-// every MIN_GAP (each takes ~0.5 s). They are the same Frames an Android screen gives, sized in the screen's pixels.
+// it (the Rust node's ios/screen.rs, ported). The live view is fleetd-frames' stream of the simulator's framebuffer
+// (../../screen/mac_frames.ts: a frame as soon as the screen changes, upright as its UI is), which runs from the
+// screen's start while it has a video (its H.264 is the video too: sim_screen.ts), else only while someone watches;
+// where that can't run, a loop of `simctl io screenshot` JPEGs while someone watches, at most one every MIN_GAP (each
+// takes ~0.5 s). They are the same Frames an Android screen gives, sized in the screen's pixels.
 //
 // A person's input goes straight into the simulator's HID service while the stream runs and its helper says it can
 // (./hid.ts: a finger, keys, the home button, as Simulator.app's own input, landing within a frame or two). Otherwise,
@@ -16,11 +17,16 @@
 // go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
 import { jpegSize } from "../../browser/fit.ts";
-import { fpsFor, HARDWARE_FPS, kbpsFor, type StreamFrame, type StreamRun } from "../../screen/live.ts";
+import { fpsFor, HARDWARE_FPS, kbpsFor, MAX_KBPS, type StreamFrame, type StreamRun } from "../../screen/live.ts";
+import type { Display } from "../../screen/mac_frames.ts";
 import { type Direct, Touches } from "./hid.ts";
 
 /** The live view's frames come no closer together than this. */
 export const MIN_GAP = 100;
+/** Frames a second of a video nobody watches: the stream's H.264 alone. */
+export const RECORD_FPS = 30;
+/** A simulator's picture's longer side at most, in pixels: a phone's whole screen, sharp at a desktop window's size. */
+export const SIM_SIDE = 1600;
 /** How often a stream looks whether someone still watches: it stops this long after the last one left. */
 const WATCHED_EVERY = 250;
 /** After a failed screenshot, the next comes this much later. */
@@ -53,12 +59,20 @@ export type Shoot = () => Promise<Uint8Array>;
 /** A running stream of the simulator's screen (../../screen/mac_frames.ts). */
 export type LiveRun = StreamRun;
 /** Starts a stream of the simulator's screen (../../screen/mac_frames.ts): each change a JPEG or H.264, sized in the
- * screen's own pixels (the picture may be smaller). */
-export type Live = (onFrame: (frame: StreamFrame) => void) => Promise<LiveRun>;
+ * screen's own pixels (the picture may be smaller); `onDisplay` hears which display it shows, as that changes. */
+export type Live = (onFrame: (frame: StreamFrame) => void, onDisplay?: (display: Display) => void) => Promise<LiveRun>;
+
+/** What a stream does beyond the live view: `keep` it running for the video though nobody watches, the display it
+ * shows (`panel`: a foldable's lit panel; undefined, the one that changed last), and `onDisplay` hears it. */
+export type Keep = { keep: () => boolean; panel?: () => string | undefined; onDisplay?: (display: Display) => void };
+
+const NO_KEEP: Keep = { keep: () => false };
 
 /**
- * The screenshot loop for one simulator: it runs while `wanted` says someone watches, a new frame to `onFrame` only
- * when the screen changed. `run` starts it, once; it stops by itself when nobody watches, or for good on `stop`.
+ * The stream (or the screenshot loop) of one simulator: it runs while `wanted` says someone watches, or while `keep`
+ * keeps it for the video, a new frame to `onFrame` only when the screen changed. `run` starts it, once; it stops by
+ * itself when nobody watches and nothing keeps it, or for good on `stop`. A video kept with nobody watching is H.264
+ * alone at RECORD_FPS; JPEG watchers get JPEG beside it (`both`); H.264 watchers set its rate and frame rate.
  */
 export class Shooter {
   private looping = false;
@@ -83,14 +97,29 @@ export class Shooter {
     private readonly sleep: (ms: number) => Promise<unknown> = Bun.sleep,
     /** The screen as a stream, where the Mac can: a frame as it changes, not a screenshot each MIN_GAP at most. */
     private readonly live?: Live,
-  ) {}
+    private readonly kept: Keep = NO_KEEP,
+  ) {
+    // Kept for the video: it runs from the start.
+    if (live && kept.keep()) this.run();
+  }
 
-  /** Runs while someone watches; a new watcher meanwhile gets the screen at once. */
+  /** Whether the stream runs: someone watches, or the video keeps it. */
+  private running(): boolean {
+    return this.wanted() || (this.live !== undefined && this.liveFailed === undefined && this.kept.keep());
+  }
+
+  /** Watchers came or went, or the device's pose changed: the stream hears what it now makes. */
+  refresh(): void {
+    this.tellWants();
+  }
+
+  /** Runs while someone watches (or the video keeps it); a new watcher meanwhile gets the screen at once. */
   run(): void {
     if (this.stopped) return;
     if (this.looping) {
       // The screen now, even unchanged: a new watcher hasn't seen it.
       this.last = undefined;
+      this.tellWants();
       return this.streaming?.still();
     }
     this.looping = true;
@@ -134,10 +163,20 @@ export class Shooter {
     const run = this.streaming;
     if (!run) return;
     const { video, kbps, fps } = this.wants;
-    run.tell(video ? "h264" : "jpeg");
-    run.tell(`kbps ${kbpsFor(kbps)}`);
+    const keep = this.kept.keep();
+    run.tell(`side ${SIM_SIDE}`);
+    run.tell(`panel ${this.kept.panel?.() ?? "-"}`);
+    if (!this.wanted() && keep) {
+      run.tell("h264");
+      run.tell(`kbps ${MAX_KBPS}`);
+      run.tell(`fps ${RECORD_FPS}`);
+      return;
+    }
+    run.tell(video ? "h264" : keep ? "both" : "jpeg");
+    run.tell(`kbps ${kbpsFor(video ? kbps : undefined)}`);
     // VideoToolbox's 60 a second, fewer for a slow link (live.ts fpsFor): the Mac's load is its own, not counted.
     if (video) run.tell(`fps ${fpsFor(HARDWARE_FPS, kbpsFor(kbps), 0, fps)}`);
+    else if (keep) run.tell(`fps ${RECORD_FPS}`);
   }
 
   /** The stream, until nobody watches; screenshots instead if it can't start or stops by itself. */
@@ -146,18 +185,22 @@ export class Shooter {
     // A watcher that comes back gets the screen at once, changed or not.
     this.last = undefined;
     try {
+      const onDisplay = (d: Display) => this.kept.onDisplay?.(d);
       run = await live((f) => {
         if (this.stopped) return;
         const [width, height] = f.screen;
         this.screen = f.screen;
         const atMs = Math.round(performance.now() - this.start);
-        if (f.kind === "h264") return this.onFrame({ seq: ++this.seq, jpeg: new Uint8Array(0), width, height, atMs, video: { data: f.data, key: f.key } });
+        if (f.kind === "h264") {
+          const video = { data: f.data, key: f.key, ...(f.picture ? { size: f.picture } : {}) };
+          return this.onFrame({ seq: ++this.seq, jpeg: new Uint8Array(0), width, height, atMs, video });
+        }
         // A still asked for on an unchanged screen is the same picture: the watchers have it.
         const hash = Bun.hash(f.data);
         if (hash === this.last) return;
         this.last = hash;
         this.onFrame({ seq: ++this.seq, jpeg: f.data, width, height, atMs });
-      });
+      }, onDisplay);
     } catch (e) {
       this.liveFailed = (e as Error).message;
       console.warn(`iOS live view: screenshots instead of a stream: ${this.liveFailed}`);
@@ -167,7 +210,7 @@ export class Shooter {
     this.tellWants();
     let ended: string | undefined;
     void run.ended.then((why) => (ended = why ?? "it stopped"));
-    while (this.wanted() && !this.stopped && ended === undefined) await this.sleep(WATCHED_EVERY);
+    while (this.running() && !this.stopped && ended === undefined) await this.sleep(WATCHED_EVERY);
     this.streaming = undefined;
     run.stop();
     if (ended !== undefined && !this.stopped) {
