@@ -24,7 +24,7 @@ function qaShards(os: string): string[] {
     .map((entry) => Object.entries(entry).reduce((name, [k, v]) => name.replaceAll(`\${{ matrix.${k} }}`, String(v)), qa.name!));
 }
 
-test("the train's fast checks are Linux jobs of ci.yml, and every Linux QA shard", () => {
+test("the train's fast checks are Linux jobs of ci.yml, the perf budgets among them, and every Linux QA shard", () => {
   // ci.yml runs on every PR's push: a scope step or job, never a paths filter, so each check always reports.
   expect(workflow("ci.yml").on?.pull_request?.paths).toBeUndefined();
   const jobs = Object.entries(workflow("ci.yml").jobs);
@@ -33,14 +33,18 @@ test("the train's fast checks are Linux jobs of ci.yml, and every Linux QA shard
   for (const shard of shards) expect(settings.fastChecks).toContain(shard);
   expect(settings.fastChecks).toContain("fleetd");
   expect(settings.fastChecks).toContain("mobile");
+  // A PR that breaks the desktop's perf budgets never merges: they run on PRs, and the train waits for them.
+  expect(settings.fastChecks).toContain("desktop-budgets");
   for (const check of settings.fastChecks) {
     if (shards.includes(check)) continue;
     const job = jobs.find(([id, j]) => (j.name ?? id) === check)?.[1];
-    expect(job ? job["runs-on"] : `${PATH} names ${check}, which no job of ci.yml is`).toBe("ubuntu-latest");
+    // desktop-budgets pins the Ubuntu image its baselines were measured on.
+    expect(job ? String(job["runs-on"]) : `${PATH} names ${check}, which no job of ci.yml is`).toMatch(/^ubuntu-/);
+    expect(job?.if ?? "").not.toContain("pull_request");
   }
 });
 
-test("the train's after-merge checks are what mac.yml reports, and besides those only Linux jobs of ci.yml", () => {
+test("the train's after-merge checks are what mac.yml reports", () => {
   // No PR runs a macOS job: each check mac.yml (Nightly) reports, the iOS build of a manual run among them, is after
   // merge only. mac.yml never starts on a push or a pull request by itself.
   const nightly = workflow("mac.yml");
@@ -60,10 +64,7 @@ test("the train's after-merge checks are what mac.yml reports, and besides those
   const links = nightly.jobs["site-external-links"]?.if;
   expect(links).toContain(`github.workflow == '${nightly.name}'`);
   expect(links).toContain("(github.event_name == 'schedule' || inputs.only == 'links')");
-  const ci = Object.entries(workflow("ci.yml").jobs);
-  // desktop-budgets pins the Ubuntu image its baselines were measured on.
-  const linux = (check: string) => ci.some(([id, j]) => (j.name ?? id) === check && /^ubuntu-/.test(String(j["runs-on"])));
-  expect(settings.afterMerge.filter((c) => !linux(c)).sort()).toEqual(mac.sort());
+  expect([...settings.afterMerge].sort()).toEqual(mac.sort());
 });
 
 test("no workflow gates on the label or leaves a check to each PR's own head, and every fast check is a job's", () => {
