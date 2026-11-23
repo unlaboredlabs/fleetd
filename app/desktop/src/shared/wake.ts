@@ -44,8 +44,10 @@ export interface WakeIn {
   readonly asked?: number | undefined;
   /** The person's newest message waits for the lead (`waitingFor`): the bot stays in the reply's place for any turn. */
   readonly waiting?: boolean | undefined;
-  /** Why the lead can't take it now, in plain words (`heldWords`); undefined: nothing holds it. */
+  /** The hub's word that the lead doesn't have it (`heldWords` of chat_send's leadWaiting): said even while it works. */
   readonly held?: string | undefined;
+  /** Why the bot can't start (`heldWords` of Status's blocked reason): said only while its lead isn't at work. */
+  readonly blocked?: string | undefined;
   /** That message came longer than START_STALE_MS ago on the hub's clock: a lead that hasn't started on it shows nothing. */
   readonly stale?: boolean | undefined;
 }
@@ -74,6 +76,8 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
     const since = ms(a.startedAt);
     return { phase: "waking", step: a.step, since: since === undefined || i.asked === undefined ? since : Math.max(since, i.asked) };
   }
+  // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
+  if (i.waiting === true && i.held !== undefined) return { phase: "held", reason: i.held };
   if (i.working) {
     // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
     if (!i.cold && i.waiting !== true) return undefined;
@@ -81,7 +85,7 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
     return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
   }
   if (i.waiting === true) {
-    if (i.held !== undefined) return { phase: "held", reason: i.held };
+    if (i.blocked !== undefined) return { phase: "held", reason: i.blocked };
     // Its computer starts on your message: it stirs at once, before the hub's first step says so.
     if (i.stale !== true) return i.asleep ? { phase: "waking", step: undefined, since: i.asked } : { phase: "received", since: i.asked };
   }
@@ -226,10 +230,12 @@ export const waitingFor = (
 };
 
 /** What holds the lead up, in one short line: the hub's word on why it doesn't have your message (its first sentence),
- * else why the bot is blocked (its machine offline, its usage paused). Undefined when nothing does. */
-export const heldWords = (leadWaiting: string | undefined, blocked: string | undefined): string | undefined => {
-  const first = leadWaiting?.trim().match(/^.+?[.!?](?=\s|$)/u)?.[0] ?? leadWaiting?.trim();
-  if (first !== undefined && first !== "") return first;
-  const why = blocked?.trim().replace(/[.\s]+$/u, "");
-  return why === undefined ? undefined : why === "" ? "The lead can’t start now." : `The lead can’t start now: ${why}.`;
+ * or why the bot is blocked (its machine offline, its usage paused). Undefined when there is none. */
+export const heldWords = (why: { readonly leadWaiting?: string | undefined; readonly blocked?: string | undefined }): string | undefined => {
+  if (why.leadWaiting !== undefined) {
+    const said = why.leadWaiting.trim();
+    return said === "" ? undefined : (said.match(/^.+?[.!?](?=\s|$)/u)?.[0] ?? said);
+  }
+  const reason = why.blocked?.trim().replace(/[.\s]+$/u, "");
+  return reason === undefined ? undefined : reason === "" ? "The lead can’t start now." : `The lead can’t start now: ${reason}.`;
 };

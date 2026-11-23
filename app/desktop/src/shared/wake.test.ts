@@ -214,21 +214,23 @@ describe("the bot in the reply's place on every turn", () => {
   });
 
   test("what holds the lead up says why in one plain line, in place of the dots", () => {
-    expect(heldWords("factory-a is offline: its node isn't connected. It goes in when factory-a is back. Repair it in Settings › Machines.", undefined)).toBe(
+    expect(heldWords({ leadWaiting: "factory-a is offline: its node isn't connected. It goes in when factory-a is back. Repair it in Settings › Machines." })).toBe(
       "factory-a is offline: its node isn't connected.",
     );
-    expect(heldWords(undefined, "usage limit reached on devbox until 15:00")).toBe("The lead can’t start now: usage limit reached on devbox until 15:00.");
-    expect(heldWords(undefined, "")).toBe("The lead can’t start now.");
-    expect(heldWords(undefined, undefined)).toBeUndefined();
-    const held = some({ waiting: true, held: "The lead can’t start now: devbox is offline." });
+    expect(heldWords({ blocked: "usage limit reached on devbox until 15:00" })).toBe("The lead can’t start now: usage limit reached on devbox until 15:00.");
+    expect(heldWords({ blocked: "" })).toBe("The lead can’t start now.");
+    expect(heldWords({})).toBeUndefined();
+    const held = some({ waiting: true, blocked: "The lead can’t start now: devbox is offline." });
     expect(held).toEqual({ phase: "held", reason: "The lead can’t start now: devbox is offline." });
     expect(wakeDots(held)).toBe(false);
     expect(wakePose(held, true)).toBe("idle");
     expect(wakeWords(held, T)).toEqual({ words: "The lead can’t start now: devbox is offline." });
     // Even long past: it still holds.
-    expect(some({ waiting: true, stale: true, held: "x" })).toEqual({ phase: "held", reason: "x" });
+    expect(some({ waiting: true, stale: true, blocked: "x" })).toEqual({ phase: "held", reason: "x" });
     // A lead at work is at work, whatever the status said a moment ago.
-    expect(some({ working: true, waiting: true, held: "x" })).toEqual({ phase: "thinking" });
+    expect(some({ working: true, waiting: true, blocked: "x" })).toEqual({ phase: "thinking" });
+    // But the hub's word that your message never reached it wins: whatever the lead works on, it isn't that.
+    expect(some({ working: true, waiting: true, held: "devbox is offline." })).toEqual({ phase: "held", reason: "devbox is offline." });
   });
 
   test("the turn's own line keeps its words while the lead works, and says nothing while the bot says the wait", () => {

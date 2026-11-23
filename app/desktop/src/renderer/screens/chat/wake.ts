@@ -46,7 +46,8 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const leadWaiting = useData((s) => leadWaitingOf(s, key));
   const skew = useData((s) => s.live.skewMs ?? 0);
   const row = useToolQuery("status_get", ALL).data?.rows?.find((r) => `${r.projectRef.machineId}/${r.projectRef.projectId}` === key);
-  const held = heldWords(leadWaiting, row?.state === "blocked" ? (row.blockedReason ?? "") : undefined);
+  const held = heldWords({ leadWaiting });
+  const blocked = heldWords({ blocked: row?.state === "blocked" ? (row.blockedReason ?? "") : undefined });
   // A wait for a start goes once it is stale (START_STALE_MS on the hub's clock): the message it went stale for.
   const [staleAt, setStaleAt] = useState<number>();
   useEffect(() => {
@@ -57,8 +58,8 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const isCold = cold.see(key, working, activity, landed);
   const stale = asked !== undefined && staleAt === asked;
   return useMemo(
-    () => wakeOf({ asleep, working, activity, cold: isCold, writing, asked, waiting, held, stale }),
-    [asleep, working, activity, isCold, writing, asked, waiting, held, stale],
+    () => wakeOf({ asleep, working, activity, cold: isCold, writing, asked, waiting, held, blocked, stale }),
+    [asleep, working, activity, isCold, writing, asked, waiting, held, blocked, stale],
   );
 }
 

@@ -35,7 +35,7 @@ export const wakeIn = (
   const newest = messages?.findLast((m) => m.author === "human" || m.author === "lead");
   const leadWaiting = newest?.author === "human" ? s.chats?.[key]?.leadWaiting?.[newest.messageId] : undefined;
   const stale = asked !== undefined && nowMs + (s.skewMs ?? 0) - asked >= START_STALE_MS;
-  return wakeOf({ asleep: chat?.leadAsleep === true, working, activity, cold: cold.see(key, working, activity, landed), writing, asked, waiting, held: heldWords(leadWaiting, undefined), stale });
+  return wakeOf({ asleep: chat?.leadAsleep === true, working, activity, cold: cold.see(key, working, activity, landed), writing, asked, waiting, held: heldWords({ leadWaiting }), stale });
 };
 
 /** What a bot in a list shows of it (botStateOf's `asleep` and `start`). */
