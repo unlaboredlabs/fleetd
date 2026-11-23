@@ -4010,6 +4010,10 @@
           "minimum": 0,
           "type": "integer"
         },
+        "byHand": {
+          "description": "pr.merged: a person merged it on GitHub, not the train; `mergedBy` and `mergedByKind` say who.",
+          "type": "boolean"
+        },
         "changeId": {
           "$ref": "#/$defs/ChangeId"
         },

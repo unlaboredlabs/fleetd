@@ -23,6 +23,7 @@ import { registerAll } from "../src/hub/serve/areas.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { withTrailers } from "../src/hub/train/batch.ts";
+import { changeRecords } from "../src/hub/train/index.ts";
 import type { Change, Workstream } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
@@ -79,6 +80,14 @@ class FakeGitHub implements IssueGitHub {
   }
   async setPullBody(_repo: string, n: number, body: string) {
     this.bodies.set(n, body);
+  }
+  /** The PRs a person merged on GitHub, each with its merge commit. */
+  mergedPulls = new Map<number, string>();
+  pullReads = 0;
+  async pullMerge(_repo: string, n: number) {
+    this.pullReads++;
+    const sha = this.mergedPulls.get(n);
+    return sha === undefined ? undefined : { sha };
   }
 }
 
@@ -280,6 +289,51 @@ test("closing the issue before anything landed asks the lead whether to stop the
       text: `GitHub issue acme/shop#12, which opened ${w}, was closed by dana as not planned before any of its PRs landed. Ask the person whether to stop ${w}; stop it only when they say so.`,
     },
   ]);
+  r.done();
+});
+
+test("a person merges the order's PR on GitHub and its Fixes line closes the issue first: one landing comment, no ask", async () => {
+  // A people-merge bot: the PR waits for a person, who merges it; GitHub closes the issue before the train reads it.
+  const r = rig();
+  await watching(r);
+  r.gh.issues.set(12, issue(12));
+  r.gh.labelled.set(12, [labelling("LE_1")]);
+  await r.poll();
+  const w = r.orders()[0]!.workstreamId;
+  const change = changeRecords(r.hub).create({
+    changeId: "",
+    projectRef: PROJECT,
+    repo: REPO,
+    prNumber: 40,
+    prUrl: `https://github.com/${REPO}/pull/40`,
+    branch: "fleetd/T3-coupon",
+    taskId: "T3",
+    workstreamId: w,
+    headSha: "1".repeat(40),
+    state: "ready",
+    reviews: [],
+    createdAt: iso(NOW),
+    updatedAt: iso(NOW),
+  } as Change);
+  r.gh.mergedPulls.set(40, "abcdef1234567890abcdef1234567890abcdef12");
+  r.gh.issues.set(12, issue(12, { state: "closed", stateReason: "completed", labels: ["fleetd"] }));
+  r.gh.closedBy.set(12, "dana");
+  await r.poll();
+  expect(r.gh.comments.slice(1)).toEqual([[12, "fleetd landed #40 for this as abcdef1."]]);
+  expect(r.wakes.filter((t) => t.kind === "line")).toEqual([]);
+  // The train reads the merge next: its pr.merged comments nothing more.
+  events(r.hub).append({
+    at: iso(NOW),
+    type: "pr.merged",
+    machineId: PROJECT.machineId,
+    projectId: PROJECT.projectId,
+    summary: "pr.merged",
+    data: { changeId: change.changeId, workstreamId: w, repo: REPO, prNumber: 40, mergedSha: "abcdef1234567890abcdef1234567890abcdef12", byHand: true },
+  });
+  await r.area.settled();
+  await r.poll();
+  expect(r.gh.comments.length).toBe(2);
+  expect(r.wakes.filter((t) => t.kind === "line")).toEqual([]);
   r.done();
 });
 

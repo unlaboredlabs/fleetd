@@ -13,7 +13,8 @@ starts the work without asking you first. Reviews, the [merge train](/docs/merge
 2. The PR says `Fixes #12` in its description (`Fixes acme/shop#12` when it is in another of the bot's repos). fleetd
    adds the line if the agent left it out, and the squash the train lands carries it too, so GitHub closes the issue
    even when the PR lands in a batch, where GitHub shows it Closed rather than Merged.
-3. When the PR lands, the issue gets one more comment, with the PR and its commit.
+3. When the PR lands, the issue gets one more comment, with the PR and its commit. That includes a PR you merge on
+   GitHub yourself, even when its `Fixes` line closes the issue before the train sees the merge.
 
 ## Who it listens to {#who}
 

@@ -2,7 +2,8 @@
 // opens one order in that bot, with the issue as its text (rules.ts says how it reads). The issue gets a comment when
 // the order opens and one when each of its PRs lands; the PR's description says `Fixes #N` (fleetd adds the line when
 // it is missing) and so does the squash that lands it, so GitHub closes the issue even when the PR landed in a batch.
-// An issue closed while its order is open and nothing of it landed tells the lead, who asks the person whether to stop.
+// An issue closed while its order is open and nothing of it landed, by the train's record or GitHub's, tells the lead,
+// who asks the person whether to stop.
 //
 // A self-hosted hub gets no webhooks (its App asks for no events, and the hub is on loopback or a tailnet), so it
 // reads each watched repo's open `fleetd` issues once a minute: one call per repo, which GitHub answers 304 for free
@@ -24,6 +25,7 @@ import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
 import { every } from "../sweep/index.ts";
+import { changeRecords } from "../train/index.ts";
 import { isClosed } from "../leads/records.ts";
 import {
   closedLine,
@@ -62,6 +64,8 @@ export interface IssueGitHub {
   comment(repo: string, n: number, body: string): Promise<void>;
   pullBody(repo: string, n: number): Promise<string>;
   setPullBody(repo: string, n: number, body: string): Promise<void>;
+  /** A PR's merge on GitHub, with its commit; undefined while it isn't merged. */
+  pullMerge(repo: string, n: number): Promise<{ sha?: string } | undefined>;
 }
 
 type Row = { repo: string; number: number; machine_id: string; project_id: string; workstream_id: string | null; data: string };
@@ -227,11 +231,32 @@ export class IssueOrders {
     const w = k?.row.workstreamId;
     if (!k || k.row.state !== "order" || w === undefined || k.row.closedTold) return "not an open order";
     if (!this.orderOpen(w)) return "its order is closed";
+    // A person's merge on GitHub closes it by the PR's `Fixes` line, maybe before the train reads the merge: that
+    // PR's landing comment goes now.
+    if ((k.row.landed ?? []).length === 0) await this.landedOnGitHub(k.projectRef, w);
+    const now = this.get(issue.repo, issue.number) ?? k;
     // Closed by its own PR's `Fixes` line, or after part of the work landed: the lead sees the landing already.
-    this.put({ ...k, row: { ...k.row, closedTold: true } });
-    if ((k.row.landed ?? []).length > 0) return "landed already";
+    this.put({ ...now, row: { ...now.row, closedTold: true } });
+    if ((now.row.landed ?? []).length > 0) return "landed already";
     leadWakes(this.hub).trigger(k.projectRef, { kind: "line", line: "issue", text: closedLine(issue, w, by) });
     return `told the lead of ${w}`;
+  }
+
+  /** The order's PRs the train hasn't seen merge that GitHub says merged, each given its landing comment. */
+  private async landedOnGitHub(r: ProjectRef, w: string): Promise<void> {
+    const gh = this.github;
+    if (!gh) return;
+    for (const c of changeRecords(this.hub).ofWorkstream(r, w)) {
+      if (c.state === "merged") continue;
+      let merge: { sha?: string } | undefined;
+      try {
+        merge = await gh.pullMerge(c.repo, c.prNumber);
+      } catch (error) {
+        console.warn(`issues: ${c.repo}#${c.prNumber} not read:`, (error as Error).message);
+        continue;
+      }
+      if (merge) await this.merged({ workstreamId: w, repo: c.repo, prNumber: c.prNumber, ...(merge.sha ? { mergedSha: merge.sha } : {}) });
+    }
   }
 
   // --- the train's side ---

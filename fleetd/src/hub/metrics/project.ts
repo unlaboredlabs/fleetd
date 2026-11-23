@@ -1,7 +1,7 @@
 // Landed changes folded out of the event log: it walks the log in seq order
 // from `time_cursors('metrics:events')` and wakes on each append; a replay writes the same rows.
 //
-// - `pr.merged`: a `train` row, timed from its order's request.
+// - `pr.merged`: a `train` row, timed from its order's request; `fleetd_by_hand` when a person merged it (`byHand`).
 // - `pr.merged_outside`: `fleetd_by_hand` when fleetd wrote it (a Change, or a `fleetd/` head), else `outside`; a
 //   bot's PR, or one into another base, is kept as skipped.
 // - `change.state`: the first move to `ready` is when its review passed.
@@ -130,7 +130,8 @@ function resolve(db: HubDb, e: HubEvent): Fold | undefined {
       const fallback: [string, string] | undefined =
         e.machineId !== undefined && e.projectId !== undefined ? [e.machineId, e.projectId] : undefined;
       const def = d.repo === undefined ? undefined : defaultBranch(db, store.githubRemote(d.repo));
-      const row = landed(db, e.type === "pr.merged", d, at, fallback, def);
+      // A Change's PR a person merged on GitHub is fleetd's work merged by hand, not the train's merge.
+      const row = landed(db, e.type === "pr.merged" && d.byHand !== true, d, at, fallback, def);
       return row ? { kind: "merge", row } : undefined;
     }
     case "change.state": {

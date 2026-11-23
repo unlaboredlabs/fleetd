@@ -120,6 +120,17 @@ export class ChangeRecords {
     );
   }
 
+  /** The workstream's Changes, oldest first. */
+  ofWorkstream(r: ProjectRef, workstreamId: string): Change[] {
+    return this.db.conn
+      .query<{ data: string }, [string, string, string]>(
+        `SELECT data FROM changes WHERE machine_id = ?1 AND project_id = ?2
+           AND json_extract(data, '$.workstreamId') = ?3 ORDER BY n`,
+      )
+      .all(r.machineId, r.projectId, workstreamId)
+      .map((row) => decode(row.data));
+  }
+
   /** The workstream's Changes that are not merged, refused or abandoned, oldest first. */
   unlanded(r: ProjectRef, workstreamId: string): Change[] {
     return this.db.conn

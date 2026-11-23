@@ -85,8 +85,8 @@ test("a PR with the hold label is reviewed, never merged by the train, and a mer
   await k.train.step(REPO);
   k.clock.ms += 2 * 60_000;
   await k.train.step(REPO);
-  expect(k.change(19)).toMatchObject({ state: "abandoned", lastError: "was merged outside the train" });
-  expect(k.host.eventsOf("pr.merged_outside")).toMatchObject([{ repo: REPO, prNumber: 19, base: "main" }]);
+  expect(k.change(19)).toMatchObject({ state: "merged", mergedSha: "e".repeat(40), byHand: true });
+  expect(k.host.eventsOf("pr.merged")).toMatchObject([{ repo: REPO, prNumber: 19, mergedSha: "e".repeat(40), byHand: true, base: "main" }]);
   expect(merges(k)).toEqual([]);
 });
 

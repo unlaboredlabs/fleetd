@@ -1571,6 +1571,8 @@ export type Change = {
   after?: GitHubPrUrl[];
   /** The PR's head branch. */
   branch: string;
+  /** Merged by a person on GitHub rather than by the train; set on merge. */
+  byHand?: boolean;
   changeId: ChangeId;
   createdAt: Timestamp;
   headSha: CommitSha;
@@ -9698,6 +9700,8 @@ export type TrainEventData = {
   base?: string;
   /** pr.merged: the train's batch PR it landed in. */
   batchPr?: number;
+  /** pr.merged: a person merged it on GitHub, not the train; `mergedBy` and `mergedByKind` say who. */
+  byHand?: boolean;
   changeId?: ChangeId;
   /** change.ci_failed: the failing check names. */
   checks?: string[];
