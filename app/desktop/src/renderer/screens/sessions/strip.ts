@@ -4,10 +4,10 @@
 // Pure, so it is unit-tested.
 
 /** A control the strip draws: one of the hub's (contracts ScreenControl) it knows how to show. */
-export type StripControl = "rotate_left" | "rotate_right" | "fold" | "home" | "back" | "lock" | "shake" | "appearance" | "location" | "screenshot";
+export type StripControl = "rotate_left" | "rotate_right" | "fold" | "home" | "back" | "lock" | "shake" | "appearance" | "text_size" | "location" | "screenshot";
 
 /** The strip's groups, top to bottom: turning and folding it, its buttons, what it senses, and taking its picture. */
-const GROUPS: readonly (readonly StripControl[])[] = [["rotate_left", "rotate_right", "fold"], ["home", "back", "lock"], ["shake", "appearance", "location"], ["screenshot"]];
+const GROUPS: readonly (readonly StripControl[])[] = [["rotate_left", "rotate_right", "fold"], ["home", "back", "lock"], ["shake", "appearance", "text_size", "location"], ["screenshot"]];
 
 /** Each control's tooltip: what it does, in a word or two. */
 export const CONTROL_WORD: Readonly<Record<StripControl, string>> = {
@@ -19,6 +19,7 @@ export const CONTROL_WORD: Readonly<Record<StripControl, string>> = {
   lock: "Lock",
   shake: "Shake",
   appearance: "Dark appearance",
+  text_size: "Text size",
   location: "Location",
   screenshot: "Screenshot",
 };
@@ -72,8 +73,8 @@ export const shotName = (device: string, at: Date): string => {
 // The desktop's device toolbar (DeviceRail, W859), T3 Code's order: home and rotate; light or dark, text size and a
 // screenshot, the rest behind More; then a Duo's postures. Only what the machine says works shows.
 
-/** A control the toolbar draws beside the strip's: text size. */
-export type RailControl = StripControl | "text_size";
+/** A control the toolbar draws. */
+export type RailControl = StripControl;
 
 /** The toolbar's device groups for a device: its buttons, its look, what's behind More, and a Duo's postures. */
 export const railOf = (controls: readonly string[], folds: readonly string[] | undefined) => {

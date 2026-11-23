@@ -51,7 +51,7 @@ export function DeviceRail({ sessionId, device, name, view }: { sessionId: strin
     const out = await layer.call("screen_control", { sessionId, control, ...(value === undefined ? {} : { value }) });
     setBusy(null);
     if (!out.ok) {
-      toast({ title: `${control === "text_size" ? "Text size" : CONTROL_WORD[control]} didn’t work`, description: out.error.message, tone: "danger", key: `control:${sessionId}` });
+      toast({ title: `${CONTROL_WORD[control]} didn’t work`, description: out.error.message, tone: "danger", key: `control:${sessionId}` });
       return;
     }
     // Its new state shows from the answer at once, before the list reads it again.
@@ -109,7 +109,7 @@ export function DeviceRail({ sessionId, device, name, view }: { sessionId: strin
           </Menu>
         );
       default:
-        return button(c, c === "rotate_left" ? "Rotate" : CONTROL_WORD[c as Exclude<RailControl, "text_size">], ICON[c], () => void press(c), { disabled: busy === c });
+        return button(c, c === "rotate_left" ? "Rotate" : CONTROL_WORD[c], ICON[c], () => void press(c), { disabled: busy === c });
     }
   };
 
@@ -136,7 +136,7 @@ export function DeviceRail({ sessionId, device, name, view }: { sessionId: strin
                     </MenuItem>
                   ) : (
                     <MenuItem key={c} icon={ICON[c]} disabled={busy === c} onSelect={() => void press(c)}>
-                      {CONTROL_WORD[c as Exclude<RailControl, "text_size">]}
+                      {CONTROL_WORD[c]}
                     </MenuItem>
                   ),
                 )}

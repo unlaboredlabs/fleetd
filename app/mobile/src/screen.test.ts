@@ -142,6 +142,17 @@ describe("where a touch lands on the page", () => {
     expect(pixelsPerPoint(box, frame, { zoom: 2, x: 0, y: 0 })).toBeCloseTo(1280 / 390 / 2);
   });
 
+  it("is the picture's pixel inside a device's bezel, the picture drawn smaller than the box would fit it", () => {
+    // An iPhone in its frame: the 1206 × 2622 picture drawn 300 points wide in the middle of the box (W859).
+    const phone = { width: 1206, height: 2622 };
+    const fit = 300 / 1206;
+    expect(toFrame({ x: 195, y: 300 }, box, phone, rest, fit)).toEqual({ x: 603, y: 1311 });
+    expect(toFrame({ x: 195 - 150, y: 300 - (2622 * fit) / 2 }, box, phone, rest, fit)).toEqual({ x: 0, y: 0 });
+    // The bezel beside the picture isn't on it.
+    expect(toFrame({ x: 195 - 160, y: 300 }, box, phone, rest, fit)).toBeNull();
+    expect(pixelsPerPoint(box, phone, rest, fit)).toBeCloseTo(1206 / 300);
+  });
+
   it("keeps the zoom in 1…MAX_ZOOM and the page over the box", () => {
     expect(clampView(box, frame, { zoom: 9, x: 0, y: 0 }).zoom).toBe(MAX_ZOOM);
     expect(clampView(box, frame, { zoom: 0.5, x: 40, y: 40 })).toEqual({ zoom: 1, x: 0, y: 0 });

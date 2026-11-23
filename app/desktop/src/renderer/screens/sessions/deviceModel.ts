@@ -256,6 +256,8 @@ export function flatOf(body: Body, pose: Pose) {
     outer: screenRadii.map((r) => (r + bezel) / width) as unknown as readonly [number, number, number, number],
     inner: screenRadii.map((r) => r / width) as unknown as readonly [number, number, number, number],
     island,
+    /** Front to back as a share of the frame's width (a shut Duo is both halves). */
+    depth: (body.kind === "duo" && pose.panel === "cover" ? body.depth * 2 : body.depth) / width,
     /** An open Duo's crease: down the middle, or across it on its side. */
     crease: body.kind === "duo" && pose.panel === "inner" ? (Math.abs(pose.roll) === 90 ? ("across" as const) : ("down" as const)) : undefined,
   };

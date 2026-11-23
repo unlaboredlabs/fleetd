@@ -1,9 +1,10 @@
 // A phone screen's control strip on the phone (D652), the desktop's strip in iOS's own terms: one slim glass capsule of
 // icons over the screen's actions, only the controls its machine says work there (stripOf), each named for VoiceOver.
-// Fold and location pick from an action sheet; a screenshot opens the share sheet. Each press is one screen_control.
+// Fold (an iPhone Duo's posture: closed, book, open, laptop), text size and location pick from an action sheet; a
+// screenshot opens the share sheet. Each press is one screen_control. Its last icon shows the device in 3D or flat.
 import { ActionSheetIOS, Alert, Platform, Pressable, Share, StyleSheet, View } from "react-native";
 import { useState } from "react";
-import { appearanceWord, CONTROL_WORD, foldWord, latLon, otherAppearance, PLACES, shotName, stripOf, type BrowserSession, type StripControl } from "../desktop";
+import { appearanceWord, CONTROL_WORD, latLon, otherAppearance, PLACES, POSTURE, railOf, shotName, TEXT_SIZES, type BrowserSession, type StripControl } from "../desktop";
 import { useHub } from "../hubContext";
 import { useTheme } from "../theme";
 import { Glass } from "../ui/Glass";
@@ -20,14 +21,31 @@ const ICON: Readonly<Record<Exclude<StripControl, "appearance">, IconName>> = {
   shake: "shake",
   location: "location",
   screenshot: "screenshot",
+  text_size: "textSize",
 };
 
-export function DeviceStrip({ screen, name, onChanged }: { screen: BrowserSession; name: string; onChanged: () => void }) {
+export function DeviceStrip({
+  screen,
+  name,
+  three,
+  onThree,
+  onChanged,
+}: {
+  screen: BrowserSession;
+  name: string;
+  /** The device shows in 3D; pressing the last icon shows it flat, and back. */
+  three: boolean;
+  onThree: (three: boolean) => void;
+  onChanged: () => void;
+}) {
   const t = useTheme();
   const { session } = useHub();
   const [busy, setBusy] = useState<StripControl | null>(null);
-  const groups = stripOf(screen.controls ?? [], screen.folds);
-  if (groups.length === 0) return null;
+  // The desktop toolbar's groups (strip.ts railOf): home and rotate; the look, the rest behind More; a Duo's posture.
+  const rail = railOf(screen.controls ?? [], screen.folds);
+  const look: (StripControl | "more")[] = rail.more.length === 0 ? rail.look : [...rail.look, "more"];
+  const posture: StripControl[] = rail.postures.length === 0 ? [] : ["fold"];
+  const groups = [rail.buttons, look, posture].filter((g) => g.length > 0);
 
   const press = async (control: StripControl, value?: string) => {
     haptics.tap();
@@ -64,8 +82,14 @@ export function DeviceStrip({ screen, name, onChanged }: { screen: BrowserSessio
         return void press(c, otherAppearance(screen.appearance));
       case "fold":
         return pick(
-          "Fold",
-          (screen.folds ?? []).map((f) => ({ label: `${foldWord(f)}${f === screen.fold ? " ✓" : ""}`, value: f })),
+          "Posture",
+          (screen.folds ?? []).map((f) => ({ label: `${POSTURE[f] ?? f}${f === screen.fold ? " ✓" : ""}`, value: f })),
+          (v) => void press(c, v),
+        );
+      case "text_size":
+        return pick(
+          "Text Size",
+          TEXT_SIZES.map((s) => ({ label: `${s.word}${s.value === screen.textSize ? " ✓" : ""}`, value: s.value })),
           (v) => void press(c, v),
         );
       case "location":
@@ -95,8 +119,8 @@ export function DeviceStrip({ screen, name, onChanged }: { screen: BrowserSessio
       {groups.map((g, i) => (
         <View key={g.join()} style={[styles.group, i > 0 && styles.apart]}>
           {g.map((c) => {
-            const word = c === "appearance" ? appearanceWord(screen.appearance) : CONTROL_WORD[c];
-            const icon: IconName = c === "appearance" ? (screen.appearance === "dark" ? "lightMode" : "darkMode") : ICON[c];
+            const word = c === "more" ? "More" : c === "appearance" ? appearanceWord(screen.appearance) : c === "fold" ? "Posture" : c === "rotate_left" ? "Rotate" : CONTROL_WORD[c];
+            const icon: IconName = c === "more" ? "more" : c === "appearance" ? (screen.appearance === "dark" ? "lightMode" : "darkMode") : ICON[c];
             return (
               <Pressable
                 key={c}
@@ -104,7 +128,15 @@ export function DeviceStrip({ screen, name, onChanged }: { screen: BrowserSessio
                 accessibilityLabel={word}
                 accessibilityState={{ busy: busy === c }}
                 disabled={busy === c}
-                onPress={() => onPress(c)}
+                onPress={() =>
+                  c === "more"
+                    ? pick(
+                        "More",
+                        rail.more.map((m) => ({ label: m === "location" ? "Location…" : CONTROL_WORD[m], value: m })),
+                        (v) => onPress(v as StripControl),
+                      )
+                    : onPress(c)
+                }
                 style={({ pressed }) => [styles.hit, (pressed || busy === c) && styles.pressed]}
               >
                 <Icon name={icon} size={18} color={t.label} />
@@ -113,6 +145,19 @@ export function DeviceStrip({ screen, name, onChanged }: { screen: BrowserSessio
           })}
         </View>
       ))}
+      <View style={[styles.group, styles.apart]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={three ? "Show It Flat" : "Show It in 3D"}
+          onPress={() => {
+            haptics.tap();
+            onThree(!three);
+          }}
+          style={({ pressed }) => [styles.hit, pressed && styles.pressed]}
+        >
+          <Icon name={three ? "flat" : "threeD"} size={18} color={t.label} />
+        </Pressable>
+      </View>
     </Glass>
   );
 }
