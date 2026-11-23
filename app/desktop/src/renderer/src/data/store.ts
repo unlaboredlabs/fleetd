@@ -486,7 +486,7 @@ export const applyEvent = (s: DataState, event: HubEvent): DataState => {
         // Why it is degraded, as the event says it (a runner check that answered after the snapshot); none otherwise.
         const reason = status === "degraded" ? (dataField(event, "degradedReason") ?? machine.degradedReason) : undefined;
         const cause = status !== "degraded" ? undefined : event.type === "machine.degraded" ? dataField(event, "degradedCause") : machine.degradedCause;
-        const why = { ...(reason === undefined ? {} : { degradedReason: reason }), ...(cause === "claude_login" ? { degradedCause: cause } : {}) };
+        const why = { ...(reason === undefined ? {} : { degradedReason: reason }), ...(cause === "claude_login" ? { degradedCause: "claude_login" as const } : {}) };
         next = { ...next, machines: { ...next.machines, [id]: { ...rest, status, nodeVersion, ...why } } };
       }
       break;
