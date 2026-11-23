@@ -103,6 +103,43 @@ const server = (transport: Record<string, unknown>, values: Record<string, unkno
   ...(transport.type === "stdio" ? { env: values } : { headers: values }),
 });
 
+// An address server whose address doesn't answer from the node is left out of the start (src/node/mcp_reach.ts, W818):
+// claude would wait 30 s on it before its first request. The agent hears it once, ahead of its next message, to tell
+// the person in its reply; the next message of the same claude carries nothing.
+test("a lead's MCP server that doesn't answer is left out of its start, and the agent hears it once with its next message", async () => {
+  const up = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("", { status: 405 }) });
+  const gone = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const goneUrl = `http://127.0.0.1:${gone.port}/mcp`;
+  gone.stop(true);
+  try {
+    const plain = (name: string, url: string) => ({ ...server({ type: "http", url }, []), name });
+    await ok("launch", {
+      sessionId: "s-mcp-gone",
+      projectId: "p1",
+      runtimeMode: "full-access",
+      workspace: { type: "root" },
+      prompt: "hello",
+      runId: "rg1",
+      role: "lead",
+      mcpRole: "lead",
+      mcp: { userServers: false, servers: [plain("team-docs", `http://127.0.0.1:${up.port}/mcp`), plain("devbox-tailnet", goneUrl)] },
+    });
+    await until("the first run", () => service.store.session("s-mcp-gone")?.summary.latestRun?.status === "completed");
+    const config = JSON.parse(readFileSync(join(nodeHome, "sessions", "s-mcp-gone", "mcp.json"), "utf8"));
+    expect(Object.keys(config.mcpServers)).toEqual(["team-docs", "fleetd"]);
+    // The fake host echoes what claude was sent: the note, then the message.
+    const first = service.store.session("s-mcp-gone")?.summary.latestAssistantTail ?? "";
+    expect(first).toStartWith("ok: [fleetd: this session started without the MCP server “devbox-tailnet”: it didn't answer within 3 s");
+    expect(first).toEndWith("\n\nhello");
+    await ok("send", { sessionId: "s-mcp-gone", runId: "rg2", text: "again" });
+    await until("the second run", () => service.store.session("s-mcp-gone")?.summary.latestRun?.id === "rg2" && service.store.session("s-mcp-gone")?.summary.latestRun?.status === "completed");
+    expect(service.store.session("s-mcp-gone")?.summary.latestAssistantTail).toBe("ok: again");
+    await ok("stop", { sessionId: "s-mcp-gone" });
+  } finally {
+    up.stop(true);
+  }
+});
+
 test("an MCP server's secrets are kept sealed in the Rust node's file, kept or replaced all at once", async () => {
   const missing = await ok("mcp_test", { server: server(script()) });
   expect(missing).toEqual({ kind: "mcp_tested", tools: [], error: "this machine doesn't hold its TOKEN: save the server again" });

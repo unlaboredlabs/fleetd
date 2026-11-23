@@ -49,6 +49,7 @@ import { privateByName } from "../place/endpoint.ts";
 import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
 import * as mcp from "../actions/mcp.ts";
+import * as reach from "../mcp_reach.ts";
 import { fallback as onepasswordFallback } from "../actions/onepassword.ts";
 import { CallRefusal } from "../actions/refusal.ts";
 import { forgetSignins, signinsKept } from "../actions/signins.ts";
@@ -406,6 +407,8 @@ export class SessionService {
   #active = new Set<string>();
   #announced = new Map<string, number>();
   #spawning = new Map<string, Promise<unknown>>();
+  /** What a start's `#spec` left out of its MCP servers, for the note its `#spawn` sends ahead (../mcp_reach.ts). */
+  #mcpSkipped = new Map<string, string>();
   /** Sessions launched ahead (`SessionLaunch.ahead`) whose claude is still starting: a send meanwhile joins that start. */
   #ahead = new Set<string>();
   /** Launches under way, by session: a retry that comes while one fetches or makes its worktree shares its outcome. */
@@ -1485,8 +1488,10 @@ export class SessionService {
     if (!existsSync(row.local.cwd)) throw invalid(`the session's workspace ${row.local.cwd} is missing`);
     const spec = await this.#spec(row, resume, env);
     // The agent hears that its worktree was rebuilt before anything else, so it checks what is left; and a claude
-    // without the system prompt file, its rules.
-    let note = rebuilt;
+    // without the system prompt file, its rules; then which MCP servers this start left out (`#spec`).
+    const skipped = this.#mcpSkipped.get(id);
+    this.#mcpSkipped.delete(id);
+    let note = [rebuilt, skipped].filter((t): t is string => !!t).join("\n\n") || undefined;
     // Antigravity takes the system prompt in its session/new, never in a note.
     if (this.#noPromptFile && row.local.systemPrompt && !agy) {
       delete spec.systemPrompt;
@@ -1610,7 +1615,20 @@ export class SessionService {
     // secrets, so it is written as the node's secret files are (0600).
     const sessionMcp = mcp.sessionConfig(this.home, mcp.kept(dir), fleetdServer(this.config.fleetd, role, sock, id), id, relayServer(this.config.fleetd, sock, id));
     const mcpConfig = join(dir, "mcp.json");
-    writeAtomic(mcpConfig, sessionMcp.json);
+    // A server reached by address that doesn't answer from here is left out of this start, rather than claude waiting
+    // 30 s on it before its first request, and the agent hears it with its next message (../mcp_reach.ts). Not for a
+    // hosted session: its claude runs in a box, whose reach isn't this machine's.
+    let mcpJson = sessionMcp.json;
+    if (hostedOf(row.local.hosted) === undefined) {
+      const servers = (JSON.parse(sessionMcp.json) as { mcpServers: Record<string, unknown> }).mcpServers;
+      const skipped = await reach.unanswered(servers);
+      if (skipped.length) {
+        mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, skipped) })}\n`;
+        this.#mcpSkipped.set(id, reach.skippedNote(skipped));
+        console.log(`${nowIso()} WARN MCP server left out of this start: it didn't answer within ${reach.MCP_REACH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(skipped)}}`);
+      }
+    }
+    writeAtomic(mcpConfig, mcpJson);
     const env: Env = { ...base };
     // The session's Claude account in place of the machine's own login and gateway, read at each start. One the node
     // no longer holds fails the start: it never runs on the machine's login instead. The machine's own settings' `env`
