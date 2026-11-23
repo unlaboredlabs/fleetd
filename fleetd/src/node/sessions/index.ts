@@ -1637,22 +1637,31 @@ export class SessionService {
       delete row.summary.mcpHeavy;
       const lead = role === "lead" || role === "assistant";
       // A lead on Antigravity goes without the biggest of the bot's servers when theirs and fleetd's own tools together
-      // are more than agy shows its model (../agy_budget.ts); its agents keep them.
+      // are more than agy shows its model, and without any that didn't list its tools in time, whose size is unknown
+      // (../agy_budget.ts): it is left out as one that doesn't answer is, and weighed again at the next start. Its
+      // agents keep them all.
       let heavy: string[] = [];
+      let unweighed: string[] = [];
+      let looked = reach.addressed(servers).map((s) => s.name);
       if (lead && antigravity.agyModel(row.summary.model) !== undefined) {
         const io = { fetch, spawn: spawnGroup, cwd: existsSync(row.local.cwd) ? row.local.cwd : this.home, env: base, version: VERSION };
-        heavy = await budget.overBudget(reach.without(servers, skipped), (server) => listTools(server, io, budget.WEIGH_MS));
+        const weighing = reach.without(servers, skipped);
+        ({ left: heavy, unweighed } = await budget.overBudget(weighing, (server) => listTools(server, io, budget.WEIGH_MS)));
+        // A server weighed this start answered, though a heavy one stays off: the chat says so of it instead.
+        looked = [...new Set([...looked, ...Object.keys(weighing)])].filter((n) => !unweighed.includes(n) && !heavy.includes(n));
       }
+      const down = [...skipped, ...unweighed];
       if (lead) {
-        row.summary.mcpSkipped = skipped;
+        row.summary.mcpSkipped = down;
         row.summary.mcpChange = {
-          ...reach.startChange(before, skipped, reach.addressed(servers).map((s) => s.name)),
+          ...reach.startChange(before, down, looked),
           ...(heavy.length ? { heavy: heavy.filter((n) => !heavyBefore.includes(n)) } : {}),
         };
         row.summary.mcpSkippedAt = nowIso();
         if (heavy.length) row.summary.mcpHeavy = heavy;
       }
-      if (skipped.length || heavy.length) mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, [...skipped, ...heavy]) })}\n`;
+      if (down.length || heavy.length) mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, [...down, ...heavy]) })}\n`;
+      if (unweighed.length) console.log(`${nowIso()} WARN MCP server left out of this Antigravity lead's start: it didn't list its tools within ${budget.WEIGH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(unweighed)}}`);
       if (skipped.length) {
         if (!lead) this.#mcpSkipped.set(id, reach.skippedNote(skipped));
         console.log(`${nowIso()} WARN MCP server left out of this start: it didn't answer within ${reach.MCP_REACH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(skipped)}}`);

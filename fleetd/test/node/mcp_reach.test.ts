@@ -90,6 +90,6 @@ test("a start's change from the one before: newly down, and back only when looke
   // The review of #2090: "docs" said down, then removed (never back), then re-added and still down (down again).
   expect(startChange(["docs"], [], ["crm"])).toEqual({ down: [], back: [] });
   expect(startChange([], ["docs"], ["crm", "docs"])).toEqual({ down: ["docs"], back: [] });
-  expect(skippedLine(["docs"])).toBe("The MCP server “docs” didn't answer, so its tools are off until the next start.");
+  expect(skippedLine(["docs"])).toBe("The MCP server “docs” didn't answer in time, so its tools are off until the next start.");
   expect(backLine(["a", "b"])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
 });

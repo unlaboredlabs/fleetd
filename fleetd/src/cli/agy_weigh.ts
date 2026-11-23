@@ -1,7 +1,8 @@
 // `fleetd agy-weigh`: an Antigravity lead's MCP servers weighed as the node weighs them at its start
 // (src/node/agy_budget.ts), where no node is: fleetd cloud runs it in the lead's box, where the bot's servers are
 // reached. stdin holds the session's mcp.json (`{"mcpServers": {...}}`, values included); stdout gets one JSON line,
-// `{"left":[names]}`: the servers the lead goes without so fleetd's own tools fit agy's budget, the biggest first. A
+// `{"left":[names],"unweighed":[names]}`: the servers the lead goes without so fleetd's own tools fit agy's budget,
+// the biggest first, and those that didn't list their tools in time, which it goes without too. A
 // stdio server starts in this command's directory with its environment plus the server's env. Exit 0 when it weighed,
 // 2 on bad input. It takes nothing on argv, and no value of a server's reaches stderr.
 import { VERSION } from "../shared/version.ts";
@@ -21,8 +22,8 @@ export async function run(argv: string[]): Promise<number> {
   }
   const env = Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined));
   const io = { fetch, spawn: spawnGroup, cwd: process.cwd(), env, version: VERSION };
-  const left = await overBudget(servers, (server) => listTools(server, io, WEIGH_MS));
-  await Bun.write(Bun.stdout, `${JSON.stringify({ left })}\n`);
+  const weighed = await overBudget(servers, (server) => listTools(server, io, WEIGH_MS));
+  await Bun.write(Bun.stdout, `${JSON.stringify(weighed)}\n`);
   return 0;
 }
 

@@ -1,5 +1,6 @@
 // An Antigravity lead's start weighs the bot's MCP servers (src/node/agy_budget.ts): fleetd's own aside, each listed,
-// one that can't be listed counting nothing, and the biggest left out until fleetd's tools all fit agy's budget.
+// one that can't be listed left out (its size unknown), and the biggest left out until fleetd's tools all fit agy's
+// budget.
 import { expect, test } from "bun:test";
 import { fleetdLeadBytes, overBudget, resolvedOf } from "../../src/node/agy_budget.ts";
 import type { Resolved } from "../../src/node/actions/mcp_probe.ts";
@@ -13,7 +14,7 @@ test("an mcpServers entry reaches the probe as its transport and values", () => 
   expect(resolvedOf("c", {})).toBeUndefined();
 });
 
-test("the biggest servers go, fleetd's own is never weighed, and one that can't list counts nothing", async () => {
+test("the biggest servers go, fleetd's own is never weighed, and one that can't list goes too, as unweighed", async () => {
   const listed: string[] = [];
   const by: Record<string, unknown[]> = { paper: tools(50, 1000), notes: tools(2, 10) };
   const list = async (s: Resolved) => {
@@ -22,8 +23,12 @@ test("the biggest servers go, fleetd's own is never weighed, and one that can't 
     return by[s.name] ?? [];
   };
   const entry = { type: "stdio", command: "x" };
-  expect(await overBudget({ paper: entry, notes: entry, down: entry, fleetd: entry }, list)).toEqual(["paper"]);
+  expect(await overBudget({ paper: entry, notes: entry, down: entry, fleetd: entry }, list)).toEqual({ left: ["paper"], unweighed: ["down"] });
   expect(listed.sort()).toEqual(["down", "notes", "paper"]);
-  expect(await overBudget({ notes: entry }, list)).toEqual([]);
+  expect(await overBudget({ notes: entry }, list)).toEqual({ left: [], unweighed: [] });
+  // One that can't list doesn't count toward the budget either: the rest fit without it.
+  expect(await overBudget({ down: entry, notes: entry }, list)).toEqual({ left: [], unweighed: ["down"] });
+  // An entry with neither a command nor an address can't be listed.
+  expect(await overBudget({ odd: {} }, list)).toEqual({ left: [], unweighed: ["odd"] });
   expect(fleetdLeadBytes()).toBeLessThanOrEqual(FLEETD_TOOL_SHARE);
 });

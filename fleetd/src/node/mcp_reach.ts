@@ -54,7 +54,7 @@ const quoted = (names: readonly string[]) => names.map((n) => `“${n}”`).join
 /** What a lead's chat says, in fleetd's own words, when its start left servers out: one plain line, once per start. */
 export function skippedLine(names: readonly string[]): string {
   const one = names.length === 1;
-  return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
+  return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer in time, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
 /** What a lead's chat says when its start on Antigravity went without servers (./agy_budget.ts): one plain line, once. */

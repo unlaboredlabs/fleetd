@@ -2,13 +2,15 @@
 // tools, every server's together, and hides the biggest past it (runner/antigravity_spec.ts): a bot's own server with
 // many tools (Paper's are 55 KB) pushed fleetd's brief, spawn_agent and ten more out of a lead on Gemini (W844). So a
 // lead's start lists each of the bot's servers' tools and goes without the biggest servers, as few as it takes, so
-// that fleetd's own tools all fit; agents keep them. The hub's chat says which, once (../mcp_reach.ts `heavyLine`).
+// that fleetd's own tools all fit; agents keep them. A server that doesn't list its tools in time goes too, as one that
+// doesn't answer does, since its size is unknown: the next start weighs it again. The hub's chat says which, once
+// (../mcp_reach.ts `heavyLine`, `skippedLine`).
 import { toolList } from "../cli/agent_mcp/tools.ts";
 import type { Resolved } from "./actions/mcp_probe.ts";
 import { FLEETD_SERVER } from "./actions/mcp.ts";
 import { leftOut, type ListedTool, toolBytes } from "./runner/antigravity_spec.ts";
 
-/** How long a server has to list its tools before it counts as none: agy would wait on it too. */
+/** How long a server has to list its tools before the start goes on without it. */
 export const WEIGH_MS = 10_000;
 
 type Entries = Record<string, unknown>;
@@ -30,17 +32,22 @@ export function resolvedOf(name: string, entry: unknown): Resolved | undefined {
 
 const isTool = (t: unknown): t is ListedTool => typeof (t as { name?: unknown } | null)?.name === "string";
 
-/** The servers of `servers` (fleetd's own aside) a lead on Antigravity goes without, the biggest first; `list` gives
- * a server's tools, and one it can't list counts nothing. */
-export async function overBudget(servers: Entries, list: (server: Resolved) => Promise<unknown[]>, fleetdBytes = fleetdLeadBytes()): Promise<string[]> {
+/** The servers of `servers` (fleetd's own aside) a lead on Antigravity goes without: those `list` couldn't list
+ * (`unweighed`: it threw, or ran past its time), and of the rest the biggest, as few as it takes (`left`). */
+export async function overBudget(
+  servers: Entries,
+  list: (server: Resolved) => Promise<unknown[]>,
+  fleetdBytes = fleetdLeadBytes(),
+): Promise<{ left: string[]; unweighed: string[] }> {
   const weighed = await Promise.all(
     Object.entries(servers)
       .filter(([name]) => name.toLowerCase() !== FLEETD_SERVER)
       .map(async ([name, entry]) => {
         const server = resolvedOf(name, entry);
-        const tools = server ? await list(server).catch(() => []) : [];
-        return { name, bytes: tools.filter(isTool).reduce((sum, t) => sum + toolBytes(t), 0) };
+        const tools = server ? await list(server).catch(() => undefined) : undefined;
+        return { name, bytes: tools?.filter(isTool).reduce((sum, t) => sum + toolBytes(t), 0) };
       }),
   );
-  return leftOut(fleetdBytes, weighed);
+  const sized = weighed.filter((s): s is { name: string; bytes: number } => s.bytes !== undefined);
+  return { left: leftOut(fleetdBytes, sized), unweighed: weighed.filter((s) => s.bytes === undefined).map((s) => s.name) };
 }
