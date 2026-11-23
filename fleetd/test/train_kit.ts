@@ -422,6 +422,7 @@ export class FakeGh implements GhRunner {
       return ok([{ name: label }]);
     }
     if (a === "issues" && c === "labels" && method === "DELETE") {
+      if (this.unreadable.includes("unlabel")) return httpError(502, "Bad Gateway");
       const p = this.pulls.get(Number(b));
       const name = (parts[3] ?? "").replaceAll("%3A", ":");
       if (!p || !p.labels.includes(name)) return httpError(404, "Label does not exist");

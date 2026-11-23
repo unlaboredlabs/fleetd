@@ -1832,7 +1832,9 @@ export class Train {
       console.info(`train: a PR labelled ${TRAIN_LABEL} goes on the train under ${workstreamId}: ${change.changeId} ${prUrl}`);
     } catch (error) {
       const e = error as TrainError;
-      if (e.code === "unavailable") {
+      // GitHub away for a moment, in the train's enqueue (a TrainError's code) or in its own calls here, the comment
+      // and the label's removal (a GhError's kind): nothing is wrong with the PR, and the next pass takes it again.
+      if (e.code === "unavailable" || (error instanceof GhError && error.kind === "unavailable")) {
         this.readyHeads.delete(key);
         return;
       }
