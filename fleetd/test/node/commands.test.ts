@@ -89,6 +89,24 @@ test("an order: sink becomes one variable of the order's agents, sourced from a 
   }
 });
 
+test("an order's variable delivered after a session started is in its next command's shell", () => {
+  const home = tempHome();
+  try {
+    const box = loadOrCreateBoxKey(home.dir);
+    const ctx: SecretsContext = { machineId: "devbox", roots: [home.dir], home: home.dir, boxKey: box };
+    const seal = (v: string) => Buffer.from(box.seal(new TextEncoder().encode(v))).toString("base64");
+    deliverSecret({ id: "o1", sink: "order:devbox:W13", sealed: seal("old"), secretKey: "x", envName: "OLD_KEY", projectId: "p1" }, ctx);
+    // The session's CLAUDE_ENV_FILE, written at its start; claude sources it ahead of each command.
+    const envFile = join(home.dir, "order-env.sh");
+    writeFileSync(envFile, orderEnvFile(home.dir, "p1", "W13")!);
+    deliverSecret({ id: "o2", sink: "order:devbox:W13", sealed: seal("dummy-new"), secretKey: "x", envName: "NEW_KEY", projectId: "p1" }, ctx);
+    const out = Bun.spawnSync(["sh", "-c", `. ${envFile}; echo "$OLD_KEY/$NEW_KEY"`], { env: { PATH: process.env.PATH ?? "" } });
+    expect(out.stdout.toString()).toBe("old/dummy-new\n");
+  } finally {
+    home.done();
+  }
+});
+
 test("sinks parse as the contracts' do, and env files keep their other lines", () => {
   expect(parseSecretSink("env:devbox:/a/b")).toEqual({ kind: "env", machineId: "devbox", path: "/a/b" });
   expect(parseSecretSink("file:devbox:/a/../b")).toBeUndefined();
