@@ -231,9 +231,21 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
       return;
     }
     if (found.end.kind === "own") {
-      if (carriedOn.has(key)) return;
+      const carries = !carriedOn.has(key);
+      // A turn the stall watchdog stopped: the chat says so, once per run, never "working" with nothing (the cloud's
+      // leads/follow.ts the same).
+      const stalled = e.data as { reason?: unknown; runId?: unknown } | undefined;
+      if (e.type === "thread.failed" && stalled?.reason === "stalled") {
+        const run = typeof stalled.runId === "string" ? stalled.runId : String(e.seq);
+        chat(hub).add(found.project, { author: "system", text: stalledLine(carries), source: `lead_stalled:${run}` });
+      }
+      if (!carries) return;
       carriedOn.add(key);
     }
     area.wakes.trigger(found.project, { kind: "line", line: "cut_off", text: found.end.text });
   });
 }
+
+/** The chat's line for a lead's turn the stall watchdog stopped: that it carries on by itself, or what starts it again. */
+export const stalledLine = (carriesOn: boolean): string =>
+  `The lead stopped making progress, so fleetd stopped its turn. ${carriesOn ? "It carries on by itself." : "Your next message starts it again."}`;
