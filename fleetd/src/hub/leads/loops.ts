@@ -22,6 +22,7 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
+import { skippedLine } from "../../node/mcp_reach.ts";
 import { end, notStartedLine, signedOutLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
@@ -56,6 +57,21 @@ function follow(hub: Hub, types: HubEventType[], fn: (e: import("../../shared/co
 }
 
 /** Ends the project's live work if the cache no longer has the project; a no-op otherwise (removals.rs `reconcile`). */
+/**
+ * A lead's start left out MCP servers that didn't answer (node/mcp_reach.ts, its summary's `mcpSkipped`): its chat says
+ * which in a line of fleetd's own when its run starts, once per start (the line's source is the start's), never left
+ * to the lead to relay. A run of any other thread, or a start that left none out, says nothing.
+ */
+export function mcpSkipped(hub: Hub, e: import("../../shared/contracts.ts").HubEvent): void {
+  const data = e.data as Record<string, unknown> | undefined;
+  const thread = e.threadId ?? (typeof data?.threadId === "string" ? data.threadId : undefined);
+  if (e.machineId === undefined || thread === undefined) return;
+  const lead = leads(hub).records.leadsList().find((l) => l.projectRef.machineId === e.machineId && l.threadId === thread);
+  const skipped = lead ? executors(hub).tracked({ machineId: e.machineId, threadId: thread })?.mcpSkipped : undefined;
+  if (!lead || !skipped) return;
+  chat(hub).add(lead.projectRef, { author: "system", text: skippedLine(skipped[0]), source: `mcp_skipped:${thread}:${skipped[1] ?? ""}` });
+}
+
 export async function reconcile(hub: Hub, r: ProjectRef): Promise<void> {
   if (store(hub).projectGet(r)) return;
   const tasks = leadWiring(hub).hooks.tasks;
@@ -183,6 +199,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   const retryLater = (r: ProjectRef, lead: StoredLead, seq?: number) =>
     retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
   for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
+  follow(hub, ["thread.started"], (e) => mcpSkipped(hub, e));
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {
