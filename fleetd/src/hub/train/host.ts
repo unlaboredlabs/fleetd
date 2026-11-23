@@ -1,7 +1,7 @@
 // What the train and the review gate take from other hub areas: tasks,
 // workstreams, the event log and wakes. One port, so the logic tests run on a fake and the hub provides it from its
 // services (`HubHost`, hub_host.ts).
-import type { Merger, MergeMode, ProjectRef, RiskRules } from "../../shared/contracts.ts";
+import type { Brief, Merger, MergeMode, ProjectRef, RiskRules } from "../../shared/contracts.ts";
 
 /** The parts of a Task the train and reviews read. */
 export type TaskView = {
@@ -27,6 +27,8 @@ export type WorkstreamView = {
   hasBrief: boolean;
   /** Neither done nor stopped: tasks, reviewers included, run only for an open workstream. */
   open: boolean;
+  /** Opened by the train for a PR's `fleetd-train` label (label.ts): it closes when the PR merges or closes. */
+  fromLabel?: boolean;
 };
 
 export type EventView = { seq: number; eventType: string; data: unknown };
@@ -95,6 +97,13 @@ export interface TrainHost {
   issueFixes?(workstreamId: string, repo: string): string | undefined;
   /** Opens an order for the project's lead (channel `train`) with `text`; the same `requestId` finds the first. */
   openOrder(projectRef: ProjectRef, text: string, requestId: string): Promise<string>;
+  /**
+   * Opens an order with its brief set at once, for a PR labelled `fleetd-train` (label.ts): the same `requestId` finds
+   * the first. Absent: the train takes no PR by its label.
+   */
+  openBriefedOrder?(projectRef: ProjectRef, text: string, requestId: string, brief: Brief): Promise<string>;
+  /** Closes an order as its lead's `close` does; throws its refusal. */
+  closeOrder?(projectRef: ProjectRef, workstreamId: string, reason: string): Promise<void>;
   /** Whether the work ledger's landing scanner watches `repo`'s `base`. */
   landingsWatched(repo: string, base: string): boolean;
   /** Where the train's state and CI spans go; none in tests. */

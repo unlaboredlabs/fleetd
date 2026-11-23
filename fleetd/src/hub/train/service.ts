@@ -13,7 +13,7 @@ import * as back from "./back.ts";
 import * as batch from "./batch.ts";
 import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, type Mine, ownTests, ownText, rerunFailed } from "./flaky.ts";
-import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
+import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type OpenPull, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
 import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
@@ -26,7 +26,7 @@ import { BEHIND, Lanes } from "./lanes.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
-import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, WAIT_BACK, WAIT_BLOCKED, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
+import { ChangeRecords, DRAFT, errorText, HEAD_STATES, isDraft, type ListFilter, parsePrUrl, TERMINAL_STATES, WAIT_BACK, WAIT_BLOCKED, WAIT_OWN_RED, WAIT_PERSON, WAIT_REGEN, WAIT_UNSTARTED, WAITING } from "./records.ts";
 import { conflicted, forgetRegens, REGEN_RUNNING, type Regenerate } from "./regen.ts";
 import { repoChecks, type Cached as RepoChecksCached } from "./repo_checks.ts";
 import * as reverts from "./reverts.ts";
@@ -54,6 +54,7 @@ import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
+import { labelBrief, TRAIN_LABEL, trainLabelled } from "./label.ts";
 import { behind } from "./up_to_date.ts";
 import { repoVerifying, verifying } from "./verify.ts";
 import { fixing, rerunning, watchMerge, watchPass } from "./watch.ts";
@@ -185,6 +186,8 @@ const CI_CONFIG_TTL_MS = 10 * 60_000;
 const CI_HISTORY = 10;
 /** The error code of a task result's PR that already merged: nothing to enqueue, and nothing to tell the lead. */
 const MERGED = "merged";
+/** The `lastError` of a Change whose PR was closed on GitHub. */
+const CLOSED = "was closed";
 const CI_FIRST_WAIT_MS = 2000;
 const MERGE_RETRY_FIRST_MS = 15_000;
 const MERGE_RETRY_MAX_MS = 5 * 60_000;
@@ -451,6 +454,7 @@ export class Train {
         `${changed.changeId} ${was} → ${changed.state}: ${changed.repo}#${changed.prNumber}${reason !== undefined ? ` (${reason})` : ""}`,
         data,
       );
+      if (TERMINAL_STATES.includes(changed.state) && !TERMINAL_STATES.includes(was)) this.closeLabelled(changed);
     }
     return changed;
   }
@@ -1380,7 +1384,7 @@ export class Train {
     const pull = await this.github.pull(repo, change.prNumber);
     this.guardBase(repo, pull.base.ref);
     if (pull.merged) return this.mergedOnGitHub(change, pull);
-    if (pull.state !== "open") return this.abandon(change, "was closed");
+    if (pull.state !== "open") return this.abandon(change, CLOSED);
     if (pull.head.sha.toLowerCase() !== change.headSha) return this.readyMoved(change, pull);
     // A Change in review goes only as a re-review, which runs alongside its CI.
     const rebasing = this.update(change.changeId, ["ready", "reviewing"], (c) => ({ ...c, state: "rebasing" }));
@@ -1593,7 +1597,7 @@ export class Train {
       const moved = pull.head.sha.toLowerCase() !== change.headSha;
       const inLine = !moved && !pull.draft && ["queued", "reviewing", "ready"].includes(change.state);
       if (pull.merged) await this.mergedOnGitHub(change, pull);
-      else if (pull.state !== "open") await this.abandon(change, "was closed");
+      else if (pull.state !== "open") await this.abandon(change, CLOSED);
       else if (change.state === "queued" && pull.draft) this.holdDraft(change);
       else if (inLine && conflicts(pull)) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);
       else if (change.state === "ready") {
@@ -1759,7 +1763,9 @@ export class Train {
     if (last !== undefined && now - last < this.options.readyEveryMs) return;
     const projects = [projectRef, ...this.host.repoProjects(repo).filter((p) => !sameRef(p, projectRef))];
     const writers = projects.flatMap((p) => this.host.writers(p).map(([taskId, branch]) => [p, taskId, branch] as const));
-    if (writers.length === 0) return;
+    // A PR labelled `fleetd-train` goes too (label.ts), writers or not, where the hub can open its order.
+    const byLabel = this.host.openBriefedOrder !== undefined;
+    if (writers.length === 0 && !byLabel) return;
     this.lastReadyCheck.set(repo, now);
     let pulls;
     try {
@@ -1769,7 +1775,10 @@ export class Train {
     }
     for (const pull of pulls.filter((p) => !p.draft)) {
       const writer = writers.find(([, taskId, branch]) => writersBranch(taskId, branch, pull.head.ref));
-      if (!writer) continue;
+      if (!writer) {
+        if (byLabel && trainLabelled(pull.labels)) await this.labelReady(repo, projectRef, pull);
+        continue;
+      }
       // A fork's PR is a person's, whatever its branch is called.
       if (pull.head.repo?.full_name.toLowerCase() !== repo) continue;
       if (this.records.openFor(repo, pull.number)) continue;
@@ -1792,6 +1801,54 @@ export class Train {
         await this.wakeLead(writer[0], prRefused(prUrl, writer[1], e.message, e.fix));
       }
     }
+  }
+
+  /**
+   * A ready PR no task opened, labelled `fleetd-train` (label.ts): its own order, its brief made from the PR, opened in
+   * the train's bot once per PR, then the PR on the train under it, once per head. A fork's PR never goes.
+   */
+  private async labelReady(repo: string, projectRef: ProjectRef, pull: OpenPull): Promise<void> {
+    if (pull.head.repo?.full_name.toLowerCase() !== repo) return;
+    if (this.records.openFor(repo, pull.number)) return;
+    if (this.records.landedAt(repo, pull.number, pull.head.sha)) return;
+    const key = `${repo}\u0000${pull.number}\u0000${pull.head.sha.toLowerCase()}`;
+    if (this.readyHeads.has(key)) return;
+    this.readyHeads.add(key);
+    const prUrl = `https://github.com/${repo}/pull/${pull.number}`;
+    let workstreamId: string | undefined;
+    try {
+      const text = `${pull.title.trim() || prUrl}\n\nA ready pull request labelled ${TRAIN_LABEL}: ${prUrl}`;
+      workstreamId = await this.host.openBriefedOrder!(projectRef, text, `train-label:${repo}#${pull.number}`, labelBrief(pull, prUrl));
+      const change = await this.enqueue(projectRef, { prUrl, workstreamId });
+      console.info(`train: a PR labelled ${TRAIN_LABEL} goes on the train under ${workstreamId}: ${change.changeId} ${prUrl}`);
+    } catch (error) {
+      const e = error as TrainError;
+      if (e.code === "unavailable") {
+        this.readyHeads.delete(key);
+        return;
+      }
+      // An order opened for a PR the train then refused is left open by nothing: it closes now, saying why.
+      if (workstreamId !== undefined && !this.records.openFor(repo, pull.number)) {
+        await this.host.closeOrder?.(projectRef, workstreamId, `${prUrl} didn't go on the train: ${e.message}`).catch(() => {});
+      }
+      await this.wakeLead(projectRef, prRefused(prUrl, "its fleetd-train label", e.message, e.fix));
+    }
+  }
+
+  /** A labelled PR's order (label.ts) closes once its Change ends: merged, or its PR closed. Never throws. */
+  private closeLabelled(change: Change): void {
+    if (!this.host.closeOrder) return;
+    const w = this.host.workstream(change.workstreamId);
+    if (!w?.fromLabel || !w.open) return;
+    // Its PR closed: reopened at the same head, it goes on the train again, under a new order. Any other end (its order
+    // stopped, the train's refusal) keeps it off at that head.
+    if (change.state === "abandoned" && change.lastError === CLOSED) {
+      this.readyHeads.delete(`${change.repo}\u0000${change.prNumber}\u0000${change.headSha.toLowerCase()}`);
+    }
+    const why = change.state === "merged" ? `${change.prUrl} merged` : `${change.prUrl} left the train (${change.state}${change.lastError ? `: ${change.lastError}` : ""})`;
+    this.host.closeOrder(change.projectRef, change.workstreamId, why).catch((error: unknown) => {
+      console.warn(`train: ${change.workstreamId}, ${change.prUrl}'s order, not closed: ${(error as Error).message}`);
+    });
   }
 
   /** After a restart: a Change being merged is finished if GitHub merged it, else put back. CI in flight goes on. */

@@ -56,6 +56,25 @@ export class Workstreams {
     return this.create(input, true);
   }
 
+  /**
+   * An order opened with its brief at once, no intent wake (the train's, for a PR labelled `fleetd-train`). Once per
+   * clientRequestId while that order is open; after it closed (its PR closed, then reopened), a new one. A stopped
+   * one is final: refused.
+   */
+  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string } {
+    for (let n = 1; ; n++) {
+      const { workstreamId } = this.open(n === 1 ? input : { ...input, clientRequestId: `${input.clientRequestId}#${n}` });
+      const w = this.records.workstreamGet(workstreamId);
+      // A person stopped it: that is final for its PR, which stays off the train until its label goes.
+      if (w?.state === "stopped") {
+        throw new ToolError("invalid", `${workstreamId}, this pull request's order, was stopped, so it stays off the train.`, "Its label does nothing more: open a new pull request to put the change on the train again.");
+      }
+      if (w && isClosed(w.state)) continue;
+      this.briefCreate(input.projectRef, workstreamId, brief);
+      return { workstreamId };
+    }
+  }
+
   /** A `brief` without a workstream opens one: the same draft, with no intent wake. `asked` is a project message's handle. */
   open(input: IntakeInput, asked?: string): { workstreamId: string } {
     return this.create(input, false, asked);
@@ -170,6 +189,8 @@ export const workstreams = (hub: Hub) => hub.area("lead_workstreams", (h) => new
 export type Intake = {
   intake(input: IntakeInput): { workstreamId: string };
   submit(input: IntakeInput): { workstreamId: string };
+  /** Opens an order with its brief set at once, no intent wake (the train's for a labelled PR): `Workstreams.openBriefed`. */
+  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string };
   close(r: ProjectRef, workstreamId: string, reason: string, by: string): Promise<{ workstreamId: string; state: WorkstreamState; next: string }>;
 };
 
@@ -178,5 +199,6 @@ export const intake = (hub: Hub) =>
   hub.area<Intake>("intake", (h) => ({
     intake: (input) => workstreams(h).intake(input),
     submit: (input) => workstreams(h).intake(input),
+    openBriefed: (input, brief) => workstreams(h).openBriefed(input, brief),
     close: (r, id, reason, by) => workstreams(h).close(r, id, reason, by),
   }));
