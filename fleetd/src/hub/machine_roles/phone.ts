@@ -30,6 +30,12 @@ import { macMachine } from "./mac.ts";
 import { endPlace, newKey, type Place, runnerOf, runners, simPlace } from "./places.ts";
 import { WAIT_MS } from "./screen_rules.ts";
 
+/**
+ * How often a start that waits in the Mac's line asks again, and how often its place's start moves to now while it
+ * waits (a sim place with no screen yet is pruned past START_MS, and a wait runs up to WAIT_MS); tests shorten them.
+ */
+export const asking = { everyMs: ASK_EVERY, keepMs: 30_000 };
+
 /** How long a person's control waits for its machine: a fold or a screenshot takes seconds. */
 export const CONTROL_WAIT = 45_000;
 
@@ -181,9 +187,19 @@ export async function followSim(
   done: (outcome: { session: BrowserSession } | { error: string }) => void,
 ): Promise<void> {
   const until = hub.clock.now() + WAIT_MS;
+  // Its place is kept from the prune until the Mac reports its screen: the Mac reports it under the place's key.
+  const keep = setInterval(() => {
+    if (hub.shutdown.signal.aborted) return;
+    hub.db.conn
+      .query(
+        `UPDATE session_places SET started_ms = ?2 WHERE place_id = ?1 AND ended_ms IS NULL
+           AND NOT EXISTS (SELECT 1 FROM browser_sessions b WHERE b.session_id = session_places.session_id)`,
+      )
+      .run(start.place.key, hub.clock.now());
+  }, asking.keepMs);
   try {
     for (let first = true; ; first = false) {
-      if (!first) await Bun.sleep(ASK_EVERY);
+      if (!first) await Bun.sleep(asking.everyMs);
       // The hub stopping: the Mac's line forgets the person by itself (queue.ts GONE).
       if (hub.shutdown.signal.aborted) return;
       if (gone()) {
@@ -198,8 +214,12 @@ export async function followSim(
     }
   } catch (e) {
     if (hub.shutdown.signal.aborted) return;
+    // A simulator the Mac lent meanwhile (its screen not reported, a step that failed after it) goes back.
+    await macStep(hub, start, { step: "sim_end" }).catch(() => {});
     hub.db.transaction((c) => endPlace(c, start.place.key, hub.clock.now()));
     done({ error: (e as Error).message });
+  } finally {
+    clearInterval(keep);
   }
 }
 
