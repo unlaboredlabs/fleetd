@@ -148,8 +148,9 @@ An optional file in a repo naming a check that fleetd's writers must pass before
 
 3. fleetd refuses a writer's push of any other tree, with what to do. `--no-verify` doesn't get around it.
 
-On a fleetd machine, writers run the check as `fleetd-heavy <check>`, so it waits for one of the machine's
-[heavy-run slots](/docs/machines#fair-share). A check can also take one itself, which covers a person's runs too:
+On a fleetd machine, writers run `fleetd-heavy <check>`, or `fleetd-heavy <background>` then `wait`, so the check
+waits for one of the machine's [heavy-run slots](/docs/machines#fair-share). The `background` start and the `wait` take
+no slot of their own, so a check with a `background` command should take its slot itself, as fleetd's does:
 
 ```sh
 if [ -z "${FLEETD_HEAVY_SLOT:-}" ] && command -v fleetd-heavy >/dev/null; then exec fleetd-heavy "$0" "$@"; fi

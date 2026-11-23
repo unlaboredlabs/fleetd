@@ -76,16 +76,18 @@ function machine(heavySlots: number) {
   const started = () => (existsSync(join(home, "log")) ? readFileSync(join(home, "log"), "utf8").trim().split("\n") : []);
   // Through the wrapper agents run, as they do: `fleetd-heavy <command>`.
   const wrapper = install(home, [process.execPath, SRC]);
-  const start = (name: string): Check => {
-    const proc = Bun.spawn([wrapper, script, name], { env, stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+  // `fleetd-heavy <argv>` in `cwd`.
+  const run = (name: string, argv: string[], cwd?: string): Check => {
+    const proc = Bun.spawn([wrapper, ...argv], { cwd, env: { ...env, WRAPPER: wrapper }, stdin: "ignore", stdout: "ignore", stderr: "pipe" });
     let err = "";
     void (async () => {
       for await (const chunk of proc.stderr) err += new TextDecoder().decode(chunk);
     })();
     return { name, proc, err: () => err };
   };
+  const start = (name: string) => run(name, [script, name]);
   const release = (name: string, code = 0) => writeFileSync(join(home, `go-${name}`), String(code));
-  return { started, start, release };
+  return { home, started, run, start, release };
 }
 
 async function until(what: string, ok: () => boolean) {
@@ -184,6 +186,47 @@ describe("the slots", () => {
       await a.proc.exited;
     }, SLOW);
   }
+});
+
+describe("runs that take no slot", () => {
+  test("a check that wraps itself, run under fleetd-heavy, takes one slot, not two", async () => {
+    const m = machine(1);
+    // As scripts/check.sh: it runs itself under the wrapper unless it holds a slot.
+    const nests = join(m.home, "nests");
+    writeFileSync(nests, `#!/bin/sh\n[ -n "$FLEETD_HEAVY_SLOT" ] || exec "$WRAPPER" "$0" "$@"\nexec "$HOME_DIR/check" "$@"\n`);
+    chmodSync(nests, 0o755);
+    const a = m.run("a", [nests, "a"]);
+    await until("a starts", () => m.started().includes("start a"));
+    m.release("a");
+    expect(await a.proc.exited).toBe(0);
+    expect(a.err()).toBe("");
+  }, SLOW);
+
+  test("the repo's declared background start and wait take none; its other commands do", async () => {
+    const m = machine(1);
+    const repo = join(m.home, "repo");
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    mkdirSync(join(repo, ".fleetd"));
+    mkdirSync(join(repo, "sub"));
+    writeFileSync(join(repo, ".fleetd", "pre-push.json"), '{"check": "./check", "background": "./check bg", "wait": "./check wait"}');
+    writeFileSync(join(repo, "check"), CHECK);
+    chmodSync(join(repo, "check"), 0o755);
+    const a = m.start("a");
+    await until("a starts", () => m.started().length === 1);
+    for (const n of ["bg", "wait", "full"]) writeFileSync(join(m.home, `go-${n}`), "0");
+    // a holds the only slot: these run at once all the same.
+    for (const [argv, cwd] of [[["./check", "wait"], repo], [[join(repo, "check"), "bg"], join(repo, "sub")], [["../check", "wait"], join(repo, "sub")]] as const) {
+      const light = m.run("light", [...argv], cwd);
+      expect(await light.proc.exited).toBe(0);
+      expect(light.err()).toBe("");
+    }
+    expect(m.started()).toEqual(["start a", "start wait", "start bg", "start wait"]);
+    // The check itself waits its turn.
+    const full = m.run("full", ["./check", "full"], repo);
+    await until("the check waits", () => waiting(full));
+    m.release("a");
+    expect([await a.proc.exited, await full.proc.exited]).toEqual([0, 0]);
+  }, SLOW);
 });
 
 describe("the wrapper", () => {
