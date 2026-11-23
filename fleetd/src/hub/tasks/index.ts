@@ -117,6 +117,10 @@ const COMPACT = "/compact";
 const HANDOFF_TAIL = 1500;
 /** The most each node read for a handoff may take. */
 const HANDOFF_STEP_TIMEOUT_MS = 20_000;
+/** How long the event follower waits on ending threads' whole replies before applying their ends without them. */
+const WHOLE_READ_GRACE_MS = 1_000;
+/** The thread events that may end a task, whose whole reply the follower reads before taking the lock. */
+const ENDING_EVENTS: ReadonlySet<HubEventType> = new Set(["thread.completed", "thread.failed", "thread.interrupted"]);
 /** How long a run a task was continued in may take to show up before the ends of other runs count again. */
 const CONTINUED_RUN_WAIT_MS = 2 * 60 * 1000;
 const ALSO_WRITING_MAX = 10;
@@ -218,6 +222,11 @@ export class Tasks {
   private readonly binding = new Set<string>();
   /** Running tasks whose lead was told their machine is away: the machine and the start of that spell. */
   private readonly unreachableTold = new Map<TaskId, [MachineId, string]>();
+  /**
+   * Per thread (`threadKey`), the read of its latest reply whole the follower started when it saw the thread's end, and
+   * its text once read: `end` takes it, never reading a session itself while it holds the lock.
+   */
+  private readonly wholeReads = new Map<string, { read: Promise<string | undefined>; text?: string }>();
   /** Tasks fleetd resumed whose new run hasn't started yet: what the dead run was doing, and its last rebuild. */
   private readonly resumed = new Map<TaskId, [string, Rebuilt | undefined]>();
   /** Fresh restarts' handoffs by task, for the attempt they were gathered for: undefined while it runs. */
@@ -970,12 +979,12 @@ export class Tasks {
     const task = stored.task;
     const threadRef = task.threadRef as ThreadRef;
     const thread = store(this.hub).threadGet(threadRef);
-    let text = thread?.thread.latestMessageTail ?? "";
-    // The summary may hold only a cut of the reply, and the node's own summary keeps just its last 2000 units, unmarked
-    // and as short as a whole reply: the reply is read whole from the session, so the result keeps its head and the lead
-    // reads it all with `agents` and its taskId.
-    const whole = await this.ports.latestText?.(threadRef);
-    if (whole !== undefined && whole.trim().length > text.trim().length) text = whole;
+    const summary = thread?.thread.latestMessageTail ?? "";
+    // The summary may hold only a cut of the reply (the node's own keeps just its last 2000 units), so the reply is read
+    // whole from the session: by the follower before it took the lock, or, when that read isn't in yet, after (`fill`).
+    const whole = this.wholeReads.get(threadKey(threadRef));
+    this.wholeReads.delete(threadKey(threadRef));
+    const text = whole?.text !== undefined && whole.text.trim().length > summary.trim().length ? whole.text : summary;
     const error =
       why ?? (thread && status === "failed" && thread.thread.lastError ? `[${thread.thread.lastError.class}] ${thread.thread.lastError.message}` : "");
     const write = task.kind === "write";
@@ -1005,6 +1014,10 @@ export class Tasks {
     TaskRecords.putEnded(this.db, { task: next }, write, fullResult);
     this.releaseAll(task);
     this.wakeResult(next, result, escalated !== undefined);
+    if (whole?.text === undefined && this.ports.latestText) {
+      const read = whole?.read ?? this.ports.latestText(threadRef);
+      spawnInBackground(`${task.taskId}'s whole result`, this.fill(next, text, read, [error, escalation]));
+    }
     // Last, so whoever waits on it sees the slot and the wake already settled.
     const [type, verb]: [HubEventType, string] = status === "done" ? ["task.completed", "completed"] : ["task.failed", "failed"];
     this.emit(next, type, `${task.taskId} ${verb}: ${task.title}`, escalated !== undefined ? { escalated } : {});
@@ -1013,6 +1026,46 @@ export class Tasks {
     if (task.kind === "review") this.removeWorktree(next);
     else this.stopIdle(next);
     if (write) this.resolvePr(next.taskId);
+  }
+
+  /**
+   * An ended task's result made from `text` because its whole reply wasn't read yet: once `read` has it, and the task
+   * hasn't ended again since, its tail and whole result are made from the reply whole. `after` is what followed the text.
+   */
+  private async fill(ended: Task, text: string, read: Promise<string | undefined>, after: string[]): Promise<void> {
+    const whole = await read;
+    if (whole === undefined || whole.trim().length <= text.trim().length) return;
+    await this.lock.with(async () => {
+      const stored = TaskRecords.get(this.db, ended.taskId);
+      const result = stored?.task.result;
+      if (!stored || !result || stored.task.endedAt !== ended.endedAt) return;
+      const tail = [whole.trim(), ...after].filter((s) => s !== "").join("\n\n");
+      TaskRecords.putResult(this.db, { ...stored, task: { ...stored.task, result: { ...result, tail: resultText(tail, TAIL_MAX) } } }, fullResultText(tail));
+    });
+  }
+
+  /**
+   * Starts reading the latest reply whole of each task thread `events` may end, and waits up to WHOLE_READ_GRACE_MS for
+   * them, without the lock: a node slow to answer delays its own end's wake text, never another task's end.
+   */
+  private async readWholeReplies(events: HubEvent[]): Promise<void> {
+    const latestText = this.ports.latestText;
+    if (!latestText) return;
+    const reads: Promise<unknown>[] = [];
+    for (const event of events) {
+      if (!ENDING_EVENTS.has(event.type) || event.machineId === undefined || event.threadId === undefined) continue;
+      const thread: ThreadRef = { machineId: event.machineId, threadId: event.threadId };
+      const key = threadKey(thread);
+      if (this.wholeReads.has(key) || !TaskRecords.byThread(this.db, thread)) continue;
+      const entry: { read: Promise<string | undefined>; text?: string } = { read: latestText(thread) };
+      entry.read = entry.read.then((text) => {
+        if (text !== undefined) entry.text = text;
+        return text;
+      });
+      this.wholeReads.set(key, entry);
+      reads.push(entry.read);
+    }
+    if (reads.length > 0) await within(WHOLE_READ_GRACE_MS, Promise.all(reads));
   }
 
   /** A run of a live task ended without completing: resumed, escalated or failed plainly (`recovery.decide`). */
@@ -1528,7 +1581,12 @@ export class Tasks {
         continue;
       }
       cursor = page.cursor;
-      for (const event of page.events) await this.lock.with(() => this.apply(event));
+      await this.readWholeReplies(page.events);
+      for (const event of page.events) {
+        await this.lock.with(() => this.apply(event));
+        // An end that took no read leaves none behind.
+        if (event.machineId !== undefined && event.threadId !== undefined) this.wholeReads.delete(threadKey({ machineId: event.machineId, threadId: event.threadId }));
+      }
     }
   }
 
