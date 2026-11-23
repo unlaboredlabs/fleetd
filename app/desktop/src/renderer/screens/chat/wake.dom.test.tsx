@@ -144,6 +144,16 @@ it("a failed try says why, counts down to its retry, and Try again asks the hub 
   expect(n.calls).toContain("chat_start_now");
 });
 
+it("a start its team's billing holds says so plainly, with no Try again: no try fixes it", async () => {
+  layout();
+  const n = await mount();
+  await n.lead({ kind: "starting", text: "…", step: "box", startedAt: AT, failed: { reason: "This team reached its spend cap" } });
+  expect(wake()?.dataset["wake"]).toBe("held");
+  expect(wake()?.textContent).toContain("The lead can’t start now: this team reached its spend cap.");
+  expect(wake()?.textContent).not.toContain("Couldn’t wake up");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent.startsWith("Try again"))).toBe(false);
+});
+
 it("Try again that starts nothing says why in the row: the hub's word, or that nothing waited, or the error", async () => {
   layout();
   const cases: [Parameters<typeof mount>[0], string][] = [

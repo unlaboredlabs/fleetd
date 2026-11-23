@@ -5,7 +5,7 @@
 // Status's blocked reason); whether this turn began with a start and has no reply yet is held
 // here, one record for the app, so the thread's row, the turn line and every list's bot agree. Pure, so it is
 // unit-tested.
-import { askedAt, ColdTurns, endedAt, heldWords, replied, START_STALE_MS, waitingFor, wakeOf, type Wake } from "./desktop";
+import { askedAt, ColdTurns, endedAt, heldWords, replied, START_STALE_MS, startOf, waitingFor, wakeOf, type Wake } from "./desktop";
 import type { Key, State } from "./store";
 import { leadActivityOf } from "./turn";
 
@@ -66,7 +66,7 @@ export const staleAt = (s: Pick<State, "chatStates"> & Partial<Pick<State, "chat
 };
 
 /** What a bot in a list shows of it (botStateOf's `asleep` and `start`). */
-export const botWake = (w: Wake | undefined): { asleep: boolean; start: "waking" | "failed" | undefined } => ({
+export const botWake = (w: Wake | undefined): { asleep: boolean; start: "waking" | "failed" | "held" | undefined } => ({
   asleep: w?.phase === "asleep",
-  start: w?.phase === "waking" ? "waking" : w?.phase === "failed" ? "failed" : undefined,
+  start: startOf(w),
 });

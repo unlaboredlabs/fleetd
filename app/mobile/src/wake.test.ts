@@ -16,8 +16,11 @@ describe("a cloud bot waking on the phone", () => {
     expect(botOf(chat({ leadAsleep: true }), KEY, true)).toBe("done");
     const starting = { ...(chat({ leadWorking: true }) as object), leadActivity: lane({ kind: "starting", text: "Starting its computer at boat.dev", step: "box" }) } as never;
     expect(botOf(starting, KEY)).toBe("waking");
-    const failed = { ...(chat({ leadWorking: true }) as object), leadActivity: lane({ kind: "starting", text: "…", step: "box", failed: { reason: "No computer was free" } }) } as never;
+    const failed = { ...(chat({ leadWorking: true }) as object), leadActivity: lane({ kind: "starting", text: "…", step: "box", failed: { reason: "No computer was free", retryAt: "2031-05-06T07:09:00.000Z" } }) } as never;
     expect(botOf(failed, KEY)).toBe("error");
+    // A start the team's billing holds has no retry of its own: the bot rests, never at work while nothing runs.
+    const held = { ...(chat({ leadWorking: true }) as object), leadActivity: lane({ kind: "starting", text: "…", step: "box", failed: { reason: "This team reached its spend cap" } }) } as never;
+    expect(botOf(held, KEY)).toBe("idle");
   });
 
   it("stands in the reply's place from its start through its lead's thinking, as the desktop's", () => {

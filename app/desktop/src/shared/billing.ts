@@ -255,17 +255,20 @@ export const topLine = (state: BillingState): { tone: "danger" | "warning"; mess
   }
   if (state.held === "cap") {
     const cap = state.credits.capCents === null ? "" : ` of ${money(state.credits.capCents, state.currency)}`;
-    return { tone: "danger", message: `This month's spend cap${cap} is reached, so bots wait until next month. Raise the cap to go on.`, fix: "cap" };
+    return { tone: "danger", message: `This month's spend cap${cap} is reached, so bots on fleetd's computers are stopped until next month. Raise the cap to go on.`, fix: "cap" };
   }
   if (state.held === "empty" || state.held === "none" || state.credits.leftCents <= 0) {
-    return { tone: "danger", message: "No credits left, so bots on fleetd's computers wait. Add credits or pick a plan.", fix: "buy" };
+    return { tone: "danger", message: "No credits left, so bots on fleetd's computers are stopped. Add credits or pick a plan.", fix: "buy" };
   }
   return null;
 };
 
-/** The cap's quiet line: this month's spend against it. */
-export const capLine = (state: BillingState): string | null =>
-  state.credits.capCents === null ? null : `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;
+/** The cap's quiet line: this month's spend against it, and that the bots are stopped once it is reached. */
+export const capLine = (state: BillingState): string | null => {
+  if (state.credits.capCents === null) return null;
+  const spent = `${money(state.credits.capSpentCents, state.currency)} of ${money(state.credits.capCents, state.currency)} this month`;
+  return state.held === "cap" ? `${spent}: reached, so bots are stopped` : spent;
+};
 
 /** Dollars as typed into the cap's field, as cents; null for an empty field (no cap); undefined when it isn't money. */
 export const capFromInput = (typed: string): number | null | undefined => {
