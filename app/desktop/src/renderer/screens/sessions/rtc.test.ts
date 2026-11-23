@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RTC_QUIET_MS } from "../../../shared/contracts";
 import type { HubFrame } from "../../../shared/hub";
-import { OPEN_MS, RETRY_MS, RtcViewer, type RtcSeams } from "./rtc";
+import type { DataLayer } from "../../src/data/queries";
+import { OPEN_MS, RETRY_MS, RTC_FEATURE, RtcViewer, watchPeer, type RtcSeams } from "./rtc";
 
 const S = "B68722f97b065412024c7cda6c636fd9a";
 
@@ -178,5 +179,50 @@ describe("a screen's peer", () => {
     expect(there(h.peers[2]).closed).toBe(true);
     await vi.advanceTimersByTimeAsync(RETRY_MS[2] * 2);
     expect(h.peers).toHaveLength(3);
+  });
+});
+
+describe("a window's peer for a screen", () => {
+  const made: unknown[] = [];
+  beforeEach(() => {
+    made.length = 0;
+    // The browser's peer, counted: none may be made, nor STUN asked, where nothing would answer it.
+    vi.stubGlobal(
+      "RTCPeerConnection",
+      class {
+        constructor() {
+          made.push(this);
+        }
+        createDataChannel() {
+          return { readyState: "connecting" };
+        }
+        createOffer() {
+          return new Promise(() => undefined);
+        }
+        close() {}
+      },
+    );
+    vi.stubGlobal("window", { fleetd: { hub: { rtc: vi.fn(() => Promise.resolve()), rtcWatch: vi.fn(() => Promise.resolve()), input: vi.fn() } } });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const layer = (features: string[]) =>
+    ({
+      hub: "devbox",
+      store: { getState: () => ({ features }), setState: vi.fn() },
+      frame: vi.fn(),
+      onRtc: () => () => undefined,
+    }) as unknown as DataLayer;
+
+  it("isn't made at all without the hub's feature or the screen's machine taking one", async () => {
+    watchPeer(layer([]), S, true)();
+    watchPeer(layer(["browser_sessions"]), S, true)();
+    watchPeer(layer([RTC_FEATURE]), S, false)();
+    await vi.advanceTimersByTimeAsync(RETRY_MS[2] * 3);
+    expect(made).toHaveLength(0);
+    const stop = watchPeer(layer([RTC_FEATURE]), S, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(made).toHaveLength(1);
+    stop();
   });
 });

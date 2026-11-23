@@ -251,9 +251,19 @@ function gathered(pc: RTCPeerConnection, ms: number): Promise<void> {
 const viewers = new Map<string, RtcViewer>();
 const keyOf = (hub: string, sessionId: string) => `${hub}\n${sessionId}`;
 
-/** Starts the window's peer for `sessionId` while it watches it; returns the stop. None where the browser has none. */
-export function watchPeer(layer: DataLayer, sessionId: string): () => void {
-  if (typeof RTCPeerConnection === "undefined") return () => undefined;
+/** Whether a peer is worth building: the hub passes peers on (its `browser_rtc` feature) and the screen's machine answers one. */
+export const peerWanted = (features: readonly string[], machineAnswers: boolean): boolean =>
+  machineAnswers && features.includes(RTC_FEATURE) && typeof RTCPeerConnection !== "undefined";
+
+/** The hub feature that says it passes screen peers on. */
+export const RTC_FEATURE = "browser_rtc";
+
+/**
+ * Starts the window's peer for `sessionId` while it watches it; returns the stop. `machineAnswers`: the session says its
+ * machine takes a peer (its `rtc`). None at all, no STUN asked either, where the hub, the machine or the browser has none.
+ */
+export function watchPeer(layer: DataLayer, sessionId: string, machineAnswers: boolean): () => void {
+  if (!peerWanted(layer.store.getState().features, machineAnswers)) return () => undefined;
   const { hub } = layer;
   const api = window.fleetd.hub;
   const viewer = new RtcViewer(sessionId, {

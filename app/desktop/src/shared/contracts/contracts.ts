@@ -1431,6 +1431,11 @@ export type BrowserSession = {
   orientation?: ScreenOrientation;
   projectRef: ProjectRef;
   purpose: string;
+  /**
+   * True while it is live and its machine's node answers screen peers (`browser_rtc`): only then does an app offer
+   * one. `browser_sessions` fills it in; absent otherwise and from older hubs.
+   */
+  rtc?: boolean;
   sessionId: BrowserSessionId;
   startedAt: Timestamp;
   state: BrowserSessionState;

@@ -100,7 +100,8 @@ trip, not by seconds of queued frames. When a queue stands, the hub takes a quar
 machine to send, and adds a tenth back each second once the link is clear. An app or hub from before this paces
 nothing, as before.
 
-The desktop and web apps also try to reach the screen's machine directly, peer to peer, over WebRTC. The hub only
+Where the hub and the screen's machine support it, the desktop and web apps also try to reach the machine directly,
+peer to peer, over WebRTC; elsewhere they make no attempt at all. The hub only
 passes the two ends' offer and answer between them. Once the direct link brings its first frame, the frames and your
 mouse and keys go over it, and the hub carries none. It uses public STUN servers only, with no relay of fleetd's: two
 networks that can't reach each other directly stay on the hub. If the direct link fails or goes quiet for a few
@@ -211,7 +212,8 @@ the share sheet. MCP clients use `screen_control`; agents run `mac sim <control>
   its Linux desktop (an X display of its own) and its Android emulator run in the sandbox, beside its files and on its network; the machine
   drives, records and shows them over the sandbox's link, and takeover works as anywhere. On fleetd's cloud only.
   A Linux desktop's picture is read and encoded in the sandbox itself, by its own fleetd, as a node reads one: only
-  frames cross the link, and your keys and clicks land as fast as on a machine of your own.
+  frames cross the link, and your keys and clicks land as fast as on a machine of your own. The desktop and web apps
+  watch it peer to peer over WebRTC, straight from the sandbox, where the network allows, else through the cloud.
   Ending the screen kills it and what was launched on it.
 
 Agents aren't sandboxed on their machine (see [Security](/docs/security#keys)). These measures keep screens apart and
