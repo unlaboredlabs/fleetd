@@ -122,8 +122,9 @@ While you have control, a strip beside the simulator offers these. Agents run th
 
 - Rotate left or right, Home, Lock, Shake
 - Light or dark appearance
+- Text size (`mac sim text-size extra-large`)
 - Location (`mac sim location 48.8584,2.2945`)
-- Fold, on an iPhone Duo
+- Fold, on an iPhone Duo: closed, half-open, open, or laptop (half-open on its side) (`mac sim fold laptop`)
 - Screenshot (`mac sim screenshot shot.png`)
 
 ## Turn it off {#switch}

@@ -3579,7 +3579,7 @@
       "x-open": true
     },
     "ScreenControl": {
-      "description": "A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or\ndark (`value`), take a screenshot, set its location (`value` \"lat,lon\"), fold it (`value`, one of the session's\n`folds`), or go back (Android).",
+      "description": "A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or\ndark (`value`), set its text size (`value`, a Dynamic Type size), take a screenshot, set its location (`value`\n\"lat,lon\"), fold it (`value`, one of the session's `folds`), or go back (Android).",
       "enum": [
         "rotate_left",
         "rotate_right",
@@ -3587,6 +3587,7 @@
         "home",
         "lock",
         "appearance",
+        "text_size",
         "screenshot",
         "location",
         "fold",
@@ -3596,7 +3597,7 @@
       "x-open": true
     },
     "ScreenDevice": {
-      "description": "A phone screen's device: its controls, orientation, fold and appearance now.",
+      "description": "A phone screen's device: which device it is, its controls, orientation, fold, appearance and text size now.",
       "properties": {
         "appearance": {
           "$ref": "#/$defs/ScreenAppearance"
@@ -3624,8 +3625,20 @@
           "maxItems": 8,
           "type": "array"
         },
+        "model": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
+        },
         "orientation": {
           "$ref": "#/$defs/ScreenOrientation"
+        },
+        "textSize": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string"
         }
       },
       "required": [
