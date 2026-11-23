@@ -33,6 +33,7 @@ import {
   CAP_UPDATE_FETCH,
   CAP_UPDATE_HOLD,
 } from "../../shared/node_link.ts";
+import { CAP_SCREEN_CONTROL } from "../../shared/screens_wire.ts";
 import type { Node } from "../api.ts";
 import type { NodeConfig } from "../config.ts";
 import { grant, readMac, run as runChecks, screenCapture } from "./checks.ts";
@@ -77,6 +78,8 @@ const KEPT = new Set([
   CAP_BROWSER,
   CAP_BROWSER_RTC,
   CAP_SESSION_IOS,
+  // A person's iPhone and its device controls (../mac_tool start): without it the hub refuses both as "an older fleetd".
+  CAP_SCREEN_CONTROL,
   CAP_LINK_DEFLATE,
 ]);
 

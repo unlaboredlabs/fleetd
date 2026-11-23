@@ -7,7 +7,7 @@ import { helloCapabilities, refusedOnMac } from "../../src/node/link/tool_only.t
 import type { HubFrame } from "../../src/node/wire.ts";
 
 test("a runner's hello lists the node core's calls then the areas'; the agents' Mac's lists only a tool's", () => {
-  const areas = ["browser", "session_android", "agents_mac", "mac_tool"];
+  const areas = ["browser", "session_android", "agents_mac", "mac_tool", "screen_control"];
   expect(helloCapabilities(CAPABILITIES, areas, undefined)).toEqual([...CAPABILITIES, ...areas.filter((c) => !CAPABILITIES.includes(c as never))]);
   const mac = helloCapabilities(CAPABILITIES, areas, { tool: true });
   expect(mac[0]).toBe("agents_mac");
@@ -16,7 +16,8 @@ test("a runner's hello lists the node core's calls then the areas'; the agents' 
   // Nothing that carries a secret, a claude, a project or a repo; an Android emulator isn't the Mac's to host.
   for (const gone of ["repos", "claude_install", "claude_login", "onepassword", "assistant", "session_android", "skills", "mcp_servers"])
     expect(mac).not.toContain(gone);
-  for (const kept of ["self_update", "update_fetch", "update_hold", "link_deflate", "browser"]) expect(mac).toContain(kept);
+  // screen_control: a person's iPhone on the Mac and its device controls, which the hub refuses a Mac without.
+  for (const kept of ["self_update", "update_fetch", "update_hold", "link_deflate", "browser", "screen_control"]) expect(mac).toContain(kept);
   // Its tool off (not macOS): no mac_tool, whatever an area listed.
   expect(helloCapabilities(CAPABILITIES, areas, { tool: false })).not.toContain("mac_tool");
 });

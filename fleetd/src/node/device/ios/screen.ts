@@ -10,7 +10,8 @@
 // own home, so through its daemon and the XCTest runner it already started (0.4-0.9 s a gesture): a tap is `press`, a
 // drag `swipe`, a held tap `longpress`, the wheel a `swipe`, typing `type`, and Enter, Home and Back their own
 // commands. Inputs queue and run one at a time; scrolls and typing that pile up behind a slow command go as one. agent-device runs them only in a session, and keeps its sessions per working folder: the
-// agent's is its job folder's, never the node's. So the first input it refuses opens one (`open`, no app): refused as
+// agent's is its job folder's, never the node's. So the first input it refuses opens one named for the simulator
+// (`open --session`, no app; a folder's own may still be bound to a person's earlier iPhone): refused as
 // the agent's session holds the simulator, the inputs go to that session by name (`--session`); opened, the inputs
 // go to that new one, which is closed at hand-back so the agent's own `open` isn't refused.
 import type { Frame, Input } from "../scrcpy.ts";
@@ -32,6 +33,11 @@ const TAP_SLOP = 8;
 export const COMMAND = 30_000;
 /** What agent-device says when no session of its own is open on the simulator. */
 export const NO_SESSION = "SESSION_NOT_FOUND";
+/** agent-device's refusal of a session it holds on another simulator: the person's last iPhone, on the same home. */
+export const BOUND_ELSEWHERE = "is already bound to";
+/** How long an input waits for the helper's word on straight input (its first try answers within ~4 s), rather than
+ * queueing behind agent-device, which in a fresh session takes seconds and holds up every input after it. */
+export const DIRECT_WAIT = 5_000;
 
 /** The session holding the simulator, as agent-device names it when it refuses an `open` (`DEVICE_IN_USE`). */
 export function heldBy(said: string): string | undefined {
@@ -103,6 +109,12 @@ export class Shooter {
     this.wants = { video, kbps, ...(fps === undefined ? {} : { fps }) };
     this.tellWants();
     return switched;
+  }
+
+  /** Whether straight input may still come: the stream runs, or starts, and its helper hasn't said either way. */
+  directPending(): boolean {
+    if (this.stopped || !this.looping || !this.live || this.liveFailed !== undefined) return false;
+    return this.streaming === undefined || this.streaming.inputPending?.() === true;
   }
 
   /** Where a person's input goes straight into the simulator, while the stream takes it. */
@@ -323,6 +335,8 @@ export class Hands {
     private readonly onRan: (args: string[], ran: Ran, direct?: boolean) => void = () => {},
     private readonly run: (runner: Runner, args: string[]) => Promise<Ran> = runCommand,
     private readonly direct: () => Direct | undefined = () => undefined,
+    /** Whether straight input may still come (Shooter `directPending`): an input waits DIRECT_WAIT for it at most. */
+    private readonly pending: () => boolean = () => false,
   ) {
     this.gestures = new Gestures(scale);
     this.logged = new Gestures(scale);
@@ -360,21 +374,24 @@ export class Hands {
       while (this.queue.length > 0 && !this.stopped) {
         for (const input of coalesce(this.queue.splice(0))) {
           if (this.stopped) return;
+          if (!this.direct() && this.pending()) await this.awaitDirect();
+          if (this.stopped) return;
           if (this.straight(input)) continue;
           const args = this.gestures.feed(input, performance.now());
           if (!args) continue;
           let ran = await this.run(this.runner, inSession(args, this.session));
-          if (!ran.ok && ran.said.includes(NO_SESSION)) ran = await this.reopen(args);
+          if (!ran.ok && (ran.said.includes(NO_SESSION) || ran.said.includes(BOUND_ELSEWHERE))) ran = await this.reopen(args);
           if (!ran.ok) console.warn(`a person's input did not reach the iOS simulator (${args.join(" ")}): ${[...ran.said.trim()].slice(0, 300).join("")}`);
           this.onRan(args, ran);
         }
       }
       if (this.releasing && !this.stopped) {
         this.releasing = false;
+        const session = this.session;
         this.session = undefined;
         if (this.opened) {
           this.opened = false;
-          const ran = await this.run(this.runner, ["close"]);
+          const ran = await this.run(this.runner, inSession(["close"], session));
           if (!ran.ok) console.warn(`the person's agent-device session on the iOS simulator did not close: ${[...ran.said.trim()].slice(0, 300).join("")}`);
         }
       }
@@ -397,16 +414,25 @@ export class Hands {
     return true;
   }
 
+  /** Until the helper says whether it takes input, DIRECT_WAIT at most. */
+  private async awaitDirect(): Promise<void> {
+    const until = performance.now() + DIRECT_WAIT;
+    while (!this.stopped && !this.direct() && this.pending() && performance.now() < until) await Bun.sleep(20);
+  }
+
   /**
    * press, swipe and type each need a session, and agent-device refuses them all without one: the input's own folder
-   * has none. Open one on the simulator, with no app: refused for the agent's session, go to that one by name.
+   * has none, or has one bound to another simulator (a person's earlier iPhone, on the same agent-device home). Open
+   * one named for this simulator, with no app: refused for the agent's session, go to that one by name.
    */
   private async reopen(args: string[]): Promise<Ran> {
+    const own = `fleetd-${this.runner.udid}`;
     this.session = undefined;
-    const open = await this.run(this.runner, ["open"]);
+    const open = await this.run(this.runner, inSession(["open"], own));
     if (open.ok) {
       this.opened = true;
-      return this.run(this.runner, args);
+      this.session = own;
+      return this.run(this.runner, inSession(args, own));
     }
     this.session = heldBy(open.said);
     return this.session ? this.run(this.runner, inSession(args, this.session)) : open;

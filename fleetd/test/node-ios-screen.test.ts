@@ -98,16 +98,17 @@ test("a person's taps, drags and typing reach a simulator no agent opened a sess
   await hands.idle();
   expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
     "press --platform ios --udid U1 100 200",
-    "open --platform ios --udid U1",
-    "press --platform ios --udid U1 100 200",
-    "type --platform ios --udid U1 -- hi",
-    "swipe --platform ios --udid U1 100 500 100 200",
+    // A session named for the simulator: the folder's own may be bound to a person's earlier iPhone.
+    "open --platform ios --udid U1 --session fleetd-U1",
+    "press --platform ios --udid U1 --session fleetd-U1 100 200",
+    "type --platform ios --udid U1 --session fleetd-U1 -- hi",
+    "swipe --platform ios --udid U1 --session fleetd-U1 100 500 100 200",
   ]);
   expect(ran).toEqual(["press ok", "type ok", "swipe ok"]);
   // Handed back: the session the person's inputs opened closes, so the agent's own `open` isn't refused.
   hands.release();
   await hands.idle();
-  expect(readFileSync(log, "utf8").trim().split("\n").at(-1)).toBe("close --platform ios --udid U1");
+  expect(readFileSync(log, "utf8").trim().split("\n").at(-1)).toBe("close --platform ios --udid U1 --session fleetd-U1");
   hands.stop();
   expect(hands.send(touch("down", 1, 1))).toBe(false);
 });
@@ -146,13 +147,48 @@ test("a person's taps reach a simulator the agent's own session holds: in that s
   await hands.idle();
   expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
     "press --platform ios --udid U1 100 200",
-    "open --platform ios --udid U1",
+    "open --platform ios --udid U1 --session fleetd-U1",
     "press --platform ios --udid U1 --session cwd:f659d6f3f36057dc:ios 100 200",
     // Remembered: the next input goes straight to it, and hand-back closes nothing of the agent's.
     "type --platform ios --udid U1 --session cwd:f659d6f3f36057dc:ios -- -x",
   ]);
   // The screen's log keeps the person's command as they made it.
   expect(ran).toEqual(["press 100 200 ok", "type -- -x ok"]);
+});
+
+test("a person's next iPhone on the same agent-device home gets a session of its own, not the folder's bound to the last one", async () => {
+  const home = tempHome();
+  cleanups.push(home.done);
+  // agent-device 0.21.31 with the folder's session still bound to the person's earlier simulator (OLD): any command in
+  // it for another simulator is refused, and only a session named otherwise opens.
+  const wrapper = join(home.dir, "agent-device");
+  writeFileSync(
+    wrapper,
+    `#!/bin/sh
+echo "$*" >> "$LOG"
+case "$*" in *"--session fleetd-U2"*) exit 0 ;; esac
+echo 'Error (INVALID_ARGS): Session "cwd:a87755645dc8a736:ios" is already bound to apple device "fleetd-old" (OLD), but this request selected --udid=U2.' >&2; exit 1
+`,
+  );
+  chmodSync(wrapper, 0o755);
+  const ran: string[] = [];
+  const hands = new Hands({ wrapper, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LOG: join(home.dir, "log") }, udid: "U2" }, 3, (args, r) => ran.push(`${args[0]} ${r.ok ? "ok" : "failed"}`));
+  cleanups.push(() => hands.stop());
+  for (const input of [touch("down", 300, 600), touch("up", 300, 600), touch("down", 30, 60), touch("up", 30, 60)]) hands.send(input);
+  const log = join(home.dir, "log");
+  const deadline = Date.now() + 20_000;
+  while ((existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").length : 0) < 4 && Date.now() < deadline) await Bun.sleep(20);
+  await hands.idle();
+  hands.release();
+  await hands.idle();
+  expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+    "press --platform ios --udid U2 100 200",
+    "open --platform ios --udid U2 --session fleetd-U2",
+    "press --platform ios --udid U2 --session fleetd-U2 100 200",
+    "press --platform ios --udid U2 --session fleetd-U2 10 20",
+    "close --platform ios --udid U2 --session fleetd-U2",
+  ]);
+  expect(ran).toEqual(["press ok", "press ok"]);
 });
 
 test("agent-device's refusal names the session holding the simulator", () => {

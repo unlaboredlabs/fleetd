@@ -122,6 +122,8 @@ read line; echo "$line" >> "${told}"
   await until(() => frames.length > 0);
   expect(frames.map((f) => [f.kind, f.screen])).toEqual([["jpeg", [1206, 2622]]]);
   expect(run.input?.()).toBe(true);
+  // It has said: an input no longer waits for its word (../src/node/device/ios/screen.ts Hands).
+  expect(run.inputPending?.()).toBe(false);
   run.tell("touch down 600 1300 0");
   await until(() => run.input?.() === false);
   expect(run.input?.()).toBe(false);

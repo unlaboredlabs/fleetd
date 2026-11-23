@@ -136,6 +136,31 @@ test("while the stream takes input it all goes straight, logged as agent-device 
   hands.stop();
 });
 
+test("an input made while the stream's helper hasn't said whether it takes input waits for it, not for agent-device", async () => {
+  const { said, to } = told();
+  const ad = agentDevice();
+  let direct: typeof to | undefined;
+  let pending = true;
+  const hands = new Hands(runner, 3, () => {}, ad.run, () => direct, () => pending);
+  hands.send(touch("down", 300, 600));
+  hands.send(touch("up", 300, 600));
+  await Bun.sleep(60);
+  expect(ad.ran).toEqual([]);
+  // The helper says `input`: the tap goes straight, and agent-device never ran.
+  direct = to;
+  pending = false;
+  await hands.idle();
+  expect(said).toEqual(["touch down 300 600 0", "touch up 300 600 0"]);
+  expect(ad.ran).toEqual([]);
+  // It says `noinput`: the next tap goes through agent-device at once.
+  direct = undefined;
+  hands.send(touch("down", 300, 600));
+  hands.send(touch("up", 300, 600));
+  await hands.idle();
+  expect(ad.ran).toEqual(["press 100 200"]);
+  hands.stop();
+});
+
 test("input waits behind an agent-device command still running, so it lands in order, and a finger ends the way it began", async () => {
   const { said, to } = told();
   const ad = agentDevice();

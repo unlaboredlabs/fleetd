@@ -24,8 +24,16 @@ export type Command =
 export type StreamFrame = { kind: "jpeg" | "h264"; key: boolean; screen: [number, number]; data: Uint8Array };
 
 /** A running stream: `still` asks for the screen now (a JPEG), changed or not; `tell` gives it a command; `ended`
- * says why it stopped by itself; `input` whether it takes a person's input itself now. */
-export type StreamRun = { still(): void; tell(command: Command): void; stop(): void; ended: Promise<string | undefined>; input?: () => boolean };
+ * says why it stopped by itself; `input` whether it takes a person's input itself now, `inputPending` whether a
+ * simulator's helper hasn't said yet if it will. */
+export type StreamRun = {
+  still(): void;
+  tell(command: Command): void;
+  stop(): void;
+  ended: Promise<string | undefined>;
+  input?: () => boolean;
+  inputPending?: () => boolean;
+};
 
 /** One encoded frame: an access unit in Annex B, its parameter sets first on a keyframe. */
 export type Encoded = { data: Uint8Array; key: boolean };
