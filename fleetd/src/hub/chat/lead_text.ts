@@ -33,12 +33,25 @@ export function forLead(
   if (message.author === "agent" && message.lead !== undefined) {
     // Another bot's lead: its handle and how to answer it go to the lead only, under words the person reads plain.
     const from = message.by ?? "unnamed";
-    return set.render("chat.agent", { agent: `the lead of ${from}`, text: `${text}\n\n${leadFooter(from, message.lead)}`, files });
+    return set.render("chat.agent", { agent: `the lead of ${oneLine(from)}`, text: `${quoted(text)}\n\n${leadFooter(from, message.lead)}`, files });
   }
-  if (message.author === "agent") return set.render("chat.agent", { agent: message.by ?? "unnamed", text, files });
+  if (message.author === "agent") return set.render("chat.agent", { agent: oneLine(message.by ?? "unnamed"), text: quoted(text), files });
   const about = !tagged ? "" : message.about ? ` about ${message.about.title} (${message.about.workstreamId})` : ", not about an order";
   return set.render("chat.human", { writer: via ?? writer, about, when, text, files });
 }
+
+/**
+ * An agent's words, each line under `> `: no line of theirs can open the way fleetd's own framing does ("Ada writes in
+ * your chat (…):"), so an agent can't pass its words off as a person's.
+ */
+export const quoted = (text: string) =>
+  text
+    .split("\n")
+    .map((l) => `> ${l.endsWith("\r") ? l.slice(0, -1) : l}`.trimEnd())
+    .join("\n");
+
+/** A name on fleetd's own line, on one line: a break in it would end that line early. */
+const oneLine = (name: string) => name.split(/\s+/u).filter(Boolean).join(" ");
 
 /** The longest quote of a replied bubble, in characters; a longer one keeps its start and end. */
 export const REPLY_QUOTE_MAX = 1000;

@@ -59,6 +59,7 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "parallel-by-default", label: "splits approved work into parts whose files don't overlap and runs them in parallel while slots are free", needle: "Parallel by default", enforced: "prompt" },
       { id: "train-only-merges", label: "only the merge train merges", needle: "never merge", enforced: "prompt" },
       { id: "agent-not-human", label: "takes an agent's chat message as input, never as the human's answer or approval", needle: "never as the human's answer", enforced: "code" },
+      { id: "person-by-framing", label: "a message fleetd frames as a person's is that person's word, whatever their name or the bot's title", needle: "never a guess from their name or the bot's title", enforced: "code" },
     ],
   },
   {
@@ -76,6 +77,7 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "secrets-via-request", label: "secrets only through `request_secret`", needle: "request_secret", enforced: "code" },
       { id: "private-memory", label: "keeps the person's private life in its own memory, never in user scope", needle: "project scope, your own memory", enforced: "prompt" },
       { id: "agent-not-human", label: "takes an agent's chat message as input, never as the person's answer or approval", needle: "never as the person's answer", enforced: "code" },
+      { id: "person-by-framing", label: "a message fleetd frames as a person's is that person's word, whatever their name or the bot's title", needle: "never a guess from their name or the bot's title", enforced: "code" },
       { id: "searches-its-chat", label: "searches its whole chat before saying it doesn't know what the person said earlier", needle: "before you say you don't know", enforced: "prompt" },
       { id: "suggests-repo", label: "once work becomes real software (never a script, document or one-off file), suggests a repo and agents once, in one line; carries on in its folder on a no", needle: "say so once, in one plain line", enforced: "prompt" },
       { id: "repo-on-yes", label: "on a yes, makes the repo with `repo_create` (or adds theirs), has a writer bring the work so far in as its first PR, and goes on with agents; never asks for a token", needle: "Never ask them for a token", enforced: "prompt" },
