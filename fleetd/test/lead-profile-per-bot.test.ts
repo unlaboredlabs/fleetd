@@ -170,6 +170,24 @@ test("a lead whose turn can't be stopped (its machine doesn't answer) stays aske
   await until(() => t.launched.length === 2);
 });
 
+test("a restart a launch would refuse (out of usage, moved to the cloud) never stops the turn, and says why", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "running");
+  const hooks = leadWiring(t.hub).hooks;
+  hooks.usageGate = () => "the login is out of usage until 14:00";
+  await expect(t.call("project_set", { ...PROJECT, leadRestart: true })).rejects.toMatchObject({ code: "invalid", message: expect.stringContaining("out of usage") });
+  await settle();
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+  // Nothing waits marked either: the apps offer Restart lead again, not "Restarts after its turn".
+  expect((await view(t)).leadRestarting).toBeUndefined();
+  delete hooks.usageGate;
+  hooks.moved = () => "this hub's bots moved to fleetd cloud";
+  await expect(t.call("project_set", { ...PROJECT, leadRestart: true })).rejects.toMatchObject({ message: expect.stringContaining("moved to fleetd cloud") });
+  await settle();
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+});
+
 test("a profile switch alone waits for a lead's turn to end: nothing stops it", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);

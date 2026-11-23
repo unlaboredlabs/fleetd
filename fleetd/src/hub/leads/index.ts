@@ -330,10 +330,13 @@ export class Leads {
    * `project_set` leadRestart: the project's lead starts again on its lead profile now, keeping its chat, memory and orders:
    * a turn under way is stopped first, as the chat's Stop does, then it starts at once; one whose machine doesn't answer
    * starts once its turn ends or its machine is back. Its profile needn't have changed: a stuck lead is started again on
-   * the one it runs on. False when the project has no lead.
+   * the one it runs on. False when the project has no lead; throws why when a launch would be refused now, stopping
+   * nothing.
    */
   async switchSoon(r: ProjectRef): Promise<boolean> {
     if (!this.records.leadGet(r)) return false;
+    const refused = this.refusal(r, "restarted");
+    if (refused) throw refused;
     this.records.leadSwitchSet(r, "asked");
     await this.switchIfDue(r).catch((error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`));
     return true;
@@ -365,6 +368,12 @@ export class Leads {
       }
       const lead = this.records.leadGet(r)!;
       if (this.records.leadRestartAsked(r)) {
+        // A launch refused since the ask (archived, moved, out of usage) stops nothing: the ask is dropped.
+        const refused = this.refusal(r, "restarted");
+        if (refused) {
+          this.records.leadSwitchSet(r, false);
+          throw refused;
+        }
         // A person's Restart lead stops the turn under way first; while its machine can't, it stays marked.
         const thread = store(this.hub).threadGet({ machineId: r.machineId, threadId: lead.threadId })?.thread;
         if (thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) {
@@ -497,22 +506,34 @@ export class Leads {
   }
 
   /** `ahead`: the node starts it with no turn and keeps the start text for its first message (`startAhead`). */
-  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string, ahead = false): Promise<Lead> {
-    this.refuseArchived(r);
+  /**
+   * Why a launch of the project's lead is refused now: its bot is archived, its bots moved to fleetd cloud, or its login
+   * is out of usage. A restart asks first, so a refused one never stops the turn under way.
+   */
+  private refusal(r: ProjectRef, what = "started"): ToolError | undefined {
+    const note = archivedNote(this.hub, r);
+    if (note) return new ToolError("invalid", note.message, note.fix);
     const held = this.archived(r);
-    if (held) throw held;
+    if (held) return held;
     const wiring = leadWiring(this.hub);
     const moved = wiring.hooks.moved?.();
-    if (moved !== undefined) throw new ToolError("invalid", `The lead was not started: ${moved}.`, "Its bots run on fleetd cloud now. To run them here again, press Undo on this hub's banner.");
+    if (moved !== undefined) return new ToolError("invalid", `The lead was not ${what}: ${moved}.`, "Its bots run on fleetd cloud now. To run them here again, press Undo on this hub's banner.");
     // No lead turn goes into a login fleetd knows is exhausted.
     const paused = wiring.hooks.usageGate?.(r);
     if (paused !== undefined) {
-      throw new ToolError(
+      return new ToolError(
         "invalid",
-        `The lead was not started: ${paused}.`,
+        `The lead was not ${what}: ${paused}.`,
         "It goes on by itself at the reset. Once the login has capacity, the human can press Resume in the app or run fleetd usage resume on the hub machine.",
       );
     }
+    return undefined;
+  }
+
+  private async launch(r: ProjectRef, project: ProjectSummary, sessionGeneration: number, first?: string, ahead = false): Promise<Lead> {
+    const refused = this.refusal(r);
+    if (refused) throw refused;
+    const wiring = leadWiring(this.hub);
     // Taken before the digest is read: every intent made before it is in the first message.
     const at = isoMs(nowMs(this.hub.clock));
     const set = prompts(this.hub.db).current(r);
