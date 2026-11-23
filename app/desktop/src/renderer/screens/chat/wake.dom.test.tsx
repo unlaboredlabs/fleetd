@@ -204,3 +204,24 @@ it("goes when the lead's turn ends without a reply, a quiet one, and stays gone"
   expect(wake()).toBeNull();
   expect(host.querySelector("[data-typing]")).toBeNull();
 });
+
+// W791 (F1520): Claude overloaded mid-turn, and the bot in the reply's place showed typing dots alone for minutes.
+it("past 20 s of Claude's retries, a plain line beside the bot says so; gone once it writes", async () => {
+  layout();
+  const n = await mount();
+  const retrying = (since: string, at: string) => {
+    act(() =>
+      n.send({ t: "live", frame: { at, full: true, lanes: [liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "retrying", attempt: 5, of: 10, reason: "overloaded" }, since } })] } }),
+    );
+    return flush();
+  };
+  // A blip: the dots alone.
+  await retrying(AT, later(5));
+  expect(wake()?.dataset["wake"]).toBe("working");
+  expect(wake()?.textContent).toBe("");
+  await retrying(AT, later(25));
+  expect(wake()?.textContent).toBe("Claude is overloaded, retrying…");
+  // Claude answers: the line goes.
+  await n.lead({ kind: "thinking" }, later(30));
+  expect(wake()?.textContent).toBe("");
+});
