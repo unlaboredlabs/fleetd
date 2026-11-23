@@ -1,6 +1,7 @@
 // Settings › Providers, for admins, as the desktop's Settings › Hub › Providers: what agents run on, a section per
-// provider (the desktop's shared/agentProviders.ts): how it is connected and the models it offers, then the task
-// profiles that run on it, each opening its editor (ProfileEdit.tsx), and Add Profile. While a provider isn't connected
+// provider (the desktop's shared/agentProviders.ts): how it is connected, then the task profiles that run on it (No
+// profiles yet with none), each opening its editor (ProfileEdit.tsx), and Add Profile. The models a provider offers
+// show only in a profile's editor. While a provider isn't connected
 // its profiles say they can't be used until it is. Anthropic's connection opens the hub's Claude API key (Claude.tsx);
 // Google's opens its own (Google below): a sign-in on each machine agents run on, the team's Gemini API key, and the
 // bots whose Vault holds a key of their own, which wins there.
@@ -10,7 +11,7 @@ import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import type { AntigravityStatusOutput, ClaudeAccountsGetOutput, GeminiKey, Profile, ProfileModel } from "../../../desktop/src/shared/contracts";
 import { boxesOf, endpointOk, geminiKeyWords, keyOf as keyOfTyped, sealEach } from "../claude";
-import { AGENT_PROVIDERS, googleConnected, googleWords, leadOf, providerOf, runsLine, runsWords, type AgentProviderId } from "../desktop";
+import { AGENT_PROVIDERS, googleConnected, googleWords, leadOf, providerOf, runsLine, type AgentProviderId } from "../desktop";
 import { useHub, type SettingsProps } from "../hubContext";
 import { keyOf } from "../store";
 import { shape, space, type, useTheme } from "../theme";
@@ -19,9 +20,6 @@ import { ListRow, ListSection } from "../ui/List";
 import { GoogleSignIn } from "./GoogleSignIn";
 import { machineName } from "./manage/model";
 import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
-
-/** How many models a row names under its provider, then how many more: one line on a phone. */
-const MODELS_SHOWN = 1;
 
 /** Where Google is connected: undefined on a hub that doesn't say (it offers the sign-in on each machine that takes it). */
 const useGoogle = () => {
@@ -71,12 +69,12 @@ export function Providers({ navigation }: SettingsProps<"Providers">) {
       {AGENT_PROVIDERS.map((p) => {
         const c = connection[p.id];
         const mine = profiles.filter((q) => providerOf(q.model).id === p.id);
-        const runs = runsWords(list, p.id, MODELS_SHOWN);
+        const canAdd = list.some((m) => providerOf(m.id).id === p.id);
+        const footer = mine.length === 0 ? "No profiles yet." : c.off ? `${p.name} isn't connected: agents can't run on its profiles until it is.` : undefined;
         return (
-          <ListSection key={p.id} header={p.name} {...(c.off && mine.length > 0 ? { footer: `${p.name} isn't connected: agents can't run on its profiles until it is.` } : {})}>
+          <ListSection key={p.id} header={p.name} {...(footer === undefined ? {} : { footer })}>
             <ListRow
               title="Connection"
-              detail={runs}
               value={c.value}
               {...(p.id === "google" && connected !== "yes" ? { valueColor: t.warning } : {})}
               onPress={c.open}
@@ -91,7 +89,7 @@ export function Providers({ navigation }: SettingsProps<"Providers">) {
                 onPress={() => navigation.navigate("ProfileEdit", { provider: p.id, id: q.id })}
               />
             ))}
-            {runs === "" ? null : <ListRow icon="plus" title="Add Profile" chevron={false} onPress={() => navigation.navigate("ProfileEdit", { provider: p.id })} />}
+            {canAdd ? <ListRow icon="plus" title="Add Profile" chevron={false} onPress={() => navigation.navigate("ProfileEdit", { provider: p.id })} /> : null}
           </ListSection>
         );
       })}
