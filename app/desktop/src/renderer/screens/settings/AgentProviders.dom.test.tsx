@@ -140,11 +140,11 @@ it("lists each provider with how it is connected, never its models, Google's Sig
   // The models are a profile's editor's alone: nowhere on a row, nor in its hover.
   expect(host.querySelector("[data-provider] [data-hint]")).toBeNull();
   expect(host.textContent).not.toContain("Claude Sonnet 5.5");
-  // No profile yet under either: each says so, with Add profile.
-  expect([...host.querySelectorAll("[data-provider-group]")].map((g) => g.textContent)).toEqual([
-    expect.stringContaining("No profiles yetAdd profile"),
-    expect.stringContaining("No profiles yetAdd profile"),
-  ]);
+  // No profile yet under either: each says so, and the row's plus is the one way to add one.
+  for (const g of host.querySelectorAll("[data-provider-group]")) {
+    expect(g.textContent).toContain("No profiles yet");
+    expect([...g.querySelectorAll("button")].filter((b) => /add/iu.test(b.getAttribute("aria-label") ?? b.textContent))).toHaveLength(1);
+  }
   // The setup shows only once a row opens.
   expect(host.querySelector("[data-provider-setup]")).toBeNull();
 });

@@ -226,8 +226,8 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
   // Each under its provider: Anthropic's three, none under Google.
   expect([...host.querySelectorAll("[data-provider-group='anthropic'] [data-profile]")].map((r) => r.getAttribute("data-profile"))).toEqual(["high", "medium", "wide"]);
   expect(host.querySelector("[data-provider-group='google'] [data-profile]")).toBeNull();
-  // Google has none yet: it says so, with Add profile.
-  expect(host.querySelector("[data-provider-group='google']")?.textContent).toContain("No profiles yetAdd profile");
+  // Google has none yet: it says so; its row's plus adds one.
+  expect(host.querySelector("[data-provider-group='google']")?.textContent).toContain("No profiles yet");
   expect(host.textContent).not.toContain("the hub has no API key");
   await click(button("Add Anthropic profile"));
   expect(host.textContent).toContain("New Anthropic profile");
