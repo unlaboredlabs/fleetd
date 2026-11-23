@@ -842,6 +842,31 @@ export class TrainGitHub {
     await this.json("PATCH", `repos/${repo}/pulls/${n}`, [["state", "closed"]], (v) => v ?? null);
   }
 
+  /**
+   * What GitHub says closed PR `n` last: `#<pr>` or a commit's short sha when it closed it itself, as a PR or commit
+   * that landed on the default branch named it with a closing keyword ("fix #821"); undefined for a close by someone.
+   */
+  async closedBy(repo: string, n: number): Promise<string | undefined> {
+    const [owner, name] = repo.split("/") as [string, string];
+    const query =
+      `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { pullRequest(number: ${n}) { ` +
+      "timelineItems(itemTypes: [CLOSED_EVENT], last: 1) { nodes { ... on ClosedEvent { closer { __typename " +
+      "... on PullRequest { number } ... on Commit { oid } } } } } } } }";
+    const data = (await this.graphql(query, [["owner", owner], ["name", name]])) as any;
+    const pull = data?.repository?.pullRequest;
+    if (pull == null) throw GhError.failed(`the close of ${repo}#${n} was not answered`);
+    const closer = pull.timelineItems?.nodes?.[0]?.closer;
+    if (typeof closer?.number === "number") return `#${closer.number}`;
+    return typeof closer?.oid === "string" ? short(closer.oid) : undefined;
+  }
+
+  /** Comments on the PR with why (marked as the train's), once, then reopens it. */
+  async reopen(repo: string, n: number, comment: string): Promise<void> {
+    const body = `${comment}\n\n${TRAIN_MARK}`;
+    if (!(await this.commented(repo, n, body))) await this.json("POST", `repos/${repo}/issues/${n}/comments`, [["body", body]], (v) => v ?? null);
+    await this.json("PATCH", `repos/${repo}/pulls/${n}`, [["state", "open"]], (v) => v ?? null);
+  }
+
   /** Whether one of the PR's first 1,000 comments is `body`. */
   private async commented(repo: string, n: number, body: string): Promise<boolean> {
     for (let page = 1; page <= 10; page++) {

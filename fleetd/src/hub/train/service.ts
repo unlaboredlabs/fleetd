@@ -33,6 +33,7 @@ import * as reverts from "./reverts.ts";
 import {
   allCancelled,
   awaitsChecks,
+  closingRefs,
   cancelledRequired,
   CANCELLED_RERUNS,
   type Checks,
@@ -49,6 +50,7 @@ import {
   short,
   type Stall,
   statusRuns,
+  unlinked,
 } from "./rules.ts";
 import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
@@ -711,6 +713,44 @@ export class Train {
   async abandon(change: Change, why: string): Promise<void> {
     const done = this.update(change.changeId, [change.state], (c) => ({ ...c, state: "abandoned", lastError: why }));
     if (done) await this.wakeLead(change.projectRef, prLeft(change.changeId, change.prUrl, why));
+  }
+
+  /**
+   * Its PR closed unmerged. GitHub closes one itself when a PR or commit that landed names it with a closing keyword
+   * ("product fix #821" in #820's description, fleetd-cloud 2026-11-23): nobody meant that, so the train reopens it
+   * and it keeps its place. Any other close takes it off the train. Throws a GhError when GitHub doesn't answer.
+   */
+  async closed(change: Change): Promise<void> {
+    const by = await this.github.closedBy(change.repo, change.prNumber);
+    if (by === undefined) return this.abandon(change, CLOSED);
+    try {
+      await this.github.reopen(
+        change.repo,
+        change.prNumber,
+        `GitHub closed this PR because ${by} names it with a closing keyword. It isn't merged: the merge train reopened it, and it stays on the train.`,
+      );
+    } catch (error) {
+      if (error instanceof GhError && error.kind === "unavailable") throw error;
+      return this.abandon(change, `${CLOSED} by GitHub for ${by}'s closing keyword, and not reopened (${githubWhy(error)})`);
+    }
+    console.info(`train: ${change.changeId}'s PR, closed by GitHub for ${by}'s closing keyword, reopened`);
+  }
+
+  /**
+   * `texts` (a description, a commit message) with each closing keyword before another open PR made a plain mention:
+   * GitHub closes what a landing PR or commit names so, an open PR too. `own`: the PRs landing now.
+   */
+  async unlinkOpen(repo: string, texts: string[], own: number[]): Promise<string[]> {
+    const open = new Set<number>();
+    for (const n of new Set(texts.flatMap((text) => closingRefs(text, repo)))) {
+      if (own.includes(n)) continue;
+      try {
+        if ((await this.github.pull(repo, n)).state === "open") open.add(n);
+      } catch {
+        // An issue, which its keyword is for; a PR not read is reopened if GitHub closes it (`closed`).
+      }
+    }
+    return open.size === 0 ? texts : texts.map((text) => unlinked(text, repo, open));
   }
 
   /**
@@ -1397,7 +1437,7 @@ export class Train {
     const pull = await this.github.pull(repo, change.prNumber);
     this.guardBase(repo, pull.base.ref);
     if (pull.merged) return this.mergedOnGitHub(change, pull);
-    if (pull.state !== "open") return this.abandon(change, CLOSED);
+    if (pull.state !== "open") return this.closed(change);
     if (pull.head.sha.toLowerCase() !== change.headSha) return this.readyMoved(change, pull);
     // A Change in review goes only as a re-review, which runs alongside its CI.
     const rebasing = this.update(change.changeId, ["ready", "reviewing"], (c) => ({ ...c, state: "rebasing" }));
@@ -1523,6 +1563,17 @@ export class Train {
       title = squashTitle;
       body = batch.withTrailers(body0, [merging], fixes);
     }
+    // A keyword naming another open PR ("fix #821") would make GitHub close it once this merges.
+    const description = rebased.body ?? "";
+    let unlinkedText: string;
+    [title, body, unlinkedText] = (await this.unlinkOpen(repo, [title, body, description], [inCi.prNumber])) as [string, string, string];
+    if (unlinkedText !== description) {
+      try {
+        await this.github.editPull(repo, inCi.prNumber, [["body", unlinkedText]]);
+      } catch (error) {
+        console.warn(`train: ${inCi.changeId}'s description keeps its closing keywords: ${ghMessage(error)}`);
+      }
+    }
     const mergingSince = this.nowMs();
     let retryWait = MERGE_RETRY_FIRST_MS;
     let status: number;
@@ -1610,7 +1661,11 @@ export class Train {
       const moved = pull.head.sha.toLowerCase() !== change.headSha;
       const inLine = !moved && !pull.draft && ["queued", "reviewing", "ready"].includes(change.state);
       if (pull.merged) await this.mergedOnGitHub(change, pull);
-      else if (pull.state !== "open") await this.abandon(change, CLOSED);
+      else if (pull.state !== "open") {
+        await this.closed(change).catch((error: unknown) => {
+          this.warnHourly([`train: the close of ${change.changeId}'s PR not read`], ghMessage(error), `train: the close of ${change.changeId}'s PR not read: ${ghMessage(error)}`);
+        });
+      }
       else if (change.state === "queued" && pull.draft) this.holdDraft(change);
       else if (inLine && conflicts(pull)) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);
       else if (change.state === "ready") {
@@ -1866,7 +1921,7 @@ export class Train {
     if (!w?.fromLabel || !w.open) return;
     // Its PR closed: reopened at the same head, it goes on the train again, under a new order. Any other end (its order
     // stopped, the train's refusal) keeps it off at that head.
-    if (change.state === "abandoned" && change.lastError === CLOSED) {
+    if (change.state === "abandoned" && change.lastError?.startsWith(CLOSED)) {
       this.readyHeads.delete(`${change.repo}\u0000${change.prNumber}\u0000${change.headSha.toLowerCase()}`);
     }
     const why = change.state === "merged" ? `${change.prUrl} merged` : `${change.prUrl} left the train (${change.state}${change.lastError ? `: ${change.lastError}` : ""})`;

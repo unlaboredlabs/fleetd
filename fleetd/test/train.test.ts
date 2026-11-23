@@ -3,7 +3,7 @@
 // the pinned squash merge; red CI and conflicts back to their writers; batches; refusals; merges outside the train.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { httpError, Kit, PROJECT, REPO } from "./train_kit.ts";
-import { awaitsChecks, checks } from "../src/hub/train/rules.ts";
+import { awaitsChecks, checks, closingRefs, unlinked } from "../src/hub/train/rules.ts";
 import { timedOut } from "../src/hub/train/notes.ts";
 import { batchSkipped, gatedName, jobChecks, labelGated, unprovenBatchSkips } from "../src/hub/train/next.ts";
 import { ownChecks, ownCi, withTrailers } from "../src/hub/train/batch.ts";
@@ -458,6 +458,47 @@ test("a PR merged into main without the train is reported once", async () => {
   await k.train.step(REPO);
   expect(k.host.eventsOf("pr.merged_outside").length).toBe(1);
   expect(k.host.wakes).toContain(`${REPO}#23 was merged into main without the merge train.`);
+});
+
+test("a PR the train merges closes no other open PR through a closing keyword; one GitHub closed so is reopened", async () => {
+  const k = kit();
+  // As fleetd-cloud #820, whose description said "product fix #821": its merge made GitHub close #821, in line behind it.
+  k.pr(31, "fleetd/T31-x", { "x.md": "x\n" }, { labels: ["hold"] });
+  k.pr(30, "fleetd/T30-y", { "y.md": "y\n" }, { body: "Green again with the product fix #31. Fixes #7." });
+  await k.enqueue(31);
+  await k.enqueue(30);
+  await k.settle();
+  expect(k.change(30).state).toBe("merged");
+  expect(k.gh.pulls.get(30)!.body).toBe("Green again with the product fix PR #31. Fixes #7.");
+  const pull = k.gh.pulls.get(31)!;
+  expect([pull.state, k.change(31).state]).toEqual(["open", "ready"]);
+  // Closed so all the same (a PR merged outside the train), it is reopened and keeps its place.
+  Object.assign(pull, { state: "closed", closer: 40 });
+  await k.settle();
+  expect(k.gh.log).toContain("reopen #31");
+  expect(pull.state).toBe("open");
+  expect(pull.comments).toHaveLength(1);
+  expect(pull.comments[0]).toStartWith("GitHub closed this PR because #40 names it with a closing keyword. It isn't merged");
+  expect(k.host.wakes.join("\n")).not.toContain("left the train");
+  pull.labels = [];
+  await k.settle();
+  expect(k.change(31).state).toBe("merged");
+  // A person's close takes it off the train.
+  k.pr(32, "fleetd/T32-z", { "z.md": "z\n" }, { labels: ["hold"] });
+  await k.enqueue(32);
+  k.gh.pulls.get(32)!.state = "closed";
+  await k.settle();
+  expect([k.change(32).state, k.change(32).lastError]).toEqual(["abandoned", "was closed"]);
+  expect(k.gh.log).not.toContain("reopen #32");
+});
+
+test("GitHub's closing keywords: the references they close, and each made a plain mention of an open PR", () => {
+  const text = "Product fix #821, test Fix: #822, closes acme/storefront#823, resolved other/repo#824, mentions #825.";
+  expect(closingRefs(text, REPO)).toEqual([821, 822, 823]);
+  expect(unlinked(text, REPO, new Set([821, 822, 823, 824]))).toBe(
+    "Product fix PR #821, test Fix: PR #822, closes PR acme/storefront#823, resolved other/repo#824, mentions #825.",
+  );
+  expect(unlinked("fixes #9", REPO, new Set([8]))).toBe("fixes #9");
 });
 
 test("a write task's result naming its PR puts it on the train (auto-enqueue)", async () => {

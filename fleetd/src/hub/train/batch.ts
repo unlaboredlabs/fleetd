@@ -256,7 +256,11 @@ export async function candidates(t: Train, repo: string, ready: Change[]): Promi
       continue;
     }
     if (pull.state !== "open") {
-      await t.abandon(change, "was closed");
+      try {
+        await t.closed(change);
+      } catch (error) {
+        readyError(t, change, (error as Error).message);
+      }
       settled = true;
       continue;
     }
@@ -791,13 +795,14 @@ async function land(t: Train, repo: string, base: string, stage: Stage): Promise
   } catch (error) {
     return back({ kind: "failed", why: githubWhy(error) });
   }
-  const commitBody = withTrailers(memberLines(merging), merging.map((m) => m.change), t.fixesOf(merging.map((m) => m.change)));
+  const message = withTrailers(memberLines(merging), merging.map((m) => m.change), t.fixesOf(merging.map((m) => m.change)));
+  const [heading, commitBody] = (await t.unlinkOpen(repo, [`${title} (#${pr})`, message], [pr, ...numbers])) as [string, string];
   // From the merge to its members' closes, an update waits for it before it restarts the hub.
   t.landings += 1;
   try {
     let out;
     try {
-      out = await t.github.merge(repo, pr, sha, [`${title} (#${pr})`, commitBody]);
+      out = await t.github.merge(repo, pr, sha, [heading, commitBody]);
     } catch (error) {
       // GitHub may have merged it all the same: the next pass's reconcile finishes the members if it did.
       return back({ kind: "unknown", why: githubWhy(error) });
