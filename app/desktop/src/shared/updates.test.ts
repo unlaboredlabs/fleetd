@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboutVersions, knownVersion, shortLabels, versionLabel } from "./updates";
+import { aboutVersions, isReleased, knownVersion, shortLabels, versionLabel, versionNumber } from "./updates";
 
 describe("versions", () => {
   it("knows a released version, and not a local build's 0.0.0 or something that doesn't parse", () => {
@@ -13,8 +13,13 @@ describe("versions", () => {
 
   it("reads an Edge build by when it was built, and any other version as itself", () => {
     expect(versionLabel("0.0.0-edge.202610261056+1b563d7")).toBe("Edge · Oct 26, 10:56");
-    // A numbered build (D701) by its number.
+    // A day-numbered build (D701's first weeks) by its number; a published one (release.version-scheme) by its number
+    // and the UTC day it was built.
     expect(versionLabel("0.0.0-edge.202611231406.4+5877c50")).toBe("2026.11.23.4");
+    expect(versionLabel("0.9.4+20261123.5877c50")).toBe("0.9.4 · Nov 23");
+    expect(versionNumber("0.9.4+20261123.5877c50")).toBe("0.9.4");
+    expect(isReleased("0.9.4+20261123.5877c50")).toBe(true);
+    expect(isReleased("0.0.0-edge.202611231406.4+5877c50")).toBe(false);
     expect(versionLabel("0.6.0-edge.202601020304+ABCDEF0123")).toBe("Edge · Jan 2, 03:04");
     expect(versionLabel("0.6.0-edge.202610221030")).toBe("Edge · Oct 22, 10:30");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");

@@ -70,7 +70,7 @@ describe("fleetd cloud, which updates itself (updates: false)", () => {
 
 describe("an update to take", () => {
   it("is one line and one button: the channel's newer build", () => {
-    expect(status({ cli: NEXT })).toEqual({ kind: "available", title: "Update available", detail: "fleetd Edge · Oct 23, 10:30", action: { label: "Update", act: "update" }, rows: [] });
+    expect(status({ cli: NEXT })).toEqual({ kind: "available", title: "Update available", detail: "fleetd Edge · Oct 23, 10:30", to: NEXT, action: { label: "Update", act: "update" }, rows: [] });
   });
 
   it("is the build the hub has ready, and this app's own when the hub runs an older one", () => {
@@ -84,7 +84,7 @@ describe("an update to take", () => {
 
   it("says when it installs by itself, and Update now only does it sooner", () => {
     const s = status({ ready: NEXT, auto: auto({ at: "2026-10-26T10:10:00.000Z" }) });
-    expect(s).toEqual({ kind: "available", title: "Update available", detail: "Installs by itself at 10:10.", action: { label: "Update now", act: "update" }, quiet: true, rows: [] });
+    expect(s).toEqual({ kind: "available", title: "Update available", detail: "Installs by itself at 10:10.", to: NEXT, action: { label: "Update now", act: "update" }, quiet: true, rows: [] });
     // Held back, or with no time set: the plain offer.
     expect(status({ ready: NEXT, auto: auto({ held: "An update someone started is still running." }) }).action?.label).toBe("Update");
     expect(status({ ready: NEXT, auto: auto() }).quiet).toBeUndefined();
@@ -102,7 +102,7 @@ describe("an update to take", () => {
 
 describe("this app's own update", () => {
   it("uses the same words: found, downloaded, or the deb's command", () => {
-    const found = { kind: "available", title: "Update available", detail: "fleetd Edge · Oct 23, 10:30", action: { label: "Restart to update", act: "app" }, rows: [] };
+    const found = { kind: "available", title: "Update available", detail: "fleetd Edge · Oct 23, 10:30", to: NEXT, action: { label: "Restart to update", act: "app" }, rows: [] };
     expect(status({ app: { kind: "available", version: NEXT, percent: 30, restart: false } })).toEqual(found);
     expect(status({ app: { kind: "ready", version: NEXT } })).toEqual(found);
     expect(status({ app: { kind: "manual", version: NEXT } })).toMatchObject({ action: { label: "Download", act: "app" }, command: "sudo apt install ./fleetd-desktop-linux-amd64.deb" });

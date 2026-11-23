@@ -60,10 +60,17 @@ const PLATFORMS = ["mac", "linux"] as const;
 const ms = (iso: string | undefined) => (iso === undefined ? Number.NaN : Date.parse(iso));
 const iso = (at: number) => new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z");
 
-/** A build's number from its version (fleetd/src/update/version.ts `buildNumber`). */
-export const numberOf = (version: string) => {
-  const m = /-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)(?:\+|$)/.exec(version);
-  return m ? `${m[1]}.${Number(m[2])}.${Number(m[3])}.${m[4]}` : undefined;
+/** A day-numbered build's number, from before release.version-scheme. */
+const DAY_NUMBERED_BUILD = /^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/;
+/** A build number as the rollout lists it: `0.9.4` (release.version-scheme), or a day-numbered one from before. */
+export const BUILD_NUMBER = /^(?:\d+\.\d+\.\d+|\d{4}\.\d{1,2}\.\d{1,2}\.\d+)$/;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** A build's heading: its number and the UTC day it was published, "0.9.4 · Nov 23"; a day-numbered build's number
+ * already says its day. */
+export const heading = (b: Pick<RolloutBuild, "build" | "publishedAt">) => {
+  const at = new Date(ms(b.publishedAt));
+  return Number.isNaN(at.getTime()) || b.build.split(".").length !== 3 ? b.build : `${b.build} · ${MONTHS[at.getUTCMonth()]} ${at.getUTCDate()}`;
 };
 
 /**
@@ -88,11 +95,15 @@ export function plainNotes(subjects: string[]): string[] {
  * go back to, and for Steady, the newest passed build of each 6 hours of the last 3 days; MAX_BUILDS at most. */
 export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
   const good = (b: RolloutBuild) => b.haltedAt === undefined && b.pulledAt === undefined;
+  // A day-numbered build (2026.11.23.x, eleven of them) stays listed for good: a hub on one, from before 0.MINOR.PATCH,
+  // orders a build that isn't listed by its minute stamp, which a 0.9.x version hasn't, so it finds 0.9.x newer only
+  // while its own build is listed (fleetd/src/update/rollout.ts `pick`), however long it was away.
+  const dayNumbered = (b: RolloutBuild) => DAY_NUMBERED_BUILD.test(b.build);
   const full = builds.findIndex((b) => good(b) && percentAt(b, now) === 100);
   const fallback = full < 0 ? -1 : builds.findIndex((b, i) => i > full && good(b) && b.passedAt !== undefined);
   const slots = new Set<number>();
   const kept = builds.filter((b, i) => {
-    if (full < 0 ? now - ms(b.publishedAt) < KEEP_MS : i <= full) return true;
+    if (dayNumbered(b) || (full < 0 ? now - ms(b.publishedAt) < KEEP_MS : i <= full)) return true;
     const slot = Math.floor(ms(b.publishedAt) / SLOT_MS);
     if (i === fallback) {
       slots.add(slot);
@@ -103,7 +114,7 @@ export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
     slots.add(slot);
     return true;
   });
-  return kept.slice(0, MAX_BUILDS);
+  return kept.filter((b, i) => i < MAX_BUILDS || dayNumbered(b));
 }
 
 /** What the cloud says it runs. */
@@ -184,7 +195,7 @@ export function moving(r: Rollout, now: number): boolean {
 /** The release's notes: the newest builds, each with how far it got and its what's new. */
 export function releaseNotes(r: Rollout, now: number): string {
   const lines = [
-    "Every green build of main, numbered by day. A build goes to fleetd's own hub and the cloud first, then to everyone in stages: " +
+    "Every green build of main is a release, numbered 0.MINOR.PATCH. A build goes to fleetd's own hub and the cloud first, then to everyone in stages: " +
       `${STAGES.map((s) => `${s.percent}%${s.afterMs === 0 ? "" : ` after ${s.afterMs / HOUR} h`}`).join(", ")}. ` +
       "Hubs on Update speed Steady take builds that have been out 2 days.",
     "",
@@ -201,7 +212,7 @@ export function releaseNotes(r: Rollout, now: number): string {
               ? "on fleetd's own hub"
               : "waiting on the cloud"
             : `${percentAt(b, now)}% of hubs`;
-    lines.push("", `### ${b.build} (${state})`, "");
+    lines.push("", `### ${heading(b)} (${state})`, "");
     const notes = b.notes ?? [];
     for (const n of notes.slice(0, 30)) lines.push(`- ${n}`);
     if (notes.length > 30) lines.push(`- and ${notes.length - 30} more`);
@@ -330,7 +341,7 @@ function add(): void {
   const build = process.env.BUILD ?? "";
   const version = process.env.VERSION ?? "";
   const commit = process.env.RELEASE_SHA ?? "";
-  if (!/^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/.test(build) || version === "" || commit === "") throw new Error("add needs BUILD, VERSION and RELEASE_SHA");
+  if (!BUILD_NUMBER.test(build) || version === "" || commit === "") throw new Error("add needs BUILD, VERSION and RELEASE_SHA");
   const release = JSON.parse(readFileSync("release.json", "utf8")) as { sha256?: Record<string, string>; appVersion?: string };
   const sha256 = Object.fromEntries(Object.entries(release.sha256 ?? {}).filter(([name]) => CLI.test(name)));
   if (Object.keys(sha256).length === 0) {
@@ -368,7 +379,7 @@ function add(): void {
   writeFeeds(r, now, work, (b) => assets(releaseOf(b)), new Set(assets(TAG)));
   const mine = r.builds.find((b) => b.build === build);
   const notes = (mine?.notes ?? []).map((n) => `- ${n}`).join("\n") || "- No merged changes listed.";
-  gh(["release", "edit", releaseOf(build), "--notes", `Build ${build} of main at ${commit}.\n\n### What's new\n\n${notes}`]);
+  gh(["release", "edit", releaseOf(build), "--notes", `fleetd ${mine === undefined ? build : heading(mine)}, built from main at ${commit}.\n\n### What's new\n\n${notes}`]);
   console.log(`rollout.json: added ${build}; ${r.builds.length} builds listed`);
 }
 

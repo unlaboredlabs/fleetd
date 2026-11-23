@@ -55,18 +55,31 @@ const withoutBuild = (version: string): string => version.trim().replace(/^v/u, 
 const EDGE = /^\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** A build with a number (D701): `0.0.0-edge.<minute stamp>.<nth build that UTC day>`. */
+/** A published build (release.version-scheme): `0.<minor>.<patch>+<UTC day>.<commit>`. */
+const RELEASED = /^v?(\d+\.\d+\.\d+)\+(\d{4})(\d{2})(\d{2})(?:\.|$)/u;
+/** A version's number alone, as a short line names it ("Update to 0.9.4"): a published build's 0.MINOR.PATCH, any
+ * other's label. */
+export const versionNumber = (version: string): string => RELEASED.exec(version.trim())?.[1] ?? versionLabel(version);
+
+/** A published 0.MINOR.PATCH build: every one is on the edge release, like an Edge build. */
+export const isReleased = (version: string): boolean => RELEASED.test(version.trim());
+
+/** A day-numbered build from before it: `0.0.0-edge.<minute stamp>.<nth build that UTC day>`. */
 const BUILD = /^\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)$/u;
 
 /**
- * A version as people read it. A build by its number, `0.0.0-edge.202611231406.4+5877c50` reading "2026.11.23.4"
- * (fleetd/src/update/version.ts `buildNumber`). One from before build numbers by when it was built (UTC), since its
- * minute stamp is what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56", and so does
+ * A version as people read it (fleetd/src/update/version.ts `versionLabel`). A published build by its number and the
+ * UTC day it was built, `0.9.4+20261123.5877c50` reading "0.9.4 · Nov 23"; a day-numbered one by its number,
+ * `0.0.0-edge.202611231406.4+5877c50` reading "2026.11.23.4". One from before build numbers by when it was built
+ * (UTC), since its minute stamp is what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56", and so does
  * `0.0.0-nightly.202610261056+1b563d7`, from before the rename.
  * Any other version is itself, without a build part. Only for showing: the updaters compare the raw version, and the
  * raw version is what gets copied.
  */
 export const versionLabel = (version: string): string => {
+  const released = RELEASED.exec(version.trim());
+  const built = released === null ? undefined : MONTHS[Number(released[3]) - 1];
+  if (released !== null && built !== undefined) return `${released[1] ?? ""} · ${built} ${String(Number(released[4]))}`;
   const bare = withoutBuild(version);
   const numbered = BUILD.exec(bare);
   if (numbered !== null) return `${numbered[1] ?? ""}.${String(Number(numbered[2]))}.${String(Number(numbered[3]))}.${numbered[4] ?? ""}`;

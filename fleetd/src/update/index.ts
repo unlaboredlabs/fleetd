@@ -34,10 +34,12 @@ export function parseChannel(name: string): Channel {
 /** Edge builds stay on edge and tagged builds on stable; until the first tag, local builds follow edge. */
 export const channelOf = (version: string, releaseBuild: boolean): Channel => (edgeStamp(version) || !releaseBuild ? "edge" : "stable");
 
-/** Where the channel's assets are: `FLEETD_BASE_URL`, else its GitHub release download directory. */
-export const baseUrl = (c: Channel) =>
-  process.env.FLEETD_BASE_URL ??
-  (c === "edge" ? `https://github.com/${REPO}/releases/download/edge` : `https://github.com/${REPO}/releases/latest/download`);
+/**
+ * Where the release's assets are: `FLEETD_BASE_URL`, else the edge release's download directory, whatever the channel.
+ * Builds are 0.MINOR.PATCH releases now (release.version-scheme), which `channelOf` reads as stable, and every one of
+ * them is published there; no tagged stable release exists.
+ */
+export const baseUrl = (_c?: Channel) => process.env.FLEETD_BASE_URL ?? `https://github.com/${REPO}/releases/download/edge`;
 
 /** Why an update didn't happen, at which stage, in one plain sentence. */
 export class Failure extends Error {

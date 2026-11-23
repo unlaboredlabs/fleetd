@@ -121,7 +121,7 @@ const unsupported = (): Updates => {
 export const updates = (fixtureFile: string | null): Updates => {
   if (fixtureFile !== null) return fixtureUpdates(fixtureFile);
   if (!RELEASE_BUILD || !app.isPackaged || (process.platform !== "darwin" && process.platform !== "linux")) return unsupported();
-  const url = feedUrl(app.getVersion(), process.env["FLEETD_BASE_URL"]);
+  const url = feedUrl(process.env["FLEETD_BASE_URL"]);
   const deb = process.platform === "linux" && process.env["APPIMAGE"] === undefined;
   let updater: MacUpdater | AppImageUpdater | DebUpdater | null = null;
   const h = holder({ kind: "idle" }, deb, (effect) => {

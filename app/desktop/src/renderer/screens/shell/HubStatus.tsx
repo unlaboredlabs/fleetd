@@ -12,18 +12,25 @@ import { useHubState } from "./hubFeed";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { revealNext } from "../settings/reveal";
 import { tabHref } from "../settings/route";
-import { useQuiet, useUpdateAct } from "../updates";
+import { useQuiet, useUpdateAct, useUpdateStatus } from "../updates";
 import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
 import { startScreen } from "../start/kept";
 import { useStartLeft } from "../start/state";
-import { appLine, hostedLine, machinesLine, menuLines, setupLine, updateLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
+import { appLine, hostedLine, machinesLine, menuLines, setupLine, updateLine, updateToLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
 import type { SlotHosted } from "../../../shared/contracts";
 import { RUNNER_ID } from "../../../shared/providers";
 
-const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = { success: "var(--success)", warning: "var(--warning)", danger: "var(--danger)", quiet: "var(--faint)" };
+const TONE: Record<Exclude<LineMark, "ring" | "update">, string> = {
+  success: "var(--success)",
+  warning: "var(--warning)",
+  danger: "var(--danger)",
+  quiet: "var(--faint)",
+  // As your picture's update mark (sidebar.module.css .meMark).
+  accent: "var(--link)",
+};
 
 /**
  * Hubs & devices at this hub's row, as Settings search opens its "Hub" option: by its reveal key and the page's link,
@@ -85,9 +92,14 @@ function LineItem({ line, act }: { line: MenuLine; act: (does: LineDoes) => void
   );
 }
 
-/** This app's own update, a row in the menu under your name; nothing while there is none to say. */
+/**
+ * The update row in the menu under your name: "Update to 0.9.4" while one is there to take (the Updates page's, which
+ * its press starts), else this app's own update going on or not taken; nothing while there is none to say.
+ */
 export function AppItem() {
-  const line = appLine(useAppUpdate());
+  const offer = updateToLine(useUpdateStatus());
+  const own = appLine(useAppUpdate());
+  const line = offer ?? own;
   const update = useUpdateAct();
   // Its one action is the update's own, which changes the row where it is.
   const act = (does: LineDoes) => {

@@ -400,6 +400,8 @@ export const fixtures = [
   "updates-auto-on",
   "updates-auto-held",
   "updates-auto-current",
+  // A hub on 0.9.3 with 0.9.4 ready (release.version-scheme): Update to 0.9.4 under your name.
+  "updates-numbered",
   "updates-put-back",
   "updates-updated",
   // Projects with no repo (fixtures/no-repo): Ada and Home in the sidebar and Taxes archived, Ada asking to book a
@@ -3050,7 +3052,7 @@ export const screens: readonly Screen[] = [
   {
     id: "shell",
     route: "#/",
-    fixtures: ["admin-owner", "admin-member", "updates-ready", "menu-app-update"],
+    fixtures: ["admin-owner", "admin-member", "updates-ready", "menu-app-update", "updates-numbered"],
     variant: "you-menu",
     sizes: ["small"],
     open: async (page) => {
@@ -4404,7 +4406,7 @@ export const screens: readonly Screen[] = [
   },
   // W469 and W603: Hub › Machines at its Updates (a page of its own once: its link lands there): the everyday status (up to date, Update automatically on), a ready build it installs
   // by itself, one holding back with why, and the switch off.
-  { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-current", "updates-auto-on", "updates-auto-held", "updates-hub-current"] },
+  { id: "settings.hub.updates", route: "#/settings/hub/updates", fixtures: ["updates-auto-current", "updates-auto-on", "updates-auto-held", "updates-hub-current", "updates-numbered"] },
   // Machines: the hub's machines, each a name and its role, with a dot on one that needs someone (offline, claude
   // logged out); a hub with one machine; a run going; a failed step with Retry. Add machine is the button at the
   // title's end.

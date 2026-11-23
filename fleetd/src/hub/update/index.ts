@@ -39,7 +39,7 @@ import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type F
 import { bucketOf, choose, type Choice, type Picker, parseSpeed, readRollout, type Rollout, rolloutId, type Speed } from "../../update/rollout.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
-import { atLeast, buildNumber, versionCmp, versionLabel } from "../../update/version.ts";
+import { atLeast, buildNumber, isDayNumbered, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
 import { pause } from "../serve/every.ts";
 import { death } from "../leads/cut_off.ts";
@@ -123,7 +123,21 @@ export type Target = { version: string; build?: string; sha256?: Record<string, 
 /** The node can install `update`: it takes a named build, or the build is the release's newest, the only one a node
  * from before rollouts takes. */
 const takes = (n: NodeFacts, update: NodeUpdate, t: Target | undefined) =>
-  update.build === undefined || n.canPickBuild === true || t?.version !== update.version || t.newest === undefined || t.newest === update.version;
+  update.build === undefined || readsBuild(n, update.build) || t?.version !== update.version || t.newest === undefined || t.newest === update.version;
+
+/**
+ * The node can take the build named `build` by its number: it says it takes named builds, and a node on a day-numbered
+ * build (2026.11.23.x) only reads day-numbered names, refusing a 0.MINOR.PATCH one (release.version-scheme).
+ */
+const readsBuild = (n: NodeFacts, build: string) => n.canPickBuild === true && !(isDayNumbered(n.version) && /^\d+\.\d+\.\d+$/.test(build));
+
+/** `update` as the node can take it: without a build name it can't read, so it takes the release's newest (`takes`
+ * keeps it from being asked for any other). */
+const forNode = (n: NodeFacts, update: NodeUpdate): NodeUpdate => {
+  if (update.build === undefined || readsBuild(n, update.build)) return update;
+  const { build: _build, sha256: _sha256, ...plain } = update;
+  return plain;
+};
 
 /** Lead turns that ended since the hub's restart: well, failed (with why, in a few words each), or failed for the
  * provider's reasons. */
@@ -811,7 +825,7 @@ export class Updates {
     const update = nodeUpdate(to, "edge", this.target());
     for (const node of ports.nodes()) {
       if (node.liveSince !== undefined && node.canFetch && takes(node, update, this.target()) && !runs(node, to, this.back(to))) {
-        ports.fetchOnNode(node.machineId, update);
+        ports.fetchOnNode(node.machineId, forNode(node, update));
       }
     }
     this.ready_ = to;
@@ -1216,7 +1230,7 @@ class Drive {
     const update = nodeUpdate(to, run.channel, this.u.target());
     for (const node of ports.nodes()) {
       if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && takes(node, update, this.u.target()) && !runs(node, to, this.u.back(to))) {
-        ports.fetchOnNode(node.machineId, update);
+        ports.fetchOnNode(node.machineId, forNode(node, update));
       }
     }
   }
@@ -1463,7 +1477,7 @@ class Drive {
       const asked = this.u.clockNow();
       let refusal: NodeAnswer[1];
       try {
-        const [r, second] = await ports.updateNode(machineId, update);
+        const [r, second] = await ports.updateNode(machineId, forNode(node, update));
         if (!r.ok) return this.setPart(machineId, "failed", r.stage ?? "download", r.message);
         refusal = second;
       } catch (e) {

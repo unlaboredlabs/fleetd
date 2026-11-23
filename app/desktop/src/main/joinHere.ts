@@ -23,6 +23,7 @@ import type { JoinHere, JoinStep, ThisComputer } from "../shared/joinHere";
 import { isEdge } from "../shared/pairing";
 import { feedUrl } from "./update-feed";
 import { parseCli, parsePin, pinnedName } from "./update-release";
+import { isReleased } from "../shared/updates";
 
 export interface JoinPorts {
   /** A hub call, as the page's go through main. */
@@ -94,12 +95,13 @@ const TITLES = {
 const RELEASES = "https://github.com/unlaboredlabs/fleetd/releases/download";
 
 /**
- * Where the build of the hub's `version` is: its own `v<version>` release, or for an Edge hub the rolling edge release
- * (whose release.json must still name that version). FLEETD_BASE_URL, when it is trusted, replaces both.
+ * Where the build of the hub's `version` is: for an Edge hub or a published 0.MINOR.PATCH one (release.version-scheme)
+ * the rolling edge release (whose release.json must still name that version), else its own `v<version>` release.
+ * FLEETD_BASE_URL, when it is trusted, replaces both.
  */
 export const releaseFor = (version: string, override: string | undefined): { base: string; edge: boolean } => {
-  if (override !== undefined && feedUrl(version, override) === override) return { base: override, edge: false };
-  const edge = isEdge(version);
+  if (override !== undefined && feedUrl(override) === override) return { base: override, edge: false };
+  const edge = isEdge(version) || isReleased(version);
   return { base: edge ? `${RELEASES}/edge` : `${RELEASES}/v${version}`, edge };
 };
 
