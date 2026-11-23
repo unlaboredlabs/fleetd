@@ -96,7 +96,7 @@ own job for every bot, always on, so it has no prompt to edit, no webhook, no sw
 From an MCP client, `automation_list` returns it as `memoryRefresh`, and `memory_refresh_run` is its Run now.
 
 You can also ask the lead in the chat ("check the dependencies every Monday morning"). It manages a bot's
-automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#lead-tools).
+automations with its own tools, listed under [Agent tools](/docs/reference/agent-tools#automations).
 
 ## One-time runs: reminders and follow-ups {#one-time}
 

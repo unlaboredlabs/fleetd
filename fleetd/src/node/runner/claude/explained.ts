@@ -5,14 +5,14 @@ import type { SessionRole } from "../../sessions/types.ts";
 type Why<T> = readonly (readonly [T, string])[];
 
 const WHY_AGENTS =
-  "fleetd manages agents. Every agent is a fleetd task with its own session, slot, worktree, lane, steering and receipts, started with spawn_agent.";
+  "fleetd starts and tracks every agent itself, with spawn_agent.";
 const WHY_TASK =
-  "fleetd manages agents (spawn_agent). Task and Agent are one tool: init lists Task, the model sees Agent, and denying either removes both.";
-const WHY_HEADLESS = "Nobody sits at a terminal to answer it, so the run would stall. Agents use ask or ask_lead.";
-const WHY_SCHEDULE = "fleetd schedules work (tasks, wakes), never inside one claude process the node may restart.";
-const WHY_WORKTREE = "fleetd owns worktrees, one per writer. A session that moves its own folder can't be resumed.";
+  "fleetd starts and tracks every agent itself, with spawn_agent. Task and Agent are one tool: blocking either removes both.";
+const WHY_HEADLESS = "Nobody sits at a terminal to answer it, so the run would stall. Agents ask through fleetd instead.";
+const WHY_SCHEDULE = "fleetd schedules work itself, so a restart can't lose it.";
+const WHY_WORKTREE = "fleetd gives each writer its own worktree. A session that moves to another folder can't be resumed.";
 const WHY_NESTED =
-  "A claude started inside a session runs outside fleetd's slots, with its own subagents and any model. Agents start agents with spawn_agent.";
+  "A claude started inside a session would run outside fleetd's limits, on any model. Agents start agents with spawn_agent.";
 
 /**
  * Tools no fleetd session gets (names from claude 2.1.302's `system/init` tool list), then the Bash rules against a
@@ -64,7 +64,7 @@ export const DISALLOWED_WHY: Why<string> = [
   ["Bash(xargs *claude -*)", WHY_NESTED],
 ];
 
-const WHY_UNUSED = "Unused by fleetd's agents, and tool schemas ride on every request.";
+const WHY_UNUSED = "fleetd's agents don't use it, and every tool adds to each request.";
 const WHY_LEAD_FILES = "A lead with repos never changes files: its agents do. A lead with no repo keeps them.";
 const WHY_LEAD_WEB = "A lead with repos has its agents read the web; a lead with no repo keeps it.";
 
@@ -76,7 +76,7 @@ export const AGENT_DISALLOWED_WHY: Why<string> = [
 ];
 
 const WHY_PRE_PUSH =
-  "A writer pushes only a tree the repo's pre-push check passed on (`.fleetd/pre-push.json`): run the check, and push again. A person's push can still skip it.";
+  "A writer may push only after the repo's pre-push check passed (`.fleetd/pre-push.json`). A person's push can still skip it.";
 
 /** Denied to a task's agent: the ways past fleetd's pre-push gate an agent reaches for first. */
 export const TASK_DISALLOWED_WHY: Why<string> = [
@@ -93,7 +93,7 @@ export const LEAD_DISALLOWED_WHY: Why<string> = [
   ["WebSearch", WHY_LEAD_WEB],
 ];
 
-const WHY_DEVICE = "Screens work as they do for every lead; a final Send or Pay click is the person's, through request_takeover.";
+const WHY_DEVICE = "Phone screens work for a lead as for any agent. A final Send or Pay is the person's, through request_takeover.";
 
 /** Allowed without asking to a lead in `manual` permission mode (every lead, D310). */
 export const LEAD_ALLOWED_WHY: Why<string> = [
@@ -102,7 +102,7 @@ export const LEAD_ALLOWED_WHY: Why<string> = [
   ["Write", "A lead that does its own work writes what the person can; a lead with repos has no Write."],
   ["WebSearch", "A search sends only its query, to the search provider."],
   ["Skill", "Loads a skill's instructions; runs nothing."],
-  ["mcp__fleetd", "fleetd's own tools, which the hub checks on every call."],
+  ["mcp__fleetd", "fleetd's own tools. The hub checks every call."],
   ["Bash(agent-device *)", WHY_DEVICE],
 ];
 
@@ -118,35 +118,35 @@ export const LEAD_ASK_WHY: Why<string> = [
 export const SUBAGENTS_OFF_ENV_WHY: Why<readonly [string, string]> = [
   [
     ["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"],
-    "Takes run_in_background out of Bash and Agent and refuses it: a background job outlives the turn fleetd tracks.",
+    "Turns off background jobs in Bash: one would outlive the turn fleetd tracks.",
   ],
-  [["CLAUDE_CODE_DISABLE_WORKFLOWS", "1"], "Removes the Workflow tool: fleetd manages agents."],
-  [["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "1"], "Removes the built-in Explore and Plan agents: fleetd manages agents."],
-  [["CLAUDE_CODE_DISABLE_AGENT_VIEW", "1"], "Removes the built-in claude agent: fleetd manages agents."],
+  [["CLAUDE_CODE_DISABLE_WORKFLOWS", "1"], "Removes the Workflow tool: fleetd starts agents itself."],
+  [["CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS", "1"], "Removes the built-in Explore and Plan agents: fleetd starts agents itself."],
+  [["CLAUDE_CODE_DISABLE_AGENT_VIEW", "1"], "Removes the built-in claude agent: fleetd starts agents itself."],
 ];
 
 /** Never passed on, and blanked in the settings overlay in case the user's settings set them. */
 export const SUBAGENTS_ON_ENV_WHY: Why<string> = [
-  ["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "Agent teams: fleetd manages agents."],
+  ["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "Agent teams: fleetd starts agents itself."],
   [
     "CLAUDE_CODE_COORDINATOR_MODE",
-    "Coordinator mode turns a session into one that only delegates (its tools become Task, ListAgents, SendMessage, TaskStop, Workflow).",
+    "Coordinator mode turns a session into one that only hands work to subagents.",
   ],
 ];
 
 export const AUTO_MEMORY_OFF_WHY =
-  "fleetd owns an agent's context (briefs, decisions, instructions). Notes claude keeps per folder would carry stale, unreviewed text from one agent's worktree to the next.";
+  "fleetd decides what each agent is told. Notes claude keeps per folder would carry stale text from one agent to the next.";
 
 /** Defaults for every claude fleetd starts: the node's own environment or `claude.env` sets any of them otherwise. */
 export const DEFAULT_ENV_WHY: Why<readonly [string, string]> = [
-  [["ENABLE_TOOL_SEARCH", "true"], "Tool schemas load when a tool is used, not on every request. fleetd's own tools always load at start."],
+  [["ENABLE_TOOL_SEARCH", "true"], "Tools load when used, not on every request. fleetd's own tools always load at start."],
 ];
 
 /** Defaults for a task's agent, like DEFAULT_ENV_WHY; also in its settings overlay. */
 export const WORKER_ENV_WHY: Why<readonly [string, string]> = [
   [
     ["BASH_MAX_TIMEOUT_MS", "280000"],
-    "No one command outlives a task agent's 5-minute prompt cache: past it, the agent's next request writes its whole context to the cache again. A longer suite is CI's job.",
+    "No command outlives an agent's 5-minute prompt cache, which would cost a full rewrite of its context. Long test suites are CI's job.",
   ],
 ];
 
@@ -158,26 +158,26 @@ export const WORKER_ENV_WHY: Why<readonly [string, string]> = [
 export const LEAD_ENV_WHY: Why<readonly [string, string]> = [
   [
     ["CLAUDE_CODE_SILENT_TURN_REMINDER", "0"],
-    "Turns off claude's mid-turn \"the user hasn't heard from you in a while\" reminder, which drew narration between tool calls. Only a lead turn's last text reaches the chat, so it would be dropped anyway.",
+    "Turns off claude's mid-turn reminder to post an update. Only a lead turn's last text reaches the chat.",
   ],
 ];
 
 /** A session's prompt cache TTL by role, unless the node's environment or `claude.env` sets the TTL variables. A
  * 1-hour cache write costs 2x the input price, a 5-minute one 1.25x; reads cost the same. */
 export const PROMPT_CACHE_TTL_WHY: Why<readonly [SessionRole, "5m" | "1h"]> = [
-  [["assistant", "1h"], "A lead doing its own work idles between a person's messages, like a lead between wakes."],
+  [["assistant", "1h"], "A lead with no repo waits between a person's messages."],
   [
     ["lead", "1h"],
-    "A lead idles between wakes, often more than 5 minutes while reviews and CI run, and would otherwise rewrite its whole context to the prompt cache on those wakes.",
+    "A lead often waits more than 5 minutes for reviews and CI. A longer cache saves rewriting its whole context.",
   ],
-  [["plain", "1h"], "A person's thread idles while they read and reply."],
+  [["plain", "1h"], "Your own thread waits while you read and reply."],
   [
     ["worker", "5m"],
-    "A task's agent (writer, reader, reviewer, CI fix) works in one burst and ends, so a 1-hour write pays for an hour it never uses.",
+    "An agent works in one burst and ends, so a 1-hour cache would go unused.",
   ],
 ];
 
-const WHY_NESTING = "claude sets it for its own children and treats a process that has it as nested inside another session.";
+const WHY_NESTING = "claude would treat the session as nested inside another one.";
 
 /** Variables never passed on to a session, even if the node's env has them. */
 export const NESTING_VARS_WHY: Why<string> = [
@@ -187,12 +187,12 @@ export const NESTING_VARS_WHY: Why<string> = [
 ];
 
 export const HELPER_MODEL_WHY =
-  "claude's background helper calls (session titles and the like) run on the default profile's model like every review, not on the haiku model claude picks by default.";
+  "claude's background calls (like session titles) use the default profile's model, not Haiku.";
 
 /** Set in every session's environment or settings overlay, besides the subagent switches and auto memory. */
 export const SESSION_ENV_WHY: Why<readonly [string, string]> = [
-  [["DISABLE_AUTOUPDATER", "1"], "Keeps the claude fleetd checked. An update mid-run would swap the binary under a live session."],
-  [["CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1"], "A refusal at startup arrives as a result fleetd can read, not only as stderr."],
+  [["DISABLE_AUTOUPDATER", "1"], "Keeps the claude version fleetd tested. An update mid-run would swap it under a live session."],
+  [["CLAUDE_CODE_STARTUP_FAILURE_RESULTS", "1"], "A failed start comes back as a result fleetd can read and show."],
 ];
 
 /** The items of a table, as the launch code uses them. */

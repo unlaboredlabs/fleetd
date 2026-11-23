@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentToolsPage, checkExample, clean, mdText, parseHelp, patternWords, prose, sourceText, splice } from "../scripts/docs.ts";
+import { agentToolsPage, cliPage, mdText, parseHelp, prose, sourceText, splice, summary } from "../scripts/docs.ts";
 import { fixtures } from "../scripts/setup-fixtures.ts";
 import { usageText } from "../src/cli/index.ts";
 import { toolsFor } from "../src/cli/agent_mcp/tools.ts";
@@ -42,31 +42,33 @@ describe("docs", () => {
     expect(sourceText("done:<n> or `T<n>`, a*")).toBe("done:&lt;n> or `T<n>`, a\\*");
   });
 
-  test("schema words", () => {
-    expect(patternWords("^T[1-9][0-9]*$")).toBe("`T<n>`, e.g. `T1`.");
-    expect(clean("`--item P<n>`: the plan item this task works on")).toBe("The plan item this task works on.");
-    expect(clean("A [`Brief`] whose")).toBe("A `Brief` whose.");
-    expect(clean("M9: a research judge")).toBe("A research judge.");
-    expect(clean("https://github.com/<owner>/<name>/pull/<n>")).toBe("Like `https://github.com/<owner>/<name>/pull/<n>`.");
+  test("a command's summary is its first sentence", () => {
+    expect(summary("set up fleetd (home default ~/.fleetd/hub; kept running): the hub. Run it again")).toBe(
+      "set up fleetd (home default ~/.fleetd/hub; kept running).",
+    );
+    expect(summary("stop being the agents' Mac")).toBe("stop being the agents' Mac.");
+    expect(summary("see `a. b` here. More")).toBe("see `a. b` here.");
   });
 
-  test("an example with a key the schema lacks is refused", () => {
-    const tool = toolsFor("lead").find((t) => t.name === "agents")!;
-    expect(() => checkExample("lead", tool, { taskId: "T1", taskID: "T1" })).toThrow(/taskID/);
-    expect(() => checkExample("lead", tool, { taskId: "seven" })).toThrow();
+  test("every command is on the CLI page", () => {
+    const page = cliPage();
+    for (const group of parseHelp(usageText())) for (const e of group.entries) expect(page).toContain(`fleetd ${e.synopsis[0]}`);
   });
 
-  test("every blocked tool and switch is on the page", () => {
+  test("every tool, blocked tool and switch is on the page", () => {
     const page = agentToolsPage();
-    const blocked = page.split("**Blocked**")[1]!;
-    for (const [tool] of DISALLOWED_WHY) expect(blocked).toContain(`\`${tool}\``);
-    for (const [[name]] of [...SUBAGENTS_OFF_ENV_WHY, ...SESSION_ENV_WHY, ...DEFAULT_ENV_WHY]) expect(page).toContain(`| \`${name}\` |`);
+    for (const tool of [...toolsFor("lead"), ...toolsFor("worker")]) expect(page).toContain(`<span id="${tool.name}"></span>\`${tool.name}\`: `);
+    const blocked = page.split("### Blocked everywhere")[1]!.split("### What a lead")[0]!;
+    for (const [tool] of [...DISALLOWED_WHY, ...AGENT_DISALLOWED_WHY, ...TASK_DISALLOWED_WHY, ...LEAD_DISALLOWED_WHY]) {
+      expect(blocked).toContain(`\`${tool}\``);
+    }
+    for (const [[name]] of [...SUBAGENTS_OFF_ENV_WHY, ...SESSION_ENV_WHY, ...DEFAULT_ENV_WHY]) expect(page).toContain(`- \`${name}\` = `);
     const [own, helpers] = PROMPT_CACHE_TTL_VARS;
-    expect(page.split(`| \`${own}\`, \`${helpers}\` |`).length - 1).toBe(PROMPT_CACHE_TTL_WHY.length);
+    const cache = page.split(`- \`${own}\`, \`${helpers}\``)[1]!.split("\n- ")[0]!;
+    expect(cache.split("\n  - ").length - 1).toBe(PROMPT_CACHE_TTL_WHY.length);
     // Allowed and blocked never overlap.
     const allowed = page.split("**Allowed:**")[1]!.split("\n")[0]!;
-    for (const [tool] of DISALLOWED_WHY) expect(allowed).not.toContain(`\`${tool}\``);
-    for (const [tool] of [...AGENT_DISALLOWED_WHY, ...TASK_DISALLOWED_WHY, ...LEAD_DISALLOWED_WHY]) expect(blocked).toContain(`\`${tool}\``);
+    for (const [tool] of [...DISALLOWED_WHY, ...AGENT_DISALLOWED_WHY]) expect(allowed).not.toContain(`\`${tool}\``);
     expect(allowed).toContain("`Bash`");
     expect(allowed).toContain("`Edit`");
   });
