@@ -54,6 +54,10 @@ input=$(cat)
 checked=$(git rev-parse --git-path fleetd-checked) || exit 1
 # field <key>: the string <key> holds in the declaration.
 field() { printf '%s\\n' "$declared" | sed -n "s/.*\\"$1\\"[[:space:]]*:[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p" | head -n 1; }
+# On a fleetd machine the check runs as \`fleetd-heavy <check>\`, taking a heavy-run slot (node/heavy_slots.ts), as
+# workers' standing rules say too.
+heavy=
+command -v fleetd-heavy >/dev/null 2>&1 && heavy="fleetd-heavy "
 refused=$(printf '%s\\n' "$input" | {
   long=
   while read -r _ sha ref _; do
@@ -65,9 +69,11 @@ refused=$(printf '%s\\n' "$input" | {
     check=$(field check) background=$(field background) wait_for=$(field wait)
     echo "fleetd: push refused: \${check:-the check in .fleetd/pre-push.json} hasn't passed on \${ref#refs/heads/}'s tree at $(git rev-parse --short "$sha")."
     [ -z "$background" ] || [ -z "$wait_for" ] ||
-      long="Too long for one command? Start \\\`$background\\\`, then wait for it with the Monitor tool running \\\`$wait_for\\\`, never a sleep loop."
+      long="Too long for one command? Start \\\`$heavy$background\\\`, then wait for it with the Monitor tool running \\\`$wait_for\\\`, never a sleep loop."
   done
-  echo "Run it in this worktree on what you push, commit exactly what it checked, then push again."
+  run=it
+  [ -z "$check" ] || run="\\\`$heavy$check\\\`"
+  echo "Run $run in this worktree on what you push, commit exactly what it checked, then push again."
   echo "\${long:-Too long for one command? Run it in the background and wait for it with the Monitor tool, never a sleep loop.}"
 })
 case $refused in "fleetd: push refused: "*)

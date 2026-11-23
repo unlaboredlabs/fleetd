@@ -1,7 +1,7 @@
 // A writer's worktree hooks: its pushes wait for its repo's pre-push check, and its commits name its task.
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { branchTask, gate, trailerHooks } from "../../src/node/worktree/hooks.ts";
 import { tempHome } from "../helpers.ts";
@@ -21,12 +21,24 @@ test("a writer's push goes only once the repo's pre-push check passed on its tre
     git(repo, ["add", "."]);
     git(repo, ["commit", "-q", "-m", "declare the check"]);
     git(repo, ["remote", "add", "origin", remote]);
-    const env: Record<string, string> = {};
+    // A PATH without fleetd-heavy (this test may run as an agent's, whose PATH has it), then with a stand-in for it.
+    const path = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "fleetd-heavy"))).join(":");
+    const env: Record<string, string> = { PATH: path };
     await gate(repo, env);
     const refused = git(repo, ["push", "-q", "origin", "main"], env);
     expect(refused.status).not.toBe(0);
     expect(refused.stderr).toContain("fleetd: push refused: scripts/check.sh hasn't passed on main's tree at");
+    expect(refused.stderr).toContain("Run `scripts/check.sh` in this worktree on what you push");
     expect(refused.stderr).toContain("Start `scripts/check.sh --background`, then wait for it with the Monitor tool running `scripts/check.sh --wait`");
+    // On a fleetd machine it says to run the check through fleetd-heavy, as workers' standing rules do; the wait as it is.
+    const bin = join(home.dir, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "fleetd-heavy"), "#!/bin/sh\nexec \"$@\"\n");
+    chmodSync(join(bin, "fleetd-heavy"), 0o755);
+    const heavy = git(repo, ["push", "-q", "origin", "main"], { ...env, PATH: `${bin}:${path}` });
+    expect(heavy.status).not.toBe(0);
+    expect(heavy.stderr).toContain("Run `fleetd-heavy scripts/check.sh` in this worktree on what you push");
+    expect(heavy.stderr).toContain("Start `fleetd-heavy scripts/check.sh --background`, then wait for it with the Monitor tool running `scripts/check.sh --wait`");
     // The check passed on this tree: it goes.
     const tree = git(repo, ["rev-parse", "HEAD^{tree}"]).stdout.trim();
     appendFileSync(join(repo, ".git", "fleetd-checked"), `${tree}\n`);

@@ -7,10 +7,12 @@
 //
 // Agents' PATH carries `fleetd-heavy` (install, beside build_slots.ts's cargo wrapper): their standing rules (briefLine)
 // tell them to run any repo's full check and long suites as `fleetd-heavy <command>`, and a repo's check may run
-// itself under it (fleetd's scripts/check.sh does), unless FLEETD_HEAVY_SLOT says it holds one.
-import { closeSync } from "node:fs";
+// itself under it (fleetd's scripts/check.sh does), unless FLEETD_HEAVY_SLOT says it holds one. So a run inside one
+// takes no second slot, and neither does the repo's declared `background` start or `wait` (.fleetd/pre-push.json): the
+// one returns at once, its run taking a slot of its own, and the other only waits for that run.
+import { closeSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { runInherited, take, writeWrapper } from "./build_slots.ts";
 import { readConfig } from "./config.ts";
 
@@ -60,7 +62,30 @@ export function install(home: string, exe: string[]): string {
 
 /** What a worker's standing rules say about heavy runs. */
 export const briefLine = (slots: number) =>
-  `- Run the repo's full pre-push check (\`.fleetd/pre-push.json\`, or what its docs name) and any other whole test suite or full build as \`${WRAPPER} <command>\` (\`${WRAPPER} bun run check\`): it takes one of this machine's ${slots} heavy-run slots, so many agents' checks can't overload it and fail on ports or timeouts. With all in use it prints that it is waiting and starts by itself once one frees: give it Bash's longest timeout or run it in the background with the Monitor tool, and don't stop it or start another. Your own partial test commands (one file, a filter) run directly and never wait.\n`;
+  `- Run the repo's full pre-push check (\`.fleetd/pre-push.json\`'s \`check\`, or what its docs name) and any other whole test suite or full build as \`${WRAPPER} <command>\` (\`${WRAPPER} bun run check\`): it takes one of this machine's ${slots} heavy-run slots, so many agents' checks can't overload it and fail on ports or timeouts. With all in use it prints that it is waiting and starts by itself once one frees: give it Bash's longest timeout, and don't stop it or start another. One too long for one command: start \`${WRAPPER} <its background command>\`, then wait with the Monitor tool running its \`wait\` command; neither the start nor the wait holds a slot, and a check that wraps itself takes no second one. Your own partial test commands (one file, a filter) run directly and never wait.\n`;
+
+/** Whether `argv`, run in `cwd`, is the `background` or `wait` command of the repo's `.fleetd/pre-push.json` (at the
+ * top of the repo `cwd` is in). A first word with a slash is a path: `./scripts/check.sh` from the top, or
+ * `../check.sh` from `scripts`, is `scripts/check.sh`. */
+export function declaredLight(cwd: string, argv: string[]): boolean {
+  let top = resolve(cwd);
+  while (!existsSync(join(top, ".git"))) {
+    if (dirname(top) === top) return false;
+    top = dirname(top);
+  }
+  let declared: Record<string, unknown>;
+  try {
+    declared = JSON.parse(readFileSync(join(top, ".fleetd", "pre-push.json"), "utf8")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  const word = (w: string, from: string) => (w.includes("/") ? resolve(from, w) : w);
+  return [declared.background, declared.wait].some((command) => {
+    if (typeof command !== "string") return false;
+    const words = command.trim().split(/\s+/);
+    return words.length === argv.length && words.every((w, i) => (i === 0 ? word(w, top) === word(argv[0]!, cwd) : w === argv[i]));
+  });
+}
 
 export async function main(argv: string[]): Promise<number> {
   const [home, bin, ...args] = argv;
@@ -69,7 +94,7 @@ export async function main(argv: string[]): Promise<number> {
     return 2;
   }
   const held = process.env[HELD] !== undefined || process.env[OLD.held] !== undefined;
-  const slots = held ? undefined : slotsHere(home);
+  const slots = held || declaredLight(process.cwd(), [bin, ...args]) ? undefined : slotsHere(home);
   if (slots === undefined) return runInherited(bin, args, process.env);
   let slot: number[] | undefined;
   try {
