@@ -199,6 +199,10 @@ When a PR is merged into a branch the train guards without the train, such as by
 within a minute and records `pr.merged_outside`. The next PR in line is rebased onto the new base as usual, so nothing
 else changes.
 
+A PR in the train that a person merges on GitHub, on a bot [you merge](#people-merge) or one with the `hold` label,
+counts as merged: its order, Factory (as made by fleetd, merged by you) and its [issue](/docs/issues) see it land as if the
+train had merged it.
+
 Every commit that reaches a bot's base branch is also recorded as a landing (`work.landed`), however it got there:
 by the train, from a PR merged outside it, or pushed straight to the branch. fleetd reads this with plain git on the
 bot's machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout's

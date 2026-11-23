@@ -3,7 +3,8 @@
 // that exact head, posts `fleetd/train=success` and squash-merges pinned to the head. Conflicts and red CI go back to
 // the task that wrote the code, but a conflict only in generated files, which the train regenerates on a node
 // (regen.ts); a merge goes to the lead inline. A PR merged into a guarded base without the train is reported once
-// (`pr.merged_outside`). The `hold` label holds one PR. Two or more ready Changes go as one batch (batch.ts).
+// (`pr.merged_outside`); a Change's PR a person merges on GitHub is merged all the same (`mergedOnGitHub`). The
+// `hold` label holds one PR. Two or more ready Changes go as one batch (batch.ts).
 // The base's own rules on GitHub decide the rest (`rules`): where it requires a person's approval, a PR waits for it
 // (person.ts) and PRs merge one at a time, updated by a merge of the base where a push would drop the approval; where
 // the repo allows no squash, the train merges by rebase or with a merge commit. Rules it can't read change nothing.
@@ -675,12 +676,32 @@ export class Train {
     if (done) await this.wakeLead(change.projectRef, prLeft(change.changeId, change.prUrl, why));
   }
 
-  /** `landed` is the batch PR it landed in with the others, when it did; `left`, what is left to do (its PR's close). */
-  async finishMerged(change: Change, mergedSha: string | undefined, landed?: batch.Landed, left?: string): Promise<void> {
+  /**
+   * A person merged it on GitHub: it counts as merged, as the train's own merge does, and its `pr.merged` says who
+   * merged it, so Factory counts it as made by fleetd and merged by them.
+   */
+  mergedOnGitHub(change: Change, pull: Pull): Promise<void> {
+    const hand: Record<string, unknown> = { byHand: true, base: pull.base.ref, head: pull.head.ref };
+    if (pull.merged_at) hand.mergedAt = pull.merged_at;
+    if (pull.merged_by) Object.assign(hand, { mergedBy: pull.merged_by.login, mergedByKind: pull.merged_by.type === "Bot" ? "bot" : "human" });
+    return this.finishMerged(change, pull.merge_commit_sha ?? undefined, undefined, undefined, hand);
+  }
+
+  /**
+   * `landed` is the batch PR it landed in with the others, when it did; `left`, what is left to do (its PR's close);
+   * `hand`, what `mergedOnGitHub` adds to its event.
+   */
+  async finishMerged(change: Change, mergedSha: string | undefined, landed?: batch.Landed, left?: string, hand?: Record<string, unknown>): Promise<void> {
     const sha = mergedSha?.toLowerCase();
     const merged = this.update(change.changeId, undefined, (c) => {
       const { lastError: _, ...rest } = c;
-      return { ...rest, state: "merged", ...(sha !== undefined ? { mergedSha: sha } : {}), ...(left !== undefined ? { lastError: left } : {}) };
+      return {
+        ...rest,
+        state: "merged",
+        ...(sha !== undefined ? { mergedSha: sha } : {}),
+        ...(left !== undefined ? { lastError: left } : {}),
+        ...(hand !== undefined ? { byHand: true } : {}),
+      };
     });
     if (!merged) return;
     this.mergeRefusals.delete(change.changeId);
@@ -690,6 +711,7 @@ export class Train {
     if (merged.taskId !== undefined) data.taskId = merged.taskId;
     data.mergedAt = isoMs(this.nowMs());
     if (landed) data.batchPr = landed.prNumber;
+    if (hand) Object.assign(data, hand);
     const note = landed ? ` in batch #${landed.prNumber}` : "";
     this.emit(merged.projectRef, "pr.merged", `${merged.changeId} merged: ${merged.repo}#${merged.prNumber}${asSha}${note}`, data);
     await this.wakeLead(merged.projectRef, prMerged(merged.changeId, merged.prUrl, asSha, merged.taskId));
@@ -1328,7 +1350,7 @@ export class Train {
     const repo = change.repo;
     const pull = await this.github.pull(repo, change.prNumber);
     this.guardBase(repo, pull.base.ref);
-    if (pull.merged) return this.abandon(change, "was merged outside the train");
+    if (pull.merged) return this.mergedOnGitHub(change, pull);
     if (pull.state !== "open") return this.abandon(change, "was closed");
     if (pull.head.sha.toLowerCase() !== change.headSha) return this.readyMoved(change, pull);
     // A Change in review goes only as a re-review, which runs alongside its CI.
@@ -1541,7 +1563,7 @@ export class Train {
       this.guardBase(repo, pull.base.ref);
       const moved = pull.head.sha.toLowerCase() !== change.headSha;
       const inLine = !moved && !pull.draft && ["queued", "reviewing", "ready"].includes(change.state);
-      if (pull.merged) await this.abandon(change, "was merged outside the train");
+      if (pull.merged) await this.mergedOnGitHub(change, pull);
       else if (pull.state !== "open") await this.abandon(change, "was closed");
       else if (change.state === "queued" && pull.draft) this.holdDraft(change);
       else if (inLine && conflicts(pull)) await conflicted(this, change, pull, `conflicts with ${pull.base.ref}, so GitHub runs no CI on it`);

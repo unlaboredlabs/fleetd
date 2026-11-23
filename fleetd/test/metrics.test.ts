@@ -120,6 +120,30 @@ test("a replay writes the same rows and the train has the last word", () => {
   expect([pr7.route, pr7.mergedMs, pr7.mergedByKind]).toEqual(["train", ms("2026-10-20T12:00:00.000Z"), "train"]);
 });
 
+test("a Change's PR a person merged on GitHub counts as fleetd's work merged by hand, and is their touch", () => {
+  const { hub: h } = hub();
+  orders(h);
+  sql(h, "INSERT INTO trains (repo, machine_id, project_id, watch_since_ms) VALUES ('acme/web', 'devbox', 'web', 0)");
+  change(h, 1, 7, "W1", "T1", "merged", "2026-10-20T09:00:00.000Z");
+  event(h, "2026-10-20T12:00:00.000Z", "pr.merged", {
+    changeId: "X1",
+    workstreamId: "W1",
+    repo: "acme/web",
+    prNumber: 7,
+    taskId: "T1",
+    mergedSha: "a".repeat(40),
+    mergedAt: "2026-10-20T11:59:00.000Z",
+    byHand: true,
+    mergedBy: "dana",
+    mergedByKind: "human",
+  });
+  projectFrom(h, 0);
+  const pr7 = rows(h).find((r) => r.unitKey === "pr:7")!;
+  expect([pr7.route, pr7.workstreamId, pr7.mergedByKind, pr7.mergedMs]).toEqual(["fleetd_by_hand", "W1", "human", ms("2026-10-20T11:59:00.000Z")]);
+  const touches = h.db.all<{ kind: string }>("SELECT kind FROM metric_touches WHERE kind = 'merge.by_hand'");
+  expect(touches.length).toBe(1);
+});
+
 function storeRow(h: H, unit: string, route: string, mergedMs: number, w?: string) {
   h.db.transaction((c) =>
     store.upsertMerge(c, {

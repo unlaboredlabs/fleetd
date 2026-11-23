@@ -358,7 +358,8 @@ function prRows(db: HubDb, repo: RepoRef, info: RepoInfo, pulls: MergedPr[]): Me
       continue;
     }
     const change = changeOf(db, repo.path, pr.number);
-    const train = change?.state === "merged";
+    // A Change a person merged on GitHub is fleetd's work merged by hand.
+    const train = change?.state === "merged" && change.byHand !== true;
     const d: TrainEventData = defined({
       ...base,
       prNumber: pr.number,
