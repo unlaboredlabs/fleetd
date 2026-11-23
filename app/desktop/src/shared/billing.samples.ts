@@ -5,9 +5,9 @@
 export const SAMPLE_NOW = Date.parse("2026-10-19T10:30:00.000Z");
 
 const PLANS = [
-  { key: "solo", name: "Solo", priceCents: 20_00, creditsCents: 30_00 },
-  { key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 },
-  { key: "scale", name: "Scale", priceCents: 200_00, creditsCents: 260_00 },
+  { key: "solo", name: "Solo", priceCents: 20_00, creditsCents: 30_00, agentsAtOnce: 25 },
+  { key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00, agentsAtOnce: 100 },
+  { key: "scale", name: "Scale", priceCents: 200_00, creditsCents: 260_00, agentsAtOnce: 300 },
 ];
 const TOPUPS = [
   { key: "10", priceCents: 10_00, creditsCents: 10_00 },

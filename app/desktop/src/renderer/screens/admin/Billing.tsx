@@ -21,6 +21,7 @@ import {
   noBuyWhy,
   periodWord,
   planLine,
+  planTerms,
   planWord,
   rateWord,
   sizeWord,
@@ -188,7 +189,7 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
         <SettingsRow
           reveal="hub.billing.plan"
           title="Plan"
-          hint={<HintLines lines={state.plans.map((p) => [p.name, `${money(p.priceCents, state.currency)} a month, ${money(p.creditsCents, state.currency)} of computer time included`] as const)} />}
+          hint={<HintLines lines={state.plans.map((p) => [p.name, planTerms(p, state.currency)] as const)} />}
           line={[planWord(state), planLine(state, nowMs)].filter((w) => w !== null).join(" · ")}
           control={!can ? undefined : state.plan === null ? <Plans state={state} busy={busy} open={open} /> : portal("Change plan")}
           data={{ "data-plan": state.plan?.key ?? "none" }}
