@@ -29,6 +29,17 @@ export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> 
     ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its bots are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
     : `The hub revokes ${machineId}'s key and forgets it, and its bots are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
+/**
+ * Why the hub refused a Remove, in a person's words beside Remove anyway: the bots whose leads it still runs (the
+ * hub's own words say how an agent repairs or forces it instead), else an add still going.
+ */
+export const refusedLine = (machineId: string, bots: ReadonlyArray<string>): string => {
+  if (bots.length === 0) return `${machineId} is still being added. Remove anyway stops that halfway.`;
+  if (bots.length === 1) return `${machineId} still runs ${bots[0]}'s lead. Remove anyway stops it and deletes that bot.`;
+  const named = bots.length > 3 ? `${bots.slice(0, 3).join(", ")} and ${bots.length - 3} more` : `${bots.slice(0, -1).join(", ")} and ${bots.at(-1)}`;
+  return `${machineId} still runs the leads of ${named}. Remove anyway stops them and deletes those bots.`;
+};
+
 /** What Remove does, on hovering it on the machine's page; the dialog it opens says the rest (removeLine). */
 export const REMOVE_LINE = "Its bots are deleted from fleetd with their chats and orders. Its repos and worktrees stay.";
 

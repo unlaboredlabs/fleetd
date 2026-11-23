@@ -108,6 +108,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** A bot on a machine, as the hub's snapshot lists it. */
+const project = (machineId: string, projectId: string): ProjectSummary => ({
+  machineId,
+  projectId,
+  title: projectId,
+  workspaceRoot: `/home/dev/src/${projectId}`,
+  lastActivityAt: AT,
+  threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
+});
+
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
 const render = async (ui: React.ReactNode, projects: ProjectSummary[] = []) => {
@@ -308,12 +318,13 @@ it("asks before it removes a machine, then says it is removed and goes back to t
   expect(window.location.hash).toBe("#/settings/hub/machines");
 });
 
-it("says what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
-  await render(<MachinePage machineId="devbox" />);
+it("says plainly what removing a machine that runs leads stops, and removes it only on Remove anyway", async () => {
+  await render(<MachinePage machineId="devbox" />, [project("devbox", "site"), project("devbox", "app"), project("worker", "docs")]);
   await click(button("Remove…"));
   await click(button("Remove devbox"));
-  const dialog = document.querySelector("[role='dialog']");
-  expect(dialog?.textContent).toContain("Not removed: devbox runs the leads of 2 bots (app, site)");
+  const said = document.querySelector("[role='dialog'] [role='alert']")?.textContent;
+  // The hub's words are an agent's: the tool and flag to force it never reach the person.
+  expect(said).toBe("devbox still runs the leads of app and site. Remove anyway stops them and deletes those bots.");
   expect(host.textContent).not.toContain("Removed devbox.");
   await click(button("Remove anyway"));
   expect(calls.filter((c) => c.tool === "machine_remove").map((c) => c.input)).toEqual([{ machineId: "devbox" }, { machineId: "devbox", force: true }]);
@@ -548,14 +559,6 @@ it("says so when the hub has no such machine", async () => {
 });
 
 it("lists the bots left from a removed machine, and Remove only forgets one in fleetd", async () => {
-  const project = (machineId: string, projectId: string): ProjectSummary => ({
-    machineId,
-    projectId,
-    title: projectId,
-    workspaceRoot: `/home/dev/src/${projectId}`,
-    lastActivityAt: AT,
-    threads: { running: 0, waiting: 0, idle: 0, failed: 0 },
-  });
   await render(<MachineList />, [project("devbox", "fleetd"), project("worker", "fleetd")]);
   const leftovers = host.querySelector("[aria-label='Bots left from removed machines']");
   expect([...(leftovers?.querySelectorAll("[role='listitem']") ?? [])].map((li) => li.textContent)).toEqual([
