@@ -71,6 +71,11 @@ describe("versions", () => {
 
   it("orders versions numerically and refuses to guess", () => {
     expect(compareVersions("0.10.0", "0.9.3")).toBe(1);
+    // A published build (release.version-scheme) is newer than every day-numbered or edge build before it, which is
+    // what electron-updater's own semver compare decides too: apps on 2026.11.23.x update to 0.9.x.
+    expect(compareVersions("0.9.0+20261124.abc1234", "0.0.0-edge.202611231632.1+1333328")).toBe(1);
+    expect(compareVersions("0.0.0-edge.202611231632.1+1333328", "0.9.0+20261124.abc1234")).toBe(-1);
+    expect(compareVersions("0.9.1+20261124.abc1234", "0.9.0+20261124.def5678")).toBe(1);
     expect(compareVersions("v0.4.2", "0.4.2")).toBe(0);
     expect(compareVersions("0.5.0-nightly.3", "0.5.0")).toBe(-1);
     expect(compareVersions("dev", "0.5.0")).toBeNull();

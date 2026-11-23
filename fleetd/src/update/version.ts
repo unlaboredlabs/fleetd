@@ -11,20 +11,32 @@ export function edgeStamp(version: string): [string, string] | undefined {
   return undefined;
 }
 
+/** A published build's version (release.version-scheme): `0.<minor>.<patch>+<UTC day>.<commit>`. */
+const RELEASED = /^v?(\d+\.\d+\.\d+)\+(\d{4})(\d{2})(\d{2})(?:\.|$)/;
+/** One from the day-numbered builds before it (D701's first weeks): `0.0.0-edge.<minute stamp>.<nth>+<commit>`. */
+const DAY_NUMBERED = /^v?\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)(?:\+|$)/;
+
 /**
- * A build's number (D701), `<year>.<month>.<day>.<nth build that UTC day>`, from its version
- * `0.0.0-edge.<minute stamp>.<nth>+<commit>`; undefined for a version from before build numbers.
+ * A build's number, what the rollout, its releases (`build-<number>`) and support go by: `0.9.4` for a published build,
+ * `2026.11.23.4` for a day-numbered one from before; undefined for any other version (a local build, an old edge one).
  */
 export function buildNumber(raw: string): string | undefined {
-  const m = /^v?\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)(?:\+|$)/.exec(raw.trim());
+  const v = raw.trim();
+  const released = RELEASED.exec(v);
+  if (released) return released[1];
+  const m = DAY_NUMBERED.exec(v);
   return m ? `${m[1]}.${Number(m[2])}.${Number(m[3])}.${m[4]}` : undefined;
 }
 
 /**
- * `0.0.0-edge.202611231406.4+5877c50` reads "2026.11.23.4", its build number; `0.0.0-edge.202610261056+1b563d7`, from
- * before build numbers, "Edge · Oct 26, 10:56 UTC · 1b563d7"; any other version is itself.
+ * `0.9.4+20261123.5877c50` reads "0.9.4 · Nov 23", its number and the UTC day it was built; a day-numbered build
+ * `0.0.0-edge.202611231406.4+5877c50` "2026.11.23.4"; `0.0.0-edge.202610261056+1b563d7`, from before numbers,
+ * "Edge · Oct 26, 10:56 UTC · 1b563d7"; any other version is itself.
  */
 export function versionLabel(raw: string): string {
+  const released = RELEASED.exec(raw.trim());
+  const built = released ? MONTHS[Number(released[3]) - 1] : undefined;
+  if (released && built) return `${released[1]} · ${built} ${Number(released[4])}`;
   const number = buildNumber(raw);
   if (number !== undefined) return number;
   let version = raw.trim();
@@ -51,7 +63,8 @@ export function versionShown(version: string): string {
 
 /**
  * How two versions order (lib.rs `version_cmp`): by their numbers, then a release over its prereleases, prereleases
- * part by part. Undefined across channels (an edge build and a tagged one), and for 0.0.0, a local build.
+ * part by part. Undefined across channels of the same numbers (an edge build and a tagged one), and for 0.0.0, a
+ * local build.
  */
 export function versionCmp(a: string, b: string): -1 | 0 | 1 | undefined {
   const parse = (raw: string): [number[], string | undefined] | undefined => {
@@ -78,9 +91,11 @@ export function versionCmp(a: string, b: string): -1 | 0 | 1 | undefined {
   if (!x || !y) return undefined;
   const nightly = (p: string | undefined) => p?.startsWith("nightly") ?? false;
   const zero = (n: number[]) => n.every((d) => d === 0);
-  if ((zero(x[0]) && x[1] === undefined) || (zero(y[0]) && y[1] === undefined) || nightly(x[1]) !== nightly(y[1])) return undefined;
+  if ((zero(x[0]) && x[1] === undefined) || (zero(y[0]) && y[1] === undefined)) return undefined;
   const sign = (d: number) => (d < 0 ? -1 : d > 0 ? 1 : 0) as -1 | 0 | 1;
+  // The numbers decide first, across channels too: 0.9.0 is newer than every 0.0.0-edge build before it.
   for (let i = 0; i < 3; i++) if (x[0][i] !== y[0][i]) return sign(x[0][i]! - y[0][i]!);
+  if (nightly(x[1]) !== nightly(y[1])) return undefined;
   const [p, q] = [x[1], y[1]];
   if (p === undefined && q === undefined) return 0;
   if (p === undefined) return 1;

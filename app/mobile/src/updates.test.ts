@@ -67,7 +67,7 @@ describe("updateSection", () => {
   });
 
   it("offers the hub's ready build in one line with one button, as the desktop app says it", () => {
-    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ kind: "available", title: "Update available", detail: "fleetd 0.9.1", action: { label: "Update", act: "update" }, rows: [] });
+    expect(updateSection(input({ ready: "0.9.1" }))).toEqual({ kind: "available", title: "Update available", detail: "fleetd 0.9.1", to: "0.9.1", action: { label: "Update", act: "update" }, rows: [] });
     expect(updateSection(input({ hub: { ...HUB, version: "0.0.0-edge.202610281816+e6ed04e" }, machines: [], ready: "0.0.0-edge.202610292301+c1d2e3f4" }))?.detail).toBe("fleetd Edge · Oct 29, 23:01");
     expect(updateSection(input({ ready: "0.9.1", admin: false }))).toBeNull();
   });
@@ -142,7 +142,8 @@ describe("shortVersion", () => {
     expect(shortVersion("0.9.1+abc1234")).toBe("0.9.1");
   });
 
-  it("shows a numbered build by its number (D701)", () => {
+  it("shows a numbered build by its number (D701), a published one by its 0.MINOR.PATCH", () => {
     expect(shortVersion("0.0.0-edge.202611231406.4+5877c50")).toBe("2026.11.23.4");
+    expect(shortVersion("0.9.4+20261123.5877c50")).toBe("0.9.4");
   });
 });

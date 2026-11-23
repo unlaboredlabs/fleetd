@@ -631,9 +631,11 @@ test("a node from before flavours comes back as build_rust and switches to Bun i
   await resumed;
 });
 
-test("versions order within a channel only, and the watcher's health URL reaches the hub", () => {
+test("versions order by their numbers first, then within a channel only, and the watcher's health URL reaches the hub", () => {
   expect([versionCmp("1.2.0", "1.10.0"), versionCmp("1.2.0-rc.2", "1.2.0"), versionCmp("0.0.0-edge.202611080900", "0.0.0-nightly.202611071200")]).toEqual([-1, -1, 1]);
-  expect(versionCmp("0.0.0-edge.1", "1.0.0")).toBeUndefined();
+  // Numbers first, across channels: 0.9.0 is newer than every 0.0.0-edge build (release.version-scheme).
+  expect(versionCmp("0.0.0-edge.1", "1.0.0")).toBe(-1);
+  expect(versionCmp("1.0.0-edge.1", "1.0.0-rc.1")).toBeUndefined();
   expect(versionCmp("0.0.0", "1.0.0")).toBeUndefined();
   expect([atLeast("1.2.0", "1.2.0"), atLeast("1.3.0", "1.2.0"), atLeast("0.0.0", "1.2.0")]).toEqual([true, true, false]);
   expect(["0.0.0.0", "100.104.0.7", "fd00::1", "[fd00::1]", "::", "[::]"].map((h) => healthUrl(h, 4790))).toEqual([
@@ -818,7 +820,8 @@ test("a lead's turn counts against a build unless its own error class is the pro
 test("fleetd's own hub (ring first) tells the rollout each build its self-check passed on", async () => {
   const dir = join(home.dir, "ring");
   const fake = new Fake(dir, []);
-  const version = "0.0.0-edge.202611231406.4+5877c50";
+  fake.version = "0.0.0-edge.202611231406.4+5877c50";
+  const version = "0.9.4+20261124.5877c50";
   fake.published = [version, build];
   const told: string[] = [];
   fake.reportPass = async (repo, b) => void told.push(`${repo} ${b}`);
@@ -831,7 +834,7 @@ test("fleetd's own hub (ring first) tells the rollout each build its self-check 
   fake.version = version;
   await updatesIn(dir, fake).resume();
   await until(() => told.length === 1);
-  expect(told).toEqual(["unlaboredlabs/fleetd 2026.11.23.4"]);
+  expect(told).toEqual(["unlaboredlabs/fleetd 0.9.4"]);
 });
 
 test("after `fleetd update` put a build in place by hand, its nodes still get that build's own files from the rollout", async () => {
@@ -882,4 +885,33 @@ test("a node from before rollouts waits, saying why, while the hub's build isn't
   // Not asked again at each automatic look while the hub's build isn't the newest.
   await after.prefetch();
   expect(after.autoAt()).toBeUndefined();
+});
+
+test("a hub and its machines on a day-numbered build (2026.11.23.x) update to 0.9.x, never back", async () => {
+  const dir = join(home.dir, "to-0.9");
+  const day = "0.0.0-edge.202611231632.1+1333328";
+  const nine = "0.9.0+20261124.abc1234";
+  const fake = new Fake(dir, [{ version: day }]);
+  fake.version = day;
+  fake.now = Date.parse("2026-11-24T12:00:00Z");
+  const bytes = new TextEncoder().encode("fleetd 0.9.0"), old = new TextEncoder().encode("fleetd 2026.11.23.1");
+  const r = rolledOut([
+    { build: "0.9.0", version: nine, bytes, passedAt: "2026-11-24T05:00:00Z" },
+    { build: "2026.11.23.1", version: day, bytes: old, passedAt: "2026-11-23T17:20:00Z" },
+  ]);
+  fake.release = r.edge;
+  fake.buildFeed = r.of;
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  expect([fake.plans[0]!.from, fake.plans[0]!.to]).toEqual([day, nine]);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: "runs 0.9.0" }));
+  fake.version = nine;
+  const after = updatesIn(dir, fake);
+  await after.resume();
+  expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  expect(fake.sent.at(-1)).toMatchObject({ version: nine, build: "0.9.0" });
+  // On 0.9.0 now: the day-numbered build is older, so nothing to do.
+  await after.prefetch();
+  expect(after.ready()).toBeUndefined();
 });

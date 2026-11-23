@@ -199,6 +199,15 @@ export default defineGroup({
         return says(f, { ready: NEXT, settings: { auto: true, drainMinutes: 2, speed: "fast" }, skipReason: "An update someone started is still running." });
       })(),
       says(withHub("auto-current", "The everyday page: up to date, Update automatically on.", MINE), { settings: { auto: true, drainMinutes: 2, speed: "fast" } }),
+      // release.version-scheme: a hub on 0.9.3 with 0.9.4 ready, this app on the hub's build: the menu under your name
+      // says "Update to 0.9.4", the Updates page "0.9.4 · Nov 23".
+      (() => {
+        const on = "0.9.3+20261122.1c0ffee";
+        const ready = "0.9.4+20261123.5877c50";
+        const f = withHub("numbered", "A hub on 0.9.3 with 0.9.4 ready: Update to 0.9.4.", on, { release: { cli: ready, app: on } });
+        f.appUpdate = { current: on, app: { kind: "current" }, release: { cli: ready, app: on } };
+        return says(f, { ready, settings: { auto: false, drainMinutes: 2, speed: "fast" } });
+      })(),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),

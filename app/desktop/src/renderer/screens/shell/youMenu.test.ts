@@ -3,7 +3,7 @@ import type { HubState } from "../../../shared/hub";
 import type { AppUpdate, UpdatesState } from "../../../shared/updates";
 import { updateStatus } from "../updates/model";
 import { quietOf, type Quiet } from "../updates/quiet";
-import { appLine, hostedLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, startLine, updateLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
+import { appLine, hostedLine, hubLine, linkMark, machinesLine, menuLines, offersWhole, setupLine, startLine, updateLine, updateToLine, workMark, type MenuInput, type MenuMachine } from "./youMenu";
 
 const HUB = "https://devbox.example.ts.net:4790";
 const NOW = Date.parse("2026-10-19T09:03:07.195Z");
@@ -265,5 +265,23 @@ describe("this app's own update, with two hubs", () => {
     expect(rows(app({ kind: "checking" }))).toEqual(["devbox", "weishang"]);
     expect(appLine({ current: MINE, app: { kind: "unsupported" }, release: null })).toBeNull();
     expect(appLine(null)).toBeNull();
+  });
+});
+
+describe("the update row under your name", () => {
+  const offer = (to: string, act: "update" | "app" = "update") =>
+    ({ kind: "available", title: "Update available", to, action: { label: "Update", act }, rows: [] }) as const;
+
+  it("names the version an update to take brings, and its press is the Updates page's button", () => {
+    expect(updateToLine(offer("0.9.4+20261123.5877c50"))).toEqual({ key: "app", mark: "accent", text: "Update to 0.9.4", does: { to: "update", act: "update" } });
+    expect(updateToLine(offer("0.9.5+20261124.abcdef0", "app"))?.does).toEqual({ to: "update", act: "app" });
+  });
+
+  it("is there only while an update is there to take", () => {
+    expect(updateToLine(null)).toBeNull();
+    expect(updateToLine({ kind: "current", title: "Up to date", rows: [] })).toBeNull();
+    // A member's: an owner or admin installs it, so nothing to press.
+    expect(updateToLine({ kind: "available", title: "Update available", to: "0.9.4+20261123.abc", quiet: true, rows: [] })).toBeNull();
+    expect(updateToLine({ kind: "updating", title: "Updating…", rows: [] })).toBeNull();
   });
 });

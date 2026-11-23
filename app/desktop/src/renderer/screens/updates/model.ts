@@ -36,6 +36,8 @@ export interface Status {
   readonly quiet?: boolean;
   /** When the last update came through, epoch ms, while that is news. */
   readonly updatedAt?: number;
+  /** With `available`: the version the update brings (the hub's newest, or this app's own). */
+  readonly to?: string;
 }
 
 /** How long a followed run goes unchanged before it counts as stopped. A machine's own restart is back well within it. */
@@ -175,11 +177,11 @@ export const appStatus = (state: UpdatesState): Say | null => {
   switch (app.kind) {
     case "available":
       if (app.restart) return appUpdating(state);
-      return { kind: "available", title: "Update available", detail: named(app.version), action: { label: "Restart to update", act: "app" } };
+      return { kind: "available", title: "Update available", detail: named(app.version), to: app.version, action: { label: "Restart to update", act: "app" } };
     case "ready":
-      return { kind: "available", title: "Update available", detail: named(app.version), action: { label: "Restart to update", act: "app" } };
+      return { kind: "available", title: "Update available", detail: named(app.version), to: app.version, action: { label: "Restart to update", act: "app" } };
     case "manual":
-      return { kind: "available", title: "Update available", detail: named(app.version), command: DEB_INSTALL, action: { label: "Download", act: "app" } };
+      return { kind: "available", title: "Update available", detail: named(app.version), to: app.version, command: DEB_INSTALL, action: { label: "Download", act: "app" } };
     case "failed":
       return app.during === "check"
         ? { kind: "none", title: "Couldn't check for updates", detail: app.reason, action: { label: "Try again", act: "check" } }
@@ -274,7 +276,7 @@ export const updateStatus = ({ app, hub, machines = [], run = null, flow = { pha
     byItself === null
       ? { kind: "available", title, ...(detail === undefined ? {} : { detail }), action: { label: "Update", act: "update" } }
       : { kind: "available", title, detail: `Installs by itself at ${clockAt(byItself, timeZone)}.`, action: { label: "Update now", act: "update" }, quiet: true };
-  if (newest !== null) return { ...offer("Update available", named(newest)), rows: [] };
+  if (newest !== null) return { ...offer("Update available", named(newest)), to: newest, rows: [] };
 
   const rows: Row[] = [];
   let online = 0;

@@ -10,14 +10,15 @@ import type { DegradedCause, MachineStatus, SlotHosted } from "../../../shared/c
 import { hostedRow } from "../../../shared/hostedRow";
 import { specOf } from "../../../shared/providers";
 import type { HubState } from "../../../shared/hub";
-import type { UpdatesState } from "../../../shared/updates";
-import { appStatus, clockAt, type Act } from "../updates/model";
+import { versionNumber, type UpdatesState } from "../../../shared/updates";
+import { appStatus, clockAt, type Act, type Status } from "../updates/model";
 import type { Quiet } from "../updates/quiet";
 import { hubName, restartOf, wakeQuiet } from "./model";
 import { onWeb } from "../../src/web";
 
 /** A dot in its state's colour; `ring`: the dot opened while the hub restarts; `update`: an update to take. */
-export type LineMark = "success" | "warning" | "danger" | "quiet" | "ring" | "update";
+/** `accent`: an update there to take, the small dot your picture carries for it. */
+export type LineMark = "success" | "warning" | "danger" | "quiet" | "ring" | "update" | "accent";
 
 /** What a click on a line does. */
 export type LineDoes =
@@ -141,6 +142,16 @@ export const appLine = (state: UpdatesState | null, whole = false): MenuLine | n
   if (whole && said.kind === "available") return null;
   const line = { key: "app", mark: said.kind === "failed" ? "danger" : "update", text: said.title } as const;
   return said.action === undefined ? line : { ...line, action: said.action.label, does: { to: "update", act: said.action.act } };
+};
+
+/**
+ * An update this person can take now, as the Updates page offers it (the hub's whole update for an owner or admin,
+ * else this app's own): one row naming the version it brings, "Update to 0.9.4", whose press is the page's button.
+ * Null while there is none to take.
+ */
+export const updateToLine = (status: Status | null): MenuLine | null => {
+  if (status?.kind !== "available" || status.action === undefined || status.to === undefined) return null;
+  return { key: "app", mark: "accent", text: `Update to ${versionNumber(status.to)}`, does: { to: "update", act: status.action.act } };
 };
 
 /**

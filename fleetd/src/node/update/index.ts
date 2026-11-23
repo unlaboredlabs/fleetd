@@ -212,7 +212,7 @@ export type Watch = { answered: string; verdict: string };
 
 function feedOf(update: NodeUpdate): Feed {
   if (update.build !== undefined && update.sha256 !== undefined) {
-    if (!/^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/.test(update.build)) throw new Failure("download", "the hub named a build this fleetd can't read");
+    if (!/^(?:\d+\.\d+\.\d+|\d{4}\.\d{1,2}\.\d{1,2}\.\d+)$/.test(update.build)) throw new Failure("download", "the hub named a build this fleetd can't read");
     return buildFeed(update.build);
   }
   // Edge goes out as `nightly`, its name before D203.

@@ -2,7 +2,7 @@
 // the quiet indicator, self-contained for whatever names the hub: its state (useQuiet), its word, what its note's
 // button does (useUpdateAct), and the main area's line for a restart that runs long.
 export { UpdatesHost } from "./UpdatesHost";
-export { useQuiet, useUpdateAct } from "./hooks";
+export { useQuiet, useUpdateAct, useUpdateStatus } from "./hooks";
 export { UpdateWord } from "./UpdateWord";
 export { RestartLine } from "./RestartLine";
 export type { Act } from "./model";

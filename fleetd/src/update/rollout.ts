@@ -1,5 +1,5 @@
-// Which build a machine runs (D701): every green build of main is a release with a date-based number (2026.11.23.4),
-// and reaches machines in rings. fleetd's own hub takes each build first (ring `first`) and checks itself on it; once
+// Which build a machine runs (D701): every green build of main is a release numbered 0.MINOR.PATCH (0.9.4,
+// release.version-scheme), and reaches machines in rings. fleetd's own hub takes each build first (ring `first`) and checks itself on it; once
 // that and the cloud passed (`passedAt`, .github/release/rollout.ts), the build goes to everyone in stages, each hub
 // by the bucket its own id falls in: 10% at once, 50% after an hour, everyone after 3 hours. A hub on Update speed
 // Steady takes only builds that have been out 2 days and were never halted.
@@ -107,14 +107,7 @@ export function pick(r: Rollout, who: Picker, running: string, now: number): Pic
 /** `running` isn't listed and is newer than every listed build: a build from a branch, or one the list dropped. */
 function aheadOfAll(r: Rollout, running: string): boolean {
   const newest = r.builds[0];
-  if (!newest) return false;
-  return stampOf(running) > stampOf(newest.version);
-}
-
-/** The minute stamp of an edge version (`0.0.0-edge.202611231406.4+5877c50`), as a number with its count: for order. */
-function stampOf(version: string): number {
-  const m = /-(?:edge|nightly)\.(\d{12})(?:\.(\d+))?/.exec(version);
-  return m ? Number(m[1]) * 1000 + Number(m[2] ?? 0) : 0;
+  return newest !== undefined && versionCmp(running, newest.version) === 1;
 }
 
 /** rollout.json's contents, or why it isn't one. */

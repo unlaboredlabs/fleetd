@@ -42,7 +42,7 @@
 # ring, and which build edge's latest-*.yml and phone bundle offer is the rollout's (rollout.ts tick), so a numbered
 # build doesn't upload them to edge.
 #
-# Env: CHANNEL, VERSION, BUILD (its number, 2026.11.23.4), APP_BUILT, CLI_PUBLISH, GH_TOKEN, RELEASE_SHA (the commit
+# Env: CHANNEL, VERSION, BUILD (its number, 0.9.4), APP_BUILT, CLI_PUBLISH, GH_TOKEN, RELEASE_SHA (the commit
 # built; GITHUB_SHA without it), GITHUB_REF_NAME.
 set -euo pipefail
 : "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${RELEASE_SHA:=${GITHUB_SHA:?}}" "${BUILD:=}"
@@ -179,7 +179,7 @@ if [ "$numbered" = true ]; then
   own="build-$BUILD"
   gh release view "$own" >/dev/null 2>&1 ||
     gh release create "$own" --prerelease --latest=false --target "$RELEASE_SHA" --title "fleetd $BUILD" \
-      --notes "Build $BUILD of main at $RELEASE_SHA."
+      --notes "fleetd $BUILD, built from main at $RELEASE_SHA."
   mine=()
   for pin in ${pins[@]+"${pins[@]}"}; do
     [[ "$(basename "$pin")" =~ ^fleetd-(linux|darwin)- ]] || mine+=("$pin")

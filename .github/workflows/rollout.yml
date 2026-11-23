@@ -5,7 +5,7 @@
 # fleetd's own hub starts it with `pass` once it passed its self-check on a build. Halting or pulling a build is one
 # command:
 #
-#   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=2026.11.23.4
+#   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=0.9.4
 #
 # (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) A flag has no
 # concurrency group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back
@@ -27,7 +27,7 @@ on:
         options: [tick, pass, halt, pull, resume]
         default: tick
       build:
-        description: The build's number, as 2026.11.23.4 (not for tick)
+        description: The build's number, as 0.9.4 (not for tick)
         type: string
         default: ""
 

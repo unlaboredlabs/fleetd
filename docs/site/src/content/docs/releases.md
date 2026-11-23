@@ -1,19 +1,20 @@
 ---
 title: Builds & rollout
-description: How every build of fleetd is numbered, tested on fleetd's own hub and cloud, and rolled out in stages, with self-checks and automatic rollback.
+description: How every build of fleetd gets its version, is tested on fleetd's own hub and cloud, and rolls out in stages, with self-checks and automatic rollback.
 ---
 
-fleetd has no versioned releases. Every change to fleetd that passes its tests becomes a build, and builds reach hubs
-in stages.
+Every change to fleetd that passes its tests becomes a release, and releases reach hubs in stages.
 
-## Build numbers {#numbers}
+## Versions {#numbers}
 
-Each build gets a number from its day (UTC) and its place that day: `2026.11.23.4` is the fourth build of November 23.
-The apps show it under Settings › General › Version, and `fleetd version` prints it. Give this number when you ask
-for support.
+Each build gets the next version, `0.MINOR.PATCH`. PATCH goes up by one with each build, so 0.9.0, 0.9.1, 0.9.2 and so
+on. A build that's halted keeps its number, so you may see a gap. MINOR changes only for a bigger step (1.0 at
+launch). The apps show the version with the day it was built, as `0.9.4 · Nov 23`: under Settings › General ›
+Version, on the Updates page, and in the menu under your name when an update is ready. `fleetd version` prints it too.
+Give this version when you ask for support.
 
 Each build has its own page on [GitHub Releases](https://github.com/unlaboredlabs/fleetd/releases), named
-`build-<number>`, with what's new in plain words. The **Edge** release lists the latest builds and how far each one has
+`build-<version>` (for example `build-0.9.4`), with what's new in plain words. The **Edge** release lists the latest builds and how far each one has
 rolled out.
 
 ## How a build reaches your hub {#rings}
@@ -26,7 +27,7 @@ Each hub is in a fixed stage, worked out from a random id it creates for itself 
 build they run, and nothing is sent from your hub. The desktop app follows the same stages with its own id. The phone
 gets a new over-the-air bundle once its build has reached every hub.
 
-A machine still on a fleetd from before numbered builds can only take the newest build. While your hub runs an older
+A machine still on a fleetd from before these versions can only take the newest build. While your hub runs an older
 one, Settings › Hub › Machines › Updates says that machine is waiting. It updates once the hub runs the newest build,
 or right away if you run `fleetd update` on it.
 
@@ -61,7 +62,7 @@ installs it if you ask.
 fleetd's maintainers can stop a build with one command:
 
 ```sh
-gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=2026.11.23.4
+gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=0.9.4
 ```
 
 - `halt`: no new hub takes the build. Hubs already on it keep it.

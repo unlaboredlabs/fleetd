@@ -2,9 +2,9 @@
 // release side's pure rules (.github/release/rollout.ts): what's new in plain words, which builds stay listed, the
 // first ring's gate and the desktop app's stage feeds.
 import { expect, test } from "bun:test";
-import { absolute, cloudVerdict, feedBuild, gate, moving, plainNotes, prune, releaseNotes } from "../../.github/release/rollout.ts";
+import { absolute, cloudVerdict, feedBuild, gate, heading, moving, plainNotes, prune, releaseNotes } from "../../.github/release/rollout.ts";
 import { bucketOf, choose, parseRollout, parseSpeed, percentAt, pick, type Picker, type Rollout, type RolloutBuild } from "../src/update/rollout.ts";
-import { buildNumber, versionLabel, versionShown } from "../src/update/version.ts";
+import { atLeast, buildNumber, versionCmp, versionLabel, versionShown } from "../src/update/version.ts";
 import { versionLine } from "../src/cli/versions.ts";
 
 const NOW = Date.parse("2026-11-23T12:00:00Z");
@@ -19,6 +19,28 @@ const b = (n: number, more: Partial<RolloutBuild> = {}): RolloutBuild => ({
   ...more,
 });
 const fast = (bucket: number): Picker => ({ ring: "everyone", bucket, speed: "fast" });
+
+test("a published build is 0.MINOR.PATCH with its day, and newer than every build before the scheme", () => {
+  const v = "0.9.4+20261123.5877c50";
+  expect(buildNumber(v)).toBe("0.9.4");
+  expect(versionLabel(v)).toBe("0.9.4 · Nov 23");
+  expect(versionShown(v)).toBe(`0.9.4 · Nov 23 (${v})`);
+  expect(versionLine(v)).toBe(`fleetd 0.9.4 · Nov 23 (${v}, protocol 1)\n`);
+  // Installs on a day-numbered or edge build take 0.9.x as newer, hub, nodes and CLI alike.
+  for (const old of ["0.0.0-edge.202611231632.1+1333328", "0.0.0-edge.202610261056+1b563d7"]) {
+    expect(versionCmp("0.9.0+20261124.abc1234", old)).toBe(1);
+    expect(versionCmp(old, "0.9.0+20261124.abc1234")).toBe(-1);
+    expect(atLeast(old, "0.9.0+20261124.abc1234")).toBe(false);
+  }
+  expect(versionCmp("0.9.1+20261124.abc1234", "0.9.0+20261124.abc1234")).toBe(1);
+  expect(versionCmp("0.10.0+20261201.abc1234", "0.9.12+20261130.abc1234")).toBe(1);
+  // A hub on 2026.11.23.1 moves to 0.9.0 once it reaches its bucket; one on 0.9.0, never back to 2026.11.23.x.
+  const r: Rollout = { builds: [{ ...b(9, { passedAt: ago(4) }), build: "0.9.0", version: "0.9.0+20261124.abc1234" }, b(1, { passedAt: ago(9) })] };
+  expect(pick(r, fast(70), b(1).version, NOW)).toMatchObject({ kind: "move", build: { build: "0.9.0" }, back: false });
+  expect(pick(r, fast(70), "0.9.0+20261124.abc1234", NOW)).toMatchObject({ kind: "stay" });
+  // One on a newer 0.9.x the list dropped stays where it is.
+  expect(pick(r, fast(70), "0.9.3+20261126.abc1234", NOW)).toMatchObject({ kind: "stay" });
+});
 
 test("a build's number reads from its version, in the hub's words and the CLI's", () => {
   const v = "0.0.0-edge.202611231406.4+5877c50";
@@ -149,6 +171,8 @@ test("the first ring waits for the cloud, but a stale or silent cloud never hold
   expect(gate(r, () => ({ kind: "runs", fleetd: "f".repeat(40) }), NOW, () => true, fresh)).toBe(true);
   expect(r.builds.map((x) => x.passedAt !== undefined)).toEqual([false, true]);
   expect(releaseNotes(r, NOW)).toContain("### 2026.11.23.1 (10% of hubs)");
+  // A published build's heading says its day.
+  expect(heading({ build: "0.9.4", publishedAt: "2026-11-23T14:06:00Z" })).toBe("0.9.4 · Nov 23");
 });
 
 test("each stage feed is the newest build that reached it with an app, its files named in that build's release", () => {
