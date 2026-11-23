@@ -1,6 +1,6 @@
 // A stand-in for `agy acp`: just enough of Antigravity's ACP server for the runner's tests, with no Google behind it.
 // Every request it gets goes to $AGY_LOG, one JSON line each. A prompt's text picks what the turn does:
-// `hang` waits for session/cancel, or for a prompt sent mid-turn, which steers it as agy does; `cmd <command>` runs a command after asking permission (and `mcp <server> <tool>`
+// `hang` waits for session/cancel, or for a prompt sent mid-turn, which steers it as agy does; `cmd <command>` runs a command after asking permission (and `mcp <server> <tool> [arguments as JSON]`
 // calls an MCP tool so), and a cancel answers that permission `cancelled`; anything else thinks,
 // streams "hello" and ends. `authenticate` takes GEMINI_API_KEY, or `oauth-personal` once $AGY_SIGNIN exists;
 // `session/new` with $AGY_SIGNED_OUT refuses. `acp --login` plays Antigravity's sign-in: a Google link, then the code
@@ -54,10 +54,10 @@ async function prompt(id: unknown, sessionId: string, text: string): Promise<voi
   }
   if (text.startsWith("cmd ") || text.startsWith("mcp ")) {
     const command = text.slice(4);
-    const [server, tool] = command.split(" ");
+    const [server, tool, ...args] = command.split(" ");
     const call = text.startsWith("cmd ")
       ? { toolCallId: "call-1", name: "run_command", kind: "execute", title: command, rawInput: { CommandLine: command } }
-      : { toolCallId: "call-1", name: "mcp_tool", kind: "other", title: `Run mcp_${server}_${tool}`, rawInput: { ServerName: server, ToolName: tool } };
+      : { toolCallId: "call-1", name: "mcp_tool", kind: "other", title: `Run mcp_${server}_${tool}`, rawInput: { ServerName: server, ToolName: tool, ...(args.length ? { Arguments: args.join(" ") } : {}) } };
     update(sessionId, { sessionUpdate: "tool_call", status: "pending", ...call });
     const rpc = `perm-${++asked}`;
     write({ jsonrpc: "2.0", id: rpc, method: "session/request_permission", params: { sessionId, toolCall: call, options: [{ optionId: "allow", kind: "allow_once" }, { optionId: "deny", kind: "reject_once" }] } });

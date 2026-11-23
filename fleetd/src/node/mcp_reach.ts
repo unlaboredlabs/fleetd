@@ -57,7 +57,9 @@ export function skippedLine(names: readonly string[]): string {
   return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer in time, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
-/** What a lead's chat says when its start on Antigravity went without servers (./agy_budget.ts): one plain line, once. */
+/** What fleetd's cloud says when an Antigravity lead's start in its box went without servers, its own weighing of them
+ * (fleetd-cloud's hosted/start.ts `leaveOutHeavy`), which goes once the cloud's pin has the MCP gateway
+ * (./runner/antigravity_spec.ts `mcpServers`): then this goes too. */
 export function heavyLine(names: readonly string[]): string {
   const one = names.length === 1;
   return `The MCP server${one ? "" : "s"} ${quoted(names)} ${one ? "isn't" : "aren't"} loaded for this bot's lead on Antigravity (too many tools for it beside fleetd's own); its agents still have ${one ? "it" : "them"}.`;

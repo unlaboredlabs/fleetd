@@ -47,8 +47,8 @@ bot.
 A server that doesn't answer within 3 seconds is left out of that start, and the chat says so once. Each start tries
 again.
 
-A lead on Google Antigravity may start without the bot's largest servers, so fleetd's own tools still fit, and
-without one that doesn't list its tools within 10 seconds. Its chat says which one was left out. Its agents keep them all. See [Models](/docs/models#gemini).
+Agents on Google Antigravity reach every server too, through a search for the tools they need. See
+[Models](/docs/models#gemini).
 
 ## Secrets {#secrets}
 

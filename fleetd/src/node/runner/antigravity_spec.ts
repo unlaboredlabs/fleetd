@@ -87,15 +87,37 @@ export function spawnEnv(env: Env, auth: Auth): Env {
   return out;
 }
 
-/** Claude's `--mcp-config` servers as ACP's `mcpServers`: stdio ones with `env`, http ones with `headers`, each a list. */
+/** The MCP server an Antigravity session reaches the bot's own servers through (`fleetd mcp-gateway`,
+ * cli/mcp_gateway.ts): its `search` and `call` tools in place of every tool of theirs. */
+export const GATEWAY = "servers";
+/** The gateway's variable: the bot's servers, as `{"mcpServers": {...}}` in Claude's `--mcp-config` words. */
+export const GATEWAY_ENV = "FLEETD_MCP_GATEWAY";
+/** fleetd's own server's name in a session's `--mcp-config`. */
+export const FLEETD = "fleetd";
+
+/** Claude's `--mcp-config` servers as ACP's `mcpServers`: stdio ones with `env`, http ones with `headers`, each a list.
+ * agy shows its model at most TOOL_BUDGET of every server's tools together and hides the biggest past it, so the bot's
+ * own servers (Paper's tools alone are 55 KB) never go to agy as they are: fleetd's own does, and beside it the gateway,
+ * run by the same fleetd, which holds the rest and gives the model their tools when it searches for them. A session
+ * without fleetd's own server gets them as they are. */
 export function mcpServers(config: string): unknown[] {
-  const servers = (JSON.parse(config) as { mcpServers?: Record<string, Record<string, any>> }).mcpServers ?? {};
+  const all = (JSON.parse(config) as { mcpServers?: Record<string, Record<string, any>> }).mcpServers ?? {};
   const pairs = (o: unknown) => Object.entries((o ?? {}) as Record<string, string>).map(([name, value]) => ({ name, value: String(value) }));
-  return Object.entries(servers).map(([name, s]) =>
+  const fleetd = Object.entries(all).find(([name]) => name.toLowerCase() === FLEETD)?.[1];
+  const at = Array.isArray(fleetd?.args) ? (fleetd.args as unknown[]).indexOf("agent-mcp") : -1;
+  const bots = Object.fromEntries(Object.entries(all).filter(([name]) => name.toLowerCase() !== FLEETD));
+  const gated = fleetd && typeof fleetd.command === "string" && at >= 0 && Object.keys(bots).length > 0;
+  const servers = gated ? { [FLEETD]: fleetd } : all;
+  const out = Object.entries(servers).map(([name, s]) =>
     s.type === "http" || s.type === "sse"
       ? { type: s.type, name, url: s.url, headers: pairs(s.headers) }
       : { name, command: s.command, args: s.args ?? [], env: pairs(s.env) },
   );
+  if (gated) {
+    const env = { ...(fleetd.env ?? {}), [GATEWAY_ENV]: JSON.stringify({ mcpServers: bots }) };
+    out.push({ name: GATEWAY, command: fleetd.command, args: [...(fleetd.args as string[]).slice(0, at), "mcp-gateway"], env: pairs(env) });
+  }
+  return out;
 }
 
 /** What the host's ACP driver runs the session with (./host/acp.ts). */
@@ -132,10 +154,10 @@ export function spec(o: {
 /** How much MCP tool schema agy 1.5.14 shows its model in one session, all servers together, in `toolBytes`: past it,
  * agy hides the largest tools, biggest first, until the rest fits, and the model never learns of them (no name in its
  * `<mcp_servers>` block, no call that reaches them). Measured with a stand-in server through `agy acp` (W844): tools
- * kept up to 59,744 bytes, hidden from 60,000. */
+ * kept up to 59,744 bytes, hidden from 60,000. fleetd's own tools and the gateway's (`mcpServers`) are all it gets. */
 export const TOOL_BUDGET = 60_000;
 /** What fleetd's own tools may take of it, per role (cli/agent_mcp/tools.json; agent_mcp_size.test.ts holds them to
- * it): the rest is room for the bot's own servers. */
+ * it): the rest is room for the gateway's. */
 export const FLEETD_TOOL_SHARE = 45_000;
 /** The most one fleetd tool may take: over the budget agy hides the biggest first, so fleetd's stay small. */
 export const TOOL_MAX = 2_000;
@@ -156,19 +178,6 @@ export function overLimits(tools: ListedTool[]): string[] {
   const out = tools.filter((t) => toolBytes(t) > TOOL_MAX).map((t) => `${t.name} is ${toolBytes(t)} bytes (at most ${TOOL_MAX})`);
   const total = tools.reduce((sum, t) => sum + toolBytes(t), 0);
   if (total > FLEETD_TOOL_SHARE) out.push(`the set is ${total} bytes (at most ${FLEETD_TOOL_SHARE})`);
-  return out;
-}
-
-/** The servers an Antigravity lead's session goes without so that fleetd's own tools (`fleetdBytes`) all fit the budget:
- * the biggest first, as few as it takes. A server whose tools couldn't be listed counts nothing. */
-export function leftOut(fleetdBytes: number, servers: { name: string; bytes: number }[]): string[] {
-  let total = fleetdBytes + servers.reduce((sum, s) => sum + s.bytes, 0);
-  const out: string[] = [];
-  for (const s of [...servers].sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name))) {
-    if (total <= TOOL_BUDGET) break;
-    out.push(s.name);
-    total -= s.bytes;
-  }
   return out;
 }
 

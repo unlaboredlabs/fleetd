@@ -510,8 +510,8 @@ export type WorktreeSource = "local" | "remote" | "base" | (string & {});
 
 /** One session's row on the machine stream: what the hub's shell mapper turns into a ThreadSummary. */
 /** What a lead's start changed of the MCP servers it left out (node/mcp_reach.ts `startChange`): the ones newly down,
- * the ones back, and on Antigravity the ones newly left out for too many tools (`heavy`). */
-export type McpStartChange = { down: string[]; back: string[]; heavy?: string[] };
+ * and the ones back. */
+export type McpStartChange = { down: string[]; back: string[] };
 
 export type SessionSummary = {
   sessionId: ThreadId;
@@ -537,9 +537,6 @@ export type SessionSummary = {
   mcpSkipped?: string[];
   mcpChange?: McpStartChange;
   mcpSkippedAt?: Timestamp;
-  /** A lead's on Antigravity: the servers its latest start went without, its tools too many beside fleetd's own
-   * (node/agy_budget.ts); `mcpChange.heavy` names the ones newly left out. Absent: none. */
-  mcpHeavy?: string[];
   /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
   watchingUntil?: Timestamp;
   /** What those Monitors watch: each one's description (`a Monitor` for one with none); absent with none. */

@@ -104,11 +104,32 @@ test("agy starts on its own sign-in or the project's key, with no Google credent
 });
 
 test("MCP servers reach ACP as its lists: stdio with env, http with headers", () => {
-  const config = { mcpServers: { fleetd: { type: "stdio", command: "fleetd", args: ["agent-mcp"], env: { A: "1" } }, docs: { type: "http", url: "https://mcp.devbox.example", headers: { Authorization: "Bearer t" } } } };
+  const config = { mcpServers: { docs: { type: "http", url: "https://mcp.devbox.example", headers: { Authorization: "Bearer t" } }, notes: { command: "notes", args: ["--x"] } } };
   expect(agy.mcpServers(JSON.stringify(config))).toEqual([
-    { name: "fleetd", command: "fleetd", args: ["agent-mcp"], env: [{ name: "A", value: "1" }] },
     { type: "http", name: "docs", url: "https://mcp.devbox.example", headers: [{ name: "Authorization", value: "Bearer t" }] },
+    { name: "notes", command: "notes", args: ["--x"], env: [] },
   ]);
+});
+
+// agy hides the biggest tools past TOOL_BUDGET, every server's together: the bot's servers reach agy only through
+// fleetd's gateway, run by the same fleetd as fleetd's own server, which holds them whole.
+test("beside fleetd's own server, the bot's servers go to agy as fleetd's MCP gateway, which holds them", () => {
+  const fleetd = { type: "stdio", command: "/bin/bun", args: ["/src/main.ts", "agent-mcp", "--role", "lead"], env: { FLEETD_THREAD_ID: "s1" } };
+  const docs = { type: "http", url: "https://mcp.devbox.example", headers: { Authorization: "Bearer t" } };
+  expect(agy.mcpServers(JSON.stringify({ mcpServers: { docs, fleetd } }))).toEqual([
+    { name: "fleetd", command: "/bin/bun", args: ["/src/main.ts", "agent-mcp", "--role", "lead"], env: [{ name: "FLEETD_THREAD_ID", value: "s1" }] },
+    {
+      name: agy.GATEWAY,
+      command: "/bin/bun",
+      args: ["/src/main.ts", "mcp-gateway"],
+      env: [
+        { name: "FLEETD_THREAD_ID", value: "s1" },
+        { name: agy.GATEWAY_ENV, value: JSON.stringify({ mcpServers: { docs } }) },
+      ],
+    },
+  ]);
+  // fleetd's own alone needs none.
+  expect(agy.mcpServers(JSON.stringify({ mcpServers: { fleetd } })).map((s: any) => s.name)).toEqual(["fleetd"]);
 });
 
 test("a role's fences match Antigravity's tool calls in Claude's rule words", () => {
@@ -122,6 +143,19 @@ test("a role's fences match Antigravity's tool calls in Claude's rule words", ()
   // A server's name alone is every tool of it, as a lead's `mcp__fleetd` is; another server's tool isn't.
   expect(fenced(["mcp__fleetd"], { name: "mcp_tool", rawInput: { ServerName: "fleetd", ToolName: "spawn_agent" } })).toBe(true);
   expect(fenced(["mcp__fleetd"], { name: "mcp_tool", rawInput: { ServerName: "fleetdx", ToolName: "spawn_agent" } })).toBe(false);
+  // Through fleetd's gateway, a call is the server's own tool's, its arguments an object or JSON.
+  const via = (args: unknown) => ({ name: "mcp_tool", rawInput: { ServerName: agy.GATEWAY, ToolName: "call", Arguments: args } });
+  expect(fenced(["mcp__paper__delete_nodes"], via({ server: "paper", tool: "delete_nodes", arguments: {} }))).toBe(true);
+  expect(fenced(["mcp__paper"], via(JSON.stringify({ server: "paper", tool: "get_screenshot" })))).toBe(true);
+  expect(fenced(["mcp__paper__delete_nodes"], via({ server: "paper", tool: "get_screenshot" }))).toBe(false);
+  expect(fenced([`mcp__${agy.GATEWAY}__search`], { name: "mcp_tool", rawInput: { ServerName: agy.GATEWAY, ToolName: "search" } })).toBe(true);
+  // As agy 1.5.14 sends them (recorded on a lead on Gemini 3.8 Flash): the tool named `mcp_<server>_<tool>`, its input
+  // the tool's arguments with a `toolSummary` of agy's.
+  const real = (name: string, rawInput: Record<string, unknown>) => ({ name, kind: "other", title: `Run ${name}`, rawInput });
+  expect(fenced(["mcp__fleetd"], real("mcp_fleetd_spawn_agent", { title: "x", toolSummary: "Spawn" }))).toBe(true);
+  expect(fenced(["mcp__paper__list_resources"], real(`mcp_${agy.GATEWAY}_call`, { arguments: { limit: 10 }, server: "paper", tool: "list_resources", toolSummary: "List Paper resources" }))).toBe(true);
+  expect(fenced([`mcp__${agy.GATEWAY}__search`], real(`mcp_${agy.GATEWAY}_search`, { query: "", server: "paper", toolSummary: "Search Paper MCP tools" }))).toBe(true);
+  expect(fenced(["mcp__fleetd"], real("list_resources", { ServerName: "paper" }))).toBe(false);
 });
 
 test("a turn streams and ends with its reply; MCP servers, the system prompt, model and thinking level reach the agent", async () => {
@@ -314,6 +348,18 @@ test("in approval mode a lead's own tools run unasked (fleetd's MCP server, its 
   run.session.command({ Send: { run_id: "r3", text: "mcp docs search", mode: "plain" } });
   await until(() => of(run.events, "PermissionRequest").length > 0, "another server's tool asks");
   expect(of(run.events, "PermissionRequest")[0]!.PermissionRequest.tool_name).toBe("mcp__docs__search");
+  await run.end();
+});
+
+test("a call through fleetd's MCP gateway asks, runs and shows as the server's own tool", async () => {
+  const run = await Run.fresh({ approval: true, allow: ["mcp__fleetd", `mcp__${agy.GATEWAY}__search`] });
+  expect((await run.turn("r1", `mcp ${agy.GATEWAY} search {"query":"screenshot"}`)).outcome).toEqual({ Completed: { text: "allow" } });
+  run.session.command({ Send: { run_id: "r2", text: `mcp ${agy.GATEWAY} call {"server":"paper","tool":"get_screenshot","arguments":{"nodeId":"n1"}}`, mode: "plain" } });
+  await until(() => of(run.events, "PermissionRequest").length > 0, "the gateway's call asks as Paper's tool");
+  expect(of(run.events, "PermissionRequest")[0]!.PermissionRequest.tool_name).toBe("mcp__paper__get_screenshot");
+  const item = JSON.stringify(run.events);
+  expect(item).toContain('"toolName":"mcp__paper__get_screenshot"');
+  expect(item).toContain('"input":{"nodeId":"n1"}');
   await run.end();
 });
 
