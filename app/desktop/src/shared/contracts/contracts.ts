@@ -6155,6 +6155,14 @@ export type PrGetOutput = {
   truncated?: boolean;
 };
 
+export type KnownPrHeldFor = "person" | "hold" | "approval";
+/**
+ * Who a ready PR the merge train leaves alone waits for: a person to merge it on GitHub (its bot's Who merges
+ * and risk rules), its `hold` label to come off, or a person's approval its base requires. KnownPrHeldFor, or a value
+ * from a newer hub.
+ */
+export type PrHeldFor = KnownPrHeldFor | (string & {});
+
 export type PrLinks = {
   checks: string;
   files: string;
@@ -6183,6 +6191,8 @@ export type PrListOutput = {
 /** Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land. */
 export type PrQueue = {
   changeId: ChangeId;
+  /** Set while it is ready and the train leaves it for a person: it is then out of the line, with no position. */
+  heldFor?: PrHeldFor;
   /** PRs waiting in the same line, none that waits for a person among them. */
   length: number;
   /** Where people merge its bot's PRs: which of its rules decided who merges it, in words. */

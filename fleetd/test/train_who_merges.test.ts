@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { trainFacts } from "../src/hub/train/digest.ts";
 import { leadTrainLines, PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
 import { DEFAULT_RISK_RULES } from "../src/hub/train/merge_rules.ts";
-import { changeNext, PEOPLE } from "../src/hub/train/notes.ts";
+import { queue } from "../src/hub/prs/join.ts";
+import { APPROVAL, changeNext, HELD, PEOPLE } from "../src/hub/train/notes.ts";
 import { git, Kit, REPO, WS } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -136,6 +137,13 @@ test("a PR waiting for a person takes no place in the merge line, and the PRs be
   expect(k.train.records.inLine(REPO).map((c) => c.prNumber)).toEqual([62]);
   // The lead's train line still names it, as waiting for a person.
   expect(k.train.records.trainState(REPO).queue).toContain(k.change(61).changeId);
+  // The PR's row says who it waits for in a field of its own, never only in words.
+  const held = k.change(61);
+  expect(queue(held, 1)).toMatchObject({ state: "ready", heldFor: "person", length: 1 });
+  expect(queue({ ...held, lastError: HELD }, 1).heldFor).toBe("hold");
+  expect(queue({ ...held, lastError: APPROVAL }, 1).heldFor).toBe("approval");
+  expect(queue({ ...held, lastError: undefined }, 1)).not.toHaveProperty("heldFor");
+  expect(queue(k.change(62), 1)).not.toHaveProperty("heldFor");
 });
 
 test("switching a bot to fleetd merges lets its waiting PR go, and back to people holds the next one", async () => {

@@ -51,18 +51,14 @@ const IN_LINE: ReadonlySet<string> = new Set<ChangeState>(["queued", "reviewing"
 /** Its 0-based place in line, when it is waiting in one. */
 const lineAt = (q: PrRow["queue"]): number | undefined => (q?.position === undefined || !IN_LINE.has(q.state) ? undefined : q.position);
 
-/** How the hub words a person's part in who merges a PR (its train's `noteDecision`). */
-const FOR_A_PERSON = "waits for a person";
-
 /**
- * Who a ready PR the train leaves alone waits for: you, where people merge its bot's PRs by its Who merges and rules,
- * or someone to let it go, for its `hold` label or an approval its base requires (a ready PR's reason says which).
- * Such a PR isn't in the merge line. Undefined for any other.
+ * Who a ready PR the train leaves alone waits for, by the hub's `heldFor`: you, where people merge its bot's PRs by its
+ * Who merges and rules, or someone to let it go, for its `hold` label, an approval its base requires, or a reason from
+ * a newer hub. Such a PR isn't in the merge line. Undefined for any other.
  */
 export const waitsOn = (q: PrRow["queue"]): "you" | "held" | undefined => {
-  if (q?.state !== "ready") return undefined;
-  if (q.mergeRule?.toLowerCase().startsWith(FOR_A_PERSON) === true) return "you";
-  return q.reason !== undefined && q.reason.trim() !== "" ? "held" : undefined;
+  if (q?.heldFor === undefined || q.state !== "ready") return undefined;
+  return q.heldFor === "person" ? "you" : "held";
 };
 
 const queueSentence = (q: NonNullable<PrRow["queue"]>): string => {

@@ -16357,6 +16357,16 @@
       ],
       "type": "object"
     },
+    "PrHeldFor": {
+      "description": "Who a ready PR the merge train leaves alone waits for: a person to merge it on GitHub (its bot's Who merges\nand risk rules), its `hold` label to come off, or a person's approval its base requires.",
+      "enum": [
+        "person",
+        "hold",
+        "approval"
+      ],
+      "type": "string",
+      "x-open": true
+    },
     "PrLinks": {
       "properties": {
         "checks": {
@@ -16446,6 +16456,10 @@
       "properties": {
         "changeId": {
           "$ref": "#/$defs/ChangeId"
+        },
+        "heldFor": {
+          "$ref": "#/$defs/PrHeldFor",
+          "description": "Set while it is ready and the train leaves it for a person: it is then out of the line, with no position."
         },
         "length": {
           "description": "PRs waiting in the same line, none that waits for a person among them.",
