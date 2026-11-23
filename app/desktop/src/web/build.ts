@@ -1,17 +1,16 @@
 // A page left open learns that the cloud serves a newer build and switches to it by itself, with no banner: it asks
 // for index.html now and then (past the service worker, which leaves a page's own fetch to the network) and compares
 // the script it starts from with its own, named by content. Once one differs, the page loads again, `fresh` (so no
-// worker serves it an older index), when the person isn't using it: the tab hidden, the window in the background, or
-// no key or pointer for IDLE_MS; or at once on their next move to another screen. Never while a field holds words they
-// typed in this load, a dialog is open, or a draft holds files (only a draft's words outlive a reload).
+// worker serves it an older index), once its tab is hidden, or at once on the person's next move to another screen.
+// Never in sight otherwise (people read long chats and watch screens without a key or pointer), never offline (the new
+// build's page couldn't load), and never while a field holds words they typed in this load, a dialog is open, or a
+// draft holds files (only a draft's words outlive a reload).
 import { FRESH_LOAD } from "./shell";
 
 /** How often an open page asks which build is current. */
 export const CHECK_EVERY_MS = 5 * 60_000;
 /** The least time between two asks on coming back (focus, shown, online). */
 export const CHECK_GAP_MS = 60_000;
-/** No key or pointer this long: a page in front but not in use. */
-export const IDLE_MS = 10 * 60_000;
 /** How often the page looks again whether it may switch. */
 const TICK_MS = 60_000;
 /** After a move to another screen: its screen drawn before the fields are looked at. */
@@ -37,7 +36,6 @@ export const followNewBuild = (page: Pick<Window, "document" | "location" | "ses
   const { document } = page;
   let newer = false;
   let checked = Number.NEGATIVE_INFINITY;
-  let moved = Date.now();
   /** The fields typed into in this load; one gone from the page no longer counts. */
   const typed = new Set<Element>();
 
@@ -46,10 +44,8 @@ export const followNewBuild = (page: Pick<Window, "document" | "location" | "ses
     for (const el of typed) if (!el.isConnected) typed.delete(el);
     return [...typed].some(holdsWords) || document.querySelector('[role="dialog"], [role="alertdialog"]') !== null || deps.holding();
   };
-  const unused = () => document.visibilityState === "hidden" || !document.hasFocus() || Date.now() - moved >= IDLE_MS;
-
   const maybe = (navigated: boolean) => {
-    if (!newer || busy() || !(navigated || unused())) return;
+    if (!newer || !navigator.onLine || busy() || !(navigated || document.visibilityState === "hidden")) return;
     newer = false;
     const url = new URL(page.location.href);
     url.searchParams.set("fresh", "1");
@@ -80,9 +76,7 @@ export const followNewBuild = (page: Pick<Window, "document" | "location" | "ses
     },
     true,
   );
-  for (const type of ["keydown", "pointerdown", "pointermove", "wheel", "touchstart"]) page.addEventListener(type, () => void (moved = Date.now()), { capture: true, passive: true });
   page.addEventListener("hashchange", () => void setTimeout(() => maybe(true), DRAWN_MS));
-  page.addEventListener("blur", () => maybe(false));
   page.addEventListener("focus", soon);
   page.addEventListener("online", soon);
   document.addEventListener("visibilitychange", () => (document.visibilityState === "visible" ? soon() : maybe(false)));

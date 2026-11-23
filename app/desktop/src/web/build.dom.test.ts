@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-// A page left open on an older build: it learns of the new one and switches to it by itself when the person isn't
-// using it or moves to another screen, never under their typing, an open dialog or a draft's files.
+// A page left open on an older build: it learns of the new one and switches to it by itself when its tab is hidden or
+// the person moves to another screen, never in front of them, offline, under their typing, an open dialog or a draft's
+// files.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHECK_EVERY_MS, entryOf, followNewBuild, IDLE_MS } from "./build";
+import { CHECK_EVERY_MS, entryOf, followNewBuild } from "./build";
 import { FRESH_LOAD } from "./shell";
 
 const index = (entry: string) =>
@@ -18,6 +19,8 @@ const open = (own: string, opts: { holding?: () => boolean } = {}) => {
   const went: string[] = [];
   let focused = true;
   vi.spyOn(document, "hasFocus").mockImplementation(() => focused);
+  let online = true;
+  vi.spyOn(navigator, "onLine", "get").mockImplementation(() => online);
   window.sessionStorage.setItem(FRESH_LOAD, "1");
   followNewBuild(page, {
     own: `/assets/${own}`,
@@ -34,6 +37,10 @@ const open = (own: string, opts: { holding?: () => boolean } = {}) => {
     blur: () => {
       focused = false;
       window.dispatchEvent(new Event("blur"));
+    },
+    offline: (off: boolean) => {
+      online = !off;
+      window.dispatchEvent(new Event(off ? "offline" : "online"));
     },
     hide: () => {
       Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
@@ -94,10 +101,26 @@ describe("followNewBuild", () => {
     expect(window.sessionStorage.getItem(FRESH_LOAD)).toBeNull();
   });
 
-  it("switches when the window goes to the background", async () => {
+  it("never switches a tab still in sight: the window behind another, or a long read with no key or pointer", async () => {
     const p = open("index-1.js");
     await deploy(p, "index-2.js");
     p.blur();
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(p.went).toEqual([]);
+    p.hide();
+    expect(p.went).toHaveLength(1);
+  });
+
+  it("never switches offline: the new build's page couldn't load", async () => {
+    const p = open("index-1.js");
+    await deploy(p, "index-2.js");
+    p.offline(true);
+    p.hide();
+    window.dispatchEvent(new Event("hashchange"));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(p.went).toEqual([]);
+    p.offline(false);
+    await settle();
     expect(p.went).toHaveLength(1);
   });
 
@@ -108,16 +131,6 @@ describe("followNewBuild", () => {
     window.dispatchEvent(new Event("hashchange"));
     await vi.advanceTimersByTimeAsync(300);
     expect(p.went).toEqual(["https://app.fleetd.dev/?team=t1&fresh=1#/project/a/c"]);
-  });
-
-  it("switches in front once no key or pointer has moved for a while", async () => {
-    const p = open("index-1.js");
-    await deploy(p, "index-2.js");
-    window.dispatchEvent(new Event("pointermove"));
-    await vi.advanceTimersByTimeAsync(IDLE_MS - 120_000);
-    expect(p.went).toEqual([]);
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(p.went).toHaveLength(1);
   });
 
   it("learns of it as the person comes back, without waiting for the next ask", async () => {
