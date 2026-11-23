@@ -130,14 +130,16 @@ describe("a cloud bot waking on the phone", () => {
     expect(wakeIn(never, k, false, t0 + 10 * 60_000)).toEqual({ phase: "unstarted" });
   });
 
-  it("says why the bot is blocked, as Status read it when you sent (its usage paused), in place of the dots", () => {
+  it("says why the bot is blocked, as Status last read it (its usage paused), in place of the dots, and lets go as it lifts", () => {
     const k = "devbox/w6";
     const r = { machineId: "devbox", projectId: "w6" };
     const asked = "2026-11-22T10:00:00.000Z";
     let s = { ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1 } }, chats: { [k]: { messages: [{ messageId: "m1", author: "human", state: "final", createdAt: asked }], leadWaiting: {} } } } as never as State;
-    s = reduce(s, { t: "blocked", key: k, reason: "usage paused on devbox until 15:00" });
+    const row = (state: string, blockedReason?: string) => ({ projectRef: r, title: "w6", asOf: asked, agentsRunning: 0, state, ...(blockedReason === undefined ? {} : { blockedReason }) }) as never;
+    s = reduce(s, { t: "status", rows: [row("blocked", "usage paused on devbox until 15:00")] });
     expect(wakeIn(s, k, false, Date.parse(asked) + 1_000)).toEqual({ phase: "held", reason: "The lead can’t start now: usage paused on devbox until 15:00." });
-    s = reduce(s, { t: "blocked", key: k, reason: undefined });
+    // Status read again as the pause lifts (a usage.* event): the reason goes, and the bot waits for the lead again.
+    s = reduce(s, { t: "status", rows: [row("working")] });
     expect(wakeIn(s, k, false, Date.parse(asked) + 1_000)).toEqual({ phase: "received", since: Date.parse(asked) });
   });
 });

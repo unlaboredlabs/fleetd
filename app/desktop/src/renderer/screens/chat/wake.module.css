@@ -43,6 +43,11 @@
   color: var(--quiet);
   overflow-wrap: anywhere;
 }
+/* Restart lead, and what it came to, after the line it acts on. */
+.reason .act,
+.reason .note {
+  margin-left: 10px;
+}
 .count {
   margin-left: 6px;
   color: var(--faint);

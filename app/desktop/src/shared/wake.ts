@@ -151,7 +151,7 @@ export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; rea
     case "held":
       return { words: w.reason };
     case "unstarted":
-      return { words: "The lead didn’t start on this. Send it again, or press Restart lead in the bot’s settings, under Agents." };
+      return { words: "The lead didn’t start on this. Restart it, then send your message again." };
     case "received":
       return w.since !== undefined && nowMs - w.since >= START_SLOW_MS ? { words: "Waiting for the lead to start", count: waited(nowMs - w.since) } : undefined;
     default:
@@ -183,6 +183,16 @@ export const tryAgainNote = (outcome: { readonly ok: true; readonly output: unkn
 /** Try again's press: the call, and what it came to as tryAgainNote says it; a call that throws says why too. */
 export const tryAgainNow = (call: () => Promise<{ readonly ok: true; readonly output: unknown } | { readonly ok: false; readonly error: { readonly message: string } }>): Promise<string | undefined> =>
   call().then(tryAgainNote, (error: unknown) => tryAgainNote({ ok: false, error: { message: error instanceof Error ? error.message : String(error) } }));
+
+/**
+ * What the row's Restart lead came to (project_set leadRestart): it restarts, and the person sends again once it is
+ * back; or why it couldn't, in the hub's words.
+ */
+export const restartNote = (outcome: { readonly ok: true } | { readonly ok: false; readonly error: { readonly message: string } }): string => {
+  if (outcome.ok) return "Restarting the lead. Send your message again in a moment.";
+  const why = outcome.error.message.trim().replace(/[.\s]+$/u, "");
+  return why === "" ? "Couldn’t restart the lead" : `Couldn’t restart the lead: ${why}`;
+};
 
 /** "34s", "1m 05s": how long it has waited. */
 export const waited = (ms: number): string => {

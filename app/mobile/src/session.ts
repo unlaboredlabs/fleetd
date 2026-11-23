@@ -15,7 +15,7 @@ import { registerDevice, signOut, type PushDeps } from "./push";
 import { farPageFrom } from "./chatView";
 import { FIND_PINS } from "./messagePins";
 import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
-import { initial, keyOf, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
+import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 const CHAT_PAGE = 50;
 /** A chat's screens read at once: its live ones are among its newest. */
@@ -97,6 +97,9 @@ export class Session {
   /** An orders_board read on its way, and another one asked for meanwhile. */
   #boarding = false;
   #boardAgain = false;
+  /** A status_get read on its way, and another one asked for meanwhile. */
+  #statusing = false;
+  #statusAgain = false;
 
   constructor(options: SessionOptions) {
     this.#now = options.now ?? Date.now;
@@ -513,20 +516,33 @@ export class Session {
         ? { t: "sent", key, clientRequestId: row.clientRequestId, result: { ok: true, message: r.output.message }, leadWaiting: r.output.leadWaiting }
         : { t: "sent", key, clientRequestId: row.clientRequestId, result: r },
     );
-    if (r.ok) void this.#readBlocked(key);
+    if (r.ok) void this.#readStatus();
   }
 
-  /** Whether the bot is blocked and why (its usage paused, its machine offline), as the desktop's chat reads it from Status:
-   * the bot in the reply's place says so (wake.ts). */
-  async #readBlocked(key: Key): Promise<void> {
-    const r = await this.#client.call("status_get", {});
-    if (!r.ok) return;
-    const row = r.output.rows?.find((p) => keyOf(p.projectRef) === key);
-    this.#dispatch({ t: "blocked", key, reason: row?.state === "blocked" ? (row.blockedReason ?? "") : undefined });
+  /**
+   * Which bots are blocked and why (a usage pause, a machine offline), as the desktop's chat reads Status: the bot in
+   * the reply's place says so (wake.ts). Read with the snapshot, as a chat opens and you send, and again as a machine or
+   * its usage changes: one read at a time, and one more if asked meanwhile.
+   */
+  async #readStatus(): Promise<void> {
+    if (this.#statusing) {
+      this.#statusAgain = true;
+      return;
+    }
+    this.#statusing = true;
+    try {
+      do {
+        this.#statusAgain = false;
+        const r = await this.#client.call("status_get", {});
+        if (r.ok) this.#dispatch({ t: "status", rows: r.output.rows ?? [] });
+      } while (this.#statusAgain);
+    } finally {
+      this.#statusing = false;
+    }
   }
 
   async #loadLatest(key: Key): Promise<void> {
-    void this.#readBlocked(key);
+    void this.#readStatus();
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "latest" });
     else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error, direction: "latest" });
@@ -640,6 +656,7 @@ export class Session {
     if (frame.t === "snapshot") {
       void this.#readRequests();
       void this.#readBoard();
+      void this.#readStatus();
       // After the snapshot: an older build's pins go up only for this hub's own chats.
       void this.#pins.read();
       void this.#sections.read();
@@ -668,6 +685,7 @@ export class Session {
       const effects = effectsOf(frame.event);
       if (effects.requests) void this.#readRequests();
       if (effects.board) void this.#readBoard();
+      if (effects.status) void this.#readStatus();
       if (effects.snapshot) this.#client.resync();
       if (effects.pins) void this.#pins.read();
       if (effects.sections) void this.#sections.read();

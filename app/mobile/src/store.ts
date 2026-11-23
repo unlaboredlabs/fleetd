@@ -36,6 +36,7 @@ import {
   type OrderCard,
   type ProjectChatState,
   type ProjectRef,
+  type ProjectStatusRow,
   type ProjectSummary,
   type Activity,
   type BrowserSession,
@@ -135,7 +136,7 @@ export interface State {
    * ended without a reply ends the bot's wait in the reply's place too (wake.ts). Absent from a cache before it.
    */
   readonly turnEnded?: Readonly<Record<Key, number>> | undefined;
-  /** Why each bot read can't start, as Status said when its chat opened or you sent to it ("" with no reason); absent: not blocked. */
+  /** Why each blocked bot can't start, as Status last said it ("" with no reason); absent: not blocked. */
   readonly blocked?: Readonly<Record<Key, string>> | undefined;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
@@ -204,8 +205,8 @@ export type Action =
   | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
   | { readonly t: "board"; readonly orders: readonly OrderCard[] }
-  /** Status's word on whether a bot is blocked, and why. */
-  | { readonly t: "blocked"; readonly key: Key; readonly reason: string | undefined }
+  /** Status's rows: which bots are blocked, and why. */
+  | { readonly t: "status"; readonly rows: readonly ProjectStatusRow[] }
   /** A message moved to another order (chat_about_set's answer), before its event comes. */
   | { readonly t: "retagged"; readonly key: Key; readonly message: ChatMessage }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
@@ -342,10 +343,9 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "board":
       return { ...s, running: runningOf(a.orders), orders: a.orders };
-    case "blocked": {
-      if (s.blocked?.[a.key] === a.reason) return s;
-      const { [a.key]: _was, ...rest } = s.blocked ?? {};
-      return { ...s, blocked: a.reason === undefined ? rest : { ...rest, [a.key]: a.reason } };
+    case "status": {
+      const blocked = Object.fromEntries(a.rows.filter((r) => r.state === "blocked").map((r) => [keyOf(r.projectRef), r.blockedReason ?? ""]));
+      return JSON.stringify(blocked) === JSON.stringify(s.blocked ?? {}) ? s : { ...s, blocked };
     }
     case "retagged": {
       const chat = s.chats[a.key];
@@ -529,13 +529,15 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
  * hub's people changed (a new picture), a chat's screens when one of them started, changed hands or ended, or a
  * chat's pinned messages when someone pinned or unpinned one (`messagePins`, its chat).
  */
-export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly board: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly sections: boolean; readonly info: boolean; readonly screens?: Key; readonly messagePins?: Key } => {
+export const effectsOf = (event: HubEvent): { readonly requests: boolean; readonly board: boolean; readonly status: boolean; readonly snapshot: boolean; readonly pins: boolean; readonly sections: boolean; readonly info: boolean; readonly screens?: Key; readonly messagePins?: Key } => {
   const screen = event.type === "browser.session" ? (event.data as BrowserSessionEventData | undefined)?.projectRef : undefined;
   const pinned = event.type === "chat.message_pins" ? (event.data as ChatMessagePinsEventData | undefined)?.projectRef : undefined;
   return {
     requests: event.type.startsWith("request."),
     // An agent started, ended or changed its order: who works where (the bots).
     board: event.type.startsWith("task.") || event.type.startsWith("workstream."),
+    // A machine gone offline or back, a usage pause or limit: whether a bot is blocked (the desktop's effects.ts).
+    status: event.type.startsWith("machine.") || event.type.startsWith("usage."),
     // A removed machine's projects went with it.
     snapshot: event.type === "project.added" || event.type === "project.removed" || event.type === "project.settings" || event.type === "machine.removed",
     pins: event.type === "chat.pins",

@@ -13,6 +13,13 @@ describe("what an event reads again", () => {
     expect(effectsOf(event("machine.offline", { machineId: "devbox" })).snapshot).toBe(false);
   });
 
+  it("a machine going offline or back, or its usage paused or lifted, reads Status again: whether a bot is blocked", () => {
+    expect(effectsOf(event("machine.offline", { machineId: "devbox" })).status).toBe(true);
+    expect(effectsOf(event("machine.online", { machineId: "devbox" })).status).toBe(true);
+    expect(effectsOf(event("usage.paused", { machineId: "devbox" })).status).toBe(true);
+    expect(effectsOf(event("chat.message")).status).toBe(false);
+  });
+
   it("someone pinning or unpinning a message reads that chat's pins again, never the person's pinned chats", () => {
     const projectRef = { machineId: "devbox", projectId: "p1" };
     const pinned = effectsOf(event("chat.message_pins", { data: { projectRef, messageId: "m1", pinned: true, by: { personId: "a", name: "Ada" } } }));
