@@ -207,6 +207,7 @@ export {
   SLOW_MS,
   START_STALE_MS,
   endedAt,
+  startOf,
   STIR_MS,
   tryAgainLabel,
   tryAgainNote,

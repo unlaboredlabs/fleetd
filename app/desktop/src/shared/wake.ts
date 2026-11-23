@@ -27,8 +27,9 @@ export type Wake =
   | { readonly phase: "writing" }
   /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
   | { readonly phase: "received"; readonly since: number | undefined }
-  /** The lead can't take your message now, or its start waits on something no try fixes (the team's billing): why, in plain words. */
-  | { readonly phase: "held"; readonly reason: string }
+  /** The lead can't take your message now, or (`start`) its start waits on something no try fixes, the team's billing:
+   * why, in plain words. */
+  | { readonly phase: "held"; readonly reason: string; readonly start?: true }
   /** Past START_STALE_MS the lead, idle since before your message, never started on it. */
   | { readonly phase: "unstarted" };
 
@@ -90,7 +91,7 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   if (i.working && a?.kind === "starting") {
     // A start that waits on something no try fixes (no retry of its own: the team's billing) is held, not failed: it
     // goes on by itself once that is settled, so nothing offers Try again.
-    if (a.failed !== undefined) return a.failed.retryAt === undefined ? { phase: "held", reason: heldStart(a.failed.reason) } : { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
+    if (a.failed !== undefined) return a.failed.retryAt === undefined ? { phase: "held", reason: heldStart(a.failed.reason), start: true } : { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
     // A start older than the person's message (one it joined, or a hub that kept an old start's time) counts from
     // the message: the wait they see is this one.
     const since = ms(a.startedAt);
@@ -116,6 +117,10 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   }
   return i.asleep ? { phase: "asleep" } : undefined;
 };
+
+/** What the bot shows of its lead's start (botStateOf's `start`): starting, a failed try, or held by the team's billing. */
+export const startOf = (w: Wake | undefined): "waking" | "failed" | "held" | undefined =>
+  w?.phase === "waking" ? "waking" : w?.phase === "failed" ? "failed" : w?.phase === "held" && w.start === true ? "held" : undefined;
 
 /** The wait shows in the reply's place: from the start until the lead's reply lands, its first words included. */
 export const wakeShown = (w: Wake | undefined): boolean => w !== undefined && w.phase !== "asleep";

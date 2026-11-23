@@ -8,6 +8,7 @@ import {
   replied,
   restartNote,
   SLOW_MS,
+  startOf,
   START_SLOW_MS,
   tryAgainNote,
   tryAgainNow,
@@ -83,12 +84,18 @@ describe("a cloud bot waking", () => {
   test("a start the team's billing holds is held, with no Try again: it goes on by itself once that is settled", () => {
     // The cloud's held start has no retry of its own (fleetd-cloud src/hosted/start.ts).
     const w = some({ working: true, waiting: true, activity: starting({ step: "box", failed: { reason: "This team reached its spend cap" } }) });
-    expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this team reached its spend cap." });
+    expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this team reached its spend cap.", start: true });
     expect(wakeWords(w, T)).toEqual({ words: "The lead can’t start now: this team reached its spend cap." });
     expect(wakePose(w, true)).toBe("idle");
     expect(wakeDots(w)).toBe(false);
-    // A name keeps its capital.
-    expect(some({ working: true, activity: starting({ failed: { reason: "GitHub refused the clone." } }) })).toEqual({ phase: "held", reason: "The lead can’t start now: GitHub refused the clone." });
+    // The bot rests, as the row shows it, never at work while nothing runs: the lead still "works" on its start.
+    expect(startOf(w)).toBe("held");
+    expect(botStateOf({ needs: false, blocked: false, running: 0, doing: "Starting its computer", done: false, start: startOf(w) })).toBe("idle");
+    // The cloud's other reasons that wait on billing or on ops, each said plainly.
+    expect(some({ working: true, activity: starting({ failed: { reason: "This team's credits are used up" } }) })).toMatchObject({ reason: "The lead can’t start now: this team's credits are used up." });
+    expect(some({ working: true, activity: starting({ failed: { reason: "fleetd paused new computers" } }) })).toMatchObject({ reason: "The lead can’t start now: fleetd paused new computers." });
+    // A message the hub holds is no held start: the bot shows what its lead does.
+    expect(startOf(some({ waiting: true, held: "devbox is offline." }))).toBeUndefined();
   });
 
   test("after the start, it stays in the reply's place through the thinking and the first words of a cold turn only", () => {

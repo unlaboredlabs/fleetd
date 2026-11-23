@@ -40,17 +40,19 @@ export interface BotIn {
   readonly done: boolean;
   /** Its lead's computer sleeps (fleetd cloud: the chat state's leadAsleep). */
   readonly asleep?: boolean | undefined;
-  /** Its lead's computer starts now, or its last try failed (shared/wake.ts). */
-  readonly start?: "waking" | "failed" | undefined;
+  /** Its lead's computer starts now, its last try failed, or its start waits on the team's billing (shared/wake.ts). */
+  readonly start?: "waking" | "failed" | "held" | undefined;
 }
 
 /** A project's bot: it needs you, else it's blocked or its computer didn't start (an error), else it wakes while its
- * computer starts, else its agents or lead work (the lead thinking or planning alone: thinking), else it has a new reply
+ * computer starts (idle while its start is held), else its agents or lead work (the lead thinking or planning alone: thinking), else it has a new reply
  * for you (done), else it sleeps with its computer, else idle. */
 export const botStateOf = ({ needs, blocked, running, doing, done, asleep, start }: BotIn): BotState => {
   if (needs) return "needs";
   if (blocked || start === "failed") return "error";
   if (start === "waking") return "waking";
+  // Its start waits on the team's billing: nothing runs, so it rests, as the chat's row shows it.
+  if (start === "held") return "idle";
   if (doing === "thinking" || doing === "planning") return running > 0 ? "working" : "thinking";
   if (doing !== undefined || running > 0) return "working";
   if (done) return "done";

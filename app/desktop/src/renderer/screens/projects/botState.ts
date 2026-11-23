@@ -7,6 +7,7 @@ import { useData } from "../../src/data/react";
 import { selectProjectList } from "../../src/data/selectors";
 import { leadDoing } from "../chat/activity";
 import { useWake } from "../chat/wake";
+import { startOf } from "../../../shared/wake";
 
 /** The bot of the project `key` ("machineId/projectId"), with what the caller knows over the row's own. */
 export const useBotState = (key: string, own: Partial<BotIn> = {}): BotState => {
@@ -14,7 +15,7 @@ export const useBotState = (key: string, own: Partial<BotIn> = {}): BotState => 
   const doing = useData((s) => leadDoing(s, key));
   // A cloud bot sleeps with its computer, and wakes while it starts (shared/wake.ts).
   const wake = useWake(key);
-  const start = wake?.phase === "waking" ? "waking" : wake?.phase === "failed" ? "failed" : undefined;
+  const start = startOf(wake);
   return botStateOf({
     needs: own.needs ?? row?.needsYou ?? false,
     blocked: own.blocked ?? false,
