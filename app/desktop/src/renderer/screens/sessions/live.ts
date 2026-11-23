@@ -29,6 +29,8 @@ export function useLiveFrame(sessionId: string, on: boolean, rtc = false): Brows
   useEffect(() => {
     if (!on) return undefined;
     screenMark("view", sessionId);
+    // A wait said to a watch before this one is stale: the hub says it again for this one if the machine is still away.
+    layer.store.setState((st) => (st.browserWaiting?.sessionId === sessionId ? { browserWaiting: undefined } : {}));
     void window.fleetd.hub.watch(hub, sessionId);
     screenMark("watch", sessionId);
     // Its peer alongside, where the hub and the screen's machine take one: the frames and input go straight to the

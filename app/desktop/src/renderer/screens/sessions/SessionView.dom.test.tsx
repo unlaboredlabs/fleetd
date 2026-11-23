@@ -5,7 +5,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createDataLayer, type HubApi } from "../../src/data/queries";
+import { createDataLayer, type DataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { AT, live, project, snapshot } from "../../src/data/fixtures.test-util";
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
@@ -85,7 +85,8 @@ const settle = async () => {
   for (let i = 0; i < 8; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
-const mount = async (id: string, features: readonly string[] = ["browser_sessions", "browser_navigate"]) => {
+/** The view of `id`, on `reused`'s data layer (as the app keeps one while a person moves between screens) or a fresh one. */
+const mount = async (id: string, features: readonly string[] = ["browser_sessions", "browser_navigate"], reused?: DataLayer): Promise<DataLayer> => {
   const hub: HubApi = {
     call: (tool, input) => {
       if (tool === "browser_sessions") return Promise.resolve({ ok: true, output: { sessions: SESSIONS, retention: { retentionDays: 30, maxGbPerProject: 20 } } });
@@ -106,7 +107,7 @@ const mount = async (id: string, features: readonly string[] = ["browser_session
     focus: () => Promise.resolve(),
     chat: () => Promise.resolve(),
   };
-  const layer = createDataLayer(hub);
+  const layer = reused ?? createDataLayer(hub);
   root = createRoot(host);
   act(() => {
     root?.render(
@@ -122,6 +123,7 @@ const mount = async (id: string, features: readonly string[] = ["browser_session
     send(snapshot(1));
   });
   await settle();
+  return layer;
 };
 
 const stepsToggle = () => [...host.querySelectorAll("button")].find((b) => b.textContent === "Steps");
@@ -191,6 +193,36 @@ it("says over the last picture that it waits for the screen's machine while that
   await settle();
   expect(host.querySelector("[role='status']")).toBeNull();
   expect(host.querySelector("img")?.dataset["seq"]).toBe("1");
+});
+
+it("never says it waits over a picture its own peer carries live, and says it again once the peer is gone", async () => {
+  const layer = await mount("bs-live");
+  // The window's peer carries the screen; then the hub restarts, so the machine isn't linked to it a moment.
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 4, jpegB64: "AAAA", width: 1280, height: 800, control: "agent" }, rtc: true }));
+  act(() => send({ t: "browser_waiting", sessionId: "bs-live", machineId: "box-7" }));
+  await settle();
+  expect(host.querySelector("[role='status']")).toBeNull();
+  // The peer goes too: the picture is no longer live, and the line is up.
+  act(() => layer.store.setState({ browserRtc: undefined }));
+  await settle();
+  expect(host.querySelector("[role='status']")?.textContent).toBe("Waiting for box-7…");
+});
+
+it("drops a wait said to an earlier view of a screen when it's watched again, until the hub says it again", async () => {
+  const layer = await mount("bs-live");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 5, jpegB64: "AAAA", width: 1280, height: 800, control: "agent" } }));
+  act(() => send({ t: "browser_waiting", sessionId: "bs-live", machineId: "box-7" }));
+  await settle();
+  expect(host.querySelector("[role='status']")).not.toBeNull();
+  // The person goes elsewhere and back, on the same data layer: a new watch, and nothing said of it yet.
+  act(() => root?.unmount());
+  root = undefined;
+  await mount("bs-live", undefined, layer);
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("5");
+  expect(host.querySelector("[role='status']")).toBeNull();
+  act(() => send({ t: "browser_waiting", sessionId: "bs-live", machineId: "box-7" }));
+  await settle();
+  expect(host.querySelector("[role='status']")?.textContent).toBe("Waiting for box-7…");
 });
 
 it("plays an ended screen's recording the full width, its steps behind Steps, closed until opened and closed again", async () => {
