@@ -42,6 +42,11 @@ export class RtcViewer {
   #pc: RTCPeerConnection | null = null;
   #input: RTCDataChannel | null = null;
   #peer: string | null = null;
+  /** Peers started so far, and the `link` the current one's frames carry: each peer's own, below every hub link (a
+   * machine link's id, 1 and up). A node counts `seq` from the start on a new peer (a new holder's box after a handover,
+   * a node that restarted), and the store drops a lower seq only on the same link, so a new peer is a new stream. */
+  #starts = 0;
+  #link = 0;
   /** A frame of the peer's arrived: the session's frames come on it. */
   #carrying = false;
   #heard = 0;
@@ -107,6 +112,7 @@ export class RtcViewer {
     }
     this.#pc = pc;
     this.#peer = peer;
+    this.#link = -++this.#starts;
     const frames = pc.createDataChannel("frames", { ordered: true });
     const input = pc.createDataChannel("input", { ordered: true });
     frames.binaryType = "arraybuffer";
@@ -180,7 +186,7 @@ export class RtcViewer {
     this.#send({ t: "ack", seq: head.seq });
     const { t: _t, kind, bytes: _n, ...rest } = head;
     const b64 = toBase64(bytes);
-    const frame: BrowserFrame = { ...rest, ...(kind === "h264" ? { h264B64: b64 } : { jpegB64: b64 }) };
+    const frame: BrowserFrame = { ...rest, link: this.#link, ...(kind === "h264" ? { h264B64: b64 } : { jpegB64: b64 }) };
     this.seams.frame({ t: "browser_frame", frame, rtc: true });
     if (!this.#carrying && this.#peer !== null) {
       this.#carrying = true;
