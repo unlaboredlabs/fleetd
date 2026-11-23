@@ -708,6 +708,9 @@ export class SimScreens {
     const next: BrowserControl = to === "human" ? "human" : now === "human" ? "handing_back" : now;
     this.pressed.delete(screen.id);
     screen.setControl(next, frame.by);
+    // A watched screen says the new control in a frame at once, still or not: a window's peer takes a person's input
+    // only once the screen's newest frame says they have control (../../rtc), and a still simulator sends none of itself.
+    if (next !== now && this.pumps.has(screen.id)) screen.key();
     void this.report(screen, "live");
   }
 
