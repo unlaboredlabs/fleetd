@@ -127,3 +127,16 @@ test("a logged-out runner refuses a launch; an archived bot's lead takes no turn
   hub.db.conn.run("INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id) VALUES ('devbox', 'big', 'p1', 'devbox', 'p1')");
   await expect(send(hub, { machineId: "devbox", threadId: "lead-1" }, "hi", "req-5")).rejects.toThrow("This bot is archived: its directory is repo p1 of bot big on devbox.");
 });
+
+test("a Gemini launch starts where claude is logged out: Antigravity needs only its own sign-in", async () => {
+  const { hub, ex, reply, next } = await node();
+  ex.rememberRunner("devbox", { runner: "claude", supported: ">=2", versionOk: true, login: "logged_out", problem: "claude is not logged in" });
+  profiles(hub).create({ name: "gemini", model: "gemini-3.8-flash", effort: "medium", default: false }, AT);
+  const launched = launch(hub, "devbox", { ...input("req-g"), profile: "gemini" });
+  const call = await next();
+  expect((call.call as SessionLaunch).model).toBe("gemini-3.8-flash");
+  reply(call, { kind: "launched", summary: summary((call.call as SessionLaunch).sessionId, { model: "gemini-3.8-flash" }) });
+  expect((await launched).threadId).toBe((call.call as SessionLaunch).sessionId);
+  // A model on Claude still meets the machine's login.
+  await expect(launch(hub, "devbox", input("req-c"))).rejects.toThrow("claude is not logged in");
+});

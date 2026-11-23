@@ -12,6 +12,7 @@ import type {
   WorktreeBase,
 } from "../../shared/sessions.ts";
 import { jsPrefix } from "../../shared/text.ts";
+import { agyModel } from "../../node/runner/antigravity_spec.ts";
 import type { Hub } from "../api/hub.ts";
 import { accounts } from "../claude_accounts/tools.ts";
 import { launchRules } from "../integrations/policy.ts";
@@ -54,6 +55,17 @@ const nodeCan = (hub: Hub, m: MachineId, cap: string) => !link(hub).lacks(m, cap
 export function runnerProblem(info: RunnerInfo): string | undefined {
   if (info.login === "logged_in") return undefined;
   return info.problem ?? "Claude Code is not logged in on this machine";
+}
+
+/** Whether a session's model runs on Antigravity (`agy`), whose own sign-in it needs, not the machine's Claude login. */
+export const onAntigravity = (model: string | undefined) => model !== undefined && agyModel(model) !== undefined;
+
+/** Whether a thread runs on Antigravity, by its model as the machine stream or the stored thread last had it. */
+export function threadOnAntigravity(hub: Hub, r: ThreadRef): boolean {
+  const tracked = executors(hub).tracked(r)?.summary.model;
+  if (tracked !== undefined) return onAntigravity(tracked);
+  const stored = hub.db.conn.query<{ data: string }, [string, string]>("SELECT data FROM threads WHERE machine_id = ? AND thread_id = ?").get(r.machineId, r.threadId);
+  return stored !== null && onAntigravity(fromThread(JSON.parse(stored.data)).model);
 }
 
 /** What to run on the machine for a runner problem: a login, or the tested runner. */
@@ -111,9 +123,7 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
       await runnerInfo(hub, m);
     } catch {}
   }
-  const refused = runnerRefusal(hub, m, "launch");
   const cached = ex.cachedRunner(m);
-  if (refused && (options.claudeAccount === undefined || !cached || cached.login !== "logged_out" || cached.conformanceOk !== true)) throw refused;
   const runner = cached?.runner ?? "claude";
   const title = input.title?.trim() ? input.title.trim() : jsPrefix(input.prompt.trim().split("\n")[0] ?? "", 80);
   const r = { machineId: m, projectId: input.projectId };
@@ -131,6 +141,9 @@ export async function launch(hub: Hub, m: MachineId, input: LaunchInput, options
   } catch {
     console.warn(`the profiles were not read; the runner's own runs (${input.profile})`);
   }
+  // Antigravity runs on its own sign-in, so the machine's Claude login never refuses it.
+  const refused = onAntigravity(options.model?.[0] ?? chosen?.model) ? undefined : runnerRefusal(hub, m, "launch");
+  if (refused && (options.claudeAccount === undefined || !cached || cached.login !== "logged_out" || cached.conformanceOk !== true)) throw refused;
   // A lead never asks for its integrations' reads, and never gets a tool the blocked list refuses.
   if (options.role === "lead" || options.role === "assistant") {
     try {
