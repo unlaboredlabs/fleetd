@@ -112,6 +112,29 @@ describe("a cloud bot waking on the phone", () => {
     expect(wakeIn(s, k, false, t0 + 5_000)).toBeUndefined();
   });
 
+  // W868 (F1486): "The lead restarted on neon." under the message, then a server not loaded as it started, and the
+  // bot was gone for the 40 s until the reply.
+  it("stays under your message through a lead's restart and its lines, until the reply", () => {
+    const k = "devbox/w7";
+    const r = { machineId: "devbox", projectId: "w7" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    const t0 = Date.parse(asked);
+    const line = (id: string, createdAt: string) => ({ messageId: id, author: "system", state: "final", createdAt });
+    const ask = { messageId: "m1", author: "human", state: "final", createdAt: asked };
+    const messages = [ask, line("m2", "2026-11-22T10:00:02.000Z")];
+    const state = (over: object, more: object[] = []) =>
+      ({ ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1, leadIdleAt: "1970-01-01T00:00:00.000Z", ...over } }, chats: { [k]: { messages: [...messages, ...more], leadWaiting: {} } } }) as never;
+    // Its computer asleep while the new session starts: it wakes under your message.
+    expect(wakeIn(state({ leadAsleep: true }), k, false, t0 + 15_000)).toEqual({ phase: "waking", step: undefined, since: t0 });
+    // An awake one's new session not at work yet: the dots.
+    expect(wakeIn(state({}), k, false, t0 + 15_000)).toEqual({ phase: "received", since: t0 });
+    // At work on it, another line of fleetd's own beside it: thinking.
+    expect(wakeIn(state({ leadWorking: true, leadIdleAt: undefined }, [line("m3", "2026-11-22T10:00:30.000Z")]), k, false, t0 + 31_000)).toEqual({ phase: "thinking" });
+    // The reply: gone.
+    const reply = { messageId: "m4", author: "lead", state: "final", createdAt: "2026-11-22T10:00:41.000Z" };
+    expect(wakeIn(state({ leadWorking: true, leadIdleAt: undefined }, [reply]), k, false, t0 + 42_000)).toBeUndefined();
+  });
+
   // The review of #2131: the phone locked through a quiet turn, the snapshot it reopens with says when the turn ended.
   it("reopened after a quiet turn, by the hub's leadIdleAt: no bot; a follow-up turn on it has the bot again", () => {
     const k = "devbox/w5";

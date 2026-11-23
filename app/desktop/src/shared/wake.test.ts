@@ -160,16 +160,35 @@ describe("the bot in the reply's place on every turn", () => {
   const human = (ms: number) => ({ author: "human", state: "final", createdAt: iso(ms) });
   const lead = (ms: number, state = "final") => ({ author: "lead", state, createdAt: iso(ms) });
 
-  test("from the send, before the hub has it, until the lead's whole reply or fleetd's own line", () => {
+  test("from the send, before the hub has it, until the lead's whole reply", () => {
     expect(waitingFor([lead(0)], true)).toBe(true);
     expect(waitingFor([lead(0), human(1_000)], false)).toBe(true);
     // An agent's message to the lead answers nothing; the lead's reply streaming is still on its way.
     expect(waitingFor([human(1_000), { author: "agent", state: "final", createdAt: iso(2_000) }], false)).toBe(true);
     expect(waitingFor([human(1_000), lead(2_000, "streaming")], false)).toBe(true);
     expect(waitingFor([human(1_000), lead(2_000)], false)).toBe(false);
-    expect(waitingFor([human(1_000), { author: "system", state: "final", createdAt: iso(2_000) }], false)).toBe(false);
     expect(waitingFor([], false)).toBe(false);
     expect(waitingFor(undefined, false)).toBe(false);
+  });
+
+  // W868 (F1486): "what model are you", then "The lead restarted on neon." while its computer started, and the bot
+  // was gone from under the message for the 40 s until the reply.
+  test("a line of fleetd's own after the message answers nothing: the bot stays through a restart until the reply", () => {
+    const restarted = { author: "system", state: "final", createdAt: iso(2_000) };
+    const chat = [lead(0), human(1_000), restarted];
+    expect(waitingFor(chat, false)).toBe(true);
+    expect(replied(chat)).toBe(false);
+    const asked = T + 1_000;
+    // Its computer starts on it, its new session starts, its lead works on it: the bot is there each time.
+    expect(some({ asleep: true, waiting: waitingFor(chat, false), asked, endedAt: T, idleKnown: true })).toEqual({ phase: "waking", step: undefined, since: asked });
+    expect(some({ waiting: waitingFor(chat, false), asked, endedAt: T, idleKnown: true })).toEqual({ phase: "received", since: asked });
+    expect(some({ working: true, waiting: waitingFor(chat, false), asked, activity: { kind: "thinking" } })).toEqual({ phase: "thinking" });
+    // Another line of fleetd's own as it starts (a server not loaded) changes nothing; the lead's whole reply ends it.
+    const replyIn = [...chat, { author: "system", state: "final", createdAt: iso(3_000) }, lead(4_000)];
+    expect(waitingFor(replyIn, false)).toBe(false);
+    expect(replied([...replyIn, { author: "system", state: "final", createdAt: iso(5_000) }])).toBe(true);
+    // A turn that ended on it without a reply (a quiet one, a stop) ends it, its line or none.
+    expect(wakeOf(at({ waiting: waitingFor(chat, false), asked, endedAt: T + 3_000, idleKnown: true }))).toBeUndefined();
   });
 
   // The review of #2131: a quiet turn that ended while the app was away must not leave the bot waiting.
