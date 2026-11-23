@@ -143,9 +143,11 @@ const addAnswers = (f: Fixture) => {
   f.answer("project_repo_add", { url: "acme/checkout-v2" }, { path: "/home/dev/src/checkout-v2", addId: "add-1" });
   f.fail("project_repo_add", { url: "acme/ledger-ui" }, {
     code: "invalid",
-    message: "devbox already has a checkout of acme/ledger-ui at /home/dev/src/ledger-ui",
-    fix: "Add that checkout instead (useExisting), or clone into another folder (dest)",
+    reason: "same_repo_there",
+    message: "devbox already has a copy of acme/ledger-ui at /home/dev/src/ledger-ui",
+    fix: "Use the same copy, or make a separate one",
   });
+  f.answer("project_repo_add", { url: "acme/ledger-ui", copy: true }, { path: "/home/dev/src/ledger-ui-2", addId: "add-2" });
   f.answer("project_repo_add", { url: "acme/ledger-ui", useExisting: true }, {
     path: "/home/dev/src/ledger-ui",
     repo: { name: "ledger-ui", path: "/home/dev/src/ledger-ui", repoId: "R9", checkout: { machineId: "devbox", projectId: "ledger-ui" }, repoKey: "github.com/acme/ledger-ui" },

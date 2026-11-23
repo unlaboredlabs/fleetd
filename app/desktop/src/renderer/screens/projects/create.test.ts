@@ -96,16 +96,32 @@ describe("its repos", () => {
     expect(calls).toEqual([{ kind: "repo", gen: 1, key: "gh:acme/web", input: { machineId: "devbox", projectId: "p1", url: "acme/web" } }]);
   });
 
-  it("whose clone folder already holds the repo offer to use that checkout", () => {
+  it("whose clone folder already holds the repo, no bot using it, offer to use that copy or make a separate one", () => {
     const { m, api } = cloning();
-    const fix = "Add that checkout instead (useExisting), or clone into another folder (dest)";
-    const s = createStep(m, { t: "answer", call: api, outcome: { ok: false, error: { code: "invalid", message: "devbox already has a checkout of acme/api at /home/w/src/api", fix } } })[0];
-    expect(s.jobs[0]?.state).toEqual({ t: "failed", message: "devbox already has a checkout of acme/api at /home/w/src/api.", existing: true, at: "/home/w/src/api" });
-    const [again, calls] = createStep(s, { t: "retry", key: "gh:acme/api", useExisting: true });
+    const error = { code: "invalid", reason: "same_repo_there", message: "devbox already has a copy of acme/api at /home/w/src/api", fix: "Use the same copy, or make a separate one" };
+    const s = createStep(m, { t: "answer", call: api, outcome: { ok: false, error } })[0];
+    expect(s.jobs[0]?.state).toEqual({ t: "failed", message: "There's already a copy at ~/src/api.", existing: true, unused: true, at: "/home/w/src/api" });
+    const [again, calls] = createStep(s, { t: "retry", key: "gh:acme/api", use: "same" });
     expect(calls[0]?.input).toEqual({ machineId: "devbox", projectId: "p1", url: "acme/api", useExisting: true });
-    // That checkout was a bot of its own: the hub archived it, and the row keeps which.
-    const [added] = createStep(again, { t: "answer", call: calls[0] as Call, outcome: { ok: true, output: { path: "/home/w/src/api", repo: { path: "/home/w/src/api" }, archived: { machineId: "devbox", projectId: "api-bot" } } } });
-    expect(added.jobs[0]?.state).toEqual({ t: "added", path: "/home/w/src/api", archived: { machineId: "devbox", projectId: "api-bot" } });
+    const [added] = createStep(again, { t: "answer", call: calls[0] as Call, outcome: { ok: true, output: { path: "/home/w/src/api", repo: { path: "/home/w/src/api" } } } });
+    expect(added.jobs[0]?.state).toEqual({ t: "added", path: "/home/w/src/api" });
+    const [, copied] = createStep(s, { t: "retry", key: "gh:acme/api", use: "copy" });
+    expect(copied[0]?.input).toEqual({ machineId: "devbox", projectId: "p1", url: "acme/api", copy: true });
+    // The hub copied it beside a folder another bot uses: the row says so until the clone's progress comes.
+    const [copying] = createStep(s, { t: "retry", key: "gh:acme/api", use: "copy" });
+    const [started] = createStep(copying, { t: "answer", call: copied[0] as Call, outcome: { ok: true, output: { path: "/home/w/src/api-2", addId: "a9", separateFrom: "/home/w/src/api" } } });
+    expect(started.jobs[0]?.state).toEqual({ t: "adding", detail: "Making a separate copy" });
+    // An older hub says so only in its fix.
+    const old = { code: "invalid", message: "devbox already has a checkout of acme/api at /home/w/src/api", fix: "Add that checkout instead (useExisting), or clone into another folder (dest)" };
+    expect(createStep(m, { t: "answer", call: api, outcome: { ok: false, error: old } })[0].jobs[0]?.state).toMatchObject({ existing: true, at: "/home/w/src/api" });
+  });
+
+  it("never name a bot when the hub says no bot uses the copy in the way", () => {
+    const { m, api } = cloning();
+    const error = { code: "invalid", reason: "same_repo_there", message: "devbox already has a copy of acme/api at /home/w/src/api" };
+    expect(createStep(m, { t: "answer", call: api, outcome: { ok: false, error } })[0].jobs[0]?.state).toMatchObject({ existing: true, unused: true });
+    const old = { code: "invalid", message: "devbox already has a checkout of acme/api at /home/w/src/api", fix: "Add that checkout instead (useExisting), or clone into another folder (dest)" };
+    expect(createStep(m, { t: "answer", call: api, outcome: { ok: false, error: old } })[0].jobs[0]?.state).not.toHaveProperty("unused");
   });
 
   it("name the bot a checkout in the way is, by its folder or its own repo, never the new bot itself", () => {

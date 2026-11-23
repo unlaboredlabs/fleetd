@@ -142,6 +142,13 @@
   gap: var(--space-2);
   min-width: 0;
 }
+/* Add repo's choice when a copy is already there: its buttons at the row's end. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 /* A field for a few digits. */
 .narrow {
   width: 6rem;

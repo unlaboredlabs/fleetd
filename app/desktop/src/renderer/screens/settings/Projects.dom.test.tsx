@@ -178,7 +178,15 @@ const render = async (page: "project" | "instructions" = "project") => {
         });
       }
       if (tool === "project_repo_add") {
-        const url = (input as { url?: string }).url;
+        const { url, useExisting, copy } = input as { url?: string; useExisting?: boolean; copy?: boolean };
+        if (url === "acme/shop" && useExisting !== true && copy !== true) {
+          return Promise.resolve({
+            ok: false,
+            error: { code: "invalid", reason: "same_repo_there", message: "devbox already has a copy of acme/shop at /home/w/src/shop", fix: "Use the same copy, or make a separate one" },
+          });
+        }
+        if (url === "acme/shop" && copy === true) return Promise.resolve({ ok: true, output: { path: "/home/w/src/shop-2", addId: "a2", separateFrom: "/home/w/src/shop" } });
+        if (url === "acme/shop") return Promise.resolve({ ok: true, output: { path: "/home/w/src/shop", next: "shop is a repo of the bot now, at /home/w/src/shop on devbox." } });
         return Promise.resolve({
           ok: true,
           output: url ? { path: "/home/w/src/web", addId: "a1" } : { path: "/home/w/src/api", next: "api is a repo of the bot now, at /home/w/src/api on devbox." },
@@ -785,6 +793,30 @@ describe("Settings → Bots → Repos", () => {
     // A name that isn't a repo name adds nothing.
     await type(name, "Front End");
     expect(button("Add repo").disabled).toBe(true);
+  });
+
+  it("offers to use a copy already there or make a separate one, never the hub's own words", async () => {
+    await renderRepos();
+    await click(button("Add a repo"));
+    const field = section().querySelector<HTMLInputElement>('input[aria-label="Repo to add"]');
+    if (field === null) throw new Error("no add form");
+    await type(field, "acme/shop");
+    await click(button("Add repo"));
+    await settle();
+    expect(section().textContent).toContain("There's already a copy at ~/src/shop.");
+    expect(section().textContent).not.toMatch(/useExisting|copy\)|dest/u);
+    expect(section().querySelector('[role="alert"]')).toBeNull();
+    await click(button("Make a separate copy"));
+    await settle();
+    expect(calls).toContainEqual({ tool: "project_repo_add", input: { machineId: "devbox", projectId: "p1", url: "acme/shop", copy: true } });
+    expect(section().textContent).toContain("Cloning a separate copy into /home/w/src/shop-2 on devbox");
+    await type(field, "acme/shop");
+    await click(button("Add repo"));
+    await settle();
+    await click(button("Use the same copy"));
+    await settle();
+    expect(calls).toContainEqual({ tool: "project_repo_add", input: { machineId: "devbox", projectId: "p1", url: "acme/shop", useExisting: true } });
+    expect(section().textContent).toContain("shop is a repo of the bot now");
   });
 
   it("removes a repo once asked, never the bot's own directory", async () => {

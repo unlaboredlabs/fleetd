@@ -173,6 +173,19 @@ export function holders(db: Database, checkout: ProjectRef): { project: ProjectR
     .map((row) => ({ project: projectOf(row), repo: repoOf(row) }));
 }
 
+/**
+ * Whether the checkout is a bot's (W845), which adding a repo never takes from it: another project holds it as a repo,
+ * or it is a live bot of its own, one the hub knows and that isn't archived, whether its lead ever ran or not. Only an
+ * archived bot's folder may be added as it is.
+ */
+export function inUse(db: Database, checkout: ProjectRef): boolean {
+  if (holders(db, checkout).length > 0) return true;
+  const known = db.query("SELECT 1 FROM projects WHERE machine_id = ? AND project_id = ?").get(checkout.machineId, checkout.projectId) !== null;
+  const archived =
+    db.query("SELECT 1 FROM project_settings WHERE machine_id = ? AND project_id = ? AND archived_ms IS NOT NULL").get(checkout.machineId, checkout.projectId) !== null;
+  return known && !archived;
+}
+
 /** Forgets the project's repos and every repo whose files were in it: its node no longer has it. */
 export function removeProject(db: Database, project: ProjectRef): void {
   db.query(

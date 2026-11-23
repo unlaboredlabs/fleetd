@@ -8,7 +8,7 @@ import { useDataLayer } from "../../src/data/react";
 import { projectKey, type DataState } from "../../src/data/store";
 import { toast } from "../../ui";
 import type { Machine } from "./contracts";
-import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CreateState, type HubView, type RepoDraft } from "./create";
+import { botName, busy, createStep, hubMessages, initialCreate, outcomeLine, repoKey, type Call, type CreateMsg, type CopyChoice, type CreateState, type HubView, type RepoDraft } from "./create";
 import { navigate } from "../shell/navigation";
 import { addSource, machineIdFromHost, omit, tilde } from "./source";
 import { settingsPath } from "../../../shared/settingsPages";
@@ -285,7 +285,7 @@ export const startBot = (machineId: string, repo: RepoDraft): void => {
 /** Why Create didn't go, said over its button until the next edit. */
 export const refuseCreate = (why: string): void => set({ ...ui, refused: why });
 
-export const retryRepo = (key: string, useExisting = false): void => dispatch({ t: "retry", key, useExisting });
+export const retryRepo = (key: string, use?: CopyChoice): void => dispatch(use === undefined ? { t: "retry", key } : { t: "retry", key, use });
 
 export const dismissRepo = (key: string): void => dispatch({ t: "dismiss", key });
 

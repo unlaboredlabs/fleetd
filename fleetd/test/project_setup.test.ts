@@ -12,6 +12,7 @@ import * as avatar from "../src/hub/projects/avatar.ts";
 import { registerLeadCalls } from "../src/hub/projects/calls.ts";
 import * as icon from "../src/hub/projects/icon.ts";
 import { PEOPLE_ONLY, type PeopleOnly } from "../src/hub/projects/people_only.ts";
+import { holder } from "../src/hub/projects/repos.ts";
 import { projectSettings } from "../src/hub/projects/settings.ts";
 import { INSTRUCTIONS } from "../src/hub/prompts/entry.ts";
 import { entryOr, prompts } from "../src/hub/prompts/store.ts";
@@ -197,17 +198,17 @@ test("a lead whose clone a hub restart cut off is told at the hub's next start",
   expect(k.db.query("SELECT COUNT(*) AS n FROM project_setup_clones").get()).toEqual({ n: 0 });
 });
 
-test("a folder that is a bot of its own is a person's to add: a lead's repo_add never archives a bot", async () => {
+test("a folder that is another bot's is never taken: neither a lead's repo_add nor a person's add archives that bot", async () => {
   const k = await rig((call) => (call.op === "repo_inspect" && call.path === "/home/me/site" ? { ok: { kind: "repo_facts", exists: true, isGit: true, workflowFiles: [] } } : undefined));
-  expect(refusal(await k.send("th-lead", { op: "repo_add", path: "/home/me/site" }))).toEqual({
-    code: "forbidden",
-    message: `/home/me/site is the bot Site. ${PEOPLE_ONLY.project_folder}`,
-  });
+  // Site is a bot of its own (it has a lead), and its repo isn't on GitHub, so there is nothing to copy: refused, and
+  // Site stays as it is.
+  k.hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'site', 'th-site', '2026-11-01T00:00:00Z', 1)");
+  const why = "/home/me/site is the bot Site's folder, and its repo isn't on GitHub to copy.";
+  expect(refusal(await k.send("th-lead", { op: "repo_add", path: "/home/me/site" }))).toMatchObject({ code: "invalid", message: why });
   expect(k.names()).toEqual([]);
   expect(k.lines()).toEqual([]);
-  expect(store(k.hub).projectGet({ machineId: "devbox", projectId: "site" })?.archivedAt).toBeUndefined();
-  // The same from a person's own device archives it, as before.
-  expect((await k.ok(ada, "project_repo_add", { ...NOTES, path: "/home/me/site" })).archived).toEqual({ machineId: "devbox", projectId: "site" });
+  expect(await k.call(ada, "project_repo_add", { ...NOTES, path: "/home/me/site" })).toMatchObject({ error: { error: { code: "invalid", message: why } } });
+  expect(holder(k.hub, { machineId: "devbox", projectId: "site" })).toBeUndefined();
 });
 
 test("the setup calls are a lead's, for its own bot: a task, a person's shell and another bot's session are refused", async () => {

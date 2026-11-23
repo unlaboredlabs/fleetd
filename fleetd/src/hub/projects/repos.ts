@@ -1,11 +1,13 @@
 // project_repo_add, project_repo_list and project_repo_remove (W79): the
 // repos a project holds besides its own directory. A repo's files are a node checkout, a node "project" like any
 // other, on the project's machine: adding one by path or by clone goes the way project_add does, then records the
-// checkout as a repo of the project. While a project holds it, the checkout doesn't show as a project of its own; one
-// that was a project with its own chat and history is archived read-only (`holder`): its lead is stopped, and refused
-// every start, wake and spawn. Its tasks end when the repo is removed (the leads area's removals); nothing on disk is
-// deleted.
+// checkout as a repo of the project. While a project holds it, the checkout doesn't show as a project of its own. A
+// folder that is another bot's is never taken (W845): its repo is cloned as a separate copy beside it. A project held
+// as another's repo before then stays archived read-only (`holder`): its lead refused every start, wake and spawn. Its
+// tasks end when the repo is removed (the leads area's removals); nothing on disk is deleted.
 import type {
+  CloneTarget,
+  GitHubRepo,
   MachineId,
   ProjectId,
   ProjectInspect,
@@ -21,6 +23,7 @@ import type {
   Role,
   TaskId,
 } from "../../shared/contracts.ts";
+import { SAME_REPO_THERE } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_PROJECT_ENV_COPY } from "../../shared/node_link.ts";
 import type { RepoFacts } from "../../shared/sessions.ts";
@@ -29,18 +32,16 @@ import type { Hub } from "../api/hub.ts";
 import { unknownProject } from "../api/refusals.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { newUuid } from "../executor/index.ts";
-import { projectEnvCopy, projectUpsert, stop } from "../executor/projects.ts";
+import { projectEnvCopy, projectUpsert } from "../executor/projects.ts";
 import { fromExecutor } from "../executor/tools.ts";
-import { leads } from "../leads/index.ts";
 import { link } from "../link/index.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
 import { store } from "../store/hub_store.ts";
-import { TaskRecords } from "../tasks/records.ts";
 import { scopeOf } from "../work/store.ts";
 import { appendAdded, bindScope, type CloneInto, cloneAndRegister, clones, destTaken, ensureOwn, now } from "./add.ts";
 import { checkout, cloneTarget, inspectCheckout, problem, problemError, projectAt, readGithub, repoOf, requireRepoNode } from "./discover.ts";
-import { fitAdded } from "./inspect.ts";
+import { fitAdded, githubRepo } from "./inspect.ts";
 import { repoNamed } from "./settings.ts";
 import { archivedNote } from "./adding.ts";
 
@@ -93,7 +94,10 @@ function checkInput(input: ProjectRepoAddInput): void {
   const bad = (why: string) => new ToolError("invalid", why);
   if (input.path !== undefined && input.url !== undefined) throw bad("give path or url, not both");
   if (input.path === undefined && input.url === undefined) throw bad("give path (a checkout on the bot's machine) or url (a GitHub repository)");
-  if (input.path !== undefined && (input.dest !== undefined || input.useExisting !== undefined)) throw bad("dest and useExisting go with url only");
+  if (input.path !== undefined && (input.dest !== undefined || input.useExisting !== undefined || input.copy !== undefined)) {
+    throw bad("dest, useExisting and copy go with url only");
+  }
+  if (input.useExisting === true && input.copy === true) throw bad("give useExisting or copy, not both");
 }
 
 /** The directory at `path`, which must be a git checkout to be a repo. */
@@ -107,12 +111,13 @@ async function gitCheckout(hub: Hub, m: MachineId, path: string): Promise<RepoFa
   return facts;
 }
 
-/**
- * What a lead's `repo_add` adds to the add (projects/calls.ts): `existing` sees a checkout already on the machine
- * before it is attached and throws to refuse it; a clone's end reaches `cloned` or `cloneFailed`.
- */
+/** What a lead's `repo_add` adds to the add (projects/calls.ts): a clone's end reaches `cloned` or `cloneFailed`. */
 export type AddHooks = {
-  existing?(path: string): void;
+  /**
+   * An Undo of the bot's own repo removal (projects/calls.ts): the checkout it held, which no bot has held since, is
+   * taken back as it is, though it shows as a bot of its own since the removal.
+   */
+  takeBack?: boolean;
   cloned?(repo: ProjectRepo): void;
   cloneFailed?(problem: ProjectProblem): void;
 };
@@ -123,7 +128,11 @@ function add(hub: Hub, caller: Caller, input: ProjectRepoAddInput): Promise<Proj
   return addTo(hub, input, {});
 }
 
-/** `project_repo_add` once its caller may: the checkout attached, or its clone started. */
+/**
+ * `project_repo_add` once its caller may: the checkout attached, or its clone started. Adding a repo never touches
+ * another bot: a folder that is another bot's, or a repo some bot holds, is never shared or archived; its repo is
+ * cloned as a separate copy into a free folder beside it.
+ */
 export async function addTo(hub: Hub, input: ProjectRepoAddInput, hooks: AddHooks): Promise<ProjectRepoAddOutput> {
   checkInput(input);
   const [r] = known(hub, { machineId: input.machineId, projectId: input.projectId }, true);
@@ -138,56 +147,138 @@ export async function addTo(hub: Hub, input: ProjectRepoAddInput, hooks: AddHook
   requireRepoNode(hub, m);
   if (input.path !== undefined) {
     const path = stripSlash(input.path);
-    if (projectAt(hub, m, path) === r.projectId) throw ownDirectory(path);
-    hooks.existing?.(path);
+    const at = projectAt(hub, m, path);
+    if (at === r.projectId) throw ownDirectory(path);
     const facts = await gitCheckout(hub, m, path);
-    const inspect = await inspectCheckout(hub, facts);
-    const [repo, archived] = await attachCheckout(hub, r, input.name, path, facts, inspect, undefined);
-    return added(m, repo, archived);
+    const mine = repos.of(hub.db.conn, r).find((repo) => at !== undefined && same(repo.checkout, { machineId: m, projectId: at }));
+    if (mine) throw new ToolError("invalid", `${path} is already the bot's repo ${mine.name}.`);
+    if (at === undefined || free(hub, { machineId: m, projectId: at }, hooks.takeBack === true)) {
+      const inspect = await inspectCheckout(hub, facts);
+      return added(m, await attachCheckout(hub, r, input.name, path, facts, inspect, undefined, hooks.takeBack === true));
+    }
+    // Another bot's folder: a separate copy of its repo, cloned beside it.
+    const repo = facts.remote !== undefined ? githubRepo(facts.remote) : undefined;
+    if (repo === undefined) {
+      throw new ToolError(
+        "invalid",
+        `${path} is the bot ${whose(hub, { machineId: m, projectId: at })}'s folder, and its repo isn't on GitHub to copy.`,
+        "Copy that folder yourself and add the copy, or add the repo to that bot instead",
+      );
+    }
+    alreadyHas(hub, r, repo);
+    await readGithub(hub, repo, undefined);
+    const t = await cloneTarget(hub, m, repo, path);
+    return startClone(hub, r, input.name, repo, await freeFolder(hub, m, repo, path), t, hooks);
   }
   const repo = repoOf(input.url as string);
+  alreadyHas(hub, r, repo);
   // Before cloning: does gh see it, and is the destination free?
   await readGithub(hub, repo, undefined);
   const t = await cloneTarget(hub, m, repo, input.dest);
-  if (t.exists) {
-    if (t.sameRemote && input.useExisting === true) {
-      hooks.existing?.(t.path);
-      const facts = await gitCheckout(hub, m, t.path);
-      const inspect = await inspectCheckout(hub, facts);
-      const [got, archived] = await attachCheckout(hub, r, input.name, t.path, facts, inspect, undefined);
-      return added(m, got, archived);
-    }
-    throw destTaken(m, repo, t);
+  if (!t.exists) return startClone(hub, r, input.name, repo, t, undefined, hooks);
+  // A folder no bot uses, holding this repo: it is used as it is, or copied, as asked. A bot's folder is never
+  // shared with another bot (its sessions would take this bot's environment): it is copied.
+  const unused = t.sameRemote && (t.projectId === undefined || free(hub, { machineId: m, projectId: t.projectId }, false));
+  if (unused && input.useExisting === true) {
+    const facts = await gitCheckout(hub, m, t.path);
+    const inspect = await inspectCheckout(hub, facts);
+    return added(m, await attachCheckout(hub, r, input.name, t.path, facts, inspect, undefined));
   }
+  if (unused && input.copy !== true) throw sameRepoThere(m, repo, t.path);
+  if (input.dest !== undefined && input.copy !== true) throw t.projectId === undefined ? destTaken(m, repo, t) : botsFolder(hub, m, t.path, t.projectId);
+  return startClone(hub, r, input.name, repo, await freeFolder(hub, m, repo, t.path), t, hooks);
+}
+
+/** Whether the checkout may be added as it is: no live bot's (`repos.inUse`), or one an Undo takes back that no bot holds. */
+const free = (hub: Hub, checkout: ProjectRef, takeBack: boolean) =>
+  takeBack ? repos.holders(hub.db.conn, checkout).length === 0 : !repos.inUse(hub.db.conn, checkout);
+
+/** Refused when the bot already has the GitHub repo `repo`, before anything is cloned. */
+function alreadyHas(hub: Hub, r: ProjectRef, repo: GitHubRepo): void {
+  const had = repos.of(hub.db.conn, r).find((x) => x.repoKey?.toLowerCase() === `github.com/${repo}`.toLowerCase());
+  if (had) throw new ToolError("invalid", `The bot already has ${repo}: its repo ${had.name}.`);
+}
+
+/**
+ * Starts cloning `repo` into `t` as a repo of the project. `beside`: the taken folder a separate copy goes next to, said
+ * in the answer (`separateFrom`).
+ */
+function startClone(
+  hub: Hub,
+  r: ProjectRef,
+  name: RepoName | undefined,
+  repo: GitHubRepo,
+  t: CloneTarget,
+  beside: CloneTarget | undefined,
+  hooks: AddHooks,
+): ProjectRepoAddOutput {
+  const m = r.machineId;
   const run = clones(hub).start();
   const path = t.path;
   const into = (p: string): CloneInto => ({
     add: async (at, facts, inspect, addId) => {
-      const [got] = await attachCheckout(hub, r, input.name, at, facts, inspect, addId);
+      const got = await attachCheckout(hub, r, name, at, facts, inspect, addId);
       hooks.cloned?.(got);
     },
     fix: `Add the checkout at ${p} on ${m} with project_repo_add`,
     ...(hooks.cloneFailed ? { failed: hooks.cloneFailed } : {}),
   });
   void cloneAndRegister(hub, m, repo, path, into, run);
+  const owner = beside?.projectId !== undefined ? whose(hub, { machineId: m, projectId: beside.projectId }) : undefined;
+  const why = beside === undefined ? "" : owner !== undefined ? `${beside.path} is the bot ${owner}'s, so this is a separate copy. ` : `${beside.path} is taken, so this is a separate copy. `;
   return {
     path,
     addId: run.addId,
-    next: `Cloning into ${path} on ${m}. Follow events_wait for project.clone_progress, then project.added or project.add_failed with data.addId ${run.addId}.`,
+    ...(beside !== undefined ? { separateFrom: beside.path } : {}),
+    next: `${why}Cloning into ${path} on ${m}. Follow events_wait for project.clone_progress, then project.added or project.add_failed with data.addId ${run.addId}.`,
   };
 }
 
-function added(m: MachineId, repo: ProjectRepo, archived: ProjectRef | undefined): ProjectRepoAddOutput {
+/** How many folders next to a taken one a separate copy tries: `<path>-2` up to `<path>-<COPIES_MAX>`. */
+const COPIES_MAX = 20;
+
+/** The first folder next to `taken` that is free for a separate copy: `<taken>-2`, `<taken>-3`… */
+async function freeFolder(hub: Hub, m: MachineId, repo: GitHubRepo, taken: string): Promise<CloneTarget> {
+  for (let n = 2; n <= COPIES_MAX; n++) {
+    const t = await cloneTarget(hub, m, repo, `${taken}-${n}`);
+    if (!t.exists && t.projectId === undefined) return t;
+  }
+  throw problemError(problem("dest_exists", `${taken}-2 to ${taken}-${COPIES_MAX} on ${m} are all taken`, "Move some of those folders away, then add it again"));
+}
+
+/** The title of the bot whose folder the checkout is: the bot holding it as a repo, else its own. */
+function whose(hub: Hub, checkout: ProjectRef): string {
+  const bot = holder(hub, checkout)?.project ?? checkout;
+  return store(hub).projectGet(bot)?.title ?? bot.projectId;
+}
+
+/** A clone's `dest` is a bot's folder, which is never shared with another bot. */
+function botsFolder(hub: Hub, m: MachineId, path: string, projectId: ProjectId): ToolError {
+  return problemError(
+    problem("dest_exists", `${path} on ${m} is the bot ${whose(hub, { machineId: m, projectId })}'s folder`, "Pick another folder, or leave it out for a separate copy beside it"),
+  );
+}
+
+/** A folder no bot uses already holds the repo: the person picks between using it and a separate copy. */
+function sameRepoThere(m: MachineId, repo: GitHubRepo, path: string): ToolError {
+  return new ToolError(
+    "invalid",
+    `${m} already has a copy of ${repo} at ${path}`,
+    "Add that copy as it is (useExisting), or make a separate one in a free folder next to it (copy)",
+    SAME_REPO_THERE,
+    "Use the same copy, or make a separate one",
+  );
+}
+
+function added(m: MachineId, repo: ProjectRepo): ProjectRepoAddOutput {
   const path = repo.path ?? "";
-  let next = `${repo.name} is a repo of the bot now, at ${path} on ${m}.`;
-  if (archived) next += ` The bot ${archived.projectId} it was is archived: its chat and history stay, its lead no longer runs.`;
-  return { path, repo, ...(archived ? { archived } : {}), next };
+  return { path, repo, next: `${repo.name} is a repo of the bot now, at ${path} on ${m}.` };
 }
 
 /**
- * Records the checkout at `path` on the project's machine as a repo of the project: registered on the node when it
- * isn't a project yet, else archived when it is one of its own. The project's environment is copied to it, and
- * `project.added` (the project's) says so. Returns the repo, and the project archived.
+ * Records the checkout at `path` on the project's machine, a folder no live bot uses (`free`), as a repo of the
+ * project: registered on the node when it isn't a project yet, the project's environment copied to it, and
+ * `project.added` (the project's) saying so.
  */
 export async function attachCheckout(
   hub: Hub,
@@ -197,39 +288,22 @@ export async function attachCheckout(
   facts: RepoFacts,
   inspect: ProjectInspect,
   addId: string | undefined,
-): Promise<[ProjectRepo, ProjectRef | undefined]> {
+  takeBack = false,
+): Promise<ProjectRepo> {
   const m = r.machineId;
   // Again, for a clone that ends after the project was removed or archived.
   if (!store(hub).projectGet(r)) throw unknownProject(r);
   notArchived(hub, r);
   const path = stripSlash(given);
-  const existing = projectAt(hub, m, path);
-  const created = existing === undefined;
-  let archived: ProjectRef | undefined;
+  const there = projectAt(hub, m, path);
+  if (there === r.projectId) throw ownDirectory(path);
   let checkout: ProjectRef;
-  if (existing === r.projectId) throw ownDirectory(path);
-  if (existing !== undefined) {
-    checkout = { machineId: m, projectId: existing };
+  if (there !== undefined) {
+    checkout = { machineId: m, projectId: there };
     const mine = repos.of(hub.db.conn, r).find((repo) => same(repo.checkout, checkout));
-    if (mine) throw new ToolError("invalid", `${path} is already the bot's repo ${mine.name}.`, "project_repo_list shows its repos");
-    if (repos.of(hub.db.conn, checkout).some((repo) => !same(repo.checkout, checkout))) {
-      throw new ToolError(
-        "invalid",
-        `${path} is a bot that holds repos of its own.`,
-        "Remove its other repos first (project_repo_remove), or add those repos to this bot instead",
-      );
-    }
-    // A project of its own until now (no project held it yet): it is archived, once nothing runs in it.
-    if (repos.holders(hub.db.conn, checkout).length === 0) {
-      if (TaskRecords.live(hub.db.conn, checkout, 1).length > 0) {
-        throw new ToolError(
-          "invalid",
-          `${path} is the bot ${checkout.projectId} and its agents still run.`,
-          "Stop them first (project_stop, or the chat's Stop), then add it",
-        );
-      }
-      archived = checkout;
-    }
+    if (mine) throw new ToolError("invalid", `${path} is already the bot's repo ${mine.name}.`);
+    // A bot came to that folder meanwhile: it stays that bot's.
+    if (!free(hub, checkout, takeBack)) throw new ToolError("invalid", `${path} is the bot ${whose(hub, checkout)}'s folder now.`, "Add the repo again for a separate copy");
   } else {
     const id = newUuid();
     await projectUpsert(hub, m, id, path.split("/").pop() ?? path, path).catch((e) => {
@@ -245,22 +319,15 @@ export async function attachCheckout(
     return repos.attach(c, r, named, checkout);
   });
   repo.path ??= path;
-  // Archived from here: its lead is refused every start and wake, and the session it has now is stopped.
-  const lead = archived ? leads(hub).records.leadGet(archived) : undefined;
-  if (lead) {
-    await stop(hub, { machineId: m, threadId: lead.threadId }, false).catch((error) =>
-      console.warn("the archived project's lead was not stopped:", error),
-    );
-  }
   if (link(hub).can(m, CAP_PROJECT_ENV_COPY)) {
     await projectEnvCopy(hub, m, r.projectId, checkout.projectId).catch((error) =>
       console.warn("the project's environment was not copied to its new repo:", error),
     );
   }
   const title = store(hub).projectGet(r)?.title ?? r.projectId;
-  const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title, path, created, inspect });
+  const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title, path, created: there === undefined, inspect });
   appendAdded(hub, m, r.projectId, `${repo.name} added to ${title} on ${m}: ${inspect.leadNeeds}`, data);
-  return [repo, archived];
+  return repo;
 }
 
 function list(hub: Hub, caller: Caller, input: { machineId: MachineId; projectId: ProjectId }): ProjectRepoListOutput {

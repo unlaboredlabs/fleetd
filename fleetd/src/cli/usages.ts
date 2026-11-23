@@ -109,10 +109,11 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
              automations and sign-ins; its files, branches and worktrees stay
   project repo list <machine>/<bot> [--hub <url>]
   project repo add <machine>/<bot> <path|github-url> [--name <n>] [--dest <dir>]
-         [--use-existing] [--hub <url>]
+         [--use-existing | --copy] [--hub <url>]
              add a repo to the bot: a checkout on its machine, or a GitHub repo
-             cloned there, with progress. A checkout that is a bot of its own is
-             archived: its chat stays, its lead stops running
+             cloned there, with progress. Another bot's folder is never taken:
+             its repo is cloned into a free folder next to it. A copy already
+             there that no bot uses takes --use-existing or --copy
   project repo remove <machine>/<bot> <name> [--yes] [--hub <url>]
              take the repo out of the bot and end its agents; its files stay
   project set <machine>/<bot> --max-agents <n>|default [--pause-extras] [--hub <url>]

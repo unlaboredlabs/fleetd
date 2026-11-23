@@ -5,11 +5,11 @@
 // that names it: those wait in `early`). A repo that fails leaves the bot made: its row says why, with Retry, and
 // "Use the checkout there" when the clone's folder already holds that repo.
 
-import type { ToolInput } from "../../../shared/contracts";
+import { SAME_REPO_THERE, type ToolInput } from "../../../shared/contracts";
 import type { HubError } from "../../../shared/hub";
 import { ADD_EVENTS, type CloneProgressData, type HubEvent, type ProjectAddFailedData, type ProjectAddOutput, type ProjectAddedData, type ProjectSummary } from "./contracts";
 import { progress, type ProjectKey } from "./discovery";
-import { addSource, baseName, otherHost } from "./source";
+import { addSource, baseName, otherHost, tilde } from "./source";
 
 /** One repo in the list: a GitHub repo to clone onto the bot's machine, or a folder already on it. */
 export type RepoDraft = { readonly kind: "clone"; readonly repo: string } | { readonly kind: "folder"; readonly path: string };
@@ -60,8 +60,9 @@ export const botAtFolder = (projects: Readonly<Record<string, Listed>>, machineI
 
 /**
  * The bot that is the checkout a failed clone found in its way (`at`, the hub's path, or the GitHub repo its own
- * checkout tracks): adding that checkout to another bot archives it read-only (hub/projects/repos.ts attachCheckout).
- * One archived already isn't named: nothing more happens to it.
+ * checkout tracks). Asked only of an older hub: a hub of now says no bot uses the folder (`unused`) and copies a bot's
+ * folder by itself, while an older one archives that bot when its folder is used, so the row offers only a separate copy
+ * then. One archived already isn't named.
  */
 export const botHolding = (projects: Readonly<Record<string, Listed>>, machineId: string, repo: string, at: string | undefined, self: string): Listed | undefined => {
   const key = `github.com/${repo}`.toLowerCase();
@@ -94,8 +95,11 @@ export type RepoState =
   | { readonly t: "adding"; readonly detail: string; readonly fraction?: number }
   /** `archived`: the bot that checkout was until now, archived read-only by the add. */
   | { readonly t: "added"; readonly path: string; readonly archived?: ProjectKey }
-  /** `existing`: the clone's folder (`at`, as the hub says it) already holds this repo, which can be added as it is. */
-  | { readonly t: "failed"; readonly message: string; readonly fix?: string; readonly existing?: boolean; readonly at?: string };
+  /**
+   * `existing`: the clone's folder (`at`, as the hub says it) already holds this repo: it is used as it is, or copied.
+   * `unused`: the hub said no bot uses that folder (an older hub didn't say, and may archive a bot whose folder it is).
+   */
+  | { readonly t: "failed"; readonly message: string; readonly fix?: string; readonly existing?: boolean; readonly unused?: boolean; readonly at?: string };
 
 export interface RepoJob {
   readonly key: string;
@@ -146,7 +150,8 @@ export type CreateMsg =
   | { readonly t: "live"; readonly live: boolean }
   /** A snapshot after a drop: a repo the bot now lists was added while the link was down. */
   | { readonly t: "snapshot"; readonly projects: ReadonlyArray<ProjectSummary> }
-  | { readonly t: "retry"; readonly key: string; readonly useExisting?: boolean }
+  /** `use`: for a clone whose folder already holds the repo, use that copy (`same`) or make a separate one (`copy`). */
+  | { readonly t: "retry"; readonly key: string; readonly use?: CopyChoice }
   /** A failed row taken out of the list: nothing on the hub changes. */
   | { readonly t: "dismiss"; readonly key: string }
   | { readonly t: "back" }
@@ -172,17 +177,24 @@ const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()) ? tex
 /** The folder in the hub's "<machine> already has a checkout of <repo> at <path>" (hub/projects/add.ts destTaken). */
 const atPath = (message: string): string | undefined => / at (\/\S+?)\.?$/u.exec(message.trim())?.[1];
 
-const failed = (message: string, fix: string | undefined, existing = false): RepoState => {
-  // The hub names its own field in the fix ("Add that checkout instead (useExisting)"): the row's button says it.
+const failed = (message: string, fix: string | undefined, existing = false, unused = false): RepoState => {
+  // The hub's words name its own fields (useExisting, copy): the row says it plainly, and its two buttons do them.
   if (existing) {
     const at = atPath(message);
-    return { t: "failed", message: sentence(message), existing: true, ...(at === undefined ? {} : { at }) };
+    const free = unused ? { unused: true } : {};
+    return at === undefined
+      ? { t: "failed", message: "There's already a copy of it on that machine.", existing: true, ...free }
+      : { t: "failed", message: `There's already a copy at ${tilde(at)}.`, existing: true, ...free, at };
   }
   return fix?.trim() ? { t: "failed", message: sentence(message), fix: sentence(fix) } : { t: "failed", message: sentence(message) };
 };
 
-/** A clone refused because its folder already holds the same repo (hub/projects/add.ts destTaken). */
-const sameRepoThere = (fix: string | undefined): boolean => fix !== undefined && /\buseExisting\b/u.test(fix);
+/** A clone refused because its folder already holds the same repo (hub/projects/repos.ts; an older hub says so only in its fix). */
+const sameRepoThere = (e: { readonly fix?: string | undefined; readonly reason?: string | undefined }): boolean =>
+  e.reason === SAME_REPO_THERE || (e.fix !== undefined && /\buseExisting\b/u.test(e.fix));
+
+/** The hub's own word that no bot uses the folder in the clone's way. */
+const unusedThere = (e: { readonly reason?: string | undefined }): boolean => e.reason === SAME_REPO_THERE;
 
 export const settled = (j: RepoJob): boolean => j.state.t === "added" || j.state.t === "failed";
 
@@ -194,15 +206,20 @@ const trimEarly = (s: CreateState): CreateState => (s.jobs.some((j) => j.awaitin
 
 const withJob = (s: CreateState, key: string, change: (j: RepoJob) => RepoJob): CreateState => ({ ...s, jobs: s.jobs.map((j) => (j.key === key ? change(j) : j)) });
 
-const repoInput = (bot: ProjectKey, d: RepoDraft, useExisting: boolean): ToolInput<"project_repo_add"> =>
-  d.kind === "clone" ? { ...bot, url: d.repo, ...(useExisting ? { useExisting: true } : {}) } : { ...bot, path: d.path };
+/** For a clone whose folder already holds the repo: use that copy, or make a separate one next to it. */
+export type CopyChoice = "same" | "copy";
 
-const sendRepo = (s: CreateState, bot: ProjectKey, key: string, useExisting: boolean): Step_ => {
+const repoInput = (bot: ProjectKey, d: RepoDraft, use: CopyChoice | undefined): ToolInput<"project_repo_add"> =>
+  d.kind === "clone"
+    ? { ...bot, url: d.repo, ...(use === "same" ? { useExisting: true } : use === "copy" ? { copy: true } : {}) }
+    : { ...bot, path: d.path };
+
+const sendRepo = (s: CreateState, bot: ProjectKey, key: string, use: CopyChoice | undefined): Step_ => {
   const job = s.jobs.find((j) => j.key === key);
   if (job === undefined) return [s, []];
   const detail = job.draft.kind === "clone" ? "Asking the hub" : "Reading the folder";
   const next = withJob(s, key, (j) => ({ key: j.key, draft: j.draft, state: { t: "adding", detail }, awaiting: true }));
-  return [next, [{ kind: "repo", gen: s.gen, key, input: repoInput(bot, job.draft, useExisting) }]];
+  return [next, [{ kind: "repo", gen: s.gen, key, input: repoInput(bot, job.draft, use) }]];
 };
 
 const start = (s: CreateState, draft: Draft): Step_ => {
@@ -231,7 +248,7 @@ const onCreated = (s: CreateState, out: ProjectAddOutput, title: string, ownKey:
   const calls: Array<Call> = [];
   for (const j of next.jobs) {
     if (j.state.t !== "waiting") continue;
-    const [after, more] = sendRepo(next, bot.project, j.key, false);
+    const [after, more] = sendRepo(next, bot.project, j.key, undefined);
     next = after;
     calls.push(...more);
   }
@@ -256,10 +273,10 @@ const answer = (s: CreateState, c: Call, outcome: Outcome): Step_ => {
   if (job === undefined || job.awaiting !== true) return [s, []];
   if (!outcome.ok) {
     const lost = CONNECTION.has(outcome.error.code);
-    const state: RepoState = lost ? { t: "adding", detail: LOST_REPO } : failed(outcome.error.message, outcome.error.fix, sameRepoThere(outcome.error.fix));
+    const state: RepoState = lost ? { t: "adding", detail: LOST_REPO } : failed(outcome.error.message, outcome.error.fix, sameRepoThere(outcome.error), unusedThere(outcome.error));
     return [trimEarly(withJob(s, c.key, (j) => ({ key: j.key, draft: j.draft, state }))), []];
   }
-  const out = outcome.output as { path: string; addId?: string; repo?: { path?: string }; archived?: ProjectKey };
+  const out = outcome.output as { path: string; addId?: string; repo?: { path?: string }; archived?: ProjectKey; separateFrom?: string };
   if (out.addId === undefined) {
     const archived = out.archived === undefined ? {} : { archived: { machineId: out.archived.machineId, projectId: out.archived.projectId } };
     return [withJob(s, c.key, (j) => ({ key: j.key, draft: j.draft, state: { t: "added", path: out.repo?.path ?? out.path, ...archived } })), []];
@@ -267,7 +284,7 @@ const answer = (s: CreateState, c: Call, outcome: Outcome): Step_ => {
   const addId = out.addId;
   // Events that came before this answer: the ones naming its addId are its own.
   const mine = s.early.filter((e) => str(e.data, "addId") === addId);
-  let next = withJob({ ...s, early: s.early.filter((e) => !mine.includes(e)) }, c.key, (j) => ({ key: j.key, draft: j.draft, addId, state: { t: "adding", detail: "Starting the clone" } }));
+  let next = withJob({ ...s, early: s.early.filter((e) => !mine.includes(e)) }, c.key, (j) => ({ key: j.key, draft: j.draft, addId, state: { t: "adding", detail: out.separateFrom === undefined ? "Starting the clone" : "Making a separate copy" } }));
   for (const e of mine) next = onEvent(next, e);
   return [trimEarly(next), []];
 };
@@ -292,7 +309,7 @@ const onEvent = (s: CreateState, e: HubEvent): CreateState => {
     return withJob(s, job.key, (j) => ({ key: j.key, draft: j.draft, state: { t: "added", path: added.path } }));
   }
   const f = e.data as ProjectAddFailedData;
-  return withJob(s, job.key, (j) => ({ key: j.key, draft: j.draft, state: failed(f.message, f.fix, f.code === "dest_exists" && sameRepoThere(f.fix)) }));
+  return withJob(s, job.key, (j) => ({ key: j.key, draft: j.draft, state: failed(f.message, f.fix, f.code === "dest_exists" && sameRepoThere(f)) }));
 };
 
 /** After a drop: a repo the bot now lists (by its folder) was added meanwhile. */
@@ -328,7 +345,7 @@ export const createStep = (s: CreateState, msg: CreateMsg): Step_ => {
       if (s.phase.kind !== "made") return [s, []];
       const job = s.jobs.find((j) => j.key === msg.key);
       if (job?.state.t !== "failed") return [s, []];
-      return sendRepo(s, s.phase.bot.project, msg.key, msg.useExisting === true);
+      return sendRepo(s, s.phase.bot.project, msg.key, msg.use);
     }
     case "dismiss":
       return [{ ...s, jobs: s.jobs.filter((j) => j.key !== msg.key || !settled(j)) }, []];

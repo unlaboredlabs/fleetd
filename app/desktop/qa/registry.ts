@@ -3688,7 +3688,7 @@ export const screens: readonly Screen[] = [
     },
   },
   // Made: the bot's chat opens behind, and the dialog shows each repo coming in: a clone at git's 42%, and one whose
-  // folder already holds that repo, offering to use that checkout.
+  // folder already holds that repo, offering to use that copy or make a separate one.
   {
     id: "projects.add.cloning",
     route: "#/projects/add",
@@ -3698,7 +3698,7 @@ export const screens: readonly Screen[] = [
       await addRepo(page, "acme/checkout-v2");
       await addRepo(page, "acme/ledger-ui");
       await page.getByRole("button", { name: "Create", exact: true }).click();
-      await page.getByRole("button", { name: "Use the checkout there" }).waitFor();
+      await page.getByRole("button", { name: "Use the same copy" }).waitFor();
       // The fixture's progress events are timed; shoot once the bar shows git's 42%.
       await page.locator('[role="progressbar"][aria-valuenow="42"]').waitFor();
     },
@@ -3761,6 +3761,26 @@ export const screens: readonly Screen[] = [
       await page.getByText("Field notes is ready").first().waitFor();
       await page.evaluate(() => (window.location.hash = "#/settings/projects?for=devbox/field-notes"));
       await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
+    },
+  },
+  // W845: Add repo on a GitHub repo whose folder already holds it, no bot using it: two plain choices, the hub's own
+  // words nowhere.
+  {
+    id: "settings.projects",
+    variant: "repo-copy",
+    route: "#/projects/add",
+    fixtures: ["projects-new"],
+    open: async (page) => {
+      await page.getByRole("textbox", { name: "Name" }).fill("Field notes");
+      await page.keyboard.press("Enter");
+      await page.getByText("Field notes is ready").first().waitFor();
+      await page.evaluate(() => (window.location.hash = "#/settings/projects?for=devbox/field-notes"));
+      await page.getByText("No repo, a plain folder.").waitFor({ timeout: 15_000 });
+      await page.getByRole("button", { name: "Add a repo" }).click();
+      await page.getByRole("textbox", { name: "Repo to add" }).fill("acme/ledger-ui");
+      await page.getByRole("button", { name: "Add repo" }).click();
+      await page.getByRole("button", { name: "Use the same copy" }).waitFor();
+      await expect(page.getByText(/useExisting|\(dest\)/u)).toHaveCount(0);
     },
   },
   // UX-1 A2: the project's agents in the panel, those waiting on you first (none, many, long titles and commands, the
