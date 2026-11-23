@@ -47,6 +47,7 @@ jobs:
       build: ${{ steps.plan.outputs.build }}
       has-cli: ${{ steps.plan.outputs.has-cli }}
       build-app: ${{ steps.plan.outputs.build-app }}
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,8 +93,23 @@ jobs:
             fi
             echo "app last built from: ${prev:-none}"
           fi
-          echo "version=$version build=$build has-cli=$has_cli build-app=$build_app"
+          # A commit edge already holds, or an older one (a second CI pass of a commit, a re-run), builds nothing: it
+          # would hold edge's one build slot for its whole build (the Mac app's runner can take a quarter of an hour)
+          # while newer commits wait, and its publish would skip it anyway. It ends here in seconds, and the newest
+          # commit waiting builds next.
+          skip=false
+          if [ "$CHANNEL" = edge ] && [ "$PUBLISH" = true ]; then
+            held="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null | jq -r '.commit // empty' || true)"
+            if [ -n "$held" ] && git cat-file -e "$held^{commit}" 2>/dev/null && git merge-base --is-ancestor "$RELEASE_SHA" "$held"; then
+              echo "edge already holds $held, which has $RELEASE_SHA: nothing to build"
+              skip=true
+              has_cli=false
+              build_app=false
+            fi
+          fi
+          echo "version=$version build=$build has-cli=$has_cli build-app=$build_app skip=$skip"
           {
+            echo "skip=$skip"
             echo "version=$version"
             echo "build=$build"
             echo "has-cli=$has_cli"
@@ -488,7 +504,7 @@ jobs:
     needs: [plan, cli, cli-macos, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
-      always() && inputs.publish && needs.plan.result == 'success' &&
+      always() && inputs.publish && needs.plan.result == 'success' && needs.plan.outputs.skip != 'true' &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 10
