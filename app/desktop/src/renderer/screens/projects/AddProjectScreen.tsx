@@ -498,9 +498,10 @@ function JobRow({ job, bot }: { job: RepoJob; bot: Bot | undefined }) {
   const label = job.draft.kind === "clone" ? job.draft.repo : tilde(job.draft.path);
   const st = job.state;
   const projects = useData((d) => d.projects);
-  // The checkout in a clone's way may be a bot of its own, which adding it here archives: said before, and after.
+  // A copy already in a clone's way: used as it is, or copied next to it. An older hub archives a bot whose folder it
+  // is when it is used, so only a copy is offered then.
   const holder =
-    st.t === "failed" && st.existing === true && job.draft.kind === "clone" && bot !== undefined
+    st.t === "failed" && st.existing === true && st.unused !== true && job.draft.kind === "clone" && bot !== undefined
       ? botHolding(projects, bot.project.machineId, job.draft.repo, st.at, bot.project.projectId)
       : undefined;
   const archived = st.t === "added" && st.archived !== undefined ? (projects[projectKey(st.archived)]?.title ?? st.archived.projectId) : undefined;
@@ -522,11 +523,7 @@ function JobRow({ job, bot }: { job: RepoJob; bot: Bot | undefined }) {
         )}
         {st.t === "failed" ? (
           <span className={s.jobActions}>
-            {st.existing ? (
-              <Button size="sm" onClick={() => retryRepo(job.key, true)}>
-                {holder === undefined ? "Use the checkout there" : `Use it, archiving ${holder.title}`}
-              </Button>
-            ) : (
+            {st.existing ? null : (
               <Button size="sm" onClick={() => retryRepo(job.key)}>
                 Retry
               </Button>
@@ -545,8 +542,20 @@ function JobRow({ job, bot }: { job: RepoJob; bot: Bot | undefined }) {
       {st.t === "failed" ? (
         <Text as="p" size="sm" tone="quiet" className={cx(s.why)}>
           <HubText>{st.fix ? `${st.message} ${st.fix}` : st.message}</HubText>
-          {holder === undefined ? null : ` It is the bot ${holder.title}: using it here archives ${holder.title}, whose chat stays but whose lead stops.`}
+          {holder === undefined ? null : ` It is the bot ${holder.title}'s.`}
         </Text>
+      ) : null}
+      {st.t === "failed" && st.existing ? (
+        <div className={s.copyChoice}>
+          {holder === undefined ? (
+            <Button size="sm" variant="primary" onClick={() => retryRepo(job.key, "same")}>
+              Use the same copy
+            </Button>
+          ) : null}
+          <Button size="sm" onClick={() => retryRepo(job.key, "copy")}>
+            Make a separate copy
+          </Button>
+        </div>
       ) : null}
     </li>
   );

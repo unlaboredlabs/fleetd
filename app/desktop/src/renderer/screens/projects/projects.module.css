@@ -323,6 +323,13 @@
   margin: 0;
   padding: 0 var(--space-2) var(--space-1) calc(var(--space-2) * 2 + 14px);
 }
+/* A clone whose folder already holds the repo: use that copy, or make a separate one. */
+.copyChoice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) var(--space-1) calc(var(--space-2) * 2 + 14px);
+}
 .bar {
   height: 3px;
   margin: 0 var(--space-2) var(--space-1) calc(var(--space-2) * 2 + 14px);

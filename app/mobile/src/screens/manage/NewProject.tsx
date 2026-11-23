@@ -6,8 +6,8 @@
 // at once.
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, needsUpdate, otherHost, projectHome, repoKey, repoSuggestions, target, tilde, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { botAtFolder, botHolding, botName, createBusy, createStep, typedRepo, type ProjectRef, type ProjectSummary, initialCreate, NAME_MAX, nameProblem, needsUpdate, otherHost, projectHome, repoKey, repoSuggestions, target, tilde, type CopyChoice, type CreateMsg, type CreateState, type RepoDraft, type RepoJob, type RepoPick } from "../../desktop";
 import { useHub, type RootParams } from "../../hubContext";
 import { keyOf } from "../../store";
 import { space, type, useTheme } from "../../theme";
@@ -147,7 +147,7 @@ export function NewProject({ navigation, route }: Props) {
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ paddingBottom: space.xxl }} style={{ backgroundColor: t.grouped }}>
         <ListSection header="Repos" {...(createBusy(s) ? { footer: "It carries on if you close this." } : {})}>
           {s.jobs.map((j) => (
-            <JobRow key={j.key} job={j} bot={phase.bot.project} projects={state.projects ?? {}} onRetry={(useExisting) => send({ t: "retry", key: j.key, useExisting })} />
+            <JobRow key={j.key} job={j} bot={phase.bot.project} projects={state.projects ?? {}} onRetry={(use) => send(use === undefined ? { t: "retry", key: j.key } : { t: "retry", key: j.key, use })} />
           ))}
         </ListSection>
       </ScrollView>
@@ -265,20 +265,20 @@ export function NewProject({ navigation, route }: Props) {
 }
 
 /**
- * A repo coming in: its progress, ✓, or why it failed with Retry (or the checkout already there). That checkout may be
- * a bot of its own, which adding it here archives: the row names that bot before, and after.
+ * A repo coming in: its progress, ✓, or why it failed with Retry; a copy already in a clone's way is used as it is or
+ * copied next to it. An older hub archives a bot whose folder it is when it is used, so only a copy is offered then.
  */
-function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef; projects: Readonly<Record<string, ProjectSummary>>; onRetry: (useExisting: boolean) => void }) {
+function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef; projects: Readonly<Record<string, ProjectSummary>>; onRetry: (use?: CopyChoice) => void }) {
   const t = useTheme();
   const st = job.state;
   const title = job.draft.kind === "clone" ? job.draft.repo : tilde(job.draft.path);
-  const holder = st.t === "failed" && st.existing === true && job.draft.kind === "clone" ? botHolding(projects, bot.machineId, job.draft.repo, st.at, bot.projectId) : undefined;
+  const holder = st.t === "failed" && st.existing === true && st.unused !== true && job.draft.kind === "clone" ? botHolding(projects, bot.machineId, job.draft.repo, st.at, bot.projectId) : undefined;
   const archived = st.t === "added" && st.archived !== undefined ? (projects[keyOf(st.archived)]?.title ?? st.archived.projectId) : undefined;
   const detail =
     st.t === "adding"
       ? st.detail
       : st.t === "failed"
-        ? `${errorWords(st)}${holder === undefined ? "" : ` It is the bot ${holder.title}: using it here archives ${holder.title}, whose chat stays but whose lead stops.`}`
+        ? `${errorWords(st)}${holder === undefined ? "" : ` It is the bot ${holder.title}'s.`}`
         : st.t === "waiting"
           ? "Waiting for the bot"
           : archived === undefined
@@ -293,14 +293,26 @@ function JobRow({ job, bot, projects, onRetry }: { job: RepoJob; bot: ProjectRef
       accessory={
         st.t === "added" ? (
           <Symbol ios="checkmark.circle.fill" android="check_circle" size={20} color={t.success} />
+        ) : st.t === "failed" && st.existing === true ? (
+          <Button label="Add" kind="tinted" size="small" onPress={() => chooseCopy(st.at, holder === undefined, onRetry)} />
         ) : st.t === "failed" ? (
-          <Button label={st.existing === true ? (holder === undefined ? "Use Checkout" : "Use and Archive") : "Retry"} kind="tinted" size="small" onPress={() => onRetry(st.existing === true)} />
+          <Button label="Retry" kind="tinted" size="small" onPress={() => onRetry()} />
         ) : (
           <ActivityIndicator color={t.secondary} />
         )
       }
     />
   );
+}
+
+/** A clone whose folder already holds the repo: use that copy, or make a separate one beside it (only that on an older
+ * hub, where using a bot's folder archives that bot). */
+function chooseCopy(at: string | undefined, same: boolean, onRetry: (use?: CopyChoice) => void) {
+  Alert.alert("There's Already a Copy", at === undefined ? undefined : tilde(at), [
+    ...(same ? [{ text: "Use the Same Copy", isPreferred: true, onPress: () => onRetry("same") }] : []),
+    { text: "Make a Separate Copy", onPress: () => onRetry("copy") },
+    { text: "Cancel", style: "cancel" as const },
+  ]);
 }
 
 const styles = StyleSheet.create({

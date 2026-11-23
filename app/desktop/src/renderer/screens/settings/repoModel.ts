@@ -1,5 +1,5 @@
 // Settings → Projects → Repos, the parts with no React: where a repo's checkout is, and what Add repo sends.
-import type { ProjectRepo, ProjectSummary, ToolInput } from "../../../shared/contracts";
+import { SAME_REPO_THERE, type ProjectRepo, type ProjectSummary, type ToolInput } from "../../../shared/contracts";
 
 /**
  * The directory holding the repo's files: as the hub serves it, else its checkout project's folder, else the checkout's
@@ -31,10 +31,25 @@ export function sourceProblem(source: string): string | null {
  * What Add repo sends for `source`: a path (`/…`) on the project's machine, else a GitHub repo to clone there; null
  * while there is nothing to add, a relative path (`sourceProblem`), or a name that isn't a repo name.
  */
-export function addInput(project: { machineId: string; projectId: string }, source: string, name: string): ToolInput<"project_repo_add"> | null {
+export function addInput(
+  project: { machineId: string; projectId: string },
+  source: string,
+  name: string,
+  use?: "same" | "copy",
+): ToolInput<"project_repo_add"> | null {
   const text = source.trim();
   const n = name.trim();
   if (text === "" || sourceProblem(text) !== null || (n !== "" && !NAME.test(n))) return null;
   const at = { machineId: project.machineId, projectId: project.projectId, ...(n ? { name: n } : {}) };
-  return text.startsWith("/") ? { ...at, path: text } : { ...at, url: text };
+  if (text.startsWith("/")) return { ...at, path: text };
+  return { ...at, url: text, ...(use === "same" ? { useExisting: true } : use === "copy" ? { copy: true } : {}) };
+}
+
+/**
+ * The folder already holding the repo a clone was refused for, which no bot uses (the hub's `same_repo_there`): Add
+ * repo then offers to use that copy or make a separate one. Null for any other refusal.
+ */
+export function copyThere(error: { readonly reason?: string | undefined; readonly message: string }): string | null {
+  if (error.reason !== SAME_REPO_THERE) return null;
+  return / at (\/\S+?)\.?$/u.exec(error.message.trim())?.[1] ?? "";
 }

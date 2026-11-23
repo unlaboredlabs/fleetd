@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectRepo, ProjectSettings } from "../../../shared/contracts";
-import { addInput, checkoutPath, isOwn, sourceProblem } from "./repoModel";
+import { addInput, checkoutPath, copyThere, isOwn, sourceProblem } from "./repoModel";
 
 const project: ProjectSettings = {
   machineId: "devbox",
@@ -24,6 +24,16 @@ describe("Settings → Bots → Repos", () => {
     }
     expect(sourceProblem("acme/web")).toBeNull();
     expect(sourceProblem("/home/w/src/api")).toBeNull();
+  });
+
+  it("uses a copy already there or makes a separate one only when asked, and only for a GitHub repo", () => {
+    expect(addInput(project, "acme/web", "", "same")).toEqual({ machineId: "devbox", projectId: "p1", url: "acme/web", useExisting: true });
+    expect(addInput(project, "acme/web", "", "copy")).toEqual({ machineId: "devbox", projectId: "p1", url: "acme/web", copy: true });
+    expect(addInput(project, "/home/w/src/api", "", "copy")).toEqual({ machineId: "devbox", projectId: "p1", path: "/home/w/src/api" });
+    const there = { reason: "same_repo_there", message: "devbox already has a copy of acme/web at /home/w/src/web" };
+    expect(copyThere(there)).toBe("/home/w/src/web");
+    expect(copyThere({ ...there, message: "a copy is there" })).toBe("");
+    expect(copyThere({ message: "devbox already has a checkout of acme/web at /home/w/src/web" })).toBeNull();
   });
 
   it("finds a repo's checkout by the hub's path first, and tells the bot's own directory", () => {

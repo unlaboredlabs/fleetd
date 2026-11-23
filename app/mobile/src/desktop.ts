@@ -130,6 +130,7 @@ export {
   repoLabel,
   typedRepo,
   type Call as CreateCall,
+  type CopyChoice,
   type CreateMsg,
   type CreateState,
   type RepoDraft,

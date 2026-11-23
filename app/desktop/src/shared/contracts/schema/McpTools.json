@@ -18196,6 +18196,10 @@
     },
     "ProjectRepoAddInput": {
       "properties": {
+        "copy": {
+          "description": "With `url`: a separate copy, cloned into the first free folder next to the destination (`<dest>-2`, `-3`…) when it is taken.",
+          "type": "boolean"
+        },
         "dest": {
           "description": "With `url`: clone here instead of `<cloneRoot>/<name>`.",
           "pattern": "^/.",
@@ -18223,7 +18227,7 @@
           "type": "string"
         },
         "useExisting": {
-          "description": "With `url`: when the destination is already a checkout of the same repository, add it instead of failing.",
+          "description": "With `url`: when the destination is already a checkout of the same repository that no bot uses, add it instead of failing. A bot's folder is never shared with another bot: the repo is cloned into a free folder next to it instead.",
           "type": "boolean"
         }
       },
@@ -18243,7 +18247,7 @@
         },
         "archived": {
           "$ref": "#/$defs/ProjectRef",
-          "description": "The project the checkout was until now, archived read-only."
+          "description": "From an older hub only: the project the checkout was until then, archived read-only. A hub of now never archives one."
         },
         "next": {
           "type": "string"
@@ -18255,6 +18259,10 @@
         "repo": {
           "$ref": "#/$defs/ProjectRepo",
           "description": "The repo, once added; absent while a clone runs."
+        },
+        "separateFrom": {
+          "description": "A separate copy: the folder it is cloned beside, another bot's or taken by something else.",
+          "type": "string"
         },
         "truncated": {
           "type": "boolean"

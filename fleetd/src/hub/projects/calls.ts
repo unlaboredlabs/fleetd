@@ -136,18 +136,12 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
   if ((url === undefined) === (path === undefined)) {
     throw invalid("Give url (a GitHub URL or owner/repo, cloned onto the bot's machine) or path (a checkout already there), one of them.");
   }
-  let created = true;
+  // A folder already a project of the machine (one no bot uses) is added as it is: not created.
+  const created = path === undefined || projectAt(hub, m, path.replace(/\/$/, "")) === undefined;
   // A clone can end before this call does: its row is written only while it still runs.
   let ended = false;
   let addId: string | undefined;
   const hooks: AddHooks = {
-    existing: (at) => {
-      const other = projectAt(hub, m, at);
-      created = other === undefined;
-      if (other === undefined || repos.holders(hub.db.conn, { machineId: m, projectId: other }).length > 0) return;
-      const title = store(hub).projectGet({ machineId: m, projectId: other })?.title ?? other;
-      throw peopleOnly("project_folder", `${at} is the bot ${title}.`);
-    },
     cloned: (repo) => {
       ended = true;
       if (addId !== undefined) cloneDone(hub, addId);
@@ -157,7 +151,7 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
     cloneFailed: (problem: ProjectProblem) => {
       ended = true;
       if (addId !== undefined) cloneDone(hub, addId);
-      tell(hub, r, "request", `repo_add: ${url} was not added. ${problem.message}${problem.fix ? ` ${problem.fix}.` : ""}`);
+      tell(hub, r, "request", `repo_add: ${url ?? path} was not added. ${problem.message}${problem.fix ? ` ${problem.fix}.` : ""}`);
     },
   };
   const out = await addTo(
@@ -568,7 +562,7 @@ async function restore(hub: Hub, caller: Caller, r: ProjectRef, before: Before, 
       if (before.path === undefined) {
         throw new ToolError("failed", `fleetd doesn't know where ${before.repo}'s checkout was.`, "Add it again in the bot's settings.");
       }
-      const out = await addTo(hub, { machineId: r.machineId, projectId: r.projectId, name: before.repo, path: before.path }, {});
+      const out = await addTo(hub, { machineId: r.machineId, projectId: r.projectId, name: before.repo, path: before.path }, { takeBack: true });
       if (before.setup && out.repo) {
         s.setSetupIn(r, out.repo.repoId, before.setup);
       }

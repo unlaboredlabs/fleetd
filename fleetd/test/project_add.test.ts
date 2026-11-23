@@ -345,7 +345,7 @@ test("a plain folder takes a repo by path, lists it and takes it out again", asy
   expect(await k.refused(operate, "project_repo_remove", { ...r, name: "api" })).toBe("not_found");
 });
 
-test("attaching a bot of its own archives it, and an archived bot takes no repo", async () => {
+test("another bot's folder added by path is never taken, and a bot archived as a repo before takes no repo", async () => {
   const k = kit();
   const n = await node(k, ["repos"], (call) =>
     call.op === "repo_inspect" ? { ok: { kind: "repo_facts", exists: true, isGit: true, workflowFiles: [] } } : undefined,
@@ -356,13 +356,13 @@ test("attaching a bot of its own archives it, and an archived bot takes no repo"
   await settle();
   const web = { machineId: "devbox", projectId: "web" };
   const site = { machineId: "devbox", projectId: "site" };
-  // Its agents still run: refused.
-  k.hub.db.conn.run(`INSERT INTO tasks (machine_id, project_id, workstream_id, state, data) VALUES ('devbox', 'site', 'W1', 'running', '{"projectRef":{"machineId":"devbox","projectId":"site"}}')`);
-  expect(await k.refused(operate, "project_repo_add", { ...web, path: "/home/me/site" })).toBe("invalid");
-  k.hub.db.conn.run("UPDATE tasks SET state = 'done'");
-  const out = await k.ok(operate, "project_repo_add", { ...web, path: "/home/me/site" });
-  expect(out.archived).toEqual(site);
-  expect(out.next).toContain("The bot site it was is archived");
+  k.hub.db.conn.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'site', 'th-site', '2026-11-01T00:00:00Z', 1)");
+  // Site's folder holds a repo with no GitHub remote: nothing to copy, so refused, and Site stays a bot of its own.
+  const out = await k.call(operate, "project_repo_add", { ...web, path: "/home/me/site" });
+  expect(out).toMatchObject({ error: { error: { code: "invalid", message: "/home/me/site is the bot Site's folder, and its repo isn't on GitHub to copy." } } });
+  expect(repos.holders(k.hub.db.conn, site)).toEqual([]);
+  // Held as web's repo by an older hub: archived, and it takes no repo.
+  k.hub.db.transaction((c) => repos.attach(c, web, "site", site));
   const refused = await k.call(operate, "project_repo_add", { ...site, path: "/home/me/web" });
   expect(refused).toMatchObject({ error: { error: { code: "invalid", message: "This bot is archived: its directory is repo site of bot web on devbox." } } });
 });
@@ -392,7 +392,10 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   await settle();
   await k.ok(operate, "project_repo_add", { ...app, path: "/work/api2" });
   await settle();
-  await k.ok(operate, "project_repo_add", { machineId: "devbox", projectId: "shop", path: "/work/api2" });
+  // shop held it too (an older hub shared a held checkout).
+  const held = repos.byName(k.hub.db.conn, app, "api2")?.checkout;
+  if (held === undefined) throw new Error("api2 not added");
+  k.hub.db.transaction((c) => repos.attach(c, { machineId: "devbox", projectId: "shop" }, "api2", held));
   const checkout = (name: string) => repos.byName(k.hub.db.conn, app, name)?.checkout.projectId;
   const api = checkout("api");
   const api2 = checkout("api2");

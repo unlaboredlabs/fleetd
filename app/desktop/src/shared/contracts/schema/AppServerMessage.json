@@ -801,6 +801,11 @@
           "const": "no_project",
           "description": "Memory import runs in one of the hub's projects, and the hub has none (D491).",
           "type": "string"
+        },
+        {
+          "const": "same_repo_there",
+          "description": "project_repo_add of a url whose folder already holds that repo, used by no bot: add it as it is (useExisting) or as a separate copy (copy).",
+          "type": "string"
         }
       ],
       "x-open": true

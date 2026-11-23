@@ -1,6 +1,7 @@
 // Settings › Projects › Project › Code: the git repos a project holds (ProjectSummary.repos), each with its remote, base
 // branch and checkout; then each repo's Computer in a section of its own (SetupSetting.tsx). Add a repo (the plus) takes a
-// checkout on the project's machine or a GitHub repo to clone there (project_repo_add); Remove takes one out
+// checkout on the project's machine or a GitHub repo to clone there (project_repo_add); a clone whose folder already
+// holds the repo, no bot using it, offers to use that copy or make a separate one. Remove takes one out
 // (project_repo_remove), ending its agents and leaving its files. A plain folder holds none until one is added.
 import { GitBranch } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -11,7 +12,9 @@ import { repoName } from "../factory/model";
 import { errorText, useHubCall, useLive } from "./hub";
 import { AddButton, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects } from "./parts";
 import { Computer, RepoComputer } from "./SetupSetting";
-import { addInput, checkoutPath, isOwn, sourceProblem } from "./repoModel";
+import { CallError } from "../../src/data/queries";
+import { tilde } from "../projects/source";
+import { addInput, checkoutPath, copyThere, isOwn, sourceProblem } from "./repoModel";
 import s from "./settings.module.css";
 
 type Echo = { ok: boolean; text: string };
@@ -86,21 +89,28 @@ function AddRepo({ project, onCancel, onDone }: { project: Project; onCancel: ()
   const [source, setSource] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The folder already holding the repo, while Add repo asks whether to use it: "" when the hub didn't say where. */
+  const [there, setThere] = useState<string | null>(null);
   const input = addInput(project, source, name);
   const problem = sourceProblem(source);
-  const add = () => {
-    if (input === null) return;
+  const add = (use?: "same" | "copy") => {
+    const sent = addInput(project, source, name, use);
+    if (sent === null) return;
     setBusy(true);
-    hubCall("project_repo_add", input).then(
+    setThere(null);
+    hubCall("project_repo_add", sent).then(
       (out) => {
         setBusy(false);
         setSource("");
         setName("");
-        onDone({ ok: true, text: out.addId ? `Cloning into ${out.path} on ${machine}; it shows here once the clone ends.` : (out.next ?? "Added.") });
+        const into = out.separateFrom === undefined ? "Cloning into" : "Cloning a separate copy into";
+        onDone({ ok: true, text: out.addId ? `${into} ${out.path} on ${machine}; it shows here once the clone ends.` : (out.next ?? "Added.") });
       },
       (e: unknown) => {
         setBusy(false);
-        onDone({ ok: false, text: errorText(e) });
+        const at = e instanceof CallError ? copyThere(e.error) : null;
+        if (at !== null) setThere(at);
+        else onDone({ ok: false, text: errorText(e) });
       },
     );
   };
@@ -115,17 +125,40 @@ function AddRepo({ project, onCancel, onDone }: { project: Project; onCancel: ()
           autoFocus
           placeholder={`A checkout on ${machine}, or a GitHub URL`}
           value={source}
-          onChange={(e) => setSource(e.target.value)}
+          onChange={(e) => {
+            setSource(e.target.value);
+            setThere(null);
+          }}
         />
         <Input aria-label="Repo name" placeholder="Name (optional)" value={name} maxLength={32} onChange={(e) => setName(e.target.value)} />
-        <Button variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant="primary" disabled={!live || busy || input === null} onClick={add}>
-          {busy ? "Adding…" : "Add repo"}
-        </Button>
+        {there === null ? (
+          <>
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button variant="primary" disabled={!live || busy || input === null} onClick={() => add()}>
+              {busy ? "Adding…" : "Add repo"}
+            </Button>
+          </>
+        ) : null}
       </div>
-      {why === null ? null : (
+      {there === null ? null : (
+        <div className={s.addRepo} role="group" aria-label="A copy is already there">
+          <Text size="sm">{there === "" ? `There's already a copy on ${machine}.` : `There's already a copy at ${tilde(there)}.`}</Text>
+          <div className={s.choices}>
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button disabled={!live || busy} onClick={() => add("copy")}>
+              Make a separate copy
+            </Button>
+            <Button variant="primary" autoFocus disabled={!live || busy} onClick={() => add("same")}>
+              Use the same copy
+            </Button>
+          </div>
+        </div>
+      )}
+      {why === null || there !== null ? null : (
         <Text size="sm" tone="quiet">
           {why}
         </Text>

@@ -15,8 +15,7 @@ export type PeopleOnly =
   | "prompts"
   | "delete"
   | "create"
-  | "another_project"
-  | "project_folder";
+  | "another_project";
 
 /** Who can do it and where, in one line. */
 export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
@@ -33,7 +32,6 @@ export const PEOPLE_ONLY: Record<PeopleOnly, string> = {
   create:
     "Only a person creates a bot. When they ask you for one, propose it with project_propose: their Approve on its card makes it, as theirs. Or they make it themselves: New bot in the app, or `fleetd project add` from their own terminal.",
   another_project: "A lead sets up only its own bot. Another bot is set up by its own lead (project_message writes to it) or by a person in the app.",
-  project_folder: "That folder is a bot of its own, and adding it as a repo would archive that bot: only a person does that, in this bot's settings in the app.",
 };
 
 /** The names a call might carry for each, lowercase with nothing but letters and digits. */
@@ -48,7 +46,6 @@ const NAMES: Record<PeopleOnly, string[]> = {
   delete: ["delete", "deleted", "remove", "destroy"],
   create: ["create", "new", "createproject", "newproject"],
   another_project: ["project", "projectid", "projectref", "machine", "machineid"],
-  project_folder: [],
 };
 
 const BY_NAME = new Map(Object.entries(NAMES).flatMap(([thing, names]) => names.map((n) => [n, thing as PeopleOnly] as const)));

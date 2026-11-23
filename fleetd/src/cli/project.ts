@@ -21,6 +21,7 @@ const SPEC = {
     title: "str",
     dest: "str",
     "use-existing": "bool",
+    copy: "bool",
     yes: "bool",
     hub: "str",
     "max-agents": "str",
@@ -359,17 +360,18 @@ async function repo(client: McpClient, out: Out, v: Parsed) {
       input.url = arg;
       input.dest = v.str("dest") ?? null;
       if (v.flag("use-existing")) input.useExisting = true;
+      if (v.flag("copy")) input.copy = true;
     }
     const head = await call(client, "events_wait", { timeoutSec: 0 });
     const cursor = head?.cursor ?? 0;
     const added = await call(client, "project_repo_add", input);
     if (typeof added?.addId === "string") {
+      if (typeof added.separateFrom === "string") out.info(`${tilde(added.separateFrom)} is another bot's or taken: this is a separate copy`);
       await followClone(client, out, machine, s(added, "/path"), added.addId, cursor);
       out.success(`added to ${title}`);
       return;
     }
     out.success(`${s(added, "/repo/name")} added to ${title}`);
-    if (added?.archived !== undefined) out.info(s(added, "/next"));
     return;
   }
   if (arg === undefined) throw new Stop(2, "give the repo's name (fleetd project repo list shows them)");

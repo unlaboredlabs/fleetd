@@ -35,7 +35,7 @@ A bot can hold several repos, so one lead works across them. The lead picks the 
 
 - **Add:** Settings › Bots › *your bot* › Bot › **Add repo**, or ask the lead in the chat.
 - **Remove:** **Remove…** on the repo's row. Its agents stop; its files stay on disk.
-- **One repo can be in several bots.**
+- **One repo can be in several bots,** each with its own copy. Adding a repo never takes another bot's folder: fleetd clones a separate copy beside it, such as `~/src/web-2`. If a copy no bot uses is already there, it asks: **Use the same copy** or **Make a separate copy**.
 
 When work in a bot with no repo grows into real software, the lead offers once to make a GitHub repo for it. Say no and it won't ask again for that work.
 

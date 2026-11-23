@@ -316,7 +316,7 @@ Add a repo to the bot: a checkout on its machine, or a GitHub repo cloned there,
 
 ```text
 fleetd project repo add <machine>/<bot> <path|github-url> [--name <n>] [--dest <dir>]
-    [--use-existing] [--hub <url>]
+    [--use-existing | --copy] [--hub <url>]
 ```
 
 ### fleetd project repo remove {#project-repo-remove}

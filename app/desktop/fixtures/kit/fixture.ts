@@ -12,6 +12,7 @@ export interface HubErrorJson {
   readonly code: string;
   readonly message: string;
   readonly fix?: string | undefined;
+  readonly reason?: string | undefined;
 }
 
 // "rows": not a frame the window sees, but rows later answers leave out or show again from then on (see Rows).

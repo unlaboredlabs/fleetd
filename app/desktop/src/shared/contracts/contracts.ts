@@ -2958,7 +2958,9 @@ export type EnvVarSet = {
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
 
 /** A refusal an app acts on. */
-export type KnownErrorReason = "no_project";
+export type KnownErrorReason = "no_project" | "same_repo_there";
+/** `project_repo_add` of a url whose folder already holds that repo, used by no bot: add it as it is (`useExisting`) or as a separate copy (`copy`). */
+export const SAME_REPO_THERE = "same_repo_there" satisfies KnownErrorReason;
 /** KnownErrorReason, or a value from a newer hub. */
 export type ErrorReason = KnownErrorReason | (string & {});
 
@@ -6897,6 +6899,8 @@ export type ProjectRepo = {
 };
 
 export type ProjectRepoAddInput = {
+  /** With `url`: a separate copy, cloned into the first free folder next to the destination (`<dest>-2`, `-3`…) when it is taken. */
+  copy?: boolean;
   /** With `url`: clone here instead of `<cloneRoot>/<name>`. */
   dest?: string;
   machineId: MachineId;
@@ -6907,20 +6911,25 @@ export type ProjectRepoAddInput = {
   projectId: ProjectId;
   /** A GitHub URL, `git@github.com:o/r.git`, or `owner/repo`, cloned onto the project's machine. */
   url?: string;
-  /** With `url`: when the destination is already a checkout of the same repository, add it instead of failing. */
+  /**
+   * With `url`: when the destination is already a checkout of the same repository that no bot uses, add it instead of
+   * failing. A bot's folder is never shared with another bot: the repo is cloned into a free folder next to it instead.
+   */
   useExisting?: boolean;
 };
 
 export type ProjectRepoAddOutput = {
   /** A clone was started: its `project.clone_progress`, `project.added` and `project.add_failed` events carry it. */
   addId?: string;
-  /** The project the checkout was until now, archived read-only. */
+  /** From an older hub only: the project the checkout was until then, archived read-only. A hub of now never archives one. */
   archived?: ProjectRef;
   next?: string;
   /** The checkout's directory (the clone's destination for a url). */
   path: string;
   /** The repo, once added; absent while a clone runs. */
   repo?: ProjectRepo;
+  /** A separate copy: the folder it is cloned beside, another bot's or taken by something else. */
+  separateFrom?: string;
   truncated?: boolean;
 };
 
