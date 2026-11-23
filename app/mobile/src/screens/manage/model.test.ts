@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRow, OrderCard, PrRow, ProfilesListOutput, ProjectSettings, ProjectSummary, TodoItem } from "../../desktop";
 import { deleteWords as desktopDeleteWords } from "../../desktop";
 import { machineName, offFooter } from "./model";
-import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadSections, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
+import { agentLines, checklist, createRefusal, deleteBlocked, deleteConfirmed, deleteWords, merges, leadLines, leadRestartRow, leadSections, leadValue, LEAD_HUB, orderLines, profileLines, profilesValue, NOT_CONNECTED, refusalNow, subtitle } from "./model";
 
 const AT = "2026-10-28T10:00:00Z";
 
@@ -143,6 +143,13 @@ describe("its screen", () => {
     const own = { ...view, leadProfile: "high" };
     expect(leadLines(own).filter((l) => l.checked).map((l) => l.value)).toEqual(["high"]);
     expect(leadValue(own)).toBe("high");
+  });
+
+  it("offers Restart Lead on the profile its lead runs on too, as a stuck lead needs, and waits once asked mid-turn", () => {
+    const view = { profiles: [{ id: 1, name: "high", default: true, note: "", model: "claude-opus-5-5" }], models: [], allowed: ["high"] } as unknown as ProfilesListOutput;
+    expect(leadRestartRow(view)).toBe("offer");
+    expect(leadRestartRow({ ...view, leadRestart: true })).toBe("offer");
+    expect(leadRestartRow({ ...view, leadRestarting: true })).toBe("waits");
   });
 
   it("lists its lead's model by provider: Google's profiles under Google, and for an admin each Gemini model no profile runs on", () => {

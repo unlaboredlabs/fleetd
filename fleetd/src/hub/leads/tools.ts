@@ -45,8 +45,8 @@ export function register(tools: Registry): void {
       said.push(`Its lead starts on ${lead.name} from its next start${input.leadRestart === true ? "" : "; leadRestart: true starts it on it now"}.`);
     }
     if (input.leadRestart === true) {
-      const due = area.records.leadGet(r) !== undefined && (await area.switchSoon(r));
-      said.push(due ? "Its lead starts again on it now, or once its turn ends; it keeps its chat, memory and orders." : "Its lead already runs on its lead profile: nothing to restart.");
+      const due = await area.switchSoon(r);
+      said.push(due ? "Its lead starts again on it now, or once its turn ends; it keeps its chat, memory and orders." : "It has no lead yet: its first message starts it.");
     }
     const pick = profiles(hub).leadPick(r);
     return { profiles: allowed, ...(pick ? { leadProfile: pick.name } : {}), next: said.join(" ") || "Nothing changed." };

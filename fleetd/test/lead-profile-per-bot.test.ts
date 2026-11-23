@@ -157,14 +157,47 @@ test("a lead mid-turn asked to restart starts on its new profile once its turn e
   expect([after.leadRestart, after.leadRestarting]).toEqual([undefined, undefined]);
 });
 
-test("a restart asked of a lead already on its profile starts nothing", async () => {
+test("a restart asked of a lead already on its profile starts it again on it: a stuck lead is restarted without a model switch", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
   threadIs(t.hub, "idle");
+  const before = leads(t.hub).get(PROJECT)!;
   const out = await t.call<ProjectSetOutput>("project_set", { ...PROJECT, leadRestart: true });
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe(t.launched[0]);
+  const after = leads(t.hub).get(PROJECT)!;
+  expect(after.threadId).not.toBe(before.threadId);
+  expect(after.sessionGeneration).toBe(before.sessionGeneration + 1);
+  expect(out.next).not.toContain("nothing to restart");
+  const view_ = await view(t);
+  expect([view_.leadRestart, view_.leadRestarting]).toEqual([undefined, undefined]);
+  // Asked once, it starts once: the next turn's end starts nothing more.
+  const threadId = threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
+  await settle();
+  expect(t.launched.length).toBe(2);
+});
+
+test("a lead mid-turn on its own profile, asked to restart, starts again once its turn ends", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "running");
+  await t.call("project_set", { ...PROJECT, leadRestart: true });
   await settle();
   expect(t.launched.length).toBe(1);
-  expect(out.next).toContain("already");
+  expect(await view(t)).toMatchObject({ leadRestarting: true });
+  const threadId = threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
+  await until(() => t.launched.length === 2);
+  expect((await view(t)).leadRestarting).toBeUndefined();
+});
+
+test("a restart asked of a bot with no lead yet starts nothing, and says its first message starts it", async () => {
+  const t = hubWithTools();
+  const out = await t.call<ProjectSetOutput>("project_set", { ...PROJECT, leadRestart: true });
+  await settle();
+  expect(t.launched.length).toBe(0);
+  expect(out.next).toContain("first message");
 });
 
 test("the lead's own setup calls have no lead profile: it is a person's", () => {

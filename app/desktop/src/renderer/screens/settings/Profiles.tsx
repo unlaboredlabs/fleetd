@@ -290,7 +290,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
  * A project's Agents page: a checkbox for each of the hub's profiles, checked for each its agents may run on
  * (project_set). The default is always allowed: checked, and can't be unchecked. Under them, Lead model: the profile
  * its lead starts on, the hub's lead profile until it picks its own (project_set leadProfile, any of the hub's but
- * one claude refused), with Restart lead while its lead runs on another (leadRestart).
+ * one claude refused), with Restart lead beside it: on the pick, or on the one it runs on, as a stuck lead needs.
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const cloud = useCloudTeam();
@@ -376,11 +376,11 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
                 <Text size="sm" tone="quiet">
                   Restarts after its turn
                 </Text>
-              ) : view.leadRestart ? (
+              ) : (
                 <Button size="sm" variant="ghost" disabled={!live || busy !== undefined} onClick={restart}>
                   Restart lead
                 </Button>
-              ) : null}
+              )}
               <Select
                 aria-label="Lead model"
                 value={view.leadProfile ?? HUB_LEAD}
