@@ -934,7 +934,8 @@ export class TrainGitHub {
   /** Takes `name` off the PR; one without it counts as done. */
   async removeLabel(repo: string, n: number, name: string): Promise<void> {
     const r = await this.call("DELETE", `repos/${repo}/issues/${n}/labels/${name.replaceAll(":", "%3A")}`);
-    if (!r.ok && r.status !== 404) throw GhError.failed(`taking the label off ${repo}#${n} failed: ${r.message}`);
+    // GitHub failing for a moment is unavailable, as for every other call: its caller tries again on a later pass.
+    if (!r.ok && r.status !== 404) throw TrainGitHub.failed(`repos/${repo}/issues/${n}/labels/${name}`, r.status, r.message);
   }
 
   /** Each workflow file in `.github/workflows` on `branch`, by path, with its text. */

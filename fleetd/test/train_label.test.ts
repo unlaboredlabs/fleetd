@@ -109,6 +109,29 @@ test("a labelled PR whose order a person stopped has its label taken off once, w
   expect(told()).toBe(1);
 });
 
+test("GitHub failing for a moment as the train takes a stopped PR's label off is tried again on a later pass, not refused", async () => {
+  const k = await kit();
+  openPr(k, 27, "renovate/y", { labels: [TRAIN_LABEL, "hold"] });
+  await passes(k, 1);
+  k.train.takeLeftovers(k.change(27).projectRef, "W200", "W200 was stopped: by you");
+  Object.assign(k.host.briefed.get("W200")!, { stopped: true, closed: "stopped" });
+  k.pr(27, "renovate/y", { "27.md": "27 again\n" }, { labels: [TRAIN_LABEL, "hold"] });
+  k.host.tasks.delete("T27");
+  const told = () => k.host.wakes.filter((w) => w.includes("/pull/27")).length;
+  const before = told();
+  // The label's removal answers 502: the label stays, and the lead hears nothing of a refusal.
+  k.gh.unreadable.push("unlabel");
+  await passes(k, 2);
+  expect(k.gh.pulls.get(27)!.labels).toContain(TRAIN_LABEL);
+  expect(told()).toBe(before);
+  // GitHub back: the next pass takes it off, with its one comment, and tells the lead once.
+  k.gh.unreadable = k.gh.unreadable.filter((u) => u !== "unlabel");
+  await passes(k, 2);
+  expect(k.gh.pulls.get(27)!.labels).toEqual(["hold"]);
+  expect(k.gh.pulls.get(27)!.comments).toHaveLength(1);
+  expect(told()).toBe(before + 1);
+});
+
 test("without the label, from a fork, or as a draft, a PR no task opened stays off the train, and opens no order", async () => {
   const k = await kit();
   openPr(k, 22, "sam/pricing-fix");
