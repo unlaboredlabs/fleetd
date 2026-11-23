@@ -701,3 +701,33 @@ for (const { still, screen, variant, fixture, part, holds } of STILLS) {
     });
   }
 }
+
+// The landing page's hero (site/home.html, W847): the app full screen on a 14-inch MacBook Pro with PROLED XDR
+// Display, 1512x993 points at 2x, on storefront with each bot in its own colour and body: you ask to save carts, the lead splits it and #231 is
+// up, as in the lead clip's poster. The page's own picture is made from this PNG (site/README.md).
+for (const theme of ["light", "dark"] as const) {
+  test(`showcase hero ${theme}`, async () => {
+    test.setTimeout(120_000);
+    const { app, page, settled, close } = await launch("showcase-hero", appMain, { realClock: true });
+    try {
+      // As record() does for the lead clip: a running clock from the fixture's now, storefront's chat and its agents.
+      const { now } = fixtureMeta(path.join(fixturesDir, "showcase-hero.json"));
+      await page.clock.install({ time: new Date(now ?? Date.now()) });
+      await page.reload();
+      await setView(app, page, "hero", theme);
+      await show(page, "chat", `${CHAT}/agents`);
+      await settled();
+      await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "no-preference" });
+      await settle(page);
+      const { sent } = await ask(page, REQUEST, []);
+      await sleepUntil(sent + 4700);
+      await settle(page);
+      const out = test.info().outputPath(`hero-mac-${theme}.png`);
+      await page.screenshot({ path: out, type: "png", caret: "hide" });
+      console.log(`hero: ${out}`);
+    } finally {
+      await close();
+    }
+  });
+}

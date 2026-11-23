@@ -420,6 +420,8 @@ export const fixtures = [
   "showcase-pin",
   // ...and with billing and Ada pinned: two side by side, a small gap between them (W577).
   "showcase-pins-two",
+  // ...and with each bot in its own colour and body: the landing page's hero (W847).
+  "showcase-hero",
   // The menu under your name (W607): Sam's hub with one thing off in each (fixtures/menu).
   "menu-setup",
   "menu-machine-offline",
@@ -455,6 +457,9 @@ export const sizes = {
   // The macOS window shot: wide enough to keep the sidebar, short enough for the smallest runner's screen once the
   // menu bar and the Dock are off it (1024×768 leaves 680 px).
   window: { width: 1024, height: 640 },
+  // The 14-inch MacBook Pro with PROLED XDR Display's screen in points (Apple's product bezel: 3024x1986 at 2x): the
+  // landing page's hero shows the app full screen on one.
+  hero: { width: 1512, height: 993 },
 } as const;
 export type SizeName = keyof typeof sizes;
 /** What an entry without `sizes` is shot at. */

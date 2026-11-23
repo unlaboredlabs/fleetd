@@ -22,14 +22,28 @@ a second of load, then every 2.4 s or so, through the bots' colours, their five 
 working, needs you, done, a glance); a new colour or body pops in on the rig's own springs. It waits off screen or in a
 hidden tab, and stays still, grey and idle, with reduced motion. The bots beside the sections are still poses.
 
-Under the hero, the stage shows the desktop app on a MacBook Pro and the phone app on an iPhone Duo, both built in
-`home.html` (HTML and CSS, no pictures): each screen lays out at the device's size in points (1512x982 for the Mac,
-1000x702 for the Duo open, 480x698 for its outer display) and is scaled to fit, so it stays sharp at any width. Its
-layout, words and colours are the apps' own (`app/desktop`'s tokens, `app/mobile`'s theme and `src/split.ts`'s panes
-and side strip), and each bot in it is drawn by `pebble.js` in its colour and body. The Duo starts shut and opens once
-the page has loaded (0.6 s after, when any of it shows then, else once it's half in view), on a spring; with
-reduced motion or no script it is shown open. The screens are the apps' light themes in both of the page's themes, and
-at a phone's width the stage shows the Duo alone. Keep its words true to the apps.
+Under the hero, the stage shows the desktop app on a 14-inch MacBook Pro with PROLED XDR Display and the phone app on
+an iPhone Duo, in Apple's own product bezels (developer.apple.com/design/resources; their licence, Apple's "License
+Agreement for Apple Design Resources", was accepted for this site on 2026-11-23), used as Apple's marketing guidelines
+ask: as given, side by side at their true relative size, nothing over them. `hero/` holds them with the apps' real
+screenshots in their screens, as WebP at 2x and 1x: `mac-*` the Mac with the desktop app, `duo-frame-*` the Duo's
+bezel, `duo-open-*` and `duo-closed-*` its inner and outer screens. Only these composites are in the repo, never Apple's
+source files.
+
+- The desktop app: `QA_SCALE=2 pnpm exec playwright test -c qa/playwright.config.ts --project=showcase -g "showcase
+  hero"` in `app/desktop` (after `pnpm fixtures && pnpm qa:build`) shoots the app at the Mac's screen, 1512x993 points
+  at 2x, on the `showcase-hero` fixture (the showcase with each bot in its own colour and body).
+- The phone app: on an iPhone Duo simulator on the agents' Mac (`mac sim start --device "iPhone Duo"`), paired with
+  `node tests/lab/heroLab.ts <dir> <tailnet address>`, the app a Release build from the Mac's own Xcode (a simulator
+  build linked against an older iOS SDK runs letterboxed on the Duo open) with `EXPO_PUBLIC_FLEETD_SCREENS=1` (no
+  notification prompt, which the simulator's driver can't answer on the Duo). Open: storefront's chat beside Chats
+  (`mac sim fold open`); shut: Chats (`mac sim fold closed`), each `mac sim screenshot`, 2853x2007 and 1398x2034.
+
+The Duo's screen comes on once as Apple's does when it opens: the outer screen's view widens into the inner one on a
+spring, the content held in place, a soft copy's shade lifting and the sharp copy fading in over it (a fixed blur, so
+it never steps). It runs 0.6 s after load when any of it shows then, else once it's half in view; with reduced motion
+or no script the screen is shown as it is. At a phone's width, or a window under 1100 px, the stage shows the Duo
+alone, so it stays over Apple's 200 px minimum height.
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves

@@ -122,7 +122,7 @@ p,h1,h2,figure{margin:0}
    (botLife.ts's PAD, Bot.module.css's .canvas). */
 .pb{position:relative;display:block;flex:none}
 .pb canvas{position:absolute;left:-25%;top:-25%;width:150%;height:150%;pointer-events:none}
-#hero-bot{width:var(--av);height:var(--av)}
+#hero-bot{width:var(--av);height:var(--av);transform-origin:50% 92%}
 h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
 .install{margin-top:clamp(28px,3.2vw,44px);max-width:31em}
 /* The install command: one quiet surface sized to it, the prompt dim and left out of a selection, a small copy icon
@@ -206,190 +206,37 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .theme .i-moon,[data-theme="light"] .theme .i-sun{display:none}
 [data-theme="light"] .theme .i-moon{display:block}
 
-/* The stage: the desktop app on a MacBook Pro and the phone app on an iPhone Duo, side by side on one quiet surface,
-   each screen the app's own layout, words and bots, built here rather than shot so it stays sharp at any size. Every
-   length is a share of the stage (cqw), so the picture scales as one. Each screen lays out at the device's own size in
-   points (1512x982, the Duo's 1000x702 open and 480x698 shut) and is scaled to fit, as a screenshot would be. */
+/* The stage: the desktop app on a 14-inch MacBook Pro with PROLED XDR Display and the phone app on an iPhone Duo, in
+   Apple's own product bezels as given (developer.apple.com/design/resources), side by side at their true relative size
+   on one quiet surface. Each screen is a screenshot of the app itself (site/README.md). The Duo's screen comes on as
+   Apple's does when it opens: the outer screen's view widens into the inner one, and the blur clears. */
 .stage{position:relative;margin-top:clamp(36px,4.2vw,64px);container-type:inline-size}
-.floor{position:relative;aspect-ratio:100/54;border-radius:clamp(12px,1.5vw,20px);background:var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring);overflow:hidden;isolation:isolate}
-
-/* MacBook Pro 14", front on: an aluminium lid round black glass, the notch, and the base's front edge with its thumb
-   cut, a touch wider than the lid as the eye sees it. */
-.mac{position:absolute;left:10cqw;top:4.6cqw;width:60cqw}
-.lid{position:relative;aspect-ratio:312.6/215;border-radius:2.1cqw 2.1cqw .55cqw .55cqw;background:linear-gradient(#eceef0,#c4c7cb 22%,#a9acb1 70%,#c0c3c7);box-shadow:0 0 0 .04cqw rgba(0,0,0,.45),inset 0 .05cqw 0 rgba(255,255,255,.9),0 3cqw 5cqw -2.4cqw rgba(0,0,0,.55)}
-.lid::before{content:"";position:absolute;inset:.21cqw;border-radius:1.95cqw 1.95cqw .4cqw .4cqw;background:#060607;box-shadow:inset 0 0 0 .07cqw #222326}
-.mac .screen{position:absolute;left:1.62%;right:1.62%;top:2.79%;bottom:5.81%;overflow:hidden;border-radius:.75cqw .75cqw 0 0;background:var(--m-frame);container-type:inline-size}
-.mac .ui{position:absolute;left:0;top:0;width:1512px;height:982px;transform-origin:0 0;scale:tan(atan2(100cqw,1512px))}
-.notch{position:absolute;z-index:2;left:43.4cqw;top:0;width:13.2cqw;height:2.15cqw;background:#060607;border-radius:0 0 .85cqw .85cqw}
-.notch::after{content:"";position:absolute;left:50%;top:42%;width:.48cqw;height:.48cqw;margin-left:-.24cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#2b3a52,#0b0f17 60%)}
-/* The glass: one faint sheen across lid and screen, the light of the room on it. */
-.lid::after{content:"";position:absolute;inset:.21cqw;border-radius:inherit;pointer-events:none;background:linear-gradient(112deg,rgba(255,255,255,.07),rgba(255,255,255,0) 34%);z-index:3}
-.hinge{width:84%;height:.32cqw;margin:0 auto;background:linear-gradient(#26272a,#3a3b3f);border-radius:0 0 .2cqw .2cqw}
-.base{position:relative;width:113%;margin-left:-6.5%;height:1.75cqw;border-radius:.2cqw .2cqw 2.4cqw 2.4cqw/.2cqw .2cqw 1.25cqw 1.25cqw;background:linear-gradient(90deg,rgba(0,0,0,.22),rgba(0,0,0,0) 5%,rgba(0,0,0,0) 95%,rgba(0,0,0,.22)),linear-gradient(#d4d6d9 0,#f3f4f5 9%,#e2e4e6 16%,#c7cacd 30%,#b3b6ba 62%,#8a8d92 100%);box-shadow:0 0 0 .04cqw rgba(0,0,0,.35),inset 0 .05cqw 0 rgba(255,255,255,.95),inset 0 -.1cqw .15cqw rgba(0,0,0,.25)}
-.base::before{content:"";position:absolute;left:50%;top:0;width:16%;height:.52cqw;transform:translateX(-50%);border-radius:0 0 .7cqw .7cqw;background:linear-gradient(#a9acb1,#c6c9cd);box-shadow:inset 0 .1cqw .14cqw rgba(0,0,0,.28)}
-.base::after{content:"";position:absolute;left:2%;right:2%;bottom:-1.1cqw;height:1.8cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.75),rgba(0,0,0,0));filter:blur(.25cqw);z-index:-1}
-
-/* iPhone Duo: two halves on a hinge, a titanium band round black glass, one display across both open and a smaller
-   one on the outside. Shut, the left half lies over the right one, its outer display up; it opens on the hinge with
-   a spring (the script, once it's seen), the inner display waking as it goes. Reduced motion, or no script: open. */
-.fold{position:absolute;left:61cqw;top:21.2cqw;width:33cqw;aspect-ratio:1.405;perspective:140cqw;perspective-origin:75% 45%}
-.fold .device{position:absolute;inset:0;transform-style:preserve-3d}
-.fold .half{position:absolute;top:0;bottom:0;width:50%;transform-style:preserve-3d}
-.fold .fixed{right:0}
-.fold .leaf{left:0;transform-origin:100% 50%}
-.fold[data-fold="shut"] .leaf{transform:rotateY(180deg)}
-.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
-/* A half's band, rounded on its outer side; the inner display runs to the hinge with no edge there. */
-.band{position:absolute;inset:0;border-radius:0 2.3cqw 2.3cqw 0;background:linear-gradient(160deg,#e9e6e1,#b7b3ad 30%,#8f8c87 60%,#c9c5bf);box-shadow:0 0 0 .04cqw rgba(0,0,0,.55);padding:.28cqw .28cqw .28cqw 0}
-.band::before{content:"";position:absolute;inset:.28cqw .28cqw .28cqw 0;border-radius:0 2.02cqw 2.02cqw 0;background:#050506}
-.leaf .front .band{border-radius:2.3cqw 0 0 2.3cqw;padding:.28cqw 0 .28cqw .28cqw;background:linear-gradient(200deg,#e9e6e1,#b7b3ad 30%,#8f8c87 60%,#c9c5bf)}
-.leaf .front .band::before{inset:.28cqw 0 .28cqw .28cqw;border-radius:2.02cqw 0 0 2.02cqw}
-.fold .screen{position:absolute;inset:.72cqw .72cqw .72cqw 0;overflow:hidden;border-radius:0 1.62cqw 1.62cqw 0;background:var(--p-bg);container-type:inline-size}
-.leaf .front .screen{inset:.72cqw 0 .72cqw .72cqw;border-radius:1.62cqw 0 0 1.62cqw}
-.outer .screen{inset:.95cqw;border-radius:1.4cqw}
-.fold .ui{position:absolute;top:0;left:0;width:1000px;height:702px;transform-origin:0 0;scale:tan(atan2(100cqw,500px))}
-/* Open and still, the right half's screen is the whole display, one piece across the hinge, and the left half's copy
-   is hidden. Shut or turning (data-fold), each half shows its own half of it. */
-.fold:not([data-fold]) :is(.device,.half){transform-style:flat}
-.fold:not([data-fold]) .fixed{z-index:1}
-.fold:not([data-fold]) .fixed .screen{left:calc(-100% + .72cqw);border-radius:1.62cqw}
-.fold:not([data-fold]) .fixed .ui{scale:tan(atan2(100cqw,1000px))}
-.fold:not([data-fold]) .leaf .front .screen{visibility:hidden}
-.fold[data-fold] .fixed .ui{left:-500px;transform-origin:500px 0}
-.outer .ui{width:480px;height:698px;scale:tan(atan2(100cqw,480px))}
-/* The hinge's seam in the band, top and bottom; the display runs across it unbroken (one copy of the screen in each half). */
-.fixed .band::after{content:"";position:absolute;left:-.04cqw;top:0;bottom:0;width:.08cqw;background:rgba(0,0,0,.45)}
-/* The hinge's barrel, at the fold's ends, a step proud of the band. */
-.pin-t,.pin-b{position:absolute;z-index:2;left:50%;width:2.4cqw;height:.42cqw;margin-left:-1.2cqw;border-radius:.2cqw;background:linear-gradient(#a19d97,#6e6b67);box-shadow:0 0 0 .04cqw rgba(0,0,0,.5)}
-.pin-t{top:-.12cqw}
-.pin-b{bottom:-.12cqw}
-/* The right half's side button, and the outer display's camera. */
-.fixed .btn{position:absolute;right:-.14cqw;top:24%;width:.2cqw;height:12%;border-radius:0 .12cqw .12cqw 0;background:linear-gradient(90deg,#8f8c87,#d6d2cc)}
-.outer .cam{position:absolute;z-index:2;top:1.6cqw;left:50%;width:4.2cqw;height:1.25cqw;margin-left:-2.1cqw;border-radius:1cqw;background:#000}
-/* The leaf's thickness: its free edge and its top and bottom, seen only while it turns. */
-.leaf .edge{position:absolute;left:0;top:2.3cqw;bottom:2.3cqw;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#8f8c87,#e1ddd7 40%,#7d7a75)}
-.leaf :is(.rim-t,.rim-b){position:absolute;left:2.3cqw;right:0;height:.85cqw;background:linear-gradient(#d6d2cc,#8f8c87)}
-.leaf .rim-t{top:0;transform-origin:50% 0;transform:rotateX(-90deg)}
-.leaf .rim-b{bottom:0;transform-origin:50% 100%;transform:rotateX(90deg)}
-.leaf .back{transform:translateZ(-.85cqw) rotateY(180deg)}
-.outer .band{border-radius:2.3cqw;padding:.28cqw}
-.outer .band::before{inset:.28cqw;border-radius:2.02cqw}
-/* The inner display, off while shut. */
-.fold .off{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none}
-.fold[data-fold="shut"] .off{opacity:1}
-.fold .shade{position:absolute;left:3%;right:3%;top:10%;bottom:-5%;border-radius:3cqw;background:rgba(0,0,0,.5);filter:blur(1.6cqw);transform-origin:100% 50%}
-.fold[data-fold="shut"] .shade{transform:scaleX(.52)}
-
-/* A phone's width: the Duo alone, large enough to read. */
-@container (max-width:620px){
-  .floor{aspect-ratio:100/76}
-  .mac{display:none}
-  .fold{left:5cqw;top:5cqw;width:90cqw}
+.floor{display:flex;align-items:flex-end;justify-content:center;gap:3.4cqw;padding:6cqw 4.5cqw 5cqw;border-radius:clamp(12px,1.5vw,20px);background:var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring)}
+.floor img{display:block;width:100%;height:auto}
+.hero-mac{flex:0 0 60.35cqw;min-width:0}
+.hero-duo{flex:0 0 27.25cqw;min-width:0;position:relative}
+.hero-duo .frame{position:relative;z-index:1}
+/* Its layers stay composited from first frame to last, so none is redrawn another way as the open starts or ends. */
+.hero-duo :is(.frame,.scr img){will-change:opacity}
+/* The screen under the bezel's glass: the inner display open, with the outer display's view over its right half. */
+.hero-duo .scr{position:absolute;left:2.08%;top:3.27%;width:95.58%;height:93.83%;overflow:hidden;background:#000}
+.hero-duo .scr img{position:absolute;top:0;height:100%}
+.hero-duo .open{left:0;width:100%}
+.hero-duo .soft{display:none;filter:blur(1.1cqw) brightness(.55)}
+.hero-duo .outer{left:50%;width:50%;object-fit:cover;object-position:0 50%;opacity:0}
+/* Shut and while it opens: the open screen's soft copy (a fixed blur, so it never steps) under its sharp one, which
+   fades in as the view widens; the outer screen's view over both. */
+.hero-duo[data-fold] .soft{display:block}
+.hero-duo[data-fold] :is(.open,.soft){clip-path:inset(0 0 0 50%)}
+.hero-duo[data-fold] .sharp{opacity:0}
+.hero-duo[data-fold] .outer{opacity:1}
+/* A phone's width, or a narrow window: the Duo alone, large enough to read. */
+@container (max-width:1000px){
+  .floor{padding:7cqw 5cqw 6cqw}
+  .floor .hero-mac{display:none}
+  .hero-duo{flex-basis:90cqw}
+  .hero-duo .soft{filter:blur(3.6cqw) brightness(.55)}
 }
-
-/* ---- The desktop app's window (app/desktop: the sidebar, a bot's chat and the panel), in its own light tokens: light
-   in both of the page's themes, so the screens stand out from the stage as a lit display does. */
-.mui{--m-bg:#ffffff;--m-side:#f4f5f7;--m-line:#eaecef;--m-text:#0b0d10;--m-quiet:#5c626b;--m-faint:#9298a1;--m-bubble:#edeff2;--m-mine:#0b0d10;--m-on-mine:#ffffff;--m-link:#1d5fd3;--m-ok:#1a6c3c;--m-row:#0f172010;--m-field:#c9cdd3;--m-glass:#ffffff;--m-glass-edge:#0f172014;--m-warn:#b07200;--m-bar:#e9eaed;
-  display:flex;flex-direction:column;font:400 14px/1.45 var(--sans);color:var(--m-text);background:var(--m-bg);letter-spacing:0;text-align:left;-webkit-font-smoothing:antialiased}
-.mui svg{display:block;flex:none}
-.mb{display:flex;align-items:center;height:33px;padding:0 18px;gap:20px;background:var(--m-bar);font-size:13.5px;font-weight:500;flex:none}
-.mb b{font-weight:600}
-.mb .r{margin-left:auto;display:flex;align-items:center;gap:16px}
-.win{flex:1;display:flex;min-height:0}
-.side{width:268px;flex:none;display:flex;flex-direction:column;background:var(--m-side);border-right:1px solid var(--m-line);padding:0 10px}
-.lights{display:flex;gap:8px;padding:16px 8px 10px}
-.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}
-.lights i+i{background:#febc2e}
-.lights i+i+i{background:#28c840}
-.ws{display:flex;align-items:center;gap:9px;padding:6px 8px 12px;font-weight:600;font-size:15px}
-.ws .a{width:22px;height:22px;border-radius:6px;background:#f2a531;color:#2a1a00;display:grid;place-items:center;font-size:12px;font-weight:600}
-.ws .d{width:6px;height:6px;border-radius:50%;background:var(--m-warn)}
-.ws .more{margin-left:auto;color:var(--m-quiet)}
-.find{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--m-field);border-radius:8px;color:var(--m-quiet);font-size:14px;margin:0 2px 12px}
-.find kbd{margin-left:auto;font:inherit;font-size:12px;border:1px solid var(--m-field);border-radius:5px;padding:0 5px;line-height:18px}
-.row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;column-gap:11px;align-items:center;padding:8px 10px;border-radius:9px;margin-bottom:2px}
-.row.on{background:var(--m-row)}
-.row .pb{width:32px;height:32px;grid-row:span 2}
-.row b{font-weight:600;font-size:14.5px;line-height:20px}
-.row time{font-size:12.5px;color:var(--m-quiet);text-align:right;line-height:20px}
-.row .tx{font-size:13.5px;color:var(--m-quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:19px}
-.row em{font-style:normal;justify-self:end;display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--m-quiet)}
-.row em.dot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--m-warn)}
-.side .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:14px 8px 16px;font-weight:600;font-size:14px}
-.side .me .a{width:26px;height:26px;border-radius:50%;background:#d7efe0;color:#1a6c3c;display:grid;place-items:center;font-size:10.5px;font-weight:600}
-.side .me .ic{margin-left:auto;display:flex;gap:14px;color:var(--m-quiet)}
-.chat{flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 26px 18px;position:relative}
-.pill{align-self:flex-start;display:flex;align-items:center;gap:9px;height:38px;padding:0 13px 0 9px;border-radius:19px;background:var(--m-glass);box-shadow:inset 0 0 0 1px var(--m-glass-edge),0 6px 18px -8px rgba(0,0,0,.35);font-weight:600;font-size:15px}
-.pill .pb{width:24px;height:24px}
-.pill svg{color:var(--m-quiet)}
-.log{flex:1;display:flex;flex-direction:column;gap:10px;padding-top:22px;font-size:15px;line-height:1.5}
-.sys{align-self:center;color:var(--m-quiet);font-size:13.5px}
-.sys b{font-weight:600;color:var(--m-text)}
-.sys a{color:var(--m-link);text-decoration:none}
-.sys .t{color:var(--m-faint)}
-.b{max-width:76%;padding:9px 15px;border-radius:16px;background:var(--m-bubble)}
-.b.mine{align-self:flex-end;background:var(--m-mine);color:var(--m-on-mine)}
-.b a{color:var(--m-link);text-decoration:underline;text-decoration-color:currentColor;text-underline-offset:.18em}
-.at{align-self:center;display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:17px;background:var(--m-glass);box-shadow:inset 0 0 0 1px var(--m-glass-edge);font-size:14px;margin:12px 0}
-.box{display:flex;align-items:center;gap:14px;height:52px;padding:0 10px 0 16px;border:1px solid var(--m-field);border-radius:12px;color:var(--m-faint);font-size:15px}
-.box .send{margin-left:auto;width:32px;height:32px;border-radius:8px;background:var(--m-row);display:grid;place-items:center;color:var(--m-quiet)}
-.panel{width:440px;flex:none;border-left:1px solid var(--m-line);padding:14px 22px;display:flex;flex-direction:column}
-.tabs{display:flex;gap:6px;font-size:15px;font-weight:500;color:var(--m-quiet);align-items:center}
-.tabs span{padding:5px 10px;border-radius:7px}
-.tabs .on{background:var(--m-row);color:var(--m-text)}
-.tabs i{font-style:normal;color:var(--m-quiet);font-weight:400}
-.tabs svg{margin-left:auto}
-.grp{margin-top:22px;font-weight:600;font-size:14.5px}
-.grp i{font-style:normal;color:var(--m-quiet);font-weight:400;margin-left:6px}
-.ag{display:grid;grid-template-columns:20px minmax(0,1fr) auto;column-gap:12px;margin-top:12px;font-size:14px;line-height:19px}
-.ag b{font-weight:500}
-.ag .tx{grid-column:2;color:var(--m-quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ag em{font-style:normal;color:var(--m-quiet);font-size:13px}
-/* The agents' state glyph (StateGlyph): a 3x3 grid of cells, a working one in the app's green. */
-.g{display:inline-grid;grid-template-columns:repeat(3,4px);grid-auto-rows:4px;gap:1px;color:var(--m-ok);margin-top:2px}
-.g i{background:currentColor}
-.g i:nth-child(2n){opacity:.35}
-.g.q{color:var(--m-quiet)}
-.g.q i{opacity:.3}
-.g.q i:nth-child(5){opacity:1}
-
-/* ---- The phone app (app/mobile), its light iOS palette as on the Mac: Chats beside the open chat on the Duo open, Chats alone shut,
-   iOS's status and the app's buttons in the side strip at the right edge (split.ts's sideStrip). */
-.pui{--p-bg:#fff;--p-text:#0b0d10;--p-quiet:#5c626b;--p-line:rgba(15,23,32,.14);--p-bubble:#edeff2;--p-mine:#0b0d10;--p-link:#1d5fd3;--p-glass:#fff;--p-edge:rgba(15,23,32,.1);--p-dot:#ff9500;
-  position:relative;font:400 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",var(--sans);color:var(--p-text);background:var(--p-bg);letter-spacing:-.01em;text-align:left;-webkit-font-smoothing:antialiased;display:flex}
-.fold .screen{--p-bg:#fff}
-.pui svg{display:block;flex:none}
-.list{width:360px;flex:none;display:flex;flex-direction:column;padding:22px 0 20px 18px;border-right:1px solid var(--p-line)}
-.outer .list{width:auto;flex:1;border-right:0}
-.circ{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge),0 4px 14px -6px rgba(0,0,0,.35);color:var(--p-text);flex:none;position:relative}
-.circ.me{font-size:17px;font-weight:500}
-.circ.me::after{content:"";position:absolute;right:1px;bottom:1px;width:11px;height:11px;border-radius:50%;background:#30d158;box-shadow:0 0 0 2px var(--p-bg)}
-.lhead{display:flex;justify-content:space-between;padding-right:18px;margin-bottom:14px}
-.prow{display:grid;grid-template-columns:52px minmax(0,1fr) auto;column-gap:14px;padding:11px 18px 11px 0;position:relative}
-.prow+.prow::before{content:"";position:absolute;left:66px;right:0;top:0;height:1px;background:var(--p-line)}
-.prow .pb{width:48px;height:48px;grid-row:span 2;align-self:center}
-.prow b{font-weight:600;font-size:17px}
-.prow time{font-size:15px;color:var(--p-quiet)}
-.prow .tx{grid-column:2/4;font-size:15px;color:var(--p-quiet);line-height:1.32;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.prow.on{background:var(--p-on,rgba(127,127,127,.14));border-radius:14px;margin-right:10px;padding-left:8px;margin-left:-8px}
-.lfoot{margin-top:auto;display:flex;gap:12px;padding-right:18px}
-.search{flex:1;display:flex;align-items:center;gap:8px;height:48px;padding:0 16px;border-radius:24px;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge);color:var(--p-quiet)}
-.pchat{flex:1;min-width:0;display:flex;flex-direction:column;padding:22px 18px 20px}
-.phead{align-self:center;display:flex;align-items:center;gap:10px;height:52px;padding:0 18px 0 8px;border-radius:26px;background:var(--p-glass);box-shadow:inset 0 0 0 1px var(--p-edge),0 4px 14px -6px rgba(0,0,0,.35)}
-.phead .pb{width:34px;height:34px}
-.phead b{display:block;font-weight:600;font-size:17px;line-height:1.1}
-.phead small{display:block;font-size:13px;color:var(--p-quiet)}
-.thread{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:9px;padding:16px 0}
-.pb2{max-width:74%;padding:10px 15px;border-radius:20px;background:var(--p-bubble);font-size:17px;line-height:1.3}
-.pb2.mine{align-self:flex-end;background:var(--p-mine);color:#fff}
-.pb2 a{color:var(--p-link)}
-.pb2.mine a{color:inherit}
-.comp{display:flex;gap:10px;align-items:center}
-.comp .search{color:var(--p-quiet)}
-.strip{width:62px;flex:none;display:flex;flex-direction:column;align-items:center;gap:12px;padding-top:24px;padding-bottom:20px}
-.strip .clock{font-weight:600;font-size:16px}
-.strip .circ{width:46px;height:46px}
-.strip .end{margin-top:auto;display:flex;flex-direction:column;gap:12px}
 
 @media (max-width:1000px){
   .sec{grid-template-columns:minmax(0,1fr)}
@@ -450,124 +297,18 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
       </div>
     </div>
   </div>
-  <!-- The device stage: the desktop app and the phone app as they are today, on storefront's work. Built of HTML, its
-       bots drawn by the app's own code like the one above (pebble.js), each in its own colour and body. -->
-  <div class="stage" role="img" aria-label="The fleetd desktop app on a MacBook Pro and the phone app on an iPhone Duo. On the Mac, storefront’s chat: you asked to let shoppers save their cart and pick it up on the web or the iPhone app, the lead split it between three writers, and #231 is up; the panel lists ten agents at work. On the Duo, opened, the same bot’s chat: the lead says #231 merged and the other two parts are in review.">
-    <div class="floor" aria-hidden="true">
-      <div class="mac">
-        <div class="lid">
-          <div class="screen">
-            <div class="ui mui">
-              <div class="mb"><b>fleetd</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
-                <span class="r"><svg width="18" height="13" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><svg width="26" height="13" viewBox="0 0 26 13" fill="none" stroke="currentColor"><rect x=".5" y=".5" width="22" height="12" rx="3.5" opacity=".45"/><rect x="2.5" y="2.5" width="15" height="8" rx="1.8" fill="currentColor" stroke="none"/><path d="M24.5 4.5v4" stroke-linecap="round" opacity=".45"/></svg><span>Mon 23 Nov&nbsp; 9:41</span></span></div>
-              <div class="win">
-                <div class="side">
-                  <div class="lights"><i></i><i></i><i></i></div>
-                  <div class="ws"><span class="a">A</span>Acme<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 3.5l3 3 3-3"/></svg><span class="d"></span><svg class="more" width="16" height="4" viewBox="0 0 16 4" fill="currentColor"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="14" cy="2" r="1.6"/></svg></div>
-                  <div class="find"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>Search<kbd>⌘K</kbd></div>
-                  <div class="row on"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:02 AM</time><span class="tx">#231 is up: carts are saved per…</span><em><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>10</em></div>
-                  <div class="row"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02 AM</time><span class="tx">Asks for your approval</span><em class="dot"></em></div>
-                  <div class="row"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01 AM</time><span class="tx">Share card is built. Two checks left.</span><em class="dot"></em></div>
-                  <div class="row"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16 AM</time><span class="tx">Bob, done: #84 merged an hour ago.</span><em></em></div>
-                  <div class="row"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02 AM</time><span class="tx">Stock counts sync from the warehouse now.</span><em></em></div>
-                  <div class="row"><span class="pb" data-av="pink pebble"></span><b>payments</b><time>Yesterday</time><span class="tx">Noted. I’ll ask for the new key when it’s time.</span><em></em></div>
-                  <div class="row"><span class="pb" data-av="green kitty"></span><b>docs</b><time>Yesterday</time><span class="tx">Two typos and a broken link, fixed in #14.</span><em></em></div>
-                  <div class="row"><span class="pb" data-av="red ghost"></span><b>garden-sensors</b><time>Fri</time><span class="tx">The soil probe reads every ten minutes.</span><em></em></div>
-                  <div class="me"><span class="a">SR</span>Sam Rivera<span class="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></svg></span></div>
-                </div>
-                <div class="chat">
-                  <div class="pill"><span class="pb" data-av="orange kitty working"></span>storefront<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 2L3.5 5l3 3"/></svg></div>
-                  <div class="log">
-                    <p class="sys"><b>Today</b></p>
-                    <p class="sys">Memory tidied: 3 added, 1 updated, 2 removed&nbsp; <a>Undo all</a>&nbsp; <span class="t">08:21</span></p>
-                    <p class="b mine">The checkout should speak the shopper’s language.</p>
-                    <p class="b">On it: one writer translates the checkout, and a QA agent checks the Dutch one in a real browser. <a>#230</a> is up for the first part.</p>
-                    <p class="b mine">Let shoppers save their cart and pick it up on the web or the iPhone app.</p>
-                    <p class="b">On it, in three parts, each with its own writer: carts saved per shopper, the web cart, and the iPhone app’s cart. Each PR gets a reviewer, and the web and iPhone parts are tested on a screen first.</p>
-                    <p class="b"><a>#231</a> is up: carts are saved per shopper. A reviewer is on it.</p>
-                  </div>
-                  <div class="at"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>10 agents working</div>
-                  <div class="box"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M13.5 7.5l-5.6 5.6a3.3 3.3 0 0 1-4.7-4.7l6-6a2.2 2.2 0 0 1 3.1 3.1l-6 6a1.1 1.1 0 0 1-1.6-1.6l5.5-5.5"/></svg>Message the lead. It reads this at its next step.<span class="send"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 12V2M3 6l4-4 4 4"/></svg></span></div>
-                </div>
-                <div class="panel">
-                  <div class="tabs"><span class="on">Agents <i>10</i></span><span>Shipping</span><span>Plan <i>4</i></span><span>History</span><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.8M8 12.6v1.8M1.6 8h1.8M12.6 8h1.8M3.5 3.5l1.3 1.3M11.2 11.2l1.3 1.3M3.5 12.5l1.3-1.3M11.2 4.8l1.3-1.3"/></svg></div>
-                  <p class="grp">Saved carts on the web and the iPhone app<i>3</i></p>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Bring the saved cart back on the web</b><em>writer</em><span class="tx">editing web/cart/restore.ts</span></div>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Bring the saved cart back in the iPhone app</b><em>writer</em><span class="tx">editing ios/Cart/CartStore.swift</span></div>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Review #231</b><em>reviewer</em><span class="tx">running gh pr diff 231</span></div>
-                  <p class="grp">Checkout in the shopper’s language<i>3</i></p>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Translate the checkout’s buttons</b><em>writer</em><span class="tx">editing src/i18n/checkout.fr.json</span></div>
-                  <div class="ag"><span class="g q"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Check the Dutch checkout</b><em>verifier</em><span class="tx">thinking</span></div>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Pick the checkout language from the browser</b><em>writer</em><span class="tx">reading src/checkout/locale.ts</span></div>
-                  <p class="grp">Gift cards apply before tax<i>2</i></p>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Apply gift cards before tax</b><em>writer</em><span class="tx">running pnpm test checkout/tax</span></div>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Show the gift card balance at checkout</b><em>writer</em><span class="tx">editing web/checkout/GiftCard.tsx</span></div>
-                  <p class="grp">Filter search results by price<i>2</i></p>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Add a price filter to search</b><em>writer</em><span class="tx">editing src/search/filters.tsx</span></div>
-                  <div class="ag"><span class="g"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><b>Review #229</b><em>reviewer</em><span class="tx">running gh pr diff 229</span></div>
-                </div>
-              </div>
-            </div>
-            <span class="notch"></span>
-          </div>
-        </div>
-        <div class="hinge"></div>
-        <div class="base"></div>
-      </div>
-
-      <div class="fold" id="duo">
+  <!-- The device stage: the apps as they are, in Apple's product bezels as given (site/README.md). -->
+  <div class="stage">
+    <div class="floor">
+      <img class="hero-mac" src="/hero/mac-1440.webp" srcset="/hero/mac-720.webp 720w, /hero/mac-1440.webp 1440w" sizes="(min-width: 1101px) 61vw, 1px" width="1440" height="882" alt="The fleetd desktop app on a 14-inch MacBook Pro: storefront’s chat, where you asked to let shoppers save their cart and pick it up on the web or the iPhone app, the lead split it between three writers and #231 is up; the panel lists the agents at work. Each bot in the sidebar wears its own colour and shape.">
+      <div class="hero-duo" id="duo">
         <script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.getElementById("duo").dataset.fold="shut"</script>
-        <div class="shade"></div>
-        <div class="device">
-          <span class="pin-t"></span><span class="pin-b"></span>
-          <div class="half fixed">
-            <div class="band"></div><span class="btn"></span>
-            <div class="screen"><div class="ui pui" id="duo-open">
-              <div class="list">
-                <div class="lhead"><span class="circ me">S</span><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span></div>
-                <div class="prow on"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:41</time><span class="tx">#231 merged: carts are saved per shopper.</span></div>
-                <div class="prow"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02</time><span class="tx">Asks for your approval</span></div>
-                <div class="prow"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01</time><span class="tx">Share card is built. Two checks left.</span></div>
-                <div class="prow"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16</time><span class="tx">Bob, done: #84 merged an hour ago.</span></div>
-                <div class="prow"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02</time><span class="tx">Stock counts sync from the warehouse now.</span></div>
-                <div class="lfoot"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6 10h8M8 14h4"/></svg></span><span class="search"><svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg>Search</span></div>
-              </div>
-              <div class="pchat">
-                <div class="phead"><span class="pb" data-av="orange kitty working"></span><span><b>storefront</b><small>Acme</small></span></div>
-                <div class="thread">
-                  <p class="pb2 mine">Let shoppers save their cart and pick it up on the web or the iPhone app.</p>
-                  <p class="pb2">On it, in three parts, each with its own writer. Each PR gets a reviewer.</p>
-                  <p class="pb2 mine">How’s the saved cart coming along?</p>
-                  <p class="pb2"><a>#231</a> merged: carts are saved per shopper. The web and iPhone parts are in review, each tested on a screen first.</p>
-                  <p class="pb2 mine">Land them once they’re green.</p>
-                  <p class="pb2">Will do. The train lands them together, and I’ll tell you when they’re live.</p>
-                </div>
-                <div class="comp"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span><span class="search">Message</span></div>
-              </div>
-              <div class="strip"><span class="clock">9:41</span><svg width="22" height="16" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.1" stroke-linecap="round"/></svg></span></div>
-            </div><span class="off"></span></div>
-          </div>
-          <div class="half leaf">
-            <div class="face front"><div class="band"></div><div class="screen" id="duo-left"><span class="off"></span></div></div>
-            <div class="face back outer"><div class="band"></div><span class="cam"></span>
-              <div class="screen"><div class="ui pui">
-                <div class="list">
-                  <div class="lhead"><span class="circ me">S</span></div>
-                  <div class="prow"><span class="pb" data-av="orange kitty working"></span><b>storefront</b><time>9:41</time><span class="tx">#231 merged: carts are saved per shopper.</span></div>
-                  <div class="prow"><span class="pb" data-av="purple bunny needs"></span><b>Ada</b><time>9:02</time><span class="tx">Asks for your approval</span></div>
-                  <div class="prow"><span class="pb" data-av="blue pebble"></span><b>billing</b><time>9:01</time><span class="tx">Share card is built. Two checks left.</span></div>
-                  <div class="prow"><span class="pb" data-av="teal ghost"></span><b>checkout</b><time>8:16</time><span class="tx">Bob, done: #84 merged an hour ago.</span></div>
-                  <div class="prow"><span class="pb" data-av="amber toast"></span><b>inventory</b><time>8:02</time><span class="tx">Stock counts sync from the warehouse now.</span></div>
-                </div>
-                <div class="strip"><span class="clock">9:41</span><svg width="22" height="16" viewBox="0 0 18 13" fill="currentColor"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg></span>
-                  <span class="end"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6 10h8M8 14h4"/></svg></span><span class="circ"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg></span></span></div>
-              </div></div>
-            </div>
-            <span class="edge"></span><span class="rim-t"></span><span class="rim-b"></span>
-          </div>
+        <div class="scr" aria-hidden="true">
+          <img class="open soft" src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 1101px) 26vw, 86vw" width="1376" height="968" alt="">
+          <img class="open sharp" src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 1101px) 26vw, 86vw" width="1376" height="968" alt="">
+          <img class="outer" src="/hero/duo-closed-672.webp" srcset="/hero/duo-closed-336.webp 336w, /hero/duo-closed-672.webp 672w" sizes="(min-width: 1101px) 13vw, 43vw" width="672" height="978" alt="">
         </div>
-        <!-- The open display's left half is the same screen as the right half's: one copy, shown in each. -->
-        <script>(function(){var s=document.getElementById("duo-left"),u=document.getElementById("duo-open").cloneNode(true);u.removeAttribute("id");s.insertBefore(u,s.firstChild)})()</script>
+        <img class="frame" src="/hero/duo-frame-1440.webp" srcset="/hero/duo-frame-720.webp 720w, /hero/duo-frame-1440.webp 1440w" sizes="(min-width: 1101px) 28vw, 90vw" width="1440" height="1032" alt="The fleetd phone app on an iPhone Duo, opened: Chats beside storefront’s chat, where the lead says #231 merged and the web and iPhone parts are in review. Each bot wears its own colour and shape.">
       </div>
     </div>
   </div>
@@ -751,8 +492,8 @@ var fleetdMedia={};
 
   // The hero shows itself early and often, on the rig's own springs: a first change within a second of load, then one
   // every 2.4 s or so, through the bots' colours and five bodies and their states (thinking, working, needs you, done,
-  // a glance). A new colour or body pops in: the body takes a squash on its springs, swaps at its lowest, and springs
-  // back up taller with a hop. Off screen or in a hidden tab it waits where it is; with reduced motion it stays still,
+  // a glance). A new colour or body dissolves in over 170 ms with a small scale pop, then the bot springs up from its
+  // seat: a stretch and a hop on its own springs. Off screen or in a hidden tab it waits where it is; with reduced motion it stays still,
   // grey and idle.
   const glance = (side) => {
     // The rig's own glance (shared/bot.ts's moment): a look aside that springs back at its end, with a blink as it turns.
@@ -788,23 +529,36 @@ var fleetdMedia={};
     }
   };
   const pop = (color, shape) => {
-    heroRig.v[SQUASH] += 1.5;
-    heroRig.v[LIFT] -= 10;
-    hero.set(heroState);
+    // A quick dissolve, never a cut: the old look, as last drawn, stays over the new one while the new one fades in
+    // under it (so what only the new body has, a pair of ears, comes in softly too), then fades out itself.
+    const live = heroHost.querySelector("canvas");
+    const ghost = live.cloneNode();
+    ghost.getContext("2d").drawImage(live, 0, 0);
+    heroHost.append(ghost);
+    live.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 90, easing: "cubic-bezier(.3,0,.2,1)" });
+    ghost.animate([{ opacity: 1 }, { opacity: 1, offset: 0.45 }, { opacity: 0 }], { duration: 170, easing: "cubic-bezier(.3,0,.2,1)" }).finished.then(() => ghost.remove(), () => ghost.remove());
+    look = [color, shape];
+    hero.paint(color, shape);
+    // And it springs up from its seat as it changes: a small scale pop at once, which moves the old look and the new
+    // together, then, once the old one has gone, a stretch and a hop on the rig's own springs.
     setTimeout(() => {
-      look = [color, shape];
-      hero.paint(color, shape);
-      heroRig.v[SQUASH] -= 2.6;
-      heroRig.v[LIFT] += 34;
+      heroRig.v[SQUASH] -= 1.6;
+      heroRig.v[LIFT] += 26;
       hero.set(heroState);
-    }, 90);
+    }, 160);
+    const { easing, duration } = impulseCurve(260, 14);
+    heroHost.animate([{ transform: "none" }, { transform: "scale(.94)" }], { duration, easing });
   };
   const next = () => {
     if (calm.matches || document.hidden || !seen) { timer = setTimeout(next, 600); return; }
     step = (step + 1) % PLAN.length;
     const [color, shape, what] = PLAN[step];
-    if (color !== look[0] || shape !== look[1]) pop(color, shape);
-    act(what);
+    // A new look first, its state once the old look has dissolved: the state's own arrival (a hop, a squish) never
+    // moves the body under the fading old one.
+    if (color !== look[0] || shape !== look[1]) {
+      pop(color, shape);
+      setTimeout(() => act(what), 170);
+    } else act(what);
     // The first change follows sooner, so the first three seconds show two.
     timer = setTimeout(next, step === 0 ? 1700 : 2200 + Math.random() * 500);
   };
@@ -833,24 +587,10 @@ var fleetdMedia={};
   addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); dispatchEvent(new Event("fleetdtheme")); showTheme(); } });
   addEventListener("fleetdtheme", () => setTimeout(mountStills, 0));
 
-  // ---- The stage's bots, one per bot in the apps' lists and headers, each in its colour, body and state and taking its
-  // turns as the app's do. Each lays out at the screen's own size in points, which the scale doesn't change. One on a
-  // screen not shown (the Mac, at a phone's width) comes to life once it is.
-  const mountScreens = () => {
-    document.querySelectorAll("[data-av]:not([data-on])").forEach((host, n) => {
-      const [color, shape, state = "idle"] = host.dataset.av.split(" ");
-      const box = host.offsetWidth;
-      if (box === 0) return;
-      host.dataset.on = "";
-      bringToLife(canvasIn(host), newRig(state, drawnAt(box), 300 + n, false), box, color, shape);
-    });
-  };
-  addEventListener("resize", mountScreens);
-
-  // ---- The Duo opens once: 0.6 s after the page loads when any of it shows then, else the first time it's half in
-  // view. The left half swings off the right on a spring with a touch of overshoot, as a hinge settles, the inner
-  // display waking as it goes. Shut until then (the inline script shut it before the first paint, unless reduced
-  // motion); after, it is the plain open phone, no transform left on it.
+  // ---- The Duo's screen comes on once, as Apple's does when it opens: the outer screen's view (the right half) widens
+  // into the inner one on a spring, the content held in place, its blur and shade clearing as it goes. 0.6 s after the
+  // page loads when any of it shows then, else the first time it's half in view. Shut until then (the inline script
+  // set data-fold before the first paint, unless reduced motion); after, the plain screen, no filter left on it.
   const duo = document.getElementById("duo");
   /** A spring's curve from 0 to 1 (mass 1), for CSS linear(): its points 1/60 s apart, and how long it takes. */
   const springCurve = (k, c) => {
@@ -859,21 +599,41 @@ var fleetdMedia={};
     for (let i = 1; t < 3; i++) {
       for (let s = 0; s < 2; s++) { v += (k * (1 - x) - c * v) / 120; x += v / 120; t += 1 / 120; }
       pts.push(Math.round(x * 1e4) / 1e4);
-      if (Math.abs(1 - x) < 0.004 && Math.abs(v) < 0.05) break;
+      if (Math.abs(1 - x) < 0.002 && Math.abs(v) < 0.02) break;
     }
     pts[pts.length - 1] = 1;
     return { easing: CSS.supports("transition-timing-function", "linear(0, 1)") ? `linear(${pts.join(", ")})` : "cubic-bezier(.2,.9,.25,1)", duration: Math.round(t * 1000) };
   };
+  /** A struck spring's curve (mass 1, at rest, given a push): out to 1 at its furthest and back through 0, settling
+   * there, for CSS linear(); and how long it takes. A pop that starts from where the thing is, never a jump. */
+  const impulseCurve = (k, c) => {
+    let x = 0, v = 1, t = 0, most = 0;
+    const pts = [0];
+    while (t < 2) {
+      for (let s = 0; s < 2; s++) { v += (-k * x - c * v) / 120; x += v / 120; t += 1 / 120; }
+      pts.push(x);
+      most = Math.max(most, Math.abs(x));
+      if (t > 0.1 && Math.abs(x) < 0.002 * most && Math.abs(v) < 0.02 * most * 10) break;
+    }
+    pts[pts.length - 1] = 0;
+    const curve = pts.map((p) => Math.round((p / most) * 1e4) / 1e4);
+    return { easing: CSS.supports("transition-timing-function", "linear(0, 1)") ? `linear(${curve.join(", ")})` : "ease", duration: Math.round(t * 1000) };
+  };
   const open = () => {
     if (duo.dataset.fold !== "shut") return;
-    const { easing, duration } = springCurve(72, 14.5);
-    const go = { duration, easing, fill: "both" };
+    const [soft, sharp, outer] = ["soft", "sharp", "outer"].map((c) => duo.querySelector(`.${c}`));
+    const spring = springCurve(90, 19);
+    const widen = [{ clipPath: "inset(0 0 0 50%)" }, { clipPath: "inset(0 0 0 0%)" }];
+    const softFilter = getComputedStyle(soft).filter;
     const runs = [
-      duo.querySelector(".leaf").animate([{ transform: "rotateY(180deg)" }, { transform: "rotateY(0deg)" }], go),
-      duo.querySelector(".shade").animate([{ transform: "scaleX(.52)" }, { transform: "none" }], go),
-      ...[...duo.querySelectorAll(".off")].map((el) => el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 320, delay: duration * 0.12, easing: "cubic-bezier(.2,0,0,1)", fill: "both" })),
+      soft.animate(widen, { ...spring, fill: "both" }),
+      sharp.animate(widen, { ...spring, fill: "both" }),
+      // The shade lifts with the widening; the focus comes in over its second half, the sharp copy fading in.
+      soft.animate([{ filter: softFilter }, { filter: softFilter.replace(/brightness\([^)]*\)/u, "brightness(1)") }], { duration: spring.duration, easing: "cubic-bezier(.3,0,.2,1)", fill: "both" }),
+      sharp.animate([{ opacity: 0 }, { opacity: 1 }], { duration: spring.duration * 0.75, delay: spring.duration * 0.3, easing: "cubic-bezier(.4,0,.2,1)", fill: "both" }),
+      outer.animate([{ opacity: 1 }, { opacity: 0 }], { duration: spring.duration * 0.4, easing: "cubic-bezier(.3,0,.2,1)", fill: "both" }),
     ];
-    duo.dataset.fold = "turning";
+    duo.dataset.fold = "opening";
     Promise.all(runs.map((r) => r.finished)).then(() => { delete duo.dataset.fold; runs.forEach((r) => r.cancel()); }, () => {});
   };
   if (duo.dataset.fold === "shut") {
@@ -963,7 +723,6 @@ var fleetdMedia={};
   showTheme();
   mountHero();
   mountStills();
-  mountScreens();
   begin();
 })();
 </script>

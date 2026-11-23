@@ -637,9 +637,33 @@ const pinnedTwo = (base: Fixture): Fixture => {
   return f.answer("chat_pins_get", {}, { pins: [ref("billing"), ref("Ada")], set: true });
 };
 
+/** Each bot's colour and body in the landing page's hero (W847), as people pick them. */
+const HERO_LOOKS: Readonly<Record<string, readonly [string, string]>> = {
+  storefront: ["orange", "kitty"],
+  billing: ["blue", "pebble"],
+  Ada: ["purple", "bunny"],
+  checkout: ["teal", "ghost"],
+  Home: ["green", "toast"],
+};
+
+/** The showcase with each bot in its own colour and body: the landing page's hero shoots it (qa/showcase.spec.ts). */
+const hero = (base: Fixture): Fixture => {
+  const f = Fixture.from(base, "showcase-hero", "The showcase with each bot in its own colour and body, for the landing page's hero.");
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  if (f.snapshot !== undefined)
+    f.snapshot = {
+      ...f.snapshot,
+      projects: projects.map((p) => {
+        const look = HERO_LOOKS[asText(p["title"])];
+        return look === undefined ? p : { ...p, avatarColor: look[0], avatarShape: look[1] };
+      }),
+    };
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => {
     const order = build(base("typical"), base("chat-empty"));
-    return [order, pinned(order), pinnedOne(order), pinnedTwo(order)];
+    return [order, pinned(order), pinnedOne(order), pinnedTwo(order), hero(order)];
   },
 });
