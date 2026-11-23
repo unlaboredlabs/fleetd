@@ -128,11 +128,15 @@ export type ScreenControlFrame = { id: string; sessionId: BrowserSessionId; cont
 
 /** Where a phone screen's device is: what the hub keeps on its session ([`BrowserSession`]'s fields of the same names). */
 export type ScreenDevice = {
+  /** Which device it is ("iPhone Duo"), without its runtime. */
+  model?: string;
   controls: ScreenControl[];
   orientation?: ScreenOrientation;
   fold?: string;
   folds?: string[];
   appearance?: ScreenAppearance;
+  /** Dynamic Type's size ("large"). */
+  textSize?: string;
 };
 
 // ---- node -> hub ----

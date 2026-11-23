@@ -86,7 +86,8 @@ function device(d: unknown): void {
   };
   words("controls", 16, false);
   words("folds", 8, true);
-  for (const field of ["orientation", "fold", "appearance"]) text(o, field, 1, 32, true);
+  for (const field of ["orientation", "fold", "appearance", "textSize"]) text(o, field, 1, 32, true);
+  text(o, "model", 1, 64, true);
 }
 
 /** A `browser_recording_part` as the contract has it. */

@@ -143,10 +143,12 @@ export function deviceOf(d: ScreenDevice | undefined): Partial<BrowserSession> {
   if (!d) return {};
   return {
     controls: d.controls,
+    ...(d.model === undefined ? {} : { model: d.model }),
     ...(d.orientation === undefined ? {} : { orientation: d.orientation }),
     ...(d.fold === undefined ? {} : { fold: d.fold }),
     ...(d.folds === undefined ? {} : { folds: d.folds }),
     ...(d.appearance === undefined ? {} : { appearance: d.appearance }),
+    ...(d.textSize === undefined ? {} : { textSize: d.textSize }),
   };
 }
 
@@ -154,7 +156,7 @@ export function deviceOf(d: ScreenDevice | undefined): Partial<BrowserSession> {
 const deviceIn = (s: BrowserSession): ScreenDevice | undefined =>
   s.controls === undefined
     ? undefined
-    : { controls: s.controls, orientation: s.orientation, fold: s.fold, folds: s.folds, appearance: s.appearance };
+    : { model: s.model, controls: s.controls, orientation: s.orientation, fold: s.fold, folds: s.folds, appearance: s.appearance, textSize: s.textSize };
 
 function part(hub: Hub, caller: LeadCaller, call: BrowserRecordingPartCall) {
   const id = call.sessionId;

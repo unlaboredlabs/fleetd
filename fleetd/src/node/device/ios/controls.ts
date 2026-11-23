@@ -10,10 +10,13 @@
 // - shake: the Darwin notification Simulator's own Shake posts (`notifyutil -p com.apple.UIKit.SimulatorShake`).
 // - home and lock: the Home and Power buttons as HID key presses inside the simulator (DEVICE below, `simctl spawn`):
 //   agent-device's `home` takes seconds and it has no lock on a simulator.
-// - light/dark: `simctl ui appearance`; location: `simctl location set`; screenshot: `simctl io screenshot`.
+// - light/dark: `simctl ui appearance`; text size: `simctl ui content_size` (Dynamic Type's sizes); location:
+//   `simctl location set`; screenshot: `simctl io screenshot`.
 // - fold (the iPhone Duo): the hinge as agent-device's own fold helper sets it (its Fold.m, `simctl spawn`). agent-device's
 //   `fold` refuses a simulator outside the default set, since it reads the hinge back through CoreDevice; here the
 //   pose is fleetd's to keep: closed lights the outer panel (`primary`), half-open and open the inner (`primary-1`).
+//   Laptop is half-open stood on its side, the crease across (the orientation picker's landscape-left): the simulator
+//   has a hinge and an orientation, no table, so a tent (half-open stood on its edges, the cover out) isn't one.
 //
 // The helpers are built once per source and Xcode under the node's `device/ios/helpers/`.
 import { createHash } from "node:crypto";
@@ -28,10 +31,26 @@ import type { Simctl } from "./simctl.ts";
 import { iosDir } from "./wrapper.ts";
 
 /** What every iPhone and iPad simulator takes. */
-export const IOS_CONTROLS: readonly ScreenControl[] = ["rotate_left", "rotate_right", "shake", "home", "lock", "appearance", "screenshot", "location"];
+export const IOS_CONTROLS: readonly ScreenControl[] = ["rotate_left", "rotate_right", "shake", "home", "lock", "appearance", "text_size", "screenshot", "location"];
 /** A foldable's poses, as a picker shows them. */
-export const FOLDS = ["closed", "half-open", "open"] as const;
+export const FOLDS = ["closed", "half-open", "open", "laptop"] as const;
 export type Fold = (typeof FOLDS)[number];
+/** Dynamic Type's sizes, smallest first, as `simctl ui content_size` names them; "large" is a new simulator's. */
+export const TEXT_SIZES = [
+  "extra-small",
+  "small",
+  "medium",
+  "large",
+  "extra-large",
+  "extra-extra-large",
+  "extra-extra-extra-large",
+  "accessibility-medium",
+  "accessibility-large",
+  "accessibility-extra-large",
+  "accessibility-extra-extra-large",
+  "accessibility-extra-extra-extra-large",
+] as const;
+export type TextSize = (typeof TEXT_SIZES)[number];
 /** The orientations a left turn steps through, from upright. */
 const TURNS: readonly ScreenOrientation[] = ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"];
 /** The Duo's orientation picker's word for each. */
@@ -68,6 +87,9 @@ export function turned(from: ScreenOrientation, way: "left" | "right"): ScreenOr
   return TURNS[(at + (way === "left" ? 1 : TURNS.length - 1)) % TURNS.length]!;
 }
 
+/** The device's own name, without its runtime: "iPhone Duo on iOS 27.2" is "iPhone Duo". */
+export const modelOf = (device: string) => device.split(" on ")[0] ?? device;
+
 /** The panel a foldable lights in `fold` (simctl's `--display`); undefined for a device with one. */
 export const panelOf = (device: string, fold: Fold) => (!foldable(device) ? undefined : fold === "closed" ? "primary" : "primary-1");
 
@@ -88,7 +110,7 @@ export type Step =
   | { agentDevice: string[] };
 
 /** The device as fleetd last set it. */
-export type DeviceState = { orientation: ScreenOrientation; fold?: Fold; appearance: ScreenAppearance };
+export type DeviceState = { orientation: ScreenOrientation; fold?: Fold; appearance: ScreenAppearance; textSize?: TextSize };
 
 /**
  * The steps `control` (with its `value`) takes on simulator `udid` of `device` in `state`, and the state after them.
@@ -115,6 +137,11 @@ export function plan(device: string, udid: string, state: DeviceState, control: 
       if (to !== "light" && to !== "dark") throw new ToolError("invalid", `Appearance is light or dark, not ${JSON.stringify(value)}.`);
       return { steps: [{ simctl: ["ui", udid, "appearance", to] }], next: { ...state, appearance: to } };
     }
+    case "text_size": {
+      const size = TEXT_SIZES.find((t) => t === value);
+      if (!size) throw new ToolError("invalid", `A text size is one of ${TEXT_SIZES.join(", ")}, not ${JSON.stringify(value ?? "")}.`);
+      return { steps: [{ simctl: ["ui", udid, "content_size", size] }], next: { ...state, textSize: size } };
+    }
     case "location": {
       const [lat, lon] = latLon(value);
       return { steps: [{ simctl: ["location", udid, "set", `${lat},${lon}`] }], next: state };
@@ -122,8 +149,11 @@ export function plan(device: string, udid: string, state: DeviceState, control: 
     case "fold": {
       const fold = FOLDS.find((f) => f === value);
       if (!fold) throw new ToolError("invalid", `A fold is one of ${FOLDS.join(", ")}, not ${JSON.stringify(value ?? "")}.`);
-      // The pose a turn left on one panel isn't the other's: the panel now lit is turned as the session says.
-      return { steps: [{ helper: "fold", args: [fold] }, { helper: "device", args: ["turn", PICKER[state.orientation] ?? "portrait"] }], next: { ...state, fold } };
+      // The pose a turn left on one panel isn't the other's: the panel now lit is turned as the session says. Laptop is
+      // half-open on its side; leaving it stands the device up again.
+      const orientation: ScreenOrientation = fold === "laptop" ? "landscape_left" : state.fold === "laptop" ? "portrait" : state.orientation;
+      const hinge = fold === "laptop" ? "half-open" : fold;
+      return { steps: [{ helper: "fold", args: [hinge] }, { helper: "device", args: ["turn", PICKER[orientation] ?? "portrait"] }], next: { ...state, fold, orientation } };
     }
     case "screenshot":
       return { steps: [], next: state };
@@ -323,9 +353,11 @@ export class SimDevice {
   /** The session's device fields. */
   report(): ScreenDevice {
     return {
+      model: modelOf(this.device),
       controls: controlsOf(this.device),
       orientation: this.state.orientation,
       appearance: this.state.appearance,
+      ...(this.state.textSize ? { textSize: this.state.textSize } : {}),
       ...(this.state.fold ? { fold: this.state.fold, folds: [...FOLDS] } : {}),
     };
   }
@@ -335,13 +367,20 @@ export class SimDevice {
     return this.state.fold ? panelOf(this.device, this.state.fold) : undefined;
   }
 
-  /** Reads the simulator's appearance, and puts a foldable in the pose fleetd keeps for it (closed). */
+  /** Reads the simulator's appearance and text size, and puts a foldable in the pose fleetd keeps for it (closed). */
   async settle(): Promise<void> {
     try {
       const said = (await this.tools.simctl(["ui", this.udid, "appearance"], CONTROL_WAIT)).trim();
       if (said === "dark" || said === "light") this.state = { ...this.state, appearance: said };
     } catch {
       // Light, as a fresh simulator is.
+    }
+    try {
+      const said = (await this.tools.simctl(["ui", this.udid, "content_size"], CONTROL_WAIT)).trim();
+      const size = TEXT_SIZES.find((t) => t === said);
+      if (size) this.state = { ...this.state, textSize: size };
+    } catch {
+      // Unknown until it is set.
     }
     if (this.state.fold) await this.apply("fold", this.state.fold).catch(() => {});
   }

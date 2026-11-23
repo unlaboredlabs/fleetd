@@ -29,11 +29,12 @@ function png(width: number, height: number): Uint8Array {
 test("a Duo folds and an iPhone doesn't: its controls, and the panel each pose lights", () => {
   expect(foldable(DUO)).toBe(true);
   expect(foldable(IPHONE)).toBe(false);
-  expect(controlsOf(IPHONE)).toEqual(["rotate_left", "rotate_right", "shake", "home", "lock", "appearance", "screenshot", "location"]);
+  expect(controlsOf(IPHONE)).toEqual(["rotate_left", "rotate_right", "shake", "home", "lock", "appearance", "text_size", "screenshot", "location"]);
   expect(controlsOf(DUO).at(-1)).toBe("fold");
   expect(panelOf(DUO, "closed")).toBe("primary");
   expect(panelOf(DUO, "half-open")).toBe("primary-1");
   expect(panelOf(DUO, "open")).toBe("primary-1");
+  expect(panelOf(DUO, "laptop")).toBe("primary-1");
   expect(panelOf(IPHONE, "open")).toBeUndefined();
 });
 
@@ -65,7 +66,26 @@ test("each iOS control's commands, as tried on the real Mac", () => {
     steps: [{ helper: "fold", args: ["half-open"] }, { helper: "device", args: ["turn", "portrait"] }],
     next: { ...upright, fold: "half-open" },
   });
+  expect(plan(IPHONE, UDID, upright, "text_size", "extra-large")).toEqual({
+    steps: [{ simctl: ["ui", UDID, "content_size", "extra-large"] }],
+    next: { ...upright, textSize: "extra-large" },
+  });
   expect(plan(IPHONE, UDID, upright, "screenshot").steps).toEqual([]);
+});
+
+test("a Duo stands as a laptop half-open on its side, and stands up again when it leaves it", () => {
+  const book = { ...upright, fold: "half-open" } as const;
+  expect(plan(DUO, UDID, book, "fold", "laptop")).toEqual({
+    steps: [{ helper: "fold", args: ["half-open"] }, { helper: "device", args: ["turn", "landscape-left"] }],
+    next: { ...upright, fold: "laptop", orientation: "landscape_left" },
+  });
+  const laptop = { ...upright, fold: "laptop", orientation: "landscape_left" } as const;
+  expect(plan(DUO, UDID, laptop, "fold", "open")).toEqual({
+    steps: [{ helper: "fold", args: ["open"] }, { helper: "device", args: ["turn", "portrait"] }],
+    next: { ...upright, fold: "open", orientation: "portrait" },
+  });
+  // Turned by hand, an open Duo keeps its turn through a fold.
+  expect(plan(DUO, UDID, { ...upright, fold: "open", orientation: "landscape_right" }, "fold", "closed").next.orientation).toBe("landscape_right");
 });
 
 test("a control a device doesn't take, or a value it can't use, is refused before anything runs", () => {
@@ -73,6 +93,8 @@ test("a control a device doesn't take, or a value it can't use, is refused befor
   expect(() => plan(IPHONE, UDID, upright, "back")).toThrow("no back control");
   expect(() => plan(DUO, UDID, { ...upright, fold: "closed" }, "fold", "flat")).toThrow("closed, half-open, open");
   expect(() => plan(IPHONE, UDID, upright, "appearance", "sepia")).toThrow("light or dark");
+  expect(() => plan(IPHONE, UDID, upright, "text_size", "huge")).toThrow("extra-small, small");
+  expect(() => plan(IPHONE, UDID, upright, "text_size")).toThrow("extra-small, small");
   expect(() => latLon("91,0")).toThrow();
   expect(() => latLon("48.8")).toThrow();
   expect(() => latLon(",2")).toThrow();
@@ -87,6 +109,7 @@ function tools(opts: { noSession?: boolean } = {}) {
   const t: ControlTools = {
     async simctl(args) {
       ran.push(["simctl", ...args]);
+      if (args[0] === "ui" && args[2] === "content_size") return "extra-large\n";
       if (args[0] === "ui" && args.length === 3) return "dark\n";
       if (args[1] === UDID && args[2] === "screenshot") await Bun.write(args.at(-1)!, png(1398, 2034));
       return "";
@@ -108,14 +131,17 @@ test("a Duo settles closed with its appearance read, folds, turns, and screensho
     const dev = new SimDevice(UDID, DUO, t);
     await dev.settle();
     expect(dev.report()).toEqual({
+      model: "iPhone Duo",
       controls: controlsOf(DUO),
       orientation: "portrait",
       appearance: "dark",
+      textSize: "extra-large",
       fold: "closed",
-      folds: ["closed", "half-open", "open"],
+      folds: ["closed", "half-open", "open", "laptop"],
     });
     expect(ran).toEqual([
       ["simctl", "ui", UDID, "appearance"],
+      ["simctl", "ui", UDID, "content_size"],
       ["simctl", "spawn", UDID, "/h/fold-helper", "closed"],
       ["simctl", "spawn", UDID, "/h/device", "turn", "portrait"],
     ]);
@@ -125,7 +151,7 @@ test("a Duo settles closed with its appearance read, folds, turns, and screensho
     await dev.apply("rotate_left");
     const shot = await dev.apply("screenshot");
     expect(shot).toMatchObject({ width: 1398, height: 2034 });
-    expect(ran.slice(3).map((r) => r.slice(0, 5))).toEqual([
+    expect(ran.slice(4).map((r) => r.slice(0, 5))).toEqual([
       ["simctl", "spawn", UDID, "/h/fold-helper", "open"],
       ["simctl", "spawn", UDID, "/h/device", "turn"],
       // A Duo turns with its orientation picker, not XCUIDevice.
@@ -303,5 +329,8 @@ test("mac sim <control>'s arguments", () => {
   expect(simControlArgs(["location", "paris"])).toBeInstanceOf(Error);
   expect(simControlArgs(["fold", "half-open"])).toEqual({ control: "fold", value: "half-open" });
   expect(simControlArgs(["fold", "flat"])).toBeInstanceOf(Error);
+  expect(simControlArgs(["fold", "laptop"])).toEqual({ control: "fold", value: "laptop" });
+  expect(simControlArgs(["text-size", "extra-large"])).toEqual({ control: "text_size", value: "extra-large" });
+  expect(simControlArgs(["text-size"])).toBeInstanceOf(Error);
   expect(simControlArgs(["screenshot", "shots/duo.png"])).toEqual({ control: "screenshot", to: "shots/duo.png" });
 });

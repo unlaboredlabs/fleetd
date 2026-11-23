@@ -93,9 +93,9 @@ async function simStart(device: string | undefined, wait: boolean): Promise<numb
 }
 
 /** The device controls `mac sim` takes. */
-export const SIM_CONTROLS = ["rotate", "shake", "home", "lock", "appearance", "location", "fold", "screenshot"];
+export const SIM_CONTROLS = ["rotate", "shake", "home", "lock", "appearance", "text-size", "location", "fold", "screenshot"];
 const SIM_CONTROL_USAGE =
-  "mac sim rotate left|right | shake | home | lock | appearance [light|dark] | location <lat>,<lon> | fold closed|half-open|open | screenshot [to]";
+  "mac sim rotate left|right | shake | home | lock | appearance [light|dark] | text-size <size> | location <lat>,<lon> | fold closed|half-open|open|laptop | screenshot [to]";
 
 /** `mac sim <control> …` as the step's control and value (and a screenshot's `to`), or why not. */
 export function simControlArgs(args: string[]): { control: string; value?: string; to?: string } | Error {
@@ -111,12 +111,14 @@ export function simControlArgs(args: string[]): { control: string; value?: strin
     case "appearance":
       if (more.length === 0) return { control: "appearance" };
       return more.length === 1 && (more[0] === "light" || more[0] === "dark") ? { control: "appearance", value: more[0] } : bad;
+    case "text-size":
+      return more.length === 1 && /^[a-z-]{4,40}$/.test(more[0]!) ? { control: "text_size", value: more[0] } : bad;
     case "location": {
       const at = more.join(",").replace(/,+/g, ",");
       return /^-?[0-9.]+,-?[0-9.]+$/.test(at) ? { control: "location", value: at } : bad;
     }
     case "fold":
-      return more.length === 1 && ["closed", "half-open", "open"].includes(more[0]!) ? { control: "fold", value: more[0] } : bad;
+      return more.length === 1 && ["closed", "half-open", "open", "laptop"].includes(more[0]!) ? { control: "fold", value: more[0] } : bad;
     case "screenshot":
       return more.length <= 1 ? { control: "screenshot", ...(more[0] ? { to: more[0] } : {}) } : bad;
     default:

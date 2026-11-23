@@ -1427,6 +1427,11 @@ export type BrowserSession = {
    * emulator), else its project's. `browser_sessions` fills it in; absent from older hubs.
    */
   machineId?: MachineId;
+  /**
+   * Which device a phone screen is ("iPhone Duo", "iPhone 17 Pro"), as its machine says; absent on other screens
+   * and from older nodes.
+   */
+  model?: string;
   /** Why a session is lost, or what its recording lacks ("no video: this machine has no ffmpeg"). */
   note?: string;
   /**
@@ -1459,6 +1464,8 @@ export type BrowserSession = {
   takeoverReason?: string;
   /** The task whose agent opened it; absent for the project's lead. */
   taskId?: TaskId;
+  /** A phone screen's text size now (Dynamic Type's: "large" is the default). */
+  textSize?: string;
   /** The agent's session (its thread on the project's machine). */
   threadId: ThreadId;
 };
@@ -8056,8 +8063,8 @@ export type ScreenAppearance = KnownScreenAppearance | (string & {});
 
 /**
  * A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or
- * dark (`value`), take a screenshot, set its location (`value` "lat,lon"), fold it (`value`, one of the session's
- * `folds`), or go back (Android).
+ * dark (`value`), set its text size (`value`, a Dynamic Type size), take a screenshot, set its location (`value`
+ * "lat,lon"), fold it (`value`, one of the session's `folds`), or go back (Android).
  */
 export type KnownScreenControl =
   | "rotate_left"
@@ -8066,6 +8073,7 @@ export type KnownScreenControl =
   | "home"
   | "lock"
   | "appearance"
+  | "text_size"
   | "screenshot"
   | "location"
   | "fold"
@@ -8076,7 +8084,7 @@ export type ScreenControl = KnownScreenControl | (string & {});
 export type ScreenControlInput = {
   control: ScreenControl;
   sessionId: BrowserSessionId;
-  /** `appearance`: light or dark; `location`: "lat,lon"; `fold`: one of the session's `folds`. */
+  /** `appearance`: light or dark; `text_size`: a Dynamic Type size; `location`: "lat,lon"; `fold`: one of the session's `folds`. */
   value?: string;
 };
 

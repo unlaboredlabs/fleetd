@@ -2665,6 +2665,13 @@
           "$ref": "#/$defs/MachineId",
           "description": "The machine it runs on: the one hosting it for an agent elsewhere (the agents' Mac, another machine's\nemulator), else its project's. `browser_sessions` fills it in; absent from older hubs."
         },
+        "model": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "Which device a phone screen is (\"iPhone Duo\", \"iPhone 17 Pro\"), as its machine says; absent on other screens\nand from older nodes."
+        },
         "note": {
           "description": "Why a session is lost, or what its recording lacks (\"no video: this machine has no ffmpeg\").",
           "maxLength": 500,
@@ -2714,6 +2721,13 @@
         "taskId": {
           "$ref": "#/$defs/TaskId",
           "description": "The task whose agent opened it; absent for the project's lead."
+        },
+        "textSize": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*$",
+          "type": "string",
+          "description": "A phone screen's text size now (Dynamic Type's: \"large\" is the default)."
         },
         "threadId": {
           "$ref": "#/$defs/ThreadId",
@@ -20748,7 +20762,7 @@
       "x-open": true
     },
     "ScreenControl": {
-      "description": "A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or\ndark (`value`), take a screenshot, set its location (`value` \"lat,lon\"), fold it (`value`, one of the session's\n`folds`), or go back (Android).",
+      "description": "A device control on a phone screen: turn it a quarter left or right, shake it, press home or lock, set light or\ndark (`value`), set its text size (`value`, a Dynamic Type size), take a screenshot, set its location (`value`\n\"lat,lon\"), fold it (`value`, one of the session's `folds`), or go back (Android).",
       "enum": [
         "rotate_left",
         "rotate_right",
@@ -20756,6 +20770,7 @@
         "home",
         "lock",
         "appearance",
+        "text_size",
         "screenshot",
         "location",
         "fold",
@@ -20777,7 +20792,7 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string",
-          "description": "`appearance`: light or dark; `location`: \"lat,lon\"; `fold`: one of the session's `folds`."
+          "description": "`appearance`: light or dark; `text_size`: a Dynamic Type size; `location`: \"lat,lon\"; `fold`: one of the session's `folds`."
         }
       },
       "required": [
