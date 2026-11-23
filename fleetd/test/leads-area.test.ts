@@ -16,6 +16,9 @@ import { leadWiring } from "../src/hub/leads/ports.ts";
 import { workstreams } from "../src/hub/leads/workstreams.ts";
 import { events } from "../src/hub/store/events.ts";
 import { changeRecords } from "../src/hub/train/index.ts";
+import { PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
+import { setMerges } from "../src/hub/project_lead/store.ts";
+import * as repos from "../src/hub/repos/store.ts";
 import { isoMs } from "../src/hub/store/time.ts";
 import type { Change, HubEvent, ProjectRef } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
@@ -313,7 +316,56 @@ test("the digest's Merge train section comes from the train: a merged PR shows a
   await leads(hub).start(PROJECT);
   expect(launches[0]?.prompt).toContain("Merge train");
   expect(launches[0]?.prompt).toContain("- X1 merged: ");
-  expect(leadWiring(hub).hooks.trainLines?.(PROJECT, "2026-11-08T10:00:00.000Z")).toEqual([]);
+  // Nothing new since: only the standing line that people merge this bot's PRs (its Who merges, You by default).
+  expect(leadWiring(hub).hooks.trainLines?.(PROJECT, "2026-11-08T10:00:00.000Z")).toEqual([PEOPLE_MERGE_LINE]);
+  done();
+});
+
+test("where people merge, the digest says so before the bot's first PR and when its repo's train is another bot's (W845)", async () => {
+  const { hub, done } = withLead();
+  const lines = () => leadWiring(hub).hooks.trainLines?.(PROJECT, undefined);
+  // A bot with no GitHub repo has no PR to merge: no section, so a repo-less bot's every wake doesn't carry the line.
+  expect(lines()).toBeUndefined();
+  // Its GitHub repo, no train and no PR yet: the lead still reads that a person merges, never that the train does.
+  hub.db.conn
+    .query("INSERT INTO work_projects (machine_id, project_id, repo_key, base, updated_ms) VALUES (?1, ?2, 'github.com/acme/shop', 'main', 0)")
+    .run(PROJECT.machineId, PROJECT.projectId);
+  repos.ensureOwn(hub.db.conn, PROJECT, "/work/shop");
+  expect(lines()).toEqual([PEOPLE_MERGE_LINE]);
+  // Its PR on a repo whose train is another bot's (the two share it): the train lists none of its own.
+  const other = { machineId: PROJECT.machineId, projectId: "other-bot" };
+  changeRecords(hub).create({
+    changeId: "X2",
+    projectRef: other,
+    repo: "acme/shop",
+    prNumber: 8,
+    prUrl: "https://github.com/acme/shop/pull/8",
+    branch: "pr-8",
+    workstreamId: "W1",
+    headSha: "b".repeat(40),
+    state: "ready",
+    reviews: [],
+    createdAt: "2026-11-08T09:00:00.000Z",
+    updatedAt: "2026-11-08T09:30:00.000Z",
+  } as unknown as Change);
+  changeRecords(hub).create({
+    changeId: "X3",
+    projectRef: PROJECT,
+    repo: "acme/shop",
+    prNumber: 9,
+    prUrl: "https://github.com/acme/shop/pull/9",
+    branch: "pr-9",
+    workstreamId: "W1",
+    headSha: "c".repeat(40),
+    state: "ready",
+    reviews: [],
+    createdAt: "2026-11-08T09:40:00.000Z",
+    updatedAt: "2026-11-08T09:40:00.000Z",
+  } as unknown as Change);
+  expect(lines()?.[0]).toBe(PEOPLE_MERGE_LINE);
+  // A bot whose PRs fleetd merges hears nothing of it.
+  setMerges(hub.db.conn, PROJECT, "fleetd");
+  expect(lines()?.includes(PEOPLE_MERGE_LINE) ?? false).toBe(false);
   done();
 });
 

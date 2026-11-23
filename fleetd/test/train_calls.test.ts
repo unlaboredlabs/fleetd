@@ -163,6 +163,7 @@ test("a writer's command that prints its PR URL starts the train's ready pass at
 test("the lead digest's merge train lines", async () => {
   const { trainDigest, trainUnlanded } = await import("../src/hub/train/index.ts");
   const { k, hub } = lab();
+  // No train, no PR and no GitHub repo yet: nothing to say.
   expect(trainDigest(hub, PROJECT)).toBeUndefined();
   k.pr(10, "fleetd/T10-a", { FAIL: "x\n" });
   k.train.gate = new (await import("./train_kit.ts")).CleanGate();

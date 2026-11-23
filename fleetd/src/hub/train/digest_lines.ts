@@ -90,7 +90,6 @@ export function leadTrainLines(facts: TrainFacts, since?: string): string[] {
   // Date.parse of an unreadable `since` is NaN: nothing is "after" it.
   const sinceMs = since === undefined ? undefined : (parseMs(since) ?? Number.MAX_SAFE_INTEGER);
   const lines = facts.trains.map((t) => `- ${t.repo}: ${stateOf(facts.changes, t)}`);
-  if (facts.peopleMerge && lines.length > 0) lines.unshift(PEOPLE_MERGE_LINE);
   const when = since !== undefined ? " since your last wake" : "";
   for (const c of facts.changes.filter((c) => c.state === "merged" && updatedAfter(c, sinceMs))) {
     lines.push(`- ${c.changeId} merged${when}: ${pr(c)}${shortSha(c.mergedSha)}${c.taskId !== undefined ? ` (by ${c.taskId})` : ""}`);
@@ -106,5 +105,7 @@ export function leadTrainLines(facts: TrainFacts, since?: string): string[] {
     const left = idle(facts, c);
     if (left !== "") lines.push(`- ${c.changeId} reviewing: ${pr(c)}${by(c)}; ${oneLine(c.lastError ?? "", 160)}${left}`);
   }
-  return lines;
+  // Where people merge, the lead always reads so: before the bot's first PR is on a train, and when its repo's train is
+  // another bot's (a repo they share), as much as when a train of its own lists its queue.
+  return facts.peopleMerge ? [PEOPLE_MERGE_LINE, ...lines] : lines;
 }
