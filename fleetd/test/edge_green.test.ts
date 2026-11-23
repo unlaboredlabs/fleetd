@@ -89,3 +89,48 @@ test("Desktop QA on main compares only with a run that passed: after a red one i
   // B's red run is no base: the run compares with A's, so B's change to app/desktop makes it run in full.
   expect(out.stdout.toString().trim()).toBe("a".repeat(40));
 });
+
+/** build-release.yml's plan step run on a repo of two commits, `one` then `two`, with edge's release.json holding
+ * `held` (a stand-in curl answers it): its outputs. */
+function plan(release: "one" | "two", held: "one" | "two" | undefined, event = "workflow_run", forceApp = "false"): Record<string, string> {
+  const step = (yaml("build-release.yml").jobs.plan.steps as { id?: string; run: string }[]).find((s) => s.id === "plan")!;
+  const dir = `${process.env.TMPDIR ?? "/tmp"}/fleetd-edge-plan-${Math.random().toString(36).slice(2)}`;
+  const env = { PATH: `${dir}/bin:${process.env.PATH ?? "/usr/bin:/bin"}`, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@example.invalid", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@example.invalid" };
+  const run = (args: string[]) => Bun.spawnSync(args, { cwd: dir, env }).stdout.toString().trim();
+  Bun.spawnSync(["mkdir", "-p", `${dir}/bin`, `${dir}/fleetd`]);
+  run(["git", "init", "-q", "-b", "main"]);
+  Bun.write(join(dir, "fleetd/package.json"), "{}\n");
+  run(["git", "add", "-A"]);
+  run(["git", "commit", "-q", "-m", "one"]);
+  const one = run(["git", "rev-parse", "HEAD"]);
+  run(["git", "commit", "-q", "--allow-empty", "-m", "two"]);
+  const two = run(["git", "rev-parse", "HEAD"]);
+  const sha = { one, two };
+  const json = held === undefined ? "" : JSON.stringify({ commit: sha[held], appCommit: sha[held], build: "2026.11.23.1" });
+  Bun.write(join(dir, "bin/curl"), `#!/bin/sh\nprintf '%s' '${json}'\n`);
+  Bun.spawnSync(["chmod", "+x", join(dir, "bin/curl")]);
+  const out = join(dir, "out.txt");
+  Bun.spawnSync(["bash", "-c", step.run], {
+    cwd: dir,
+    env: { ...env, CHANNEL: "edge", PUBLISH: "true", FORCE_APP: forceApp, GITHUB_EVENT_NAME: event, RELEASE_SHA: sha[release], GITHUB_REPOSITORY: "unlaboredlabs/fleetd", GITHUB_OUTPUT: out },
+  });
+  const written = Bun.file(out).size > 0 ? readFileSync(out, "utf8") : "";
+  Bun.spawnSync(["rm", "-rf", dir]);
+  return Object.fromEntries(written.split("\n").filter(Boolean).map((l) => l.split("=", 2) as [string, string]));
+}
+
+test("a run for a commit edge already holds, or an older one, builds and publishes nothing: the newest commit builds next", () => {
+  expect(plan("one", "two")).toMatchObject({ skip: "true", "has-cli": "false", "build-app": "false" });
+  expect(plan("two", "two")).toMatchObject({ skip: "true", "has-cli": "false" });
+  // A newer commit than edge's builds, as does the first build of all.
+  expect(plan("two", "one")).toMatchObject({ skip: "false", "has-cli": "true" });
+  expect(plan("two", undefined)).toMatchObject({ skip: "false", "has-cli": "true", "build-app": "true" });
+  // A run by hand always builds: Rebuild the app on the commit edge holds, or a dispatch from main.
+  expect(plan("two", "two", "workflow_dispatch", "true")).toMatchObject({ skip: "false", "has-cli": "true", "build-app": "true" });
+  expect(plan("two", "two", "workflow_dispatch")).toMatchObject({ skip: "false", "has-cli": "true" });
+  expect(plan("two", "two", "workflow_run", "true")).toMatchObject({ skip: "false", "build-app": "true" });
+  // The build number counts on from the one edge holds, read in the same look.
+  expect(plan("two", "one").build).toMatch(/\.\d+$/);
+  // And a skipped plan skips the publish.
+  expect(yaml("build-release.yml").jobs.publish.if).toContain("needs.plan.outputs.skip != 'true'");
+});

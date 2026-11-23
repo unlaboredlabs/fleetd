@@ -2,9 +2,10 @@
 # before the rename, D203): edge, and the hubs that update from it, only ever take a green main commit, never one whose
 # CI failed or is still running. A build takes longer than merges come, so a newer green commit never cancels a running
 # edge build: it waits, and a still newer one replaces it while it waits, so the newest builds next and the ones between
-# are skipped. A re-run of an older commit's CI that passes builds it too, and publishes nothing over a newer one. The
-# app change check compares with what the release carries, so nothing a skipped run would have shipped is lost, and the
-# publish job skips a build when the release already holds a newer commit.
+# are skipped. A CI pass for a commit edge already holds, or an older one (a second pass, a re-run), stops at its plan
+# in seconds rather than holding the one build slot for a whole build (build-release.yml). One that arrives while a
+# newer commit waits still replaces it, and that commit then builds with the next merge.
+# The app change check compares with what the release carries, so nothing a skipped run would have shipped is lost.
 # Pull requests that change the release pipeline itself get a dry run on Linux (CLI and the app's Linux packages),
 # publishing nothing. The mac app job runs only for a main push that changed the app, a tag, or a manual dispatch
 # (from a branch: a dry run that publishes nothing).

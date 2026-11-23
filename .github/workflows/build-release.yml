@@ -47,6 +47,7 @@ jobs:
       build: ${{ steps.plan.outputs.build }}
       has-cli: ${{ steps.plan.outputs.has-cli }}
       build-app: ${{ steps.plan.outputs.build-app }}
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -59,6 +60,12 @@ jobs:
           FORCE_APP: ${{ inputs.force-app }}
         run: |
           build=""
+          # What edge holds now, read once: its build number, commit and app's commit.
+          edge='{}'
+          if [ "$CHANNEL" = edge ]; then
+            edge="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null || true)"
+            jq -e . <<< "$edge" > /dev/null 2>&1 || edge='{}'
+          fi
           if [ "$CHANNEL" = stable ]; then
             version="${GITHUB_REF_NAME#v}"
           else
@@ -68,7 +75,7 @@ jobs:
             # a time, edge.yml). A build that fails or isn't published leaves its number to the next.
             now="$(date -u +%Y%m%d%H%M)"
             day="${now:0:4}.$((10#${now:4:2})).$((10#${now:6:2}))"
-            held="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null | jq -r '.build // empty' || true)"
+            held="$(jq -r '.build // empty' <<< "$edge")"
             nth=1
             if [ "${held%.*}" = "$day" ]; then nth=$((${held##*.} + 1)); fi
             build="$day.$nth"
@@ -85,15 +92,30 @@ jobs:
           # edge release there is nothing to compare with, so the app is built.
           build_app=true
           if [ "$CHANNEL" = edge ] && [ "$PUBLISH" = true ] && [ "$FORCE_APP" != true ]; then
-            prev="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null | jq -r '.appCommit // empty' || true)"
+            prev="$(jq -r '.appCommit // empty' <<< "$edge")"
             if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null &&
               git diff --quiet "$prev" HEAD -- app; then
               build_app=false
             fi
             echo "app last built from: ${prev:-none}"
           fi
-          echo "version=$version build=$build has-cli=$has_cli build-app=$build_app"
+          # A CI pass for a commit edge already holds, or an older one (a second pass of a commit, a re-run), builds
+          # nothing: it would hold edge's one build slot for its whole build (the Mac app's runner can take a quarter
+          # of an hour) while newer commits wait, and its publish would skip it anyway. It ends here in seconds. A run
+          # started by hand (Rebuild the app among them) always builds.
+          skip=false
+          if [ "$CHANNEL" = edge ] && [ "$PUBLISH" = true ] && [ "$GITHUB_EVENT_NAME" = workflow_run ] && [ "$FORCE_APP" != true ]; then
+            held="$(jq -r '.commit // empty' <<< "$edge")"
+            if [ -n "$held" ] && git cat-file -e "$held^{commit}" 2>/dev/null && git merge-base --is-ancestor "$RELEASE_SHA" "$held"; then
+              echo "edge already holds $held, which has $RELEASE_SHA: nothing to build"
+              skip=true
+              has_cli=false
+              build_app=false
+            fi
+          fi
+          echo "version=$version build=$build has-cli=$has_cli build-app=$build_app skip=$skip"
           {
+            echo "skip=$skip"
             echo "version=$version"
             echo "build=$build"
             echo "has-cli=$has_cli"
@@ -488,7 +510,7 @@ jobs:
     needs: [plan, cli, cli-macos, desktop-macos, desktop-linux]
     # Skipped builds (no CLI yet, app unchanged) must not skip publishing; failed or cancelled ones must.
     if: >-
-      always() && inputs.publish && needs.plan.result == 'success' &&
+      always() && inputs.publish && needs.plan.result == 'success' && needs.plan.outputs.skip != 'true' &&
       !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     timeout-minutes: 10
