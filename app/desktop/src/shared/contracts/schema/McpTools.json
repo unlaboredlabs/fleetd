@@ -3012,6 +3012,10 @@
           "minLength": 1,
           "type": "string"
         },
+        "byHand": {
+          "description": "Merged by a person on GitHub rather than by the train; set on merge.",
+          "type": "boolean"
+        },
         "changeId": {
           "$ref": "#/$defs/ChangeId"
         },

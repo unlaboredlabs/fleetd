@@ -84,6 +84,12 @@ export class GhIssues implements IssueGitHub {
     return (await this.gh.pull(repo, n)).body ?? "";
   }
 
+  async pullMerge(repo: string, n: number): Promise<{ sha?: string } | undefined> {
+    const p = await this.gh.pull(repo, n);
+    if (!p.merged) return undefined;
+    return p.merge_commit_sha ? { sha: p.merge_commit_sha } : {};
+  }
+
   async setPullBody(repo: string, n: number, body: string): Promise<void> {
     const path = `repos/${repo}/pulls/${n}`;
     const r = await this.gh.exchange("PATCH", path, ACCEPT, [["body", body]]);

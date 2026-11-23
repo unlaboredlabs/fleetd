@@ -248,7 +248,7 @@ export async function candidates(t: Train, repo: string, ready: Change[]): Promi
       continue;
     }
     if (pull.merged) {
-      await t.abandon(change, "was merged outside the train");
+      await t.mergedOnGitHub(change, pull);
       settled = true;
       continue;
     }
