@@ -6363,8 +6363,8 @@ export type ProfileUpdateInput = {
   fast?: boolean;
   id: number;
   /**
-   * True makes it the one leads start on, from each lead's next start; false (on that one) or true on the default
-   * has leads start on the default again.
+   * True makes it the one leads run on, each switching at its next idle moment; false (on that one) or true on the default
+   * has leads run on the default again.
    */
   lead?: boolean;
   /** Setting the model again clears a refusal. */
@@ -6991,9 +6991,9 @@ export type KnownProjectRowState = "working" | "waiting_on_you" | "blocked" | "i
 export type ProjectRowState = KnownProjectRowState | (string & {});
 
 export type ProjectSetInput = {
-  /** Drop its lead's own profile: its lead starts on the hub's lead profile again, from its next start. */
+  /** Drop its lead's own profile: its lead switches back to the hub's lead profile at its next idle moment. */
   leadDefault?: boolean;
-  /** The profile its lead starts on from its next start, any of the hub's; absent: unchanged. */
+  /** The profile its lead runs on, switching at its next idle moment, any of the hub's; absent: unchanged. */
   leadProfile?: ProfileName;
   /** Start its lead again on its lead profile now, keeping its chat, memory and orders; a turn under way is stopped first. */
   leadRestart?: boolean;

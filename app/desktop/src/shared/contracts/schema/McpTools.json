@@ -16909,7 +16909,7 @@
           "type": "integer"
         },
         "lead": {
-          "description": "True makes it the one leads start on, from each lead's next start; false (on that one) or true on the default\nhas leads start on the default again.",
+          "description": "True makes it the one leads run on, each switching at its next idle moment; false (on that one) or true on the default\nhas leads run on the default again.",
           "type": "boolean"
         },
         "model": {
@@ -18374,12 +18374,12 @@
     "ProjectSetInput": {
       "properties": {
         "leadDefault": {
-          "description": "Drop its lead's own profile: its lead starts on the hub's lead profile again, from its next start.",
+          "description": "Drop its lead's own profile: its lead switches back to the hub's lead profile at its next idle moment.",
           "type": "boolean"
         },
         "leadProfile": {
           "$ref": "#/$defs/ProfileName",
-          "description": "The profile its lead starts on from its next start, any of the hub's; absent: unchanged."
+          "description": "The profile its lead runs on, switching at its next idle moment, any of the hub's; absent: unchanged."
         },
         "leadRestart": {
           "description": "Start its lead again on its lead profile now, keeping its chat, memory and orders; a turn under way is stopped first.",

@@ -203,6 +203,37 @@ test("a change of the hub's lead profile switches each lead on it at its next id
   await until(() => t.launched.length === 4);
   expect(t.launched[3]).toBe("sonnet");
   expect(t.interrupted).toEqual([]);
+
+  // A rename runs nothing new: no lead starts again for it.
+  threadIs(t.hub, "idle");
+  const renamed = await t.call<{ next: string }>("profile_update", { id: t.sonnet.id, name: "sonnet-lead" }, ADMIN);
+  expect(renamed.next).not.toContain("leads on it switch");
+  await settle();
+  expect(t.launched.length).toBe(4);
+  // An edit of what it runs says leads on it switch.
+  const edited = await t.call<{ next: string }>("profile_update", { id: t.sonnet.id, effort: "high" }, ADMIN);
+  expect(edited.next).toContain("leads on it switch at their next idle moment");
+  await until(() => t.launched.length === 5);
+});
+
+test("a bot's Lead model pick answers at once; the switch goes on in the background", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "idle");
+  // The lead's machine is slow to start the new session.
+  let started!: () => void;
+  const launch = leadWiring(t.hub).ports.launch;
+  leadWiring(t.hub).ports.launch = async (...args) => {
+    await new Promise<void>((resolve) => (started = resolve));
+    return launch(...args);
+  };
+  const out = await t.call<ProjectSetOutput>("project_set", { ...PROJECT, leadProfile: "opus" });
+  expect(out.leadProfile).toBe("opus");
+  expect(t.launched.length).toBe(1);
+  await until(() => started !== undefined);
+  started();
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe("opus");
 });
 
 test("leadRestart starts a lead on its pick now", async () => {
