@@ -63,6 +63,8 @@ export function useReplay(video: Blob | undefined, onTime: (ms: number) => void,
       onEnd: () => hooks.current.onEnd(),
       onError: () => {
         replay.close();
+        // Stopped: the basic player that takes over starts paused.
+        hooks.current.onEnd();
         setBroken({ got });
       },
     });

@@ -68,14 +68,16 @@ export function useVideo(
   );
   // A JPEG newer than the canvas's picture, drawn into it once decoded (off the page's main work): only while the
   // canvas shows (its H.264 drew) or something takes its pictures (a 3D frame), never for a hidden canvas nobody
-  // reads. A seq lower than the canvas's is a relinked node counting from the start again.
+  // reads. JPEG and H.264 frames share one count, so while H.264 shows, the JPEG beneath is older than the canvas's
+  // picture and never drawn over it; with none showing, a seq lower than the canvas's is a relinked node counting from
+  // the start again.
   const jpegB64 = picture?.jpegB64;
   const jpegSeq = picture?.seq;
   const shows = drawn !== undefined && drawn.sessionId === sessionId && drawn.seq > (under ?? 0);
   const wanted = shows || surface.taken();
   useEffect(() => {
     if (jpegB64 === undefined || jpegSeq === undefined || !wanted || typeof createImageBitmap === "undefined") return undefined;
-    if (jpegSeq < onCanvas.current) onCanvas.current = -1;
+    if (!shows && jpegSeq < onCanvas.current) onCanvas.current = -1;
     if (jpegSeq <= onCanvas.current) return undefined;
     let live = true;
     void createImageBitmap(new Blob([bytes(jpegB64)], { type: "image/jpeg" })).then(
@@ -91,7 +93,7 @@ export function useVideo(
     return () => {
       live = false;
     };
-  }, [jpegB64, jpegSeq, surface, wanted]);
+  }, [jpegB64, jpegSeq, surface, wanted, shows]);
   useEffect(() => {
     if (video === undefined || typeof VideoDecoder === "undefined") return;
     const { fresh, lost } = unread(video.frames, video.dropped, decoded.current);
