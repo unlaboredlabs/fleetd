@@ -400,7 +400,8 @@ before merging", or classic protection's strict status checks), GitHub refuses a
 The train then rebases it and runs its CI again, which never counts as a failure, but PRs land one at a time. The
 setting says so under the control, and for an admin of the repo it has a button that turns off that one setting and
 leaves the rest of the rule, its required checks too, as it was. A rule set by an organization's ruleset is its
-owners' to change.
+owners' to change. The line shows the rule as the train last read it, so the settings open without waiting on
+GitHub: a rule read over 10 minutes ago, or not read yet, is read in the background, and the next open shows it.
 
 Review, the repo's GitHub rules, `hold` and [Who merges](#who-merges) work as in **Test, then merge**: where you
 merge, the train merges only the PRs its rules let merge themselves, each the same way. A revert the train opened (below) goes before

@@ -12,19 +12,56 @@ import { useNow } from "../live";
 import { useData, useHub, useToolQuery } from "../../src/data/react";
 import { errorText, useHubCall, useRefetch } from "./hub";
 import { CommandLine } from "../onboarding/Prose";
+import { HoldsPlace } from "./HoldsPlace";
 import { GroupNote, SettingsRow, SettingsSection } from "./parts";
 import { AUTO, changed, draftOf, imageLine, pickOptions, pickValue, runsOnHint, setupFrom, whereOf, type SetupDraft } from "./setupModel";
 import s from "./settings.module.css";
 
-/** One of the project's other repos' computer, read with `repo`, once the hub answers. */
-export function RepoComputer({ settings, repo }: { settings: Settings; repo: RepoName }) {
-  const read = useToolQuery("project_settings_get", { machineId: settings.machineId, projectId: settings.projectId, repo });
-  const own = read.data?.settings;
-  return own === undefined ? null : <Computer settings={own} title={`Computer: ${repo}`} repo={repo} />;
+/** One of the project's other repos' computer, read with `repo`: in its place at once, filled in once the hub answers. */
+export function RepoComputer({ project, repo }: { project: { machineId: string; projectId: string }; repo: RepoName }) {
+  const read = useToolQuery("project_settings_get", { machineId: project.machineId, projectId: project.projectId, repo });
+  if (read.isError) return null;
+  return <Computer project={project} settings={read.data?.settings} title={`Computer: ${repo}`} repo={repo} />;
 }
 
-/** A repo's computer, its image and its setup: the project's own directory's without `repo`. */
-export function Computer({ settings, title, repo, reveal }: { settings: Settings; title: string; repo?: RepoName; reveal?: string }) {
+const COMPUTER_HINT = "What each agent's computer has before it starts. Setup runs once in a clean box, and agents start from the image it leaves.";
+const SETUP_HINT =
+  "One command a line, in order, each run with sh -c in the worktree with the bot's variables, for up to 10 minutes: install tools and dependencies, generate code. The first that fails stops the rest, and the agent starts anyway, told what failed. Never write a secret to disk here: the image would keep it.";
+const SKIP_HINT =
+  "Files whose contents decide what setup makes, one a line, such as lockfiles. A worktree set up before with the same commands and the same contents of these is not set up again. None: setup always runs.";
+
+/**
+ * A repo's computer, its image and its setup: the project's own directory's without `repo`. Until the hub answers
+ * (`settings` undefined) its rows hold their place, empty and off.
+ */
+export function Computer(props: {
+  project: { machineId: string; projectId: string };
+  settings: Settings | undefined;
+  title: string;
+  repo?: RepoName;
+  reveal?: string;
+}) {
+  const { project, settings, title, repo, reveal } = props;
+  // As tall as it was when last shown here until the hub answers, so its image and setup rows move nothing under them.
+  return (
+    <HoldsPlace id={`computer:${project.machineId}/${project.projectId}/${repo ?? ""}`} ready={settings !== undefined}>
+      {settings === undefined ? (
+        <SettingsSection title={title} reveal={reveal} hint={COMPUTER_HINT}>
+          <SettingsRow title="Setup" hint={SETUP_HINT}>
+            <Textarea mono aria-label="Setup commands" minRows={2} value="" disabled placeholder="…" onChange={() => undefined} />
+          </SettingsRow>
+          <SettingsRow title="Skip when unchanged" hint={SKIP_HINT}>
+            <Textarea mono aria-label="Skip when unchanged" minRows={1} value="" disabled placeholder="…" onChange={() => undefined} />
+          </SettingsRow>
+        </SettingsSection>
+      ) : (
+        <ComputerRead settings={settings} title={title} {...(repo === undefined ? {} : { repo })} {...(reveal === undefined ? {} : { reveal })} />
+      )}
+    </HoldsPlace>
+  );
+}
+
+function ComputerRead({ settings, title, repo, reveal }: { settings: Settings; title: string; repo?: RepoName; reveal?: string }) {
   const [draft, setDraft] = useState<SetupDraft>(() => draftOf(settings.setup));
   const [busy, setBusy] = useState(false);
   const [echo, setEcho] = useState<{ ok: boolean; text: string } | null>(null);
@@ -57,13 +94,13 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
     <SettingsSection
       title={title}
       reveal={reveal}
-      hint="What each agent's computer has before it starts. Setup runs once in a clean box, and agents start from the image it leaves."
+      hint={COMPUTER_HINT}
     >
       {repo === undefined ? <RunsOnRow settings={settings} /> : null}
       <ImageRow settings={settings} repo={repo} commands={(settings.setup.commands ?? []).length} />
       <SettingsRow
         title="Setup"
-        hint="One command a line, in order, each run with sh -c in the worktree with the bot's variables, for up to 10 minutes: install tools and dependencies, generate code. The first that fails stops the rest, and the agent starts anyway, told what failed. Never write a secret to disk here: the image would keep it."
+        hint={SETUP_HINT}
       >
         <Textarea
           mono
@@ -78,7 +115,7 @@ export function Computer({ settings, title, repo, reveal }: { settings: Settings
       </SettingsRow>
       <SettingsRow
         title="Skip when unchanged"
-        hint="Files whose contents decide what setup makes, one a line, such as lockfiles. A worktree set up before with the same commands and the same contents of these is not set up again. None: setup always runs."
+        hint={SKIP_HINT}
       >
         <Textarea
           mono

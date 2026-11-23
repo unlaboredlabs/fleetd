@@ -53,6 +53,8 @@ import { vaultServed } from "./vaultModel";
 
 type Echo = { ok: boolean; text: string };
 type Ref = { machineId: string; projectId: string };
+/** What the page shows before project_settings_get answers: the app's own summary of the project has it. */
+type Shell = Pick<Settings, "machineId" | "projectId" | "title" | "workspaceRoot">;
 
 /** Hands the changes to main, which seals each secret and calls project_env_set; throws the hub's error. */
 function useEnvSubmit(ref: Ref) {
@@ -77,6 +79,7 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
   }, [key]);
 
   const read = useToolQuery("project_settings_get", { machineId: ref?.machineId ?? "", projectId: ref?.projectId ?? "" }, { enabled: live && ref !== undefined });
+  const summary = useData((d) => (ref ? d.projects[projectKey(ref)] : undefined));
 
   if (!live) {
     return (
@@ -88,7 +91,10 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
       </div>
     );
   }
-  const settings = read.data?.settings ?? null;
+  const got = read.data?.settings;
+  const settings = got && ref && got.projectId === ref.projectId && got.machineId === ref.machineId ? got : undefined;
+  // The page shows at once from the app's summary; what only the hub's answer has fills in its own row.
+  const project: Shell | undefined = settings ?? summary;
   return (
     <div className={s.scroll} data-screen="settings.projects">
       <div className={s.column}>
@@ -100,8 +106,14 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
             <Button onClick={() => void read.refetch()}>Try again</Button>
           </div>
         ) : null}
-        {settings && ref && settings.projectId === ref.projectId && settings.machineId === ref.machineId ? (
-          <ProjectPage key={key} settings={settings} refresh={async () => (await read.refetch()).data?.settings} onDeleted={() => navigate({ id: "settings", tab: "projects" })} />
+        {project && ref && !read.isLoadingError ? (
+          <ProjectPage
+            key={key}
+            project={project}
+            settings={settings}
+            refresh={async () => (await read.refetch()).data?.settings}
+            onDeleted={() => navigate({ id: "settings", tab: "projects" })}
+          />
         ) : ref && !read.isLoadingError ? (
           <Text tone="quiet">Loading…</Text>
         ) : null}
@@ -114,9 +126,12 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
  * Delete opens only on a fresh list of the project's worktrees, so the confirm names every one with uncommitted
  * changes: while its machine is offline, too old, or can't list them, Delete is off and says why. A project whose
  * machine was removed has no worktrees anywhere: its Delete only forgets it in fleetd (RemoveProjectDialog's `gone`).
+ * Until project_settings_get answers (`settings` undefined) the page shows from `project`, the app's summary, and each
+ * row that needs the answer keeps its place: its count, its computer's setup and Delete fill in when it comes.
  */
-function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
-  const ref = { machineId: settings.machineId, projectId: settings.projectId };
+function ProjectPage(props: { project: Shell; settings: Settings | undefined; refresh: () => Promise<Settings | undefined>; onDeleted: () => void }) {
+  const { project, settings, refresh, onDeleted } = props;
+  const ref = { machineId: project.machineId, projectId: project.projectId };
   const summary = useData((d) => d.projects[projectKey(ref)]);
   const vault = useData((d) => vaultServed(d.features));
   // A folder rather than a git repo: the hub knows no repo of its own.
@@ -124,11 +139,12 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   const [deleting, setDeleting] = useState<RemoveTarget | null>(null);
   const [checking, setChecking] = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
-  const gone = useData((d) => d.fresh && d.machines[settings.machineId] === undefined);
-  const unknown = gone || settings.worktrees !== undefined ? null : (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.");
+  const gone = useData((d) => d.fresh && d.machines[project.machineId] === undefined);
+  const reading = settings === undefined && !gone;
+  const unknown = gone || settings === undefined || settings.worktrees !== undefined ? null : (settings.worktreesUnknown ?? "its machine hasn't listed its worktrees.");
   const open = async () => {
     if (gone) {
-      setDeleting({ ...ref, title: settings.title, path: settings.workspaceRoot, deleting: { unsaved: [], plain } });
+      setDeleting({ ...ref, title: project.title, path: project.workspaceRoot, deleting: { unsaved: [], plain } });
       return;
     }
     setChecking(true);
@@ -149,22 +165,40 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
   return (
     <>
       <SettingsSection title="Bot">
-        <PictureSetting project={summary ?? { ...ref, title: settings.title }} />
-        <BotLookSetting project={summary ?? { ...ref, title: settings.title }} />
-        <NameSetting settings={settings} />
+        <PictureSetting project={summary ?? { ...ref, title: project.title }} />
+        <BotLookSetting project={summary ?? { ...ref, title: project.title }} />
+        <NameSetting project={project} />
       </SettingsSection>
-      <RepoSection settings={settings}>
-        {vault ? <EnvInVault count={settings.env.length} projectRef={ref} /> : <EnvSetting env={settings.env} projectRef={ref} />}
+      <RepoSection project={project} settings={settings}>
+        {vault ? (
+          <EnvInVault count={settings?.env.length} projectRef={ref} />
+        ) : settings ? (
+          <EnvSetting env={settings.env} projectRef={ref} />
+        ) : (
+          <SettingsRow
+            reveal="projects.env"
+            title="Environment variables"
+            hint="Given to every agent the bot starts. Secrets are never shown again."
+            control={
+              <>
+                <Button variant="ghost" disabled>
+                  Paste .env
+                </Button>
+                <AddButton label="Add variable" disabled onClick={() => undefined} />
+              </>
+            }
+          />
+        )}
         {summary?.issueOrders !== undefined ? <IssueOrdersSetting projectRef={ref} on={summary.issueOrders} /> : null}
       </RepoSection>
       <SettingsSection title="Safety">
-        <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings.mergeRules} />
-        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings.upToDate} />
+        <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} />
+        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} />
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">
         <BotConnections projectRef={ref} />
-        <SigninsSetting projectRef={ref} kept={settings.signinsKept} />
+        <SigninsSetting projectRef={ref} kept={settings?.signinsKept} />
         <SkillsSetting projectRef={ref} />
         <PaymentsSetting projectRef={ref} />
       </SettingsSection>
@@ -172,18 +206,18 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
         <ChatTagsSetting projectRef={ref} on={summary?.chatTags === true} />
       </SettingsSection>
       <SettingsSection title="Archive or delete">
-        <ArchiveSetting projectRef={ref} title={settings.title} archivedAt={summary?.archivedAt} />
+        <ArchiveSetting projectRef={ref} title={project.title} archivedAt={summary?.archivedAt} />
         <SettingsRow
           reveal="projects.delete"
           title="Delete bot"
           hint={
             gone
-              ? `${settings.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
+              ? `${project.machineId} was removed from this hub, so no machine holds its files: deleting only forgets it in fleetd.`
               : `Stops it and erases everything fleetd keeps for it, its worktrees too. ${plain ? "Its folder stays unless you tick it when you delete." : "Its checkout stays unless you tick it when you delete; its branches and pull requests stay either way."}`
           }
           line={unknown !== null ? `Deleting needs its machine to list its worktrees first: ${unknown}` : null}
           control={
-            <DangerButton disabled={unknown !== null || checking} onClick={() => void open()}>
+            <DangerButton disabled={reading || unknown !== null || checking} onClick={() => void open()}>
               {checking ? "Checking its worktrees…" : "Delete bot…"}
             </DangerButton>
           }
@@ -235,12 +269,12 @@ function Problem({ text }: { text: string | null }) {
   );
 }
 
-function NameSetting({ settings }: { settings: Settings }) {
-  const [draft, setDraft] = useState(settings.title);
+function NameSetting({ project }: { project: Shell }) {
+  const [draft, setDraft] = useState(project.title);
   const { busy, echo, save } = useSave();
   const title = draft.trim();
   // Rename shows once the name differs; an empty one says why it can't be saved.
-  const dirty = draft !== settings.title;
+  const dirty = draft !== project.title;
   return (
     <SettingsRow
       reveal="projects.name"
@@ -257,7 +291,7 @@ function NameSetting({ settings }: { settings: Settings }) {
             <span className={s.lineBlock}>A bot needs a name.</span>
           ) : null}
           <Truncate size="sm" tone="quiet" mono>
-            {settings.workspaceRoot}
+            {project.workspaceRoot}
           </Truncate>
         </>
       }
@@ -267,8 +301,8 @@ function NameSetting({ settings }: { settings: Settings }) {
           {dirty ? (
             <Button
               variant="primary"
-              disabled={busy || title === "" || title === settings.title}
-              onClick={() => save({ machineId: settings.machineId, projectId: settings.projectId, title }, `Renamed to ${title}.`)}
+              disabled={busy || title === "" || title === project.title}
+              onClick={() => save({ machineId: project.machineId, projectId: project.projectId, title }, `Renamed to ${title}.`)}
             >
               {busy ? "Saving…" : "Rename"}
             </Button>
@@ -396,14 +430,17 @@ export function MemoryRefreshSetting({ settings, job }: { settings: Settings; jo
   );
 }
 
-/** On a hub with a vault, the project's variables live in its Vault tab: one line here says so and links there. */
-function EnvInVault({ count, projectRef }: { count: number; projectRef: Ref }) {
+/**
+ * On a hub with a vault, the project's variables live in its Vault tab: one line here says so and links there. Its
+ * count is an ellipsis until the hub answers.
+ */
+function EnvInVault({ count, projectRef }: { count: number | undefined; projectRef: Ref }) {
   return (
     <SettingsRow
       reveal="projects.env"
       title="Environment variables"
       hint="Given to every agent the bot starts. They are kept in the bot's vault."
-      line={count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}
+      line={count === undefined ? "…" : count === 0 ? "None yet." : `${String(count)} ${count === 1 ? "variable" : "variables"}.`}
       control={
         <Button variant="secondary" onClick={() => navigate({ id: "settings", tab: "project-vault", for: `${projectRef.machineId}/${projectRef.projectId}` })}>
           Open Vault

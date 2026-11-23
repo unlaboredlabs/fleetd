@@ -56,7 +56,7 @@ import {
   setRiskRules,
 } from "../project_lead/store.ts";
 import { trainArea } from "../train/index.ts";
-import { ruleOf, turnOffOn } from "../train/up_to_date.ts";
+import { knownRuleOf, turnOffOn } from "../train/up_to_date.ts";
 import { rulesProblems, tidyRules } from "../train/merge_rules.ts";
 import * as repos from "../repos/store.ts";
 import { events } from "../store/events.ts";
@@ -275,7 +275,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   const signinsKept = worktrees?.signinsKept;
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
-  const upToDate = await upToDateRules(hub, r);
+  const upToDate = upToDateRules(hub, r);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -385,17 +385,24 @@ export const mergeModeNext = (mode: MergeMode) =>
     ? "Each reviewed PR merges once its own CI passes on a fresh rebase, side by side (4 at once unless the repo's .fleetd/train.json sets ciAtOnce); a red main afterwards is bisected and its culprit reverted."
     : "Ready PRs merge in batches whose combined tree passed CI first.";
 
-/** The bases of the project's GitHub repos that require up-to-date branches, while it merges, then verifies. */
-async function upToDateRules(hub: Hub, r: ProjectRef): Promise<UpToDateRule[]> {
+/**
+ * The bases of the project's GitHub repos that require up-to-date branches, while it merges, then verifies: as the
+ * train last read them, each at the base its work lands on, never waiting on GitHub (`knownRuleOf`).
+ */
+function upToDateRules(hub: Hub, r: ProjectRef): UpToDateRule[] {
   if (mergeModeOf(hub.db.conn, r) !== "verify_after") return [];
   const { train, host } = trainArea(hub);
   const out: UpToDateRule[] = [];
   for (const [repo] of host.githubRepos(r)) {
-    const rule = await ruleOf(train, repo).catch(() => undefined);
+    const rule = knownRuleOf(train, repo, baseOf(hub, r, repo));
     if (rule) out.push(rule);
   }
   return out;
 }
+
+/** The branch `repo`'s work lands on, as the project's repo row records it; undefined until fleetd knows it. */
+const baseOf = (hub: Hub, r: ProjectRef, repo: string): string | undefined =>
+  repos.of(hub.db.conn, r).find((x) => x.repoKey?.toLowerCase() === `github.com/${repo}`.toLowerCase())?.base;
 
 /** Turns off up-to-date branches on one of the project's repos, an admin's alone; nothing else of its rules. */
 async function upToDateOff(hub: Hub, caller: Caller, r: ProjectRef, repo: string): Promise<void> {
@@ -404,7 +411,8 @@ async function upToDateOff(hub: Hub, caller: Caller, r: ProjectRef, repo: string
   const name = repo.toLowerCase();
   if (!host.githubRepos(r).some(([x]) => x.toLowerCase() === name)) throw new ToolError("invalid", `${repo} is not one of this bot's repos.`, "Give one of its repos on GitHub.");
   try {
-    await turnOffOn(train, name);
+    // The base its line names, so the rule turned off is the one the person saw.
+    await turnOffOn(train, name, baseOf(hub, r, name));
   } catch (error) {
     throw new ToolError("failed", `GitHub didn't change ${repo}'s rule: ${(error as Error).message}`, "A repo admin turns off \"Require branches to be up to date\" in its ruleset on GitHub.");
   }

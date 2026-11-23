@@ -3,6 +3,7 @@
 // reverted first and sent back to its writer; a flake on the base reverts nothing; a base that requires branches up to
 // date makes a PR go again, never fail. Counts, not milliseconds, measure what the line saves.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { knownRuleOf, turnOffOn } from "../src/hub/train/up_to_date.ts";
 import { gitOut, Kit, REPO } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -201,3 +202,55 @@ test("one slow PR holds no other: side by side lands the rest in a fraction of t
   // beside it. A ratio of times on the same clock, never a budget in milliseconds.
   expect(verify / batches).toBeLessThan(0.6);
 }, 120_000);
+
+/** Waits for the train to hold `base`'s rules, read in the background. */
+async function held(k: Kit, base: string): Promise<void> {
+  for (let i = 0; i < 400 && !k.train.ciConfigs.has(`${REPO}\u0000${base}`); i++) await Bun.sleep(5);
+}
+
+test("a page's up-to-date line never waits on GitHub: it reads what the train holds, and reads a missing base in the background", async () => {
+  const k = new Kit();
+  kits.push(k);
+  // Nothing read yet: no line now, and no GitHub call answered before it returns.
+  expect(knownRuleOf(k.train, REPO, "main")).toBeUndefined();
+  await held(k, "main");
+  const config = k.train.ciConfigs.get(`${REPO}\u0000main`)?.[1];
+  if (config === undefined || config instanceof Error) throw new Error("main's rules were not read");
+  // The train's copy says main requires up-to-date branches, from a ruleset of the repo's: the line, with no call.
+  k.train.ciConfigs.set(`${REPO}\u0000main`, [k.clock.ms, { ...config, rules: { ...config.rules, admin: true, upToDate: { rulesets: [7], orgRulesets: [], classic: false } } }]);
+  const calls = k.gh.calls.length;
+  expect(knownRuleOf(k.train, REPO, "main")).toEqual({ repo: REPO, base: "main", line: expect.stringContaining("one at a time"), canTurnOff: true });
+  await Bun.sleep(20);
+  expect(k.gh.calls.length).toBe(calls);
+});
+
+test("a repo whose base isn't known yet has its default branch asked in the background, and the next page read uses it", async () => {
+  const k = new Kit();
+  kits.push(k);
+  expect(knownRuleOf(k.train, REPO, undefined)).toBeUndefined();
+  await held(k, "main");
+  expect(k.gh.calls.some((c) => c.includes(`repos/${REPO}`))).toBe(true);
+  const config = k.train.ciConfigs.get(`${REPO}\u0000main`)?.[1];
+  if (config === undefined || config instanceof Error) throw new Error("main's rules were not read");
+  k.train.ciConfigs.set(`${REPO}\u0000main`, [k.clock.ms, { ...config, rules: { ...config.rules, upToDate: { rulesets: [], orgRulesets: [9], classic: false } } }]);
+  expect(knownRuleOf(k.train, REPO, undefined)).toMatchObject({ base: "main", canTurnOff: false });
+});
+
+test("Turn off changes the rule on the base its line names, never the repo's default branch", async () => {
+  const k = new Kit();
+  kits.push(k);
+  // The bot's work lands on release, which requires up-to-date branches by classic protection; main is the default.
+  expect(knownRuleOf(k.train, REPO, "release")).toBeUndefined();
+  await held(k, "release");
+  const config = k.train.ciConfigs.get(`${REPO}\u0000release`)?.[1];
+  if (config === undefined || config instanceof Error) throw new Error("release's rules were not read");
+  k.train.ciConfigs.set(`${REPO}\u0000release`, [k.clock.ms, { ...config, rules: { ...config.rules, admin: true, upToDate: { rulesets: [], orgRulesets: [], classic: true } } }]);
+  expect(knownRuleOf(k.train, REPO, "release")?.base).toBe("release");
+  const before = k.gh.calls.length;
+  await turnOffOn(k.train, REPO, "release").catch(() => undefined);
+  const asked = k.gh.calls.slice(before).map((c) => c.join(" "));
+  expect(asked.some((c) => c.includes(`repos/${REPO}/branches/release/protection/required_status_checks`))).toBe(true);
+  expect(asked.some((c) => c.includes("branches/main"))).toBe(false);
+  // Nor is the default branch asked, which would be the base before the line named one.
+  expect(asked.some((c) => / repos\/acme\/storefront( |$)/.test(c))).toBe(false);
+});

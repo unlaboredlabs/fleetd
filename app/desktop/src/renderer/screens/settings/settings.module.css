@@ -596,3 +596,13 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
+
+/* A part held at the height it last had while the hub's answer comes (HoldsPlace): its section and card fill it. */
+.holding {
+  display: flex;
+  flex-direction: column;
+}
+.holding > section,
+.holding > section > :last-child {
+  flex: 1;
+}
