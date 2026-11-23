@@ -152,7 +152,7 @@ export const setProfile = async (hub: Hub, p: ProjectRef, view: ProfilesListOutp
   return r.ok ? { ok: true, value: r.output.profiles } : r;
 };
 
-/** Picks the profile its lead starts on from its next start; undefined: the hub's lead profile again. */
+/** Picks the profile its lead runs on, switching at its next idle moment; undefined: the hub's lead profile again. */
 export const setLeadProfile = async (hub: Hub, p: ProjectRef, name: string | undefined): Promise<Result<null>> => {
   const r = await hub.call("project_set", { ...ref(p), ...(name === undefined ? { leadDefault: true } : { leadProfile: name }) });
   return r.ok ? { ok: true, value: null } : r;

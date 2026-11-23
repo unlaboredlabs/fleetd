@@ -515,13 +515,14 @@ export function register(tools: Registry): void {
       now(hub),
     );
     const lead = input.lead !== undefined ? leadLine(s.leadProfile()) : "";
+    const runs = profile.model !== old.model || profile.effort !== old.effort || profile.fast !== old.fast;
     // An edit of the profile leads run on (its model, effort or fast mode) reaches them as a new pick does.
     leadsFollow(hub);
     const renamed =
       profile.name !== old.name ? ` Ended tasks keep ${old.name} in their history; the ones not yet ended are on ${profile.name} now.` : "";
     return {
       profile,
-      next: `New agents on ${profile.name} run ${profile.model} at ${profile.effort}${profile.fast ? ", fast" : ""} from their next start; running ones keep theirs.${renamed}${lead}`,
+      next: `New agents on ${profile.name} run ${profile.model} at ${profile.effort}${profile.fast ? ", fast" : ""} from their next start; running agents keep theirs${runs && input.lead === undefined ? ", and leads on it switch at their next idle moment" : ""}.${renamed}${lead}`,
     };
   });
 

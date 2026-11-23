@@ -42,8 +42,9 @@ export function register(tools: Registry): void {
     }
     if (input.leadProfile !== undefined || input.leadDefault === true) {
       const lead = area.setLeadProfile(r, project.title, input.leadDefault === true ? undefined : input.leadProfile);
-      // Without a Restart asked too, it switches by itself at its next idle moment (leads.bot-model-pick-switches-at-idle).
-      if (input.leadRestart !== true) await area.switchAtIdle(r);
+      // Without a Restart asked too, it switches by itself at its next idle moment (leads.bot-model-pick-switches-at-idle),
+      // in the background: the picker answers at once, not once the new session started.
+      if (input.leadRestart !== true) void area.switchAtIdle(r);
       said.push(`Its lead runs on ${lead.name}${input.leadRestart === true ? "" : " from its next idle moment, keeping its chat, memory and orders; leadRestart: true stops a turn under way and switches now"}.`);
     }
     if (input.leadRestart === true) {

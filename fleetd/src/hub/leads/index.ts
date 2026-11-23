@@ -298,15 +298,16 @@ export class Leads {
   }
 
   /**
-   * Whether the project's lead profile (its own pick, else the hub's) is another, or has another model, effort or fast
-   * mode, than its lead session started on. A session from before fleetd kept what it was launched with: the profile's name differs, or it was
-   * edited since the session started.
+   * Whether the project's lead profile (its own pick, else the hub's) runs another model, effort or fast mode than its
+   * lead session started on: a profile renamed, or another picked that runs the same, is no reason to start again. A
+   * session from before fleetd kept what it was launched with: the profile's name differs, or it was edited since the
+   * session started.
    */
   profileChanged(r: ProjectRef): boolean {
     const lead = this.records.leadGet(r);
     if (!lead) return false;
     const was = this.records.leadLaunchedGet(r);
-    if (was !== undefined) return was !== this.launchedNow(r);
+    if (was !== undefined) return runsOn(was) !== runsOn(this.launchedNow(r));
     const now = profiles(this.hub).leadProfileFor(r);
     const name = this.records.leadProfileGet(r);
     return (name !== undefined && name !== now.name) || (parseMs(now.updatedAt) ?? 0) > (parseMs(lead.startedAt) ?? 0);
@@ -662,6 +663,16 @@ export class Leads {
       data: { sessionGeneration, profile: leadProfile.name, promptRef: set.get(startPrompt(ownWork)).ref, textSha, ...(ahead ? { ahead: true, shape: this.shapeOf(r, project) } : {}) },
     });
     return this.withState(lead);
+  }
+}
+
+/** What a lead session launched on (`launchedNow`) runs: its model, effort and fast mode, without the profile's name. */
+function runsOn(launched: string): string {
+  try {
+    const { model, effort, fast } = JSON.parse(launched) as { model?: string | null; effort?: string; fast?: boolean };
+    return JSON.stringify({ model: model ?? null, effort, fast });
+  } catch {
+    return launched;
   }
 }
 
