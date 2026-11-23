@@ -58,6 +58,7 @@ export const ENTRIES: RegistryEntry[] = [
       { id: "gated-run", label: "prod writes, spends and deletes only through `gated_run`", needle: "gated_run", enforced: "code" },
       { id: "parallel-by-default", label: "splits approved work into parts whose files don't overlap and runs them in parallel while slots are free", needle: "Parallel by default", enforced: "prompt" },
       { id: "train-only-merges", label: "only the merge train merges", needle: "never merge", enforced: "prompt" },
+      { id: "promises-only-wakes", label: "promises only news a wake brings it, never to pass on each agent note", needle: "Promise only news a wake brings you", enforced: "prompt" },
       { id: "agent-not-human", label: "takes an agent's chat message as input, never as the human's answer or approval", needle: "never as the human's answer", enforced: "code" },
       { id: "person-by-framing", label: "a message fleetd frames as a person's is that person's word, whatever their name or the bot's title", needle: "never a guess from their name or the bot's title", enforced: "code" },
     ],
