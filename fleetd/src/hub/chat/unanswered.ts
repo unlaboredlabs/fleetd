@@ -18,7 +18,7 @@ export const NO_REPLY_LINE = "The lead ended its turn without replying to your m
 
 /** The wake's line: which message has no answer, and that `(quiet)` isn't one. */
 export const askLine = (text: string) =>
-  `- The person's message "${oneLine(text, 200) || "(files only)"}" has no reply: your turn ended without words for them (only \`(quiet)\`, or no text). \`(quiet)\` never answers a person's own message: answer it now, in a line or two, with what you did or found.`;
+  `- The person's message "${oneLine(text, 200) || "(files only)"}" has no reply: your turn ended without words for them (it ended with \`(quiet)\`, which posts nothing, or no text). \`(quiet)\` never answers a person's own message: answer it now, in a line or two, with what you did or found.`;
 
 /**
  * The message each project's lead was asked to answer, by project. In memory: a restart between the ask and its turn's

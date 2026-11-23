@@ -1,6 +1,6 @@
 // A lead turn a person's message came into never ends with the person left waiting (W788): a turn that posts nothing
-// (only `(quiet)`, or no text) asks the lead once to answer, and if that turn posts nothing too, the chat says so. A wake's
-// turn keeps `(quiet)` as silence.
+// (one that ends with `(quiet)`, or no text) asks the lead once to answer, and if that turn posts nothing too, the chat
+// says so. A wake's turn keeps `(quiet)` as silence.
 import { expect, test } from "bun:test";
 import type { Trigger } from "../src/hub/api/lead_lines.ts";
 import { run } from "../src/hub/chat/flow.ts";
@@ -77,6 +77,20 @@ test("a turn answering a person that ends with only (quiet) asks the lead once; 
   done();
 });
 
+test("a turn answering a person with words then (quiet) posts nothing, so the lead is asked once and its answer lands", async () => {
+  const { wakes, person, lead, ends, lines, done } = await rig();
+  person("what model are you");
+  lead("Asked and answered before; nothing new.\n\n(quiet)");
+  await ends();
+  expect(wakes.map((w) => w.kind === "line" && w.line)).toEqual(["unanswered"]);
+  expect(lines()).toEqual(["human: what model are you"]);
+  lead("I'm running on Opus 5.5.");
+  await ends();
+  expect(wakes.length).toBe(1);
+  expect(lines()).toEqual(["human: what model are you", "lead: I'm running on Opus 5.5."]);
+  done();
+});
+
 test("a turn answering a person that ends with no text at all asks the lead; its answer then lands and nothing more is said", async () => {
   const { wakes, person, lead, ends, lines, done } = await rig();
   person("so ??");
@@ -92,7 +106,7 @@ test("a turn answering a person that ends with no text at all asks the lead; its
 test("a turn that answers, a wake's quiet turn, a stopped turn and a turn still followed by another post nothing more", async () => {
   const { hub, wakes, person, lead, ends, lines, done } = await rig();
   person("add dark mode");
-  lead("On it: W5.\n\n(quiet)");
+  lead("On it: W5.");
   await ends();
   // An agent's result wakes the lead later; its turn is quiet, and the person's message was answered before it.
   lead("(quiet)");

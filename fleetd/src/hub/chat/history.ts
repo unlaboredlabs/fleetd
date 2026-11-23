@@ -68,26 +68,29 @@ export const QUIET = "(quiet)";
 
 /**
  * The lead's reply as the person reads it: without a QUIET that stands as a line of its own, outside a code fence, nor
- * the blank line it leaves. A reply can end with one after words it wrote first ("Still running.\n\n(quiet)"), which
- * would otherwise show as a bubble of its own. QUIET in a sentence or a fence is the lead quoting it, and stays.
+ * the blank line it leaves. A reply whose last line is QUIET posts nothing, the words before it included: the lead
+ * chose silence, and what it wrote first only says why ("Already announced in the last message; nothing new
+ * since.\n\n(quiet)" posted as a bubble on 2026-11-23, W868). QUIET in a sentence or a fence is the lead quoting it.
  */
 export function unquiet(text: string): string {
   const out: string[] = [];
   let fence: string | undefined;
   let dropped = false;
+  let last = false;
   for (const line of text.split("\n")) {
     const t = line.trim();
     const before = fence;
     fence = fenceAfter(fence, t);
     if (before === undefined && fence === undefined && t === QUIET) {
-      dropped = true;
+      dropped = last = true;
       continue;
     }
+    if (t !== "") last = false;
     if (dropped && t === "" && (out.length === 0 || out[out.length - 1]!.trim() === "")) continue;
     dropped = false;
     out.push(line);
   }
-  return out.join("\n").trim();
+  return last ? "" : out.join("\n").trim();
 }
 
 /** The code fence open after the trimmed line `t`, given the one open before it. */
