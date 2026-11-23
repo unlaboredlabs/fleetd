@@ -225,23 +225,25 @@ export const askedAt = (messages: readonly { readonly author: string; readonly c
   return undefined;
 };
 
-/** The lead's reply has landed: the chat's newest message is the lead's, whole. Oldest first, as the chat holds them. */
+/** The lead's reply has landed: the chat's newest message of the person's or the lead's is the lead's, whole. Oldest
+ * first, as the chat holds them. */
 export const replied = (messages: readonly { readonly author: string; readonly state: string }[] | undefined): boolean => {
-  const last = messages?.at(-1);
+  const last = messages?.findLast((m) => m.author === "human" || m.author === "lead");
   return last !== undefined && last.author === "lead" && last.state === "final";
 };
 
 /**
  * Whether the person's newest message has no answer yet, for the bot in the reply's place: one of theirs is on its way
- * (`sending`), or the chat's newest message that isn't an agent's is theirs, or the lead's reply still streaming after
- * it. A lead's whole reply or a line of fleetd's own (a stop, a turn that didn't answer) answers it. Whether a turn
- * ended on it since is wakeOf's (`endedAt`). Oldest first, as the chat holds them.
+ * (`sending`), or the chat's newest message of the person's or the lead's is theirs, or the lead's reply still
+ * streaming after it. Only a lead's whole reply answers it, as the hub's own rule has it (leads/recap.ts `answers`): a
+ * line of fleetd's own says something beside it ("The lead restarted on …", a server connected), and a turn that ended
+ * on it (a stop, a quiet turn) is wakeOf's (`endedAt`). Oldest first, as the chat holds them.
  */
 export const waitingFor = (messages: readonly { readonly author: string; readonly state: string }[] | undefined, sending: boolean): boolean => {
   if (sending) return true;
   for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
     const m = messages?.[i];
-    if (m === undefined || m.author === "agent") continue;
+    if (m === undefined || (m.author !== "human" && m.author !== "lead")) continue;
     if (m.author === "lead" && m.state === "streaming") continue;
     return m.author === "human";
   }
