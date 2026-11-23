@@ -128,6 +128,18 @@ test("merged takes only a PR, and the lead's digest says a done task waits on on
   k.hub.shutdown.abort();
 });
 
+test("what a task waits on besides a PR leaves out every wait on that PR, its CI's and its merge's", async () => {
+  const k = await ended();
+  const agent = { projectRef: P, by: "lead:lab-a/p1", agent: { kind: "task" as const, taskId: "T1" } };
+  await leadCall(k.hub, k.t, agent, { op: "wait_ci", url: PR });
+  expect(k.t.waitingOn("T1")).toBe(`wait_ci on ${PR}`);
+  expect(k.t.waitingOn("T1", PR.replace("acme", "Acme"))).toBeUndefined();
+  await k.waitMerged(PR2);
+  expect(k.t.waitingOn("T1", PR)).toBe(`wait_ci on ${PR2} (until it merges)`);
+  expect(k.t.waitingOn("T1", PR2)).toBe(`wait_ci on ${PR}`);
+  k.hub.shutdown.abort();
+});
+
 test("a merge read that fails leaves the wait for the next pass, and the poll goes on", async () => {
   const k = await ended();
   await k.waitMerged(PR);

@@ -30,7 +30,8 @@ generated files is [regenerated](#regenerate) instead.
 
 GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR's mergeable
 state, and once GitHub says it conflicts, the PR goes back to its agent as `needs_rebase` ("conflicts with main, so
-GitHub runs no CI on it") without waiting for its turn, unless the train can [regenerate](#regenerate) it. A waiting PR whose commit has none of its base's required
+GitHub runs no CI on it") without waiting for its turn, unless the train can [regenerate](#regenerate) it. An agent
+that finished waiting on that PR with `wait_ci` is continued with it at once, since no CI will come to wake it. A waiting PR whose commit has none of its base's required
 checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
 lead, once per commit, and keeps its place.
 

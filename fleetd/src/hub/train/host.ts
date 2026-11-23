@@ -49,8 +49,9 @@ export interface TrainHost {
   writers(projectRef: ProjectRef): [string, string][];
   /** Tasks.message from `by`; throws its message. */
   messageTask(projectRef: ProjectRef, by: string, taskId: string, text: string): Promise<void>;
-  /** What an ended task still waits on that may wake it by itself (its wait_ci, a Monitor); undefined for none. */
-  waitingOn?(taskId: string): string | undefined;
+  /** What an ended task still waits on that may wake it by itself (its wait_ci, a Monitor), besides its waits on the
+   * PR `except`; undefined for none. */
+  waitingOn?(taskId: string, except?: string): string | undefined;
   /** Keeps `text` for the task's next run, whatever starts it, without starting it (Tasks.holdMessage). */
   holdMessage?(projectRef: ProjectRef, by: string, taskId: string, text: string): Promise<void>;
   /** Tasks.cancel from `by`, with `reason` as its result; throws its message. */

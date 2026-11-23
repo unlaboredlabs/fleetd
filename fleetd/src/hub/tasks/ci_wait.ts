@@ -103,10 +103,15 @@ function ciWaits(db: Database): WaitRow[] {
   }
 }
 
-/** Each task's open wait URLs, by task id; a wait with `merged` says so. */
-export function openCiWaits(db: Database): Map<string, string[]> {
+/** Each task's open wait URLs, by task id; a wait with `merged` says so. Its waits on the PR `except` left out. */
+export function openCiWaits(db: Database, except?: string): Map<string, string[]> {
+  const target = except === undefined ? undefined : targetOf(except);
+  const skip = target === undefined ? undefined : targetUrl(target).toLowerCase();
   const open = new Map<string, string[]>();
-  for (const w of ciWaits(db)) open.set(w.task_id, [...(open.get(w.task_id) ?? []), waitLabel(w.url, w.merged !== null)]);
+  for (const w of ciWaits(db)) {
+    if (w.url.toLowerCase() === skip) continue;
+    open.set(w.task_id, [...(open.get(w.task_id) ?? []), waitLabel(w.url, w.merged !== null)]);
+  }
   return open;
 }
 

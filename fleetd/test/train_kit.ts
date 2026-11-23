@@ -627,8 +627,10 @@ export class FakeHost implements TrainHost {
   async messageTask(_r: ProjectRef, _by: string, taskId: string, text: string) {
     this.sends.push([taskId, text]);
   }
-  waitingOn(taskId: string) {
-    return this.tasks.get(taskId)?.state === "done" ? this.waits.get(taskId) : undefined;
+  waitingOn(taskId: string, except?: string) {
+    const w = this.tasks.get(taskId)?.state === "done" ? this.waits.get(taskId) : undefined;
+    // A test's "wait_ci on <url>" is that one wait, as Tasks names it.
+    return except !== undefined && w === `wait_ci on ${except}` ? undefined : w;
   }
   async holdMessage(_r: ProjectRef, _by: string, taskId: string, text: string) {
     this.held.push([taskId, text]);
