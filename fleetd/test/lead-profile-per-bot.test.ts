@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
+import { chat } from "../src/hub/chat/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
@@ -31,10 +32,12 @@ function hubWithTools() {
   cleanups.push(t.done);
   start(t.hub);
   const launched: string[] = [];
+  const prompts: string[] = [];
   const interrupted: string[] = [];
   Object.assign(leadWiring(t.hub).ports, {
-    launch: async (_machineId: string, input: { profile: string }) => {
+    launch: async (_machineId: string, input: { profile: string; prompt: string }) => {
       launched.push(input.profile);
+      prompts.push(input.prompt);
       return `lead-${++threads}`;
     },
     send: async () => false,
@@ -53,7 +56,7 @@ function hubWithTools() {
   const s = profiles(t.hub);
   const opus = s.create({ name: "opus", model: "claude-opus-5-5", effort: "max", default: false }, isoMs(t.clock.now()));
   const sonnet = s.create({ name: "sonnet", model: "claude-sonnet-5-5", effort: "high", default: false }, isoMs(t.clock.now()));
-  return { ...t, launched, interrupted, call, opus, sonnet };
+  return { ...t, launched, prompts, interrupted, call, opus, sonnet };
 }
 
 /** The lead's thread as its node last reported it. */
@@ -119,27 +122,63 @@ test("a name no profile has is refused, and the pick stays", async () => {
   expect((await view(t)).leadProfile).toBe("opus");
 });
 
-test("a change reaches a running lead at its next start; leadRestart starts it on it now", async () => {
+test("a bot's own pick switches an idle lead by itself, keeping its chat; picking back leaves it be", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
   threadIs(t.hub, "idle");
   const before = leads(t.hub).get(PROJECT)!;
-  expect((await view(t)).leadRestart).toBeUndefined();
+  chat(t.hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
+  chat(t.hub).add(PROJECT, { author: "lead", text: "Yes: it moved to /docs/start." });
 
-  await t.call("project_set", { ...PROJECT, leadProfile: "opus" });
-  await settle();
-  // Not started again by the pick alone: the lead runs on as it was until its next start.
-  expect(t.launched.length).toBe(1);
-  expect(leads(t.hub).get(PROJECT)?.threadId).toBe(before.threadId);
-  expect(leads(t.hub).profileChanged(PROJECT)).toBe(true);
-  expect((await view(t)).leadRestart).toBe(true);
-
-  await t.call("project_set", { ...PROJECT, leadRestart: true });
+  const out = await t.call<ProjectSetOutput>("project_set", { ...PROJECT, leadProfile: "opus" });
+  expect(out.next).toContain("from its next idle moment");
+  // No Restart lead pressed: the idle lead switches to its pick by itself, with the chat it carries on.
   await until(() => t.launched.length === 2);
   expect(t.launched[1]).toBe("opus");
+  expect(t.prompts[1]).toContain("## Recent chat");
+  expect(t.prompts[1]).toMatch(/^You \([^)]*\): Yes: it moved to \/docs\/start\.$/m);
   const after = leads(t.hub).get(PROJECT)!;
   expect(after.threadId).not.toBe(before.threadId);
   expect(after.sessionGeneration).toBe(before.sessionGeneration + 1);
+  expect([(await view(t)).leadRestart, (await view(t)).leadRestarting]).toEqual([undefined, undefined]);
+  // A pick of the profile it already runs on switches nothing.
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadProfile: "opus" });
+  await settle();
+  expect(t.launched.length).toBe(2);
+});
+
+test("a bot's own pick reaches a lead mid-turn once the turn ends: its next message runs on the new model, with the recap", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  const old = threadIs(t.hub, "running");
+  chat(t.hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
+  await t.call("project_set", { ...PROJECT, leadProfile: "sonnet" });
+  await settle();
+  // Never stopped: the turn under way runs on, and the apps show the switch waiting on it.
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+  expect((await view(t)).leadRestarting).toBe(true);
+  chat(t.hub).add(PROJECT, { author: "lead", text: "Yes: it moved to /docs/start." });
+  threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId: old, summary: "" });
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe("sonnet");
+  expect(t.prompts[1]).toMatch(/^Human \([^)]*\): is the docs page gone\?$/m);
+  expect(t.prompts[1]).toMatch(/^You \([^)]*\): Yes: it moved to \/docs\/start\.$/m);
+  // The next message goes to the new session, on the new model.
+  const lead = leads(t.hub).get(PROJECT)!;
+  expect(lead.threadId).not.toBe(old);
+  expect(leads(t.hub).records.leadProfileGet(PROJECT)).toBe("sonnet");
+  expect((await view(t)).leadRestarting).toBeUndefined();
+});
+
+test("leadRestart starts a lead on its pick now", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadProfile: "opus", leadRestart: true });
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe("opus");
   expect((await view(t)).leadRestart).toBeUndefined();
 });
 

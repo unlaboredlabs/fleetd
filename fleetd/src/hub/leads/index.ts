@@ -472,7 +472,7 @@ export class Leads {
   }
 
   /**
-   * `project_set` leadProfile: the profile the project's lead starts on from its next start, by name; undefined drops
+   * `project_set` leadProfile: the profile the project's lead runs on (it switches to it with `switchAtIdle`), by name; undefined drops
    * its pick, back to the hub's lead profile. A name no profile has is refused. Tells the clients; returns the one its
    * lead starts on now.
    */
@@ -493,6 +493,18 @@ export class Leads {
       data: { leadProfile: picked?.name ?? null },
     });
     return lead;
+  }
+
+  /**
+   * After a bot's own lead pick changed (`setLeadProfile`): its lead, when its profile now differs from the one its
+   * session runs on, switches by itself at its next idle moment, as a hub lead-profile change does after Restart hub
+   * (decision leads.bot-model-pick-switches-at-idle): now when idle, else once its turn ends. A pick back to the profile it
+   * runs on is unmarked by `switchIfDue`. A person's Restart lead already asked stays asked.
+   */
+  async switchAtIdle(r: ProjectRef): Promise<void> {
+    if (!this.records.leadGet(r)) return;
+    if (this.profileChanged(r) && !this.records.leadRestartAsked(r)) this.records.leadSwitchSet(r, true);
+    await this.switchIfDue(r).catch((error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`));
   }
 
   /** The drafts waiting for this lead whose order says more than its title, oldest first, as a wake says a new order. */
