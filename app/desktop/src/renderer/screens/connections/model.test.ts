@@ -140,6 +140,9 @@ describe("Connections", () => {
     expect(suggestedName({ kind: "command", url: "", command: "uvx mcp-server-fetch@1.2" })).toBe("fetch");
     expect(suggestedName({ kind: "url", url: "https://mcp.linear.app/sse", command: "" })).toBe("linear");
     expect(suggestedName({ kind: "url", url: "http://devbox.tail1234.ts.net:8080/mcp", command: "" })).toBe("devbox");
+    // An address is named whole, not by its first number.
+    expect(suggestedName({ kind: "url", url: "http://100.104.249.49:8765/mcp", command: "" })).toBe("100-104-249-49");
+    expect(suggestedName({ kind: "url", url: "http://[fd7a:115c:a1e0::1]:8765/mcp", command: "" })).toBe("fd7a-115c-a1e0-1");
     expect(initialOf("linear")).toBe("L");
     expect(initialOf("_x")).toBe("X");
   });
