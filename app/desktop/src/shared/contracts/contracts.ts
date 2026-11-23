@@ -1290,7 +1290,13 @@ export type BrowserFrame = {
   jpegB64?: string;
   /** An H.264 keyframe. */
   key?: boolean;
-  /** 1, 2, ... per watch; a frame older than one already shown is dropped. */
+  /**
+   * The machine link it came on, set by the hub. A node that links again (restarted, or the next server that took a
+   * team's screens over) counts `seq` from the start, so a frame on another link than the last one shown is shown
+   * whatever its seq.
+   */
+  link?: number;
+  /** 1, 2, ... per link; a frame older than one already shown on the same link is dropped. */
   seq: number;
   sessionId: BrowserSessionId;
   /** The page the frame shows, when the node knows it. */

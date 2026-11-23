@@ -33,7 +33,8 @@ class Connection {
   readonly peers = new Map<string, { id: string; machine: string; session: string; owner: string; input: boolean }>();
   /** The acking watch's frames, paced to its acks. */
   sender: FrameSender<string> | undefined;
-  last: number | undefined;
+  /** The last frame sent, by its link and seq. */
+  last: { link: number | undefined; seq: number } | undefined;
   thumbs: (() => void) | undefined;
   /** The last reason a person's input was refused, logged once until it changes. */
   inputRefused: string | undefined;
@@ -214,8 +215,8 @@ export function browserWatch(
   const onFrame = (frame: BrowserFrame) => {
     if (frame.sessionId !== session) return;
     // The node sends its newest frame again for each `on`: not again to a connection that has it.
-    if (c.last === frame.seq) return;
-    c.last = frame.seq;
+    if (c.last?.seq === frame.seq && c.last.link === frame.link) return;
+    c.last = { link: frame.link, seq: frame.seq };
     // On the app's peer: it has this one already.
     if (c.rtc !== undefined) return;
     if (!c.sender) return void appWs(hub).sendTo(conn, textOf(frame));

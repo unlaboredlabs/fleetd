@@ -16,7 +16,11 @@ import { run as runThumbs, sleep } from "./thumbs.ts";
 
 export function start(hub: Hub): void {
   const nodes = link(hub);
-  nodes.on("browser_frame", (machine, frame) => live(hub).frame(machine, frame as unknown as BrowserFrame));
+  // Each frame says which link it came on: a node that links again counts its frames from the start (contracts' `link`).
+  nodes.on("browser_frame", (machine, frame) => {
+    const at = nodes.linkId(machine);
+    live(hub).frame(machine, { ...(frame as unknown as BrowserFrame), ...(at === undefined ? {} : { link: at }) });
+  });
   // The link keeps each heartbeat's load itself (link.load); its steps are this area's.
   nodes.on("hb", (machine, frame) => live(hub).stepsReported(machine, (frame.steps as ScreenStep[] | undefined) ?? []));
   nodes.on("browser_rtc", (machine, frame) => rtcReport(hub, machine, frame as unknown as BrowserRtcReport));

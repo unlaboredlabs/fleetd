@@ -43,14 +43,18 @@ export function useVideo(sessionId: string, on: boolean, under: number | undefin
   const canvas = useCallback((el: HTMLCanvasElement | null) => {
     element.current = el;
   }, []);
+  // A node that linked again (restarted, or the next server that took the screen over) counts its frames from the
+  // start: its stream is decoded afresh, as another session's is.
+  const link = video?.link;
   useEffect(
     () => () => {
       if (decoder.current?.state !== "closed") decoder.current?.close();
       decoder.current = null;
       keyed.current = false;
       decoded.current = -1;
+      setDrawn(undefined);
     },
-    [sessionId],
+    [sessionId, link],
   );
   useEffect(() => {
     if (video === undefined || typeof VideoDecoder === "undefined") return;

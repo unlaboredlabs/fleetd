@@ -86,7 +86,7 @@ export interface DataState {
    * one, where the picture takes only the newest. `dropped` is the newest seq let go past VIDEO_KEPT: a loss if the
    * decoder hadn't had it.
    */
-  readonly browserVideo?: { readonly sessionId: string; readonly frames: readonly BrowserFrame[]; readonly dropped: number } | undefined;
+  readonly browserVideo?: { readonly sessionId: string; readonly link?: number; readonly frames: readonly BrowserFrame[]; readonly dropped: number } | undefined;
   /** The session whose frames come on the window's own peer now (screens/sessions/rtc.ts): main's of it are dropped. */
   readonly browserRtc?: string | undefined;
   /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
@@ -316,16 +316,18 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       // On the window's peer, the frames main still had on their way are dropped; the first of the peer's says so.
       if (frame.rtc !== true && s.browserRtc === f.sessionId) return [s, {}];
       if (frame.rtc === true && s.browserRtc !== f.sessionId) s = { ...s, browserRtc: f.sessionId };
-      // A frame older than one already shown (a slow link's) is dropped.
+      // A frame older than one already shown on the same link (a slow link's) is dropped. One on another link is a node
+      // that linked again (restarted, or the next server that took the screen over), counting from the start: shown.
       const shown = s.browserFrame;
-      if (shown !== undefined && shown.sessionId === f.sessionId && shown.seq >= f.seq) return [s, {}];
+      if (shown !== undefined && shown.sessionId === f.sessionId && shown.link === f.link && shown.seq >= f.seq) return [s, {}];
       if (f.h264B64 === undefined) return [{ ...s, browserFrame: f }, {}];
-      const before = s.browserVideo?.sessionId === f.sessionId ? s.browserVideo : { sessionId: f.sessionId, frames: [], dropped: -1 };
+      const video = s.browserVideo;
+      const before = video !== undefined && video.sessionId === f.sessionId && video.link === f.link ? video : { sessionId: f.sessionId, frames: [], dropped: -1 };
       // A keyframe makes those before it no longer needed.
       const frames = f.key === true ? [f] : [...before.frames, f];
       const over = Math.max(0, frames.length - VIDEO_KEPT);
       const dropped = frames[over - 1]?.seq ?? before.dropped;
-      return [{ ...s, browserFrame: f, browserVideo: { sessionId: f.sessionId, frames: frames.slice(over), dropped } }, {}];
+      return [{ ...s, browserFrame: f, browserVideo: { sessionId: f.sessionId, ...(f.link === undefined ? {} : { link: f.link }), frames: frames.slice(over), dropped } }, {}];
     }
     case "screen_thumb":
       return [{ ...s, screenThumbs: withThumb(s.screenThumbs, frame.thumb) }, {}];
