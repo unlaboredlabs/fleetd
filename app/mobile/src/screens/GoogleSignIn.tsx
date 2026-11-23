@@ -13,8 +13,11 @@ import { errorWords, Problem } from "./manage/parts";
 
 /** A first sign-in may install Antigravity on the machine first: the hub waits as long. */
 export const AGY_SIGN_IN_WAIT_MS = 600_000;
-/** Finishing with the code: the machine answers within a minute. */
-const CODE_WAIT_MS = 60_000;
+/** Finishing with the code: the hub waits 90 s for the machine (fleetd's computers type it into a computer of
+ * their own first), as the desktop's MACHINE_WAIT_MS does. */
+const CODE_WAIT_MS = 100_000;
+/** The row while a sign-in starts, until Google's page opens: its title and the line under it. */
+export const STARTING = ["Starting a Sign-In…", "Google's sign-in page opens once it's ready."] as const;
 
 type Step = { step: "idle" } | { step: "starting" } | { step: "url"; url: string } | { step: "finishing"; url: string } | { step: "signed"; plan: string };
 
@@ -93,7 +96,12 @@ export function GoogleSignIn({ machineId, name, signedIn, onSigned }: { machineI
             />
           </>
         ) : (
-          <ListRow title={step.step === "starting" ? "Checking…" : "Sign In with Google"} tint={t.accent} {...(step.step === "idle" ? { onPress: () => void start() } : {})} chevron={false} />
+          step.step === "starting" ? (
+            // Words while it starts, never a dead row: the machine may start a computer or install Antigravity first.
+            <ListRow title={STARTING[0]} detail={STARTING[1]} chevron={false} />
+          ) : (
+            <ListRow title="Sign In with Google" tint={t.accent} onPress={() => void start()} chevron={false} />
+          )
         )}
       </ListSection>
       <Problem text={problem} />
