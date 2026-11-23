@@ -2,7 +2,7 @@
 // release side's pure rules (.github/release/rollout.ts): what's new in plain words, which builds stay listed, the
 // first ring's gate and the desktop app's stage feeds.
 import { expect, test } from "bun:test";
-import { absolute, cloudVerdict, feedBuild, gate, plainNotes, prune, releaseNotes } from "../../.github/release/rollout.ts";
+import { absolute, cloudVerdict, feedBuild, gate, moving, plainNotes, prune, releaseNotes } from "../../.github/release/rollout.ts";
 import { bucketOf, choose, parseRollout, parseSpeed, percentAt, pick, type Picker, type Rollout, type RolloutBuild } from "../src/update/rollout.ts";
 import { buildNumber, versionLabel, versionShown } from "../src/update/version.ts";
 import { versionLine } from "../src/cli/versions.ts";
@@ -161,4 +161,13 @@ test("each stage feed is the newest build that reached it with an app, its files
     "version: 1\nfiles:\n  - url: https://github.com/unlaboredlabs/fleetd/releases/download/build-2026.11.23.1/app-1234.zip\n    sha512: x\n" +
       "path: https://github.com/unlaboredlabs/fleetd/releases/download/build-2026.11.23.1/app-1234.zip\n",
   );
+});
+
+test("the ticker ticks on while a build waits on the gate or hasn't reached everyone, and stops once none does", () => {
+  expect(moving({ builds: [b(2, { hubPassedAt: ago(0.5) })] }, NOW)).toBe(true);
+  expect(moving({ builds: [b(2, { passedAt: ago(2) })] }, NOW)).toBe(true);
+  expect(moving({ builds: [b(2, { passedAt: ago(3.5) }), b(1, { passedAt: ago(9) })] }, NOW)).toBe(false);
+  // Nothing passed fleetd's own hub yet, or what moved was halted: nothing for the ticker to do.
+  expect(moving({ builds: [b(3)] }, NOW)).toBe(false);
+  expect(moving({ builds: [b(3, { passedAt: ago(1), haltedAt: ago(0.5) })] }, NOW)).toBe(false);
 });

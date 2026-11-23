@@ -12,6 +12,7 @@
 //   rollout.ts halt <build>     nobody new takes <build>
 //   rollout.ts pull <build>     everyone on <build> goes back to the build before it
 //   rollout.ts resume <build>   undoes a halt or a pull
+//   rollout.ts moving           exits 0 while a build waits on the gate or hasn't reached everyone yet
 //
 // The first ring: a build passes once fleetd's own hub passed on it and the cloud runs it (its public /version names a
 // fleetd commit that holds the build's, with every instance settled). A stale cloud never holds everyone back: when the
@@ -164,6 +165,20 @@ export function feedBuild(r: Rollout, percent: number, now: number, hasFeed: (bu
   const at = r.builds.findIndex((b) => b.haltedAt === undefined && b.pulledAt === undefined && percentAt(b, now) >= percent);
   if (at < 0) return undefined;
   return r.builds.slice(at).find((b) => hasFeed(b.build))?.build;
+}
+
+/**
+ * Something is still moving: a build fleetd's own hub passed waits on the first ring's gate, or one that passed hasn't
+ * reached everyone yet. The rollout workflow ticks on while it is (`rollout.ts moving`), since GitHub's schedule alone
+ * can lag by hours.
+ */
+export function moving(r: Rollout, now: number): boolean {
+  return r.builds.some(
+    (b) =>
+      b.haltedAt === undefined &&
+      b.pulledAt === undefined &&
+      ((b.hubPassedAt !== undefined && b.passedAt === undefined) || (b.passedAt !== undefined && percentAt(b, now) < 100)),
+  );
 }
 
 /** The release's notes: the newest builds, each with how far it got and its what's new. */
@@ -446,6 +461,8 @@ if (import.meta.main) {
   try {
     if (command === "add") add();
     else if (command === "tick") await tick();
+    // Exits 0 while something is still moving (`moving`), 1 once nothing is.
+    else if (command === "moving") process.exit(moving(readRollout(), Date.now()) ? 0 : 1);
     else if ((command === "halt" || command === "pull" || command === "resume" || command === "pass") && build) {
       flag(command, build);
       await tick();
