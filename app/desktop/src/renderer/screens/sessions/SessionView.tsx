@@ -1,7 +1,7 @@
 // One screen (a browser session, or a device's), in the panel's wide width. Above it one slim line: back to the list,
 // what it is for, who has it and for how long, and its one or two controls at the line's end. Under the line the
-// screen, as large as the panel holds it at its own shape: a phone in its bezel, a browser or a desktop in a plain
-// window whose bar says where it is. While it runs the agent's screen shows what the agent does, in one quiet line
+// screen, as large as the panel holds it at its own shape: a phone as its real device (DeviceStage: in 3D, or flat,
+// with its toolbar beside it), a browser or a desktop in a plain window whose bar says where it is. While it runs the agent's screen shows what the agent does, in one quiet line
 // under it, and Take over. Taken over, the line says you're in control and, on a browser, the window's bar becomes its
 // address bar (where it is, back, forward, reload); your clicks and keys go to the page, and Hand back gives it to the
 // agent, which looks at the page again and goes on. A screen a person opened themselves (New screen) is theirs from its
@@ -11,7 +11,7 @@
 // its moment and a way into the page's snapshot at that step. A login filled from 1Password is a step in words; its
 // value is never on the hub to show, nor in a snapshot.
 import { AppWindow, ArrowLeft, ArrowRight, ChevronLeft, CornerUpLeft, Hand, KeyRound, ListOrdered, ListTree, Pause, Play, RotateCw, Square } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Button, EmptyState, StateGlyph, Text, Tooltip, Truncate, cx, toast } from "../../ui";
 import { useData, useDataLayer } from "../../src/data/react";
 import { display } from "../../../shared/shortcuts";
@@ -39,6 +39,7 @@ import {
   type BrowserSession,
   type FrameBox,
   type PageSnapshot,
+  type PhoneDevice,
   type SessionAction,
 } from "./model";
 import { structureOf } from "./dom";
@@ -49,8 +50,8 @@ import { type Surface } from "./player";
 import { useReplay, useSurfaceSize } from "./replay";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
-import { ControlStrip } from "./ControlStrip";
-import { keyframesOf, moveOf, MOVE_MS, turnBetween, type Box } from "./turn";
+import { DeviceRail } from "./DeviceRail";
+import { DeviceStage, useDevice, type Place, type StageView } from "./DeviceStage";
 import s from "./sessions.module.css";
 
 /** How long an empty page stays without words before it says what it waits for. */
@@ -69,9 +70,6 @@ function useAfter(on: boolean, ms: number): boolean {
   }, [on, ms]);
   return after;
 }
-
-/** A phone's screen standing up, before its first frame says its own shape (an iPhone's, near enough an Android's). */
-const PHONE = 9 / 19.5;
 
 const clock = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });
 
@@ -196,7 +194,9 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
     d.browserWaiting?.sessionId === x.id && d.browserRtc !== x.id ? `Waiting for ${d.machines[d.browserWaiting.machineId]?.name ?? d.browserWaiting.machineId}…` : undefined,
   );
   const takes = yours && !away;
-  const input = useFrameInput(x.id, frame, takes);
+  // A press on the 3D device's display, as a point of the picture (DeviceStage sets it while 3D shows).
+  const place = useRef<Place | null>(null);
+  const input = useFrameInput(x.id, frame, takes, place);
   const page = useRef<HTMLDivElement>(null);
   // A browser's address bar, while the page is yours here, from a hub that relays it; a device's screen has none.
   const navigates = useData((d) => d.features.includes(NAVIGATE));
@@ -286,8 +286,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   // What the agent does while it has the screen; nothing while you do, which the line says.
   const doing = (x.state === "running" && !own) || x.state === "handingBack" ? nowLine(x) : undefined;
   const phone = x.kind === "ios" || x.kind === "android";
-  // A phone's control strip (D652), beside it while it's yours here: only what its machine says works.
-  const strip = phone && takes && x.device !== undefined ? <ControlStrip sessionId={x.id} device={x.device} name={x.kind === "ios" ? "iPhone" : "Android"} /> : undefined;
+  // A phone's toolbar (D652): its device's controls while it's yours here, only what its machine says works; the view's always.
+  const rail = (view: StageView) => <DeviceRail sessionId={x.id} device={takes ? x.device : undefined} name={x.model ?? (x.kind === "ios" ? "iPhone" : "Android")} view={view} />;
   return (
     <>
       <Head session={x} windowed={windowed} back={back} controls={controls} />
@@ -318,8 +318,10 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             caption={away ? "It shows in its own window." : (waiting ?? (slow ? waitingFor(x) : undefined))}
             {...(away || waiting === undefined ? {} : { waiting })}
             {...(nav === undefined ? {} : { nav })}
-            {...(strip === undefined ? {} : { beside: strip })}
-            {...(x.device?.orientation === undefined ? {} : { orientation: x.device.orientation })}
+            rail={rail}
+            place={place}
+            {...(x.model === undefined ? {} : { model: x.model })}
+            {...(x.device === undefined ? {} : { device: x.device })}
           />
           {doing === undefined ? null : (
             <span className={s.doing}>
@@ -335,68 +337,9 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
 }
 
 /**
- * A phone in its bezel, its control strip (if it has one) beside it. When its frame changes shape (the device turned,
- * a Duo folded or opened) it moves there from where it stood rather than jumping: turned the way its orientation says,
- * or grown or shrunk to the new shape (turn.ts).
- */
-function Phone({
-  kind,
-  aspect,
-  shape,
-  beside,
-  orientation,
-  children,
-}: {
-  kind: "ios" | "android";
-  aspect: number;
-  shape: Record<string, string | undefined>;
-  beside: ReactNode;
-  orientation: string | undefined;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const last = useRef<{ box: Box; orientation: string | undefined } | null>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (el === null) return;
-    const box = { width: el.offsetWidth, height: el.offsetHeight };
-    const was = last.current;
-    // The orientation comes a moment before the frame: the turn is read when the frame's shape changes.
-    last.current = { box, orientation: was !== null && was.box.width === box.width && was.box.height === box.height ? was.orientation : orientation };
-    if (was === null || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const move = moveOf(was.box, box, turnBetween(was.orientation, orientation));
-    if (move !== null) el.animate(keyframesOf(move), { duration: MOVE_MS, easing: EASE });
-  }, [aspect, orientation]);
-  // The bezel and corners go by the panel's short side: a wide one (an open Duo's, a phone on its side) is no heavier.
-  const short = Math.min(1, 1 / aspect);
-  // An iPhone on its side has its island along the edge its top turned to.
-  const island = kind === "ios" && aspect > 1 ? (orientation === "landscape_left" ? "left" : orientation === "landscape_right" ? "right" : undefined) : undefined;
-  return (
-    <div
-      className={s.phoneAt}
-      data-strip={beside === undefined ? undefined : ""}
-      style={{ "--aspect": String(aspect), "--b": String(BEZEL[kind] * short), "--short": String(short) } as CSSProperties}
-    >
-      <div ref={ref} className={s.phone} data-kind={kind} data-wide={aspect > 1 ? "" : undefined} data-island={island} {...shape}>
-        {children}
-        <span className={s.camera} aria-hidden />
-      </div>
-      {beside}
-    </div>
-  );
-}
-
-/** The phone's move: tokens.css --ease-spring, a critically damped spring, sampled (WAAPI takes no var()). */
-const EASE =
-  "linear(0, 0.056 5%, 0.177 10%, 0.316 15%, 0.449 20%, 0.566 25%, 0.665 30%, 0.744 35%, 0.807 40%, 0.855 45%, 0.893 50%, 0.921 55%, 0.942 60%, 0.958 65%, 0.969 70%, 0.978 75%, 0.984 80%, 0.988 85%, 0.992 90%, 0.994 95%, 1)";
-
-/** A phone's bezel, as its share of the phone's width all round. */
-const BEZEL = { ios: 0.034, android: 0.03 } as const;
-
-/**
- * The page at its own shape, as large as its stage holds it (container units): a phone standing up in its bezel (an
- * iPhone's island, an Android's camera, drawn over the top of its screen as the device's own frame has them), a browser
- * or a desktop in a plain window whose bar says where it is; a browser that is yours, its address bar. Never coloured
+ * The page at its own shape, as large as its stage holds it (container units): a phone as its device (DeviceStage), the
+ * picture filling its display exactly, a browser or a desktop in a plain window whose bar says where it is; a browser
+ * that is yours, its address bar. Never coloured
  * by who has it: the view's line says that. Yours, the page takes your clicks, keys and pastes (`input`); the agent's,
  * it only shows.
  */
@@ -415,9 +358,12 @@ function Frame({
   nav,
   videoSurface,
   videoOn = false,
-  beside,
-  orientation,
+  rail,
+  place,
+  model,
+  device,
   picture,
+  replaySurface,
 }: {
   /** Where the live screen's H.264 is drawn (video.ts), over `image` while `videoOn` (it has a newer picture). */
   videoSurface?: Surface;
@@ -442,30 +388,38 @@ function Frame({
   pageRef?: RefObject<HTMLDivElement | null>;
   /** The page is yours, a browser's: the bar is its address bar. */
   nav?: PageNav;
-  /** A phone's control strip, beside it. */
-  beside?: ReactNode;
-  /** Which way a phone's device is turned, as its machine says: which way the phone turns when its frame flips. */
-  orientation?: string;
+  /** A phone's toolbar, given its view's state. */
+  rail?: (view: StageView) => ReactNode;
+  /** Set to the 3D display's point lookup while it shows, for `input`. */
+  place?: RefObject<Place | null>;
+  /** Which device a phone is ("iPhone Duo"). */
+  model?: string;
+  /** A phone's device as its machine last said: how it is turned and folded. */
+  device?: PhoneDevice;
   /** The size of the picture `media` draws (a replay's): the frame takes its shape, so nothing is letterboxed. */
   picture?: { readonly width: number; readonly height: number };
+  /** The replay's player canvas, which a 3D device draws as its display. */
+  replaySurface?: Surface;
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
   const phone = kind === "ios" || kind === "android";
-  // A phone's stands up from the start, so its first frame lands without the frame changing shape.
   const size = image ?? (picture !== undefined && picture.width > 0 && picture.height > 0 ? picture : undefined);
-  const aspect = size === undefined ? (phone ? PHONE : 16 / 10) : size.width / size.height;
+  const aspect = size === undefined ? 16 / 10 : size.width / size.height;
+  // A phone's device takes the picture's shape: it stands up from the start, so its first frame lands without moving.
+  const { body, pose } = useDevice(kind, model, device?.fold, device?.orientation, size);
+  const ownPlace = useRef<Place | null>(null);
   const once = useRef(false);
   const painted = () => {
     if (once.current) return;
     once.current = true;
     requestAnimationFrame(() => screenMark("painted"));
   };
-  const screen = (
+  const screenOf = (style: CSSProperties) => (
     <div
       ref={pageRef}
       className={s.screen}
-      style={{ aspectRatio: String(aspect) }}
+      style={{ aspectRatio: String(aspect), ...style }}
       role={takes ? "application" : "img"}
       aria-label={takes ? "The page: your clicks and keys go to it" : `The page${url === undefined ? "" : `: ${url}`}`}
       tabIndex={takes ? 0 : undefined}
@@ -504,13 +458,25 @@ function Frame({
     "data-control": yours ? "you" : "agent",
     "data-shape": aspect < 1 ? "portrait" : undefined,
   } as const;
-  if (phone) {
+  if (phone && body !== undefined && pose !== undefined) {
+    // The picture the device shows: the live view's player canvas (it holds the JPEGs too), or the replay's.
+    const shown = media === undefined ? videoSurface : replaySurface;
     return (
-      <Phone kind={kind} aspect={aspect} shape={shape} beside={beside} orientation={orientation}>
-        {screen}
-      </Phone>
+      <DeviceStage
+        body={body}
+        pose={pose}
+        surface={size === undefined ? undefined : shown}
+        screen={screenOf}
+        rail={rail ?? (() => null)}
+        takes={takes}
+        input={input}
+        placeRef={place ?? ownPlace}
+        label={model ?? (kind === "ios" ? "The iPhone" : "The phone")}
+        {...(caption === undefined ? {} : { caption })}
+      />
     );
   }
+  const screen = screenOf({});
   const where = kind === "linux_desktop" ? "Linux desktop" : kind === "mac" ? "" : url === undefined || url === "about:blank" ? "" : url;
   return (
     <div className={s.pageWindow} data-kind={kind ?? "browser"} {...shape} style={{ "--aspect": String(aspect) } as CSSProperties}>
@@ -782,6 +748,9 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
               url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
               mark={shown?.box}
               {...(picture === undefined ? {} : { picture })}
+              {...(replay === undefined ? {} : { replaySurface: replay.surface })}
+              {...(x.model === undefined ? {} : { model: x.model })}
+              rail={(view) => <DeviceRail sessionId={x.id} device={undefined} name={x.model ?? "iPhone"} view={view} />}
               media={
                 video === undefined ? undefined : replay !== undefined ? (
                   <SurfaceHost surface={replay.surface} />

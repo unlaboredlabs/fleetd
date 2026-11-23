@@ -68,3 +68,43 @@ export const shotName = (device: string, at: Date): string => {
   const day = `${String(at.getFullYear())}-${two(at.getMonth() + 1)}-${two(at.getDate())}`;
   return `${device} ${day} at ${two(at.getHours())}.${two(at.getMinutes())}.${two(at.getSeconds())}.png`;
 };
+
+// The desktop's device toolbar (DeviceRail, W859), T3 Code's order: home and rotate; light or dark, text size and a
+// screenshot, the rest behind More; then a Duo's postures. Only what the machine says works shows.
+
+/** A control the toolbar draws beside the strip's: text size. */
+export type RailControl = StripControl | "text_size";
+
+/** The toolbar's device groups for a device: its buttons, its look, what's behind More, and a Duo's postures. */
+export const railOf = (controls: readonly string[], folds: readonly string[] | undefined) => {
+  const has = new Set(controls);
+  const only = (list: readonly RailControl[]) => list.filter((c) => has.has(c));
+  return {
+    buttons: only(["home", "rotate_left"]),
+    look: only(["appearance", "text_size", "screenshot"]),
+    more: only(["rotate_right", "back", "lock", "shake", "location"]),
+    postures: has.has("fold") ? (folds ?? []).filter((f) => f in POSTURE) : [],
+  };
+};
+
+/** A Duo's postures as people name them, in the toolbar's order. */
+export const POSTURE: Readonly<Record<string, string>> = { closed: "Closed", "half-open": "Book", open: "Open", laptop: "Laptop" };
+
+/** Dynamic Type's sizes as `text_size` takes them, smallest first, each in words. */
+export const TEXT_SIZES: readonly { readonly value: string; readonly word: string }[] = [
+  { value: "extra-small", word: "Extra small" },
+  { value: "small", word: "Small" },
+  { value: "medium", word: "Medium" },
+  { value: "large", word: "Large (default)" },
+  { value: "extra-large", word: "Extra large" },
+  { value: "extra-extra-large", word: "Extra extra large" },
+  { value: "extra-extra-extra-large", word: "Largest" },
+  { value: "accessibility-medium", word: "Accessibility medium" },
+  { value: "accessibility-large", word: "Accessibility large" },
+  { value: "accessibility-extra-large", word: "Accessibility extra large" },
+  { value: "accessibility-extra-extra-large", word: "Accessibility extra extra large" },
+  { value: "accessibility-extra-extra-extra-large", word: "Accessibility largest" },
+];
+
+/** A text size in words; unknown, as it is before its first read. */
+export const textSizeWord = (value: string | undefined): string => TEXT_SIZES.find((t) => t.value === value)?.word ?? "Text size";

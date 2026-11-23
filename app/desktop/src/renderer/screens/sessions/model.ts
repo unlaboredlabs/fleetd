@@ -117,6 +117,8 @@ export interface BrowserSession {
   readonly note?: string;
   /** The person who opened it themselves (New screen): theirs to drive, with no agent to hand it back to. */
   readonly openedBy?: string;
+  /** Which device a phone screen is ("iPhone Duo"), as its machine says; absent from older nodes. */
+  readonly model?: string;
   /** A phone's device, as its machine last said: the controls it takes (D652) and how it stands. */
   readonly device?: PhoneDevice;
   /** Live, and its machine answers a screen peer (`browser_rtc`): the window may watch it peer to peer. */
@@ -130,6 +132,8 @@ export interface PhoneDevice {
   readonly fold?: string;
   readonly folds?: readonly string[];
   readonly appearance?: string;
+  /** Dynamic Type's size ("large"). */
+  readonly textSize?: string;
 }
 
 /**

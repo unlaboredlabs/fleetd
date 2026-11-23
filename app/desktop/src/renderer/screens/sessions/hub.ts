@@ -63,6 +63,7 @@ export const fromHub = (row: HubSession, agent: SessionAgent): BrowserSession =>
     agent,
     purpose: row.purpose,
     ...(isDevice(row.kind) ? { kind: row.kind } : {}),
+    ...(isDevice(row.kind) && row.model !== undefined ? { model: row.model } : {}),
     state: viewState(row),
     startedAt: row.startedAt,
     ...(row.endedAt === undefined ? {} : { endedAt: row.endedAt }),
@@ -86,6 +87,7 @@ const deviceOf = (row: HubSession): PhoneDevice => ({
   ...(row.fold === undefined ? {} : { fold: row.fold }),
   ...(row.folds === undefined || row.folds.length === 0 ? {} : { folds: row.folds }),
   ...(row.appearance === undefined ? {} : { appearance: row.appearance }),
+  ...(row.textSize === undefined ? {} : { textSize: row.textSize }),
 });
 
 /** Who a session is for in the views: the person who opened it themselves, else its agent. */

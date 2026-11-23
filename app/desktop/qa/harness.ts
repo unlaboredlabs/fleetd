@@ -107,6 +107,9 @@ export async function launch(
     args.push("--no-sandbox");
     // No display (CI, an ssh session): render offscreen. Layout, fonts and screenshots are the same.
     if (!env["DISPLAY"] && !env["WAYLAND_DISPLAY"]) args.push("--ozone-platform=headless");
+    // WebGL on the CPU, for the screens that show a phone in 3D (DeviceStage): a box with no graphics card has none
+    // otherwise. The app sees a software renderer and starts such a phone flat, as on any machine without one.
+    args.push("--use-angle=swiftshader", "--enable-unsafe-swiftshader");
   }
   const app = await launchElectron({ args, env, cwd: desktopDir, timeout: 30_000 });
   const page = await app.firstWindow();
