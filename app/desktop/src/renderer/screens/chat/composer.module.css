@@ -243,7 +243,7 @@
   cursor: pointer;
 }
 
-/* A quiet receipt's mark, beside your bubble's foot: faint, an open ring while it waits for the lead, a check once taken.
+/* A quiet receipt's mark, beside your bubble's foot: a faint check while it goes, the check once the hub has it.
    Centred on the bubble's last line: its 9 px padding under a 22 px line (view.module.css, .bubble). */
 .receiptMark {
   flex: none;
@@ -255,7 +255,7 @@
   margin-bottom: calc(9px + (22px - 16px) / 2);
   border-radius: 999px;
 }
-.receiptMark > span[data-state] {
+.receiptMark[data-mark="sending"] .receiptCheck {
   color: var(--faint);
 }
 .receiptCheck {

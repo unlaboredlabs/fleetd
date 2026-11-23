@@ -117,11 +117,12 @@ export const replyOf = (text: string): { readonly quote: string; readonly body: 
 };
 
 /**
- * The line under a row of the person's own, for what stays: a send that didn't go (its ! offers Try Again and Delete),
- * or a lead that can't take it yet. Nothing while it goes, as in Messages: a line that came and went under each send
- * would bounce the thread. A slow one has its mark beside the bubble instead (sendWait).
+ * The line under a row of the person's own, for what stays: a send that didn't go (its ! offers Try Again and Delete).
+ * A lead that can't take it yet is the bot's to say, in the reply's place (WakeRow.tsx). Nothing while it goes, as in
+ * Messages: a line that came and went under each send would bounce the thread. A slow one has its mark beside the
+ * bubble instead (sendWait).
  */
-export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">): string | undefined => {
+export const sendNote = (item: Pick<ChatItem, "state" | "error">): string | undefined => {
   switch (item.state) {
     case "pending":
     case "queued":
@@ -132,7 +133,7 @@ export const sendNote = (item: Pick<ChatItem, "state" | "error" | "leadWaiting">
     case "failed":
       return `Not sent: ${item.error?.message ?? "the hub refused it."}`;
     default:
-      return item.leadWaiting;
+      return undefined;
   }
 };
 

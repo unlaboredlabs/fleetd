@@ -130,6 +130,11 @@ export interface State {
   readonly turnSince: Readonly<Record<Key, number>>;
   /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
   readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number }>>;
+  /**
+   * When each lead was last seen to stop working (hub epoch ms, the event's time), its start seen or not: a turn that
+   * ended without a reply ends the bot's wait in the reply's place too (wake.ts). Absent from a cache before it.
+   */
+  readonly turnEnded?: Readonly<Record<Key, number>> | undefined;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
   /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
@@ -476,7 +481,9 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     const since = s.turnSince[key];
     const ended = !state.leadWorking && since !== undefined;
     const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at) } } : s.turnWorked;
-    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked };
+    const stopped = !state.leadWorking && s.chatStates[key]?.leadWorking === true && !Number.isNaN(Date.parse(event.at));
+    const turnEnded = stopped ? { ...s.turnEnded, [key]: Date.parse(event.at) } : s.turnEnded;
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnEnded };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

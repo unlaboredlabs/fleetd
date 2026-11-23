@@ -88,8 +88,8 @@ describe("receipts", () => {
     expect(receiptFor(m({ delivery: "now" }), true)).toEqual(receiptFor(m({ delivery: "now" }), false));
   });
 
-  it("say when the lead can't take it yet, and why", () => {
-    expect(receiptFor(m({ leadWaiting: "devbox is offline; start it" }), true)).toMatchObject({ kind: "warn", line: expect.stringContaining("devbox is offline") as unknown });
+  it("leave why the lead can't take it yet to the bot in the reply's place: the receipt says it is sent", () => {
+    expect(receiptFor(m({ delivery: "queued" }), true)).toEqual({ kind: "quiet", line: "sent; the lead takes it when it’s free" });
   });
 
   it("tell a cut-off link, no answer, no hub and a refusal apart, each with its way out", () => {
@@ -258,9 +258,9 @@ describe("a draft after quitting", () => {
 
 describe("a quiet receipt as a mark", () => {
   const sent = (delivery?: "turn" | "steer" | "queued" | "now") => ({ state: "sent" as const, ...(delivery === undefined ? {} : { delivery }) });
-  it("waits, an open ring, while sending or queued for the lead; else it is delivered", () => {
-    expect(receiptMark({ state: "pending" }, true)).toMatchObject({ mark: "waiting", word: "Sending" });
-    expect(receiptMark(sent("queued"), true)).toEqual({ mark: "waiting", word: "Queued", words: "Sent; the lead takes it when it’s free" });
+  it("is a faint check while it goes, and the check as soon as the hub has it, the lead free or not", () => {
+    expect(receiptMark({ state: "pending" }, true)).toMatchObject({ mark: "sending", word: "Sending" });
+    expect(receiptMark(sent("queued"), true)).toEqual({ mark: "delivered", word: "Received", words: "Sent; the lead takes it when it’s free" });
     expect(receiptMark(sent("steer"), true)).toMatchObject({ mark: "delivered", word: "Delivered" });
     expect(receiptMark(sent("turn"), true)).toMatchObject({ mark: "delivered" });
     // Stopping the lead's step says so even on an older message.

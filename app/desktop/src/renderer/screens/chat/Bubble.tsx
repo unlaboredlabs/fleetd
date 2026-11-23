@@ -129,11 +129,12 @@ export function useEnter(arrival: Arrival | undefined, step = 0): { className?: 
 /** One to three emoji and nothing else: shown large, without a bubble, as a messaging app does. */
 const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*\s*){1,3}$/u;
 
-/** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). */
-function TypingBubble() {
+/** The lead writing: three square cells, one lit at a time, on the app's beat (view.module.css). Also the bot's, in the
+ * reply's place, while its lead takes your message and works on it (WakeRow.tsx). */
+export function TypingBubble({ label = "The lead is writing" }: { label?: string }) {
   const dots = useBeatRef<HTMLSpanElement>(true);
   return (
-    <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label="The lead is writing" data-typing>
+    <div className={cx(s.bubble, s.theirs, s.first, s.last)} role="status" aria-label={label} data-typing>
       <span ref={dots} className={s.typing} aria-hidden>
         {[0, 1, 2].map((d) => (
           <span key={d} className={s.dot} />

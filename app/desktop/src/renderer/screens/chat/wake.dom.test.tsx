@@ -160,10 +160,26 @@ it("Try again that starts nothing says why in the row: the hub's word, or that n
   }
 });
 
-it("an awake bot's turn shows no wake, and its island says what the lead does as before", async () => {
+// W852: an awake bot's turn on your message has the bot in the reply's place too, with its typing dots, and the island
+// still says the step in words.
+it("an awake bot's turn on your message: the bot with its typing dots, and the island says what the lead does", async () => {
   layout();
   const n = await mount();
   await n.lead({ kind: "edit", path: "src/a.ts" });
-  expect(wake()).toBeNull();
+  expect(wake()?.dataset["wake"]).toBe("working");
+  expect(wake()?.querySelector("[data-typing]")).not.toBeNull();
+  expect(wake()?.textContent).toBe("");
   expect(host.querySelector("[data-island]")?.textContent).toContain("a.ts");
+});
+
+it("goes when the lead's turn ends without a reply, a quiet one, and stays gone", async () => {
+  layout();
+  const n = await mount();
+  await n.lead({ kind: "thinking" });
+  expect(wake()?.dataset["wake"]).toBe("thinking");
+  act(() => n.send(event(2, "chat.waiting", { projectRef: project, needsYou: false, leadWorking: false, lastSeq: 1 })));
+  act(() => n.send({ t: "live", frame: { at: later(2), full: true, lanes: [liveLane(leadLaneId(project), "idle")] } }));
+  await flush();
+  expect(wake()).toBeNull();
+  expect(host.querySelector("[data-typing]")).toBeNull();
 });

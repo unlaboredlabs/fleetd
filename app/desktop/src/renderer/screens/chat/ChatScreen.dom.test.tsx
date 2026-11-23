@@ -162,13 +162,16 @@ const island = () => host.querySelector("[data-band] > [data-island]");
 // said only a step with more words than "Working", so a turn with none (or only thinking) drew no island.
 it("shows the lead at work in the island whenever the composer shows Stop, with no words where its step has none", async () => {
   const human = (seq: number, text: string, delivery: string) => ({ messageId: `m${String(seq)}`, projectRef: project, seq, author: "human", state: "final", text, createdAt: AT, delivery });
-  const steered = [human(1, "start", "turn"), human(2, "1-16", "steer")];
+  // The lead answered and works on: nothing of yours waits, so the bot isn't in the reply's place (WakeRow.tsx).
+  const answered = (seq: number) => ({ messageId: `m${String(seq)}`, projectRef: project, seq, author: "lead", state: "final", text: "On it.", createdAt: AT });
+  const steered = [human(1, "start", "turn"), human(2, "1-16", "steer"), answered(3)];
+  const asked = [human(1, "Add dark mode", "turn"), answered(2)];
   const states: readonly [string, Parameters<typeof mount>[1], Parameters<typeof mount>[2]][] = [
     ["a turn with no step yet, after a steer", undefined, { working: true, messages: steered }],
-    ["a turn with no step yet", undefined, { working: true }],
-    ["a lane at work with no activity", liveLane(leadLaneId(project), "working"), {}],
-    ["thinking", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }), {}],
-    ["writing", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "writing" }, since: AT } }), {}],
+    ["a turn with no step yet", undefined, { working: true, messages: asked }],
+    ["a lane at work with no activity", liveLane(leadLaneId(project), "working"), { messages: asked }],
+    ["thinking", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }), { messages: asked }],
+    ["writing", liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "writing" }, since: AT } }), { messages: asked }],
   ];
   for (const [state, lead, at] of states) {
     await mount({ state: "working" }, lead, at);
@@ -180,6 +183,12 @@ it("shows the lead at work in the island whenever the composer shows Stop, with 
     expect(island()?.querySelector("button"), state).toBeNull();
     act(() => root?.unmount());
   }
+  // Your message waits on it: the bot with its typing dots in the reply's place says so (wake.dom.test.tsx), and the
+  // island doesn't again.
+  await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: { activity: { kind: "thinking" }, since: AT } }));
+  expect(stop()).not.toBeNull();
+  expect(island()).toBeNull();
+  act(() => root?.unmount());
   // Idle: no Stop, no island.
   await mount({ state: "idle" });
   expect(stop()).toBeNull();

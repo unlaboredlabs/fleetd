@@ -82,4 +82,33 @@ describe("a cloud bot waking on the phone", () => {
     s = frame(s, true, at + 3_000, at - 2_000 + 300);
     expect(s.skewMs).toBe(4_700);
   });
+
+  // W852: the bot under your message on every turn, not only a cloud bot's waking one.
+  it("stands under your message from the send, on any turn, until the reply or a turn that ends without one", () => {
+    const k = "devbox/w4";
+    const r = { machineId: "devbox", projectId: "w4" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    const t0 = Date.parse(asked);
+    const ask = { messageId: "m1", author: "human", state: "final", createdAt: asked };
+    let s = { ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }) } as State;
+    s = { ...s, chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1 } }, chats: { [k]: { messages: [ask], leadWaiting: {} } } } as never;
+    // In, and the lead not started yet: the dots at once.
+    expect(wakeIn(s, k, false, t0 + 200)).toEqual({ phase: "received", since: t0 });
+    // Long past with no start: nothing.
+    expect(wakeIn(s, k, false, t0 + 11 * 60_000)).toBeUndefined();
+    // Not on the hub: nothing it can know.
+    expect(wakeIn({ ...s, hub: { phase: "connecting", hub: "", attempt: 1 } } as never, k, false, t0 + 200)).toBeUndefined();
+    // Why the lead doesn't have it, in its first sentence.
+    const held = { ...s, chats: { [k]: { messages: [ask], leadWaiting: { m1: "devbox is offline: its node isn't connected. It goes in when devbox is back." } } } } as never;
+    expect(wakeIn(held, k, false, t0 + 200)).toEqual({ phase: "held", reason: "devbox is offline: its node isn't connected." });
+    // The lead works on it, an awake bot's turn: thinking, with the dots.
+    const event = (leadWorking: boolean, at: string) =>
+      ({ t: "frame", frame: { t: "event", event: { seq: 2, at, type: "chat.waiting", summary: "", data: { projectRef: r, needsYou: false, leadWorking, lastSeq: 1 } } }, nowMs: t0 }) as never;
+    s = reduce(s, event(true, "2026-11-22T10:00:01.000Z"));
+    expect(wakeIn(s, k, false, t0 + 1_500)).toEqual({ phase: "thinking" });
+    // Its turn ends with no reply (a quiet one): gone, and it stays gone.
+    s = reduce(s, event(false, "2026-11-22T10:00:04.000Z"));
+    expect(s.turnEnded?.[k]).toBe(t0 + 4_000);
+    expect(wakeIn(s, k, false, t0 + 5_000)).toBeUndefined();
+  });
 });
