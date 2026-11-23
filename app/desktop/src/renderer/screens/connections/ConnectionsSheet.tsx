@@ -228,7 +228,8 @@ function Strip({ items }: { items: ReadonlyArray<StripItem> }) {
   );
 }
 
-/** A row's frame: its tile, its name with the state beside it, a line under for what the person needs now, its controls. */
+/** A row's frame: its tile, its name, a line under for what the person needs now, and at its end its state with its
+ * controls. Tile, words and end are each centred on the row, so a row of one line and one of two line up alike. */
 function Row(props: {
   tile: ReactNode;
   name: string;
@@ -248,17 +249,6 @@ function Row(props: {
         <div className={c.top}>
           <span className={c.name}>{props.name}</span>
           {props.where === undefined ? null : <span className={c.where}>{props.where}</span>}
-          {props.word == null ? null : props.word.hint === undefined ? (
-            <span className={c.word} data-tone={props.word.tone}>
-              {props.word.text}
-            </span>
-          ) : (
-            <Tooltip content={props.word.hint}>
-              <span className={c.word} data-tone={props.word.tone} tabIndex={0}>
-                {props.word.text}
-              </span>
-            </Tooltip>
-          )}
         </div>
         {props.line == null ? null : (
           <span className={c.line} data-tone={props.line.tone} role={props.line.tone === "danger" ? "alert" : "status"}>
@@ -267,7 +257,20 @@ function Row(props: {
         )}
         {props.children}
       </div>
-      <div className={c.controls}>{props.controls}</div>
+      <div className={c.controls}>
+        {props.word == null ? null : props.word.hint === undefined ? (
+          <span className={c.word} data-tone={props.word.tone}>
+            {props.word.text}
+          </span>
+        ) : (
+          <Tooltip content={props.word.hint}>
+            <span className={c.word} data-tone={props.word.tone} tabIndex={0}>
+              {props.word.text}
+            </span>
+          </Tooltip>
+        )}
+        {props.controls}
+      </div>
     </li>
   );
 }

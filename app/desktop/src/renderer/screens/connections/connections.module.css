@@ -269,7 +269,7 @@
 }
 .word {
   flex: none;
-  margin-left: auto;
+  margin-right: var(--space-2);
   color: var(--quiet);
   font-size: var(--text-md);
   white-space: nowrap;
