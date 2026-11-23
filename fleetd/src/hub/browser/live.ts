@@ -298,8 +298,11 @@ export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame
     );
   }
   const machine = runsOn(hub, s);
-  if (!link(hub).can(machine, CAP_BROWSER)) {
-    throw new ToolError("machine_offline", `${machine}'s node isn't connected, or is too old for live view.`);
+  // Refused only by a node too old for live view. One not linked this moment (the hub or the node restarting) is
+  // watched all the same: it hears of the watch as it links (`rewatch`). An app whose watch was refused then would
+  // wait for its next reconnect, frozen meanwhile.
+  if (link(hub).lacks(machine, CAP_BROWSER)) {
+    throw new ToolError("machine_offline", `${machine}'s node is too old for live view.`, "Update fleetd on that machine.");
   }
   return live(hub).watch(machine, id, onFrame, video);
 }
