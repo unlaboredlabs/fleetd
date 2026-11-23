@@ -227,7 +227,9 @@ const count = (n: number): string => (n === 1 ? "1 machine" : `${String(n)} mach
 export const updateStatus = ({ app, hub, machines = [], run = null, flow = { phase: "idle" }, ready = null, auto = null, now = Date.now(), timeZone, administers = true, updates = true, withApp = true }: StatusInput): Status => {
   const own = app === null || !withApp ? null : appStatus(app);
   const connected = hub.url !== null;
-  const of = connected ? target(hub, app) : null;
+  // A hub with an Update speed follows the staged rollout (D701): the build it has ready is the one to offer, and a
+  // newer one that hasn't reached it yet isn't. Only a hub from before that is compared with the newest build.
+  const of = connected && auto?.speed === undefined ? target(hub, app) : null;
   const newest = !connected ? null : (ready ?? (behind(hub.version, of) ? of : null));
   // A finished run behind a newer build (ready on the hub, or on the channel) is history: that build is what to offer.
   const last = shown(run, flow, now);

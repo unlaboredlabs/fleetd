@@ -165,7 +165,7 @@ sign yourself needs [its own notification relay](/docs/phone-notifications#own).
 A build signed with an update certificate gets new screens and fixes without a reinstall. It checks at launch and
 uses the new version from its next start. Native changes still need a new build.
 
-Pick the channel when you run **Mobile release**: `edge` updates with every merge to `main`, `stable` with each
-release. A fork that wants its own updates makes its own key with
+Pick the channel when you run **Mobile release**: `edge` gets each build's bundle once that build has reached every
+hub (see [Builds & rollout](/docs/releases#rings)), `stable` each tagged release. A fork that wants its own updates makes its own key with
 `npm exec -- expo-updates codesigning:generate` in `app/mobile`, sets `UPDATES_PRIVATE_KEY_PEM`, `UPDATES_CERT_PEM` and
 `FLEETD_UPDATES_URL`, and serves its own `site/`.

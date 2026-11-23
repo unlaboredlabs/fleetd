@@ -1,15 +1,27 @@
-// Update automatically, on Hub › Machines › Updates: one switch the hub's owners and admins turn, which says nothing more unless
-// automatic updates hold back, and then why in the hub's words.
+// Update automatically and Update speed, on Hub › Machines › Updates: a switch and a choice the hub's owners and admins
+// turn. The switch says nothing more unless automatic updates hold back, and then why in the hub's words.
 import { useState } from "react";
-import { toast } from "../../ui";
+import type { UpdateSpeed } from "../../../shared/contracts";
+import { Segmented, toast } from "../../ui";
 import { useDataLayer } from "../../src/data/react";
 import { shortLabels } from "../../../shared/updates";
 import { useSettledAdministers } from "../admin/role";
-import { setAuto, useAuto } from "./flow";
-import { SettingsSection, SwitchRow } from "../settings/parts";
+import { setAuto, setSpeed, useAuto } from "./flow";
+import { HintLines, SettingsRow, SettingsSection, SwitchRow } from "../settings/parts";
 import { Line } from "./UpdateStatus";
 
-/** `inGroup`: its one row, for a group that holds it (Hub › Machines' Updates); else a section of its own. */
+const SPEEDS: readonly { readonly value: UpdateSpeed; readonly label: string }[] = [
+  { value: "fast", label: "Fast" },
+  { value: "steady", label: "Steady" },
+];
+
+const SPEED_HINT = [
+  "Which builds of fleetd this hub takes. Every build runs on fleetd's own hub and cloud first, then reaches hubs in stages.",
+  ["Fast", "each build within hours of passing those checks (the default)"],
+  ["Steady", "only builds that have been out 2 days with no problems"],
+] as const;
+
+/** `inGroup`: its rows, for a group that holds them (Hub › Machines' Updates); else a section of its own. */
 export function AutoUpdates({ inGroup = false }: { inGroup?: boolean }) {
   const layer = useDataLayer();
   const auto = useAuto(layer.hub);
@@ -23,16 +35,36 @@ export function AutoUpdates({ inGroup = false }: { inGroup?: boolean }) {
     setSaving(false);
     if (refused !== null) toast({ title: "Automatic updates didn't change", description: refused, tone: "danger" });
   };
-  const row = (
-    <SwitchRow
-      title="Update automatically"
-      {...(inGroup ? { mark: "none" as const } : {})}
-      line={auto.on && auto.held !== null ? <Line text={shortLabels(auto.held)} /> : undefined}
-      checked={auto.on}
-      disabled={saving}
-      onCheckedChange={(on) => void turn(on)}
-      {...(inGroup ? { data: { "data-auto-updates": auto.on ? "on" : "off" } } : {})}
-    />
+  const pace = async (speed: UpdateSpeed) => {
+    if (speed === auto.speed) return;
+    setSaving(true);
+    const refused = await setSpeed(layer, speed);
+    setSaving(false);
+    if (refused !== null) toast({ title: "Update speed didn't change", description: refused, tone: "danger" });
+  };
+  const rows = (
+    <>
+      <SwitchRow
+        title="Update automatically"
+        {...(inGroup ? { mark: "none" as const } : {})}
+        line={auto.on && auto.held !== null ? <Line text={shortLabels(auto.held)} /> : undefined}
+        checked={auto.on}
+        disabled={saving}
+        onCheckedChange={(on) => void turn(on)}
+        {...(inGroup ? { data: { "data-auto-updates": auto.on ? "on" : "off" } } : {})}
+      />
+      {/* A hub from before update speeds has none to choose. */}
+      {auto.speed === undefined ? null : (
+        <SettingsRow
+          reveal="hub.update_speed"
+          {...(inGroup ? { mark: "none" as const } : {})}
+          title="Update speed"
+          hint={<HintLines lines={SPEED_HINT} />}
+          data={{ "data-update-speed": auto.speed }}
+          control={<Segmented label="Update speed" options={SPEEDS} value={auto.speed} disabled={saving} onChange={(s) => void pace(s)} />}
+        />
+      )}
+    </>
   );
-  return inGroup ? row : <SettingsSection data={{ "data-auto-updates": auto.on ? "on" : "off" }}>{row}</SettingsSection>;
+  return inGroup ? rows : <SettingsSection data={{ "data-auto-updates": auto.on ? "on" : "off" }}>{rows}</SettingsSection>;
 }

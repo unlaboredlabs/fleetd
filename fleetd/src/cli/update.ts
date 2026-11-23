@@ -1,9 +1,12 @@
-// `fleetd update [--check] [--channel edge|stable] [--now]`, on src/update: replaces this binary with the latest build of a release channel, then restarts the hub and node services
+// `fleetd update [--check] [--speed fast|steady] [--now]`, on src/update: replaces this binary with the build the rollout
+// picks for this machine (src/update/rollout.ts, as its hub would: the hub's settings on this machine), then restarts
+// the hub and node services
 // that run it: the hub at once, the node once its agents finish the step they're on (held meanwhile, node/hold), 2
 // minutes at most; `--now` doesn't wait. The desktop app's Update button does the same through the hub (`hub_update`).
 //
 // Not here: replacing the pre-Electron GPUI app, which no machine on this build has.
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { claudeBinary, TESTED } from "../node/runner/claude.ts";
 import { bringTo, RealClaude } from "../node/runner/install.ts";
 import { VERSION } from "../shared/version.ts";
@@ -18,7 +21,7 @@ import { hubInfo, versionShown } from "./versions.ts";
 const WAIT_POLL_MS = 2000;
 
 export async function updateCommand(argv: string[]): Promise<number> {
-  const v = parse(argv, { options: { check: "bool", channel: "str", now: "bool" }, positionals: false });
+  const v = parse(argv, { options: { check: "bool", speed: "str", channel: "str", now: "bool" }, positionals: false });
   if (v instanceof ArgError) {
     process.stderr.write(`fleetd: ${v.message}\n\n${usageText()}`);
     return 2;
@@ -26,6 +29,7 @@ export async function updateCommand(argv: string[]): Promise<number> {
   try {
     await run({
       check: v.flag("check"),
+      ...(v.str("speed") === undefined ? {} : { speed: v.str("speed")! }),
       ...(v.str("channel") === undefined ? {} : { channel: v.str("channel")! }),
       now: v.flag("now"),
     });
@@ -47,27 +51,35 @@ async function askHub(): Promise<string | undefined> {
   }
 }
 
-export async function run(args: { check: boolean; channel?: string; now: boolean }): Promise<void> {
-  const { HttpFeed, baseUrl, channelOf, checkedTo, cliAsset, installedExe, parseChannel, release, sums, retireHelper } = await import(
-    "../update/index.ts"
-  );
+/** `args.speed`, else the edge/stable `--channel` or `FLEETD_CHANNEL` from before speeds, as a speed. */
+function speedOf(args: { speed?: string; channel?: string }, parseSpeed: (n: string | undefined) => "fast" | "steady" | undefined) {
+  const named = args.speed ?? args.channel ?? process.env.FLEETD_CHANNEL;
+  const speed = parseSpeed(named);
+  if (named !== undefined && speed === undefined) throw new Error(`unknown speed ${JSON.stringify(named)}: use fast or steady`);
+  return speed;
+}
+
+export async function run(args: { check: boolean; speed?: string; channel?: string; now: boolean }): Promise<void> {
+  const { HttpFeed, baseUrl, checkedTo, cliAsset, installedExe, retireHelper } = await import("../update/index.ts");
+  const { choose, parseSpeed } = await import("../update/rollout.ts");
+  const { pickerIn } = await import("../hub/update/index.ts");
   const { isHubService, services: servicesOf } = await import("../update/service.ts");
   const current = VERSION;
   const releaseBuild = process.env.FLEETD_VERSION !== undefined;
-  const named = args.channel ?? process.env.FLEETD_CHANNEL;
-  const channel = named !== undefined ? parseChannel(named) : channelOf(current, releaseBuild);
-  const feed = new HttpFeed(baseUrl(channel));
+  const who = pickerIn(join(resolveHome(), "update"), speedOf(args, parseSpeed));
   // The build and its checksums from one read, so what installs below is the build this names.
-  const rel = await release(feed);
-  const cliLatest = rel.cliVersion !== undefined && rel.cliVersion !== current ? rel.cliVersion : undefined;
+  const c = await choose(new HttpFeed(baseUrl("edge")), who, current, Date.now());
+  const cliLatest = c.kind === "move" ? c.to : undefined;
   const exe = installedExe();
   const services = servicesOf(exe);
   const hub = services.some(isHubService) ? await askHub() : undefined;
   // An earlier update installed this binary, and the hub still runs the one before.
   const pending = hub !== undefined && cliLatest === undefined && hub !== current && hub !== "0.0.0" ? hub : undefined;
-  if (cliLatest !== undefined) console.log(`fleetd ${versionShown(current)} -> ${versionShown(cliLatest)} (${channel})`);
-  else if (rel.cliVersion !== undefined) console.log(`fleetd ${versionShown(current)} is up to date (${channel})`);
-  else console.log(`the ${channel} channel has no fleetd CLI build yet`);
+  const said = c.kind === "move" && c.back ? `${who.speed}; the build it runs was pulled` : who.speed;
+  if (cliLatest !== undefined) console.log(`fleetd ${versionShown(current)} -> ${versionShown(cliLatest)} (${said})`);
+  else if (c.kind === "stay" && c.newest === undefined) console.log(c.why);
+  else if (c.kind === "stay" && c.why.startsWith("it runs the newest")) console.log(`fleetd ${versionShown(current)} is up to date (${who.speed})`);
+  else if (c.kind === "stay") console.log(`fleetd ${versionShown(current)} stays: ${c.why} (${who.speed})`);
   if (pending !== undefined) console.log(`the hub still runs ${versionShown(pending)}; a restart moves it to ${versionShown(current)}`);
   const restartDue = services.length > 0 && (cliLatest !== undefined || pending !== undefined);
   if (args.check || !restartDue) {
@@ -78,9 +90,7 @@ export async function run(args: { check: boolean; channel?: string; now: boolean
   if (cliLatest !== undefined) {
     if (!releaseBuild) throw new Error("this fleetd is a local build; install a release with: curl -fsSL https://fleetd.sh | sh");
     try {
-      // A release from before pins lists its checksums in SHA256SUMS.
-      const s = rel.sums ?? (await sums(feed));
-      await checkedTo(feed, s, cliAsset(), exe);
+      if (c.kind === "move") await checkedTo(c.feed, await c.sums(), cliAsset(), exe);
       // This build hosts sessions itself, so a Rust session host an older build kept beside it goes.
       retireHelper(exe);
     } catch (error) {

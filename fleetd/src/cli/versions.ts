@@ -1,6 +1,7 @@
 // Versions as people read them (`version_shown`, `version_cmp`) and the one
 // line `fleetd status` and `fleetd doctor` print when the CLI, the hub and the nodes differ (cli/versions.rs).
 import { VERSION } from "../shared/version.ts";
+import { buildNumber } from "../update/version.ts";
 import type { McpClient } from "./mcp_client.ts";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -15,8 +16,11 @@ export function edgeStamp(version: string): [string, string] | undefined {
   return undefined;
 }
 
-/** An Edge build by when and from which commit it was built: "Edge · Oct 26, 10:56 UTC · 1b563d7". */
+/** A numbered build by its number ("2026.11.23.4", src/update/version.ts `buildNumber`); one from before numbers by when
+ * and from which commit it was built: "Edge · Oct 26, 10:56 UTC · 1b563d7". */
 export function versionLabel(raw: string): string {
+  const number = buildNumber(raw);
+  if (number !== undefined) return number;
   let version = raw.trim();
   if (version.startsWith("v")) version = version.slice(1);
   const plus = version.indexOf("+");

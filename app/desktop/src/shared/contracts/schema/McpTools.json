@@ -9238,6 +9238,10 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "speed": {
+          "$ref": "#/$defs/UpdateSpeed",
+          "description": "Which builds the hub takes: Fast (each build in its rollout stage) or Steady (builds out 2 days, never halted)."
         }
       },
       "type": "object"
@@ -25905,6 +25909,10 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "speed": {
+          "$ref": "#/$defs/UpdateSpeed",
+          "description": "Which builds the hub takes, Fast by default. Absent from a hub before update speeds."
         }
       },
       "required": [
@@ -28613,6 +28621,22 @@
         "items"
       ],
       "type": "object"
+    },
+    "UpdateSpeed": {
+      "description": "Update speed: `fast` takes each build once its staged rollout reaches the hub, within hours of it passing fleetd's\nown checks; `steady` only builds that have been out 2 days and were never halted. Replaces the edge/stable channel.",
+      "oneOf": [
+        {
+          "const": "fast",
+          "description": "Each build once its staged rollout reaches the hub.",
+          "type": "string"
+        },
+        {
+          "const": "steady",
+          "description": "Only builds that have been out 2 days and were never halted.",
+          "type": "string"
+        }
+      ],
+      "x-open": true
     }
   },
   "$ref": "#/$defs/McpTools",

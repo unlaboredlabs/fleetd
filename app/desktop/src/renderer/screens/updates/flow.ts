@@ -6,7 +6,7 @@
 // whenever the hub says an update began or ended. A tiny external store, so every surface shows the same run; the
 // steps take their effects as deps, so they are unit-tested.
 import { useSyncExternalStore } from "react";
-import type { Call, HubUpdateOutput, UpdateRun } from "../../../shared/contracts";
+import type { Call, HubUpdateOutput, UpdateRun, UpdateSpeed } from "../../../shared/contracts";
 import type { UpdatesState } from "../../../shared/updates";
 
 export type Flow =
@@ -32,6 +32,8 @@ export interface Auto {
   readonly at: string | null;
   /** Why automatic updates hold back now, in the hub's sentence; null while they don't. */
   readonly held: string | null;
+  /** Update speed (D701); absent from a hub before speeds. */
+  readonly speed?: UpdateSpeed;
 }
 
 export interface FlowDeps {
@@ -119,7 +121,9 @@ export const hubUpdated = (r: UpdateRun): boolean => {
 
 /** Update automatically in an answer; undefined when it has no settings (an older hub), so the last one stays. */
 const autoOf = (out: HubUpdateOutput): Auto | undefined =>
-  out.settings === undefined ? undefined : { on: out.settings.auto, at: out.autoAt ?? null, held: out.skipReason ?? null };
+  out.settings === undefined
+    ? undefined
+    : { on: out.settings.auto, at: out.autoAt ?? null, held: out.skipReason ?? null, ...(out.settings.speed === undefined ? {} : { speed: out.settings.speed }) };
 
 const said = (error: { readonly message: string; readonly fix?: string | undefined }): string => (error.fix === undefined ? error.message : `${error.message} ${error.fix}`);
 
@@ -159,6 +163,14 @@ export const startUpdate = async (deps: FlowDeps, over = false): Promise<void> =
 /** Update automatically on or off: the hub keeps it. The hub's words when it refused. */
 export const setAuto = async (deps: Pick<FlowDeps, "call" | "hub">, on: boolean): Promise<string | null> => {
   const out = await deps.call("hub_update_settings", { auto: on });
+  if (!out.ok) return said(out.error);
+  set(deps.hub ?? "", { auto: autoOf(out.output) });
+  return null;
+};
+
+/** Update speed, Fast or Steady: the hub keeps it. The hub's words when it refused. */
+export const setSpeed = async (deps: Pick<FlowDeps, "call" | "hub">, speed: UpdateSpeed): Promise<string | null> => {
+  const out = await deps.call("hub_update_settings", { speed });
   if (!out.ok) return said(out.error);
   set(deps.hub ?? "", { auto: autoOf(out.output) });
   return null;

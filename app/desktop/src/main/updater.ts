@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { app, shell } from "electron";
 import type { AppImageUpdater, DebUpdater, MacUpdater } from "electron-updater";
 import { z } from "zod";
@@ -7,7 +8,8 @@ import { compareVersions } from "../shared/pairing";
 import { RELEASE_BUILD } from "./build";
 import { feedUrl } from "./update-feed";
 import { failureReason } from "./update-messages";
-import { fetchRelease } from "./update-release";
+import { fetchRelease, readJson } from "./update-release";
+import { bucketOf, pulled, rolloutId, stageChannel } from "./update-stage";
 import { step, type UpdateEffect, type UpdateInput } from "./update-state";
 
 /**
@@ -137,6 +139,11 @@ export const updates = (fixtureFile: string | null): Updates => {
     // staple-later flow replaced, a stale cache) is downloaded whole instead.
     const options = { provider: "generic" as const, url, useMultipleRangeRequest: false };
     const u = process.platform === "darwin" ? new MacUpdater(options) : deb ? new DebUpdater(options) : new AppImageUpdater(options);
+    // Its stage of the staged rollout (update-stage.ts); setting a channel lets the updater step down, which only a
+    // pulled build may (each check says).
+    const channel = stageChannel(bucketOf(rolloutId(join(app.getPath("userData"), "rollout-id"))));
+    if (channel !== null) u.channel = channel;
+    u.allowDowngrade = false;
     u.autoDownload = !deb;
     u.autoInstallOnAppQuit = !deb;
     u.on("update-available", ({ version }) => {
@@ -186,6 +193,7 @@ export const updates = (fixtureFile: string | null): Updates => {
         const newest = (await release).app;
         if (newest === null || compareVersions(newest, ready.version) !== 1) return;
       }
+      if (updater) updater.allowDowngrade = pulled(await readJson(`${url}/rollout.json`), app.getVersion());
       updater?.checkForUpdates().catch((error: unknown) => {
         console.warn("update check failed:", error instanceof Error ? error.message : error);
         h.send({ type: "error", reason: failureReason(error) });

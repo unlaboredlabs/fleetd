@@ -168,6 +168,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   },
   { key: "hub.where", label: "What runs where", tab: "hub.machines", keywords: ["what runs where", "where agents run", "where screens run", "route", "routing", "browser", "linux desktop", "android", "ios simulator", "mac", "your machines"] },
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
+  { key: "hub.update_speed", label: "Update speed", tab: "hub.machines", keywords: ["update speed", "fast", "steady", "stable", "edge", "channel", "rollout"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
   { key: "hub.agents", label: "Agents for every bot", tab: "hub.agents", keywords: ["bot defaults", "defaults", "every bot", "hub-wide"] },
   { key: "hub.default-profile", label: "Default profile", tab: "hub.agents", keywords: ["default", "profile", "model", "effort", "reviews", "every bot"] },

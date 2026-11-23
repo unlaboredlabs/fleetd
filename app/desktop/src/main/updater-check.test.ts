@@ -17,12 +17,12 @@ const { fake } = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
-  app: { isPackaged: true, getVersion: () => "0.5.0" },
+  app: { isPackaged: true, getVersion: () => "0.5.0", getPath: () => process.env["TMPDIR"] ?? "/tmp" },
   shell: { openExternal: vi.fn() },
 }));
 vi.mock("./build", () => ({ RELEASE_BUILD: true }));
 const release = { cli: "0.6.0", app: "0.6.0" };
-vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve({ ...release, app: fake.feed }) }));
+vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve({ ...release, app: fake.feed }), readJson: () => Promise.resolve(null) }));
 vi.mock("electron-updater", async () => {
   const { EventEmitter } = await import("node:events");
   class FakeUpdater extends EventEmitter {

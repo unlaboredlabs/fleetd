@@ -295,9 +295,10 @@ export type NodeActionKind =
   | "rejoin"
   | "mac_ended";
 
-/** The build a node updates to. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
+/** The build a node updates to. With `build` and `sha256`, the build's own release and its checksums (the rollout's
+ * pick, D701), which a node from before rollouts ignores, taking the channel's newest. Edge goes out as `nightly`, its name before D203. `flavour` is the hub's own: a node on
  * the other one switches to it; one from before ignores it and installs its own flavour of `version`. */
-export type NodeUpdate = { version: string; channel: HubChannel | "nightly"; flavour?: string };
+export type NodeUpdate = { version: string; channel: HubChannel | "nightly"; flavour?: string; build?: string; sha256?: Record<string, string> };
 
 /** Hub -> node: the doctor's probe and the hub's update of its nodes. Its fields are single words. */
 export type NodeAction = {

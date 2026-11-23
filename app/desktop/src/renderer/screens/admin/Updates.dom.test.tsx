@@ -31,9 +31,10 @@ let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ tool: string; input: Record<string, unknown> }>;
 let auto: boolean;
+let speed: string;
 
 const status = () => ({
-  settings: { auto, drainMinutes: 2 },
+  settings: { auto, drainMinutes: 2, speed },
   ready: READY,
   ...(auto ? { skipReason: "A person's update is still running." } : {}),
 });
@@ -42,6 +43,7 @@ beforeEach(() => {
   resetServes();
   calls = [];
   auto = true;
+  speed = "fast";
   resetFlow();
   // This app runs the hub's build, and the channel has a newer one: the hub has it ready.
   const app = { current: OLD, app: { kind: "current" }, release: { cli: READY, app: READY } };
@@ -66,7 +68,8 @@ const render = async (node: React.ReactNode, admin = true, leftOut?: string[]) =
     call: (tool, input) => {
       const args = input as Record<string, unknown>;
       calls.push({ tool, input: args });
-      if (tool === "hub_update_settings") auto = args["auto"] === true;
+      if (tool === "hub_update_settings" && "auto" in args) auto = args["auto"] === true;
+      if (tool === "hub_update_settings" && typeof args["speed"] === "string") speed = args["speed"];
       const output =
         tool === "hub_info"
           ? { version: OLD, protocol: 1, busy: [], admin, ...(leftOut === undefined ? {} : { leftOut }), me: { personId: "p_aaaaaaaa", name: "Sam", role: admin ? "owner" : "member", createdAt: AT } }
@@ -127,6 +130,23 @@ it("shows one status with one button, and the switch with why it holds back", as
   // This hub refuses it (nothing faked): its words, and the way to press again.
   expect(text(page, "[data-update-status='failed']")).toBe("The update didn't startHub_update isn't faked.Try again");
   expect(document.querySelector("[role='dialog']")).toBeNull();
+});
+
+it("sets Update speed, Fast or Steady, on the hub", async () => {
+  await render(<Updates />);
+  const row = host.querySelector<HTMLElement>("[data-update-speed]");
+  expect(row?.dataset["updateSpeed"]).toBe("fast");
+  expect([...(row?.querySelectorAll("button[aria-pressed]") ?? [])].map((b) => [b.textContent, b.getAttribute("aria-pressed")])).toEqual([
+    ["Fast", "true"],
+    ["Steady", "false"],
+  ]);
+  await act(async () => {
+    [...(row?.querySelectorAll<HTMLElement>("button[aria-pressed]") ?? [])].find((b) => b.textContent === "Steady")?.click();
+    await Promise.resolve();
+  });
+  for (let i = 0; i < 3; i++) await settle();
+  expect(calls.filter((c) => c.tool === "hub_update_settings").map((c) => c.input)).toEqual([{ speed: "steady" }]);
+  expect(host.querySelector<HTMLElement>("[data-update-speed]")?.dataset["updateSpeed"]).toBe("steady");
 });
 
 it("shows a member no switch", async () => {

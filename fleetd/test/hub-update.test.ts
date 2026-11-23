@@ -47,6 +47,9 @@ class Fake implements UpdatePorts {
   published: [string, Uint8Array] = [NEW, build];
   /** A feed of its own, instead of `published`'s. */
   release?: Feed;
+  buildFeed?: (build: string) => Feed;
+  leadTurns?: UpdatePorts["leadTurns"];
+  reportPass?: UpdatePorts["reportPass"];
 
   constructor(dir: string, nodes: Partial<NodeFacts>[]) {
     require("node:fs").mkdirSync(dir, { recursive: true });
@@ -71,10 +74,13 @@ class Fake implements UpdatePorts {
     if (this.release) return this.release;
     const [version, bytes] = this.published;
     return {
-      get: async (name: string) =>
-        new TextEncoder().encode(
+      get: async (name: string) => {
+        // A release from before rollouts: its newest build is the one.
+        if (name === "rollout.json") throw new Error("GET `rollout.json`: 404 Not Found");
+        return new TextEncoder().encode(
           name === "release.json" ? JSON.stringify({ cliVersion: version }) : name === "SHA256SUMS" ? `${sha256Hex(bytes)}  fleetd-linux-x64\n` : "",
-        ),
+        );
+      },
       stream: async (name: string, sink: (c: Uint8Array) => void) => sink(name === "fleetd-linux-x64" ? bytes : new Uint8Array()),
     };
   }
@@ -201,6 +207,7 @@ function republishing(builds: [string, Uint8Array][]): Feed & { reads: string[] 
   const asset = "fleetd-linux-x64";
   const reads: string[] = [];
   const bytesOf = (name: string): Uint8Array => {
+    if (name === "rollout.json") throw new Error("GET `rollout.json`: 404 Not Found");
     const [version, bytes] = builds[Math.min(reads.length, builds.length - 1)]!;
     reads.push(name);
     const pinned = builds.find(([, b]) => name === `${asset}-${sha256Hex(b).slice(0, 16)}`);
@@ -311,9 +318,14 @@ test("settings, the automatic update's due time, and its last result", () => {
   const dir = join(home.dir, "d");
   const fake = new Fake(dir, [{}]);
   const u = updatesIn(dir, fake);
-  expect(u.settings()).toEqual({ auto: false, drainMinutes: 0 });
-  expect(u.setSettings(true, 500)).toEqual({ auto: true, drainMinutes: 240 });
+  expect(u.settings()).toEqual({ auto: false, drainMinutes: 0, speed: "fast" });
+  expect(u.setSettings(true, 500)).toEqual({ auto: true, drainMinutes: 240, speed: "fast" });
   expect(JSON.parse(readFileSync(join(dir, "update", "settings.json"), "utf8"))).toEqual({ auto: true, drainMinutes: 240 });
+  // Update speed replaced the edge/stable channel: a hub set to stable reads as Steady, and a speed set replaces it.
+  writeFileSync(join(dir, "update", "settings.json"), JSON.stringify({ auto: true, drainMinutes: 240, channel: "stable", ring: "first" }));
+  expect(u.settings().speed).toBe("steady");
+  expect(u.setSettings(undefined, undefined, "fast")).toEqual({ auto: true, drainMinutes: 240, speed: "fast" });
+  expect(JSON.parse(readFileSync(join(dir, "update", "settings.json"), "utf8"))).toEqual({ auto: true, drainMinutes: 240, speed: "fast", ring: "first" });
   // Auto on, a node left behind: due now.
   fake.version = NEW;
   expect(u.autoAt()).toBe(fake.now);
@@ -631,4 +643,170 @@ test("versions order within a channel only, and the watcher's health URL reaches
     "http://[::1]:4790",
     "http://[::1]:4790",
   ]);
+});
+
+/** A release with a rollout.json (D701): each build's file in its own release, `build-<number>`, pinned. */
+function rolledOut(builds: { build: string; version: string; bytes: Uint8Array; passedAt?: string; pulledAt?: string; publishedAt?: string }[]) {
+  const asset = "fleetd-linux-x64";
+  const rollout = {
+    builds: builds.map((b) => ({
+      build: b.build,
+      version: b.version,
+      commit: "0".repeat(40),
+      publishedAt: b.publishedAt ?? "2026-11-23T10:00:00Z",
+      sha256: { [asset]: sha256Hex(b.bytes) },
+      ...(b.passedAt ? { passedAt: b.passedAt } : {}),
+      ...(b.pulledAt ? { pulledAt: b.pulledAt } : {}),
+    })),
+  };
+  const reads: string[] = [];
+  const edge: Feed = {
+    get: async (name) => {
+      reads.push(name);
+      if (name === "rollout.json") return new TextEncoder().encode(JSON.stringify(rollout));
+      throw new Error(`GET \`${name}\`: 404 Not Found`);
+    },
+  };
+  const of = (build: string): Feed => {
+    const b = builds.find((x) => x.build === build)!;
+    const pin = `${asset}-${sha256Hex(b.bytes).slice(0, 16)}`;
+    const bytesOf = (name: string) => {
+      reads.push(`build-${build}/${name}`);
+      if (name !== pin) throw new Error(`GET \`${name}\`: 404 Not Found`);
+      return b.bytes;
+    };
+    return { get: async (name) => bytesOf(name), stream: async (name, sink) => sink(bytesOf(name)) };
+  };
+  return { edge, of, reads };
+}
+
+test("with a rollout, the hub takes the newest build that reached its bucket, and its nodes get that build's own files", async () => {
+  const dir = join(home.dir, "rollout");
+  const fake = new Fake(dir, [{}]);
+  const at = (h: number) => new Date(Date.parse("2026-11-23T12:00:00Z") - h * 3_600_000).toISOString();
+  fake.now = Date.parse("2026-11-23T12:00:00Z");
+  const two = new TextEncoder().encode("fleetd 2"), one = new TextEncoder().encode("fleetd 1");
+  // The newest passed its first ring a minute ago (10% of hubs); the one before 4 hours ago (everyone).
+  const r = rolledOut([
+    { build: "2026.11.23.2", version: NEWER, bytes: two, passedAt: at(0.01) },
+    { build: "2026.11.23.1", version: NEW, bytes: one, passedAt: at(4) },
+  ]);
+  fake.release = r.edge;
+  fake.buildFeed = r.of;
+  const u = updatesIn(dir, fake);
+  // A bucket past 10: its id is made once and kept.
+  let id = 0;
+  const { bucketOf } = await import("../src/update/rollout.ts");
+  while (bucketOf(`hub-${id}`) < 10) id++;
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  writeFileSync(join(dir, "update", "rollout-id"), `hub-${id}\n`);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  expect(fake.plans[0]!.to).toBe(NEW);
+  expect(readFileSync(fake.exePath, "utf8")).toBe("fleetd 1");
+  expect(r.reads).toContain(`build-2026.11.23.1/fleetd-linux-x64-${sha256Hex(one).slice(0, 16)}`);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  fake.version = NEW;
+  const after = updatesIn(dir, fake);
+  await after.resume();
+  expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  expect(fake.sent.at(-1)).toMatchObject({ version: NEW, build: "2026.11.23.1", sha256: { "fleetd-linux-x64": sha256Hex(one) } });
+});
+
+test("a pulled build sends the hub, and its nodes, back to the build before it", async () => {
+  const dir = join(home.dir, "pulled");
+  const fake = new Fake(dir, [{ version: NEWER }]);
+  fake.version = NEWER;
+  fake.now = Date.parse("2026-11-23T12:00:00Z");
+  const two = new TextEncoder().encode("fleetd 2"), one = new TextEncoder().encode("fleetd 1");
+  const r = rolledOut([
+    { build: "2026.11.23.2", version: NEWER, bytes: two, passedAt: "2026-11-23T06:00:00Z", pulledAt: "2026-11-23T11:00:00Z" },
+    { build: "2026.11.23.1", version: NEW, bytes: one, passedAt: "2026-11-23T05:00:00Z" },
+  ]);
+  fake.release = r.edge;
+  fake.buildFeed = r.of;
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  expect([fake.plans[0]!.from, fake.plans[0]!.to]).toEqual([NEWER, NEW]);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  fake.version = NEW;
+  const after = updatesIn(dir, fake);
+  await after.resume();
+  // The node ran the pulled build, newer than the hub's now: it goes back too.
+  expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+  expect(fake.facts[0]!.version).toBe(NEW);
+});
+
+test("a hub whose machines don't relink on the new build puts the build before back by itself", async () => {
+  const dir = join(home.dir, "selfcheck");
+  const fake = new Fake(dir, [{ name: "builder" }]);
+  const u = updatesIn(dir, fake, { relink: 20 });
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  const plan = fake.plans[0]!;
+  writeFileSync(plan.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+  // The hub came up on NEW, healthy, but its machine never links again.
+  fake.version = NEW;
+  fake.facts[0]!.liveSince = undefined;
+  const after = updatesIn(dir, fake, { relink: 20 });
+  const clock = setInterval(() => (fake.now += 5), 1);
+  await after.resume();
+  clearInterval(clock);
+  const run = after.status()!;
+  expect(byMachine(run).get("")!).toMatchObject({
+    state: "rolled_back",
+    stage: "health",
+    message: `${NEW} failed its self-check (builder didn't relink within 0 min), so ${OLD} was put back`,
+  });
+  expect(byMachine(run).get("m0")!.state).toBe("skipped");
+  // The build before is in place again, and a watcher restarts the hub on it.
+  expect(readFileSync(fake.exePath, "utf8")).toBe("old fleetd");
+  expect(fake.plans[1]).toMatchObject({ from: NEW, to: OLD });
+  // Back on the build before, automatic updates skip the build that failed until a newer one is out.
+  fake.version = OLD;
+  await after.prefetch();
+  expect(after.autoSkips()).toBe(NEW);
+});
+
+test("a lead turn that fails twice with none ending well fails the self-check; one that ends well, or no lead at work, passes it", async () => {
+  for (const [ended, failed, working, ok] of [
+    [0, 2, 1, false],
+    [1, 2, 1, true],
+    [0, 0, 1, true],
+    [0, 0, 0, true],
+  ] as const) {
+    const dir = join(home.dir, `lead-${ended}-${failed}-${working}`);
+    const fake = new Fake(dir, []);
+    fake.leadTurns = { mark: () => 0, since: () => ({ completed: ended, failed }), working: () => working };
+    const u = updatesIn(dir, fake, { leadCheck: 20 });
+    u.start(undefined, true);
+    await until(() => fake.plans.length === 1);
+    writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
+    fake.version = NEW;
+    const after = updatesIn(dir, fake, { leadCheck: 20 });
+    const clock = setInterval(() => (fake.now += 5), 1);
+    await after.resume();
+    clearInterval(clock);
+    expect(byMachine(after.status()!).get("")!.state).toBe(ok ? "done" : "rolled_back");
+  }
+});
+
+test("fleetd's own hub (ring first) tells the rollout each build its self-check passed on", async () => {
+  const dir = join(home.dir, "ring");
+  const fake = new Fake(dir, []);
+  const version = "0.0.0-edge.202611231406.4+5877c50";
+  fake.published = [version, build];
+  const told: string[] = [];
+  fake.reportPass = async (repo, b) => void told.push(`${repo} ${b}`);
+  require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
+  writeFileSync(join(dir, "update", "settings.json"), JSON.stringify({ ring: "first", reportTo: "unlaboredlabs/fleetd" }));
+  const u = updatesIn(dir, fake);
+  u.start(undefined, true);
+  await until(() => fake.plans.length === 1);
+  writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: "runs it" }));
+  fake.version = version;
+  await updatesIn(dir, fake).resume();
+  await until(() => told.length === 1);
+  expect(told).toEqual(["unlaboredlabs/fleetd 2026.11.23.4"]);
 });

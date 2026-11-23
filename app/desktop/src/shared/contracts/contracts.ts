@@ -3942,6 +3942,8 @@ export type HubUpdateSettingsInput = {
   auto?: boolean;
   /** How long a node waits at most for what its restart would cut off, in minutes, 0 to 240; 0 doesn't wait. */
   drainMinutes?: number;
+  /** Which builds the hub takes: Fast (each build in its rollout stage) or Steady (builds out 2 days, never halted). */
+  speed?: UpdateSpeed;
 };
 
 export type HubUpdateStatusInput = { [key: string]: unknown };
@@ -9852,7 +9854,17 @@ export type UpdateSettings = {
   auto: boolean;
   /** How long a node waits at most for what its restart would cut off, in minutes. */
   drainMinutes: number;
+  /** Which builds the hub takes, Fast by default. Absent from a hub before update speeds. */
+  speed?: UpdateSpeed;
 };
+
+/**
+ * Update speed: `fast` takes each build once its staged rollout reaches the hub, within hours of it passing fleetd's
+ * own checks; `steady` only builds that have been out 2 days and were never halted. Replaces the edge/stable channel.
+ */
+export type KnownUpdateSpeed = "fast" | "steady";
+/** KnownUpdateSpeed, or a value from a newer hub. */
+export type UpdateSpeed = KnownUpdateSpeed | (string & {});
 
 export type KnownUpdateStage = "download" | "checksum" | "install" | "restart" | "health";
 /** KnownUpdateStage, or a value from a newer hub. */

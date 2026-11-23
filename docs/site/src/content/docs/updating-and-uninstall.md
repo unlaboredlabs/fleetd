@@ -1,6 +1,6 @@
 ---
 title: Updating & uninstall
-description: Update the hub, its machines and the apps, pick a release channel, and remove fleetd.
+description: Update the hub, its machines and the apps, pick an update speed, and remove fleetd.
 ---
 
 How to keep fleetd up to date, and how to remove it.
@@ -10,7 +10,8 @@ How to keep fleetd up to date, and how to remove it.
 When a new build is ready, owners and admins see **Update available** in the hub's menu at the top of the sidebar.
 
 1. Click **Update**. Nothing else to confirm.
-2. The hub restarts on the new build. If it isn't healthy within 90 seconds, it goes back to the old one.
+2. The hub restarts on the new build and checks itself. If it isn't healthy within 90 seconds, or a machine doesn't
+   reconnect, or lead turns fail, it goes back to the old one. See [Self-check and rollback](/docs/releases#self-check).
 3. Every machine then updates, and moves Claude Code to the version that build was tested with.
 4. The app restarts last. A message you were typing is kept.
 
@@ -23,7 +24,8 @@ A machine that was offline updates when it's back.
 ### Update automatically {#everything}
 
 Turn on **Update automatically** in Settings › Hub › Machines › Updates (off by default). The hub then installs each
-new build once it's ready, at most once every 10 minutes. A build that failed to start isn't tried again by itself.
+new build once it reaches the hub's [stage](/docs/releases#rings), at most once every 10 minutes. A build that failed
+to start isn't tried again by itself.
 
 ## Update from a terminal {#cli}
 
@@ -47,13 +49,11 @@ shows **Restart to update**. If you don't restart, it installs the next time you
 - **Check for Updates…** is in the fleetd menu on macOS, in Help on Linux, and in the command palette.
 - The Linux `.deb` package can't update itself: the app shows the download and the install command.
 
-## Channels {#channels}
+## Update speed {#channels}
 
-You start on Edge: a new build after each change to fleetd that passes its tests. `fleetd update` stays on the
-channel you installed from.
-
-- Switch to stable: `fleetd update --channel stable`
-- Switch back to Edge: `fleetd update --channel edge`
+**Fast** (default) takes each build within hours of it passing fleetd's own checks. **Steady** takes only builds that
+have been out for 2 days. Set it in Settings › Hub › Machines › Updates, or run `fleetd update --speed steady`. See
+[Builds & rollout](/docs/releases#speed).
 
 ## Remove a machine {#remove-worker}
 

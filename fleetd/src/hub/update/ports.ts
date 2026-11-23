@@ -16,7 +16,14 @@ import { TESTED } from "../../node/runner/claude.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
 import type { TrainArea } from "../train/index.ts";
 import { CAP_BUILD_BUN, CAP_BUILD_RUST } from "../../shared/node_link.ts";
+import { leads } from "../leads/index.ts";
+import { leadWorking } from "../chat/flow.ts";
+import { runGh } from "../train/gh.ts";
+import { buildFeed } from "../../update/rollout.ts";
+import type { HubEventType } from "../../shared/contracts.ts";
 import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
+
+const LEAD_ENDS: HubEventType[] = ["thread.completed", "thread.failed"];
 
 /** The Claude Code version this fleetd was tested with. */
 export const CLAUDE_TESTED = TESTED;
@@ -63,6 +70,7 @@ export function hubPorts(hub: Hub): UpdatePorts {
   const commands = () => link(hub).commands;
   return {
     feed: (channel) => new HttpFeed(baseUrl(channel)),
+    buildFeed,
     running: () => VERSION,
     releaseBuild: () => process.env.FLEETD_VERSION !== undefined,
     exe: installedExe,
@@ -72,6 +80,30 @@ export function hubPorts(hub: Hub): UpdatePorts {
     healthUrl: () => healthUrl(hub.config.listen.host, hub.config.listen.port),
     startWatcher,
     trainLandings: () => hub.peek<TrainArea>("merge_train")?.train.landings ?? 0,
+    leadTurns: {
+      mark: () => events(hub).head(),
+      since(mark) {
+        const threads = new Set(leads(hub).records.leadsList().map((l) => `${l.projectRef.machineId}/${l.threadId}`));
+        let completed = 0;
+        let failed = 0;
+        for (let after = mark; ; ) {
+          const page = events(hub).page(after, LEAD_ENDS);
+          for (const e of page.events) {
+            if (!threads.has(`${e.machineId}/${e.threadId}`)) continue;
+            if (e.type === "thread.completed") completed++;
+            else failed++;
+          }
+          if (!page.more) break;
+          after = page.cursor;
+        }
+        return { completed, failed };
+      },
+      working: () => leads(hub).records.leadsList().filter((l) => leadWorking(hub, l.projectRef)).length,
+    },
+    async reportPass(repo, build) {
+      const out = await runGh("gh", ["workflow", "run", "rollout.yml", "-R", repo, "-f", "action=pass", "-f", `build=${build}`]);
+      if (out.exitCode !== 0) throw new Error((out.stderr || out.stdout).trim() || `gh exited ${out.exitCode}`);
+    },
     nodes(): NodeFacts[] {
       const l = link(hub);
       const ex = executors(hub);

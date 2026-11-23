@@ -35,6 +35,7 @@ import {
 } from "../../update/index.ts";
 import { isHubService, services, type Service } from "../../update/service.ts";
 import { versionLabel } from "../../update/version.ts";
+import { buildFeed } from "../../update/rollout.ts";
 
 /** Where this node's binary and service are, and what it runs: the real ones, or a test's. `asset` is its flavour's. */
 export type Place = { home: string; exe: string; services: Service[]; running: string; releaseBuild: boolean; flavour: Flavour; asset: string };
@@ -99,6 +100,18 @@ const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
   return run;
 };
 
+/** The checksums of the build `update` names: its own when the hub sent them (the rollout's pick), else the channel's
+ * newest build's, from one release.json, refusing a newest build other than `to`. */
+async function sumsOf(update: NodeUpdate, feed: Feed): Promise<Sums> {
+  if (update.sha256 !== undefined && update.build !== undefined) {
+    if (!Object.values(update.sha256).every((h) => typeof h === "string" && /^[0-9a-f]{64}$/.test(h))) {
+      throw new Failure("download", "the hub sent checksums that aren't SHA-256s");
+    }
+    return Object.assign(new Map(Object.entries(update.sha256)), { pinned: true as const });
+  }
+  return releaseOf(update.version, feed);
+}
+
 /** The channel's newest build and its sums, from one release.json; a newest build other than `to` is refused. */
 async function releaseOf(to: string, feed: Feed): Promise<Sums> {
   const r = await build(feed);
@@ -110,7 +123,7 @@ async function releaseOf(to: string, feed: Feed): Promise<Sums> {
   return r.sums;
 }
 
-export type NodeUpdate = { version: string; channel: string; flavour?: string };
+export type NodeUpdate = { version: string; channel: string; flavour?: string; build?: string; sha256?: Record<string, string> };
 
 /** Downloads `update.version` ahead of the update, checked, and keeps it beside the node's binary with the sums. */
 export function fetch(update: NodeUpdate, p: Place, feed: Feed): Promise<void> {
@@ -119,7 +132,7 @@ export function fetch(update: NodeUpdate, p: Place, feed: Feed): Promise<void> {
     const asset = target(update, p);
     // Nothing the update that follows could install.
     if (runs(update, p) || !p.releaseBuild || !p.services.some((s) => !isHubService(s))) return;
-    const s = await releaseOf(to, feed);
+    const s = await sumsOf(update, feed);
     keepSums(p, to, s);
     // This binary is the hub's too, which the hub puts in place itself.
     if (p.services.some(isHubService) || isBuild(p.exe, s, asset) || isBuild(fetched(p), s, asset)) return;
@@ -152,7 +165,7 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
   // A fetch still downloading this build finishes first.
   return exclusive(async () => {
     const kept = keptSums(p, to);
-    const s = kept && (isBuild(p.exe, kept, asset) || isBuild(fetched(p), kept, asset)) ? kept : await releaseOf(to, feed);
+    const s = kept && (isBuild(p.exe, kept, asset) || isBuild(fetched(p), kept, asset)) ? kept : await sumsOf(update, feed);
     // On the hub's machine the hub's update already put this build at the shared path.
     const inPlace = isBuild(p.exe, s, asset);
     const prev = join(dir(p), "fleetd.prev");
@@ -198,6 +211,10 @@ export function stage(update: NodeUpdate, p: Place, feed: Feed, previous: () => 
 export type Watch = { answered: string; verdict: string };
 
 function feedOf(update: NodeUpdate): Feed {
+  if (update.build !== undefined && update.sha256 !== undefined) {
+    if (!/^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/.test(update.build)) throw new Failure("download", "the hub named a build this fleetd can't read");
+    return buildFeed(update.build);
+  }
   // Edge goes out as `nightly`, its name before D203.
   const channel = update.channel === "nightly" || update.channel === "edge" ? "edge" : update.channel === "stable" ? "stable" : undefined;
   if (!channel) throw new Failure("download", "the hub asked for a channel this fleetd doesn't know");

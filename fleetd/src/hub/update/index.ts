@@ -34,10 +34,11 @@ import {
   type UpdateState,
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
-import { build, checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, replaceFile, restore, type Sums, swap, retireHelper } from "../../update/index.ts";
+import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, replaceFile, restore, type Sums, swap, retireHelper } from "../../update/index.ts";
+import { bucketOf, choose, type Choice, type Picker, parseSpeed, rolloutId, type Speed } from "../../update/rollout.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
-import { atLeast, versionCmp, versionLabel } from "../../update/version.ts";
+import { atLeast, buildNumber, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
 import { pause } from "../serve/every.ts";
 import { isoMs } from "../store/time.ts";
@@ -86,26 +87,43 @@ export type NodeFacts = {
 
 /** A node's answer to a `node_action` (node_link.rs `NodeActionResult`). */
 export type NodeActionResult = { ok: boolean; message: string; stage?: UpdateStage; steps?: number };
-export type NodeUpdate = { version: string; channel: HubChannel; flavour?: Flavour };
+/** With `build` and `sha256`, the build's own release and checksums (the rollout's pick); without, the channel's newest. */
+export type NodeUpdate = { version: string; channel: HubChannel; flavour?: Flavour; build?: string; sha256?: Record<string, string> };
 
 /**
  * The node runs `to` or newer, of the hub's flavour: one on the other flavour is behind whatever its version, so the
  * hub's update switches it. A node that names no flavour is taken at its version: it is older than any hub that sends
- * one, and the update it gets brings it to a build that names it.
+ * one, and the update it gets brings it to a build that names it. With `back` (the hub stepped back from a pulled
+ * build), only `to` itself: a newer node goes back with it.
  */
-export const runs = (n: NodeFacts, to: string) => atLeast(n.version, to) && (n.flavour === undefined || n.flavour === FLAVOUR);
+export const runs = (n: NodeFacts, to: string, back = false) =>
+  (back ? n.version === to : atLeast(n.version, to)) && (n.flavour === undefined || n.flavour === FLAVOUR);
 
 /** Its build in words: its version, with its flavour when that isn't the hub's. */
 const buildLabel = (n: NodeFacts) => (n.flavour !== undefined && n.flavour !== FLAVOUR ? `${versionLabel(n.version)} (${n.flavour})` : versionLabel(n.version));
 
-/** The update that brings a node to `to`, the hub's build: its version and channel, and the hub's flavour. */
-const nodeUpdate = (to: string, channel: HubChannel): NodeUpdate => ({ version: head(to, 200), channel, flavour: FLAVOUR });
+/**
+ * The update that brings a node to `to`, the hub's build: its version and channel, and the hub's flavour; with the
+ * build the rollout picked, its number and checksums, which a node from before rollouts ignores.
+ */
+const nodeUpdate = (to: string, channel: HubChannel, target?: Target): NodeUpdate => ({
+  version: head(to, 200),
+  channel,
+  flavour: FLAVOUR,
+  ...(target?.version === to && target.build !== undefined ? { build: target.build, sha256: target.sha256 } : {}),
+});
+
+/** The build the hub chose last (`<hub home>/update/target.json`): what its nodes are sent to, and whether it was a
+ * step back from a pulled build, where nodes go back too. */
+export type Target = { version: string; build?: string; sha256?: Record<string, string>; back?: boolean };
 /** A node's answer to its update, and its second, sent only when its restart was refused. */
 export type NodeAnswer = [NodeActionResult, { tryTake(): NodeActionResult | undefined }];
 
 /** What the update does to the hub's machine and its nodes; tests stand in fakes. */
 export interface UpdatePorts {
   feed(channel: Channel): Feed;
+  /** A numbered build's own release; the real one when absent. */
+  buildFeed?(build: string): Feed;
   running(): string;
   releaseBuild(): boolean;
   exe(): string;
@@ -113,7 +131,8 @@ export interface UpdatePorts {
   hubService(exe: string): Service | undefined;
   previous(): Uint8Array;
   healthUrl(): string;
-  startWatcher(plan: Plan, planPath: string): void;
+  /** Starts the watcher of `plan` from the binary at `from` (the plan's previous binary when absent). */
+  startWatcher(plan: Plan, planPath: string, from?: string): void;
   nodes(): NodeFacts[];
   fetchOnNode(machineId: string, update: NodeUpdate): void;
   /**
@@ -131,6 +150,10 @@ export interface UpdatePorts {
   announce(update: HubUpdateData): void;
   /** The merge train's batches being landed now, which the hub's restart would cut off between their merge and closes. */
   trainLandings?(): number;
+  /** The leads' turns that ended since `mark()`, and how many leads are mid-turn now: for the self-check after an update. */
+  leadTurns?: { mark(): number; since(mark: number): { completed: number; failed: number }; working(): number };
+  /** fleetd's own hub tells the rollout its self-check passed on `build` (`ring: "first"`, settings' `reportTo`). */
+  reportPass?(repo: string, build: string): Promise<void>;
 }
 
 /** A node's answer to its hold. */
@@ -156,6 +179,10 @@ export type Timing = {
    * gathers builds published close together into one update.
    */
   autoGap: number;
+  /** The self-check after an update: how long machines online before it get to relink. */
+  relink: number;
+  /** The self-check: how long it waits for a lead turn to end, when none has yet. */
+  leadCheck: number;
 };
 
 export const defaultTiming = (): Timing => ({
@@ -169,6 +196,8 @@ export const defaultTiming = (): Timing => ({
   drainPoll: 5000,
   drain: DRAIN_MINUTES * 60_000,
   autoGap: 600_000,
+  relink: 180_000,
+  leadCheck: 300_000,
 });
 
 export type Refused = { kind: "not_wired" } | { kind: "nothing_to_retry" } | { kind: "hub_moved_on"; running: string };
@@ -192,8 +221,12 @@ const hhmm = (ms: number) => {
   return Number.isNaN(d.getTime()) ? "" : `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")} UTC`;
 };
 
-/** `<hub home>/update/settings.json`, written by `hub_update_settings` (or a person); every field optional. */
-type Settings = { auto?: boolean; drainMinutes?: number };
+/**
+ * `<hub home>/update/settings.json`, written by `hub_update_settings` (or a person); every field optional. `speed`
+ * replaced the edge/stable `channel`, which still reads as its speed. `ring: "first"` is fleetd's own hub only: it takes
+ * each build before everyone and, with `reportTo` (a GitHub repo), reports each one its self-check passed on there.
+ */
+type Settings = { auto?: boolean; drainMinutes?: number; speed?: string; channel?: string; ring?: string; reportTo?: string };
 
 function readSettings(dir: string): Settings {
   try {
@@ -202,6 +235,17 @@ function readSettings(dir: string): Settings {
   } catch {
     return {};
   }
+}
+
+/** Who picks the build by the settings in `dir` (`<hub home>/update`): its ring, the bucket of its rollout id (made
+ * there once), and its speed, `speed` when given. `fleetd update` on the hub's machine picks as the hub does. */
+export function pickerIn(dir: string, speed?: Speed): Picker {
+  const s = readSettings(dir);
+  return {
+    ring: s.ring === "first" ? "first" : "everyone",
+    bucket: bucketOf(rolloutId(join(dir, "rollout-id"))),
+    speed: speed ?? parseSpeed(s.speed) ?? parseSpeed(s.channel) ?? "fast",
+  };
 }
 
 /** How long a node waits for its agents at most by the settings in `<hub home>/update`, else `defaultMs`. */
@@ -358,6 +402,8 @@ export class Updates {
   ) {
     try {
       this.run = withoutGone(JSON.parse(readFileSync(join(dir, "run.json"), "utf8")) as UpdateRun);
+      // The process before told the apps how it looked when it wrote it.
+      this.announced = JSON.stringify(signal(this.run));
     } catch {
       this.run = undefined;
     }
@@ -373,16 +419,69 @@ export class Updates {
   }
 
   settings(): UpdateSettings {
-    return { auto: readSettings(this.dir).auto === true, drainMinutes: Math.min(Math.floor(this.drain() / 60_000), DRAIN_MINUTES_MAX) };
+    return { auto: readSettings(this.dir).auto === true, drainMinutes: Math.min(Math.floor(this.drain() / 60_000), DRAIN_MINUTES_MAX), speed: this.speed() };
   }
 
-  setSettings(auto: boolean | undefined, drainMinutes: number | undefined): UpdateSettings {
+  /** Update speed: Fast unless set to Steady; a `channel` from before speeds (stable) reads as its speed. */
+  speed(): Speed {
+    const s = readSettings(this.dir);
+    return parseSpeed(s.speed) ?? parseSpeed(s.channel) ?? "fast";
+  }
+
+  /** Who picks the build (rollout.ts): this hub's ring, the bucket of its rollout id, and its speed. */
+  who(): Picker {
+    return pickerIn(this.dir);
+  }
+
+  /** The repo fleetd's own hub reports its passed builds to, with `ring: "first"`. */
+  reportTo(): string | undefined {
+    const s = readSettings(this.dir);
+    return s.ring === "first" && typeof s.reportTo === "string" && /^[\w.-]+\/[\w.-]+$/.test(s.reportTo) ? s.reportTo : undefined;
+  }
+
+  setSettings(auto: boolean | undefined, drainMinutes: number | undefined, speed?: Speed): UpdateSettings {
     const s = readSettings(this.dir);
     if (auto !== undefined) s.auto = auto;
     if (drainMinutes !== undefined) s.drainMinutes = Math.min(drainMinutes, DRAIN_MINUTES_MAX);
+    if (speed !== undefined) {
+      s.speed = speed;
+      delete s.channel;
+    }
     mkdirSync(this.dir, { recursive: true });
-    replaceFile(join(this.dir, "settings.json"), pretty({ ...(s.auto !== undefined ? { auto: s.auto } : {}), ...(s.drainMinutes !== undefined ? { drainMinutes: s.drainMinutes } : {}) }));
+    replaceFile(join(this.dir, "settings.json"), pretty(s));
     return this.settings();
+  }
+
+  /** `to` is the build the hub stepped back to from a pulled one: its nodes go back to it too. */
+  back(to: string): boolean {
+    const t = this.target();
+    return t?.version === to && t.back === true;
+  }
+
+  /** The build the hub chose last, for its nodes (`Target`). */
+  target(): Target | undefined {
+    try {
+      const t = JSON.parse(readFileSync(join(this.dir, "target.json"), "utf8")) as Target;
+      return typeof t?.version === "string" ? t : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Remembers `c`, the build chosen, for the nodes and for the hub that comes up on it. */
+  keepTarget(c: Extract<Choice, { kind: "move" }>): void {
+    const t: Target = { version: c.to, ...(c.build ? { build: c.build.build, sha256: c.build.sha256 } : {}), ...(c.back ? { back: true } : {}) };
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      replaceFile(join(this.dir, "target.json"), pretty(t));
+    } catch (e) {
+      console.warn(`update: couldn't write ${join(this.dir, "target.json")}: ${(e as Error).message}`);
+    }
+  }
+
+  /** What the rollout says the hub runs now: `choose` from the release, as this hub. */
+  async choose(ports: UpdatePorts): Promise<Choice> {
+    return choose(ports.feed("edge"), this.who(), ports.running(), this.now(), ports.buildFeed);
   }
 
   private lastStarted(): number | undefined {
@@ -409,7 +508,7 @@ export class Updates {
       ports.releaseBuild() &&
       ports.nodes().some((n) => {
         const refused = last?.parts.some((p) => p.part === "node" && p.machineId === n.machineId && refusedForGood(p)) ?? false;
-        return n.liveSince !== undefined && n.canUpdate && !refused && !runs(n, running);
+        return n.liveSince !== undefined && n.canUpdate && !refused && !runs(n, running, this.back(running));
       })
     );
   }
@@ -587,28 +686,24 @@ export class Updates {
   }
 
   /**
-   * Downloads the channel's newest build when the hub doesn't run it, checks it against the release's SHA256SUMS and
-   * keeps it for the update, and asks every online node that can to do the same. Nothing is installed.
+   * Downloads the build the rollout picks for this hub (rollout.ts) when the hub doesn't run it, checks it against its
+   * checksums and keeps it for the update, and asks every online node that can to do the same. Nothing is installed.
    */
   async prefetch(): Promise<void> {
     const ports = this.ports_;
     if (!ports || (this.run && this.going(this.run)) || !ports.releaseBuild()) return;
-    const running = ports.running();
-    const channel = channelOf(running, true);
-    const feed = ports.feed(channel);
     const at = hhmm(this.now());
-    let to: string | undefined;
-    let s: Sums;
+    let c: Choice;
     try {
-      ({ cliVersion: to, sums: s } = await build(feed));
+      c = await this.choose(ports);
     } catch (e) {
-      return this.checked(`couldn't look at the ${channel} channel at ${at}: ${(e as Error).message}`);
+      return this.checked(`couldn't look at fleetd's releases at ${at}: ${(e as Error).message}`);
     }
-    if (to === undefined) return this.checked(`the ${channel} channel had no fleetd build at ${at}`);
-    if (!newer(to, running)) {
+    if (c.kind === "stay") {
       this.ready_ = undefined;
       return this.checked(undefined);
     }
+    const { to, feed } = c;
     const label = versionLabel(to);
     let asset: string;
     try {
@@ -617,8 +712,9 @@ export class Updates {
       return this.checked(`couldn't download ${label} ahead: ${(e as Error).message}`);
     }
     const failed = await this.withFetching(async () => {
-      if (isBuild(this.kept(), s, asset)) return undefined;
       try {
+        const s = await c.sums();
+        if (isBuild(this.kept(), s, asset)) return undefined;
         await checkedTo(feed, s, asset, this.kept());
         return undefined;
       } catch (e) {
@@ -627,9 +723,10 @@ export class Updates {
     });
     if (failed !== undefined) return this.checked(failed);
     this.checked(undefined);
-    const update = nodeUpdate(to, channel === "stable" ? "stable" : "edge");
+    this.keepTarget(c);
+    const update = nodeUpdate(to, "edge", this.target());
     for (const node of ports.nodes()) {
-      if (node.liveSince !== undefined && node.canFetch && !runs(node, to)) ports.fetchOnNode(node.machineId, update);
+      if (node.liveSince !== undefined && node.canFetch && !runs(node, to, this.back(to))) ports.fetchOnNode(node.machineId, update);
     }
     this.ready_ = to;
   }
@@ -658,7 +755,7 @@ export class Updates {
     this.save(run);
     const to = run.to;
     void this.drive(run.id, async (d) => {
-      const update = nodeUpdate(to, this.run?.channel ?? "edge");
+      const update = nodeUpdate(to, this.run?.channel ?? "edge", this.target());
       await d.updateNode(ports, machineId, update);
       await d.updateClaude(ports, machineId);
       d.settleNodes("failed", "the update of this node stopped without a result");
@@ -883,7 +980,7 @@ class Drive {
     if (this.stopped()) return;
     let plan: Plan | undefined;
     try {
-      plan = await this.stageHub(ports, channel);
+      plan = await this.stageHub(ports);
     } catch (e) {
       return this.hubFailed(e instanceof Failure ? e : new Failure("install", (e as Error).message));
     }
@@ -960,15 +1057,15 @@ class Drive {
     this.settleNodes("skipped", "not asked: the hub kept its build, and nodes follow the hub");
   }
 
-  /** Puts the channel's newest build in place for the watcher, or undefined when the hub already runs it. */
-  private async stageHub(ports: UpdatePorts, channel: HubChannel): Promise<Plan | undefined> {
-    const ch: Channel = channel === "stable" ? "stable" : "edge";
-    const feed = ports.feed(ch);
+  /** Puts the build the rollout picks in place for the watcher, or undefined when the hub stays on its own. */
+  private async stageHub(ports: UpdatePorts): Promise<Plan | undefined> {
     const running = ports.running();
-    // The build and its checksums from one read: what downloads below is that build, whatever edge publishes meanwhile.
-    const { cliVersion: to, sums: s } = await build(feed);
-    if (to === undefined) throw new Failure("download", `the ${ch} channel has no fleetd build yet`);
-    if (!newer(to, running)) return undefined;
+    // The build and its checksums from one read: what downloads below is that build, whatever is published meanwhile.
+    const c = await this.u.choose(ports);
+    if (c.kind === "stay") return undefined;
+    const { to, feed } = c;
+    const s = await c.sums();
+    this.u.keepTarget(c);
     if (!ports.releaseBuild()) {
       throw new Failure("install", "the hub runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh");
     }
@@ -1030,9 +1127,9 @@ class Drive {
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && p.state === "waiting").map((p) => p.machineId);
-    const update = nodeUpdate(to, run.channel);
+    const update = nodeUpdate(to, run.channel, this.u.target());
     for (const node of ports.nodes()) {
-      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && !runs(node, to)) {
+      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && !runs(node, to, this.u.back(to))) {
         ports.fetchOnNode(node.machineId, update);
       }
     }
@@ -1048,7 +1145,14 @@ class Drive {
       const to = run.to ?? "";
       const v = await this.verdict(ports, to);
       if (v.state === "done") {
+        // Up on the new build: before its nodes follow, it checks itself, and goes back to the build before by itself
+        // when that fails.
+        this.setPart(undefined, "restarting", undefined, `checking itself on ${versionLabel(to)}: machines relink, a lead turn works`);
+        const failed = await this.selfCheck(ports, run);
+        if (this.stopped()) return;
+        if (failed !== undefined) return this.rollBack(ports, hub.from, to, failed);
         this.setPart(undefined, "done", undefined, v.message);
+        this.reportPass(ports, to);
         return this.driveNodes(ports, to);
       }
       this.setPart(undefined, v.state, v.stage ?? undefined, v.message);
@@ -1056,6 +1160,89 @@ class Drive {
     }
     if ((hub.state === "done" || hub.state === "current") && run.to !== undefined) return this.driveNodes(ports, run.to);
     this.settleNodes("skipped", "not asked: the hub didn't update");
+  }
+
+  /**
+   * After the hub came up on a new build: every machine online when the update started relinks (within
+   * `Timing.relink`), and a lead turn works: one ends well, not two fail with none that ended well. With no lead mid-turn
+   * and none ended there is nothing to judge, and a turn that runs on is waited for `Timing.leadCheck` at most. Why it
+   * failed, or undefined. Nothing leaves the hub.
+   */
+  async selfCheck(ports: UpdatePorts, run: UpdateRun): Promise<string | undefined> {
+    const started = this.u.clockNow();
+    const online = run.parts.filter((p) => p.part === "node" && p.machineId !== undefined && p.state !== "skipped");
+    for (;;) {
+      const live = new Set(ports.nodes().filter((n) => n.liveSince !== undefined).map((n) => n.machineId));
+      const away = online.filter((p) => !live.has(p.machineId!));
+      if (away.length === 0) break;
+      if (this.u.clockNow() - started >= this.u.timing.relink) {
+        const names = away.slice(0, 3).map((p) => p.name).join(", ") + (away.length > 3 ? ` and ${away.length - 3} more` : "");
+        return `${names} didn't relink within ${Math.round(this.u.timing.relink / 60_000)} min`;
+      }
+      if (this.stopped()) return undefined;
+      await this.u.sleep(this.u.timing.nodePoll, this.signal);
+    }
+    const leads = ports.leadTurns;
+    if (!leads) return undefined;
+    const mark = leads.mark();
+    for (;;) {
+      const t = leads.since(mark);
+      if (t.completed > 0) return undefined;
+      if (t.failed >= 2) return `${t.failed} lead turns failed and none ended well`;
+      if (t.failed === 0 && leads.working() === 0) return undefined;
+      if (this.u.clockNow() - started >= this.u.timing.leadCheck || this.stopped()) return undefined;
+      await this.u.sleep(this.u.timing.nodePoll, this.signal);
+    }
+  }
+
+  /** The new build `to` failed its self-check: `from`, kept as fleetd.prev, goes back in place and the watcher restarts
+   * the hub on it. Automatic updates then skip `to` (`autoSkips`). */
+  private rollBack(ports: UpdatePorts, from: string, to: string, why: string): void {
+    const said = `${versionLabel(to)} failed its self-check (${why})`;
+    const prev = join(this.u.dir, "fleetd.prev");
+    const bad = join(this.u.dir, "fleetd.bad");
+    let exe: string;
+    let service: Service | undefined;
+    try {
+      exe = ports.exe();
+      service = ports.hubService(exe);
+      if (!service) throw new Error("the hub doesn't run as the service `fleetd init` sets up");
+      replaceFile(bad, ports.previous());
+      restore(exe, prev);
+    } catch (e) {
+      this.setPart(undefined, "failed", "health", `${said}, and ${versionLabel(from)} couldn't be put back (${(e as Error).message}): run \`fleetd update\` on its machine`);
+      return this.settleNodes("skipped", "not asked: the hub's build failed its self-check, and nodes follow the hub");
+    }
+    this.setPart(undefined, "rolled_back", "health", `${said}, so ${versionLabel(from)} was put back`);
+    this.settleNodes("skipped", "not asked: the hub's build failed its self-check, and nodes follow the hub");
+    const plan: Plan = {
+      exe,
+      prev: bad,
+      service,
+      from: to,
+      to: from,
+      health: { kind: "hub", url: ports.healthUrl() },
+      waitSecs: HEALTH_WAIT_SECS,
+      verdict: join(this.u.dir, "back-verdict.json"),
+      answered: null,
+    };
+    try {
+      // From the binary put back: the one in place now.
+      ports.startWatcher(plan, join(this.u.dir, "back-plan.json"), exe);
+    } catch (e) {
+      console.error(`update: the hub couldn't restart onto ${versionLabel(from)}: ${(e as Error).message}`);
+    }
+  }
+
+  /** fleetd's own hub tells the rollout its self-check passed on `to` (`ring: "first"`); a failure is only logged. */
+  private reportPass(ports: UpdatePorts, to: string): void {
+    const repo = this.u.reportTo();
+    const build = buildNumber(to);
+    if (repo === undefined || build === undefined || !ports.reportPass) return;
+    ports.reportPass(repo, build).then(
+      () => console.info(`update: told ${repo}'s rollout that ${build} passed here`),
+      (e: unknown) => console.warn(`update: couldn't tell ${repo}'s rollout that ${build} passed here: ${(e as Error).message}`),
+    );
   }
 
   /** The watcher's verdict on the hub's restart, waited for; without one, what this process runs says it. */
@@ -1081,7 +1268,7 @@ class Drive {
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && !settled(p.state)).map((p) => p.machineId!);
-    const update = nodeUpdate(to, run.channel);
+    const update = nodeUpdate(to, run.channel, this.u.target());
     await Promise.allSettled(
       waiting.map(async (m) => {
         await this.updateNode(ports, m, update);
@@ -1102,7 +1289,7 @@ class Drive {
     const label = versionLabel(to);
     // Never backwards: a node on `to` or newer is settled as it is, whenever it is looked at.
     const current = (node: NodeFacts) => {
-      const at = runs(node, to);
+      const at = runs(node, to, this.u.back(to));
       if (at) this.setPart(machineId, "current", undefined, `already runs ${versionLabel(node.version)}`);
       return at;
     };
@@ -1184,7 +1371,7 @@ class Drive {
         const ch = ports.nodeChanged(machineId);
         const n = facts();
         if (n && n.liveSince !== undefined && n.liveSince > asked) {
-          if (n.version === to && runs(n, to)) return this.setPart(machineId, "done", undefined, `runs ${label}`);
+          if (n.version === to && runs(n, to, this.u.back(to))) return this.setPart(machineId, "done", undefined, `runs ${label}`);
         // A node from before flavours took its own flavour of `to`, and now names it: asked again, it switches in this
         // same run. Not put back: nothing failed.
         if (n.version === to && !named && n.flavour !== undefined) {
@@ -1241,10 +1428,6 @@ class Drive {
     }
   }
 }
-
-/** The channel's build `to` is one to update to from `running`: not the same, and not an older one of the same channel,
- * as a release.json a cache kept from before the hub's own build names. */
-const newer = (to: string, running: string) => to !== running && versionCmp(to, running) !== -1;
 
 /** The hub's and the nodes' parts by machine (the hub's under ""), for a quick look. */
 export function byMachine(run: UpdateRun): Map<string, UpdatePart> {

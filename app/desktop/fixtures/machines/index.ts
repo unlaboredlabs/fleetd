@@ -286,7 +286,7 @@ function sandboxes(from: Fixture, name: string, note: string, state: JsonObject)
 /** fleetd's everyday updates: the hub on 0.9.0 like its machines, Update automatically on. */
 function upToDate(f: Fixture): void {
   if (f.state.phase === "live") f.state = { ...f.state, version: "0.9.0" };
-  f.answer("hub_update_status", {}, { settings: { auto: true, drainMinutes: 2 } });
+  f.answer("hub_update_status", {}, { settings: { auto: true, drainMinutes: 2, speed: "fast" } });
 }
 
 function withShares(f: Fixture, perMachine: JsonObject[]): void {

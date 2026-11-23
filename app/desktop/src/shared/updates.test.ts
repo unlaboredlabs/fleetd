@@ -13,6 +13,8 @@ describe("versions", () => {
 
   it("reads an Edge build by when it was built, and any other version as itself", () => {
     expect(versionLabel("0.0.0-edge.202610261056+1b563d7")).toBe("Edge · Oct 26, 10:56");
+    // A numbered build (D701) by its number.
+    expect(versionLabel("0.0.0-edge.202611231406.4+5877c50")).toBe("2026.11.23.4");
     expect(versionLabel("0.6.0-edge.202601020304+ABCDEF0123")).toBe("Edge · Jan 2, 03:04");
     expect(versionLabel("0.6.0-edge.202610221030")).toBe("Edge · Oct 22, 10:30");
     expect(versionLabel("v0.6.0")).toBe("0.6.0");
