@@ -88,7 +88,7 @@ due)
     echo build=false
     exit 0
   fi
-  git fetch -q --no-tags --depth=1 origin "$since"
+  git fetch -q --no-tags --depth=1 origin "$since" "$head"
   changed="$(git diff --name-only "$since" "$head" -- "${paths[@]}" "${skip[@]}" | wc -l | tr -d ' ')"
   if [ "$changed" = 0 ]; then
     say "Nothing new for TestFlight: the phone app hasn't changed on $branch since ${since:0:9}."

@@ -79,9 +79,9 @@ jobs:
       upload: ${{ steps.upload.outputs.upload }}
       build: ${{ steps.due.outputs.build || 'true' }}
     steps:
+      # The workflow's own commit, not the one to build: its scripts decide, and an older commit's may lack what this
+      # workflow calls (build 36 of fb11f5e had no `mobile-due.sh commit`). The build's jobs check out `sha`.
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.sha || github.sha }}
       - name: The commit is on the branch
         if: inputs.sha != ''
         env:
