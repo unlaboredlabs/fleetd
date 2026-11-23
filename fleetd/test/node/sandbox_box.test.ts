@@ -538,3 +538,36 @@ test.skipIf(process.platform !== "linux")("a guest started again joins the sessi
   expect(readdirSync(join(b.dir, "hosts"))).toEqual(["s-restart"]);
   next.close();
 }, 30_000);
+
+test.skipIf(process.platform !== "linux")("a box that redials its guest started again sends the session host none of its lines twice", async () => {
+  const b = await standIn();
+  const sock = join(b.dir, "link.sock");
+  const box = await Box.open({ session: "s-redial", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 20_000 });
+  const claude = await program("claude-redial", ECHO_CLAUDE);
+  await box.start({ sessionId: "s-redial", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: marker("box-test-redial") } });
+  const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
+  const send = (run: string) => link.send({ Send: { run_id: run, text: run, mode: "plain" } });
+  expect(await applyInits(link, 1)).toEqual(["m0"]);
+  send("run-1");
+  send("run-2");
+  expect(await applyInits(link, 2)).toEqual(["r1", "r2"]);
+  await Bun.sleep(400);
+  // The guest started again while the same Box redials it.
+  b.proc.kill("SIGTERM");
+  await b.proc.exited;
+  rmSync(sock, { force: true });
+  const again = Bun.spawn([process.execPath, MAIN, "sandbox-guest", "--listen", sock, "--dir", join(b.dir, "hosts"), "--loopback", "127.0.0.2"], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  guests.push({ proc: again, dir: b.dir });
+  send("run-3");
+  expect(await applyInits(link, 1)).toEqual(["r3"]);
+  await Bun.sleep(400);
+  // An ordinary drop after it: what the bridge resends is only what the host hadn't taken.
+  b.drop()();
+  send("run-4");
+  expect(await applyInits(link, 1)).toEqual(["r4"]);
+  // A line sent twice would have made claude answer once more.
+  expect(await Promise.race([link.next(), Bun.sleep(1_000).then(() => "nothing more")])).toBe("nothing more");
+  box.close();
+}, 30_000);
