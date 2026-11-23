@@ -186,3 +186,18 @@ export function runningSince(runs: CheckRun[], fallback: number): number | undef
   const starts = took.map((r) => (r.started_at ? parseMs(r.started_at) : undefined)).filter((s): s is number => s !== undefined);
   return starts.length > 0 ? Math.min(...starts) : fallback;
 }
+
+/** GitHub's closing keywords before a reference to an issue or PR: "fix #821", "Closes: owner/repo#821". */
+const CLOSING = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(:?[ \t]+)((?:([\w.-]+\/[\w.-]+))?#(\d+))\b/gi;
+
+/** The numbers in `repo` that `text` names after a closing keyword, which GitHub closes when it lands. */
+export function closingRefs(text: string, repo: string): number[] {
+  return [...text.matchAll(CLOSING)].filter((m) => m[4] === undefined || m[4].toLowerCase() === repo.toLowerCase()).map((m) => Number(m[5]));
+}
+
+/** `text` with each closing keyword before one of `open` made a plain mention ("fix PR #821"), so GitHub closes none. */
+export function unlinked(text: string, repo: string, open: Set<number>): string {
+  return text.replace(CLOSING, (all, word: string, gap: string, ref: string, other: string | undefined, n: string) =>
+    (other === undefined || other.toLowerCase() === repo.toLowerCase()) && open.has(Number(n)) ? `${word}${gap}PR ${ref}` : all,
+  );
+}

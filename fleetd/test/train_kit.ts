@@ -59,6 +59,8 @@ export type FakePull = {
   changesRequested?: boolean;
   /** It has an open conversation, on a base whose ruleset wants each resolved. */
   conversation?: boolean;
+  /** The PR whose closing keyword ("fix #<n>") made GitHub close it, as its last close. */
+  closer?: number;
 };
 
 /** The approving review a base requires: `count` of them, 1 unless said; 0 is a base that requires a PR and no approval. */
@@ -236,6 +238,13 @@ export class FakeGh implements GhRunner {
     p.mergeSha = landed;
     p.mergedAt = new Date(this.now()).toISOString();
     this.log.push(method === "squash" ? `merge #${n}` : `merge #${n} by ${method}`);
+    // GitHub closes the open PRs its description names with a closing keyword, as it does issues.
+    if (p.base === "main") {
+      for (const [, k] of p.body.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)/gi)) {
+        const named = this.pulls.get(Number(k));
+        if (named?.state === "open") Object.assign(named, { state: "closed", closer: n });
+      }
+    }
     return ok({ sha: landed, merged: true, message: "Pull Request successfully merged" });
   }
 
@@ -297,6 +306,11 @@ export class FakeGh implements GhRunner {
         const p = this.pulls.get(Number(query.match(/pullRequest\(number: (\d+)\)/)?.[1]));
         return ok({ data: { repository: { pullRequest: p ? { reviewDecision: this.reviewDecision(p) } : null } } });
       }
+      if (query.includes("CLOSED_EVENT")) {
+        const p = this.pulls.get(Number(query.match(/pullRequest\(number: (\d+)\)/)?.[1]));
+        const closer = p?.closer === undefined ? null : { __typename: "PullRequest", number: p.closer };
+        return ok({ data: { repository: { pullRequest: p ? { timelineItems: { nodes: p.state === "open" ? [] : [{ closer }] } } : null } } });
+      }
       const prId = query.match(/pullRequest\(number:(\d+)\)\{id\}/);
       if (prId) return ok({ data: { repository: { pullRequest: this.pulls.has(Number(prId[1])) ? { id: `PR_${prId[1]}` } : null } } });
       if (query.includes("revertPullRequest")) return this.revertPull(Number((fields.get("id") ?? "").slice(3)), fields.get("body") ?? "");
@@ -346,7 +360,8 @@ export class FakeGh implements GhRunner {
       for (const [k, v] of fields) {
         if (k === "state") {
           p.state = v;
-          this.log.push(`close #${b}`);
+          p.closer = undefined;
+          this.log.push(`${v === "open" ? "reopen" : "close"} #${b}`);
         } else if (k === "base") p.base = v;
         else if (k === "title") p.title = v;
         else if (k === "body") p.body = v;
