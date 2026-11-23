@@ -23,6 +23,7 @@ import {
   hours,
   money,
   noBuyWhy,
+  planChoice,
   readTeamBilling,
   setTeamCap,
   sizeWord,
@@ -127,7 +128,7 @@ export function Billing() {
   const choosePlan = () =>
     pick(
       "Choose a Plan",
-      state.plans.map((p) => `${p.name} · ${money(p.priceCents, state.currency)} a month`),
+      state.plans.map((p) => `${p.name} · ${planChoice(p, state.currency)}`),
       (i) => {
         const p = state.plans[i];
         if (p !== undefined) open({ plan: p.key }, "Choose a Plan");

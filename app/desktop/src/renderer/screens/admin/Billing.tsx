@@ -20,6 +20,7 @@ import {
   money,
   noBuyWhy,
   periodWord,
+  planChoice,
   planLine,
   planTerms,
   planWord,
@@ -209,7 +210,7 @@ function BillingBody({ state, nowMs, paid }: { state: BillingState; nowMs: numbe
   );
 }
 
-/** Pick a plan: each the service offers, its price beside it; one opens Stripe's checkout for it. */
+/** Pick a plan: each the service offers, its price and agents at once beside it; one opens Stripe's checkout for it. */
 function Plans({ state, busy, open }: { state: BillingState; busy: string | null; open: (what: BillingOpen, label: string) => void }) {
   return (
     <Menu>
@@ -220,7 +221,7 @@ function Plans({ state, busy, open }: { state: BillingState; busy: string | null
       </MenuTrigger>
       <MenuContent align="end">
         {state.plans.map((p) => (
-          <MenuItem key={p.key} hint={`${money(p.priceCents, state.currency)} a month`} onSelect={() => open({ plan: p.key }, "Pick a plan")}>
+          <MenuItem key={p.key} hint={planChoice(p, state.currency)} onSelect={() => open({ plan: p.key }, "Pick a plan")}>
             {p.name}
           </MenuItem>
         ))}

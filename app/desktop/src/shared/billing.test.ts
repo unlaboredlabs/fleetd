@@ -14,6 +14,7 @@ import {
   money,
   noBuyWhy,
   offerWord,
+  planChoice,
   planLine,
   planTerms,
   planWord,
@@ -56,8 +57,10 @@ describe("the service's billing answer", () => {
   it("reads each plan's agents at once where the cloud sends it, and words a plan without it as before", () => {
     const [, team] = state("plan").plans;
     expect(team && offerWord(team, "usd")).toBe("Team · $50 a month, $60 of computer time included, 100 agents at once");
+    expect(team && planChoice(team, "usd")).toBe("$50 a month · 100 agents at once");
     const [older] = readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 }] })?.plans ?? [];
     expect(older && planTerms(older, "usd")).toBe("$50 a month, $60 of computer time included");
+    expect(older && planChoice(older, "usd")).toBe("$50 a month");
     const odd = readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00, agentsAtOnce: "lots" }] });
     expect(odd?.plans).toEqual([{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 }]);
   });
