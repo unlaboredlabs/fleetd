@@ -26,6 +26,7 @@ import { jpegSize } from "../browser/fit.ts";
 import { type Meta, type Recording, type RecordingStore, report, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
 import {
+  agentToolsIn,
   type AndroidBox,
   BOX_PLUGIN_DIR,
   boxAgentEnv,
@@ -63,8 +64,15 @@ export type DeviceHost = {
   send(frame: { t: string } & Record<string, unknown>): void;
   /** The agent session's own secrets, which its recording is scrubbed of. */
   secrets(thread: string): [string, string][];
-  /** The box the agent session runs in, where its emulator runs; `starting` while it is made. */
+  /** The box the agent session's emulator runs in: its own, unless `agentBox` says otherwise; `starting` while made. */
   inBox(thread: string): AndroidBox | "starting" | undefined;
+  /**
+   * The box the agent session's claude runs in, when its emulator runs in another (`inBox`: a host that gives an agent
+   * whose own box is too small for the emulator a box of its own for it). agent-device, adb and the files they read (its
+   * config, the person's takeover) are there; its adb's server is the emulator box's, which the host relays to this
+   * box's ADB_SERVER_PORT. Absent, or undefined: the same box as `inBox`.
+   */
+  agentBox?(thread: string): AndroidBox | undefined;
   /** Where recordings go. */
   recordings: RecordingStore;
   /** The idle limit: a session no step touched this long ends. */
@@ -107,6 +115,8 @@ type Open = {
   note?: string;
   part: PartHandle;
   box: AndroidBox;
+  /** Where the agent's agent-device and its files are (DeviceHost `agentBox`): `box` itself, unless the host says. */
+  agent: AndroidBox;
   recording: Recording;
   scrub: Scrub;
   touched: number;
@@ -214,7 +224,8 @@ export class AndroidSessions {
     try {
       let pending = this.booting.get(thread);
       if (!pending) {
-        pending = bootIn(box);
+        const agent = this.agentOf(thread, box);
+        pending = agent === box ? bootIn(box) : Promise.all([bootIn(box), agentToolsIn(agent)]).then(([booted]) => booted);
         pending.catch(() => {});
         this.booting.set(thread, pending);
       }
@@ -243,8 +254,9 @@ export class AndroidSessions {
   private async openOn(thread: string, cwd: string, purpose: string, box: AndroidBox, started: number): Promise<Record<string, unknown>> {
     const id = newId();
     let part: PartHandle;
+    const agent = this.agentOf(thread, box);
     try {
-      await pointAgent(box, thread);
+      await pointAgent(agent, thread);
       part = await startPart(box, id);
     } catch (e) {
       throw new ToolError("failed", `The Android session did not start in your sandbox: ${(e as Error).message}.`, "try session_start again");
@@ -258,7 +270,7 @@ export class AndroidSessions {
       await stopPart(box, id);
       throw new ToolError("failed", `The Android session's recording didn't start: ${(e as Error).message}`, "try session_start again in a moment");
     }
-    const entry = this.entry({ id, thread, cwd, purpose, startedAt, seq: 0, control: "agent", part }, box, recording);
+    const entry = this.entry({ id, thread, cwd, purpose, startedAt, seq: 0, control: "agent", part }, box, agent, recording);
     this.sessions.set(thread, entry);
     this.step(entry, "session_start", { purpose, kind: "android", serial: SERIAL }, true, undefined, 0);
     // The stream connects in the background: the agent's first command needn't wait for it.
@@ -267,10 +279,16 @@ export class AndroidSessions {
     return { sessionId: id, serial: SERIAL, startMs: Math.round(performance.now() - started) };
   }
 
-  private entry(s: Omit<DeviceSnapshot, "v">, box: AndroidBox, recording: Recording): Open {
+  /** Where agent session `thread`'s agent-device is: the host's `agentBox`, else the emulator's `box`. */
+  private agentOf(thread: string, box: AndroidBox): AndroidBox {
+    return this.host.agentBox?.(thread) ?? box;
+  }
+
+  private entry(s: Omit<DeviceSnapshot, "v">, box: AndroidBox, agent: AndroidBox, recording: Recording): Open {
     const entry: Open = {
       ...s,
       box,
+      agent,
       recording,
       scrub: new Scrub(this.host.secrets(s.thread)),
       touched: Date.now(),
@@ -412,7 +430,7 @@ export class AndroidSessions {
       entry.link?.stop();
       entry.link = undefined;
       await stopPart(entry.box, entry.id);
-      await releaseAgent(entry.box, thread);
+      await releaseAgent(entry.agent, thread);
       // The device goes with everything done in it, as a node's copy does: the next session boots a fresh one.
       await stopEmulator(entry.box);
       if (note) this.addNote(entry, note);
@@ -519,7 +537,7 @@ export class AndroidSessions {
     entry.pressed = false;
     if (next !== before) {
       entry.control = next;
-      void controlIn(entry.box, entry.thread, next === "human").catch((e: Error) => console.warn(`device ${entry.id}: control file not written: ${e.message}`));
+      void controlIn(entry.agent, entry.thread, next === "human").catch((e: Error) => console.warn(`device ${entry.id}: control file not written: ${e.message}`));
       if (next === "human") this.step(entry, "takeover", { by: frame.by }, true, undefined, 0);
       else if (before === "human") this.step(entry, "handback", { by: frame.by }, true, undefined, 0);
     }
@@ -580,7 +598,8 @@ export class AndroidSessions {
       throw new Error(`the Android session's recording didn't go on: ${(e as Error).message}`);
     }
     let why = "its box is gone";
-    const entry = this.entry(state, box ?? ({} as AndroidBox), recording);
+    const agent = box ? this.agentOf(thread, box) : undefined;
+    const entry = this.entry(state, box ?? ({} as AndroidBox), agent ?? ({} as AndroidBox), recording);
     if (box) {
       try {
         await this.connect(entry, timing.reachMs);
@@ -595,9 +614,9 @@ export class AndroidSessions {
       entry.control = "agent";
       this.step(entry, "device_gone", { why }, false, undefined, 0);
       if (box) {
-        await controlIn(box, thread, false).catch(() => {});
+        await controlIn(agent!, thread, false).catch(() => {});
         await stopPart(box, entry.id);
-        await releaseAgent(box, thread);
+        await releaseAgent(agent!, thread);
         await stopEmulator(box);
       }
       this.addNote(entry, note);
@@ -607,7 +626,7 @@ export class AndroidSessions {
     }
     this.sessions.set(thread, entry);
     // What a takeover guards is put back as it was, never reset: the box's control file, written again.
-    await controlIn(box!, thread, entry.control === "human").catch((e: Error) => console.warn(`device ${entry.id}: control file not written: ${e.message}`));
+    await controlIn(agent!, thread, entry.control === "human").catch((e: Error) => console.warn(`device ${entry.id}: control file not written: ${e.message}`));
     this.step(entry, "device_adopted", {}, true, undefined, 0);
     await this.report(entry, "live");
     return { adopted: true, sessionId: entry.id };
