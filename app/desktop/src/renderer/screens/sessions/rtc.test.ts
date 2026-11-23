@@ -119,7 +119,7 @@ describe("a screen's peer", () => {
     expect(h.viewer.input({ kind: "key", action: "down", key: "a" })).toBe(false);
     p.deliver(head(5, 5));
     p.deliver(new Uint8Array([0, 0, 0, 1, 0x67]).buffer);
-    expect(h.frames).toEqual([{ t: "browser_frame", rtc: true, frame: { sessionId: S, seq: 5, width: 800, height: 600, control: "agent", key: true, h264B64: btoa("\u0000\u0000\u0000\u0001g") } }]);
+    expect(h.frames).toEqual([{ t: "browser_frame", rtc: true, frame: { sessionId: S, seq: 5, width: 800, height: 600, control: "agent", key: true, link: -1, h264B64: btoa("\u0000\u0000\u0000\u0001g") } }]);
     expect(h.watches).toEqual([peer]);
     expect(p.channel("input").sent).toEqual([JSON.stringify({ t: "ack", seq: 5 })]);
     // A JPEG in two pieces, a heartbeat between.
@@ -156,6 +156,15 @@ describe("a screen's peer", () => {
     await vi.advanceTimersByTimeAsync(RETRY_MS[0]);
     expect(h.peers).toHaveLength(2);
     expect(h.signals.at(-1)?.[1]).toBe("v=0 offer");
+    // The next peer is a stream of its own: a node that counts from the start again (a new holder's box after a
+    // server's handover) isn't taken for older than what the last peer showed.
+    const next = there(h.peers[1]);
+    next.open();
+    next.deliver(head(1, 0));
+    expect(h.frames.map((f) => (f.t === "browser_frame" ? [f.frame.seq, f.frame.link] : null))).toEqual([
+      [1, -1],
+      [1, -2],
+    ]);
   });
 
   it("gives up on a peer the hub refuses or that never opens, without touching what the hub sends", async () => {
