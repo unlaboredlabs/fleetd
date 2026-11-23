@@ -59,16 +59,14 @@ export class Workstreams {
   /**
    * An order opened with its brief at once, no intent wake (the train's, for a PR labelled `fleetd-train`). Once per
    * clientRequestId while that order is open; after it closed (its PR closed, then reopened), a new one. A stopped
-   * one is final: refused.
+   * one is final: it is answered, `stopped`, and no order opens.
    */
-  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string } {
+  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string; stopped?: true } {
     for (let n = 1; ; n++) {
       const { workstreamId } = this.open(n === 1 ? input : { ...input, clientRequestId: `${input.clientRequestId}#${n}` });
       const w = this.records.workstreamGet(workstreamId);
-      // A person stopped it: that is final for its PR, which stays off the train until its label goes.
-      if (w?.state === "stopped") {
-        throw new ToolError("invalid", `${workstreamId}, this pull request's order, was stopped, so it stays off the train.`, "Its label does nothing more: open a new pull request to put the change on the train again.");
-      }
+      // A person stopped it: that is final for its PR, which the train then takes off by its label.
+      if (w?.state === "stopped") return { workstreamId, stopped: true };
       if (w && isClosed(w.state)) continue;
       this.briefCreate(input.projectRef, workstreamId, brief);
       return { workstreamId };
@@ -190,7 +188,7 @@ export type Intake = {
   intake(input: IntakeInput): { workstreamId: string };
   submit(input: IntakeInput): { workstreamId: string };
   /** Opens an order with its brief set at once, no intent wake (the train's for a labelled PR): `Workstreams.openBriefed`. */
-  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string };
+  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string; stopped?: true };
   close(r: ProjectRef, workstreamId: string, reason: string, by: string): Promise<{ workstreamId: string; state: WorkstreamState; next: string }>;
 };
 

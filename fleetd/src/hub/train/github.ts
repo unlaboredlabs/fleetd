@@ -921,6 +921,12 @@ export class TrainGitHub {
     if (!r.ok && r.status !== 422) throw GhError.failed(`creating the label ${name} on ${repo} failed: ${r.message}`);
   }
 
+  /** Comments on the PR (marked as the train's), unless one of its comments says that already. */
+  async commentOnce(repo: string, n: number, comment: string): Promise<void> {
+    const body = `${comment}\n\n${TRAIN_MARK}`;
+    if (!(await this.commented(repo, n, body))) await this.json("POST", `repos/${repo}/issues/${n}/comments`, [["body", body]], (v) => v ?? null);
+  }
+
   async addLabel(repo: string, n: number, name: string): Promise<void> {
     await this.json("POST", `repos/${repo}/issues/${n}/labels`, [["labels[]", name]], (v) => v ?? null);
   }

@@ -3,7 +3,7 @@
 // goes through review and CI as a writer's PR does, and its order closes when the PR merges or closes. Without the
 // label, from a fork, or as a draft, it stays off the train.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { LABEL_DONE_WHEN, TRAIN_LABEL } from "../src/hub/train/label.ts";
+import { LABEL_DONE_WHEN, stoppedComment, TRAIN_LABEL } from "../src/hub/train/label.ts";
 import { Kit, REPO } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -81,7 +81,7 @@ test("a labelled PR closed unmerged leaves the train, and its order closes with 
   expect(k.host.briefed.get("W201")!.closed).toBeUndefined();
 });
 
-test("a labelled PR whose order a person stopped stays off the train: not at the same head, nor at a new one", async () => {
+test("a labelled PR whose order a person stopped has its label taken off once, with one comment, and the lead is told once", async () => {
   const k = await kit();
   openPr(k, 26, "renovate/x", { labels: [TRAIN_LABEL, "hold"] });
   await passes(k, 1);
@@ -89,15 +89,24 @@ test("a labelled PR whose order a person stopped stays off the train: not at the
   // The stop flow (chat/stop.ts): its PRs off the train while the order is still open, then the order stopped.
   k.train.takeLeftovers(k.change(26).projectRef, "W200", "W200 was stopped: by you");
   Object.assign(k.host.briefed.get("W200")!, { stopped: true, closed: "stopped" });
-  await passes(k, 2);
-  expect(changesOf(k, 26).map((c) => [c.workstreamId, c.state])).toEqual([["W200", "abandoned"]]);
-  // A new push: refused, said to the lead, and still no new order.
+  // A new push reads it again (as a restarted hub would): the label comes off, with the train's comment.
   k.pr(26, "renovate/x", { "26.md": "26 again\n" }, { labels: [TRAIN_LABEL, "hold"] });
   k.host.tasks.delete("T26");
-  await passes(k, 2);
-  expect(changesOf(k, 26)).toHaveLength(1);
+  await passes(k, 3);
+  const pull = k.gh.pulls.get(26)!;
+  expect(pull.labels).toEqual(["hold"]);
+  expect(pull.comments).toHaveLength(1);
+  expect(pull.comments[0]).toStartWith(stoppedComment("W200"));
+  expect(changesOf(k, 26).map((c) => [c.workstreamId, c.state])).toEqual([["W200", "abandoned"]]);
   expect([...k.host.briefed.keys()]).toEqual(["W200"]);
-  expect(k.host.wakes.some((w) => w.includes("/pull/26") && w.includes("was stopped, so it stays off the train"))).toBe(true);
+  const told = () => k.host.wakes.filter((w) => w.includes("/pull/26") && w.includes("was stopped, so it stays off the train")).length;
+  expect(told()).toBe(1);
+  // Without its label, nothing reads it again: no second comment, no second wake.
+  k.pr(26, "renovate/x", { "26.md": "26 once more\n" }, { labels: ["hold"], comments: pull.comments });
+  k.host.tasks.delete("T26");
+  await passes(k, 3);
+  expect(k.gh.pulls.get(26)!.comments).toHaveLength(1);
+  expect(told()).toBe(1);
 });
 
 test("without the label, from a fork, or as a draft, a PR no task opened stays off the train, and opens no order", async () => {
