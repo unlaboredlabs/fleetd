@@ -701,6 +701,19 @@ describe("a chat's screens", () => {
     expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(2);
   });
 
+  it("of the open chat are read again as the link comes up, when the cold start's read couldn't go", async () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    hub.fail("browser_sessions", "unavailable", "Not connected.");
+    await flush();
+    expect(session.state.screens[KEY]).toBeUndefined();
+    hub.link.frame(snapshot);
+    expect(hub.sentOf("call").filter((c) => c.tool === "browser_sessions")).toHaveLength(2);
+    hub.answer("browser_sessions", sessions([live("agent")]));
+    await flush();
+    expect(session.state.screens[KEY]?.map((s) => s.control)).toEqual(["agent"]);
+  });
+
   it("send frames to the live view alone, never through the state", () => {
     const { hub, session } = setup();
     hub.ready(["browser_sessions"]);

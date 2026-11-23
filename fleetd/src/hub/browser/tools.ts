@@ -8,7 +8,7 @@ import { CAP_BROWSER, RECORDING_FILES, RECORDING_PART_BYTES, type RecordingFileN
 import type { Hub } from "../api/hub.ts";
 import { isHuman, REPAIR_FIX, requireRole } from "../api/grants.ts";
 import type { Caller, Registry } from "../api/registry.ts";
-import { allows } from "../auth/index.ts";
+import { allows, isoMs } from "../auth/index.ts";
 import { runnerOf } from "../machine_roles/places.ts";
 import { waitsOf } from "../machine_roles/screens.ts";
 import { live, runsOn } from "./live.ts";
@@ -17,7 +17,7 @@ import { writeQueue } from "../queue/index.ts";
 import { steerTasks } from "../steer/index.ts";
 import { store } from "../store/hub_store.ts";
 import { TaskRecords } from "../tasks/records.ts";
-import { get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
+import { closesAtOn, get, list, liveSessions, filePath, retentionOn, setRetention } from "./store.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
 
 /** How long browser_control waits for the node to say it acted. */
@@ -179,8 +179,8 @@ export async function changeControl(
 }
 
 /**
- * A session as browser_sessions answers it: where it runs, and, live, what its agent did last there and whether its
- * machine answers an app's peer (`rtc`). Any answer that hands an app a session row it shows gives it this, or the
+ * A session as browser_sessions answers it: where it runs, and, live, what its agent did last there, whether its
+ * machine answers an app's peer (`rtc`), and when it closes once its task finished (`closesAt`). Any answer that hands an app a session row it shows gives it this, or the
  * app's view drops its peer for relayed frames until its next read.
  */
 export function asRead(hub: Hub, s: BrowserSession): BrowserSession {
@@ -190,6 +190,9 @@ export function asRead(hub: Hub, s: BrowserSession): BrowserSession {
     if (step) s.step = step;
     // An app offers a peer only to a node that answers one: none builds one, nor asks STUN, for nothing.
     if (link(hub).can(s.machineId, CAP_BROWSER_RTC)) s.rtc = true;
+    // Its task finished: when the hub ends it, which the apps say rather than call it live.
+    const closes = s.taskId === undefined ? undefined : closesAtOn(hub.db.conn, s.taskId);
+    if (closes !== undefined) s.closesAt = isoMs(closes);
   }
   return s;
 }

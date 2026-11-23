@@ -252,9 +252,14 @@ export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
 
 /**
  * The rows with each screen's card where it opened: after the last message before it. One that opened before the
- * oldest message read waits for its page, unless there are no older ones.
+ * oldest message read waits for its page, unless there are no older ones. A `live` one opened after the newest
+ * message has no card yet: the strip of live screens under it says it, once (screens/ScreenCards.tsx).
  */
-export const withScreens = (rows: readonly ThreadRow[], screens: readonly { readonly id: string; readonly at: string }[], hasOlder: boolean): ThreadRow[] => {
+export const withScreens = (
+  rows: readonly ThreadRow[],
+  screens: readonly { readonly id: string; readonly at: string; readonly live: boolean }[],
+  hasOlder: boolean,
+): ThreadRow[] => {
   if (screens.length === 0) return [...rows];
   const byTime = [...screens].sort((a, b) => msOf(a.at) - msOf(b.at));
   // Each row's next message (its own, or the one a day line or the unread bar stands over): a card goes before the
@@ -277,7 +282,7 @@ export const withScreens = (rows: readonly ThreadRow[], screens: readonly { read
     }
     out.push(row);
   }
-  for (const s of byTime.slice(next)) out.push({ t: "screen", id: `screen:${s.id}`, sessionId: s.id });
+  for (const s of byTime.slice(next)) if (!s.live) out.push({ t: "screen", id: `screen:${s.id}`, sessionId: s.id });
   return out;
 };
 

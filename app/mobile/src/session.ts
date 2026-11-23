@@ -5,7 +5,7 @@
 // agent's live screen is watched one at a time: its frames go to the live view's listener alone (onFrame), never
 // through the state, which would draw the whole app again with each.
 import { loadRun, mergeMessages, serves, PREVIEW_SIDE, readFile, readPreview, resetFlow, toResend, type ApprovalDecision, type AttachmentGetOutput, type AttachmentRef, type BrowserFrame, type BrowserInput, type ChatReplyTo, type FlowDeps, type HubError, type HubEvent, type HubState, type ProjectRef, type Read, type ToolInput, type ToolName, type TransferCall } from "./desktop";
-import type { Navigation } from "./screen";
+import { screensOfAgents, type Navigation } from "./screen";
 import type { LensSend } from "./chatTags";
 import { HubClient, type HubFrame, type Transport, type Typed } from "./hub/client";
 import { memoryPins, Pins, type PinStore } from "./pins";
@@ -591,7 +591,11 @@ export class Session {
       do {
         this.#boardAgain = false;
         const r = await this.#client.call("orders_board", {});
-        if (r.ok) this.#dispatch({ t: "board", orders: r.output.orders });
+        if (!r.ok) continue;
+        this.#dispatch({ t: "board", orders: r.output.orders });
+        // An agent that finished or was woken changes whether its open screens are live (screen.ts liveNow): its
+        // chat's screens read again, where one of them is an agent's.
+        for (const key of screensOfAgents(this.#state.screens)) void this.readScreens(key);
       } while (this.#boardAgain);
     } finally {
       this.#boarding = false;
@@ -648,8 +652,11 @@ export class Session {
       // Someone may have pinned or unpinned while the link was down.
       if (this.#open !== null) void this.readMessagePins(this.#open);
       this.#resumable = null;
-      // The screens of the chats looked at may have changed while the link was down.
-      for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
+      // The screens of the chats looked at may have changed while the link was down; the open chat's too, which a
+      // cold start opens before the link is up, when its read can't go.
+      const looked = Object.keys(this.#state.screens);
+      if (this.#open !== null && !looked.includes(this.#open)) looked.push(this.#open);
+      for (const key of looked) void this.readScreens(key);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
       }

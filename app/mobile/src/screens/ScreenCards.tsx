@@ -4,12 +4,12 @@
 // (ScreenList.tsx). A finished task's screen, still open a while, isn't live there: it is only in that list. Tapping a
 // card opens its live view (Screen.tsx), watching; Take Over is there.
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated from "react-native-reanimated";
 import { useHub, type RootParams } from "../hubContext";
-import { cardOf, cardTitle, liveNow, runningTasks, screenCards, stripOf, type ScreenCard } from "../screen";
-import type { Key, State } from "../store";
+import { cardOf, cardTitle, liveNow, screenCards, stripOf, type ScreenCard } from "../screen";
+import type { Key } from "../store";
 import { shape, space, type, useTheme } from "../theme";
 import { haptics } from "../ui/haptics";
 import { Icon, type IconName } from "../ui/Icon";
@@ -17,16 +17,12 @@ import { PRESSED_OPACITY, rowIn, rowOut, useReduceMotion } from "../ui/motion";
 
 export const ICON: Readonly<Record<ScreenCard["kind"], IconName>> = { browser: "browser", android: "device", ios: "device", linux_desktop: "desktop", mac: "desktop" };
 
-/** The tasks at work now, by the open orders: their screens are the live ones. */
-export const useRunning = (orders: State["orders"]): ReadonlySet<string> => useMemo(() => runningTasks(orders), [orders]);
-
 /** The chat's live screens as one strip over the composer; nothing with none. */
 export const ScreenStrip = memo(function ScreenStrip({ chatKey }: { chatKey: Key }) {
   const t = useTheme();
   const { state } = useHub();
-  const running = useRunning(state.orders);
   const who = state.projects?.[chatKey]?.title ?? "Its agent";
-  const strip = stripOf(screenCards(state.screens[chatKey], running), who);
+  const strip = stripOf(screenCards(state.screens[chatKey]), who);
   const reduce = useReduceMotion();
   const nav = useNavigation<NavigationProp<RootParams>>();
   if (strip === undefined) return null;
@@ -85,11 +81,10 @@ export const ScreenStrip = memo(function ScreenStrip({ chatKey }: { chatKey: Key
 export const ScreenRow = memo(function ScreenRow({ chatKey, sessionId }: { chatKey: Key; sessionId: string }) {
   const { state } = useHub();
   const nav = useNavigation<NavigationProp<RootParams>>();
-  const running = useRunning(state.orders);
   const listed = state.screens[chatKey]?.find((s) => s.sessionId === sessionId);
   if (listed === undefined) return null;
   const who = state.projects?.[chatKey]?.title ?? "Its agent";
-  const finished = listed.state === "live" && !liveNow(listed, running);
+  const finished = listed.state === "live" && !liveNow(listed);
   return (
     <View style={styles.cards}>
       <ScreenCardView card={cardOf(listed)} who={who} finished={finished} onOpen={() => nav.navigate("Screen", { key: chatKey, sessionId })} />

@@ -4,6 +4,7 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { ScrollView, StyleSheet } from "react-native";
+import { bubbleTime } from "../chatView";
 import { useHub, type RootParams } from "../hubContext";
 import { cardTitle, finishedCards, screenCards, type ScreenCard } from "../screen";
 import { space, useTheme } from "../theme";
@@ -11,16 +12,17 @@ import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { SHEET_GONE_MS } from "./manage/arrival";
 import { sheetOptions } from "./manage/parts";
-import { ICON, useRunning } from "./ScreenCards";
+import { ICON } from "./ScreenCards";
+import { useNow } from "./time";
 
 export function ScreenList({ navigation, route }: NativeStackScreenProps<RootParams, "ScreenList">) {
   const t = useTheme();
+  const now = useNow();
   const { state, session } = useHub();
   const key = route.params.key;
-  const running = useRunning(state.orders);
   const who = state.projects?.[key]?.title ?? "Its agent";
-  const live = screenCards(state.screens[key], running);
-  const finished = finishedCards(state.screens[key], running);
+  const live = screenCards(state.screens[key]);
+  const finished = finishedCards(state.screens[key]);
 
   useLayoutEffect(() => navigation.setOptions(sheetOptions(t, () => navigation.goBack(), undefined)), [navigation, t]);
   useEffect(() => {
@@ -48,7 +50,7 @@ export function ScreenList({ navigation, route }: NativeStackScreenProps<RootPar
       icon={c.reason !== undefined ? "hand" : ICON[c.kind]}
       title={cardTitle(c, who)}
       detail={c.reason ?? c.purpose}
-      value={finishedTask ? "Done" : c.reason !== undefined ? "Asks you" : c.control === "human" ? "Yours" : "Live"}
+      value={finishedTask ? (c.closesAt === undefined ? "Done" : `Until ${bubbleTime(c.closesAt, now)}`) : c.reason !== undefined ? "Asks you" : c.control === "human" ? "Yours" : "Live"}
       valueDot={finishedTask ? t.tertiary : c.reason !== undefined ? t.warning : c.control === "human" ? t.accent : t.success}
       onPress={() => open(c.id)}
     />
@@ -58,7 +60,7 @@ export function ScreenList({ navigation, route }: NativeStackScreenProps<RootPar
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: t.grouped }} contentContainerStyle={styles.list}>
       {live.length === 0 ? null : <ListSection header="Live now">{live.map((c) => row(c, false))}</ListSection>}
       {finished.length === 0 ? null : (
-        <ListSection header="Task finished" footer="Their agents are done. Each stays open for 30 minutes in case its agent is woken again, then closes.">
+        <ListSection header="Task finished" footer="Their agents are done. Each stays open until the time it shows, in case its agent is woken again.">
           {finished.map((c) => row(c, true))}
         </ListSection>
       )}

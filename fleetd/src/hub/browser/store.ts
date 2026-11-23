@@ -16,7 +16,7 @@ import {
 } from "../../shared/screens_wire.ts";
 import type { Hub } from "../api/hub.ts";
 import { isoMs } from "../auth/index.ts";
-import { taskEnded } from "../machine_roles/places.ts";
+import { taskEnded, TURN_WAIT_MS } from "../machine_roles/places.ts";
 import { isRecordingFile, isSessionId } from "./check.ts";
 import { events } from "../store/events.ts";
 import { link } from "../link/index.ts";
@@ -193,6 +193,17 @@ export const list = (hub: Hub, r: ProjectRef, limit: number) =>
 
 /** Every live screen. */
 export const liveSessions = (hub: Hub) => rows(hub.db.conn, "SELECT data FROM browser_sessions WHERE state = 'live'");
+
+/**
+ * When a live session of task `taskId` ends because its task finished (`endOutlived`): its task done or failed, the
+ * wait after; undefined while the task works (or is woken again) and for one the hub doesn't know.
+ */
+export function closesAtOn(c: Database, taskId: string): number | undefined {
+  const t = c.query<{ state: string; ended_at: string | null }, [number]>("SELECT state, ended_at FROM tasks WHERE n = ?").get(Number(taskId.slice(1)));
+  if (t === null || (t.state !== "done" && t.state !== "failed") || !t.ended_at) return undefined;
+  const ended = Date.parse(t.ended_at);
+  return Number.isNaN(ended) ? undefined : ended + TURN_WAIT_MS;
+}
 
 /**
  * Ends every live session whose task ended (cancelled, or done or failed past a screen's idle limit): lost on the
