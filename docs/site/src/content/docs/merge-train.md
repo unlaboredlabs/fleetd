@@ -4,9 +4,10 @@ description: "How fleetd merges pull requests: one train per repo, batches of re
 ---
 
 How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on its repo's
-[merge train](/docs/glossary#merge-train). Every ready PR from a writer's branch, or from one named after it
-(`<branch>-<n>`), goes on by itself while the writer's order is open, not only the PR its result names, so split
-work needs no `change_enqueue`.
+[merge train](/docs/glossary#merge-train). Every ready PR from a writer's branch, or from any other branch under its
+task's prefix (`fleetd/T7-pricing-2`, `fleetd/T7-cloud-pin`), goes on by itself, once, as that writer's, while its order
+is open: in any of the bot's repos, opened before or after its result, not only the PR its result names, so split work
+and a second repo's PR need no `change_enqueue`. A PR from a fork or from a person's own branch never goes on by itself.
 
 ## What the train does {#steps}
 
