@@ -65,6 +65,14 @@ interface InsetsLike {
 export const sideStrip = (insets: InsetsLike): Strip | undefined =>
   insets.top > 0 || (insets.left <= 0 && insets.right <= 0) ? undefined : { left: Math.max(insets.left, 0), right: Math.max(insets.right, 0) };
 
+/**
+ * The strip a sheet's content keeps out of in a window `width` wide: all of it where the window is a phone's width (the
+ * Duo folded), where a sheet spans the window and its own safe area says nothing of the strip, so its rows ran under the
+ * status; none where it is wide enough for the list beside the chat (the Duo unfolded), where a sheet is a card centred
+ * well clear of either side.
+ */
+export const sheetStrip = (strip: Strip | undefined, width: number): Strip | undefined => (width < SPLIT_LEAST ? strip : undefined);
+
 /** How far a screen's content keeps from each side for the strip. */
 export interface Strip {
   readonly left: number;

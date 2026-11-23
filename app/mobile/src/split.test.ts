@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { onHome, openChatKey, paneStrip, sideStrip, splitOf, SPLIT_LEAST } from "./split";
+import { onHome, openChatKey, paneStrip, sheetStrip, sideStrip, splitOf, SPLIT_LEAST } from "./split";
 
 describe("splitOf", () => {
   it("keeps a phone, and the Duo folded, to one screen at a time", () => {
@@ -44,6 +44,14 @@ describe("onHome", () => {
     expect(onHome(routes, 1)).toBe(true);
     expect(onHome(routes, 3)).toBe(false);
     expect(onHome(routes, 0)).toBe(false);
+  });
+});
+
+describe("sheetStrip", () => {
+  it("keeps a sheet out of the strip where it spans the folded window, and leaves a centred card as it is", () => {
+    expect(sheetStrip({ left: 0, right: 84 }, 466)).toEqual({ left: 0, right: 84 });
+    expect(sheetStrip({ left: 0, right: 84 }, 951)).toBeUndefined();
+    expect(sheetStrip(undefined, 402)).toBeUndefined();
   });
 });
 
