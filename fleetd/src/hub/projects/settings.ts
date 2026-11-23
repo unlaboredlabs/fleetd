@@ -394,20 +394,25 @@ export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary
  * bot): they share that repo's merge train, so its merge mode.
  */
 export function sharers(hub: Hub, r: ProjectRef): ProjectRef[] {
-  const { host } = trainArea(hub);
+  const db = hub.db.conn;
   const seen = new Set([`${r.machineId}/${r.projectId}`]);
   const out: ProjectRef[] = [];
-  for (const [repo] of host.githubRepos(r)) {
-    for (const p of host.repoProjects(repo)) {
+  for (const key of githubKeys(hub, r)) {
+    for (const p of repos.withKey(db, key)) {
       const k = `${p.machineId}/${p.projectId}`;
       if (seen.has(k)) continue;
       seen.add(k);
-      if (repos.holders(hub.db.conn, p).length > 0 || archived(hub.db.conn, p)) continue;
+      if (repos.holders(db, p).length > 0 || archived(db, p)) continue;
       out.push(p);
     }
   }
   return out;
 }
+
+/** The project's repos on GitHub, as their keys (`github.com/acme/shop`), lowercased. */
+const githubKeys = (hub: Hub, r: ProjectRef): string[] => [
+  ...new Set(repos.of(hub.db.conn, r).flatMap((x) => (x.repoKey?.toLowerCase().startsWith("github.com/") ? [x.repoKey.toLowerCase()] : []))),
+];
 
 /**
  * How it merges while another bot shares one of its GitHub repos: that repo's train's mode, the one its PRs go by,
@@ -416,9 +421,11 @@ export function sharers(hub: Hub, r: ProjectRef): ProjectRef[] {
 function mergeShared(hub: Hub, r: ProjectRef): MergeShared | undefined {
   const others = sharers(hub, r);
   if (others.length === 0) return undefined;
-  const { train, host } = trainArea(hub);
-  const repo = host.githubRepos(r).find(([x]) => host.repoProjects(x).some((p) => others.some((o) => o.machineId === p.machineId && o.projectId === p.projectId)))?.[0];
-  const mode = mergeModeOf(hub.db.conn, repo === undefined ? r : train.trainProject(repo.toLowerCase(), r));
+  // The repo they share, and the train it has: its mode is the one their PRs go by.
+  const db = hub.db.conn;
+  const key = githubKeys(hub, r).find((k) => repos.withKey(db, k).some((p) => others.some((o) => o.machineId === p.machineId && o.projectId === p.projectId)));
+  const repo = key?.slice("github.com/".length);
+  const mode = mergeModeOf(db, repo === undefined ? r : trainArea(hub).train.trainProject(repo, r));
   return { mode, bots: others.map((o) => store(hub).projectGet(o)?.title ?? o.projectId) };
 }
 

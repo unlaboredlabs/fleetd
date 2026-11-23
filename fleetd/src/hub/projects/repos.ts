@@ -220,7 +220,7 @@ function startClone(
       const got = await attachCheckout(hub, r, name, at, facts, inspect, addId);
       hooks.cloned?.(got);
     },
-    fix: `Add the checkout at ${p} on ${m} with project_repo_add`,
+    fix: `Add the folder ${p} on ${m} as a repo again: the copy there is added as it is`,
     ...(hooks.cloneFailed ? { failed: hooks.cloneFailed } : {}),
   });
   void cloneAndRegister(hub, m, repo, path, into, run);

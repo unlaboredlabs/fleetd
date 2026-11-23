@@ -191,7 +191,7 @@ test("a lead whose clone a hub restart cut off is told at the hub's next start",
       kind: "line",
       line: "request",
       text:
-        "repo_add: the hub restarted while cloning acme/shop into /home/me/src/shop, so it was not added. Call repo_add with the same url again: " +
+        "repo_add: the hub restarted while cloning acme/shop into /home/me/src/shop, so it was not added. Call repo_add with the same url or path again: " +
         "a clone that finished on the machine is added as it is.",
     },
   ]);
@@ -208,6 +208,23 @@ test("a folder that is another bot's is never taken: neither a lead's repo_add n
   expect(k.names()).toEqual([]);
   expect(k.lines()).toEqual([]);
   expect(await k.call(ada, "project_repo_add", { ...NOTES, path: "/home/me/site" })).toMatchObject({ error: { error: { code: "invalid", message: why } } });
+  expect(holder(k.hub, { machineId: "devbox", projectId: "site" })).toBeUndefined();
+});
+
+test("a lead's repo_add of another bot's folder by path clones a separate copy, named by the path it gave", async () => {
+  const site = { kind: "repo_facts" as const, exists: true, isGit: true, remote: "git@github.com:acme/shop.git", defaultBranch: "main", workflowFiles: [] };
+  const k = await rig((call) => {
+    if (call.op === "repo_inspect" && call.path === "/home/me/site") return { ok: site };
+    if (call.op === "repo_inspect" && call.path === "/home/me/site-2") return { ok: { kind: "repo_facts", exists: false, isGit: false, workflowFiles: [] } };
+    if (call.op === "repo_clone") return new Promise(() => undefined) as never;
+    return undefined;
+  });
+  k.db.run("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('devbox', 'site', 'th-site', '', 1)");
+  const out = await k.lead({ op: "repo_add", path: "/home/me/site" });
+  expect(out).toMatchObject({ cloning: true, path: "/home/me/site-2" });
+  expect(out.next).toStartWith("Cloning the repo at /home/me/site into /home/me/site-2 on devbox (a separate copy: /home/me/site is another bot's or taken).");
+  expect(out.next).not.toContain("undefined");
+  expect(k.db.query("SELECT repo, path FROM project_setup_clones").all()).toEqual([{ repo: "/home/me/site", path: "/home/me/site-2" }]);
   expect(holder(k.hub, { machineId: "devbox", projectId: "site" })).toBeUndefined();
 });
 
