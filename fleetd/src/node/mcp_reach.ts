@@ -57,6 +57,40 @@ export function skippedLine(names: readonly string[]): string {
   return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
+/** What a lead's chat says when servers it last said were left out answer again. */
+export function backLine(names: readonly string[]): string {
+  const one = names.length === 1;
+  return `The MCP server${one ? "" : "s"} ${quoted(names)} answer${one ? "s" : ""} again: ${one ? "its" : "their"} tools are back.`;
+}
+
+/** A start's left-out servers, sorted, as the line saying them keeps them (`skipSource`). */
+const setOf = (names: readonly string[]) => [...new Set(names)].sort();
+
+/** The prefix of the source of each line a bot's chat says of its left-out servers, whatever the set. */
+export const SKIP_SOURCE = "mcp:";
+
+/** The source of the line a start's left-out servers are said with: the set itself, then the start, so the bot's
+ * latest such line says which set it last said (`saidSet`). */
+export const skipSource = (names: readonly string[], start: string): string => `${SKIP_SOURCE}${setOf(names).map(encodeURIComponent).join(",")}:${start}`;
+
+/** The set a line's source says (`skipSource`); undefined for one that isn't such a line. */
+export function saidSet(source: string | undefined): string[] | undefined {
+  if (!source?.startsWith(SKIP_SOURCE)) return undefined;
+  const set = source.slice(SKIP_SOURCE.length).split(":")[0] ?? "";
+  return set === "" ? [] : set.split(",").map(decodeURIComponent);
+}
+
+/**
+ * What a bot's chat says of a start's left-out servers, `now`, after the set it last said, `last`: only a change. A
+ * server that stays down is said once; once more when it answers again, or when another one drops. Undefined: nothing.
+ */
+export function changeLine(last: readonly string[] | undefined, now: readonly string[]): string | undefined {
+  const was = setOf(last ?? []);
+  const is = setOf(now);
+  if (was.length === is.length && was.every((n, i) => n === is[i])) return undefined;
+  return is.length > 0 ? skippedLine(is) : backLine(was);
+}
+
 /** What the agent hears ahead of its next message when servers were left out of its start: the person hears it from
  * the agent once, in plain words, inside its reply to them, never as a message of its own. */
 export function skippedNote(names: readonly string[], ms = MCP_REACH_MS): string {

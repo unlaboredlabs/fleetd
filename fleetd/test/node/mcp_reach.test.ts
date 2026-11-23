@@ -3,7 +3,7 @@
 // is told in a note that has it mention it once, inside its reply to the person. Servers here are this test's own.
 import { afterAll, expect, test } from "bun:test";
 import { createServer, type Server } from "node:net";
-import { addressed, reaches, skippedNote, unanswered, without } from "../../src/node/mcp_reach.ts";
+import { addressed, changeLine, reaches, saidSet, skippedNote, skipSource, unanswered, without } from "../../src/node/mcp_reach.ts";
 
 const servers: { stop(): void }[] = [];
 afterAll(() => {
@@ -76,4 +76,21 @@ test("the note names each server left out, and has the agent tell the person onc
   expect(note).toContain("Mention this once, in one plain line, inside your reply the next time the person writes");
   expect(note).toContain("Never send it as a message of its own");
   expect(skippedNote(["a", "b"])).toContain("the MCP servers “a” and “b”: they didn't answer");
+});
+
+test("a bot's chat says only a change of its left-out servers, and the line's source keeps the set it said", () => {
+  // Said once while down, once when back, once more for another set; the same set, in any order, says nothing.
+  expect(changeLine(undefined, [])).toBeUndefined();
+  expect(changeLine(undefined, ["x"])).toBe("The MCP server “x” didn't answer, so its tools are off until the next start.");
+  expect(changeLine(["x"], ["x"])).toBeUndefined();
+  expect(changeLine(["x"], [])).toBe("The MCP server “x” answers again: its tools are back.");
+  expect(changeLine([], [])).toBeUndefined();
+  expect(changeLine(["b", "a"], ["a", "b"])).toBeUndefined();
+  expect(changeLine(["x"], ["y"])).toBe("The MCP server “y” didn't answer, so its tools are off until the next start.");
+  expect(changeLine(["a", "b"], [])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
+  // The set round-trips through a source, odd names included; another source says no set.
+  expect(saidSet(skipSource(["b", "a:1", "c,d"], "t1:2026"))).toEqual(["a:1", "b", "c,d"]);
+  expect(saidSet(skipSource([], "t1:2026"))).toEqual([]);
+  expect(saidSet("unanswered:m1")).toBeUndefined();
+  expect(saidSet(undefined)).toBeUndefined();
 });

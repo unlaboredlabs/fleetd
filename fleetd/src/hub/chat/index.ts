@@ -484,6 +484,16 @@ export class Chat {
     return this.one("SELECT data FROM chat_messages WHERE source = ?1 ORDER BY n DESC LIMIT 1", source);
   }
 
+  /** The source of the project's latest message whose source starts with `prefix`, if any. */
+  lastSource(r: ProjectRef, prefix: string): string | undefined {
+    const row = this.db.conn
+      .query<{ source: string }, [string, string, string]>(
+        "SELECT source FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND substr(source, 1, length(?3)) = ?3 ORDER BY seq DESC LIMIT 1",
+      )
+      .get(r.machineId, r.projectId, prefix);
+    return row?.source;
+  }
+
   bySource(r: ProjectRef, source: string): ChatMessage | undefined {
     return this.one(
       "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND source = ?3",

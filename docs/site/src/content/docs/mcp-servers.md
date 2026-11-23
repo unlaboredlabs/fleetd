@@ -46,7 +46,8 @@ restart). Removing a server works the same way.
 
 A server reached by address that doesn't answer within 3 s when an agent starts is left out of that start, so the agent
 doesn't wait on it. A lead's chat says so once ("The MCP server “docs” didn't answer, so its tools are off until the next
-start"); an agent hears it with its next message. The next start looks again.
+start"), not at every start while it stays down, and once more when it answers again or another server drops; an agent
+hears it with its next message. Each start looks again.
 
 ## Secrets {#secrets}
 
