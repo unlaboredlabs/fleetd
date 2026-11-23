@@ -1,47 +1,34 @@
 ---
 title: Quick start
-description: Install fleetd, open a bot and chat with its lead.
+description: Set up a hub, open a bot in the desktop app and give its lead your first request.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
 
-You'll install fleetd, open a bot in the desktop app, and tell its lead what you want.
+Set up fleetd on one machine and give a bot its first piece of work.
 
-**Before you start**, have these on the machine:
-
-- macOS or Linux x64.
-- The `claude` CLI on the machines that run agents. Its Claude account can be the hub's API key, your subscription, or
-  each machine's own login; the setup steps below set it.
-- `git`. GitHub goes through the hub's own GitHub App, set up in the steps below, or the `gh` CLI logged in on the hub.
-- A GitHub repo to work on. fleetd branches from its default branch and merges back into it; see
-  [Which branch fleetd works on](/docs/projects#branches).
+You need a Mac (macOS 13 or newer) or a Linux x64 machine that stays on, and a GitHub repo to work on.
 
 <Steps>
 
-1. **Install and run the setup wizard.**
+1. **Install fleetd and run the wizard.**
 
-   Run this on the always-on machine that will be your [hub](/docs/glossary#hub), the machine that coordinates all
-   the work:
+   On the machine that will run the hub:
 
    ```sh
    curl -fsSL https://fleetd.sh | sh
    ```
 
-   The installer starts the wizard, `fleetd init`. On a desktop with the fleetd app it first asks whether to set up
-   here or in the app ("Continue in the desktop app" opens the app's setup). It then asks whether this machine is the
-   hub or a worker of a hub you already have. Press Enter to take the default at each question. As the hub, it walks
-   through six parts:
+   The wizard, `fleetd init`, starts by itself. On a machine with the desktop app it offers to go on in the app
+   instead. Press Enter to take each default. It sets up:
 
-   | Part | What it sets up |
-   |---|---|
-   | 1. This machine | Makes this machine the hub and picks where it listens: your tailnet, your LAN, or this machine only. |
-   | 2. Logins | Checks `claude` and `gh`, and picks the commit author for your agents. |
-   | 3. Hub | Runs the hub as a background service. |
-   | 4. Workers | Picks the [workers](/docs/glossary#worker): the machines that run agents. This machine can be one. |
-   | 5. Bot | Adds your first [bot](/docs/glossary#project): a git repo on a worker. |
-   | 6. App & setup | Prints a pairing code for the desktop app, then lists the hub's [setup steps](#setup-steps) and runs `fleetd doctor`. |
+   - where the hub listens: your tailnet, your network, or this machine only;
+   - the hub as a background service;
+   - which machines run agents (this one can);
+   - your first bot, from a repo;
+   - a pairing code for the app.
 
-   Expected output ends like this:
+   It ends with a summary like this:
 
    ```text
    ◇  fleetd is ready ─────────────────────────────────────╮
@@ -50,118 +37,90 @@ You'll install fleetd, open a bot in the desktop app, and tell its lead what you
    │  workers   homeserver                                 │
    │  bot       ~/src/hello on homeserver                  │
    │  app       code K4QW-7RNP                             │
-   │  PATH      add: export PATH="$HOME/.local/bin:$PATH"  │
    ├───────────────────────────────────────────────────────╯
    ```
 
-   Note the pairing code it prints, such as `K4QW-7RNP`. A line starting with ✗ ends with the command that fixes it. Run `fleetd init` again at any time: it keeps what
-   works and repairs the rest.
+   A line with ✗ ends with the command that fixes it. You can run `fleetd init` again at any time.
 
 2. **Open the desktop app.**
 
-   On the hub machine, open the app: it pairs with the hub by itself.
-
-   On another computer, install fleetd without the wizard, then open the app:
+   On the hub's machine, the app pairs by itself. On another computer, install with `--no-init` and open the app:
 
    ```sh
    curl -fsSL https://fleetd.sh | sh -s -- --no-init
    ```
 
-   On macOS, open `~/Applications/fleetd.app`. On Linux, open **fleetd** from your app menu. Enter the hub address
-   and the pairing code from step 1. A code works once, for 15 minutes; run `fleetd pair` on the hub for a new one.
+   Enter the hub's address and the pairing code. A code works once, for 15 minutes; `fleetd pair` on the hub prints a
+   new one.
 
-3. **Open your bot.**
+3. **Finish setup.**
 
-   The sidebar lists your bots. Click the one the wizard added. It opens the chat with that bot's
-   [lead](/docs/glossary#lead): the Claude session that plans the work and runs the agents. Each bot has one.
+   The app opens on the setup steps that are left (below). Claude and GitHub are the ones you need before the first
+   pull request.
 
-4. **Tell the lead what you want.**
+4. **Write to your bot.**
 
-   Type a message and press Enter:
+   Click the bot in the sidebar and tell its lead what you want:
 
    ```text
    fix the typo in the README
    ```
 
-   The lead answers in the chat and starts agents. A strip under its message shows who is working; pull requests and
-   merges show up as one-line events.
+   The lead answers and starts agents. Pull requests and merges show up in the chat as they happen.
 
-5. **Reply when it asks.**
+5. **Answer its questions.**
 
-   The lead asks only about product calls, money and irreversible steps, as numbered items with a recommendation
-   each. A bot with a question waiting shows an amber dot in the sidebar. Reply in plain words, or tersely:
-
-   ```text
-   1 go, 2 rec
-   ```
-
-6. **Watch it land.**
-
-   Each pull request goes through review, then the [merge train](/docs/glossary#merge-train) merges it once CI
-   passes. The lead says in the chat when the work is done and checked.
+   The lead asks only about real choices, as numbered items with a recommendation each. A short reply such as
+   `1 go, 2 rec` is enough.
 
 </Steps>
 
 ## Setup steps {#setup-steps}
 
-Everything a hub admin sets up is one list of steps, the same in the terminal and the app. `fleetd init` lists them at
-its end, `fleetd doctor` lists them first, and `fleetd init --step <id>` opens one: why it matters, the values to paste
-(computed for your hub), the pages to open, then **Test** or **Go on**. In the app, an admin's first run opens on
-them while the hub has no bot yet. After that, Settings in the sidebar shows how many required steps are left and
-opens on [Settings › Hub › Setup](/docs/desktop-app#hub), which lists the hub's accounts and the steps left at any time. Each step's status comes from the hub's checks, so you can stop at any
-point and pick up again later, from any of them.
+The same steps are in the terminal (`fleetd init --step <id>`) and in the app (Settings › Hub › Setup). Each shows
+what to paste and where, then a **Test** button. `fleetd doctor` lists the ones still open.
 
 | Step | Id | Needed |
 |---|---|---|
-| Where the hub listens | `address` | Required. Plain HTTP is fine on your tailnet. |
-| Where agents run | `machines` | Required: a computer online. Agents run on it directly. |
-| Claude | `claude` | Required. The hub's API key with its endpoint (Anthropic's own, `https://api.anthropic.com`, filled in; type a gateway's over it), your subscription in Settings › Accounts › Claude, or each machine's own `claude auth login`. |
-| GitHub | `github` | Before the first PR: the hub's GitHub App, made with one button on Settings › Hub › Setup › GitHub, then each person connects theirs in Settings › Accounts › GitHub; or `gh auth login` on the hub. |
-| Import from 1Password | `onepassword` | Optional. Agents fill logins and cards from fleetd's own [vault](/docs/vault); to import yours from 1Password, a service account that reads only a vault of fleetd's own, pasted in Settings › Accounts › 1Password. Done once each saved token's Test reads one vault ([why](/docs/security#agent-reach)). |
-| Invite people | `people` | Optional. Done once someone you invited has joined. |
-| A Mac for agents | `mac` | Optional. One Mac every bot's agents use for Xcode builds and iOS simulators: [the agents' Mac](/docs/agents-mac). |
+| Where the hub listens | `address` | Yes |
+| Where agents run | `machines` | Yes |
+| Claude | `claude` | Yes |
+| GitHub | `github` | Before the first pull request |
+| Import from 1Password | `onepassword` | Optional |
+| Invite people | `people` | Optional |
+| A Mac for agents | `mac` | Optional |
 
-Optional steps never block anything, and stay in the list until they are done; in the app's first run their button is
-**Skip**. The app's first run holds Claude's key and endpoint right on its step, as Settings › Hub › Setup does. In the
-terminal, `fleetd init --step claude` takes the endpoint and the key, typed hidden and sealed in the terminal to each
-machine before it reaches the hub. Every other secret is pasted in the app, which seals it on your
-device: the step names the page.
+- **Claude**: the hub's API key, your Claude subscription, or each machine's own `claude auth login`.
+- **GitHub**: create the hub's GitHub App with one button, then install it on your repos. Each person then connects
+  their own GitHub in Settings › Accounts › GitHub, so their pull requests open as them.
 
 ## Without the app {#headless}
 
-On a machine with no display, chat with the lead from a script:
+On a machine with no screen, you can chat from the terminal:
 
-1. On the hub, create a key and keep it in a file only you can read:
+1. Create a key for yourself, in a file only you can read:
 
    ```sh
    (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
    ```
 
-2. Save the script from [MCP clients](/docs/mcp-clients#script) as `~/mcp.sh`, and find your bot's ids:
+2. Find your bot's name:
 
    ```sh
    fleetd project list
    ```
 
-3. Write to the lead, with the ids from `project list` (`<machineId>/<projectId>`):
+3. Write to its lead and wait for the reply:
 
    ```sh
-   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key sh ~/mcp.sh chat_send \
-     '{"projectRef":{"machineId":"homeserver","projectId":"<id>"},"text":"fix the typo in the README","clientRequestId":"first"}'
+   fleetd chat homeserver/hello "fix the typo in the README" --wait --key-file ~/.fleetd/human.key
    ```
 
-4. Read its replies:
+`fleetd status` shows how the work is going.
 
-   ```sh
-   FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/human.key sh ~/mcp.sh chat_history \
-     '{"projectRef":{"machineId":"homeserver","projectId":"<id>"}}'
-   ```
+## Next
 
-`fleetd status` shows where the bot's work is. Secrets need the app.
-
-## Next steps
-
-- [Concepts](/docs/concepts): how the pieces fit together.
-- [Machines](/docs/machines): add more machines that run agents.
-- [Chat with the lead](/docs/chat): give work, reply, steer.
-- [Bots](/docs/projects): add more repos.
+- [Chat with the lead](/docs/chat)
+- [Bots](/docs/bots): add more repos.
+- [Machines](/docs/machines): add machines that run agents.
+- [People & invites](/docs/people): bring in your team.

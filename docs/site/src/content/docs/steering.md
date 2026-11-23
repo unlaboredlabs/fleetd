@@ -1,131 +1,74 @@
 ---
-title: Steering
-description: Redirect the lead or one agent while it works, see when it took your words in, and take a steer back.
+title: Steer and stop
+description: Redirect the lead or one agent while it works, or stop it.
 ---
 
-You'll send a [steer](/docs/glossary#steer): a short message to an agent that is already working. In a bot's chat,
-any message you send while the lead works is a steer.
+A steer is a message to the lead or an agent while it's already working. It changes course without starting over.
 
-```text
-skip the docs page, ship the API first
-```
+## Steer the lead {#lead}
 
-A steer goes straight to the agent. It doesn't wait for the lead's next wake, and each steer gets a small
-[receipt](#receipts) that says whether the agent took it in.
-
-## Send a steer {#keys}
-
-1. Open the bot's chat in the desktop app.
-2. While the lead works, type in the box at the bottom. It says "Message the lead. It reads this at its next step."
+1. Open the bot's chat.
+2. While the lead works, type in the box. It says "It reads this at its next step."
 3. Press Enter.
 
-A steer holds up to 20,000 characters, and a chat message up to 100,000; attach anything longer as a file.
+The lead reads it after the command it's running now finishes. A long build or test run ends first.
 
-The lead reads your message at its [next step](#next-step). Nothing it is doing is cut short. When the lead is idle,
-the same message starts its next turn instead.
+To cut in at once, press ⌘Enter (Ctrl+Enter on Linux and Windows). The running step stops and the lead reads your message now.
 
-To stop the running step and deliver at once, press ⌘Enter (Ctrl+Enter on Linux and Windows) instead. The box shows
-"⌘↩ stops its step and sends now" whenever the lead works. When it's idle, ⌘Enter sends as Enter does. Either way your
-words are a chat message like any other; one sent with ⌘Enter says under it that the lead stopped its step to read it.
-From a terminal, `fleetd chat <project> "…" --now` does the same.
+## What "next step" means {#next-step}
 
-### What "next step" means {#next-step}
+An agent works in steps: it thinks, runs a tool (a command, an edit, a search), reads the result, then decides.
 
-An agent works in steps: it thinks, runs a tool (a command, an edit, a search), reads the result, then decides what to
-do next.
+- **Enter** waits for the running tool to finish, then delivers before the agent decides anything else.
+- **⌘Enter** stops the running tool and delivers now. Nothing else is lost.
 
-- **A steer** waits for the running tool to finish, then reaches the agent before it decides anything else. A test
-  suite or a build runs to the end first.
-- **⌘Enter** (or `--now`) stops the running tool (a long command is killed) and delivers your steer. Nothing else the agent had
-  queued is dropped.
+## Steer one agent {#agent}
 
-## Receipts {#receipts}
+1. Open the agent from the panel's **Agents** tab, or from the island above the message box.
+2. Type in the box at the end of its work.
+3. Press Enter, or ⌘Enter to stop its current step.
 
-Each steer to an agent gets a receipt. In the app it shows under the
-agent's box; from a terminal it carries the steer's id, such as `S12`. A message to the lead in its chat has its
-own line instead (see [Chat](/docs/chat#steer)).
+The lead hears what you told the agent, so its plan follows. An agent that has finished continues its conversation with your message. One that hasn't started yet can't be steered.
+
+## Did it get through? {#receipts}
+
+Each steer to an agent gets a small receipt under the box:
 
 | Receipt | Means |
 |---|---|
-| queued | fleetd has it; the agent hasn't taken it in yet. You can still withdraw it. |
-| delivered | The agent took it in. The receipt says how: a new turn, after the running tool, or by stopping that tool. |
-| acknowledged | The agent replied after taking it in, saying what it will do. Under an agent's box, the receipt quotes it. |
-| not acknowledged | The agent's turn ended without a reply after taking it in. |
-| withdrawn | You took it back before the agent saw it. |
-| failed | It couldn't be delivered. The receipt says why. |
-| expired | The agent's machine stayed offline past the hub's queue time, so it was never delivered. |
+| queued | Not taken in yet. You can still withdraw it. |
+| delivered | The agent took it in. |
+| acknowledged | The agent replied, saying what it will do. |
+| not acknowledged | It took it in but didn't reply. |
+| withdrawn | You took it back. |
+| failed or expired | It couldn't be delivered. The receipt says why. |
 
-:::tip[Not acknowledged?]
-The agent took the message in but ended its turn without replying. If it is still doing the wrong thing, send it
-again with ⌘Enter (or `fleetd steer … --now`) to stop its current step.
-:::
+If the agent's machine is offline, the steer waits until it's back.
 
-If the agent's machine is offline, the steer waits ("waiting for lab-b (until 14:30)") and goes when the machine is
-back. Past that time it is **expired**.
-
-## Steer one agent {#agents}
-
-Open an agent from **Agents** (or the island above its bot's message box) and type in the box at the end of its work.
-Enter sends at its next step; ⌘Enter stops its current step (Send's hover says so). Your recent steers to it show in
-the box, over your words, with their receipts. From a terminal, `fleetd steer T88 "…"` does the same.
-
-Its lead is told at its next wake: what you said, to whom, and that the agent now works to it. The lead is never
-interrupted for this.
-
-| The agent | Your steer |
-|---|---|
-| is working | Arrives at its next step, or at once with ⌘Enter (`--now`). |
-| has finished | Continues its conversation. |
-| hasn't started yet | Is refused: "T88 has not started yet." Wait for it to start, or stop it and spawn it with the new prompt. |
-
-## Stop one agent {#stop}
-
-**Stop**, at the top of an agent's panel, ends it there and then, with nothing to confirm: its run stops, it ends
-cancelled and its slot frees for the next. Its lead hears it at its next wake. To stop a bot's lead and all its agents,
-use the chat's Stop instead.
+**Not acknowledged** and the agent still does the wrong thing? Send it again with ⌘Enter.
 
 ## Take a steer back {#withdraw}
 
-While a steer is still queued, click **Withdraw** on its receipt, or run `fleetd steer withdraw S12`. The agent never
-sees it.
+While a steer is **queued**, click **Withdraw** on its receipt. Once delivered, it can't be taken back: send another one that says what changed.
 
-Once delivered, a steer can't be taken back. Send another one that says what changed.
+## Stop {#stop}
 
-## From the command line {#cli}
+- **One agent:** click **Stop** at the top of its panel. It ends at once and frees its slot.
+- **The whole bot:** click **Stop** beside Send in the chat. The lead and every agent stop.
 
-`fleetd steer` speaks for you, so it needs a [human key](/docs/glossary#human-key).
+## From a terminal {#cli}
 
-1. On the hub, create one and keep it in a file only you can read:
+Both commands need a [personal key](/docs/chat#terminal).
 
-   ```sh
-   (umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-   ```
+```sh
+# The lead: same as ⌘Enter in its chat
+fleetd chat devbox/storefront "ship the API first" --now --key-file ~/.fleetd/human.key
 
-2. Steer one agent (`T88`). To reach the lead, use `fleetd chat <machine>/<project> "…" --now`: that is the same
-   message ⌘Enter sends in its chat.
+# One agent, by the id the app shows (T88)
+fleetd steer T88 "the schema changed, rebase first" --now --wait --key-file ~/.fleetd/human.key
 
-   ```sh
-   fleetd steer T88 "stop: the schema changed, rebase first" --now --wait --key-file ~/.fleetd/human.key
-   ```
+# Take back a queued steer
+fleetd steer withdraw S12 --key-file ~/.fleetd/human.key
+```
 
-3. List an order's (`W41`) or one agent's recent steers, or take one back:
-
-   ```sh
-   fleetd steers W41 --key-file ~/.fleetd/human.key
-   fleetd steer withdraw S12 --key-file ~/.fleetd/human.key
-   ```
-
-| Option | Does |
-|---|---|
-| `--now` | Stop the current step and deliver at once. |
-| `--wait` | Print each receipt as it arrives. Exits 0 when acknowledged; 1 when not acknowledged, withdrawn, failed or expired. |
-| `--hub <url>` | The hub to use, from another machine. |
-
-See the [CLI reference](/docs/reference/cli#steer).
-
-A lead steers its own agents the same way through its own task message call, and can stop the agent's current step.
-
-From an MCP client: `steer_send {target: {workstreamId} | {taskId}, text, mode: "queue" | "now", clientRequestId}`
-(operate, human key), `steer_withdraw {steerId}`; `order_get {workstreamId}` lists the order's newest steers. `clientRequestId` is any
-unique string; sending the same one again doesn't send the steer twice. To the lead in its chat, ⌘Enter is
-`chat_send {projectRef, text, now: true, clientRequestId}` (human key).
+`--wait` prints each receipt and exits 0 once the agent acknowledges. See the [CLI reference](/docs/reference/cli#steer).

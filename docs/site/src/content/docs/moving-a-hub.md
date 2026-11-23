@@ -1,141 +1,70 @@
 ---
 title: Moving a hub
-description: Move a self-hosted hub to fleetd cloud from the app, or take its data to another hub as one file with fleetd export and fleetd import, and see what moves and what stays behind.
+description: Move a self-hosted hub to fleetd cloud, or to another machine with fleetd export and fleetd import.
 ---
 
-`fleetd export` writes everything a [hub](/docs/glossary#hub) knows into one file, and `fleetd import` loads that file
-into a fresh hub, on another machine or after a reinstall. Both commands run on the hub machine and work on the hub's
-home (`~/.fleetd/hub`, or `FLEETD_HOME`).
+Move everything a hub knows to fleetd cloud, or to a new hub on another machine.
 
 ## Move to the cloud {#cloud}
 
-To move a self-hosted hub into fleetd cloud, use the app instead of the two commands: **Settings › Hub › Setup ›
-Move to the cloud**. You need Admin on every machine.
+You need Admin on every machine.
 
-1. Sign in to fleetd cloud. The move goes into an empty team of yours, and a new team is made when you have none.
-2. Press **Move**. The hub pauses its leads, agents and automations, uploads its data, and the cloud loads it. The
-   sheet shows how far it is. A dropped connection is waited out, and the upload carries on where it stopped.
-3. Each machine then rejoins the team by itself, over its own connection to the hub. A machine that is offline
-   rejoins when it is next online. One running an older fleetd is updated first.
-4. The app opens the team, and the bots answer there with their history.
+1. In the app, open **Settings › Hub › Setup › Move to the cloud**.
+2. Sign in to fleetd cloud. The move goes into an empty team of yours, or a new one.
+3. Click **Move**. The hub pauses its bots and uploads its data. The sheet shows the progress.
+4. Your machines rejoin the cloud team by themselves. An offline machine rejoins when it's next online.
+5. The app opens the team. Your bots carry on there, with their history.
 
-The secrets travel under a passphrase the hub makes and never shows. Everything is carried as with an export, and
-the machines come along.
+The old hub keeps its data and stays paused. **Undo** on its banner runs the bots there again.
 
-The old hub keeps all its data and stays paused, with a banner. **Undo** on the banner runs its bots there again.
-Machines that already rejoined the cloud stay there until they join the old hub again.
+If the move stops, nothing changes on either side, and the sheet says why.
 
-If the move stops (the connection is out too long, the team already has data, the hub is too big, the cloud runs an
-older fleetd, or your sign-in ends), nothing changes on either side. The pause lifts, and the sheet says why and
-what to do next.
+## Move to another machine {#export}
 
-## Export {#export}
+1. On the old hub, write everything to one file:
 
-```sh
-fleetd export --out shop-hub.tar
-```
+   ```sh
+   fleetd export --out shop-hub.tar
+   ```
 
-The hub keeps running. The file is one consistent snapshot of its database as of the moment the command started,
-followed by the files of its home. Without `--out` it is `fleetd-export-<time>.tar` in the current folder. It is
-written as `<file>.part` and renamed when it is whole, readable only by you (mode `0600`), and a file that is already
-there is never overwritten.
+   It asks for a passphrase of 12 characters or more. Secrets in the file are sealed under it. Keep the passphrase:
+   nobody can recover it.
 
-Export asks for a passphrase, twice, of 12 characters or more. The hub's secrets go into the file sealed under it:
-without the passphrase the file opens none of them, and nobody can recover a lost one, so keep it with the file. The
-passphrase is never a command-line argument and is never printed. For a script:
-
-| From | How |
-|---|---|
-| A file | `--passphrase-file <file>`: its first line |
-| Standard input | `--passphrase-file -` |
-| The environment | `FLEETD_EXPORT_PASSPHRASE` |
-
-`--no-secrets` writes the file without the secrets and asks for nothing.
-
-When the vault's key is itself kept under a passphrase (`fleetd vault key --store passphrase`), export asks for that
-one too, or reads it from `FLEETD_VAULT_PASSPHRASE`.
-
-## Import {#import}
-
-Import loads into a **fresh hub only**: one that was set up (`fleetd init`) and has no bot, chat, order, task,
-decision, vault item or second person yet. Machines may already have joined it, as long as none brought a bot. A
-hub that has data is refused with a line that names what it found, and nothing is changed.
-
-1. On the new hub machine, install fleetd and run `fleetd init`. Add no bot.
-2. Stop the hub: `systemctl --user stop fleetd-hub`, or on a Mac `launchctl bootout gui/$(id -u)/sh.fleetd.hub`.
-   Import refuses while a hub has the database open.
-3. Load the file. It asks for the export's passphrase, or takes it as export does.
+2. On the new machine, install fleetd and run `fleetd init`. Don't add a bot.
+3. Stop the new hub: `systemctl --user stop fleetd-hub`, or on a Mac
+   `launchctl bootout gui/$(id -u)/sh.fleetd.hub`.
+4. Load the file and enter the passphrase:
 
    ```sh
    fleetd import shop-hub.tar
    ```
 
-4. Start the hub: `systemctl --user start fleetd-hub`, or on a Mac
+5. Start the hub: `systemctl --user start fleetd-hub`, or on a Mac
    `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/sh.fleetd.hub.plist`.
-5. Join the machines and sign people in again, with the commands import printed (see [what isn't carried](#not-carried)).
+6. Join your machines and pair your devices again, with the commands `fleetd import` prints.
 
-Import reads the whole file and checks every part against the checksum the file lists for it before it touches the
-hub. Then it loads all or nothing: the rows go into the hub's database in one transaction, and the files move into
-place with it. A damaged file, a wrong passphrase or a full disk leaves the hub exactly as it was. At the end it
-prints what it loaded and what it skipped.
+The old hub keeps running during the export. Import only loads into a new hub with no bots yet. It loads everything
+or nothing: a wrong passphrase or a damaged file changes nothing.
 
-`--no-secrets` loads a file without its secrets, for when you don't have the passphrase: everything else arrives,
-and the vault, the GitHub App and the connected accounts are set up again by hand.
+For scripts, pass the passphrase with `--passphrase-file <file>`, or `-` for standard input. `--no-secrets` leaves
+the secrets out.
 
-An export written by a newer fleetd than the one importing is refused with a line that says to update fleetd
-(`fleetd update`), then import again. An export from an older fleetd loads: import runs the migrations its rows
-hadn't seen.
+## What moves {#carried}
 
-## What is carried {#carried}
+- Bots with their settings, repos and instructions
+- Chats, with attachments
+- Orders, decisions, memory, skills and reports
+- Automations, with their schedules and webhooks
+- People and their roles
+- The hub's settings
+- Recordings of screens
+- Vault items, the GitHub App and connected accounts (with the passphrase)
 
-Everything the hub keeps across its own restart:
+## What stays behind {#not-carried}
 
-| | |
-|---|---|
-| Bots | Each bot with its settings, picture, repos, instructions, MCP servers and plain variables. |
-| Chats | Every message, pin and section, with attachments. |
-| Work | Orders, tasks and their results, agents' sessions as records, checklists, reviews, the merge train's state. |
-| Knowledge | Decisions, memory, skills and their versions, artifacts and their versions, prompts you changed. |
-| Automations | Each with its schedule, runs and webhook. A webhook keeps its secret: its URL is the new hub's address with the same path. |
-| People | Everyone with their role and picture. |
-| Settings | The hub's settings, profiles, agent limits, approvals. |
-| Recordings | Browser and screen sessions that were recorded, with their files. |
-| History | The event log, time and metrics. |
-| Secrets | Vault items (logins, cards, addresses, variables) with their log, the GitHub App's keys, connected GitHub accounts, MCP sign-ins, your own push relay's key. |
+- **Machines' and devices' sign-ins.** Each machine joins the new hub again with `fleetd pair --worker <machine-id>`.
+  People pair their devices again.
+- **Running agents.** Let them finish or stop them before you export.
+- **The vault's key.** The new hub has its own. Save its new [recovery code](/docs/vault#key).
 
-Secrets never leave in the clear. Export opens each with the hub's own keys and seals it under a key made for that
-file, which is in the file only wrapped under your passphrase (scrypt, then AES-256-GCM). Import seals each again to
-the new hub's own keys. The hub's own keys are never in the file.
-
-## What isn't carried {#not-carried}
-
-| Left behind | Why | Afterwards |
-|---|---|---|
-| Machines' keys | A machine's enrolment is with one hub. | Each machine is carried as an offline placeholder under its id, so its bots keep their place. Join it again: on the hub, `fleetd pair --worker <machine-id>`, then the command it prints on that machine. Add `--rejoin` to it when the new hub answers at the old hub's address. |
-| Keys and device sign-ins | A key signs a device in to one hub. | The owner pairs again with `fleetd pair`. Everyone else gets `fleetd invite --person <personId>`, which makes a device of the person they already are. Agents' keys are made again as agents start. |
-| Phones' push tokens | They belong to the sign-ins. | Each phone registers again when it signs in. |
-| Open pairing, invite and join codes | They are single use and short lived. | Print new ones. |
-| The hub's own keys | The box key and the vault's root key never leave the hub. | The new hub has its own; secrets are sealed to them on import. Save the new [recovery code](/docs/vault). |
-| Agent slots, session places, waits for a screen | They describe processes on the old hub's machines at that moment. | Agents claim slots again as they run. |
-| Unfinished uploads, recordings still being made | Half a file. | Send or record again. |
-| Builds, update downloads, the log, `setup.json` | Made again, or about this install's address. | `fleetd init` writes the new install's. |
-
-Agents that were running when the export was taken aren't moved: their sessions live on the machines. Let them finish
-or stop them first, export, and start work again on the new hub once its machines have joined.
-
-Bots find their folders by machine id and path. A machine that joins the new hub under the id it had, with its
-checkouts where they were, picks its bots up as they were.
-
-## The file {#file}
-
-The file is an uncompressed tar, so `tar tf` lists it, written and read front to back without holding it in memory:
-
-| Entry | What |
-|---|---|
-| `fleetd-export.json` | The header: the format's version, the fleetd version that wrote it, when, and how the secrets' key is wrapped. |
-| `tables/<table>/<n>.jsonl.gz` | A table's rows, one JSON object a line, gzipped, a new part every 8 MB of rows. |
-| `files/<n>` | A file of the hub's home, as it is. |
-| `manifest.json` | What is inside: every table with its columns and row count, every file with its place, and the size and SHA-256 of every part. |
-| `manifest.sha256` | The manifest's own SHA-256. |
-
-The format is versioned, 1 today, and its schema is `HubExport.json` beside the repo's other contracts.
+A machine that joins under the same name, with its folders where they were, picks its bots up as they were.

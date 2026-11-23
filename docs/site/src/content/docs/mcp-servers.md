@@ -1,98 +1,77 @@
 ---
-title: MCP servers
-description: Give agents more tools, globally or per bot, from a command on their machine or a service over HTTP.
+title: Custom MCP servers
+description: Give agents more tools by adding any MCP server, by URL or as a command on their machine.
 ---
 
-You can give fleetd's agents more tools through MCP servers: a GitHub or database server, your docs search, an internal
-API. They live in **Connections**: the plain icon at the sidebar's foot, beside you (on the phone, Settings ›
-**Connections**). It holds the few named services (Paper, Notion and [Tailscale](#tailnet)), then **Custom MCP**: every
-other server, with where it stands and a menu with **Test**, **Edit**, **Bots** and **Disconnect**.
+Add an MCP server to give agents more tools: a database, your docs search, an internal API.
+
+Servers live in **Connections**, the plain icon at the foot of the sidebar. On the phone: **Settings › Connections**.
+Paper, Notion and Tailscale have their own rows: see [Connections](/docs/connections).
 
 ## Add a server {#add}
 
-In Connections, click **+** beside **Custom MCP** (with none yet, **Add a custom MCP**). The form has:
+1. In Connections, press **+** next to **Custom MCP** (or **Add a custom MCP** when there are none).
+2. Pick **URL** for a server over HTTP, or **Command** for a program the agent's machine runs.
+3. Enter the URL or the command, such as `acme-mcp --read-only`.
+4. Check the name. Agents see its tools as `mcp__<name>__<tool>`.
+5. Add any **Headers** (for a URL) or **Environment** variables (for a command). Pick each value from the
+   [vault](/docs/vault).
+6. Under **Bots**, pick every bot or the ones that use it.
+7. Press **Add and test**.
 
-| Field | Is |
-|---|---|
-| URL or Command | **URL**: an MCP server over HTTP (streamable HTTP, which also serves SSE). **Command**: a program each agent's claude starts on its machine, speaking MCP over stdin and stdout, typed as one line (`acme-mcp --read-only`; quote an argument with spaces). |
-| Name | How agents see its tools: `mcp__<name>__<tool>`. Made from the URL's host or the command's package until you type one. Letters, digits, `_` and `-`; `fleetd` is taken by fleetd's own tools. |
-| Headers or Environment | Each a name and a value picked from the [vault](/docs/vault): a team login's password or a variable. `Authorization` takes **Bearer** before the value unless you pick **As is**. See [Secrets](#secrets). |
-| Bots | **Every bot** (bots made later too), or the ones you tick. Every agent of a bot that uses it gets it, its lead included. |
+The test lists the server's tools, or says why it failed. A URL that asks you to sign in opens its
+[sign-in](/docs/connections#sign-in) first.
 
-**Add and test** saves it and tests it at once; the line under the form says what came back. A URL with no headers
-is asked whether it signs in: one that asks for OAuth (a 401 with a Bearer challenge or resource metadata, as MCP's
-spec has it) goes to its sign-in first ([Integrations](/docs/integrations#sign-in)), then is tested; one that asks no
-one is a plain server, which agents get as it is, and the test line says **no sign-in needed**. Owners and admins add
-a command, headers or a URL that asks no one to sign in; anyone adds a URL that signs in.
+For an `Authorization` header, fleetd adds `Bearer` before the value. Pick **No prefix** to send it as is.
 
-A server you saved before Connections, for one bot alone, stays that bot's: its row says which bot, and **Edit** keeps
-it there. A bot's server replaces a global one of the same name in that bot, for every role, even while the bot's
-is off: that's how to turn a global server off for one bot.
+Owners and admins can add commands, headers, and servers that need no sign-in. Anyone can add a server that signs in.
 
-A command server starts in the agent's working directory with the agent's environment, the
-[bot's variables](/docs/projects#env) included, plus its own environment.
+## Change, test or remove {#manage}
 
-## When a change takes effect {#takes-effect}
+Each server's row has a menu:
 
-An agent started after you save gets the change. A lead already running gets it at its next turn: when a
-server it gets was added, edited or removed, or had its key replaced, that turn starts a fresh session, as
-[a cold lead's does](/docs/what-agents-are-told#pinning), with the latest part of the chat. A turn in progress is never
-cut short: the change waits for the next one. The chat then says once that the server is there ("docs is connected: I
-can use it now"). A change that doesn't reach the lead, such as a server for writers only, leaves its session as it is.
+- **Test**: starts the server as an agent would, and lists its tools within 30 seconds.
+- **Edit**: change its settings. Saved secrets stay unless you pick another vault item.
+- **Bots**: change which bots use it.
+- **Disconnect**: remove it, and erase its secrets from every machine.
 
-A task already running keeps the servers its claude started with; fleetd hands it the change with its next message, and
-it takes effect the next time that agent's process starts (after it was idle or stopped; it runs on through a node
-restart). Removing a server works the same way.
+A bot's own server replaces a team server of the same name in that bot. Use this to turn a team server off for one
+bot.
 
-A server reached by address that doesn't answer within 3 s when an agent starts is left out of that start, so the agent
-doesn't wait on it. A lead's chat says so once ("The MCP server “docs” didn't answer in time, so its tools are off until
-the next start"), not at every start while it stays down, and once more when it answers again or another server drops;
-an agent hears it with its next message. Each start looks again. A lead on Google Antigravity may also start without
-the bot's biggest servers, so fleetd's own tools fit what Antigravity shows its model, and without one that doesn't
-list its tools within 10 s: see [Agents on Google Antigravity](/docs/projects#antigravity).
+## When changes reach agents {#takes-effect}
+
+- New agents get the change at once.
+- A running lead gets it at its next turn. The chat says once when a server is connected.
+- A running agent gets it the next time its session starts.
+
+A server that doesn't answer within 3 seconds is left out of that start, and the chat says so once. Each start tries
+again.
+
+A lead on Google Antigravity may start without the bot's largest servers, so fleetd's own tools still fit, and
+without one that doesn't list its tools within 10 seconds. Its chat says which one was left out. Its agents keep them all. See [Models](/docs/models#gemini).
 
 ## Secrets {#secrets}
 
-A header's or variable's value comes from a vault item: the hub seals it to each machine's key itself, so the app never
-holds it, and every use is in the item's activity. A value saved as a secret before the vault is kept as it was: sealed
-in the app to each machine's key, as a [bot's secret variables](/docs/projects#env) are: a bot server's to its
-machine, a global one's to every machine. The hub passes the sealed values on to the nodes without storing or logging them, and keeps only each
-node's fingerprint of the value. The node keeps them in `~/.fleetd/node/mcp-secrets/` (mode `0600`) and puts them into
-the MCP config it writes for each agent's claude (also `0600`). If an agent prints one, the node masks it as
-`***<server>.<NAME>***` before the output leaves the machine, as it masks a bot's secrets.
+Header and variable values come from the vault. The hub seals them for each machine and never stores them in the
+clear. A secret is never shown again after you save it.
 
-A secret is never shown again. Editing a server keeps a saved one until you pick a vault item in its place.
+If an agent prints a secret, fleetd masks it before the output leaves the machine.
 
-:::caution
-A machine that is offline when you save a global server with secrets doesn't get them, and its agents go without
-that server. The list says which machines lack its secrets: save the server again once they are online.
-:::
+A machine that's offline when you save a team server with secrets doesn't get them. The row lists such machines: save
+the server again once they're back.
 
-## Test {#test}
+## Servers on your tailnet {#tailnet}
 
-**Test** (a row's menu, or **Add and test**) has the node start the server (or connect to it), with its secrets, exactly as an agent's claude
-would, and list its tools within 30 seconds. A bot's server is tested on its machine in the bot's checkout; a
-global one on the first machine online. On failure it says why: a command that isn't on the machine's `PATH`, the
-command's error output (secrets masked), an HTTP status such as 401 when a header is wrong, or no answer in time. A
-server given no key that answers 401 and asks for OAuth sign-in says so, and one that answers 401 with no sign-in to
-offer is said to want a key; a signed-in server whose token it turns away has the token renewed and is tested again.
+A URL on your tailnet (a `.ts.net` name or a `100.x` address) works through the **Tailscale** row in Connections, with
+nothing else to set. Its test says **through Tailscale**. If Tailscale isn't connected yet, the form offers
+**Connect Tailscale** to an admin.
 
-## On your tailnet {#tailnet}
+## Servers from your own setup {#your-own}
 
-A server whose URL is on your tailnet (a MagicDNS name under `.ts.net`, or a `100.x` address) works through the
-**Tailscale** connection in Connections, with nothing else to set: agents on a machine that's on the tailnet reach it
-directly, others through the hub's route, and on fleetd's computers through your team's Tailscale. Its row carries
-Tailscale's mark, and a Test says **through Tailscale**. While Tailscale isn't connected, the form and the row say so,
-with **Connect Tailscale** for an admin.
-
-## Your own MCP servers {#your-own}
-
-Agents also get the MCP servers of each machine's own claude setup (`~/.claude.json`, a repo's `.mcp.json`), as
-claude gives them anyway. fleetd's own tools (`report`, `ask_lead`, the lead's tools) are always there and can't be
-replaced.
+Agents also get the MCP servers from their machine's own Claude Code setup (`~/.claude.json`, or a repo's
+`.mcp.json`). fleetd's own tools are always there and can't be replaced.
 
 ## From an MCP client {#tools}
 
-`mcp_servers_get` lists the servers, `mcp_server_set` adds or replaces one (each secret sealed to each machine's
-`boxPubKey`), `mcp_server_remove` removes one, `mcp_server_test` tests one, and `mcp_oauth_start` opens a bot
-server's [sign-in](/docs/integrations#sign-in). All but `mcp_servers_get` take a human key.
+An [MCP client](/docs/mcp-clients) manages servers with `mcp_servers_get`, `mcp_server_set`, `mcp_server_remove` and
+`mcp_server_test`. All but the first need a human key.

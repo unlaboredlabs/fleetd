@@ -14,13 +14,33 @@
       "permanent": true
     },
     {
+      "source": "/docs/concepts",
+      "destination": "/docs/how-fleetd-works",
+      "permanent": true
+    },
+    {
       "source": "/docs/projects-and-orders",
-      "destination": "/docs/projects",
+      "destination": "/docs/bots",
       "permanent": true
     },
     {
       "source": "/docs/navi",
-      "destination": "/docs/projects",
+      "destination": "/docs/bots",
+      "permanent": true
+    },
+    {
+      "source": "/docs/projects",
+      "destination": "/docs/bots",
+      "permanent": true
+    },
+    {
+      "source": "/docs/time-inspector",
+      "destination": "/docs/agent-time",
+      "permanent": true
+    },
+    {
+      "source": "/docs/integrations",
+      "destination": "/docs/connections",
       "permanent": true
     }
   ],

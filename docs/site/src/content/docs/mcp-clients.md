@@ -1,60 +1,97 @@
 ---
 title: MCP clients
-description: Connect Claude Code or another MCP client to the hub, and the tools it can use to chat with leads.
+description: Connect Claude Code or another MCP client to the hub, to read and write to your bots from there.
 ---
 
-You'll connect an MCP client, such as Claude Code on your laptop, to the hub so it can chat with bot leads.
+Connect Claude Code, or any MCP client, to your hub, so it can read your bots' chats and status and write to their
+leads.
 
 ## Connect Claude Code {#claude-code}
 
-1. On the hub, create an [agent key](/docs/glossary#agent-key) and keep it in a file only you can read:
+1. On the hub machine, create a key and save it to a file only you can read:
 
    ```sh
-   (umask 077; fleetd hub key create --name laptop --role operate --machines '*' > ~/.fleetd/agent.key)
+   fleetd hub key create --name laptop --role operate --machines '*' --out ~/.fleetd/agent.key
    ```
 
-   The key is printed once, so this file is the only copy. The command also prints a line like this:
-
-   ```text
-   created key_tjw34bxe (fld_mwrgw4, operate:*). The key above is shown only once.
-   ```
-
-2. Copy the key to the machine that runs Claude Code, readable only by you. For example, from that machine:
+2. Copy the file to the computer that runs Claude Code, keeping it private:
 
    ```sh
-   (umask 077; ssh hub 'cat ~/.fleetd/agent.key' > ~/.fleetd/agent.key)
+   (umask 077; mkdir -p ~/.fleetd; ssh hub 'cat ~/.fleetd/agent.key' > ~/.fleetd/agent.key)
    ```
 
-   `hub` is the hub machine's SSH name. Create `~/.fleetd` first if this machine has no fleetd.
+   `hub` is the hub machine's SSH name.
 
-3. Add the hub's MCP endpoint, `<hub url>/mcp`, to Claude Code:
+3. Add the hub to Claude Code. Use your hub's address, followed by `/mcp`:
 
    ```sh
    claude mcp add --transport http fleetd http://hub.your-tailnet.ts.net:4790/mcp \
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
-4. In Claude Code, ask it how a bot is doing. It reads the chat with `chat_history` and the status with
-   `fleetd_status`.
+4. Ask Claude Code how a bot is doing.
 
-:::note[Writing to a lead]
-With a [human key](/docs/glossary#human-key), `chat_send` writes as you. Any other key writes as an agent, by the
-key's name: the lead takes it as input, never as your answer or approval. Don't give Claude Code a human key: it could
-then speak and approve as you.
-:::
+Don't add it with `--scope project`. That writes the key into the repo's `.mcp.json`, where it could be committed.
 
-`claude mcp add` writes to your Claude config. `--scope` picks where:
+## Keys and roles {#roles}
 
-| Scope | Where it applies | Note |
-|---|---|---|
-| `local` (default) | This folder, only for you. | |
-| `project` | Everyone who opens this repo: written to `.mcp.json`. | Don't use with a key in `--header`: you'd commit the key. |
-| `user` | All your folders. | |
+Each key has a role:
+
+- `read`: read chats, status and prompts.
+- `operate`: also write to leads and manage bots.
+- `admin`: also change hub settings.
+
+`--machines '*'` gives the role on every machine. `--machines devbox,laptop` limits it.
+
+Manage keys on the hub machine:
+
+```sh
+fleetd hub key list
+fleetd hub key revoke <keyId>     # ends it at once
+```
+
+### Human keys {#human-key}
+
+A human key speaks as you. Create one with `--human`:
+
+```sh
+fleetd hub key create --human --name terminal --out ~/.fleetd/human.key
+```
+
+- With a human key, messages to a lead count as yours.
+- With any other key, they count as an agent's. The lead treats them as input, never as your answer or approval.
+- Stopping a bot, answering an approval or entering a secret needs a human key.
+
+Don't give Claude Code a human key: it could then approve things as you.
+
+## Claim work before you start it {#work}
+
+fleetd keeps a list of the work in flight on each repo: its agents, PRs on the merge train, and what people have
+claimed. Checking it first stops you building what an agent is already building.
+
+Connected Claude Code does this by itself. Before a change, it claims the work, and tells you if an agent already has
+it:
+
+```text
+> add a dark mode toggle to settings
+● fleetd's agent is already building a dark mode toggle for settings. Shall I wait for its PR, or is this
+  different work?
+```
+
+From a terminal, run `fleetd work` in your checkout:
+
+```sh
+export FLEETD_KEY_FILE=~/.fleetd/agent.key
+fleetd work claim "dark mode toggle in settings"   # exits 1 if it's taken
+fleetd work                                        # what's in flight here
+fleetd work done                                   # your change landed
+```
+
+It works with any git host. A claim lasts 12 hours after you last renew it.
 
 ## From a script {#script}
 
-The endpoint speaks MCP over HTTP. A call needs a session: `initialize`, then `tools/call` with the session id. This
-script does both. Save it as `mcp.sh`:
+The hub speaks MCP over HTTP. A call first opens a session, then calls a tool. Save this as `mcp.sh`:
 
 ```sh
 #!/bin/sh
@@ -70,129 +107,20 @@ post -H "Mcp-Session-Id: $SID" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"to
 Then call a tool:
 
 ```sh
-FLEETD_HUB=http://hub.your-tailnet.ts.net:4790 FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_get '{}'
+FLEETD_KEY_FILE=~/.fleetd/agent.key sh mcp.sh status_get '{}'
 ```
 
-On a new hub with no bots yet, the output starts like this:
+## Common tools {#tools}
 
-```text
-{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"{\"rows\":[]}", …
-```
+- `status_get`: one line per bot, with its state and running agents.
+- `chat_history`, `chat_find`: read or search a bot's chat.
+- `chat_send`: write to a bot's lead.
+- `agents_list`: every agent, what it's doing and its PR.
+- `pr_list`, `pr_get`: a bot's PRs, with checks and reviews.
+- `approval_answer`, `secret_submit`: answer a request (human key only).
+- `project_stop`: stop all of a bot's agents (human key only).
 
-## Use a key from the CLI {#key-file}
+Most tools take a `projectRef`, such as `{"machineId": "devbox", "projectId": "<id>"}`. `fleetd project list` prints
+both parts.
 
-| Command | Needs |
-|---|---|
-| `fleetd status`, `fleetd time` | Nothing on the hub machine. Elsewhere, `--hub <url> --key-file <file>`. |
-| `fleetd steer`, `fleetd steers` | Always `--key-file` with a [human key](/docs/glossary#human-key). `--hub <url>` off the hub machine. |
-| `fleetd work` | `--key-file`, or `FLEETD_KEY_FILE`: any operate key, such as the one Claude Code uses. `--hub <url>` off the hub machine. |
-
-To make a human key file on the hub:
-
-```sh
-(umask 077; fleetd hub key create --human --name terminal > ~/.fleetd/human.key)
-fleetd steers W41 --key-file ~/.fleetd/human.key
-```
-
-## Claim work before you start it {#work}
-
-fleetd keeps one ledger of the work in flight on each repo: its agents, the PRs on its merge train, and what people
-claimed from their own sessions. A session that checks it first doesn't build what an agent is already building.
-
-Claude Code needs nothing more than the connection above. The hub's MCP `instructions`, which Claude Code adds to every
-session's system prompt, tell it to call `work_claim` before a code change and `work_done` when the change lands or
-is dropped, and to tell you when the work is taken. A session might go like this:
-
-```text
-> add a dark mode toggle to settings
-● fleetd - work_claim (repo: "git@gitlab.example.com:acme/shop.git", title: "dark mode toggle in settings",
-                       branch: "ada/dark-mode", paths: ["app/theme.ts"])
-  ⎿ status: possible_duplicate. may repeat T12 (an agent of devbox/shop): dark mode toggle for settings
-    (3 shared words: dark, mode, toggle)
-● fleetd's agent T12 is already building a dark mode toggle for settings. Shall I wait for its PR, or is this
-  different work?
-```
-
-| Tool | Does | Role |
-|---|---|---|
-| `work_claim {repo \| projectRef, title, base?, branch?, keys?, paths?, changed?, authorEmail?, notDuplicateOf?, notDuplicateWhy?, anyway?}` | Checks the intent against the work in flight on the repo's base and claims it in one call. `status` is `claimed`; `renewed` (your claim on the same branch, updated); `taken` (someone else has the same issue, PR, branch or plan item); `possible_duplicate` (most of the same words, or the same words and files), or `yours` (fleetd's own agent on its task's branch: the task already holds it). Keys and paths a renewal adds are checked like a new claim's. For a likely duplicate, call again with `notDuplicateOf` and `notDuplicateWhy` if it's different work. With a taken item, `anyway: true` claims it regardless, but only with a [human key](/docs/glossary#human-key): any other key may be one of fleetd's own agents. | operate |
-| `work_list {repo \| projectRef, base?, paths?}` | What is in flight on the repo's base, newest first, with each item's keys and files (`paths: false` leaves out what each writer has changed so far, which asks its machine). Expired claims come last. `recentLandings` lists what reached the base outside the merge train in the last 24 h, and how. | read |
-| `work_done {claimId, outcome, landing?, reason?}` | Ends your claim: `landed` (with its commit) or `dropped`. A human key can end anyone's. | operate |
-
-`repo` is the origin remote in any form, on any host: `git@github.com:acme/shop.git`, `https://gitlab.example.com/g/shop`,
-`/srv/git/shop.git`. With no `base`, the base is the bot's (or that of a bot on the repo), else `main`. A claim
-lasts 12 hours after your last `work_claim` on it, then shows as expired for a day. Matches only list it once it has expired.
-When no bot is known to be on the repo yet, the hub first reads the remotes of your bots that it hasn't
-matched to a repo, waiting a few seconds. If none matches, the answer's `warning` says the agents' work may be
-missing from it.
-
-From a terminal, or a session without the MCP, `fleetd work` does the same. It reads the repo, base, branch,
-`user.email` and changed paths (since the branch left the base, plus uncommitted and untracked files) from the
-checkout you run it in:
-
-```sh
-export FLEETD_KEY_FILE=~/.fleetd/agent.key
-fleetd work claim "dark mode toggle in settings" --issue SHOP-12   # exit 0 claimed, 1 taken or a likely duplicate
-fleetd work                                                        # what is in flight here
-fleetd work done                                                   # the claim on this branch landed
-```
-
-## Roles
-
-| Role | Can |
-|---|---|
-| `read` | Read chats, status, time and prompts. |
-| `operate` | Also write to leads, set a bot's max agents, and manage bots. |
-| `admin` | Also change hub settings, such as screen recordings' retention. |
-
-`--machines '*'` gives the role on every machine; `--machines devbox,laptop` limits it to those.
-
-| Command | Does |
-|---|---|
-| `fleetd hub key list` | Lists keys. |
-| `fleetd hub key revoke <keyId>` | Ends a key at once, also on a running hub. |
-
-A [human key](/docs/glossary#human-key) (`fleetd hub key create --human`) is for a person's device. Some tools, such
-as stopping a bot, answering an approval or entering a secret, need one.
-
-## Tools for the chat {#tools}
-
-| Tool | Does | Role |
-|---|---|---|
-| `chat_send {projectRef, text, attachments?, clientRequestId}` | Write to a bot's lead. It starts a turn when the lead is idle, steers it when it works, or waits while it starts. The lead reads it as your words with a human key, as an agent's with any other. | operate |
-| `chat_history {projectRef, before?, after?, around?, limit?}` | A page of a bot's chat, oldest first; up to 100 messages. Without `before` or `after`, the newest; with `around` (a message id), that message and the ones on each side. | read |
-| `chat_find {projectRef, words?, author?, personId?, since?, until?, has?, before?, limit?}` | [Search](/docs/chat#search) a bot's whole chat, newest first, 20 a page. `words`: words (each from the start of a word) and `"quoted phrases"`. `author` is `lead`, `human` or `agent`; `has` any of `link`, `image`, `file`, `pr`, `pinned`. Each hit is one line of its message with `marks`, where your words are in it. The first page has `count`; `before` (the last hit's id) reads the next. | read |
-| `chat_message_pins {projectRef}` | The chat's [pinned messages](/docs/chat#pins), newest pinned first: who pinned each, when, and the message's first line. | read |
-| `chat_message_pin {projectRef, messageId, pinned}` | Pin (`true`) or unpin (`false`) a message for everyone in the bot. Every app reading the bot hears `chat.message_pins`. | operate, human key |
-| `approval_answer {requestId, decision, message?}` | Approve or deny an approval item: `decision` is `approve` or `deny`; `message` is a denial's reason for the lead. | operate, human key |
-| `secret_submit {requestId, sealed}` | Answer a secret item with a value sealed to the target machine. | operate, human key |
-| `decisions_list {projectRef, limit?}` | Every decision in the bot, project-wide or for one order, newest first: in force, replaced by a newer one, or revoked (by whom, when, why). `orders` names each order by its title. | read |
-| `decisions_overturn {decisionId, value?, why}` | Take back a decision in force. Without `value` it is revoked and the lead asks again when it comes up; with `value` a new decision on the same question replaces it, as yours. The lead reads the change, and your why, at its next wake. | operate, human key |
-| `requests_list {projectRef?, state?}` | Secret and approval requests, newest first, with their state. A secret's value is never in it, only its fingerprint. | read |
-| `project_stop {projectRef, reason?}` | Stop every running and queued agent of the bot and tell the lead in its chat. Merged PRs, the lead and the chat stay. | operate, human key |
-| `attachment_put {name, mime, dataB64, uploadId?}` | Upload a file (image, text or PDF, at most 25 MiB) for a message; up to 20 go with one message. | operate |
-| `attachment_part {dataB64, uploadId?, offset?}` | One piece of a file too large for one request, in order: pass the `uploadId` it returns and the bytes sent so far as `offset` with the next piece, and the last piece to `attachment_put` with the `uploadId`. | operate |
-| `attachment_get {projectRef, attachmentId}` | Read a file attached to a bot's chat. | read |
-| `project_files {machineId, projectId, query}` | A bot's files, for `@`-mentions. | read |
-| `status_get` | One row per bot: its state word, its work in groups, agents running and the last merge. | read |
-| `agents_list {projectRef?, endedSince?}` | Every agent of your bots: its role, task, what it's doing now, when it started and its PR. | read |
-| `agent_work {machineId, threadId, before?, limit?}` | A page of one agent's recent messages, commands and edits, oldest first. Secrets show as `[secret]`. | read |
-| `pr_list {projectRef, closedSince?, cursor?}`, `pr_get {repo, number}` | A bot's PRs, up to 60 a page (`nextCursor`, passed as `cursor`, reads the next), and one in detail: description, checks, reviews with their findings, its place in the merge queue and the agent that wrote it. | read |
-| `pr_files {repo, number, offset?}`, `pr_diff {repo, number, path, offset?}` | A PR's changed files, and one file's diff a page at a time. | read |
-| `events_list {projectRef, before?, types?, hubWide?, limit?}` | A bot's events, newest first, back through the last 30 days: agents started and finished, reviews, merges, requests. `hubWide` adds the hub's own, such as a device paired. | read |
-| `workstream_list`, `order_get`, `thread_tail`, `fleetd_status` | Lower-level views of the lead's work. | read |
-
-`projectRef` is `{"machineId": "devbox", "projectId": "<id>"}`; `fleetd project list` prints both, as
-`<machineId>/<projectId>`.
-
-`clientRequestId` is any unique string you choose per request. Sending the same one again returns the same message
-instead of a second one. `events_wait` waits for changes, so a client doesn't need to poll: a new message is a
-`chat.message` event.
-
-Tools for bots: `project_discover`, `project_add {path | url | create}` (a path is a git checkout or a
-plain folder; `create` makes a new folder for it on the machine; with `dryRun` to see its CI and merge rules, and where a
-clone would go, without adding it), `project_settings_set`, `project_archive` and `project_remove`
-([more](/docs/projects#clients)). A clone answers with an `addId`, then sends
-`project.clone_progress` events, then `project.added` or `project.add_failed`.
-
-Every tool, generated from the code: [Agent tools](/docs/reference/agent-tools).
+Every tool, with its inputs: [Agent tools](/docs/reference/agent-tools).

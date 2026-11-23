@@ -1,114 +1,70 @@
 ---
 title: Several hubs
-description: Pair the desktop app with more than one hub, each under a name you pick, and see all of their work in one window.
+description: Pair the desktop app with more than one hub and see all their work in one window.
 ---
 
-The desktop app can be paired with several [hubs](/docs/glossary#hub) at once. Use this to keep work apart, for
-example your own bots on one hub and your company's on another, each with its own machines, people and keys,
-and still see all of it in one window.
-
-Each hub gets a name you choose, such as Personal, Acme or Side project, and an optional colour. Names are free text,
-not a fixed list.
+The desktop app can be paired with several hubs at once, for example your own bots on one and your company's on
+another. Each hub keeps its own machines, people and keys.
 
 ## Add a hub {#add}
 
-1. On the new hub, print a pairing code with `fleetd pair` (see [Pair it with the hub](/docs/desktop-app#pair)).
-2. In the app, open Settings (⌘,) → Hubs and click **Add a hub**.
-3. Enter a name, pick a colour if you like, then the hub's address and the code. Click **Connect**.
+1. On the new hub's machine, run `fleetd pair` to print a pairing code.
+2. In the app, open Settings › Hubs & devices and click **Add a hub**.
+3. Enter a name (Personal, Acme, anything), pick a colour if you like, then the hub's address and the code.
+4. Click **Connect**. Your other hubs stay connected.
 
-To connect with a key instead, click "Use a key instead". The hubs you already have stay connected the whole time.
-
-A `fleetd://pair` link opened while the app is already connected to a hub adds a new hub too. The app asks for a name
-first. A link or address for a hub you already have pairs that hub again instead of adding it twice.
+Opening a `fleetd://pair` link adds a hub the same way. A link for a hub you already have pairs it again instead.
 
 ## Rename, recolour or remove {#manage}
 
-Settings › Hubs & devices lists each hub with its address, its connection and where its key is kept.
+Settings › Hubs & devices lists each hub.
 
-| To | Do |
-|---|---|
-| Rename it | Edit **Name** and press Enter. |
-| Change its colour | Click a swatch. The empty one means no colour. |
-| Pair it again | Click **Pair again**. It shows when the hub refused this app's key. |
-| Remove it | Click **Remove…**. The app forgets that hub's key and what it kept offline for it. Your other hubs stay as they are, and agents on the removed hub keep running. |
-
-With only one hub, Remove is called "Disconnect and forget key", as before.
+- **Rename:** edit its name and press Enter.
+- **Recolour:** click a swatch. The empty one means no colour.
+- **Pair again:** shown when the hub refused this app's key.
+- **Remove…:** the app forgets that hub's key. Agents on it keep running.
 
 ### Restart a hub {#restart}
 
-On the row of a hub you are an owner or admin of, with Admin on every machine, **Restart hub…** restarts that hub in
-place, the way an update restarts it. Members don't see the button, and the hub refuses them anyway. It asks first.
-The hub is back in about a second: the row says **Restarting the hub…** until this app is connected again, every
-other app and machine reconnects by itself, and running agents carry on. A message sent meanwhile goes once the hub is
-back.
+Owners and admins see **Restart hub…** on a hub's row. The hub is back in about a second: apps and machines
+reconnect by themselves, and running agents carry on. Use it when a hub needs to drop what it holds in memory, or to
+move leads onto a changed model.
 
-After such a restart, each lead whose [profile](/docs/projects#lead-profile) changed since it started comes back on
-the current one, with its chat, memory and open orders; the row says how many. Leads already on it just carry on.
+It works for a hub run as a service (`fleetd init` sets one up). A hub started by hand with `fleetd hub start`
+needs to be stopped and started again on its machine. The phone app has the same under Settings.
 
-The hub restarts itself through the service `fleetd init` set up (the `fleetd-hub` systemd user unit, or its launchd
-agent on a Mac). One started by hand with `fleetd hub start` says so instead: stop it and start it again on its machine.
-The phone app has the same under Settings, **Restart Hub**, for admins.
+## Switch between hubs {#sidebar}
 
-## One sidebar {#sidebar}
+The sidebar shows one hub at a time, with its name at the top. To switch:
 
-The sidebar shows one hub at a time. Its name at the top, on a line of its own under the window's buttons, opens the
-list of your hubs: pick one to show it. A dot by its name means a bot on another hub needs you, or something is off
-with a hub. Under it, that hub's pins, its bots, then your sections under their labels.
+- click the name and pick a hub;
+- swipe left or right with two fingers on the sidebar;
+- click a hub's square at the bottom of the sidebar;
+- press ⇧⌘] or ⇧⌘[ (Ctrl+Shift+] or Ctrl+Shift+[ on Linux).
 
-To go to the next or previous hub, swipe left or right with two fingers anywhere on the sidebar: the list follows your
-fingers, the next hub's slides in beside it, and it settles on whichever is nearer when you let go. Past the first or
-last hub, the list stretches and springs back, as lists on a Mac do. The next swipe back
-works straight away, without moving the pointer, and on a Mac so does the next one on; elsewhere, let the list come to
-rest before swiping on the same way again. A scroll up or down the list never switches, and one swipe moves one hub at
-most. At the bottom of the sidebar, a small square for each hub shows which one you're on; click one to go to it. ⇧⌘]
-and ⇧⌘[ (Ctrl+Shift+] and Ctrl+Shift+[ on Linux) go to the next and previous hub, and View › Next Hub and Previous Hub
-do the same. With reduced motion turned on in your system, the hub switches without the slide.
+Each hub opens on the chat you last had open there.
 
-Whichever way you switch, the chat goes with the sidebar: the hub opens on the chat you last had open there, kept
-across restarts, or on its first bot if that one is gone (or Get started, if it has none). The chat on screen is always
-one of the hub you see. Switching hubs while Settings is open closes Settings.
+## What needs you, on every hub {#attention}
 
-Opening a bot from elsewhere (a notification, ⌘K) shows its hub. ⌘1 to ⌘9 count the rows you can see, in order.
+- **Sidebar:** a dot by the hub's name means a bot on another hub needs you.
+- **Dock badge:** counts the bots that need you on every hub.
+- **Notifications:** come from every hub, titled with its name.
+- **Status** and **⌘K:** list every hub's bots, under their hub's name.
 
-## Everything that needs you {#attention}
+## Manage a hub {#admin}
 
-Every hub counts toward what needs you:
-
-| Where | With several hubs |
-|---|---|
-| The sidebar | Each row's mark (reply, approve, secret, blocked) sits on its bot's row; a hub that isn't on show puts a dot by the hub's name at the top. |
-| The Dock badge | Counts the bots that need you on every hub. |
-| Notifications | Come from every hub, each under its own quiet hours. The title starts with the hub's name, and clicking one opens that hub's bot. |
-| Status | Has a section per hub, under its name. |
-| Commands (⌘K) | Lists every hub's bots, each with its hub's name beside its machine. |
-
-## Managing a hub {#admin}
-
-Settings' Hub group manages one hub at a time. With several hubs, it names that hub, with its colour, above every page:
-"Managing Acme". The button to make an invite names it too: **Create invite link to Acme**. To manage another hub,
-pick it beside "Managing" at the top of the page. The page you're on stays open. Only the hubs where you're an
-owner or admin are listed.
+Settings' Hub group manages one hub at a time, named at the top ("Managing Acme"). Pick another hub there to manage
+it. Only hubs where you're an owner or admin are listed.
 
 ## When a hub is out of reach {#offline}
 
-While a hub is out of reach, the hub's name at the top of the sidebar carries a dot, its tooltip naming the hub.
-Click it for the list of your hubs: under one that's out of reach, what is wrong in a few words with **Retry** or
-**Pair again**. Settings › You › Hubs & devices says why a hub is out of reach.
+The hub's name in the sidebar gets a dot. Click it to see what's wrong, with **Retry** or **Pair again**.
 
-A hub that's out of reach only affects its own bots. They show as they were last seen, marked "as of 09:02", and
-the other hubs keep working. A hub refusing the app's key doesn't lock the window either: the line under it in that
-list says "Acme refused the key", with **Pair again**.
-
-The app reaches each hub directly, over your tailnet or HTTPS. A hub that only your company network reaches is out of
-reach from home until you're on that network or its VPN.
+Only that hub's bots are affected: they show as last seen, and your other hubs keep working. The app reaches each
+hub directly, so a hub only your company network reaches needs that network or its VPN.
 
 ## Where things are kept {#storage}
 
-Each hub's key is kept the same way as the first one, encrypted by the OS where it can be (see
-[Security](/docs/security)). The list of hubs, with their names and colours but no keys, is `desktop-hubs.json` in
-the fleetd directory. The first hub keeps the files it always had, so an app updated from an earlier version simply
-has one hub.
-
-If `desktop-hubs.json` can't be read, no hub is lost. The app keeps the old file as `desktop-hubs.json.bad`, finds
-each hub again from its saved key, and Settings › Hubs & devices says so. The hubs come back under their host names, so rename
-them if you like.
+Each hub's key is stored like the first one, encrypted by the OS where it can be ([Security](/docs/security#keys)).
+The list of hubs, with names and colours but no keys, is `desktop-hubs.json` in the app's folder. If that file
+breaks, the app finds each hub again from its saved key.

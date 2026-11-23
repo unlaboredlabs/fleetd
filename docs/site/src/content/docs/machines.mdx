@@ -1,294 +1,120 @@
 ---
 title: Machines
-description: Add workers to the hub, log in their Claude, remove them, and check their health.
+description: Add the computers that run your agents, log in their Claude, fix them and remove them.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Agents run on your own computers, directly on each, as plain processes of your user: the machine's tools, its network
-and its files are theirs. fleetd's cloud also offers computers of its own to its teams; a hub of your own runs agents
-on your computers only.
+This page is for adding the computers your agents run on and keeping them healthy.
 
-You'll add [workers](/docs/glossary#worker), the machines that run agents, and keep them healthy. The hub's owners
-and admins add, repair and remove them in the app, and log in their Claude from it too. The [CLI](#cli) does the same
-from a terminal on the hub.
+Agents run directly on your own machines, as plain processes of your user, with the machine's tools, files and
+network. On fleetd cloud, a team can also run them on [fleetd's computers](/docs/cloud-machines).
 
-A worker needs the `claude` CLI, and Linux on x64 or macOS (Apple silicon or Intel). fleetd has no Linux ARM build
-yet.
-A profile on [Google Antigravity](/docs/projects#antigravity) runs `agy` instead, which fleetd installs where it's
-needed; **Settings › Hub › Providers** signs it in (**Sign in with Google** on Google's row), as does a machine's own page.
-
-Local VMs (each agent in a VM of its own) and hosted sandboxes on a sandbox key of your own were removed from fleetd:
-a hub updated from a fleetd that had them runs every agent on its machine again, deletes the keys it kept, and tells
-each bot that had picked one so, once, in its chat. A bot that lived in the hosted sandboxes keeps its files in
-`~/.fleetd/hub/runner` on the hub's machine, and its chat says where: add its repo on one of your computers to go on.
+A machine needs Linux (x64) or macOS, and the `claude` CLI. Only the hub's owners and admins add, fix or remove
+machines.
 
 ## The Machines page {#page}
 
-**Settings › Hub › Machines** is one page, for the hub's owners and admins, in three groups:
+Open **Settings › Hub › Machines**. It has these groups:
 
-| Group | What it holds |
+- **Machines**: every machine, with a dot (grey when well, amber when it needs you) and what runs there now, or
+  what's wrong. Click a row to open its page.
+- **What runs where**: **Mac machine**, where Mac screens and iOS simulators run, and **Keep screen recordings for**.
+  On a cloud team, **Linux machine** too ([fleetd's computers](/docs/cloud-machines)).
+- **Updates**: whether everything is up to date, with **Update** ([Updating](/docs/updating-and-uninstall)).
+
+On the phone, admins find the same groups under **Settings › Machines**.
+
+## Add a machine {#app}
+
+1. Open **Settings › Hub › Machines** and click the **+**.
+2. Pick how to reach it:
+   - **This computer**: one click. The app installs fleetd here and joins the hub.
+   - **A machine the hub can reach**: pick it from the hub's SSH hosts or tailnet, read the plan, then **Add**. Each
+     step shows as it runs; **Retry** picks up where a failed step stopped.
+   - **Any other machine** (a laptop, or one behind NAT): name it, click **Make the line**, and run that line in a
+     terminal on the machine. The line works once, for 15 minutes.
+   - **A Mac for agents**: see [The agents' Mac](/docs/agents-mac).
+3. The machine shows in the list once it's online.
+
+The new machine must be able to reach the hub's address. A hub that only listens on `127.0.0.1` can't take other
+machines: give it a tailnet or LAN address first (`fleetd init --listen <ip>:<port> --url http://<name>:<port>`).
+
+### From the terminal {#cli}
+
+Run these on the hub.
+
+| The machine is | Run |
 |---|---|
-| **Machines** | Every machine, a dot before its name: grey while it is well, amber while it needs someone. At the row's end, what runs there now ("8 agents · 2 screens", Idle) or what is wrong ("Offline since Fri 09:03", "Claude is not logged in"). A role other than both shows beside the name. A row opens [its page](#checks). The plus adds a machine. |
-| **What runs where** | **Mac machine**: where Mac screens and iOS simulators run, the agents' Mac, or **None yet**. Then **Keep screen recordings for**. |
-| **Updates** | Where the hub and its machines stand, **Update**, and **Update automatically** ([Updating](/docs/updating-and-uninstall)). |
-
-On a fleetd cloud team whose computers are on (it has [Billing](/docs/billing)), **What runs where** starts with
-**Linux machine**: **Your machines**, **Your machines first, then fleetd's computers** (they take agents only once
-your machines are at their agent limit) or **fleetd's computers only**. With no machine of your own that runs agents,
-it reads fleetd's computers. **Mac machine** is your own Macs only: fleetd's computers don't run Macs. A group
-**fleetd's computers** follows: each bot that runs there, its computer awake or asleep, its agents at work and the size
-they get (a row opens the bot's **Computer**, where the size is picked), how many run at once of what your plan
-allows, and this period's computer time against what the plan includes, which opens Billing.
-
-The phone's **Settings › Machines** has the same groups for an admin: the machines and how each is, what runs where,
-and fleetd's computers on a cloud team. Updates stay on Settings.
-
-## Add a machine in the app {#app}
-
-Open **Settings › Hub › Machines**. The plus beside **Machines** offers three ways, and a fourth for [the agents' Mac](/docs/agents-mac#app), a Mac every bot's agents use but none runs on (**A Mac for agents**: a 6-digit code you type in the fleetd app on that Mac):
-
-| The machine is | Pick | What happens |
-|---|---|---|
-| The computer the app runs on | **This computer** | One click. The app downloads the release of the fleetd version the hub runs, built for this computer, checks it against that release's `SHA256SUMS`, and joins the hub with a one-time code that never shows on screen. The node runs as a user service. An Edge hub asks to be updated first once the edge release has moved past it. On the machine that runs the hub you're connected to, the hub sets it up with its own fleetd instead. A computer that runs another hub, or whose node already belongs to a hub, is left as it is. |
-| Reachable from the hub over SSH | **A machine the hub can reach** | Pick it from the hosts the hub sees (its `~/.ssh/config` and its tailnet), and read the plan: the machine's OS and CPU, each step with its command, and notes such as linger. Press **Add**, and watch each step run. |
-| Behind NAT, or with no SSH from the hub (a laptop) | **Any other machine** | Give it a name and press **Make the line**. Copy the one line it shows and run it in a terminal on that machine: it installs fleetd and joins with a one-time code. The code works once, for 15 minutes. Under the line, "Waiting for laptop…" turns into "laptop joined." once its node connects; **Open laptop** shows [what it still needs](#checks), if anything. |
-
-Adding a machine the hub can reach runs [`fleetd machine add`](#ssh) in the hub, step by step. A failed step shows
-its output and what to fix; **Retry** runs it again and skips the steps that finished. The run goes on in the hub if
-you leave the page, and Add machine shows it when you come back.
-
-Only a person with Admin on every machine sees Settings' Hub group. Agents' keys can't add or remove machines.
-
-A machine id belongs to one computer. The hub knows each computer by a hash of the id its OS gives it
-(`/etc/machine-id` on Linux, `IOPlatformUUID` on macOS), so it never enrolls a second computer under an id that is
-already another's, whatever the computer is called. To give an id to another computer, [remove](#remove) the machine
-first. The app knows the hub's own computer the same way, wherever the hub keeps its data.
-
-### Repair or remove a machine {#app-repair}
-
-The Machines group lists every machine with its state (above). Open one for its own page: its state, **Repair**
-while it is degraded or offline, what is wrong with it, if anything, then **Used for** (its role), **Agents** (how many
-at once, with what runs now), **Screens** and **Remove**.
-
-A machine is degraded while its claude can't run sessions, or while it has no IPv4 network and git there can't reach
-GitHub. For the second, a Linux node checks its own network hardware (not Tailscale, docker or loopback) with each heartbeat:
-an interface with only a 169.254 link-local address, which is what's left when DHCP times out, counts as none. The
-hub shows "no IPv4 network on enp3s0, so GitHub can't be reached" with the fix, `sudo networkctl reconfigure enp3s0`
-or `sudo netplan apply`, and its agents keep running. It shows online again at the first heartbeat with an address.
-
-- **Repair** on a machine the hub reaches over SSH (one it set up, its own, or one in its `~/.ssh/config` or tailnet)
-  opens its plan in Add machine: adding it again repairs it and skips what is in place. On a machine that joined by
-  itself, Repair makes a line that enrolls it again (`--rejoin`): run it on that machine.
-- **Remove** asks first, then does what [`fleetd machine remove`](#remove) does: on a machine the hub set up, it stops
-  and removes the node's service and revokes its key; on one that joined by itself, it only revokes the key, so stop
-  its node there by hand.
-
-### What is wrong with a machine {#checks}
-
-A machine's name opens its page. The hub checks what each machine needs to run agents every 15 minutes, and within a
-minute of the machine coming back online, going offline or degrading. The page shows only what those checks found
-wrong, one row each with its fix; a machine whose checks all pass shows nothing about them.
-
-| Check | Wrong when |
-|---|---|
-| Claude | `claude` isn't installed at the version fleetd was tested with, or isn't logged in. |
-| Git identity | The node's commits don't carry the hub's identity. |
-| GitHub access | git couldn't fetch a bot's remote at the last agent start there. |
-| Screens | A screen kind it is set up to host besides browsers (Android, Linux desktop) isn't ready. |
-
-A row's fix is a command to copy, with the machine to run it on, or for Claude's login, **Log in…**; a screen kind
-that only needs turning on has a button to the machine's Screens. **Check again**, under the rows, runs the checks now.
-
-### Log in Claude from the app {#app-claude}
-
-**Log in…**, on the row that says Claude is not logged in, has the machine's node run `claude auth login`, with the
-same environment as its sessions, so the login lands where they read it.
-
-1. Press **Open**, or copy the page's address, and sign in with the Claude account the machine should use. Any device
-   works.
-2. Paste the code the page shows, and press **Log in**.
-
-Only that code passes through the hub, once, to the node. `claude` keeps the login it gets on the machine; the token
-never reaches the hub, the app or any agent's transcript. A login nobody finishes ends after 10 minutes. A wrong or
-used code ends it too: press **Try again** for a new page. The machine needs a fleetd recent enough to do this; with an
-older one, log in on it [by hand](#claude).
-
-## Add a machine from the CLI {#cli}
-
-Run these on the hub unless it says otherwise.
-
-| The machine is | Use |
-|---|---|
-| Reachable from the hub over SSH | [`fleetd machine add <ssh-host>`](#ssh) |
-| The hub machine itself | [`fleetd machine add --local`](#local) |
-| Behind NAT, or has no SSH from the hub (a laptop) | [`fleetd pair --worker <name>`](#join) |
+| Reachable over SSH | `fleetd machine add <ssh-host>` |
+| The hub's own computer | `fleetd machine add --local` |
+| Anywhere else | `fleetd pair --worker <name>` |
 
 ### Over SSH {#ssh}
 
-1. See the plan without changing anything:
-
-   ```console capture=machine-add
-   $ fleetd machine add builder-1 --dry-run
-   dry run: nothing runs. Planned for a fresh Linux machine at builder-1 (home /home/demo); a real run first reads the machine's state and leaves out what is already done:
-   [probe] read the machine's state (read-only)
-   [1/5] create fleetd's directories
-   [2/5] install fleetd 0.0.0
-   [3/5] write the node service
-   [4/5] enroll the node with a one-time token (sent on stdin)
-   [5/5] (re)start the node
-   [hub] wait until builder-1 is online
-   [exit 0]
-   ```
-
-2. Run it for real:
-
-   ```sh
-   fleetd machine add builder-1
-   ```
-
-   It copies the hub's own fleetd to the machine, enrolls its [node](/docs/glossary#node), runs the node as a user
-   service, and waits until the machine is online. It prints each remote command before it runs it.
-
-   A machine of another OS or CPU than the hub's (a Mac added from a Linux hub, say) gets the same fleetd version
-   built for it: the hub downloads that release's build and checks it against the release's `SHA256SUMS` first. A
-   machine that has that build already is left as it is. A hub on an Edge build can do this only while the edge release
-   is still its build; once it has moved on, the add stops and says to update the hub first.
-
-The host name can be anything in `~/.ssh/config` or on your tailnet. You can also run `fleetd init` again and pick the
-machine from a list.
-
-It is safe to run again: a real run reads the machine's state first and skips what is done.
-
-It never takes over another fleetd's node. When the user's systemd manager already runs `fleetd-node.service` from
-another home (the same account with another `HOME`, say), adding or joining stops before it changes anything and says
-so. Pass `--no-service` to enrol the node without a service, and start it with the command it prints.
-
-### The hub machine {#local}
-
 ```sh
-fleetd machine add --local
+fleetd machine add builder-1 --dry-run   # show the plan, change nothing
+fleetd machine add builder-1
 ```
 
-The same steps, run on this machine without SSH. `fleetd init` does this when you pick "(this machine)". Run it again
-to repair the hub machine's node.
+The host can be any name in `~/.ssh/config` or on your tailnet. It's safe to run again: it skips steps already done,
+which is also how you repair a machine.
 
 ### A machine the hub can't reach {#join}
 
-1. On the hub, print a join command for the new machine:
+1. On the hub, run `fleetd pair --worker laptop`. It prints one line.
+2. Paste that line into a terminal on the new machine. It installs fleetd and joins.
 
-   ```sh
-   fleetd pair --worker laptop
-   ```
+The code in the line works once, for 15 minutes. `fleetd pair --worker-codes` lists open codes, and
+`fleetd pair --worker-revoke <id>` takes one back.
 
-   Expected output:
+## Log in Claude {#claude}
 
-   ```text
-   On laptop, run:
+Agents use the machine's own Claude login (`~/.claude`). If `claude` works in your shell there, it works for fleetd.
 
-     curl -fsSL https://fleetd.sh | sh -s -- --join http://hub.your-tailnet.ts.net:4790 --code <code> --machine-id laptop --git-identity 'ada-lovelace <1234567+ada-lovelace@users.noreply.github.com>'
+To log in from the app:
 
-   The code works once, until 2026-10-18T13:35:46.366Z. laptop needs claude installed and must reach the hub at that address.
-   ```
+1. Open the machine's page. Its **Claude** row says it isn't logged in.
+2. Click **Log in…**, open the sign-in page on any device and sign in.
+3. Paste the code it shows and click **Log in**.
 
-2. Paste the printed command into a terminal on the new machine. It installs fleetd and joins the hub with that
-   address and code, without asking for them. Where fleetd is already installed and `fleetd init` asks what the
-   machine is, pick **A worker** and paste the same line: it takes the hub, the code, the machine's name and the
-   commit identity from it.
-
-The code works once, for 15 minutes. The new machine must reach the hub's address. A hub that is only at
-`127.0.0.1` or `localhost` gives a line that works on its own computer alone; `fleetd pair --worker` and Add machine
-say so. Give the hub its tailnet or LAN address first: on the hub, `fleetd init --listen <ip>:<port> --url http://<name>:<port>`.
-
-A machine has one code that works at a time: printing a new one replaces the machine's open code.
-
-A line can also name no machine: the app asks the hub for one with the `machine_join` tool and no `machineId`. Its
-line has no `--machine-id`, and the computer that runs it joins under its own host name (the first label, lowercased),
-or that name with `-2`, `-3`… when another computer has it or an open code is for it. A computer that joined before
-keeps its id. It still works once, for 15 minutes, and joins one computer; making one replaces no other code. A line
-made for a name admits only that name.
-
-To see the codes that still work, run `fleetd pair --worker-codes`. It lists each code's id, machine, when it was
-made and when it expires, but never the code itself. To take one back before it is used, run
-`fleetd pair --worker-revoke <id>`. The hub drops used and expired codes a day later.
-
-To repair the worker later, run the same command again. `--rejoin` enrolls it again with a new code.
-
-A node keeps the machine id it joined with. The hub refuses to enroll a node home (its key in `node-key.pem`)
-already enrolled under another id, since that would put all its bots and chats on a second machine. To repair it, rejoin it under its own id: run `fleetd pair --worker <id>` on the hub and the line it prints.
-To give it a new id, remove the old machine first (`fleetd machine remove <old id>`), then join under the new one.
-
-If the hub refuses the join (a spent code, say), the machine stays as it was: its node keeps its settings, and its
-service starts again.
-
-## Log in Claude on a worker {#claude}
-
-Sessions use the worker's own claude setup in `~/.claude`. If `claude` works in your shell there, it works for
-fleetd: your login, a proxy in `~/.claude/settings.json`, and your MCP servers.
-
-If it isn't logged in, log it in [from the app](#app-claude), or on the worker as you normally do:
-
-```sh
-claude auth login
-```
-
-Behind a proxy, log in through your proxy instead. To give a worker's sessions their own claude profile, see
-[The Claude login](/docs/config-and-files#claude).
+The login stays on that machine; it never reaches the hub or an agent. Or run `claude auth login` on the machine.
 
 ### Claude Code's version {#claude-version}
 
-Each fleetd release is tested with one Claude Code version. Updating fleetd moves every machine's Claude Code to that
-version (see [Update](/docs/updating-and-uninstall#everything)), and nothing moves it on its own:
+Each fleetd release is tested with one Claude Code version. Updating fleetd moves every machine to it, and fleetd
+turns off Claude Code's own auto-update so nothing else moves it. Running sessions finish on the version they started
+with.
 
-- The node turns Claude Code's own background update off when it starts, by setting `"DISABLE_AUTOUPDATER": "1"`
-  in the `env` of the `settings.json` its sessions read (`~/.claude/settings.json` unless the machine has its own
-  profile). That covers a `claude` you run yourself on that machine too. `fleetd doctor` warns when it is on.
-- Sessions that are already running finish on the version they started with. New sessions start on the new one.
-  Nothing waits for the machine to be idle.
-- Only Claude Code's native install (`~/.local/bin/claude`) is moved. A Homebrew, npm or package install, or a
-  machine without claude, is left as it is: the update says so in a calm line with the command that updates it
-  (`brew upgrade claude-code`, say), not as a failure.
+Claude Code installed with Homebrew or npm isn't moved: the update tells you the command to run.
+
+## Fix a machine {#checks}
+
+The hub checks each machine every 15 minutes. A machine's page lists only what failed, each with its fix:
+
+- **Claude**: not installed at the tested version, or not logged in.
+- **Git identity**: commits there don't carry the hub's identity.
+- **GitHub access**: git couldn't fetch a bot's repo.
+- **Screens**: a kind of screen it could host isn't ready ([Screens](/docs/browser-sessions#settings)).
+
+**Check again** runs the checks now. **Repair**, shown while a machine is offline or degraded, adds it again and
+skips what's already in place. A machine that joined with a line gets a new line to run there.
 
 ## Remove a machine {#remove}
 
-In the app, press **Remove** beside it in [Settings › Hub › Machines](#app-repair). From the CLI:
+Click **Remove** on the machine's page, or run:
 
 ```sh
 fleetd machine remove builder-1
 ```
 
-It stops and removes the node's service on that machine, revokes its key on the hub, and forgets everything the hub
-held of it, keyed by its id: its sessions, checkouts, settings and slots, and its bots, each erased as deleting it
-would: its chat, memory, skills, files, orders and tasks. A machine that joins again under the same id starts its
-bots afresh. Another machine's rows stay, even under the same bot ids. The factory metrics stay as history,
-until their own retention prunes them. Open apps drop the machine and its bots at once. A node that is still linked
-is cut off at its next heartbeat (within 15 s), and what it reported in the meantime is forgotten too. To clear what an older fleetd's remove left behind, run the same
-command again. The bots it left are also listed under **Left from removed machines** in Settings › Hub ›
-Machines, each with Remove, and Delete in Settings › Bots works for them too: no machine holds their files, so
-either only forgets the bot in fleetd. The hub never forgets them on its own.
+This revokes its key and erases its bots (their chats, memory, files and tasks). A machine the hub set up also has
+its service stopped and removed.
 
-| Option | Also does |
-|---|---|
-| `--purge` | Deletes `~/.fleetd/node` and `~/.fleetd/claude.env` on that machine. Your own `~/.claude` stays. |
-| `--force` | Removes it even while it runs bots' leads. |
+- `--purge` also deletes fleetd's files on that machine (`~/.fleetd/node`). Your `~/.claude` stays.
+- `--force` removes it even while it runs a bot's lead.
 
-A machine that runs bots' leads, or one the app is still adding, isn't removed. Removing it would stop those leads
-or undo the add halfway. The refusal names the bots, and says how to repair the machine instead
-(`fleetd pair --worker <id>` and the line it prints, with `--rejoin`). To remove it anyway, press **Remove anyway** in
-the app, or pass `--force`.
-
-For a machine that joined with `fleetd pair --worker`, only the key is revoked:
-
-```text
-laptop was not set up by fleetd machine add from this hub, so only its key is revoked here; its node stops when it next reaches the hub.
-revoked laptop's node key; the hub refuses that node from now on.
-erased laptop's 2 bots: their chats, memory, skills, files, orders and tasks.
-the hub forgot laptop's sessions, checkouts and settings (214 rows); the factory metrics stay as history.
-```
-
-Its node stops as that machine when it next reaches the hub: it marks itself removed in its `node.json`, and its
-service waits there for a new join (a new code from `fleetd pair --worker`), dialling nothing. To take its service off
-the machine too:
+For a machine that joined with a line, stop its service there yourself:
 
 <Tabs syncKey="os">
 <TabItem label="macOS">
@@ -307,167 +133,62 @@ systemctl --user disable --now fleetd-node.service
 </TabItem>
 </Tabs>
 
-## Disk and usage {#guard}
+## What a machine is used for {#roles}
 
-A machine short of disk, or whose Claude login is nearly out of a usage window, takes no new agents until it has room
-again. Agents already running keep going. The node reads the figures every 15 seconds, with its heartbeat.
+A machine runs **agents**, hosts **screens** (agents' browsers, emulators and desktops), or **both** (the default).
+Change it under **Used for** on the machine's page, or:
 
-CPU load and memory in use never hold new agents back. New agents start by fixed rules: they wait only for a free
-place under the [agent caps](/docs/projects#max-agents), and their builds wait for the machine's
-[build slots](#fair-share), sized to its memory.
+```sh
+fleetd machine set mac1 --roles sessions --max-sessions 2
+```
 
-| New agents wait while | They start again at |
+`sessions` means screens. A machine with screens only runs no agents; it hosts screens for agents on every machine.
+
+## When new agents wait {#guard}
+
+A machine takes no new agents while it's short of disk or its Claude login is nearly out of usage. Running agents
+carry on. The bot's status says why.
+
+| New agents wait while | They start again |
 |---|---|
-| Free space where the worktrees live is below `minFreeGb` in [`node.json`](/docs/config-and-files#node-json): 10% of the disk or 20 GB by default, whichever is larger. | 10% above it. |
-| A usage window of the machine's Claude login is 90% used, or claude warned about it without a figure. API keys and gateways report no windows. | Below 85% or at the window's reset. A reading with no reset time counts for 15 minutes. |
+| Free disk is below 10% of it, or 20 GB if more | 10% above that |
+| A Claude usage window is 90% used | Below 85%, or at the reset |
 
-The bot's status says why, for example "Paused new agents: 14 GB free on builder-1" or "Paused new agents: 5-hour
-limit 91% on builder-1 as of Tue 13:42 UTC, resets Tue 14:00 UTC (pauses at 90%, lifts below 85%)", and `fleetd doctor`
-shows each machine's free space. A writer's worktree, build output included, goes once its PR merges, unless it holds
-uncommitted or unpushed work. A reader's or reviewer's goes when its task ends. When `sccache` is on the node's `PATH`,
-sessions compile through it, so a dependency builds once per machine rather than once per worktree: a new worktree's
-first check skips most of its dependencies' compiles. The cache is sccache's own, `~/.cache/sccache` (10 GB at most
-unless `SCCACHE_CACHE_SIZE` says otherwise); fleetd's own dependencies take about 350 MB of it.
+Change the disk limit with `minFreeGb` in [node.json](/docs/config-and-files#node-json).
 
-## When a Claude login hits its limit {#usage-pause}
+### When a Claude login hits its limit {#usage-pause}
 
-When agents on one machine hit their Claude login's usage or rate limit, fleetd parks them and pauses new turns on that
-login. They go on by themselves at the reset claude's message named, or as soon as a turn on that login completes. The
-bot's Status row and its chat say so, with **Resume**.
-
-To go on sooner, once the login has capacity again:
-
-- In the app, press **Resume** on the bot's Status row or on the chat's blocked line. Your device key needs
-  operate on the machine (a paired app has it).
-- On the hub machine, run `fleetd usage` to see each machine's pause, and `fleetd usage resume <machine>` to lift
-  one. Neither needs a key or `--hub`: they use the hub's own CLI key and reach the hub at the address it listens on.
-  From elsewhere, add `--hub <url> --key-file <path>`.
-
-Resume sends every parked agent "continue". An agent whose login is still limited parks again on its next turn, with
-the real reset. Whenever the lead takes a turn during the pause (you message it, say), its wake states the pause,
-when it ends and that you can press Resume. It can lift the pause on its own bot's machine with `usage_resume`, at
-most once every 10 minutes, and that is recorded as the lead's.
+Agents that hit their login's limit pause, and go on by themselves at the reset. To go on sooner, click **Resume** on
+the bot's status row or in the chat, or run `fleetd usage resume <machine>` on the hub.
 
 ## A fair share for each agent {#fair-share}
 
-Agents on one machine share its CPUs, memory and disk. Each session gets:
+Agents on one machine share its CPUs, memory and disk:
 
-| What | How |
-|---|---|
-| Build jobs | Each agent's share of the CPUs: the CPUs divided by the agents the machine fits, at least 2. fleetd sets `CARGO_BUILD_JOBS`, `MAKEFLAGS=-j<n>`, `CMAKE_BUILD_PARALLEL_LEVEL` and `GOFLAGS=-p=<n>`, and vitest's `VITEST_MAX_WORKERS` to `<n>` but at least 4, except any you set in `claude.env`, and a task's brief says what each is. |
-| Build turns | Agents' cargo builds take turns for the machine's build slots, so twenty agents compiling at once can't run it out of memory. A `cargo` of fleetd's own comes first on each agent's `PATH` (`~/.fleetd/node/build-slots/bin`) and hands every command to the real one; `build`, `check`, `clippy`, `test`, `bench`, `doc`, `rustc`, `install`, `fix`, `nextest`, `llvm-cov` and `miri` first take a slot, and hold it until they end. `cargo run` takes one for a `cargo build` of what it runs, then lets it go before the program starts, since that may run for hours. Other commands (`fmt`, `metadata`, `tree`) start at once, and so does a call that compiles nothing: `cargo -V`, a command's own `--version` or `--help` (`cargo nextest --version`), `cargo install --list`. A build takes one slot, and two when it builds a lib's tests beside the lib, a package's two biggest rustc at once: a `cargo test`, `nextest` or `llvm-cov` naming neither `--lib` of one package nor only other targets (`--test <name>`, `--doc`), or a `cargo build --all-targets`. With too few slots free, a build queues first come first served and prints one line, such as `fleetd: queued for a build slot (1 build ahead; 3 slots on this machine): it starts once one frees`. A running build is never stopped, and a slot frees the moment its build ends, however it ends. Slots: one per 16 GB of the machine's memory, at least 1, never more or fewer by load: 16 GB holds one build at its peak (fleetd's lib tests, 10.6 GB measured) and keeps a third of the machine for what runs beside the builds (agents, browsers, a tmpfs `/tmp`), so every slot busy still fits. A 16 GB laptop gets 1, a 32 GB one 2, the 60 GB devbox 3, a 128 GB machine 8. Set `buildSlots` in node.json to change it (no restart needed), or `0` to turn turns off. A task's brief says how many. |
-| Check turns | Writers' full pre-push checks (the check a repo names in `.fleetd/pre-push.json`; fleetd's `scripts/check.sh`) take turns for the machine's check slots, so ten writers checking at once can't load it until each other's timing tests fail and every rerun adds more. A `fleetd-check-slot` of fleetd's own sits beside the `cargo` one on each agent's `PATH`, and a check runs itself under it when it is there. With every slot in use a check waits first come first served and prints one line, such as `fleetd: waiting for a check slot (2 checks ahead; 4 slots on this machine, all in use): it starts by itself once one frees, and the wait isn't counted in its time`. The wait counts against nothing: the check's time starts once it has its slot. A slot frees the moment its check ends, however it ends, a crash or a kill included. An agent's own partial test commands (`bun test <file>`) never wait. Slots: one per 8 cores, at least 2 (4 on the 32-core devbox). Set `checkSlots` in node.json to change it (no restart needed), or `0` to turn turns off. |
-| Language servers | Claude Code's heavy language servers (rust-analyzer, clangd, the Java and Kotlin ones) are off in every session: each holds gigabytes per worktree outside the build slots. A bot's `HEAVY_LANGUAGE_SERVERS=1` variable turns them back on. See [Heavy language servers are off](/docs/what-agents-are-told#language-servers). |
-| Scratch space | `TMPDIR`, `TMP`, `TEMP` and Claude Code's `CLAUDE_CODE_TMPDIR` point at `~/.fleetd/node/tmp/<16 hex characters, one per session>`, on disk. Never `/tmp`, which is often held in memory. Its files last until the task can no longer be continued, through node restarts: they go with its worktree (once its PR merges with nothing of its waiting: a `wait_ci`, a Monitor or a question to its lead; else `policy.worktree_days` after the task ends, even when the worktree is kept for unsaved work); a session without a worktree loses them when it is stopped, or at a node restart 3 days after its last change. The processes an agent started there (a database, a server) end when its session is reaped idle, so after a wait it starts them again from the data it kept. Apps on a Linux desktop get the desktop's own temp dir, removed when it ends, and the browser's install downloads to `~/.fleetd/node/browser/install-tmp`, removed after it. |
-| Its own memory scope (Linux) | When the node can reach your systemd user manager, each session runs in its own transient scope (`systemctl --user list-units 'run-*.scope'`, described as "fleetd agent …"), capped so it can't starve the rest of the machine: the machine's memory less a reserve of a quarter of it, at least 4 GB and at most half, and its swap the same way (`MemoryMax=`, `MemorySwapMax=`). A 16 GB laptop's cap is 12 GB, so one build at its 10.6 GB peak (a build slot, above) fits; a 32 GB machine's is 24 GB, the 60 GB devbox's 44.6 GB, a 128 GB machine's 96 GB. The cap is the same for every session, leads included, and isn't a setting: on the devbox the hub, the node and the system together peak near 11 GB with some 30 agents, sessions peak at a few GB and rarely past 13, and the one runaway that took it down reached 56 GB. A session that goes past its cap loses only its largest process there, killed by the kernel inside its scope, and the rest of the machine runs on. Claude reads which process it was and why beside its next tool result (`fleetd: at 18:01:58 UTC the kernel killed \`bun test\` (pid 4242, 19.6 GB): this session went past its memory cap of 44.6 GB …`); the command itself just ends with exit 137. If the whole machine runs out anyway, the kernel's kill still lands in one agent. The scopes and the node's unit have `OOMPolicy=continue`, so an out-of-memory kill never fails an agent's scope or the node. A lead's and an agent's scope isn't part of the node's unit: restarting the node leaves them running, and the node picks them up again when it starts. One whose node doesn't come back within 15 minutes ends by itself, and `fleetd machine remove` ends them at once. If a scope can't be started, the session starts without one (and without its cap), and the node checks again 10 minutes later. Without a user manager (macOS, containers), sessions run as before, with no cap. What the node starts for an agent outside its session (a browser session, an emulator, a Linux desktop) and what a session hands to another service (a `docker run` container) count toward the node or that service, not the session's cap. |
-| Its own signals (Linux) | A signal sent from inside a session (`kill`, `pkill`, a loop over `ps`) reaches only that session's own processes, a lead's session included: the hub, the node, `systemd --user`, other sessions and your own programs refuse it with `Operation not permitted`. Every process stays in sight (`ps`, `pgrep`, `/proc/<pid>/stat`), though what only a debugger may read of a process outside the session is refused too (`/proc/<pid>/environ`, `fd` and `maps`, `strace -p`, `gdb -p`, so `ps e` and `lsof` show less of it), and files, network, Chrome and Electron with their sandboxes, Postgres, docker and Monitors work as before. An agent still stops what it started, a `setsid` or double-forked process too; the node, and systemd stopping a scope, still stop any session. It is Landlock's signal scope (Linux 6.12 or later, with `landlock` among the kernel's LSMs, as on Ubuntu's kernels), which the session's host sets before it starts claude. Landlock needs `no_new_privs`, so a setuid or file-capability program doesn't gain privileges inside a session: `sudo`, `newuidmap` (rootless podman or docker setup) and setuid sandbox helpers. Chrome and Electron use their namespace sandbox instead, which works. A process left by an earlier start of the same session (a server still running after the session was reaped idle) is outside the new start's fence, so the agent can't signal it; it ends with the task. On an older kernel, or with Landlock off, sessions start unfenced and the host's log (`~/.fleetd/node/hosts/<session>/host.log`) says why; macOS has no such fence, and there a session's signals reach any of your processes, as before. A deliberate `systemctl --user stop` goes through systemd, not a signal, and isn't fenced. |
-| Killed last (Linux) | If memory runs out, the kernel kills an agent's processes before the hub or the node. The hub and node lower their OOM score as far as Linux lets them, which under a systemd user manager is its own score, 100 (`OOMScoreAdjust=-900` in their units; systemd's default for a user service is 200). Everything the node starts for an agent (its claude and everything that runs, builds included, a browser, an emulator, a Linux desktop) starts at 500. Their units also have `ManagedOOMPreference=avoid`, so systemd-oomd, where it runs, picks other cgroups first. A unit written before this gets them when its service next starts (below). Check with `cat /proc/$(systemctl --user show -p MainPID --value fleetd-node)/oom_score_adj`. macOS has no such score: it compresses and swaps before it ends anything, and launchd runs the hub and node as interactive, the last it ends. |
+- **Build jobs**: each agent gets its share of the CPUs (`MAKEFLAGS`, `CARGO_BUILD_JOBS` and similar are set for it).
+- **Build slots**: heavy `cargo` builds take turns, one slot per 16 GB of memory, so many agents can't run the machine
+  out of memory. Set `buildSlots` in node.json to change it.
+- **Check slots**: full pre-push checks take turns too, one slot per 8 cores. Set `checkSlots` to change it.
+- **Memory cap** (Linux): each agent runs in its own scope, so one runaway process is killed without taking the
+  machine down.
+- **Scratch space**: each agent's `TMPDIR` is on disk, never in `/tmp`.
 
-The hub and node keep their own units current: each time one starts (after a `fleetd update` restart, say), it rewrites
-its unit from today's template when an older fleetd wrote it, keeping its command, environment and paths, and enables it
-if it isn't, so it starts at the next boot. The rewritten unit takes effect at its next restart. A unit edited by hand
-(any setting fleetd doesn't write) is left as it is. A node started as a service before its config is there (`fleetd
-node join` not done yet, or a home not ready at boot) waits for it, trying again after 5 s and up to every 5 minutes,
-rather than exiting.
+## Keep the services running {#service-manager}
 
-## When the service manager stops {#service-manager}
-
-On Linux the hub and the node are services of your systemd user manager (`systemd --user`), and so are agents' scopes.
-If that manager stops (a stray `kill` from any process of yours reaches it, say), it stops them all. systemd's own
-`user@.service` has no restart: with linger on, the manager starts at boot, but once it has stopped nothing starts it
-again until you log in. fleetd fixes that with one drop-in for your user's manager, which only root can write:
+On Linux the hub and node run under your systemd user manager. If that manager stops, nothing restarts it until you
+log in again. This one-time root command fixes that (replace `dev` and `1000` with `id -un` and `id -u`):
 
 ```sh
 sudo sh -c "loginctl enable-linger dev && mkdir -p /etc/systemd/system/user@1000.service.d && printf '[Service]\nRestart=always\nRestartSec=5\n' > /etc/systemd/system/user@1000.service.d/fleetd.conf && systemctl daemon-reload"
 ```
 
-With your user name and uid (`id -un`, `id -u`) in place of `dev` and `1000`. It turns linger on (the manager starts
-at boot and stays after you log out) and has systemd start the manager again 5 s after it stops, which starts the hub
-and the node (and nothing else stops: the manager running now carries on). After a SIGTERM to the manager, the hub and
-node answer again in about 5 seconds. A logout with linger off still ends the manager, a stop by root (a shutdown, an
-admin) stays a stop, and `fleetd update` and **Restart hub** restart only the hub or node inside it.
-
-- `fleetd init` and `fleetd machine add` write it themselves where they can be root without a password (they run as
-  root, or `sudo -n` works). Elsewhere their plan notes the command, filled in for that machine.
-- The doctor checks it on the hub's machine (`hub/service_manager`) and on every machine (`service_manager`), so an
-  existing install is flagged with its command in Settings › Hub › Setup, `fleetd init` and `fleetd doctor`.
-  `fleetd update` can't write it: it never has root.
-- A user alone has no clean way to do it: a timer in the stopped manager is gone with it, and a cron job that turns
-  linger off and on again as you would start the manager, but polls every minute and restarts everything on a false
-  alarm.
-- macOS: launchd runs the hub and node in your login session and keeps them alive while it lasts; it has no such
-  manager to stop.
-
-`scripts/manager-restart.sh <fleetd binary>` proves it in throwaway systemd containers: the outage without the drop-in,
-the services back after it, and that a logout, a stop by root and a hub restart behave as before.
-
-## Machine roles {#roles}
-
-Each machine runs **agents**, hosts **screens** (an agent's [browser, emulator or desktop](/docs/browser-sessions), or the agents' Mac's screen),
-or **both**, the default. An owner or admin sets it on the machine's own page in **Settings › Hub › Machines** (open it
-from the list), or with an admin key, where the screens role is named `sessions`:
-
-```sh
-fleetd machine set mac1 --roles sessions --max-sessions 2
-fleetd machine set devbox --roles agents,sessions --max-sessions auto
-```
-
-- **Agents only.** The machine hosts no screens. Its agents' screens run on a machine that does.
-- **Screens only.** The machine runs no agents: those running finish their work, and its bots' agents wait until
-  it runs agents again. It hosts screens for agents on every machine.
-
-Screen slots are counted apart from agent slots. A machine hosts at most its screen cap at once: what it fits (one
-screen per two CPUs and about 2 GB of memory each, at most 16, and never fewer than its agent slots and leads), or
-the number you set, 1 to 64.
-
-Each node reports what it can host. There's no switch per kind: a machine hosts every kind it can run, and the Screens
-part of its page shows a line only while one needs someone, with the fix ([Screens in Settings](/docs/browser-sessions#settings)):
-
-| Kind | Needs |
-|---|---|
-| Browser | Chrome: the node's own, which it installs as it starts, or the one `browser.chrome` names in node.json. |
-| Android emulator | fleetd's own pinned emulator: Linux on x86_64 and a `/dev/kvm` this user can open read-write (the first screen installs it). See [Android screens](/docs/browser-sessions#android-setup). |
-| Desktop | Linux with docker, podman or Xvfb. |
-| Agents' Mac | [The agents' Mac](/docs/agents-mac): the node's account at the Mac's screen (yours is fine), unlocked, with Accessibility and Screen Recording. Elsewhere it says `Needs a Mac`. The agents' Mac hosts only this kind. See [the agents' Mac's screen](/docs/browser-sessions#mac). |
-
-When an agent starts a screen, the hub places it: on the agent's own machine when it hosts screens, can run that kind
-and has a free screen slot; else on the online machine that can with the most free slots. When none can, the agent is
-told why in one line: none can host that kind, the ones that can are offline, or every one is full. The default cap is
-never lower than the machine's agent slots and leads together, one screen each, as before screen caps. A screen a
-person [opens themselves](/docs/browser-sessions#yours) takes a slot too, on the machine they pick, and a person
-waiting for a full machine's next slot gets it before any agent does.
-
-A screen on another machine works as one on the agent's own:
-
-- **Its secrets go sealed.** Before it starts, the agent's node seals the screen's secrets (its bot's, its
-  order's and its MCP servers') to the hosting machine's key, as the app seals a secret to a machine. The hub passes
-  the box on and can't open it. The hosting machine scrubs the screen's action log and page snapshots with them,
-  as for a screen of its own, and forgets them once the screen has started.
-- **Its 1Password token stays home.** A `fill_credential` is read from 1Password on the agent's machine, with its
-  token, and only the value goes to the hosting machine, sealed to it. That machine fills it into the item's own sites
-  only, refuses reads of it as for a fill of its own, and wipes it. The agent's machine masks it in its agent's
-  reports.
-- **Its relay is encrypted end to end.** The agent's `agent-browser` reaches the browser through a relay on the hub.
-  The agent's node connects with a token only that node and the hub know (the hub keeps just its SHA-256). The two
-  nodes encrypt every message with a key sealed along with the secrets, so the hub carries only ciphertext, and it
-  logs none of it.
-- **Its steps are recorded there.** Each `agent-browser` command that drove it goes into the hosting machine's
-  recording, with the page after it, masked on the agent's machine first.
-- **Agents' iOS simulators are on [the agents' Mac](/docs/agents-mac)**, reached with `mac`, not as screens.
-  Android screens stay on their agent's machine for now.
-
-Only machines whose fleetd seals and opens these boxes take part. An agent on a machine with browser screens turned
-off can't start one anywhere: it has no proxy to drive it through.
+`fleetd init` and `fleetd machine add` run it for you when they can use root without a password. `fleetd doctor`
+flags a machine that still needs it.
 
 ## When a machine goes down {#down}
 
-A machine whose node says nothing for 45 seconds shows offline. If it is still offline 10 minutes later, the hub's
-owners and admins get one [phone notification](/docs/phone-notifications) and one desktop notification: "devbox has
-been offline for 10m00s". Nothing more comes however long it stays down, a hub restart included, and a short "devbox
-is back online after 1h11m" follows once its node links again. Back within 10 minutes, it notifies nobody.
-
-An update restarting the machine's node doesn't count until the update has its result: one that leaves the node
-offline notifies then. The agents' Mac counts like any machine; a removed machine never does.
+A machine shows offline after 45 seconds of silence. If it's still offline after 10 minutes, owners and admins get one
+notification, and another when it's back.
 
 ## Check health {#health}
 
@@ -475,7 +196,5 @@ offline notifies then. The agents' Mac counts like any machine; a removed machin
 fleetd doctor
 ```
 
-It checks the hub and every machine: online (or degraded, with its claude's or its network's cause), claude version
-and login, commit identity, disk space and the usage breaker. Each problem comes with the command that fixes it.
-
-Every finding and its fix: [Troubleshooting](/docs/troubleshooting).
+It checks the hub and every machine, and prints the fix for each problem. See
+[Troubleshooting](/docs/troubleshooting).

@@ -1,732 +1,169 @@
 ---
 title: Merge train
-description: "How fleetd merges pull requests: one train per repo, batches of ready PRs in one CI run, or each PR on its own CI with a revert when the base turns red."
+description: How fleetd reviews and merges pull requests, who merges, and how to hold a PR.
 ---
 
-How fleetd merges pull requests. Only fleetd merges: each writer's PR goes on its repo's
-[merge train](/docs/glossary#merge-train). Every ready PR from a writer's branch, or from any other branch under its
-task's prefix (`fleetd/T7-pricing-2`, `fleetd/T7-cloud-pin`), goes on by itself, once, as that writer's, while its order
-is open: in any of the bot's repos, opened before or after its result, within a minute even while the train waits on
-another PR's CI, not only the PR its result names, so split work
-and a second repo's PR need no `change_enqueue`. A PR from a fork or from a person's own branch never goes on by itself.
-
-## What the train does {#steps}
-
-1. Takes the next ready PR. A PR is ready once its review passes (see [Review](#review)).
-2. Has GitHub rebase it onto its base branch, as **Update branch** with rebase does (or merge the base into it,
-   where a rebase would [cost it an approval](#approval)).
-3. Waits for its [fast set](#fast-set) of checks on that exact commit, and for each check a batch
-   [skips](#scarce-runners) there too (see [How long CI may take](#ci-time)).
-4. Posts the `fleetd/train` status and squash-merges it, pinned to that commit (with another
-   [merge method](#merge-method) where the repo allows no squash).
-
-The train follows [the repo's own rules](#rules) on GitHub: a PR whose base requires a person's approval waits for it.
-
-A PR already on the current base whose own commit already passed its fast set, every check of it reported, merges
-without step 2 and without the `fleetd:next` label: its CI already ran on exactly the tree that lands, so the train
-doesn't run it again. A check the label runs that was skipped on that commit doesn't count as passed (see
-[CI runners are scarce](#scarce-runners)), so such a PR still takes the usual path.
-
-A conflict or red CI goes back to the agent that wrote the PR; for red CI, with the failing checks. A conflict only in
-generated files is [regenerated](#regenerate) instead.
-
-GitHub runs no CI on a PR that conflicts with its base. So on every pass the train reads each waiting PR's mergeable
-state, and once GitHub says it conflicts, the PR goes back to its agent as `needs_rebase` ("conflicts with main, so
-GitHub runs no CI on it") without waiting for its turn, unless the train can [regenerate](#regenerate) it. An agent
-that finished waiting on that PR with `wait_ci` is continued with it at once, since no CI will come to wake it. A waiting PR whose commit has none of its base's required
-checks (any check, when the base requires none) 15 minutes after the train first saw it is flagged to its agent and the
-lead, once per commit, and keeps its place.
-
-fleetd merges on green CI. A repo with no CI at all has nothing to wait for: no job in the workflow files of the PR's
-base branch or of the PR itself, no required check but `fleetd/train`, and no check or status from anyone but
-`fleetd/train` ([another CI](#providers) counts) on the PR's commit, on any earlier commit of it the train reviewed, or
-on the default branch's last 10 commits. GitHub's own Actions runs, such as Pages and Dependabot, don't count. Each of
-its PRs merges alone once its review approves it, and the bot's chat says it merged on review alone. A PR that adds the
-repo's first workflow waits for it. When the train can't read one of those, it waits as for CI. Once the repo gets CI,
-its PRs wait for it again. A repo whose checks exist but haven't started on a PR still waits, flagged after 15 minutes
-as above.
-
-To keep a PR off the train, [hold it](#hold). To have people merge a bot's PRs, set its [Who merges](#who-merges).
-
-## Which checks it waits for {#fast-set}
-
-The train waits only for the repo's fast set, the same way in every repo:
-
-- the checks the base branch requires, read from its ruleset or branch protection;
-- the checks the repo lists in `.fleetd/train.json` on the base branch.
-
-Each check of the fast set is waited for until it reports, however late its workflow starts; a required one that never
-reports times out by name. One the repo added that still hasn't run 5 minutes after every other check finished
-is named then: its job was most likely renamed or removed, so fix the name in the file.
-
-The train expects only the jobs the tree under test defines. When a PR removes or renames a job that the base's
-workflows still have, the train doesn't wait for that check, on the PR or on a batch with it. If the base requires
-that check, GitHub won't merge without it. In that case the train stops as soon as the other checks finish, says the
-ruleset needs changing first, and doesn't try the PR again until it changes. It never waits out the CI timeout or loops
-back into the queue. The train never waits for any
-other check. A check outside the fast set that has already failed when the fast set is green still stops the merge,
-unless the file lists it in `afterMerge`. A required check is always in the fast set, since GitHub won't merge without
-it. A cancelled run of a check that isn't required doesn't count. With no required check and none added, the train
-waits for every check, so such a repo still merges only on green CI. When the train can't read the base's rules or the
-repo's `.fleetd/train.json`, it also waits for every check.
-
-The repo keeps the list next to its workflows, so a renamed job and its name change in one pull request. The train
-reads `.fleetd/train.json` from the base branch every 10 minutes at most:
-
-```json
-{
-  "fastChecks": ["lint", "docs"],
-  "afterMerge": ["e2e (macos-latest)"]
-}
-```
-
-Both keys are optional, and there may be no other key. A file the train can't read or use makes it wait for every
-check until the file is fixed.
-
-## The repo's own rules {#rules}
-
-The train reads what GitHub says about the base branch and follows it: its rulesets, its branch protection and the
-repo's merge settings, read every 10 minutes at most. There is nothing to set in fleetd. fleetd never approves a PR
-and never goes around a rule.
-
-### A required approval {#approval}
-
-When the base requires an approving review (in a ruleset or in branch protection, code owners' included), a PR that
-is reviewed by the agent and green waits for a person's approval on GitHub. The train doesn't try to merge it, and
-doesn't push to it. It shows as "waiting for a person's approval" in the train's state, and the lead tells you once per
-reviewed patch that it is reviewed and green. Once GitHub shows it approved, the train merges it by itself, in its
-turn. A review that requests changes keeps it waiting, and goes to its writer as [any person's review](#people) does.
-
-Into such a base:
-
-- PRs merge one at a time, each as itself. A [batch](#batches) lands as a PR of its own, which nobody approved.
-- Where the base drops approvals on new commits, the train never rebases a PR: it has GitHub merge the base into it,
-  as **Update branch** does, which rewrites none of its commits. A PR that still waits for its approval isn't
-  updated at all.
-
-Whether a PR has its approval is GitHub's own answer for that PR (its review decision), never the train's reading
-of the reviews.
-
-### Merge method {#merge-method}
-
-The train merges with the first method the repo allows, and the base's ruleset where it names its own: squash, then
-rebase, then a merge commit. A squash carries the message GitHub would write and the `Fleetd-Change` trailer. A
-merge commit carries the PR's title and the trailer. A rebase lands the PR's commits as they are. Without squash,
-PRs merge one at a time: a batch lands as one squash.
-
-### CI from another provider {#providers}
-
-A check counts whether it reports as a check run (GitHub Actions and most apps) or as a commit status (CircleCI,
-Buildkite, Jenkins and others):
-
-- A check the base requires, or one the repo lists in `fastChecks`, is read from either.
-- On a commit no check run reports on, the commit's statuses are its CI: those of the [fast set](#fast-set) where
-  there is one, and every status in a repo with no GitHub Actions workflow.
-
-In a repo that has workflows, a status that is neither required nor listed is not waited for, since the workflows'
-checks may still come. If such a commit gets only that status, its CI times out, and the message names the status and
-says to require it on the base or list it in `fastChecks`.
-
-### Other rules {#other-rules}
-
-When GitHub refuses a merge for a rule fleetd can't satisfy (signed commits, an unresolved conversation, a push
-restriction, GitHub's merge queue), the lead hears once, with GitHub's own words, and the train doesn't try again by
-itself. Once the rule or the PR has changed, the lead puts it back with `change_enqueue`. Any other refusal is tried
-3 times, as the base may have moved, and then reported with GitHub's words too.
-
-A base that requires GitHub's merge queue is not supported: the train is the only way fleetd merges, and it can't
-merge into such a base.
-
-When GitHub doesn't let the hub read a rule, the train goes on as it did before it read any (it rebases, squashes
-and batches), and the hub's log says which read failed, once an hour. It never stalls on an unread rule: if GitHub
-then refuses a merge for a missing approval, the PR waits for the approval as above.
-
-## After the merge {#after-merge}
-
-The train watches the checks it didn't wait for on the commit it merged onto the base, and the checks its batches
-[skip](#scarce-runners), even required ones. When one fails there, fleetd
-opens a fix order for the bot, so its lead takes it up like any order: it names the check, the base, the PR that
-merged and the run's link. One failure opens one order. The same check failing again on the next merges, while that
-order is open, is that order's; once it is closed, a new failure opens a new one. A cancelled run is no failure. The
-watch ends once every check on the commit has finished, and after 6 hours at most. With an empty fast set the train
-waited for every check, so only the checks its batches skip are watched.
-
-A workflow that runs on a schedule (a nightly build on runners your pull requests don't use, say) checks the base long
-after the merges it covers, so the train reads those runs too, every 10 minutes at most. When a workflow's newest
-finished scheduled run on the base failed, in the last day, fleetd opens a fix order naming the failed jobs, the run's
-link and the commits since that workflow's last green scheduled run. One failure opens one order, as above: a job
-failing again while its order is open is that order's, and the same commit failing again is the same failure. A
-cancelled run is no failure.
-
-A check red on the base holds no merge: each pull request merges on its own checks. Status shows it as a warning, with
-whether its fix order is open ([a check red on main](/docs/status#red-main)).
-
-## How long CI may take {#ci-time}
-
-The train gives a commit's CI 45 minutes of running time, counted from when its first check starts. Time the checks
-spend queued for runners doesn't count. While every check is still queued, there is a ceiling of 2 hours. If the CI
-provider gives no start times, the 45 minutes count from when the train starts waiting.
-
-A check that fails on a PR's own commit gets one more try: the train re-runs that job alone, with the jobs that need
-it, once its workflow run is done. Of several failed jobs in one run it re-runs the oldest first, and a cancelled job of
-that run with them, so a job that failed because one it needs failed or was cancelled (a check that gathers test
-shards) re-runs with that one. If the re-run passes, the PR carries on, and its agent and the lead hear in one line
-that the check was flaky, naming the failing test when the job's log shows one. If it fails again, the PR fails,
-however long the other checks have left. A red check on a batch fails the batch at once, and its PRs go alone. A
-cancelled check is never a failure: if a push to the PR cancelled its run, the train takes the new commit instead;
-otherwise it re-runs the cancelled jobs alone, never a job that failed beside them, or waits.
-
-A push to a PR never needs it enqueued again. While the train waits on CI, it reads the PRs in line about every 15
-seconds: one that was pushed to takes its new commit (and a new review if its changes changed) without waiting for
-that CI to end, and a push to the PR in CI ends the wait on its old commit, even when the push didn't cancel that run. CI that runs out of time is different: the
-PR shows `ci_failed` with "CI timed out", the lead is told, and the agent that wrote it isn't asked to push. The train
-keeps reading that commit's checks. If they finish green, the PR goes back in the queue ("CI finished after the
-timeout; back in the queue") and merges on that run, after the usual rebase if its base moved. If one goes red, the
-PR goes back to its agent as for any red CI. If they read cancelled, the train re-runs those jobs twice, then sends the PR
-back to its agent to push again. If GitHub refuses a re-run, the train asks again after a minute, then two, and after
-the third refusal sends the PR back the same way. A new push starts over as usual.
-
-When the hub restarts while a PR's CI runs, alone or in a batch, the new hub keeps watching the same run on the same
-commit, and merges once it is green. It doesn't rebase the PR or run its CI again. Its other waits carry on too: the
-15 minutes for a PR's checks to start, the 30 minutes a blocked PR sits before the lead hears, and a regeneration that
-failed, which isn't tried again. A regeneration the hub was running when it stopped runs again.
-
-The train takes a PR whose base is a branch it merges into, such as `main`. A PR based on another open PR's branch is
-refused when it is queued: once that PR merges, point it at the same base (`gh pr edit <n> --base main`) and queue it
-again.
-
-## Merges outside the train {#outside}
-
-When a PR is merged into a branch the train guards without the train, such as by hand on GitHub, the train notices
-within a minute and records `pr.merged_outside`. The next PR in line is rebased onto the new base as usual, so nothing
-else changes.
-
-A PR in the train that a person merges on GitHub, on a bot [you merge](#people-merge) or one with the `hold` label,
-counts as merged: its order, Factory (as made by fleetd, merged by you) and its [issue](/docs/issues) see it land as if the
-train had merged it.
-
-Every commit that reaches a bot's base branch is also recorded as a landing (`work.landed`), however it got there:
-by the train, from a PR merged outside it, or pushed straight to the branch. fleetd reads this with plain git on the
-bot's machine, once a minute, so it works on any git host, and on repos with no train. The base is the checkout's
-`origin/HEAD`. A landing ends the claims it matches: the same branch or PR, a closing reference to the claim's issue
-in its message ("Fixes #12", "Closes SHOP-12"; a mere mention doesn't count), or a direct push by the claim's own
-author whose message matches its title closely. The bot's lead is told once about each landing that didn't come
-through the train. When git on the bot's machine can't reach the remote (for SSH, the key has to be in the
-`ssh-agent` the node runs with), the lead is told once, with git's reason.
-
-Each host's default merge message names its PR: GitHub, Gitea and Forgejo (`Merge pull request #12`, or a squash
-subject ending in `(#12)`), GitLab (`See merge request group/project!12`), Bitbucket (`(pull request #12)`) and
-Azure DevOps (`Merged PR 12:`). On GitHub, fleetd also reads the merged PRs, so a squash or rebase merge whose message
-doesn't name its PR still counts as one, every commit of a rebase merge included. On other hosts, a merge whose message doesn't name its PR counts as pushed
-straight to the branch.
-
-## Review {#review}
-
-Every PR gets one fresh reviewer. It judges what the PR sets out to do first, and blocks only on a defect reachable
-today, naming the input or state that triggers it and what breaks, or on a miss against the order's brief; a reachable
-security hole, data loss or secret exposure always blocks. Hardening against inputs nothing sends and speculative edge
-cases are non-blocking notes. Its verdict is bound to the PR's current patch. Blocking findings go to the agent that
-wrote the PR, and the PR waits for its next commit. They go to it even when the train sent the PR back mid-review.
-Until a review of a newer commit lands or the lead [resolves](#resolved) them, every later message about the PR (a
-conflict, red CI, a `wait_ci` wake) repeats them, so a rebase alone never leaves them behind.
-
-Before a reviewer starts, the train checks the PR doesn't undo work already on its base, as a commit made on a fresh
-main while its files were an older tree's does: a file the PR puts back, byte for byte, to a version main had before
-a later commit, where the PR puts back at least half that commit's files. Such a PR goes back to its agent as
-`needs_rebase`, with the files and the commits it would undo, to rebuild on the current base. A PR whose title or body
-says it reverts named commits or PRs passes. `scripts/check.sh` runs the same check before a push.
-
-### Re-reviews {#re-reviews}
-
-When an approved PR gets a new head, the train compares the PR's own changes with the approved head's: each run of
-removed and added lines, and where it sits. A run is unchanged when it has the same lines in the place main's added
-and removed lines move it to, and main changed nothing right next to it. Context lines don't count, so main editing a
-line near the PR's changes, with an unchanged line between, is no change. The same lines moved elsewhere are.
-
-| What changed | Review |
-| --- | --- |
-| Nothing: the same patch id, or the same changed lines in the same places after a clean rebase | None. The approval carries over, recorded with the head and reviewer it came from. |
-| Only lines next to main's changes: the author resolved conflicts in a rebase | A short review of just those files: the PR's side, main's side and the resolution. |
-| Anything else: new commits, or a changed hunk main never touched | A full review, which starts from what changed. |
-
-An approval carries over only from the last reviewed head, and only when that head has no blocking findings open.
-If the reviewer whose approval carried over later records blocking findings on its head, every head it carried to is
-blocked too. A rebase past commits that landed on main as a squash keeps the approval only with the same patch id.
-When the train can't read the commits it compares, the PR gets a full review.
-
-A PR already approved at an earlier patch isn't sent back to wait for its new review. The new review runs while its
-CI runs, alone or in a batch, and the merge waits for both. If the review finds a blocker, the PR leaves the train for
-its author, and a batch it was in forms again without it, so its code never lands. If CI is green and the review is
-still at work after 15 minutes, the PR waits in review out of the train's way, and merges once the review is clean.
-
-A reviewer that ends its turn without recording a verdict, for example while its own build was still running, is
-asked once, in its own thread, to finish and report. No new reviewer starts while it does, and its verdict counts as
-any other. If that turn ends without a verdict too, or the reviewer failed, a fresh reviewer starts the review over,
-once per patch. A missing verdict never counts as approval.
-
-A reviewer that couldn't use fleetd's tools, so it couldn't record its verdict, is caught as soon as it ends. Its
-queue entry and the train's line say "review tools failed", and the lead hears once. A new reviewer starts by itself
-a minute later, then after longer waits up to 15 minutes. It starts at once when any other review records a verdict,
-since that shows the tools work again. These don't count toward the one retry a reviewer that ended without a verdict
-for other reasons gets.
-
-A reviewer stopped by a usage or rate limit is parked and continued at the reset like any agent. One that ended on a
-limit anyway says "review limited", never counts toward that retry, and a new reviewer starts once the limit resets.
-
-### Findings resolved without a new patch {#resolved}
-
-Blocking findings hold a PR until its next commit. Sometimes the lead resolves a finding another way, for example by
-narrowing the brief the reviewer judged against. In that case, enqueue the PR again with `change_enqueue`. The
-findings on its current patch stop counting, and a fresh, full review of the same patch starts. No approval carries
-over to it. The PR lands only on that review's clean verdict. If the review finds blockers again, they hold the PR as
-before. A PR whose reviewers ended without a verdict until no more started goes back in review the same way, without a
-new head. Enqueuing a PR that nothing blocks starts nothing. Only the lead's `change_enqueue` does this: a writer whose
-turn ends without a push, its result naming the same PR, starts no review.
-
-When blocking findings have held a PR at the same commit for 30 minutes with no push, the lead hears once. The message
-says how to start a fresh review, and to check on the writer otherwise.
-
-### People's reviews on GitHub {#people}
-
-People can review a fleetd PR on GitHub as they would any PR. The hub reads each PR in the train about once a minute,
-and again just before it marks a PR ready, so a person's review reaches the writer within about a minute.
-
-| On GitHub | What fleetd does |
-|---|---|
-| A review that requests changes | A blocking finding, sent to the PR's writer with who said it. The PR waits until that person approves or the review is dismissed. A later review that only comments doesn't lift it, as on GitHub. |
-| An unresolved review thread a person started (a line comment) | A blocking finding, sent to the writer with its file, line and who said it. Each later comment on it is sent too, except the PR author's: the writer replies as the PR's author, so those are shown with the thread but never sent as new. The PR waits until the thread is resolved. |
-| A review that only comments, or a comment on the PR | Nothing. Only its line comments count, as threads. |
-| Anything from a bot, from someone who isn't the repo's owner, a member of its organization or a collaborator, or posted by fleetd itself | Nothing. On a public repo, a passer-by's review never reaches the writer. |
-
-The writer gets these the way it gets the agent reviewer's blocking findings, in the same message, and `review_read`
-lists the ones still open. It fixes them, pushes, and replies on each thread or on the PR. It never resolves a
-person's thread or dismisses their review: the person does that. If a person's review arrives after the PR is
-ready or while it is in CI, the PR goes back to review, out of the train's way, and returns to its place once GitHub
-shows the review answered. The PR's line in the train says who it is waiting for.
-
-The hub reads people's reviews by polling, with no webhooks, so this works on a hub GitHub can't reach. If GitHub
-refuses a read (a rate limit, an outage), the hub waits longer before the next one, up to 30 minutes. A failed read
-never holds or fails a PR: what the last read found stays in force.
-
-### The agent's review on the PR {#on-the-pr}
-
-When the agent reviewer records its verdict, fleetd posts it on the PR as a comment: the commit it reviewed, its
-blocking and non-blocking counts, and its findings. A re-review edits the same comment and keeps one line for each
-earlier round, so a PR gets one comment however often it is reviewed. The comment is never an approval or a request
-for changes, so it never counts toward a review GitHub requires. If GitHub refuses the comment, nothing waits on it.
-
-## Batches {#batches}
-
-When several PRs are ready at once, the train merges them together in one CI run, except into a base that
-[requires approvals](#approval) or in a repo [without squash merges](#merge-method), where they go one at a time. It
-takes up to 8 ready PRs in line that go into the same base branch and whose fast set passed on their own commit, every check of it reported. A
-PR whose commit has no checks yet stays out. A cancelled or superseded run, and any check outside the fast set, doesn't
-keep a PR out: the batch's own CI decides. A check the batch PR [skips](#scarce-runners) must have passed on the PR's
-own commit too. A fast-set check whose job the PR's own tree doesn't define, because its branch predates the job,
-doesn't keep it out. The batch's CI runs that job on the combined tree and must pass it. Then:
-
-1. It makes its own branch from the base on GitHub, `train/batch` under the bot's branch prefix
-   (`fleetd/train/batch` by default), and merges each PR into it in order.
-2. It opens one PR for them, whose CI runs once.
-3. When that PR is green, it posts `fleetd/train` and merges it as one squash.
-4. It closes each member PR with a comment linking the batch.
-
-A member counts as merged only while its head is still the one the batch was built from.
-
-| If | The train |
-|---|---|
-| A PR conflicts with the PRs ahead of it | Leaves it out; it goes again once they land, and a conflict with the base then is [regenerated](#regenerate) or sent back. |
-| A PR conflicts with the base | Leaves it out and [regenerates](#regenerate) it, or sends it back to the agent that wrote it. |
-| The batch is red, or GitHub refuses to merge its PR | Takes each member alone, so each CI result blames only that PR. |
-| A member gets a new push, the `hold` label, or is closed during CI | Drops the batch before the merge, so untested code never lands, and builds a new one without it. |
-
-On every pass, a ready PR the batch left out says why, in its queue entry and in the train's line in the lead's digest:
-for example "not in this batch: its own head's `lint` failed", "… still running", or "the batch is full (8 PRs)". When a
-check failed on its own head, the agent that wrote it also hears of it once per head, with the check and its log, so a
-writer that finished and isn't watching CI still fixes it.
-
-### Batches in CI at once {#pipeline}
-
-While a batch is in CI, PRs that become ready don't wait for it. The train builds a second batch on top of the first:
-its branch starts at the first batch's head (`train/1/train/batch` under the branch prefix, so CI that keys on
-`train/batch` treats it the same) and merges the new PRs into it. Its PR holds every PR of both batches, and its CI
-starts right away.
-
-| If | The train |
-|---|---|
-| Both batches pass | Lands the second batch's PR alone, as one squash of all their PRs, on exactly the tree its CI passed. The first batch's PR closes unmerged. |
-| The first batch fails | Drops the second batch. Its PRs go back in line for a new batch on the base, and the first batch's PRs each go alone. |
-| The first passes and the second fails | Lands the first batch. The second batch's own PRs each go alone. |
-| The second is still in CI when the first passes | Waits at most as long as the first batch's CI took, then lands the first batch without it. The second batch's PRs go back in line. |
-
-The train keeps at most two batches in CI at once.
-
-A PR merging alone doesn't hold the lane either. While its CI runs on its rebased commit, the PRs that become ready go
-in a batch built on that commit, the same way, and that batch's CI starts right away on the combined tree.
-
-| If | The train |
-|---|---|
-| Both pass | Lands the batch's PR, as one squash of the lone PR and the batch's PRs, on exactly the tree its CI passed. The lone PR closes with a link to it. |
-| The lone PR fails, is pushed to, or its review finds a blocker | Drops the batch. Its PRs go back in line and start again on the base. |
-| The lone PR passes and the batch fails | Merges the lone PR by itself, as it would with nothing behind it. The batch's PRs each go alone. |
-| The batch is still in CI when the lone PR passes | Waits at most as long as the lone PR's CI took, then merges the lone PR by itself. The batch's PRs go back in line. |
-
-A PR in the batch never lands before or without the PR ahead of it, and only on its own green CI.
-
-## Merge, then verify {#verify}
-
-Each bot picks how its PRs merge, under **How it merges** in its settings, below [Who merges](#who-merges):
-
-- **Test, then merge** (the default): the train as described above. Ready PRs merge in [batches](#batches) whose
-  combined tree passed CI first, so the base stays green, but one red batch sends every PR in it through alone.
-- **Merge, then verify**: no batches. Each ready PR merges on its own CI, and the base's own CI after each merge
-  catches what two PRs break only together.
-
-In **Merge, then verify**, for each ready PR the train:
-
-1. Rebases it onto its base as the base is then, as in [What the train does](#steps).
-2. Waits for its [fast set](#fast-set) on that commit, with the [one re-run](#ci-time) a failed check gets.
-3. Merges it the moment that passes, if GitHub sees no conflict, even when other PRs merged meanwhile.
-
-Up to 4 PRs of a repo are in CI at once, side by side, so a slow or red PR holds no other. A PR past that waits and says
-"waiting for a free place in CI". The repo sets the number in `.fleetd/train.json`, from 1 to 16:
+The merge train reviews each agent's PR, runs CI, and merges it, or leaves the merge to you.
+
+Each repo has its own train. Every PR an agent opens goes on it by itself. PRs from forks or from people's own
+branches never do.
+
+## Who merges {#who-merges}
+
+Each bot picks who merges its PRs, in its settings under **Safety › Who merges**:
+
+- **You** (the default for new bots): fleetd reviews each PR and keeps it up to date. You merge it on GitHub. Only PRs
+  your [risk rules](#risk-rules) allow merge by themselves.
+- **fleetd**: the train merges each PR once it's reviewed and CI is green.
+
+You can also set it from a terminal on the hub: `fleetd project set <machine>/<bot> --merges you|fleetd --key-file
+<your key>`. Only a person can change it, never an agent.
+
+### When you merge {#people-merge}
+
+- fleetd's reviewer still reviews each PR, and problems go back to the agent that wrote it.
+- The lead tells you once when a PR is reviewed and green, with its link.
+- The PR shows **Waiting for you to merge on GitHub**, and appears under **Needs a look**.
+- While it waits, the train updates it with the base branch at most once an hour.
+
+When you merge it on GitHub, fleetd records the merge, and the PRs behind it carry on.
+
+### Risk rules {#risk-rules}
+
+On a bot you merge, press **Rules** next to **Who merges**. There are two lists, one rule per line:
+
+- **Merges itself when every file matches**: the PR merges by itself if every file matches a rule here. Default:
+  `docs`, `tests`, `lockfile-bumps`, `formatting`.
+- **Always waits for a person when any file matches**: the PR waits for you if any file matches, whatever the first
+  list says. Default: `auth`, `billing`, `migrations`, `infra`, `ci`, `secrets`.
+
+A rule is a path pattern or a named kind:
+
+- A pattern such as `docs/**` or `*.sql`. `**` spans folders. A pattern with no `/` matches a file name in any folder.
+- `docs`: Markdown and similar files in `docs/`, and READMEs. Never files that instruct agents, such as `CLAUDE.md` or
+  `AGENTS.md`.
+- `tests`: test folders and test files.
+- `lockfile-bumps`: lockfiles whose only change is patch or minor version bumps.
+- `formatting`: changes that only add or remove blank lines or trailing spaces.
+- `auth`, `billing`, `migrations`, `infra`, `ci`, `secrets`: the folders and files those words usually name, such as
+  `auth/`, `*.sql`, `Dockerfile`, `.github/` or `.env`.
+
+Empty both lists and every PR waits for you. A PR whose files GitHub can't list waits for you too.
+
+## Hold a PR {#hold}
+
+Add the `hold` label to a PR to keep the train off it. Remove the label and it goes in its turn.
+
+Use it for a one-off. To hold every PR of a bot, set **Who merges** to **You**.
+
+## How it merges {#modes}
+
+Each bot also picks how the train merges, under **Safety › How it merges**:
+
+- **Test, then merge** (the default): ready PRs merge in batches, up to 8 at a time. CI runs on the combined code
+  first, so main stays green. If a batch fails, its PRs go one at a time.
+- **Merge, then verify**: each PR merges as soon as its own CI passes on the latest main, up to 4 at a time. If main
+  then goes red, fleetd finds the PR that broke it and reverts it.
+
+Pick **Merge, then verify** when CI is slow and many PRs land each day. Pick **Test, then merge** when main must never
+be red, even briefly.
+
+### Merge, then verify {#verify}
+
+1. The train rebases the PR on main and waits for its CI.
+2. It merges the moment CI passes.
+3. It then watches main's own CI.
+
+When a check fails on main, the train re-runs it once. If it passes, it was flaky and nothing happens. If it fails
+again:
+
+1. The train finds the first merge where it went red, looking up to 30 merges back.
+2. It opens a revert PR and puts it first in line.
+3. The agent that wrote the change hears it was reverted, and brings it back with a fix.
+
+If it can't pin the failure on one merge, it opens a fix request for the bot's lead instead.
+
+A repo can change how many PRs run CI at once (1 to 16) in `.fleetd/train.json`:
 
 ```json
 { "ciAtOnce": 2 }
 ```
 
-Where the base requires branches to be up to date before merging (a ruleset's "Require branches to be up to date
-before merging", or classic protection's strict status checks), GitHub refuses a PR whose base moved during its CI.
-The train then rebases it and runs its CI again, which never counts as a failure, but PRs land one at a time. The
-setting says so under the control, and for an admin of the repo it has a button that turns off that one setting and
-leaves the rest of the rule, its required checks too, as it was. A rule set by an organization's ruleset is its
-owners' to change. The line shows the rule as the train last read it, so the settings open without waiting on
-GitHub: a rule read over 10 minutes ago, or not read yet, is read in the background, and the next open shows it.
+If main requires branches to be up to date before merging, PRs still land one at a time. The setting says so, and
+offers repo admins a button to turn just that rule off.
 
-Review, the repo's GitHub rules, `hold` and [Who merges](#who-merges) work as in **Test, then merge**: where you
-merge, the train merges only the PRs its rules let merge themselves, each the same way. A revert the train opened (below) goes before
-any other PR.
+## What happens to each PR {#steps}
 
-### A red base {#red-base}
+1. **Review.** A fresh reviewer agent reads the PR. Blocking problems go back to the agent that wrote it.
+2. **Rebase.** The train updates the PR with its base branch.
+3. **CI.** It waits for the repo's checks. A failed check is re-run once, to rule out a flaky test.
+4. **Merge.** It posts the `fleetd/train` status and squash-merges.
 
-The train [watches](#after-merge) every check on each merged commit, the fast set too. A check that fails there is
-re-run once. If the re-run passes, it was flaky: nothing is reverted, and nothing opens. If it fails again:
+Conflicts and red CI go back to the agent that wrote the PR. A pushed fix goes back in line by itself.
 
-1. The train finds the merge that broke it: the first commit red since the check was last green on the base, at most
-   30 commits back. A commit the check didn't run on counts as its parent. A cancelled run in between is re-run, the
-   one in the middle first, so finding one culprit among 30 merges takes at most 5 re-runs.
-2. It has GitHub open a revert PR of that merge's PR, and puts it at the front of the line, under the order the
-   culprit came from (in a new order when that one is closed). The revert is reviewed like any PR.
-3. The culprit's writer hears it was reverted, with the run's link, and brings the change back in a new PR with a fix.
-4. The lead hears it once, in one line.
+A repo with no CI at all merges on review alone.
 
-When the train can't pin it on one merge (no green run within 30 commits, a commit no PR merged, a revert GitHub
-refuses), it opens a [fix order](#after-merge) instead, as in **Test, then merge**.
+## Review {#review}
 
-Edge builds, and the hubs that [update](/docs/updating-and-uninstall) from them, take only main commits whose CI passed,
-so a red merge never ships while it is being reverted.
+Every PR gets a fresh reviewer. It blocks only on a real problem: a bug someone can hit today, a security hole, or a
+miss against what was asked. Smaller notes don't block.
 
-This needs main's own CI to be honest about every check on every push. A job that skips itself on main when its paths
-didn't change since a red run (reporting success at once) reads as green there: it would let a later merge build on a
-red one, and the bisect blame the wrong merge. A job skipped outright counts as its commit's parent's result. fleetd's
-own CI runs every job in full on main, but Desktop QA, which skips a push only when nothing it reads changed since its
-last passing run on main.
+The verdict is posted on the PR as one comment, updated on each new review. It never counts as a GitHub approval.
 
-## Generated files {#regenerate}
+A new push gets a new review. If only a rebase changed it, the approval carries over.
 
-Built files (a docs site, generated types, reference pages) conflict on almost every rebase. A repo that commits
-`.fleetd/regenerate.json` lets the train make them again instead of sending the PR back:
+### People's reviews on GitHub {#people}
 
-```json
-{
-  "generated": ["site/docs/", "docs/reference/cli.md"],
-  "run": ["make docs", "npm ci --prefix docs", "npm run build --prefix docs"],
-  "migrations": "db/migrations/",
-  "timeoutMinutes": 30
-}
-```
+Review a fleetd PR on GitHub as you would any PR. Within about a minute:
 
-| Key | What it is |
-|---|---|
-| `generated` | The generated files, from the repo root: a path ending in `/` is a directory, anything else one file. |
-| `run` | Shell lines run in order from the repo root: the same commands CI checks the generated files with. |
-| `migrations` | Optional. A directory of `<UTC stamp>_<name>.sql` files that must sort after the base's newest. |
-| `timeoutMinutes` | Optional, 1–120, default 30. |
+- **Request changes**: the PR waits, and your review goes to the agent that wrote it. It waits until you approve or
+  dismiss the review.
+- **A comment on a line**: goes to the agent too. The PR waits until you resolve the thread.
+- **A plain comment**: nothing happens.
 
-The train reads the file from the base branch, never from the PR. When a PR conflicts with its base, or adds a
-migration that sorts at or before the base's newest, the train:
+The agent fixes it, pushes and replies. It never resolves your threads or dismisses your review: you do that.
 
-1. Picks the node holding the repo's checkout. It must be online and take agent work; the hub's own machine runs
-   none of this. With no such node, the PR goes back to its agent as before.
-2. Fetches the base and the PR there, and rebases the PR onto `origin/<base>` in a scratch worktree. A branch with
-   merge commits, such as an integrator's that merged several writers' branches, instead goes on `origin/<base>` as
-   one commit of its whole diff, titled with the PR's title: an old merged-in commit that no longer replays on its own
-   then doesn't stop a branch that merges cleanly.
-3. Takes the base's side of each conflict in a generated file. A conflict in any other file stops it.
-4. Gives the PR's new migrations fresh UTC stamps, in order, when one sorts too early.
-5. Runs every `run` line, commits what changed as its own commit, then runs them all again: the second run must change
-   nothing, and no run may change a file outside `generated`.
-6. Pushes the result to the PR's branch, only if the branch is still where it was.
+Only reviews from the repo's owner, organization members or collaborators count.
 
-The commands run as the node's user, as agent work does there, but reach for no credential: their HOME is a scratch
-directory, git under them has no credential helper, no hooks and no recorded conflict resolutions (rerere), and they
-get no SSH agent. The fetch and the push are
-separate steps. Programs are found on the node's PATH, the one its agent sessions get; a missing one is named in the
-reason. The commands get `FLEETD_REGENERATE_CACHE`, a directory in the node's own home kept between runs
-(`~/.fleetd/node/cache/regenerate/<owner>-<name>`, or under the node's `--home`), for build caches such as
-`CARGO_TARGET_DIR`. One regeneration runs at a time in a checkout; the others wait their turn. Meanwhile the PR keeps
-its place in line, its queue entry says the train is regenerating it, and the train goes on with
-the others. Once the train pushes, the agent that wrote the PR is told, so it builds on the train's commit instead of
-overwriting it.
+## The repo's GitHub rules {#rules}
 
-The pushed commit is a new patch, so it is reviewed and tested like any push. When any step fails, the timeout passes,
-or there is nothing to regenerate, the PR goes back to its
-agent as `needs_rebase`, with the reason: for example "conflicts with main, and the train could not regenerate its
-generated files: it conflicts with main in src/app.rs, which is not a generated file".
+The train follows the base branch's rules on GitHub. There's nothing to set in fleetd, and fleetd never gets around a
+rule.
 
-## CI runners are scarce {#scarce-runners}
+- **Required approval**: the PR waits for a person to approve it on GitHub, then merges in its turn. PRs go one at a
+  time, never in batches.
+- **Merge method**: squash if the repo allows it, then rebase, then a merge commit.
+- **A rule fleetd can't meet** (signed commits, push restrictions): the lead is told once, with GitHub's words.
 
-When a repo has few runners of a kind, such as macOS (GitHub runs 5 macOS jobs at once per account), a batch can wait
-far longer for one than its other checks take. Run those jobs on each PR's own commit and skip them on the batch PR:
+A base that requires GitHub's own merge queue isn't supported.
 
-```yaml
-jobs:
-  macos:
-    runs-on: macos-latest
-    if: ${{ !endsWith(github.head_ref, 'train/batch') }}
-```
+## After the merge {#after-merge}
 
-The train reads the repo's workflows on the base and finds such jobs: an `if:` with
-`!endsWith(github.head_ref, 'train/batch')`, in a workflow that runs on each push to a PR (`pull_request` with its
-default types, or with `opened` and `synchronize`). For each one:
+The train watches main's checks after each merge, including nightly scheduled runs. When one fails, fleetd opens a fix
+request for the bot's lead. One failure opens one request.
 
-- A PR joins a batch only once that check passed or skipped on its own commit (below). Until then it stays out and
-  says why: "its own head's `macos` still running", "… failed", or "its own head hasn't reported `macos`
-  yet". Nothing else would run a cancelled one again, so when that check, or a job it needs, reads cancelled, the train
-  re-runs that one job once, with the jobs that need it, and says so: "its own head's `macos` was cancelled; the train
-  re-ran it". It never re-runs the rest of the workflow run, so a job that failed there stays failed, and it waits
-  while a job of that run is still going. Cancelled again, it says to push again or re-run it by hand. If GitHub
-  refuses the re-run, the train asks again after a minute, then two, and after the third refusal says the same.
-- On the batch PR it reads skipped, which counts as passing, so the batch never waits for it. A skipped job still
-  reports, so it can stay a required check.
-- `main` still runs it after each merge, where a failure opens a fix order like any [check after the merge](#after-merge).
+PRs merged outside the train, by hand on GitHub, are noticed within a minute. The train carries on from the new base.
 
-To skip work a change doesn't touch, decide on a cheap Linux runner and skip the job by `if:` on that decision, so a
-scarce runner starts only for real work:
+## One PR after another {#order}
 
-```yaml
-jobs:
-  scope:
-    runs-on: ubuntu-latest
-    outputs:
-      macos: ${{ steps.scope.outputs.macos }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 2
-      - id: scope
-        run: |
-          if git diff --quiet HEAD^1 HEAD -- src/macos; then
-            echo macos=false >> "$GITHUB_OUTPUT"
-          else
-            echo macos=true >> "$GITHUB_OUTPUT"
-          fi
-  macos:
-    needs: scope
-    if: ${{ !cancelled() && !endsWith(github.head_ref, 'train/batch') && needs.scope.outputs.macos != 'false' }}
-    runs-on: macos-latest
-```
+When one PR needs another merged first, the lead tells the train the order, across repos too. The later PR waits,
+showing "waiting on" the earlier one.
 
-On a PR's own commit, the train counts a skip as passing, as branch protection does, while a check still queued or
-running, or not reported yet, holds the PR. A job that needs others also reads skipped when its run is cancelled before
-it starts, so the train counts such a skip only once every job it needs passed there; otherwise the check hasn't
-reported, and the PR stays out of batches until a new run decides it. With `needs.scope.outputs.macos != 'false'`, a
-failed scope runs the job rather than skipping it.
-
-Don't filter the workflow by `paths:` instead: a workflow that never starts never reports, and the PR stays out of
-every batch. If the workflows can't be read, the train uses the last answer it had for the repo; with none, ready PRs
-stay out of batches until it can read them.
-
-The only coverage this gives up: a break on those runners that only two PRs together cause. `main` catches it after
-the merge.
-
-### The `fleetd:next` label {#next-label}
-
-The train also labels what it is merging now with `fleetd:next`:
-
-- the batch PR;
-- or a PR it merges alone, before it rebases that PR, so the rebase's CI run already sees the label.
-
-PRs waiting behind it get no label. The train takes the label off once a PR merges or leaves the queue, and creates the
-label if the repo doesn't have it.
-
-A repo can instead run its expensive jobs only on `main`, on the batch branch, on manual runs, and on labelled PRs:
-
-```yaml
-jobs:
-  macos:
-    runs-on: macos-latest
-    if: >-
-      github.event_name != 'pull_request'
-      || endsWith(github.head_ref, 'train/batch')
-      || contains(github.event.pull_request.labels.*.name, 'fleetd:next')
-```
-
-Then every agent push skips them, but the batch waits for them. Adding the label must also start a run. Don't add
-`labeled` to that workflow's `pull_request` types: a run for any other label would replace the PR's real check results
-with skipped ones. Instead, use a small workflow on `labeled` that reacts to `fleetd:next` only and runs the CI workflow
-on the PR's branch (`gh workflow run ci.yml --ref <branch>`).
-
-Give the runs that workflow starts a concurrency group of their own, not the PR's. GitHub's ruleset reads a required
-check from the PR's own run on the head, not from the newest run of it. A started run that cancels the PR's own run on
-the same head leaves that check reading cancelled, and GitHub refuses the merge even though the started run passed.
-The train guards against it: before it merges, it re-runs each job on the head whose required check reads cancelled,
-on its own and once its workflow run is done, and waits for it again. A job still cancelled after 2 re-runs is red.
-
-The train reads the repo's workflows to see which checks the label runs. It looks for jobs whose `if:` names
-`fleetd:next`, in a workflow that reacts to the label being added, or in one that such a workflow starts with
-`gh workflow run`. For a PR it merges alone, such a check skipped before the label went on never counts as passing.
-The train waits for the run the label starts. If GitHub refuses the label, or no run replaces the skipped check within
-3 minutes, the train keeps waiting, retries the label, and tells the lead once: "CI didn't start for the labelled PR".
-
-Every other skipped check counts as GitHub counts it: as passing. That covers checks in workflows the label never
-runs, and jobs a workflow skips on purpose. In a repo whose workflows don't run anything on the label, nothing waits,
-and a refused label is only one line in the hub's log. If the workflows can't be read, the train uses the last answer
-it had for the repo; with none, any skipped check holds the PR for 3 minutes, then counts.
-
-### Waiting for runners {#runner-wait}
-
-When the checks of the batch, or of a PR merging alone, have been queued for more than 5 minutes, its queue entry and
-the lead's digest say "waiting for CI runners (N queued)". Once a runner takes them, the entry's earlier note comes
-back.
-
-## GitHub's API limit {#api-limit}
-
-The hub reads GitHub through its App's installation, which GitHub allows a set number of API calls an hour. It asks
-again for what it has read before with the answer's ETag, so an unchanged PR or check list costs no call. When less
-than a tenth of the hour's calls are left, the hub's log says so once, with the time the limit resets, and the hub
-polls GitHub 4 times less often until then.
-
-When GitHub says the limit is used up, the hub calls GitHub on it no more until the reset GitHub names (an hour at
-most). Nothing is refused or failed for it: a PR enqueued meanwhile is kept and read once the limit resets, then goes
-to review with no one enqueuing it again, and a PR whose checks, rebase or merge GitHub refused stays in line. Its
-entry says "waiting for GitHub's API rate limit to reset at" the reset time, and the time it waits doesn't count
-toward [CI's](#ci-time). A `wait_ci` goes on through it too.
+A PR built on another agent's open PR waits for it without being told.
 
 ## Several repos {#repos}
 
-A bot can hold several repos. Each repo has its own train, so its PRs line up and merge on their own, apart from
-the other repos' PRs. The train for a repo reads its rules and its branch prefix from that repo's checkout. If two
-bots share a repo, they share its train and its rules.
+A bot with several repos has one train per repo. Each repo's PRs line up and merge on their own.
 
-A bot with two or more repos takes only PRs from its repos. A PR from any other repo is refused, and the refusal
-lists the bot's repos. A bot with one repo, or none, takes PRs from any repo, as before, such as a fork's
-upstream.
+## Set up your repo's CI {#ci}
 
-## Merge order {#order}
+The train works with any CI. To pick which checks it waits for, skip slow jobs on batches, or have it regenerate
+built files, see [CI for the merge train](/docs/merge-train-ci).
 
-When one PR needs another merged first, such as a client that needs a new API, the lead enqueues it with `after`:
+## What never changes {#guarantees}
 
-```json
-{ "prUrl": "https://github.com/acme/web/pull/12", "after": ["https://github.com/acme/api/pull/40"] }
-```
-
-The PRs can be in the same repo or any other. Enqueuing a PR that is already in line adds the new `after` PRs to the
-ones it has. Once the train is merging it (rebasing, in CI or merging), that is refused: add the `hold` label to keep it
-from landing first. The train also refuses an order that loops back, where the upstream PR already waits on this one.
-
-An `after` PR of a repo no bot has counts too: the train reads only its state on GitHub.
-
-A PR stacked on an agent's open PR waits for it without an `after`: one whose commits hold that PR's latest commit, as
-when it is based on that PR's branch or built on top of it. Only a PR of the same repo from an agent's branch (under the
-bot's branch prefix) counts, never a fork's PR or a standing branch such as `develop`. Once the branch a PR is based
-on has landed, however it merged, the train first points the PR at that branch's base, so it lands there and not in
-the branch that already merged.
-
-The downstream PR is reviewed and checked as usual. Once it is ready, it stays in line, held with
-"waiting on acme/api#40" and the reason. When the upstream PR merges, the downstream PR's train takes it on its next
-pass.
-
-If the upstream PR fails CI or review, is refused, or leaves the train without merging, the downstream PR stays
-held. The lead is told once, with the reason. Once the upstream PR is fixed and merges, the downstream PR goes on its
-own. A PR merged outside the train also counts as merged.
-
-## Who merges {#who-merges}
-
-Each bot has one setting, **Who merges**, in its settings on the desktop, the web and the phone:
-
-- **You**, the default for a bot made since the setting came: people merge its PRs on GitHub, except those its risk
-  rules let merge themselves.
-- **fleetd**: the train merges each PR once it is reviewed and green. Every bot made before the setting came stays on
-  fleetd, so nothing changed under it.
-
-`fleetd project set <machine>/<bot> --merges you|fleetd --key-file <human key>` sets it too. Only a person picks it:
-an agent's or a lead's key is refused.
-
-### When you merge {#people-merge}
-
-The train enforces it; no label or instruction is needed. For each PR of the bot:
-
-- The agent reviewer reviews it as any other, and findings and red CI go back to its writer.
-- The train merges it only when its [risk rules](#risk-rules) let it merge itself. It never merges any other.
-- The lead tells you once per reviewed patch that it is reviewed and green, with its link.
-- The train keeps it up to date with its base while it waits, once an hour at most, since each update runs its CI
-  again. Where the base drops approvals on new commits, an approved PR is left as it is, and any other gets the base
-  merged in, so an update never costs an approval.
-- When you merge it on GitHub, the merge is [recorded](#outside), and the PRs behind it carry on.
-
-Switching the bot to fleetd lets its waiting PRs go at the train's next pass. Switching to You while a PR is in CI
-keeps it from merging: it goes back in line for you. A PR waiting for you reads "Waiting for you to merge on GitHub"
-on its page and under **Needs a look** in the list, on the desktop and the web, and says under **Who merges** which
-rule decided. It takes no place in the merge line, so the PRs behind it count their place without it. A PR held by
-its `hold` label or by an approval its base requires reads **held**, out of the line the same way.
-
-### Risk rules {#risk-rules}
-
-On a bot you merge, **Rules** under Who merges opens two lists, one rule a line:
-
-| List | A PR | Defaults |
-|---|---|---|
-| Merges itself when every file matches | merges by the train when every one of its files matches one of these | `docs`, `tests`, `lockfile-bumps`, `formatting` |
-| Always a person when any file matches | waits for you when any of its files matches one of these, whatever the other list says | `auth`, `billing`, `migrations`, `infra`, `ci`, `secrets` |
-
-A rule is a path glob or a named kind. In a glob `**` spans folders and `*` stays within one name, and one with no
-`/` matches a file's name in any folder (`*.sql`, `Dockerfile*`); matching ignores case. A renamed file is judged on
-both its names. The kinds:
-
-| Kind | Matches |
-|---|---|
-| `docs` | `*.md`, `*.mdx`, `*.rst` and `*.adoc` files in a `docs/` or `doc/` folder, and READMEs; never Markdown that steers agents: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `SKILL.md`, `*.instructions.md`, `*.prompt.md`, and anything under `.claude/`, `.cursor/`, `.github/`, `.fleetd/`, `prompts/` or `skills/` |
-| `tests` | files under `test/`, `tests/`, `__tests__/` or `spec/`, and `*.test.*`, `*.spec.*`, `*_test.go`, `*_test.py`, `test_*.py`. They ship nothing, though a helper or fixture can change what CI checks; take `tests` out where a test folder holds code the product ships |
-| `lockfile-bumps` | a lockfile (`bun.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `go.sum`, `poetry.lock`, `uv.lock` and the like) whose diff only moves versions within a major, and within a minor below 1.0.0, with their hashes; a package added or removed doesn't count, and the PR's `package.json` or other manifest is a file of its own that must match a rule too |
-| `formatting` | a changed file whose diff only adds or removes blank lines, or spaces at a line's end; indentation and spaces within a line count as code, since Python, YAML and string literals read them |
-| `auth` | `auth/`, `oauth/`, `login/` and `sessions/` folders, and `auth.*`, `oauth.*`, `login.*` files |
-| `billing` | `billing/`, `payments/`, `stripe/`, `checkout/` and `invoices/` folders, and `billing.*`, `payment*.*`, `stripe.*`, `invoice*.*` files |
-| `migrations` | `migrations/` and `migrate/` folders, `*.sql`, `schema.prisma` |
-| `infra` | `infra/`, `terraform/`, `k8s/`, `kubernetes/`, `helm/`, `deploy/`, `ansible/` and `pulumi/` folders, `*.tf`, `*.tfvars`, `Dockerfile*`, compose files |
-| `ci` | `.github/`, `.circleci/`, `.buildkite/`, `.fleetd/`, `.gitlab-ci.yml`, `Jenkinsfile`, `azure-pipelines.yml` |
-| `secrets` | `.env*`, `*secret*`, `*credential*`, `*.pem`, `*.key`, `.sops.yaml`, `*.sops.*` |
-
-A PR with no files, or whose files GitHub can't list (more than 3,000), waits for you. Empty both lists and every PR
-waits for you. The rules apply only while you merge; a bot fleetd merges merges every PR.
-
-## Hold a PR {#hold}
-
-Add the `hold` label to a PR to keep the train from taking it, alone or in a batch, on any bot. Remove the label and
-it goes in its turn. It is for a one-off hold; for every PR of a bot, set [Who merges](#who-merges) to You.
-
-## What never relaxes {#guarantees}
-
-Batches only save waiting, and **Merge, then verify** only trades a green base before each merge for a fast revert
-after it.
-
-- Every PR in a batch is reviewed at its current patch, or carries an approval of the same changed lines.
-- A person's review that requests changes, or a person's unresolved thread, holds the PR until GitHub shows it
-  answered.
-- The batch's fast set must pass, and it always includes the checks the base requires.
-- `fleetd/train` is posted only on a commit whose CI passed.
-- GitHub's rules on the base decide every merge. fleetd never approves a PR, and never goes around a rule.
-- In **Test, then merge**, what lands is always a tree CI passed on: a batch on top of another lands only as itself,
-  never stacked onto a squash it wasn't tested with.
-- In **Merge, then verify**, every PR merges only on its own green CI, on a rebase onto its base as the base was when
-  that CI started, and a red base is reverted automatically. Edge builds only take green commits.
+- Every PR is reviewed before it merges.
+- A person's change request or open thread holds the PR.
+- The checks the base branch requires always pass first.
+- GitHub's rules decide every merge. fleetd never approves its own PRs.
+- With **Merge, then verify**, each PR merges only on its own green CI, and a red main is reverted.
