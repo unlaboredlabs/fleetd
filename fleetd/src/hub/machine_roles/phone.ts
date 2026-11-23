@@ -20,7 +20,7 @@ import { ASK_EVERY } from "../../node/mac_tool/queue.ts";
 import type { Hub } from "../api/hub.ts";
 import { isHuman, requireRole } from "../api/grants.ts";
 import type { Caller } from "../api/registry.ts";
-import { changeControl } from "../browser/tools.ts";
+import { asRead, changeControl } from "../browser/tools.ts";
 import { get } from "../browser/store.ts";
 import { link } from "../link/index.ts";
 import { SEND_WAIT } from "../mac_tool/index.ts";
@@ -258,7 +258,8 @@ export async function screenControl(hub: Hub, caller: Caller, input: { sessionId
   // The node's report of the device may land a moment after its answer: the answer's own is the newest.
   const after = get(hub, id);
   return {
-    ...(after ? { session: { ...after, ...(answer.device ?? {}) } } : {}),
+    // As browser_sessions reads it (its `rtc` too): the app writes it over its list, and keeps its peer with it.
+    ...(after ? { session: { ...asRead(hub, after), ...(answer.device ?? {}) } } : {}),
     ...(answer.screenshot
       ? { screenshot: { mime: "image/png", dataB64: answer.screenshot.pngB64, width: answer.screenshot.width, height: answer.screenshot.height } }
       : {}),

@@ -177,6 +177,22 @@ export async function changeControl(
   }
 }
 
+/**
+ * A session as browser_sessions answers it: where it runs, and, live, what its agent did last there and whether its
+ * machine answers an app's peer (`rtc`). Any answer that hands an app a session row it shows gives it this, or the
+ * app's view drops its peer for relayed frames until its next read.
+ */
+export function asRead(hub: Hub, s: BrowserSession): BrowserSession {
+  s.machineId = runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;
+  if (s.state === "live") {
+    const step = live(hub).step(s.sessionId);
+    if (step) s.step = step;
+    // An app offers a peer only to a node that answers one: none builds one, nor asks STUN, for nothing.
+    if (link(hub).can(s.machineId, CAP_BROWSER_RTC)) s.rtc = true;
+  }
+  return s;
+}
+
 async function browserSessions(hub: Hub, caller: Caller, input: { projectRef: { machineId: string; projectId: string }; sessionId?: string; limit?: number }) {
   const r = input.projectRef;
   requireRole(caller, "read", r.machineId);
@@ -190,16 +206,7 @@ async function browserSessions(hub: Hub, caller: Caller, input: { projectRef: { 
   } else {
     sessions = list(hub, r, limit);
   }
-  // Where each runs, and what a live one's agent did last there.
-  for (const s of sessions) {
-    s.machineId = runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;
-    if (s.state === "live") {
-      const step = live(hub).step(s.sessionId);
-      if (step) s.step = step;
-      // An app offers a peer only to a node that answers one: none builds one, nor asks STUN, for nothing.
-      if (link(hub).can(s.machineId, CAP_BROWSER_RTC)) s.rtc = true;
-    }
-  }
+  for (const s of sessions) asRead(hub, s);
   return {
     sessions,
     waits: waitsOf(hub, caller, r),
