@@ -292,6 +292,7 @@ export class SimScreen {
           : this.step("agent-device", { command: `agent-device ${args.join(" ")}`, by: "person" }, ran.ok, ran.ok ? undefined : ran.said, ran.ms),
       tools.run,
       () => this.shooter.direct(),
+      () => this.shooter.directPending(),
     );
   }
 

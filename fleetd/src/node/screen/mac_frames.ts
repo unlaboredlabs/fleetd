@@ -166,15 +166,19 @@ export const H264_FPS = HARDWARE_FPS;
  */
 export async function stream(dir: string, args: string[], onFrame: (frame: StreamFrame) => void): Promise<StreamRun> {
   let input = false;
+  // Only a simulator's helper says whether it takes input.
+  let answered = args[0] !== "sim";
   const helper = new MacFrames(await ensureHelper(dir), args, (frame) => {
     if (frame.kind !== "word") return onFrame(frame as StreamFrame);
     const word = new TextDecoder().decode(frame.data);
     input = word === "input";
+    answered = true;
     if (word.startsWith("noinput")) console.warn(`iOS input through agent-device: ${word.slice("noinput ".length)}`);
   });
   helper.tell(`fps ${JPEG_FPS}`);
   return {
     input: () => input,
+    inputPending: () => !answered,
     still: () => helper.tell("still"),
     tell: (command: Command) => {
       helper.tell(command);

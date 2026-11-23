@@ -3,7 +3,7 @@
 // No simulator here: fleetd-frames and agent-device are stand-ins. bench/screens/ios-input.ts measures the real one.
 import { expect, test } from "bun:test";
 import { edgeOf, keyOf, Touches } from "../src/node/device/ios/hid.ts";
-import { Hands, type Ran, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
+import { DIRECT_WAIT, Hands, type Ran, type Runner, Shooter } from "../src/node/device/ios/screen.ts";
 import type { Input } from "../src/node/device/scrcpy.ts";
 import type { Command, StreamFrame } from "../src/node/screen/live.ts";
 
@@ -135,6 +135,56 @@ test("while the stream takes input it all goes straight, logged as agent-device 
   expect(said.at(-1)).toBe("touch up 600 1470 0");
   hands.stop();
 });
+
+test("an input made while the stream's helper hasn't said whether it takes input waits for it, not for agent-device", async () => {
+  const { said, to } = told();
+  const ad = agentDevice();
+  let direct: typeof to | undefined;
+  let pending = true;
+  const hands = new Hands(runner, 3, () => {}, ad.run, () => direct, () => pending);
+  hands.send(touch("down", 300, 600));
+  hands.send(touch("up", 300, 600));
+  await Bun.sleep(60);
+  expect(ad.ran).toEqual([]);
+  // The helper says `input`: the tap goes straight, and agent-device never ran.
+  direct = to;
+  pending = false;
+  await hands.idle();
+  expect(said).toEqual(["touch down 300 600 0", "touch up 300 600 0"]);
+  expect(ad.ran).toEqual([]);
+  // It says `noinput`: the next tap goes through agent-device at once.
+  direct = undefined;
+  hands.send(touch("down", 300, 600));
+  hands.send(touch("up", 300, 600));
+  await hands.idle();
+  expect(ad.ran).toEqual(["press 100 200"]);
+  hands.stop();
+});
+
+test("a helper that stays silent holds a gesture up once, DIRECT_WAIT in all, and a quick tap stays a tap", async () => {
+  const { said } = told();
+  const ad = agentDevice();
+  const hands = new Hands(runner, 3, () => {}, ad.run, () => undefined, () => true);
+  const t0 = performance.now();
+  hands.send(touch("down", 300, 600));
+  await Bun.sleep(40);
+  hands.send(touch("up", 300, 600));
+  await hands.idle();
+  const ms = performance.now() - t0;
+  // One wait for the gesture, not one per input; timed by when it was made, so not a longpress.
+  expect(ms).toBeGreaterThanOrEqual(DIRECT_WAIT - 50);
+  expect(ms).toBeLessThan(DIRECT_WAIT + 1_500);
+  expect(ad.ran).toEqual(["press 100 200"]);
+  // Past the wait, the next tap goes through agent-device at once.
+  const t1 = performance.now();
+  hands.send(touch("down", 300, 600));
+  hands.send(touch("up", 300, 600));
+  await hands.idle();
+  expect(performance.now() - t1).toBeLessThan(1_000);
+  expect(ad.ran).toEqual(["press 100 200", "press 100 200"]);
+  expect(said).toEqual([]);
+  hands.stop();
+}, 15_000);
 
 test("input waits behind an agent-device command still running, so it lands in order, and a finger ends the way it began", async () => {
   const { said, to } = told();
