@@ -123,3 +123,12 @@ test("the chat state says when the lead's latest turn ended, on the hub's clock,
   expect(events(n.hub).appendedMs(r, { machineId: "devbox", threadId: "lead-1" }, ["thread.completed"])).toBe(asked + 3_000);
   n.done();
 });
+
+test("a lead with no turn end kept, or no lead yet, is idle since before any message: the epoch", async () => {
+  const n = await node();
+  // The lead's thread is known and idle, and the log keeps no end of it (none yet, or one past its retention).
+  await n.updated(lead());
+  expect(state(n.hub, r).leadIdleAt).toBe("1970-01-01T00:00:00.000Z");
+  n.done();
+  expect(state(kit().hub, { machineId: "devbox", projectId: "none" }).leadIdleAt).toBe("1970-01-01T00:00:00.000Z");
+});

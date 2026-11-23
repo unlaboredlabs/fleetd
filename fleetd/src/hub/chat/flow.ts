@@ -117,15 +117,20 @@ class LeadEnds {
 }
 const leadEnds = (hub: Hub) => hub.area("chat_lead_ends", (h) => new LeadEnds(h));
 
+/** A lead with no turn end kept (none yet, no lead, or one past the log's retention): idle since before any message. */
+export const IDLE_SINCE_EVER = isoMs(0);
+
 /**
- * When the project's lead's latest turn ended, while it isn't mid-turn, on the hub's clock. The apps take a person's
- * message from before it as one a turn had, answered or not, so the bot leaves the reply's place.
+ * When the project's lead's latest turn ended, while it isn't mid-turn, on the hub's clock; IDLE_SINCE_EVER when none is
+ * kept. The apps take a person's message from before it as one a turn had, answered or not, so the bot leaves the
+ * reply's place; one after it, past ten minutes, as one the lead never started on.
  */
 export const leadIdleAt = (hub: Hub, r: ProjectRef): string | undefined => {
   const thread = leadThread(hub, r);
-  if (thread === undefined || midTurn(hub, thread)) return undefined;
+  if (thread === undefined) return IDLE_SINCE_EVER;
+  if (midTurn(hub, thread)) return undefined;
   const ms = leadEnds(hub).of(r, thread);
-  return ms === undefined ? undefined : isoMs(ms);
+  return ms === undefined ? IDLE_SINCE_EVER : isoMs(ms);
 };
 
 /** The project's chat state, as the lead's thread says it now. */
