@@ -4,7 +4,7 @@
 // the Mac's key holding the step, when it was made, a nonce the Mac takes only once and a fresh key for the answer,
 // so only the agent's node opens what comes back. A step or an answer may carry raw bytes after its JSON (a piece of
 // a file), so large pushes and pulls go without base64.
-import { seal, secretbox, secretboxOpen } from "../../shared/sealed_box.ts";
+import { seal, secretbox, secretboxOpen } from "../../shared/sealed_box_core.ts";
 import type { ScreenControl } from "../../shared/contracts.ts";
 import type { McpToolError } from "../../shared/screens_wire.ts";
 
