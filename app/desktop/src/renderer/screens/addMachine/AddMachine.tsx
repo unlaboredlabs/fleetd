@@ -11,7 +11,8 @@
 //     with no terminal; Use Terminal instead shows the same line with --mac, between the hub's own guide for it (setup step "mac"): the
 //     admin block the person pastes in their own account first, and the two permission clicks at the Mac after. A
 //     machine of that name already moves into the agents' user (--rejoin). Its checks are on #/setup/mac.
-// Repair on a machine's page opens the plan of a machine the hub reaches, or a line that enrolls it again.
+// Repair on a machine's page opens the plan of a machine the hub reaches, or a line that enrolls it again (the agents'
+// Mac's with --mac, so it stays the agents' Mac).
 // A run goes on in the hub when the page closes; opening it again shows the run still going or the last one that
 // failed. Every step is a machine_add.step event, which reads machine_add_status again.
 //
@@ -666,7 +667,7 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
   return (
     <>
       <Head
-        title={mac ? "A Mac for agents" : props.rejoin ? `Repair ${props.machineId ?? ""}` : "Any other machine"}
+        title={props.rejoin ? `Repair ${props.machineId ?? ""}` : mac ? "A Mac for agents" : "Any other machine"}
         line={
           mac
             ? MAC_HEAD
@@ -734,7 +735,8 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
           ) : null}
         </div>
       )}
-      {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin ? 4 : 3) ?? []} from={2} /> : null}
+      {/* What to do about the machine it replaces, only where it replaces one: a repair enrolls the agents' Mac itself. */}
+      {mac && made !== undefined ? <GuideParts parts={guide?.slice(2, rejoin && !props.rejoin ? 4 : 3) ?? []} from={2} /> : null}
       {mac ? (
         <>
           <Text size="sm" tone="quiet">

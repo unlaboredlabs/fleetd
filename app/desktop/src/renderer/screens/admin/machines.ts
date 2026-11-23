@@ -9,12 +9,16 @@ import { when } from "../live/when";
  */
 export const MACHINE_WAIT_MS = 100_000;
 
-/** Repair: again over SSH when the hub can reach it (it set it up, or found it), else a line that enrolls it again. */
+/**
+ * Repair: again over SSH when the hub can reach it (it set it up, or found it), else a line that enrolls it again. The
+ * agents' Mac always gets its line, with `--mac`: SSH's steps, or a line without it, would enrol it as a plain machine.
+ */
 export type Repair =
   | { readonly kind: "plan"; readonly host: MachineHost }
-  | { readonly kind: "line"; readonly machineId: string; readonly rejoin: true };
+  | { readonly kind: "line"; readonly machineId: string; readonly rejoin: true; readonly mac?: true };
 
-export const repairOf = (machineId: string, hosts: ReadonlyArray<MachineHost> | undefined): Repair => {
+export const repairOf = (machineId: string, hosts: ReadonlyArray<MachineHost> | undefined, agentsMac = false): Repair => {
+  if (agentsMac) return { kind: "line", machineId, rejoin: true, mac: true };
   const host = hosts?.find((h) => h.machineId === machineId && (h.source === "hub" || h.host !== undefined));
   return host === undefined ? { kind: "line", machineId, rejoin: true } : { kind: "plan", host: { ...host, joined: true } };
 };

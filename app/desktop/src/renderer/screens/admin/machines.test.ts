@@ -17,6 +17,9 @@ describe("Administration › Machines' model", () => {
     expect(repairOf("mac-mini", hosts)).toEqual({ kind: "plan", host: { ...hosts[2], joined: true } });
     expect(repairOf("laptop", hosts)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
     expect(repairOf("laptop", undefined)).toEqual({ kind: "line", machineId: "laptop", rejoin: true });
+    // The agents' Mac: its line, with --mac, even where the hub reaches it over SSH.
+    expect(repairOf("mac-mini", hosts, true)).toEqual({ kind: "line", machineId: "mac-mini", rejoin: true, mac: true });
+    expect(repairOf("mac", undefined, true)).toEqual({ kind: "line", machineId: "mac", rejoin: true, mac: true });
   });
 
   it("says a machine's state in a few words: online, what the hub says is wrong, or offline since when", () => {
