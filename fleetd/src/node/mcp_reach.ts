@@ -57,43 +57,20 @@ export function skippedLine(names: readonly string[]): string {
   return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
-/** What a lead's chat says when servers it last said were left out answer again. */
+/** What a lead's chat says when servers the previous start left out answer again. */
 export function backLine(names: readonly string[]): string {
   const one = names.length === 1;
   return `The MCP server${one ? "" : "s"} ${quoted(names)} answer${one ? "s" : ""} again: ${one ? "its" : "their"} tools are back.`;
 }
 
-/** A start's left-out servers, sorted, as the line saying them keeps them (`skipSource`). */
-const setOf = (names: readonly string[]) => [...new Set(names)].sort();
-
-/** The prefix of the source of each line a bot's chat says of its left-out servers, whatever the set. */
-export const SKIP_SOURCE = "mcp:";
-
-/** The source of the line a start's left-out servers are said with: the set itself, then the start, so the bot's
- * latest such line says which set it last said (`saidSet`). */
-export const skipSource = (names: readonly string[], start: string): string => `${SKIP_SOURCE}${setOf(names).map(encodeURIComponent).join(",")}:${start}`;
-
-/** The set a line's source says (`skipSource`); undefined for one that isn't such a line. */
-export function saidSet(source: string | undefined): string[] | undefined {
-  if (!source?.startsWith(SKIP_SOURCE)) return undefined;
-  const set = source.slice(SKIP_SOURCE.length).split(":")[0] ?? "";
-  return set === "" ? [] : set.split(",").map(decodeURIComponent);
-}
-
 /**
- * What a bot's chat says of a start's left-out servers, `now`, after the set it last said, `last`: only a change. A
- * server that stays down is said once; once more when it answers again, or when another one drops. `looked`: the servers
- * the start looked at (`addressed`'s names), when known: one said down before that isn't there any more (removed,
- * renamed, now a stdio server) is never said to answer again. Undefined: nothing.
+ * What changed from the servers the previous start left out, `before`, to this start's, `now`: the ones newly left out
+ * (`down`), and the ones left out before that this start looked at and that answered (`back`). A server that stays down
+ * changes nothing; one no longer looked at (removed, renamed, now stdio) is never back, and once re-added and still down
+ * it is newly down again.
  */
-export function changeLine(last: readonly string[] | undefined, now: readonly string[], looked?: readonly string[]): string | undefined {
-  const was = setOf((last ?? []).filter((n) => !looked || looked.includes(n)));
-  const is = setOf(now);
-  const dropped = is.filter((n) => !was.includes(n));
-  const back = was.filter((n) => !is.includes(n));
-  // Another one down: the whole set now down, in one line. Only some back: those, and no more of the ones still down.
-  if (dropped.length > 0) return skippedLine(is);
-  return back.length > 0 ? backLine(back) : undefined;
+export function startChange(before: readonly string[], now: readonly string[], looked: readonly string[]): { down: string[]; back: string[] } {
+  return { down: now.filter((n) => !before.includes(n)), back: before.filter((n) => looked.includes(n) && !now.includes(n)) };
 }
 
 /** What the agent hears ahead of its next message when servers were left out of its start: the person hears it from

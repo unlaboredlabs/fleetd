@@ -22,7 +22,7 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
-import { changeLine, SKIP_SOURCE, saidSet, skipSource } from "../../node/mcp_reach.ts";
+import { backLine, skippedLine } from "../../node/mcp_reach.ts";
 import { end, notStartedLine, signedOutLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
@@ -57,17 +57,17 @@ function follow(hub: Hub, types: HubEventType[], fn: (e: import("../../shared/co
 }
 
 /**
- * What a lead's start left out of its MCP servers because they didn't answer (node/mcp_reach.ts, its summary's
- * `mcpSkipped`, none included, told by the executor as the summary first says so): its chat says so in a line of
- * fleetd's own, never left to the lead to relay, but only when the set differs from the one its chat last said
- * (`changeLine`, kept in that line's source): a server that stays down is said once, and once more when it answers
- * again or another one drops. Any other thread's says nothing here.
+ * What a lead's start changed of its MCP servers left out because they didn't answer (node/mcp_reach.ts `startChange`,
+ * its summary's `mcpChange`, told by the executor as the summary first says so): its chat says so in lines of fleetd's
+ * own, never left to the lead to relay. The ones newly left out "didn't answer"; the ones left out before that answered
+ * now "answer again"; a server that stays down says nothing. Each line once per start (its source is the start's).
  */
-export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, names: string[], at: string | undefined, looked?: string[]): void {
+export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined): void {
   const lead = leads(hub).records.leadsList().find((l) => l.projectRef.machineId === thread.machineId && l.threadId === thread.threadId);
   if (!lead) return;
-  const text = changeLine(saidSet(chat(hub).lastSource(lead.projectRef, SKIP_SOURCE)), names, looked);
-  if (text) chat(hub).add(lead.projectRef, { author: "system", text, source: skipSource(names, `${thread.threadId}:${at ?? ""}`) });
+  const start = `${thread.threadId}:${at ?? ""}`;
+  if (change.down.length > 0) chat(hub).add(lead.projectRef, { author: "system", text: skippedLine(change.down), source: `mcp_down:${start}` });
+  if (change.back.length > 0) chat(hub).add(lead.projectRef, { author: "system", text: backLine(change.back), source: `mcp_back:${start}` });
 }
 
 /** Ends the project's live work if the cache no longer has the project; a no-op otherwise (removals.rs `reconcile`). */
@@ -198,7 +198,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   const retryLater = (r: ProjectRef, lead: StoredLead, seq?: number) =>
     retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
   for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
-  executorHooks(hub).onMcpSkipped((thread, names, at, looked) => mcpSkipped(hub, thread, names, at, looked));
+  executorHooks(hub).onMcpSkipped((thread, change, at) => mcpSkipped(hub, thread, change, at));
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {

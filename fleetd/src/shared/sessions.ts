@@ -528,11 +528,11 @@ export type SessionSummary = {
   recreatedFrom?: WorktreeSource;
   recreatedAt?: Timestamp;
   /** A lead's: the MCP servers its latest start left out because they didn't answer (node/mcp_reach.ts), none
-   * included, and when; its chat says a change of them in a line of fleetd's own. Absent: not looked at. */
+   * included; what changed from the start before it (`mcpChange`), which its chat says in a line of fleetd's own; and
+   * when. Absent: not looked at. */
   mcpSkipped?: string[];
+  mcpChange?: { down: string[]; back: string[] };
   mcpSkippedAt?: Timestamp;
-  /** The servers reached by address that start looked at, so one no longer there is never said to answer again. */
-  mcpLooked?: string[];
   /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
   watchingUntil?: Timestamp;
   /** What those Monitors watch: each one's description (`a Monitor` for one with none); absent with none. */

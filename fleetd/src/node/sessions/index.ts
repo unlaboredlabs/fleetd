@@ -1622,15 +1622,17 @@ export class SessionService {
     if (hostedOf(row.local.hosted) === undefined) {
       const servers = (JSON.parse(sessionMcp.json) as { mcpServers: Record<string, unknown> }).mcpServers;
       const skipped = await reach.unanswered(servers);
-      // A lead's summary says what each start left out, none included (the hub's chat line says only a change of it:
-      // src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it with its next message.
+      // A lead's summary says what each start left out, none included, and what changed from the start before it,
+      // which the hub's chat line says (src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it with its next
+      // message.
+      const before = row.summary.mcpSkipped ?? [];
       delete row.summary.mcpSkipped;
+      delete row.summary.mcpChange;
       delete row.summary.mcpSkippedAt;
-      delete row.summary.mcpLooked;
       if (role === "lead" || role === "assistant") {
         row.summary.mcpSkipped = skipped;
+        row.summary.mcpChange = reach.startChange(before, skipped, reach.addressed(servers).map((s) => s.name));
         row.summary.mcpSkippedAt = nowIso();
-        row.summary.mcpLooked = reach.addressed(servers).map((s) => s.name);
       }
       if (skipped.length) {
         mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, skipped) })}\n`;

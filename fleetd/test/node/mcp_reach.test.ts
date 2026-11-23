@@ -3,7 +3,7 @@
 // is told in a note that has it mention it once, inside its reply to the person. Servers here are this test's own.
 import { afterAll, expect, test } from "bun:test";
 import { createServer, type Server } from "node:net";
-import { addressed, changeLine, reaches, saidSet, skippedNote, skipSource, unanswered, without } from "../../src/node/mcp_reach.ts";
+import { addressed, backLine, reaches, skippedLine, skippedNote, startChange, unanswered, without } from "../../src/node/mcp_reach.ts";
 
 const servers: { stop(): void }[] = [];
 afterAll(() => {
@@ -78,27 +78,18 @@ test("the note names each server left out, and has the agent tell the person onc
   expect(skippedNote(["a", "b"])).toContain("the MCP servers “a” and “b”: they didn't answer");
 });
 
-test("a bot's chat says only a change of its left-out servers, and the line's source keeps the set it said", () => {
-  // Said once while down, once when back, once more for another set; the same set, in any order, says nothing.
-  expect(changeLine(undefined, [])).toBeUndefined();
-  expect(changeLine(undefined, ["x"])).toBe("The MCP server “x” didn't answer, so its tools are off until the next start.");
-  expect(changeLine(["x"], ["x"])).toBeUndefined();
-  expect(changeLine(["x"], [])).toBe("The MCP server “x” answers again: its tools are back.");
-  expect(changeLine([], [])).toBeUndefined();
-  expect(changeLine(["b", "a"], ["a", "b"])).toBeUndefined();
-  expect(changeLine(["x"], ["y"])).toBe("The MCP server “y” didn't answer, so its tools are off until the next start.");
-  expect(changeLine(["a", "b"], [])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
-  // Only some back: those, and the ones still down aren't said again.
-  expect(changeLine(["a", "b"], ["a"])).toBe("The MCP server “b” answers again: its tools are back.");
-  // One more down besides one still down: the whole set, once.
-  expect(changeLine(["a"], ["a", "b"])).toBe("The MCP servers “a” and “b” didn't answer, so their tools are off until the next start.");
-  // A server said down that the start no longer looked at (removed, renamed, now stdio) is never said to answer again.
-  expect(changeLine(["docs"], [], [])).toBeUndefined();
-  expect(changeLine(["docs", "crm"], [], ["crm"])).toBe("The MCP server “crm” answers again: its tools are back.");
-  expect(changeLine(["docs"], [], ["docs"])).toBe("The MCP server “docs” answers again: its tools are back.");
-  // The set round-trips through a source, odd names included; another source says no set.
-  expect(saidSet(skipSource(["b", "a:1", "c,d"], "t1:2026"))).toEqual(["a:1", "b", "c,d"]);
-  expect(saidSet(skipSource([], "t1:2026"))).toEqual([]);
-  expect(saidSet("unanswered:m1")).toBeUndefined();
-  expect(saidSet(undefined)).toBeUndefined();
+test("a start's change from the one before: newly down, and back only when looked at again and answering", () => {
+  const all = ["docs", "crm", "a", "b"];
+  // Down, still down (nothing), back.
+  expect(startChange([], ["docs"], all)).toEqual({ down: ["docs"], back: [] });
+  expect(startChange(["docs"], ["docs"], all)).toEqual({ down: [], back: [] });
+  expect(startChange(["docs"], [], all)).toEqual({ down: [], back: ["docs"] });
+  // Only some back; one more down besides one still down.
+  expect(startChange(["a", "b"], ["a"], all)).toEqual({ down: [], back: ["b"] });
+  expect(startChange(["a"], ["a", "b"], all)).toEqual({ down: ["b"], back: [] });
+  // The review of #2090: "docs" said down, then removed (never back), then re-added and still down (down again).
+  expect(startChange(["docs"], [], ["crm"])).toEqual({ down: [], back: [] });
+  expect(startChange([], ["docs"], ["crm", "docs"])).toEqual({ down: ["docs"], back: [] });
+  expect(skippedLine(["docs"])).toBe("The MCP server “docs” didn't answer, so its tools are off until the next start.");
+  expect(backLine(["a", "b"])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
 });

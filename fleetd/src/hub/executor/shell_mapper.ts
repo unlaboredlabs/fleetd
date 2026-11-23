@@ -127,9 +127,8 @@ export type TrackedThread = {
   pending?: PendingPermission;
   /** What the node rebuilt the worktree from the last time it was gone, and when. */
   recreatedFrom?: [WorktreeSource, string | undefined];
-  /** The MCP servers its latest start left out because they didn't answer, none included, when, and the ones it looked
-   * at (node/mcp_reach.ts). */
-  mcpSkipped?: [string[], string | undefined, string[] | undefined];
+  /** What its latest start changed of the MCP servers left out because they didn't answer, and when (node/mcp_reach.ts). */
+  mcpSkipped?: { change: { down: string[]; back: string[] }; at: string | undefined };
   /** The steer's run that cut the latest run, if one did. */
   supersededBy?: string;
 };
@@ -375,7 +374,7 @@ class Applier {
       activeRunStarting: starting,
       ...(session.pendingPermission ? { pending: session.pendingPermission } : {}),
       ...(session.recreatedFrom !== undefined ? { recreatedFrom: [session.recreatedFrom, session.recreatedAt] as [WorktreeSource, string | undefined] } : {}),
-      ...(session.mcpSkipped !== undefined ? { mcpSkipped: [session.mcpSkipped, session.mcpSkippedAt, session.mcpLooked] as [string[], string | undefined, string[] | undefined] } : {}),
+      ...(session.mcpChange !== undefined ? { mcpSkipped: { change: session.mcpChange, at: session.mcpSkippedAt } } : {}),
       ...(session.latestRun?.supersededBy !== undefined ? { supersededBy: session.latestRun.supersededBy } : {}),
     };
     this.state.threads.set(id, next);
