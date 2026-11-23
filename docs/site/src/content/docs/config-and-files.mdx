@@ -1,148 +1,100 @@
 ---
-title: Config & files
-description: Where fleetd keeps its state, the Claude login it uses, the bot policy file, services and ports.
+title: Config and files
+description: Where fleetd keeps its files, and the settings you can change by hand.
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Where fleetd keeps everything, and the settings you can change. The [hub](/docs/glossary#hub) keeps its state under
-`~/.fleetd/hub`; each [worker](/docs/glossary#worker)'s [node](/docs/glossary#node) under `~/.fleetd/node`.
+Where fleetd keeps its files, and the settings you can change by hand. Most people never need this page: the app
+covers the same settings.
 
-## ~/.fleetd {#home}
+## Where things live {#home}
+
+Everything is under `~/.fleetd`. `fleetd uninstall` keeps it all.
 
 ```text
 ~/.fleetd/
-  bin/fleetd             the CLI (linked from ~/.local/bin/fleetd)
-  hub/                   the hub's home (hub machine only)
-    hub.sqlite           everything the hub knows, timelines included
-    browser/<session>/   browser screen recordings (see Screens)
-    attachments/         files sent in chats
-    skills/              hub-wide and each bot's skills: global/, projects/<machine>/<project>/
-    setup.json           what fleetd init and machine add set up: address, commit identity, machines
-    node-box-key.pem     the hub's own box key: opens what is sealed to the hub (GitHub App keys, sign-ins, the push relay's key)
-    update/              the update in progress, its settings (Update automatically) and the last automatic run
-    hub.log              the hub service's log
-    cli.key              the admin key the CLI on this machine uses (an agent key)
-    keys/<name>.key      agent keys made with fleetd hub key create --agent
-    prompts/<id>.md      your version of a prompt, hub-wide
-    prompts/projects/<key>/<id>.md   the same for one bot
-    memory/people/<id>.md   what the agents remember about how one person works, theirs alone: its core
-    memory/people/<id>/<topic>.md   that person's topic files
-    memory/user.md       the shared memory of a hub with no people yet; once it has some, its owner got a copy
-    memory/<machine>/<project>/MEMORY.md   one bot's memory, with its topic files beside it
-  node/                  the node's home (every worker)
-    node.json            the node's settings (below)
-    node-key.pem         proves the node to the hub
-    node-box-key.pem     opens secrets sealed to this machine
-    node.sock            the socket agents' fleetd tools use to reach the hub
-    bin/                 the running node's own binary, linked here so its agents' fleetd tools survive an update
-    sessions.sqlite      the node's sessions, and timings not yet sent to the hub
-    worktrees/           one git worktree per task session, readers' and reviewers' too
-    tmp/<id>/            each task's scratch folder, its TMPDIR (never /tmp, which may be held in memory): kept through restarts, removed with its worktree
-    own-tmp/             the node's own TMPDIR, for it and what it starts, when its environment sets none: as it starts, it removes what nothing changed for 6 hours and no running process holds
-    cache/targets/       warm cargo builds handed from one reader or reviewer to the next (warmBuilds)
-    build-slots/         the cargo wrapper first on agents' PATH, and the build turns
-    hosts/<session>/     each session's host: its registration and socket
-    project-env/<project>.json   a bot's environment variables, secrets included (mode 0600; Settings › Bots)
-    order-env/<project>/ one order's variables, the secrets a person entered for its agents (mode 0600)
-    claude-accounts/     the Claude API key and subscription tokens sealed to this machine (mode 0600)
-    onepassword-tokens/  each person's 1Password service account token (mode 0600)
-    mcp-secrets/         the secrets of the MCP servers agents get, global and per bot (mode 0600; Connections)
-    update/              the build fetched ahead for the next update, with its checksums
-    browser/             browser screens: the pinned Chrome, ffmpeg and agent-browser, and recordings not yet on the hub
-    device/              Android screens: the pinned SDK, emulator, snapshot and agent-device, and recordings not yet on the hub
-      ios/               the agents' Mac's iOS simulators: the node's simulator set, its golden and agent-device's runner
-    desktop/             Linux desktop screens: each display's folder, and recordings not yet on the hub;
-                         mac/ the agents' Mac screen's agent-desktop and each session's folder
-  claude.env             optional extra environment for every claude fleetd starts
-  logs/node.log          the node service's log
+  bin/fleetd            the CLI
+  claude.env            optional extra environment for every claude
+  logs/node.log         the machine's log
+  hub/                  the hub (hub machine only)
+    hub.sqlite          everything the hub knows
+    hub.log             the hub's log
+    setup.json          what fleetd init set up
+    cli.key             the key the CLI on this machine uses
+    memory/             what the leads remember, as markdown
+    prompts/            your edited prompts
+    skills/             skills, hub-wide and per bot
+    attachments/        files sent in chats
+  node/                 the machine's own part (every machine)
+    node.json           its settings
+    node-key.pem        proves the machine to the hub
+    sessions.sqlite     its sessions
+    worktrees/          one git worktree per agent
+    tmp/<id>/           each agent's scratch folder
+    project-env/        bots' variables and secrets (mode 0600)
+    claude-accounts/    Claude keys sealed to this machine (mode 0600)
 ```
-
-`fleetd uninstall` keeps all of it. See [Updating & uninstall](/docs/updating-and-uninstall).
 
 ## Memory files {#memory}
 
-What the leads [remember](/docs/what-agents-are-told#memory) is plain markdown under `~/.fleetd/hub/memory`: each
-person's own in `people/<person id>.md` (its core, with one `- [topic](topic.md)` line per topic in
-`people/<person id>/`; one shared `user.md` on a hub from before people), and per bot a
-`MEMORY.md` (its always-on entries, then one `- [topic](topic.md)` line per topic) with its topic files beside it. Each remembered line is one `- ` entry.
+What the leads remember is plain markdown in `~/.fleetd/hub/memory`:
 
-Settings › a bot › Instructions & memory (and Settings › Your memory for yours) lists each file as cards, one per entry, with a search across them and the file's length against
-its cap. An entry the lead wrote says when, and links to the "Remembered: …" line in that bot's chat (or the
-[nightly refresh](/docs/what-agents-are-told#memory-refresh)'s line); an entry
-you wrote or changed since shows no source. Edit an entry in its card, or delete it and use Undo in the toast to put it
-back. **Edit as text** opens the whole file; a save past a cap is refused there, as it is for the lead. The files stay
-the truth: every change in the app rewrites the file, and you can edit them by hand on the hub too.
+- `people/<person id>.md`: how one person works, with their topic files in `people/<person id>/`.
+- `<machine>/<bot>/MEMORY.md`: one bot's memory, with its topic files beside it.
+
+Each line starting with `- ` is one entry. Edit them in Settings › a bot › Instructions & memory, or by hand on the
+hub. The files stay the truth: the app rewrites them on every change.
 
 ## Logs {#logs}
 
-| Run as | Hub log | Node log |
-|---|---|---|
-| A service (`fleetd init`, `fleetd machine add`) | `~/.fleetd/hub/hub.log` | `~/.fleetd/logs/node.log` |
-| By hand (`fleetd hub start`, `fleetd node join` or `node run`) | The terminal | The terminal |
+- **Services** (set up by `fleetd init` or `fleetd machine add`): the hub logs to `~/.fleetd/hub/hub.log`, each
+  machine to `~/.fleetd/logs/node.log`.
+- **By hand** (`fleetd hub start`, `fleetd node join`, `fleetd node run`): the terminal.
+- **The desktop app**: `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux. Help ›
+  Reveal Logs opens it. It holds errors only, never keys or message text.
 
 ## node.json {#node-json}
 
-`~/.fleetd/node/node.json` on each worker. `fleetd node join` and `fleetd machine add` write it. Restart the node
-after you change it.
+Each machine's settings, in `~/.fleetd/node/node.json`. `fleetd node join` and `fleetd machine add` write it.
+Restart the node after a change (`fleetd node restart`), except where a key says otherwise.
 
-| Key | Means |
-|---|---|
-| `hub` | The hub's address. |
-| `machineId`, `name` | How the hub knows this machine. |
-| `enrolled` | `true` once the hub accepted the node's key. |
-| `cmdRoots` | Folders the node may run commands in, and below. Absent: your home directory. |
-| `claudeConfigDir` | A dedicated claude profile for this machine's sessions. See [below](#claude-profile). |
-| `minFreeGb` | New agents wait while the disk holding the worktrees has less than this many GB free. Absent: 10% of the disk or 20 GB, whichever is larger. `0` turns it off. Read with every heartbeat, no restart needed. See [Disk and usage](/docs/machines#guard). |
-| `warmBuilds` | Warm cargo builds each checkout keeps for its next readers and reviewers: a finished reviewer's `target/` goes to the next one. Absent: 2; `0` keeps none. Each is a whole target, often many GB; the node prunes them to this many once a day and drops any older than a week. |
-| `buildSlots` | Agents' cargo builds (`build`, `check`, `clippy`, `test` and the like) that run at once on this machine; one more waits its turn and says it is queued. A test build of a lib's tests beside its other targets takes two. Absent: one per 16 GB of the machine's memory, at least 1. `0` turns the turns off. Read by each build, no restart needed. See [Build turns](/docs/machines#fair-share). |
-| `checkSlots` | Writers' full pre-push checks that run at once on this machine; one more waits its turn and says it is waiting for a check slot. Absent: one per 8 cores, at least 2. `0` turns the turns off. Read by each check, no restart needed. See [Check turns](/docs/machines#fair-share). |
-| `browser` | How this machine runs [browser screens](/docs/browser-sessions#setup): `enabled`, `sandbox`. |
-| `device` | How this machine runs [Android screens](/docs/browser-sessions#android-setup): `enabled`. |
-| `ios` | How [the agents' Mac](/docs/agents-mac#node-json) keeps the iOS simulators it lends agents: `enabled` (ignored on the agents' Mac, where simulators are always on), `deviceType`. |
-| `desktop` | How this machine runs [Linux desktop screens](/docs/browser-sessions#desktop-setup): `enabled`, `backend`. |
-| `mac` | Whether this Mac lends [its screen](/docs/browser-sessions#mac-setup): `enabled`; and `simulators`, how many iOS simulators [the agents' Mac](/docs/agents-mac#sim) boots for agents at once. |
-| `agentsMac` | `true` makes this Mac [the agents' Mac](/docs/agents-mac#setup), a tool for agents on other machines that runs none itself. Set by the installer's `--mac`. |
+- `hub`: the hub's address.
+- `machineId`, `name`: how the hub knows this machine.
+- `cmdRoots`: folders the machine may run commands in. Default: your home folder.
+- `claudeConfigDir`: a separate Claude Code profile for this machine's sessions ([below](#claude-profile)).
+- `minFreeGb`: new agents wait while the disk has less free than this. Default: 10% of the disk or 20 GB,
+  whichever is larger. `0` turns it off. No restart needed.
+- `buildSlots`: how many agents' cargo builds run at once; the rest wait their turn. Default: one per 16 GB of
+  memory. `0` turns it off. No restart needed.
+- `checkSlots`: how many writers' pre-push checks run at once. Default: one per 8 cores, at least 2. `0` turns it
+  off. No restart needed.
+- `warmBuilds`: finished cargo builds kept for the next reader or reviewer of a repo. Default: 2. `0` keeps none.
+- `browser`, `device`, `desktop`, `mac`, `ios`, `agentsMac`: which [screens](/docs/browser-sessions) the machine
+  runs. Set these in Settings › Hub › Machines rather than by hand.
 
-## The Claude login {#claude}
+## Claude Code login {#claude}
 
-Sessions run `claude` with your own setup on that machine, `~/.claude`. These all work as they do in your shell:
+Agents run `claude` with your own Claude Code setup on that machine (`~/.claude`). Your login, the `env` in
+`~/.claude/settings.json`, an `apiKeyHelper` and your MCP servers all work as in your own terminal.
+`fleetd doctor` shows the version and login each machine uses.
 
-- your login;
-- the `env` in `~/.claude/settings.json`, such as a proxy's `ANTHROPIC_BASE_URL`;
-- an `apiKeyHelper`;
-- your MCP servers.
+fleetd adds its own tools and settings on top. [Agent tools](/docs/reference/agent-tools) lists them.
 
-`fleetd doctor` shows what each worker uses:
+### A separate profile {#claude-profile}
 
-```text
-claude 2.1.314, logged in (Max), via proxy http://127.0.0.1:8317 from ~/.claude/settings.json
-```
+To give a machine's agents their own Claude Code profile:
 
-fleetd adds its own settings on top of yours, per session:
-
-| fleetd adds | Why |
-|---|---|
-| `--mcp-config` | fleetd's agent tools. |
-| A `--settings` overlay | Pins claude's version, turns claude's auto memory, its own subagents ([why](/docs/what-agents-are-told#no-subagents)) and the [heavy language servers](/docs/what-agents-are-told#language-servers) off, and denies tools agents never get: asking you questions, plan mode, worktrees, cron and scheduled wakeups. |
-| agent-browser on `PATH`, its `AGENT_BROWSER_*` variables and its skill | A lead's and a task's [browser screen](/docs/browser-sessions#use). |
-| agent-device on `PATH` (it alone: the node's SDK and adb stay inside it), its `AGENT_DEVICE_*` variables and its skill, on a machine with Android screens | A lead's and a task's [Android screen](/docs/browser-sessions#android). |
-| A folder first on `PATH` that holds a forwarding agent-device only while the session holds a simulator on the agents' Mac, then `mac` | A lead's and a task's [agents' Mac](/docs/agents-mac). |
-
-### A dedicated claude profile {#claude-profile}
-
-To give a worker's sessions their own claude profile:
-
-1. Set `"claudeConfigDir": "<dir>"` in `~/.fleetd/node/node.json` on the worker, or join with
+1. Set `"claudeConfigDir": "<dir>"` in that machine's `node.json`, or join with
    `fleetd node join --claude-config-dir <dir>`.
 2. Restart the node.
 
-A session resumes only under the config dir it started in.
+A session can only resume under the profile it started in.
 
 ## claude.env {#claude-env}
 
-Optional. `KEY=VALUE` lines for every `claude` fleetd runs, for a variable your login needs that the services don't
-see. Blank lines, `#` comments and `export ` are allowed. Keep it mode `0600`.
+Optional `KEY=VALUE` lines in `~/.fleetd/claude.env`, added to every `claude` fleetd starts on that machine. Use it
+for a variable your login needs that services don't see. Keep it mode `0600`.
 
 ```ini
 CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>
@@ -151,18 +103,15 @@ ANTHROPIC_BASE_URL=https://gateway.example.com
 ANTHROPIC_AUTH_TOKEN=<token>
 ```
 
-Nodes put every line in each session's environment, re-read at each session start. `HEAVY_LANGUAGE_SERVERS=1` here
-turns the [heavy language servers](/docs/what-agents-are-told#language-servers) back on for every bot on the
-machine.
-
-The `env` in your `~/.claude/settings.json` outranks it, as it does for your own `claude`. An agent on a
-[Claude account](/docs/people#claude) gets that account's endpoint over both.
+- It is read again at each session start.
+- `#` comments, blank lines and `export ` are allowed.
+- The `env` in `~/.claude/settings.json` wins over it.
+- An agent on a [Claude account](/docs/people#claude) uses that account instead.
 
 ## .fleetd/policy.yaml {#policy}
 
-Optional: a bot with no `.fleetd/` runs at full speed with the defaults below. fleetd reads the file from the
-bot's checkout on its machine (the working tree of the folder you added, committed or not), so an edit there
-applies within a minute. Commit it if your other checkouts and machines should get it too.
+An optional file in a bot's repo that adds tool rules for its agents. fleetd reads it from the bot's checkout, so a
+change applies within a minute, committed or not.
 
 ```yaml
 tools:
@@ -171,16 +120,14 @@ tools:
 branchPrefix: team-a/
 ```
 
-| Key | Default | Does |
-|---|---|---|
-| `tools.allow`, `tools.deny` | none | Claude permission rules for every session. Deny wins. |
-| `branchPrefix` | `fleetd/` | What writer and train branches start with. Must end in `/`. |
+- `tools.allow`, `tools.deny`: Claude Code permission rules for every session. Deny wins.
+- `branchPrefix`: what agents' branches start with. Default `fleetd/`. Must end in `/`.
 
 A broken file is refused with the exact problem, never ignored, so a typo can't drop a deny rule.
 
 ## .fleetd/pre-push.json {#pre-push}
 
-Optional: the repo's own pre-push check, which fleetd's writers must pass before they push.
+An optional file in a repo naming a check that fleetd's writers must pass before they push.
 
 ```json
 {
@@ -190,50 +137,55 @@ Optional: the repo's own pre-push check, which fleetd's writers must pass before
 }
 ```
 
-A writer's push of a branch whose tree has this file is refused, with what to do, unless the check passed on that exact
-tree. `background` and `wait` are optional: for a check longer than one command, the refusal tells the writer to start
-`background`, then wait with the Monitor tool on `wait`, a command that ends when the check does. The check says so when it passes, by adding the tree it checked to `fleetd-checked` in the git dir:
+1. A writer runs `check`. For a long check, it starts `background` and waits on `wait`, a command that ends when the
+   check does.
+2. When the check passes, it records the tree it checked:
 
-```sh
-tree=$(git write-tree)   # with everything it checked staged
-echo "$tree" >>"$(git rev-parse --git-path fleetd-checked)"
-```
+   ```sh
+   tree=$(git write-tree)   # with everything it checked staged
+   echo "$tree" >>"$(git rev-parse --git-path fleetd-checked)"
+   ```
 
-The gate is set up for each writer's worktree in its session's environment alone. Your own checkouts, your pushes from
-a writer's worktree, other repos and the merge train's pushes run their hooks as before, and a repo's own `pre-push`
-hook still runs after it. Writers can't push with `--no-verify` or an overridden `core.hooksPath`.
+3. fleetd refuses a writer's push of any other tree, with what to do. `--no-verify` doesn't get around it.
+
+Only fleetd's writers are held to it. Your own pushes and the merge train's work as before.
 
 ## Services {#services}
 
-`fleetd init` and `fleetd machine add` run the hub and node as user services:
+`fleetd init` and `fleetd machine add` run the hub and each machine as user services:
 
 <Tabs syncKey="os">
 <TabItem label="macOS">
 
-| | launchd file |
-|---|---|
-| Hub | `~/Library/LaunchAgents/sh.fleetd.hub.plist` |
-| Node | `~/Library/LaunchAgents/sh.fleetd.node.plist` |
+- Hub: `~/Library/LaunchAgents/sh.fleetd.hub.plist`
+- Machine: `~/Library/LaunchAgents/sh.fleetd.node.plist`
 
 </TabItem>
 <TabItem label="Linux">
 
-| | systemd unit |
-|---|---|
-| Hub | `~/.config/systemd/user/fleetd-hub.service` |
-| Node | `~/.config/systemd/user/fleetd-node.service` |
+- Hub: `~/.config/systemd/user/fleetd-hub.service`
+- Machine: `~/.config/systemd/user/fleetd-node.service`
+
+Restart with `systemctl --user restart fleetd-hub` or `fleetd-node`.
 
 </TabItem>
 </Tabs>
 
-A second fleet never writes, stops or removes the first one's services.
+## Ports and addresses {#ports}
+
+- The hub listens on port 4790: one port for the app, the machines and MCP clients.
+- `fleetd init` picks your Tailscale address when it finds one, otherwise `127.0.0.1` only.
+- MCP clients connect to `<hub url>/mcp`.
+- Other machines open no port: they connect out to the hub.
+
+Change it with `fleetd init --listen <host:port> --url <url>`.
 
 ## Run a second fleet on one machine {#second-fleet}
 
-To try fleetd next to a fleet you already run, give the test fleet its own folder with `FLEETD_HOME` and its own port.
-Every command then keeps all its state there and never reads or writes `~/.fleetd`.
+To try fleetd next to the one you run, give the test fleet its own folder with `FLEETD_HOME` and its own port. Every
+command then keeps its files there and never touches `~/.fleetd`.
 
-1. Set up the test hub's files. Run `export FLEETD_HOME=$HOME/fleetd-test` in each terminal you use for it.
+1. Set up the test hub. Run the `export` in every terminal you use for it.
 
    ```sh
    export FLEETD_HOME=$HOME/fleetd-test
@@ -241,73 +193,25 @@ Every command then keeps all its state there and never reads or writes `~/.fleet
      --git-identity "Your Name <id+you@users.noreply.github.com>" </dev/null
    ```
 
-   With no terminal (`</dev/null`), `init` only writes the hub's setup and the CLI's key, and starts nothing.
-
-2. Start the hub. Keep the terminal open; it logs there.
+2. Start the hub, and keep the terminal open:
 
    ```sh
    fleetd hub start --listen 127.0.0.1:4797
    ```
 
-3. In another terminal, add this machine as a worker of the test hub:
+3. In another terminal, add this machine to the test hub:
 
    ```sh
-   fleetd pair --worker test-1    # prints a join command; take its one-time --code
+   fleetd pair --worker test-1    # prints a join command with a one-time code
    fleetd node join --hub http://127.0.0.1:4797 --token <code> --machine test-1
    ```
 
-4. Use the test fleet as you would your own:
+4. Use it as usual:
 
    ```sh
    fleetd doctor
    fleetd project add ~/src/sandbox --machine test-1 --yes
-   fleetd status
    ```
 
-Stop the hub and node with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet.
-
-### What FLEETD_HOME covers {#home-scope}
-
-| | Where |
-|---|---|
-| The hub's home: `init`, `doctor`, `uninstall`, `machine`, `pair`, `project`, `hub`, `prompts`, `instructions`, and `status`, `time`, `steer`, `steers` without `--hub` | `$FLEETD_HOME/hub` |
-| The node's home: `node join`, `node run` | `$FLEETD_HOME/node` |
-| The app's hand-off from `init` and `pair` | `$FLEETD_HOME/app-pair.json`. Start the desktop app with the same `FLEETD_HOME` to pair with it. |
-| Lead-side commands (`close`, `change`, …) | `FLEETD_NODE_SOCK`, else `$FLEETD_HOME/node/node.sock`. Sessions get it set. |
-
-`hub start`, `node join` and `node run` also take `--home <dir>`, one hub's or node's folder, as fleetd's services
-run them. Without `FLEETD_HOME`, that command keeps everything else in the folder above it, so `--home $T/hub` works
-like `FLEETD_HOME=$T`. `FLEETD_HOME` wins when both are given.
-
-## Ports and addresses {#ports}
-
-| | |
-|---|---|
-| Port | 4790 by default. One port for the app, nodes and MCP clients. |
-| Address | Your tailnet address when `fleetd init` finds Tailscale, otherwise `127.0.0.1` only. |
-| MCP endpoint | `<hub url>/mcp` |
-| Workers | Open no port: their nodes connect out. |
-
-Change it with `fleetd init --listen <host:port> --url <url>`.
-
-## Timelines {#timelines}
-
-The hub keeps the spans behind [Where time went](/docs/time-inspector) in `hub.sqlite`. A span is one stretch of
-one agent's work or wait, such as a tool call or a CI check.
-
-| Data | Kept |
-|---|---|
-| Spans | 30 days |
-| Daily totals and each piece of work's critical path | 400 days |
-
-Each node holds timings it hasn't sent yet in `sessions.sqlite`. While the hub is away, it keeps up to 7 days or
-500,000 of them, then drops the oldest; the timeline shows the gap.
-
-## The desktop app {#app}
-
-| | Where |
-|---|---|
-| Pairing hand-off from `fleetd init` or `fleetd pair` | `~/.config/fleetd/app-pair.json` (macOS: `~/Library/Application Support/fleetd/app-pair.json`), or `$FLEETD_HOME/app-pair.json` for a [second fleet](#second-fleet) |
-| Its hub address and key | `desktop-hub.bin` in the same folder, encrypted with the OS keychain or keyring. Without one (no keyring on Linux, or an unsigned or ad-hoc signed Mac build): `desktop-hub.json`, mode `0600`. |
-| Its own browser state | `desktop/` in the same folder. |
-| Its log | `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux (`$XDG_STATE_HOME/fleetd`), or `$FLEETD_HOME/logs`. Errors only, without keys or message text; crash dumps go in `crashes/` beside it. Help → Reveal Logs opens it. |
+Stop both with Ctrl+C. Delete `$FLEETD_HOME` to remove the test fleet. Its services, if any, never touch the first
+fleet's. Start the desktop app with the same `FLEETD_HOME` to pair it with the test hub.

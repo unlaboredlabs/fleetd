@@ -1,136 +1,109 @@
 ---
-title: Secrets & approvals
-description: Enter a secret and approve a risky command, the two things that show as items inside the lead's chat.
+title: Approvals and secrets
+description: Choose what the lead asks before it acts, approve commands, and give it keys safely.
 ---
 
-You'll enter a secret a lead needs, and approve or deny a command it wants to run. Both show as items inside the
-bot's chat, because plain chat text can't carry them safely.
+The lead does most things without asking. This page covers what it does ask: approvals for actions that reach outside, and secrets it needs from you.
 
-| Item | You see | You do |
-|---|---|---|
-| [Secret](#secrets) | A masked field naming the machine and where the value goes | Type the value |
-| [Approval](#approve) | The exact command, the reason, and where it runs | Approve or Deny |
-| [Tool approval](#tool-approvals) | A lead's tool call: the tool and exactly what it would get | Approve or Deny |
+Both show as cards in the bot's chat. Only you can answer them: no agent can approve itself.
 
-Only a person's device can act on them, using a [human key](/docs/glossary#human-key) that the desktop app holds. An
-agent key can't, so no agent can approve itself.
+## Approval modes {#modes}
 
-Everything else the lead needs from you is a plain question in the chat. See
-[Reply to the lead](/docs/chat#reply).
+Each bot has an approval mode, under **Settings › Bots** › *your bot* › Bot › **Approvals**. It decides what happens when the lead wants to:
 
-## Approve a command {#approve}
+- send, reply, share or invite through a [connection](/docs/connections);
+- open a site for the first time;
+- click a final Confirm or Submit on a site.
 
-When a lead needs an irreversible step, one that costs money, or one that uses a credential, it files the exact
-command as a [gated command](/docs/glossary#gated-command).
+| Mode | What happens |
+|---|---|
+| YOLO | Nothing asks. A new bot starts here. |
+| Checker decides | A separate model checks each action. What you asked for runs; it asks you when unsure, and blocks what looks like an attack. |
+| Ask me about everything | Every such action waits for you. |
 
-![An approval item in storefront's chat: the lead says the command writes to the production database; the Command card, marked "Can't be undone", says it runs on devbox with the secret it gets, has a Show command row, and Approve and Deny. Above it, an earlier run and a denied permission request, each folded to one line.](/docs/img/chat-command.png)
+Shell commands never ask in any mode. **Ran without asking**, under the mode, lists every action that ran without a card.
 
-1. The item shows the reason, what is at stake and where it runs. Click "Show command" to see the exact command, and
-   again to hide it; every card opens with it hidden.
-2. Click Approve to run it, or Deny to refuse. A command marked "Can't be undone" asks once more: click "Yes, run
-   it". With the item focused, Enter approves and Esc denies.
-3. The node runs exactly the stored command, in the bot's workspace. It is killed after the lead's timeout: 30
-   minutes unless the lead asked for more, at most 4 hours.
-4. The exit code and output go back to the lead. The item folds to one line, such as "Approved, ran in 12s"; click
-   it to see the card and its output again.
+## What every mode refuses {#floors}
 
-If the machine was offline when you approved, the item opens again and says why. Click "Approve again" once it is
-back. If an answer doesn't go through, the item says why in one line; click Retry.
+Whatever the mode:
 
-## Approve an integration call {#integrations}
+- No moving money, trading or placing orders outside a [purchase](/docs/payments-and-sign-ins#purchases).
+- No passwords, keys or tokens sent out.
+- No commands that would wipe the machine, such as `rm -rf ~`.
 
-A call through a bot's [integrations](/docs/integrations) that you didn't mark as a read goes by the bot's
-[approval mode](/docs/projects#approvals): none asks (YOLO, which a new bot starts in), or its checker lets what
-you asked for through and asks you about the rest, or every call asks. A card shows the tool and its whole input, exactly as it runs, and the checker's reason
-when it had one. Approve sends exactly that, once. Moving money, trading and creating accounts are refused even if
-approved. See [The approval card](/docs/integrations#card).
+A purchase with a card from the vault fills at the checkout without asking. Paying through a connected app or a
+payment command always asks you first.
 
-## Hidden characters {#hidden}
+## Approve an action {#approve}
 
-Some characters change how text reads without showing: control characters, line and paragraph separators,
-right-to-left overrides and other bidi controls, and zero-width characters. A command or an email holding one could
-read differently on the card from what runs or goes out. Every approval card, on the desktop and on the phone, shows
-each one as a mark such as ⟨U+202E⟩ and says **Contains hidden characters**. Each value also keeps its own direction,
-so a right-to-left word can't reorder the words around it. Accents, emoji and other scripts show as written, and a
-multi-line command shows on its lines: a plain line break isn't marked, but a carriage return is. The warning shows
-while the command is hidden too.
+A card shows the action exactly as it will run: the tool, the recipients, the text or the command.
 
-The marks only change how the card shows a value. Approve runs or sends the exact text.
+1. Read the card. Click **Show command** to see a command in full.
+2. Click **Approve** or **Deny**. With the card focused, Enter approves and Esc denies.
+3. An action that can't be undone asks once more: click **Yes, run it**.
 
-## Enter a secret {#secrets}
+The card folds to one line, such as "Approved, ran in 12s". Click it to see the output.
 
-When a lead needs an API key or a password, it asks with `request_secret`, and the item names the machine and where
-the value goes: a line in an env file, a file, or a variable for one order's agents (see below).
+A card blocked by the checker has **Approve anyway**, which allows that exact action once.
 
-![A secret item in storefront's chat: the lead needs the Stripe test key, which goes to devbox only. The card names where it is saved, with a masked field and Save secret. Above it, a secret already saved, folded to one line; below it, one line for the agents at work.](/docs/img/chat-secret.png)
+### Hidden characters {#hidden}
 
-1. Type or paste the value in the masked field: up to 64 KB.
-2. The app seals it to the hub's own key (a libsodium sealed box). The field clears once the value is saved; if
-   saving fails, what you typed stays so you can click Retry.
-3. The hub keeps it in the [vault](/docs/vault), encrypted, as a variable of the bot (an env file line or a file)
-   or of the order, and delivers it to the machine. A machine that's offline gets it once it's back.
-4. The node writes it with mode `0600`.
-5. The lead sees only its fingerprint, never the value. The value never enters the chat.
+Some invisible characters can make text read differently from what runs. A card shows each one as a mark like ⟨U+202E⟩ and says **Contains hidden characters**. Approve still runs the exact text.
 
-The saved value is then listed in the bot's Vault, where you can change or delete it. A hub without the vault
-(an older one) seals the value to the machine's key instead, keeps nothing, and needs the machine online.
+## How the checker decides {#checker}
 
-If you don't want to give a secret, or a command isn't needed after all, say so in the chat; the lead takes the request
-back.
+The checker is a fresh model with no tools. It sees the action and where each part came from, plus your recent messages. It never sees the mail or pages the lead read, so text in them can't talk it round.
 
-A gated command can use a stored secret as an environment variable. The node reads it from its own files.
+It always asks you when:
 
-For a secret every agent of a bot should have, such as a test API key, add it to the bot's Vault instead:
-see [Environment variables](/docs/projects#env).
+- a recipient or site came only from something the lead read, not from you;
+- a link carries data, such as an email address or a code;
+- a share is public, or goes to more than 10 people.
 
-### A variable an agent asks for {#order-variables}
+If the checker fails or times out, you get the card.
 
-An agent that finds a variable it needs isn't set asks its lead with `ask_lead`, naming the variable and why, never its
-value. The lead relays it to you as a secret request whose item says **for W27's agents** (the order's id): its sink is
-`order:<machine>:<order>`, on the bot's machine.
+## Sites {#sites}
 
-- The value reaches only that order's agents on that machine: each one already running gets it at its next turn (its
-  claude starts again with it and resumes its conversation), and each new one from the start. No other order's agents
-  and no other bot's see it.
-- It is masked like a bot's secret, as `***NAME***`, in everything those agents report.
-- For those agents it wins over a bot variable of the same name.
-- A value entered after the order closed is refused.
-- It goes when the order closes, done or stopped: the node forgets it, and the hub deletes it from the vault. A
-  machine offline then forgets it once it is back.
-- Its limits are a bot variable's: up to 64 KiB, any number of lines, no NUL character, and the order's values
-  together with the bot's stay under 512 KiB.
+A link you write in the chat is allowed as you send it. A site the lead finds itself goes through the mode the first time; once approved, it's allowed from then on.
 
-Each agent's brief lists the names of the bot's and its order's variables (a short plain value too), never a
-secret's value.
+## Automations you set up {#automations}
 
-### What agents send is masked too {#masking}
+An [automation](/docs/automations) you wrote counts as your go-ahead for what its prompt names. A weekly "email the report to Dana" sends without a card each week.
 
-Before anything an agent reports leaves its machine, the node replaces each of its bot's and order's secrets with
-`***NAME***` (see [what is masked](/docs/projects#env)). That covers the agent's own fleetd calls as well: a secret
-pasted into `ask_lead`, a `report` or any other fleetd tool reaches the hub, its records and the app masked. A call
-that masking would make too long for its field, or one the machine can't read the secrets to mask, is refused there, so
-it is never sent.
+An automation the lead wrote counts only after you approve its **Let it run on its own** card.
 
-From an MCP client, a secret is entered with `secret_submit` and an item is answered with `approval_answer`. Both
-take only a human key. `requests_list` lists every secret and approval request with its state.
+## Give a secret {#secrets}
 
-## Approve a lead's tool call {#tool-approvals}
+When the lead needs an API key or a password, a card asks for it.
 
-A bot's lead runs with claude's permission prompts on, allowed unasked what a full-access lead does: a send
-through an integration, a first visit to a site, `confirm_step` and `automation_confirm` raise a prompt. The bot's [approval mode](/docs/projects#approvals) decides it; one that asks you shows in the bot's
-chat as an approval with the tool and its input. Approve runs the tool with exactly that input; Deny tells the lead you
-said no, with your reason if you type one. A card the checker blocked says why, with **Approve anyway**. If the lead's
-run ends before you answer, the approval closes by itself.
+![A secret card in the chat](/docs/img/chat-secret.png)
 
-## Tool permission rules {#tool-rules}
+1. Paste the value into the masked field.
+2. Click **Save secret**.
 
-Tasks run with claude's permission prompts off, and leads ask only as above. A bot can deny tools for every session, with rules in
-claude's own syntax in `.fleetd/policy.yaml`:
+The value is sealed on your device and saved in the bot's [Vault](/docs/vault). It never enters the chat, and the lead sees only that it's set.
+
+Don't want to give it? Say so in the chat and the lead drops the request.
+
+For a key every agent should have, add it to the bot's Vault yourself.
+
+### A secret for one piece of work {#order-variables}
+
+An agent can ask for a variable it needs. The card then says it's for that work only. The value reaches only those agents and is deleted when the work ends.
+
+## Secrets stay hidden {#masking}
+
+If an agent prints a secret, fleetd replaces it with `***NAME***` before the output leaves the machine. This covers command output, the agent's replies and its messages to the hub.
+
+Only exact matches are caught. Part of a key, or the key in another encoding, can slip through, so keep secrets out of output where you can.
+
+## Block tools for a bot {#tool-rules}
+
+To forbid a tool for every agent of a bot, add a rule to `.fleetd/policy.yaml` in its repo:
 
 ```yaml
 tools:
   deny: ["Bash(git push:*)"]
 ```
 
-fleetd adds its own denials on top: Claude Code's subagents, and `claude` itself in an agent's shell. See
-[Config & files](/docs/config-and-files#policy).
+See [Config and files](/docs/config-and-files#policy).

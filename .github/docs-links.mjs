@@ -2,11 +2,14 @@
 //   node .github/docs-links.mjs              internal: each href/src in site/home.html, site/pricing.html and the built docs' pages
 //                                            (site/docs/**/*.html) names a file in site/ (clean URLs as Vercel serves
 //                                            them) and an id on that page
+//                                            Also: each moved section in docs/site/src/old-anchors.mjs leads to a page
+//                                            and an id that exist, and is gone from the page it moved from
 //   node .github/docs-links.mjs --external   external: each http(s) link answers, 10 s per try, two tries
 // Links into this repository on GitHub (…/fleetd/blob|tree|edit/main/<path>) are checked against the checkout instead,
 // so a PR that adds a page and links to it passes before it merges.
 import fs from "node:fs";
 import path from "node:path";
+import { OLD_ANCHORS } from "../docs/site/src/old-anchors.mjs";
 import { resolve } from "./docs-serve.mjs";
 
 // Starlight's own assets (_astro/, pagefind/) hold no pages.
@@ -53,6 +56,19 @@ for (const page of PAGES) {
     else if (anchor !== undefined && anchor !== "" && target.endsWith(".html") && !idsOf(target).has(anchor)) {
       errors.push(`${page}: ${link}: ${path.relative(".", target)} has no id="${anchor}"`);
     }
+  }
+}
+
+// A moved section is sent on only while its page has no section of that id, to a page and section that exist.
+for (const [from, moved] of Object.entries(OLD_ANCHORS)) {
+  const page = resolve(from);
+  if (page === undefined) errors.push(`docs/site/src/old-anchors.mjs: ${from}: no file in site/ serves it`);
+  for (const [id, to] of Object.entries(moved)) {
+    if (page !== undefined && idsOf(page).has(id)) errors.push(`docs/site/src/old-anchors.mjs: ${from}#${id} is still on that page`);
+    const [where, anchor] = to.split("#");
+    const target = resolve(where);
+    if (target === undefined) errors.push(`docs/site/src/old-anchors.mjs: ${from}#${id}: no file in site/ serves ${where}`);
+    else if (anchor !== undefined && !idsOf(target).has(anchor)) errors.push(`docs/site/src/old-anchors.mjs: ${from}#${id}: ${path.relative(".", target)} has no id="${anchor}"`);
   }
 }
 

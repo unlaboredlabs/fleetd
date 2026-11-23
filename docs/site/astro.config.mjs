@@ -3,6 +3,19 @@
 import { satteri } from "@astrojs/markdown-satteri";
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import { oldAnchorScript } from "./src/old-anchors.mjs";
+
+// Every table sits in its own box that scrolls sideways when the table is wider than the page, so a wide table on a
+// phone scrolls inside the box instead of being cut off at the page's edge.
+const tableScroll = {
+  name: "table-scroll",
+  element: {
+    filter: ["table"],
+    visit(node, ctx) {
+      ctx.wrapNode(node, { type: "element", tagName: "div", properties: { className: ["table-scroll"] }, children: [] });
+    },
+  },
+};
 
 export default defineConfig({
   site: "https://fleetd.sh",
@@ -13,7 +26,7 @@ export default defineConfig({
   trailingSlash: "never",
   // `## Remove a machine {#remove}`: anchors that other pages and fleetd's own output link to stay put when a
   // heading's wording changes.
-  markdown: { processor: satteri({ features: { headingAttributes: true } }) },
+  markdown: { processor: satteri({ features: { headingAttributes: true }, hastPlugins: [tableScroll] }) },
   integrations: [
     starlight({
       title: "fleetd docs",
@@ -28,6 +41,8 @@ export default defineConfig({
       head: [
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Regular.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Medium.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
+        // Old links to a section that moved go on to where it lives now (src/old-anchors.mjs).
+        { tag: "script", content: oldAnchorScript },
       ],
       // Code is a compact hairline panel in Lilex: no window chrome (a terminal frame's three dots), no shadow, a copy
       // button that shows on hover. Muted themes, so a block reads as text before it reads as colour.
@@ -59,43 +74,38 @@ export default defineConfig({
         },
       },
       sidebar: [
-        { label: "Get started", items: ["install", "quick-start", "concepts"] },
+        { label: "Get started", items: [{ label: "Home", link: "/" }, "quick-start", "install", "how-fleetd-works"] },
         {
-          label: "Use fleetd",
+          label: "Using a bot",
           items: [
-            "machines",
-            "projects",
             "chat",
-            "merge-train",
-            "github",
             "steering",
-            "automations",
-            "issues",
+            "bots",
+            "models",
+            "status",
+            "agent-time",
+            "payments-and-sign-ins",
+            "people",
             "approvals-and-secrets",
             "vault",
-            "people",
-            "desktop-app",
-            "mobile",
-            "web-app",
-            "billing",
-            "phone-notifications",
-            "several-hubs",
-            "status",
-            "time-inspector",
-            "what-agents-are-told",
-            "mcp-servers",
-            "integrations",
+            "automations",
             "skills",
-            "browser-sessions",
-            "agents-mac",
-            "mcp-clients",
+            "memory",
           ],
         },
         {
-          label: "Reference",
-          items: ["reference/cli", "reference/agent-tools", "config-and-files", "security", "glossary"],
+          label: "Shipping code",
+          items: ["github", "merge-train", "merge-train-ci", "issues", "what-agents-are-told", "mcp-servers", "mcp-clients", "connections"],
         },
-        { label: "Help", items: ["troubleshooting", "updating-and-uninstall", "moving-a-hub"] },
+        {
+          label: "Machines & screens",
+          items: ["machines", "cloud-machines", "billing", "agents-mac", "browser-sessions", "desktop-app", "several-hubs", "mobile", "web-app", "phone-notifications"],
+        },
+        {
+          label: "Running a hub",
+          items: ["config-and-files", "security", "moving-a-hub", "updating-and-uninstall", "troubleshooting"],
+        },
+        { label: "Reference", items: ["reference/cli", "reference/agent-tools", "glossary"] },
       ],
     }),
   ],

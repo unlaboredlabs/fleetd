@@ -1,122 +1,79 @@
 ---
-title: GitHub App
-description: Give the hub a GitHub App of its own, created from one button with nothing to paste. The merge train works as the App, and each person's PRs open as them.
+title: GitHub
+description: Give the hub its own GitHub App, then connect your GitHub account so agents open PRs as you.
 ---
 
-The hub works on GitHub as a GitHub App of its own: the merge train's reads, rebases, `fleetd/train` statuses and
-merges, and the PR pages. Each hub makes its own App. fleetd is open source and has no shared App, so the App and its
-keys are yours.
+This page sets up GitHub: the hub's own GitHub App, and your own GitHub account.
 
-Each person connects their own GitHub account through the same App, and the PRs agents open for the orders they start
-open as them.
+The App is what the merge train works as. Your account is what agents open PRs as. fleetd has no shared App: each hub
+makes its own, and its keys stay with you.
 
-Without an App, the hub runs `gh` as it is logged in on the hub machine (`gh auth login`), and agents use each
-machine's own login, as before. With one, a repository the App is installed on uses the App and people's own accounts,
-and any other repository still uses those logins.
+## Create the App {#create}
 
-## Create it {#create}
+An owner or admin does this once, in **Settings › Hub › Setup › GitHub**.
 
-On an owner's or admin's app: **Settings › Hub › Setup › GitHub**.
+1. Pick where the App lives: your account, or an organization you administer.
+2. Check its name. It defaults to "fleetd on" and the hub's name. If GitHub says it's taken, pick another on
+   GitHub's form.
+3. Press **Create GitHub App**. GitHub's form opens, filled in. Press **Create GitHub App** there too.
 
-1. Choose where the App lives: your account, or an organization you administer.
-2. Check its name: by default "fleetd on" and the hub's name. App names are unique on GitHub, so GitHub asks for
-   another one on its form if the name is taken.
-3. Press **Create GitHub App**. Your browser opens GitHub's form, filled in. Press **Create GitHub App** there.
+GitHub sends you back to fleetd. The hub fetches the App's keys from GitHub and seals them. Nobody sees them.
 
-GitHub sends you back to the fleetd app, and the hub fetches the App's private key and secrets from GitHub directly.
-The hub seals them to its own key, in the hub's home. No person ever sees them, and no fleetd call returns them.
-
-It works on any hub, plain HTTP included. The app catches GitHub's answer on this computer (`127.0.0.1`).
-
-From a terminal on the hub machine, with no desktop app:
+With no desktop app, run this on the hub machine instead:
 
 ```sh
 fleetd github-app create              # on your account
 fleetd github-app create --org acme   # in an organization
 ```
 
-It opens a page on `127.0.0.1` that sends GitHub the App's manifest. With no browser on the hub machine, forward the port
-from your computer first. The command prints the `ssh -L` line to use.
+## Install it on repositories {#install}
 
-## Install it {#install}
+1. Press **Install it on repositories**.
+2. Pick all repositories, or the ones fleetd works on.
+3. Press **Test**. It checks the App can reach each one.
 
-Press **Install it on repositories**, and pick the repositories fleetd works on: all of them, or chosen ones. You can
-add more later from the same button. Then press **Test**.
+Add repositories later with **Install on more repositories**. The hub sees new ones within 10 minutes.
 
-Test asks GitHub for a token for each installation, and says where the App reaches:
+## Connect your own account {#connect}
 
-```text
-"fleetd on devbox" is installed on acme (2 repositories), and its tokens work.
-```
+1. Open **Settings › Accounts › GitHub**.
+2. Press **Connect GitHub** and allow the App on GitHub's page.
 
-`fleetd github-app test` does the same from the hub machine.
+Your PRs now open as you. The hub keeps your token sealed and renews it. If GitHub stops taking it, the same row shows
+**Connect again**.
 
-## What it asks for {#permissions}
+## Who agents act as {#who}
 
-On each repository it is installed on:
+On a repository the App is installed on:
 
-| Permission | Level | Why |
+- **Work you started, while you're connected**: agents act as you, and PRs open as you.
+- **Work you started, while you're not connected**: writers can't start. The lead asks you to connect, then starts
+  them. Reviewers carry on.
+- **Work nobody started** (automations, fixes the train opens): agents act as the App.
+
+On a repository without the App, agents use the `gh` login of the machine they run on.
+
+If GitHub is down when a token needs renewing, agents keep their work and try again. They never fall back to another
+login.
+
+## What the App can do {#permissions}
+
+| Permission | Level | Used to |
 |---|---|---|
 | Contents | write | Rebase and merge branches |
-| Pull requests | write | Read, update and merge PRs, and read people's reviews on them |
-| Issues | write | Find and label PRs (`fleetd:next`), and post the agent's review as a comment: both go through the issues endpoints |
-| Workflows | write | Merge changes to `.github/workflows` |
-| Commit statuses | write | Post `fleetd/train` |
+| Pull requests | write | Read, update and merge PRs |
+| Issues | write | Label PRs, post review comments |
+| Workflows | write | Merge changes to workflow files |
+| Commit statuses | write | Post the `fleetd/train` status |
 | Actions | write | Re-run CI |
-| Checks | read | Read CI's results |
+| Checks | read | Read CI results |
 | Metadata | read | Read the repository |
 
-Webhooks are off. The hub polls GitHub, as the merge train always has: people's reviews on a PR reach its writer
-within about a minute (see [People's reviews on GitHub](/docs/merge-train#people)).
-
-## Tokens {#tokens}
-
-The hub signs in as the App with its private key, and mints a token for each installation. A token lasts an hour, and
-the hub mints a new one before it ends. Each `gh` call about a repository the App reaches gets that installation's
-token. The hub reads the App's installations again every 10 minutes, so a repository you add shows up within that.
-
-Work the hub does on GitHub then appears as the App, `fleetd-on-devbox[bot]`.
-
-## Your own GitHub {#connect}
-
-In **Settings › Accounts › GitHub**, press **Connect GitHub** and authorize the App on GitHub's page. The app catches GitHub's
-answer on this computer (`127.0.0.1`), and the hub keeps your token sealed and renews it. You never see it, and
-nobody else's work uses it.
-
-In the [web app](/docs/web-app#get-started), on fleetd cloud, the same button takes the tab to GitHub and back: one
-trip signs you in and, on a team with no installation yet, lets an owner or admin choose its repositories.
-
-Who an order's agents are on GitHub, on a repository the App reaches:
-
-| The order | Its agents' `gh` |
-|---|---|
-| Started by you, connected | Your account: the PRs open as you |
-| Started by you, not connected | Its writers are refused: the lead says "Connect your GitHub to open this order's PRs" and spawns them again once you have. Readers and reviewers go on |
-| Started by nobody (automations, train fixes) | The App, `fleetd-on-devbox[bot]` |
-
-The token reaches the order's agents as `GH_TOKEN`, one of the order's variables: masked in what they report, renewed
-before it ends, and gone when the order closes. A closed order's agents are done: one that finished waiting on CI, a
-merge or a Monitor doesn't start again, so none runs on a token GitHub has ended. Renewing yours ends the one before
-at GitHub, so the renewal hands the new one to every open order of yours, on every machine and in every sandbox,
-before anything goes on. A machine that comes back (its node or the hub restarted, even after the token ended) gets
-its orders' tokens renewed as it reconnects, before the hub reads its agents' state or resumes or wakes any of them,
-for at most 30 seconds when GitHub doesn't answer. It reaches agents already at work at their next command, not only
-their next turn. An agent whose `gh` or `git push` is
-refused anyway keeps its work committed and tries again for a few minutes before asking its lead. If the hub can't
-renew it before it ends (GitHub unreachable), its agents hold a value GitHub refuses until it can, and the lead is
-told; they never fall back to the machine's login. A task launched while GitHub gives no token starts anyway, holding
-that same value: it is told so in its first message, and its token reaches its next command at the first renewal
-GitHub answers (every 5 minutes). Each repo the order works in gets its own: the App's token for that repo's owner,
-and none in a repo the App doesn't reach, where `gh` uses the machine's own login.
-
-If GitHub stops taking your connection (revoked there, or unused for six months), Settings › Accounts › GitHub says so, with
-**Connect again**. **Disconnect** revokes the token at GitHub and forgets it. Your open orders' agents then hold a
-value GitHub refuses, so their `gh` fails (never falling back to the machine's login) and the order's lead asks you to
-connect again; they get your token back at their next command once you do. GitHub lapsing your connection, or your
-removal from the hub, does the same.
+The App has no webhooks. The hub checks GitHub about once a minute.
 
 ## Remove it {#remove}
 
-**Remove** on Settings › Hub › Setup › GitHub, or `fleetd github-app remove`, makes the hub forget the App and its keys, and everyone's connection through it. The
-hub's `gh` goes back to the machine's own login. GitHub keeps the App until you delete it under its settings' Advanced
-page.
+Press **Remove** in **Settings › Hub › Setup › GitHub**, or run `fleetd github-app remove`. The hub forgets the App
+and everyone's connection to it, and goes back to the machine's `gh` login.
+
+GitHub keeps the App itself. Delete it in the App's settings on GitHub.

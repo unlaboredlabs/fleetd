@@ -1,29 +1,26 @@
 ---
 title: fleetd docs
-description: Install fleetd, chat with a bot's lead, and look up any command, file or error.
+description: Set up fleetd, give a bot work in its chat, and look up any setting, command or error.
 tableOfContents: false
 prev: false
 ---
 
-fleetd runs Claude Code on your own machines. You chat with each bot's lead; it plans the work, runs the agents,
-opens pull requests it has checked, and asks you only about real decisions.
+fleetd runs coding agents for you, on Claude or Gemini. You chat with a bot's lead; it plans the work, runs agents on your machines
+or fleetd's computers, and lands checked pull requests.
 
 ## Start here
 
-1. [Install](/docs/install): one command puts the CLI and the desktop app on a machine.
-2. [Quick start](/docs/quick-start): set up the hub, open a bot and chat with its lead.
-3. [Concepts](/docs/concepts): the hub, nodes, leads and their chats on one page.
+1. [Quick start](/docs/quick-start): set up a hub and send your first message.
+2. [Install](/docs/install): what the installer puts where, and its options.
+3. [How fleetd works](/docs/how-fleetd-works): the parts, and how work goes from a chat to a merge.
 
-## Look something up
+## Common tasks
 
-| You want to | Read |
-|---|---|
-| Add a machine that runs agents | [Machines](/docs/machines) |
-| Add a repo | [Bots](/docs/projects) |
-| Give a bot work | [Chat with the lead](/docs/chat) |
-| Change what an agent is doing | [Steering](/docs/steering) |
-| See how far along work is from the terminal | [Status](/docs/status) |
-| Find a command or option | [CLI reference](/docs/reference/cli) |
-| Find a file or setting | [Config & files](/docs/config-and-files) |
-| Fix something `fleetd doctor` reported | [Troubleshooting](/docs/troubleshooting) |
-| Look up a word | [Glossary](/docs/glossary) |
+- Give a bot work: [Chat with the lead](/docs/chat)
+- Change what an agent is doing: [Steering](/docs/steering)
+- Add a repo or start a new bot: [Bots](/docs/bots)
+- Add a machine that runs agents: [Machines](/docs/machines)
+- Invite your team: [People & invites](/docs/people)
+- Decide how pull requests merge: [Merge train](/docs/merge-train)
+- Fix something `fleetd doctor` reported: [Troubleshooting](/docs/troubleshooting)
+- Find a command: [CLI reference](/docs/reference/cli)

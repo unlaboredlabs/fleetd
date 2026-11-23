@@ -1,71 +1,58 @@
 ---
 title: Billing
-description: Plans, credits and computer time on fleetd cloud. What each costs, how credits are used, and the spend cap.
+description: Plans, credits and computer time for fleetd's computers on fleetd cloud, and the spend cap.
 ---
 
-On fleetd cloud, a bot's agents run on your own machines or on fleetd's computers. Your own machines cost nothing.
-fleetd's computers are paid for with a plan, credits, or both. There is no free tier: with no plan and no credits,
-fleetd doesn't start a computer for your bots, and each waiting bot says so in its chat.
-
-A hub you run yourself has no billing at all.
+On fleetd cloud, you pay only for agents that run on fleetd's computers. Agents on your own machines are free, and a
+hub you run yourself has no billing at all.
 
 ## Where {#where}
 
-**Settings › Hub › Billing**, in the desktop app, the web app and the phone app (Settings › Billing). Only a team's
-owners and admins see it. It shows:
+Owners and admins open **Settings › Team › Billing** in the desktop, web or phone app. It shows:
 
-- **Plan**: which, its price, and when it renews or ends. **Pick a plan** or **Change plan**.
-- **Credits**: what is left in dollars, and the soonest credits to expire when that is within 30 days. **Add
-  credits**.
-- **Payment**: **Manage billing** opens Stripe's page for the card, invoices, VAT id and cancelling.
-- **Computer time**: hours and dollars used this period, by computer size.
-- **Spend cap**: an optional monthly limit you set.
+- **Plan**: your plan, with **Pick a plan** or **Change plan**.
+- **Credits**: what's left, with **Add credits**.
+- **Computer time**: hours and cost so far this month.
+- **Spend cap**: an optional monthly limit.
+- **Manage billing**: Stripe's page for your card, invoices and cancelling.
 
-When something needs you (a declined card, no credits left, the cap reached), one line at the top says what and how to
-fix it. Paying happens on Stripe's own pages, in your browser; fleetd never sees your card.
+Payment happens on Stripe's pages; fleetd never sees your card.
 
 ## Plans {#plans}
 
-| Plan | Price a month | Computer time included |
-| --- | --- | --- |
-| Solo | $20 | $30 (500 hours of the 2 CPU size) |
-| Team | $50 | $60 |
-| Scale | $200 | $260 |
+| Plan | Per month | Computer time included | Agents at once |
+|---|---|---|---|
+| Solo | $20 | $30 | 3 |
+| Team | $50 | $60 | 10 |
+| Scale | $200 | $260 | 40 |
 
-A plan also sets how many agents run on fleetd's computers at once (leads never count): 3 on Solo, 10 on Team, 40
-on Scale, and 3 with credits and no plan.
+- Leads don't count toward agents at once. With credits and no plan, it's 3.
+- Included time is used before credits, and doesn't roll over.
+- A plan change applies from the next month. Cancelling stops renewal at the end of the paid month.
+- Prices are before VAT.
 
-A plan renews each month. Its included time is used before bought credits and ends with its month: it doesn't roll
-over. A plan change applies from the next month. Cancelling stops renewal; the plan lasts to the end of the month paid
-for. Prices are before VAT, which Stripe adds where it applies.
+There's no free tier: with no plan and no credits, fleetd's computers don't start.
 
 ## Credits {#credits}
 
-Credits are computer time paid ahead, at face value: $10 buys $10 of time. Buy them from $10, with or without a plan.
-Bought credits last 12 months from purchase. When credits expire at different times, the soonest to expire are used
-first.
+Credits are computer time paid ahead: $10 buys $10 of time. Buy them from $10, with or without a plan. They last 12
+months, and the ones that expire first are used first.
 
 ## Computer time {#computer-time}
 
-Each computer is charged for the time it runs, to the millisecond, at its size's rate:
+Each computer is billed for the time it runs, by size:
 
 | Size | Per hour |
-| --- | --- |
+|---|---|
 | 2 CPU, 4 GB | $0.06 |
 | 4 CPU, 8 GB | $0.12 |
 | 8 CPU, 16 GB | $0.24 |
 
-8 CPU, 16 GB is the largest size for now. Time is counted per team, from the moment a computer starts to the moment
-it stops.
-
 ## When computers stop {#stops}
 
-The rules are fixed, never a guess:
-
-- **No credits left.** Running computers stop and new ones wait. Add credits or pick a plan, and they start again.
-- **Spend cap reached.** If you set a monthly cap, computers stop when this calendar month's spend (UTC) reaches it,
-  and start again at the next month or when you raise the cap. Leave the cap empty for none.
-- **Declined card.** Nothing stops at once. The plan lasts to the end of the month paid for; update the card in
-  **Manage billing** before then to keep it.
+- **No credits left**: running computers stop and new ones wait, until you add credits or pick a plan.
+- **Spend cap reached**: computers stop until next month (UTC), or until you raise the cap.
+- **Card declined**: nothing stops right away. The plan lasts to the end of the paid month; update the card in
+  **Manage billing** before then.
 
 Bots on your own machines are never stopped by billing.

@@ -115,7 +115,7 @@ export const ENTRIES: RegistryEntry[] = [
     group: "lead",
     audience: "lead",
     title: "Task profiles",
-    sentWhen: "after the lead prompt, while the bot allows more than the default profile (project_set)",
+    sentWhen: "after the lead prompt, while the bot allows more than the default profile (its Allowed profiles)",
     default: d4,
     placeholders: "default!=the default profile's name; profiles!=each profile the bot allows, a line each with its note",
     rules: [

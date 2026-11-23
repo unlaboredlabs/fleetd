@@ -35,19 +35,20 @@
   --fd-pick: #222222;
   --fd-link: #8fb3ff;
   --fd-warn: #f0a050;
+  --fd-shade: rgba(255, 255, 255, 0.2);
 
   --sl-font: "Plex";
   --sl-font-mono: "Lilex";
   --sl-text-body: 0.9375rem;
-  --sl-text-h1: 1.75rem;
-  --sl-text-h2: 1.3125rem;
-  --sl-text-h3: 1.0625rem;
+  --sl-text-h1: 1.5rem;
+  --sl-text-h2: 1.125rem;
+  --sl-text-h3: 0.9375rem;
   --sl-text-h4: 0.9375rem;
   --sl-text-h5: 0.9375rem;
   --sl-text-code: 0.8125rem;
   --sl-line-height: 1.6;
   --sl-line-height-headings: 1.3;
-  --sl-content-width: 46rem;
+  --sl-content-width: 44rem;
   --sl-sidebar-width: 16rem;
   --sl-nav-height: 3.25rem;
 }
@@ -70,6 +71,7 @@
   --fd-pick: #f0f0f0;
   --fd-link: #2357c6;
   --fd-warn: #a8500a;
+  --fd-shade: rgba(0, 0, 0, 0.2);
 }
 
 ::selection {
@@ -249,9 +251,10 @@ mobile-starlight-toc nav {
 }
 .sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
   font-weight: 600;
+  letter-spacing: -0.005em;
 }
 .sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper.level-h2 {
-  margin-top: 2rem;
+  margin-top: 1.75rem;
 }
 .sl-markdown-content :not(h1, h2, h3, h4, h5, h6, .sl-heading-wrapper) + .sl-heading-wrapper:is(.level-h3, .level-h4) {
   margin-top: 1.5rem;
@@ -297,29 +300,41 @@ mobile-starlight-toc nav {
   font-variant-ligatures: none;
 }
 
-/* Tables: framed in a hairline, a filled head row, compact cells. */
-.sl-markdown-content table:not(:where(.not-content *)) {
+/* Tables: each sits in its own framed box (`.table-scroll`, added by astro.config.mjs) that is as wide as the text. Cells
+   wrap; a table too wide for a phone scrolls sideways inside the box, with a soft shade at the edge that has more, and
+   never pushes the page wider or gets cut off. */
+.sl-markdown-content .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
   border: 1px solid var(--sl-color-hairline);
   border-radius: 8px;
+  background:
+    linear-gradient(to right, var(--sl-color-black) 40%, transparent) left / 1.5rem 100% no-repeat local,
+    linear-gradient(to left, var(--sl-color-black) 40%, transparent) right / 1.5rem 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--fd-shade), transparent) left / 0.75rem 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--fd-shade), transparent) right / 0.75rem 100% no-repeat scroll;
+}
+.sl-markdown-content .table-scroll > table:not(:where(.not-content *)) {
+  display: table;
+  width: 100%;
+  margin: 0;
+  border: 0;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.84375rem;
   line-height: 1.5;
 }
-@media (min-width: 50rem) {
-  .sl-markdown-content table:not(:where(.not-content *)) {
-    display: table;
-    width: 100%;
-    overflow: hidden;
-  }
-  .sl-markdown-content td:not(:where(.not-content *)) {
-    overflow-wrap: anywhere;
-  }
-}
 .sl-markdown-content :is(th, td):not(:where(.not-content *)),
 .sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)),
 .sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+  min-width: 5rem;
   padding: 0.4375rem 0.75rem;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+/* Code in a cell stays whole while it fits; only one wider than its column breaks. */
+.sl-markdown-content td code {
+  overflow-wrap: break-word;
 }
 .sl-markdown-content th:not(:where(.not-content *)) {
   border-bottom: 1px solid var(--sl-color-hairline);
