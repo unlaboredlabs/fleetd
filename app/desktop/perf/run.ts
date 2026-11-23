@@ -4,7 +4,8 @@
 //
 //   --json FILE          also write the numbers as JSON
 //   --baseline FILE      exit 1 when a number regressed past budgets.ts's limit from FILE (the Linux CI job)
-//   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too)
+//   (CI gates first paint only over a bare Electron window, perf/reference, which moves with the runner too, and
+//   times the start and keypress again once before a regression in them counts: a runner's slow spell can outlast a set)
 //
 // First paint is timed from this script's spawn to the page's first contentful paint (FLEETD_PERF's stderr line),
 // with no debugger attached. Memory is the RSS of every process in the app's tree after 10 s idle. Scroll and
@@ -16,12 +17,12 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { type Browser, chromium, type Locator, type Page } from "@playwright/test";
 import { devtoolsPort, launch, type Memory, openChat, sleep } from "./app.ts";
-import { frameStats, median, type Metric, METRICS, quantile, regressions, type Results, RULES, withinBudget } from "./budgets.ts";
+import { frameStats, type Launches, median, type Metric, METRICS, quantile, regressions, type Results, RULES, START, startTimes, withinBudget } from "./budgets.ts";
 import { keyLatencies, traced } from "./trace.ts";
 import { STREAM_IN_LONG_ARRIVE_MS, STREAM_IN_LONG_FROM_MS, STREAM_IN_LONG_TO_MS } from "../fixtures/stream/index.ts";
 
 const { values: flags } = parseArgs({ options: { json: { type: "string" }, baseline: { type: "string" } } });
-/** Launches timed for first paint after an untimed first one; the median counts. */
+/** Launches timed for first paint after an untimed first one; the fastest counts (budgets.ts startTimes). */
 const RUNS = 5;
 const IDLE_MS = 10_000;
 const SCROLL_MS = 4_000;
@@ -65,7 +66,7 @@ const timeLaunch = async (entry?: string): Promise<{ paint: number; chat: number
  * The app and the bare reference, alternately, so both see the runner in the same state. One untimed launch of each
  * first (a fresh runner's first launch fills the OS page cache: 5-8 s on CI), then RUNS of each.
  */
-const firstPaint = async () => {
+const firstPaint = async (): Promise<Launches & { coldApp: number }> => {
   const app: Array<{ paint: number; chat: number }> = [];
   const bare: Array<number> = [];
   for (let i = 0; i <= RUNS; i++) {
@@ -75,6 +76,13 @@ const firstPaint = async () => {
   const timed = app.slice(1);
   return { coldApp: app[0]?.paint ?? Number.NaN, app: timed.map((t) => t.paint), chat: timed.map((t) => t.chat), bare: bare.slice(1) };
 };
+
+/** The start's lines of the report, for `paints` timed in `sets` sets. */
+const startDetail = (paints: Launches & { coldApp: number }, sets: number) => ({
+  firstPaintMs: `fastest of ${paints.app.length} warm launches${sets > 1 ? `, timed in ${sets} sets` : ""}: ${paints.app.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.coldApp.toFixed(0)} ms)`,
+  firstPaintRefMs: `the same for a bare Electron window with one line of text, launched alternately: ${paints.bare.map((p) => p.toFixed(0)).join(", ")} ms`,
+  chatShownMs: `the same launches, until the chat-long fixture's chat shows its words: ${paints.chat.map((p) => p.toFixed(0)).join(", ")} ms`,
+});
 
 /** rAF timestamps while `during` runs. */
 const frames = async (page: Page, during: () => Promise<unknown>): Promise<Array<number>> => {
@@ -203,7 +211,8 @@ const keys = async (browser: Browser, page: Page, composer: Locator) => {
 };
 
 const main = async () => {
-  const paints = await firstPaint();
+  const baseline = flags.baseline === undefined ? undefined : (JSON.parse(readFileSync(flags.baseline, "utf8")) as Results);
+  let paints = await firstPaint();
   const streamed = await streaming();
 
   const app = launch({ debug: true });
@@ -224,26 +233,25 @@ const main = async () => {
       if (page === undefined) throw new Error("no app window over CDP");
       const chat = await openChat(page);
       const scrolled = await scroll(page, chat.log);
-      const typed = await keys(browser, page, (await openChat(page)).composer);
-      const firstPaintMs = median(paints.app);
-      const firstPaintRefMs = median(paints.bare);
+      let typed = await keys(browser, page, (await openChat(page)).composer);
       results = {
-        firstPaintMs,
-        firstPaintRefMs,
-        firstPaintOverMs: firstPaintMs - firstPaintRefMs,
-        chatShownMs: median(paints.chat),
-        chatOverMs: median(paints.chat) - firstPaintRefMs,
+        ...startTimes(paints),
         idleMemoryMb: median(samples.map((m) => m.uniqueMb)),
         idleRssMb: median(samples.map((m) => m.rssMb)),
         scrollFps: scrolled.fps,
         streamFps: streamed.fps,
         keyP95Ms: typed.p95,
       };
+      // Keypress past its limit is typed again, the rounds pooled, before it counts, as the start is timed again below.
+      if (baseline !== undefined && regressions(results, baseline).some((r) => r.metric === "keyP95Ms")) {
+        console.log(`keypress read a p95 of ${typed.p95.toFixed(1)} ms; typing it again`);
+        const rounds = [...typed.rounds, ...(await keys(browser, page, (await openChat(page)).composer)).rounds];
+        typed = { p95: median(rounds.map((r) => r.p95)), rounds };
+        results = { ...results, keyP95Ms: typed.p95 };
+      }
       detail = {
-        firstPaintMs: `median of ${paints.app.length} warm launches: ${paints.app.map((p) => p.toFixed(0)).join(", ")} ms (the untimed first: ${paints.coldApp.toFixed(0)} ms)`,
-        firstPaintRefMs: `the same for a bare Electron window with one line of text, launched alternately: ${paints.bare.map((p) => p.toFixed(0)).join(", ")} ms`,
+        ...startDetail(paints, 1),
         firstPaintOverMs: "what the app adds to Electron's own start; CI gates this, not the runner-bound first paint",
-        chatShownMs: `the same launches, until the chat-long fixture's chat shows its words: ${paints.chat.map((p) => p.toFixed(0)).join(", ")} ms`,
         chatOverMs: "what the app adds before its chat reads, over Electron's own start; CI gates this",
         idleRssMb: "summed RSS of the same processes; counts the shared Electron pages once per process, never gated",
         idleMemoryMb: `${process.platform === "linux" ? "PSS" : "physical footprint"} summed over all ${samples[0]?.processes ?? 0} processes read (${[...new Set(samples[0]?.kinds ?? [])].join(", ")}) after ${IDLE_MS / 1000} s idle`,
@@ -256,6 +264,16 @@ const main = async () => {
     }
   } finally {
     await app.stop();
+  }
+
+  // A start past its limit is timed again, a fresh set pooled with the first, before it counts: the fastest launch
+  // already drops a slow one, but a slow spell can outlast a set, and a real regression slows every launch of both.
+  if (baseline !== undefined && regressions(results, baseline).some((r) => START.includes(r.metric))) {
+    console.log(`the start read ${results.firstPaintOverMs.toFixed(0)} ms over bare Electron, ${results.chatOverMs.toFixed(0)} ms before the chat; timing it again`);
+    const again = await firstPaint();
+    paints = { coldApp: paints.coldApp, app: [...paints.app, ...again.app], chat: [...paints.chat, ...again.chat], bare: [...paints.bare, ...again.bare] };
+    results = { ...results, ...startTimes(paints) };
+    detail = { ...detail, ...startDetail(paints, 2) };
   }
 
   const electron = `Electron ${electronVersion()}`;
@@ -283,8 +301,7 @@ const main = async () => {
   if (flags.json !== undefined) writeFileSync(flags.json, `${JSON.stringify(results, null, 2)}\n`);
 
   let failed = false;
-  if (flags.baseline !== undefined) {
-    const baseline = JSON.parse(readFileSync(flags.baseline, "utf8")) as Results;
+  if (baseline !== undefined) {
     const worse = regressions(results, baseline);
     for (const r of worse) {
       const scaled = RULES[r.metric].perRunner ? `, ${baseline[r.metric]} at bare Electron ${baseline.firstPaintRefMs} ms scaled to this runner's ${results.firstPaintRefMs.toFixed(0)}` : "";

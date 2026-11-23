@@ -1,17 +1,17 @@
 // The five budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
 // regression rules the Linux CI job applies against perf/baseline-linux.json. CI runners are not the budget machine
-// and differ from each other, so CI gates regressions only, and the app's start there only relative to a bare Electron
-// window launched in the same job: over it, and scaled by it (Rule.perRunner).
+// and differ from each other, so CI gates regressions only, and the app's start and keypress there only relative to a
+// bare Electron window launched in the same job: the start over it, and both scaled by it (Rule.perRunner).
 
 export interface Results {
-  /** Median, ms from spawning the app until its window is shown and has painted its first content (warm launches). */
+  /** Fastest warm launch, ms from spawning the app until its window is shown and has painted its first content (startTimes). */
   readonly firstPaintMs: number;
   /** The same for a bare Electron window that paints one line of text (perf/reference), launched alternately with the app. */
   readonly firstPaintRefMs: number;
   /** firstPaintMs minus firstPaintRefMs: what the app adds to Electron's own start, which CI gates. */
   readonly firstPaintOverMs: number;
   /**
-   * Median, ms from spawning the app until the chat it opens on shows its words (three rows in, no markdown
+   * Fastest, ms from spawning the app until the chat it opens on shows its words (three rows in, no markdown
    * placeholder left, and its composer): the same warm launches as first paint.
    */
   readonly chatShownMs: number;
@@ -51,6 +51,9 @@ interface Rule {
    * is its own JavaScript, as CPU-bound as Electron's start, so it reads ~1.3× a bare start on every runner while in
    * ms it spreads 1.5× between them (main's runs, Nov 13 to 23: chat over bare 248 ms on an EPYC 9V45, 259 on a Xeon
    * 6975P, 374 on an EPYC 7763). Unscaled, a fixed limit sat inside the 7763's own spread (352 to 403 for one app).
+   * A key press is as CPU-bound: its p95 read 6.5 to 9.5 ms on a 6975P and 12.6 to 14.0 on a Xeon 8370C for the same
+   * code, and a fixed 12.1 ms limit failed every 8370C run, while over the bare start it reads 0.034 to 0.053 on all
+   * 81 runs of Nov 22 and 23.
    */
   readonly perRunner?: boolean;
 }
@@ -73,8 +76,9 @@ export const RULES: Record<Metric, Rule> = {
   // about 59 on an EPYC 9V45 runner and 49.5 on a 7763, so its baseline is the slower runner's; a formatter made per
   // message took it under 20.
   streamFps: { label: "chat streaming", unit: "fps", higher: true, limit: 57, regress: { ratio: 0.07, slack: 3 } },
-  // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide slack and perf/run.ts's median of five rounds.
-  keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 8 } },
+  // A p95 over ~160 keys still moves with a few slow ones on a shared runner, hence the wide ratio and perf/run.ts's
+  // median of five rounds; the slack only keeps a fast runner's few ms from failing on a single slow key.
+  keyP95Ms: { label: "keypress to screen", unit: "ms", higher: false, limit: 16, regress: { ratio: 0.5, slack: 2 }, perRunner: true },
 };
 
 export const METRICS = Object.keys(RULES) as ReadonlyArray<Metric>;
@@ -107,6 +111,30 @@ export const regressions = (results: Results, baseline: Results): Array<{ metric
     const worse = RULES[metric].higher ? value < limit : value > limit;
     return worse ? [{ metric, value, limit, base }] : [];
   });
+
+/** Warm launches' times, ms, the app's and the bare window's taken alternately (perf/run.ts firstPaint). */
+export interface Launches {
+  readonly app: ReadonlyArray<number>;
+  readonly chat: ReadonlyArray<number>;
+  readonly bare: ReadonlyArray<number>;
+}
+
+/**
+ * The start's results from warm launches: the fastest of each. A shared runner's noise only ever adds time, and comes
+ * in bursts of a second or so that slow a few launches in a row, the app's (which does more work) more than the bare
+ * window's: on main at 6e93c42a7 the app read 368 to 911 ms and bare 195 to 404, and medians put the app 492 ms over
+ * bare where its fastest launches put it 173, as on the green commit after it (176). On the 81 runs of Nov 22 and 23,
+ * app over bare read 0.75 to 1.00× the bare start by the fastest launches and 0.30 to 2.19× by the medians.
+ */
+export const startTimes = ({ app, chat, bare }: Launches): Pick<Results, "firstPaintMs" | "firstPaintRefMs" | "firstPaintOverMs" | "chatShownMs" | "chatOverMs"> => {
+  const firstPaintMs = Math.min(...app);
+  const firstPaintRefMs = Math.min(...bare);
+  const chatShownMs = Math.min(...chat);
+  return { firstPaintMs, firstPaintRefMs, firstPaintOverMs: firstPaintMs - firstPaintRefMs, chatShownMs, chatOverMs: chatShownMs - firstPaintRefMs };
+};
+
+/** The gated start metrics, which perf/run.ts times again once before a regression in them counts, as it does keypress. */
+export const START: ReadonlyArray<Metric> = ["firstPaintOverMs", "chatOverMs"];
 
 export const median = (values: ReadonlyArray<number>): number => quantile(values, 0.5);
 

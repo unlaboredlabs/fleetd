@@ -1,12 +1,12 @@
 {
-  "firstPaintMs": 513,
+  "firstPaintMs": 540,
   "firstPaintRefMs": 288,
-  "firstPaintOverMs": 225,
-  "chatShownMs": 663,
-  "chatOverMs": 375,
+  "firstPaintOverMs": 252,
+  "chatShownMs": 705,
+  "chatOverMs": 417,
   "idleMemoryMb": 331,
   "idleRssMb": 589,
   "scrollFps": 58,
   "streamFps": 49,
-  "keyP95Ms": 4.1
+  "keyP95Ms": 11.7
 }
