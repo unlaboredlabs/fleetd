@@ -95,3 +95,16 @@ test("a start that changed nothing, or another thread's start, says nothing", as
   expect(n.systemLines()).toEqual([]);
   n.done();
 });
+
+test("a lead on Antigravity that went without a server for too many tools says so once, its agents still having it", async () => {
+  const n = await node();
+  const heavy = (now: string[], newly: string[], at: string): Partial<SessionSummary> => ({ mcpSkipped: [], mcpChange: { down: [], back: [], heavy: newly }, mcpSkippedAt: at, mcpHeavy: now });
+  await n.updated(summary("lead-1", "run-1", "running", heavy(["Paper"], ["Paper"], "2026-11-23T04:00:00.000Z")));
+  expect(n.systemLines()).toEqual([
+    "The MCP server “Paper” isn't loaded for this bot's lead on Antigravity (too many tools for it beside fleetd's own); its agents still have it.",
+  ]);
+  // The next start leaves it out again: nothing new to say.
+  await n.updated(summary("lead-1", "run-2", "running", heavy(["Paper"], [], "2026-11-23T05:00:00.000Z")));
+  expect(n.systemLines()).toHaveLength(1);
+  n.done();
+});

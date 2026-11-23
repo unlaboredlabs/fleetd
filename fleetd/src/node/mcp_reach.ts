@@ -57,6 +57,12 @@ export function skippedLine(names: readonly string[]): string {
   return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
 }
 
+/** What a lead's chat says when its start on Antigravity went without servers (./agy_budget.ts): one plain line, once. */
+export function heavyLine(names: readonly string[]): string {
+  const one = names.length === 1;
+  return `The MCP server${one ? "" : "s"} ${quoted(names)} ${one ? "isn't" : "aren't"} loaded for this bot's lead on Antigravity (too many tools for it beside fleetd's own); its agents still have ${one ? "it" : "them"}.`;
+}
+
 /** What a lead's chat says when servers the previous start left out answer again. */
 export function backLine(names: readonly string[]): string {
   const one = names.length === 1;
