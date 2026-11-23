@@ -42,7 +42,11 @@ test("TestFlight gets only the commit CI passed on: the dispatch names it and ev
   // Every job builds from that commit, and the gate compares it.
   const checkouts = [...WORKFLOW.matchAll(/- uses: actions\/checkout@[^\n]+\n((?: {8}.*\n)*)/g)].map(([, w]) => w!);
   expect(checkouts.length).toBe(4);
-  for (const w of checkouts) expect(w).toContain("ref: ${{ inputs.sha || github.sha }}");
+  // `signing` runs the gate from the workflow's own commit, whose scripts this workflow calls (build 36 failed running
+  // fb11f5e's older mobile-due.sh); `runtime`, `android` and `ios` build `sha`.
+  const [gate, ...builds] = checkouts;
+  expect(gate).not.toContain("ref:");
+  for (const w of builds) expect(w).toContain("ref: ${{ inputs.sha || github.sha }}");
   expect(WORKFLOW).toContain("BUILD_SHA: ${{ inputs.sha || github.sha }}");
   // A commit not on the branch fails the run before anything is built; the run's name says which commit it built.
   expect(WORKFLOW).toContain("run: .github/release/mobile-due.sh commit");
