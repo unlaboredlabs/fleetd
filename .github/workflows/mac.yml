@@ -213,7 +213,9 @@ jobs:
         ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
         && format('ios-{0}', github.ref) || format('ios-{0}', github.run_id) }}
       cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' }}
-    runs-on: macos-latest
+    # Xcode 27's iOS 27 SDK, as the release (mobile-release.yml): macos-latest's Xcode 26.6 builds against iOS 26.5's,
+    # and that app runs letterboxed, phone-sized, on the iPhone Duo unfolded. The SDK step below holds it there.
+    runs-on: xcode-27
     timeout-minutes: 60
     env:
       METRO: ${{ inputs.metro }}
@@ -273,6 +275,8 @@ jobs:
         run: |
           plutil -convert json -o "$RUNNER_TEMP/Info.json" "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app/Info.plist"
           node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
+      - name: iOS SDK
+        run: ../../.github/release/ios-sdk.sh "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app/Info.plist"
       - name: Pack
         run: ditto -c -k --keepParent "build/Build/Products/$CONFIGURATION-iphonesimulator/fleetd.app" "$RUNNER_TEMP/fleetd-ios-simulator.zip"
       - uses: actions/upload-artifact@v7
@@ -330,6 +334,7 @@ jobs:
           xcodebuild -workspace ios/fleetd.xcworkspace -scheme fleetd -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
             CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= build | tail -n 50
+          ../../.github/release/ios-sdk.sh build/Build/Products/Release-iphonesimulator/fleetd.app/Info.plist
       - name: Screens
         run: |
           app/mobile/scripts/screens.sh app/mobile/build/Build/Products/Release-iphonesimulator/fleetd.app \

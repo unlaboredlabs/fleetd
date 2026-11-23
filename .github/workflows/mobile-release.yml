@@ -251,6 +251,8 @@ jobs:
         run: |
           plutil -convert json -o "$RUNNER_TEMP/Info.json" "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications/fleetd.app/Info.plist"
           node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ats.ts "$RUNNER_TEMP/Info.json"
+      - name: iOS SDK
+        run: ../../.github/release/ios-sdk.sh "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications/fleetd.app/Info.plist"
       - name: Runtime version
         # The update job resolves iOS's on Linux; this build's, embedded on macOS, must be the same.
         if: env.FLEETD_UPDATES_CERT != ''
