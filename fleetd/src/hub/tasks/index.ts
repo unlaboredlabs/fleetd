@@ -1910,11 +1910,11 @@ export class Tasks {
   }
 
   /** What an ended task still waits on, which may wake it by itself: its wait_ci, or a Monitor its claude keeps
-   * armed. Undefined for one that isn't done, or waits on nothing. */
-  waitingOn(taskId: TaskId): string | undefined {
+   * armed, besides its waits on the PR `except`. Undefined for one that isn't done, or waits on nothing. */
+  waitingOn(taskId: TaskId, except?: string): string | undefined {
     const task = this.tryDb(() => TaskRecords.get(this.db, taskId)?.task);
     if (task?.state !== "done") return undefined;
-    const ci = openCiWaits(this.db).get(taskId);
+    const ci = openCiWaits(this.db, except).get(taskId);
     if (ci?.length) return `wait_ci on ${ci.join(", ")}`;
     const monitor = this.tryDb(() => TaskRecords.monitorWaits(this.db, task.projectRef, this.nowIso()).get(taskId));
     if (!monitor) return undefined;

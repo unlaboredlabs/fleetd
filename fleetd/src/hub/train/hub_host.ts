@@ -23,7 +23,7 @@ export type TasksPort = {
   spawn(caller: TaskCaller, input: { workstreamId: string; title: string; kind: "review"; prompt: string; pr: string }): Promise<Task>;
   message(caller: TaskCaller, taskId: string, text: string): Promise<unknown>;
   holdMessage(taskId: string, text: string): Promise<void>;
-  waitingOn(taskId: string): string | undefined;
+  waitingOn(taskId: string, except?: string): string | undefined;
   cancel(caller: TaskCaller, taskId: string, reason?: string): Promise<unknown>;
 };
 
@@ -155,8 +155,8 @@ export class HubHost implements TrainHost {
     await this.tasks().message({ projectRef: r, by }, taskId, text);
   }
 
-  waitingOn(taskId: string): string | undefined {
-    return this.hub.peek<TasksPort>("tasks")?.waitingOn(taskId);
+  waitingOn(taskId: string, except?: string): string | undefined {
+    return this.hub.peek<TasksPort>("tasks")?.waitingOn(taskId, except);
   }
 
   async holdMessage(_r: ProjectRef, _by: string, taskId: string, text: string): Promise<void> {

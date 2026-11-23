@@ -12,6 +12,7 @@ import { batchHeads, squashText } from "../src/hub/train/github.ts";
 import { earlyMigrations, parseRegenerate } from "../src/hub/train/regen.ts";
 import { counted, deliberate, undone } from "../src/hub/train/reverts.ts";
 import { leadTrainLines, trainFacts } from "../src/hub/train/digest.ts";
+import { tellWriter } from "../src/hub/train/back.ts";
 import { parse as parseRepoChecks } from "../src/hub/train/repo_checks.ts";
 
 let kits: Kit[] = [];
@@ -130,7 +131,7 @@ test("an ended writer is continued at the send-back, and never again for the sam
 });
 
 test("a writer with an armed wait gets the send-back held for that wait, not a second wake", async () => {
-  const k = await sentBack("done", `wait_ci on https://github.com/${REPO}/pull/10`);
+  const k = await sentBack("done", "a Monitor (pre-push check)");
   expect(sentTo(k, "T10")).toEqual([]);
   expect(k.host.held.map(([to]) => to)).toEqual(["T10"]);
   expect(k.host.held[0]![1]).toContain("the merge train could not rebase it: it conflicts with main");
@@ -141,6 +142,21 @@ test("a writer with an armed wait gets the send-back held for that wait, not a s
   await k.settle();
   expect(sentTo(k, "T10")).toHaveLength(1);
   await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+});
+
+test("a writer waiting with wait_ci on its own PR is woken when the PR goes back as conflicting: no CI runs on it", async () => {
+  const k = await sentBack("done", `wait_ci on https://github.com/${REPO}/pull/10`);
+  expect(k.host.held).toEqual([]);
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  expect(sentTo(k, "T10")[0]).toContain("the merge train could not rebase it: it conflicts with main");
+  // Once per send-back: its turn ends again with the same wait and no push, and nothing more comes.
+  await k.settle();
+  expect(sentTo(k, "T10")).toHaveLength(1);
+  // Sent back for work it would undo, the PR still gets CI, so that wait's wake carries the message.
+  const undoes = { ...k.change(10), lastError: "would undo 1 commit of main: rebuild it on origin/main" };
+  expect(await tellWriter(k.train, undoes, "T10", "Rebuild it")).toBeUndefined();
+  expect(k.host.held).toEqual([["T10", "Rebuild it"]]);
   expect(sentTo(k, "T10")).toHaveLength(1);
 });
 

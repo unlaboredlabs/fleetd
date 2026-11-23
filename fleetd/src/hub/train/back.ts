@@ -1,6 +1,7 @@
 // A PR sent back to its writer (needs_rebase, red CI, its review's blocking findings) stays with its writer until it pushes. The writer hears why at
 // once: steered while it runs, continued if its turn ended, or held for the wait it armed (its wait_ci, a Monitor)
-// so that wait's wake carries it instead of a second one. A writer whose turn then ends with no push and nothing armed
+// so that wait's wake carries it instead of a second one. A conflicting PR gets no CI and doesn't move on the train,
+// so a wait on it never fires and doesn't count: its writer is continued. A writer whose turn then ends with no push and nothing armed
 // is continued once more by the train's next pass; one that can't be (cancelled) is the lead's. Once per send-back:
 // the Change's `back` wait, at its head, says whether its writer was continued for it yet. Its start is when the PR
 // went back, which the lead's digest reads for a PR left with no push (notes.ts `BACK_IDLE_MS`).
@@ -29,11 +30,19 @@ function mark(t: Train, change: Change, state: string): void {
   t.records.startWait(c, WAIT_BACK, c.headSha, t.nowMs(), state);
 }
 
+/** Whether the Change went back conflicting with its base (`needsRebase`), not for work it would undo, which gets CI. */
+const conflicting = (c: Change) => c.state === "needs_rebase" && c.lastError?.startsWith("conflicts with ") === true;
+
+/** What the ended writer `taskId` of `change` waits on that will wake it: none of its waits on a conflicting PR. */
+function waitingOn(t: Train, change: Change, taskId: string): string | undefined {
+  return t.host.waitingOn?.(taskId, conflicting(change) ? change.prUrl : undefined);
+}
+
 /** `text` from `by` to the writer `taskId` of `change`; why it could not take it, else undefined. */
 export async function tellWriter(t: Train, change: Change, taskId: string, text: string, by = TRAIN_BY): Promise<string | undefined> {
   const state = t.host.task(taskId)?.state;
   const ended = state === "done" || state === "failed";
-  if (state === "done" && t.host.waitingOn?.(taskId) !== undefined && t.host.holdMessage) {
+  if (state === "done" && waitingOn(t, change, taskId) !== undefined && t.host.holdMessage) {
     try {
       await t.host.holdMessage(change.projectRef, by, taskId, text);
     } catch (error) {
@@ -61,7 +70,7 @@ export async function stillBack(t: Train, change: Change): Promise<void> {
   if (taskId === undefined || !isBack(change) || w?.head !== change.headSha || w.state !== TOLD) return;
   const task = t.host.task(taskId);
   if (task?.state === "running" || task?.state === "queued" || task?.state === "idle") return;
-  if (task?.state === "done" && t.host.waitingOn?.(taskId) !== undefined) return;
+  if (task?.state === "done" && waitingOn(t, change, taskId) !== undefined) return;
   t.records.setWait(change.changeId, WAIT_BACK, change.headSha, WOKEN);
   const why = oneLine(change.lastError ?? "", 300);
   if (task === undefined || task.state === "cancelled") {
