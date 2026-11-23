@@ -51,6 +51,20 @@ const IN_LINE: ReadonlySet<string> = new Set<ChangeState>(["queued", "reviewing"
 /** Its 0-based place in line, when it is waiting in one. */
 const lineAt = (q: PrRow["queue"]): number | undefined => (q?.position === undefined || !IN_LINE.has(q.state) ? undefined : q.position);
 
+/** How the hub words a person's part in who merges a PR (its train's `noteDecision`). */
+const FOR_A_PERSON = "waits for a person";
+
+/**
+ * Who a ready PR the train leaves alone waits for: you, where people merge its bot's PRs by its Who merges and rules,
+ * or someone to let it go, for its `hold` label or an approval its base requires (a ready PR's reason says which).
+ * Such a PR isn't in the merge line. Undefined for any other.
+ */
+export const waitsOn = (q: PrRow["queue"]): "you" | "held" | undefined => {
+  if (q?.state !== "ready") return undefined;
+  if (q.mergeRule?.toLowerCase().startsWith(FOR_A_PERSON) === true) return "you";
+  return q.reason !== undefined && q.reason.trim() !== "" ? "held" : undefined;
+};
+
 const queueSentence = (q: NonNullable<PrRow["queue"]>): string => {
   const at = lineAt(q);
   const place = at === undefined ? "" : q.length > 1 ? `, ${ordinal(at + 1)} of ${q.length} in line` : ", next in line";
@@ -88,6 +102,10 @@ export const stateLine = (pr: Pick<PrRow, "state" | "queue"> & Partial<Pick<PrRo
   const q = pr.queue;
   const known = q === undefined ? undefined : QUEUE[q.state];
   if (q === undefined || known === undefined) return { word: "open", sentence: "Open. fleetd isn't merging it.", tone: "quiet" };
+  // Left for a person, it is out of the line, and so says no place in it.
+  const waits = waitsOn(q);
+  if (waits === "you") return { word: "yours to merge", sentence: "Waiting for you to merge on GitHub.", tone: "needs-you" };
+  if (waits === "held") return { word: "held", sentence: "Held until someone lets it merge.", tone: "needs-you" };
   const held = q.state === "reviewing" && pr.review !== undefined ? heldHint({ ...pr, review: pr.review }) : undefined;
   if (held !== undefined) return { word: "changes requested", sentence: `Changes requested: ${held.text}. It merges once it passes review.`, tone: held.tone };
   return { word: known.word, sentence: queueSentence(q), tone: known.tone };

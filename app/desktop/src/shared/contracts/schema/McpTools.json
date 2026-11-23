@@ -16448,7 +16448,7 @@
           "$ref": "#/$defs/ChangeId"
         },
         "length": {
-          "description": "PRs waiting in the same queue.",
+          "description": "PRs waiting in the same line, none that waits for a person among them.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
@@ -16458,13 +16458,13 @@
           "type": "string"
         },
         "position": {
-          "description": "0-based place in the queue; absent when not waiting in it.",
+          "description": "0-based place in the line; absent when not waiting in it, as for a PR that waits for a person.",
           "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
         "reason": {
-          "description": "Why it is held or was sent back: a conflict, failing check names, or the refusal's fix.",
+          "description": "Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. A ready PR has one only\nwhile it waits for a person (its bot's Who merges, its `hold` label, an approval its base requires).",
           "maxLength": 2000,
           "type": "string"
         },

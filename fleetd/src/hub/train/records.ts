@@ -2,6 +2,7 @@
 // lowercased.
 import type { Change, ChangeId, ChangeState, ProjectRef, TrainState, WorkstreamId } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
+import { waitsForPerson } from "./notes.ts";
 import { encode, HEAD_STATES, isDraft, type ListFilter, parseState, QUEUED_STATES, TERMINAL_STATES, type TrainRow, type Wait, type Watch, type WatchCheck } from "./states.ts";
 
 export {
@@ -397,10 +398,15 @@ export class ChangeRecords {
     return [...queued.filter((c) => !isDraft(c)), ...queued.filter(isDraft)];
   }
 
-  /** Each Change with its `position` in its repo's queue (absent when not queued). */
+  /** The line as the apps show it: the queue without the Changes left for a person, which the train never takes. */
+  inLine(repo: string): Change[] {
+    return this.line(repo).filter((c) => !waitsForPerson(c));
+  }
+
+  /** Each Change with its `position` in its repo's line (`inLine`; absent when not in it). */
   positioned(changes: Change[]): Change[] {
     const queues = new Map<string, ChangeId[]>();
-    for (const c of changes) if (!queues.has(c.repo)) queues.set(c.repo, this.line(c.repo).map((x) => x.changeId));
+    for (const c of changes) if (!queues.has(c.repo)) queues.set(c.repo, this.inLine(c.repo).map((x) => x.changeId));
     return changes.map((c) => {
       const at = queues.get(c.repo)?.indexOf(c.changeId) ?? -1;
       const { position: _, ...rest } = c;

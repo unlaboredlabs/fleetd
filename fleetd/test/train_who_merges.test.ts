@@ -122,6 +122,22 @@ test("where people merge, a PR touching a migration always waits for a person, e
   expect(merges(k)).toEqual([]);
 });
 
+test("a PR waiting for a person takes no place in the merge line, and the PRs behind it count without it", async () => {
+  const k = peopleKit();
+  k.pr(61, "fleetd/T61-x", { "src/a.ts": "a\n" });
+  await k.enqueue(61);
+  await passes(k, 8);
+  expect(k.change(61)).toMatchObject({ state: "ready", lastError: PEOPLE });
+  k.pr(62, "fleetd/T62-x", { "src/b.ts": "b\n" });
+  await k.enqueue(62);
+  const placed = new Map(k.train.list({ repo: REPO, limit: 10 }).map((c) => [c.prNumber, c.position]));
+  expect(placed.get(61)).toBeUndefined();
+  expect(placed.get(62)).toBe(0);
+  expect(k.train.records.inLine(REPO).map((c) => c.prNumber)).toEqual([62]);
+  // The lead's train line still names it, as waiting for a person.
+  expect(k.train.records.trainState(REPO).queue).toContain(k.change(61).changeId);
+});
+
 test("switching a bot to fleetd merges lets its waiting PR go, and back to people holds the next one", async () => {
   const k = peopleKit();
   k.pr(56, "fleetd/T56-x", { "src/a.ts": "a\n" });

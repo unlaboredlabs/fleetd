@@ -2,7 +2,7 @@
 // merges now among them, and what a row says under its title. No React here, so the tests read it directly.
 import type { PrRow } from "../../../shared/contracts";
 import type { Moving } from "../train/model";
-import { checksShort, isOpen, reviewsShort, stateLine, type StateLine, type Tone } from "./words";
+import { checksShort, isOpen, reviewsShort, stateLine, type StateLine, type Tone, waitsOn } from "./words";
 
 export type Item =
   | { readonly kind: "group"; readonly label: string; readonly count: number }
@@ -14,9 +14,8 @@ export type Item =
   | { readonly kind: "note"; readonly text: string }
   | { readonly kind: "cut" };
 
-/** The train's prefix on a hold it keeps a ready PR under (the `hold` label, a base rule): it waits for a person. */
+/** The train's tag on a hold, which an older hub sent with a held PR's reason. */
 const HELD = "held: ";
-const held = (row: PrRow): boolean => row.queue?.state === "ready" && row.queue.reason?.startsWith(HELD) === true;
 
 /** Why the train holds a PR or sent it back, as a person reads it: without the "held: " tag or markdown code marks. */
 const whyOf = (row: PrRow): string | undefined => {
@@ -28,7 +27,7 @@ const whyOf = (row: PrRow): string | undefined => {
 /** Where an open PR stands, for its group: it needs a look (failed, held, or changes asked for), the train has it, or neither. */
 export const openGroup = (row: PrRow): "look" | "train" | "open" => {
   const meta = rowMeta(row);
-  if (held(row) || meta.state.tone === "failed" || meta.checks?.tone === "failed" || meta.review?.tone === "failed") return "look";
+  if (waitsOn(row.queue) !== undefined || meta.state.tone === "failed" || meta.checks?.tone === "failed" || meta.review?.tone === "failed") return "look";
   return row.queue !== undefined ? "train" : "open";
 };
 
@@ -94,8 +93,7 @@ export const rowMeta = (row: PrRow): RowMeta => {
   return {
     ref: `${row.repo.slice(row.repo.lastIndexOf("/") + 1)}#${row.number}`,
     why: open ? whyOf(row) : undefined,
-    // A held PR is ready, and waits for a person rather than its turn: it says so.
-    state: held(row) ? { word: "held", sentence: "Held until someone lets it merge.", tone: "needs-you" } : stateLine(row),
+    state: stateLine(row),
     checks: row.checks === undefined || checksSaid || !open ? undefined : checksShort(row.checks),
     // On the train, its state word already says it passed review.
     review: !open || (row.queue !== undefined && review?.tone === "done") ? undefined : review,

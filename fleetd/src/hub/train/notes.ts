@@ -63,6 +63,11 @@ export const HELD = "held: the PR has the `hold` label; the train takes it once 
 export const LEFT_OUT = "not in this batch: ";
 /** A ready Change's `lastError` while its base requires an approving review it doesn't have. */
 export const APPROVAL = "held: waiting for a person's approval on GitHub; the train merges it once it is approved";
+/**
+ * A ready Change the train leaves for a person: its bot's people merge it, its `hold` label, or an approval its base
+ * requires. It takes no place in the merge line the apps show, and nor do the PRs behind it count it.
+ */
+export const waitsForPerson = (c: Change): boolean => c.state === "ready" && (c.lastError === PEOPLE || c.lastError === HELD || c.lastError === APPROVAL);
 /** The start of a `ci` Change's `lastError` while its batch passed CI and waits for the batch behind it to land with it. */
 export const PASSED_WAITING = "passed, waiting up to ";
 /** The note on a batch that passed while it waits up to `waitMs` for batch #`behind`. */

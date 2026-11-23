@@ -6183,13 +6183,16 @@ export type PrListOutput = {
 /** Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land. */
 export type PrQueue = {
   changeId: ChangeId;
-  /** PRs waiting in the same queue. */
+  /** PRs waiting in the same line, none that waits for a person among them. */
   length: number;
   /** Where people merge its bot's PRs: which of its rules decided who merges it, in words. */
   mergeRule?: string;
-  /** 0-based place in the queue; absent when not waiting in it. */
+  /** 0-based place in the line; absent when not waiting in it, as for a PR that waits for a person. */
   position?: number;
-  /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
+  /**
+   * Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. A ready PR has one only
+   * while it waits for a person (its bot's Who merges, its `hold` label, an approval its base requires).
+   */
   reason?: string;
   state: ChangeState;
 };

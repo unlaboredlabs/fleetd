@@ -49,6 +49,35 @@ describe("where a PR is on its way to main", () => {
   });
 });
 
+// As the hub sends them (prs/join.ts `queue`): a ready PR's reason without the train's "held: " tag.
+const PEOPLE_REASON = "it waits for a person to merge it on GitHub, by its bot's Who merges and risk rules; a merge there is recorded";
+const PEOPLE_RULE = "waits for a person: people merge this bot's PRs, and src/x.ts matches no merges-itself rule";
+const LABEL_REASON = "the PR has the `hold` label; the train takes it once the label is gone";
+
+describe("a PR that waits for a person", () => {
+  // A hub from before held PRs left the count still sends a place: it is never shown.
+  const yours = row({ queue: queue("ready", { position: 0, length: 2, reason: PEOPLE_REASON, mergeRule: PEOPLE_RULE }) });
+
+  it("says a person merges it on GitHub, never a place in the merge line", () => {
+    expect(stateLine(yours)).toEqual({ word: "yours to merge", sentence: "Waiting for you to merge on GitHub.", tone: "needs-you" });
+    expect(rowMeta(yours).state.sentence).toBe("Waiting for you to merge on GitHub.");
+    expect(openGroup(yours)).toBe("look");
+  });
+
+  it("reads a hold label or an approval it waits for as held, out of line, as the hub sends its reason", () => {
+    const labelled = row({ queue: queue("ready", { position: 1, reason: LABEL_REASON }) });
+    expect(stateLine(labelled)).toMatchObject({ word: "held", tone: "needs-you" });
+    expect(stateLine(labelled).sentence).not.toMatch(/in line|Ready to merge/u);
+    expect(openGroup(labelled)).toBe("look");
+    expect(words(listItems([labelled, row({ number: 13, queue: queue("ready", { position: 0 }) })]))).toEqual(["Needs a look 1", 11, "In line 1", 13]);
+  });
+
+  it("still reads as in line once a person's rule merges it itself", () => {
+    const itself = row({ queue: queue("ready", { position: 0, length: 1, mergeRule: "merges itself: every file matches docs" }) });
+    expect(stateLine(itself)).toMatchObject({ word: "ready to merge", sentence: "Ready to merge, next in line." });
+  });
+});
+
 describe("a PR its review holds", () => {
   const writer = { role: "implementer", taskId: "T7", profile: "high" } as const;
   const held = (review: Partial<PrRow["review"]>, over: Partial<PrRow> = {}) =>
