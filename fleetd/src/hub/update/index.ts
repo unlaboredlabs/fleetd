@@ -22,6 +22,7 @@ import {
   APP_CLOSE_UPDATING,
   type AutoUpdateResult,
   type HubChannel,
+  type HubEventType,
   type HubUpdateData,
   type HubUpdateMachine,
   type HubUpdatePhase,
@@ -41,6 +42,7 @@ import type { Service } from "../../update/service.ts";
 import { atLeast, buildNumber, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
 import { pause } from "../serve/every.ts";
+import { death } from "../leads/cut_off.ts";
 import { isoMs } from "../store/time.ts";
 
 /**
@@ -123,6 +125,43 @@ export type Target = { version: string; build?: string; sha256?: Record<string, 
 const takes = (n: NodeFacts, update: NodeUpdate, t: Target | undefined) =>
   update.build === undefined || n.canPickBuild === true || t?.version !== update.version || t.newest === undefined || t.newest === update.version;
 
+/** Lead turns that ended since the hub's restart: well, failed (with why, in a few words each), or failed for the
+ * provider's reasons. */
+export type LeadTurns = { completed: number; failed: number; why: string[]; provider: number; providerWhy: string[] };
+
+/** Error classes that are the provider's: a sign-in it refused, a quota or rate limit, its API reporting an outage. */
+const PROVIDER: Record<string, string> = {
+  auth: "a sign-in refused",
+  usage_limit: "a usage limit",
+  rate_limit: "a rate limit",
+  pool_exhausted: "a usage limit",
+  overloaded: "the provider's API reporting an outage",
+};
+
+/**
+ * How a lead's turn ended, for the self-check: `completed`, `failed` (its claude exiting, a fatal error, a stall, its
+ * machine's link dropping: what a build can cause), `provider` (its error classed as the provider's, from the error's
+ * own class), or undefined for an end that isn't a failure (stopped by a person, replaced by a newer message).
+ */
+export function leadEnd(type: HubEventType, data: Record<string, unknown> | undefined, machine: string): { end: "completed" } | { end: "failed" | "provider"; why: string } | undefined {
+  if (type === "thread.completed") return { end: "completed" };
+  const error = data?.error;
+  const cls = error !== null && typeof error === "object" && typeof (error as { class?: unknown }).class === "string" ? (error as { class: string }).class : undefined;
+  if (type === "thread.failed" && cls !== undefined && PROVIDER[cls] !== undefined && data?.reason !== "stalled") return { end: "provider", why: PROVIDER[cls]! };
+  const d = death(type, data, machine);
+  if (d.kind === "not_dead" || d.kind === "cut") return undefined;
+  const why: Record<string, string> = {
+    node_lost: "its machine's link dropped",
+    stalled: "it stalled",
+    exited: "its claude exited",
+    context_full: "its context was full",
+    no_sandbox: "its sandbox didn't come up",
+    signed_out: "a sign-in refused",
+    unreachable: "the provider unreachable",
+  };
+  return { end: "failed", why: why[d.kind] ?? "a fatal error" };
+}
+
 /** A node's answer to its update, and its second, sent only when its restart was refused. */
 export type NodeAnswer = [NodeActionResult, { tryTake(): NodeActionResult | undefined }];
 
@@ -157,12 +196,9 @@ export interface UpdatePorts {
   announce(update: HubUpdateData): void;
   /** The merge train's batches being landed now, which the hub's restart would cut off between their merge and closes. */
   trainLandings?(): number;
-  /**
-   * The leads' turns that ended well since `mark()`, those cut off by their machine's link to the hub dropping (what a
-   * hub's build can cause; never a turn Claude or its provider ended), and how many leads are mid-turn now: for the
-   * self-check after an update.
-   */
-  leadTurns?: { mark(): number; since(mark: number): { completed: number; failed: number }; working(): number };
+  /** The leads' turns that ended since `mark()`, as `leadEnd` sorts them, and how many leads are mid-turn now: for the
+   * self-check after an update. */
+  leadTurns?: { mark(): number; since(mark: number): LeadTurns; working(): number };
   /** fleetd's own hub tells the rollout its self-check passed on `build` (`ring: "first"`, settings' `reportTo`). */
   reportPass?(repo: string, build: string): Promise<void>;
 }
@@ -1198,10 +1234,10 @@ class Drive {
         // Up on the new build: before its nodes follow, it checks itself, and goes back to the build before by itself
         // when that fails.
         this.setPart(undefined, "restarting", undefined, `checking itself on ${versionLabel(to)}: machines relink, a lead turn works`);
-        const failed = await this.selfCheck(ports, run);
+        const check = await this.selfCheck(ports, run);
         if (this.stopped()) return;
-        if (failed !== undefined) return this.rollBack(ports, hub.from, to, failed);
-        this.setPart(undefined, "done", undefined, v.message);
+        if (check.failed !== undefined) return this.rollBack(ports, hub.from, to, check.failed);
+        this.setPart(undefined, "done", undefined, check.note === undefined ? v.message : `${v.message}; ${check.note}`);
         this.reportPass(ports, to);
         return this.driveNodes(ports, to);
       }
@@ -1214,13 +1250,17 @@ class Drive {
 
   /**
    * After the hub came up on a new build: every machine online when the update started relinks (within
-   * `Timing.relink`), and a lead turn works: one ends well, not two cut off by their link to the hub dropping with none
-   * that ended well. Only what the build can cause counts: a turn Claude or its provider ended (an expired sign-in, an
-   * outage) never does. With no lead mid-turn and none ended there is nothing to judge, and a turn that runs on is
-   * waited for `Timing.leadCheck` at most. Why it failed, or undefined. Nothing leaves the hub.
+   * `Timing.relink`), and a lead turn works: one ends well, not two fail with none that ended well. Every failed turn
+   * counts (its claude exiting, a fatal error, a stall, its link dropping) but one its error classes as the provider's
+   * (`leadEnd`): those can't come from the build, so they never roll it back, and the note says so. With no lead
+   * mid-turn and none ended there is nothing to judge, and a turn that runs on is waited for `Timing.leadCheck` at most.
+   * Why it failed, else what to note. Nothing leaves the hub.
    */
-  async selfCheck(ports: UpdatePorts, run: UpdateRun): Promise<string | undefined> {
+  async selfCheck(ports: UpdatePorts, run: UpdateRun): Promise<{ failed?: string; note?: string }> {
     const started = this.u.clockNow();
+    const leads = ports.leadTurns;
+    // From the hub's restart: a turn that ends while machines relink counts too.
+    const mark = leads?.mark();
     const online = run.parts.filter((p) => p.part === "node" && p.machineId !== undefined && p.state !== "skipped");
     for (;;) {
       const live = new Set(ports.nodes().filter((n) => n.liveSince !== undefined).map((n) => n.machineId));
@@ -1228,20 +1268,22 @@ class Drive {
       if (away.length === 0) break;
       if (this.u.clockNow() - started >= this.u.timing.relink) {
         const names = away.slice(0, 3).map((p) => p.name).join(", ") + (away.length > 3 ? ` and ${away.length - 3} more` : "");
-        return `${names} didn't relink within ${Math.round(this.u.timing.relink / 60_000)} min`;
+        return { failed: `${names} didn't relink within ${Math.round(this.u.timing.relink / 60_000)} min` };
       }
-      if (this.stopped()) return undefined;
+      if (this.stopped()) return {};
       await this.u.sleep(this.u.timing.nodePoll, this.signal);
     }
-    const leads = ports.leadTurns;
-    if (!leads) return undefined;
-    const mark = leads.mark();
+    if (!leads || mark === undefined) return {};
+    const noted = (t: LeadTurns) =>
+      t.provider > 0 && t.completed === 0
+        ? { note: `${t.provider === 1 ? "a lead turn" : `${t.provider} lead turns`} failed for the provider's reasons (${t.providerWhy.join(", ")}), which a build can't cause` }
+        : {};
     for (;;) {
       const t = leads.since(mark);
-      if (t.completed > 0) return undefined;
-      if (t.failed >= 2) return `${t.failed} lead turns were cut off by their machine's link to the hub dropping, and none ended well`;
-      if (t.failed === 0 && leads.working() === 0) return undefined;
-      if (this.u.clockNow() - started >= this.u.timing.leadCheck || this.stopped()) return undefined;
+      if (t.completed > 0) return {};
+      if (t.failed >= 2) return { failed: `${t.failed} lead turns failed (${t.why.join(", ")}) and none ended well` };
+      if (t.failed === 0 && leads.working() === 0) return noted(t);
+      if (this.u.clockNow() - started >= this.u.timing.leadCheck || this.stopped()) return noted(t);
       await this.u.sleep(this.u.timing.nodePoll, this.signal);
     }
   }

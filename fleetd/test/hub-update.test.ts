@@ -3,7 +3,7 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { byMachine, defaultTiming, type Held, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type NodeUpdate, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
+import { byMachine, defaultTiming, type Held, leadEnd, type LeadTurns, HUB_UPDATE_MACHINES_MAX, lastAutoOf, signal, type NodeActionResult, type NodeFacts, type NodeUpdate, type UpdatePorts, Updates } from "../src/hub/update/index.ts";
 import { busyWords, healthUrl, updateSummary } from "../src/hub/update/ports.ts";
 import type { HubUpdateData, UpdatePart, UpdateRun, UpdateState } from "../src/shared/contracts.ts";
 import { type Feed, sha256Hex } from "../src/update/index.ts";
@@ -770,16 +770,24 @@ test("a hub whose machines don't relink on the new build puts the build before b
   expect(after.autoSkips()).toBe(NEW);
 });
 
-test("a lead turn that fails twice with none ending well fails the self-check; one that ends well, or no lead at work, passes it", async () => {
-  for (const [ended, failed, working, ok] of [
-    [0, 2, 1, false],
-    [1, 2, 1, true],
-    [0, 0, 1, true],
-    [0, 0, 0, true],
+test("lead turns that fail twice with none ending well fail the self-check, but never the provider's failures, which the hub notes", async () => {
+  const turns = (completed: number, failed: number, provider = 0): LeadTurns => ({
+    completed,
+    failed,
+    why: failed > 0 ? ["its claude exited"] : [],
+    provider,
+    providerWhy: provider > 0 ? ["a sign-in refused"] : [],
+  });
+  for (const [name, t, working, state, message] of [
+    ["two-exited", turns(0, 2), 1, "rolled_back", `${NEW} failed its self-check (2 lead turns failed (its claude exited) and none ended well), so ${OLD} was put back`],
+    ["one-ended", turns(1, 2), 1, "done", `runs ${NEW}`],
+    ["running", turns(0, 0), 1, "done", `runs ${NEW}`],
+    ["idle", turns(0, 0), 0, "done", `runs ${NEW}`],
+    ["provider", turns(0, 0, 3), 0, "done", `runs ${NEW}; 3 lead turns failed for the provider's reasons (a sign-in refused), which a build can't cause`],
   ] as const) {
-    const dir = join(home.dir, `lead-${ended}-${failed}-${working}`);
+    const dir = join(home.dir, `lead-${name}`);
     const fake = new Fake(dir, []);
-    fake.leadTurns = { mark: () => 0, since: () => ({ completed: ended, failed }), working: () => working };
+    fake.leadTurns = { mark: () => 0, since: () => t, working: () => working };
     const u = updatesIn(dir, fake, { leadCheck: 20 });
     u.start(undefined, true);
     await until(() => fake.plans.length === 1);
@@ -789,8 +797,22 @@ test("a lead turn that fails twice with none ending well fails the self-check; o
     const clock = setInterval(() => (fake.now += 5), 1);
     await after.resume();
     clearInterval(clock);
-    expect(byMachine(after.status()!).get("")!.state).toBe(ok ? "done" : "rolled_back");
+    expect(byMachine(after.status()!).get("")).toMatchObject({ state, message });
   }
+});
+
+test("a lead's turn counts against a build unless its own error class is the provider's", () => {
+  const failed = (cls: string, more: Record<string, unknown> = {}) => leadEnd("thread.failed", { error: { class: cls, message: "boom" }, ...more }, "m1");
+  expect(leadEnd("thread.completed", {}, "m1")).toEqual({ end: "completed" });
+  for (const cls of ["auth", "usage_limit", "rate_limit", "pool_exhausted", "overloaded"]) expect(failed(cls)?.end).toBe("provider");
+  expect(failed("process_exited")).toEqual({ end: "failed", why: "its claude exited" });
+  expect(failed("other")).toEqual({ end: "failed", why: "a fatal error" });
+  expect(failed("network")?.end).toBe("failed");
+  expect(failed("invalid_request")?.end).toBe("failed");
+  // A stall counts whatever its error says; a person's stop doesn't count at all.
+  expect(failed("overloaded", { reason: "stalled" })).toEqual({ end: "failed", why: "it stalled" });
+  expect(leadEnd("thread.interrupted", { endCause: "requested" }, "m1")).toBeUndefined();
+  expect(leadEnd("thread.interrupted", { endCause: "node_restarted" }, "m1")).toEqual({ end: "failed", why: "its machine's link dropped" });
 });
 
 test("fleetd's own hub (ring first) tells the rollout each build its self-check passed on", async () => {

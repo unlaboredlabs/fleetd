@@ -47,9 +47,10 @@ After the hub restarts on a new build, it checks itself before its machines upda
 
 1. The hub comes up healthy within 90 seconds.
 2. Every machine that was online before the update reconnects within 3 minutes.
-3. Lead turns still work: two turns cut off because their machine lost its link to the hub, with none finishing
-   normally, fail the check. A turn that Claude or its provider ended, such as for an expired sign-in or an outage,
-   doesn't count, because a new build can't cause it.
+3. Lead turns still work. Two failed turns with none finishing normally fail the check. A failure counts whether
+   Claude exited, hit a fatal error or stalled, or the machine lost its link. Failures whose error the provider
+   reported don't count, because a new build can't cause them: a refused sign-in, a quota or rate limit, or an API
+   outage. The update's record notes them instead.
 
 If any step fails, the hub puts the previous build back by itself and restarts on it. Settings › Hub › Machines ›
 Updates then says which step failed. Automatic updates skip that build until a newer one is out. **Update** still
