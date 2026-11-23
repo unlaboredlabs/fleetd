@@ -89,6 +89,9 @@ export interface DataState {
   readonly browserVideo?: { readonly sessionId: string; readonly link?: number; readonly frames: readonly BrowserFrame[]; readonly dropped: number } | undefined;
   /** The session whose frames come on the window's own peer now (screens/sessions/rtc.ts): main's of it are dropped. */
   readonly browserRtc?: string | undefined;
+  /** The watched session whose machine isn't linked this moment, and that machine: shown over its last picture until
+   * its next frame. */
+  readonly browserWaiting?: { readonly sessionId: string; readonly machineId: string } | undefined;
   /** Each live screen's newest picture for the Screens page (hub.thumbs), by session; never kept on disk. */
   readonly screenThumbs?: Readonly<Record<string, ScreenThumb>> | undefined;
   /**
@@ -313,6 +316,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       return [applyChatDelta(s, frame.delta, nowMs + (s.live.skewMs ?? 0)), {}];
     case "browser_frame": {
       const f = frame.frame;
+      // A frame of the session it waited for: its machine is back.
+      if (s.browserWaiting?.sessionId === f.sessionId) s = { ...s, browserWaiting: undefined };
       // On the window's peer, the frames main still had on their way are dropped; the first of the peer's says so.
       if (frame.rtc !== true && s.browserRtc === f.sessionId) return [s, {}];
       if (frame.rtc === true && s.browserRtc !== f.sessionId) s = { ...s, browserRtc: f.sessionId };
@@ -329,6 +334,8 @@ export const applyFrame = (s: DataState, frame: HubFrame, nowMs: number): [DataS
       const dropped = frames[over - 1]?.seq ?? before.dropped;
       return [{ ...s, browserFrame: f, browserVideo: { sessionId: f.sessionId, ...(f.link === undefined ? {} : { link: f.link }), frames: frames.slice(over), dropped } }, {}];
     }
+    case "browser_waiting":
+      return [{ ...s, browserWaiting: { sessionId: frame.sessionId, machineId: frame.machineId } }, {}];
     case "screen_thumb":
       return [{ ...s, screenThumbs: withThumb(s.screenThumbs, frame.thumb) }, {}];
     // The peer's, not the store's (screens/sessions/rtc.ts).

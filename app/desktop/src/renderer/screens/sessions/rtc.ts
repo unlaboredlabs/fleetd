@@ -56,6 +56,8 @@ export class RtcViewer {
   #timers = new Set<ReturnType<typeof setTimeout>>();
   #quiet: ReturnType<typeof setInterval> | null = null;
   #failures = 0;
+  /** The next peer's try after one failed, while it waits out its back-off. */
+  #retry: ReturnType<typeof setTimeout> | null = null;
   #stopped = true;
   #unlisten: (() => void) | null = null;
 
@@ -83,7 +85,19 @@ export class RtcViewer {
     this.#unlisten = null;
     for (const t of this.#timers) clearTimeout(t);
     this.#timers.clear();
+    this.#retry = null;
     this.#end();
+  }
+
+  /** The screen's machine is back after a wait (the store's `browserWaiting` ended): a peer now, not at the end of a
+   * back-off that the wait made long. */
+  again(): void {
+    if (this.#stopped || this.#peer !== null || this.#retry === null) return;
+    clearTimeout(this.#retry);
+    this.#timers.delete(this.#retry);
+    this.#retry = null;
+    this.#failures = 0;
+    void this.#connect();
   }
 
   /** Sends `input` on the peer; false when it isn't open, for the hub to carry it instead. */
@@ -93,12 +107,13 @@ export class RtcViewer {
     return true;
   }
 
-  #after(ms: number, fn: () => void): void {
+  #after(ms: number, fn: () => void): ReturnType<typeof setTimeout> {
     const t = setTimeout(() => {
       this.#timers.delete(t);
       fn();
     }, ms);
     this.#timers.add(t);
+    return t;
   }
 
   async #connect(): Promise<void> {
@@ -209,7 +224,10 @@ export class RtcViewer {
     if (this.#stopped) return;
     const wait = RETRY_MS[Math.min(this.#failures, RETRY_MS.length - 1)] ?? RETRY_MS[0];
     this.#failures++;
-    this.#after(wait, () => void this.#connect());
+    this.#retry = this.#after(wait, () => {
+      this.#retry = null;
+      void this.#connect();
+    });
   }
 
   #end(): void {
@@ -284,7 +302,12 @@ export function watchPeer(layer: DataLayer, sessionId: string, machineAnswers: b
   viewers.get(key)?.stop();
   viewers.set(key, viewer);
   viewer.start();
+  // Its machine back after a wait: a peer at once.
+  const unsubscribe = layer.store.subscribe((s, prev) => {
+    if (prev.browserWaiting?.sessionId === sessionId && s.browserWaiting?.sessionId !== sessionId) viewer.again();
+  });
   return () => {
+    unsubscribe();
     viewer.stop();
     if (viewers.get(key) === viewer) viewers.delete(key);
   };

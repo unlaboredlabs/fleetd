@@ -47,7 +47,7 @@ let allowed: string[];
 /** The bot's own lead profile, and whether its lead runs on another, as profiles_list says them. */
 let leadPick: string | undefined;
 let leadRestart: boolean;
-/** Its lead is mid-turn: a restart waits for the turn to end. */
+/** Its lead is mid-turn and its machine can't stop the turn: a restart waits for the turn to end. */
 let midTurn: boolean;
 let leadRestarting: boolean;
 /** hub_info's person: undefined for a hub from before it (the app lets them try). */
@@ -332,7 +332,7 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadRestart: true } });
   // Started again, it can be restarted again.
   expect(button("Restart lead")).toBeDefined();
-  // Mid-turn, it waits for the turn to end, and says so instead of offering the button again.
+  // A turn its machine can't stop yet: it waits for the turn to end, and says so instead of offering the button again.
   midTurn = true;
   await pickLead("medium", "Lead model");
   await click(button("Restart lead"));

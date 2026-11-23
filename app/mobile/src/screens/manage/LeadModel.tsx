@@ -1,6 +1,6 @@
 // Lead Model, pushed from a project's screen, as the desktop's Lead model on its Agents page: the profile its lead
 // starts on, the hub's lead profile until it picks its own (project_set leadProfile), and Restart Lead under them,
-// whichever profile its lead runs on (leadRestart), waiting on its turn once asked mid-turn (leadRestarting). A profile claude refused can't be picked, and says why.
+// whichever profile its lead runs on (leadRestart), which stops a turn under way, waiting on it while its machine can't (leadRestarting). A profile claude refused can't be picked, and says why.
 // The profiles are in a section per provider (Anthropic, Google); an admin also finds each of Google's models no profile
 // runs on yet, which makes a profile on it and picks it. While its lead runs on Google and Google isn't connected (no
 // machine signed in, no Gemini key in this bot), Sign In with Google is right under them.

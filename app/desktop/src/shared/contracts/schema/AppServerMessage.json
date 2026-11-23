@@ -490,6 +490,27 @@
             "session"
           ],
           "type": "object"
+        },
+        {
+          "description": "On the browser watch only: the watched screen's machine isn't linked this moment (it, or the hub, restarting). Its frames come once it links again; the next one ends the wait.",
+          "properties": {
+            "machineId": {
+              "$ref": "#/$defs/MachineId"
+            },
+            "sessionId": {
+              "$ref": "#/$defs/BrowserSessionId"
+            },
+            "t": {
+              "const": "browser_waiting",
+              "type": "string"
+            }
+          },
+          "required": [
+            "t",
+            "machineId",
+            "sessionId"
+          ],
+          "type": "object"
         }
       ]
     },

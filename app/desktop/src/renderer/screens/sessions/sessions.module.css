@@ -433,6 +433,19 @@
   inset: 0;
   background: repeating-conic-gradient(var(--hover) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
 }
+/* Its machine is away: one quiet line over the last picture, which stays as it was. */
+.waiting {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--hairline);
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* A browser that is yours: its address bar in the frame's bar, in the bar's own colours. */
 .address {
   flex: 1;

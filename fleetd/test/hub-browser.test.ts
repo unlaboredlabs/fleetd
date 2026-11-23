@@ -164,9 +164,9 @@ test("one node frame reaches every watcher; a slow one skips to the newest, and 
   t.link.link("other", ["browser"]);
   t.link.deliver("other", frame(6));
   expect(fast.sent).toHaveLength(5);
-  // The node links again: it hears of the watch again.
+  // The node links again: it hears of the watch again, and is asked for the screen anew (`key`).
   t.link.link("devbox", ["browser"]);
-  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true }]);
+  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true, key: true }]);
   // Its frames count from the start again: each says the link it came on, so the app shows them anyway, and the one
   // numbered as the last frame sent before still goes.
   const was = fast.sent.at(-1) as { link: number };
@@ -190,12 +190,16 @@ test("an app that watches a screen while its node is between links (a restart) i
   // The node's link dropped as the hub restarted; the app reconnects first and watches.
   t.link.unlink("devbox");
   await t.app.deliver(as(app, person), { t: "browser_watch", session: S1 });
-  expect(app.sent.filter((f) => (f as { t: string }).t === "error")).toEqual([]);
+  // Not refused: the app is told it waits for the machine, and shows that over its last picture.
+  expect(app.sent).toEqual([{ t: "browser_waiting", sessionId: S1, machineId: "devbox" }]);
   // The node links: it hears of the watch, and its frames reach the app.
   t.link.link("devbox", ["browser"]);
-  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true }]);
+  expect(t.link.sent("devbox")).toEqual([{ t: "browser_watch", sessionId: S1, on: true, key: true }]);
   t.link.deliver("devbox", { t: "browser_frame", sessionId: S1, seq: 1, jpegB64: "AAAA", width: 1, height: 1, control: "agent" });
-  expect(app.sent.map((f) => (f as { seq?: number }).seq)).toEqual([1]);
+  expect(app.sent.map((f) => (f as { seq?: number }).seq)).toEqual([undefined, 1]);
+  // Its link drops while watched: the app is told again.
+  t.link.unlink("devbox");
+  expect(app.sent.at(-1)).toEqual({ t: "browser_waiting", sessionId: S1, machineId: "devbox" });
   // A node linked but too old for live view is still refused.
   t.app.close(app);
   t.link.link("devbox", ["session_end"]);

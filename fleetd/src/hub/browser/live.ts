@@ -70,6 +70,8 @@ export class Watch {
     readonly onFrame: (frame: BrowserFrame) => void,
     /** Whether it decodes H.264: undefined for either (the Screens page's pictures take a JPEG the node sends first). */
     readonly video: boolean | undefined,
+    /** Its machine isn't linked this moment (it, or the hub, restarting): its frames come once it links again. */
+    readonly onWaiting?: (machine: string) => void,
   ) {}
 
   /** A frame of its was dropped on the way (an H.264 one): the node sends a keyframe next. */
@@ -128,14 +130,14 @@ export class Live {
    * Starts watching `session` on `machine`: its node starts sending frames, and sends its newest again for each (as a
    * JPEG). `video`: the watch decodes H.264; the node sends it only while every watch of the session does.
    */
-  watch(machine: string, session: string, onFrame: (frame: BrowserFrame) => void, video?: boolean): Watch {
+  watch(machine: string, session: string, onFrame: (frame: BrowserFrame) => void, video?: boolean, onWaiting?: (machine: string) => void): Watch {
     let watched = this.watched.get(session);
     if (!watched) {
       watched = { machine, watches: new Set() };
       this.watched.set(session, watched);
       this.first.set(session, performance.now());
     }
-    const w = new Watch(this, watched.machine, session, ++this.ids, onFrame, video);
+    const w = new Watch(this, watched.machine, session, ++this.ids, onFrame, video, onWaiting);
     watched.watches.add(w);
     let b = this.budgets.get(session);
     if (!b) {
@@ -146,7 +148,7 @@ export class Live {
     // A new watch of an H.264 screen starts from a keyframe (`key`); a watch frame again without it (a budget told
     // anew, a relink) changes only what it says.
     const h264 = this.video(session);
-    link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264, this.relay(session)));
+    if (!link(this.hub).send(watched.machine, watchFrame(session, true, b.told, h264, h264, this.relay(session)))) w.onWaiting?.(watched.machine);
     return w;
   }
 
@@ -219,13 +221,19 @@ export class Live {
     }
   }
 
+  /** `machine`'s link dropped: each watch of a session on it is told it waits for the machine. */
+  unlinked(machine: string): void {
+    for (const w of this.watched.values()) if (w.machine === machine) for (const x of w.watches) x.onWaiting?.(machine);
+  }
+
   /** A node linked (again): the sessions watched there, so it sends their frames. */
   rewatch(machine: string): void {
     for (const [session, w] of this.watched) {
       if (w.machine !== machine) continue;
-      // Frames sent while the link was down are lost: an H.264 screen starts again from a keyframe.
-      const h264 = this.video(session);
-      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, h264, h264, this.relay(session)));
+      // Frames sent while the link was down are lost: the screen comes anew (`key`), an H.264 one from a keyframe. A
+      // node that kept its watcher across a hub's crash sends nothing for a repeated `on`, so a still screen would
+      // stay as it was without it.
+      link(this.hub).send(machine, watchFrame(session, true, this.budgets.get(session)?.told, this.video(session), true, this.relay(session)));
     }
   }
 
@@ -287,7 +295,7 @@ const noSession = (id: string) =>
 export const runsOn = (hub: Hub, s: BrowserSession) => runnerOf(hub.db.conn, s.sessionId) ?? s.projectRef.machineId;
 
 /** The app's `browser_watch` of a live session: any key that can read its project's machine. */
-export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame: BrowserFrame) => void, video = false): Watch {
+export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame: BrowserFrame) => void, video = false, onWaiting?: (machine: string) => void): Watch {
   const s = get(hub, id);
   if (!s || !allows(caller, "read", s.projectRef.machineId)) throw noSession(id);
   if (s.state !== "live") {
@@ -304,7 +312,7 @@ export function startWatch(hub: Hub, caller: Caller, id: string, onFrame: (frame
   if (link(hub).lacks(machine, CAP_BROWSER)) {
     throw new ToolError("machine_offline", `${machine}'s node is too old for live view.`, "Update fleetd on that machine.");
   }
-  return live(hub).watch(machine, id, onFrame, video);
+  return live(hub).watch(machine, id, onFrame, video, onWaiting);
 }
 
 /** The app's `browser_input`: a person's device with operate on the machine, on a session they took over. */

@@ -710,6 +710,10 @@ export type AppServerMessage = {
   peer: string;
   session: BrowserSessionId;
   t: "browser_rtc";
+} | {
+  machineId: MachineId;
+  sessionId: BrowserSessionId;
+  t: "browser_waiting";
 };
 
 export type ApprovalAnswerInput = {
@@ -6390,7 +6394,7 @@ export type ProfilesListOutput = {
   leadProfile?: ProfileName;
   /** With projectRef: its lead runs on another profile, or an edited one, than it would start on now. */
   leadRestart?: boolean;
-  /** With projectRef: its lead was asked to restart (`project_set` leadRestart) and does once its turn ends. */
+  /** With projectRef: its lead was asked to restart (`project_set` leadRestart) and waits on its turn or its machine. */
   leadRestarting?: boolean;
   /** The models a profile may pick. */
   models: ProfileModel[];
@@ -6991,7 +6995,7 @@ export type ProjectSetInput = {
   leadDefault?: boolean;
   /** The profile its lead starts on from its next start, any of the hub's; absent: unchanged. */
   leadProfile?: ProfileName;
-  /** Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends. */
+  /** Start its lead again on its lead profile now, keeping its chat, memory and orders; a turn under way is stopped first. */
   leadRestart?: boolean;
   machineId: MachineId;
   /** How the train merges its PRs from now on. A person's key only. */

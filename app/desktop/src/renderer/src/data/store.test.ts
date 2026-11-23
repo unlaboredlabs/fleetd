@@ -138,6 +138,17 @@ describe("connection", () => {
     expect(run([frame(3)], s).browserFrame?.jpegB64).toBe("f3");
   });
 
+  it("says the watched screen waits for its machine, over the last picture, until its next frame", () => {
+    const frame = (seq: number) => ({ t: "browser_frame" as const, frame: { sessionId: "B1", seq, jpegB64: `f${String(seq)}`, width: 2, height: 2, control: "agent" } });
+    let s = run([live(), frame(1), { t: "browser_waiting", sessionId: "B1", machineId: "devbox" }]);
+    expect(s.browserWaiting).toEqual({ sessionId: "B1", machineId: "devbox" });
+    expect(s.browserFrame?.jpegB64).toBe("f1");
+    // Another session's frame doesn't end it; this one's does, even one older than shown.
+    s = run([{ ...frame(2), frame: { ...frame(2).frame, sessionId: "B2" } }], s);
+    expect(s.browserWaiting?.sessionId).toBe("B1");
+    expect(run([frame(1)], s).browserWaiting).toBeUndefined();
+  });
+
   it("shows a node's frames after it linked again, counted from the start, rather than freezing on the last one shown", () => {
     const frame = (seq: number, link: number, h264 = false) => ({
       t: "browser_frame" as const,
