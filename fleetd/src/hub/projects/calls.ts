@@ -168,15 +168,18 @@ async function repoAdd(hub: Hub, caller: LeadCaller, call: LeadCall): Promise<Re
     };
   }
   addId = out.addId;
+  // What the lead asked for: its url, or the path of another bot's folder whose repo is copied beside it.
+  const asked = url ?? (path as string);
   if (!ended && addId !== undefined) {
     hub.db.conn
       .query("INSERT OR REPLACE INTO project_setup_clones (add_id, machine_id, project_id, repo, path) VALUES (?, ?, ?, ?, ?)")
-      .run(addId, m, r.projectId, url as string, out.path);
+      .run(addId, m, r.projectId, asked, out.path);
   }
+  const copy = out.separateFrom === undefined ? "" : ` (a separate copy: ${out.separateFrom} is another bot's or taken)`;
   return {
     cloning: true,
     path: out.path,
-    next: `Cloning ${url} into ${out.path} on ${m}. You are woken when it ends, or when it fails, with the fix: carry on with other work or end your turn, and spawn nothing in it before then.`,
+    next: `Cloning ${url ?? `the repo at ${path}`} into ${out.path} on ${m}${copy}. You are woken when it ends, or when it fails, with the fix: carry on with other work or end your turn, and spawn nothing in it before then.`,
   };
 }
 
@@ -275,7 +278,7 @@ function tellInterrupted(hub: Hub): void {
       { machineId: row.machine_id, projectId: row.project_id },
       "request",
       row.proposed === null
-        ? `repo_add: the hub restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url again: a clone that finished on the machine is added as it is.`
+        ? `repo_add: the hub restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url or path again: a clone that finished on the machine is added as it is.`
         : propose.interrupted(row.proposed, row.repo, row.path),
     );
   }

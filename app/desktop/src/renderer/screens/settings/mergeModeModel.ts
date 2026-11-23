@@ -1,6 +1,6 @@
 // How a bot's PRs merge, as Settings › Bot shows it (MergeMode.tsx) next to Who merges: its two picks and their words.
 // Pure: the phone app takes it too (app/mobile/src/desktop.ts).
-import type { MergeMode, ProjectSummary } from "../../../shared/contracts";
+import type { MergeMode, MergeShared, ProjectSummary } from "../../../shared/contracts";
 
 export const MERGE_MODES: readonly { readonly value: MergeMode; readonly label: string }[] = [
   { value: "test_first", label: "Test, then merge" },
@@ -9,6 +9,13 @@ export const MERGE_MODES: readonly { readonly value: MergeMode; readonly label: 
 
 /** How the bot's PRs merge: an older hub says nothing, and its train batches them. */
 export const mergeModeOf = (summary: Pick<ProjectSummary, "mergeMode"> | undefined): MergeMode => (summary?.mergeMode === "verify_after" ? "verify_after" : "test_first");
+
+/** "Web", "Web and Docs", "Web, Docs and Shop". */
+const names = (bots: readonly string[]): string => (bots.length <= 1 ? (bots[0] ?? "") : `${bots.slice(0, -1).join(", ")} and ${bots[bots.length - 1]}`);
+
+/** The line under How it merges while other bots share its repo: one merge train, one mode for all of them. */
+export const sharedText = (shared: MergeShared): string =>
+  `Shared with ${names(shared.bots)} (same repo): a change here changes it there too.`;
 
 /** The fix after the up-to-date line where fleetd can't turn it off, and where the person can't. */
 export const OFF_ON_GITHUB = 'An admin of the repo turns off "Require branches to be up to date" on GitHub.';

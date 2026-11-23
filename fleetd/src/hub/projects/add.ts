@@ -50,6 +50,7 @@ import {
 } from "./discover.ts";
 import { build, cutPath, fitAdded, fitFailed, folder, noAnswers, cloneProblem, repoKeyOf } from "./inspect.ts";
 import { type Last, namesFolder, progressDue, slugOr } from "./adding.ts";
+import { adoptSharedMode } from "./settings.ts";
 
 export { namesFolder, progressDue, slugOr } from "./adding.ts";
 
@@ -134,6 +135,14 @@ async function registerAt(
   // A git checkout is the project's own repo, with a remote or without; a plain folder holds none.
   if (facts.isGit) ensureOwn(hub, project, path, "the bot's own repo");
   if (created) startApprovals(hub.db.conn, project);
+  // A new bot on a repo other bots share takes its train's merge mode (W845).
+  if (created && facts.isGit) {
+    try {
+      adoptSharedMode(hub, project);
+    } catch (error) {
+      console.warn("the shared repo's merge mode was not taken:", error);
+    }
+  }
   // The event log keeps at most 2 KB of data; a dry-run project_add has the whole inspect.
   const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title: named, path, created, inspect });
   appendAdded(hub, m, projectId, `${named} added on ${m}: ${inspect.leadNeeds}`, data);

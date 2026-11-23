@@ -5,7 +5,7 @@
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type MergeMode, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type UpToDateRule, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type MergeMode, type MergeShared, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type UpToDateRule, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -223,10 +223,15 @@ export const setMergeMode = async (hub: Hub, p: ProjectRef, mergeMode: MergeMode
   return r.ok ? { ok: true, value: null } : r;
 };
 
-/** The bases of its repos that require branches up to date, while it merges, then verifies; an older hub's are none. */
-export const readUpToDate = async (hub: Hub, p: ProjectRef): Promise<Result<UpToDateRule[]>> => {
+/**
+ * How it merges, as the hub reads it: the bases of its repos that require branches up to date, while it merges, then
+ * verifies (an older hub's are none), and the other bots sharing its repo's train, with that train's mode.
+ */
+export const readMergeFacts = async (hub: Hub, p: ProjectRef): Promise<Result<{ upToDate: UpToDateRule[]; shared?: MergeShared }>> => {
   const r = await hub.call("project_settings_get", ref(p));
-  return r.ok ? { ok: true, value: r.output.settings.upToDate ?? [] } : r;
+  if (!r.ok) return r;
+  const { upToDate, mergeShared } = r.output.settings;
+  return { ok: true, value: { upToDate: upToDate ?? [], ...(mergeShared ? { shared: mergeShared } : {}) } };
 };
 
 /** Turns off "require branches to be up to date" on `repo`'s main, and nothing else of its rules (an admin's). */

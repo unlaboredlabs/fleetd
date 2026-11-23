@@ -11,6 +11,7 @@ import { queue } from "../src/hub/prs/join.ts";
 import { WAITING_ON } from "../src/hub/train/next_rules.ts";
 import { DRAFT } from "../src/hub/train/states.ts";
 import { APPROVAL, changeNext, HELD, PEOPLE } from "../src/hub/train/notes.ts";
+import type { ProjectRef } from "../src/shared/contracts.ts";
 import { git, Kit, REPO, WS } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -186,4 +187,27 @@ test("the hold label still holds a PR of a bot fleetd merges", async () => {
   await k.settle();
   expect(k.change(58)).toMatchObject({ state: "ready", lastError: "held: the PR has the `hold` label; the train takes it once the label is gone" });
   expect(digest(k, false)).not.toContain(PEOPLE_MERGE_LINE);
+});
+
+test("two bots on one repo: each PR goes by its own bot's Who merges, and a hold label holds only its own PR", async () => {
+  const k = new Kit();
+  kits.push(k);
+  const other: ProjectRef = { machineId: "devbox", projectId: "shop-2" };
+  // storefront's people merge; the other bot on the same repo lets fleetd merge.
+  k.host.whoMerges = (r?: ProjectRef) => (r?.projectId === other.projectId ? { merges: "fleetd", rules: DEFAULT_RISK_RULES } : { merges: "people", rules: DEFAULT_RISK_RULES });
+  k.pr(61, "fleetd/T61-x", { "src/a.ts": "a\n" });
+  k.pr(62, "fleetd/T62-x", { "src/b.ts": "b\n" });
+  k.pr(63, "fleetd/T63-x", { "src/c.ts": "c\n" }, { labels: ["hold"] });
+  // Its PRs are its own order's.
+  const workstream = k.host.workstream.bind(k.host);
+  k.host.workstream = (id: string) => (id === "W9" ? { workstreamId: "W9", projectRef: other, hasBrief: true, open: true } : workstream(id));
+  for (const n of [62, 63]) k.host.tasks.set(`T${n}`, { ...k.host.tasks.get(`T${n}`)!, projectRef: other, workstreamId: "W9" });
+  await k.enqueue(61);
+  await k.train.enqueue(other, { taskId: "T62", prUrl: `https://github.com/${REPO}/pull/62` });
+  await k.train.enqueue(other, { taskId: "T63", prUrl: `https://github.com/${REPO}/pull/63` });
+  await passes(k, 10);
+  expect(k.change(62).state).toBe("merged");
+  expect(k.change(61)).toMatchObject({ state: "ready", lastError: PEOPLE });
+  expect(k.change(63).lastError).toBe(HELD);
+  expect(merges(k)).toEqual(["merge #62"]);
 });

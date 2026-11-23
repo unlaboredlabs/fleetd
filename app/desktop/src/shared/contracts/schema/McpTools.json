@@ -14219,6 +14219,27 @@
       ],
       "type": "string"
     },
+    "MergeShared": {
+      "description": "How a bot's PRs merge while other bots share one of its GitHub repos: one merge train per repo, so one mode, which\na change in any of them changes for all.",
+      "properties": {
+        "bots": {
+          "description": "The other bots' titles.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "$ref": "#/$defs/MergeMode",
+          "description": "The mode that repo's train merges by."
+        }
+      },
+      "required": [
+        "bots",
+        "mode"
+      ],
+      "type": "object"
+    },
     "MergePipeline": {
       "description": "One landed change's time in the train and its CI runs.",
       "properties": {
@@ -18480,6 +18501,10 @@
         "mergeRules": {
           "$ref": "#/$defs/RiskRules",
           "description": "Its risk rules, used while people merge its PRs; the defaults until a person edits them. Absent from older\nhubs."
+        },
+        "mergeShared": {
+          "$ref": "#/$defs/MergeShared",
+          "description": "Other bots share one of its GitHub repos, so its merge mode; absent: none does, and from older hubs."
         },
         "projectId": {
           "$ref": "#/$defs/ProjectId"

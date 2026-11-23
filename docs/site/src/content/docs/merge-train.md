@@ -68,6 +68,9 @@ Each bot also picks how the train merges, under **Safety › How it merges**:
 Pick **Merge, then verify** when CI is slow and many PRs land each day. Pick **Test, then merge** when main must never
 be red, even briefly.
 
+Bots on the same GitHub repo share its train, so they share this pick: their settings say so, and a change in one
+changes it for all of them. Who merges stays each bot's own, and a `hold` label holds only its own PR.
+
 ### Merge, then verify {#verify}
 
 1. The train rebases the PR on main and waits for its CI.

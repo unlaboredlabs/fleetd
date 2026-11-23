@@ -42,7 +42,7 @@ import { scopeOf } from "../work/store.ts";
 import { appendAdded, bindScope, type CloneInto, cloneAndRegister, clones, destTaken, ensureOwn, now } from "./add.ts";
 import { checkout, cloneTarget, inspectCheckout, problem, problemError, projectAt, readGithub, repoOf, requireRepoNode } from "./discover.ts";
 import { fitAdded, githubRepo } from "./inspect.ts";
-import { repoNamed } from "./settings.ts";
+import { adoptSharedMode, repoNamed } from "./settings.ts";
 import { archivedNote } from "./adding.ts";
 
 export { archivedNote } from "./adding.ts";
@@ -220,7 +220,7 @@ function startClone(
       const got = await attachCheckout(hub, r, name, at, facts, inspect, addId);
       hooks.cloned?.(got);
     },
-    fix: `Add the checkout at ${p} on ${m} with project_repo_add`,
+    fix: `Add the folder ${p} on ${m} as a repo again: the copy there is added as it is`,
     ...(hooks.cloneFailed ? { failed: hooks.cloneFailed } : {}),
   });
   void cloneAndRegister(hub, m, repo, path, into, run);
@@ -323,6 +323,12 @@ export async function attachCheckout(
     await projectEnvCopy(hub, m, r.projectId, checkout.projectId).catch((error) =>
       console.warn("the project's environment was not copied to its new repo:", error),
     );
+  }
+  // A repo other bots share brings its train's merge mode with it.
+  try {
+    adoptSharedMode(hub, r);
+  } catch (error) {
+    console.warn("the shared repo's merge mode was not taken:", error);
   }
   const title = store(hub).projectGet(r)?.title ?? r.projectId;
   const data = fitAdded({ ...(addId !== undefined ? { addId } : {}), title, path, created: there === undefined, inspect });

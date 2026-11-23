@@ -193,7 +193,7 @@ function ProjectPage(props: { project: Shell; settings: Settings | undefined; re
       </RepoSection>
       <SettingsSection title="Safety">
         <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings?.mergeRules} />
-        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} />
+        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings ? (settings.upToDate ?? []) : undefined} shared={settings?.mergeShared} />
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">

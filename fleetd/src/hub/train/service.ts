@@ -54,7 +54,7 @@ import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
 import { behind } from "./up_to_date.ts";
-import { verifying } from "./verify.ts";
+import { repoVerifying, verifying } from "./verify.ts";
 import { fixing, rerunning, watchMerge, watchPass } from "./watch.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { openBlocking } from "../reviews/read.ts";
@@ -1446,7 +1446,7 @@ export class Train {
     const started = this.nowMs();
     const chain: batch.Stage[] = [{ pr: inCi.prNumber, sha: headSha, title: rebased.title, members: [{ change: inCi, pull: rebased }], added: 1, lone: true }];
     // No batch stacks behind it where each PR merges as itself.
-    const stack = (await this.oneAtATime(repo, base)) === undefined && !verifying(this, inCi.projectRef) ? batch.stacker(this, repo, base, chain) : undefined;
+    const stack = (await this.oneAtATime(repo, base)) === undefined && !repoVerifying(this, repo, inCi.projectRef) ? batch.stacker(this, repo, base, chain) : undefined;
     // A repo with no CI at all goes on its review alone. One whose checks exist but haven't started waits for them, its
     // author and the lead told after `checksStartWaitMs` (`unstartedChecks`).
     const noCi = await this.withoutCi(inCi, base, true);
@@ -1553,7 +1553,7 @@ export class Train {
       await this.wakeLead(inCi.projectRef, prNote(inCi.changeId, inCi.prUrl, `not merged: ${rule}. The train won't try again by itself; once the rule or the PR has changed, call \`change_enqueue\` for it again`));
       return;
     }
-    if (verifying(this, inCi.projectRef) && behind(message)) {
+    if (repoVerifying(this, repo, inCi.projectRef) && behind(message)) {
       // Its base requires it up to date, and another PR merged during its CI: rebased and tested again, no failed try.
       console.info(`train: merge of ${inCi.changeId} refused, its branch behind ${base}; rebasing it again`);
       this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ready", lastError: errorText(`${BEHIND}${base}`) }));

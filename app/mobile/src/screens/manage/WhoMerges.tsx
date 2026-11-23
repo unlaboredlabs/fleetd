@@ -2,8 +2,8 @@
 // GitHub, a new bot's default) or fleetd's merge train, one checked; while You, its risk rules below, one a line, with
 // Save in the bar once they changed. Then How it merges, as the desktop's: Test, then merge or Merge, then verify, and
 // while it merges, then verifies, a line when its main requires branches up to date, with Turn off for an admin where
-// fleetd may. Reads the bot's summary (`merges`, `mergeMode`) and project_settings_get (`mergeRules`, `upToDate`);
-// writes project_settings_set.
+// fleetd may; while other bots share its repo, their one mode and a line saying so. Reads the bot's summary (`merges`,
+// `mergeMode`) and project_settings_get (`mergeRules`, `upToDate`, `mergeShared`); writes project_settings_set.
 import { useLayoutEffect, useState } from "react";
 import { RefreshControl, ScrollView } from "react-native";
 import {
@@ -14,6 +14,7 @@ import {
   mergesOf,
   RULES_WORDS,
   rulesText,
+  sharedText,
   upToDateText,
   WHO_MERGES,
   WHO_MERGES_WORDS,
@@ -26,7 +27,7 @@ import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
-import { readRules, readUpToDate, setMergeMode, setRules, setWhoMerges, turnOffUpToDate } from "./api";
+import { readMergeFacts, readRules, setMergeMode, setRules, setWhoMerges, turnOffUpToDate } from "./api";
 import { CheckRow, errorWords, FieldRow, Problem, sheetOptions, useRead } from "./parts";
 
 export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
@@ -35,9 +36,12 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const key = route.params.key;
   const ref = refOf(key);
   const saved = mergesOf(state.projects?.[key]);
-  const savedMode = mergeModeOf(state.projects?.[key]);
+  const summaryMode = mergeModeOf(state.projects?.[key]);
   const read = useRead(() => readRules(session, ref), [session, key]);
-  const upToDate = useRead(() => readUpToDate(session, ref), [session, key, savedMode]);
+  const facts = useRead(() => readMergeFacts(session, ref), [session, key, summaryMode]);
+  const shared = facts.value?.ok === true ? facts.value.value.shared : undefined;
+  // Shared: the repo's train's mode, the one its PRs go by.
+  const savedMode = shared?.mode ?? summaryMode;
   const rules = read.value?.ok === true ? read.value.value : undefined;
   // A pick shows at once, until the hub's own word on it comes back (as the desktop's).
   const [picked, setPicked] = useState<{ to: Merger; over: Merger } | null>(null);
@@ -49,7 +53,7 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
   const live = state.hub.phase === "live";
   const shown = picked !== null && picked.over === saved ? picked.to : saved;
   const mode = pickedMode !== null && pickedMode.over === savedMode ? pickedMode.to : savedMode;
-  const rule = mode === "verify_after" && upToDate.value?.ok === true ? upToDate.value.value[0] : undefined;
+  const rule = mode === "verify_after" && facts.value?.ok === true ? facts.value.value.upToDate[0] : undefined;
   const admin = state.admin === true;
   const itselfText = itself ?? (rules === undefined ? "" : rulesText(rules.itself));
   const personText = person ?? (rules === undefined ? "" : rulesText(rules.person));
@@ -94,7 +98,7 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
       return setError(r.error);
     }
     haptics.success();
-    upToDate.reload();
+    facts.reload();
   };
 
   const save = async () => {
@@ -141,7 +145,10 @@ export function WhoMerges({ navigation, route }: ChatInfoProps<"WhoMerges">) {
           </ListSection>
         </>
       ) : null}
-      <ListSection header="How it merges" footer={rule === undefined ? MERGE_MODE_WORDS[mode] : upToDateText(rule, admin)}>
+      <ListSection
+        header="How it merges"
+        footer={[shared === undefined ? undefined : sharedText(shared), rule === undefined ? MERGE_MODE_WORDS[mode] : upToDateText(rule, admin)].filter(Boolean).join(" ")}
+      >
         {MERGE_MODES.map((m) => (
           <CheckRow key={m.value} title={m.label} checked={mode === m.value} disabled={!live || busy} onPress={() => void pickMode(m.value)} />
         ))}

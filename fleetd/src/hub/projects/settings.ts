@@ -16,6 +16,7 @@ import type {
   MachineId,
   Merger,
   MergeMode,
+  MergeShared,
   RiskRules,
   ProjectEnvVar,
   ProjectRef,
@@ -42,6 +43,7 @@ import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
 import { issueOrders } from "../issues/index.ts";
 import {
+  archived,
   chatTagsOn,
   issueOrdersOn,
   mergeModeOf,
@@ -276,6 +278,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   if (worktrees) delete worktrees.signinsKept;
   const setup = s.setupIn(r, repo?.repoId) ?? setupOf(undefined);
   const upToDate = upToDateRules(hub, r);
+  const shared = mergeShared(hub, r);
   return {
     machineId: r.machineId,
     projectId: r.projectId,
@@ -285,6 +288,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
     env: s.env(r),
     mergeRules: riskRulesOf(hub.db.conn, r),
     ...(upToDate.length > 0 ? { upToDate } : {}),
+    ...(shared ? { mergeShared: shared } : {}),
     setup,
     ...(worktrees ? { worktrees } : {}),
     ...(worktreesUnknown !== undefined ? { worktreesUnknown } : {}),
@@ -373,10 +377,70 @@ export function setHowItMerges(hub: Hub, caller: Caller, project: ProjectSummary
     throw new ToolError("forbidden", "Only a person picks how a bot's PRs merge.", "Ask the human to set it next to Who merges in the bot's settings.");
   }
   const r = { machineId: project.machineId, projectId: project.projectId };
-  if (mergeModeOf(hub.db.conn, r) === mode) return false;
-  setMergeMode(hub.db.conn, r, mode);
-  announce(hub, r, mode === "verify_after" ? `${project.title}'s PRs merge, then verify now` : `${project.title}'s PRs are tested, then merged now`, { mergeMode: mode });
-  return true;
+  // One merge train per GitHub repo: every bot sharing one of this bot's repos goes the same way (W845).
+  let changed = false;
+  for (const b of [r, ...sharers(hub, r)]) {
+    if (mergeModeOf(hub.db.conn, b) === mode) continue;
+    setMergeMode(hub.db.conn, b, mode);
+    const title = store(hub).projectGet(b)?.title ?? b.projectId;
+    announce(hub, b, mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`, { mergeMode: mode });
+    changed = true;
+  }
+  return changed;
+}
+
+/**
+ * The other live bots that hold one of the project's GitHub repos (never a checkout one of them holds, nor an archived
+ * bot): they share that repo's merge train, so its merge mode.
+ */
+export function sharers(hub: Hub, r: ProjectRef): ProjectRef[] {
+  const db = hub.db.conn;
+  const seen = new Set([`${r.machineId}/${r.projectId}`]);
+  const out: ProjectRef[] = [];
+  for (const key of githubKeys(hub, r)) {
+    for (const p of repos.withKey(db, key)) {
+      const k = `${p.machineId}/${p.projectId}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (repos.holders(db, p).length > 0 || archived(db, p)) continue;
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+/** The project's repos on GitHub, as their keys (`github.com/acme/shop`), lowercased. */
+const githubKeys = (hub: Hub, r: ProjectRef): string[] => [
+  ...new Set(repos.of(hub.db.conn, r).flatMap((x) => (x.repoKey?.toLowerCase().startsWith("github.com/") ? [x.repoKey.toLowerCase()] : []))),
+];
+
+/**
+ * A bot that just took a repo other bots share takes that repo's train's mode with it, so its row and its PRs go one
+ * way with theirs from the start (W845). Tells its apps when that changed its mode.
+ */
+export function adoptSharedMode(hub: Hub, r: ProjectRef): void {
+  const shared = mergeShared(hub, r);
+  if (shared === undefined || mergeModeOf(hub.db.conn, r) === shared.mode) return;
+  setMergeMode(hub.db.conn, r, shared.mode);
+  const title = store(hub).projectGet(r)?.title ?? r.projectId;
+  announce(hub, r, shared.mode === "verify_after" ? `${title}'s PRs merge, then verify now` : `${title}'s PRs are tested, then merged now`, { mergeMode: shared.mode });
+}
+
+/**
+ * How it merges while another bot shares one of its GitHub repos: that repo's train's mode, the one its PRs go by,
+ * and those bots' titles. Undefined while no other bot does.
+ */
+function mergeShared(hub: Hub, r: ProjectRef): MergeShared | undefined {
+  const others = sharers(hub, r);
+  if (others.length === 0) return undefined;
+  // The repo they share, and the train it has: its mode is the one their PRs go by.
+  const db = hub.db.conn;
+  const key = githubKeys(hub, r).find((k) => repos.withKey(db, k).some((p) => others.some((o) => o.machineId === p.machineId && o.projectId === p.projectId)));
+  const repo = key?.slice("github.com/".length);
+  // No train yet: the bots that had the repo first, whose modes a pick keeps as one.
+  const first = others[0] as ProjectRef;
+  const mode = mergeModeOf(db, repo === undefined ? first : trainArea(hub).train.trainProject(repo, first));
+  return { mode, bots: others.map((o) => store(hub).projectGet(o)?.title ?? o.projectId) };
 }
 
 /** What a change of how it merges means, as a call's `next`. */

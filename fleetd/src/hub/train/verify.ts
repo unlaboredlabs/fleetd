@@ -252,3 +252,9 @@ async function tellWriter(t: Train, change: Change, text: string): Promise<void>
 
 /** Whether the project's PRs merge, then verify (its `mergeMode`). */
 export const verifying = (t: Train, projectRef: ProjectRef) => t.host.mergeMode?.(projectRef) === "verify_after";
+
+/**
+ * Whether `repo`'s train merges, then verifies: the mode of the bot it is bound to, one for every PR on it, whichever
+ * bot sharing the repo it is from (W845).
+ */
+export const repoVerifying = (t: Train, repo: string, projectRef: ProjectRef) => verifying(t, t.trainProject(repo, projectRef));

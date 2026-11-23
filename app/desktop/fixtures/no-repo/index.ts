@@ -276,6 +276,17 @@ const settings = (from: Fixture): Fixture => {
   return f;
 };
 
+/** Ada's settings while the bot storefront shares her repo (W845): one merge train, one mode, said under How it merges. */
+const sharedTrain = (from: Fixture): Fixture => {
+  const f = Fixture.from(settings(from), "no-repo-shared-train", "No repo: Ada's settings while storefront shares her repo, so its merge train and mode.");
+  f.update("project_settings_get", (out, input) => {
+    if (!isObject(out) || input?.["projectId"] !== ADA.projectId || !isObject(out["settings"])) return out;
+    const { upToDate: _upToDate, ...rest } = out["settings"];
+    return { ...out, settings: { ...rest, mergeShared: { bots: ["storefront"], mode: "verify_after" } } };
+  });
+  return f;
+};
+
 /** A file block as the hub fills it in (`file`, its name, type and size), and attachment_get's answer for it. */
 const madeFile = (f: Fixture, ref: Ref, attachmentId: string, name: string, mime: string, data: Buffer, caption?: string): JsonObject => {
   f.answer("attachment_get", { projectRef: { ...ref }, attachmentId }, { attachmentId, name, mime, bytes: data.length, dataB64: data.toString("base64") });
@@ -342,7 +353,7 @@ const pictures = (from: Fixture): Fixture => {
 export default defineGroup({
   fixtures: (base) => {
     const made = two(base("chat-waiting"));
-    return [made, settings(made), files(made), pictures(made)];
+    return [made, settings(made), sharedTrain(made), files(made), pictures(made)];
   },
 });
 

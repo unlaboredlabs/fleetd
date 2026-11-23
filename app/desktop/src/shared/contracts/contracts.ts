@@ -6970,6 +6970,17 @@ export type Merger = "people" | "fleetd";
 export type MergeMode = "test_first" | "verify_after";
 
 /**
+ * How a bot's PRs merge while other bots share one of its GitHub repos: one merge train per repo, so one mode, which
+ * a change in any of them changes for all.
+ */
+export type MergeShared = {
+  /** The other bots' titles. */
+  bots: string[];
+  /** The mode that repo's train merges by. */
+  mode: MergeMode;
+};
+
+/**
  * A base of one of a bot's repos that requires branches to be up to date before merging, so its PRs land one at a time
  * in "Merge, then verify" however many run side by side.
  */
@@ -7048,6 +7059,8 @@ export type ProjectSettings = {
   projectId: ProjectId;
   /** The bases of its repos that require branches up to date, read while it merges, then verifies; absent: none. */
   upToDate?: UpToDateRule[];
+  /** Other bots share one of its GitHub repos, so its merge mode; absent: none does, and from older hubs. */
+  mergeShared?: MergeShared;
   /** The repo `setup` is for; absent when it is the project's own directory's, and from older hubs. */
   repo?: RepoName;
   /** What runs in each new worktree before its agent starts; no commands when none are set. */
