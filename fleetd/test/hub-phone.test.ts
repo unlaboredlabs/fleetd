@@ -34,7 +34,7 @@ function setup() {
   addMachine(t.hub, "devbox");
   addMachine(t.hub, "mac1", { agentsMac: true, boxPubKey: MAC_KEY });
   addProject(t.hub, "devbox", "p1");
-  t.link.link("mac1", ["mac_tool", "screen_control", "browser"]);
+  t.link.link("mac1", ["mac_tool", "screen_control", "browser", "browser_rtc"]);
   t.link.deliver("mac1", {
     t: "hb",
     at: "2026-11-08T12:00:00.000Z",
@@ -134,6 +134,8 @@ test("a person starts an iPhone Duo: the Mac lends it ahead of agents, and it is
   const turned = (await t.tools.call(t.hub, human(), "screen_control", { sessionId: session.sessionId, control: "rotate_left" })) as { output: Record<string, any> };
   expect(mac.frames.at(-1)).toMatchObject({ t: "screen_control", sessionId: session.sessionId, control: "rotate_left", by: "human:ada-laptop" });
   expect(turned.output.session.orientation).toBe("landscape_left");
+  // As browser_sessions reads it: the app writes it over its list, and keeps its direct video (`rtc`) with it.
+  expect(turned.output.session).toMatchObject({ machineId: "mac1", rtc: true });
 
   // Its end is a sealed mac sim end in its own thread.
   const ended = await t.tools.call(t.hub, human(), "screen_end", { sessionId: session.sessionId });
