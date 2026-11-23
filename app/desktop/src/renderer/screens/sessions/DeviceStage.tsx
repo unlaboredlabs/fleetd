@@ -340,7 +340,8 @@ function Model({
       onPaste={(e) => call("onPaste", e)}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <canvas ref={canvas} className={cx(s.modelCanvas)} />
+      {/* data-stage: the 3D stage's own canvas, beside the player's (whose picture it draws). */}
+      <canvas ref={canvas} className={cx(s.modelCanvas)} data-stage="" />
     </div>
   );
 }
