@@ -25,7 +25,9 @@ export function keep(id: string, value: unknown): void {
   kept[id] = value;
   try {
     window.localStorage.setItem(KEY, JSON.stringify(kept));
-  } catch {}
+  } catch {
+    // Storage full or off: the part simply isn't held next time.
+  }
 }
 
 /**
