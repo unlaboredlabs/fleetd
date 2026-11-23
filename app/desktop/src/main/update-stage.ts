@@ -13,6 +13,16 @@ export const bucketOf = (id: string): number => createHash("sha256").update(id).
 /** The electron-updater channel for `bucket`: its feed is `<channel>-mac.yml` / `-linux.yml`; null reads latest. */
 export const stageChannel = (bucket: number): string | null => (bucket < 10 ? "stage10" : bucket < 50 ? "stage50" : null);
 
+/** A channel's feed file on `platform`, as electron-updater names it. */
+export const feedFile = (channel: string, platform: NodeJS.Platform): string => `${channel}-${platform === "darwin" ? "mac" : "linux"}.yml`;
+
+/**
+ * The channel to read now: the stage's while its feed is there, else latest. A stage's feed exists only once a build
+ * has reached that stage (rollout.ts tick), and a feed elsewhere (a test's, a fork's) has only latest.
+ */
+export const channelNow = async (stage: string | null, feed: string, platform: NodeJS.Platform, exists: (url: string) => Promise<boolean>): Promise<string> =>
+  stage !== null && (await exists(`${feed}/${feedFile(stage, platform)}`)) ? stage : "latest";
+
 /** This app's rollout id, made once at `path`. */
 export function rolloutId(path: string): string {
   try {
