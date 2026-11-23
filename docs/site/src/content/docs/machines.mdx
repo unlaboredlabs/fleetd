@@ -168,10 +168,7 @@ Agents on one machine share its CPUs, memory and disk:
 - **Build jobs**: each agent gets its share of the CPUs (`MAKEFLAGS`, `CARGO_BUILD_JOBS` and similar are set for it).
 - **Build slots**: heavy `cargo` builds take turns, one slot per 16 GB of memory, so many agents can't run the machine
   out of memory. Set `buildSlots` in node.json to change it.
-- **Heavy-run slots**: agents run each full check, whole test suite or full build as `fleetd-heavy <command>`, which
-  takes one of the machine's heavy-run slots, one per 8 cores (at least 2). With every slot in use the run waits its
-  turn, first come first served, and says so, so many agents checking at once can't overload the machine or fail each
-  other's tests on ports and timeouts. An agent's own small test runs never wait. Set `heavySlots` to change it.
+- **Check slots**: full pre-push checks take turns too, one slot per 8 cores. Set `checkSlots` to change it.
 - **Memory cap** (Linux): each agent runs in its own scope, so one runaway process is killed without taking the
   machine down.
 - **Scratch space**: each agent's `TMPDIR` is on disk, never in `/tmp`.
