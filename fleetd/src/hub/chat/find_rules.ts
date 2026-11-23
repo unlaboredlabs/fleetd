@@ -17,7 +17,7 @@ export type Term = { tokens: string[]; prefix: boolean };
 const TOKEN = /[\p{L}\p{N}]+/gu;
 
 /** A block's words in a line, as the apps' previews say them: its caption, title or question, else what it is. */
-function blockWords(json: string): string {
+export function blockWords(json: string): string {
   let b: { kind?: unknown; caption?: unknown; title?: unknown; question?: unknown; name?: unknown; number?: unknown };
   try {
     b = JSON.parse(json) as typeof b;

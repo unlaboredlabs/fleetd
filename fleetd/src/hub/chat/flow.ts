@@ -807,24 +807,34 @@ async function onEvent(hub: Hub, event: HubEvent): Promise<void> {
   if (event.type === "lead.started") await sendHeld(hub, r);
   else if (event.type === "thread.started") state(hub, r);
   else {
-    const read = await mirror(hub, r, thread);
-    // A person's message the turn left with no reply asks the lead once, with every reply it made landed first; not
-    // while a next turn already runs, which may still answer it.
-    if (event.type === "thread.completed" && read && !leadWorking(hub, r)) {
-      try {
-        unanswered(hub, r, thread, event.seq);
-      } catch (error) {
-        console.warn("chat: an unanswered message not checked:", error);
-      }
+    try {
+      await ended(hub, r, thread, event);
+    } finally {
+      // A Restart lead waiting on this turn's end starts the new session now.
+      if (RUN_ENDS.includes(event.type)) leads(hub).runEnded(thread);
     }
-    // Once per run, as its end comes: a later mirror (a node back, a request answered) must not tag again what a
-    // person since moved to no order.
-    if (RUN_ENDS.includes(event.type)) {
-      try {
-        settleEnded(hub, r, thread.threadId, event.seq);
-      } catch (error) {
-        console.warn("chat: the run's tags not settled:", error);
-      }
+  }
+}
+
+/** A lead run's end or other move: its message lands, an unanswered message is asked for, an end's tags settle. */
+async function ended(hub: Hub, r: ProjectRef, thread: ThreadRef, event: HubEvent): Promise<void> {
+  const read = await mirror(hub, r, thread);
+  // A person's message the turn left with no reply asks the lead once, with every reply it made landed first; not
+  // while a next turn already runs, which may still answer it.
+  if (event.type === "thread.completed" && read && !leadWorking(hub, r)) {
+    try {
+      unanswered(hub, r, thread, event.seq);
+    } catch (error) {
+      console.warn("chat: an unanswered message not checked:", error);
+    }
+  }
+  // Once per run, as its end comes: a later mirror (a node back, a request answered) must not tag again what a
+  // person since moved to no order.
+  if (RUN_ENDS.includes(event.type)) {
+    try {
+      settleEnded(hub, r, thread.threadId, event.seq);
+    } catch (error) {
+      console.warn("chat: the run's tags not settled:", error);
     }
   }
 }

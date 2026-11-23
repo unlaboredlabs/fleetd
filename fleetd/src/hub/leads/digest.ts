@@ -13,6 +13,8 @@ export const DIGEST_MAX_CHARS = 4500;
 export const IDLE_SLOTS_MINUTES = 10;
 /** Decisions listed by full value; the rest only appear by key under "do not re-ask". */
 export const DIGEST_DECISIONS = 10;
+/** Stalled orders' lines the head holds. */
+const STALLED_SHOWN = 10;
 /** The Elsewhere section's "more" words (work/elsewhere.rs `CUT_FIRST`). */
 const ELSEWHERE_CUT_FIRST = "expired claims, then landings, are cut first";
 
@@ -34,6 +36,8 @@ export type DigestInput = {
   idle?: string;
   /** The usage layer's pause on the project's machine ("usage: paused until …"). */
   usage?: string;
+  /** Open orders nothing has run, queued or waited on for a while (stalled.ts), a line each. */
+  stalled?: string[];
   /** Lines from the tasks area; undefined leaves the section out. */
   tasks?: string[];
   train?: string[];
@@ -129,6 +133,9 @@ export function renderLeadDigest(input: DigestInput): string {
   for (const d of ranked) if (!keys.includes(d.key)) keys.push(d.key);
   let head = `# bot ${oneLine(input.title, 80)} (${input.projectRef.machineId}/${input.projectRef.projectId}), ${input.at}`;
   if (input.agents) head += `\n${agentsLineText(input.agents)}`;
+  const stalled = input.stalled ?? [];
+  for (const line of stalled.slice(0, STALLED_SHOWN)) head += `\n${line}`;
+  if (stalled.length > STALLED_SHOWN) head += `\n(+${stalled.length - STALLED_SHOWN} more orders with nothing running)`;
   if (input.idle !== undefined) head += `\n${input.idle}`;
   if (input.usage !== undefined) head += `\n${usageLine(input.projectRef.machineId, input.usage)}`;
   const sections: Section[] = [
