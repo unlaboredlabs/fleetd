@@ -63,10 +63,10 @@ function follow(hub: Hub, types: HubEventType[], fn: (e: import("../../shared/co
  * (`changeLine`, kept in that line's source): a server that stays down is said once, and once more when it answers
  * again or another one drops. Any other thread's says nothing here.
  */
-export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, names: string[], at: string | undefined): void {
+export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, names: string[], at: string | undefined, looked?: string[]): void {
   const lead = leads(hub).records.leadsList().find((l) => l.projectRef.machineId === thread.machineId && l.threadId === thread.threadId);
   if (!lead) return;
-  const text = changeLine(saidSet(chat(hub).lastSource(lead.projectRef, SKIP_SOURCE)), names);
+  const text = changeLine(saidSet(chat(hub).lastSource(lead.projectRef, SKIP_SOURCE)), names, looked);
   if (text) chat(hub).add(lead.projectRef, { author: "system", text, source: skipSource(names, `${thread.threadId}:${at ?? ""}`) });
 }
 
@@ -198,7 +198,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   const retryLater = (r: ProjectRef, lead: StoredLead, seq?: number) =>
     retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
   for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
-  executorHooks(hub).onMcpSkipped((thread, names, at) => mcpSkipped(hub, thread, names, at));
+  executorHooks(hub).onMcpSkipped((thread, names, at, looked) => mcpSkipped(hub, thread, names, at, looked));
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {

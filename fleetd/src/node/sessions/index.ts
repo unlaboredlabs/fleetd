@@ -1626,9 +1626,11 @@ export class SessionService {
       // src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it with its next message.
       delete row.summary.mcpSkipped;
       delete row.summary.mcpSkippedAt;
+      delete row.summary.mcpLooked;
       if (role === "lead" || role === "assistant") {
         row.summary.mcpSkipped = skipped;
         row.summary.mcpSkippedAt = nowIso();
+        row.summary.mcpLooked = reach.addressed(servers).map((s) => s.name);
       }
       if (skipped.length) {
         mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, skipped) })}\n`;

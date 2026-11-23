@@ -44,7 +44,7 @@ async function node() {
   await settle();
   leads(k.hub).records.leadPut({ projectRef: r, threadId: "lead-1", startedAt: AT, sessionGeneration: 1 });
   // As the leads area wires it (src/hub/leads/loops.ts `start`).
-  executorHooks(k.hub).onMcpSkipped((thread, names, at) => mcpSkipped(k.hub, thread, names, at));
+  executorHooks(k.hub).onMcpSkipped((thread, names, at, looked) => mcpSkipped(k.hub, thread, names, at, looked));
   let seq = 1;
   const updated = async (s: SessionSummary) => {
     ex.handleFrame("devbox", { t: "machine_event", seq: ++seq, at: AT, event: { type: "session_updated", ...s } });
@@ -89,5 +89,16 @@ test("a start that left none out, with nothing said before, or another thread's 
   await n.updated(summary("lead-1", "run-1", "running", { mcpSkipped: [], mcpSkippedAt: "2026-11-23T04:00:00.000Z" }));
   await n.updated(summary("agent-7", "run-9", "running", { mcpSkipped: ["devbox-tailnet"], mcpSkippedAt: "2026-11-23T04:00:00.000Z" }));
   expect(n.systemLines()).toEqual([]);
+  n.done();
+});
+
+// The review of #2090: a person who removes the server the chat said was down (the obvious answer to that line) must
+// never read that it answers again.
+test("a server said down and then removed from the bot is never said to answer again", async () => {
+  const n = await node();
+  await n.updated(summary("lead-1", "run-1", "running", { mcpSkipped: ["docs"], mcpSkippedAt: "2026-11-23T04:00:00.000Z", mcpLooked: ["docs", "crm"] }));
+  // "docs" is removed: the next start looks only at "crm", which answers.
+  await n.updated(summary("lead-1", "run-2", "running", { mcpSkipped: [], mcpSkippedAt: "2026-11-23T05:00:00.000Z", mcpLooked: ["crm"] }));
+  expect(n.systemLines()).toEqual(["The MCP server “docs” didn't answer, so its tools are off until the next start."]);
   n.done();
 });

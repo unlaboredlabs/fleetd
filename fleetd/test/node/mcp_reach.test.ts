@@ -88,6 +88,14 @@ test("a bot's chat says only a change of its left-out servers, and the line's so
   expect(changeLine(["b", "a"], ["a", "b"])).toBeUndefined();
   expect(changeLine(["x"], ["y"])).toBe("The MCP server “y” didn't answer, so its tools are off until the next start.");
   expect(changeLine(["a", "b"], [])).toBe("The MCP servers “a” and “b” answer again: their tools are back.");
+  // Only some back: those, and the ones still down aren't said again.
+  expect(changeLine(["a", "b"], ["a"])).toBe("The MCP server “b” answers again: its tools are back.");
+  // One more down besides one still down: the whole set, once.
+  expect(changeLine(["a"], ["a", "b"])).toBe("The MCP servers “a” and “b” didn't answer, so their tools are off until the next start.");
+  // A server said down that the start no longer looked at (removed, renamed, now stdio) is never said to answer again.
+  expect(changeLine(["docs"], [], [])).toBeUndefined();
+  expect(changeLine(["docs", "crm"], [], ["crm"])).toBe("The MCP server “crm” answers again: its tools are back.");
+  expect(changeLine(["docs"], [], ["docs"])).toBe("The MCP server “docs” answers again: its tools are back.");
   // The set round-trips through a source, odd names included; another source says no set.
   expect(saidSet(skipSource(["b", "a:1", "c,d"], "t1:2026"))).toEqual(["a:1", "b", "c,d"]);
   expect(saidSet(skipSource([], "t1:2026"))).toEqual([]);

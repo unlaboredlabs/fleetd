@@ -531,6 +531,8 @@ export type SessionSummary = {
    * included, and when; its chat says a change of them in a line of fleetd's own. Absent: not looked at. */
   mcpSkipped?: string[];
   mcpSkippedAt?: Timestamp;
+  /** The servers reached by address that start looked at, so one no longer there is never said to answer again. */
+  mcpLooked?: string[];
   /** Until when a Monitor the agent armed may still wake the session: the latest of their deadlines; absent with none. */
   watchingUntil?: Timestamp;
   /** What those Monitors watch: each one's description (`a Monitor` for one with none); absent with none. */

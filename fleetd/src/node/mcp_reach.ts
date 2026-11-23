@@ -82,13 +82,18 @@ export function saidSet(source: string | undefined): string[] | undefined {
 
 /**
  * What a bot's chat says of a start's left-out servers, `now`, after the set it last said, `last`: only a change. A
- * server that stays down is said once; once more when it answers again, or when another one drops. Undefined: nothing.
+ * server that stays down is said once; once more when it answers again, or when another one drops. `looked`: the servers
+ * the start looked at (`addressed`'s names), when known: one said down before that isn't there any more (removed,
+ * renamed, now a stdio server) is never said to answer again. Undefined: nothing.
  */
-export function changeLine(last: readonly string[] | undefined, now: readonly string[]): string | undefined {
-  const was = setOf(last ?? []);
+export function changeLine(last: readonly string[] | undefined, now: readonly string[], looked?: readonly string[]): string | undefined {
+  const was = setOf((last ?? []).filter((n) => !looked || looked.includes(n)));
   const is = setOf(now);
-  if (was.length === is.length && was.every((n, i) => n === is[i])) return undefined;
-  return is.length > 0 ? skippedLine(is) : backLine(was);
+  const dropped = is.filter((n) => !was.includes(n));
+  const back = was.filter((n) => !is.includes(n));
+  // Another one down: the whole set now down, in one line. Only some back: those, and no more of the ones still down.
+  if (dropped.length > 0) return skippedLine(is);
+  return back.length > 0 ? backLine(back) : undefined;
 }
 
 /** What the agent hears ahead of its next message when servers were left out of its start: the person hears it from

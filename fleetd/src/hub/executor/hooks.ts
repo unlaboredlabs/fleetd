@@ -24,7 +24,7 @@ export type AsleepHook = (thread: { machineId: string; threadId: string; project
 
 /** A session's start left out MCP servers that didn't answer (its summary's `mcpSkipped`, node/mcp_reach.ts): told
  * once for each start that did, as its summary first says so, never again for that start's fields carried on. */
-export type McpSkippedHook = (thread: { machineId: string; threadId: string }, names: string[], at: string | undefined) => void;
+export type McpSkippedHook = (thread: { machineId: string; threadId: string }, names: string[], at: string | undefined, looked: string[] | undefined) => void;
 
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
@@ -39,10 +39,10 @@ export class ToolHooks {
   }
 
   /** Each `onMcpSkipped` hook, a throwing one logged. */
-  skippedMcp(thread: { machineId: string; threadId: string }, names: string[], at: string | undefined): void {
+  skippedMcp(thread: { machineId: string; threadId: string }, names: string[], at: string | undefined, looked: string[] | undefined): void {
     for (const hook of this.mcpSkipped) {
       try {
-        hook(thread, names, at);
+        hook(thread, names, at, looked);
       } catch (error) {
         console.warn("executor: an MCP skipped hook failed:", error);
       }

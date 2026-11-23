@@ -539,7 +539,7 @@ export class Executors {
     // that carries an older start's fields on, which name the same time): told once, whatever frame brought it.
     for (const id of ids) {
       const skipped = slot.shell.threads.get(id)?.mcpSkipped;
-      if (skipped && skipped[1] !== skippedBefore.get(id)) queueMicrotask(() => executorHooks(this.hub).skippedMcp({ machineId, threadId: id }, skipped[0], skipped[1]));
+      if (skipped && skipped[1] !== skippedBefore.get(id)) queueMicrotask(() => executorHooks(this.hub).skippedMcp({ machineId, threadId: id }, skipped[0], skipped[1], skipped[2]));
     }
     const upserts: StoredThread[] = [];
     for (const t of applied.threads) {
