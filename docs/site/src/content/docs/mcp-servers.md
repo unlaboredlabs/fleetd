@@ -45,11 +45,11 @@ it takes effect the next time that agent's process starts (after it was idle or 
 restart). Removing a server works the same way.
 
 A server reached by address that doesn't answer within 3 s when an agent starts is left out of that start, so the agent
-doesn't wait on it. A lead's chat says so once ("The MCP server “docs” didn't answer, so its tools are off until the next
-start"), not at every start while it stays down, and once more when it answers again or another server drops; an agent
-hears it with its next message. Each start looks again. A lead on Google Antigravity may also start without the bot's
-biggest servers, so fleetd's own tools fit what Antigravity shows its model: see
-[Agents on Google Antigravity](/docs/projects#antigravity).
+doesn't wait on it. A lead's chat says so once ("The MCP server “docs” didn't answer in time, so its tools are off until
+the next start"), not at every start while it stays down, and once more when it answers again or another server drops;
+an agent hears it with its next message. Each start looks again. A lead on Google Antigravity may also start without
+the bot's biggest servers, so fleetd's own tools fit what Antigravity shows its model, and without one that doesn't
+list its tools within 10 s: see [Agents on Google Antigravity](/docs/projects#antigravity).
 
 ## Secrets {#secrets}
 

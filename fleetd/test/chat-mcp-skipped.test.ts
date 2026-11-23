@@ -71,7 +71,7 @@ test("a lead's chat says what each start changed of its left-out MCP servers, on
   // The same fields again (the run's end, a follow's snapshot), and the next wake's "starting" frame carrying them.
   await n.updated(summary("lead-1", "run-1", "completed", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:32:31.000Z")));
   await n.updated(summary("lead-1", "run-2", "starting", left(["devbox-tailnet"], ["devbox-tailnet"], [], "2026-11-23T04:32:31.000Z")));
-  expect(n.systemLines()).toEqual(["The MCP server “devbox-tailnet” didn't answer, so its tools are off until the next start."]);
+  expect(n.systemLines()).toEqual(["The MCP server “devbox-tailnet” didn't answer in time, so its tools are off until the next start."]);
   // That start leaves it out again: nothing changed, nothing said.
   await n.updated(summary("lead-1", "run-2", "running", left(["devbox-tailnet"], [], [], "2026-11-23T05:00:00.000Z")));
   expect(n.systemLines()).toHaveLength(1);
@@ -81,7 +81,7 @@ test("a lead's chat says what each start changed of its left-out MCP servers, on
   // One start with one back and two down: both said.
   await n.updated(summary("lead-1", "run-4", "running", left(["a", "b"], ["a", "b"], ["c"], "2026-11-23T07:00:00.000Z")));
   expect(n.systemLines().slice(2)).toEqual([
-    "The MCP servers “a” and “b” didn't answer, so their tools are off until the next start.",
+    "The MCP servers “a” and “b” didn't answer in time, so their tools are off until the next start.",
     "The MCP server “c” answers again: its tools are back.",
   ]);
   n.done();

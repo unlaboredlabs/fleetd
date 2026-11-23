@@ -977,8 +977,9 @@ sandboxes.
 Antigravity shows its model at most about 60 KB of MCP tools in a session, all servers together, and silently hides the
 biggest tools past that. fleetd's own tools stay well under it, so a lead on Antigravity always has them all: when the
 bot's own servers would push the session past it, the lead starts without the biggest of them (as few as it takes),
-and its chat says so once ("The MCP server “Paper” isn't loaded for this bot's lead on Antigravity …"). Its agents keep
-those servers.
+and its chat says so once ("The MCP server “Paper” isn't loaded for this bot's lead on Antigravity …"). A server that
+doesn't list its tools within 10 s can't be weighed, so the lead starts without it too ("didn't answer in time") and
+the next start weighs it again. Its agents keep those servers.
 
 ## How the lead schedules work {#scheduling}
 

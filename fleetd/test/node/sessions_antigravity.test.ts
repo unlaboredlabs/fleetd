@@ -175,3 +175,34 @@ test("a lead on Antigravity goes without the bot's biggest servers when they and
   expect(summary("g-light")?.mcpHeavy).toBeUndefined();
   expect(summary("g-light")?.mcpChange).toEqual({ down: [], back: [] });
 });
+
+// A server that doesn't list its tools within the weigh time can't be weighed: counted as nothing, it could push
+// fleetd's own tools out once agy loads it. So the lead starts without it, as without one that doesn't answer, and its
+// next start weighs it again.
+test("a lead on Antigravity starts without a server it couldn't weigh, and weighs it again at its next start", async () => {
+  const broken = join(home.dir, "broken-mcp");
+  writeFileSync(broken, "#!/bin/sh\nexit 3\n");
+  chmodSync(broken, 0o755);
+  const server = (name: string, transport: Record<string, unknown>, env: Record<string, string> = {}) => ({
+    name,
+    secrets: { kind: "global" },
+    roles: { lead: true, writers: true, reviewers: false },
+    transport,
+    env: Object.entries(env).map(([k, value]) => ({ kind: "plain", name: k, value })),
+  });
+  const notes = server("notes", { type: "stdio", command: process.execPath, args: [join(import.meta.dir, "fake-mcp-tools.ts")] }, { TOOLS_N: "2", TOOLS_PAD: "10" });
+  const mcp = (slow: Record<string, unknown>) => ({ userServers: false, servers: [notes, slow] });
+  const loaded = (id: string) => JSON.parse(readFileSync(join(home.dir, "node", "sessions", id, "acp.json"), "utf8")).mcpServers.map((m: { name: string }) => m.name);
+  await ok("launch", { sessionId: "g-slow", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role: "lead", mcpRole: "lead", profile: "gemini", model: "gemini-4-neon", effort: "high", mcp: mcp(server("slow", { type: "stdio", command: broken })) });
+  await until("the lead's first run", () => summary("g-slow")?.latestRun?.status === "completed");
+  expect(loaded("g-slow")).toEqual(["notes", "fleetd"]);
+  expect(summary("g-slow")).toMatchObject({ mcpSkipped: ["slow"], mcpChange: { down: ["slow"], back: [] } });
+  expect(summary("g-slow")?.mcpHeavy).toBeUndefined();
+  // Its next start, the server now listing: weighed, loaded, and back.
+  await ok("stop", { sessionId: "g-slow" });
+  const fixed = server("slow", { type: "stdio", command: process.execPath, args: [join(import.meta.dir, "fake-mcp-tools.ts")] }, { TOOLS_N: "2", TOOLS_PAD: "10" });
+  await ok("send", { sessionId: "g-slow", runId: "r2", text: "again", mcpRole: "lead", mcp: mcp(fixed) });
+  await until("the lead's second run", () => summary("g-slow")?.latestRun?.id === "r2" && summary("g-slow")?.latestRun?.status === "completed");
+  expect(loaded("g-slow")).toEqual(["notes", "slow", "fleetd"]);
+  expect(summary("g-slow")).toMatchObject({ mcpSkipped: [], mcpChange: { down: [], back: ["slow"] } });
+});

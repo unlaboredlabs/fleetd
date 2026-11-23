@@ -29,14 +29,14 @@ const many = (n: number, pad: number) => ({
   env: { TOOLS_N: String(n), TOOLS_PAD: String(pad), TOKEN: KEY },
 });
 
-test("it names the servers a lead on Antigravity goes without, the biggest, and never a key", async () => {
+test("it names the servers a lead on Antigravity goes without, the biggest and one that can't list, and never a key", async () => {
   const failing = join(dir, "failing-mcp");
   writeFileSync(failing, `#!/bin/sh\necho "bad token: $TOKEN" >&2\nexit 2\n`);
   const servers = { paper: many(50, 1000), notes: many(2, 10), broken: { type: "stdio", command: "sh", args: [failing], env: { TOKEN: KEY } }, fleetd: { type: "stdio", command: "fleetd" } };
   const r = await run(JSON.stringify({ mcpServers: servers }));
-  expect([r.code, r.stderr, r.stdout]).toEqual([0, "", '{"left":["paper"]}\n']);
+  expect([r.code, r.stderr, r.stdout]).toEqual([0, "", '{"left":["paper"],"unweighed":["broken"]}\n']);
   const light = await run(JSON.stringify({ mcpServers: { notes: many(2, 10) } }));
-  expect([light.code, light.stdout]).toEqual([0, '{"left":[]}\n']);
+  expect([light.code, light.stdout]).toEqual([0, '{"left":[],"unweighed":[]}\n']);
 });
 
 test("bad input exits 2 naming the field, never its value", async () => {
