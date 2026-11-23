@@ -407,7 +407,10 @@ test("an agents' Mac's node checks its setup and puts it in each heartbeat; any 
   const hb = { load: { cpus: 1, load1: 0 }, steps: [], busy: { threads: 0, screens: 0, uploads: 0, hosted: 0 } };
   await t.node.area("hb").fill(hb as never);
   expect((hb.load as { mac?: { user: string } }).mac?.user).toBe("agents");
-  expect(JSON.parse(readFileSync(healthFile(t.node.home), "utf8")).checks.length).toBe(9);
+  // On a Mac the screen capture prompt's row follows Screen Recording's, before its first try too (withCapture).
+  const capture = process.platform === "darwin" ? ["screen_capture"] : [];
+  const ids = JSON.parse(readFileSync(healthFile(t.node.home), "utf8")).checks.map((c: { id: string }) => c.id);
+  expect(ids).toEqual(["developer", "xcode", "ios_runtime", "accessibility", "screen_recording", ...capture, "gui_session", "tools", "keep_awake", "screen_lock"]);
 });
 
 test("the agents' Mac's hello says so, and lists its tool only while it is on", () => {
