@@ -21,6 +21,7 @@ import {
   type Gate,
   gatedName,
   jobChecks,
+  jobFiles,
   LABEL_ABOUT,
   LABEL_COLOR,
   labelGated,
@@ -109,6 +110,11 @@ export async function labelGate(t: Train, repo: string, base: string): Promise<G
   return w ? { kind: "checks", names: w.label } : { kind: "unknown" };
 }
 
+/** What the repo's workflows on `base` said when `workflows` last read them, with no read now. */
+export function knownWorkflows(t: Train, repo: string, base: string): Workflows | undefined {
+  return t.nextLabels.gated.get(key2(repo, base))?.[1];
+}
+
 /** What the repo's workflows on `base` say, read once per `USES_TTL_MS`; a failed read keeps the last answer. */
 export async function workflows(t: Train, repo: string, base: string): Promise<Workflows | undefined> {
   const key = key2(repo, base);
@@ -117,7 +123,7 @@ export async function workflows(t: Train, repo: string, base: string): Promise<W
   if (known && now - known[0] < USES_TTL_MS) return known[1];
   try {
     const files = await t.github.workflowFiles(repo, base);
-    const w: Workflows = { label: labelGated(files), batch: batchSkipped(files), jobs: jobChecks(files) };
+    const w: Workflows = { label: labelGated(files), batch: batchSkipped(files), jobs: jobChecks(files), files: jobFiles(files) };
     t.nextLabels.gated.set(key, [now, w]);
     return w;
   } catch (error) {
@@ -311,6 +317,12 @@ export async function upstream(t: Train, url: string): Promise<Waiting | undefin
   const n = p.number;
   const latest = t.records.latestFor(repo, n);
   return upstreamOf(repo, n, latest, asksGitHub(latest) ? await upstreamPull(t, url, repo, n) : undefined);
+}
+
+/** The task that wrote the PR, as its newest Change on the train has it. */
+export function writerOf(t: Train, url: string): string | undefined {
+  const p = parsePrUrl(url);
+  return p ? t.records.latestFor(p.repo.toLowerCase(), p.number)?.taskId : undefined;
 }
 
 /** The upstream PR as GitHub has it, read at most every `UPSTREAM_TTL_MS`. */

@@ -18,6 +18,10 @@ class Reads implements CiReads {
   merges = new Map<string, Merge>();
   read = async (t: Target) => this.reads.get(targetUrl(t)) ?? { kind: "running" };
   merge = async (_: ProjectRef, t: Target) => this.merges.get(targetUrl(t)) ?? { kind: "pending" };
+  writers = new Map<string, string>();
+  writer = (t: Target) => this.writers.get(targetUrl(t));
+  main: string[] = [];
+  mainFailing = (_: string) => this.main;
 }
 
 /** T1, a writer that ended its turn waiting, in a project whose repo is acme/shop. */
@@ -96,6 +100,64 @@ test("a merge wait wakes early when its PR closes unmerged or fails on the train
   expect(await k.poll(reads)).toBe(1);
   expect(k.sent().length).toBe(2);
   expect(await k.poll(reads)).toBe(0);
+  k.hub.shutdown.abort();
+});
+
+test("a writer waiting on its own PR to merge wakes once per head whose own CI finished red", async () => {
+  // 2026-11-23: fleetd-cloud #769 sat "ready" in the train's line while its own CI failed, and its writer's merge
+  // wait said nothing, as the train had sent nothing back.
+  const k = await ended();
+  await k.waitMerged(PR);
+  await k.waitMerged(PR2);
+  const reads = new Reads();
+  reads.writers.set(PR, "T1");
+  reads.writers.set(PR2, "T9");
+  const red: Read = { kind: "finished", label: "a446317", failing: ["check"], total: 3 };
+  reads.reads.set(PR, red);
+  // Another writer's PR red is its writer's to fix: this wait says nothing of it.
+  reads.reads.set(PR2, red);
+  expect(await k.poll(reads)).toBe(1);
+  expect(k.sent()).toEqual([
+    `Your PR's own CI failed while you wait on it to merge (wait_ci merged): ${PR} at a446317: 1 of 3 checks failed: check. Fix it and push: the train takes the new head, and you still wait on it.`,
+  ]);
+  // The same red head isn't told twice, nor after the wait is asked again.
+  expect(await k.poll(reads)).toBe(0);
+  await k.waitMerged(PR);
+  expect(await k.poll(reads)).toBe(0);
+  // A new head running, then red too: told again.
+  reads.reads.set(PR, { kind: "running" });
+  expect(await k.poll(reads)).toBe(0);
+  reads.reads.set(PR, { ...red, label: "b0459ed" });
+  expect(await k.poll(reads)).toBe(1);
+  expect(k.sent()[0]).toContain(`${PR} at b0459ed: 1 of 3 checks failed`);
+  // Green, it waits on quietly until the PR merges.
+  reads.reads.set(PR, { kind: "finished", label: "c1d2e3f", failing: [], total: 3 });
+  expect(await k.poll(reads)).toBe(0);
+  reads.merges.set(PR, { kind: "merged" });
+  expect(await k.poll(reads)).toBe(1);
+  expect(k.sent()).toEqual([`A PR you waited on to merge (wait_ci merged) has merged: ${PR}.`]);
+  k.hub.shutdown.abort();
+});
+
+test("a PR's red check that is red on main too tells its writer not to re-run it", async () => {
+  // 2026-11-23: writers kept re-running their PRs' CI while main's own install step hung, each re-run hanging again in
+  // one of the repo's places in CI that main's fix waited for.
+  const k = await ended();
+  const agent = { projectRef: P, by: "lead:lab-a/p1", agent: { kind: "task" as const, taskId: "T1" } };
+  await leadCall(k.hub, k.t, agent, { op: "wait_ci", url: PR });
+  await k.waitMerged(PR2);
+  const reads = new Reads();
+  reads.writers.set(PR2, "T1");
+  reads.main = ["check"];
+  reads.reads.set(PR, { kind: "finished", label: "a446317", failing: ["check", "lint"], total: 3 });
+  reads.reads.set(PR2, { kind: "finished", label: "b0459ed", failing: ["lint"], total: 3 });
+  expect(await k.poll(reads)).toBe(2);
+  const [plain, own] = k.sent();
+  expect(plain).toBe(
+    `CI you waited on (wait_ci) finished: ${PR} at a446317: 2 of 3 checks failed: check, lint. check is red on main too: don't re-run it, as the train rebases your PR once main's fix lands.`,
+  );
+  // A check green on main is the PR's own to fix.
+  expect(own).not.toContain("red on main too");
   k.hub.shutdown.abort();
 });
 

@@ -2,10 +2,12 @@
 // runs, and it merges the moment that is green, while others do the same beside it: up to `ciAtOnce` PRs of a repo in
 // CI at once (`.fleetd/train.json`, 4 by default). A PR that merges after another merged meanwhile lands if GitHub sees
 // no conflict; what the two break only together, the base's own CI finds after the merge (verify.ts). A revert the
-// train opened goes before any other PR.
+// train opened goes before any other PR, then a PR that fixes the red base (red_fix.ts), which takes a place in CI
+// even when the others are all taken, so a red base's fix never waits behind PRs merging onto it.
 import type { Change } from "../../shared/contracts.ts";
 import * as batch from "./batch.ts";
 import * as next from "./next.ts";
+import { fixesFirst, fixesRed } from "./red_fix.ts";
 import { repoChecks } from "./repo_checks.ts";
 import type { Train } from "./service.ts";
 import { ciAtOnce } from "./settings.ts";
@@ -48,10 +50,10 @@ export class Lanes {
   }
 }
 
-/** The ready Changes in the order the line takes them: the train's reverts first, the rest as they stand. */
+/** The ready Changes in the order the line takes them: the train's reverts first, a red base's fixes next, the rest as they stand. */
 export function lineOrder(t: Train, repo: string, ready: Change[]): Change[] {
   const reverts = ready.filter((c) => t.records.isRevert(repo, c.prNumber));
-  return [...reverts, ...ready.filter((c) => !reverts.includes(c))];
+  return [...reverts, ...fixesFirst(t, ready.filter((c) => !reverts.includes(c)))];
 }
 
 /**
@@ -70,7 +72,9 @@ export async function laneNext(t: Train, repo: string): Promise<boolean> {
   let took = false;
   for (const c of cands) {
     const cap = ciAtOnce(await repoChecks(t, repo, c.pull.base.ref));
-    if (busy.size >= cap) {
+    // A red base's fix goes past the limit, while no other fix is in CI.
+    const past = fixesRed(t, c.change) && ![...busy].some((id) => fixing(t, id));
+    if (busy.size >= cap && !past) {
       waits(t, c.change, lanesFull(cap));
       continue;
     }
@@ -82,6 +86,12 @@ export async function laneNext(t: Train, repo: string): Promise<boolean> {
   const kept = [...busy].map((id) => t.records.get(id)?.prNumber).filter((n): n is number => n !== undefined);
   await next.relabel(t, repo, [], kept);
   return took || settled;
+}
+
+/** Whether the Change `id` in CI fixes the red base. */
+function fixing(t: Train, id: string): boolean {
+  const change = t.records.get(id);
+  return change !== undefined && fixesRed(t, change);
 }
 
 /** Shows `why` the ready Change waits (undefined: it doesn't), replacing only the line's own note. */

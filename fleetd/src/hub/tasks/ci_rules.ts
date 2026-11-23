@@ -179,6 +179,23 @@ export function mergeLine(url: string, m: Merge): string | undefined {
   return undefined;
 }
 
+/** What a merge wait keeps once it told its writer the PR's own head `label` finished red. */
+export const HEAD_RED = "head red: ";
+
+/**
+ * The writer's line for its own PR's head that finished red while the PR waits on the train: the PR's CI, not the
+ * train's, so the train has nothing to send back yet. Undefined unless `read` finished with a failing check.
+ */
+export function headRedLine(url: string, read: Read): string | undefined {
+  if (read.kind !== "finished" || read.failing.length === 0) return undefined;
+  const names = read.failing.slice(0, NAMED).join(", ");
+  const more = read.failing.length > NAMED ? `, and ${read.failing.length - NAMED} more` : "";
+  return (
+    `Your PR's own CI failed while you wait on it to merge (wait_ci merged): ${url} at ${read.label}: ` +
+    `${read.failing.length} of ${read.total} checks failed: ${names}${more}. Fix it and push: the train takes the new head, and you still wait on it.`
+  );
+}
+
 /** How long a wait (with `merged` or not) stays open before it is given up on. */
 export const giveUpMs = (merged: boolean) => (merged ? MERGE_GIVE_UP_MS : GIVE_UP_MS);
 

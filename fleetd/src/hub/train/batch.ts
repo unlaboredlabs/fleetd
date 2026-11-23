@@ -8,6 +8,7 @@ import type { Change, ChangeState } from "../../shared/contracts.ts";
 import { BATCH_MARKER, batchHeads, type CheckRun, type CommitStatus, GhError, githubWhy, held, labelled, MERGED_LABEL, NEXT_LABEL, type Pull } from "./github.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
+import { fixesFirst, fixesRed } from "./red_fix.ts";
 import { DRAFT, errorText, WAIT_OWN_RED } from "./records.ts";
 import { conflicted, earlyMigration, REGENERATING } from "./regen.ts";
 import { type Fast, isRed, short } from "./rules.ts";
@@ -25,6 +26,8 @@ export { HELD, LEFT_OUT, PEOPLE } from "./notes.ts";
 const NO_CI_HELD = "held: this repo has no CI";
 /** Why the PRs of a repo with no CI at all go one at a time: each merges on its own review (D642). */
 export const NO_CI_ALONE = "this repo has no CI, so each PR merges alone once its review approves it";
+/** Why the others wait for a red base's fix (red_fix.ts): it goes first, alone, so no other PR's failure holds it. */
+export const RED_FIX_ALONE = "it fixes the red base, so it merges first, on its own";
 const MEMBER_LEFT = "a PR left the batch while it formed; the next pass forms it again";
 const NOT_CLOSED = "landed, but its PR is not closed yet";
 /** GitHub's own colour for a merged PR. */
@@ -180,7 +183,7 @@ export async function scratchPrefix(t: Train, repo: string): Promise<string | un
  */
 export async function next_(t: Train, repo: string): Promise<boolean> {
   const ready = t.records.inTrain(repo, ["reviewing", "ready"]).filter((c) => c.state === "ready" || rereviewing(t, c));
-  const [cands, settled] = await candidates(t, repo, ready);
+  const [cands, settled] = await candidates(t, repo, fixesFirst(t, ready));
   next.pruneHeads(t, repo);
   const head = cands[0];
   if (!head) {
@@ -191,7 +194,7 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
   const members: Candidate[] = [];
   const left: [Candidate, string][] = [];
   const reds = new Map<string, Red[]>();
-  const single = (await t.withoutCi(head.change, base)) ? NO_CI_ALONE : await t.oneAtATime(repo, base);
+  const single = fixesRed(t, head.change) ? RED_FIX_ALONE : (await t.withoutCi(head.change, base)) ? NO_CI_ALONE : await t.oneAtATime(repo, base);
   if (single !== undefined) {
     // No batch: each PR merges as itself.
     for (const c of cands.slice(1)) left.push([c, `${head.change.changeId} goes first: ${single}`]);

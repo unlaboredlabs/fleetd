@@ -76,8 +76,8 @@ export function upstreams(after: string[]): string[] {
 /** A check the batch PR skips: the checks of the jobs it `needs` must have passed on a PR's own head. */
 export type BatchSkip = { name: string; needs: string[] };
 
-/** What the train reads from a repo's workflows on one base. */
-export type Workflows = { label: string[]; batch: BatchSkip[]; jobs: string[] };
+/** What the train reads from a repo's workflows on one base; `files`: each file's path and the checks its jobs report. */
+export type Workflows = { label: string[]; batch: BatchSkip[]; jobs: string[]; files: [string, string[]][] };
 
 export const batchNames = (w: Workflows) => w.batch.map((b) => b.name);
 
@@ -220,10 +220,16 @@ export function labelGated(files: [string, string][]): string[] {
 
 /** The checks each job of the workflow files reports, as patterns `gatedName` reads. */
 export function jobChecks(files: [string, string][]): string[] {
-  const names: string[] = [];
-  for (const [, text] of files) {
+  return [...new Set(jobFiles(files).flatMap(([, names]) => names))];
+}
+
+/** Each workflow file's path, with the checks its jobs report, as patterns `gatedName` reads. */
+export function jobFiles(files: [string, string][]): [string, string[]][] {
+  const out: [string, string[]][] = [];
+  for (const [path, text] of files) {
     const jobs = obj(obj(parseYaml(text))?.jobs);
     if (!jobs) continue;
+    const names: string[] = [];
     for (const [id, raw] of Object.entries(jobs)) {
       const job = obj(raw) ?? {};
       const base = str(job.name) ?? id;
@@ -231,8 +237,9 @@ export function jobChecks(files: [string, string][]): string[] {
       const name = job.uses !== undefined ? `${base} / \${{ job }}` : matrix && !base.includes("${{") ? `${base} (\${{ matrix }})` : base;
       if (!names.includes(name)) names.push(name);
     }
+    out.push([path, names]);
   }
-  return names;
+  return out;
 }
 
 /** How a job's `if:` skips it on the train's batch PR, spaces left out. */
