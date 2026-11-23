@@ -88,7 +88,7 @@ export type ChatInfoParams = {
   Info: { key: Key };
   Rename: { key: Key };
   Profiles: { key: Key };
-  /** The profile its lead starts on, and Restart Lead while it runs on another (LeadModel.tsx). */
+  /** The profile its lead starts on, and Restart Lead (LeadModel.tsx). */
   LeadModel: { key: Key };
   /** Its watchers (Watching.tsx), and one to add or change. */
   Watching: { key: Key };

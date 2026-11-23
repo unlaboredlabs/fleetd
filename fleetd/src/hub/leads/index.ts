@@ -328,30 +328,36 @@ export class Leads {
 
   /**
    * `project_set` leadRestart: the project's lead starts again on its lead profile, as Restart hub does for every lead:
-   * now when idle on a linked machine, else once its turn ends or its machine is back. False when it already runs on it.
+   * now when idle on a linked machine, else once its turn ends or its machine is back. Its profile needn't have changed:
+   * a stuck lead is started again on the one it runs on. False when the project has no lead.
    */
   async switchSoon(r: ProjectRef): Promise<boolean> {
-    if (!this.profileChanged(r)) return false;
-    this.records.leadSwitchSet(r, true);
+    if (!this.records.leadGet(r)) return false;
+    this.records.leadSwitchSet(r, "asked");
     await this.switchIfDue(r).catch((error) => console.info(`lead profile switch: ${r.projectId} on ${r.machineId} waits: ${error instanceof Error ? error.message : String(error)}`));
     return true;
   }
 
-  /** The lead's profile switch is due, it still differs, and the lead is idle. */
+  /** The lead's profile switch is due, it still differs (or a person asked for it), and the lead is idle. */
   private switchReady(r: ProjectRef): boolean {
-    return !this.restarting && this.records.leadSwitchDue(r) && this.idle(r) !== undefined && this.profileChanged(r);
+    return !this.restarting && this.records.leadSwitchDue(r) && this.idle(r) !== undefined && this.switchWanted(r);
+  }
+
+  /** A marked lead still has a reason to start again: its profile changed since its session started, or a person asked. */
+  private switchWanted(r: ProjectRef): boolean {
+    return this.records.leadRestartAsked(r) || this.profileChanged(r);
   }
 
   /**
    * A lead marked by `markProfileSwitches` starts again on its current profile, as `restart` does: it keeps its chat,
    * memory and open orders. One that is mid-turn stays marked until its turn ends; one whose profile is the one it
-   * runs on again, or whose project is gone or archived, is unmarked.
+   * runs on again (and no person asked), or whose project is gone or archived, is unmarked.
    */
   switchIfDue(r: ProjectRef): Promise<Lead | undefined> {
     return this.locked(async () => {
       if (this.restarting || !this.records.leadSwitchDue(r)) return undefined;
       const project = store(this.hub).projectGet(r);
-      if (!project || project.archivedAt !== undefined || !this.profileChanged(r)) {
+      if (!project || project.archivedAt !== undefined || !this.switchWanted(r)) {
         this.records.leadSwitchSet(r, false);
         return undefined;
       }

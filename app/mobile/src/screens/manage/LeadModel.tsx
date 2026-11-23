@@ -1,6 +1,6 @@
 // Lead Model, pushed from a project's screen, as the desktop's Lead model on its Agents page: the profile its lead
-// starts on, the hub's lead profile until it picks its own (project_set leadProfile), and Restart Lead while its lead
-// runs on another (leadRestart), waiting on its turn once asked mid-turn (leadRestarting). A profile claude refused can't be picked, and says why.
+// starts on, the hub's lead profile until it picks its own (project_set leadProfile), and Restart Lead under them,
+// whichever profile its lead runs on (leadRestart), waiting on its turn once asked mid-turn (leadRestarting). A profile claude refused can't be picked, and says why.
 // The profiles are in a section per provider (Anthropic, Google); an admin also finds each of Google's models no profile
 // runs on yet, which makes a profile on it and picks it. While its lead runs on Google and Google isn't connected (no
 // machine signed in, no Gemini key in this bot), Sign In with Google is right under them.
@@ -14,7 +14,7 @@ import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
 import { restartLead, setLeadProfile, startLeadOn } from "./api";
 import { GoogleSignIn } from "../GoogleSignIn";
-import { LEAD_HUB, leadLines, leadSections, machineName } from "./model";
+import { LEAD_HUB, leadLines, leadRestartRow, leadSections, machineName } from "./model";
 import { CheckRow, errorWords, Problem, useRead } from "./parts";
 
 export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
@@ -82,11 +82,11 @@ export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
       {admin && onGoogle && googleConnected(status, ref) !== "yes"
         ? signIns.map((m) => <GoogleSignIn key={m.machineId} machineId={m.machineId} name={machineName(state.machines, m.machineId, paired.cloud === true)} signedIn={m.signedIn} onSigned={google.reload} />)
         : null}
-      {view?.leadRestarting === true ? (
+      {view === undefined ? null : leadRestartRow(view) === "waits" ? (
         <ListSection>
           <ListRow title="Restart Lead" value="After its turn" />
         </ListSection>
-      ) : view?.leadRestart === true ? (
+      ) : (
         <ListSection>
           <ListRow
             title="Restart Lead"
@@ -95,7 +95,7 @@ export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
             {...(busy === "restart" ? { accessory: <ActivityIndicator color={t.secondary} /> } : {})}
           />
         </ListSection>
-      ) : null}
+      )}
       <Problem text={read.value?.ok === false ? errorWords(read.value.error) : error === null ? undefined : `Not changed: ${errorWords(error)}`} />
     </ScrollView>
   );

@@ -85,22 +85,33 @@ export class LeadRecords {
     );
   }
 
-  /** Whether the project's lead starts again on its current profile once it is idle; a new session's row clears it. */
-  leadSwitchDue(r: ProjectRef): boolean {
+  /** The project's lead's mark: 1 while its profile switch is due, 2 when a person asked it to start again (whatever its
+   * profile), 0 for neither. A new session's row clears it. */
+  private switchMark(r: ProjectRef): number {
     return (
       this.db.all<{ switch_due: number }>("SELECT switch_due FROM leads WHERE machine_id = ? AND project_id = ?", [r.machineId, r.projectId])[0]
-        ?.switch_due === 1
+        ?.switch_due ?? 0
     );
   }
 
-  leadSwitchSet(r: ProjectRef, due: boolean): void {
-    this.db.conn.query("UPDATE leads SET switch_due = ? WHERE machine_id = ? AND project_id = ?").run(due ? 1 : 0, r.machineId, r.projectId);
+  /** Whether the project's lead starts again on its current profile once it is idle. */
+  leadSwitchDue(r: ProjectRef): boolean {
+    return this.switchMark(r) !== 0;
+  }
+
+  /** Whether a person asked the project's lead to start again (`project_set` leadRestart), even on the profile it runs on. */
+  leadRestartAsked(r: ProjectRef): boolean {
+    return this.switchMark(r) === 2;
+  }
+
+  leadSwitchSet(r: ProjectRef, due: boolean | "asked"): void {
+    this.db.conn.query("UPDATE leads SET switch_due = ? WHERE machine_id = ? AND project_id = ?").run(due === "asked" ? 2 : due ? 1 : 0, r.machineId, r.projectId);
   }
 
   /** The projects whose lead waits to start again on its current profile. */
   leadsSwitchDue(): ProjectRef[] {
     return this.db
-      .all<{ machine_id: string; project_id: string }>("SELECT machine_id, project_id FROM leads WHERE switch_due = 1 ORDER BY machine_id, project_id")
+      .all<{ machine_id: string; project_id: string }>("SELECT machine_id, project_id FROM leads WHERE switch_due != 0 ORDER BY machine_id, project_id")
       .map((row) => ({ machineId: row.machine_id, projectId: row.project_id }));
   }
 

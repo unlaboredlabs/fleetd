@@ -3,7 +3,7 @@
 // mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; Lead
 // runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
 // page, where the default is checked for good and another is allowed with project_set, and its Lead model: the hub's
-// lead profile until the bot picks its own (project_set leadProfile), with Restart lead while its lead runs on another.
+// lead profile until the bot picks its own (project_set leadProfile), with Restart lead always beside it.
 // Both pickers list models by provider, Google's beside Anthropic's: a pick of Google's while Google isn't connected
 // offers Sign in with Google right there, and Lead model starts a lead on a Gemini model no profile runs on yet.
 import { act } from "react";
@@ -309,7 +309,10 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   expect(leadPicker("Lead model").textContent).toBe("Hub default (medium)");
   const row = leadPicker("Lead model").closest("section");
   expect(row?.querySelector("[data-hint]")).toBeNull();
-  expect(host.textContent).not.toContain("Restart lead");
+  // Restart lead is there at rest too: a stuck lead starts again on the model it runs on, with no switch away and back.
+  await click(button("Restart lead"));
+  expect(calls).toEqual([{ tool: "project_set", input: { ...storefront, leadRestart: true } }]);
+  calls = [];
   // A profile claude refused can't be picked, and its hover says why.
   const wide = (await openPicker("Lead model")).find((o) => o.textContent.startsWith("wide"));
   expect(wide?.getAttribute("aria-disabled")).toBe("true");
@@ -327,7 +330,8 @@ it("picks a bot's own lead model, the hub's lead profile first, and restarts its
   // Its lead still runs on the one before: Restart lead moves it now.
   await click(button("Restart lead"));
   expect(calls.at(-1)).toEqual({ tool: "project_set", input: { ...storefront, leadRestart: true } });
-  expect(host.textContent).not.toContain("Restart lead");
+  // Started again, it can be restarted again.
+  expect(button("Restart lead")).toBeDefined();
   // Mid-turn, it waits for the turn to end, and says so instead of offering the button again.
   midTurn = true;
   await pickLead("medium", "Lead model");
