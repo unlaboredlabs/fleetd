@@ -3838,13 +3838,15 @@ export const screens: readonly Screen[] = [
   { id: "sessions", route: SESSION_ROUTE(SESSION.payouts), fixtures: ["sessions-preview"], variant: "asking" },
   // W266, D652, W859: an iPhone of your own on the Mac, the phone as its device the panel's full height under one line,
   // its toolbar at the right edge: icons only, what the Mac says works there (no postures on a plain iPhone), and 3D.
+  // A runner with a graphics card (macOS) shows it in 3D, where the model takes the clicks; one without, flat, where the
+  // page does: either way one element takes your clicks and keys.
   {
     id: "sessions",
     route: SESSION_ROUTE(SESSION.phone),
     fixtures: ["sessions-preview"],
     variant: "ios",
     open: async (page) => {
-      await expect(page.getByRole("application", { name: "The page: your clicks and keys go to it" })).toBeVisible();
+      await expect(page.getByRole("application", { name: /your clicks and keys go to it/u })).toBeVisible();
       await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
       const strip = page.getByRole("toolbar", { name: "Device" });
       await expect(strip.getByRole("button")).toHaveCount(6);
@@ -3969,7 +3971,8 @@ export const screens: readonly Screen[] = [
       const toolbar = page.getByRole("toolbar", { name: "Device" });
       await toolbar.getByRole("button", { name: "Open", exact: true }).click();
       await expect(page.locator('[data-kind="duo"][data-panel="inner"]')).toBeVisible();
-      await toolbar.getByRole("button", { name: "Show it in 3D" }).click();
+      // A runner with a graphics card (macOS) starts in 3D; one drawing WebGL on the CPU (Linux) starts flat until asked.
+      if ((await page.locator('[data-mode="3d"]').count()) === 0) await toolbar.getByRole("button", { name: "Show it in 3D" }).click();
       const model = page.locator('[data-mode="3d"] > [role="application"]');
       await expect(model).toBeVisible();
       const at = await model.boundingBox();
@@ -4131,7 +4134,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["sessions-preview"],
     variant: "duo-replay",
     open: async (page) => {
-      const canvas = page.locator("[data-screen='sessions.replay'] canvas");
+      // The player's canvas; a runner with a graphics card (macOS) also has the 3D stage's, which draws it.
+      const canvas = page.locator("[data-screen='sessions.replay'] canvas:not([data-stage])");
       await expect(canvas).toHaveCount(1);
       await expect(page.locator("video")).toHaveCount(0);
       // The first picture, at its own size: the open inner panel, landscape.
