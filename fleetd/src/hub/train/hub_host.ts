@@ -8,7 +8,7 @@ import type { Hub } from "../api/hub.ts";
 import { leadWakes, trainLine } from "../api/leads.ts";
 import { chat } from "../chat/index.ts";
 import { workstreamGet } from "../orders/workstreams.ts";
-import { mergeModeOf, mergesOf, riskRulesOf } from "../project_lead/store.ts";
+import { archived, mergeModeOf, mergesOf, riskRulesOf } from "../project_lead/store.ts";
 import { time as timeArea } from "../time/index.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
 import { isLabelBrief } from "./label.ts";
@@ -231,6 +231,15 @@ export class HubHost implements TrainHost {
 
   mergeMode(r: ProjectRef): MergeMode {
     return mergeModeOf(this.hub.db.conn, r);
+  }
+
+  projectArchived(r: ProjectRef): boolean {
+    try {
+      return archived(this.hub.db.conn, r);
+    } catch (error) {
+      console.debug(`train: project ${seams.refKey(r)} not read; taken as not archived: ${error}`);
+      return false;
+    }
   }
 
   projectRemoved(r: ProjectRef): boolean {
