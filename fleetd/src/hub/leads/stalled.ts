@@ -1,19 +1,12 @@
-// Open orders nothing moves: on 2026-11-23 ten open orders sat with no agent for hours to days across lead restarts,
-// and nobody noticed until the person asked. The lead's state opens with a line for each order that has had nothing
-// running, queued or waiting (no task, no wait_ci, no Monitor, no PR on the train, no request to the person) for longer
-// than STALLED_MS, with when it last moved.
+// When each open order last moved and whether anything of it is busy, from the hub's store, for the lead state's
+// stalled-order lines (stalled_rules.ts says which orders get one, and how).
 import type { HumanRequest, ProjectRef, Workstream } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
 import { isoMs, parseMs } from "../store/time.ts";
 import { TERMINAL_STATES } from "../train/states.ts";
+import { stalledLines as rules } from "./stalled_rules.ts";
 
-export const STALLED_MS = 30 * 60_000;
-
-/** "2026-11-23 10:05 UTC". */
-const when = (ms: number) => {
-  const iso = isoMs(ms);
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
-};
+export { STALLED_MS } from "./stalled_rules.ts";
 
 /** Whether anything of the order runs, is queued or waits: a live task, a done one's wait_ci or Monitor, a PR on the train. */
 function busy(db: HubDb, r: ProjectRef, workstreamId: string, now: string): boolean {
@@ -52,12 +45,6 @@ function lastMoved(db: HubDb, r: ProjectRef, w: Workstream): number {
 /** A line per open order with nothing running, queued or waiting for over STALLED_MS, the longest idle first. */
 export function stalledLines(db: HubDb, r: ProjectRef, open: Workstream[], requests: HumanRequest[], nowMs: number): string[] {
   const now = isoMs(nowMs);
-  const out: { line: string; since: number }[] = [];
-  for (const w of open) {
-    if (requests.some((q) => q.workstreamId === w.workstreamId)) continue;
-    const since = lastMoved(db, r, w);
-    if (nowMs - since <= STALLED_MS || busy(db, r, w.workstreamId, now)) continue;
-    out.push({ line: `${w.workstreamId} open, nothing running since ${when(since)}`, since });
-  }
-  return out.sort((a, b) => a.since - b.since).map((x) => x.line);
+  const orders = open.map((w) => ({ workstreamId: w.workstreamId, lastMovedMs: lastMoved(db, r, w), busy: busy(db, r, w.workstreamId, now) }));
+  return rules(orders, requests, nowMs);
 }

@@ -9,6 +9,7 @@ import { executors } from "../src/hub/executor/index.ts";
 import { LEAD_FRESH_AFTER_MS, leads } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
+import { STALLED_MS, stalledLines } from "../src/hub/leads/stalled_rules.ts";
 import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { isoMs } from "../src/hub/store/time.ts";
@@ -219,4 +220,22 @@ test("the lead's state flags each open order with nothing running for more than 
   expect(digest).not.toContain(`${fresh.workstreamId} open, nothing running`);
   // At the top: before the Work section.
   expect(digest.indexOf("nothing running since")).toBeLessThan(digest.indexOf("## Work"));
+});
+
+test("the stalled-order rules alone, as fleetd cloud calls them: busy, recent and asked-of-the-person orders get no line", () => {
+  const now = Date.parse("2026-11-23T12:00:00Z");
+  const ago = (min: number) => now - min * 60_000;
+  const lines = stalledLines(
+    [
+      { workstreamId: "W1", lastMovedMs: ago(45), busy: false },
+      { workstreamId: "W2", lastMovedMs: ago(600), busy: false },
+      { workstreamId: "W3", lastMovedMs: ago(600), busy: true },
+      { workstreamId: "W4", lastMovedMs: ago(20), busy: false },
+      { workstreamId: "W5", lastMovedMs: ago(600), busy: false },
+    ],
+    [{ workstreamId: "W5" } as never],
+    now,
+  );
+  expect(lines).toEqual(["W2 open, nothing running since 2026-11-23 02:00 UTC", "W1 open, nothing running since 2026-11-23 11:15 UTC"]);
+  expect(STALLED_MS).toBe(30 * 60_000);
 });
