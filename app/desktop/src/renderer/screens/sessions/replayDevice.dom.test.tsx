@@ -60,6 +60,12 @@ const settle = async () => {
   for (let i = 0; i < 12; i++) await act(() => new Promise((done) => setTimeout(done, 0)));
 };
 
+/** Waits until `ready` holds (the 3D stage's own chunk loads and gives way in its own time), up to 10 s. */
+const until = async (ready: () => boolean) => {
+  for (let i = 0; i < 500 && !ready(); i++) await act(() => new Promise((done) => setTimeout(done, 20)));
+  expect(ready()).toBe(true);
+};
+
 const mount = async () => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const hub: HubApi = {
@@ -101,9 +107,10 @@ it("keeps a replay's video through 3D giving way to flat, with its source, in a 
   });
   watch.observe(host, { childList: true, subtree: true });
   await mount();
+  // The stage couldn't start here: once it has tried, the device shows flat, a Duo.
+  await until(() => host.querySelector("[data-mode='flat'] [data-kind='duo']") !== null);
+  await settle();
   watch.disconnect();
-  // The stage couldn't start here: the device shows flat, a Duo.
-  expect(host.querySelector("[data-mode='flat'] [data-kind='duo']")).not.toBeNull();
   const videos = host.querySelectorAll("video");
   expect(videos).toHaveLength(1);
   // One video, the one put in first, playing from its recording.
