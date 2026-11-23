@@ -215,9 +215,9 @@ export function taskResultLines(taskId: string, title: string, result: TaskResul
   });
 }
 
-/** A result tail `resultText` cut, with a last line on reading it whole. */
+/** A result tail `resultText` cut, or the node's summary cut before its whole reply was read, with a last line on reading it whole. */
 const withWholeHint = (taskId: string, tail: string) =>
-  tail.includes("\n…\n") ? `${tail}\n(Cut: \`agents\` with taskId ${taskId} has it whole, in fullResult.)` : tail;
+  tail.includes("\n…\n") || tail.startsWith("…") ? `${tail}\n(Cut: \`agents\` with taskId ${taskId} has it whole, in fullResult.)` : tail;
 
 /** `" [branch]"`, or nothing. */
 const branchPlace = (task: Task) => (task.branch !== undefined ? ` [${task.branch}]` : "");

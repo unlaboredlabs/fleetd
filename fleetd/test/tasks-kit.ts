@@ -105,7 +105,9 @@ export class FakePorts implements TaskPorts {
   pendingQuestion = async () => this.pending;
   /** The thread's latest assistant message whole, as `latestText` reads it from the node. */
   latest: string | undefined;
-  latestText = async () => this.latest;
+  /** When set, how `latestText` reads a thread instead: a slow or silent node. */
+  latestRead: ((thread: ThreadRef) => Promise<string | undefined>) | undefined;
+  latestText = async (thread: ThreadRef) => (this.latestRead ? this.latestRead(thread) : this.latest);
   runCommand = async (machineId: string, cwd: string, argv: string[]): Promise<CmdOutput | undefined> => {
     this.commands.push({ machineId, cwd, argv });
     if (argv.join(" ") === "git remote get-url origin") return { exitCode: 0, outputTail: `${this.remote}\n` };

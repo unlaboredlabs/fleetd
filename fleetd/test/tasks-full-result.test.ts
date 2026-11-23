@@ -6,7 +6,7 @@ import { MESSAGE_KEPT } from "../src/hub/executor/shell_mapper.ts";
 import { ASSISTANT_TAIL, assistantTail } from "../src/node/sessions/state.ts";
 import { leadCall } from "../src/hub/tasks/calls.ts";
 import { fullResultText, resultText, taskResultLines } from "../src/hub/tasks/render.ts";
-import type { Task, TaskResult } from "../src/shared/contracts.ts";
+import type { Task, TaskResult, ThreadRef } from "../src/shared/contracts.ts";
 import { tasksKit, until } from "./tasks-kit.ts";
 
 test("a lead reads a long result whole by its task id, read from the node past the summary's 4 KB", async () => {
@@ -71,6 +71,38 @@ test("a result the node's summary kept only the end of is read whole: fullResult
   const lead = { ...k.lead, agent: { kind: "lead" as const } };
   const one = (await leadCall(k.hub, k.t, lead, { op: "task_list", taskId: writer.taskId })) as { fullResult?: string };
   expect(one.fullResult).toBe(whole);
+  k.hub.shutdown.abort();
+});
+
+test("a node slow to give a reply whole holds no lock: another task ends at once, and the late read fills the result", async () => {
+  const k = tasksKit();
+  void k.t.run();
+  const slow = await k.spawn("audit the sheet", "read");
+  const quick = await k.spawn("check the pin", "read");
+  const whole = `Steps for the person: open Settings.\n${"Each PR landed and its pin moved. ".repeat(120).trim()}\nDone.`;
+  const slowThread = slow.threadRef as ThreadRef;
+  let answer: (text: string) => void = () => {};
+  k.ports.latestRead = (thread) =>
+    thread.threadId === slowThread.threadId ? new Promise<string>((resolve) => (answer = resolve)) : Promise.resolve("Pin checked.");
+  k.threadRow(slowThread.threadId, "completed", resultText(assistantTail(whole), MESSAGE_KEPT));
+  k.threadRow(quick.threadRef?.threadId as string, "completed", "Pin checked.");
+  const started = Date.now();
+  k.thread("thread.completed", slowThread.threadId, { runId: "r1", endCause: "completed" });
+  k.thread("thread.completed", quick.threadRef?.threadId as string, { runId: "r1", endCause: "completed" });
+  await until(() => k.t.get(quick.taskId)?.state === "done" && k.t.get(slow.taskId)?.state === "done");
+  // Both ended within the follower's grace, the slow read still out, and the lock is free meanwhile.
+  expect(Date.now() - started).toBeLessThan(5_000);
+  const release = await k.t.lockSettled();
+  release();
+  const cut = (k.t.get(slow.taskId) as Task).result as TaskResult;
+  expect(cut.tail.startsWith("…")).toBe(true);
+  expect(taskResultLines(slow.taskId, "audit the sheet", cut, false)).toContain(`\`agents\` with taskId ${slow.taskId} has it whole`);
+
+  answer(whole);
+  const lead = { ...k.lead, agent: { kind: "lead" as const } };
+  const fullOf = async () => ((await leadCall(k.hub, k.t, lead, { op: "task_list", taskId: slow.taskId })) as { fullResult?: string }).fullResult;
+  await until(() => (k.t.get(slow.taskId)?.result as TaskResult).tail.startsWith("Steps for the person"));
+  expect(await fullOf()).toBe(whole);
   k.hub.shutdown.abort();
 });
 
