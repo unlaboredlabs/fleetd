@@ -24,7 +24,7 @@ import { events } from "../src/hub/store/events.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { withTrailers } from "../src/hub/train/batch.ts";
 import { changeRecords } from "../src/hub/train/index.ts";
-import type { Change, Workstream } from "../src/shared/contracts.ts";
+import type { Change, ProjectSummary, Workstream } from "../src/shared/contracts.ts";
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 const REPO = "acme/shop";
@@ -402,5 +402,26 @@ test("a setting announced to apps: the bot with no GitHub repo shows no switch",
   expect(store(r.hub).projectGet(PROJECT)?.issueOrders).toBeUndefined();
   setIssueOrders(r.hub.db.conn, PROJECT, false);
   expect(store(r.hub).projectGet(PROJECT)?.issueOrders).toBeUndefined();
+  r.done();
+});
+
+test("a repo a bot holds as another bot's checkout: the issue goes to the bot that holds it, never to the archived checkout", async () => {
+  const r = rig();
+  // Shop's own directory is a plain folder now; the bot that was acme/shop's checkout, lab-a/c1, is Shop's repo.
+  const c = r.hub.db.conn;
+  c.run("DELETE FROM repos");
+  store(r.hub).projectsUpsertMany(PROJECT.machineId, [
+    { machineId: PROJECT.machineId, projectId: "p1", title: "Shop", workspaceRoot: "/srv/shop", lastActivityAt: iso(NOW), threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as unknown as ProjectSummary,
+    { machineId: PROJECT.machineId, projectId: "c1", title: "shop-checkout", workspaceRoot: "/srv/src/shop", lastActivityAt: iso(NOW), threads: { failed: 0, idle: 0, running: 0, waiting: 0 } } as unknown as ProjectSummary,
+  ]);
+  c.run(
+    `INSERT INTO repos (machine_id, project_id, name, checkout_machine_id, checkout_project_id, repo_key, base) VALUES
+       (?1, 'c1', 'shop', ?1, 'c1', 'github.com/acme/shop', 'main'),
+       (?1, 'p1', 'shop', ?1, 'c1', 'github.com/acme/shop', 'main')`,
+    [PROJECT.machineId],
+  );
+  expect(r.area.botFor(REPO)).toEqual(PROJECT);
+  expect(await r.area.take({ kind: "labelled", issue: issue(30), labelling: labelling("LE_30") }, true)).toStartWith("opened ");
+  expect(r.orders().map((o) => o.projectRef)).toEqual([PROJECT]);
   r.done();
 });
