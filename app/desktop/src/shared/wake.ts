@@ -18,7 +18,7 @@ export type Wake =
   | { readonly phase: "asleep" }
   /** Its computer starts: the step, and when the start began (hub epoch ms; absent from a hub that doesn't say). */
   | { readonly phase: "waking"; readonly step: StartStep | undefined; readonly since: number | undefined }
-  /** A try failed: why, and when it is tried again by itself (none: it waits on something else, as billing). */
+  /** A try failed: why, and when it is tried again by itself. */
   | { readonly phase: "failed"; readonly reason: string; readonly retryAt: number | undefined }
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
@@ -27,7 +27,7 @@ export type Wake =
   | { readonly phase: "writing" }
   /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
   | { readonly phase: "received"; readonly since: number | undefined }
-  /** The lead can't take your message now: why, in plain words. */
+  /** The lead can't take your message now, or its start waits on something no try fixes (the team's billing): why, in plain words. */
   | { readonly phase: "held"; readonly reason: string }
   /** Past START_STALE_MS the lead, idle since before your message, never started on it. */
   | { readonly phase: "unstarted" };
@@ -77,11 +77,20 @@ const ms = (at: string | undefined): number | undefined => {
   return Number.isNaN(t) ? undefined : t;
 };
 
+/** A held start's reason as the bot says it: "The lead can’t start now: this team reached its spend cap." */
+const heldStart = (reason: string): string => {
+  const r = reason.trim();
+  // Lowered only where it is a sentence's first word ("This team…"), never a name or an acronym ("GitHub", "API").
+  return heldWords({ blocked: /^[A-Z][a-z]*(?=[\s,.:;]|$)/u.test(r) ? `${r.charAt(0).toLowerCase()}${r.slice(1)}` : r }) ?? "The lead can’t start now.";
+};
+
 /** The wait now, or undefined: a lead that is neither asleep nor at work, with nothing of yours to answer. */
 export const wakeOf = (i: WakeIn): Wake | undefined => {
   const a = i.activity;
   if (i.working && a?.kind === "starting") {
-    if (a.failed !== undefined) return { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
+    // A start that waits on something no try fixes (no retry of its own: the team's billing) is held, not failed: it
+    // goes on by itself once that is settled, so nothing offers Try again.
+    if (a.failed !== undefined) return a.failed.retryAt === undefined ? { phase: "held", reason: heldStart(a.failed.reason) } : { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
     // A start older than the person's message (one it joined, or a hub that kept an old start's time) counts from
     // the message: the wait they see is this one.
     const since = ms(a.startedAt);

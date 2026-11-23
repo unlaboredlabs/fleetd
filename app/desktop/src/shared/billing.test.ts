@@ -114,13 +114,14 @@ describe("what the page says in each state", () => {
 
   it("the cap reached: one line with the cap, fixed by raising it", () => {
     const s = state("cap");
-    expect(topLine(s)).toEqual({ tone: "danger", message: "This month's spend cap of $50 is reached, so bots wait until next month. Raise the cap to go on.", fix: "cap" });
+    expect(topLine(s)).toEqual({ tone: "danger", message: "This month's spend cap of $50 is reached, so bots on fleetd's computers are stopped until next month. Raise the cap to go on.", fix: "cap" });
+    expect(capLine(s)).toMatch(/ this month: reached, so bots are stopped$/u);
     expect(usageRows(s).map((r) => r.cpu)).toEqual([16, 8, 2]);
   });
 
   it("credits used up with a plan: one line, fixed by adding credits", () => {
     const s = { ...state("plan"), held: "empty" as const, credits: { ...state("plan").credits, leftCents: 0, expiring: null } };
-    expect(topLine(s)).toMatchObject({ fix: "buy", message: "No credits left, so bots on fleetd's computers wait. Add credits or pick a plan." });
+    expect(topLine(s)).toMatchObject({ fix: "buy", message: "No credits left, so bots on fleetd's computers are stopped. Add credits or pick a plan." });
   });
 
   it("not switched on: no Billing at all, so no line to say so and nothing to buy", () => {
@@ -169,7 +170,7 @@ describe("the page's figures", () => {
     expect(heldLine(read(BILLING_SAMPLES.cap))).not.toContain("credits");
     expect(heldLine(read(BILLING_SAMPLES.none))).toBe("This team has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
     expect(heldLine({ ...read(BILLING_SAMPLES.plan), notice: null, held: "empty", credits: { ...read(BILLING_SAMPLES.plan).credits, leftCents: 0 } })).toBe(
-      "No credits left, so bots on fleetd's computers wait. Add credits or pick a plan.",
+      "No credits left, so bots on fleetd's computers are stopped. Add credits or pick a plan.",
     );
   });
 

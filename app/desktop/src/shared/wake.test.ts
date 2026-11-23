@@ -78,9 +78,17 @@ describe("a cloud bot waking", () => {
     if (w.phase !== "failed") throw new Error("not failed");
     expect(tryAgainLabel(w, T + 1_200)).toBe("Try again · 9s");
     expect(tryAgainLabel(w, T + 10_000)).toBe("Try again");
-    // A billing hold has no retry of its own.
-    expect(tryAgainLabel({ phase: "failed", reason: "Your team is out of credits.", retryAt: undefined }, T)).toBe("Try again");
-    expect(wakeWords({ phase: "failed", reason: "Your team is out of credits.", retryAt: undefined }, T)).toEqual({ words: "Couldn’t wake up. Your team is out of credits." });
+  });
+
+  test("a start the team's billing holds is held, with no Try again: it goes on by itself once that is settled", () => {
+    // The cloud's held start has no retry of its own (fleetd-cloud src/hosted/start.ts).
+    const w = some({ working: true, waiting: true, activity: starting({ step: "box", failed: { reason: "This team reached its spend cap" } }) });
+    expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this team reached its spend cap." });
+    expect(wakeWords(w, T)).toEqual({ words: "The lead can’t start now: this team reached its spend cap." });
+    expect(wakePose(w, true)).toBe("idle");
+    expect(wakeDots(w)).toBe(false);
+    // A name keeps its capital.
+    expect(some({ working: true, activity: starting({ failed: { reason: "GitHub refused the clone." } }) })).toEqual({ phase: "held", reason: "The lead can’t start now: GitHub refused the clone." });
   });
 
   test("after the start, it stays in the reply's place through the thinking and the first words of a cold turn only", () => {
