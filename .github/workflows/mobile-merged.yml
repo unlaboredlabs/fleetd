@@ -1,0 +1,32 @@
+# After each push to main whose CI passed, starts Mobile release (mobile-release.yml) on main to build and send the
+# phone app to TestFlight if it changed since the last build that went there; nothing new, it passes in seconds
+# (.github/release/mobile-due.sh). Mobile release's own schedule is only a backstop: GitHub starts scheduled runs in
+# this repository hours late or not at all (Nightly's 04:17 UTC ran at 12:39 and 14:49; Staple's half-hourly one ran
+# 5 times in 36 hours, Nov 22-23).
+#
+# A dispatch rather than a workflow_run trigger on mobile-release.yml itself: the merge train counts no run a dispatch
+# started as main's CI (its watch after a merge and its read of main's checks leave them out), so a failed iOS build
+# opens no fix order for a merge. Runs of Mobile release on main take turns, and a newer one waiting replaces an older
+# one, so a burst of merges builds once.
+name: Mobile release on merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    name: mobile release on merge
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run mobile-release.yml --ref main -f testflight=true -f only_if_changed=true

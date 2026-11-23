@@ -1,9 +1,10 @@
 name: Mobile release
 
-# Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow) or every 3 hours from main, on
-# GitHub runners only: no EAS, no Expo service. A scheduled run builds and sends to TestFlight only when the phone app
-# changed on main since the last build that went there (.github/release/mobile-due.sh), else it passes saying so in
-# its summary. Each platform signs only when its secrets are set (.github/release/mobile-sign.sh lists them), so a fork
+# Signed builds of the phone app, by hand (Actions › Mobile release › Run workflow) or from main by themselves, on
+# GitHub runners only: no EAS, no Expo service. mobile-merged.yml starts one after each push to main whose CI passed,
+# and a schedule every 3 hours is the backstop (GitHub starts scheduled runs here hours late, or drops them). Either
+# builds and sends to TestFlight only when the phone app changed on main since the last build that went there
+# (.github/release/mobile-due.sh), else it passes saying so in its summary. Each platform signs only when its secrets are set (.github/release/mobile-sign.sh lists them), so a fork
 # without them still gets a debug-signed APK and skips iOS cleanly, without starting a macOS runner. The guide:
 # docs/site/src/content/docs/mobile.md (fleetd.sh/docs/mobile).
 #
@@ -20,6 +21,10 @@ on:
     inputs:
       testflight:
         description: Send the iOS build to TestFlight (needs the App Store Connect key)
+        type: boolean
+        default: false
+      only_if_changed:
+        description: Build only if the phone app changed since the last build sent to TestFlight
         type: boolean
         default: false
       channel:
@@ -98,7 +103,7 @@ jobs:
           if [ "$ASKED" = true ] && [ "$IOS" = true ] && [ "$TESTFLIGHT" = true ]; then upload=true; fi
           echo "upload=$upload" | tee -a "$GITHUB_OUTPUT"
       - id: due
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' || inputs.only_if_changed
         env:
           GH_TOKEN: ${{ github.token }}
           UPLOAD: ${{ steps.upload.outputs.upload }}

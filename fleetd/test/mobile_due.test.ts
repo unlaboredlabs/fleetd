@@ -17,11 +17,19 @@ afterEach(() => {
   dirs = [];
 });
 
-test("the workflow runs on a schedule and by hand, on the xcode-27 runner, and the gate starts no build", () => {
+test("the workflow runs after a merge, on a schedule and by hand, on the xcode-27 runner, and the gate starts no build", () => {
   expect(WORKFLOW).toMatch(/^ {2}schedule:\n {4}- cron: "[^"]+"$/m);
   expect(WORKFLOW).toMatch(/^ {2}workflow_dispatch:$/m);
   expect(WORKFLOW).toContain("runs-on: xcode-27");
   expect(WORKFLOW).toContain(".github/release/mobile-due.sh due");
+  expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || inputs.only_if_changed");
+  expect(WORKFLOW).toMatch(/^ {6}only_if_changed:$/m);
+  // A merge starts it by a dispatch, which the train counts as no check of main's (NOT_THE_MERGES), never by a
+  // workflow_run trigger of its own.
+  expect(WORKFLOW).not.toMatch(/^ {2}(push|workflow_run):/m);
+  const merged = readFileSync(join(ROOT, ".github/workflows/mobile-merged.yml"), "utf8");
+  expect(merged).toContain("gh workflow run mobile-release.yml --ref main -f testflight=true -f only_if_changed=true");
+  expect(merged).toContain("github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'");
   // The step whose name the script reads off a run by hand.
   expect(WORKFLOW).toContain("'Upload to TestFlight'");
   expect(readFileSync(SCRIPT, "utf8")).toContain('select(.name == "Upload to TestFlight" and .conclusion == "success")');

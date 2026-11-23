@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Whether a scheduled Mobile release (mobile-release.yml) has a phone app to send to TestFlight: only when the files
-# its binary is built from changed on the branch since the newest commit already covered. A commit is covered by a
-# successful scheduled run there (it sent its build, or found nothing new since the one before) or by a run by hand
-# there whose build went to TestFlight (its `Upload to TestFlight` step passed). A run that failed covers nothing, so
-# the next one tries the same commit again.
+# Whether a Mobile release started by itself (mobile-release.yml's schedule, or mobile-merged.yml's dispatch after a
+# merge) has a phone app to send to TestFlight: only when the files its binary is built from changed on the branch
+# since the newest commit already covered. A commit is covered by a successful scheduled run there (it sent its build,
+# or found nothing new since the one before) or by a dispatched run there whose build went to TestFlight (its `Upload
+# to TestFlight` step passed). A run that failed covers nothing, so the next one tries the same commit again.
 #
 #   mobile-due.sh paths   the paths the binary is built from, one per line: the app, the desktop modules Metro bundles
 #                         with it (metro.config.js), and the release's own workflow and scripts
