@@ -631,6 +631,11 @@ export class HubClient implements HubSource {
         });
         return;
       }
+      case "browser_waiting": {
+        if (frame.sessionId !== this.#watch) return;
+        this.#options.emit({ t: "browser_waiting", sessionId: frame.sessionId, machineId: frame.machineId });
+        return;
+      }
       case "screen_thumb": {
         const { t: _t, ...thumb } = frame;
         // One that was on its way as the page closed is dropped.

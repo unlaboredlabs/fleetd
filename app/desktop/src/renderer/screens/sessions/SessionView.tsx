@@ -188,6 +188,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const { canvas: videoCanvas, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg);
   // Until its first frame: the empty page, quiet; words only once it is slow to come.
   const slow = useAfter(frame === undefined && !away, SLOW_MS);
+  // Its machine isn't linked this moment (it, or the hub, restarting): said over the last picture until its next frame.
+  const waiting = useData((d) => (d.browserWaiting?.sessionId === x.id ? `Waiting for ${d.machines[d.browserWaiting.machineId]?.name ?? d.browserWaiting.machineId}…` : undefined));
   const takes = yours && !away;
   const input = useFrameInput(x.id, frame, takes);
   const page = useRef<HTMLDivElement>(null);
@@ -308,7 +310,8 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             yours={yours}
             pageRef={page}
             input={input}
-            caption={away ? "It shows in its own window." : slow ? waitingFor(x) : undefined}
+            caption={away ? "It shows in its own window." : (waiting ?? (slow ? waitingFor(x) : undefined))}
+            {...(away || waiting === undefined ? {} : { waiting })}
             {...(nav === undefined ? {} : { nav })}
             {...(strip === undefined ? {} : { beside: strip })}
             {...(x.device?.orientation === undefined ? {} : { orientation: x.device.orientation })}
@@ -399,6 +402,7 @@ function Frame({
   note,
   media,
   caption,
+  waiting,
   url: given,
   mark,
   input,
@@ -422,6 +426,8 @@ function Frame({
   media?: ReactNode;
   /** Words on an empty page: why nothing shows there. */
   caption?: string | undefined;
+  /** Words over the page's last picture: why it doesn't move now (its machine is away). */
+  waiting?: string;
   /** The page's address when there is no live frame (a replay's step's). */
   url?: string | undefined;
   /** What a step acted on, outlined where it was (in the video frame's pixels). */
@@ -462,6 +468,13 @@ function Frame({
         ) : (
           <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
         ))}
+      {waiting === undefined || image === undefined ? null : (
+        <span className={s.waiting} role="status">
+          <Text size="xs" tone="quiet">
+            {waiting}
+          </Text>
+        </span>
+      )}
       {media === undefined && videoCanvas !== undefined ? <canvas ref={videoCanvas} className={s.video} data-on={videoOn ? "" : undefined} /> : null}
       {mark === undefined ? null : (
         <span
