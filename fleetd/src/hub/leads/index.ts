@@ -352,6 +352,11 @@ export class Leads {
     return true;
   }
 
+  /** The person's newest message no turn answered yet, by its id; undefined when none waits. */
+  waitingAsk(r: ProjectRef): string | undefined {
+    return unanswered(this.chatRows(r)).values().next().value;
+  }
+
   /** Whether the lead session `threadId` a restart started began with no turn, waiting for the person; undefined when unknown. */
   startedQuiet(threadId: string): boolean | undefined {
     return this.quietStarts.get(threadId);

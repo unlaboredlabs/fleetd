@@ -6,7 +6,7 @@ import { leadWorking } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
-import { FROZEN_CARRIES_LINE, FROZEN_LINE, start as startLeads } from "../src/hub/leads/loops.ts";
+import { FROZEN_CARRIES_LINE, FROZEN_LINE, start as startLeads, stuckLine } from "../src/hub/leads/loops.ts";
 import { link } from "../src/hub/link/server.ts";
 import { CAP_LAUNCH_AHEAD } from "../src/shared/node_link.ts";
 import { store } from "../src/hub/store/hub_store.ts";
@@ -369,5 +369,40 @@ test("a lead's stopped run that its machine ends in time is not started again", 
   await Bun.sleep(50);
   expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(1);
   expect(chat(n.hub).page(r, undefined, undefined, 10).messages.map((m) => m.text)).not.toContain(FROZEN_LINE);
+  n.end();
+});
+
+// A machine every run of the lead freezes on: started again twice for the person's message, it stalls each time; the
+// third stall starts nothing more, and the chat says plainly where the trouble is and what to do.
+test("a lead that stalls on every run is started again twice for the same message, then the chat says it keeps stalling", async () => {
+  const n = await standIn();
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  leads(n.hub).settleMs = 10;
+  startLeads(n.hub, { sleep: () => Promise.resolve() });
+  await n.link();
+  chat(n.hub).add(r, { author: "human", text: "Ship the fix?", request: "k:1", by: "a person" });
+  const said = () => chat(n.hub).page(r, undefined, undefined, 20).messages.filter((m) => m.author === "system").map((m) => m.text);
+  // Each session's run freezes: it runs, sends nothing, and its machine never ends it.
+  for (let run = 1; run <= 3; run++) {
+    const thread = leads(n.hub).records.leadGet(r)!.threadId;
+    await n.set(thread, running(`r${String(run)}`));
+    const before = said().length;
+    await n.minutes(10);
+    for (let i = 0; i < 200 && said().length < before + (run < 3 ? 2 : 1); i++) await Bun.sleep(10);
+  }
+  expect(said()).toEqual([
+    "The lead stopped making progress, so fleetd stopped its turn. It carries on by itself.",
+    FROZEN_LINE,
+    // Its restart's turn stalled too, with no completed turn between: it would wait for the person, but their message
+    // still waits for an answer, so it starts with a turn again.
+    "The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.",
+    FROZEN_CARRIES_LINE,
+    stuckLine("devbox"),
+  ]);
+  // Started again twice, never a third time.
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(3);
+  await Bun.sleep(50);
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(3);
   n.end();
 });
