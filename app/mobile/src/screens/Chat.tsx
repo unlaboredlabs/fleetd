@@ -2,8 +2,8 @@
 // floating glass composer, with soft edges where it meets them. Newest at the bottom, older pages as you scroll up;
 // the person's bubbles on the right and the lead's on the left, grouped by burst with time chips between; pictures
 // and files inline; the lead's text as it streams and the desktop's turn line while it works; blocks and approvals as
-// cards; a skill its lead saved as one quiet line that opens it; a live screen as a card at the newest end
-// (ScreenCards.tsx), which opens its live view.
+// cards; a skill its lead saved as one quiet line that opens it; a screen as a card where it opened, and the ones live
+// now as one strip at the newest end (ScreenCards.tsx), which opens a live view or their list.
 //
 // Opening it lands on the first message you haven't read, under an "Unread Messages" bar; what you scroll past is read,
 // as is everything once you're at the bottom. Scrolled up, the thread holds still while replies come, and a glass
@@ -32,7 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { capsuleOf, findPinsShown } from "../messagePins";
 import { arrivalsOf, ENTER_MS, rowKeyOf, type Arrival, type Arrivals } from "../arrivals";
 import { aboutChoices, aboutOf, agentName, lensHides, openOrdersOf, sendAbout, tagOf, taggedItems, type ChatAbout, type OpenOrder, type Tag } from "../chatTags";
-import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, type Bubble as BubbleData, type ThreadRow } from "../chatView";
+import { farFailure, farOpening, farStep, shownWindow, windowChat, aimOf, AT_NEWEST, attachmentBubbles, bubbleTime, cardOf, dayLine, arrivedSince, fullTime, holdFrom, landingOf, olderOffset, outgoing, partBubbles, quoteOf, replyOf, sameRow, seenSeq, sendNote, sendWait, streamingAt, viaNote, threadRows, withScreens, type Bubble as BubbleData, type ThreadRow } from "../chatView";
 import { chatItems, holds, wakeShown, type AttachmentRef, type ChatMessagePin, type BotState, type ChatItem, type CommandApprovalItem } from "../desktop";
 import { useHub, useSession, type RootParams } from "../hubContext";
 import { onHome } from "../split";
@@ -78,7 +78,7 @@ import { ArtifactCard } from "./artifacts/ArtifactCard";
 import { ImportCard } from "./vault/ImportCard";
 import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
-import { ScreenCards } from "./ScreenCards";
+import { ScreenRow, ScreenStrip } from "./ScreenCards";
 import { PIN_ROOM, PinCapsuleView, PinnedSheet } from "./PinnedMessages";
 import { Symbol } from "./manage/parts";
 import { machineName } from "./manage/model";
@@ -199,7 +199,10 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // Lines show only while two or more orders are open.
   const showTags = tagsOn && openOrders.length >= 2;
   const tagFor = useMemo(() => (showTags ? (i: ChatItem) => tagOf(i, { show: true, me, lens: lensId }) : undefined), [showTags, me, lensId]);
-  const rows = useMemo(() => threadRows(shown, worked, unreadFrom, undefined, tagFor), [shown, worked, unreadFrom, tagFor]);
+  // Each screen's card where it opened; not in a window far back, which doesn't reach the newest.
+  const screens = state.screens[chatKey];
+  const screenTimes = useMemo(() => (win !== undefined || lens !== null ? [] : (screens ?? []).map((s) => ({ id: s.sessionId, at: s.startedAt }))), [screens, win, lens]);
+  const rows = useMemo(() => withScreens(threadRows(shown, worked, unreadFrom, undefined, tagFor), screenTimes, chat.hasOlder), [shown, worked, unreadFrom, tagFor, screenTimes, chat.hasOlder]);
   const newestFirst = useMemo(() => [...rows].reverse(), [rows]);
   // An ask's buttons answer only while nothing of yours came after it.
   const lastHuman = items.findLastIndex((i) => i.author === "human");
@@ -746,13 +749,13 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
               onEndReached={() => void (win === undefined ? session.loadOlder(chatKey) : session.pageWindow(chatKey, "older"))}
               // A window far back reads on towards the newest as it is scrolled down.
               {...(win === undefined ? {} : { onStartReached: () => void session.pageWindow(chatKey, "newer"), onStartReachedThreshold: 1 })}
-              // Upside down too: the newest end, where its live screens sit over the composer.
+              // Upside down too: the newest end, where the strip of its live screens sits over the composer.
               ListHeaderComponent={
                 <View>
                   {win?.hasNewer === true ? <ActivityIndicator style={styles.older} color={t.secondary} /> : null}
                   {/* A cloud bot waking: its bot in the reply's place, under the newest message, until its words show. */}
                   {wake === undefined ? null : <WakeRow chatKey={chatKey} wake={wake} title={title} picture={project} />}
-                  <ScreenCards chatKey={chatKey} />
+                  <ScreenStrip chatKey={chatKey} />
                   {/* The composer's room and the turn line's over it, always: the thread never moves for the line. */}
                   <View style={{ height: composerHeight + TURN_BAND }} />
                 </View>
@@ -1036,6 +1039,7 @@ const RowView = memo(function RowView({ row, chatKey, title, canAnswer, tags, le
       </View>
     );
   }
+  if (row.t === "screen") return <ScreenRow chatKey={chatKey} sessionId={row.sessionId} />;
   const item = <ItemView item={row.item} side={row.side} first={row.first} tag={row.tag} tags={tags} lens={lens} chatKey={chatKey} title={title} canAnswer={canAnswer} actions={actions} pinned={pinned} />;
   const body =
     row.side === "center" ? (

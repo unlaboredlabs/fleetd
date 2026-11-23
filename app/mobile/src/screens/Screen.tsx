@@ -342,6 +342,9 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
   const status = ended ? "Ended" : control === "agent" && card?.reason === undefined && newest === undefined ? "Connecting…" : controlLine(control, who, own);
   useAnnounce(status);
   const ground = t.dark ? "#000000" : t.grouped;
+  // The iPhone Duo unfolded has no top inset (its status is a column at the side): the bar stands where iOS stands its
+  // own bars there, not against the window's edge.
+  const barTop = insets.top > 0 ? insets.top : BAR_TOP_BARE;
   // A phone screen of yours has its control strip over the actions, which the touch hint stands clear of.
   const strip = yours && !ended && listed !== undefined && (card?.kind === "ios" || card?.kind === "android") && (listed.controls?.length ?? 0) > 0;
 
@@ -364,7 +367,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
     <View style={[styles.fill, { backgroundColor: ground }]}>
       <StatusBar style={t.dark ? "light" : "dark"} />
       <KeyboardAvoidingView behavior="padding" style={styles.fill}>
-        <View style={[styles.stage, { paddingTop: insets.top + BAR + space.sm, paddingBottom: space.sm }]}>
+        <View style={[styles.stage, { paddingTop: barTop + BAR + space.sm, paddingBottom: space.sm }]}>
           <GestureDetector gesture={gestures}>
             <View
               style={styles.box}
@@ -405,7 +408,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
         {/* What it asks of you, under the bar, while it waits for you. */}
         {card?.reason !== undefined && !ended ? (
-          <View style={[styles.ask, { top: insets.top + BAR + space.md }]}>
+          <View style={[styles.ask, { top: barTop + BAR + space.md }]}>
             <Glass appear style={styles.askGlass}>
               <View style={styles.askIcon}>
                 <Icon name="hand" size={ASK_ICON} color={t.warning} />
@@ -419,7 +422,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
         ) : null}
 
         {/* The bar: close, and who it is and who drives. */}
-        <View style={[styles.bar, { top: insets.top }]} pointerEvents="box-none">
+        <View style={[styles.bar, { top: barTop }]} pointerEvents="box-none">
           <Glass interactive style={styles.round}>
             <Pressable accessibilityRole="button" accessibilityLabel="Close" style={styles.roundHit} onPress={close}>
               <Icon name="close" size={20} color={t.label} weight="semibold" />
@@ -489,7 +492,7 @@ export function Screen({ navigation, route }: NativeStackScreenProps<RootParams,
 
         {/* An input the hub refused. */}
         {refused === null ? null : (
-          <View style={[styles.ask, { top: insets.top + BAR + space.md }]} accessibilityLiveRegion="assertive">
+          <View style={[styles.ask, { top: barTop + BAR + space.md }]} accessibilityLiveRegion="assertive">
             <Glass appear style={styles.askGlass}>
               <View style={styles.askIcon}>
                 <Icon name="error" size={ASK_ICON} color={t.danger} />
@@ -604,6 +607,8 @@ function Action({ label, icon, onPress, prominent = false, destructive = false, 
 
 /** The bar's height under the status bar, and the toolbar's over the home indicator. */
 const BAR = 52;
+/** Where the bar stands on a window with no top inset: its buttons' middle 48 pt down, as the native bars' there. */
+const BAR_TOP_BARE = 48 - BAR / 2;
 const TOOLBAR = 52;
 /** The control strip's height and the gap under it (DeviceStrip). */
 const STRIP = 54;

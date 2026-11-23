@@ -1,10 +1,10 @@
-// A project's or agent's live screen on the phone, as plain logic: which screens a chat shows as cards and what each
-// says, who has control, where a touch on the shown frame lands in the frame's own pixels (through the pinch zoom),
+// A project's or agent's live screen on the phone, as plain logic: which screens a chat counts live (its strip over the
+// composer) and which it shows as cards in its thread, and what each says, who has control, where a touch on the shown frame lands in the frame's own pixels (through the pinch zoom),
 // what a finger does to the page (a tap clicks, a drag scrolls, a touch held first presses and drags, as for a slider
 // or a press-and-hold captcha), what typing sends, and how often a frame is drawn. The hub's browser_watch,
 // browser_input and browser_control carry it (contracts browser.rs), as the desktop's live view does; nothing here
 // touches React Native, so it is unit-tested. The geometry runs in gestures on the UI thread too: worklets.
-import type { BrowserFrame, BrowserInput, BrowserSession } from "./desktop";
+import type { BrowserFrame, BrowserInput, BrowserSession, OrderCard } from "./desktop";
 
 /** Who drives a screen now: its agent, the person, or the agent again from its next step. */
 export type Control = "agent" | "human" | "handing_back";
@@ -18,9 +18,13 @@ export const controlOf = (session: Pick<BrowserSession, "control"> | undefined, 
   return c === "human" ? "human" : c === "handing_back" ? "handing_back" : "agent";
 };
 
-/** A live screen's card in its chat: one asking for the person first, then the rest, newest first. */
+/** A screen's card in its chat: one asking for the person first, then the rest, newest first. */
 export interface ScreenCard {
   readonly id: string;
+  /** When it opened: where its card stands in the thread. */
+  readonly at: string;
+  /** It has ended: its card stays in the thread, saying so. */
+  readonly ended: boolean;
   /** Its agent asked the person to take over, and waits: why, in its words. */
   readonly reason?: string;
   readonly purpose: string;
@@ -34,6 +38,8 @@ const KINDS = new Set(["android", "ios", "linux_desktop", "mac"]);
 
 export const cardOf = (s: BrowserSession): ScreenCard => ({
   id: s.sessionId,
+  at: s.startedAt,
+  ended: s.state !== "live",
   ...(s.takeoverReason === undefined || s.control !== "agent" ? {} : { reason: s.takeoverReason }),
   purpose: s.purpose,
   kind: KINDS.has(s.kind ?? "") ? (s.kind as ScreenCard["kind"]) : "browser",
@@ -41,12 +47,72 @@ export const cardOf = (s: BrowserSession): ScreenCard => ({
   own: s.openedBy !== undefined,
 });
 
-/** The cards a chat shows: its live screens, the ones asking for you first. */
-export const screenCards = (sessions: readonly BrowserSession[] | undefined): readonly ScreenCard[] =>
+const SETTLED = new Set(["done", "failed", "cancelled"]);
+
+/** The tasks still at work, from the open orders' lanes (orders_board): finished ones are left out of the board. */
+export const runningTasks = (orders: readonly { readonly lanes: readonly Pick<OrderCard["lanes"][number], "taskId" | "status">[] }[]): ReadonlySet<string> => {
+  const out = new Set<string>();
+  for (const o of orders) for (const l of o.lanes) if (l.taskId !== undefined && !SETTLED.has(l.status)) out.add(l.taskId);
+  return out;
+};
+
+/**
+ * Whether a screen counts live in its chat: open, and its task still at work (a lead's has none), or a person in it
+ * (theirs, taken over, or asked for). A finished task's screen stays open a while for a task woken again (the hub's
+ * grace), yet nobody works in it: it is only in the list of the chat's screens.
+ */
+export const liveNow = (s: BrowserSession, running: ReadonlySet<string>): boolean =>
+  s.state === "live" && (s.taskId === undefined || running.has(s.taskId) || s.openedBy !== undefined || s.takeoverReason !== undefined || controlOf(s, undefined) !== "agent");
+
+const askingFirst = (a: ScreenCard, b: ScreenCard): number => Number(b.reason !== undefined) - Number(a.reason !== undefined);
+
+/** The screens a chat counts live, the ones asking for you first. */
+export const screenCards = (sessions: readonly BrowserSession[] | undefined, running: ReadonlySet<string>): readonly ScreenCard[] =>
   (sessions ?? [])
-    .filter((s) => s.state === "live")
+    .filter((s) => liveNow(s, running))
     .map(cardOf)
-    .sort((a, b) => Number(b.reason !== undefined) - Number(a.reason !== undefined));
+    .sort(askingFirst);
+
+/** The screens still open whose task finished: the list's last section. */
+export const finishedCards = (sessions: readonly BrowserSession[] | undefined, running: ReadonlySet<string>): readonly ScreenCard[] =>
+  (sessions ?? []).filter((s) => s.state === "live" && !liveNow(s, running)).map(cardOf);
+
+/** What a chat's strip over its composer says of its live screens; undefined with none. */
+export interface Strip {
+  readonly title: string;
+  readonly line: string;
+  /** One asks for you: the strip says so, warm, and opens it. */
+  readonly asking: boolean;
+  /** The one it opens; undefined with several, where it opens their list. */
+  readonly opens: string | undefined;
+  /** The kinds of the first few, for their tiles. */
+  readonly kinds: readonly ScreenCard["kind"][];
+}
+
+/** How many tiles the strip stacks. */
+export const STRIP_TILES = 3;
+
+export const stripOf = (cards: readonly ScreenCard[], who: string): Strip | undefined => {
+  const first = cards[0];
+  if (first === undefined) return undefined;
+  const kinds = cards.slice(0, STRIP_TILES).map((c) => c.kind);
+  if (first.reason !== undefined || cards.length === 1) {
+    const more = cards.length - 1;
+    const line = first.reason ?? first.purpose;
+    return { title: cardTitle(first, who), line: more === 0 ? line : `${line} · ${String(more)} more`, asking: first.reason !== undefined, opens: first.id, kinds };
+  }
+  return { title: `${String(cards.length)} screens live`, line: kindsLine(cards), asking: false, opens: undefined, kinds };
+};
+
+/** "4 browsers, iOS simulator": what the live screens are, the most first. */
+const kindsLine = (cards: readonly ScreenCard[]): string => {
+  const counts = new Map<ScreenCard["kind"], number>();
+  for (const c of cards) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([kind, n]) => (n === 1 ? KIND_WORD[kind] : `${String(n)} ${KIND_WORD[kind]}s`))
+    .join(", ");
+};
 
 /** What a screen is, in a word: "browser", "Android emulator"… */
 export const KIND_WORD: Record<ScreenCard["kind"], string> = {

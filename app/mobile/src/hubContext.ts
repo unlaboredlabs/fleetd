@@ -66,6 +66,8 @@ export type RootParams = {
   Chat: { key: Key; messageId?: string; requestId?: string; tap?: number; at?: { offset: number; rows: number } };
   /** A project's or agent's live screen, full screen over its chat (screens/Screen.tsx). */
   Screen: { key: Key; sessionId: string };
+  /** A chat's open screens, a sheet from its strip over the composer (screens/ScreenList.tsx). */
+  ScreenList: { key: Key };
 } & ManageParams;
 /** The chats list's own stack: `filter` picks one, each time `at` changes (a link opened again). */
 export type ChatsParams = {
