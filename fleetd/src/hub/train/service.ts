@@ -923,6 +923,21 @@ export class Train {
     const reruns: next.Reruns = new Map();
     const failedReruns: next.Reruns = new Map();
     const flaky: Flaky[] = [];
+    // Each check the head showed, and the run of each the train re-ran: GitHub may leave a re-run job out of its list
+    // until it starts (fleetd-cloud #824 merged on a red `check` so, 2026-11-23). Either stays pending until a run of
+    // it newer than the one re-run is listed: the checks waited on never shrink.
+    const seen = new Set<string>();
+    const rerunOf = new Map<string, number>();
+    const waiting = (name: string): CheckRun => ({ id: 0, name, status: "in_progress", conclusion: null });
+    const expected = (judged: CheckRun[], runs: CheckRun[]) => {
+      const out = judged.map((r) => ((rerunOf.get(r.name) ?? -1) >= r.id ? waiting(r.name) : r));
+      for (const name of seen) if (!runs.some((r) => r.name === name)) out.push(waiting(name));
+      for (const r of out) seen.add(r.name);
+      return out;
+    };
+    const noteReruns = (runs: CheckRun[]) => {
+      for (const r of runs) if (next.reran(reruns, r) || next.reran(failedReruns, r)) rerunOf.set(r.name, Math.max(rerunOf.get(r.name) ?? -1, r.id));
+    };
     // The PR's diff against its base, read once a failing test needs it.
     let diff: Promise<string> | undefined;
     const mine: Mine = {
@@ -991,7 +1006,7 @@ export class Train {
         next.runnerNote(this, noted, note, earlier);
       }
       const runs = runsRead ?? [];
-      const judgedRuns = judge(runs);
+      const judgedRuns = expected(judge(runs), runs);
       if (judgedRuns.length > 0) last = judgedRuns;
       else if (runs.length > 0) last = runs;
       let judged: Checks = checks(judgedRuns);
@@ -1000,8 +1015,10 @@ export class Train {
         // A cancelled check is never a failure: the new head goes through instead, or the run is re-run (D191).
         if (await this.superseded(change, repo, sha, judged.runs, cancelRead)) return { kind: "moved" };
         if ((await this.rerunCancelled(repo, judged.runs, all, reruns)) === true) start = this.nowMs();
+        noteReruns(all);
       } else if (judged.kind === "red" && alone) {
         const now = await rerunFailed(this, repo, judged.runs, all, failedReruns, flaky, mine);
+        noteReruns(all);
         if (now === undefined) {
           this.checkSpans(change, sha, runs);
           return mine.own.length > 0 ? { kind: "red", runs: judged.runs, own: mine.own } : { kind: "red", runs: judged.runs };
@@ -1065,6 +1082,7 @@ export class Train {
           if (await this.superseded(change, repo, sha, cancelled, cancelRead)) return { kind: "moved" };
           // Re-runs spent, it waits for the timeout: cancelled is no failure (D191).
           if ((await this.rerunCancelled(repo, cancelled, all, reruns)) === true) start = this.nowMs();
+          noteReruns(all);
         }
       } else if (judged.kind === "pending") {
         // A check GitHub left pending under a finished run never finishes by itself: its run goes again. The re-run's
