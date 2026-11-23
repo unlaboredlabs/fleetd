@@ -115,6 +115,8 @@ export interface Gesture {
   readonly ry: number;
   /** A swipe let go of while its fingers stood still, not lifted for all anyone knows (rest). */
   readonly rested?: boolean;
+  /** It began while the list moved: the list follows its scroll itself (useHubSwipe's onWheel). */
+  readonly carried?: boolean;
 }
 
 export const IDLE: Gesture = { phase: "idle", swiped: false, x: 0, y: 0, at: Number.NEGATIVE_INFINITY, v: 0, peak: 0, falls: 0, low: 0, up: 0, late: false, n: 0, size: 0, rose: false, rx: 0, ry: 0 };
@@ -383,6 +385,8 @@ const pressed = { current: false };
 const held = { current: false };
 // The hub the swipe stood on when its fingers last stood still: a rest that has landed another since spent the touch.
 const restOn = { current: null as number | null };
+// Where a carried touch (Gesture.carried) last left the list's scroll; null before it has scrolled it.
+const carriedTop = { current: null as number | null };
 
 const setBeside = (b: Beside | null): void => {
   view.current.beside = b;
@@ -524,6 +528,22 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
         lifts ? (switching ? REST_HUB_MS : REST_MS) : said ? LIFT_MS : GAP_MS,
       );
     };
+    /**
+     * A carried touch's scroll, `by` px up or down, or its glide's: never a swipe's. Should the browser move the list
+     * itself after all, the rest is left to it.
+     */
+    const follow = (by: number) => {
+      const now = g.current;
+      const list = pane.current;
+      if (now.carried !== true || now.swiped || (now.phase !== "vertical" && now.phase !== "glide") || list === null) return;
+      const top = carriedTop.current;
+      if (top !== null && Math.abs(list.scrollTop - top) > 1) {
+        g.current = { ...now, carried: false };
+        return;
+      }
+      list.scrollTop += by;
+      carriedTop.current = list.scrollTop;
+    };
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey) return;
       const w = pane.current?.clientWidth ?? 0;
@@ -542,6 +562,13 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
       // sideways stays where it is, for the swipe to take up (below), unless it turns out to be a scroll after all.
       const fresh = step.g.phase === "deciding" && was !== "deciding";
       const back = settling.current?.hub === null && Math.abs(dx) > Math.abs(dy);
+      // Landing it isn't enough for a scroll, though: the browser picks a touch's scroller from the frame on screen,
+      // drawn before this event, where the list was on its way and took no pointer. It then scrolls nothing for the
+      // whole touch (the Mac runner's swipe check, W864), so the list follows a touch that began while it moved itself.
+      if (fresh && settling.current !== null) {
+        g.current = { ...step.g, carried: true };
+        carriedTop.current = null;
+      }
       if (settling.current !== null && fresh && back) {
         // Held where it is, as a hand stops a moving list; on again if the touch comes to nothing.
         cancelAnimationFrame(frame.current);
@@ -550,6 +577,7 @@ export function useHubSwipe({ area, pane, frame: list, hubs, at, paint, drawn }:
         timer.current = setTimeout(resume, lifts ? REST_MS : GAP_MS);
       } else if (settling.current !== null && ((fresh && !back) || (step.g.phase === "vertical" && was === "deciding"))) flushSync(finish);
       else if (was === "deciding" && step.g.phase === "glide") resume();
+      follow(was === "deciding" ? g.current.y : dy);
       if (step.claim) e.preventDefault();
       if (step.release) return letGo(step.back === true);
       if (step.g.phase !== "drag") return;
