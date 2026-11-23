@@ -34,6 +34,8 @@ let host: HTMLDivElement;
 let root: Root;
 let google: AntigravityStatusOutput;
 let calls: { tool: string; input: Record<string, unknown> }[];
+/** While set, machine_antigravity_login answers only when the test resolves it. */
+let loginHeld: Promise<unknown> | undefined;
 /** What the page handed main to seal: the team's Gemini key's requests. */
 let sealed: unknown[];
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => {
+  loginHeld = undefined;
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
@@ -80,6 +83,7 @@ const render = async () => {
       }
       if (tool === "machine_antigravity_login") {
         calls.push({ tool, input });
+        if (loginHeld !== undefined) return loginHeld.then(() => ({ ok: true, output: { machineId: "devbox", message: "sign in", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" } }));
         return Promise.resolve({ ok: true, output: { machineId: "devbox", message: "sign in", loginUrl: "https://accounts.google.com/o/oauth2/auth?state=g1" } });
       }
       return Promise.resolve({ ok: false, error: { code: "not_found", message: `${tool} isn't faked` } });
@@ -146,6 +150,21 @@ it("signs Google in on the one machine right from its row", async () => {
   const setup = host.querySelector("[data-provider-setup='google']");
   expect(setup?.textContent).toContain("Open this page and sign in with the Google account devbox's agents on Antigravity should use.");
   expect(setup?.querySelector("form[aria-label='Sign in']")).not.toBeNull();
+});
+
+it("says in words that a sign-in is starting, never a bare disabled button, until Google's link is there", async () => {
+  let answer!: () => void;
+  loginHeld = new Promise<void>((done) => (answer = done));
+  await render();
+  await click(button("Sign in with Google"));
+  const row = () => host.querySelector("[data-provider-setup='google'] [data-machine='devbox']");
+  expect(row()?.querySelector("[role='status']")?.textContent).toBe("Starting a sign-in… Google's sign-in link shows here once it's ready.");
+  expect([...(row()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([]);
+  expect(host.textContent).not.toContain("Checking");
+  await act(async () => answer());
+  await settle();
+  expect(row()?.querySelector("[role='status']")).toBeNull();
+  expect(row()?.querySelector("form[aria-label='Sign in']")).not.toBeNull();
 });
 
 it("says how a connected Google is, and its setup lists each machine's sign-in and the bots holding a key", async () => {

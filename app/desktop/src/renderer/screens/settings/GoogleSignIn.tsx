@@ -33,6 +33,9 @@ const DEFAULT_TITLE = "Google Antigravity";
 /** `lab's`, `fleetd's computers'`. */
 const whose = (name: string): string => (name.endsWith("s") ? `${name}'` : `${name}'s`);
 
+/** The row's words while a sign-in starts, until Google's link is there. */
+export const STARTING = "Starting a sign-in… Google's sign-in link shows here once it's ready.";
+
 /** A first sign-in may install agy on the machine first. */
 export const AGY_SIGN_IN_WAIT_MS = 600_000;
 
@@ -177,13 +180,16 @@ export function AntigravityRow({
           `Signed in · ${sign.plan}`
         ) : !live && waiting ? (
           "Not connected to the hub."
+        ) : sign.step === "starting" ? (
+          // Words while it starts, never a bare disabled button: the machine may start a computer or install agy first.
+          <span role="status">{STARTING}</span>
         ) : undefined
       }
       lineTone={error === undefined ? "quiet" : "danger"}
       control={
-        waiting ? (
-          <Button size="sm" disabled={!live || sign.step === "starting"} onClick={start}>
-            {sign.step === "starting" ? "Checking…" : error === undefined ? "Sign in…" : "Try again"}
+        sign.step === "idle" ? (
+          <Button size="sm" disabled={!live} onClick={start}>
+            {error === undefined ? "Sign in…" : "Try again"}
           </Button>
         ) : undefined
       }
