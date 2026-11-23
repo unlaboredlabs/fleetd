@@ -7,7 +7,10 @@ import { join } from "node:path";
 import { trainFacts } from "../src/hub/train/digest.ts";
 import { leadTrainLines, PEOPLE_MERGE_LINE } from "../src/hub/train/digest_lines.ts";
 import { DEFAULT_RISK_RULES } from "../src/hub/train/merge_rules.ts";
-import { changeNext, PEOPLE } from "../src/hub/train/notes.ts";
+import { queue } from "../src/hub/prs/join.ts";
+import { WAITING_ON } from "../src/hub/train/next_rules.ts";
+import { DRAFT } from "../src/hub/train/states.ts";
+import { APPROVAL, changeNext, HELD, PEOPLE } from "../src/hub/train/notes.ts";
 import { git, Kit, REPO, WS } from "./train_kit.ts";
 
 let kits: Kit[] = [];
@@ -120,6 +123,32 @@ test("where people merge, a PR touching a migration always waits for a person, e
   expect(k.change(55)).toMatchObject({ state: "ready", lastError: PEOPLE });
   expect(k.change(55).mergeRule).toBe("waits for a person: db/migrations/0002_add.sql matches the always-a-person rule migrations");
   expect(merges(k)).toEqual([]);
+});
+
+test("a PR waiting for a person takes no place in the merge line, and the PRs behind it count without it", async () => {
+  const k = peopleKit();
+  k.pr(61, "fleetd/T61-x", { "src/a.ts": "a\n" });
+  await k.enqueue(61);
+  await passes(k, 8);
+  expect(k.change(61)).toMatchObject({ state: "ready", lastError: PEOPLE });
+  k.pr(62, "fleetd/T62-x", { "src/b.ts": "b\n" });
+  await k.enqueue(62);
+  const placed = new Map(k.train.list({ repo: REPO, limit: 10 }).map((c) => [c.prNumber, c.position]));
+  expect(placed.get(61)).toBeUndefined();
+  expect(placed.get(62)).toBe(0);
+  expect(k.train.records.inLine(REPO).map((c) => c.prNumber)).toEqual([62]);
+  // The lead's train line still names it, as waiting for a person.
+  expect(k.train.records.trainState(REPO).queue).toContain(k.change(61).changeId);
+  // The PR's row says who it waits for in a field of its own, never only in words.
+  const held = k.change(61);
+  expect(queue(held, 1)).toMatchObject({ state: "ready", heldFor: "person", length: 1 });
+  expect(queue({ ...held, lastError: HELD }, 1).heldFor).toBe("hold");
+  expect(queue({ ...held, lastError: APPROVAL }, 1).heldFor).toBe("approval");
+  expect(queue({ ...held, lastError: undefined }, 1)).not.toHaveProperty("heldFor");
+  // Waits that need no one: a stacked PR's upstream, a draft. They stay in line, with no heldFor.
+  expect(queue({ ...held, lastError: `${WAITING_ON}acme/storefront#3: it hasn't merged yet` }, 1)).not.toHaveProperty("heldFor");
+  expect(queue({ ...held, lastError: DRAFT }, 1)).not.toHaveProperty("heldFor");
+  expect(queue(k.change(62), 1)).not.toHaveProperty("heldFor");
 });
 
 test("switching a bot to fleetd merges lets its waiting PR go, and back to people holds the next one", async () => {

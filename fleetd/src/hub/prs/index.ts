@@ -65,10 +65,10 @@ export function projectChanges(hub: Hub, project: ProjectRef): Change[] {
   return records.positioned(records.list({ projectRef: project, limit: PROJECT_CHANGES }));
 }
 
-/** The hub's side of the join: each repo's queue. */
+/** The hub's side of the join: how many wait in each repo's line, those left for a person not among them. */
 export function fillCtx(hub: Hub, ctx: RowCtx, repos: string[]): void {
   const records = new ChangeRecords(hub.db);
-  for (const repo of repos) ctx.queues.set(repo.toLowerCase(), records.trainState(repo).queue.length);
+  for (const repo of repos) ctx.queues.set(repo.toLowerCase(), records.inLine(repo).length);
 }
 
 /**

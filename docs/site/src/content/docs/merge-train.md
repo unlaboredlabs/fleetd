@@ -673,8 +673,10 @@ The train enforces it; no label or instruction is needed. For each PR of the bot
 - When you merge it on GitHub, the merge is [recorded](#outside), and the PRs behind it carry on.
 
 Switching the bot to fleetd lets its waiting PRs go at the train's next pass. Switching to You while a PR is in CI
-keeps it from merging: it goes back in line for you. The PR's page on the desktop says, under **Who merges**, which
-rule decided.
+keeps it from merging: it goes back in line for you. A PR waiting for you reads "Waiting for you to merge on GitHub"
+on its page and under **Needs a look** in the list, on the desktop and the web, and says under **Who merges** which
+rule decided. It takes no place in the merge line, so the PRs behind it count their place without it. A PR held by
+its `hold` label or by an approval its base requires reads **held**, out of the line the same way.
 
 ### Risk rules {#risk-rules}
 

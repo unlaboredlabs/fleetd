@@ -21,6 +21,7 @@ import type {
 } from "../../shared/contracts.ts";
 import { redact } from "../../shared/redact.ts";
 import { isoMs, parseMs } from "../store/time.ts";
+import { heldFor } from "../train/notes.ts";
 import { TERMINAL_STATES } from "../train/states.ts";
 import { clip, TRAIN_CONTEXT } from "../train/text.ts";
 import type { GhCheck, GhFile, GhPull } from "./shapes.ts";
@@ -184,6 +185,8 @@ export function queue(change: Change, length: number): PrQueue {
   const out: PrQueue = { changeId: change.changeId, state: change.state, length };
   if (change.position !== undefined) out.position = change.position;
   if (change.mergeRule !== undefined) out.mergeRule = clip(change.mergeRule, 500);
+  const waits = heldFor(change);
+  if (waits !== undefined) out.heldFor = waits;
   if (held && change.lastError !== undefined) out.reason = clip(redact(change.lastError), 2000);
   // A ready PR the train holds back says why: its label, or a person's approval it waits for.
   else if (change.state === "ready" && change.lastError?.startsWith(HELD)) out.reason = clip(redact(change.lastError.slice(HELD.length)), 2000);

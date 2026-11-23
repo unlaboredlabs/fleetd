@@ -1,6 +1,6 @@
 // The train's waits and the notes it keeps on a Change (service.ts runs the train), and what the lead does next
 // about one.
-import type { Change } from "../../shared/contracts.ts";
+import type { Change, PrHeldFor } from "../../shared/contracts.ts";
 
 /** Batch PRs in CI at once: the one that lands next, and one behind it. */
 export const PIPELINE_DEPTH = 2;
@@ -63,6 +63,21 @@ export const HELD = "held: the PR has the `hold` label; the train takes it once 
 export const LEFT_OUT = "not in this batch: ";
 /** A ready Change's `lastError` while its base requires an approving review it doesn't have. */
 export const APPROVAL = "held: waiting for a person's approval on GitHub; the train merges it once it is approved";
+/**
+ * Who a ready Change the train leaves alone waits for: a person to merge it (its bot's Who merges), its `hold` label to
+ * come off, or an approval its base requires; undefined for any other. Such a Change takes no place in the merge line
+ * the apps show, and the PRs behind it count without it.
+ */
+export function heldFor(c: Change): PrHeldFor | undefined {
+  if (c.state !== "ready") return undefined;
+  if (c.lastError === PEOPLE) return "person";
+  if (c.lastError === HELD) return "hold";
+  if (c.lastError === APPROVAL) return "approval";
+  return undefined;
+}
+
+export const waitsForPerson = (c: Change): boolean => heldFor(c) !== undefined;
+
 /** The start of a `ci` Change's `lastError` while its batch passed CI and waits for the batch behind it to land with it. */
 export const PASSED_WAITING = "passed, waiting up to ";
 /** The note on a batch that passed while it waits up to `waitMs` for batch #`behind`. */

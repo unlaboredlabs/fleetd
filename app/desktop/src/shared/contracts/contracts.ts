@@ -6155,6 +6155,14 @@ export type PrGetOutput = {
   truncated?: boolean;
 };
 
+export type KnownPrHeldFor = "person" | "hold" | "approval";
+/**
+ * Who a ready PR the merge train leaves alone waits for: a person to merge it on GitHub (its bot's Who merges
+ * and risk rules), its `hold` label to come off, or a person's approval its base requires. KnownPrHeldFor, or a value
+ * from a newer hub.
+ */
+export type PrHeldFor = KnownPrHeldFor | (string & {});
+
 export type PrLinks = {
   checks: string;
   files: string;
@@ -6183,13 +6191,18 @@ export type PrListOutput = {
 /** Where the PR stands in fleetd's merge queue. Absent from a PR fleetd doesn't land. */
 export type PrQueue = {
   changeId: ChangeId;
-  /** PRs waiting in the same queue. */
+  /** Set while it is ready and the train leaves it for a person: it is then out of the line, with no position. */
+  heldFor?: PrHeldFor;
+  /** PRs waiting in the same line, none that waits for a person among them. */
   length: number;
   /** Where people merge its bot's PRs: which of its rules decided who merges it, in words. */
   mergeRule?: string;
-  /** 0-based place in the queue; absent when not waiting in it. */
+  /** 0-based place in the line; absent when not waiting in it, as for a PR that waits for a person. */
   position?: number;
-  /** Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. */
+  /**
+   * Why it is held or was sent back: a conflict, failing check names, or the refusal's fix. A ready PR has one only
+   * while it waits for a person (its bot's Who merges, its `hold` label, an approval its base requires).
+   */
   reason?: string;
   state: ChangeState;
 };

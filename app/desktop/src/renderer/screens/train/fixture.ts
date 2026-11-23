@@ -2,7 +2,7 @@
 // one repo's train with a PR in CI, a line in every state (in review, ready, held, sent back), a batch that landed as
 // one commit, a refusal and a lone merge. `batch` swaps the head for a batch of three in CI. Fixture data only.
 // Value imports carry ".ts": `pnpm fixtures` runs this file under plain Node (fixtures/train/index.ts).
-import type { Change, ChangesListInput, ChangesListOutput, ChangeState, PrCheck, PrGetOutput, PrRow, ProjectRef } from "../../../shared/contracts";
+import type { Change, ChangesListInput, ChangesListOutput, ChangeState, PrCheck, PrGetOutput, PrHeldFor, PrRow, ProjectRef } from "../../../shared/contracts";
 import { lineReads } from "./model.ts";
 
 export const TRAIN_REPO = "acme/storefront";
@@ -16,6 +16,8 @@ interface Spec {
   readonly moved: number;
   readonly position?: number;
   readonly lastError?: string;
+  /** Left for a person, as the hub says it: out of the line, with no position. */
+  readonly heldFor?: PrHeldFor;
   /** Shared by a batch's members. */
   readonly mergedSha?: string;
   readonly checks?: PrRow["checks"];
@@ -35,11 +37,11 @@ const QUEUE: readonly Spec[] = [
     branch: "fleetd/webhook-backoff",
     state: "ready",
     moved: 31,
-    position: 2,
     lastError: "held: the PR has the `hold` label; the train takes it once the label is gone",
+    heldFor: "hold",
     checks: PASSING,
   },
-  { number: 24, title: "Inventory counts lock per variant", branch: "fleetd/variant-locks", state: "queued", moved: 3, position: 3, checks: { state: "pending", passed: 4, failed: 0, pending: 3 } },
+  { number: 24, title: "Inventory counts lock per variant", branch: "fleetd/variant-locks", state: "queued", moved: 3, position: 2, checks: { state: "pending", passed: 4, failed: 0, pending: 3 } },
   {
     number: 19,
     title: "Shipping zones read from the admin",
@@ -148,7 +150,9 @@ export const trainFixture = (project: ProjectRef, nowIso: string, batch = false)
         length: waiting,
         state: p.state,
         ...(p.position === undefined ? {} : { position: p.position }),
-        ...(p.lastError === undefined ? {} : { reason: p.lastError }),
+        ...(p.heldFor === undefined ? {} : { heldFor: p.heldFor }),
+        // The hub's reason, without the train's "held: " tag (prs/join.ts).
+        ...(p.lastError === undefined ? {} : { reason: p.lastError.replace(/^held: /u, "") }),
       },
     }),
   );

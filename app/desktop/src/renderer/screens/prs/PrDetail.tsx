@@ -28,6 +28,7 @@ import {
   stateLine,
   stat,
   verdictWord,
+  waitsOn,
   when,
   type Tone,
 } from "./words";
@@ -196,7 +197,8 @@ function Overview({ data, now, githubSaid }: { data: PrGetOutput; now: number; g
           <Text size="md" tone={SUMMARY_TONE[state.tone]} strong={state.tone === "failed" || state.tone === "needs-you"}>
             {state.sentence}
           </Text>
-          {pr.queue?.reason !== undefined && pr.queue.reason !== "" ? (
+          {/* Waiting for you, its Who merges line below says why. */}
+          {pr.queue?.reason !== undefined && pr.queue.reason !== "" && waitsOn(pr.queue) !== "you" ? (
             <Text size="sm" tone="quiet" preserveLines>
               <WithCode text={pr.queue.reason} />
             </Text>

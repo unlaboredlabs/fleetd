@@ -49,6 +49,45 @@ describe("where a PR is on its way to main", () => {
   });
 });
 
+// As the hub sends them (prs/join.ts `queue`): a ready PR's reason without the train's "held: " tag.
+const PEOPLE_REASON = "it waits for a person to merge it on GitHub, by its bot's Who merges and risk rules; a merge there is recorded";
+const PEOPLE_RULE = "waits for a person: people merge this bot's PRs, and src/x.ts matches no merges-itself rule";
+const LABEL_REASON = "the PR has the `hold` label; the train takes it once the label is gone";
+
+describe("a PR that waits for a person", () => {
+  // A hub from before held PRs left the count still sends a place: it is never shown.
+  const yours = row({ queue: queue("ready", { position: 0, length: 2, heldFor: "person", reason: PEOPLE_REASON, mergeRule: PEOPLE_RULE }) });
+
+  it("says a person merges it on GitHub, never a place in the merge line", () => {
+    expect(stateLine(yours)).toEqual({ word: "yours to merge", sentence: "Waiting for you to merge on GitHub.", tone: "needs-you" });
+    expect(rowMeta(yours).state.sentence).toBe("Waiting for you to merge on GitHub.");
+    expect(openGroup(yours)).toBe("look");
+  });
+
+  it("reads a hold label, an approval or a newer hub's reason it waits for as held, out of line", () => {
+    const labelled = row({ queue: queue("ready", { position: 1, heldFor: "hold", reason: LABEL_REASON }) });
+    expect(stateLine(row({ queue: queue("ready", { heldFor: "approval" }) })).word).toBe("held");
+    expect(stateLine(row({ queue: queue("ready", { heldFor: "teleporter" }) })).word).toBe("held");
+    expect(stateLine(labelled)).toMatchObject({ word: "held", tone: "needs-you" });
+    expect(stateLine(labelled).sentence).not.toMatch(/in line|Ready to merge/u);
+    expect(openGroup(labelled)).toBe("look");
+    expect(words(listItems([labelled, row({ number: 13, queue: queue("ready", { position: 0 }) })]))).toEqual(["Needs a look 1", 11, "In line 1", 13]);
+  });
+
+  it("goes by the hub's heldFor alone, never by its words", () => {
+    // The same words without the field: in line, as the hub counts it.
+    const worded = row({ queue: queue("ready", { position: 0, length: 1, reason: PEOPLE_REASON, mergeRule: PEOPLE_RULE }) });
+    expect(stateLine(worded)).toMatchObject({ word: "ready to merge", sentence: "Ready to merge, next in line." });
+    // A PR that left ready keeps no hold, whatever came with it.
+    expect(stateLine(row({ queue: queue("ci", { heldFor: "person" }) })).word).toBe("final checks");
+  });
+
+  it("still reads as in line once a person's rule merges it itself", () => {
+    const itself = row({ queue: queue("ready", { position: 0, length: 1, mergeRule: "merges itself: every file matches docs" }) });
+    expect(stateLine(itself)).toMatchObject({ word: "ready to merge", sentence: "Ready to merge, next in line." });
+  });
+});
+
 describe("a PR its review holds", () => {
   const writer = { role: "implementer", taskId: "T7", profile: "high" } as const;
   const held = (review: Partial<PrRow["review"]>, over: Partial<PrRow> = {}) =>
@@ -174,7 +213,7 @@ describe("the list", () => {
       row({ number: 13, queue: queue("ready", { position: 0 }) }),
       failed,
       row({ number: 20, queue: queue("ci") }),
-      row({ number: 23, queue: queue("ready", { position: 1, reason: HOLD }) }),
+      row({ number: 23, queue: queue("ready", { heldFor: "hold", reason: HOLD }) }),
       row({ number: 19, queue: queue("needs_rebase") }),
       row({ number: 8, state: "merged" }),
     ];
@@ -207,7 +246,7 @@ describe("the list", () => {
   });
 
   it("says a held PR is held, and why the train holds one or sent it back, without its tag or code marks", () => {
-    const held = rowMeta(row({ queue: queue("ready", { position: 1, reason: HOLD }) }));
+    const held = rowMeta(row({ queue: queue("ready", { heldFor: "hold", reason: HOLD }) }));
     expect(held.state).toMatchObject({ word: "held", tone: "needs-you" });
     expect(held.why).toBe("the PR has the hold label; the train takes it once the label is gone");
     expect(rowMeta(row({ queue: queue("needs_rebase", { reason: "src/shipping/zones.ts, src/shipping/rates.ts" }) }))).toMatchObject({ state: { word: "conflicts" }, why: "src/shipping/zones.ts, src/shipping/rates.ts" });
