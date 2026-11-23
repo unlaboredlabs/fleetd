@@ -80,6 +80,19 @@ export function ProjectSettings({ route }: { route: SettingsRoute }) {
 
   const read = useToolQuery("project_settings_get", { machineId: ref?.machineId ?? "", projectId: ref?.projectId ?? "" }, { enabled: live && ref !== undefined });
   const summary = useData((d) => (ref ? d.projects[projectKey(ref)] : undefined));
+  // A repo's checkout that a bot holds, reached by its id, is no bot: its bot's settings open instead, never a page
+  // offering Who merges for it (W791, fleetd cloud: Who merges set on a checkout changed nothing).
+  const holder = useData((d) =>
+    ref
+      ? Object.values(d.projects).find(
+          (p) => !(p.machineId === ref.machineId && p.projectId === ref.projectId) && (p.repos ?? []).some((r) => r.checkout.machineId === ref.machineId && r.checkout.projectId === ref.projectId),
+        )
+      : undefined,
+  );
+  const holderKey = holder ? `${holder.machineId}/${holder.projectId}` : null;
+  useEffect(() => {
+    if (holderKey !== null) replaceRoute({ tab: "projects", for: holderKey });
+  }, [holderKey]);
 
   if (!live) {
     return (
