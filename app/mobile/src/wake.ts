@@ -7,7 +7,7 @@
 // unit-tested.
 import { askedAt, ColdTurns, endedAt, heldWords, replied, START_STALE_MS, startOf, waitingFor, wakeOf, type Wake } from "./desktop";
 import type { Key, State } from "./store";
-import { leadActivityOf } from "./turn";
+import { leadActivityOf, leadActivitySinceOf } from "./turn";
 
 const cold = new ColdTurns();
 
@@ -17,7 +17,7 @@ const cold = new ColdTurns();
  * shows nothing.
  */
 export const wakeIn = (
-  s: Pick<State, "chatStates" | "leadActivity"> & Partial<Pick<State, "chats" | "sends" | "turnEnded" | "skewMs" | "hub" | "blocked">>,
+  s: Pick<State, "chatStates" | "leadActivity"> & Partial<Pick<State, "chats" | "sends" | "turnEnded" | "skewMs" | "hub" | "blocked" | "leadActivitySince">>,
   key: Key,
   writing = false,
   nowMs = Date.now(),
@@ -39,6 +39,7 @@ export const wakeIn = (
     asleep: chat?.leadAsleep === true,
     working,
     activity,
+    activitySince: leadActivitySinceOf(s, key),
     cold: cold.see(key, working, activity, landed),
     writing,
     asked,

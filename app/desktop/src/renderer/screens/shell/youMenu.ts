@@ -196,10 +196,10 @@ export const hostedLine = (machines: readonly MenuMachine[] | undefined, hosted:
   const open = { to: "hosted" } as const;
   if (!admin) {
     const alone = machines?.every((m) => m.runner === true) ?? false;
-    return alone && row.state !== "starting" ? { key: "hosted", mark: "warning", text: `${name}: ${row.why ?? "they didn't start"}`, aside: ASK } : null;
+    return alone && row.state !== "starting" ? { key: "hosted", mark: "warning", text: row.line ?? `${name}: ${row.why ?? "they didn't start"}`, aside: ASK } : null;
   }
   if (row.state === "starting") return { key: "hosted", mark: "quiet", text: `${name} are starting…`, does: open };
-  const text = `${name}: ${row.why ?? "they didn't start"}`;
+  const text = row.line ?? `${name}: ${row.why ?? "they didn't start"}`;
   if (row.action === "connect") return { key: "hosted", mark: "warning", text, action: "Connect", does: { to: "accounts" } };
   if (row.action === "retry" || row.action === "test") return { key: "hosted", mark: "warning", text, action: "Try again", does: { to: "hosted", retry: p.provider } };
   return { key: "hosted", mark: "warning", text, action: "Open", does: open };

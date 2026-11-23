@@ -30,7 +30,8 @@ export function WakeRow({ chatKey, wake, title, picture }: { chatKey: Key; wake:
     const timer = setTimeout(() => setStirred(true), STIR_MS);
     return () => clearTimeout(timer);
   }, []);
-  const ticking = wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received";
+  // Claude's retries too: their plain line comes once they have gone on for a while (RETRY_SAID_MS).
+  const ticking = wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received" || (wake.phase === "working" && wake.retry !== undefined);
   // Timed on the hub's clock, as its start's times are (store.ts skewMs).
   const { state } = useHub();
   const skew = state.skewMs ?? 0;

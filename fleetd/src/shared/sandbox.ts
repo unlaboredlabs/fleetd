@@ -82,8 +82,8 @@ export function checkFix(_provider: KnownSandboxProvider, reason: string): strin
     case "invalid_key":
     case "billing":
       return "try again later";
+    // fleetd's computers' own account at its limit: nothing the team changes frees it; they start again by themselves.
     case "limit":
-      return "lower the limit here, or try again later";
     case "rate":
       return "";
     default:
@@ -123,8 +123,9 @@ export function refusalWords(provider: KnownSandboxProvider, reason: string, why
       return `${name} refused the key`;
     case "billing":
       return `${name} refused: billing isn't set up on the account`;
+    // The account's own limit (its starts a day): never the team's plan, which the slot board keeps (W791).
     case "limit":
-      return `${name} refused: the account is at its plan's limit`;
+      return `${name} can't start more right now`;
     case "rate":
       return `${name} are at their ${RATE_WORDS}`;
     case "unreachable":
@@ -136,14 +137,21 @@ export function refusalWords(provider: KnownSandboxProvider, reason: string, why
 
 /** A provider's trouble as a machine reported it (shared/node_link.ts SandboxTrouble), as the apps show it: what is
  * wrong and its fix in plain words, and when its agents are tried there again. */
-export function troubleOf(provider: KnownSandboxProvider, t: { what: string; reason: string; why: string; until?: number }): ProviderTrouble {
+export function troubleOf(provider: KnownSandboxProvider, t: { what: string; reason: string; why: string; until?: number; freeAt?: number }): ProviderTrouble {
   const reason = reasonOf(t.reason);
   const message =
     t.what === "keep_alive"
       ? `${NAMES[provider]} couldn't keep their sandboxes running: ${reason === "failed" ? plainWhy(t.why) || "no reason given" : refusalWords(provider, reason, t.why)}`
       : refusalWords(provider, reason, t.why);
   const fix = checkFix(provider, reason);
-  return { what: t.what, reason, message, ...(fix ? { fix } : {}), ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}) };
+  return {
+    what: t.what,
+    reason,
+    message,
+    ...(fix ? { fix } : {}),
+    ...(t.until !== undefined ? { until: new Date(t.until).toISOString() } : {}),
+    ...(t.freeAt !== undefined && Number.isFinite(t.freeAt) ? { freeAt: new Date(t.freeAt).toISOString() } : {}),
+  };
 }
 
 /** A trouble's line where a person reads why an agent waits or didn't start: what is wrong, its fix, and when it is

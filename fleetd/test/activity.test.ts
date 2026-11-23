@@ -128,7 +128,8 @@ test("a hosted start's step, when it began and a failed try's reason and retry r
   const startedAt = "2026-10-18T10:00:00.000Z";
   t.apply(item("start-r1", "running", { type: "starting", text: "Starting its computer at boat.dev", step: "box", startedAt }), T0 + 10);
   expect(t.now(T0 + 20)?.activity).toEqual({ kind: "starting", text: "Starting its computer at boat.dev", step: "box", startedAt });
-  const failed = { reason: "No computer was free", retryAt: "2026-10-18T10:00:19.000Z" };
+  // When fleetd's computers start again after their account's limit, too (W791).
+  const failed = { reason: "No computer was free", retryAt: "2026-10-18T10:00:19.000Z", freeAt: "2026-10-19T11:18:00.000Z" };
   t.apply(item("start-r1", "running", { type: "starting", text: "Starting its computer at boat.dev: no free computers. Trying again in 10 s, by itself.", step: "box", startedAt, failed }), T0 + 30);
   expect(t.now(T0 + 40)?.activity).toMatchObject({ kind: "starting", step: "box", startedAt, failed });
   // A billing hold: the reason alone, with no retry of its own.
@@ -226,4 +227,20 @@ test("a tracker idle past its time with no run going is dropped, whoever ends it
   now += TRACKER_IDLE_MS + 61_000;
   a.onThreadEvent("devbox", frame("fresh", run("running")));
   expect(a.size()).toBe(2);
+});
+
+// W791: Claude overloaded mid-turn retries for minutes; each retry used to restart the wait, so no app could tell a long
+// one from a blip and the person saw typing dots alone.
+test("a run of retries counts from the first, and ends with the work that follows", () => {
+  const t = new ActivityTracker();
+  t.apply(run("running"), T0);
+  const retry = (n: number) => item(`retry-${n}`, "completed", { type: "api_retry", attempt: n, maxRetries: 10, errorStatus: 529, error: "Overloaded" });
+  t.apply(retry(1), T0 + 1_000);
+  t.apply(retry(2), T0 + 3_000);
+  t.apply(retry(3), T0 + 25_000);
+  expect(t.now(T0 + 26_000)).toEqual({ activity: { kind: "retrying", attempt: 3, of: 10, reason: "overloaded" }, since: isoMs(T0 + 1_000) });
+  // Claude answers: the next retry is a new wait.
+  t.apply(delta("Here"), T0 + 30_000);
+  t.apply(retry(1), T0 + 40_000);
+  expect(t.now(T0 + 41_000)?.since).toBe(isoMs(T0 + 40_000));
 });

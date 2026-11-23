@@ -5633,6 +5633,8 @@ export type NodeLoad = {
  * asked of it until `until` (epoch ms); `keep_alive`, its live boxes couldn't be extended at the last try.
  */
 export type NodeSandboxTrouble = {
+  /** Epoch ms: when the provider starts boxes again after refusing for its account's limit. */
+  freeAt?: number;
   provider: string;
   /** Its kind: invalid_key, limit, billing, rate, unreachable or failed (SandboxCheckReason). */
   reason: string;
@@ -7967,6 +7969,8 @@ export type ProviderTroubleKind = KnownProviderTroubleKind | (string & {});
 export type ProviderTrouble = {
   /** What to do about it, in plain words. */
   fix?: string;
+  /** When fleetd's computers start again after refusing for their account's limit (its starts a day, its rate). */
+  freeAt?: Timestamp;
   /** What is wrong: "fleetd's computers refused: billing isn't set up on the account". */
   message: string;
   reason: SandboxCheckReason;
@@ -9031,6 +9035,8 @@ export type Star = "*";
 /** Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on
  * something else, such as the team's billing). */
 export type StartFailed = {
+  /** When fleetd's computers start again after refusing for their account's limit (its starts a day, its rate). */
+  freeAt?: Timestamp;
   reason: string;
   retryAt?: Timestamp;
 };

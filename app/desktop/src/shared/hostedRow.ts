@@ -5,6 +5,7 @@
 // to press. Pure, so every state is unit-tested and both apps say the same words.
 import type { DegradedCause, MachineStatus, ProviderTrouble, SandboxProviderState, SlotHosted } from "./contracts";
 import { specOf } from "./providers";
+import { startsAgain } from "./startsAgain";
 
 /** The hub's runner as the row reads it; absent on a hub that has none (it can't run one, or nothing hosted is on). */
 export type HostedRunner = { status: MachineStatus; degradedCause?: DegradedCause | undefined; degradedReason?: string | undefined };
@@ -27,6 +28,8 @@ export interface HostedRow {
   /** Why it isn't ready, in a few words for the hub menu's "fleetd's computers: <why>" (one short line, the row
    * saying the whole of it); only while it isn't. */
   readonly why?: string;
+  /** The hub menu's whole line where "<name>: <why>" would mislead: fleetd's computers out of starts for now. */
+  readonly line?: string;
 }
 
 const cap = (s: string): string => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
@@ -42,7 +45,7 @@ const troubleWhy = (t: ProviderTrouble): string => {
     case "billing":
       return "billing isn't set up";
     case "limit":
-      return "its plan's limit is reached";
+      return "they can't start more right now";
     case "rate":
       return "its start rate is reached for a minute";
     case "unreachable":
@@ -61,6 +64,7 @@ export function hostedRow(
   p: Pick<SandboxProviderState, "provider" | "connected" | "limit" | "check" | "running" | "trouble">,
   runner?: HostedRunner,
   live?: Pick<SlotHosted, "limit" | "running" | "trouble">,
+  timeZone?: string,
 ): HostedRow {
   if (!p.connected) return { state: "off", text: null };
   const name = specOf(p.provider).name;
@@ -70,6 +74,12 @@ export function hostedRow(
     return { state: "failed", text, ...(check.fix === undefined ? {} : { fix: check.fix }), action: "test", why: check.reason === "invalid_key" ? "it refused the key" : "its key failed its test" };
   }
   const trouble = live === undefined ? p.trouble : live.trouble;
+  // Their own account's limit (its starts a day): nothing to press or change, only when they start again, in the
+  // person's time. Never "its plan's limit", which reads as the team's own plan.
+  if (trouble?.reason === "limit" && trouble.what === "start") {
+    const again = startsAgain(trouble.freeAt, timeZone);
+    return { state: "failed", text: `${name} can't start more right now${again}.`, why: "they can't start more right now", line: `${name} can't start more right now${again}` };
+  }
   if (trouble !== undefined) {
     const text = trouble.what === "keep_alive" ? sentence(trouble.message) : `Couldn't start: ${sentence(trouble.message)}`;
     return { state: "failed", text, ...(trouble.fix === undefined ? {} : { fix: trouble.fix }), action: "retry", why: troubleWhy(trouble) };

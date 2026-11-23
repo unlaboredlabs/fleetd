@@ -56,6 +56,29 @@ export const doingWords = (a: Activity): string => {
   }
 };
 
+/** A lead's turn that is over, hub epoch ms at each end; `cut`: its run failed or was cut rather than completed (the
+ * project's last thread end before the lead went idle said so). */
+export type TurnSpan = { readonly since: number; readonly until: number; readonly cut?: boolean };
+
+/**
+ * How long the lead worked toward the reply its latest turn (`turns`' last) ended with: that turn, and the turns right
+ * before it since the person's message (`askedAt`) whose runs failed or were cut, which the lead carried on by itself
+ * (W791: "Worked for 8s" after 3 min 45 s of Claude down). A turn that ended on its own (a quiet one, a reply) ends the
+ * count, and the idle time between turns never counts.
+ */
+export const workedToward = (turns: readonly TurnSpan[], askedAt: number | undefined): number | undefined => {
+  const last = turns.at(-1);
+  if (last === undefined) return undefined;
+  let ms = last.until - last.since;
+  if (askedAt === undefined) return ms;
+  for (let i = turns.length - 2; i >= 0; i--) {
+    const t = turns[i];
+    if (t === undefined || t.cut !== true || t.until <= askedAt) break;
+    ms += t.until - t.since;
+  }
+  return ms;
+};
+
 /** "40s", "3m 40s", "1h 12m": elapsed time only, never an estimate. */
 export const workedFor = (ms: number): string => {
   const s = Math.floor(Math.max(0, ms) / 1000);

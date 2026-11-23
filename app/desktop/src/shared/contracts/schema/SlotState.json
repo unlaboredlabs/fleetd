@@ -31,6 +31,10 @@
           "description": "What to do about it, in plain words.",
           "type": "string"
         },
+        "freeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When fleetd's computers start again after refusing for their account's limit (its starts a day, its rate)."
+        },
         "message": {
           "description": "What is wrong: \"fleetd's computers refused: billing isn't set up on the account\".",
           "type": "string"

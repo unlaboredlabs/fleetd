@@ -2,7 +2,8 @@
 // fleetd's node speaks, in the shapes recorded in fleetd/test/fixtures/runner at version.rs TESTED, and
 // does no model call: each user message is one turn that runs the message's `lab-run: <shell>` lines in its cwd, one
 // Bash tool call each, and replies `lab-ok`; a `lab-slow: <ms>` line waits that long before each call after the first, as
-// a slow runner between tool calls. A lab that wants replies of its own (the phone lab's chats) writes replies.json in
+// a slow runner between tool calls. Claude overloaded, as the recorded 529s are: a `lab-overloaded: <s>` line retries
+// that many seconds (an `api_retry` 529 every 5 s) before the turn goes on. A lab that wants replies of its own (the phone lab's chats) writes replies.json in
 // its run dir (FLEETD_LAB_DIR, which kit.ts's wrapper sets): `[[needle, reply], …]`, the first whose needle the message
 // holds answers it instead of `lab-ok`. Every user message is filed in the session file claude would write, so
 // scenarios read what an agent was told (its brief, a lead's digest, a recovery note) as for the real claude.
@@ -138,6 +139,11 @@ const turn = async (msg: Msg) => {
   lifecycle(userUuid, "started");
   out(init());
   out({ type: "system", subtype: "status", status: "requesting", session_id: sessionId, uuid: randomUUID(), user_message_uuids: [userUuid] });
+  const overloadedS = Number(/^lab-overloaded: (\d+)$/mu.exec(text)?.[1] ?? 0);
+  for (let attempt = 1, waited = 0; waited < overloadedS && !interrupted; attempt++, waited += 5) {
+    out({ type: "system", subtype: "api_retry", attempt, max_retries: 10, retry_delay_ms: 5000, error_status: 529, error: "overloaded", session_id: sessionId, uuid: randomUUID() });
+    await new Promise((r) => setTimeout(r, 5000));
+  }
   const commands = [...text.matchAll(/^lab-run: (.+)$/gmu)].map((m) => m[1]!);
   const slowMs = Number(/^lab-slow: (\d+)$/mu.exec(text)?.[1] ?? 0);
   for (const [i, command] of commands.entries()) {

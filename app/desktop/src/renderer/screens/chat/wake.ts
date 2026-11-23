@@ -20,6 +20,11 @@ const refOf = (key: ProjectKey) => {
 };
 
 const activityOf = (s: DataState, key: ProjectKey) => s.live.lanes[leadLaneId(refOf(key))]?.activity?.activity;
+/** Since when it does that, hub epoch ms. */
+const activitySinceOf = (s: DataState, key: ProjectKey) => {
+  const at = Date.parse(s.live.lanes[leadLaneId(refOf(key))]?.activity?.since ?? "");
+  return Number.isNaN(at) ? undefined : at;
+};
 
 /** One of your messages is on its way to the hub (not one it refused). */
 const sendingTo = (s: DataState, key: ProjectKey) => (s.chatSends[key] ?? []).some((r) => r.state.t !== "failed");
@@ -36,6 +41,7 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const asleep = useData((s) => s.chatStates[key]?.leadAsleep === true);
   const working = useData((s) => s.fresh && s.chatStates[key]?.leadWorking === true);
   const activity = useData((s) => activityOf(s, key));
+  const activitySince = useData((s) => activitySinceOf(s, key));
   // Its reply landed (none of yours still on its way): the wake is over, though the lead may work on.
   const landed = useData((s) => replied(s.chats[key]?.messages) && (s.chatSends[key]?.length ?? 0) === 0);
   const sending = useData((s) => sendingTo(s, key));
@@ -61,8 +67,8 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const isCold = cold.see(key, working, activity, landed);
   const stale = asked !== undefined && staleAt === asked;
   return useMemo(
-    () => wakeOf({ asleep, working, activity, cold: isCold, writing, asked, waiting, endedAt: ended, idleKnown: idleAt !== undefined, held, blocked, stale }),
-    [asleep, working, activity, isCold, writing, asked, waiting, ended, idleAt, held, blocked, stale],
+    () => wakeOf({ asleep, working, activity, activitySince, cold: isCold, writing, asked, waiting, endedAt: ended, idleKnown: idleAt !== undefined, held, blocked, stale }),
+    [asleep, working, activity, activitySince, isCold, writing, asked, waiting, ended, idleAt, held, blocked, stale],
   );
 }
 

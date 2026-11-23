@@ -104,6 +104,8 @@ export class ActivityTracker {
       case "message":
         return this.message(event);
       case "item": {
+        // A retry after a retry goes on the same wait: it counts from the first, so the apps can say a long one plainly.
+        const retrying = this.retry?.[1];
         this.retry = undefined;
         if (event.status === "running") {
           if (!this.open.has(event.id)) this.bump(nowMs, 1, 0, 0);
@@ -112,7 +114,7 @@ export class ActivityTracker {
           if (this.open.delete(event.id)) this.quietSinceMs = nowMs;
           else this.bump(nowMs, 1, 0, 0);
           const retry = retryOf(event.kind);
-          if (retry) this.retry = [retry, nowMs];
+          if (retry) this.retry = [retry, retrying ?? nowMs];
         }
         return;
       }
@@ -351,7 +353,15 @@ export function activityOf(kind: ItemKind, root: string | undefined): Activity |
         text: clip(kind.text),
         ...(kind.step !== undefined ? { step: kind.step } : {}),
         ...(kind.startedAt !== undefined ? { startedAt: kind.startedAt } : {}),
-        ...(kind.failed !== undefined ? { failed: { reason: clip(kind.failed.reason), ...(kind.failed.retryAt !== undefined ? { retryAt: kind.failed.retryAt } : {}) } } : {}),
+        ...(kind.failed !== undefined
+          ? {
+              failed: {
+                reason: clip(kind.failed.reason),
+                ...(kind.failed.retryAt !== undefined ? { retryAt: kind.failed.retryAt } : {}),
+                ...(kind.failed.freeAt !== undefined ? { freeAt: kind.failed.freeAt } : {}),
+              },
+            }
+          : {}),
       };
     case "api_retry":
     case "node_retry":

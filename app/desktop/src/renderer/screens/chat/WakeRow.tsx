@@ -1,6 +1,7 @@
 // The bot in the reply's place (shared/wake.ts, the person's pick of W792's designs, for every turn since W852): from
 // your send until the reply lands or the turn ends, the bot under your message with the lead's typing bubble beside
-// it, as a person's avatar and dots in Messages, its own look thinking or working. While the lead can't take it, one
+// it, as a person's avatar and dots in Messages, its own look thinking or working; past RETRY_SAID_MS of Claude not
+// serving it, one plain line beside them says so ("Claude is overloaded, retrying…"). While the lead can't take it, one
 // plain line instead says why; a start that never came, that it didn't start, with Restart lead beside it. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
 // word beside it that rises out as the next rises in. A failed try slumps, with one plain reason and a Try again that
 // counts down to the start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
@@ -34,7 +35,7 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
     const timer = setTimeout(() => setStirred(true), STIR_MS);
     return () => clearTimeout(timer);
   }, []);
-  const now = useHubNow(wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received");
+  const now = useHubNow(wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received" || (wake.phase === "working" && wake.retry !== undefined));
   const said = wakeWords(wake, now);
   // A reason, or that the lead didn't start: a line that wraps, not a word that gives way to the next.
   const plain = wake.phase === "held" || wake.phase === "unstarted";

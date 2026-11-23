@@ -2,7 +2,7 @@
 // (Island.tsx), and when it began. Once it ends: how long it worked, the reply's stamp. Only real state:
 // elapsed time, never an estimate, and "working" when the hub says it works but nothing more is known.
 import { eventData, isEvent, type HubEvent, type ProjectRef } from "../../../shared/contracts";
-import { doingWords } from "../../../shared/turnWords";
+import { doingWords, workedToward, type TurnSpan } from "../../../shared/turnWords";
 import { leadLaneId, selectLeadWorking } from "../../src/data/selectors";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
@@ -68,6 +68,50 @@ export const leadLastTurnUntil = (s: DataState, key: ProjectKey): number | undef
   const turn = lastTurn(s.events, refOf(key));
   const at = turn === undefined ? undefined : s.events[turn.end]?.at;
   return at === undefined ? undefined : Date.parse(at);
+};
+
+/** A thread's end, whose type says whether its run completed. */
+const THREAD_ENDS = new Set(["thread.completed", "thread.failed", "thread.interrupted", "thread.usage_limited"]);
+
+/**
+ * The lead's turns that are over, as lastTurn has each, oldest first: hub epoch ms at each end, and `cut` when the
+ * project's last thread end before the lead went idle was a failure or an interrupt. The app knows no lead's thread
+ * id: the lead's own end comes right before its idle, so the last end of the bot's threads in the turn is taken for it.
+ */
+export const leadTurns = (events: readonly HubEvent[], ref: ProjectRef): TurnSpan[] => {
+  const ours = ofProject(ref);
+  const isIdle = idleAt(ours);
+  const out: TurnSpan[] = [];
+  let idleSeen = false;
+  let start: HubEvent | undefined;
+  let lastEnd: string | undefined;
+  for (const e of events) {
+    if (!ours(e)) continue;
+    if (THREAD_ENDS.has(e.type)) lastEnd = e.type;
+    if (!isEvent(e, "chat.waiting")) continue;
+    if (isIdle(e)) {
+      if (start !== undefined) out.push({ since: Date.parse(start.at), until: Date.parse(e.at), ...(lastEnd === "thread.failed" || lastEnd === "thread.interrupted" ? { cut: true } : {}) });
+      start = undefined;
+      idleSeen = true;
+    } else if (idleSeen && start === undefined) {
+      start = e;
+      lastEnd = undefined;
+    }
+  }
+  return out;
+};
+
+/**
+ * How long the lead worked toward its latest finished turn's reply, ms: that turn, and the turns before it since your
+ * message whose runs failed or were cut (shared/turnWords.ts workedToward), so a reply that took minutes across Claude's
+ * retries never reads as the seconds of its last run (W791, "Worked for 8s").
+ */
+export const leadLastTurnWorkedMs = (s: DataState, key: ProjectKey): number | undefined => {
+  const turns = leadTurns(s.events, refOf(key));
+  const last = turns.at(-1);
+  if (last === undefined) return undefined;
+  const asked = s.chats[key]?.messages.findLast((m) => m.author === "human" && Date.parse(m.createdAt) < last.since);
+  return workedToward(turns, asked === undefined ? undefined : Date.parse(asked.createdAt));
 };
 
 /** What the lead does this moment ("thinking", "editing `a.ts`"), "working" when nothing more is known; undefined idle. */

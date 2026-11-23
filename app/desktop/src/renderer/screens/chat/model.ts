@@ -184,9 +184,10 @@ export interface RowsInput {
   readonly offline?: boolean;
   /**
    * The lead's latest finished turn, epoch ms at each end: "Worked for" goes beside its reply, the lead's newest
-   * message written during it, and stays there while the next turn runs.
+   * message written during it, and stays there while the next turn runs. `ms`: how long it worked toward that reply,
+   * the runs before it that ended without one included (activity.ts leadLastTurnWorkedMs); else the turn's own length.
    */
-  readonly worked?: { readonly since: number; readonly until: number } | undefined;
+  readonly worked?: { readonly since: number; readonly until: number; readonly ms?: number } | undefined;
   /** The newest seq you had seen when the chat opened, when there was more since (data/seen.ts). */
   readonly seenSeq?: number | undefined;
   /** The person this app acts as (hub_info's me): someone else's messages show their name. */
@@ -222,7 +223,7 @@ export function chatRows(i: RowsInput): Row[] {
     return turn !== undefined && at >= turn.since && at <= turn.until + REPLY_SLACK_MS;
   };
   const reply = i.items.findLastIndex((item) => item.author === "lead" && item.kind === "message" && item.state !== "streaming" && inTurn(item));
-  const worked = turn === undefined ? undefined : `Worked for ${workedFor(turn.until - turn.since)}`;
+  const worked = turn === undefined ? undefined : `Worked for ${workedFor(turn.ms ?? turn.until - turn.since)}`;
   const day = (iso: string, d: string) => {
     if (d === lastDay) return;
     out.push({ kind: "day", key: `day:${d}`, label: dayLabel(iso, i.nowMs, i.timeZone) });
