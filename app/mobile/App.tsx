@@ -52,6 +52,7 @@ import { Claude } from "./src/screens/Claude";
 import { Google, Providers } from "./src/screens/Providers";
 import { ProfileEdit } from "./src/screens/ProfileEdit";
 import { Screen } from "./src/screens/Screen";
+import { ScreenList } from "./src/screens/ScreenList";
 import { Settings } from "./src/screens/Settings";
 import { Vault } from "./src/screens/vault/Vault";
 import { VaultEdit } from "./src/screens/vault/VaultEdit";
@@ -553,6 +554,7 @@ function Root() {
                 })}
               />
               <RootStack.Screen name="Screen" component={Screen} getId={({ params }) => params.sessionId} options={{ headerShown: false, presentation: "fullScreenModal", gestureEnabled: false, contentStyle: { backgroundColor: t.dark ? "#000000" : t.grouped } }} />
+              <RootStack.Screen name="ScreenList" component={ScreenList} layout={sheetRoom} options={{ ...sheet(t, "Screens"), headerLargeTitleEnabled: false }} />
               {manageScreens(RootStack, t)}
             </RootStack.Navigator>
             </PaneSide.Provider>

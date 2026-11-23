@@ -233,7 +233,9 @@ export type ThreadRow =
    */
   | { readonly t: "item"; readonly id: string; readonly item: ChatItem; readonly side: Side; readonly first: boolean; readonly worked?: string; readonly tag?: Tag }
   /** Where what you haven't read starts, as chat apps' "Unread Messages" bar. */
-  | { readonly t: "unread"; readonly id: string };
+  | { readonly t: "unread"; readonly id: string }
+  /** A screen its agent opened, where it opened: its card (screens/ScreenCards.tsx), live or ended. */
+  | { readonly t: "screen"; readonly id: string; readonly sessionId: string };
 
 /**
  * Whether two rows draw the same: the thread makes its rows anew with each change (a streamed word), and a row that is
@@ -245,6 +247,37 @@ export const sameRow = (a: ThreadRow, b: ThreadRow): boolean => {
   if (a.t === "item" && b.t === "item") return a.side === b.side && a.first === b.first && a.worked === b.worked && a.tag?.key === b.tag?.key && a.tag?.order?.title === b.tag?.order?.title && sameItem(a.item, b.item);
   if (a.t === "day" && b.t === "day") return a.at === b.at;
   return true;
+};
+
+/**
+ * The rows with each screen's card where it opened: after the last message before it. One that opened before the
+ * oldest message read waits for its page, unless there are no older ones.
+ */
+export const withScreens = (rows: readonly ThreadRow[], screens: readonly { readonly id: string; readonly at: string }[], hasOlder: boolean): ThreadRow[] => {
+  if (screens.length === 0) return [...rows];
+  const byTime = [...screens].sort((a, b) => msOf(a.at) - msOf(b.at));
+  // Each row's next message (its own, or the one a day line or the unread bar stands over): a card goes before the
+  // lines over the message after it.
+  const ahead: (ChatItem | undefined)[] = [];
+  for (let i = rows.length - 1, after: ChatItem | undefined; i >= 0; i -= 1) {
+    const row = rows[i]!;
+    if (row.t === "item") after = row.item;
+    ahead[i] = after;
+  }
+  const firstItem = rows.find((r) => r.t === "item");
+  const out: ThreadRow[] = [];
+  let next = 0;
+  for (const [i, row] of rows.entries()) {
+    const item = ahead[i];
+    while (item !== undefined && next < byTime.length && msOf(byTime[next]!.at) < msOf(item.at)) {
+      const s = byTime[next]!;
+      if (firstItem?.t !== "item" || item !== firstItem.item || !hasOlder) out.push({ t: "screen", id: `screen:${s.id}`, sessionId: s.id });
+      next += 1;
+    }
+    out.push(row);
+  }
+  for (const s of byTime.slice(next)) out.push({ t: "screen", id: `screen:${s.id}`, sessionId: s.id });
+  return out;
 };
 
 const sameItem = (a: ChatItem, b: ChatItem): boolean => {

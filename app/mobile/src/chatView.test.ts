@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyDelta, applyHistory, chatItems, emptyChat, type Chat, type ChatItem, type ChatMessage } from "./desktop";
-import { aimOf, arrivedSince, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, holdFrom, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, type ThreadRow } from "./chatView";
+import { aimOf, arrivedSince, attachmentBubbles, bubbleTime, bubbles, dayLine, fileSize, fullTime, holdFrom, listTime, olderOffset, outgoing, previewOf, quoteOf, replyOf, replyText, sameRow, seenSeq, sendNote, sendWait, SLOW_SEND_MS, streamingAt, viaNote, threadRows, timeLine, viewOffsetOf, withScreens, type ThreadRow } from "./chatView";
 
 const message = (text: string, parts?: ChatMessage["parts"]): ChatMessage => ({
   messageId: "m1",
@@ -129,6 +129,30 @@ const item = (id: string, author: ChatItem["author"], at: string, extra: Partial
   attachments: [],
   state: "sent",
   ...extra,
+});
+
+describe("withScreens", () => {
+  const rows = threadRows([
+    item("a", "human", "2026-10-28T10:00:00Z"),
+    item("b", "lead", "2026-10-28T10:05:00Z"),
+    item("c", "lead", "2026-10-29T08:00:00Z"),
+  ], undefined, undefined, { timeZone: "UTC" });
+  const names = (r: ThreadRow[]) => r.map((x) => (x.t === "item" ? x.id : x.t === "screen" ? x.sessionId : x.t));
+
+  it("puts each screen's card where it opened, before the next day's line, and the newest at the end", () => {
+    const screens = [
+      { id: "S3", at: "2026-10-29T09:00:00Z" },
+      { id: "S1", at: "2026-10-28T10:01:00Z" },
+      { id: "S2", at: "2026-10-28T23:00:00Z" },
+    ];
+    expect(names(withScreens(rows, screens, false))).toEqual(["day", "a", "S1", "b", "S2", "day", "c", "S3"]);
+  });
+
+  it("leaves one older than every message read for its page, unless there is none older", () => {
+    const screens = [{ id: "S0", at: "2026-10-27T10:00:00Z" }];
+    expect(names(withScreens(rows, screens, true))).toEqual(["day", "a", "b", "day", "c"]);
+    expect(names(withScreens(rows, screens, false))).toEqual(["S0", "day", "a", "b", "day", "c"]);
+  });
 });
 
 describe("threadRows", () => {
