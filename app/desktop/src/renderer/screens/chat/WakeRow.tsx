@@ -1,11 +1,11 @@
 // The bot in the reply's place (shared/wake.ts, the person's pick of W792's designs, for every turn since W852): from
 // your send until the reply lands or the turn ends, the bot under your message with the lead's typing bubble beside
 // it, as a person's avatar and dots in Messages, its own look thinking or working. While the lead can't take it, one
-// plain line instead says why; a start that never came, that it didn't start and what to do. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
+// plain line instead says why; a start that never came, that it didn't start, with Restart lead beside it. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
 // word beside it that rises out as the next rises in. A failed try slumps, with one plain reason and a Try again that
 // counts down to the start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
 import { useEffect, useState, type ReactNode } from "react";
-import { STIR_MS, tryAgainLabel, tryAgainNow, wakeDots, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
+import { restartNote, STIR_MS, tryAgainLabel, tryAgainNow, wakeDots, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { Avatar } from "../../ui";
@@ -58,6 +58,7 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
       <span className={plain ? s.reason : s.words}>
         {words === undefined ? null : plain ? words : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
         {wake.phase === "failed" ? <TryAgain key={`${wake.reason}|${String(wake.retryAt)}`} project={project} wake={wake} now={now} /> : null}
+        {wake.phase === "unstarted" ? <RestartLead project={project} /> : null}
       </span>
     </div>
   );
@@ -84,6 +85,40 @@ function TryAgain({ project, wake, now }: { project: ProjectRef; wake: Extract<W
         }}
       >
         {tryAgainLabel(wake, now)}
+      </button>
+      {note === undefined ? null : (
+        <span className={s.note} role="status">
+          {note}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Restart lead, beside a start that never came: the lead's Restart lead (project_set leadRestart), and what it came to. */
+function RestartLead({ project }: { project: ProjectRef }) {
+  const layer = useDataLayer();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string>();
+  return (
+    <>
+      <button
+        type="button"
+        className={s.act}
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setNote(undefined);
+          void layer
+            .call("project_set", { ...project, leadRestart: true })
+            .then(restartNote, (error: unknown) => restartNote({ ok: false, error: { message: error instanceof Error ? error.message : String(error) } }))
+            .then((said) => {
+              setNote(said);
+              setBusy(false);
+            });
+        }}
+      >
+        Restart lead
       </button>
       {note === undefined ? null : (
         <span className={s.note} role="status">

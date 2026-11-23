@@ -6,6 +6,7 @@ import {
   ColdTurns,
   heldWords,
   replied,
+  restartNote,
   SLOW_MS,
   START_SLOW_MS,
   tryAgainNote,
@@ -196,7 +197,9 @@ describe("the bot in the reply's place on every turn", () => {
     expect(unstarted).toEqual({ phase: "unstarted" });
     expect(wakeDots(unstarted)).toBe(false);
     expect(wakePose(unstarted, true)).toBe("idle");
-    expect(wakeWords(unstarted, T)?.words).toMatch(/^The lead didn’t start on this\. Send it again, or press Restart lead/u);
+    expect(wakeWords(unstarted, T)?.words).toBe("The lead didn’t start on this. Restart it, then send your message again.");
+    expect(restartNote({ ok: true })).toBe("Restarting the lead. Send your message again in a moment.");
+    expect(restartNote({ ok: false, error: { message: "Only an admin can restart this bot's lead." } })).toBe("Couldn’t restart the lead: Only an admin can restart this bot's lead");
     // A lead with no turn end kept (none yet, or past the log): the hub says the epoch, idle since before it all.
     expect(endedAt("1970-01-01T00:00:00.000Z", undefined)).toBe(0);
     expect(some({ waiting: true, asked: T, endedAt: 0, idleKnown: true, stale: true })).toEqual({ phase: "unstarted" });
