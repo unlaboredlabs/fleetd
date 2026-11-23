@@ -12,12 +12,13 @@
 // asked for keys and budgets with the hub's own watch frame, sent on to the screens again with `key`, or with the
 // lower of the hub's budget and the peers' own.
 //
-// Input on the peer reaches the screen only while the app's key may drive it (the hub's `input`) and the screen's
-// newest frame says a person has control. Each peer ends with its app's socket (the hub's close) and with the link,
+// Input on the peer reaches the screen only while the app's key may drive it (the hub's `input`) and the screen says a
+// person has control: its newest frame, or the hub's `browser_control` since it (a still screen sends no frame when a
+// person takes it over, and the screen itself still refuses input it doesn't take). Each peer ends with its app's socket (the hub's close) and with the link,
 // because the hub that let it in can't take it back after that.
 import { RTCPeerConnection } from "werift";
 import { RTC_CHUNK, RTC_HB_MS, RTC_STUN, type BrowserFrame, type BrowserInput, type RtcFromApp, type RtcFromNode } from "../../shared/contracts.ts";
-import { RTC_INPUT_EVERY_MS, type BrowserRtcFrame, type BrowserRtcReport, type BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import { RTC_INPUT_EVERY_MS, type BrowserControlFrame, type BrowserRtcFrame, type BrowserRtcReport, type BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import { FrameSender } from "../../hub/browser/flow.ts";
 import { CAP_BROWSER_RTC } from "../../shared/node_link.ts";
 import type { Node } from "../api.ts";
@@ -186,6 +187,8 @@ export class Peers {
   /** Each session's newest frame, the whole picture a new peer starts at when it's a JPEG. */
   private readonly newest = new Map<string, BrowserFrame>();
   private readonly told = new Map<string, { kbps: number | undefined; at: number }>();
+  /** Who drives each session as the hub last said it (`browser_control`), until its screen's next frame. */
+  private readonly toldControl = new Map<string, string>();
   private readonly keyed = new Map<string, number>();
 
   constructor(
@@ -200,6 +203,7 @@ export class Peers {
       this.watches.delete(id);
       this.told.delete(id);
       this.newest.delete(id);
+      this.toldControl.delete(id);
       return frame;
     }
     this.watches.set(id, frame);
@@ -212,6 +216,7 @@ export class Peers {
   frame(frame: BrowserFrame): boolean {
     const id = frame.sessionId;
     this.newest.set(id, frame);
+    this.toldControl.delete(id);
     let open = false;
     for (const p of this.peers.values()) {
       if (p.sessionId !== id) continue;
@@ -222,7 +227,12 @@ export class Peers {
   }
 
   control(sessionId: string): string | undefined {
-    return this.newest.get(sessionId)?.control;
+    return this.toldControl.get(sessionId) ?? this.newest.get(sessionId)?.control;
+  }
+
+  /** The hub's `browser_control`, on its way to the screens: who drives, until the screen's next frame says. */
+  fromHubControl(frame: BrowserControlFrame): void {
+    this.toldControl.set(frame.sessionId, frame.control === "human" ? "human" : "handing_back");
   }
 
   /** The hub's `browser_rtc`: a peer's offer, answered, or its close. */
@@ -313,6 +323,7 @@ export function start(node: Node, make?: ConstructorParameters<typeof Peers>[1])
   const link = node.area("link");
   const screens = link.handler("browser_watch");
   const input = link.handler("browser_input");
+  const control = link.handler("browser_control");
   const ctx = () => link.current;
   const p = new Peers(
     {
@@ -330,6 +341,10 @@ export function start(node: Node, make?: ConstructorParameters<typeof Peers>[1])
   );
   link.on("browser_watch", (frame, c) => screens?.({ ...(p.fromHub(frame as unknown as BrowserWatchFrame) as object), t: "browser_watch" } as never, c));
   link.on("browser_rtc", (frame) => void p.rtc(frame as unknown as BrowserRtcFrame));
+  link.on("browser_control", (frame, c) => {
+    p.fromHubControl(frame as unknown as BrowserControlFrame);
+    return control?.(frame, c);
+  });
   link.screens((frame) => p.frame(frame));
   link.onEnded(() => p.closeAll());
   node.area("caps").contribute(() => [CAP_BROWSER_RTC]);
