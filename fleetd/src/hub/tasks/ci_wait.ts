@@ -4,7 +4,9 @@
 //
 // With `merged`, a PR's wait ends only when the PR merges, read from the merge train (a batch merges its PRs by closing
 // them, so GitHub alone can't say): a writer whose next step needs another PR in waits on it so. It wakes its task too
-// when the PR fails on the train (and goes on, as its writer fixes it) or is closed unmerged (and ends).
+// when the PR fails on the train (and goes on, as its writer fixes it) or is closed unmerged (and ends). On its own
+// PR, a writer's merge wait wakes it too when the PR's own CI finishes red while the PR waits in the train's line: the
+// train sends back only what fails in its own CI, so nothing else would tell the writer (2026-11-23).
 import type { Database } from "bun:sqlite";
 import type { ProjectRef, TaskId } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
@@ -16,10 +18,12 @@ import { taskHooks } from "./ports.ts";
 import { holdsPr } from "./pr.ts";
 import {
   BY,
+  HEAD_RED,
   type Merge,
   giveUpMs,
   givenUpLine,
   headRead,
+  headRedLine,
   mergeLine,
   notProjectRepo,
   ownPr,
@@ -66,6 +70,10 @@ export type CiReads = {
   read(target: Target): Promise<Read>;
   /** The PR's way to merging, as `by`'s person may see it. */
   merge(by: ProjectRef, target: Target): Promise<Merge>;
+  /** The task whose PR it is, as the train has it (its Change's writer); undefined when the train doesn't say. */
+  writer?(target: Target): string | undefined;
+  /** The checks red on the repo's base now, as the train last read its CI. */
+  mainFailing?(repo: string): string[];
 };
 
 /**
@@ -178,6 +186,7 @@ export async function pollCiWaits(
         const read = await reads.read(target);
         if (errors > 0) setErrors(db, taskId, url, 0);
         line = summary(target, read);
+        if (line !== undefined && target.kind === "pr") line += sameAsMain(reads, target, read);
       } catch (error) {
         const why = error instanceof Error ? error.message : String(error);
         // GitHub's rate limit is used up: no failure of the wait, which reads again once it resets.
@@ -199,8 +208,10 @@ export async function pollCiWaits(
         continue;
       }
       if (m.kind === "pending") {
+        const red = ownPrWait(task, target, reads) ? await headRed(reads, target, url) : undefined;
+        if (red !== undefined && merged !== red[0]) [line, goesOn] = [red[1], red[0]];
         // Back on its way, its next failure wakes the task again.
-        if (merged !== "") told(db, taskId, url, "");
+        else if (red === undefined && merged !== "") told(db, taskId, url, "");
       } else if (m.kind === "failed" && m.why !== merged) {
         line = mergeLine(url, m);
         goesOn = m.why;
@@ -233,6 +244,37 @@ export async function pollCiWaits(
   return woken;
 }
 
+/** Whether a merge wait on `target` is the task's wait on its own PR: a writer's, of the PR the train has as its. */
+function ownPrWait(task: NonNullable<ReturnType<Tasks["get"]>>, target: Target, reads: CiReads): boolean {
+  if (task.kind === "review") return false;
+  const url = targetUrl(target).toLowerCase();
+  return reads.writer?.(target) === task.taskId || [task.pr, task.result?.prUrl].some((p) => p !== undefined && p.toLowerCase() === url);
+}
+
+/** The PR's own head finished red: what the wait keeps for it, and the writer's line; undefined otherwise or unread. */
+async function headRed(reads: CiReads, target: Target, url: string): Promise<[string, string] | undefined> {
+  let read: Read;
+  try {
+    read = await reads.read(target);
+  } catch (error) {
+    console.warn(`merge wait: the PR's own CI not read (${url}):`, error);
+    return undefined;
+  }
+  const line = headRedLine(url, read);
+  return line === undefined || read.kind !== "finished" ? undefined : [`${HEAD_RED}${read.label}`, `${line}${sameAsMain(reads, target, read)}`];
+}
+
+/**
+ * A PR's red checks that are red on its base too: re-run, each hangs or fails again and takes one of the repo's places
+ * in CI from the base's fix, so the line says to leave them ('' otherwise).
+ */
+function sameAsMain(reads: CiReads, target: Target, read: Read): string {
+  if (read.kind !== "finished" || read.failing.length === 0) return "";
+  const main = reads.mainFailing?.(target.repo) ?? [];
+  const same = read.failing.filter((name) => main.includes(name));
+  return same.length === 0 ? "" : ` ${same.join(", ")} ${same.length === 1 ? "is" : "are"} red on main too: don't re-run ${same.length === 1 ? "it" : "them"}, as the train rebases your PR once main's fix lands.`;
+}
+
 /** The train's GitHub reader as the CI reads need it (T2247's `TrainGitHub`). */
 export type CiGitHub = {
   get(path: string): Promise<{ ok: true; value: unknown } | { ok: false; status: number; message: string }>;
@@ -247,6 +289,10 @@ const statusText = (r: { status: number; message: string }) => `${r.status}: ${r
 /** The train's reads a merge wait needs (train/next.rs `upstream`). */
 export type MergeReads = {
   upstream(url: string): Promise<Waiting | undefined>;
+  /** The task id of the PR's writer on the train. */
+  writer?(url: string): string | undefined;
+  /** The checks red on the repo's base now. */
+  mainFailing?(repo: string): string[];
 };
 
 /** A merge wait's answer from the train's reads. */
@@ -260,6 +306,8 @@ export async function mergeOf(train: MergeReads | undefined, by: ProjectRef, tar
 export function hubReads(hub: Hub, gh: CiGitHub, train?: MergeReads): CiReads {
   return {
     merge: (by, target) => mergeOf(train, by, target),
+    writer: (target) => train?.writer?.(targetUrl(target)),
+    mainFailing: (repo) => train?.mainFailing?.(repo) ?? [],
     async read(target) {
       if (target.kind === "run") {
         const run = await gh.get(`repos/${target.repo}/actions/runs/${target.id}`);

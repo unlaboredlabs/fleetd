@@ -21,6 +21,7 @@ import { decide, type MergeDecision, type MergeFile } from "./merge_rules.ts";
 import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
 import * as lanes from "./lanes.ts";
+import { readFixes, redFixes } from "./red_fix.ts";
 import { BEHIND, Lanes } from "./lanes.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
@@ -387,18 +388,23 @@ export class Train {
       return { by: "person", why: "who merges its bot's PRs couldn't be read" };
     }
     if (who === undefined || who.merges === "fleetd") return { by: "fleetd" };
-    const kept = this.pullFiles.get(change.changeId);
-    let files = kept?.[0] === change.headSha ? kept[1] : undefined;
-    if (kept?.[0] !== change.headSha) {
-      try {
-        files = await this.github.pullFiles(change.repo, change.prNumber);
-        this.pullFiles.set(change.changeId, [change.headSha, files]);
-      } catch (error) {
-        this.warnHourly([`train: files of ${change.changeId} not read`], (error as Error).message, `train: files of ${change.changeId} not read, so it waits for a person this pass: ${(error as Error).message}`);
-        files = undefined;
-      }
+    let files: MergeFile[] | undefined;
+    try {
+      files = await this.changeFiles(change);
+    } catch (error) {
+      this.warnHourly([`train: files of ${change.changeId} not read`], (error as Error).message, `train: files of ${change.changeId} not read, so it waits for a person this pass: ${(error as Error).message}`);
+      files = undefined;
     }
     return decide(who.merges, who.rules, files);
+  }
+
+  /** The Change's PR's files, read from GitHub once per head (`pullFiles`). Throws when GitHub can't be read. */
+  async changeFiles(change: Change): Promise<MergeFile[] | undefined> {
+    const kept = this.pullFiles.get(change.changeId);
+    if (kept?.[0] === change.headSha) return kept[1];
+    const files = await this.github.pullFiles(change.repo, change.prNumber);
+    this.pullFiles.set(change.changeId, [change.headSha, files]);
+    return files;
   }
 
   /** Keeps the decision's words on the Change for the PR panel; a bot fleetd merges keeps none. */
@@ -1936,6 +1942,8 @@ export class Train {
     await this.unreadPass(repo);
     await this.readyPass(repo, train.projectRef);
     await this.mainCiPass(repo, train.projectRef);
+    // While main is red, what tells its fix on the train apart: the status and the line go by it.
+    await readFixes(this, repo);
     await watchPass(this, repo);
     await scheduledPass(this, repo, train.projectRef);
     await this.checkMergedOutside(repo, train.watchSinceMs, train.projectRef);
@@ -2022,7 +2030,8 @@ export class Train {
 
   /**
    * While main-branch CI is red, a note for the status view: which checks, and whether a fix is under way (an open fix
-   * order for the check, or a PR or task the watch found naming it) or the watch re-runs them once; while it waits on
+   * order for the check, a PR or task the watch found naming it, or a PR on the train that fixes the red: red_fix.ts) or
+   * the watch re-runs them once; while it waits on
    * that re-run, which checks. The train doesn't hold merges for it, so it is a warning, not a block.
    */
   mainCiNote(rawRepo: string): string | undefined {
@@ -2041,14 +2050,17 @@ export class Train {
       return linked.includes(name) || (order !== undefined && this.host.workstream(order)?.open === true);
     });
     const quoted = (names: string[]) => names.map((n) => `\`${n}\``).join(", ");
+    const onTrain = redFixes(this, repo).map((c) => `#${c.prNumber}`);
     const what =
       ci.failing.length === 0 ? `CI is red on ${base}` : ci.failing.length === 1 ? `${quoted(ci.failing)} is red on ${base}` : `${quoted(ci.failing)} are red on ${base}`;
     const fix =
-      fixed.length === 0 && ci.failing.some((n) => again.includes(n))
-        ? "re-running once"
-        : fixed.length === 0
-          ? "no fix under way"
-          : fixed.length === ci.failing.length ? "fix in progress" : `fix in progress for ${quoted(fixed)}`;
+      onTrain.length > 0
+        ? `fix in progress: ${onTrain.join(", ")}`
+        : fixed.length === 0 && ci.failing.some((n) => again.includes(n))
+          ? "re-running once"
+          : fixed.length === 0
+            ? "no fix under way"
+            : fixed.length === ci.failing.length ? "fix in progress" : `fix in progress for ${quoted(fixed)}`;
     return `${what}, ${fix}`;
   }
 
