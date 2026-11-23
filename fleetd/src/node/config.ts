@@ -17,7 +17,10 @@ export type NodeConfig = {
   minFreeGb?: number;
   warmBuilds?: number;
   buildSlots?: number;
-  /** Full pre-push checks that run at once (check_slots.ts). Absent: one per 8 cores, at least 2; 0: no turns. */
+  /** Heavy runs (full checks, whole suites) that run at once (heavy_slots.ts). Absent: one per 8 cores, at least 2;
+   * 0: no turns. */
+  heavySlots?: number;
+  /** heavySlots' name before Nov 23, read when it is absent. */
   checkSlots?: number;
   /** True once the hub has accepted this node's key. */
   enrolled: boolean;

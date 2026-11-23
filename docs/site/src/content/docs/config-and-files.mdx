@@ -67,8 +67,8 @@ Restart the node after a change (`fleetd node restart`), except where a key says
   whichever is larger. `0` turns it off. No restart needed.
 - `buildSlots`: how many agents' cargo builds run at once; the rest wait their turn. Default: one per 16 GB of
   memory. `0` turns it off. No restart needed.
-- `checkSlots`: how many writers' pre-push checks run at once. Default: one per 8 cores, at least 2. `0` turns it
-  off. No restart needed.
+- `heavySlots`: how many heavy runs (agents' full checks, whole test suites, full builds) run at once; the rest
+  wait their turn. Default: one per 8 cores, at least 2. `0` turns it off. No restart needed.
 - `warmBuilds`: finished cargo builds kept for the next reader or reviewer of a repo. Default: 2. `0` keeps none.
 - `browser`, `device`, `desktop`, `mac`, `ios`, `agentsMac`: which [screens](/docs/browser-sessions) the machine
   runs. Set these in Settings › Hub › Machines rather than by hand.
@@ -147,6 +147,13 @@ An optional file in a repo naming a check that fleetd's writers must pass before
    ```
 
 3. fleetd refuses a writer's push of any other tree, with what to do. `--no-verify` doesn't get around it.
+
+On a fleetd machine, writers run the check as `fleetd-heavy <check>`, so it waits for one of the machine's
+[heavy-run slots](/docs/machines#fair-share). A check can also take one itself, which covers a person's runs too:
+
+```sh
+if [ -z "${FLEETD_HEAVY_SLOT:-}" ] && command -v fleetd-heavy >/dev/null; then exec fleetd-heavy "$0" "$@"; fi
+```
 
 Only fleetd's writers are held to it. Your own pushes and the merge train's work as before.
 

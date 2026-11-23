@@ -310,7 +310,7 @@ export function queuedLine(slots: number, ahead: number): string {
   return `fleetd: queued for a build slot (${place}; ${slots === 1 ? "1 slot" : `${slots} slots`} on this machine): it starts once one frees`;
 }
 
-/** Runs `bin` (cargo, or a check: check_slots.ts) with inherited stdio and its signals passed on; its exit code,
+/** Runs `bin` (cargo, or a heavy run: heavy_slots.ts) with inherited stdio and its signals passed on; its exit code,
  * 128+signal when a signal ended it. */
 export async function runInherited(bin: string, args: string[], env: Record<string, string | undefined>): Promise<number> {
   let proc;

@@ -96,7 +96,8 @@ fleetd's built-in prompts tell agents to work like this. Your instructions can c
 - keep each PR to one change a person can review in one sitting;
 - prove each PR in its description: screenshots for UI, numbers for speed, tests for fixes;
 - end the description with an `Unsure:` line, which the reviewer checks;
-- run the repo's pre-push check before pushing. A repo can enforce it with
+- run the repo's pre-push check before pushing, through `fleetd-heavy` so it takes its turn for the machine's
+  [heavy-run slots](/docs/machines#fair-share). A repo can enforce the check with
   [`.fleetd/pre-push.json`](/docs/config-and-files#pre-push).
 
 **Everyone:**
