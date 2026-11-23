@@ -125,6 +125,26 @@ test("a stopped turn whose end never comes holds the new session back only for t
   expect(Date.now() - at).toBeGreaterThanOrEqual(45);
 });
 
+test("one bot's Restart lead waiting on its stopped turn holds up no other bot's lead start", async () => {
+  const t = await rig();
+  const other = { machineId: PROJECT.machineId, projectId: "p2" };
+  store(t.hub).projectsUpsertMany(PROJECT.machineId, [
+    { ...store(t.hub).projectGet(PROJECT)!, projectId: other.projectId, title: "Docs" },
+    store(t.hub).projectGet(PROJECT)!,
+  ]);
+  threadIs(t, "running");
+  // The stopped turn's end never comes: this bot's restart waits out its whole bound.
+  (leads(t.hub) as unknown as { settleMs: number }).settleMs = 1000;
+  const restarting = leads(t.hub).switchSoon(PROJECT);
+  await Bun.sleep(20);
+  const at = Date.now();
+  await leads(t.hub).start(other);
+  expect(Date.now() - at).toBeLessThan(500);
+  expect(t.prompts.length).toBe(2);
+  await restarting;
+  await until(() => t.prompts.length === 3);
+});
+
 test("a switched lead's first state is built clean, not from the old session's last wake", async () => {
   const t = await rig();
   const seen: (string | undefined)[] = [];
