@@ -221,12 +221,12 @@ export class Live {
     }
   }
 
-  /** A node linked (again): the sessions watched there, so it sends their frames. */
   /** `machine`'s link dropped: each watch of a session on it is told it waits for the machine. */
   unlinked(machine: string): void {
     for (const w of this.watched.values()) if (w.machine === machine) for (const x of w.watches) x.onWaiting?.(machine);
   }
 
+  /** A node linked (again): the sessions watched there, so it sends their frames. */
   rewatch(machine: string): void {
     for (const [session, w] of this.watched) {
       if (w.machine !== machine) continue;
