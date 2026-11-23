@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
+import { chat } from "../src/hub/chat/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
 import { start } from "../src/hub/leads/loops.ts";
 import { leadWiring } from "../src/hub/leads/ports.ts";
@@ -17,6 +18,7 @@ import type { ProfilesListOutput, ProjectSetOutput } from "../src/shared/contrac
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 const PERSON = caller("operate", true, { personId: "p_ada", name: "Ada" });
+const ADMIN = caller("admin", true, { personId: "p_ada", name: "Ada" });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -31,10 +33,12 @@ function hubWithTools() {
   cleanups.push(t.done);
   start(t.hub);
   const launched: string[] = [];
+  const prompts: string[] = [];
   const interrupted: string[] = [];
   Object.assign(leadWiring(t.hub).ports, {
-    launch: async (_machineId: string, input: { profile: string }) => {
+    launch: async (_machineId: string, input: { profile: string; prompt: string }) => {
       launched.push(input.profile);
+      prompts.push(input.prompt);
       return `lead-${++threads}`;
     },
     send: async () => false,
@@ -44,8 +48,8 @@ function hubWithTools() {
   leads(t.hub).settleMs = 10;
   const tools = new Registry();
   registerAll(tools);
-  const call = async <T>(tool: string, input: unknown): Promise<T> => {
-    const out = await tools.call(t.hub, PERSON, tool, input);
+  const call = async <T>(tool: string, input: unknown, who = PERSON): Promise<T> => {
+    const out = await tools.call(t.hub, who, tool, input);
     if ("output" in out) return out.output as T;
     // A call its schema refuses has no ToolError: its message says why.
     throw out.error.kind === "tool" ? out.error.error : new Error(`${out.error.kind}: ${"message" in out.error ? out.error.message : tool}`);
@@ -53,7 +57,7 @@ function hubWithTools() {
   const s = profiles(t.hub);
   const opus = s.create({ name: "opus", model: "claude-opus-5-5", effort: "max", default: false }, isoMs(t.clock.now()));
   const sonnet = s.create({ name: "sonnet", model: "claude-sonnet-5-5", effort: "high", default: false }, isoMs(t.clock.now()));
-  return { ...t, launched, interrupted, call, opus, sonnet };
+  return { ...t, launched, prompts, interrupted, call, opus, sonnet };
 }
 
 /** The lead's thread as its node last reported it. */
@@ -119,27 +123,95 @@ test("a name no profile has is refused, and the pick stays", async () => {
   expect((await view(t)).leadProfile).toBe("opus");
 });
 
-test("a change reaches a running lead at its next start; leadRestart starts it on it now", async () => {
+test("a bot's own pick switches an idle lead by itself, keeping its chat; picking back leaves it be", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
   threadIs(t.hub, "idle");
   const before = leads(t.hub).get(PROJECT)!;
-  expect((await view(t)).leadRestart).toBeUndefined();
+  chat(t.hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
+  chat(t.hub).add(PROJECT, { author: "lead", text: "Yes: it moved to /docs/start." });
 
-  await t.call("project_set", { ...PROJECT, leadProfile: "opus" });
-  await settle();
-  // Not started again by the pick alone: the lead runs on as it was until its next start.
-  expect(t.launched.length).toBe(1);
-  expect(leads(t.hub).get(PROJECT)?.threadId).toBe(before.threadId);
-  expect(leads(t.hub).profileChanged(PROJECT)).toBe(true);
-  expect((await view(t)).leadRestart).toBe(true);
-
-  await t.call("project_set", { ...PROJECT, leadRestart: true });
+  const out = await t.call<ProjectSetOutput>("project_set", { ...PROJECT, leadProfile: "opus" });
+  expect(out.next).toContain("from its next idle moment");
+  // No Restart lead pressed: the idle lead switches to its pick by itself, with the chat it carries on.
   await until(() => t.launched.length === 2);
   expect(t.launched[1]).toBe("opus");
+  expect(t.prompts[1]).toContain("## Recent chat");
+  expect(t.prompts[1]).toMatch(/^You \([^)]*\): Yes: it moved to \/docs\/start\.$/m);
   const after = leads(t.hub).get(PROJECT)!;
   expect(after.threadId).not.toBe(before.threadId);
   expect(after.sessionGeneration).toBe(before.sessionGeneration + 1);
+  expect([(await view(t)).leadRestart, (await view(t)).leadRestarting]).toEqual([undefined, undefined]);
+  // A pick of the profile it already runs on switches nothing.
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadProfile: "opus" });
+  await settle();
+  expect(t.launched.length).toBe(2);
+});
+
+test("a bot's own pick reaches a lead mid-turn once the turn ends: its next message runs on the new model, with the recap", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  const old = threadIs(t.hub, "running");
+  chat(t.hub).add(PROJECT, { author: "human", text: "is the docs page gone?" });
+  await t.call("project_set", { ...PROJECT, leadProfile: "sonnet" });
+  await settle();
+  // Never stopped: the turn under way runs on, and the apps show the switch waiting on it.
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+  expect((await view(t)).leadRestarting).toBe(true);
+  chat(t.hub).add(PROJECT, { author: "lead", text: "Yes: it moved to /docs/start." });
+  threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId: old, summary: "" });
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe("sonnet");
+  expect(t.prompts[1]).toMatch(/^Human \([^)]*\): is the docs page gone\?$/m);
+  expect(t.prompts[1]).toMatch(/^You \([^)]*\): Yes: it moved to \/docs\/start\.$/m);
+  // The next message goes to the new session, on the new model.
+  const lead = leads(t.hub).get(PROJECT)!;
+  expect(lead.threadId).not.toBe(old);
+  expect(leads(t.hub).records.leadProfileGet(PROJECT)).toBe("sonnet");
+  expect((await view(t)).leadRestarting).toBeUndefined();
+});
+
+test("a change of the hub's lead profile switches each lead on it at its next idle moment; a bot's own pick stays", async () => {
+  const t = hubWithTools();
+  // Ada is the hub's owner: she changes its profiles.
+  t.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ada', 'Ada', 'owner', 1)");
+  const other = { machineId: PROJECT.machineId, projectId: "p2" };
+  store(t.hub).projectsUpsertMany(PROJECT.machineId, [store(t.hub).projectGet(PROJECT)!, { ...store(t.hub).projectGet(PROJECT)!, projectId: other.projectId, title: "Docs" }]);
+  // p2 picked its own: the hub's change isn't its lead's.
+  await t.call("project_set", { ...other, leadProfile: "opus" });
+  await leads(t.hub).start(PROJECT);
+  await leads(t.hub).start(other);
+  threadIs(t.hub, "idle");
+  const p2 = leads(t.hub).records.leadGet(other)!;
+  expect(t.launched).toEqual([profiles(t.hub).leadProfile().name, "opus"]);
+
+  // An admin makes sonnet the hub's lead profile: the idle lead on the hub's switches by itself.
+  await t.call("profile_update", { id: t.sonnet.id, lead: true }, ADMIN);
+  await until(() => t.launched.length === 3);
+  expect(t.launched[2]).toBe("sonnet");
+  expect(leads(t.hub).records.leadGet(other)?.threadId).toBe(p2.threadId);
+
+  // An edit of the profile it runs on (its effort) reaches it too, at its next idle moment: once its turn ends.
+  const old = threadIs(t.hub, "running");
+  await t.call("profile_update", { id: t.sonnet.id, effort: "max" }, ADMIN);
+  await settle();
+  expect(t.launched.length).toBe(3);
+  threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId: old, summary: "" });
+  await until(() => t.launched.length === 4);
+  expect(t.launched[3]).toBe("sonnet");
+  expect(t.interrupted).toEqual([]);
+});
+
+test("leadRestart starts a lead on its pick now", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadProfile: "opus", leadRestart: true });
+  await until(() => t.launched.length === 2);
+  expect(t.launched[1]).toBe("opus");
   expect((await view(t)).leadRestart).toBeUndefined();
 });
 

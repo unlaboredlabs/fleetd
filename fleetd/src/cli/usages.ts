@@ -143,8 +143,8 @@ export const PROJECT_USAGE = `  project add [<path|github-url>] [--machine <id>]
              create or change a task profile (owner or admin), or delete one. A new
              one needs --model and --effort. --default makes it the one every review,
              helper call and task naming no profile runs on; --lead the one leads
-             start on (on the default: leads follow the default), from each lead's
-             next start. Deleting the lead's puts leads back on the default
+             run on (on the default: leads follow the default), each switching at
+             its next idle moment. Deleting the lead's puts leads back on the default
 `;
 
 export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]

@@ -414,7 +414,13 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
 
 /** What a change of the lead's profile says: where leads start now, and when. */
 const leadLine = (lead: Profile) =>
-  ` Leads start on ${lead.name} (${lead.model} at ${lead.effort}${lead.fast ? ", fast" : ""}) from each lead's next start.`;
+  ` Leads run on ${lead.name} (${lead.model} at ${lead.effort}${lead.fast ? ", fast" : ""}): each running lead switches at its next idle moment, keeping its chat.`;
+
+/** After a change that may move the hub's lead profile: the leads on it switch at their next idle moment, in the background. */
+const leadsFollow = (hub: Hub) =>
+  void leads(hub)
+    .switchChangedAtIdle()
+    .catch((error) => console.warn("lead profile switch: leads not switched:", error));
 
 const unknown = (id: number) => new ToolError("not_found", `No profile has id ${id}.`, "List them with profiles_list.");
 
@@ -476,6 +482,7 @@ export function register(tools: Registry): void {
       now(hub),
     );
     const lead = input.lead === true ? leadLine(profile) : "";
+    leadsFollow(hub);
     return {
       profile,
       next: `Bots allow ${profile.name} once they pick it on their Agents page (project_set); new agents on it run ${profile.model} at ${profile.effort}.${lead}`,
@@ -508,6 +515,8 @@ export function register(tools: Registry): void {
       now(hub),
     );
     const lead = input.lead !== undefined ? leadLine(s.leadProfile()) : "";
+    // An edit of the profile leads run on (its model, effort or fast mode) reaches them as a new pick does.
+    leadsFollow(hub);
     const renamed =
       profile.name !== old.name ? ` Ended tasks keep ${old.name} in their history; the ones not yet ended are on ${profile.name} now.` : "";
     return {
@@ -535,8 +544,9 @@ export function register(tools: Registry): void {
     s.delete(input.id);
     // The lead's mark goes with its row: leads fall back to the default.
     const lead = profile.lead
-      ? ` Leads ran on it, so they start on the default, ${s.defaultProfile().name}, again from their next start.`
+      ? ` Leads ran on it, so they switch to the default, ${s.defaultProfile().name}, at their next idle moment.`
       : "";
+    leadsFollow(hub);
     return { ok: true, next: `${profile.name} is gone, and no bot allows it any more.${lead}` };
   });
 }

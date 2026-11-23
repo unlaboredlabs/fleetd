@@ -128,7 +128,7 @@ const render = async (page: "editor" | "project") => {
       }
       if (tool === "project_set") {
         if (input["profiles"] !== undefined) allowed = ["high", ...(input["profiles"] as string[])];
-        // As the hub keeps it: a pick (or the hub's again) is the lead's at its next start, a restart moves it now.
+        // As the hub keeps it: a pick (or the hub's again) is the lead's at its next idle moment, a restart moves it now.
         if (input["leadProfile"] !== undefined || input["leadDefault"] === true) {
           leadPick = input["leadProfile"] as string | undefined;
           leadRestart = true;
@@ -287,7 +287,7 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   await render("editor");
   // Nothing picked: leads run on the default.
   expect(leadPicker().textContent).toContain("high");
-  expect(host.textContent).toContain("Takes effect at each lead's next start");
+  expect(host.textContent).toContain("Each running lead switches to it at its next idle moment");
   await pickLead("wide");
   expect(calls).toEqual([{ tool: "profile_update", input: { id: 3, lead: true } }]);
   expect(leadPicker().textContent).toContain("wide");
@@ -295,7 +295,7 @@ it("runs leads on the profile picked, back on the default when it is deleted", a
   // Deleting it says leads go back to the default, and they do.
   await click(edit("wide"));
   await click(button("Delete…"));
-  expect(host.textContent).toContain("Delete wide? No bot allows it after, and leads go back to high at their next start.");
+  expect(host.textContent).toContain("Delete wide? No bot allows it after, and leads switch back to high at their next idle moment.");
   await click(button("Delete"));
   expect(calls.at(-1)).toEqual({ tool: "profile_delete", input: { id: 3 } });
   expect(leadPicker().textContent).toContain("high");

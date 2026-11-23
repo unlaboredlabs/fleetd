@@ -42,7 +42,9 @@ export function register(tools: Registry): void {
     }
     if (input.leadProfile !== undefined || input.leadDefault === true) {
       const lead = area.setLeadProfile(r, project.title, input.leadDefault === true ? undefined : input.leadProfile);
-      said.push(`Its lead starts on ${lead.name} from its next start${input.leadRestart === true ? "" : "; leadRestart: true starts it on it now"}.`);
+      // Without a Restart asked too, it switches by itself at its next idle moment (leads.bot-model-pick-switches-at-idle).
+      if (input.leadRestart !== true) await area.switchAtIdle(r);
+      said.push(`Its lead runs on ${lead.name}${input.leadRestart === true ? "" : " from its next idle moment, keeping its chat, memory and orders; leadRestart: true stops a turn under way and switches now"}.`);
     }
     if (input.leadRestart === true) {
       const due = await area.switchSoon(r);

@@ -96,7 +96,7 @@ test("only an owner or admin changes profiles; create, rename, default, lead, de
   expect(await k.refused(own, "profile_create", { name: "x", note: "", model: "claude-haiku-5-5", effort: "low", fast: true })).toBe("invalid");
   const made = await k.ok(own, "profile_create", { name: "quick", note: "", model: "claude-haiku-5-5", effort: "low", lead: true });
   expect(made.profile).toMatchObject({ name: "quick", model: "claude-haiku-5-5", effort: "low", lead: true, default: false });
-  expect(made.next).toContain("Leads start on quick (claude-haiku-5-5 at low) from each lead's next start.");
+  expect(made.next).toContain("Leads run on quick (claude-haiku-5-5 at low): each running lead switches at its next idle moment, keeping its chat.");
   expect(await k.refused(own, "profile_create", { name: "quick", note: "", model: "claude-haiku-5-5", effort: "low" })).toBe("invalid");
   // A rename carries the tasks not yet ended.
   k.hub.db.conn.run(
@@ -113,7 +113,7 @@ test("only an owner or admin changes profiles; create, rename, default, lead, de
   expect(s.chosen("fast-lane")).toEqual({ profile: "fast-lane", model: "claude-haiku-5-5", effort: "low", fast: false, helperModel: s.defaultProfile().model });
   expect(s.chosen("gone").profile).toBe("high");
   const deleted = await k.ok(own, "profile_delete", { id: made.profile.id });
-  expect(deleted.next).toBe("fast-lane is gone, and no bot allows it any more. Leads ran on it, so they start on the default, high, again from their next start.");
+  expect(deleted.next).toBe("fast-lane is gone, and no bot allows it any more. Leads ran on it, so they switch to the default, high, at their next idle moment.");
   expect(s.allowed(r)).toEqual(["high"]);
   const high = s.defaultProfile();
   expect(await k.refused(own, "profile_delete", { id: high.id })).toBe("invalid");

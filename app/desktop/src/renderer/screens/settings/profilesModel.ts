@@ -84,7 +84,7 @@ export const leadOf = (profiles: ReadonlyArray<Profile>): Profile | undefined =>
 /** What Lead runs on says it falls back to while a profile is open for deleting: the default, when it is the lead's. */
 export const deleteWords = (profile: Profile, defaultName: string | undefined): string =>
   profile.lead && defaultName !== undefined
-    ? `Delete ${profile.name}? No bot allows it after, and leads go back to ${defaultName} at their next start.`
+    ? `Delete ${profile.name}? No bot allows it after, and leads switch back to ${defaultName} at their next idle moment.`
     : `Delete ${profile.name}? No bot allows it after.`;
 
 /** project_set's `profiles` once `name` is checked or not: the allowed ones but the default. */
