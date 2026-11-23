@@ -8,8 +8,9 @@ import { HubDb } from "../src/hub/store/db.ts";
 import type { GhOut, GhRunner } from "../src/hub/train/gh.ts";
 import { ALLOW_ESCAPES } from "../src/hub/train/github.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "../src/hub/train/host.ts";
+import { isLabelBrief } from "../src/hub/train/label.ts";
 import { type ReviewGate, Train, type TrainOptions, type Verdict } from "../src/hub/train/service.ts";
-import type { Change, Merger, MergeMode, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
+import type { Brief, Change, Merger, MergeMode, ProjectRef, RiskRules } from "../src/shared/contracts.ts";
 
 export const REPO = "acme/storefront";
 export const PROJECT: ProjectRef = { machineId: "devbox", projectId: "storefront" };
@@ -652,6 +653,8 @@ export class FakeHost implements TrainHost {
   workstream(id: string): WorkstreamView | undefined {
     const n = Number(id.slice(1));
     if (n >= 100 && n - 100 < this.orders.length) return { workstreamId: id, projectRef: PROJECT, hasBrief: true, open: true };
+    const briefed = this.briefed.get(id);
+    if (briefed) return { workstreamId: id, projectRef: PROJECT, hasBrief: true, open: briefed.closed === undefined, fromLabel: isLabelBrief(briefed.brief) };
     return id === WS ? { workstreamId: WS, projectRef: PROJECT, hasBrief: true, open: !this.wsClosed } : undefined;
   }
   appendEvent(_r: ProjectRef, eventType: string, _summary: string, data: unknown) {
@@ -701,6 +704,20 @@ export class FakeHost implements TrainHost {
   }
   async branchPrefix() {
     return "fleetd/";
+  }
+  /** Orders opened with a brief (a PR's fleetd-train label), by id: their brief, and whether they were closed and why. */
+  readonly briefed = new Map<string, { requestId: string; brief: Brief; closed?: string }>();
+  async openBriefedOrder(_r: ProjectRef, _text: string, requestId: string, brief: Brief) {
+    const found = [...this.briefed].find(([, o]) => o.requestId === requestId);
+    if (found) return found[0];
+    const id = `W${200 + this.briefed.size}`;
+    this.briefed.set(id, { requestId, brief });
+    return id;
+  }
+  async closeOrder(_r: ProjectRef, workstreamId: string, reason: string) {
+    const o = this.briefed.get(workstreamId);
+    if (!o) throw new Error(`no order ${workstreamId}`);
+    o.closed = reason;
   }
   async openOrder(_r: ProjectRef, text: string, requestId: string) {
     let n = this.orders.findIndex(([r]) => r === requestId);

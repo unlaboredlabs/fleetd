@@ -170,6 +170,8 @@ export const workstreams = (hub: Hub) => hub.area("lead_workstreams", (h) => new
 export type Intake = {
   intake(input: IntakeInput): { workstreamId: string };
   submit(input: IntakeInput): { workstreamId: string };
+  /** Opens an order with its brief set at once, no intent wake (the train's for a labelled PR); idempotent per clientRequestId. */
+  openBriefed(input: IntakeInput, brief: Brief): { workstreamId: string };
   close(r: ProjectRef, workstreamId: string, reason: string, by: string): Promise<{ workstreamId: string; state: WorkstreamState; next: string }>;
 };
 
@@ -178,5 +180,10 @@ export const intake = (hub: Hub) =>
   hub.area<Intake>("intake", (h) => ({
     intake: (input) => workstreams(h).intake(input),
     submit: (input) => workstreams(h).intake(input),
+    openBriefed: (input, brief) => {
+      const { workstreamId } = workstreams(h).open(input);
+      workstreams(h).briefCreate(input.projectRef, workstreamId, brief);
+      return { workstreamId };
+    },
     close: (r, id, reason, by) => workstreams(h).close(r, id, reason, by),
   }));

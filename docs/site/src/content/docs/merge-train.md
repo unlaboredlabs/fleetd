@@ -6,7 +6,9 @@ description: How fleetd reviews and merges pull requests, who merges, and how to
 The merge train reviews each agent's PR, runs CI, and merges it, or leaves the merge to you.
 
 Each repo has its own train. Every PR an agent opens goes on it by itself. PRs from forks or from people's own
-branches never do.
+branches never do, unless a ready PR carries the `fleetd-train` label (Renovate, Dependabot or a workflow's PRs): it then
+gets its own order, briefed from its title and description, is reviewed and CI-gated like any other, and its order
+closes when it merges or closes.
 
 ## Who merges {#who-merges}
 

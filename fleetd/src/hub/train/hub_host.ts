@@ -3,7 +3,7 @@
 // as if there were nothing while it is absent: Tasks' spawn, message and cancel (`tasks`), the order intake (`intake`,
 // the leads area's), the project policy's branch prefix (`policy`), the work ledger's landings (`work`) and machine
 // roles (`machine_roles`).
-import type { Merger, MergeMode, ProjectRef, RiskRules, Task } from "../../shared/contracts.ts";
+import type { Brief, Merger, MergeMode, ProjectRef, RiskRules, Task } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { leadWakes, trainLine } from "../api/leads.ts";
 import { chat } from "../chat/index.ts";
@@ -11,6 +11,7 @@ import { workstreamGet } from "../orders/workstreams.ts";
 import { mergeModeOf, mergesOf, riskRulesOf } from "../project_lead/store.ts";
 import { time as timeArea } from "../time/index.ts";
 import type { EventView, NodeRun, ReviewSpawn, TaskView, TimeSink, TrainHost, WorkstreamView, WorkView } from "./host.ts";
+import { isLabelBrief } from "./label.ts";
 import * as seams from "./seams.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { TRAIN_BY } from "./service.ts";
@@ -28,8 +29,11 @@ export type TasksPort = {
 };
 
 /** `hub.peek("intake")`, the leads area's order intake. */
+type TrainIntake = { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "train"; by: string };
 export type IntakePort = {
-  submit(input: { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "train"; by: string }): Promise<{ workstreamId: string }> | { workstreamId: string };
+  submit(input: TrainIntake): Promise<{ workstreamId: string }> | { workstreamId: string };
+  openBriefed?(input: TrainIntake, brief: Brief): { workstreamId: string };
+  close?(r: ProjectRef, workstreamId: string, reason: string, by: string): Promise<unknown>;
 };
 
 /** `hub.peek("issues")`, issues as orders (hub/issues). */
@@ -93,6 +97,18 @@ export class HubHost implements TrainHost {
     const intake = this.hub.peek<IntakePort>("intake");
     if (!intake) throw notPorted("the order intake");
     return (await intake.submit({ projectRef: r, text, clientRequestId: requestId, channel: "train", by: TRAIN_BY })).workstreamId;
+  }
+
+  async openBriefedOrder(r: ProjectRef, text: string, requestId: string, brief: Brief): Promise<string> {
+    const intake = this.hub.peek<IntakePort>("intake");
+    if (!intake?.openBriefed) throw notPorted("the order intake");
+    return intake.openBriefed({ projectRef: r, text, clientRequestId: requestId, channel: "train", by: TRAIN_BY }, brief).workstreamId;
+  }
+
+  async closeOrder(r: ProjectRef, workstreamId: string, reason: string): Promise<void> {
+    const intake = this.hub.peek<IntakePort>("intake");
+    if (!intake?.close) throw notPorted("the order intake");
+    await intake.close(r, workstreamId, reason, TRAIN_BY);
   }
 
   task(taskId: string): TaskView | undefined {
@@ -179,7 +195,7 @@ export class HubHost implements TrainHost {
     try {
       const w = workstreamGet(this.hub.db.conn, id);
       if (!w) return undefined;
-      return { workstreamId: w.workstreamId, projectRef: w.projectRef, hasBrief: w.brief != null, open: w.state === "open" };
+      return { workstreamId: w.workstreamId, projectRef: w.projectRef, hasBrief: w.brief != null, open: w.state === "open", fromLabel: isLabelBrief(w.brief) };
     } catch (error) {
       console.warn(`train: workstream ${id} not read: ${error}`);
       return undefined;

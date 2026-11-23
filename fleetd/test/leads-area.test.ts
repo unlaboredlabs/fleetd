@@ -254,6 +254,24 @@ test("the intake area opens an order once per request, announced, and wakes the 
   done();
 });
 
+test("the intake opens a briefed order for a labelled PR: open with its brief at once, once per request, read by the train as the label's", async () => {
+  const { hub, done } = withLead();
+  const { intake } = await import("../src/hub/leads/workstreams.ts");
+  const { HubHost } = await import("../src/hub/train/hub_host.ts");
+  const { labelBrief } = await import("../src/hub/train/label.ts");
+  const brief = labelBrief({ title: "Bump bun to 1.4", body: "" }, "https://github.com/acme/storefront/pull/9");
+  const host = new HubHost(hub);
+  const id = await host.openBriefedOrder(PROJECT, "Bump bun to 1.4", "train-label:acme/storefront#9", brief);
+  expect(await host.openBriefedOrder(PROJECT, "Bump bun to 1.4", "train-label:acme/storefront#9", brief)).toBe(id);
+  expect(host.workstream(id)).toEqual({ workstreamId: id, projectRef: PROJECT, hasBrief: true, open: true, fromLabel: true });
+  // A lead's own order is never taken for one.
+  const own = intake(hub).intake({ projectRef: PROJECT, text: "add dark mode", clientRequestId: "c9", channel: "app", by: "human" }).workstreamId;
+  expect(host.workstream(own)?.fromLabel).toBe(false);
+  await host.closeOrder(PROJECT, id, "https://github.com/acme/storefront/pull/9 merged");
+  expect(host.workstream(id)?.open).toBe(false);
+  done();
+});
+
 test("with the real ports, a lead start reaches the executor, and autoStart holds with why", async () => {
   const t = testHub();
   start(t.hub);
