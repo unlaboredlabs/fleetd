@@ -286,7 +286,10 @@ const main = async () => {
   if (flags.baseline !== undefined) {
     const baseline = JSON.parse(readFileSync(flags.baseline, "utf8")) as Results;
     const worse = regressions(results, baseline);
-    for (const r of worse) console.log(`REGRESSION ${RULES[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${baseline[r.metric]})`);
+    for (const r of worse) {
+      const scaled = RULES[r.metric].perRunner ? `, ${baseline[r.metric]} at bare Electron ${baseline.firstPaintRefMs} ms scaled to this runner's ${results.firstPaintRefMs.toFixed(0)}` : "";
+      console.log(`REGRESSION ${RULES[r.metric].label}: ${r.value.toFixed(1)} past ${r.limit.toFixed(1)} (baseline ${r.base.toFixed(0)}${scaled})`);
+    }
     failed ||= worse.length > 0;
     if (worse.length === 0) console.log(`no regression from ${flags.baseline}`);
   }

@@ -346,10 +346,9 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1920x1200x24" node perf/record-smoke.ts
 
   desktop-budgets:
-    # app/desktop's Linux perf budgets on the test build, after the merge (.fleetd/train.json afterMerge: a failure on
-    # main opens a fix order), not on PRs: measured on a shared runner, they fail now and then on its noise. Run CI by
-    # hand on a branch for its numbers. Same scope as desktop.
-    if: github.event_name != 'pull_request'
+    # app/desktop's Linux perf budgets on the test build, on each PR and batch (.fleetd/train.json fastChecks), so a PR
+    # that regresses them never merges. The start is gated scaled to the runner's own bare Electron start (perf/budgets.ts
+    # perRunner), which keeps a slow shared runner from reading as a regression. Same scope as desktop.
     # The image perf/baseline-linux.json was measured on. The same app reads ~15 MB more idle memory and ~25 ms more
     # "app over bare" on ubuntu-26.04 (ubuntu-latest from Nov 18), so a new image means new baselines, not a regression.
     runs-on: ubuntu-24.04
