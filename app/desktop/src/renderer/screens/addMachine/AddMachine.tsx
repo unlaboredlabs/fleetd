@@ -60,6 +60,10 @@ import { onWeb } from "../../src/web";
 const MAC_LINE = "For iOS builds and simulators.";
 
 const MAC_HEAD = "Paste both parts in Terminal on the Mac, in the account logged in at its screen.";
+/** Where no Xcode part shows (fleetd cloud has no guide), or a repair's, which a Mac set up once doesn't need. */
+const MAC_LINE_HEAD = "Paste the line in Terminal on the Mac, in the account logged in at its screen.";
+/** Before the Xcode part on a repair: the Mac had it once, unless it was never set up there. */
+const XCODE_AGAIN = "Only if Xcode was never set up on this Mac: a repair needs just the line.";
 
 export type View =
   | { readonly kind: "choose" }
@@ -663,6 +667,8 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
   if (made !== undefined && !online && !wentOffline) setWentOffline(true);
   if (made !== undefined && baseline === undefined && linked !== undefined) setBaseline(linked);
   const relinked = baseline !== undefined && linked !== undefined && linked !== baseline;
+  // The hub's Xcode part, before the line: none on fleetd cloud, which has no guide.
+  const xcode = mac ? guide?.[0] : undefined;
   const state = made === undefined ? undefined : lineState({ expiresAt: made.join.expiresAt, onlineAtStart: made.onlineAtStart }, online, now, wentOffline || relinked);
   return (
     <>
@@ -670,13 +676,15 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
         title={props.rejoin ? `Repair ${props.machineId ?? ""}` : mac ? "A Mac for agents" : "Any other machine"}
         line={
           mac
-            ? MAC_HEAD
+            ? xcode === undefined || props.rejoin
+              ? MAC_LINE_HEAD
+              : MAC_HEAD
             : props.rejoin
               ? "Run this line in a terminal on it: it installs this hub's fleetd again and enrolls the machine with a new code."
               : "Run one line in a terminal on it: it installs this hub's fleetd and joins. The machine needs claude and must reach the hub."
         }
       />
-      {mac && guide?.[0] !== undefined ? <GuideParts parts={[guide[0]]} /> : null}
+      {xcode === undefined ? null : <GuideParts parts={[props.rejoin ? { ...xcode, note: xcode.note === undefined ? XCODE_AGAIN : `${XCODE_AGAIN} ${xcode.note}` } : xcode]} />}
       {props.rejoin ? null : (
         <form
           className={s.lineForm}
