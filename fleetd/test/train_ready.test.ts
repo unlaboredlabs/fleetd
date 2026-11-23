@@ -127,3 +127,43 @@ test("a writer's PR opened while the train waits on another PR's CI goes on the 
   expect(sevenWhenTaken).toBe("ci");
   expect(changesOf(k, 8).map((c) => [c.taskId, c.workstreamId])).toEqual([["T7", "W1"]]);
 });
+
+test("a ready pass that throws while the train waits on CI is logged, and the wait goes on to the merge", async () => {
+  let during: (() => void) | undefined;
+  const k: Kit = new Kit({
+    sleep: async (ms) => {
+      k.clock.ms += ms;
+      during?.();
+      await Bun.sleep(0);
+    },
+  });
+  kits.push(k);
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  k.host.branches.set("T7", "fleetd/T7-pricing");
+  let done = false;
+  k.gh.runs = () => [{ id: 1, name: "ci", status: done ? "completed" : "in_progress", conclusion: done ? "success" : null }];
+  await k.enqueue(7);
+  let thrown = 0;
+  let sleeps = 0;
+  during = () => {
+    if (k.change(7).state !== "ci") return;
+    // From the first poll in CI, the writers can't be read: every ready pass there throws.
+    k.host.writers = () => {
+      thrown++;
+      throw new Error("writers unread");
+    };
+    void k.train.writerOpenedPr(PROJECT);
+    if (++sleeps > 5) done = true;
+  };
+  const warn = console.warn;
+  const lines: string[] = [];
+  console.warn = (...a: unknown[]) => void lines.push(a.join(" "));
+  try {
+    await k.train.step(REPO);
+  } finally {
+    console.warn = warn;
+  }
+  expect(thrown).toBeGreaterThan(1);
+  expect(k.change(7).state).toBe("merged");
+  expect(lines.filter((l) => l.includes(`ready pass of ${REPO} in CI failed: Error: writers unread`))).toHaveLength(1);
+});

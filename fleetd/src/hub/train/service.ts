@@ -1040,7 +1040,14 @@ export class Train {
       const train = this.records.train(repo);
       if (train) await this.mainCiPass(repo, train.projectRef);
       // A writer's PR opened meanwhile goes on now, not once this CI ends minutes later (#742, #743).
-      if (train) await this.readyPass(repo, train.projectRef);
+      // Never what ends this wait: a failed read is logged, and the next poll tries again.
+      if (train) {
+        try {
+          await this.readyPass(repo, train.projectRef);
+        } catch (error) {
+          this.warnHourly([`train: ready pass of ${repo} in CI failed`], String(error), `train: ready pass of ${repo} in CI failed: ${error}`);
+        }
+      }
       if (between) await between();
       await this.options.sleep(this.busyWait(start, CI_FIRST_WAIT_MS));
     }
