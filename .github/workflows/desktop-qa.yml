@@ -6,9 +6,11 @@ name: Desktop QA
 # scale 1; macOS runs it at scale 2 with the platform bits (traffic lights, menu, fonts, a shot of the real window).
 # The contact sheet (index.html), the PNGs with their annotated overlays and findings.json are the run's artifacts.
 #
-# The screens are sharded across jobs (Playwright's --shard; every test is its own unit), 4 on Linux and 3 on macOS:
-# one job ran them in 8 (Linux) and 19 (macOS) minutes. Each shard has its own contact sheet, artifact
-# desktop-qa-<os>-<shard>.
+# The screens are sharded across jobs (Playwright's --shard; every test is its own unit), 4 on Linux and 4 on macOS:
+# one job ran them in 8 (Linux) and 19 (macOS) minutes, and the screens keep coming (some 45 a day in November 2026).
+# With 3, a macOS shard ran 22-25 minutes of tests on a slow runner (GitHub's macOS runners differ about twofold) and
+# twice hit its 30-minute limit. Add a shard when one's Screens step passes about 22 minutes on a slow runner,
+# rather than raising the limit. Each shard has its own contact sheet, artifact desktop-qa-<os>-<shard>.
 #
 # Linux QA decides merges (D158, .fleetd/train.json). No pull request or push runs the macOS leg
 # (ci.no-macos-on-prs): mac.yml calls this workflow with `macos` nightly, on demand and before each release, and its
@@ -52,12 +54,12 @@ jobs:
   qa:
     strategy:
       fail-fast: false
-      # Linux's 4 shards, or macOS's 3 when mac.yml calls this workflow.
+      # Linux's 4 shards, or macOS's 4 when mac.yml calls this workflow.
       matrix:
         include: >-
           ${{ fromJSON(inputs.macos
-          && '[{"os":"macos-latest","scale":2,"shard":1,"of":3},{"os":"macos-latest","scale":2,"shard":2,"of":3},
-          {"os":"macos-latest","scale":2,"shard":3,"of":3}]'
+          && '[{"os":"macos-latest","scale":2,"shard":1,"of":4},{"os":"macos-latest","scale":2,"shard":2,"of":4},
+          {"os":"macos-latest","scale":2,"shard":3,"of":4},{"os":"macos-latest","scale":2,"shard":4,"of":4}]'
           || '[{"os":"ubuntu-latest","scale":1,"shard":1,"of":4},{"os":"ubuntu-latest","scale":1,"shard":2,"of":4},
           {"os":"ubuntu-latest","scale":1,"shard":3,"of":4},{"os":"ubuntu-latest","scale":1,"shard":4,"of":4}]') }}
     name: qa (${{ matrix.os }}, ${{ matrix.shard }}/${{ matrix.of }})

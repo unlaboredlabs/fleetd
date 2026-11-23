@@ -53,7 +53,7 @@ test("the train's after-merge checks are what mac.yml reports", () => {
   for (const [id, job] of Object.entries(nightly.jobs)) {
     if (job.uses === "./.github/workflows/desktop-qa.yml") {
       const shards = qaShards("macos-latest");
-      expect(shards).toHaveLength(3);
+      expect(shards).toHaveLength(4);
       mac.push(...shards.map((s) => `${id} / ${s}`));
     } else if (["macos-latest", "xcode-27"].includes(String(job["runs-on"])) && id !== "ios-screens") {
       mac.push(job.name ?? id);
