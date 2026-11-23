@@ -1,7 +1,7 @@
 // The five budgets (docs/build/electron-app-spec.md: measured on an M-series Mac, scripts/perf-mac.sh) and the
 // regression rules the Linux CI job applies against perf/baseline-linux.json. CI runners are not the budget machine
-// and differ from each other, so CI gates regressions only, and first paint there only relative to a bare Electron
-// window launched in the same job.
+// and differ from each other, so CI gates regressions only, and the app's start there only relative to a bare Electron
+// window launched in the same job: over it, and scaled by it (Rule.perRunner).
 
 export interface Results {
   /** Median, ms from spawning the app until its window is shown and has painted its first content (warm launches). */
@@ -46,18 +46,23 @@ interface Rule {
   readonly limit?: number;
   /** Regressed (CI) when worse than the baseline by more than the larger of ratio × baseline and slack. */
   readonly regress?: { readonly ratio: number; readonly slack: number };
+  /**
+   * The baseline is first scaled by this run's bare Electron start over the baseline's: what the app adds to a start
+   * is its own JavaScript, as CPU-bound as Electron's start, so it reads ~1.3× a bare start on every runner while in
+   * ms it spreads 1.5× between them (main's runs, Nov 13 to 23: chat over bare 248 ms on an EPYC 9V45, 259 on a Xeon
+   * 6975P, 374 on an EPYC 7763). Unscaled, a fixed limit sat inside the 7763's own spread (352 to 403 for one app).
+   */
+  readonly perRunner?: boolean;
 }
 
 export const RULES: Record<Metric, Rule> = {
   firstPaintMs: { label: "first paint", unit: "ms", higher: false, limit: 600 },
   firstPaintRefMs: { label: "bare Electron", unit: "ms", higher: false },
-  firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
+  firstPaintOverMs: { label: "app over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, perRunner: true },
   chatShownMs: { label: "chat shown", unit: "ms", higher: false },
   // What a start costs past first paint (the hub's data, the chat's rows and their markdown), which "app over bare"
-  // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there. Runners spread
-  // as for app over bare (an EPYC 7763 reads 353 ms on ubuntu-24.04, a Xeon 6975P 267 even on the slower 26.04), so its
-  // baseline sits where app over bare's does: the slowest runner ~30 ms under the limit, not a fast runner's one reading.
-  chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 } },
+  // never sees: rows that mounted blank and filled in ~300 ms later read as shown at first paint there.
+  chatOverMs: { label: "chat over bare", unit: "ms", higher: false, regress: { ratio: 0.3, slack: 60 }, perRunner: true },
   idleMemoryMb: { label: "idle memory", unit: "MB", higher: false, limit: 300, regress: { ratio: 0.15, slack: 25 } },
   idleRssMb: { label: "(summed RSS)", unit: "MB", higher: false },
   // 60 fps, allowing 5% of frames to rAF jitter: below 57 means frames were dropped. CI reads about 58 a round
@@ -89,13 +94,18 @@ export const regressionLimit = (metric: Metric, base: number): number | undefine
   return higher ? base - allowed : base + allowed;
 };
 
-export const regressions = (results: Results, baseline: Results): Array<{ metric: Metric; value: number; limit: number }> =>
+/** The baseline a run is judged against: `baseline`'s, scaled to this run's runner for a perRunner metric. */
+export const runnerBase = (metric: Metric, results: Results, baseline: Results): number =>
+  RULES[metric].perRunner ? (baseline[metric] * results.firstPaintRefMs) / baseline.firstPaintRefMs : baseline[metric];
+
+export const regressions = (results: Results, baseline: Results): Array<{ metric: Metric; value: number; limit: number; base: number }> =>
   METRICS.flatMap((metric) => {
-    const limit = regressionLimit(metric, baseline[metric]);
+    const base = runnerBase(metric, results, baseline);
+    const limit = regressionLimit(metric, base);
     if (limit === undefined) return [];
     const value = results[metric];
     const worse = RULES[metric].higher ? value < limit : value > limit;
-    return worse ? [{ metric, value, limit }] : [];
+    return worse ? [{ metric, value, limit, base }] : [];
   });
 
 export const median = (values: ReadonlyArray<number>): number => quantile(values, 0.5);

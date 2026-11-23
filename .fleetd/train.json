@@ -3,6 +3,7 @@
     "site",
     "desktop",
     "desktop (mac layout)",
+    "desktop-budgets",
     "qa (ubuntu-latest, 1/4)",
     "qa (ubuntu-latest, 2/4)",
     "qa (ubuntu-latest, 3/4)",
@@ -11,7 +12,6 @@
     "mobile"
   ],
   "afterMerge": [
-    "desktop-budgets",
     "fleetd (macos)",
     "ios simulators",
     "desktop-macos",
