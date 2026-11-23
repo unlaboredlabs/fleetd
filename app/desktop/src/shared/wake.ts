@@ -12,14 +12,16 @@
 // Pure, so both apps draw the same states (app/mobile through its src/desktop.ts).
 import type { BotState } from "./bot";
 import type { Activity, StartStep } from "./contracts";
+import { startsAgain } from "./startsAgain";
 
 export type Wake =
   /** Its computer sleeps, and nothing runs: the next message starts it. */
   | { readonly phase: "asleep" }
   /** Its computer starts: the step, and when the start began (hub epoch ms; absent from a hub that doesn't say). */
   | { readonly phase: "waking"; readonly step: StartStep | undefined; readonly since: number | undefined }
-  /** A try failed: why, and when it is tried again by itself. */
-  | { readonly phase: "failed"; readonly reason: string; readonly retryAt: number | undefined }
+  /** A try failed: why, and when it is tried again by itself; `freeAt`, when fleetd's computers start again after
+   * their account's limit refused it. */
+  | { readonly phase: "failed"; readonly reason: string; readonly retryAt: number | undefined; readonly freeAt?: number }
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
   /** At work; `retry`: Claude isn't serving its calls, and its claude has retried since then (hub epoch ms), why in
@@ -97,7 +99,11 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
   if (i.working && a?.kind === "starting") {
     // A start that waits on something no try fixes (no retry of its own: the team's billing) is held, not failed: it
     // goes on by itself once that is settled, so nothing offers Try again.
-    if (a.failed !== undefined) return a.failed.retryAt === undefined ? { phase: "held", reason: heldStart(a.failed.reason), start: true } : { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt) };
+    if (a.failed !== undefined) {
+      if (a.failed.retryAt === undefined) return { phase: "held", reason: heldStart(a.failed.reason), start: true };
+      const freeAt = ms(a.failed.freeAt);
+      return { phase: "failed", reason: a.failed.reason, retryAt: ms(a.failed.retryAt), ...(freeAt === undefined ? {} : { freeAt }) };
+    }
     // A start older than the person's message (one it joined, or a hub that kept an old start's time) counts from
     // the message: the wait they see is this one.
     const since = ms(a.startedAt);
@@ -164,7 +170,7 @@ export const retryWords = (reason: string): string =>
  * SLOW_MS (with `count`, the time so far), the reason after a failed try or while something holds the lead, that it
  * waits for the lead to start past START_SLOW_MS, that it didn't start past START_STALE_MS, that Claude isn't serving
  * it past RETRY_SAID_MS of retries; nothing once it thinks. */
-export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; readonly count?: string } | undefined => {
+export const wakeWords = (w: Wake, nowMs: number, timeZone?: string): { readonly words: string; readonly count?: string } | undefined => {
   switch (w.phase) {
     case "waking": {
       if (w.since !== undefined && nowMs - w.since >= SLOW_MS) return { words: "Still waking up", count: waited(nowMs - w.since) };
@@ -172,7 +178,9 @@ export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; rea
     }
     case "failed": {
       const reason = w.reason.trim().replace(/[.\s]+$/u, "");
-      return { words: reason === "" ? "Couldn’t wake up." : `Couldn’t wake up. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` };
+      // fleetd's own name keeps its lower case at a sentence's start, as everywhere.
+      const said = reason.startsWith("fleetd") ? reason : `${reason.charAt(0).toUpperCase()}${reason.slice(1)}`;
+      return { words: reason === "" ? "Couldn’t wake up." : `Couldn’t wake up. ${said}${startsAgain(w.freeAt, timeZone)}.` };
     }
     case "held":
       return { words: w.reason };

@@ -72,3 +72,22 @@ describe("the boat.dev row", () => {
     expect(runnerOf([{ status: "online" }])).toBeUndefined();
   });
 });
+
+// W791 (T5736): fleetd's computers' own account out of today's starts read "its plan's limit is reached" in the menu,
+// which a person took for their team's plan (at 0 of 25), with a Try again that couldn't help.
+describe("fleetd's computers out of starts", () => {
+  const limit: ProviderTrouble = { what: "start", reason: "limit", message: "fleetd's computers can't start more right now", until: "2026-11-23T22:35:00.000Z", freeAt: "2026-11-24T11:18:00.000Z" };
+  it("say they can't start more and when they start again, in the person's time, with nothing to press", () => {
+    const row = hostedRow({ ...boat, trouble: limit }, online, undefined, "Europe/Paris");
+    expect(row).toEqual({
+      state: "failed",
+      text: "fleetd's computers can't start more right now; they start again at 12:18.",
+      why: "they can't start more right now",
+      line: "fleetd's computers can't start more right now; they start again at 12:18",
+    });
+    // A refusal that didn't say when: the words alone.
+    const { freeAt: _f, ...unsaid } = limit;
+    expect(hostedRow({ ...boat, trouble: unsaid }, online, undefined, "UTC").line).toBe("fleetd's computers can't start more right now");
+    expect(JSON.stringify(row)).not.toMatch(/plan/);
+  });
+});

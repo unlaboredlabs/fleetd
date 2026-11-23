@@ -2206,6 +2206,10 @@
     "NodeSandboxTrouble": {
       "description": "A hosted provider in trouble on a node: `start`, set aside after it refused a box or one didn't come up there, no box\nasked of it until `until` (epoch ms); `keep_alive`, its live boxes couldn't be extended at the last try.",
       "properties": {
+        "freeAt": {
+          "description": "Epoch ms: when the provider starts boxes again after refusing for its account's limit.",
+          "type": "number"
+        },
         "provider": {
           "type": "string"
         },
@@ -2497,6 +2501,10 @@
         "fix": {
           "description": "What to do about it, in plain words.",
           "type": "string"
+        },
+        "freeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When fleetd's computers start again after refusing for their account's limit (its starts a day, its rate)."
         },
         "message": {
           "description": "What is wrong: \"fleetd's computers refused: billing isn't set up on the account\".",
@@ -3009,6 +3017,10 @@
     "StartFailed": {
       "description": "Why a hosted start's last try failed, in one plain line, and when it is tried again by itself (none: it waits on\nsomething else, such as the team's billing).",
       "properties": {
+        "freeAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When fleetd's computers start again after refusing for their account's limit (its starts a day, its rate)."
+        },
         "reason": {
           "maxLength": 200,
           "minLength": 1,

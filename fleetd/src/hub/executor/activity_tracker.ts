@@ -353,7 +353,15 @@ export function activityOf(kind: ItemKind, root: string | undefined): Activity |
         text: clip(kind.text),
         ...(kind.step !== undefined ? { step: kind.step } : {}),
         ...(kind.startedAt !== undefined ? { startedAt: kind.startedAt } : {}),
-        ...(kind.failed !== undefined ? { failed: { reason: clip(kind.failed.reason), ...(kind.failed.retryAt !== undefined ? { retryAt: kind.failed.retryAt } : {}) } } : {}),
+        ...(kind.failed !== undefined
+          ? {
+              failed: {
+                reason: clip(kind.failed.reason),
+                ...(kind.failed.retryAt !== undefined ? { retryAt: kind.failed.retryAt } : {}),
+                ...(kind.failed.freeAt !== undefined ? { freeAt: kind.failed.freeAt } : {}),
+              },
+            }
+          : {}),
       };
     case "api_retry":
     case "node_retry":

@@ -471,7 +471,7 @@ test("fleetd's computers' start rate sets it aside for a minute, in its own word
   boxes.setAside("boat", "at once", now, "limit");
   expect(boxes.usable(now + 61_000)).toEqual([]);
   expect(boxes.usable(now + DOWN_MS + 1)).toEqual(["boat"]);
-  expect(troubleLine(troubleOf("boat", boxes.trouble(now)[0]!))).toContain("plan's limit");
+  expect(troubleLine(troubleOf("boat", boxes.trouble(now)[0]!))).toContain("can't start more right now");
 });
 
 test("a box whose guest doesn't take the secret is never reached; the bootstrap refuses fleetd with a wrong checksum", async () => {
@@ -518,4 +518,11 @@ test("keys: a provider not sent again is forgotten, on disk too; a key that does
   b.setKeys({});
   expect(b.connected()).toEqual([]);
   expect(existsSync(join(home, "sandbox", "keys", "boat"))).toBe(false);
+});
+
+// W791 (T5736): when fleetd's computers' own account frees again reaches the apps, which say it in the person's time.
+test("a limit refusal's free-again time rides on the trouble the apps read", () => {
+  const t = troubleOf("boat", { what: "start", reason: "limit", why: "sandbox starts a day is reached", until: 1_000, freeAt: Date.parse("2026-11-24T11:18:00.000Z") });
+  expect(t).toMatchObject({ reason: "limit", message: "fleetd's computers can't start more right now", freeAt: "2026-11-24T11:18:00.000Z" });
+  expect(t.fix).toBeUndefined();
 });

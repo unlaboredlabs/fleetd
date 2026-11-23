@@ -324,3 +324,15 @@ describe("Claude not serving the lead's turn", () => {
     expect(wakeWords(w, T + 600_000)).toBeUndefined();
   });
 });
+
+// W791 (T5736): fleetd's computers out of today's starts read "Couldn't wake up. No computer was free.", as if busy.
+describe("a start fleetd's computers refused for their own account's limit", () => {
+  test("says they can't start more and when they start again, in the person's time, keeping fleetd's lower case", () => {
+    const failed = { reason: "fleetd's computers can't start more right now", retryAt: iso(300_000), freeAt: "2026-11-24T11:18:00.000Z" };
+    const w = some({ working: true, activity: starting({ step: "box", startedAt: iso(0), failed }) });
+    expect(w).toEqual({ phase: "failed", reason: failed.reason, retryAt: T + 300_000, freeAt: Date.parse(failed.freeAt) });
+    expect(wakeWords(w, T, "Europe/Paris")?.words).toBe("Couldn’t wake up. fleetd's computers can't start more right now; they start again at 12:18.");
+    // One that doesn't say when: as before.
+    expect(wakeWords({ phase: "failed", reason: "No computer was free", retryAt: undefined }, T)?.words).toBe("Couldn’t wake up. No computer was free.");
+  });
+});

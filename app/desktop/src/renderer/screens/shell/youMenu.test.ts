@@ -153,6 +153,16 @@ describe("machines and setup", () => {
       action: "Try again",
       does: { to: "hosted", retry: "boat" },
     });
+    // fleetd's computers' own account out of starts (W791): when they start again, never "its plan's limit", and
+    // nothing to press.
+    const limit = { what: "start", reason: "limit", message: "fleetd's computers can't start more right now", freeAt: "2026-11-24T11:18:00.000Z" };
+    expect(hostedLine([{ ...hosted, status: "online" }], [{ provider: "boat", limit: 25, running: 0, trouble: limit }], true)).toEqual({
+      key: "hosted",
+      mark: "warning",
+      text: expect.stringMatching(/^fleetd's computers can't start more right now; they start again at \d\d:18$/),
+      action: "Open",
+      does: { to: "hosted" },
+    });
     // Starting: a quiet line that marks nothing.
     const starting = hostedLine([{ ...hosted, status: "degraded", degradedCause: "starting", degradedReason: "Starting…" }], boat, true);
     expect(starting).toEqual({ key: "hosted", mark: "quiet", text: "fleetd's computers are starting…", does: { to: "hosted" } });
