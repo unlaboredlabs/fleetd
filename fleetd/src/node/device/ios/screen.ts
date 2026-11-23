@@ -268,12 +268,21 @@ export function commandArgs(args: string[], udid: string): string[] {
 
 /** Folds inputs that piled up into fewer: scrolls one after another into one, text into one. */
 export function coalesce(inputs: Input[]): Input[] {
-  const out: Input[] = [];
-  for (const input of inputs) {
-    const last = out.at(-1);
-    if (last?.kind === "scroll" && input.kind === "scroll") out[out.length - 1] = { ...last, dx: last.dx + input.dx, dy: last.dy + input.dy };
-    else if (last?.kind === "text" && input.kind === "text") out[out.length - 1] = { kind: "text", text: last.text + input.text };
-    else out.push(input);
+  return coalesceTimed(inputs.map((input) => ({ input, at: 0 }))).map((t) => t.input);
+}
+
+/** An input and when it came (performance.now() ms): a gesture is timed by when the person made it, not when it ran. */
+type Timed = { input: Input; at: number };
+
+/** coalesce, each folded input at the time of the last it took in. */
+function coalesceTimed(inputs: Timed[]): Timed[] {
+  const out: Timed[] = [];
+  for (const t of inputs) {
+    const last = out.at(-1)?.input;
+    const input = t.input;
+    if (last?.kind === "scroll" && input.kind === "scroll") out[out.length - 1] = { input: { ...last, dx: last.dx + input.dx, dy: last.dy + input.dy }, at: t.at };
+    else if (last?.kind === "text" && input.kind === "text") out[out.length - 1] = { input: { kind: "text", text: last.text + input.text }, at: t.at };
+    else out.push(t);
   }
   return out;
 }
@@ -314,7 +323,10 @@ export async function runCommand(runner: Runner, args: string[], within = COMMAN
  * words for one that went straight, `direct`); `stop` drops what is still queued.
  */
 export class Hands {
-  private readonly queue: Input[] = [];
+  private readonly queue: Timed[] = [];
+  /** Until when inputs wait for the helper's word on straight input: set by the first that waits, so a gesture's
+   * inputs share one wait (DIRECT_WAIT), and past it they go through agent-device until the helper says. */
+  private directBy: number | undefined;
   private readonly gestures: Gestures;
   private readonly touches = new Touches();
   /** The gestures that went straight, as agent-device would have run them: the action log's words. */
@@ -344,7 +356,7 @@ export class Hands {
 
   send(input: Input): boolean {
     if (this.stopped) return false;
-    this.queue.push(input);
+    this.queue.push({ input, at: performance.now() });
     if (!this.working) void this.work();
     return true;
   }
@@ -372,12 +384,13 @@ export class Hands {
     this.working = true;
     try {
       while (this.queue.length > 0 && !this.stopped) {
-        for (const input of coalesce(this.queue.splice(0))) {
+        for (const { input, at } of coalesceTimed(this.queue.splice(0))) {
           if (this.stopped) return;
-          if (!this.direct() && this.pending()) await this.awaitDirect();
+          // Straight ones go as they come, with no turn of the event loop.
+          if (this.waiting()) await this.awaitDirect();
           if (this.stopped) return;
-          if (this.straight(input)) continue;
-          const args = this.gestures.feed(input, performance.now());
+          if (this.straight(input, at)) continue;
+          const args = this.gestures.feed(input, at);
           if (!args) continue;
           let ran = await this.run(this.runner, inSession(args, this.session));
           if (!ran.ok && (ran.said.includes(NO_SESSION) || ran.said.includes(BOUND_ELSEWHERE))) ran = await this.reopen(args);
@@ -401,7 +414,7 @@ export class Hands {
   }
 
   /** Sends `input` straight into the simulator if it can go that way now: whether it went. */
-  private straight(input: Input): boolean {
+  private straight(input: Input, at: number): boolean {
     const touch = input.kind === "touch" ? input.action : undefined;
     // A finger that went down through agent-device ends there, and one that went straight ends straight.
     const to = touch && touch !== "down" && this.finger === "agent-device" ? undefined : this.direct();
@@ -409,15 +422,25 @@ export class Hands {
     if (!to || !this.touches.feed(input, to)) return false;
     if (touch === "up") this.finger = undefined;
     // The action log's line: what agent-device would have run (no line for each turn of the wheel).
-    const words = input.kind === "scroll" ? undefined : this.logged.feed(input, performance.now());
+    const words = input.kind === "scroll" ? undefined : this.logged.feed(input, at);
     if (words) this.onRan(words, { ok: true, said: "", ms: 0 }, true);
     return true;
   }
 
-  /** Until the helper says whether it takes input, DIRECT_WAIT at most. */
+  /** Until the helper says whether it takes input: DIRECT_WAIT from the first input that waited, once. */
   private async awaitDirect(): Promise<void> {
-    const until = performance.now() + DIRECT_WAIT;
-    while (!this.stopped && !this.direct() && this.pending() && performance.now() < until) await Bun.sleep(20);
+    while (!this.stopped && this.waiting()) await Bun.sleep(20);
+  }
+
+  /** Whether an input should still wait for the helper's word. Once it has said, a later stream (a new watcher's) gets
+   * a wait of its own. */
+  private waiting(): boolean {
+    if (this.direct() || !this.pending()) {
+      this.directBy = undefined;
+      return false;
+    }
+    this.directBy ??= performance.now() + DIRECT_WAIT;
+    return performance.now() < this.directBy;
   }
 
   /**
