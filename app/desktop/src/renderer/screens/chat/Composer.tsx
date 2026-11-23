@@ -20,7 +20,7 @@ import type { ChatItem } from "../../src/data/chat";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey as keyOf } from "../../src/data/store";
 import { selectCanStop, selectLeadAtWork, selectLeadWorking } from "../../src/data/selectors";
-import { Button, cx, IdChip, StateGlyph, Text, Tooltip, Truncate } from "../../ui";
+import { Button, cx, IdChip, Text, Tooltip, Truncate } from "../../ui";
 import { useCommands } from "../palette";
 import { nowKeys } from "../live/Steer";
 import { composerSendOn } from "../live/steerModel";
@@ -358,13 +358,12 @@ const sendableOf = (item: ChatItem) => ({
   state: item.state,
   error: item.error,
   delivery: item.delivery,
-  leadWaiting: item.leadWaiting,
   client: item.message?.client,
 });
 
 /**
- * A quiet receipt as a small mark beside your bubble's foot, its words on hover: an open ring of
- * cells while the lead hasn't taken it, a plain check once it has. Nothing under the bubble.
+ * A quiet receipt as a small mark beside your bubble's foot, its words on hover: a faint check while it goes, a plain
+ * check once the hub has it. Nothing under the bubble.
  */
 export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: boolean }) {
   const m = receiptMark(sendableOf(item), latest);
@@ -372,7 +371,7 @@ export function ReceiptMarkView({ item, latest }: { item: ChatItem; latest: bool
   return (
     <Tooltip content={m.words}>
       <span className={c.receiptMark} data-mark={m.mark} tabIndex={0} aria-label={m.words}>
-        {m.mark === "waiting" ? <StateGlyph state="queued" size="sm" /> : <Check aria-hidden className={c.receiptCheck} strokeWidth={2.5} />}
+        <Check aria-hidden className={c.receiptCheck} strokeWidth={2.5} />
       </span>
     </Tooltip>
   );
@@ -389,7 +388,6 @@ export function MessageReceipt({ project, item, latest = false }: { project: Pro
       state: item.state,
       error: item.error,
       delivery: item.delivery,
-      leadWaiting: item.leadWaiting,
       client: item.message?.client,
     },
     latest,

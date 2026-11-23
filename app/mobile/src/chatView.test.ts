@@ -69,10 +69,9 @@ describe("viaNote", () => {
 });
 
 describe("sendNote", () => {
-  it("puts a line under a send only for what stays: a failure, or a lead that can't take it yet", () => {
+  it("puts a line under a send only for what stays: a failure (a lead that can't take it yet is the bot's to say)", () => {
     expect(sendNote({ state: "failed", error: { code: "invalid", message: "Too long." } })).toBe("Not sent: Too long.");
     expect(sendNote({ state: "unanswered" })).toBe("Not sent: the hub didn't answer.");
-    expect(sendNote({ state: "sent", leadWaiting: "devbox is offline." })).toBe("devbox is offline.");
     // Nothing while it goes, linked or not: no line that comes and goes under each send.
     expect(sendNote({ state: "pending" })).toBeUndefined();
     expect(sendNote({ state: "queued" })).toBeUndefined();
@@ -80,11 +79,11 @@ describe("sendNote", () => {
     expect(sendNote({ state: "sent" })).toBeUndefined();
   });
 
-  it("drops why the lead didn't have a message once the lead writes after it", () => {
+  it("drops why the lead didn't have a message once the lead writes after it (the bot's line in the reply's place)", () => {
     // Sent while devbox was offline: the hub's copy keeps saying queued after the offline queue gave it to the lead.
     const mine: ChatMessage = { ...message("node is down"), author: "human", delivery: "queued" };
     const sent: Chat = { ...emptyChat, messages: [mine], leadWaiting: { m1: "devbox is offline." } };
-    const note = (chat: Chat) => sendNote(chatItems(chat, []).find((i) => i.id === "m1") ?? { state: "sent" });
+    const note = (chat: Chat) => chatItems(chat, []).find((i) => i.id === "m1")?.leadWaiting;
     expect(note(sent)).toBe("devbox is offline.");
     const answered: Chat = { ...sent, messages: [mine, { ...message("On it."), messageId: "m2", seq: 2 }] };
     expect(note(answered)).toBeUndefined();

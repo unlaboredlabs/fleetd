@@ -197,7 +197,26 @@ export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../..
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
 export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
-export { askedAt, ColdTurns, replied, SLOW_MS, STIR_MS, tryAgainLabel, tryAgainNote, tryAgainNow, wakeOf, wakePose, wakeShown, wakeWords, type Wake } from "../../desktop/src/shared/wake";
+export {
+  askedAt,
+  ColdTurns,
+  heldWords,
+  replied,
+  SLOW_MS,
+  START_STALE_MS,
+  endedAt,
+  STIR_MS,
+  tryAgainLabel,
+  tryAgainNote,
+  tryAgainNow,
+  waitingFor,
+  wakeDots,
+  wakeOf,
+  wakePose,
+  wakeShown,
+  wakeWords,
+  type Wake,
+} from "../../desktop/src/shared/wake";
 export { useSteady } from "../../desktop/src/shared/steady";
 export {
   adminNames,

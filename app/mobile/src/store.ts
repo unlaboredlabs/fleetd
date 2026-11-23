@@ -130,6 +130,13 @@ export interface State {
   readonly turnSince: Readonly<Record<Key, number>>;
   /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
   readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number }>>;
+  /**
+   * When each lead was last seen to stop working (hub epoch ms, the event's time), its start seen or not: a turn that
+   * ended without a reply ends the bot's wait in the reply's place too (wake.ts). Absent from a cache before it.
+   */
+  readonly turnEnded?: Readonly<Record<Key, number>> | undefined;
+  /** Why each bot read can't start, as Status said when its chat opened or you sent to it ("" with no reason); absent: not blocked. */
+  readonly blocked?: Readonly<Record<Key, string>> | undefined;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
   /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
@@ -197,6 +204,8 @@ export type Action =
   | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
   | { readonly t: "board"; readonly orders: readonly OrderCard[] }
+  /** Status's word on whether a bot is blocked, and why. */
+  | { readonly t: "blocked"; readonly key: Key; readonly reason: string | undefined }
   /** A message moved to another order (chat_about_set's answer), before its event comes. */
   | { readonly t: "retagged"; readonly key: Key; readonly message: ChatMessage }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
@@ -333,6 +342,11 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "board":
       return { ...s, running: runningOf(a.orders), orders: a.orders };
+    case "blocked": {
+      if (s.blocked?.[a.key] === a.reason) return s;
+      const { [a.key]: _was, ...rest } = s.blocked ?? {};
+      return { ...s, blocked: a.reason === undefined ? rest : { ...rest, [a.key]: a.reason } };
+    }
     case "retagged": {
       const chat = s.chats[a.key];
       return chat === undefined ? s : withChat(s, a.key, mergeMessages(chat, [a.message]));
@@ -476,7 +490,9 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     const since = s.turnSince[key];
     const ended = !state.leadWorking && since !== undefined;
     const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at) } } : s.turnWorked;
-    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked };
+    const stopped = !state.leadWorking && s.chatStates[key]?.leadWorking === true && !Number.isNaN(Date.parse(event.at));
+    const turnEnded = stopped ? { ...s.turnEnded, [key]: Date.parse(event.at) } : s.turnEnded;
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnEnded };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

@@ -52,7 +52,8 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
     const timer = setTimeout(() => setHeld(seen), HOLD_MS);
     return () => clearTimeout(timer);
   }, [over, seen]);
-  // A cloud bot waking: its bot in the reply's place says what its lead does (WakeRow.tsx), so the line says nothing.
+  // The bot in the reply's place (WakeRow.tsx) says the lead is on your message: one sign of it, so the line says
+  // nothing then.
   const waking = wakeShown(wakeIn(state, chatKey, writing));
   const view = running && !waking ? turnView(writing ? { kind: "writing" } : activity, since, 0) : undefined;
   const worked = over && held !== seen ? workedFor(ended.until - ended.since) : undefined;

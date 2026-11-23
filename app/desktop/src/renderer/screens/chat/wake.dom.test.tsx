@@ -49,13 +49,16 @@ const flush = async () => {
 };
 
 /** The chat of a cloud bot whose lead's computer starts: you asked, and its lead is at work. */
-const mount = async (startNow: { ok: true; output: unknown } | { ok: false; error: { code: string; message: string } } = { ok: true, output: { started: true } }) => {
+const mount = async (
+  startNow: { ok: true; output: unknown } | { ok: false; error: { code: string; message: string } } = { ok: true, output: { started: true } },
+  chatState: Record<string, unknown> = { leadWorking: true },
+) => {
   let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
   const calls: string[] = [];
   const answers: Readonly<Record<string, unknown>> = {
     status_get: { rows: [{ projectRef: project, title: "storefront", asOf: AT, agentsRunning: 0, state: "working" }] },
     orders_board: { orders: [] },
-    chat_history: { messages: [ASK], moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, leadWorking: true, lastSeq: 1 } },
+    chat_history: { messages: [ASK], moreBefore: false, moreAfter: false, state: { projectRef: project, needsYou: false, lastSeq: 1, ...chatState } },
   };
   const hub: HubApi = {
     call: (tool) => {
@@ -160,10 +163,34 @@ it("Try again that starts nothing says why in the row: the hub's word, or that n
   }
 });
 
-it("an awake bot's turn shows no wake, and its island says what the lead does as before", async () => {
+// W852: an awake bot's turn on your message has the bot in the reply's place too, with its typing dots: one sign that
+// the lead is on it, so the island says nothing of the lead, its step in words included.
+it("an awake bot's turn on your message: the bot with its typing dots, and nothing of it in the island", async () => {
   layout();
   const n = await mount();
   await n.lead({ kind: "edit", path: "src/a.ts" });
+  expect(wake()?.dataset["wake"]).toBe("working");
+  expect(wake()?.querySelector("[data-typing]")).not.toBeNull();
+  expect(wake()?.textContent).toBe("");
+  await act(() => new Promise((done) => setTimeout(done, HOLD_MS + 100)));
+  expect(host.querySelector("[data-island]")).toBeNull();
+});
+
+it("opened after a quiet turn ended while the app was away: the hub's leadIdleAt says so, and no bot waits", async () => {
+  layout();
+  await mount(undefined, { leadWorking: false, leadIdleAt: later(5) });
+  await flush();
   expect(wake()).toBeNull();
-  expect(host.querySelector("[data-island]")?.textContent).toContain("a.ts");
+});
+
+it("goes when the lead's turn ends without a reply, a quiet one, and stays gone", async () => {
+  layout();
+  const n = await mount();
+  await n.lead({ kind: "thinking" });
+  expect(wake()?.dataset["wake"]).toBe("thinking");
+  act(() => n.send(event(2, "chat.waiting", { projectRef: project, needsYou: false, leadWorking: false, lastSeq: 1 })));
+  act(() => n.send({ t: "live", frame: { at: later(2), full: true, lanes: [liveLane(leadLaneId(project), "idle")] } }));
+  await flush();
+  expect(wake()).toBeNull();
+  expect(host.querySelector("[data-typing]")).toBeNull();
 });

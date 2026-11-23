@@ -94,3 +94,41 @@ test("Try again asks the lead's node to start now, and answers false where no st
   // A bot with no lead yet has nothing to start.
   expect(await startNow(kit().hub, { machineId: "devbox", projectId: "none" })).toBe(false);
 });
+
+// W852: the apps take a person's message from before the lead's latest turn ended as one that turn had, answered or
+// not, so the bot leaves the reply's place on a quiet turn though the app was closed when it ended. The end is the
+// hub's own time: a node whose clock runs behind must never make a turn that ended after a message read as older.
+test("the chat state says when the lead's latest turn ended, on the hub's clock, and nothing while it is mid-turn", async () => {
+  const n = await node();
+  // The node's clock runs ten minutes behind the hub's: every time it reports is AT.
+  n.clock.ms = Date.parse(AT) + 10 * 60_000;
+  const asked = n.clock.ms;
+  await n.updated(lead({ status: "running", activeRunId: "run-1", latestRun: { id: "run-1", status: "running", ordinal: 1 } }));
+  expect(state(n.hub, r).leadWorking).toBe(true);
+  expect(state(n.hub, r).leadIdleAt).toBeUndefined();
+  // A quiet turn: it ends 3 s after the person's message, by the hub's clock, though the node says AT.
+  n.clock.ms = asked + 3_000;
+  await n.updated(lead({ updatedAt: AT, latestRun: { id: "run-1", status: "completed", ordinal: 1 } }));
+  const idle = state(n.hub, r);
+  expect(idle.leadWorking).toBe(false);
+  expect(idle.leadIdleAt).toBe(new Date(asked + 3_000).toISOString());
+  expect(Date.parse(idle.leadIdleAt ?? "")).toBeGreaterThan(asked);
+  // The flip to idle is told with it, so an app that sees it live has the end too.
+  const last = events(n.hub)
+    .page(0)
+    .events.filter((e) => e.type === "chat.waiting")
+    .at(-1);
+  expect((last?.data as ProjectChatState).leadIdleAt).toBe(new Date(asked + 3_000).toISOString());
+  // A hub that restarts reads it back from the log, on its own clock still.
+  expect(events(n.hub).appendedMs(r, { machineId: "devbox", threadId: "lead-1" }, ["thread.completed"])).toBe(asked + 3_000);
+  n.done();
+});
+
+test("a lead with no turn end kept, or no lead yet, is idle since before any message: the epoch", async () => {
+  const n = await node();
+  // The lead's thread is known and idle, and the log keeps no end of it (none yet, or one past its retention).
+  await n.updated(lead());
+  expect(state(n.hub, r).leadIdleAt).toBe("1970-01-01T00:00:00.000Z");
+  n.done();
+  expect(state(kit().hub, { machineId: "devbox", projectId: "none" }).leadIdleAt).toBe("1970-01-01T00:00:00.000Z");
+});

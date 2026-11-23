@@ -6626,6 +6626,12 @@ export type ProjectChatState = {
    * or a hub whose leads never sleep.
    */
   leadAsleep?: boolean;
+  /**
+   * When the lead's latest turn ended, while it isn't mid-turn, on the hub's clock; the epoch when none is kept (no turn
+   * yet, or one past the event log's retention). A person's message from before it was in the chat when a turn ended,
+   * answered or not (a quiet turn). Absent: mid-turn, or an older hub.
+   */
+  leadIdleAt?: Timestamp;
   /** The lead is mid-turn. */
   leadWorking: boolean;
   /** The lead's last message waits for a human reply, or an inline item is open. */

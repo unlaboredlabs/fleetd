@@ -2,7 +2,7 @@
 // over the same `events` table: a row's `data` is the event without its
 // seq, and seq is the row's AUTOINCREMENT key, so it never goes backwards past retention deletes.
 import type { Clock } from "../../shared/clock.ts";
-import type { HubEvent, HubEventType, MachineId, ProjectRef } from "../../shared/contracts.ts";
+import type { HubEvent, HubEventType, MachineId, ProjectRef, ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import type { HubDb } from "./db.ts";
 import { type NewEvent, trim } from "./new_event.ts";
@@ -63,6 +63,12 @@ const PAGE_SQL = `SELECT seq, data FROM events
        ORDER BY seq LIMIT $limit`;
 
 type Row = { seq: number; data: string };
+
+/** `EventLog.appendedMs`'s query: the project's events newest first (`events_by_project`), the thread's of the types. */
+const THREAD_LAST = `SELECT created_ms FROM events
+  WHERE machine_id = $machine AND json_extract(data, '$.projectId') = $project
+    AND type IN (SELECT value FROM json_each($types)) AND json_extract(data, '$.threadId') = $thread
+  ORDER BY seq DESC LIMIT 1`;
 
 export class EventLog {
   private lastPruneMs: number;
@@ -157,6 +163,20 @@ export class EventLog {
       events: rows.slice(0, limit).map((r) => withSeq(JSON.parse(r.data) as NewEvent, r.seq)),
       more: rows.length > limit,
     };
+  }
+
+  /**
+   * When the thread's newest event of `types` was appended, on the hub's own clock (`created_ms`, never the node's `at`);
+   * undefined when the log keeps none.
+   */
+  appendedMs(project: ProjectRef, thread: ThreadRef, types: HubEventType[]): number | undefined {
+    const row = this.db.all<{ created_ms: number }>(THREAD_LAST, {
+      machine: project.machineId,
+      project: project.projectId,
+      thread: thread.threadId,
+      types: JSON.stringify(types),
+    })[0];
+    return row?.created_ms;
   }
 
   /** Returns at once if matching events exist after `cursor`, otherwise waits up to `timeoutSec` for one. */

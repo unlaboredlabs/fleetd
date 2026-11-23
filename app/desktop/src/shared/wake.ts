@@ -1,9 +1,14 @@
-// A cloud bot waking (W792, the person's pick from the waiting-state report): between a message to a bot whose computer
-// is asleep and its lead's first words, the bot itself stands in the reply's place and wakes while its computer starts.
-// Asleep before you write (ProjectChatState.leadAsleep), it stirs and keeps heavy lids while its computer starts, opens
-// its eyes for its files, takes its thinking look, and its working look stands in for the typing dots until the reply
-// lands where it sat. One quiet word beside it while it wakes, none once it thinks; past SLOW_MS the time so far, never
-// an estimate; a failed try slumps, with one plain reason and a Try again that counts down to the start's own retry.
+// The bot in the reply's place (W792, W852): from the moment you send until the lead answers, the bot itself stands
+// under your message, with typing dots while its lead takes it and works on it, as a person's avatar does in Messages.
+// It goes when the reply lands, or when the lead is idle after a turn that ended since your message (a quiet turn; the
+// hub's chat state says when, leadIdleAt), and comes back if the lead works on it again (the hub's follow-up). While
+// the lead can't take your message it says why in one plain line instead (its machine offline, its usage paused, not
+// sent yet); after START_SLOW_MS with no start and no reason, that it waits for the lead to start, with the time so far;
+// past START_STALE_MS, that the lead didn't start and what to do, never a wait that goes on or goes without a word.
+// A cloud bot whose computer is asleep wakes there: asleep before you write (ProjectChatState.leadAsleep), it stirs
+// and keeps heavy lids while its computer starts, opens its eyes for its files, then takes the lead's looks. One quiet
+// word beside it while it wakes; past SLOW_MS the time so far, never an estimate; a failed try slumps, with one plain
+// reason and a Try again that counts down to the start's own retry.
 // Pure, so both apps draw the same states (app/mobile through its src/desktop.ts).
 import type { BotState } from "./bot";
 import type { Activity, StartStep } from "./contracts";
@@ -18,8 +23,14 @@ export type Wake =
   /** Started, its lead thinks, or works before it writes. */
   | { readonly phase: "thinking" }
   | { readonly phase: "working" }
-  /** Its first words stream: the bot stands in for the typing dots until the reply is whole. */
-  | { readonly phase: "writing" };
+  /** Its first words stream: the bot stays in the reply's place until the reply is whole. */
+  | { readonly phase: "writing" }
+  /** Your message is in and the lead hasn't started on it yet: since when you sent it (hub epoch ms; undefined: just now). */
+  | { readonly phase: "received"; readonly since: number | undefined }
+  /** The lead can't take your message now: why, in plain words. */
+  | { readonly phase: "held"; readonly reason: string }
+  /** Past START_STALE_MS the lead, idle since before your message, never started on it. */
+  | { readonly phase: "unstarted" };
 
 export interface WakeIn {
   /** The chat state's leadAsleep. */
@@ -34,19 +45,39 @@ export interface WakeIn {
   readonly writing: boolean;
   /** When the person's newest message came (hub epoch ms, `askedAt`): a wake counts from there at the earliest. */
   readonly asked?: number | undefined;
+  /** The person's newest message has no answer yet (`waitingFor`): the bot stands in the reply's place while the lead
+   * works, on any turn, the hub's follow-up after a quiet one included. */
+  readonly waiting?: boolean | undefined;
+  /**
+   * When the lead was last seen to stop (hub epoch ms): the hub's leadIdleAt, or a stop this app saw. Idle since
+   * `asked` or later, its turn had your message and ended (a quiet turn): the bot leaves the reply's place.
+   */
+  readonly endedAt?: number | undefined;
+  /** The hub says when the lead's turns end (leadIdleAt): a start that never came is one it can name. */
+  readonly idleKnown?: boolean | undefined;
+  /** The hub's word that the lead doesn't have it (`heldWords` of chat_send's leadWaiting): said even while it works. */
+  readonly held?: string | undefined;
+  /** Why the bot can't start (`heldWords` of Status's blocked reason): said only while its lead isn't at work. */
+  readonly blocked?: string | undefined;
+  /** That message came longer than START_STALE_MS ago on the hub's clock: a lead that hasn't started on it never will. */
+  readonly stale?: boolean | undefined;
 }
 
 /** Past this, a start is slow: its word says so, with the time so far. */
 export const SLOW_MS = 30_000;
 /** How long the bot shows still asleep in the reply's place before it stirs, so the wake is seen and not skipped. */
 export const STIR_MS = 900;
+/** Past this with no start and no reason, the bot says it waits for the lead to start, with the time so far. */
+export const START_SLOW_MS = 10_000;
+/** Past this, a lead idle since before your message never started on it: the bot says so, and what to do. */
+export const START_STALE_MS = 10 * 60_000;
 
 const ms = (at: string | undefined): number | undefined => {
   const t = at === undefined ? NaN : Date.parse(at);
   return Number.isNaN(t) ? undefined : t;
 };
 
-/** The wait now, or undefined: a turn that didn't begin with a start, or a lead that is neither asleep nor at work. */
+/** The wait now, or undefined: a lead that is neither asleep nor at work, with nothing of yours to answer. */
 export const wakeOf = (i: WakeIn): Wake | undefined => {
   const a = i.activity;
   if (i.working && a?.kind === "starting") {
@@ -56,14 +87,32 @@ export const wakeOf = (i: WakeIn): Wake | undefined => {
     const since = ms(a.startedAt);
     return { phase: "waking", step: a.step, since: since === undefined || i.asked === undefined ? since : Math.max(since, i.asked) };
   }
-  if (!i.working) return i.asleep ? { phase: "asleep" } : undefined;
-  if (!i.cold) return undefined;
-  if (i.writing || a?.kind === "writing") return { phase: "writing" };
-  return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
+  // Idle after a turn that ended since your message (a quiet one): that turn had it.
+  const ended = !i.working && i.endedAt !== undefined && i.asked !== undefined && i.endedAt >= i.asked;
+  const waiting = i.waiting === true && !ended;
+  // The hub said your message hasn't reached the lead: whatever it works on, it isn't this.
+  if (waiting && i.held !== undefined) return { phase: "held", reason: i.held };
+  if (i.working) {
+    // A lead at work on its own (after its reply, or with nothing asked) has the island's line, not the bot.
+    if (!i.cold && !waiting) return undefined;
+    if (i.writing || a?.kind === "writing") return { phase: "writing" };
+    return a === undefined || a.kind === "thinking" || a.kind === "planning" ? { phase: "thinking" } : { phase: "working" };
+  }
+  if (waiting) {
+    if (i.blocked !== undefined) return { phase: "held", reason: i.blocked };
+    // Its computer starts on your message: it stirs at once, before the hub's first step says so.
+    if (i.stale !== true) return i.asleep ? { phase: "waking", step: undefined, since: i.asked } : { phase: "received", since: i.asked };
+    // An older hub doesn't say when turns end: one that ended while this app was away can't be told from none.
+    if (i.idleKnown === true) return { phase: "unstarted" };
+  }
+  return i.asleep ? { phase: "asleep" } : undefined;
 };
 
 /** The wait shows in the reply's place: from the start until the lead's reply lands, its first words included. */
 export const wakeShown = (w: Wake | undefined): boolean => w !== undefined && w.phase !== "asleep";
+
+/** The typing dots beside the bot: while the lead takes your message and works on it, not while it waits or writes. */
+export const wakeDots = (w: Wake): boolean => w.phase === "received" || w.phase === "thinking" || w.phase === "working";
 
 /** The bot's pose in the reply's place: still asleep until it stirs, heavy-lidded while its computer starts, eyes open
  * for its files, then the lead's own looks. */
@@ -74,6 +123,10 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
       return w.step === "files" || w.step === "session" || w.step === "message" ? "idle" : "waking";
     case "failed":
       return "error";
+    case "held":
+    case "unstarted":
+      return "idle";
+    case "received":
     case "thinking":
       return "thinking";
     case "working":
@@ -83,7 +136,8 @@ export const wakePose = (w: Wake, stirred: boolean): BotState => {
 };
 
 /** The word beside the bot (`nowMs` on the hub's clock): the step while its computer starts, "Still waking up" past
- * SLOW_MS (with `count`, the time so far), the reason after a failed try; nothing once it thinks. */
+ * SLOW_MS (with `count`, the time so far), the reason after a failed try or while something holds the lead, that it
+ * waits for the lead to start past START_SLOW_MS, that it didn't start past START_STALE_MS; nothing once it thinks. */
 export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; readonly count?: string } | undefined => {
   switch (w.phase) {
     case "waking": {
@@ -94,6 +148,12 @@ export const wakeWords = (w: Wake, nowMs: number): { readonly words: string; rea
       const reason = w.reason.trim().replace(/[.\s]+$/u, "");
       return { words: reason === "" ? "Couldn’t wake up." : `Couldn’t wake up. ${reason.charAt(0).toUpperCase()}${reason.slice(1)}.` };
     }
+    case "held":
+      return { words: w.reason };
+    case "unstarted":
+      return { words: "The lead didn’t start on this. Send it again, or press Restart lead in the bot’s settings, under Agents." };
+    case "received":
+      return w.since !== undefined && nowMs - w.since >= START_SLOW_MS ? { words: "Waiting for the lead to start", count: waited(nowMs - w.since) } : undefined;
     default:
       return undefined;
   }
@@ -159,4 +219,38 @@ export const askedAt = (messages: readonly { readonly author: string; readonly c
 export const replied = (messages: readonly { readonly author: string; readonly state: string }[] | undefined): boolean => {
   const last = messages?.at(-1);
   return last !== undefined && last.author === "lead" && last.state === "final";
+};
+
+/**
+ * Whether the person's newest message has no answer yet, for the bot in the reply's place: one of theirs is on its way
+ * (`sending`), or the chat's newest message that isn't an agent's is theirs, or the lead's reply still streaming after
+ * it. A lead's whole reply or a line of fleetd's own (a stop, a turn that didn't answer) answers it. Whether a turn
+ * ended on it since is wakeOf's (`endedAt`). Oldest first, as the chat holds them.
+ */
+export const waitingFor = (messages: readonly { readonly author: string; readonly state: string }[] | undefined, sending: boolean): boolean => {
+  if (sending) return true;
+  for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+    const m = messages?.[i];
+    if (m === undefined || m.author === "agent") continue;
+    if (m.author === "lead" && m.state === "streaming") continue;
+    return m.author === "human";
+  }
+  return false;
+};
+
+/** When the lead was last seen to stop (hub epoch ms): the later of the hub's leadIdleAt and a stop this app saw live. */
+export const endedAt = (leadIdleAt: string | undefined, seen: number | undefined): number | undefined => {
+  const hub = ms(leadIdleAt);
+  return hub === undefined ? seen : seen === undefined ? hub : Math.max(hub, seen);
+};
+
+/** What holds the lead up, in one short line: the hub's word on why it doesn't have your message (its first sentence),
+ * or why the bot is blocked (its machine offline, its usage paused). Undefined when there is none. */
+export const heldWords = (why: { readonly leadWaiting?: string | undefined; readonly blocked?: string | undefined }): string | undefined => {
+  if (why.leadWaiting !== undefined) {
+    const said = why.leadWaiting.trim();
+    return said === "" ? undefined : (said.match(/^.+?[.!?](?=\s|$)/u)?.[0] ?? said);
+  }
+  const reason = why.blocked?.trim().replace(/[.\s]+$/u, "");
+  return reason === undefined ? undefined : reason === "" ? "The lead can’t start now." : `The lead can’t start now: ${reason}.`;
 };

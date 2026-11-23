@@ -1,14 +1,16 @@
-// The bot in the reply's place while its computer starts (shared/wake.ts, the person's pick of W792's designs): it
-// arrives asleep, stirs, and wakes with its computer's steps, one quiet word beside it that rises out as the next rises
-// in; once its lead thinks, its own look says so with no word, and its working look stands in for the typing dots until
-// the reply lands where it sat. A failed try slumps, with one plain reason and a Try again that counts down to the
-// start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
+// The bot in the reply's place (shared/wake.ts, the person's pick of W792's designs, for every turn since W852): from
+// your send until the reply lands or the turn ends, the bot under your message with the lead's typing bubble beside
+// it, as a person's avatar and dots in Messages, its own look thinking or working. While the lead can't take it, one
+// plain line instead says why; a start that never came, that it didn't start and what to do. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
+// word beside it that rises out as the next rises in. A failed try slumps, with one plain reason and a Try again that
+// counts down to the start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
 import { useEffect, useState, type ReactNode } from "react";
-import { STIR_MS, tryAgainLabel, tryAgainNow, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
+import { STIR_MS, tryAgainLabel, tryAgainNow, wakeDots, wakePose, wakeShown, wakeWords, type Wake } from "../../../shared/wake";
 import { useData, useDataLayer } from "../../src/data/react";
 import { projectKey } from "../../src/data/store";
 import { Avatar } from "../../ui";
 import { usePicture } from "../projects/ProjectAvatar";
+import { TypingBubble } from "./Bubble";
 import type { ProjectRef } from "./slots";
 import { useHubNow, useWake } from "./wake";
 import s from "./wake.module.css";
@@ -32,8 +34,10 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
     const timer = setTimeout(() => setStirred(true), STIR_MS);
     return () => clearTimeout(timer);
   }, []);
-  const now = useHubNow(wake.phase === "waking" || wake.phase === "failed");
+  const now = useHubNow(wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received");
   const said = wakeWords(wake, now);
+  // A reason, or that the lead didn't start: a line that wraps, not a word that gives way to the next.
+  const plain = wake.phase === "held" || wake.phase === "unstarted";
   const words =
     said === undefined ? undefined : (
       <>
@@ -42,12 +46,17 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
       </>
     );
   return (
-    <div className={s.row} data-wake={wake.phase} role="status" aria-label={said?.words ?? (wake.phase === "thinking" ? "Thinking" : "Working")}>
+    <div className={s.row} data-wake={wake.phase} role="status" aria-label={said?.words ?? (wake.phase === "working" || wake.phase === "writing" ? "Working" : "Thinking")}>
       <span className={s.bot}>
         <Avatar name={summary?.title ?? ""} size={BOT_SIZE} src={picture} bot={wakePose(wake, stirred)} color={summary?.avatarColor} shape={summary?.avatarShape} />
       </span>
-      <span className={s.words}>
-        {words === undefined ? null : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
+      {wakeDots(wake) ? (
+        <span className={s.dots}>
+          <TypingBubble label={wake.phase === "working" ? "The lead is working" : "The lead is thinking"} />
+        </span>
+      ) : null}
+      <span className={plain ? s.reason : s.words}>
+        {words === undefined ? null : plain ? words : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
         {wake.phase === "failed" ? <TryAgain key={`${wake.reason}|${String(wake.retryAt)}`} project={project} wake={wake} now={now} /> : null}
       </span>
     </div>

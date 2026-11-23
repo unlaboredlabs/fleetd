@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { botOf } from "./botState";
 import { leadLaneId, tryAgainNow } from "./desktop";
 import { initial, reduce, type State } from "./store";
-import { wakeIn } from "./wake";
+import { staleAt, wakeIn } from "./wake";
 
 const ref = { machineId: "devbox", projectId: "w1" };
 const KEY = "devbox/w1";
@@ -81,5 +81,63 @@ describe("a cloud bot waking on the phone", () => {
     // A full frame starts over.
     s = frame(s, true, at + 3_000, at - 2_000 + 300);
     expect(s.skewMs).toBe(4_700);
+  });
+
+  // W852: the bot under your message on every turn, not only a cloud bot's waking one.
+  it("stands under your message from the send, on any turn, until the reply or a turn that ends without one", () => {
+    const k = "devbox/w4";
+    const r = { machineId: "devbox", projectId: "w4" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    const t0 = Date.parse(asked);
+    const ask = { messageId: "m1", author: "human", state: "final", createdAt: asked };
+    let s = { ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }) } as State;
+    s = { ...s, chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1 } }, chats: { [k]: { messages: [ask], leadWaiting: {} } } } as never;
+    // In, and the lead not started yet: the dots at once.
+    expect(wakeIn(s, k, false, t0 + 200)).toEqual({ phase: "received", since: t0 });
+    // Long past with no start: nothing.
+    expect(wakeIn(s, k, false, t0 + 11 * 60_000)).toBeUndefined();
+    // Not on the hub: nothing it can know.
+    expect(wakeIn({ ...s, hub: { phase: "connecting", hub: "", attempt: 1 } } as never, k, false, t0 + 200)).toBeUndefined();
+    // Why the lead doesn't have it, in its first sentence.
+    const held = { ...s, chats: { [k]: { messages: [ask], leadWaiting: { m1: "devbox is offline: its node isn't connected. It goes in when devbox is back." } } } } as never;
+    expect(wakeIn(held, k, false, t0 + 200)).toEqual({ phase: "held", reason: "devbox is offline: its node isn't connected." });
+    // The lead works on it, an awake bot's turn: thinking, with the dots.
+    const event = (leadWorking: boolean, at: string) =>
+      ({ t: "frame", frame: { t: "event", event: { seq: 2, at, type: "chat.waiting", summary: "", data: { projectRef: r, needsYou: false, leadWorking, lastSeq: 1 } } }, nowMs: t0 }) as never;
+    s = reduce(s, event(true, "2026-11-22T10:00:01.000Z"));
+    expect(wakeIn(s, k, false, t0 + 1_500)).toEqual({ phase: "thinking" });
+    // Its turn ends with no reply (a quiet one): gone, and it stays gone.
+    s = reduce(s, event(false, "2026-11-22T10:00:04.000Z"));
+    expect(s.turnEnded?.[k]).toBe(t0 + 4_000);
+    expect(wakeIn(s, k, false, t0 + 5_000)).toBeUndefined();
+  });
+
+  // The review of #2131: the phone locked through a quiet turn, the snapshot it reopens with says when the turn ended.
+  it("reopened after a quiet turn, by the hub's leadIdleAt: no bot; a follow-up turn on it has the bot again", () => {
+    const k = "devbox/w5";
+    const r = { machineId: "devbox", projectId: "w5" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    const t0 = Date.parse(asked);
+    const base = { ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), chats: { [k]: { messages: [{ messageId: "m1", author: "human", state: "final", createdAt: asked }], leadWaiting: {} } } };
+    const idle = { ...base, chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1, leadIdleAt: "2026-11-22T10:00:04.000Z" } } } as never;
+    expect(wakeIn(idle, k, false, t0 + 60_000)).toBeUndefined();
+    const followUp = { ...base, chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: true, lastSeq: 1 } } } as never;
+    expect(wakeIn(followUp, k, false, t0 + 60_000)).toEqual({ phase: "thinking" });
+    // Idle since before it, ten minutes on: the lead didn't start, and the bot says so; drawn again on time (staleAt).
+    const never = { ...base, chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1, leadIdleAt: "2026-11-22T09:00:00.000Z" } } } as never;
+    expect(staleAt(never, k)).toBe(t0 + 10 * 60_000);
+    expect(wakeIn(never, k, false, t0 + 60_000)).toEqual({ phase: "received", since: t0 });
+    expect(wakeIn(never, k, false, t0 + 10 * 60_000)).toEqual({ phase: "unstarted" });
+  });
+
+  it("says why the bot is blocked, as Status read it when you sent (its usage paused), in place of the dots", () => {
+    const k = "devbox/w6";
+    const r = { machineId: "devbox", projectId: "w6" };
+    const asked = "2026-11-22T10:00:00.000Z";
+    let s = { ...initial({ phase: "live", hub: "http://devbox:4790", protocol: 1 }), chatStates: { [k]: { projectRef: r, needsYou: false, leadWorking: false, lastSeq: 1 } }, chats: { [k]: { messages: [{ messageId: "m1", author: "human", state: "final", createdAt: asked }], leadWaiting: {} } } } as never as State;
+    s = reduce(s, { t: "blocked", key: k, reason: "usage paused on devbox until 15:00" });
+    expect(wakeIn(s, k, false, Date.parse(asked) + 1_000)).toEqual({ phase: "held", reason: "The lead can’t start now: usage paused on devbox until 15:00." });
+    s = reduce(s, { t: "blocked", key: k, reason: undefined });
+    expect(wakeIn(s, k, false, Date.parse(asked) + 1_000)).toEqual({ phase: "received", since: Date.parse(asked) });
   });
 });

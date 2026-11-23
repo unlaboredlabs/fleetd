@@ -57,16 +57,14 @@ export interface Sendable {
    * step (`now`), or waits for one.
    */
   readonly delivery?: ChatDelivery | undefined;
-  /** chat_send's word on why the lead doesn't have it yet, with the fix. */
-  readonly leadWaiting?: string | undefined;
   /** Where it was written (ChatMessage.client); none is this app. */
   readonly client?: string | undefined;
 }
 
 /**
  * The receipt under one of your messages. A sent message says nothing unless it is your latest: then how it reached
- * the lead. Trouble, a lead that can't take it yet, and a message that stopped the lead's step always show. Written
- * elsewhere than the app, it says where.
+ * the lead. Trouble and a message that stopped the lead's step always show; a lead that can't take it yet is the bot's
+ * to say, in the reply's place (WakeRow.tsx). Written elsewhere than the app, it says where.
  */
 export function receiptFor(m: Sendable, latest: boolean): Receipt | undefined {
   const r = receiptOf(m, latest);
@@ -91,7 +89,6 @@ function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
       return { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
     case "sent":
     case "streaming":
-      if (m.leadWaiting !== undefined && latest) return { kind: "warn", line: `sent; the lead doesn’t have it yet: ${m.leadWaiting}`, acts: [] };
       if (m.delivery === "now") return { kind: "quiet", line: "delivered; the lead stopped its step to read this" };
       if (!latest) return undefined;
       switch (m.delivery) {
@@ -108,13 +105,14 @@ function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
 }
 
 /**
- * A quiet receipt as a mark beside the bubble instead of a line under it: an open ring while it waits for the
- * lead (sending, or queued for when it's free), a check once the lead has it. The words go to its tooltip. Trouble,
- * and anything you can act on, keeps its line: undefined then.
+ * A quiet receipt as a mark beside the bubble instead of a line under it: a faint check while it goes, a check once
+ * the hub has it, at once, whether the lead took it or it waits for the lead (the bot in the reply's place says what
+ * the lead does with it, WakeRow.tsx). The words go to its tooltip. Trouble, and anything you can act on, keeps its
+ * line: undefined then.
  */
 export interface ReceiptMark {
-  readonly mark: "waiting" | "delivered";
-  /** The receipt in one word ("Queued", "Delivered"). */
+  readonly mark: "sending" | "delivered";
+  /** The receipt in one word ("Sending", "Received", "Delivered"). */
   readonly word: string;
   /** The receipt's words in full, for the tooltip. */
   readonly words: string;
@@ -124,9 +122,9 @@ export function receiptMark(m: Sendable, latest: boolean): ReceiptMark | undefin
   const r = receiptFor(m, latest);
   if (r === undefined || r.kind !== "quiet" || r.acts !== undefined) return undefined;
   const words = r.line.charAt(0).toUpperCase() + r.line.slice(1);
-  if (m.state === "pending") return { mark: "waiting", word: "Sending", words };
-  // A steer is delivered (the lead reads it at its next step); only one waiting for the lead to be free is queued.
-  return m.delivery === "queued" ? { mark: "waiting", word: "Queued", words } : { mark: "delivered", word: "Delivered", words };
+  if (m.state === "pending") return { mark: "sending", word: "Sending", words };
+  // A steer is delivered (the lead reads it at its next step); one waiting for the lead to be free is received.
+  return { mark: "delivered", word: m.delivery === "queued" ? "Received" : "Delivered", words };
 }
 
 /** Why Stop didn't stop the lead and its agents, in one plain sentence; never the hub's own words. */

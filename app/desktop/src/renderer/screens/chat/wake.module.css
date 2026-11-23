@@ -1,5 +1,5 @@
-/* The bot in the reply's place while its computer starts (WakeRow.tsx): at a bubble's left edge, one quiet word
-   beside it. */
+/* The bot in the reply's place (WakeRow.tsx): at a bubble's left edge, the lead's typing bubble beside it while it
+   takes your message and works, or one quiet line saying what holds it up. */
 .row {
   max-width: calc(var(--measure) + 2 * var(--pad));
   margin: 0 auto;
@@ -21,6 +21,11 @@
   width: 36px;
   height: 36px;
 }
+/* The lead's typing bubble (Bubble.tsx TypingBubble), as its replies sit: the bot stands at its foot. */
+.dots {
+  flex: none;
+  display: flex;
+}
 .words {
   display: inline-flex;
   align-items: baseline;
@@ -29,6 +34,14 @@
   font-size: var(--text-md);
   line-height: 20px;
   color: var(--quiet);
+}
+/* What holds the lead up: the hub's plain line, wrapping rather than cut, as it carries the reason. */
+.reason {
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: 20px;
+  color: var(--quiet);
+  overflow-wrap: anywhere;
 }
 .count {
   margin-left: 6px;

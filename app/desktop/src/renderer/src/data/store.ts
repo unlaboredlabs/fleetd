@@ -145,6 +145,11 @@ export interface DataState {
   readonly chatWindows?: Readonly<Record<ProjectKey, ChatWindow>> | undefined;
   /** Per project: whether its lead waits on the person, and whether it works. */
   readonly chatStates: Readonly<Record<ProjectKey, ProjectChatState>>;
+  /**
+   * Per project: when its lead was last seen to stop working (hub epoch ms, the event's time), so a turn that ended
+   * without a reply ends the bot's wait in the reply's place too (shared/wake.ts waitingFor). Kept across reconnects.
+   */
+  readonly chatTurnEnds?: Readonly<Record<ProjectKey, number>> | undefined;
   /** Whether this hub can stop a lead mid-turn (chat_stop); undefined until asked, again on each connection. */
   readonly chatStop?: boolean | undefined;
   /**
@@ -394,7 +399,14 @@ const applyChatEvent = (s: DataState, event: HubEvent): DataState => {
     case CHAT_EVENTS.waiting: {
       const state = eventData<"chat.waiting">(event as HubEventOf<"chat.waiting">);
       if (state === undefined) return s;
-      return { ...s, chatStates: { ...s.chatStates, [projectKey(state.projectRef)]: state } };
+      const key = projectKey(state.projectRef);
+      const at = Date.parse(event.at);
+      const ended = s.chatStates[key]?.leadWorking === true && !state.leadWorking && !Number.isNaN(at);
+      return {
+        ...s,
+        chatStates: { ...s.chatStates, [key]: state },
+        ...(ended ? { chatTurnEnds: { ...s.chatTurnEnds, [key]: at } } : {}),
+      };
     }
     default:
       return s;
