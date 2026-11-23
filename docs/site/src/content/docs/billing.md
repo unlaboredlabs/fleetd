@@ -22,11 +22,11 @@ Payment happens on Stripe's pages; fleetd never sees your card.
 
 | Plan | Per month | Computer time included | Agents at once |
 |---|---|---|---|
-| Solo | $20 | $30 | 3 |
-| Team | $50 | $60 | 10 |
-| Scale | $200 | $260 | 40 |
+| Solo | $20 | $30 | 25 |
+| Team | $50 | $60 | 100 |
+| Scale | $200 | $260 | 300 |
 
-- Leads don't count toward agents at once. With credits and no plan, it's 3.
+- Leads don't count toward agents at once. With credits and no plan, it's 25.
 - Included time is used before credits, and doesn't roll over.
 - A plan change applies from the next month. Cancelling stops renewal at the end of the paid month.
 - Prices are before VAT.
