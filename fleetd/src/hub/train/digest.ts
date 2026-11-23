@@ -4,6 +4,7 @@
 import type { ProjectRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { mergesOf } from "../project_lead/store.ts";
+import * as repos from "../repos/store.ts";
 import { backSince } from "./back.ts";
 import { leadTrainLines, type TrainFacts } from "./digest_lines.ts";
 import type { TrainHost } from "./host.ts";
@@ -43,13 +44,20 @@ export function writerState(host: Pick<TrainHost, "task" | "waitingOn">, taskId:
   }
 }
 
-/** The digest's train lines for the project; undefined when it has no train and no Change: the section is left out. */
+/**
+ * The digest's train lines for the project; undefined when it has no train and no Change, and people don't merge a
+ * GitHub repo of it: the section is left out. Where people merge a bot with a GitHub repo, the section always says so,
+ * before its first PR and when its repo's train is another bot's, so the lead never tells the human a PR merges by
+ * itself; a bot with no GitHub repo has no PR to merge and carries no such line.
+ */
 export function trainDigest(hub: Hub, r: ProjectRef, since?: string): string[] | undefined {
   const host = new HubHost(hub);
   const now = { nowMs: hub.clock.now(), writer: (taskId: string) => writerState(host, taskId) };
   const facts = trainFacts(changeRecords(hub), (x) => x.machineId === r.machineId && x.projectId === r.projectId, now);
-  if (facts.trains.length === 0 && facts.changes.length === 0) return undefined;
-  return leadTrainLines({ ...facts, peopleMerge: mergesOf(hub.db.conn, r) === "people" }, since);
+  const onGithub = facts.trains.length > 0 || facts.changes.length > 0 || repos.of(hub.db.conn, r).some((x) => x.repoKey?.startsWith("github.com/"));
+  const peopleMerge = onGithub && mergesOf(hub.db.conn, r) === "people";
+  if (facts.trains.length === 0 && facts.changes.length === 0 && !peopleMerge) return undefined;
+  return leadTrainLines({ ...facts, peopleMerge }, since);
 }
 
 /** The workstream's PRs on the train that are not merged or abandoned, as `#<n> <state>`. */
