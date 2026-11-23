@@ -92,7 +92,7 @@ test("Desktop QA on main compares only with a run that passed: after a red one i
 
 /** build-release.yml's plan step run on a repo of two commits, `one` then `two`, with edge's release.json holding
  * `held` (a stand-in curl answers it): its outputs. */
-function plan(release: "one" | "two", held: "one" | "two" | undefined): Record<string, string> {
+function plan(release: "one" | "two", held: "one" | "two" | undefined, event = "workflow_run", forceApp = "false"): Record<string, string> {
   const step = (yaml("build-release.yml").jobs.plan.steps as { id?: string; run: string }[]).find((s) => s.id === "plan")!;
   const dir = `${process.env.TMPDIR ?? "/tmp"}/fleetd-edge-plan-${Math.random().toString(36).slice(2)}`;
   const env = { PATH: `${dir}/bin:${process.env.PATH ?? "/usr/bin:/bin"}`, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "a", GIT_AUTHOR_EMAIL: "a@example.invalid", GIT_COMMITTER_NAME: "a", GIT_COMMITTER_EMAIL: "a@example.invalid" };
@@ -112,7 +112,7 @@ function plan(release: "one" | "two", held: "one" | "two" | undefined): Record<s
   const out = join(dir, "out.txt");
   Bun.spawnSync(["bash", "-c", step.run], {
     cwd: dir,
-    env: { ...env, CHANNEL: "edge", PUBLISH: "true", FORCE_APP: "false", RELEASE_SHA: sha[release], GITHUB_REPOSITORY: "unlaboredlabs/fleetd", GITHUB_OUTPUT: out },
+    env: { ...env, CHANNEL: "edge", PUBLISH: "true", FORCE_APP: forceApp, GITHUB_EVENT_NAME: event, RELEASE_SHA: sha[release], GITHUB_REPOSITORY: "unlaboredlabs/fleetd", GITHUB_OUTPUT: out },
   });
   const written = Bun.file(out).size > 0 ? readFileSync(out, "utf8") : "";
   Bun.spawnSync(["rm", "-rf", dir]);
@@ -125,6 +125,12 @@ test("a run for a commit edge already holds, or an older one, builds and publish
   // A newer commit than edge's builds, as does the first build of all.
   expect(plan("two", "one")).toMatchObject({ skip: "false", "has-cli": "true" });
   expect(plan("two", undefined)).toMatchObject({ skip: "false", "has-cli": "true", "build-app": "true" });
+  // A run by hand always builds: Rebuild the app on the commit edge holds, or a dispatch from main.
+  expect(plan("two", "two", "workflow_dispatch", "true")).toMatchObject({ skip: "false", "has-cli": "true", "build-app": "true" });
+  expect(plan("two", "two", "workflow_dispatch")).toMatchObject({ skip: "false", "has-cli": "true" });
+  expect(plan("two", "two", "workflow_run", "true")).toMatchObject({ skip: "false", "build-app": "true" });
+  // The build number counts on from the one edge holds, read in the same look.
+  expect(plan("two", "one").build).toMatch(/\.\d+$/);
   // And a skipped plan skips the publish.
   expect(yaml("build-release.yml").jobs.publish.if).toContain("needs.plan.outputs.skip != 'true'");
 });
