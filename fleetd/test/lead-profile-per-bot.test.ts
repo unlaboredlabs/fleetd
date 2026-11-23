@@ -40,6 +40,8 @@ function hubWithTools() {
     send: async () => false,
     interrupt: async (thread: { threadId: string }) => void interrupted.push(thread.threadId),
   });
+  // A fake node never ends the turn it stops: the restart waits only a moment for it.
+  leads(t.hub).settleMs = 10;
   const tools = new Registry();
   registerAll(tools);
   const call = async <T>(tool: string, input: unknown): Promise<T> => {

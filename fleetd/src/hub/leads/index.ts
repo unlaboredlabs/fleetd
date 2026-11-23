@@ -2,7 +2,7 @@
 // prompt plus the digest. A project with no repo's lead does its own work, from `assistant.start` in the assistant
 // role; no lead starts while its project is archived. `leads(hub)` is the area other areas read: `get` (a Lead with
 // its state off its thread), `list`, and `leadProfile`.
-import type { ChatMessage, Lead, Profile, ProjectRef, ProjectSummary, UsageParked } from "../../shared/contracts.ts";
+import type { ChatMessage, Lead, Profile, ProjectRef, ProjectSummary, ThreadRef, UsageParked } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
@@ -19,11 +19,12 @@ import { leadState } from "./lead_state.ts";
 import { leadWiring } from "./ports.ts";
 import { renderLeadStart, reposBlock, startPrompt, whole } from "./prompt.ts";
 import { chatTagsOn } from "../project_lead/store.ts";
+import { recap, startedAgain, unanswered } from "./recap.ts";
 import { LeadRecords, type StoredLead } from "./records.ts";
-import { clip, oneLine } from "./text.ts";
-import { ofChat, short, told } from "./zone.ts";
+import { ofChat } from "./zone.ts";
 
 export { leadState } from "./lead_state.ts";
+export { STARTED_AGAIN, STARTED_AGAIN_UNANSWERED } from "./recap.ts";
 
 /** What the usage area says of a parked lead thread; set by that area once it is ported. */
 export type ParkedOf = (thread: { machineId: string; threadId: string }) => UsageParked | undefined;
@@ -36,18 +37,15 @@ const heldBy = (error: ToolError): AutoStart => ({ kind: "held", error, message:
 
 /** A lead idle this long has lost its prompt cache (1 hour for leads). */
 export const LEAD_FRESH_AFTER_MS = 3_600_000;
-/** The chat messages a fresh lead session reads, newest last; each cut. */
-const RECENT_CHAT = 12;
-const RECENT_CHAT_CHARS = 500;
-/** The most of a file's name a recap line carries. */
-const RECENT_CHAT_NAME = 80;
+/** The chat rows a fresh lead session's recap reads (recap.ts bounds what it keeps). */
+const RECENT_CHAT_ROWS = 200;
 /**
- * The last line of a session started again with no wake behind it (a profile switch, `lead_start {fresh: true}`): its
- * recent chat ends on turn-shaped lines, which invite a model to write the next one itself. It speaks for the chat
- * alone: the state and the orders waiting above it still stand.
+ * How long a person's Restart lead waits for the turn it stopped to end and the chat to follow that end (its message
+ * tags settled, its working state cleared) before the new session takes over: past it, the new session starts anyway.
  */
-export const STARTED_AGAIN =
-  "This is your session starting again: the chat messages above were already seen and handled. The state and any orders waiting above still stand: act on them, on a wake or on a person's new message, and never write a message for them.";
+const SETTLE_MS = 10_000;
+
+const threadKey = (t: ThreadRef) => `${t.machineId}/${t.threadId}`;
 
 export class Leads {
   readonly records: LeadRecords;
@@ -58,6 +56,10 @@ export class Leads {
   private lock: Promise<void> = Promise.resolve();
   /** Set once this process marked the leads for its own restart: the switches are the next hub process's to make. */
   private restarting = false;
+  /** SETTLE_MS, which a test shortens. */
+  settleMs = SETTLE_MS;
+  /** A restart waiting for a stopped turn's end to be followed, by thread (`runEnded`). */
+  private readonly ending = new Map<string, () => void>();
 
   constructor(private readonly hub: Hub) {
     this.records = new LeadRecords(hub.db);
@@ -375,15 +377,40 @@ export class Leads {
           throw refused;
         }
         // A person's Restart lead stops the turn under way first; while its machine can't, it stays marked.
-        const thread = store(this.hub).threadGet({ machineId: r.machineId, threadId: lead.threadId })?.thread;
-        if (thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) {
-          await leadWiring(this.hub).ports.interrupt({ machineId: r.machineId, threadId: lead.threadId });
-        }
+        const ref = { machineId: r.machineId, threadId: lead.threadId };
+        const thread = store(this.hub).threadGet(ref)?.thread;
+        if (thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) await this.stopped(ref);
       } else if (!this.idle(r)) return undefined;
       // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
       // nothing to answer, and it made up a message from the person (W787).
       return this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r));
     });
+  }
+
+  /**
+   * Stops the lead thread's turn and waits, at most `settleMs`, for the chat to follow its end: the new session takes
+   * the lead's record over, and the chat follows only the current lead's thread, so a stopped turn ended after it would
+   * leave its tags unsettled and its working state shown.
+   */
+  private async stopped(thread: ThreadRef): Promise<void> {
+    const key = threadKey(thread);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const followed = new Promise<void>((resolve) => {
+      this.ending.set(key, resolve);
+      timer = setTimeout(resolve, this.settleMs);
+    });
+    try {
+      await leadWiring(this.hub).ports.interrupt(thread);
+      await followed;
+    } finally {
+      clearTimeout(timer);
+      this.ending.delete(key);
+    }
+  }
+
+  /** The chat followed the end of a lead thread's run (chat/flow.ts): a restart waiting on it goes on. */
+  runEnded(thread: ThreadRef): void {
+    this.ending.get(threadKey(thread))?.();
   }
 
   /** When fresh is due: a fresh lead session instead, from the digest (and memory), then the chat's tail and `first`. */
@@ -393,9 +420,7 @@ export class Leads {
       const existing = this.records.leadGet(r);
       if (!existing || (!changed && !this.cold(r) && !this.switchReady(r) && !this.aheadStale(r))) return undefined;
       const project = this.projectOf(r);
-      // A digest as of no wake, as at any start.
-      const { lastWakeAt: _, ...rest } = existing;
-      this.records.leadPut(rest);
+      // The old session's last wake stays until the new one is launched: a failed start leaves the lead as it was.
       const chatTail = this.recentChat(r);
       const text = chatTail === undefined ? first.trim() : `${chatTail}\n\n${first.trim()}`;
       const lead = await this.launch(r, project, existing.sessionGeneration + 1, text);
@@ -468,41 +493,35 @@ export class Leads {
     return triggers.length === 0 ? undefined : `Orders waiting for you:\n${triggerLines(triggers).join("\n")}`;
   }
 
-  /** A session started again with no wake behind it: its recent chat, then that nothing new waits (STARTED_AGAIN). */
+  /**
+   * A session started again with no wake behind it: its recent chat, then that nothing new waits (STARTED_AGAIN), or
+   * that the person's messages marked unanswered wait for an answer (a turn stopped before it answered them).
+   */
   private startedAgain(r: ProjectRef): string {
-    const chatTail = this.recentChat(r);
-    return chatTail === undefined ? STARTED_AGAIN : `${chatTail}\n\n${STARTED_AGAIN}`;
+    const messages = this.chatRows(r);
+    const open = unanswered(messages);
+    return startedAgain(recap(messages, ofChat(this.hub.db, r), { unanswered: open }), open);
   }
 
-  /** The project's last few chat messages between the human, the lead and agents, for a fresh lead session. */
-  private recentChat(r: ProjectRef): string | undefined {
+  /** The project's chat newest first, none held for the lead. */
+  private chatRows(r: ProjectRef): ChatMessage[] {
     const rows = this.hub.db.all<{ data: string }>(
-      "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND held = 0 ORDER BY seq DESC LIMIT 200",
-      [r.machineId, r.projectId],
+      "SELECT data FROM chat_messages WHERE machine_id = ?1 AND project_id = ?2 AND held = 0 ORDER BY seq DESC LIMIT ?3",
+      [r.machineId, r.projectId, RECENT_CHAT_ROWS],
     );
-    const zone = ofChat(this.hub.db, r);
-    const lines: string[] = [];
-    for (const row of rows) {
-      if (lines.length >= RECENT_CHAT) break;
-      let m: ChatMessage;
+    return rows.flatMap((row) => {
       try {
-        m = JSON.parse(row.data) as ChatMessage;
+        return [JSON.parse(row.data) as ChatMessage];
       } catch {
-        continue;
+        return [];
       }
-      // Its files by id and name only: the lead saves one with attachment_read, or names its id to an agent.
-      const files = (m.attachments ?? []).map((f) => `${f.attachmentId} "${oneLine(f.name, RECENT_CHAT_NAME)}"`);
-      const said = [clip(m.text.trim(), RECENT_CHAT_CHARS), files.length === 0 ? "" : `[attached: ${files.join(", ")}]`].filter(Boolean).join(" ");
-      if (!said) continue;
-      const agent = m.lead === undefined ? `Agent ${m.by ?? ""}` : m.lead.to !== undefined ? `You, to the lead of ${m.lead.to}` : `The lead of ${m.by ?? ""}`;
-      const who = m.author === "human" ? "Human" : m.author === "lead" ? "You" : m.author === "agent" ? agent : undefined;
-      if (who === undefined) continue;
-      const ms = parseMs(m.createdAt);
-      lines.push(`${who.trim()}${ms === undefined ? "" : ` (${short(zone, ms)})`}: ${said}`);
-    }
-    if (lines.length === 0) return undefined;
-    lines.reverse();
-    return `## Recent chat\nYour session started fresh; the chat before this is not in it. Times are in ${told(zone)}.\n${lines.join("\n")}`;
+    });
+  }
+
+  /** The project's recent chat for a fresh lead session (recap.ts), the person's unanswered messages marked. */
+  private recentChat(r: ProjectRef): string | undefined {
+    const messages = this.chatRows(r);
+    return recap(messages, ofChat(this.hub.db, r), { unanswered: unanswered(messages) });
   }
 
   /** `ahead`: the node starts it with no turn and keeps the start text for its first message (`startAhead`). */
@@ -540,7 +559,8 @@ export class Leads {
     const store_ = profiles(this.hub);
     const names = store_.allowed(r);
     const allowed = store_.list().filter((p) => names.includes(p.name));
-    const { text: digest, idleSince } = this.wakes.digestToSend(r);
+    // A new session's first state is clean: the old session's last wake is not this one's.
+    const { text: digest, idleSince } = this.wakes.digestToSend(r, true);
     const manual = wiring.ports.oneLeadMode(r.machineId);
     const ownWork = manual && (project.repos ?? []).length === 0;
     const leadProfile = store_.leadProfileFor(r);

@@ -905,8 +905,10 @@ lane, and its time by profile, name the profile its session started on.
 To move every lead to it at once, an admin clicks **Restart hub…** on the hub's row in
 [Settings › Hubs & devices](/docs/several-hubs#restart). Once the hub is back, each lead whose profile changed since it started
 (another profile picked, or its model, effort or fast mode edited) starts again on the current one, as
-`lead_start {fresh: true}` does: it keeps its chat, memory and open orders, and its first turn reads the last few
-chat messages, marked as already handled. A lead in the middle of a turn switches when the turn ends, and one whose
+`lead_start {fresh: true}` does: it keeps its chat, memory and open orders, and its first turn reads the
+[recent chat](/docs/what-agents-are-told#pinning), marked as already handled. Any of your messages that no answer
+follows are marked unanswered, and the lead answers them. That happens when **Restart lead** stopped a turn before it
+replied. Restart lead waits up to 10 seconds for the stopped turn to end before the new session starts. A lead in the middle of a turn switches when the turn ends, and one whose
 machine is offline when it comes back. Leads already on the current profile carry on as they were. Only that button
 does this: the hub's restart for an update switches no lead.
 

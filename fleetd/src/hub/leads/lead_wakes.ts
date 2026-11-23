@@ -14,6 +14,7 @@ import { renderEvent } from "./events.ts";
 import { leadState } from "./lead_state.ts";
 import { decisionsInProject, leadWiring, openRequests } from "./ports.ts";
 import { LeadRecords } from "./records.ts";
+import { stalledLines } from "./stalled.ts";
 import { quiet as isQuiet, type Trigger } from "../api/leads.ts";
 
 /** The trigger's kind as `lead.woken` lists it. */
@@ -207,12 +208,15 @@ export class LeadWakes {
     if (since !== undefined) this.idleShown.set(keyOf(r), since);
   }
 
-  /** The digest, and the idle stretch whose line it carries. */
-  digestToSend(r: ProjectRef): { text: string; idleSince?: number } {
+  /**
+   * The digest, and the idle stretch whose line it carries. `clean`: as of no wake, for a new session's first message,
+   * whatever wakes the session before it had.
+   */
+  digestToSend(r: ProjectRef, clean = false): { text: string; idleSince?: number } {
     const hooks = leadWiring(this.hub).hooks;
     const project = store(this.hub).projectGet(r);
     const workstreams = this.records.workstreamsList({ projectRef: r, state: "open", limit: 50 });
-    const since = this.records.leadGet(r)?.lastWakeAt;
+    const since = clean ? undefined : this.records.leadGet(r)?.lastWakeAt;
     const requests = openRequests(this.hub, r, 50);
     const decisions = decisionsInProject(this.hub, r, 500);
     const tasks = hooks.tasks?.digestLines(r, since, 50);
@@ -237,6 +241,7 @@ export class LeadWakes {
       ...(agents ? { agents } : {}),
       ...(idle === undefined ? {} : { idle }),
       ...(usage === undefined ? {} : { usage }),
+      stalled: stalledLines(this.hub.db, r, workstreams, requests, nowMs(this.hub.clock)),
       ...(tasks ? { tasks } : {}),
       ...(() => {
         const train = hooks.trainLines?.(r, since);

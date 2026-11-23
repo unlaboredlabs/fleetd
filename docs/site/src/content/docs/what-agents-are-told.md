@@ -466,8 +466,17 @@ attempt, a lead at its next start. To give a running lead your edit now, start a
 
 A lead's next turn starts a fresh session by itself, between turns and never in the middle of one, when it has
 been idle for over an hour (its prompt cache is gone) or when the [MCP servers](/docs/mcp-servers#takes-effect) it gets
-were added, edited or removed since its session started. A fresh session starts like any lead, then reads the last few
-chat messages before the one it answers.
+were added, edited or removed since its session started. A fresh session starts like any lead, then reads the recent
+chat before the one it answers: up to 40 messages, the newest kept whole within about 12,000 characters (the oldest go
+first). Each line has the message's id, its order and the message it replies to. Your messages and the lead's are kept
+whole, an agent's is cut, and system lines and approvals take one short line each (for example "approval for `…`:
+approved by Ada"). A card shows as its kind and caption. Your messages that no lead answer follows are marked
+unanswered.
+
+A new session's state block starts clean, never from the last wake of the session before it, so every agent still
+running or waiting is listed. The state block also opens with a line for each open order that has had nothing running,
+queued or waiting for over 30 minutes: no agent, no CI or Monitor wait, no PR on the train, no request to you. For
+example, "W123 open, nothing running since 2026-11-23 10:05 UTC".
 
 ## See exactly what an agent was told {#told}
 

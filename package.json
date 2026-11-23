@@ -161,6 +161,8 @@
     "./hub/leads/events": "./fleetd/src/hub/leads/events.ts",
     "./hub/leads/lead_state": "./fleetd/src/hub/leads/lead_state.ts",
     "./hub/leads/prompt": "./fleetd/src/hub/leads/prompt.ts",
+    "./hub/leads/recap": "./fleetd/src/hub/leads/recap.ts",
+    "./hub/leads/stalled_rules": "./fleetd/src/hub/leads/stalled_rules.ts",
     "./hub/leads/stored": "./fleetd/src/hub/leads/stored.ts",
     "./hub/leads/text": "./fleetd/src/hub/leads/text.ts",
     "./hub/leads/zone_text": "./fleetd/src/hub/leads/zone_text.ts",
