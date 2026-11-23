@@ -923,16 +923,17 @@ export class Train {
     const reruns: next.Reruns = new Map();
     const failedReruns: next.Reruns = new Map();
     const flaky: Flaky[] = [];
-    // Each check the head showed, and the run of each the train re-ran: GitHub may leave a re-run job out of its list
-    // until it starts (fleetd-cloud #824 merged on a red `check` so, 2026-11-23). Either stays pending until a run of
-    // it newer than the one re-run is listed: the checks waited on never shrink.
+    // Each check run the head showed, and the run of each the train re-ran: GitHub may leave a re-run job out of its
+    // list until it starts (fleetd-cloud #824 merged on a red `check` so, 2026-11-23). Either stays pending until a run
+    // of it newer than the one re-run is listed: the checks waited on never shrink. A commit status read in place of
+    // check runs isn't kept: `requiredReported` judges statuses once check runs are listed.
     const seen = new Set<string>();
     const rerunOf = new Map<string, number>();
     const waiting = (name: string): CheckRun => ({ id: 0, name, status: "in_progress", conclusion: null });
-    const expected = (judged: CheckRun[], runs: CheckRun[]) => {
+    const expected = (judged: CheckRun[], runs: CheckRun[], checkRuns: boolean) => {
       const out = judged.map((r) => ((rerunOf.get(r.name) ?? -1) >= r.id ? waiting(r.name) : r));
       for (const name of seen) if (!runs.some((r) => r.name === name)) out.push(waiting(name));
-      for (const r of out) seen.add(r.name);
+      if (checkRuns) for (const r of out) seen.add(r.name);
       return out;
     };
     const noteReruns = (runs: CheckRun[]) => {
@@ -1006,7 +1007,7 @@ export class Train {
         next.runnerNote(this, noted, note, earlier);
       }
       const runs = runsRead ?? [];
-      const judgedRuns = expected(judge(runs), runs);
+      const judgedRuns = expected(judge(runs), runs, all.length > 0);
       if (judgedRuns.length > 0) last = judgedRuns;
       else if (runs.length > 0) last = runs;
       let judged: Checks = checks(judgedRuns);

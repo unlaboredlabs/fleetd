@@ -218,3 +218,19 @@ test("a check the train re-ran that GitHub leaves out of its list for a while st
   expect(k.gh.log.filter((l) => l.startsWith("merge") || l.startsWith("status fleetd/train success"))).toEqual([]);
   expect(k.change(8).state).toBe("ci_failed");
 });
+
+test("a required commit status read before any check run is listed holds the head no longer than its own success", async () => {
+  const k = kit();
+  // A repo that requires Vercel's status and a GitHub Actions check: the first read comes after the status posted
+  // and before Actions listed its run, so the head's checks are read from its statuses once.
+  k.gh.required = ["vercel", "check"];
+  k.gh.provider = () => [["vercel", "success"]];
+  let reads = 0;
+  k.gh.runs = () => (++reads <= 4 ? [] : [job(5, 2, "check", "success")]);
+  k.pr(9, "fleetd/T9-x", { "x.md": "x\n" });
+  const start = k.clock.ms;
+  await k.enqueue(9);
+  await k.settle();
+  expect(k.change(9).state).toBe("merged");
+  expect(k.clock.ms - start).toBeLessThan(15 * MINUTE);
+});
