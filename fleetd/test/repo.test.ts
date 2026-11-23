@@ -55,8 +55,14 @@ test("the train's after-merge checks are what mac.yml reports", () => {
       const shards = qaShards("macos-latest");
       expect(shards).toHaveLength(3);
       mac.push(...shards.map((s) => `${id} / ${s}`));
-    } else if (job["runs-on"] === "macos-latest") mac.push(job.name ?? id);
+    } else if (["macos-latest", "xcode-27"].includes(String(job["runs-on"])) && id !== "ios-screens") {
+      mac.push(job.name ?? id);
+    }
   }
+  // The iOS builds take the image with Xcode 27 (an older SDK letterboxes the app on the iPhone Duo), a label that
+  // exists: one no runner has leaves the job queued for good.
+  expect(nightly.jobs.mobile?.["runs-on"]).toBe(workflow("mobile-release.yml").jobs.ios?.["runs-on"]);
+  expect(nightly.jobs.mobile?.["runs-on"]).toBe(nightly.jobs["ios-screens"]?.["runs-on"]);
   expect(mac).toContain("mobile (ios)");
   // The link check, which the train doesn't leave for after the merge, runs only in the workflow's own nightly or a
   // manual run of it alone: never in an on-demand run of the Mac checks on a PR's head, nor in release.yml's call
