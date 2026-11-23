@@ -129,6 +129,49 @@ export function spec(o: {
   };
 }
 
+/** How much MCP tool schema agy 1.5.14 shows its model in one session, all servers together, in `toolBytes`: past it,
+ * agy hides the largest tools, biggest first, until the rest fits, and the model never learns of them (no name in its
+ * `<mcp_servers>` block, no call that reaches them). Measured with a stand-in server through `agy acp` (W844): tools
+ * kept up to 59,744 bytes, hidden from 60,000. */
+export const TOOL_BUDGET = 60_000;
+/** What fleetd's own tools may take of it, per role (cli/agent_mcp/tools.json; agent_mcp_size.test.ts holds them to
+ * it): the rest is room for the bot's own servers. */
+export const FLEETD_TOOL_SHARE = 45_000;
+/** The most one fleetd tool may take: over the budget agy hides the biggest first, so fleetd's stay small. */
+export const TOOL_MAX = 2_000;
+
+/** One MCP tool as tools/list gives it. */
+export type ListedTool = { name: string; description?: string; inputSchema?: unknown };
+
+/** A tool's size as agy counts it: the JSON it keeps of the tool (`{"name","description","parameters"}`, compact,
+ * `<`, `>` and `&` escaped as Go escapes them). */
+export function toolBytes(tool: ListedTool): number {
+  const json = JSON.stringify({ name: tool.name, description: tool.description ?? "", parameters: tool.inputSchema ?? {} });
+  return Buffer.byteLength(json.replace(/[<>&]/g, (c) => `\\u00${c.charCodeAt(0).toString(16)}`));
+}
+
+/** What breaks the limits in a set of fleetd's tools: each tool past TOOL_MAX, and the set past FLEETD_TOOL_SHARE,
+ * named with their sizes; empty when it fits. */
+export function overLimits(tools: ListedTool[]): string[] {
+  const out = tools.filter((t) => toolBytes(t) > TOOL_MAX).map((t) => `${t.name} is ${toolBytes(t)} bytes (at most ${TOOL_MAX})`);
+  const total = tools.reduce((sum, t) => sum + toolBytes(t), 0);
+  if (total > FLEETD_TOOL_SHARE) out.push(`the set is ${total} bytes (at most ${FLEETD_TOOL_SHARE})`);
+  return out;
+}
+
+/** The servers an Antigravity lead's session goes without so that fleetd's own tools (`fleetdBytes`) all fit the budget:
+ * the biggest first, as few as it takes. A server whose tools couldn't be listed counts nothing. */
+export function leftOut(fleetdBytes: number, servers: { name: string; bytes: number }[]): string[] {
+  let total = fleetdBytes + servers.reduce((sum, s) => sum + s.bytes, 0);
+  const out: string[] = [];
+  for (const s of [...servers].sort((a, b) => b.bytes - a.bytes || a.name.localeCompare(b.name))) {
+    if (total <= TOOL_BUDGET) break;
+    out.push(s.name);
+    total -= s.bytes;
+  }
+  return out;
+}
+
 /** The sign-in from the app (`antigravity_login`): `agy acp --login`, which prints a Google link and reads the code the
  * page shows. Told it runs over SSH, it never tries to open a browser on the machine and keeps the sign-in where every
  * `agy acp` finds it. */

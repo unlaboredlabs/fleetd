@@ -22,7 +22,8 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
-import { backLine, skippedLine } from "../../node/mcp_reach.ts";
+import { backLine, heavyLine, skippedLine } from "../../node/mcp_reach.ts";
+import type { McpStartChange } from "../../shared/sessions.ts";
 import { end, notStartedLine, signedOutLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
@@ -60,14 +61,16 @@ function follow(hub: Hub, types: HubEventType[], fn: (e: import("../../shared/co
  * What a lead's start changed of its MCP servers left out because they didn't answer (node/mcp_reach.ts `startChange`,
  * its summary's `mcpChange`, told by the executor as the summary first says so): its chat says so in lines of fleetd's
  * own, never left to the lead to relay. The ones newly left out "didn't answer"; the ones left out before that answered
- * now "answer again"; a server that stays down says nothing. Each line once per start (its source is the start's).
+ * now "answer again"; a server that stays down says nothing. A lead on Antigravity that newly went without servers for
+ * too many tools says which (node/agy_budget.ts). Each line once per start (its source is the start's).
  */
-export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined): void {
+export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, change: McpStartChange, at: string | undefined): void {
   const lead = leads(hub).records.leadsList().find((l) => l.projectRef.machineId === thread.machineId && l.threadId === thread.threadId);
   if (!lead) return;
   const start = `${thread.threadId}:${at ?? ""}`;
   if (change.down.length > 0) chat(hub).add(lead.projectRef, { author: "system", text: skippedLine(change.down), source: `mcp_down:${start}` });
   if (change.back.length > 0) chat(hub).add(lead.projectRef, { author: "system", text: backLine(change.back), source: `mcp_back:${start}` });
+  if (change.heavy?.length) chat(hub).add(lead.projectRef, { author: "system", text: heavyLine(change.heavy), source: `mcp_heavy:${start}` });
 }
 
 /** Ends the project's live work if the cache no longer has the project; a no-op otherwise (removals.rs `reconcile`). */

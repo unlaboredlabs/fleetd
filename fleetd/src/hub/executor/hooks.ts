@@ -1,6 +1,7 @@
 // Where later areas plug into the executor's tools: leads,
 // workstreams, tasks and trains add fields to project_get, the slot board to fleetd_status.
 import type { ProjectRef } from "../../shared/contracts.ts";
+import type { McpStartChange } from "../../shared/sessions.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 
@@ -24,7 +25,7 @@ export type AsleepHook = (thread: { machineId: string; threadId: string; project
 
 /** What a session's start changed of the MCP servers left out because they didn't answer (its summary's `mcpChange`,
  * node/mcp_reach.ts): told once per start, as its summary first says so, never again for that start's fields carried on. */
-export type McpSkippedHook = (thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined) => void;
+export type McpSkippedHook = (thread: { machineId: string; threadId: string }, change: McpStartChange, at: string | undefined) => void;
 
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
@@ -39,7 +40,7 @@ export class ToolHooks {
   }
 
   /** Each `onMcpSkipped` hook, a throwing one logged. */
-  skippedMcp(thread: { machineId: string; threadId: string }, change: { down: string[]; back: string[] }, at: string | undefined): void {
+  skippedMcp(thread: { machineId: string; threadId: string }, change: McpStartChange, at: string | undefined): void {
     for (const hook of this.mcpSkipped) {
       try {
         hook(thread, change, at);

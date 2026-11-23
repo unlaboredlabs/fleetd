@@ -5,6 +5,7 @@ import type { ThreadSummary } from "../../shared/contracts.ts";
 import type {
   FailureClass,
   MachineEvent,
+  McpStartChange,
   PendingPermission,
   ProjectInfo,
   RunEnd,
@@ -128,7 +129,7 @@ export type TrackedThread = {
   /** What the node rebuilt the worktree from the last time it was gone, and when. */
   recreatedFrom?: [WorktreeSource, string | undefined];
   /** What its latest start changed of the MCP servers left out because they didn't answer, and when (node/mcp_reach.ts). */
-  mcpSkipped?: { change: { down: string[]; back: string[] }; at: string | undefined };
+  mcpSkipped?: { change: McpStartChange; at: string | undefined };
   /** The steer's run that cut the latest run, if one did. */
   supersededBy?: string;
 };
