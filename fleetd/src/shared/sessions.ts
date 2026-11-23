@@ -525,7 +525,7 @@ export type SessionSummary = {
   latestRun?: RunInfo;
   activeRunId?: string;
   pendingPermission?: PendingPermission;
-  /** The last assistant text, cut to its last 2000 characters. */
+  /** The last assistant text, cut to its last 2000 characters, the first of them "…" when cut. */
   latestAssistantTail?: string;
   branch?: string;
   worktreePath?: string;
