@@ -470,24 +470,27 @@
   background: var(--warning);
 }
 
-/* The foot: you, your picture and name, and beside you Screens and the Factory as two small icons. One slim line, no
-   rule over it: the space says it. */
+/* The foot: your picture at the start (its left edge on the rows' pictures'), Connections, Screens and the Factory as
+   three small icons at the end, and the hubs' marks centred in the space between (W870): no name, so none of it is cut
+   short or crowded, and a hub more or less moves only the marks. One slim line, no rule over it: the space says it. */
 .foot {
-  display: flex;
+  display: grid;
   flex: none;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 2px;
+  column-gap: var(--space-2);
   padding: var(--space-1) var(--space-2) var(--space-2);
 }
 
 .me {
   display: flex;
-  flex: 1;
+  flex: none;
   align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
+  justify-content: center;
+  width: 34px;
   height: 34px;
-  padding: 0 var(--space-2);
+  margin-left: 3px;
+  padding: 0;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -526,31 +529,28 @@
   background: var(--link);
 }
 
-.meName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--text-md);
-  font-weight: var(--weight-strong);
-  line-height: var(--leading-sm);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 /* One small square a hub (a hub's own shape; a bot's is round), the one on show filled; a swipe moves the fill with the
-   fingers (--at, from hubSwipe.ts's paint). Each a slim button the foot's height, so it takes no row of its own. */
+   fingers (--at, from hubSwipe.ts's paint). Each a slim button the foot's height, so it takes no row of its own. The
+   slot is the space between you and the icons, never wider: more hubs than it holds at 12 px apart close up (--hubs,
+   from Sidebar.tsx's HubDots), the squares a little smaller once they would touch. */
+.marksSlot {
+  display: flex;
+  grid-column: 2;
+  justify-content: center;
+  min-width: 0;
+  container-type: inline-size;
+}
 .marks {
-  --pitch: 12px;
+  --pitch: min(12px, 100cqw / var(--hubs));
+  --dot: min(6px, var(--pitch) - 3px);
   position: relative;
   display: flex;
-  flex: none;
   align-items: center;
-  margin-right: var(--space-1);
 }
 .markHub {
   display: grid;
   place-items: center;
+  flex: none;
   width: var(--pitch);
   height: 28px;
   padding: 0;
@@ -561,8 +561,8 @@
 }
 .markHub::before {
   content: "";
-  width: 6px;
-  height: 6px;
+  width: var(--dot);
+  height: var(--dot);
   border-radius: 2px;
   background: var(--faint);
   opacity: 0.55;
@@ -578,10 +578,10 @@
 .markOn {
   position: absolute;
   top: 50%;
-  left: calc((var(--pitch) - 6px) / 2);
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
+  left: calc((var(--pitch) - var(--dot)) / 2);
+  width: var(--dot);
+  height: var(--dot);
+  margin-top: calc(var(--dot) / -2);
   border-radius: 2px;
   background: var(--text);
   transform: translateX(calc(var(--at) * var(--pitch)));
@@ -590,7 +590,7 @@
 
 .tools {
   display: flex;
-  flex: none;
+  grid-column: 3;
   gap: 2px;
 }
 
@@ -829,8 +829,6 @@
 
 .you {
   display: flex;
-  flex: 1;
-  min-width: 0;
 }
 
 /* A hub's mark: its first letter on its colour, a small square with the rows' rounding; a bot's picture is round. */

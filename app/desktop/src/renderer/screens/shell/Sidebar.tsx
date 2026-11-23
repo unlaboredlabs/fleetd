@@ -563,20 +563,23 @@ const useIdle = (wanted: boolean): boolean => {
 };
 
 /**
- * One small mark a hub at the sidebar's foot, between you and the two icons, the one on show filled; a swipe moves it
- * with the fingers. A click switches to that hub, on the slide. None with one hub.
+ * One small mark a hub at the sidebar's foot, between you and the three icons, the one on show filled; a swipe moves it
+ * with the fingers. A click switches to that hub, on the slide. None with one hub. More than the space between holds
+ * at their usual pitch close up to fit it, so the icons never move for a hub more.
  */
 function HubDots({ ref, at }: { ref: RefObject<HTMLDivElement | null>; at: number }) {
   const hubs = useHubs();
   if (hubs.length < 2) return null;
   return (
-    <div ref={ref} className={s.marks} role="group" aria-label="Hubs" style={{ "--at": String(at) } as CSSProperties}>
-      {hubs.map((h, i) => (
-        <Tooltip key={h.id} content={h.label} side="top">
-          <button type="button" className={s.markHub} aria-label={h.label} {...(i === at ? { "aria-current": "true" as const } : {})} onClick={() => switchHub(h.id)} />
-        </Tooltip>
-      ))}
-      <span className={s.markOn} aria-hidden />
+    <div className={s.marksSlot}>
+      <div ref={ref} className={s.marks} role="group" aria-label="Hubs" style={{ "--at": String(at), "--hubs": String(hubs.length) } as CSSProperties}>
+        {hubs.map((h, i) => (
+          <Tooltip key={h.id} content={h.label} side="top">
+            <button type="button" className={s.markHub} aria-label={h.label} {...(i === at ? { "aria-current": "true" as const } : {})} onClick={() => switchHub(h.id)} />
+          </Tooltip>
+        ))}
+        <span className={s.markOn} aria-hidden />
+      </div>
     </div>
   );
 }
