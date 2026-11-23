@@ -27,7 +27,9 @@ Under the hero, the stage shows the desktop app on a MacBook Pro and the phone a
 1000x702 for the Duo open, 480x698 for its outer display) and is scaled to fit, so it stays sharp at any width. Its
 layout, words and colours are the apps' own (`app/desktop`'s tokens, `app/mobile`'s theme and `src/split.ts`'s panes
 and side strip), and each bot in it is drawn by `pebble.js` in its colour and body. The Duo starts shut and opens once
-it's well in view, on a spring; with reduced motion or no script it is shown open. Keep its words true to the apps.
+the page has loaded (0.6 s after, when any of it shows then, else once it's half in view), on a spring; with
+reduced motion or no script it is shown open. The screens are the apps' light themes in both of the page's themes, and
+at a phone's width the stage shows the Duo alone. Keep its words true to the apps.
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves

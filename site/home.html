@@ -116,7 +116,7 @@ p,h1,h2,figure{margin:0}
 .nav .up:hover{color:var(--paper);opacity:.88}
 
 /* hero: the bot beside the headline set as large as the measure allows, then the apps on their devices */
-.hero{padding-top:clamp(32px,5vw,80px);padding-bottom:clamp(64px,8vw,120px)}
+.hero{padding-top:clamp(24px,3.6vw,60px);padding-bottom:clamp(64px,8vw,120px)}
 .lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,5.5vw,88px);align-items:center;--av:clamp(140px,19vw,272px);padding-left:clamp(0px,2vw,32px)}
 /* The bot as the app draws it: a box, and a canvas a quarter past each side so a hop or a slump is never cut off
    (botLife.ts's PAD, Bot.module.css's .canvas). */
@@ -210,29 +210,29 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
    each screen the app's own layout, words and bots, built here rather than shot so it stays sharp at any size. Every
    length is a share of the stage (cqw), so the picture scales as one. Each screen lays out at the device's own size in
    points (1512x982, the Duo's 1000x702 open and 480x698 shut) and is scaled to fit, as a screenshot would be. */
-.stage{position:relative;margin-top:clamp(48px,6vw,88px);container-type:inline-size}
-.floor{position:relative;aspect-ratio:16/10.4;border-radius:clamp(12px,1.5vw,20px);background:var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring);overflow:hidden}
+.stage{position:relative;margin-top:clamp(36px,4.2vw,64px);container-type:inline-size}
+.floor{position:relative;aspect-ratio:100/54;border-radius:clamp(12px,1.5vw,20px);background:var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring);overflow:hidden;isolation:isolate}
 
 /* MacBook Pro 14", front on: an aluminium lid round black glass, the notch, and the base's front edge with its thumb
    cut, a touch wider than the lid as the eye sees it. */
-.mac{position:absolute;left:6cqw;top:5.6cqw;width:62cqw}
-.lid{position:relative;aspect-ratio:312.6/215;border-radius:2.1cqw 2.1cqw .55cqw .55cqw;background:linear-gradient(#cfd1d4,#a7aaaf);box-shadow:0 .1cqw .2cqw rgba(0,0,0,.25),0 3cqw 5cqw -2.4cqw rgba(0,0,0,.55)}
-.lid::before{content:"";position:absolute;inset:.17cqw;border-radius:1.95cqw 1.95cqw .4cqw .4cqw;background:#060607;box-shadow:inset 0 0 0 .07cqw #222326}
+.mac{position:absolute;left:10cqw;top:4.6cqw;width:60cqw}
+.lid{position:relative;aspect-ratio:312.6/215;border-radius:2.1cqw 2.1cqw .55cqw .55cqw;background:linear-gradient(#eceef0,#c4c7cb 22%,#a9acb1 70%,#c0c3c7);box-shadow:0 0 0 .04cqw rgba(0,0,0,.45),inset 0 .05cqw 0 rgba(255,255,255,.9),0 3cqw 5cqw -2.4cqw rgba(0,0,0,.55)}
+.lid::before{content:"";position:absolute;inset:.21cqw;border-radius:1.95cqw 1.95cqw .4cqw .4cqw;background:#060607;box-shadow:inset 0 0 0 .07cqw #222326}
 .mac .screen{position:absolute;left:1.62%;right:1.62%;top:2.79%;bottom:5.81%;overflow:hidden;border-radius:.75cqw .75cqw 0 0;background:var(--m-frame);container-type:inline-size}
 .mac .ui{position:absolute;left:0;top:0;width:1512px;height:982px;transform-origin:0 0;scale:tan(atan2(100cqw,1512px))}
 .notch{position:absolute;z-index:2;left:43.4cqw;top:0;width:13.2cqw;height:2.15cqw;background:#060607;border-radius:0 0 .85cqw .85cqw}
 .notch::after{content:"";position:absolute;left:50%;top:42%;width:.48cqw;height:.48cqw;margin-left:-.24cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#2b3a52,#0b0f17 60%)}
 /* The glass: one faint sheen across lid and screen, the light of the room on it. */
-.lid::after{content:"";position:absolute;inset:.17cqw;border-radius:inherit;pointer-events:none;background:linear-gradient(112deg,rgba(255,255,255,.07),rgba(255,255,255,0) 34%);z-index:3}
+.lid::after{content:"";position:absolute;inset:.21cqw;border-radius:inherit;pointer-events:none;background:linear-gradient(112deg,rgba(255,255,255,.07),rgba(255,255,255,0) 34%);z-index:3}
 .hinge{width:84%;height:.32cqw;margin:0 auto;background:linear-gradient(#26272a,#3a3b3f);border-radius:0 0 .2cqw .2cqw}
-.base{position:relative;width:113%;margin-left:-6.5%;height:1.75cqw;border-radius:.2cqw .2cqw 2.4cqw 2.4cqw/.2cqw .2cqw 1.25cqw 1.25cqw;background:linear-gradient(90deg,rgba(0,0,0,.22),rgba(0,0,0,0) 5%,rgba(0,0,0,0) 95%,rgba(0,0,0,.22)),linear-gradient(#e6e7e9 0,#cdd0d3 18%,#b9bcc0 52%,#8d9095 100%);box-shadow:inset 0 .06cqw 0 rgba(255,255,255,.8),inset 0 -.1cqw .15cqw rgba(0,0,0,.25)}
+.base{position:relative;width:113%;margin-left:-6.5%;height:1.75cqw;border-radius:.2cqw .2cqw 2.4cqw 2.4cqw/.2cqw .2cqw 1.25cqw 1.25cqw;background:linear-gradient(90deg,rgba(0,0,0,.22),rgba(0,0,0,0) 5%,rgba(0,0,0,0) 95%,rgba(0,0,0,.22)),linear-gradient(#d4d6d9 0,#f3f4f5 9%,#e2e4e6 16%,#c7cacd 30%,#b3b6ba 62%,#8a8d92 100%);box-shadow:0 0 0 .04cqw rgba(0,0,0,.35),inset 0 .05cqw 0 rgba(255,255,255,.95),inset 0 -.1cqw .15cqw rgba(0,0,0,.25)}
 .base::before{content:"";position:absolute;left:50%;top:0;width:16%;height:.52cqw;transform:translateX(-50%);border-radius:0 0 .7cqw .7cqw;background:linear-gradient(#a9acb1,#c6c9cd);box-shadow:inset 0 .1cqw .14cqw rgba(0,0,0,.28)}
-.base::after{content:"";position:absolute;left:4%;right:4%;bottom:-1.6cqw;height:1.6cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.6),rgba(0,0,0,0));filter:blur(.3cqw);z-index:-1}
+.base::after{content:"";position:absolute;left:2%;right:2%;bottom:-1.1cqw;height:1.8cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.75),rgba(0,0,0,0));filter:blur(.25cqw);z-index:-1}
 
 /* iPhone Duo: two halves on a hinge, a titanium band round black glass, one display across both open and a smaller
    one on the outside. Shut, the left half lies over the right one, its outer display up; it opens on the hinge with
    a spring (the script, once it's seen), the inner display waking as it goes. Reduced motion, or no script: open. */
-.fold{position:absolute;left:59.5cqw;top:35cqw;width:35.5cqw;aspect-ratio:1.405;perspective:140cqw;perspective-origin:75% 45%}
+.fold{position:absolute;left:61cqw;top:21.2cqw;width:33cqw;aspect-ratio:1.405;perspective:140cqw;perspective-origin:75% 45%}
 .fold .device{position:absolute;inset:0;transform-style:preserve-3d}
 .fold .half{position:absolute;top:0;bottom:0;width:50%;transform-style:preserve-3d}
 .fold .fixed{right:0}
@@ -240,10 +240,10 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .fold[data-fold="shut"] .leaf{transform:rotateY(180deg)}
 .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 /* A half's band, rounded on its outer side; the inner display runs to the hinge with no edge there. */
-.band{position:absolute;inset:0;border-radius:0 2.3cqw 2.3cqw 0;background:linear-gradient(90deg,#3d3e42,#8a8c91 10%,#626468 50%,#8d8f94 90%,#45474b);padding:.2cqw .2cqw .2cqw 0}
-.band::before{content:"";position:absolute;inset:.2cqw .2cqw .2cqw 0;border-radius:0 2.1cqw 2.1cqw 0;background:#050506}
-.leaf .front .band{border-radius:2.3cqw 0 0 2.3cqw;padding:.2cqw 0 .2cqw .2cqw}
-.leaf .front .band::before{inset:.2cqw 0 .2cqw .2cqw;border-radius:2.1cqw 0 0 2.1cqw}
+.band{position:absolute;inset:0;border-radius:0 2.3cqw 2.3cqw 0;background:linear-gradient(160deg,#e9e6e1,#b7b3ad 30%,#8f8c87 60%,#c9c5bf);box-shadow:0 0 0 .04cqw rgba(0,0,0,.55);padding:.28cqw .28cqw .28cqw 0}
+.band::before{content:"";position:absolute;inset:.28cqw .28cqw .28cqw 0;border-radius:0 2.02cqw 2.02cqw 0;background:#050506}
+.leaf .front .band{border-radius:2.3cqw 0 0 2.3cqw;padding:.28cqw 0 .28cqw .28cqw;background:linear-gradient(200deg,#e9e6e1,#b7b3ad 30%,#8f8c87 60%,#c9c5bf)}
+.leaf .front .band::before{inset:.28cqw 0 .28cqw .28cqw;border-radius:2.02cqw 0 0 2.02cqw}
 .fold .screen{position:absolute;inset:.72cqw .72cqw .72cqw 0;overflow:hidden;border-radius:0 1.62cqw 1.62cqw 0;background:var(--p-bg);container-type:inline-size}
 .leaf .front .screen{inset:.72cqw 0 .72cqw .72cqw;border-radius:1.62cqw 0 0 1.62cqw}
 .outer .screen{inset:.95cqw;border-radius:1.4cqw}
@@ -258,34 +258,39 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .fold[data-fold] .fixed .ui{left:-500px;transform-origin:500px 0}
 .outer .ui{width:480px;height:698px;scale:tan(atan2(100cqw,480px))}
 /* The hinge's seam in the band, top and bottom; the display runs across it unbroken (one copy of the screen in each half). */
-.fixed .band::after{content:"";position:absolute;left:-.06cqw;top:0;bottom:0;width:.12cqw;background:linear-gradient(#3a3b3f 0 .2cqw,transparent .2cqw calc(100% - .2cqw),#3a3b3f calc(100% - .2cqw))}
+.fixed .band::after{content:"";position:absolute;left:-.04cqw;top:0;bottom:0;width:.08cqw;background:rgba(0,0,0,.45)}
+/* The hinge's barrel, at the fold's ends, a step proud of the band. */
+.pin-t,.pin-b{position:absolute;z-index:2;left:50%;width:2.4cqw;height:.42cqw;margin-left:-1.2cqw;border-radius:.2cqw;background:linear-gradient(#a19d97,#6e6b67);box-shadow:0 0 0 .04cqw rgba(0,0,0,.5)}
+.pin-t{top:-.12cqw}
+.pin-b{bottom:-.12cqw}
 /* The right half's side button, and the outer display's camera. */
-.fixed .btn{position:absolute;right:-.14cqw;top:24%;width:.2cqw;height:12%;border-radius:0 .12cqw .12cqw 0;background:linear-gradient(90deg,#55575b,#8f9196)}
+.fixed .btn{position:absolute;right:-.14cqw;top:24%;width:.2cqw;height:12%;border-radius:0 .12cqw .12cqw 0;background:linear-gradient(90deg,#8f8c87,#d6d2cc)}
 .outer .cam{position:absolute;z-index:2;top:1.6cqw;left:50%;width:4.2cqw;height:1.25cqw;margin-left:-2.1cqw;border-radius:1cqw;background:#000}
 /* The leaf's thickness: its free edge and its top and bottom, seen only while it turns. */
-.leaf .edge{position:absolute;left:0;top:2.3cqw;bottom:2.3cqw;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#55575b,#8f9196 40%,#4b4d51)}
-.leaf .rim{position:absolute;left:2.3cqw;right:0;height:.85cqw;background:linear-gradient(#8f9196,#55575b)}
-.leaf .rim.t{top:0;transform-origin:50% 0;transform:rotateX(-90deg)}
-.leaf .rim.b{bottom:0;transform-origin:50% 100%;transform:rotateX(90deg)}
+.leaf .edge{position:absolute;left:0;top:2.3cqw;bottom:2.3cqw;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#8f8c87,#e1ddd7 40%,#7d7a75)}
+.leaf :is(.rim-t,.rim-b){position:absolute;left:2.3cqw;right:0;height:.85cqw;background:linear-gradient(#d6d2cc,#8f8c87)}
+.leaf .rim-t{top:0;transform-origin:50% 0;transform:rotateX(-90deg)}
+.leaf .rim-b{bottom:0;transform-origin:50% 100%;transform:rotateX(90deg)}
 .leaf .back{transform:translateZ(-.85cqw) rotateY(180deg)}
-.outer .band{border-radius:2.3cqw;padding:.2cqw}
-.outer .band::before{inset:.2cqw;border-radius:2.1cqw}
+.outer .band{border-radius:2.3cqw;padding:.28cqw}
+.outer .band::before{inset:.28cqw;border-radius:2.02cqw}
 /* The inner display, off while shut. */
 .fold .off{position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none}
 .fold[data-fold="shut"] .off{opacity:1}
-.fold .shade{position:absolute;left:0;right:0;bottom:-2.2cqw;height:3.2cqw;border-radius:50%;background:radial-gradient(closest-side,rgba(0,0,0,.55),rgba(0,0,0,0));filter:blur(.4cqw);transform-origin:100% 50%}
+.fold .shade{position:absolute;left:3%;right:3%;top:10%;bottom:-5%;border-radius:3cqw;background:rgba(0,0,0,.5);filter:blur(1.6cqw);transform-origin:100% 50%}
 .fold[data-fold="shut"] .shade{transform:scaleX(.52)}
 
+/* A phone's width: the Duo alone, large enough to read. */
 @container (max-width:620px){
-  .floor{aspect-ratio:1/1.02}
-  .mac{left:4cqw;top:7cqw;width:86cqw}
-  .fold{left:38cqw;top:55cqw;width:58cqw}
+  .floor{aspect-ratio:100/76}
+  .mac{display:none}
+  .fold{left:5cqw;top:5cqw;width:90cqw}
 }
 
-/* ---- The desktop app's window (app/desktop: the sidebar, a bot's chat and the panel), in its own tokens. */
-.mui{--m-bg:#121316;--m-side:#0c0d0f;--m-line:#24262b;--m-text:#ecedf0;--m-quiet:#9a9fa8;--m-faint:#5f646c;--m-bubble:#1d1e22;--m-mine:#e3e5e8;--m-on-mine:#0b0d10;--m-link:#74a6ff;--m-ok:#5fc487;--m-row:#ffffff17;--m-field:#ffffff2b;--m-glass:#1a1b1f;--m-glass-edge:#ffffff14;--m-warn:#e2a945;--m-bar:#1c1d21;
+/* ---- The desktop app's window (app/desktop: the sidebar, a bot's chat and the panel), in its own light tokens: light
+   in both of the page's themes, so the screens stand out from the stage as a lit display does. */
+.mui{--m-bg:#ffffff;--m-side:#f4f5f7;--m-line:#eaecef;--m-text:#0b0d10;--m-quiet:#5c626b;--m-faint:#9298a1;--m-bubble:#edeff2;--m-mine:#0b0d10;--m-on-mine:#ffffff;--m-link:#1d5fd3;--m-ok:#1a6c3c;--m-row:#0f172010;--m-field:#c9cdd3;--m-glass:#ffffff;--m-glass-edge:#0f172014;--m-warn:#b07200;--m-bar:#e9eaed;
   display:flex;flex-direction:column;font:400 14px/1.45 var(--sans);color:var(--m-text);background:var(--m-bg);letter-spacing:0;text-align:left;-webkit-font-smoothing:antialiased}
-[data-theme="light"] .mui{--m-bg:#ffffff;--m-side:#f4f5f7;--m-line:#eaecef;--m-text:#0b0d10;--m-quiet:#5c626b;--m-faint:#9298a1;--m-bubble:#edeff2;--m-mine:#0b0d10;--m-on-mine:#ffffff;--m-link:#1d5fd3;--m-ok:#1a6c3c;--m-row:#0f172010;--m-field:#c9cdd3;--m-glass:#ffffff;--m-glass-edge:#0f172014;--m-warn:#b07200;--m-bar:#e9eaed}
 .mui svg{display:block;flex:none}
 .mb{display:flex;align-items:center;height:33px;padding:0 18px;gap:20px;background:var(--m-bar);font-size:13.5px;font-weight:500;flex:none}
 .mb b{font-weight:600}
@@ -310,9 +315,9 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .row .tx{font-size:13.5px;color:var(--m-quiet);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:19px}
 .row em{font-style:normal;justify-self:end;display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--m-quiet)}
 .row em.dot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--m-warn)}
-.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:14px 8px 16px;font-weight:600;font-size:14px}
-.me .a{width:26px;height:26px;border-radius:50%;background:#1f3b2a;color:#7fdca0;display:grid;place-items:center;font-size:10.5px;font-weight:600}
-.me .ic{margin-left:auto;display:flex;gap:14px;color:var(--m-quiet)}
+.side .me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:14px 8px 16px;font-weight:600;font-size:14px}
+.side .me .a{width:26px;height:26px;border-radius:50%;background:#d7efe0;color:#1a6c3c;display:grid;place-items:center;font-size:10.5px;font-weight:600}
+.side .me .ic{margin-left:auto;display:flex;gap:14px;color:var(--m-quiet)}
 .chat{flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 26px 18px;position:relative}
 .pill{align-self:flex-start;display:flex;align-items:center;gap:9px;height:38px;padding:0 13px 0 9px;border-radius:19px;background:var(--m-glass);box-shadow:inset 0 0 0 1px var(--m-glass-edge),0 6px 18px -8px rgba(0,0,0,.35);font-weight:600;font-size:15px}
 .pill .pb{width:24px;height:24px}
@@ -348,13 +353,11 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .g.q i{opacity:.3}
 .g.q i:nth-child(5){opacity:1}
 
-/* ---- The phone app (app/mobile), its iOS palette: Chats beside the open chat on the Duo open, Chats alone shut,
+/* ---- The phone app (app/mobile), its light iOS palette as on the Mac: Chats beside the open chat on the Duo open, Chats alone shut,
    iOS's status and the app's buttons in the side strip at the right edge (split.ts's sideStrip). */
-.pui{--p-bg:#000;--p-text:#ecedf0;--p-quiet:#9a9fa8;--p-line:#2a2c31;--p-bubble:#222429;--p-mine:#3e4148;--p-link:#74a6ff;--p-glass:#1a1b1f;--p-edge:rgba(255,255,255,.1);--p-dot:#ff9f0a;
+.pui{--p-bg:#fff;--p-text:#0b0d10;--p-quiet:#5c626b;--p-line:rgba(15,23,32,.14);--p-bubble:#edeff2;--p-mine:#0b0d10;--p-link:#1d5fd3;--p-glass:#fff;--p-edge:rgba(15,23,32,.1);--p-dot:#ff9500;
   position:relative;font:400 17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",var(--sans);color:var(--p-text);background:var(--p-bg);letter-spacing:-.01em;text-align:left;-webkit-font-smoothing:antialiased;display:flex}
-[data-theme="light"] .pui{--p-bg:#fff;--p-text:#0b0d10;--p-quiet:#5c626b;--p-line:rgba(15,23,32,.14);--p-bubble:#edeff2;--p-mine:#0b0d10;--p-link:#1d5fd3;--p-glass:#fff;--p-edge:rgba(15,23,32,.1);--p-dot:#ff9500}
-[data-theme="light"] .fold .screen{--p-bg:#fff}
-.fold .screen{--p-bg:#000}
+.fold .screen{--p-bg:#fff}
 .pui svg{display:block;flex:none}
 .list{width:360px;flex:none;display:flex;flex-direction:column;padding:22px 0 20px 18px;border-right:1px solid var(--p-line)}
 .outer .list{width:auto;flex:1;border-right:0}
@@ -516,6 +519,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
         <script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.getElementById("duo").dataset.fold="shut"</script>
         <div class="shade"></div>
         <div class="device">
+          <span class="pin-t"></span><span class="pin-b"></span>
           <div class="half fixed">
             <div class="band"></div><span class="btn"></span>
             <div class="screen"><div class="ui pui" id="duo-open">
@@ -559,7 +563,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
                   <span class="end"><span class="circ"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6 10h8M8 14h4"/></svg></span><span class="circ"><svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg></span></span></div>
               </div></div>
             </div>
-            <span class="edge"></span><span class="rim t"></span><span class="rim b"></span>
+            <span class="edge"></span><span class="rim-t"></span><span class="rim-b"></span>
           </div>
         </div>
         <!-- The open display's left half is the same screen as the right half's: one copy, shown in each. -->
@@ -760,9 +764,9 @@ var fleetdMedia={};
   };
   // [colour, body, state]: each step changes one or two of them.
   const PLAN = [
-    ["blue", "pebble", "glance"], ["blue", "kitty", "thinking"], ["orange", "kitty", "done"], ["orange", "bunny", "needs"],
-    ["purple", "bunny", "working"], ["teal", "ghost", "glance"], ["teal", "toast", "done"], ["pink", "toast", "thinking"],
-    ["pink", "pebble", "needs"], ["green", "pebble", "working"], ["green", "ghost", "done"], ["amber", "kitty", "glance"],
+    ["blue", "pebble", "done"], ["blue", "kitty", "thinking"], ["orange", "kitty", "needs"], ["orange", "bunny", "glance"],
+    ["purple", "bunny", "working"], ["teal", "ghost", "done"], ["teal", "toast", "thinking"], ["pink", "toast", "needs"],
+    ["pink", "pebble", "glance"], ["green", "pebble", "working"], ["green", "ghost", "done"], ["amber", "kitty", "glance"],
     ["red", "bunny", "thinking"], ["grey", "pebble", "idle"],
   ];
   // The rig's channels a pop pushes (shared/bot.ts: SQUASH, LIFT).
@@ -801,7 +805,8 @@ var fleetdMedia={};
     const [color, shape, what] = PLAN[step];
     if (color !== look[0] || shape !== look[1]) pop(color, shape);
     act(what);
-    timer = setTimeout(next, 2200 + Math.random() * 500);
+    // The first change follows sooner, so the first three seconds show two.
+    timer = setTimeout(next, step === 0 ? 1700 : 2200 + Math.random() * 500);
   };
   const begin = () => {
     clearTimeout(timer);
@@ -829,18 +834,23 @@ var fleetdMedia={};
   addEventListener("fleetdtheme", () => setTimeout(mountStills, 0));
 
   // ---- The stage's bots, one per bot in the apps' lists and headers, each in its colour, body and state and taking its
-  // turns as the app's do. Each lays out at the screen's own size in points, which the scale doesn't change.
+  // turns as the app's do. Each lays out at the screen's own size in points, which the scale doesn't change. One on a
+  // screen not shown (the Mac, at a phone's width) comes to life once it is.
   const mountScreens = () => {
-    document.querySelectorAll("[data-av]").forEach((host, n) => {
+    document.querySelectorAll("[data-av]:not([data-on])").forEach((host, n) => {
       const [color, shape, state = "idle"] = host.dataset.av.split(" ");
       const box = host.offsetWidth;
+      if (box === 0) return;
+      host.dataset.on = "";
       bringToLife(canvasIn(host), newRig(state, drawnAt(box), 300 + n, false), box, color, shape);
     });
   };
+  addEventListener("resize", mountScreens);
 
-  // ---- The Duo opens once, the first time it's well in view: the left half swings off the right on a spring with a
-  // touch of overshoot, as a hinge settles, the inner display waking as it goes. Shut until then (the inline script
-  // shut it before the first paint, unless reduced motion); after, it is the plain open phone, no transform left on it.
+  // ---- The Duo opens once: 0.6 s after the page loads when any of it shows then, else the first time it's half in
+  // view. The left half swings off the right on a spring with a touch of overshoot, as a hinge settles, the inner
+  // display waking as it goes. Shut until then (the inline script shut it before the first paint, unless reduced
+  // motion); after, it is the plain open phone, no transform left on it.
   const duo = document.getElementById("duo");
   /** A spring's curve from 0 to 1 (mass 1), for CSS linear(): its points 1/60 s apart, and how long it takes. */
   const springCurve = (k, c) => {
@@ -867,13 +877,17 @@ var fleetdMedia={};
     Promise.all(runs.map((r) => r.finished)).then(() => { delete duo.dataset.fold; runs.forEach((r) => r.cancel()); }, () => {});
   };
   if (duo.dataset.fold === "shut") {
-    const wait = performance.now() < 1500 ? 900 : 350;
+    const loaded = new Promise((done) => (document.readyState === "complete" ? done() : addEventListener("load", done, { once: true })));
+    const shown = () => new Promise((done) => (document.hidden ? addEventListener("visibilitychange", done, { once: true }) : done()));
+    let first = true;
     const watch = new IntersectionObserver((es) => {
-      if (!es[es.length - 1].isIntersecting) return;
+      const e = es[es.length - 1];
+      const atLoad = first;
+      first = false;
+      if (atLoad ? !e.isIntersecting : e.intersectionRatio < 0.5) return;
       watch.disconnect();
-      const when = () => (document.hidden ? addEventListener("visibilitychange", when, { once: true }) : setTimeout(open, wait));
-      when();
-    }, { threshold: 0.6 });
+      (atLoad ? loaded : Promise.resolve()).then(shown).then(() => setTimeout(open, atLoad ? 600 : 250));
+    }, { threshold: [0, 0.5] });
     watch.observe(duo);
     calm.addEventListener("change", () => { if (calm.matches) { watch.disconnect(); delete duo.dataset.fold; } });
   }
