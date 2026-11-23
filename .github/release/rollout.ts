@@ -149,6 +149,12 @@ export function gate(r: Rollout, cloud: () => Cloud, now: number, contains: (a: 
   return changed;
 }
 
+/** Where each feed comes from: the newest build that reached its stage, or undefined for edge's own latest-*.yml (no
+ * build reached the stage yet; latest itself is then left as it is). */
+export function stageSources(r: Rollout, now: number, hasFeed: (build: string) => boolean): { feed: string; from: string | undefined }[] {
+  return FEEDS.map((f) => ({ feed: f.name, from: feedBuild(r, f.percent, now, hasFeed) }));
+}
+
 /** The newest build that reached `percent` of hubs and has a desktop feed (its own or the nearest older build's). */
 export function feedBuild(r: Rollout, percent: number, now: number, hasFeed: (build: string) => boolean): string | undefined {
   const at = r.builds.findIndex((b) => b.haltedAt === undefined && b.pulledAt === undefined && percentAt(b, now) >= percent);
@@ -262,6 +268,31 @@ async function readCloud(): Promise<Cloud> {
 
 // ---- Commands ----
 
+/**
+ * The desktop app's stage feeds on edge, every one of them always there: an app reads its stage's feed and, from
+ * before it fell back to latest by itself (2026.11.23.1), fails on a missing one. Each is the feed of the newest build
+ * that reached its stage (`stageSources`), else edge's own latest-*.yml as it stands. `edge` is edge's file names.
+ */
+function writeFeeds(r: Rollout, now: number, work: string, filesOf: (build: string) => string[], edge: Set<string>): void {
+  const same = (name: string, text: string) => edge.has(name) && readFileSync(download(TAG, name, join(work, "edge")), "utf8") === text;
+  for (const platform of PLATFORMS) {
+    const own = `latest-${platform}.yml`;
+    for (const { feed, from } of stageSources(r, now, (build) => filesOf(build).includes(own))) {
+      let text: string;
+      if (from !== undefined) text = absolute(readFileSync(download(releaseOf(from), own, join(work, from)), "utf8"), from);
+      else if (feed !== "latest" && edge.has(own)) text = readFileSync(download(TAG, own, join(work, "edge-latest")), "utf8");
+      else continue;
+      const target = `${feed}-${platform}.yml`;
+      if (same(target, text)) continue;
+      const out = join(work, target);
+      writeFileSync(out, text);
+      gh(["release", "upload", TAG, out, "--clobber"]);
+      edge.add(target);
+      console.log(`${target}: ${from ?? "edge's latest"}`);
+    }
+  }
+}
+
 function add(): void {
   const build = process.env.BUILD ?? "";
   const version = process.env.VERSION ?? "";
@@ -299,6 +330,9 @@ function add(): void {
     (r) => r.builds.some((b) => b.build === build),
   );
   gh(["release", "edit", TAG, "--notes", releaseNotes(r, now)]);
+  // Every stage feed there from the first build on (`writeFeeds`).
+  const work = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
+  writeFeeds(r, now, work, (b) => assets(releaseOf(b)), new Set(assets(TAG)));
   const mine = r.builds.find((b) => b.build === build);
   const notes = (mine?.notes ?? []).map((n) => `- ${n}`).join("\n") || "- No merged changes listed.";
   gh(["release", "edit", releaseOf(build), "--notes", `Build ${build} of main at ${commit}.\n\n### What's new\n\n${notes}`]);
@@ -362,23 +396,7 @@ async function tick(): Promise<void> {
     return files.get(build)!;
   };
   const edge = new Set(assets(TAG));
-  const same = (name: string, text: string) => edge.has(name) && readFileSync(download(TAG, name, join(work, "edge")), "utf8") === text;
-
-  // The desktop app's stage feeds.
-  for (const feed of FEEDS) {
-    for (const platform of PLATFORMS) {
-      const own = `latest-${platform}.yml`;
-      const from = feedBuild(r, feed.percent, now, (build) => filesOf(build).includes(own));
-      if (from === undefined) continue;
-      const text = absolute(readFileSync(download(releaseOf(from), own, join(work, from)), "utf8"), from);
-      const target = `${feed.name}-${platform}.yml`;
-      if (same(target, text)) continue;
-      const out = join(work, target);
-      writeFileSync(out, text);
-      gh(["release", "upload", TAG, out, "--clobber"]);
-      console.log(`${target}: ${from}`);
-    }
-  }
+  writeFeeds(r, now, work, filesOf, edge);
 
   // The phone's bundle: the newest build that reached everyone and has one.
   const everyone = r.builds.find(

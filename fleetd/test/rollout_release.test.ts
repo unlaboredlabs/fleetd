@@ -67,6 +67,9 @@ const listed = () => parseRollout(readFileSync(join(releases, "edge/rollout.json
 
 test("a build goes from publish through fleetd's own hub to everyone's stages, and a halt, a pull and a resume reach hubs", async () => {
   mkdirSync(join(releases, "edge"), { recursive: true });
+  // Edge's feed from before rollouts, which every app reads until a build reaches its stage.
+  const before = "version: 0.0.0-edge.202611230900+aaaaaaa\nfiles:\n  - url: app-old.zip\npath: app-old.zip\n";
+  writeFileSync(join(releases, "edge/latest-mac.yml"), before);
   // The build's own release, as publish.sh leaves it: its pinned CLI and its desktop feed.
   mkdirSync(join(releases, "build-2026.11.23.4"), { recursive: true });
   writeFileSync(join(releases, "build-2026.11.23.4/latest-mac.yml"), "version: 0.0.0-edge.202611231406.4\nfiles:\n  - url: app-1234.zip\npath: app-1234.zip\n");
@@ -82,10 +85,13 @@ test("a build goes from publish through fleetd's own hub to everyone's stages, a
   expect(Object.keys(b!.sha256)).toEqual(["fleetd-bun-linux-x64"]);
   expect(b!.passedAt).toBeUndefined();
   expect(readFileSync(join(releases, "build-2026.11.23.4/.notes"), "utf8")).toContain("- A lead's turn ends cleanly");
+  // From the first build on, every stage feed is there, so an app from before it fell back to latest by itself never
+  // gets a 404: before a build reaches a stage, its feed is edge's latest as it stands.
+  for (const stage of ["stage10", "stage50"]) expect(readFileSync(join(releases, `edge/${stage}-mac.yml`), "utf8")).toBe(before);
   // A tick before fleetd's own hub passed it moves nothing.
   await rollout(["tick"]);
   expect(listed()[0]!.passedAt).toBeUndefined();
-  expect(existsSync(join(releases, "edge/stage10-mac.yml"))).toBe(false);
+  expect(readFileSync(join(releases, "edge/stage10-mac.yml"), "utf8")).toBe(before);
 
   // fleetd's own hub passed; the cloud doesn't say what it runs, so the gate passes it without the cloud.
   await rollout(["pass", "2026.11.23.4"]);
@@ -97,7 +103,8 @@ test("a build goes from publish through fleetd's own hub to everyone's stages, a
   expect(readFileSync(join(releases, "edge/stage10-mac.yml"), "utf8")).toContain(
     "url: https://github.com/unlaboredlabs/fleetd/releases/download/build-2026.11.23.4/app-1234.zip",
   );
-  expect(existsSync(join(releases, "edge/latest-mac.yml"))).toBe(false);
+  expect(readFileSync(join(releases, "edge/stage50-mac.yml"), "utf8")).toBe(before);
+  expect(readFileSync(join(releases, "edge/latest-mac.yml"), "utf8")).toBe(before);
   expect(readFileSync(join(releases, "edge/.notes"), "utf8")).toContain("### 2026.11.23.4 (10% of hubs)");
 
   await rollout(["halt", "2026.11.23.4"]);
