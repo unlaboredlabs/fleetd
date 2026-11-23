@@ -2,7 +2,8 @@
 // chats list: folded, a bot's Info ran under the status column with iOS's Back and search over its rows (the real
 // Duo's F1153). Each navigator lays its screens out in StripRoom, so a screen added later keeps out too; a screen
 // holding a stack of its own, or the chat, which keeps out itself, opts out. A sheet, a navigator's or a Modal's,
-// keeps out by its own safe area (SheetRoom), and an overlay over the whole window by the window's strip (useStrip).
+// keeps out of the window's strip where it spans the window (SheetRoom), and an overlay over the whole window by the
+// window's strip (useStrip).
 // The tags are read whole, however many lines they take, from every source file.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -45,13 +46,13 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
     expect(own.map((s) => named(s.tag))).toEqual(["Home", "Settings", "Chat", "ChatInfo"]);
   });
 
-  it("is a sheet's own safe area for every sheet screen, so a card centred on the unfolded Duo stays centred", () => {
+  it("is SheetRoom for every sheet screen, so a sheet keeps out of the strip folded and a centred card stays centred", () => {
     const sheets = all(/\w+\.Screen/u).filter((s) => /sheet\(t|presentation: "(modal|formSheet|pageSheet)"/u.test(s.tag));
     expect(sheets.map((s) => named(s.tag))).toEqual(["ScreenList", "ProfileEdit", "VaultEdit", "VaultImport", "VaultMove", "NewProject", "NewScreen", "Icon", "SkillEdit", "VaultEdit", "VaultImport", "VaultMove"]);
     for (const s of sheets) expect(s.tag, s.path).toContain("layout={sheetRoom}");
   });
 
-  it("is a sheet's own safe area for every Modal sheet, and the window's strip for every overlay over the whole window", () => {
+  it("is SheetRoom for every Modal sheet, and the window's strip for every overlay over the whole window", () => {
     const modals = all(/Modal/u);
     const sheets = modals.filter((m) => /presentationStyle="(pageSheet|formSheet)"/u.test(m.tag));
     expect(sheets.map((m) => m.path).sort()).toEqual(["src/screens/Chat.tsx", "src/screens/PinnedMessages.tsx", "src/screens/manage/ChatFind.tsx", "src/screens/manage/TypedDelete.tsx"]);
@@ -79,7 +80,9 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
   it("pads the content by the strip the pane touches, its ground still under the strip", () => {
     expect(room).toContain("const strip = useStrip();");
     expect(room).toContain("<View style={[styles.fill, { paddingLeft: strip.left, paddingRight: strip.right }]}>{children}</View>");
-    expect(room).toMatch(/export function SheetRoom\(props: ViewProps\) \{\s*return <SafeAreaView edges=\{SIDES\} \{\.\.\.props\} \/>;/u);
-    expect(room).toContain('const SIDES = ["left", "right"] as const;');
+    expect(room).toMatch(/export function SheetRoom\(\{ children, style, \.\.\.props \}: ViewProps\) \{/u);
+    expect(room).toContain("const strip = sheetStrip(useStrip(), useWindowDimensions().width);");
+    // Not the sheet's own safe area: its side insets went stale across a fold.
+    expect(room).not.toContain("SafeAreaView");
   });
 });

@@ -3,11 +3,11 @@
 // screen added later keeps out of it too. The screen's ground still runs under the strip, edge to edge, and its native
 // bar spans the window, so iOS moves the bar's Back and buttons into the column over that ground, not over a row. A
 // screen that holds a navigator of its own (whose screens keep out themselves), or keeps out of the strip itself (the
-// chat, with its buttons there), opts out with ownRoom. A sheet keeps out by its own safe area instead (sheetRoom).
+// chat, with its buttons there), opts out with ownRoom. A sheet keeps out where it spans the window (sheetRoom).
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import type { ReactElement } from "react";
-import { StyleSheet, View, type ViewProps } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { StyleSheet, useWindowDimensions, View, type ViewProps } from "react-native";
+import { sheetStrip } from "../split";
 import { useStrip } from "./pane";
 
 export function StripRoom({ children }: { children: ReactElement }) {
@@ -33,18 +33,25 @@ export const stripRoom = ({ children }: { children: ReactElement }): ReactElemen
 export const ownRoom = ({ children }: { children: ReactElement }): ReactElement => children;
 
 /**
- * A sheet's layout: its content kept out of the strip by the sheet's own left and right safe area, not the window's.
- * Folded, a sheet as wide as the screen runs under the strip and keeps out of it; a card centred on a wide window
- * touches neither side and stays centred. On a phone, held upright, those are none.
+ * A sheet's layout: its content kept out of the strip where the sheet spans the window. Folded, a sheet as wide as the
+ * screen runs under the strip and keeps out of it; a card centred on a wide window touches neither side and stays
+ * centred. On a phone, held upright, there is none.
  */
 export const sheetRoom = ({ children }: { children: ReactElement }): ReactElement => <SheetRoom style={styles.fill}>{children}</SheetRoom>;
 
-/** A sheet's ground, its content kept out of the strip by the sheet's own safe area: a Modal's sheet starts with it. */
-export function SheetRoom(props: ViewProps) {
-  return <SafeAreaView edges={SIDES} {...props} />;
+/**
+ * A sheet's ground, its content kept out of the window's strip where the window is a phone's width (split.ts sheetStrip):
+ * a Modal's sheet starts with it. Not by the sheet's own safe area, whose side insets went stale across a fold and
+ * padded the sheet's rows from the side long after the strip had gone.
+ */
+export function SheetRoom({ children, style, ...props }: ViewProps) {
+  const strip = sheetStrip(useStrip(), useWindowDimensions().width);
+  return (
+    <View style={[style, strip !== undefined && { paddingLeft: strip.left, paddingRight: strip.right }]} {...props}>
+      {children}
+    </View>
+  );
 }
-
-const SIDES = ["left", "right"] as const;
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
