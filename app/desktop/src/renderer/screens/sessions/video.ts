@@ -116,10 +116,13 @@ export function useVideo(
           }
           decodedPicture.close();
         },
-        // This app can't decode what comes: JPEG from now on.
+        // This app can't decode what comes: JPEG from now on. The canvas's H.264 picture goes stale, so it stops
+        // showing, and the next JPEG draws whatever its seq (a relinked node counts from the start again).
         error: () => {
           keyed.current = false;
           decoder.current = null;
+          onCanvas.current = -1;
+          setDrawn(undefined);
           jpeg();
         },
       });
