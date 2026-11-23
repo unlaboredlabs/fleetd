@@ -140,15 +140,20 @@ describe("withScreens", () => {
 
   it("puts each screen's card where it opened, before the next day's line, and the newest at the end", () => {
     const screens = [
-      { id: "S3", at: "2026-10-29T09:00:00Z" },
-      { id: "S1", at: "2026-10-28T10:01:00Z" },
-      { id: "S2", at: "2026-10-28T23:00:00Z" },
+      { id: "S3", at: "2026-10-29T09:00:00Z", live: false },
+      { id: "S1", at: "2026-10-28T10:01:00Z", live: true },
+      { id: "S2", at: "2026-10-28T23:00:00Z", live: false },
     ];
     expect(names(withScreens(rows, screens, false))).toEqual(["day", "a", "S1", "b", "S2", "day", "c", "S3"]);
   });
 
+  it("leaves a live one opened after the newest message to the strip under it, so it shows once", () => {
+    const screens = [{ id: "S4", at: "2026-10-29T09:00:00Z", live: true }];
+    expect(names(withScreens(rows, screens, false))).toEqual(["day", "a", "b", "day", "c"]);
+  });
+
   it("leaves one older than every message read for its page, unless there is none older", () => {
-    const screens = [{ id: "S0", at: "2026-10-27T10:00:00Z" }];
+    const screens = [{ id: "S0", at: "2026-10-27T10:00:00Z", live: false }];
     expect(names(withScreens(rows, screens, true))).toEqual(["day", "a", "b", "day", "c"]);
     expect(names(withScreens(rows, screens, false))).toEqual(["S0", "day", "a", "b", "day", "c"]);
   });

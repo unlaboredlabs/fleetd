@@ -4,7 +4,7 @@
 // or a press-and-hold captcha), what typing sends, and how often a frame is drawn. The hub's browser_watch,
 // browser_input and browser_control carry it (contracts browser.rs), as the desktop's live view does; nothing here
 // touches React Native, so it is unit-tested. The geometry runs in gestures on the UI thread too: worklets.
-import type { BrowserFrame, BrowserInput, BrowserSession, OrderCard } from "./desktop";
+import type { BrowserFrame, BrowserInput, BrowserSession } from "./desktop";
 
 /** Who drives a screen now: its agent, the person, or the agent again from its next step. */
 export type Control = "agent" | "human" | "handing_back";
@@ -25,6 +25,8 @@ export interface ScreenCard {
   readonly at: string;
   /** It has ended: its card stays in the thread, saying so. */
   readonly ended: boolean;
+  /** Its task finished: when the hub ends it, unless the task is woken again. */
+  readonly closesAt?: string;
   /** Its agent asked the person to take over, and waits: why, in its words. */
   readonly reason?: string;
   readonly purpose: string;
@@ -40,6 +42,7 @@ export const cardOf = (s: BrowserSession): ScreenCard => ({
   id: s.sessionId,
   at: s.startedAt,
   ended: s.state !== "live",
+  ...(s.closesAt === undefined ? {} : { closesAt: s.closesAt }),
   ...(s.takeoverReason === undefined || s.control !== "agent" ? {} : { reason: s.takeoverReason }),
   purpose: s.purpose,
   kind: KINDS.has(s.kind ?? "") ? (s.kind as ScreenCard["kind"]) : "browser",
@@ -47,35 +50,30 @@ export const cardOf = (s: BrowserSession): ScreenCard => ({
   own: s.openedBy !== undefined,
 });
 
-const SETTLED = new Set(["done", "failed", "cancelled"]);
-
-/** The tasks still at work, from the open orders' lanes (orders_board): finished ones are left out of the board. */
-export const runningTasks = (orders: readonly { readonly lanes: readonly Pick<OrderCard["lanes"][number], "taskId" | "status">[] }[]): ReadonlySet<string> => {
-  const out = new Set<string>();
-  for (const o of orders) for (const l of o.lanes) if (l.taskId !== undefined && !SETTLED.has(l.status)) out.add(l.taskId);
-  return out;
-};
-
 /**
  * Whether a screen counts live in its chat: open, and its task still at work (a lead's has none), or a person in it
- * (theirs, taken over, or asked for). A finished task's screen stays open a while for a task woken again (the hub's
- * grace), yet nobody works in it: it is only in the list of the chat's screens.
+ * (theirs, taken over, or asked for). A finished task's screen stays open a while in case the task is woken again, until
+ * the time the hub says (`closesAt`), yet nobody works in it: it is only in the list of the chat's screens.
  */
-export const liveNow = (s: BrowserSession, running: ReadonlySet<string>): boolean =>
-  s.state === "live" && (s.taskId === undefined || running.has(s.taskId) || s.openedBy !== undefined || s.takeoverReason !== undefined || controlOf(s, undefined) !== "agent");
+export const liveNow = (s: BrowserSession): boolean =>
+  s.state === "live" && (s.closesAt === undefined || s.openedBy !== undefined || s.takeoverReason !== undefined || controlOf(s, undefined) !== "agent");
+
+/** The chats whose open screens include an agent's: read again as agents finish or are woken. */
+export const screensOfAgents = (screens: Readonly<Record<string, readonly BrowserSession[]>>): string[] =>
+  Object.keys(screens).filter((key) => screens[key]!.some((s) => s.state === "live" && s.taskId !== undefined));
 
 const askingFirst = (a: ScreenCard, b: ScreenCard): number => Number(b.reason !== undefined) - Number(a.reason !== undefined);
 
 /** The screens a chat counts live, the ones asking for you first. */
-export const screenCards = (sessions: readonly BrowserSession[] | undefined, running: ReadonlySet<string>): readonly ScreenCard[] =>
+export const screenCards = (sessions: readonly BrowserSession[] | undefined): readonly ScreenCard[] =>
   (sessions ?? [])
-    .filter((s) => liveNow(s, running))
+    .filter(liveNow)
     .map(cardOf)
     .sort(askingFirst);
 
 /** The screens still open whose task finished: the list's last section. */
-export const finishedCards = (sessions: readonly BrowserSession[] | undefined, running: ReadonlySet<string>): readonly ScreenCard[] =>
-  (sessions ?? []).filter((s) => s.state === "live" && !liveNow(s, running)).map(cardOf);
+export const finishedCards = (sessions: readonly BrowserSession[] | undefined): readonly ScreenCard[] =>
+  (sessions ?? []).filter((s) => s.state === "live" && !liveNow(s)).map(cardOf);
 
 /** What a chat's strip over its composer says of its live screens; undefined with none. */
 export interface Strip {

@@ -1400,6 +1400,12 @@ export type BrowserRetentionSetOutput = {
 export type BrowserSession = {
   /** Light or dark, on a phone screen whose device has the setting (an iOS simulator's); absent where it can't. */
   appearance?: ScreenAppearance;
+  /**
+   * Its task finished while it is still open: when the hub ends it, unless the task is woken again first.
+   * `browser_sessions` fills it in; absent while its task works, for a lead's or a person's, once it ended, and from
+   * older hubs.
+   */
+  closesAt?: Timestamp;
   control: BrowserControl;
   /**
    * The device controls a phone screen takes (`screen_control`, an agent's `mac sim <control>`), only those its machine

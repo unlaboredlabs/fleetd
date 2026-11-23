@@ -2605,6 +2605,10 @@
           "$ref": "#/$defs/ScreenAppearance",
           "description": "Light or dark, on a phone screen whose device has the setting (an iOS simulator's); absent where it can't."
         },
+        "closesAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "Its task finished while it is still open: when the hub ends it, unless the task is woken again first.\n`browser_sessions` fills it in; absent while its task works, for a lead's or a person's, once it ended, and from\nolder hubs."
+        },
         "control": {
           "$ref": "#/$defs/BrowserControl"
         },

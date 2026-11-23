@@ -3,7 +3,7 @@ import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { live } from "../src/hub/browser/live.ts";
 import { Pace } from "../src/hub/browser/pace.ts";
 import { endOutlived, get, prune, tellNodes } from "../src/hub/browser/store.ts";
-import { handedBackLine, tellHandedBack } from "../src/hub/browser/tools.ts";
+import { asRead, handedBackLine, tellHandedBack } from "../src/hub/browser/tools.ts";
 import { steerTasks } from "../src/hub/steer/index.ts";
 import { TaskRecords } from "../src/hub/tasks/records.ts";
 import type { Task } from "../src/shared/contracts.ts";
@@ -296,6 +296,21 @@ test("a screen whose task ended is ended on the hub, and its node told once per 
   expect(tellNodes(t.hub, told)).toBe(0);
   t.link.link("devbox", ["session_end"]);
   expect(tellNodes(t.hub, told)).toBe(1);
+});
+
+test("a live screen whose task finished says when the hub ends it, and stops saying so once the task is woken", async () => {
+  setup();
+  const ended = new Date(t.clock.now()).toISOString();
+  t.hub.db.conn
+    .query("INSERT INTO tasks (n, machine_id, project_id, workstream_id, state, ended_at, data) VALUES (8, 'devbox', 'p1', 'W1', 'running', NULL, '{}')")
+    .run();
+  await t.calls.call(agent("devbox", "p1", "T8"), report("live"));
+  expect(asRead(t.hub, get(t.hub, S1)!).closesAt).toBeUndefined();
+  t.hub.db.conn.query("UPDATE tasks SET state = 'done', ended_at = ? WHERE n = 8").run(ended);
+  expect(asRead(t.hub, get(t.hub, S1)!).closesAt).toBe(new Date(t.clock.now() + 30 * 60_000).toISOString());
+  // Woken again: it works, and the screen stays.
+  t.hub.db.conn.query("UPDATE tasks SET state = 'running', ended_at = NULL WHERE n = 8").run();
+  expect(asRead(t.hub, get(t.hub, S1)!).closesAt).toBeUndefined();
 });
 
 test("retention expires old recordings and a bot's oldest past its size", async () => {

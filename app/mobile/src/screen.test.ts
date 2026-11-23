@@ -22,7 +22,7 @@ import {
   MAX_ZOOM,
   PageTouches,
   pixelsPerPoint,
-  runningTasks,
+  screensOfAgents,
   screenCards,
   SEARCH,
   SLOP,
@@ -48,74 +48,60 @@ const screen = (sessionId: string, extra: Partial<BrowserSession> = {}): Browser
   ...extra,
 });
 
-const NONE: ReadonlySet<string> = new Set();
-
 describe("a chat's screen cards", () => {
   it("show its live screens, the one asking for you first, and say what each is", () => {
     const cards = screenCards([
       screen("B1", { kind: "android" }),
       screen("B2", { takeoverReason: "Solve the captcha on booking.com" }),
       screen("B3", { state: "recorded" }),
-    ], NONE);
+    ]);
     expect(cards.map((c) => c.id)).toEqual(["B2", "B1"]);
     expect(cardTitle(cards[0]!, "Nova")).toBe("Nova needs you");
     expect(cards[0]!.reason).toBe("Solve the captcha on booking.com");
     expect(cardTitle(cards[1]!, "Nova")).toBe("Nova's Android emulator");
-    expect(screenCards(undefined, NONE)).toEqual([]);
+    expect(screenCards(undefined)).toEqual([]);
   });
 
   it("stop asking once a person has control, and name a person's own screen as theirs", () => {
-    const [taken] = screenCards([screen("B2", { takeoverReason: "Solve the captcha", control: "human" })], NONE);
+    const [taken] = screenCards([screen("B2", { takeoverReason: "Solve the captcha", control: "human" })]);
     expect(taken!.reason).toBeUndefined();
     expect(taken!.control).toBe("human");
-    const [own] = screenCards([screen("B4", { openedBy: { personId: "p1", name: "Ann" } as NonNullable<BrowserSession["openedBy"]> })], NONE);
+    const [own] = screenCards([screen("B4", { openedBy: { personId: "p1", name: "Ann" } as NonNullable<BrowserSession["openedBy"]> })]);
     expect(cardTitle(own!, "Nova")).toBe("Your browser");
   });
 });
 
 describe("which screens a chat counts live", () => {
-  const orders = [
-    {
-      lanes: [
-        { taskId: "T1", status: "working" as const },
-        { taskId: "T2", status: "idle" as const },
-        { taskId: "T3", status: "done" as const },
-        { status: "working" as const },
-      ],
-    },
-  ];
-
-  it("takes the tasks still at work from the open orders", () => {
-    expect([...runningTasks(orders)]).toEqual(["T1", "T2"]);
-  });
-
   it("leaves out a finished task's screen, still open, unless a person is in it, and lists it apart", () => {
-    const running = runningTasks(orders);
+    const CLOSES = "2026-10-31T10:30:00.000Z";
     const sessions = [
       screen("B1", { taskId: "T1" }),
-      screen("B2", { taskId: "T3" }),
-      screen("B3", { taskId: "T9" }),
+      screen("B2", { taskId: "T3", closesAt: CLOSES }),
       screen("B4"),
-      screen("B5", { taskId: "T3", control: "human" }),
-      screen("B6", { taskId: "T3", takeoverReason: "Sign in" }),
+      screen("B5", { taskId: "T3", closesAt: CLOSES, control: "human" }),
+      screen("B6", { taskId: "T3", closesAt: CLOSES, takeoverReason: "Sign in" }),
       screen("B7", { taskId: "T1", state: "recorded" }),
     ];
-    expect(screenCards(sessions, running).map((c) => c.id)).toEqual(["B6", "B1", "B4", "B5"]);
-    expect(finishedCards(sessions, running).map((c) => c.id)).toEqual(["B2", "B3"]);
+    expect(screenCards(sessions).map((c) => c.id)).toEqual(["B6", "B1", "B4", "B5"]);
+    expect(finishedCards(sessions).map((c) => [c.id, c.closesAt])).toEqual([["B2", CLOSES]]);
+  });
+
+  it("reads again the chats with an agent's open screen as agents finish or are woken", () => {
+    expect(screensOfAgents({ a: [screen("B1", { taskId: "T1" })], b: [screen("B2")], c: [screen("B3", { taskId: "T2", state: "recorded" })] })).toEqual(["a"]);
   });
 });
 
 describe("a chat's strip of live screens", () => {
   it("is nothing with none, the one screen with one, and a count with its kinds with several", () => {
     expect(stripOf([], "Nova")).toBeUndefined();
-    const one = stripOf(screenCards([screen("B1")], NONE), "Nova");
+    const one = stripOf(screenCards([screen("B1")]), "Nova");
     expect(one).toEqual({ title: "Nova's browser", line: "Book the hotel", asking: false, opens: "B1", kinds: ["browser"] });
-    const many = stripOf(screenCards([screen("B1"), screen("B2", { kind: "ios" }), screen("B3"), screen("B4"), screen("B5"), screen("B6")], NONE), "Nova");
+    const many = stripOf(screenCards([screen("B1"), screen("B2", { kind: "ios" }), screen("B3"), screen("B4"), screen("B5"), screen("B6")]), "Nova");
     expect(many).toEqual({ title: "6 screens live", line: "5 browsers, iOS simulator", asking: false, opens: undefined, kinds: ["browser", "ios", "browser"] });
   });
 
   it("says the one asking for you first, and opens it", () => {
-    const strip = stripOf(screenCards([screen("B1"), screen("B2", { takeoverReason: "Solve the captcha" }), screen("B3")], NONE), "Nova");
+    const strip = stripOf(screenCards([screen("B1"), screen("B2", { takeoverReason: "Solve the captcha" }), screen("B3")]), "Nova");
     expect(strip).toEqual({ title: "Nova needs you", line: "Solve the captcha · 2 more", asking: true, opens: "B2", kinds: ["browser", "browser", "browser"] });
   });
 });

@@ -78,6 +78,7 @@ import { ArtifactCard } from "./artifacts/ArtifactCard";
 import { ImportCard } from "./vault/ImportCard";
 import type { VaultImportCard } from "./vault/types";
 import { linkTarget } from "./artifacts/model";
+import { liveNow } from "../screen";
 import { ScreenRow, ScreenStrip } from "./ScreenCards";
 import { PIN_ROOM, PinCapsuleView, PinnedSheet } from "./PinnedMessages";
 import { Symbol } from "./manage/parts";
@@ -209,7 +210,7 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   const tagFor = useMemo(() => (showTags ? (i: ChatItem) => tagOf(i, { show: true, me, lens: lensId }) : undefined), [showTags, me, lensId]);
   // Each screen's card where it opened; not in a window far back, which doesn't reach the newest.
   const screens = state.screens[chatKey];
-  const screenTimes = useMemo(() => (win !== undefined || lens !== null ? [] : (screens ?? []).map((s) => ({ id: s.sessionId, at: s.startedAt }))), [screens, win, lens]);
+  const screenTimes = useMemo(() => (win !== undefined || lens !== null ? [] : (screens ?? []).map((s) => ({ id: s.sessionId, at: s.startedAt, live: liveNow(s) }))), [screens, win, lens]);
   const rows = useMemo(() => withScreens(threadRows(shown, worked, unreadFrom, undefined, tagFor), screenTimes, chat.hasOlder), [shown, worked, unreadFrom, tagFor, screenTimes, chat.hasOlder]);
   const newestFirst = useMemo(() => [...rows].reverse(), [rows]);
   // An ask's buttons answer only while nothing of yours came after it.
