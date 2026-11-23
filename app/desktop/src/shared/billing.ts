@@ -229,6 +229,10 @@ export const planTerms = (offer: BillingState["plans"][number], currency: string
   `${money(offer.priceCents, currency)} a month, ${money(offer.creditsCents, currency)} of computer time included` +
   (offer.agentsAtOnce === undefined ? "" : `, ${offer.agentsAtOnce} agents at once`);
 
+/** A plan's price as a pick list shows it beside its name: "$50 a month · 100 agents at once". */
+export const planChoice = (offer: BillingState["plans"][number], currency: string): string =>
+  `${money(offer.priceCents, currency)} a month` + (offer.agentsAtOnce === undefined ? "" : ` · ${offer.agentsAtOnce} agents at once`);
+
 /** A plan offered, as a choice reads: "Team · $50 a month, $60 of computer time included, 100 agents at once". */
 export const offerWord = (offer: BillingState["plans"][number], currency: string): string => `${offer.name} · ${planTerms(offer, currency)}`;
 
