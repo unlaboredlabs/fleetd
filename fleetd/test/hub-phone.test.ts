@@ -6,7 +6,8 @@ import { afterEach, expect, test } from "bun:test";
 import { start as startBrowser } from "../src/hub/browser/loops.ts";
 import { get } from "../src/hub/browser/store.ts";
 import { start as startRoles } from "../src/hub/machine_roles/loops.ts";
-import { modelOf } from "../src/hub/machine_roles/phone.ts";
+import { asking, modelOf } from "../src/hub/machine_roles/phone.ts";
+import { prune } from "../src/hub/machine_roles/places.ts";
 import { type Envelope, sealAnswer, splitRaw } from "../src/node/mac_tool/protocol.ts";
 import { openSealed, publicKeyOf } from "../src/shared/sealed_box.ts";
 import { addMachine, addProject, caller, testHub, tick } from "./screens_helpers.ts";
@@ -175,6 +176,44 @@ test("a Mac still booting the next clone keeps the person first: the row stays s
   // Given up while it boots: the row goes, and the hub's next ask ends it on the Mac.
   expect(await t.tools.call(t.hub, human(), "screen_end", { waitId: id })).not.toHaveProperty("error");
   expect(await waitRow(id)).toBeUndefined();
+});
+
+test("minutes in the Mac's line keep the person's place from the prune, and a start that fails gives its simulator back", async () => {
+  setup();
+  const was = { ...asking };
+  Object.assign(asking, { everyMs: 20, keepMs: 10 });
+  try {
+    let asks = 0;
+    const mac = fakeMac((env) =>
+      env.step.step !== "sim_start"
+        ? { step: "sim_end", ended: true }
+        : ++asks === 1
+          ? { step: "sim_queued", place: 1, secs: null, why: "all 2 of the Mac's iOS simulators are in use by other agents" }
+          : { step: "sim_start", udid: "U1", device: "iPhone 17" },
+    );
+    const opened = await open({});
+    const { waitId, threadId } = opened.output!.waiting;
+    for (let i = 0; i < 50 && (await waitRow(waitId))?.stage !== "waiting"; i++) await tick();
+    // Three minutes in line: the place keeps up with the clock, so the prune leaves it and the Mac's report finds it.
+    t.clock.ms += 180_000;
+    const placeStart = () => t.hub.db.all<{ started_ms: number }>("SELECT started_ms FROM session_places WHERE origin_thread = ?1", [threadId])[0]?.started_ms;
+    for (let i = 0; i < 50 && placeStart() !== t.clock.ms; i++) await Bun.sleep(10);
+    t.hub.db.transaction((c) => prune(c, t.clock.ms));
+    expect(placeStart()).toBe(t.clock.ms);
+    const session = await yours(waitId, threadId);
+    expect(session.control).toBe("human");
+    expect(mac.steps.filter((e) => e.step.step === "sim_start")).toHaveLength(2);
+
+    // A start whose answer makes no sense fails, and the Mac is told to give back anything it lent for it.
+    const bad = fakeMac((env) => (env.step.step === "sim_start" ? { step: "put", bytes: 0 } : { step: "sim_end", ended: false }));
+    const failing = await open({});
+    for (let i = 0; i < 50 && (await waitRow(failing.output!.waiting.waitId))?.stage !== "failed"; i++) await tick();
+    expect(await waitRow(failing.output!.waiting.waitId)).toMatchObject({ stage: "failed" });
+    expect(bad.steps.map((e) => e.step.step)).toEqual(["sim_start", "sim_end"]);
+    expect(bad.steps[1]!.thread).toBe(bad.steps[0]!.thread);
+  } finally {
+    Object.assign(asking, was);
+  }
 });
 
 test("screen_control is a person's, for a screen they control, with a control it has", async () => {

@@ -91,7 +91,8 @@ test("takeover goes to the node and changes only once it reports", async () => {
   await tick();
   expect(t.link.sent("devbox").at(-1)).toEqual({ t: "browser_control", sessionId: S1, control: "human", by: "human:phone" });
   await t.calls.call(who, report("live", { control: "human" }));
-  expect(await call).toMatchObject({ output: { session: { control: "human" } } });
+  // As browser_sessions reads it, where it runs included: the app writes it over its list.
+  expect(await call).toMatchObject({ output: { session: { control: "human", machineId: "devbox" } } });
   expect(get(t.hub, S1)?.takeoverReason).toBeUndefined();
   // An agent's key can't take a screen over.
   expect(await t.tools.call(t.hub, caller("operate"), "browser_control", { sessionId: S1, control: "human" })).toMatchObject({

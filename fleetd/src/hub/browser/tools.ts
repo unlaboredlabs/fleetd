@@ -93,7 +93,8 @@ async function browserControl(hub: Hub, caller: Caller, input: { sessionId: stri
     if (next === "handing_back") void tellHandedBack(hub, session, person(caller));
   }
   return {
-    session,
+    // As browser_sessions reads it (its `rtc` too): the app writes it over its list, and keeps its peer with it.
+    session: asRead(hub, session),
     next:
       next === "human"
         ? "You have control: send browser_input; hand it back with control agent."
