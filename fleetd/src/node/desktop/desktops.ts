@@ -15,10 +15,11 @@
 // agent's again.
 import type { BrowserControl, BrowserControlTo, BrowserSessionState } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
-import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+import type { BrowserCallFrame, BrowserControlFrame, BrowserInputFrame, BrowserRtcFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
 import { type Meta, type Recording, type RecordingStore, report, Steps } from "../browser/recording.ts";
 import { Scrub } from "../mask.ts";
 import { BoxDisplay, type DisplayHandle, type ScreenBox } from "../place/box_screens.ts";
+import type { PeerReport } from "./screen.ts";
 import { type DesktopCall, Session } from "./session.ts";
 import type { MakeEncoder } from "../screen/live.ts";
 
@@ -190,7 +191,7 @@ export class DesktopSessions {
         await display.drop();
         throw e;
       }
-      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, ...this.encodes() });
+      const session = new Session(display, x, { id, thread, cwd, purpose, secrets, kind: "linux_desktop", recording, steps: this.latest, rtcReport: this.rtcReport(id), ...this.encodes() });
       this.sessions.set(thread, session);
       this.displays.set(thread, display);
       session.open();
@@ -326,12 +327,37 @@ export class DesktopSessions {
     if (!session) return false;
     if (!frame.on) session.setWatcher(undefined);
     else if (!session.watched()) {
-      session.setWatcher({ kbps: frame.kbps, video: frame.video === true, ...(frame.fps === undefined ? {} : { fps: frame.fps }), send: (f) => this.host.send({ t: "browser_frame", ...f }) });
+      session.setWatcher({
+        kbps: frame.kbps,
+        video: frame.video === true,
+        ...(frame.fps === undefined ? {} : { fps: frame.fps }),
+        ...(frame.relay === false ? { relay: false } : {}),
+        send: (f) => this.host.send({ t: "browser_frame", ...f }),
+      });
     } else {
-      session.setBudget(frame.kbps, frame.video === true, frame.fps);
+      session.setBudget(frame.kbps, frame.video === true, frame.fps, frame.relay === false ? false : undefined);
       if (frame.key) session.key();
     }
     return true;
+  }
+
+  /**
+   * The hub's `browser_rtc` for one of these sessions: an app's screen peer, answered by the picture where it is made
+   * (a box's: ../desktop/box_frames.ts), or its close. One whose screen is read here is told it can't have one, and its
+   * app stays on the socket. False when the id isn't one of these.
+   */
+  rtc(frame: BrowserRtcFrame): boolean {
+    const session = this.byId(frame.sessionId);
+    if (!session) return false;
+    if (!session.rtc(frame) && frame.offer !== undefined) {
+      this.host.send({ t: "browser_rtc", sessionId: frame.sessionId, peer: frame.peer, error: "this screen takes no peer here", closed: true });
+    }
+    return true;
+  }
+
+  /** Where a session's peers' answers and ends go: to the hub, in its id. */
+  protected rtcReport(id: string): (report: PeerReport) => void {
+    return (r) => this.host.send({ t: "browser_rtc", ...r, sessionId: id });
   }
 
   input(frame: BrowserInputFrame): boolean {
@@ -505,6 +531,7 @@ export class DesktopSessions {
       recording,
       steps: this.latest,
       resumed: { startedAt: snapshot.startedAt, seq: snapshot.seq, control: snapshot.control, ...(snapshot.note !== undefined ? { note: snapshot.note } : {}) },
+      rtcReport: this.rtcReport(snapshot.id),
       ...this.encodes(),
     });
     this.sessions.set(thread, session);

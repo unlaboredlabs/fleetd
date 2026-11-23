@@ -10,10 +10,13 @@
 // the first that sends the display's cookie: only a holder that may open the display takes its frames. It ends when
 // that connection does, or when none came within WAIT_MS. A next holder (DesktopSessions `adopt`) starts its own.
 //
-// Its wire (the holder's side: ./picture_link.ts) is a JSON line each way. Down: `watch` (the watchers' budget, whether they decode H.264 and their frame
-// rate; null for nobody), `key`, `control`, `videoJpeg` and `shot` (a screenshot, by its number). Up: `ready` once the
-// display answered (or `error` with why), `live` (a frame for the watchers, as the hub takes it), `video` (one for
-// the session's video) and `shot`'s answer.
+// Its wire (the holder's side: ./picture_link.ts) is a JSON line each way.
+// - Down: `watch` (the watchers' budget, whether they decode H.264, their frame rate and `relay`; null for nobody),
+//   `key`, `control`, `videoJpeg`, `shot` (a screenshot, by its number) and `rtc` (an app's screen peer, answered
+//   here by the node's own peers, ../rtc: its frames and input then go straight between the box and the app).
+// - Up: `ready` once the display answered (or `error` with why), `live` (a frame for the watchers on the hub's
+//   socket, none while every watcher has a peer), `video` (one for the session's video), `shot`'s answer and `rtc`
+//   (a peer's answer or end).
 //
 // Box side (docs/CONTRIBUTING.md "The package"): the binary the box already runs, never a copy of it.
 import { existsSync } from "node:fs";
@@ -25,6 +28,11 @@ import { liveEncoder } from "../screen/x264.ts";
 import { lines, send } from "./picture_link.ts";
 import type { LiveFrame, Lent, VideoKind, Watching } from "./screen.ts";
 import { Session } from "./session.ts";
+import { Peers } from "../rtc/index.ts";
+import type { BrowserRtcFrame, BrowserWatchFrame } from "../../shared/screens_wire.ts";
+
+/** A holder's connection's session, its peers, and how a watch frame reaches the session. */
+type Served = { session: Session; peers: Peers; watchAs: (frame: BrowserWatchFrame) => void };
 import { X } from "./x11.ts";
 
 /** Where the box's template keeps an ffmpeg with x264 (sandbox/image/Dockerfile): without one, frames are JPEG. */
@@ -39,7 +47,16 @@ const USAGE = "usage: fleetd box-frames --display :N --port P --video h264|jpeg|
 
 /** What `serve` needs: the display's socket and cookie, where it listens (a port on the loopback, or a socket file: a
  * test's), what the video takes, and an ffmpeg with x264 (absent: JPEG only). */
-export type ServeOptions = { socket: string; cookie: Uint8Array; listen: number | string; video: VideoKind; ffmpeg?: string; waitMs?: number };
+export type ServeOptions = {
+  socket: string;
+  cookie: Uint8Array;
+  listen: number | string;
+  video: VideoKind;
+  ffmpeg?: string;
+  waitMs?: number;
+  /** How a screen peer's connection is made: a test's meets on this machine's own addresses, with no STUN. */
+  peer?: ConstructorParameters<typeof Peers>[1];
+};
 
 /** The box's side: listens for its holder, and serves it the display's picture until its connection ends. Resolves
  * then, or with nobody once WAIT_MS passed. */
@@ -52,10 +69,11 @@ export async function serve(o: ServeOptions): Promise<void> {
   const server = createServer((s) => {
     if (taken) return void s.destroy();
     let authed = false;
-    let session: Session | undefined;
+    let session: Served | undefined;
     const end = () => {
       if (!authed) return;
-      void session?.close().finally(() => done.resolve());
+      session?.peers.closeAll();
+      void session?.session.close().finally(() => done.resolve());
       if (!session) done.resolve();
     };
     s.on("close", end);
@@ -68,7 +86,7 @@ export async function serve(o: ServeOptions): Promise<void> {
         taken = true;
         clearTimeout(nobody);
         server.close();
-        void open(s).then(
+        void open(s, typeof line.session === "string" && line.session ? line.session : "box-frames").then(
           (made) => {
             session = made;
             if (s.destroyed) end();
@@ -93,8 +111,8 @@ export async function serve(o: ServeOptions): Promise<void> {
     else server.listen(o.listen, "127.0.0.1", () => resolve());
   });
 
-  /** The display, connected, and a session reading it whose frames go to `s`. */
-  async function open(s: Socket): Promise<Session> {
+  /** The display, connected, and a session reading it whose frames go to `s` and to its peers. */
+  async function open(s: Socket, id: string): Promise<Served> {
     const x = await X.connect(o.socket, o.cookie);
     const video: Video = {
       frame: (jpeg) => {
@@ -120,8 +138,8 @@ export async function serve(o: ServeOptions): Promise<void> {
         : { append: () => {}, video, filled: () => {}, end: async () => ({ files: [] }) };
     // The display's apps are the holder's to launch; this one only reads it.
     const lent: Lent = { launch: () => Promise.reject(new Error("box-frames only reads the display")), drop: async () => {} };
-    const session = new Session(lent, x, {
-      id: "box-frames",
+    const session: Session = new Session(lent, x, {
+      id,
       thread: "",
       cwd: "/",
       purpose: "",
@@ -131,19 +149,49 @@ export async function serve(o: ServeOptions): Promise<void> {
       ...(o.ffmpeg ? { encoder: liveEncoder(async () => o.ffmpeg!) } : {}),
       load: machineLoad,
     });
+    // The app's peers are answered here, next to the picture: their frames go straight from the box, and only the
+    // watchers on the hub's socket get them through the holder (`relay`).
+    const peers = new Peers(
+      {
+        watch: (frame) => watchAs(frame),
+        input: (_id, input) => session.queueInput(input),
+        report: (r) => send(s, { rtc: r }),
+      },
+      o.peer,
+    );
+    /** A watch frame, the hub's as the peers passed it on, or the peers' own (a key, their budget). */
+    const watchAs = (f: BrowserWatchFrame) => {
+      if (!f.on) return session.setWatcher(undefined);
+      const fps = f.fps === undefined ? {} : { fps: f.fps };
+      if (!session.watched()) session.setWatcher({ kbps: f.kbps, video: f.video === true, ...fps, send: (frame) => peers.frame(frame) && send(s, { live: liveOf(frame) }) });
+      else session.setBudget(f.kbps, f.video === true, f.fps);
+      if (f.key) session.key();
+    };
     session.open();
     send(s, { ready: true, h264: o.ffmpeg !== undefined });
-    return session;
+    return { session, peers, watchAs };
   }
 
   /** One line of the holder's. */
-  function command(s: Socket, session: Session, line: Record<string, unknown>): void {
+  function command(s: Socket, { session, peers, watchAs }: Served, line: Record<string, unknown>): void {
     if ("watch" in line) {
       const w = line.watch as Watching | null;
-      const watching = w ? { kbps: typeof w.kbps === "number" ? w.kbps : undefined, video: w.video === true, ...(typeof w.fps === "number" ? { fps: w.fps } : {}) } : undefined;
-      if (!watching) return session.setWatcher(undefined);
-      if (!session.watched()) return session.setWatcher({ ...watching, send: (f) => send(s, { live: liveOf(f) }) });
-      return session.setBudget(watching.kbps, watching.video, watching.fps);
+      const frame: BrowserWatchFrame = w
+        ? {
+            sessionId: session.id,
+            on: true,
+            ...(typeof w.kbps === "number" ? { kbps: w.kbps } : {}),
+            video: w.video === true,
+            ...(typeof w.fps === "number" ? { fps: w.fps } : {}),
+            ...(w.relay === false ? { relay: false } : {}),
+          }
+        : { sessionId: session.id, on: false };
+      return watchAs(peers.fromHub(frame));
+    }
+    if (typeof line.rtc === "object" && line.rtc !== null) {
+      const r = line.rtc as Omit<BrowserRtcFrame, "sessionId">;
+      if (typeof r.peer === "string") void peers.rtc({ ...r, sessionId: session.id });
+      return;
     }
     if (line.key) return session.key();
     if (typeof line.control === "string") return session.setControl(line.control as BrowserControl, "holder");
@@ -163,6 +211,7 @@ export async function serve(o: ServeOptions): Promise<void> {
 /** A frame of the box's session as the holder's watchers take it: the picture alone. */
 function liveOf(f: BrowserFrame): LiveFrame {
   return {
+    seq: f.seq,
     width: f.width,
     height: f.height,
     ...(f.jpegB64 !== undefined ? { jpegB64: f.jpegB64 } : {}),
