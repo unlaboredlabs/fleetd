@@ -610,7 +610,10 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   screens.input(tap("released"));
   await Bun.sleep(20);
   expect(commands).toEqual([]);
+  const still = frames.length;
   screens.control({ sessionId: screen.sessionId, control: "human", by: "human:laptop" } as never);
+  // The still screen says so in a frame at once: a window's peer takes the person's input only once a frame does.
+  await until(() => frames.slice(still).some((f) => f.control === "human"));
   const control = controlPath(home.dir, simKey("T1"));
   expect(existsSync(control)).toBe(true);
   expect(sims.env("T1")!.find(([k]) => k === "FLEETD_DEVICE_CONTROL")?.[1]).toBe(control);
@@ -620,7 +623,9 @@ test("a simulator lent with the hub's screen is a screen of the agent's: watched
   expect(commands[0]).toEqual(["press", "100", "200"]);
   expect(calls.at(-1)).toMatchObject({ op: "browser_session", args: { control: "human" } });
   // Handed back: the agent's next agent-device job gives it the simulator again.
+  const held = frames.length;
   screens.control({ sessionId: screen.sessionId, control: "agent", by: "human:laptop" } as never);
+  await until(() => frames.slice(held).some((f) => f.control === "handing_back"));
   expect(existsSync(control)).toBe(false);
   expect(screens.of("T1")!.control()).toBe("handing_back");
   sims.ran("T1", "agent-device snapshot", true, 40);
