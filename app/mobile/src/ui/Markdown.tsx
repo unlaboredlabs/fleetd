@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Linking, PixelRatio, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type TextLayoutEvent, type TextStyle } from "react-native";
 import { fenceView, parseMarkdown, UNSHOWN, type Block, type Inline } from "../markdown";
-import { bubble, fitKey, fitWidth } from "../bubble";
+import { bubble, fitKey, fitWidth, wordsMax } from "../bubble";
 import { columnWidths, isNumeric, longestWord, type Measured } from "../table";
 import { mono, space, type, useTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -41,7 +41,7 @@ export function Markdown({ text, ink, onAccent = false, fit = false, streaming =
     widths[i] = Math.max(0, ...e.nativeEvent.lines.map((l) => l.width));
     if (blocks.every((_, k) => widths[k] !== undefined)) setFitted({ key, width: fitWidth(widths, PixelRatio.get()) });
   };
-  const width = fits && fitted?.key === key ? fitted.width : undefined;
+  const width = fits && fitted?.key === key ? Math.min(fitted.width, wordsMax(room)) : undefined;
   return (
     // A new key mounts the words again, so they lay out and report their lines: a change to onTextLayout alone doesn't.
     <View key={fits ? `fit:${fitKey(fontScale, room, "")}` : "whole"} style={[styles.blocks, width !== undefined && { width }]}>

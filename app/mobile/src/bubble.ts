@@ -45,6 +45,13 @@ export const fitKey = (fontScale: number, room: number, text: string): string =>
 /** The widest a bubble draws on a screen `width` points wide. */
 export const bubbleMax = (width: number): number => Math.round(width * bubble.maxShare);
 
+/**
+ * The widest a bubble's words draw on a screen `width` points wide: inside its widest bubble. Fitted words never draw
+ * wider, whatever their lines measured: words measured an instant before the Duo folded closed, at the open panel's
+ * width, ran out past the narrower bubble.
+ */
+export const wordsMax = (width: number): number => bubbleMax(width) - 2 * bubble.padX;
+
 /** A picture's size on a screen `screen` points wide, from its width over its height. */
 export const photoSize = (screen: number, aspect: number): { width: number; height: number } => {
   const width = Math.round(screen * bubble.photo.share * 3) / 3;

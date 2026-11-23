@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bubble, bubbleMax, fitKey, fitWidth, jumbo, photoSize } from "./bubble";
+import { bubble, bubbleMax, fitKey, fitWidth, jumbo, photoSize, wordsMax } from "./bubble";
 
 describe("bubble", () => {
   // Measured from Messages in the iOS 26 simulator (iPhone 17 Pro, 402 pt wide, 3x shots), on Body's 22 pt leading
@@ -33,6 +33,12 @@ describe("bubble", () => {
     expect(fitKey(1, 402, words)).not.toBe(fitKey(1.2, 402, words));
     expect(fitKey(1, 402, words)).not.toBe(fitKey(1, 402, `${words}!`));
     expect(fitKey(1, 402, words)).toBe(fitKey(1, 402, words));
+  });
+
+  it("never draws fitted words wider than the widest bubble leaves them, even measured at a wider room", () => {
+    // The Duo's folded panel (376 pt beside its strip): a line measured at the open panel's room is cut to its bubble's.
+    expect(wordsMax(376)).toBe(bubbleMax(376) - 2 * bubble.padX);
+    expect(Math.min(fitWidth([412.5], 3), wordsMax(376))).toBe(235);
   });
 
   it("caps a bubble's width at a share of the screen", () => {
