@@ -16,7 +16,9 @@ const TEXT_MAX_BYTES = 300;
 /** One frame of the screen, as JPEG: `seq` 1, 2, … per stream, `atMs` from the session's start. A screen that streams
  * H.264 (an emulator's own, ./scrcpy.ts; an iOS simulator's, ../screen/mac_frames.ts) sends it as `video` (Annex B, a
  * keyframe with its parameter sets first), its `jpeg` empty. */
-export type Frame = { seq: number; jpeg: Uint8Array; width: number; height: number; atMs: number; video?: { data: Uint8Array; key: boolean } };
+/** A screen's frame: `width` and `height` are the screen's own (input comes in them); an H.264 frame's `size` is its
+ * picture's, where that is smaller. */
+export type Frame = { seq: number; jpeg: Uint8Array; width: number; height: number; atMs: number; video?: { data: Uint8Array; key: boolean; size?: [number, number] } };
 
 /**
  * What a person does to a device, in the last frame's pixels. The app's mouse maps to one finger (a press is `down`, a

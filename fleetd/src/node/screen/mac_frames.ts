@@ -1,7 +1,8 @@
 // A screen of the agents' Mac as live frames, from fleetd-frames (./frames.swift): an iOS simulator's framebuffer, or
 // the Mac's own display, each read only when it changes and sent as JPEG or as H.264 from the Mac's hardware encoder.
 // The node builds the helper with the Mac's own swiftc the first time a screen needs it (Xcode is there for the
-// simulators anyway), keyed by its source's hash, and runs one per watched screen while someone watches it.
+// simulators anyway), keyed by its source's hash, and runs one per screen: a simulator's from its start (its stream is
+// its video too), the Mac's own while someone watches it.
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -67,6 +68,19 @@ export class FrameReader {
 }
 
 export type { Command, StreamFrame, StreamRun } from "./live.ts";
+
+/** The display a simulator's stream shows, as its helper says it (`display <name> <orientation> <width> <height>`): its
+ * CoreSimulator name (`primary`, an iPhone Duo's inner `primary-1`), how its UI is turned (UIDeviceOrientation: 1
+ * portrait, 2 upside down, 3 landscape left, 4 landscape right, 0 unsaid) and its upright size in pixels. */
+export type Display = { name: string; orientation: number; width: number; height: number };
+
+/** A `display` word's display. */
+export function displayOf(word: string): Display | undefined {
+  const [w, name, orientation, width, height] = word.split(" ");
+  if (w !== "display" || name === undefined) return undefined;
+  const n = (v: string | undefined) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return { name: name === "-" ? "" : name, orientation: n(orientation), width: n(width), height: n(height) };
+}
 
 /** Where the helper is built, for its source as it is in this build. */
 export function helperPath(dir: string, text: string = readFileSync(source, "utf8")): string {
@@ -164,13 +178,15 @@ export const H264_FPS = HARDWARE_FPS;
  * screen (`sim <set> <udid>`, `screen`). The helper is built into `dir` first if it isn't there. A simulator's also
  * takes a person's input once the helper says it can (`input`).
  */
-export async function stream(dir: string, args: string[], onFrame: (frame: StreamFrame) => void): Promise<StreamRun> {
+export async function stream(dir: string, args: string[], onFrame: (frame: StreamFrame) => void, onDisplay?: (display: Display) => void): Promise<StreamRun> {
   let input = false;
   // Only a simulator's helper says whether it takes input.
   let answered = args[0] !== "sim";
   const helper = new MacFrames(await ensureHelper(dir), args, (frame) => {
     if (frame.kind !== "word") return onFrame(frame as StreamFrame);
     const word = new TextDecoder().decode(frame.data);
+    const display = displayOf(word);
+    if (display) return onDisplay?.(display);
     input = word === "input";
     answered = true;
     if (word.startsWith("noinput")) console.warn(`iOS input through agent-device: ${word.slice("noinput ".length)}`);
@@ -182,7 +198,7 @@ export async function stream(dir: string, args: string[], onFrame: (frame: Strea
     still: () => helper.tell("still"),
     tell: (command: Command) => {
       helper.tell(command);
-      if (command === "h264" || command === "jpeg") helper.tell(`fps ${command === "h264" ? H264_FPS : JPEG_FPS}`);
+      if (command === "h264" || command === "both" || command === "jpeg") helper.tell(`fps ${command === "jpeg" ? JPEG_FPS : H264_FPS}`);
     },
     stop: () => helper.stop(),
     ended: helper.ended,

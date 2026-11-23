@@ -7,14 +7,16 @@
 // The hub made the screen with the step that lent the simulator (hub/mac_tool: a place on the Mac in the agent's name,
 // its key and session id in the `mac_call`). The Mac reports it under that key, as a machine reports a session it
 // hosts for an agent elsewhere, and sends its recording the same way (node/browser/record.ts): its action log (the
-// agent's agent-device jobs, a person's takeover, hand-back and commands) and its video, `simctl io recordVideo`'s,
-// from the first time someone watches until it ends. Nobody watching: no screenshots, no video. The screen ends with
-// its simulator (`mac sim end`, or 30 minutes without a step).
+// agent's agent-device jobs, a person's takeover, hand-back and commands, and each change of the display shown: a
+// `device` step) and its video: the very H.264 stream the live view shows (fleetd-frames', ../../screen/mac_frames.ts),
+// upright as the simulator's UI is and of the panel lit, written as it comes into a fragmented MP4 (../../screen/mp4.ts)
+// from the screen's start to its end, watched or not. So a replay is what the live view was, frame for frame, on the
+// action log's clock. The screen ends with its simulator (`mac sim end`, or 30 minutes without a step).
 //
-// A node that stops lets its screens go without ending them (`letGo`): the simulator, its video's recordVideo and a
-// person's control file run on, and the next node opens each again under the same ids (`resume`), its log and video
-// going on where they were.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+// A node that stops lets its screens go without ending them (`letGo`): the simulator and a person's control file run
+// on, and the next node opens each again under the same ids (`resume`), its log going on and its video too, in the same
+// file from its last whole frame (the seconds the node was down hold the last picture).
+import { closeSync, existsSync, ftruncateSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { BrowserAction, BrowserControl, BrowserControlTo, BrowserInput, BrowserSessionState } from "../../../shared/contracts.ts";
 import {
@@ -31,148 +33,37 @@ import { appendAction, files as recordedFiles, GIVE_UP_MS, giveUp, type HubCall,
 import { mkdirPrivate } from "../../config.ts";
 import { deviceInput, Pump } from "../live.ts";
 import type { Frame, Input } from "../scrcpy.ts";
-import { ensureHelper, stream } from "../../screen/mac_frames.ts";
+import { type Display, ensureHelper, stream } from "../../screen/mac_frames.ts";
+import { Mp4Writer, resumeAt } from "../../screen/mp4.ts";
 import { Hands, type Live, type Ran, type Runner, Shooter, type Shoot } from "./screen.ts";
-import { recordingStarted, type Simctl } from "./simctl.ts";
+import type { Simctl } from "./simctl.ts";
 import type { SimDevice } from "./controls.ts";
 import { iosDir } from "./wrapper.ts";
 
 /** The start of a result's text the action log keeps. */
 const RESULT_CHARS = 500;
-/** recordVideo finishes its file within moments of SIGINT; this allows a loaded Mac. */
-const FINISH_VIDEO = 20_000;
-/** recordVideo says it started within a second or two; a screen that ends sooner waits this long for it at most. */
-const START_VIDEO = 15_000;
-/** How often the recording's file is looked at, to see it has started. */
-const FILE_POLL = 250;
-
 /** Where the Mac keeps simulator screens' recordings until the hub has them. */
 export const recordingsDir = (home: string) => join(iosDir(home), "recordings");
+
+/** A UIDeviceOrientation as a `device` step names it. */
+export function orientationName(orientation: number): "portrait" | "portrait_upside_down" | "landscape_left" | "landscape_right" {
+  return orientation === 2 ? "portrait_upside_down" : orientation === 3 ? "landscape_left" : orientation === 4 ? "landscape_right" : "portrait";
+}
 
 /** A screen's name in Screens: the device without its runtime, and the agent ("iPhone 17 · T12"). */
 export const screenName = (device: string, agent: string) => `${device.split(" on ")[0]} · ${agent}`;
 
-/**
- * A running recording of the simulator's screen: `finish` stops it and says why there is no video, if there is none.
- * `pid`: its recordVideo's, which runs on past the node, for the next node to finish (`resumeRecording`).
- */
-export type Recording = { finish(): Promise<string | undefined>; pid?: number };
-
-/** What a screen does to its simulator: a screenshot, a recording, an agent-device command. Simctl's, or a test's. */
+/** What a screen does to its simulator: a screenshot, a stream, an agent-device command. Simctl's, or a test's. */
 export type SimTools = {
   /** `display`: the lit panel of a simulator with two (controls.ts `SimDevice.display`). */
   shoot(udid: string, display?: string): Promise<Uint8Array>;
-  /** The screen as a stream of frames, where the Mac can make one. */
+  /** The screen as a stream of frames, where the Mac can make one: the live view and the video. */
   live?: (udid: string) => Live;
-  /** `display` as `shoot`'s: a Duo's video is of the panel lit when it starts. */
-  record(udid: string, path: string, display?: string): Recording;
-  /** The recording the node before started, by its recordVideo's pid, while it still runs. */
-  resume?: (pid: number, path: string) => Recording | undefined;
   run?: (runner: Runner, args: string[]) => Promise<Ran>;
 };
 
-/** Whether the recording's file, `before` and `now` (undefined while it isn't there), shows it recording. */
-export const fileGrowing = (before: number | undefined, now: number | undefined) => before !== undefined && now !== undefined && now > before && now > 0;
-
-const sizeOf = (path: string) => {
-  try {
-    return statSync(path).size;
-  } catch {
-    return undefined;
-  }
-};
-
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * `simctl io recordVideo` (`argv`), in a process group of its own so SIGINT reaches simctl through xcrun, and so it
- * records on when the node stops. Its output goes to a file beside the video, never a pipe: simctl writing to a pipe
- * no node reads any more would die of SIGPIPE before it finished the video. It is stopped only once it has started: a
- * SIGINT before then kills it with no file. Started is when it says "Recording started", or else when its file is
- * there and growing.
- */
-export function startRecording(argv: string[], path: string, saysStarted: (line: string) => boolean): Recording {
-  mkdirSync(dirname(path), { recursive: true });
-  const log = `${path}.log`;
-  const fd = openSync(log, "w");
-  let child: ReturnType<typeof Bun.spawn>;
-  try {
-    child = Bun.spawn(argv, { stdin: "ignore", stdout: fd, stderr: fd, detached: true });
-  } finally {
-    closeSync(fd);
-  }
-  let exited = false;
-  void child.exited.then(() => (exited = true));
-  let started = false;
-  let before: number | undefined;
-  const poll = setInterval(() => {
-    const now = sizeOf(path);
-    if (fileGrowing(before, now)) started = true;
-    before = now;
-    try {
-      if (readFileSync(log, "utf8").split("\n").some(saysStarted)) started = true;
-    } catch {
-      // Not written yet.
-    }
-    if (started) clearInterval(poll);
-  }, FILE_POLL);
-  return recordingOf(child.pid, path, () => started, () => exited, () => clearInterval(poll));
-}
-
-/**
- * The recordVideo a stopped node left recording into `path`, by its pid: only while that pid is still a recordVideo
- * of `path` (`command` reads a pid's command line), not another process given the pid since.
- */
-export function resumeRecording(pid: number, path: string, command: (pid: number) => string | undefined = commandOf): Recording | undefined {
-  const line = alive(pid) ? command(pid) : undefined;
-  if (!line?.includes("recordVideo") || !line.includes(path)) return undefined;
-  return recordingOf(pid, path, () => true, () => !alive(pid));
-}
-
-/** A pid's command line, as ps prints it. */
-function commandOf(pid: number): string | undefined {
-  const out = Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-  return out.success ? out.stdout.toString().trim() : undefined;
-}
-
-/** Finishing the recordVideo `pid` heads the group of: SIGINT once it has `started`, and its file once it is `gone`. */
-function recordingOf(pid: number, path: string, started: () => boolean, gone: () => boolean, done = () => {}): Recording {
-  return {
-    pid,
-    async finish() {
-      const deadline = Date.now() + START_VIDEO;
-      while (!started() && !gone() && Date.now() < deadline) await Bun.sleep(FILE_POLL);
-      done();
-      try {
-        process.kill(-pid, "SIGINT");
-      } catch {
-        // Gone already.
-      }
-      const until = Date.now() + FINISH_VIDEO;
-      while (!gone() && Date.now() < until) await Bun.sleep(FILE_POLL);
-      if (!gone()) {
-        try {
-          process.kill(-pid, "SIGKILL");
-        } catch {
-          // Gone meanwhile.
-        }
-        return "simctl did not finish the video in 20 s";
-      }
-      if ((sizeOf(path) ?? 0) > 0) return undefined;
-      return started() ? "simctl wrote no video" : "simctl's recording never started";
-    },
-  };
-}
-
-/** The tools on the Mac's own simulators: fleetd-frames' stream (built beside `shots`), simctl's screenshot (through a
- * file in `shots`) and recordVideo. */
+/** The tools on the Mac's own simulators: fleetd-frames' stream (built beside `shots`) and simctl's screenshot (through
+ * a file in `shots`). */
 export function simctlTools(simctl: Simctl, shots: string): SimTools {
   const frames = join(dirname(shots), "frames");
   // Built as the Mac's node starts (~10 s, once per source), not as the first person watches.
@@ -180,20 +71,13 @@ export function simctlTools(simctl: Simctl, shots: string): SimTools {
     void ensureHelper(frames).catch((e: Error) => console.warn(`iOS live view: screenshots until fleetd-frames builds: ${e.message}`));
   }
   return {
-    live: (udid) => (onFrame) => stream(frames, ["sim", simctl.set, udid], onFrame),
+    live: (udid) => (onFrame, onDisplay) => stream(frames, ["sim", simctl.set, udid], onFrame, onDisplay),
     async shoot(udid, display) {
       mkdirSync(shots, { recursive: true });
       const to = join(shots, `${udid}.jpg`);
       await simctl.screenshot(udid, to, display);
       return new Uint8Array(await Bun.file(to).arrayBuffer());
     },
-    record: (udid, path, display) =>
-      startRecording(
-        simctl.argv(["io", udid, "recordVideo", "--codec=h264", ...(display ? [`--display=${display}`] : []), "--force", path]),
-        path,
-        recordingStarted,
-      ),
-    resume: (pid, path) => resumeRecording(pid, path),
   };
 }
 
@@ -216,15 +100,16 @@ export type Opened = {
   steps: Steps;
   /** Told when what the next node needs to resume the screen changes (its video started). */
   changed?: () => void;
-  /** A screen the node before left (SimScreens `resume`): when it started, and its video, still recording. */
-  resumed?: { startedAt: string; recording?: Recording };
+  /** A screen the node before left (SimScreens `resume`): when it started. */
+  resumed?: { startedAt: string };
   /** Its device controls (controls.ts), and its orientation, fold and appearance as they last went. */
   dev?: SimDevice;
   /** Who it is for in its name, when not the agent: a person's own simulator ("iPhone Duo · Ada"). */
   label?: string;
 };
 
-/** What the next node needs to open a screen again (SimScreens `resume`), kept with its simulator (sims.ts). */
+/** What the next node needs to open a screen again (SimScreens `resume`), kept with its simulator (sims.ts). `video`:
+ * the pid of the `simctl io recordVideo` a node before this one's version recorded with. */
 export type KeptScreen = { sessionId: string; hostKey: string; startedAt: string; video?: number };
 
 /** One simulator's screen. */
@@ -245,7 +130,10 @@ export class SimScreen {
   private readonly shooter: Shooter;
   private readonly hands: Hands;
   private readonly watchers = new Set<(frame: Frame) => void>();
-  private recording: Recording | undefined;
+  /** The video, while the screen streams into it; its file, open for appending. */
+  private video: { writer: Mp4Writer; fd: number } | undefined;
+  /** The display last shown, as fleetd-frames said it: a change is a `device` step. */
+  private shownDisplay: string | undefined;
   private controlNow: BrowserControl = "agent";
   private noteText: string | undefined;
   private seq = 0;
@@ -272,17 +160,23 @@ export class SimScreen {
     // A resumed screen's log and video go on from its start, as the node before counted it.
     this.start = performance.now() - (resumed ? Math.max(Date.now() - Date.parse(resumed.startedAt), 0) : 0);
     if (resumed) {
-      this.recording = resumed.recording;
       this.seq = logged(this.dir);
       // A person who had taken it over still has it: the control file ran on with the agent's agent-device held back.
       if (existsSync(this.controlFile)) this.controlNow = "human";
     }
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.writeMeta();
+    const live = tools.live?.(this.udid);
+    if (live) this.openVideo(resumed !== undefined);
+    else this.setNote("no video: this Mac can't stream the simulator's screen");
     const shoot: Shoot = () => tools.shoot(this.udid, this.dev?.display());
-    // The stream follows a foldable's lit panel by itself (fleetd-frames shows the panel whose framebuffer changed last);
-    // a screenshot names it.
-    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, tools.live?.(this.udid));
+    // The stream shows the panel the device's pose lights (controls.ts `display`), else the one whose framebuffer
+    // changed last; a screenshot names it.
+    this.shooter = new Shooter(shoot, this.start, () => this.watchers.size > 0, (frame) => this.frame(frame), Bun.sleep, live, {
+      keep: () => this.video !== undefined,
+      panel: () => this.dev?.display(),
+      onDisplay: (d) => this.displayed(d),
+    });
     this.hands = new Hands(
       opened.runner,
       opened.scale,
@@ -302,8 +196,48 @@ export class SimScreen {
 
   /** What the next node needs to open this screen again. */
   kept(): KeptScreen {
-    const video = this.recording?.pid;
-    return { sessionId: this.id, hostKey: this.hostKey, startedAt: this.startedAt, ...(video !== undefined ? { video } : {}) };
+    return { sessionId: this.id, hostKey: this.hostKey, startedAt: this.startedAt };
+  }
+
+  /** The video's file, new, or the one a stopped node left (`resumed`), from its last whole frame on. */
+  private openVideo(resumed: boolean): void {
+    const path = join(this.dir, RECORDING_FILES.video_mp4.name);
+    try {
+      const at = resumed ? resumeAt(path) : undefined;
+      const fd = openSync(path, at ? "r+" : "w", 0o600);
+      // A frame cut short by the stop is let go: the file goes on from the last whole one.
+      if (at) ftruncateSync(fd, at.bytes);
+      let offset = at?.bytes ?? 0;
+      const writer = new Mp4Writer((bytes) => {
+        offset += writeSync(fd, bytes, 0, bytes.length, offset);
+      }, at ? { sequence: at.sequence } : undefined);
+      this.video = { writer, fd };
+    } catch (e) {
+      this.setNote(`no video: ${(e as Error).message}`);
+    }
+  }
+
+  /** The display the stream shows changed (a turn, a fold): a `device` step, which a replay's frame follows. */
+  private displayed(d: Display): void {
+    const key = `${d.name} ${d.orientation} ${d.width}x${d.height}`;
+    if (key === this.shownDisplay) return;
+    this.shownDisplay = key;
+    const model = this.purpose.split(" · ")[0];
+    const fold = this.dev?.report().fold;
+    this.step("device", { model, panel: d.name, orientation: orientationName(d.orientation), width: d.width, height: d.height, ...(fold ? { fold } : {}) }, true, undefined, 0);
+  }
+
+  /** The video's last frame, shown until now, and its file closed. */
+  private closeVideo(): void {
+    const video = this.video;
+    if (!video) return;
+    this.video = undefined;
+    try {
+      video.writer.end(this.offsetMs());
+      closeSync(video.fd);
+    } catch (e) {
+      this.setNote(`no video: ${(e as Error).message}`);
+    }
   }
 
   note(): string | undefined {
@@ -338,6 +272,14 @@ export class SimScreen {
 
   private frame(frame: Frame): void {
     if (this.closed) return;
+    if (frame.video && this.video) {
+      try {
+        this.video.writer.frame({ data: frame.video.data, key: frame.video.key, atMs: frame.atMs, size: frame.video.size ?? [frame.width, frame.height] });
+      } catch (e) {
+        console.warn(`iOS screen ${this.id}: the video stopped: ${(e as Error).message}`);
+        this.closeVideo();
+      }
+    }
     // A new watcher starts from a whole picture: an H.264 frame alone is none.
     if (!frame.video) this.newest = frame;
     for (const watcher of this.watchers) watcher(frame);
@@ -353,29 +295,26 @@ export class SimScreen {
     this.shooter.key();
   }
 
-  /**
-   * Each new frame of the screen to `fn` (the newest so far at once), until the returned function is called. The first
-   * watcher starts the video, which runs until the screen ends.
-   */
+  /** Each new frame of the screen to `fn` (the newest so far at once), until the returned function is called. */
   watch(fn: (frame: Frame) => void): () => void {
     if (this.closed) return () => {};
     this.watchers.add(fn);
     if (this.newest) fn(this.newest);
-    if (!this.recording) {
-      try {
-        this.recording = this.tools.record(this.udid, join(this.dir, RECORDING_FILES.video_mp4.name), this.dev?.display());
-        this.changed();
-      } catch (e) {
-        this.recording = { finish: async () => undefined };
-        this.setNote(`no video: ${(e as Error).message}`);
-      }
-    }
     this.shooter.run();
     return () => {
       this.watchers.delete(fn);
-      // Nobody watches: the next watcher starts from a fresh screenshot.
-      if (this.watchers.size === 0) this.newest = undefined;
+      // Nobody watches: the next watcher starts from a fresh screenshot, and the stream goes on for the video alone.
+      if (this.watchers.size === 0) {
+        this.newest = undefined;
+        this.shooter.refresh();
+      }
     };
+  }
+
+  /** The device's pose or orientation changed (a control ran): the stream shows the panel it now lights (a panel
+   * folding away shows its own animation until then, never a stale picture of the other). */
+  posed(): void {
+    this.shooter.refresh();
   }
 
   watched(): boolean {
@@ -442,11 +381,7 @@ export class SimScreen {
     this.letGo();
     if (note !== undefined) this.setNote(note);
     rmSync(this.controlFile, { force: true });
-    const why = await this.recording?.finish();
-    if (why) {
-      rmSync(join(this.dir, RECORDING_FILES.video_mp4.name), { force: true });
-      this.setNote(`no video: ${why}`);
-    }
+    this.closeVideo();
     this.writeMeta(new Date().toISOString());
     return recordedFiles(this.dir);
   }
@@ -454,6 +389,7 @@ export class SimScreen {
   /** Stops the live view and a person's queue, and nothing else: the node stops, and the next resumes the screen. */
   letGo(): void {
     this.closed = true;
+    this.closeVideo();
     this.shooter.stop();
     this.hands.stop();
     this.watchers.clear();
@@ -526,13 +462,15 @@ export class SimScreens {
 
   /**
    * Opens again the screen a stopped node left (`kept`), of a simulator its agent still holds: the same ids and
-   * folder, its log going on, its video too while the recordVideo the node before started runs, and live again at the
-   * hub, which watches it again once the node links.
+   * folder, its log and its video going on, and live again at the hub, which watches it again once the node links.
    */
   resume(opened: Omit<Opened, "home" | "steps">, kept: KeptScreen): SimScreen | undefined {
     if (this.screens.has(opened.agent)) return this.screens.get(opened.agent);
+    // A node of the version before recorded with simctl's recordVideo, which runs on into the same file: it stops
+    // unfinished, and the video starts again from here.
     const video = join(recordingsDir(this.home), kept.sessionId, RECORDING_FILES.video_mp4.name);
-    const recording = kept.video !== undefined ? this.tools.resume?.(kept.video, video) : undefined;
+    const legacy = kept.video !== undefined && stopLegacyVideo(kept.video, video);
+    if (legacy) rmSync(video, { force: true });
     let screen: SimScreen;
     try {
       screen = new SimScreen(
@@ -542,7 +480,7 @@ export class SimScreens {
           home: this.home,
           steps: this.steps,
           changed: () => this.changed(),
-          resumed: { startedAt: kept.startedAt, ...(recording ? { recording } : {}) },
+          resumed: { startedAt: kept.startedAt },
         },
         this.tools,
       );
@@ -550,8 +488,7 @@ export class SimScreens {
       console.warn(`the iOS simulator ${opened.udid} has no screen: ${(e as Error).message}`);
       return undefined;
     }
-    // Its video ended with the node before: a new one starts at the next watch, over it.
-    if (kept.video !== undefined && !recording) screen.step("video_lost", {}, false, "the video's recording ended with the node's restart", 0);
+    if (legacy) screen.step("video_lost", {}, false, "the video before fleetd's update was let go", 0);
     this.screens.set(opened.agent, screen);
     screen.step("sim_resumed", { udid: opened.udid }, true, undefined, 0);
     void this.report(screen, "live");
@@ -676,6 +613,7 @@ export class SimScreens {
     try {
       const shot = await screen.dev.apply(frame.control, frame.value);
       screen.step("control", { control: frame.control, ...(frame.value === undefined ? {} : { value: frame.value }), by: frame.by }, true, undefined, Math.round(performance.now() - started));
+      screen.posed();
       // The device as it is now is kept for the next node (sims.ts).
       this.changed();
       await this.report(screen, "live");
@@ -696,6 +634,7 @@ export class SimScreens {
     const screen = this.screens.get(agent);
     if (!screen) return;
     screen.step("control", { control, by: "agent" }, ok, why, durationMs);
+    screen.posed();
     if (ok) void this.report(screen, "live");
   }
 
@@ -733,4 +672,24 @@ export class SimScreens {
     this.screens.clear();
     for (const screen of all) await screen.close().catch(() => {});
   }
+}
+
+/** Stops the `simctl io recordVideo` a node of the version before left recording into `path` (its process group, at
+ * once: it writes nothing more), only while `pid` is still that recordVideo (`command` reads a pid's command line), not
+ * another process given the pid since: whether one was running. */
+export function stopLegacyVideo(pid: number, path: string, command: (pid: number) => string | undefined = commandOf): boolean {
+  const line = command(pid);
+  if (!line?.includes("recordVideo") || !line.includes(path)) return false;
+  try {
+    process.kill(-pid, "SIGKILL");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A pid's command line, as ps prints it. */
+function commandOf(pid: number): string | undefined {
+  const out = Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+  return out.success ? out.stdout.toString().trim() : undefined;
 }

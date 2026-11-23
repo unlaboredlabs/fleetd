@@ -1,27 +1,34 @@
 // fleetd-frames: a screen of the agents' Mac as live frames, for the node (src/node/screen/mac_frames.ts). It reads
 // the screen only when it changes and sends each change as a JPEG or as H.264 from the Mac's hardware encoder
-// (VideoToolbox), at most `fps` a second.
+// (VideoToolbox), at most `fps` a second, a keyframe at least every KEY_SECONDS so a recording of it seeks.
 //
 //   fleetd-frames sim <device set> <udid>    an iOS simulator's display: its framebuffer's IOSurface (CoreSimulator,
-//                                            loaded at run time), looked at every few ms and read when its seed moves;
-//                                            of a foldable's two panels, the one that changed last (the lit one)
+//                                            loaded at run time), looked at every few ms and read when its seed moves,
+//                                            turned upright as its UI is (the framebuffer lies as the panel does: an
+//                                            iPhone Duo's open inner panel holds a landscape UI sideways); of a
+//                                            foldable's two panels, the one the node names (`panel`), else the one that
+//                                            changed last (the lit one)
 //   fleetd-frames screen                     the Mac's main display through ScreenCaptureKit, which sends a frame only
 //                                            when something on it changed
 //
 // Each frame on stdout: a 28-byte header, little-endian: kind (u8: 1 JPEG, 2 H.264 access unit, Annex B, 3 a word
 // from the helper in UTF-8), key (u8: 1 for a keyframe or a JPEG), 2 bytes unused, the screen's own size (u32 width,
-// u32 height: input coordinates are in it), the picture's size (u32, u32), the payload's length (u32), a sequence
-// number (u32); then the payload.
-// Commands on stdin, one a line: `jpeg` or `h264` (what frames are, from the next on; JPEG at first), `key` (the next
-// H.264 frame is a keyframe), `still` (a JPEG of the screen now, changed or not), `kbps <n>` (the H.264 bit rate),
-// `fps <n>`, `side <n>` (the picture's longer side at most). stdin closing ends it.
+// u32 height: input coordinates are in it; a simulator's upright), the picture's size (u32, u32), the payload's length
+// (u32), a sequence number (u32); then the payload.
+// Commands on stdin, one a line: `jpeg`, `h264` or `both` (what frames are, from the next on; JPEG at first; `both` is
+// H.264, and JPEG beside it at JPEG_FPS at most for watchers that take only JPEG), `key` (the next H.264 frame is a
+// keyframe), `still` (a JPEG of the screen now, changed or not), `kbps <n>` (the H.264 bit rate), `fps <n>`, `side <n>`
+// (the picture's longer side at most), `panel <name>` (a simulator's display to show, by CoreSimulator's name:
+// `primary`, an iPhone Duo's inner `primary-1`; `panel -` the one that changed last). stdin closing ends it.
 //
-// A simulator also takes a person's input straight into its HID service (dtuhidd), as Simulator.app's own does: a
-// word `input` says it can from then on, `noinput <why>` that it can't (the node then sends input through
-// agent-device). `touch down|move|up <x> <y> <edge>` moves one finger, in the screen's pixels (`edge` 0, or 1 top, 2
-// left, 3 bottom, 4 right for a touch that starts at that edge: the system's edge gestures; a down's holds until
-// its finger lifts), `keyboard <usage>
-// down|up` a key (a USB HID keyboard usage), `button home` presses the home button.
+// A simulator's helper says which display it shows, each time that changes: a word `display <name> <orientation>
+// <width> <height>` (UIDeviceOrientation: 1 portrait, 2 upside down, 3 landscape left, 4 landscape right; the upright
+// size in pixels). It also takes a person's input straight into the simulator's HID service (dtuhidd), as
+// Simulator.app's own does: a word `input` says it can from then on, `noinput <why>` that it can't (the node then sends
+// input through agent-device). `touch down|move|up <x> <y> <edge>` moves one finger, in the upright screen's pixels
+// (`edge` 0, or 1 top, 2 left, 3 bottom, 4 right for a touch that starts at that edge: the system's edge gestures; a
+// down's holds until its finger lifts), on the display shown, `keyboard <usage> down|up` a key (a USB HID keyboard
+// usage), `button home` presses the home button.
 import CoreImage
 import CoreMedia
 import CoreVideo
@@ -43,16 +50,22 @@ func fail(_ why: String) -> Never {
 final class Wants {
   private let lock = NSLock()
   private var _h264 = false
+  private var _jpeg = true
   private var _key = true
   private var _still = true
   private var _kbps = 2500
   private var _fps = 30.0
   private var _side = 1280
+  private var _panel: String?
   func read<T>(_ f: (Wants) -> T) -> T { lock.lock(); defer { lock.unlock() }; return f(self) }
   var h264: Bool { read { $0._h264 } }
+  /// JPEG beside H.264, for watchers that take only JPEG.
+  var jpeg: Bool { read { $0._jpeg } }
   var kbps: Int { read { $0._kbps } }
   var fps: Double { read { $0._fps } }
   var side: Int { read { $0._side } }
+  /// The display the node names to show (a foldable's lit panel, by its CoreSimulator name), if it does.
+  var panel: String? { read { $0._panel } }
   /// Whether a still waits, without taking it (send takes it).
   var stillWaiting: Bool { read { $0._still } }
   /// Whether the next H.264 frame must be a keyframe, once.
@@ -64,13 +77,16 @@ final class Wants {
     let n = parts.count > 1 ? Double(parts[1]) : nil
     lock.lock(); defer { lock.unlock() }
     switch word {
-    case "jpeg": _h264 = false
-    case "h264": if !_h264 { _h264 = true; _key = true }
+    case "jpeg": _h264 = false; _jpeg = true
+    case "h264", "both":
+      if !_h264 { _h264 = true; _key = true }
+      _jpeg = word == "both"
     case "key": _key = true
     case "still": _still = true
     case "kbps": if let n, n >= 50 { _kbps = Int(n) }
     case "fps": if let n, n >= 1 { _fps = min(n, 60) }
     case "side": if let n, n >= 64 { _side = Int(n) }
+    case "panel": _panel = parts.count > 1 && parts[1] != "-" ? String(parts[1]) : nil
     default: break
     }
   }
@@ -127,9 +143,19 @@ func fitted(_ w: Int, _ h: Int, _ side: Int) -> (Int, Int) {
 let ci = CIContext(options: [.cacheIntermediates: false])
 let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 
-func jpeg(_ image: CIImage, _ size: (Int, Int)) -> Data? {
-  let scaled = image.transformed(by: CGAffineTransform(scaleX: CGFloat(size.0) / image.extent.width, y: CGFloat(size.1) / image.extent.height))
-  return ci.jpegRepresentation(of: scaled, colorSpace: srgb, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7])
+/// How often a keyframe comes at least, in seconds of the screen's time: a recording's seek decodes from the one before.
+let KEY_SECONDS = 2
+
+/// `image` turned upright (`turn`, as an EXIF orientation says how the stored picture lies) and scaled to `size`, its
+/// origin at 0,0.
+func upright(_ image: CIImage, _ turn: CGImagePropertyOrientation, _ size: (Int, Int)) -> CIImage {
+  let turned = image.oriented(turn)
+  let moved = turned.transformed(by: CGAffineTransform(translationX: -turned.extent.minX, y: -turned.extent.minY))
+  return moved.transformed(by: CGAffineTransform(scaleX: CGFloat(size.0) / moved.extent.width, y: CGFloat(size.1) / moved.extent.height))
+}
+
+func jpeg(_ image: CIImage, _ turn: CGImagePropertyOrientation, _ size: (Int, Int)) -> Data? {
+  ci.jpegRepresentation(of: upright(image, turn, size), colorSpace: srgb, options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.7])
 }
 
 /// H.264 from VideoToolbox: low-latency rate control, no frame reordering, a keyframe only when asked.
@@ -154,7 +180,9 @@ final class Encoder {
     VTSessionSetProperty(s, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
     VTSessionSetProperty(s, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_Main_AutoLevel)
     VTSessionSetProperty(s, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
+    // A keyframe at least every KEY_SECONDS of the screen's time, so a recording seeks from one close by.
     VTSessionSetProperty(s, key: kVTCompressionPropertyKey_MaxKeyFrameInterval, value: 100_000 as CFNumber)
+    VTSessionSetProperty(s, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: KEY_SECONDS as CFNumber)
     VTSessionSetProperty(s, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: wants.fps as CFNumber)
     VTCompressionSessionPrepareToEncodeFrames(s)
     session = s
@@ -171,8 +199,8 @@ final class Encoder {
     pool = p
   }
 
-  func encode(_ pixels: CVPixelBuffer, screen: (Int, Int), at: CMTime) {
-    let want = fitted(CVPixelBufferGetWidth(pixels), CVPixelBufferGetHeight(pixels), wants.side)
+  func encode(_ pixels: CVPixelBuffer, turn: CGImagePropertyOrientation, screen: (Int, Int), at: CMTime) {
+    let want = fitted(screen.0, screen.1, wants.side)
     var key = wants.takeKey()
     if session == nil || want != size { make(want); key = true }
     guard let session, let pool else { return }
@@ -180,11 +208,17 @@ final class Encoder {
       kbps = wants.kbps
       VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: (kbps * 1000) as CFNumber)
     }
-    // The picture at its size, in the encoder's own format, scaled by the hardware.
-    if scaler == nil { VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &scaler) }
+    // The picture at its size, in the encoder's own format: scaled by the hardware, or turned upright and scaled on the
+    // GPU (Core Image) when the screen's UI is turned against its framebuffer.
     var into: CVPixelBuffer?
     CVPixelBufferPoolCreatePixelBuffer(nil, pool, &into)
-    guard let scaler, let into, VTPixelTransferSessionTransferImage(scaler, from: pixels, to: into) == noErr else { return }
+    guard let into else { return }
+    if turn == .up {
+      if scaler == nil { VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &scaler) }
+      guard let scaler, VTPixelTransferSessionTransferImage(scaler, from: pixels, to: into) == noErr else { return }
+    } else {
+      ci.render(upright(CIImage(cvPixelBuffer: pixels), turn, size), to: into, bounds: CGRect(x: 0, y: 0, width: size.0, height: size.1), colorSpace: srgb)
+    }
     self.screen = screen
     let props = key ? [kVTEncodeFrameOptionKey_ForceKeyFrame: kCFBooleanTrue] as CFDictionary : nil
     let size = self.size
@@ -231,35 +265,105 @@ func annexB(_ sample: CMSampleBuffer) -> (bytes: Data, key: Bool)? {
 let encoder = Encoder()
 let clock = Date()
 var lastSent = 0.0
+var lastJpeg = -1.0
+/// A change the JPEG watchers haven't had yet: beside H.264, JPEG comes at its own lower rate.
+var jpegOwed = false
+/// JPEG's frames a second at most beside H.264 (a phone-sized picture is ~40-100 KB).
+let JPEG_FPS = 20.0
 
 let sending = NSLock()
 
-/// One look at the screen: a frame of it if one is due (the fps) or a still is asked for; false if it wasn't due, for
-/// the caller to look again then.
+/// One look at the screen (`changed`: it changed since the last that went): an H.264 frame of it if one is due (the
+/// fps), a JPEG if one is due or a still is asked for. False if the change wasn't sent, for the caller to look again.
 @discardableResult
-func send(_ pixels: CVPixelBuffer, screen: (Int, Int)) -> Bool {
+func send(_ pixels: CVPixelBuffer, screen: (Int, Int), turn: CGImagePropertyOrientation = .up, changed: Bool = true) -> Bool {
   sending.lock()
   defer { sending.unlock() }
   let now = Date().timeIntervalSince(clock)
-  if !wants.stillWaiting && now - lastSent < 1.0 / wants.fps - 0.002 { return false }
-  let still = wants.takeStill()
-  lastSent = now
-  if wants.h264 && !still {
-    encoder.encode(pixels, screen: screen, at: CMTime(seconds: now, preferredTimescale: 1000))
-  } else {
-    let image = CIImage(cvPixelBuffer: pixels)
-    let size = fitted(Int(image.extent.width), Int(image.extent.height), wants.side)
-    if let data = jpeg(image, size) { emit(kind: 1, key: true, screen: screen, picture: size, data) }
-    // A still asked for during H.264 leaves the next H.264 frame to be a keyframe, so a new watcher's decoder starts.
-    if still && wants.h264 { wants.command("key") }
+  let h264 = wants.h264
+  let pictures = !h264 || wants.jpeg
+  let still = wants.stillWaiting
+  let videoDue = h264 && (changed || still) && now - lastSent >= 1.0 / wants.fps - 0.002
+  let jpegDue = still || (pictures && (changed || jpegOwed) && now - lastJpeg >= (h264 ? 1.0 / JPEG_FPS : 1.0 / wants.fps) - 0.002)
+  if changed && pictures && !jpegDue { jpegOwed = true }
+  // A still is a new watcher's first picture: its decoder starts at the next H.264 frame, a keyframe.
+  if still && h264 { wants.command("key") }
+  if videoDue {
+    lastSent = now
+    encoder.encode(pixels, turn: turn, screen: screen, at: CMTime(seconds: now, preferredTimescale: 1000))
   }
-  return true
+  if jpegDue {
+    _ = wants.takeStill()
+    lastJpeg = now
+    jpegOwed = false
+    if !h264 { lastSent = now }
+    let size = fitted(screen.0, screen.1, wants.side)
+    if let data = jpeg(CIImage(cvPixelBuffer: pixels), turn, size) { emit(kind: 1, key: true, screen: screen, picture: size, data) }
+  }
+  return !changed || (h264 ? videoDue : jpegDue)
+}
+
+/// Whether a JPEG is owed and due now.
+func jpegDueNow() -> Bool {
+  sending.lock()
+  defer { sending.unlock() }
+  return jpegOwed && Date().timeIntervalSince(clock) - lastJpeg >= 1.0 / JPEG_FPS - 0.002
 }
 
 /// How long until a frame is due again.
 func untilDue() -> Double { max(0, lastSent + 1.0 / wants.fps - Date().timeIntervalSince(clock)) }
 
 // MARK: an iOS simulator's framebuffer
+
+/// One of a simulator's displays: its framebuffer, and what CoreSimulator says of its screen (`screenProperties`):
+/// its name (`primary`, a foldable's inner `primary-1`), its id (input names it) and how its UI is turned.
+struct Panel {
+  let surface: IOSurfaceRef
+  let name: String
+  let id: UInt64
+  /// UIDeviceOrientation: 1 portrait, 2 upside down, 3 landscape left, 4 landscape right (0: not said).
+  var orientation: Int
+}
+
+/// How a panel's framebuffer turns to be upright as its UI is: an EXIF orientation of the stored picture.
+func turnOf(_ orientation: Int) -> CGImagePropertyOrientation {
+  switch orientation {
+  case 2: return .down
+  case 3: return .right
+  case 4: return .left
+  default: return .up
+  }
+}
+
+/// The screen's upright size for a framebuffer of `w` x `h` turned `turn`.
+func uprightSize(_ w: Int, _ h: Int, _ turn: CGImagePropertyOrientation) -> (Int, Int) {
+  turn == .left || turn == .right ? (h, w) : (w, h)
+}
+
+/// A point of the upright picture (0...1 each way) as a point of the framebuffer, which input takes.
+func framebufferPoint(_ x: Double, _ y: Double, _ turn: CGImagePropertyOrientation) -> (Double, Double) {
+  switch turn {
+  case .right: return (y, 1 - x)
+  case .left: return (1 - y, x)
+  case .down: return (1 - x, 1 - y)
+  default: return (x, y)
+  }
+}
+
+/// An edge of the upright picture (1 top, 2 left, 3 bottom, 4 right) as the framebuffer's.
+func framebufferEdge(_ edge: UInt64, _ turn: CGImagePropertyOrientation) -> UInt64 {
+  guard (1...4).contains(edge) else { return edge }
+  // Each edge in turn going clockwise round the picture, and how many steps the framebuffer's lies behind.
+  let clockwise: [UInt64] = [1, 4, 3, 2]
+  let steps: Int
+  switch turn {
+  case .right: steps = 3
+  case .left: steps = 1
+  case .down: steps = 2
+  default: steps = 0
+  }
+  return clockwise[(clockwise.firstIndex(of: edge)! + steps) % 4]
+}
 
 func simulator(set: String, udid: String) -> Never {
   guard dlopen("/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator", RTLD_NOW) != nil else { fail("no CoreSimulator") }
@@ -276,62 +380,90 @@ func simulator(set: String, udid: String) -> Never {
   onInput = { hid.input($0) }
   Thread.detachNewThread { hid.connect() }
 
-  /// The device's display framebuffers now: a rotation or a restart of the display may replace one. A foldable phone
-  /// has two panels, only one lit at a time.
-  func surfaces() -> [IOSurfaceRef] {
+  /// What CoreSimulator says of a display's screen (`screenProperties`, a proxy: its getters, not key-value coding).
+  func screen(_ descriptor: NSObject) -> (name: String, id: UInt64, orientation: Int)? {
+    typealias IntGetter = @convention(c) (AnyObject, Selector) -> Int
+    guard descriptor.responds(to: NSSelectorFromString("screenProperties")),
+      let props = descriptor.perform(NSSelectorFromString("screenProperties"))?.takeUnretainedValue() as? NSObject
+    else { return nil }
+    func int(_ name: String) -> Int {
+      let sel = NSSelectorFromString(name)
+      guard props.responds(to: sel) else { return 0 }
+      return unsafeBitCast(props.method(for: sel), to: IntGetter.self)(props, sel)
+    }
+    let name = props.responds(to: NSSelectorFromString("deviceName")) ? props.perform(NSSelectorFromString("deviceName"))?.takeUnretainedValue() as? String : nil
+    return (name ?? "", UInt64(truncatingIfNeeded: int("screenID") & 0xffff_ffff), int("uiOrientation") & 0xffff_ffff)
+  }
+
+  /// The device's displays now, each with its framebuffer: a rotation or a restart of the display may replace one. A
+  /// foldable phone has two panels.
+  func panels() -> [Panel] {
     guard let io = device.perform(NSSelectorFromString("io"))?.takeUnretainedValue() as? NSObject,
       let ports = io.value(forKey: "ioPorts") as? [NSObject]
     else { return [] }
-    var found: [IOSurfaceRef] = []
+    var found: [Panel] = []
     for port in ports {
       guard let d = port.perform(NSSelectorFromString("descriptor"))?.takeUnretainedValue() as? NSObject else { continue }
       if let renderable, !d.conforms(to: renderable) { continue }
       for name in ["framebufferSurface", "ioSurface"] where d.responds(to: NSSelectorFromString(name)) {
         guard let s = d.perform(NSSelectorFromString(name))?.takeUnretainedValue() else { continue }
-        found.append(unsafeBitCast(s, to: IOSurfaceRef.self))
+        let said = screen(d)
+        found.append(Panel(surface: unsafeBitCast(s, to: IOSurfaceRef.self), name: said?.name ?? "", id: said?.id ?? 0, orientation: said?.orientation ?? 0))
         break
       }
     }
     return found
   }
 
-  // Each panel's seed as last seen; the one shown is the one that changed last (the lit one: a dark panel never
-  // changes), the largest until any has.
+  // Each panel's seed as last seen. The one shown is the one the node names (`panel`, a foldable's pose), else the one
+  // that changed last (the lit one: a dark panel never changes), the largest until any has.
   var seeds: [UInt32] = []
-  var all: [IOSurfaceRef] = []
-  var shown: IOSurfaceRef?
+  var all: [Panel] = []
+  var shown: Int?
   var shownSeed: UInt32 = 0
-  var lastLook = 0.0
+  var lastLook = -1.0
+  var lastTold = ""
   let wake = DispatchSemaphore(value: 0)
   onCommand = { wake.signal() }
   while true {
-    // Every second, the framebuffers again, in case one was replaced; between, only their seeds.
+    // Four times a second the displays again: a replaced framebuffer, a turned UI. Between, only their seeds.
     let now = Date().timeIntervalSince(clock)
-    if all.isEmpty || now - lastLook > 1 {
-      let next = surfaces()
-      if next.map({ IOSurfaceGetID($0) }) != all.map({ IOSurfaceGetID($0) }) {
-        all = next
-        seeds = all.map { IOSurfaceGetSeed($0) }
-        shown = all.max { IOSurfaceGetWidth($0) * IOSurfaceGetHeight($0) < IOSurfaceGetWidth($1) * IOSurfaceGetHeight($1) }
+    let named = wants.panel
+    if all.isEmpty || now - lastLook > 0.25 || (named != nil && shown.map({ all[$0].name }) != named) {
+      let next = panels()
+      if next.map({ IOSurfaceGetID($0.surface) }) != all.map({ IOSurfaceGetID($0.surface) }) {
+        seeds = next.map { IOSurfaceGetSeed($0.surface) }
+        shown = next.indices.max { IOSurfaceGetWidth(next[$0].surface) * IOSurfaceGetHeight(next[$0].surface) < IOSurfaceGetWidth(next[$1].surface) * IOSurfaceGetHeight(next[$1].surface) }
         shownSeed = 0
       }
+      // Turned: the picture turns with the panel's next frame, drawn as it now lies (the frame before is still the old
+      // way round: turned now, it would show sideways for a moment).
+      all = next
+      if let named, let i = all.firstIndex(where: { $0.name == named }), i != shown { shown = i; shownSeed = 0 }
       lastLook = now
     }
-    for (i, s) in all.enumerated() {
-      let seed = IOSurfaceGetSeed(s)
+    for (i, p) in all.enumerated() {
+      let seed = IOSurfaceGetSeed(p.surface)
       if seed != seeds[i] {
         seeds[i] = seed
-        if shown.map({ IOSurfaceGetID($0) }) != IOSurfaceGetID(s) { shown = s; shownSeed = 0 }
+        if named == nil && shown != i { shown = i; shownSeed = 0 }
       }
     }
-    if let s = shown {
+    if let i = shown {
+      let p = all[i]
+      let s = p.surface
+      let turn = turnOf(p.orientation)
+      let screen = uprightSize(IOSurfaceGetWidth(s), IOSurfaceGetHeight(s), turn)
+      hid.target(screen: screen, turn: turn, id: p.id)
+      // The node hears which display shows and how it is turned, each time that changes.
+      let told = "display \(p.name.isEmpty ? "-" : p.name) \(p.orientation) \(screen.0) \(screen.1)"
+      if told != lastTold { lastTold = told; tell(told) }
       let seed = IOSurfaceGetSeed(s)
       // A change that isn't due yet waits for its time: seen only once it is sent, so the last one always goes.
-      if seed != shownSeed || wants.stillWaiting {
+      if seed != shownSeed || wants.stillWaiting || jpegDueNow() {
         var pixels: Unmanaged<CVPixelBuffer>?
-        hid.screen = (IOSurfaceGetWidth(s), IOSurfaceGetHeight(s))
-        if CVPixelBufferCreateWithIOSurface(nil, s, nil, &pixels) == kCVReturnSuccess, let p = pixels?.takeRetainedValue(),
-          send(p, screen: (IOSurfaceGetWidth(s), IOSurfaceGetHeight(s)))
+        if CVPixelBufferCreateWithIOSurface(nil, s, nil, &pixels) == kCVReturnSuccess, let px = pixels?.takeRetainedValue(),
+          send(px, screen: screen, turn: turn, changed: seed != shownSeed)
         {
           shownSeed = seed
         }
@@ -351,6 +483,10 @@ final class Hid {
   private let lock = NSLock()
   private var connection: xpc_connection_t?
   private var _screen = (0, 0)
+  private var turn = CGImagePropertyOrientation.up
+  /// The shown display's screen id: dtuhidd's `target` for a touch (0 is the first display, which a foldable's inner
+  /// panel isn't).
+  private var display: UInt64 = 0
   /// Whether a finger is down, as dtuhidd knows it: a connection it dropped loses the finger.
   private var down = false
   /// The edge the finger down started at: every contact of an edge gesture carries it, or iOS ignores it.
@@ -358,10 +494,14 @@ final class Hid {
 
   init(device: NSObject) { self.device = device }
 
-  /// The shown panel's size: touches come in its pixels.
-  var screen: (Int, Int) {
-    get { lock.lock(); defer { lock.unlock() }; return _screen }
-    set { lock.lock(); _screen = newValue; lock.unlock() }
+  /// The shown display: its upright size (touches come in its pixels), how its framebuffer turns to be upright, and
+  /// its screen id.
+  func target(screen: (Int, Int), turn: CGImagePropertyOrientation, id: UInt64) {
+    lock.lock()
+    _screen = screen
+    self.turn = turn
+    display = id
+    lock.unlock()
   }
 
   /// Connects and waits for dtuhidd to answer, then says `input`. It starts on demand, and one that started before the
@@ -451,20 +591,23 @@ final class Hid {
       // A move with no finger down (dtuhidd lost it) starts one; an up with none is nothing.
       let phase: UInt64
       switch words[1] {
-      case "down": phase = 0; down = true; edge = UInt64(words[4]) ?? 0
+      case "down": phase = 0; down = true; edge = framebufferEdge(UInt64(words[4]) ?? 0, turn)
       case "move": phase = down ? 1 : 0; if !down { edge = 0 }; down = true
       case "up" where down: phase = 2; down = false
       default: lock.unlock(); return
       }
       let edge = self.edge
+      let display = self.display
+      // The digitizer lies as the framebuffer does, whichever way the UI is turned.
+      let (fx, fy) = framebufferPoint(min(max(x / Double(w), 0), 1), min(max(y / Double(h), 0), 1), turn)
       m = message("IndigoDigitizerEvent") { p in
         let point = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_double(point, "x", min(max(x / Double(w), 0), 1))
-        xpc_dictionary_set_double(point, "y", min(max(y / Double(h), 0), 1))
+        xpc_dictionary_set_double(point, "x", fx)
+        xpc_dictionary_set_double(point, "y", fy)
         xpc_dictionary_set_value(p, "pointOne", point)
         xpc_dictionary_set_uint64(p, "eventType", phase)
         xpc_dictionary_set_uint64(p, "edge", edge)
-        xpc_dictionary_set_uint64(p, "target", 0)
+        xpc_dictionary_set_uint64(p, "target", display)
       }
     case ("keyboard", 3):
       guard let usage = UInt64(words[1]) else { break }
