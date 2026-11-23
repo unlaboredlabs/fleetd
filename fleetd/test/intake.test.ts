@@ -443,6 +443,17 @@ test("a person's Word document, workbook and CSV reach the lead in its bot's fol
   expect((await get(hub, them, { projectRef: app, attachmentId: bank })).name).toBe("bank.csv");
 });
 
+test("an attachment whose name holds a line break, as a moved hub's row can, lists for the lead on one line", async () => {
+  const { hub } = chatRig();
+  const node = fakeNode(hub, {});
+  const id = (await put(hub, me, { name: "notes.txt", mime: "text/plain", dataB64: b64("hi\n") })).attachmentId;
+  // A move copies rows as the other hub kept them, never through safeName.
+  hub.db.conn.run("UPDATE attachments SET name = ? WHERE n = ?", ["a\nb\rc\u0085d\u2028e\u2029f\vg\fh.txt", Number(id.slice(1))]);
+  const lines = await place(hub, [id], app, "W7", "W7");
+  expect(lines).toEqual([`  - .fleetd/attachments/W7/a_b_c_d_e_f_g_h.txt (${id}, a text file, 3 B); open it with Read.`]);
+  expect(Object.keys(node.put)).toEqual([".fleetd/attachments/W7/a_b_c_d_e_f_g_h.txt"]);
+});
+
 test("screenshots a person attaches in chat reach an agent the lead names them to, saved in the agent's own session", async () => {
   const { hub, home, asTask } = chatRig();
   const node = fakeNode(hub, {});
