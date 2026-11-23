@@ -54,7 +54,7 @@ import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
-import { labelBrief, TRAIN_LABEL, trainLabelled } from "./label.ts";
+import { labelBrief, stoppedComment, TRAIN_LABEL, trainLabelled } from "./label.ts";
 import { behind } from "./up_to_date.ts";
 import { repoVerifying, verifying } from "./verify.ts";
 import { fixing, rerunning, watchMerge, watchPass } from "./watch.ts";
@@ -1818,7 +1818,16 @@ export class Train {
     let workstreamId: string | undefined;
     try {
       const text = `${pull.title.trim() || prUrl}\n\nA ready pull request labelled ${TRAIN_LABEL}: ${prUrl}`;
-      workstreamId = await this.host.openBriefedOrder!(projectRef, text, `train-label:${repo}#${pull.number}`, labelBrief(pull, prUrl));
+      const opened = await this.host.openBriefedOrder!(projectRef, text, `train-label:${repo}#${pull.number}`, labelBrief(pull, prUrl));
+      // Its order was stopped by a person: final. The label comes off with one comment saying why, so neither a later
+      // pass nor a restarted hub reads it again, and the lead hears of it this once.
+      if (opened.stopped) {
+        await this.github.commentOnce(repo, pull.number, stoppedComment(opened.workstreamId));
+        await this.github.removeLabel(repo, pull.number, TRAIN_LABEL);
+        await this.wakeLead(projectRef, prRefused(prUrl, `its ${TRAIN_LABEL} label`, `Its order ${opened.workstreamId} was stopped, so it stays off the train; its label was taken off.`, "nothing: a new PR with the label goes on the train in an order of its own"));
+        return;
+      }
+      workstreamId = opened.workstreamId;
       const change = await this.enqueue(projectRef, { prUrl, workstreamId });
       console.info(`train: a PR labelled ${TRAIN_LABEL} goes on the train under ${workstreamId}: ${change.changeId} ${prUrl}`);
     } catch (error) {

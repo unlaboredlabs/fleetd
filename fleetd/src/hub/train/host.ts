@@ -99,9 +99,10 @@ export interface TrainHost {
   openOrder(projectRef: ProjectRef, text: string, requestId: string): Promise<string>;
   /**
    * Opens an order with its brief set at once, for a PR labelled `fleetd-train` (label.ts): the same `requestId` finds
-   * the first. Absent: the train takes no PR by its label.
+   * the first while it is open, and `stopped` answers one a person stopped, opening none. Absent: the train takes no
+   * PR by its label.
    */
-  openBriefedOrder?(projectRef: ProjectRef, text: string, requestId: string, brief: Brief): Promise<string>;
+  openBriefedOrder?(projectRef: ProjectRef, text: string, requestId: string, brief: Brief): Promise<{ workstreamId: string; stopped?: true }>;
   /** Closes an order as its lead's `close` does; throws its refusal. */
   closeOrder?(projectRef: ProjectRef, workstreamId: string, reason: string): Promise<void>;
   /** Whether the work ledger's landing scanner watches `repo`'s `base`. */

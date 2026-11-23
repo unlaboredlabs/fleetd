@@ -24,5 +24,9 @@ export function labelBrief(pull: { title: string; body: string }, prUrl: string)
   };
 }
 
+/** The train's comment as it takes the label off a PR whose order a person stopped. */
+export const stoppedComment = (workstreamId: string) =>
+  `This pull request's order ${workstreamId} was stopped, so it stays off the merge train: its ${TRAIN_LABEL} label is taken off. Open a new pull request to put the change on the train again.`;
+
 /** Whether a brief is a labelled PR's order's (`labelBrief`). */
 export const isLabelBrief = (brief: Brief | undefined | null) => brief?.doneWhen.length === 1 && brief.doneWhen[0] === LABEL_DONE_WHEN;

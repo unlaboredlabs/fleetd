@@ -276,6 +276,27 @@ test("a Change waiting in review is read every pass, but GitHub counts its PR re
   expect(k.change(7).headSha).toBe(k.gh.headOf("fleetd/T7-pricing")!);
 });
 
+test("the ready pass lists a repo's open PRs every minute, but GitHub counts none of them while nothing changes", async () => {
+  const { k, gh } = limitKit();
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  k.gate.blocking.add("X1");
+  await k.enqueue(7);
+  const list = `GET repos/${REPO}/pulls`;
+  const counted = () => gh.billed.filter((c) => c === list).length;
+  const unchanged = () => gh.free.filter((c) => c === list).length;
+  k.clock.ms += 61_000;
+  await k.train.step(REPO);
+  const [before, free] = [counted(), unchanged()];
+  for (let i = 0; i < 10; i++) {
+    k.clock.ms += 61_000;
+    await k.train.step(REPO);
+  }
+  // Every listing of the repo's PRs (the ready pass's among them) a 304 GitHub doesn't count: If-None-Match with the
+  // last answer's ETag.
+  expect(unchanged() - free).toBeGreaterThanOrEqual(10);
+  expect(counted() - before).toBe(0);
+});
+
 // --- done:3, under a tenth of the budget: one warning with the reset time, and polls spread out until then ---
 
 test("under a tenth of the budget left, the hub warns once with the reset time and polls less often until the reset", async () => {

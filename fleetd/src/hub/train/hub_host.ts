@@ -32,7 +32,7 @@ export type TasksPort = {
 type TrainIntake = { projectRef: ProjectRef; text: string; clientRequestId: string; channel: "train"; by: string };
 export type IntakePort = {
   submit(input: TrainIntake): Promise<{ workstreamId: string }> | { workstreamId: string };
-  openBriefed?(input: TrainIntake, brief: Brief): { workstreamId: string };
+  openBriefed?(input: TrainIntake, brief: Brief): { workstreamId: string; stopped?: true };
   close?(r: ProjectRef, workstreamId: string, reason: string, by: string): Promise<unknown>;
 };
 
@@ -99,10 +99,10 @@ export class HubHost implements TrainHost {
     return (await intake.submit({ projectRef: r, text, clientRequestId: requestId, channel: "train", by: TRAIN_BY })).workstreamId;
   }
 
-  async openBriefedOrder(r: ProjectRef, text: string, requestId: string, brief: Brief): Promise<string> {
+  async openBriefedOrder(r: ProjectRef, text: string, requestId: string, brief: Brief): Promise<{ workstreamId: string; stopped?: true }> {
     const intake = this.hub.peek<IntakePort>("intake");
     if (!intake?.openBriefed) throw notPorted("the order intake");
-    return intake.openBriefed({ projectRef: r, text, clientRequestId: requestId, channel: "train", by: TRAIN_BY }, brief).workstreamId;
+    return intake.openBriefed({ projectRef: r, text, clientRequestId: requestId, channel: "train", by: TRAIN_BY }, brief);
   }
 
   async closeOrder(r: ProjectRef, workstreamId: string, reason: string): Promise<void> {
