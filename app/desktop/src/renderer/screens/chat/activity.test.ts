@@ -96,24 +96,39 @@ describe("how long the lead worked toward its reply", () => {
   const t = (m: number, sec = 0) => `2026-10-19T10:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.000Z`;
   const say = (author: "human" | "lead", at: string, n: number) => ({ messageId: `m${String(n)}`, projectRef: ref, seq: n, author, state: "final" as const, text: "x", createdAt: at });
   const lead = (on: boolean, seq: number, at: string) => ev(seq, "chat.waiting", working(on), ref.projectId, at);
+  const end = (seq: number, type: string, at: string) => ev(seq, type, undefined, ref.projectId, at);
   const of = (events: HubEvent[], messages: ReturnType<typeof say>[]) => state({ events, chats: { [KEY]: { ...emptyChat, messages } } });
 
-  it("counts the runs since your message that ended with no reply, not the idle between them", () => {
-    const events = [lead(false, 1, t(0)), lead(true, 2, t(1)), lead(false, 3, t(4, 45)), lead(true, 4, t(4, 50)), lead(false, 5, t(4, 58))];
+  it("counts the runs since your message that failed or were cut, not the idle between them", () => {
+    const events = [lead(false, 1, t(0)), lead(true, 2, t(1)), end(3, "thread.failed", t(4, 44)), lead(false, 4, t(4, 45)), lead(true, 5, t(4, 50)), end(6, "thread.completed", t(4, 57)), lead(false, 7, t(4, 58))];
     const s = of(events, [say("lead", t(0), 1), say("human", t(1), 2), say("lead", t(4, 57), 3)]);
     // 3m 45s of the failed run, and the 8 s of the one that answered.
     expect(leadLastTurnWorkedMs(s, KEY)).toBe(233_000);
     expect(workedFor(leadLastTurnWorkedMs(s, KEY) ?? 0)).toBe("3m 53s");
+    // A run cut (interrupted) counts the same.
+    expect(leadLastTurnWorkedMs(of(events.map((e) => (e.type === "thread.failed" ? { ...e, type: "thread.interrupted" } : e)), [say("human", t(1), 2)]), KEY)).toBe(233_000);
   });
 
-  it("stops at an earlier turn that answered, and at your message", () => {
-    const events = [lead(false, 1, t(0)), lead(true, 2, t(1)), lead(false, 3, t(2)), lead(true, 4, t(3)), lead(false, 5, t(3, 10))];
-    // The turn before answered your earlier message: the new one counts alone.
-    expect(leadLastTurnWorkedMs(of(events, [say("human", t(0, 30), 1), say("lead", t(2), 2), say("human", t(2, 30), 3), say("lead", t(3, 9), 4)]), KEY)).toBe(10_000);
-    // A quiet turn before your message isn't the one that answered it.
-    expect(leadLastTurnWorkedMs(of(events, [say("human", t(2, 30), 1), say("lead", t(3, 9), 2)]), KEY)).toBe(10_000);
+  it("stops at an earlier turn that ended on its own, and at your message", () => {
+    // You ask, the lead answers; then quiet turns its agents woke, then a post: the post's own turn alone (T5744).
+    const quiet = [
+      lead(false, 1, t(0)),
+      lead(true, 2, t(1)),
+      end(3, "thread.completed", t(2)),
+      lead(false, 4, t(2)),
+      lead(true, 5, t(3)),
+      end(6, "thread.completed", t(4)),
+      lead(false, 7, t(4)),
+      lead(true, 8, t(5)),
+      end(9, "thread.completed", t(5, 10)),
+      lead(false, 10, t(5, 10)),
+    ];
+    expect(leadLastTurnWorkedMs(of(quiet, [say("human", t(0, 30), 1), say("lead", t(2), 2), say("lead", t(5, 9), 3)]), KEY)).toBe(10_000);
+    // A failed run before your message isn't the one that answered it.
+    const before = [lead(false, 1, t(0)), lead(true, 2, t(1)), end(3, "thread.failed", t(2)), lead(false, 4, t(2)), lead(true, 5, t(3)), end(6, "thread.completed", t(3, 10)), lead(false, 7, t(3, 10))];
+    expect(leadLastTurnWorkedMs(of(before, [say("human", t(2, 30), 1), say("lead", t(3, 9), 2)]), KEY)).toBe(10_000);
     // Nothing of yours to answer: the turn's own length.
-    expect(leadLastTurnWorkedMs(of(events, []), KEY)).toBe(10_000);
+    expect(leadLastTurnWorkedMs(of(before, []), KEY)).toBe(10_000);
     expect(leadLastTurnWorkedMs(of([lead(false, 1, t(0)), lead(true, 2, t(1))], []), KEY)).toBeUndefined();
   });
 });

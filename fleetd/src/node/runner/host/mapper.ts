@@ -79,9 +79,12 @@ export class StreamMapper {
   #interruptsSent = 0;
   /** Shutdown was requested: a run cut by the exit is Interrupted, not Failed. */
   #stopping = false;
-  /** Claude refused the run's sign-in (a 401 it retries for minutes): the run was interrupted for it at once, and
-   * ends failed with these words, class `auth`, not interrupted. */
+  /** Claude refused the run's sign-in (a 401 it retries for minutes): the run was interrupted for it, and ends failed
+   * with these words, class `auth`, not interrupted. */
   #refused: string | undefined;
+  /** The run's 401 retries in a row: the first is claude's to fix (it refreshes a claude.ai login's token and tries
+   * again); a second, after that refresh, is a refused sign-in. */
+  #unauthorized = 0;
   #stderrTail = "";
   #runStderr = "";
   #minted = 0;
@@ -242,12 +245,16 @@ export class StreamMapper {
     const out: Mapped = { events: [], replies: [] };
     const turnOutput = (line.type === "assistant" || line.type === "stream_event") && line.parent_tool_use_id === undefined;
     if (turnOutput && this.#openRuns.length === 0 && !this.#stopping) this.#woke(now, out.events);
+    // Claude answered: a 401 after this is a new one, claude's own refresh to try first.
+    if (turnOutput) this.#unauthorized = 0;
     switch (line.type) {
       case "system":
         this.#system(line, now, out.events);
-        // A refused sign-in is refused again on every retry: the run stops now and fails for it (W791, about 3 minutes
-        // of claude's retries before its line said where to fix the key).
-        if (line.subtype === "api_retry" && line.error_status === 401 && this.#activeRun !== undefined && this.#refused === undefined && this.#interrupt === undefined) {
+        // A sign-in still refused after claude's own refresh is refused again on every retry: the run stops at the
+        // second 401 in a row and fails for it (W791, about 3 minutes of claude's retries before its line said where to
+        // fix the key). The first is claude's: an expired claude.ai token is refreshed and the call goes through.
+        if (line.subtype === "api_retry") this.#unauthorized = line.error_status === 401 ? this.#unauthorized + 1 : 0;
+        if (this.#unauthorized >= 2 && this.#activeRun !== undefined && this.#refused === undefined && this.#interrupt === undefined) {
           this.#refused = line.error?.trim() || "authentication_error";
           out.replies.push(this.interrupt());
         }
@@ -688,6 +695,7 @@ export class StreamMapper {
     this.#interrupt = undefined;
     this.#assistantError = undefined;
     this.#refused = undefined;
+    this.#unauthorized = 0;
     // A Monitor that ended while claude wrote the turn's last answer: claude gives its notice in a turn of its own,
     // which starts only after this one's `result`.
     events.push({ RunEnded: { run_id: runId, outcome, usage: usage ?? null, ...(this.#untold.length ? { untold_watches: [...this.#untold] } : {}) } });

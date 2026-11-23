@@ -15,6 +15,8 @@ export interface TurnView {
 
 /** The lead's activity this moment: its live lane's, undefined while nothing more than "working" is known. */
 export const leadActivityOf = (s: Pick<State, "leadActivity">, key: Key): Activity | undefined => s.leadActivity[leadLaneId(refOf(key))];
+/** Since when it does that (hub epoch ms): a run of Claude's retries from the first. */
+export const leadActivitySinceOf = (s: Partial<Pick<State, "leadActivitySince">>, key: Key): number | undefined => s.leadActivitySince?.[leadLaneId(refOf(key))];
 
 export const turnView = (activity: Activity | undefined, since: number | undefined, nowMs: number): TurnView => {
   const doing = activity === undefined ? "working" : doingWords(activity);

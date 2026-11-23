@@ -41,6 +41,8 @@ import {
   type Activity,
   type BrowserSession,
   type BrowserSessionEventData,
+  workedToward,
+  type TurnSpan,
 } from "./desktop";
 
 export type Machine = FleetStatus["machines"][number];
@@ -122,6 +124,8 @@ export interface State {
   readonly decided: Readonly<Record<string, HumanRequest>>;
   /** What a lead does this moment, by live lane id: the open chat's, which the turn line says (turn.ts). */
   readonly leadActivity: Readonly<Record<string, Activity>>;
+  /** Since when each lead lane does that (hub epoch ms): a run of Claude's retries from the first (W791). */
+  readonly leadActivitySince?: Readonly<Record<string, number>>;
   /**
    * The hub's clock less this device's, from the live frames as the desktop reads it (its data/store.ts applyLive):
    * the largest `at - received` since the last full frame. A wake's count and Try again's countdown go by it.
@@ -130,7 +134,12 @@ export interface State {
   /** When each working lead's turn began (hub epoch ms), from the event that said so; unknown for one already working. */
   readonly turnSince: Readonly<Record<Key, number>>;
   /** Each lead's latest turn seen to its end (hub epoch ms at each end): how long it took, kept with its reply's time (chatView.ts). */
-  readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number }>>;
+  readonly turnWorked: Readonly<Record<Key, { readonly since: number; readonly until: number; readonly ms?: number }>>;
+  /** Each lead's last turns seen to their end, `cut` when the bot's last thread end before it went idle failed or was
+   * interrupted: "Worked for" counts those the lead carried on toward its reply (the desktop's workedToward). */
+  readonly turnSpans?: Readonly<Record<Key, readonly TurnSpan[]>> | undefined;
+  /** The type of each bot's last thread end in the turn under way. */
+  readonly turnLastEnd?: Readonly<Record<Key, string>> | undefined;
   /**
    * When each lead was last seen to stop working (hub epoch ms, the event's time), its start seen or not: a turn that
    * ended without a reply ends the bot's wait in the reply's place too (wake.ts). Absent from a cache before it.
@@ -420,11 +429,19 @@ const applyFrame = (s: State, frame: HubFrame, nowMs: number): State => {
       const skewMs = seen === undefined ? s.skewMs : !full && s.skewMs !== undefined ? Math.max(s.skewMs, seen) : seen;
       if (!full && lanes.length === 0) return skewMs === s.skewMs ? s : { ...s, skewMs };
       const next: Record<string, Activity> = full ? {} : { ...s.leadActivity };
+      const since: Record<string, number> = full ? {} : { ...s.leadActivitySince };
       for (const lane of lanes) {
-        if (lane.activity === undefined) delete next[lane.laneId];
-        else next[lane.laneId] = lane.activity.activity;
+        if (lane.activity === undefined) {
+          delete next[lane.laneId];
+          delete since[lane.laneId];
+        } else {
+          next[lane.laneId] = lane.activity.activity;
+          const ms = Date.parse(lane.activity.since);
+          if (Number.isNaN(ms)) delete since[lane.laneId];
+          else since[lane.laneId] = ms;
+        }
       }
-      return { ...s, leadActivity: next, skewMs };
+      return { ...s, leadActivity: next, leadActivitySince: since, skewMs };
     }
     case "browser_frame":
     case "browser_error":
@@ -458,6 +475,11 @@ const restartAfter = (s: State, next: HubState, nowMs: number): Restart | null =
 /** A machine's status as each event says, as the desktop's store patches it: the next snapshot may be a while off. */
 const MACHINE_STATUS: Readonly<Record<string, Machine["status"]>> = { "machine.online": "online", "machine.offline": "offline", "machine.degraded": "degraded" };
 
+/** A thread's end, whose type says whether its run completed. */
+const THREAD_ENDS = new Set(["thread.completed", "thread.failed", "thread.interrupted", "thread.usage_limited"]);
+/** The turns kept per lead for "Worked for". */
+const SPANS_KEPT = 8;
+
 const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   const status = MACHINE_STATUS[event.type];
   if (status !== undefined) {
@@ -477,6 +499,11 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
   }
   // Missed while the link was down: the snapshot before it has the update as it is now.
   if (event.type === "hub.update") return replayed ? s : { ...s, hubUpdate: (event.data as HubUpdateData | undefined) ?? s.hubUpdate };
+  // A bot's thread ended: the last one before its lead goes idle is the lead's own, which says whether its turn was cut.
+  if (THREAD_ENDS.has(event.type) && event.machineId !== undefined && event.projectId !== undefined) {
+    const key = keyOf({ machineId: event.machineId, projectId: event.projectId });
+    return { ...s, turnLastEnd: { ...s.turnLastEnd, [key]: event.type } };
+  }
   if (event.type === "chat.waiting") {
     // What a chat waits for, missed while the link was down: the snapshot before it says it as it is now.
     if (replayed) return s;
@@ -489,10 +516,18 @@ const applyEvent = (s: State, event: HubEvent, replayed: boolean): State => {
     // It ends at its first "idle": how long it took, from a start seen here.
     const since = s.turnSince[key];
     const ended = !state.leadWorking && since !== undefined;
-    const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at) } } : s.turnWorked;
+    const lastEnd = began ? undefined : s.turnLastEnd?.[key];
+    const cut = lastEnd === "thread.failed" || lastEnd === "thread.interrupted";
+    const spans = ended ? [...(s.turnSpans?.[key] ?? []), { since, until: Date.parse(event.at), ...(cut ? { cut: true } : {}) }].slice(-SPANS_KEPT) : s.turnSpans?.[key];
+    // How long it worked toward its reply: this turn, and the cut ones right before it since your message.
+    const asked = ended ? s.chats[key]?.messages.findLast((m) => m.author === "human" && Date.parse(m.createdAt) < since) : undefined;
+    const ms = ended && spans !== undefined ? workedToward(spans, asked === undefined ? undefined : Date.parse(asked.createdAt)) : undefined;
+    const turnWorked = ended ? { ...s.turnWorked, [key]: { since, until: Date.parse(event.at), ...(ms === undefined ? {} : { ms }) } } : s.turnWorked;
+    const turnSpans = spans === undefined ? s.turnSpans : { ...s.turnSpans, [key]: spans };
+    const turnLastEnd = began ? without(s.turnLastEnd ?? {}, key) : s.turnLastEnd;
     const stopped = !state.leadWorking && s.chatStates[key]?.leadWorking === true && !Number.isNaN(Date.parse(event.at));
     const turnEnded = stopped ? { ...s.turnEnded, [key]: Date.parse(event.at) } : s.turnEnded;
-    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnEnded };
+    return { ...s, chatStates: { ...s.chatStates, [key]: state }, turnSince, turnWorked, turnEnded, turnSpans, turnLastEnd };
   }
   if (event.type !== "chat.message") return s;
   const data = event.data as ChatMessageEventData | undefined;

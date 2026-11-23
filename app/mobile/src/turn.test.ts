@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { HubEvent, LiveFrame, ProjectChatState } from "./desktop";
 import { initial, reduce, type State } from "./store";
-import { codeRuns, leadActivityOf, SWEEP, turnView } from "./turn";
+import { codeRuns, leadActivityOf, leadActivitySinceOf, SWEEP, turnView } from "./turn";
+import { wakeIn } from "./wake";
+import { wakeWords } from "./desktop";
 
 const KEY = "m1/shop";
 const REF = { machineId: "m1", projectId: "shop" };
@@ -68,7 +70,7 @@ describe("what the store keeps for it", () => {
     s = event(s, waiting(3, "2026-10-28T10:01:00Z", false));
     expect(s.turnSince[KEY]).toBeUndefined();
     // How long it took, for its reply's stamp: kept while the next turn runs.
-    expect(s.turnWorked[KEY]).toEqual({ since: Date.parse("2026-10-28T10:00:00Z"), until: Date.parse("2026-10-28T10:01:00Z") });
+    expect(s.turnWorked[KEY]).toEqual({ since: Date.parse("2026-10-28T10:00:00Z"), until: Date.parse("2026-10-28T10:01:00Z"), ms: 60_000 });
     s = event(s, waiting(4, "2026-10-28T10:02:00Z", true));
     expect(s.turnWorked[KEY]?.until).toBe(Date.parse("2026-10-28T10:01:00Z"));
   });
@@ -76,5 +78,41 @@ describe("what the store keeps for it", () => {
   it("knows no length for a turn whose start it didn't see", () => {
     const s = event(initial(live), waiting(1, "2026-10-28T10:01:00Z", false));
     expect(s.turnWorked[KEY]).toBeUndefined();
+  });
+});
+
+// W791 (F1520), as on the desktop: Claude down for 3 min 45 s of the turn, its run failed and the lead carried on, and
+// the reply read "Worked for 8s"; and the bot showed only its dots through Claude's retries.
+describe("Claude failing the lead's turn", () => {
+  const at = (m: number, sec = 0) => `2026-10-28T10:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}Z`;
+  const end = (seq: number, type: string, when: string): HubEvent => ({ seq, type, at: when, machineId: "m1", projectId: "shop", threadId: "lead-thread" }) as HubEvent;
+  const asked = (s: State, when: string): State =>
+    reduce(s, { t: "frame", frame: { t: "event", event: { seq: 99, type: "chat.message", at: when, machineId: "m1", projectId: "shop", data: { projectRef: REF, message: { messageId: "h1", projectRef: REF, seq: 1, author: "human", state: "final", text: "Why?", createdAt: when } } } as HubEvent }, nowMs: 0 });
+
+  it("Worked for counts the failed or cut runs it carried on from since your message, never a quiet turn", () => {
+    let s = event(initial(live), waiting(1, at(0), false));
+    s = reduce(s, { t: "chat_open", key: KEY });
+    s = asked(s, at(1));
+    s = event(s, waiting(2, at(1), true));
+    s = event(s, end(3, "thread.failed", at(4, 44)));
+    s = event(s, waiting(4, at(4, 45), false));
+    s = event(s, waiting(5, at(4, 50), true));
+    s = event(s, end(6, "thread.completed", at(4, 57)));
+    s = event(s, waiting(7, at(4, 58), false));
+    expect(s.turnWorked[KEY]?.ms).toBe(233_000);
+    // A quiet turn the lead ended on its own, then a post: the post's turn alone.
+    s = event(s, waiting(8, at(6), true));
+    s = event(s, end(9, "thread.completed", at(6, 10)));
+    s = event(s, waiting(10, at(6, 10), false));
+    expect(s.turnWorked[KEY]?.ms).toBe(10_000);
+  });
+
+  it("past 20 s of retries, the bot says so in a plain line", () => {
+    let s = event(initial(live), waiting(1, at(0), true));
+    s = liveFrame(s, frame(true, [{ laneId: "lead:m1/shop", status: "working", activity: { activity: { kind: "retrying", attempt: 5, of: 10, reason: "overloaded" }, since: at(0) } }]));
+    expect(leadActivitySinceOf(s, KEY)).toBe(Date.parse(at(0)));
+    const w = wakeIn({ ...s, hub: { ...live, phase: "live" } as never, chats: { [KEY]: { messages: [{ messageId: "h1", projectRef: REF, seq: 1, author: "human", state: "final", text: "Why?", createdAt: at(0) }] } as never } }, KEY, false, Date.parse(at(0)));
+    expect(w).toEqual({ phase: "working", retry: { reason: "overloaded", since: Date.parse(at(0)) } });
+    expect(w === undefined ? undefined : wakeWords(w, Date.parse(at(0, 25)))?.words).toBe("Claude is overloaded, retrying…");
   });
 });

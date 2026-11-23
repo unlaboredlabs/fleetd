@@ -197,7 +197,7 @@ export { proposal, type Proposal } from "../../desktop/src/shared/proposal";
 export { clockAt, updateStatus, type Row as UpdateRow, type Status } from "../../desktop/src/renderer/screens/updates/model";
 export { loadRun, resetFlow, startUpdate, useAuto, useFlow, useReady, useRun, type Auto, type Flow, type FlowDeps } from "../../desktop/src/renderer/screens/updates/flow";
 export { cellFrames, CELLS, GRAIN_BEATS, phaseOf, SHAPES, stillOf, type GlyphState } from "../../desktop/src/shared/glyph";
-export { doingWords, leadLaneId, sentenceCase, workedFor } from "../../desktop/src/shared/turnWords";
+export { doingWords, leadLaneId, sentenceCase, workedFor, workedToward, type TurnSpan } from "../../desktop/src/shared/turnWords";
 export {
   askedAt,
   ColdTurns,

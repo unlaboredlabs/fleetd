@@ -318,7 +318,7 @@ const REPLY_SLACK_MS = 2_000;
  */
 export const threadRows = (
   items: readonly ChatItem[],
-  worked?: { readonly since: number; readonly until: number },
+  worked?: { readonly since: number; readonly until: number; readonly ms?: number },
   readSeq?: number,
   clock: Pick<Clock, "timeZone"> = {},
   tagOf?: (item: ChatItem) => Tag | undefined,
@@ -328,7 +328,8 @@ export const threadRows = (
     worked === undefined
       ? -1
       : items.findLastIndex((i) => i.author === "lead" && i.kind === "message" && i.state !== "streaming" && msOf(i.at) >= worked.since && msOf(i.at) <= worked.until + REPLY_SLACK_MS);
-  const stamp = worked === undefined ? undefined : workedFor(worked.until - worked.since);
+  // How long it worked toward the reply, the cut runs it carried on from included (store.ts turnWorked.ms).
+  const stamp = worked === undefined ? undefined : workedFor(worked.ms ?? worked.until - worked.since);
   let prev: ChatItem | undefined;
   let prevTag: Tag | undefined;
   let prevDay = 0;
