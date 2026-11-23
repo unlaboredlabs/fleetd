@@ -623,7 +623,9 @@ it("sends a Mac that joined fleetd cloud, which has no Setup step for it, to its
   await render();
   await click("Set up…");
   await click("Use Terminal instead");
-  // No hub's guide, and no Setup step to point at: the user of its own is only said.
+  // No hub's guide, and no Setup step to point at: the user of its own is only said, and the line is all there is.
+  expect(host.textContent).toContain("Paste the line in Terminal on the Mac");
+  expect(host.textContent).not.toContain("both parts");
   expect(host.textContent).toContain("give them their own user.");
   expect(host.textContent).not.toContain("see Setup");
   expect(button("Open Setup")).toBeUndefined();
@@ -633,6 +635,16 @@ it("sends a Mac that joined fleetd cloud, which has no Setup step for it, to its
   await click("Open mac");
   expect(window.location.hash).toBe("#/settings/hub/machines/mac");
   expect(calls.some((c) => c.tool === "setup_list")).toBe(false);
+});
+
+it("repairs the agents' Mac with its line alone, the Xcode part only if Xcode was never set up there", async () => {
+  await render({ view: { kind: "line", machineId: "mac", rejoin: true, mac: true }, at: 1 });
+  expect(host.textContent).toContain("Repair mac");
+  expect(host.textContent).toContain("Paste the line in Terminal on the Mac");
+  expect(host.textContent).not.toContain("both parts");
+  expect(host.textContent).toContain("Only if Xcode was never set up on this Mac: a repair needs just the line.");
+  expect(host.textContent).toContain("sudo xcodebuild -license accept");
+  expect(calls.filter((c) => c.tool === "machine_join").map((c) => c.input)).toEqual([{ machineId: "mac", rejoin: true, mac: true }]);
 });
 
 it("says when A Mac for agents' code closed after ten wrong codes, or the Mac took it, from the hub's word", async () => {
@@ -681,7 +693,9 @@ it("sets up a Mac for agents in Terminal between the hub's own guide, and replac
   await click("Use Terminal instead");
   expect(state()).toBe("line");
   // The Xcode block first, from the hub's guide; the name defaults to mac. A user of its own is only pointed to.
+  expect(host.textContent).toContain("Paste both parts in Terminal on the Mac");
   expect(host.textContent).toContain("sudo xcodebuild -license accept");
+  expect(host.textContent).not.toContain("Only if Xcode was never set up");
   expect(host.textContent).not.toContain("sudo sysadminctl -addUser agents");
   expect(host.textContent).toContain("give them their own user (see Setup › A Mac for agents)");
   expect(host.textContent).not.toContain("open Privacy_Accessibility");
