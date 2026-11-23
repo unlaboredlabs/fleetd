@@ -89,6 +89,9 @@ export type HubFrame =
   /** The watched browser session's newest page (see hub.watch); never kept, only shown. `rtc`: it came on the
    * window's own peer (renderer/screens/sessions/rtc.ts), not from main. */
   | { readonly t: "browser_frame"; readonly frame: BrowserFrame; readonly rtc?: true }
+  /** The watched session's machine isn't linked this moment (it, or the hub, restarting): its frames come once it
+   * links again, and the next one ends the wait. */
+  | { readonly t: "browser_waiting"; readonly sessionId: string; readonly machineId: string }
   /** A screen peer's answer from the session's node (see hub.rtc), or why it has none or no more. */
   | { readonly t: "browser_rtc"; readonly session: string; readonly peer: string; readonly answer?: string; readonly error?: string }
   /** A live screen's picture for the Screens page (see hub.thumbs); never kept on disk. */

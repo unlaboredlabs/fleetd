@@ -24,6 +24,7 @@ export function start(hub: Hub): void {
   // The link keeps each heartbeat's load itself (link.load); its steps are this area's.
   nodes.on("hb", (machine, frame) => live(hub).stepsReported(machine, (frame.steps as ScreenStep[] | undefined) ?? []));
   nodes.on("browser_rtc", (machine, frame) => rtcReport(hub, machine, frame as unknown as BrowserRtcReport));
+  nodes.onUnlinked((machine) => live(hub).unlinked(machine));
   nodes.onLinked((linked) => {
     rtcRelinked(hub, linked.machineId);
     live(hub).rewatch(linked.machineId);

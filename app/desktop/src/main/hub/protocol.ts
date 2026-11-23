@@ -59,6 +59,8 @@ const readable = (f: Fields): boolean => {
       return isText(f["sessionId"]) && isText(f["jpegB64"]) && isInt(f["width"], 1) && isInt(f["height"], 1);
     case "browser_rtc":
       return isText(f["session"]) && isText(f["peer"], 1, 64) && isOptional(f["answer"], isText) && isOptional(f["error"], isText);
+    case "browser_waiting":
+      return isText(f["sessionId"]) && isText(f["machineId"]);
     default:
       return false;
   }
