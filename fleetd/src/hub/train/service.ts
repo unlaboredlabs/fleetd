@@ -13,7 +13,7 @@ import * as back from "./back.ts";
 import * as batch from "./batch.ts";
 import { noCiMerged, prGaveUp, prLeft, prMerged, prNote, prRefused } from "./events.ts";
 import { type Flaky, flakyNote, type Mine, ownTests, ownText, rerunFailed } from "./flaky.ts";
-import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type OpenPull, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel } from "./github.ts";
+import { type BaseConfig, type BaseRules, type CheckRun, GhError, githubWhy, limitReset, type OpenPull, type Pull, READ_TRIES, TRAIN_CONTEXT, TrainGitHub, batchHeads, conflicts, held as isHeld, latest, NEXT_LABEL, labelled as hasLabel, workflowRun } from "./github.ts";
 import { limitNote, limitText } from "./budget.ts";
 import type { GhRunner } from "./gh.ts";
 import type { TrainHost } from "./host.ts";
@@ -956,6 +956,8 @@ export class Train {
       own: [],
     };
     const cancelRead = { n: 0 };
+    // Each workflow run's event on the head, once read: a red run a person or a schedule started is left out (prOwn).
+    const events = new Map<number, string>();
     let triedLabel = start;
     let told = false;
     let finishedWithout: number | undefined;
@@ -969,7 +971,10 @@ export class Train {
       let removedRequired: string[] = [];
       let runsRead: CheckRun[] | undefined;
       try {
-        all = await this.github.allCheckRuns(repo, sha);
+        const read = await this.github.allCheckRuns(repo, sha);
+        all = await this.prOwn(repo, sha, read, events);
+        // A check only such a run reports is no longer waited for, should an earlier read have counted it (seen).
+        for (const r of read) if (!all.some((a) => a.name === r.name)) seen.delete(r.name);
         runsRead = all.length > 0 ? latest(all) : await this.statusRuns(repo, sha, base);
       } catch (error) {
         const reset = limitReset(error);
@@ -1176,6 +1181,29 @@ export class Train {
       this.warnHourly([`train: PR of ${change.changeId} not read`], ghMessage(error), `train: PR of ${change.changeId} not read: ${ghMessage(error)}`);
       return false;
     }
+  }
+
+  /**
+   * `runs` on a PR's head without those of the workflow runs a person or a schedule started there (a Nightly tried on the
+   * branch, W864): they check nothing of the PR's own CI, so the train neither waits on them nor re-runs them, as it
+   * leaves them on the base (mergesOwn). Read when a red run is of a workflow run whose event `events` doesn't hold yet,
+   * which keeps each one read; unread, every run counts.
+   */
+  private async prOwn(repo: string, sha: string, runs: CheckRun[], events: Map<number, string>): Promise<CheckRun[]> {
+    const unknown = (r: CheckRun) => {
+      const run = workflowRun(r);
+      return run !== undefined && !events.has(run);
+    };
+    if (runs.some((r) => isRed(r) && unknown(r))) {
+      try {
+        for (const [id, event] of await this.github.shaRunEvents(repo, sha)) events.set(id, event);
+        // A run GitHub didn't list among the head's is the PR's, as far as anyone knows: not asked about again.
+        for (const r of runs) if (unknown(r)) events.set(workflowRun(r) ?? 0, "");
+      } catch (error) {
+        this.warnHourly([`train: workflow runs of ${repo}@${short(sha)} not read`], ghMessage(error), `train: workflow runs of ${repo}@${short(sha)} not read: ${ghMessage(error)}`);
+      }
+    }
+    return mergesOwn(runs, [...events]);
   }
 
   /** Re-runs each job whose required check reads cancelled, on its own: whether it re-ran any; undefined when it can't. */
