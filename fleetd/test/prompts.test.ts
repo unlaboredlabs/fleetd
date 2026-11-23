@@ -28,6 +28,16 @@ test("every shipped text uses what its entry declares", () => {
   }
 });
 
+// A cloud lead promised "I'll pass on each note as it comes in" (agents' notes wake nobody) and quoted limits and a
+// machine from turns hours old (W791): it promises only what a wake brings, and quotes those from the newest state.
+test("the lead promises only news a wake brings it, and quotes limits and machines from its newest state, never memory", () => {
+  const start = entry("lead.start").default;
+  expect(start).toContain("Promise only news a wake brings you");
+  expect(start).toContain("never offer to pass each on as it comes");
+  expect(start).toContain("quote agents at once, limits and machines only from the newest");
+  expect(entry("lead.memory").default).toContain("the team's machines or limits");
+});
+
 test("render fills names it has and leaves the rest", () => {
   expect(render("a {{x}} {{y}} {{ bad}}\n", { x: "{{y}}" })).toBe("a {{y}} {{y}} {{ bad}}");
 });
