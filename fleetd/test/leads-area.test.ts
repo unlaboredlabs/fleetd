@@ -269,6 +269,10 @@ test("the intake opens a briefed order for a labelled PR: open with its brief at
   expect(host.workstream(own)?.fromLabel).toBe(false);
   await host.closeOrder(PROJECT, id, "https://github.com/acme/storefront/pull/9 merged");
   expect(host.workstream(id)?.open).toBe(false);
+  // The PR reopened: a new order for the same request, open with the brief.
+  const again = await host.openBriefedOrder(PROJECT, "Bump bun to 1.4", "train-label:acme/storefront#9", brief);
+  expect(again).not.toBe(id);
+  expect(host.workstream(again)).toMatchObject({ open: true, hasBrief: true, fromLabel: true });
   done();
 });
 

@@ -73,6 +73,12 @@ test("a labelled PR closed unmerged leaves the train, and its order closes with 
   await k.settle();
   expect(k.change(21).state).toBe("abandoned");
   expect(k.host.briefed.get("W200")!.closed).toStartWith(`https://github.com/${REPO}/pull/21 left the train (abandoned`);
+  // Reopened at the same head: back on the train, under a new order of its own.
+  k.gh.pulls.get(21)!.state = "open";
+  await passes(k, 2);
+  expect(changesOf(k, 21).map((c) => [c.workstreamId, c.state])).toContainEqual(["W201", expect.not.stringMatching(/abandoned|refused/)]);
+  expect(k.host.briefed.get("W201")).toMatchObject({ requestId: `train-label:${REPO}#21` });
+  expect(k.host.briefed.get("W201")!.closed).toBeUndefined();
 });
 
 test("without the label, from a fork, or as a draft, a PR no task opened stays off the train, and opens no order", async () => {

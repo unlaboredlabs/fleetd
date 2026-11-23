@@ -1813,9 +1813,10 @@ export class Train {
     if (this.readyHeads.has(key)) return;
     this.readyHeads.add(key);
     const prUrl = `https://github.com/${repo}/pull/${pull.number}`;
+    let workstreamId: string | undefined;
     try {
       const text = `${pull.title.trim() || prUrl}\n\nA ready pull request labelled ${TRAIN_LABEL}: ${prUrl}`;
-      const workstreamId = await this.host.openBriefedOrder!(projectRef, text, `train-label:${repo}#${pull.number}`, labelBrief(pull, prUrl));
+      workstreamId = await this.host.openBriefedOrder!(projectRef, text, `train-label:${repo}#${pull.number}`, labelBrief(pull, prUrl));
       const change = await this.enqueue(projectRef, { prUrl, workstreamId });
       console.info(`train: a PR labelled ${TRAIN_LABEL} goes on the train under ${workstreamId}: ${change.changeId} ${prUrl}`);
     } catch (error) {
@@ -1823,6 +1824,10 @@ export class Train {
       if (e.code === "unavailable") {
         this.readyHeads.delete(key);
         return;
+      }
+      // An order opened for a PR the train then refused is left open by nothing: it closes now, saying why.
+      if (workstreamId !== undefined && !this.records.openFor(repo, pull.number)) {
+        await this.host.closeOrder?.(projectRef, workstreamId, `${prUrl} didn't go on the train: ${e.message}`).catch(() => {});
       }
       await this.wakeLead(projectRef, prRefused(prUrl, "its fleetd-train label", e.message, e.fix));
     }
@@ -1833,6 +1838,8 @@ export class Train {
     if (!this.host.closeOrder) return;
     const w = this.host.workstream(change.workstreamId);
     if (!w?.fromLabel || !w.open) return;
+    // Reopened at the same head, the PR goes on the train again, under a new order.
+    this.readyHeads.delete(`${change.repo}\u0000${change.prNumber}\u0000${change.headSha.toLowerCase()}`);
     const why = change.state === "merged" ? `${change.prUrl} merged` : `${change.prUrl} left the train (${change.state}${change.lastError ? `: ${change.lastError}` : ""})`;
     this.host.closeOrder(change.projectRef, change.workstreamId, why).catch((error: unknown) => {
       console.warn(`train: ${change.workstreamId}, ${change.prUrl}'s order, not closed: ${(error as Error).message}`);

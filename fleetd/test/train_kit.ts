@@ -708,7 +708,8 @@ export class FakeHost implements TrainHost {
   /** Orders opened with a brief (a PR's fleetd-train label), by id: their brief, and whether they were closed and why. */
   readonly briefed = new Map<string, { requestId: string; brief: Brief; closed?: string }>();
   async openBriefedOrder(_r: ProjectRef, _text: string, requestId: string, brief: Brief) {
-    const found = [...this.briefed].find(([, o]) => o.requestId === requestId);
+    // As the intake: the open order of the request, else a new one (its PR closed, then reopened).
+    const found = [...this.briefed].find(([, o]) => o.requestId === requestId && o.closed === undefined);
     if (found) return found[0];
     const id = `W${200 + this.briefed.size}`;
     this.briefed.set(id, { requestId, brief });
