@@ -780,6 +780,14 @@ test("a team server with no key that asks no one to sign in reaches the agents o
     message: expect.stringContaining("doesn't ask anyone to sign in"),
   });
   expect(mcpServers(l.hub).get(team, "open2")).toBeUndefined();
+
+  // One with a key saved: a member's save keeping it is refused as a team server's change, not as one with no key.
+  const keyed = { ...input, name: "keyed", headers: [{ kind: "secret", name: "Authorization", sealed: [{ machineId: "lab", sealed: sealedFor("k") }] }] };
+  await l.call("mcp_server_set", keyed);
+  const kept = { ...keyed, headers: [{ kind: "keep", name: "Authorization" }] };
+  const refused = l.call("mcp_server_set", kept, member);
+  await expect(refused).rejects.toMatchObject({ code: "forbidden", message: expect.stringContaining("only the hub's owners and admins change them") });
+  await expect(refused).rejects.not.toMatchObject({ message: expect.stringContaining("doesn't ask anyone to sign in") });
 });
 
 test("a team server with no key that answers with OAuth waits for its sign-in, and Test says it asks you to sign in", async () => {
