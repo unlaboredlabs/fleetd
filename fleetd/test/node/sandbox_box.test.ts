@@ -489,3 +489,85 @@ test("a guest takes over the link socket a killed one left; a live guest's it le
   expect(await box.run({ cwd: b.dir, argv: ["true"], timeoutSec: 5 })).toMatchObject({ exitCode: 0 });
   box.close();
 }, 30_000);
+
+test.skipIf(process.platform !== "linux")("a guest started again joins the session host the one before left running, and no second claude starts", async () => {
+  const b = await standIn();
+  const sock = join(b.dir, "link.sock");
+  const box = await Box.open({ session: "s-restart", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 500 });
+  const claude = await program("claude-restart", ECHO_CLAUDE);
+  await box.start({ sessionId: "s-restart", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: marker("box-test-restart") } });
+  const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
+  expect(await applyInits(link, 1)).toEqual(["m0"]);
+  link.send({ Send: { run_id: "run-1", text: "run-1", mode: "plain" } });
+  expect(await applyInits(link, 1)).toEqual(["r1"]);
+  // Acknowledged, so the host keeps nothing to resend.
+  await Bun.sleep(400);
+  // The node in the box started again (cloud's restartGuest): the guest is stopped, its session host runs on.
+  b.proc.kill("SIGTERM");
+  await b.proc.exited;
+  await within(box.gone, 10_000, "the old box gone");
+  rmSync(sock, { force: true });
+  const again = Bun.spawn([process.execPath, MAIN, "sandbox-guest", "--listen", sock, "--dir", join(b.dir, "hosts"), "--loopback", "127.0.0.2"], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  guests.push({ proc: again, dir: b.dir });
+  const next = await within(
+    (async () => {
+      for (;;) {
+        try {
+          return await Box.open({ session: "s-restart", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()) });
+        } catch {
+          await Bun.sleep(20);
+        }
+      }
+    })(),
+    10_000,
+    "the new guest's hello",
+  );
+  // The holder joins what runs, and starts a host only when none does.
+  const joined = await HostLink.connect("", { dial: (h) => next.dialHost(h), registration: boxRegistration });
+  await expect(next.start({ sessionId: "s-restart", program: claude, args: [], cwd: b.dir, env: {} })).rejects.toThrow("a session host already runs in this box");
+  joined.send({ Send: { run_id: "run-2", text: "run-2", mode: "plain" } });
+  // The same claude answers: its second run, never a new one's m0.
+  expect(await applyInits(joined, 1)).toEqual(["r2"]);
+  // One session host and one claude: the session host's own args name claude too.
+  const ps = new TextDecoder().decode(Bun.spawnSync(["ps", "-eo", "args"]).stdout).split("\n");
+  const hosts = ps.filter((l) => l.includes(" session-host ") && l.includes(b.dir));
+  expect(hosts.length).toBe(1);
+  expect(ps.filter((l) => l.includes(claude) && !hosts.includes(l)).length).toBe(1);
+  expect(readdirSync(join(b.dir, "hosts"))).toEqual(["s-restart"]);
+  next.close();
+}, 30_000);
+
+test.skipIf(process.platform !== "linux")("a box that redials its guest started again sends the session host none of its lines twice", async () => {
+  const b = await standIn();
+  const sock = join(b.dir, "link.sock");
+  const box = await Box.open({ session: "s-redial", dial: b.dial, nodeSock: b.nodeSock, tcp: [], lead: channels(leadHooks()), goneMs: 20_000 });
+  const claude = await program("claude-redial", ECHO_CLAUDE);
+  await box.start({ sessionId: "s-redial", program: claude, args: [], cwd: b.dir, env: { ...process.env, FLEETD_RUNNER_SESSION: marker("box-test-redial") } });
+  const link = await HostLink.connect("", { dial: (h) => box.dialHost(h), registration: boxRegistration });
+  const send = (run: string) => link.send({ Send: { run_id: run, text: run, mode: "plain" } });
+  expect(await applyInits(link, 1)).toEqual(["m0"]);
+  send("run-1");
+  send("run-2");
+  expect(await applyInits(link, 2)).toEqual(["r1", "r2"]);
+  await Bun.sleep(400);
+  // The guest started again while the same Box redials it.
+  b.proc.kill("SIGTERM");
+  await b.proc.exited;
+  rmSync(sock, { force: true });
+  const again = Bun.spawn([process.execPath, MAIN, "sandbox-guest", "--listen", sock, "--dir", join(b.dir, "hosts"), "--loopback", "127.0.0.2"], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  guests.push({ proc: again, dir: b.dir });
+  send("run-3");
+  expect(await applyInits(link, 1)).toEqual(["r3"]);
+  await Bun.sleep(400);
+  // An ordinary drop after it: what the bridge resends is only what the host hadn't taken.
+  b.drop()();
+  send("run-4");
+  expect(await applyInits(link, 1)).toEqual(["r4"]);
+  // A line sent twice would have made claude answer once more.
+  expect(await Promise.race([link.next(), Bun.sleep(1_000).then(() => "nothing more")])).toBe("nothing more");
+  box.close();
+}, 30_000);

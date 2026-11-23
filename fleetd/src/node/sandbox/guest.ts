@@ -12,6 +12,12 @@
 // - connects from inside the box where the node opens a dial channel (`{"dial":{"host","port"}}`, its browser's),
 //   answering `{"op":"dial","channel":n}`, or with `"error"`, once it connected or failed.
 //
+// A guest started again (a hosted box's node restarted: a node.sock that didn't answer) takes over the session host
+// one before it started that still runs, from its registration in `--dir`, as a node on a plain machine adopts its
+// hosts: the node's next link joins it rather than starting a second claude on the session. How many of the node's
+// lines the host took goes on too (`lines` in the host's dir), so a node that kept its lines across the restart sends
+// it none again.
+//
 // A connection made where the guest listens while no link is up (the node restarting, a hosted box's link moving to
 // another of the service's hosts) waits, unread, for the next link, up to HOLD_MS, and is closed only then. One whose
 // link drops under it is closed: a lead call's CLI sends it again (../../cli/agent_mcp/socket.ts), and it waits here.
@@ -34,7 +40,7 @@
 // In a hosted box, `{"id":n,"op":"tailnet","suffix":s|null}` switches the team's tailnet in the box on or off
 // (./tailnet_box.ts), and the node says how each of its connections' dials went with `{"op":"tailnetDialed","channel"[,"error"]}`.
 import { type ChildProcess, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { appendFile, chmod, mkdir, open, writeFile } from "node:fs/promises";
 import { createServer, connect, isIP, type Server, type Socket } from "node:net";
 import { dirname, join } from "node:path";
@@ -43,7 +49,7 @@ import { runConfined, type RunOutcome } from "../cmd/index.ts";
 import { timingSafeEqual } from "node:crypto";
 import { selfArgv } from "../util.ts";
 import { SECRET_HEADER } from "../../sandbox/providers/common.ts";
-import { COMMAND as SESSION_HOST, type Registration } from "../runner/host.ts";
+import { COMMAND as SESSION_HOST, hostAlive, readRegistration, type Registration } from "../runner/host.ts";
 import { GUEST_PROTOCOL, HOST, type HostInfo, Mux, NODE_CHANNELS, READ_CHUNK, type Target } from "./mux.ts";
 import { BoxTailnet } from "./tailnet_box.ts";
 
@@ -76,7 +82,7 @@ export class Guest {
   #mux: Mux | undefined;
   #listeners = new Map<string, Server>();
   #next = 2;
-  #host: { dir: string; child: ChildProcess; info: HostInfo; pipe: HostPipe } | undefined;
+  #host: { dir: string; alive: () => boolean; info: HostInfo; pipe: HostPipe } | undefined;
   #server: Server | undefined;
   /** Commands running for the node, by its run id. */
   #runs = new Map<string, AbortController>();
@@ -92,6 +98,7 @@ export class Guest {
    * answers stays, and this guest doesn't listen. */
   async serve(): Promise<void> {
     mkdirSync(this.o.dir, { recursive: true, mode: 0o700 });
+    this.#adopt();
     const server = createServer({ allowHalfOpen: false }, (socket) => this.#link(socket));
     this.#server = server;
     const listen = () =>
@@ -111,6 +118,7 @@ export class Guest {
   /** Listens for the node's WebSocket on `port` (all addresses: the provider's proxy reaches it from outside), taking
    * one only with `secret` in SECRET_HEADER. */
   serveWs(port: number, secret: string): void {
+    this.#adopt();
     const want = Buffer.from(secret);
     const ends = new WeakMap<object, Duplex>();
     this.#ws = Bun.serve<undefined, never>({
@@ -210,7 +218,26 @@ export class Guest {
 
   #live() {
     const h = this.#host;
-    return h && h.child.exitCode === null && h.child.signalCode === null ? h : undefined;
+    return h?.alive() ? h : undefined;
+  }
+
+  /** Takes over a session host a guest before this one started in `dir` and left running. */
+  #adopt(): void {
+    let names: string[] = [];
+    try {
+      names = readdirSync(this.o.dir);
+    } catch {}
+    for (const name of names) {
+      const dir = join(this.o.dir, name);
+      const r = readRegistration(dir);
+      if (!r || r.refused || !hostAlive(r)) continue;
+      this.#host = { dir, alive: () => hostAlive(r), info: { protocol: r.protocol, refused: null }, pipe: this.#pipe(dir, HostPipe.taken(dir)) };
+      return;
+    }
+  }
+
+  #pipe(dir: string, lines = 0): HostPipe {
+    return new HostPipe(dir, (n) => this.#mux?.control({ op: "hostLines", n }), lines);
   }
 
   async #control(mux: Mux, m: Record<string, unknown>): Promise<void> {
@@ -307,7 +334,7 @@ export class Guest {
     if (this.#live()) throw new Error("a session host already runs in this box");
     const dir = join(this.o.dir, sessionId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    for (const f of ["host.json", "sock"]) rmSync(join(dir, f), { force: true });
+    for (const f of ["host.json", "sock", LINES]) rmSync(join(dir, f), { force: true });
     const log = openSync(join(dir, "host.log"), "w");
     const [exe, ...argv] = [...selfArgv(), SESSION_HOST, dir, sessionId, "--", program, ...(args as string[])];
     let child: ChildProcess;
@@ -327,7 +354,7 @@ export class Guest {
     child.on("exit", (code, signal) => (failed ??= `it exited (${signal ?? `exit status: ${code}`})`));
     const deadline = Date.now() + START_TIMEOUT_MS;
     let r: Registration | undefined;
-    while (!(r = registration(dir))) {
+    while (!(r = readRegistration(dir))) {
       if (failed) throw new Error(`no host came up: ${failed}`);
       if (Date.now() >= deadline) {
         child.kill("SIGKILL");
@@ -337,7 +364,7 @@ export class Guest {
     }
     const info = { protocol: r.protocol, refused: r.refused ?? null };
     if (!r.refused) {
-      this.#host = { dir, child, info, pipe: new HostPipe(dir, (n) => this.#mux?.control({ op: "hostLines", n })) };
+      this.#host = { dir, alive: () => child.exitCode === null && child.signalCode === null, info, pipe: this.#pipe(dir) };
     }
     return info;
   }
@@ -364,10 +391,15 @@ export function imageEnv(file = IMAGE_ENV, own: Record<string, string | undefine
   return out;
 }
 
+/** Where a host's dir keeps how many of the node's lines the host took, for the next guest. */
+const LINES = "lines";
+
 /** The guest's end of the session host's lines, across node links. */
 class HostPipe {
   /** The node's whole lines taken for the host: none is lost but with the host itself. */
-  lines = 0;
+  lines: number;
+  /** Of those, the ones written to the host: the rest wait in `#queue`, and go with this guest. */
+  #written: number;
   #conn: Socket | undefined;
   #closing: Promise<void> = Promise.resolve();
   #link: Duplex | undefined;
@@ -378,7 +410,31 @@ class HostPipe {
   constructor(
     readonly dir: string,
     readonly confirmed: (lines: number) => void,
-  ) {}
+    lines = 0,
+  ) {
+    this.lines = this.#written = lines;
+  }
+
+  /** How many lines the host in `dir` took from the guests before this one. */
+  static taken(dir: string): number {
+    try {
+      const n = Number(readFileSync(join(dir, LINES), "utf8"));
+      return Number.isInteger(n) && n > 0 ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Writes `whole` (whole lines) to the host, and records how many it took so far. */
+  #write(conn: Socket, whole: Buffer): void {
+    conn.write(whole);
+    for (const b of whole) if (b === 10) this.#written++;
+    const file = join(this.dir, LINES);
+    try {
+      writeFileSync(`${file}.part`, String(this.#written));
+      renameSync(`${file}.part`, file);
+    } catch {}
+  }
 
   /** This link's end of channel 1. The host gets whole lines only: a link that drops mid-line leaves no half of it, and
    * the node sends the line again whole. */
@@ -397,7 +453,7 @@ class HostPipe {
         else {
           tail = Buffer.from(all.subarray(nl + 1));
           const whole = Buffer.from(all.subarray(0, nl + 1));
-          if (this.#conn) this.#conn.write(whole);
+          if (this.#conn) this.#write(this.#conn, whole);
           else this.#queue.push(whole);
           for (const b of whole) if (b === 10) this.lines++;
           this.#confirm ??= setTimeout(() => {
@@ -429,7 +485,7 @@ class HostPipe {
   #open(link: Duplex): void {
     const conn = dialHost(this.dir);
     this.#conn = conn;
-    for (const b of this.#queue.splice(0)) conn.write(b);
+    for (const b of this.#queue.splice(0)) this.#write(conn, b);
     conn.on("data", (d: Buffer) => {
       if (this.#conn === conn) link.push(d);
     });
@@ -523,14 +579,6 @@ function dialHost(dir: string): Socket {
   const socket = connect(`/proc/self/fd/${fd}/sock`);
   socket.once("connect", () => closeSync(fd)).once("error", () => closeSync(fd));
   return socket;
-}
-
-function registration(dir: string): Registration | undefined {
-  try {
-    return JSON.parse(readFileSync(join(dir, "host.json"), "utf8")) as Registration;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Whether something listens on the unix socket `path`. */
