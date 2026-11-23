@@ -1039,6 +1039,8 @@ export class Train {
       this.options.fresh.touch(freshTrain(repo), this.nowMs());
       const train = this.records.train(repo);
       if (train) await this.mainCiPass(repo, train.projectRef);
+      // A writer's PR opened meanwhile goes on now, not once this CI ends minutes later (#742, #743).
+      if (train) await this.readyPass(repo, train.projectRef);
       if (between) await between();
       await this.options.sleep(this.busyWait(start, CI_FIRST_WAIT_MS));
     }
