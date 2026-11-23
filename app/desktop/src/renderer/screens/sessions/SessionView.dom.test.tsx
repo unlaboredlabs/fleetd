@@ -181,7 +181,12 @@ it("says over the last picture that it waits for the screen's machine while that
   await settle();
   // The last picture stays; one quiet line over it, the machine by its id when the hub names none.
   expect(host.querySelector("img")?.dataset["seq"]).toBe("3");
-  expect(host.querySelector("[role='status']")?.textContent).toBe("Waiting for box-7…");
+  const status = host.querySelector("[role='status']");
+  expect(status?.textContent).toBe("Waiting for box-7…");
+  // Over the H.264 canvas too, which fills the frame once it draws: after it, so painted above it.
+  const canvas = host.querySelector("canvas");
+  expect(canvas).not.toBeNull();
+  expect((canvas?.compareDocumentPosition(status as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 1, jpegB64: "AAAB", width: 1280, height: 800, control: "agent", link: 2 } }));
   await settle();
   expect(host.querySelector("[role='status']")).toBeNull();

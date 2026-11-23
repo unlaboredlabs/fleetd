@@ -468,6 +468,8 @@ function Frame({
         ) : (
           <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
         ))}
+      {media === undefined && videoCanvas !== undefined ? <canvas ref={videoCanvas} className={s.video} data-on={videoOn ? "" : undefined} /> : null}
+      {/* After the H.264 canvas, which fills the frame: the line is over the picture whichever shows it. */}
       {waiting === undefined || image === undefined ? null : (
         <span className={s.waiting} role="status">
           <Text size="xs" tone="quiet">
@@ -475,7 +477,6 @@ function Frame({
           </Text>
         </span>
       )}
-      {media === undefined && videoCanvas !== undefined ? <canvas ref={videoCanvas} className={s.video} data-on={videoOn ? "" : undefined} /> : null}
       {mark === undefined ? null : (
         <span
           className={s.mark}
