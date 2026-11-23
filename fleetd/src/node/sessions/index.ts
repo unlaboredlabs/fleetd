@@ -363,6 +363,18 @@ export function scratchKept(rows: SessionRow[], live: Set<string>, now: number):
   return new Set(rows.filter(kept).map((r) => scratchName(scratchOwner(r))));
 }
 
+/** `fleetd mac`'s transfer dir for a session (mac_tool/client.ts `scratch`): it holds only a push or pull under way. */
+const macScratch = (sessionId: string) => `mac-${sessionId.slice(0, 12).replace(/[^A-Za-z0-9-]/g, "")}`;
+
+/** Of the entries under `tmp/`, those the node's start removes: only what the node made itself and no session may come
+ * back to. A session's scratch dir not kept (scratchKept), and the mac transfer dir of a session whose process didn't
+ * run on through the restart. Anything else there (a folder agents share) is theirs, and stays. */
+export function scratchSwept(names: string[], rows: SessionRow[], live: Set<string>, now: number): string[] {
+  const kept = scratchKept(rows, live, now);
+  const mac = new Set(rows.filter((r) => !live.has(r.summary.sessionId)).map((r) => macScratch(r.summary.sessionId)));
+  return names.filter((name) => (/^[0-9a-f]{16}$/.test(name) && !kept.has(name)) || mac.has(name));
+}
+
 /** One live session's process, through its host. */
 type Live = {
   generation: number;
@@ -510,11 +522,11 @@ export class SessionService {
     if (vmLeft) console.log(`${nowIso()} INFO removed what local VMs left on this machine {"entries":${vmLeft}}`);
     const killed = await killOrphans(config.home, { hosts: adoptedHosts, sessions: adopted });
     if (killed) console.warn(`${nowIso()} WARN killed processes sessions of a previous node left running {"killed":${killed}}`);
-    // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept).
-    const keep = scratchKept(service.store.sessions(), adopted, Date.now());
+    // A killed node's scratch dirs: each stays while a session may still come back to it (scratchKept), and what
+    // isn't fleetd's stays always (scratchSwept).
+    const names = existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : [];
     let swept = 0;
-    for (const name of existsSync(join(config.home, "tmp")) ? readdirSync(join(config.home, "tmp")) : []) {
-      if (keep.has(name)) continue;
+    for (const name of scratchSwept(names, service.store.sessions(), adopted, Date.now())) {
       try {
         await rm(join(config.home, "tmp", name), { recursive: true, force: true });
         swept++;

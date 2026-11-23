@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SCRATCH_KEEP_MS, scratchKept, SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
+import { SCRATCH_KEEP_MS, scratchKept, scratchSwept, SessionService, type SessionConfig } from "../../src/node/sessions/index.ts";
 import type { SessionRow } from "../../src/node/sessions/store.ts";
 import { tempHome } from "../helpers.ts";
 
@@ -99,11 +99,17 @@ test("a task keeps its scratch dir across its sessions and a node restart, until
     expect(readFileSync(join(scratch("t1"), "clone", "edit.txt"), "utf8")).toBe("not committed\n");
     expect(existsSync(scratch("t2"))).toBe(false);
 
-    // A node restart keeps it, and sweeps a dir no session uses.
-    mkdirSync(join(k.node, "tmp", "left-behind"));
+    // A node restart keeps it, and sweeps the scratch dirs no session uses, and the mac transfer dir of a session not
+    // running on. A folder agents made there themselves isn't the node's: it stays.
+    mkdirSync(scratch("gone"));
+    mkdirSync(join(k.node, "tmp", "mac-t1"));
+    mkdirSync(join(k.node, "tmp", "density-debate"));
+    writeFileSync(join(k.node, "tmp", "density-debate", "notes.md"), "six agents' notes\n");
     await k.restart("t2");
     expect(existsSync(join(scratch("t1"), "clone", "edit.txt"))).toBe(true);
-    expect(existsSync(join(k.node, "tmp", "left-behind"))).toBe(false);
+    expect(existsSync(scratch("gone"))).toBe(false);
+    expect(existsSync(join(k.node, "tmp", "mac-t1"))).toBe(false);
+    expect(readFileSync(join(k.node, "tmp", "density-debate", "notes.md"), "utf8")).toBe("six agents' notes\n");
     await call("send", { sessionId: "t2", runId: "q2", text: "go on" });
     await until("the resumed run", done("t2", "q2"));
     expect(existsSync(join(scratch("t1"), "clone", "edit.txt"))).toBe(true);
@@ -202,6 +208,24 @@ test("the node's start keeps the scratch of every session that may come back, an
     row("live", {}, { updatedAt: at(now - SCRATCH_KEEP_MS - 60_000) }),
   ];
   expect(scratchKept(rows, new Set(["live"]), now)).toEqual(new Set(["waiting", "lead", "live"].map(scratchName)));
+});
+
+test("the node's start sweeps only what it made itself: scratch and mac transfer dirs no session comes back to", () => {
+  const now = Date.parse("2026-11-23T21:01:55Z");
+  const row = (sessionId: string, local: Record<string, unknown> = {}, summary: Record<string, unknown> = {}): SessionRow =>
+    ({ summary: { sessionId, updatedAt: new Date(now - 60_000).toISOString(), ...summary }, local }) as unknown as SessionRow;
+  const rows = [row("waiting", { baseRef: "main" }, { worktreePath: "/w/waiting" }), row("removed", { baseRef: "main" }), row("live")];
+  const names = [
+    ...["waiting", "removed", "live", "unknown"].map(scratchName),
+    "mac-waiting",
+    "mac-live",
+    // What agents made: a shared folder, and ones only like the node's.
+    "density-debate",
+    "mac-notes",
+    "0123456789abcdef0",
+    "0123456789ABCDEF",
+  ];
+  expect(scratchSwept(names, rows, new Set(["live"]), now)).toEqual([scratchName("removed"), scratchName("unknown"), "mac-waiting"]);
 });
 
 test("an ended task's agent closes when idle, keeping its worktree, but not while a Monitor of its own may fire", async () => {
