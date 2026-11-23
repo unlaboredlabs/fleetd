@@ -46,6 +46,7 @@ const RECENT_CHAT_ROWS = 200;
 const SETTLE_MS = 10_000;
 
 const threadKey = (t: ThreadRef) => `${t.machineId}/${t.threadId}`;
+const projectKey = (r: ProjectRef) => `${r.machineId}/${r.projectId}`;
 
 export class Leads {
   readonly records: LeadRecords;
@@ -60,6 +61,8 @@ export class Leads {
   settleMs = SETTLE_MS;
   /** A restart waiting for a stopped turn's end to be followed, by thread (`runEnded`). */
   private readonly ending = new Map<string, () => void>();
+  /** Projects whose next restart starts its lead with no turn: it waits for the person's next message. */
+  private readonly waitsForMessage = new Set<string>();
 
   constructor(private readonly hub: Hub) {
     this.records = new LeadRecords(hub.db);
@@ -334,10 +337,11 @@ export class Leads {
    * a turn under way is stopped first, as the chat's Stop does, then it starts at once; one whose machine doesn't answer
    * starts once its turn ends or its machine is back. Its profile needn't have changed: a stuck lead is started again on
    * the one it runs on. False when the project has no lead; throws why when a launch would be refused now, stopping
-   * nothing.
+   * nothing. `waitForMessage`: it starts with no turn, and the person's next message starts one.
    */
-  async switchSoon(r: ProjectRef): Promise<boolean> {
+  async switchSoon(r: ProjectRef, o: { readonly waitForMessage?: boolean } = {}): Promise<boolean> {
     if (!this.records.leadGet(r)) return false;
+    if (o.waitForMessage === true) this.waitsForMessage.add(projectKey(r));
     const refused = this.refusal(r, "restarted");
     if (refused) throw refused;
     this.records.leadSwitchSet(r, "asked");
@@ -397,7 +401,10 @@ export class Leads {
     } else if (!this.idle(r)) return undefined;
     // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
     // nothing to answer, and it made up a message from the person (W787).
-    return { lead: await this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r)) };
+    // One started again with no turn (`switchSoon`'s waitForMessage): its claude waits, and what it carries on reads goes in
+    // with the next message, as a lead started ahead.
+    const ahead = this.waitsForMessage.delete(projectKey(r));
+    return { lead: await this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r), ahead) };
   }
 
   /**

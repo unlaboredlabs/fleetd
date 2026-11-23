@@ -1,12 +1,14 @@
 // The stall watchdog through the hub's own watch (`hubWatch`): the real executor and its followed sessions, a stand-in
 // node and the kit's clock. A run with no frame past its threshold is failed as stalled and interrupted once; a run that
 // is slow, waiting on a person, between turns, or on a machine that came back is left alone.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { leadWorking } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
-import { FROZEN_LINE, start as startLeads } from "../src/hub/leads/loops.ts";
+import { FROZEN_CARRIES_LINE, FROZEN_LINE, start as startLeads } from "../src/hub/leads/loops.ts";
+import { link } from "../src/hub/link/server.ts";
+import { CAP_LAUNCH_AHEAD } from "../src/shared/node_link.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { hubWatch, STALL_MS, Watchdog } from "../src/hub/watchdog/index.ts";
 import type { MachineEvent, RunInfo, SessionCall, SessionSummary, ThreadEvent, ThreadItem } from "../src/shared/sessions.ts";
@@ -290,8 +292,56 @@ test("a lead's stopped run its machine never ends starts the lead again, and its
   const lead = leads(n.hub).records.leadGet(r);
   expect(lead?.sessionGeneration).toBe(2);
   expect(lead?.threadId).not.toBe("s1");
+  // It carries on, as the line said: its new session starts with a turn.
+  const launches = n.calls.filter((c) => c.op === "launch");
+  expect(launches.at(-1)).not.toHaveProperty("ahead");
   n.end();
 });
+
+for (const ahead of [true, false]) {
+test(`a second stall that waits for the person, never ended by its machine, starts the lead again ${ahead ? "with no turn" : "with one on a node too old for that, and says it carries on"}`, async () => {
+  const n = await standIn();
+  // Whether its node can start a lead with no turn (CAP_LAUNCH_AHEAD).
+  spyOn(link(n.hub), "can").mockImplementation((_machine: string, cap: string) => (cap === CAP_LAUNCH_AHEAD ? ahead : true));
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  leads(n.hub).settleMs = 10;
+  // Each grace passes when the test says.
+  const graces: (() => void)[] = [];
+  const pass = async () => {
+    for (let i = 0; i < 100 && graces.length === 0; i++) await Bun.sleep(10);
+    for (const done of graces.splice(0)) done();
+    await Bun.sleep(30);
+  };
+  startLeads(n.hub, { sleep: () => new Promise<void>((done) => graces.push(done)) });
+  await n.set("s1", running("r1"));
+  await n.link();
+  // The first stall ends on its machine (its interrupt took, the run interrupted): it carries on, and nothing is started
+  // again.
+  await n.minutes(10);
+  await n.set("s1", { status: "idle", latestRun: runOf("r1", "interrupted") });
+  await pass();
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(1);
+  // The second, with no completed turn between, waits for the person; and this one its machine never ends.
+  await n.set("s1", running("r2"));
+  await n.minutes(10);
+  await pass();
+  const said = () => chat(n.hub).page(r, undefined, undefined, 10).messages.filter((m) => m.author === "system").map((m) => m.text);
+  for (let i = 0; i < 200 && !said().includes(FROZEN_LINE); i++) await Bun.sleep(10);
+  expect(said()).toEqual([
+    "The lead stopped making progress, so fleetd stopped its turn. It carries on by itself.",
+    "The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.",
+    ahead ? FROZEN_LINE : FROZEN_CARRIES_LINE,
+  ]);
+  // As the lines said: started again with no turn, its claude waiting for the person's next message; or, on an older
+  // node, with one.
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(2);
+  const launch = n.calls.filter((c) => c.op === "launch").at(-1);
+  if (ahead) expect(launch).toMatchObject({ ahead: true });
+  else expect(launch).not.toHaveProperty("ahead");
+  n.end();
+});
+}
 
 test("a lead's stopped run that its machine ends in time is not started again", async () => {
   const n = await standIn();
