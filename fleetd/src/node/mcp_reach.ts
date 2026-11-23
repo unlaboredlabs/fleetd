@@ -51,6 +51,12 @@ export function without(servers: Entries, names: readonly string[]): Entries {
 
 const quoted = (names: readonly string[]) => names.map((n) => `“${n}”`).join(names.length === 2 ? " and " : ", ");
 
+/** What a lead's chat says, in fleetd's own words, when its start left servers out: one plain line, once per start. */
+export function skippedLine(names: readonly string[]): string {
+  const one = names.length === 1;
+  return `The MCP server${one ? "" : "s"} ${quoted(names)} didn't answer, so ${one ? "its" : "their"} tools are off until the next start.`;
+}
+
 /** What the agent hears ahead of its next message when servers were left out of its start: the person hears it from
  * the agent once, in plain words, inside its reply to them, never as a message of its own. */
 export function skippedNote(names: readonly string[], ms = MCP_REACH_MS): string {

@@ -103,38 +103,40 @@ const server = (transport: Record<string, unknown>, values: Record<string, unkno
   ...(transport.type === "stdio" ? { env: values } : { headers: values }),
 });
 
-// An address server whose address doesn't answer from the node is left out of the start (src/node/mcp_reach.ts, W818):
-// claude would wait 30 s on it before its first request. The agent hears it once, ahead of its next message, to tell
-// the person in its reply; the next message of the same claude carries nothing.
-test("a lead's MCP server that doesn't answer is left out of its start, and the agent hears it once with its next message", async () => {
+// A server reached by address that doesn't answer from the node is left out of the start (src/node/mcp_reach.ts, W818):
+// claude would wait 30 s on it before its first request. A lead's summary names it, for the hub's line of fleetd's own
+// in the lead's chat (src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it once, ahead of its next message.
+test("an MCP server that doesn't answer is left out of a start: a lead's summary names it, another agent hears it once", async () => {
   const up = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("", { status: 405 }) });
   const gone = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   const goneUrl = `http://127.0.0.1:${gone.port}/mcp`;
   gone.stop(true);
   try {
-    const plain = (name: string, url: string) => ({ ...server({ type: "http", url }, []), name });
-    await ok("launch", {
-      sessionId: "s-mcp-gone",
-      projectId: "p1",
-      runtimeMode: "full-access",
-      workspace: { type: "root" },
-      prompt: "hello",
-      runId: "rg1",
-      role: "lead",
-      mcpRole: "lead",
-      mcp: { userServers: false, servers: [plain("team-docs", `http://127.0.0.1:${up.port}/mcp`), plain("devbox-tailnet", goneUrl)] },
-    });
-    await until("the first run", () => service.store.session("s-mcp-gone")?.summary.latestRun?.status === "completed");
-    const config = JSON.parse(readFileSync(join(nodeHome, "sessions", "s-mcp-gone", "mcp.json"), "utf8"));
+    const plain = (name: string, url: string) => ({ ...server({ type: "http", url }, []), name, roles: { lead: true, writers: true, reviewers: false } });
+    const servers = [plain("team-docs", `http://127.0.0.1:${up.port}/mcp`), plain("devbox-tailnet", goneUrl)];
+    const launch = (sessionId: string, role: string, mcpRole: string) =>
+      ok("launch", { sessionId, projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hello", runId: `${sessionId}-1`, role, mcpRole, mcp: { userServers: false, servers } });
+    // The lead: left out, its summary names it, and its claude hears nothing of it.
+    await launch("s-mcp-lead", "lead", "lead");
+    await until("the lead's first run", () => service.store.session("s-mcp-lead")?.summary.latestRun?.status === "completed");
+    const config = JSON.parse(readFileSync(join(nodeHome, "sessions", "s-mcp-lead", "mcp.json"), "utf8"));
     expect(Object.keys(config.mcpServers)).toEqual(["team-docs", "fleetd"]);
-    // The fake host echoes what claude was sent: the note, then the message.
-    const first = service.store.session("s-mcp-gone")?.summary.latestAssistantTail ?? "";
+    const lead = service.store.session("s-mcp-lead")!.summary;
+    expect(lead.mcpSkipped).toEqual(["devbox-tailnet"]);
+    expect(lead.mcpSkippedAt).toBeString();
+    expect(lead.latestAssistantTail).toBe("ok: hello");
+    await ok("stop", { sessionId: "s-mcp-lead" });
+    // Another agent: its claude hears it ahead of its first message (the fake host echoes what it was sent), once.
+    await launch("s-mcp-writer", "worker", "writer");
+    await until("the writer's first run", () => service.store.session("s-mcp-writer")?.summary.latestRun?.status === "completed");
+    const first = service.store.session("s-mcp-writer")?.summary.latestAssistantTail ?? "";
     expect(first).toStartWith("ok: [fleetd: this session started without the MCP server “devbox-tailnet”: it didn't answer within 3 s");
     expect(first).toEndWith("\n\nhello");
-    await ok("send", { sessionId: "s-mcp-gone", runId: "rg2", text: "again" });
-    await until("the second run", () => service.store.session("s-mcp-gone")?.summary.latestRun?.id === "rg2" && service.store.session("s-mcp-gone")?.summary.latestRun?.status === "completed");
-    expect(service.store.session("s-mcp-gone")?.summary.latestAssistantTail).toBe("ok: again");
-    await ok("stop", { sessionId: "s-mcp-gone" });
+    expect(service.store.session("s-mcp-writer")?.summary.mcpSkipped).toBeUndefined();
+    await ok("send", { sessionId: "s-mcp-writer", runId: "s-mcp-writer-2", text: "again" });
+    await until("the writer's second run", () => service.store.session("s-mcp-writer")?.summary.latestRun?.id === "s-mcp-writer-2" && service.store.session("s-mcp-writer")?.summary.latestRun?.status === "completed");
+    expect(service.store.session("s-mcp-writer")?.summary.latestAssistantTail).toBe("ok: again");
+    await ok("stop", { sessionId: "s-mcp-writer" });
   } finally {
     up.stop(true);
   }

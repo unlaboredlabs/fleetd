@@ -22,11 +22,32 @@ export type PrFoundHook = (thread: { machineId: string; threadId: string }) => v
 /** A session's computer went to sleep or woke (its summary's `asleep`), with no change of status to say so. */
 export type AsleepHook = (thread: { machineId: string; threadId: string; projectId: string }) => void;
 
+/** A session's start left out MCP servers that didn't answer (its summary's `mcpSkipped`, node/mcp_reach.ts): told
+ * once for each start that did, as its summary first says so, never again for that start's fields carried on. */
+export type McpSkippedHook = (thread: { machineId: string; threadId: string }, names: string[], at: string | undefined) => void;
+
 export class ToolHooks {
   readonly project: ProjectHook[] = [];
   readonly status: StatusHook[] = [];
   readonly prFound: PrFoundHook[] = [];
   readonly asleep: AsleepHook[] = [];
+  readonly mcpSkipped: McpSkippedHook[] = [];
+
+  /** Told when a session's start left MCP servers out: a lead's chat says which. */
+  onMcpSkipped(hook: McpSkippedHook): void {
+    this.mcpSkipped.push(hook);
+  }
+
+  /** Each `onMcpSkipped` hook, a throwing one logged. */
+  skippedMcp(thread: { machineId: string; threadId: string }, names: string[], at: string | undefined): void {
+    for (const hook of this.mcpSkipped) {
+      try {
+        hook(thread, names, at);
+      } catch (error) {
+        console.warn("executor: an MCP skipped hook failed:", error);
+      }
+    }
+  }
 
   /** Told when a session's computer goes to sleep or wakes: the chat says so in its state. */
   onAsleep(hook: AsleepHook): void {

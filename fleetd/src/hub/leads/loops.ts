@@ -22,6 +22,7 @@ import { isoMs, nowMs } from "../store/time.ts";
 import { trainDigest } from "../train/index.ts";
 import { wakes } from "../wakes/index.ts";
 import { registerLeadCalls as leadCallsOfLeads } from "./calls.ts";
+import { skippedLine } from "../../node/mcp_reach.ts";
 import { end, notStartedLine, signedOutLine } from "./cut_off.ts";
 import { leads } from "./index.ts";
 import { leadWiring } from "./ports.ts";
@@ -53,6 +54,17 @@ function follow(hub: Hub, types: HubEventType[], fn: (e: import("../../shared/co
       }
     }
   })();
+}
+
+/**
+ * A lead's start left out MCP servers that didn't answer (node/mcp_reach.ts, its summary's `mcpSkipped`, told by the
+ * executor as the summary first says so): its chat says which in a line of fleetd's own, once per start (the line's
+ * source is the start's), never left to the lead to relay. Any other thread's says nothing here.
+ */
+export function mcpSkipped(hub: Hub, thread: { machineId: string; threadId: string }, names: string[], at: string | undefined): void {
+  const lead = leads(hub).records.leadsList().find((l) => l.projectRef.machineId === thread.machineId && l.threadId === thread.threadId);
+  if (!lead || names.length === 0) return;
+  chat(hub).add(lead.projectRef, { author: "system", text: skippedLine(names), source: `mcp_skipped:${thread.threadId}:${at ?? ""}` });
 }
 
 /** Ends the project's live work if the cache no longer has the project; a no-op otherwise (removals.rs `reconcile`). */
@@ -183,6 +195,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   const retryLater = (r: ProjectRef, lead: StoredLead, seq?: number) =>
     retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
   for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
+  executorHooks(hub).onMcpSkipped((thread, names, at) => mcpSkipped(hub, thread, names, at));
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {
