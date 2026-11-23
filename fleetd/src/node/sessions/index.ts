@@ -1880,7 +1880,7 @@ export class SessionService {
               const message: ThreadMessage = prior
                 ? { ...prior, text: `${prior.text}\n\n${body.text}` }
                 : { id: body.message_id, ...(runId ? { runId } : {}), role: "assistant", text: body.text, createdAt: c.at };
-              c.row.summary.latestAssistantTail = tailUtf16(message.text, state.ASSISTANT_TAIL);
+              c.row.summary.latestAssistantTail = state.assistantTail(message.text);
               this.#putMessage(c, message);
             });
             break;

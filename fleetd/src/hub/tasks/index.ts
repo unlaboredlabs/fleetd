@@ -971,11 +971,11 @@ export class Tasks {
     const threadRef = task.threadRef as ThreadRef;
     const thread = store(this.hub).threadGet(threadRef);
     let text = thread?.thread.latestMessageTail ?? "";
-    // The summary keeps only the ends of a long reply: the lead reads it whole with `agents` and its taskId.
-    if (fullResultText(text) !== undefined) {
-      const whole = await this.ports.latestText?.(threadRef);
-      if (whole !== undefined && whole.trim().length > text.trim().length) text = whole;
-    }
+    // The summary may hold only a cut of the reply, and the node's own summary keeps just its last 2000 units, unmarked
+    // and as short as a whole reply: the reply is read whole from the session, so the result keeps its head and the lead
+    // reads it all with `agents` and its taskId.
+    const whole = await this.ports.latestText?.(threadRef);
+    if (whole !== undefined && whole.trim().length > text.trim().length) text = whole;
     const error =
       why ?? (thread && status === "failed" && thread.thread.lastError ? `[${thread.thread.lastError.class}] ${thread.thread.lastError.message}` : "");
     const write = task.kind === "write";

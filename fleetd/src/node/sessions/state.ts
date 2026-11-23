@@ -11,6 +11,9 @@ import { isActive, RESUME_REFUSED, type FailureClass, type PermissionDecision, t
 export const OUTPUT_KEPT = 8 * 1024;
 export const ASSISTANT_TAIL = 2000;
 
+/** The summary's copy of the last assistant text: its last ASSISTANT_TAIL units, starting with "…" when cut, so a cut never reads as a whole reply. */
+export const assistantTail = (text: string) => (text.length <= ASSISTANT_TAIL ? text : `…${tailUtf16(text, ASSISTANT_TAIL - 1)}`);
+
 /** Recomputes what a summary derives from its runs: the latest run, the active one, and the status. */
 export function settle(summary: SessionSummary, runs: RunInfo[], at: string): void {
   const neverRan = (r: RunInfo) => r.status === "interrupted" && r.startedAt === undefined;
