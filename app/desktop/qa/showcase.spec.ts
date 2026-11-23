@@ -701,3 +701,60 @@ for (const { still, screen, variant, fixture, part, holds } of STILLS) {
     });
   }
 }
+
+// The landing page's hero (site/home.html, W847): the app's window as on a Mac, filling a 14-inch laptop's screen
+// under its menu bar (1512x956 points at 2x), on storefront with each bot in its own colour and body and more agents
+// at work: you ask to save carts, and the lead's work on it plays through to the batch merging. The page's own picture
+// is made from this PNG (site/README.md).
+for (const theme of ["light", "dark"] as const) {
+  test(`showcase hero ${theme}`, async () => {
+    test.setTimeout(120_000);
+    const { app, page, settled, close } = await launch("showcase-hero", appMain, { realClock: true });
+    try {
+      // As record() does for the lead clip: a running clock from the fixture's now, storefront's chat and its agents.
+      const { now } = fixtureMeta(path.join(fixturesDir, "showcase-hero.json"));
+      await page.clock.install({ time: new Date(now ?? Date.now()) });
+      await page.reload();
+      await setView(app, page, "hero", theme);
+      await show(page, "chat", `${CHAT}/agents`);
+      await settled();
+      await hideByClass(page, '[role="status"]', "Sample data, not connected", "display: none");
+      // Not the island over the composer: at the hero's size its agents' tiny glyphs read as broken letters.
+      await page.addStyleTag({ content: "[data-island] { visibility: hidden !important; }" });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "no-preference" });
+      // As on a Mac: the sidebar's first row left to the traffic lights (tokens.css), and the lights where hiddenInset
+      // puts them (shared/frame.ts's TRAFFIC_LIGHTS, macOS 26's size and pitch, recordConfig.ts's trafficLights).
+      await page.evaluate(() => {
+        document.documentElement.dataset["platform"] = "darwin";
+        const top = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--top-bar-height")) || 52;
+        const lights = document.createElement("div");
+        lights.setAttribute("aria-hidden", "true");
+        lights.style.cssText = `position:fixed;z-index:2147483647;left:21px;top:${(top - 16) / 2 + 1}px;display:flex;gap:9px;pointer-events:none`;
+        for (const [fill, edge] of [["#ff5f57", "#e0443e"], ["#febc2e", "#dea123"], ["#28c840", "#1aab29"]]) {
+          const dot = document.createElement("span");
+          dot.style.cssText = `width:14px;height:14px;border-radius:50%;background:${fill};box-shadow:inset 0 0 0 .5px ${edge}`;
+          lights.append(dot);
+        }
+        document.body.append(lights);
+      });
+      await settle(page);
+      // The busiest moment that tells the story: the batch merged, eleven agents at work, eight messages in the chat.
+      // HERO_AT (ms after the send, comma separated) shoots other moments to pick from.
+      const { sent } = await ask(page, REQUEST, []);
+      for (const at of (process.env["HERO_AT"] ?? "25500").split(",").map(Number)) {
+        await sleepUntil(sent + at);
+        // A Mac's shortcuts: the app names them by the platform it runs on, Linux here.
+        await page.evaluate(() => {
+          const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.textContent?.includes("Ctrl+")) n.textContent = n.textContent.replaceAll("Ctrl+", "⌘");
+        });
+        await settle(page);
+        const out = test.info().outputPath(`hero-mac-${theme}${process.env["HERO_AT"] ? `-${String(at)}` : ""}.png`);
+        await page.screenshot({ path: out, type: "png", caret: "hide" });
+        console.log(`hero: ${out}`);
+      }
+    } finally {
+      await close();
+    }
+  });
+}

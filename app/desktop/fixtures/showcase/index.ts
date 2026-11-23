@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
+import type { SharedName } from "../kit/group.ts";
 import { firstProject, writeChat } from "../kit/chat.ts";
 import { asText, isObject, type JsonObject, type JsonValue } from "../kit/json.ts";
 import { arr } from "../kit/stress.ts";
@@ -104,7 +105,7 @@ interface Agent {
 const cmd = (text: string): JsonObject => ({ kind: "command", text });
 const edit = (p: string): JsonObject => ({ kind: "edit", path: p });
 const read = (p: string): JsonObject => ({ kind: "read", path: p });
-const AGENTS: readonly Agent[] = [
+const SHOWCASE_AGENTS: readonly Agent[] = [
   { id: "T51", order: "W19", role: "implementer", title: "Add a price filter to search", from: BEFORE, doing: [edit("src/search/filters.tsx"), cmd("pnpm test search"), read("src/search/query.ts"), edit("src/search/query.ts")] },
   { id: "T52", order: "W19", role: "reviewer", title: "Review #229", from: BEFORE, to: "approve229", doing: [read("src/search/facets.ts"), cmd("gh pr diff 229"), { kind: "thinking" }] },
   { id: "T55", order: "W20", role: "implementer", title: "Translate the checkout’s buttons", from: BEFORE, doing: [edit("src/i18n/checkout.de.json"), edit("src/i18n/checkout.fr.json"), cmd("pnpm i18n:build"), edit("src/i18n/checkout.nl.json")] },
@@ -126,7 +127,8 @@ const ON_SCREEN: Readonly<Record<string, { from: number; to: number; activity: J
 };
 
 // ---- the orders ----
-const ORDERS: ReadonlyArray<{ id: string; title: string; prs: readonly number[] }> = [
+type Order = { readonly id: string; readonly title: string; readonly prs: readonly number[] };
+const SHOWCASE_ORDERS: readonly Order[] = [
   { id: ORDER, title: TITLE, prs: [231, 232, 233] },
   { id: "W19", title: "Filter search results by price", prs: [229] },
   { id: "W20", title: "Checkout in the shopper’s language", prs: [230] },
@@ -152,7 +154,15 @@ const PRS: readonly Pr[] = [
 ];
 const prState = (pr: Pr, s: When): PrState | undefined => pr.states.filter(([from]) => within(s, from)).at(-1)?.[1];
 
-const build = (base: Fixture, other: Fixture): Fixture => {
+/** More at work beside the showcase's own: the landing page's hero shows a busier bot (hero, below). */
+interface Extra {
+  readonly agents: readonly Agent[];
+  readonly orders: readonly Order[];
+}
+
+const build = (base: Fixture, other: Fixture, extra: Extra = { agents: [], orders: [] }): Fixture => {
+  const AGENTS = [...SHOWCASE_AGENTS, ...extra.agents];
+  const ORDERS = [...SHOWCASE_ORDERS, ...extra.orders];
   const f = Fixture.from(base, "showcase-order", "storefront at work on three orders; sending the showcase's request plays it from the lead's reply, through its screens, to its batch merged.");
   const ref = firstProject(f);
   const now = Date.parse(f.now);
@@ -637,9 +647,73 @@ const pinnedTwo = (base: Fixture): Fixture => {
   return f.answer("chat_pins_get", {}, { pins: [ref("billing"), ref("Ada")], set: true });
 };
 
+/** The hero's busier storefront: five more agents in its orders, each a step into its work. (In its own orders: the
+ * board holds each order once per step, at most 60 rows, so a new order would overflow it.) */
+const HERO_EXTRA: Extra = {
+  orders: [],
+  agents: [
+    { id: "T71", order: "W19", role: "implementer", title: "Index products for instant search", from: BEFORE, doing: [edit("src/search/index.ts"), cmd("pnpm search:reindex"), read("src/search/ranking.ts")] },
+    { id: "T72", order: "W19", role: "implementer", title: "Show results as you type", from: BEFORE, doing: [edit("web/search/Instant.tsx"), cmd("pnpm test web/search"), read("web/search/Results.tsx")] },
+    { id: "T73", order: "W20", role: "implementer", title: "Show prices in the shopper’s currency", from: BEFORE, doing: [edit("web/price/Price.tsx"), cmd("pnpm test web/price"), read("src/money/currency.ts")] },
+    { id: "T74", order: "W18", role: "reviewer", title: "Review the gift card tax order", from: BEFORE, doing: [read("src/checkout/tax.ts"), cmd("gh pr diff 234"), { kind: "thinking" }] },
+    { id: "T75", order: "W20", role: "verifier", title: "Check a German order end to end", from: BEFORE, doing: [cmd("pnpm preview --lang de"), { kind: "thinking" }, read("web/checkout/Address.tsx")] },
+  ],
+};
+
+/** Each bot's colour and body in the landing page's hero (W847), as people pick them. */
+const HERO_LOOKS: Readonly<Record<string, readonly [string, string]>> = {
+  storefront: ["orange", "kitty"],
+  billing: ["blue", "pebble"],
+  Ada: ["purple", "bunny"],
+  checkout: ["teal", "ghost"],
+  Home: ["green", "toast"],
+};
+
+/** When the landing page's hero shows the app: its other screens say 9:41 (site/home.html), so the fixture's clock is
+ * moved to just before (QA shows times in UTC). */
+const HERO_NOW = "T09:40:40.000Z";
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+/** Every time in `v` moved by `ms`. */
+const moved = (v: JsonValue, ms: number): JsonValue =>
+  typeof v === "string"
+    ? ISO_TIME.test(v)
+      ? new Date(Date.parse(v) + ms).toISOString()
+      : v
+    : Array.isArray(v)
+      ? v.map((x) => moved(x, ms))
+      : isObject(v)
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, moved(x, ms)]))
+        : v;
+
+/** The showcase with each bot in its own colour and body, and a busier storefront: the landing page's hero shoots it
+ * (qa/showcase.spec.ts). */
+const hero = (base: (name: SharedName) => Fixture): Fixture => {
+  const f = Fixture.from(build(base("typical"), base("chat-empty"), HERO_EXTRA), "showcase-hero", "The showcase with each bot in its own colour and body and more at work, for the landing page's hero.");
+  const projects = arr(f.snapshot?.["projects"]).filter(isObject);
+  if (f.snapshot !== undefined)
+    f.snapshot = {
+      ...f.snapshot,
+      projects: projects.map((p) => {
+        const look = HERO_LOOKS[asText(p["title"])];
+        return look === undefined ? p : { ...p, avatarColor: look[0], avatarShape: look[1] };
+      }),
+    };
+  // Its clock to 9:40, every time in it with it.
+  const ms = Date.parse(f.now.slice(0, 10) + HERO_NOW) - Date.parse(f.now);
+  const at = <T,>(v: T): T => moved(v as unknown as JsonValue, ms) as unknown as T;
+  f.now = at(f.now);
+  f.snapshot = f.snapshot === undefined ? undefined : at(f.snapshot);
+  f.events = at(f.events);
+  f.live = at(f.live);
+  f.timeline = f.timeline.map((t) => ({ ...t, payload: at(t.payload) }));
+  f.calls = f.calls.map((c) => ({ ...c, ...(c.output === undefined ? {} : { output: at(c.output) }), ...(c.then === undefined ? {} : { then: at(c.then) }) }));
+  f.cache = f.cache === undefined ? undefined : at(f.cache);
+  return f;
+};
+
 export default defineGroup({
   fixtures: (base) => {
     const order = build(base("typical"), base("chat-empty"));
-    return [order, pinned(order), pinnedOne(order), pinnedTwo(order)];
+    return [order, pinned(order), pinnedOne(order), pinnedTwo(order), hero(base)];
   },
 });

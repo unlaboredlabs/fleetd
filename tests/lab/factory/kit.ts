@@ -117,6 +117,9 @@ function labEnv(dir: string): { readonly PATH: string; readonly env: (home: stri
     LANG: "C.UTF-8",
     USER: process.env.USER ?? "lab",
     ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
+    // A clock the caller set for the run (libfaketime's LD_PRELOAD and FAKETIME…), passed on to the fleet's processes:
+    // heroLab.ts's chats are stamped 9:40 that way, whenever it runs.
+    ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined && (e[0] === "LD_PRELOAD" || e[0].startsWith("FAKETIME")))),
   });
   return { PATH, env };
 }

@@ -76,10 +76,6 @@ p,h1,h2,h3,table{margin:0}
 .nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
 .nav a{text-decoration:none}
 .nav a:hover,.nav a[aria-current]{color:var(--ink)}
-.theme{display:flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
-.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
-.theme button:hover{color:var(--ink)}
-.theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
 .nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
 .nav .up:hover{color:var(--paper);opacity:.88}
 
@@ -156,9 +152,15 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 .vs td>span:not([data-f]){color:var(--grey)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
-.foot nav{display:flex;gap:20px}
+.foot nav{display:flex;align-items:center;gap:20px}
 .foot a{text-decoration:none}
 .foot a:hover{color:var(--ink)}
+/* Light or Dark, as on home.html: one small icon at the footer's end, the other theme's. */
+.theme{display:grid;place-items:center;width:24px;height:24px;margin:-4px -4px -4px 0;padding:0;border:0;border-radius:6px;background:none;color:var(--faint);cursor:pointer}
+.theme:hover{color:var(--ink);background:var(--tone)}
+.theme svg{width:14px;height:14px}
+.theme .i-moon,[data-theme="light"] .theme .i-sun{display:none}
+[data-theme="light"] .theme .i-moon{display:block}
 
 @media (max-width:1000px){
   .blk{grid-template-columns:minmax(0,1fr)}
@@ -186,7 +188,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
   .nav .docs{display:none}
 }
 @media (prefers-reduced-motion:no-preference){
-  .nav a,a,.theme button{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .nav a,a,.theme{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
 }
 </style>
 </head>
@@ -198,10 +200,6 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     <a href="/pricing" aria-current="page">Pricing</a>
     <a class="docs" href="/docs">Docs</a>
     <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-    <div class="theme" role="group" aria-label="Colour theme">
-      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
-      <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
-    </div>
     <a class="in" href="https://app.fleetd.dev">Sign in</a>
     <a class="up" href="https://app.fleetd.dev">Sign up</a>
   </nav>
@@ -330,6 +328,7 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
   </nav>
 </footer>
 
@@ -500,9 +499,10 @@ code{font:400 .92em/1 var(--mono);font-variant-ligatures:none}
 })();
 
 (() => {
-  const buttons = [...document.querySelectorAll("[data-theme-set]")];
-  const show = () => { const t = fleetdTheme.get(); buttons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
-  buttons.forEach((b) => b.addEventListener("click", () => { fleetdTheme.set(b.dataset.themeSet); show(); }));
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
   addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
   show();
 })();
