@@ -80,13 +80,15 @@ const jpegLeaks = (data: Buffer, where: string): Array<string> => {
 
 /**
  * Problems with one attached file's bytes: text (and NDJSON) is scanned whole; a PNG may only hold pixel chunks; a WebM
- * (a session's video, from its first byte) is scanned for text leaks in its header; a stand-in PDF, Office file or zip
+ * or an MP4 (a session's video, from its first byte) is scanned for text leaks in its header; a stand-in PDF, Office file or zip
  * must be plain text; nothing else.
  */
 const attachmentLeaks = (mime: string, data: Buffer, name: string, first = true): Array<string> => {
   const where = ` in attachment ${name}`;
   if (mime.startsWith("text/") || mime === "application/x-ndjson" || mime === "application/json") return scan(asText(data), where);
   if (mime === "video/webm") return first && !data.subarray(0, 4).equals(EBML) ? [`a WebM that isn't one${where}`] : scan(data.toString("latin1"), where);
+  // An MP4 (a screen's video as the node writes it) the same way: its boxes from the first byte, its text scanned.
+  if (mime === "video/mp4") return first && data.subarray(4, 8).toString("latin1") !== "ftyp" ? [`an MP4 that isn't one${where}`] : scan(data.toString("latin1"), where);
   if (mime === "image/jpeg") return jpegLeaks(data, where);
   // A PDF, Office file or zip in a fixture is a stand-in (no screen reads its insides): its bytes must be plain text,
   // scanned whole, so a real one with something compressed in it never slips in.

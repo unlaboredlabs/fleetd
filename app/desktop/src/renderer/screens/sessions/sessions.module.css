@@ -425,6 +425,16 @@
 .video[data-on] {
   visibility: visible;
 }
+/* A screen player's canvas (player.ts): the frame has the picture's shape, so it fills it exactly. */
+.surfaceHost {
+  position: absolute;
+  inset: 0;
+}
+.surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .screen:focus-visible {
   outline: none;
 }

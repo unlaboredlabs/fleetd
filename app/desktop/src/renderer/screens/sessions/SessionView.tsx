@@ -45,6 +45,8 @@ import { structureOf } from "./dom";
 import { useRecording, useSessions } from "./hub";
 import { addressOf, NAVIGATE, pageNav, pictureOf, setControl, useFrameInput, useLiveFrame, useWatchAgain, type PageNav } from "./live";
 import { useVideo } from "./video";
+import { type Surface } from "./player";
+import { useReplay, useSurfaceSize } from "./replay";
 import { showWindow, useInItsWindow } from "./windows";
 import { screenMark } from "./timing";
 import { ControlStrip } from "./ControlStrip";
@@ -185,7 +187,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   const frame = useLiveFrame(x.id, !away, x.rtc === true);
   const picture = pictureOf(frame, x.id);
   const { again, jpeg } = useWatchAgain(x.id);
-  const { canvas: videoCanvas, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg);
+  const { surface: videoSurface, on: videoOn } = useVideo(x.id, !away, picture?.seq, again, jpeg, picture);
   // Until its first frame: the empty page, quiet; words only once it is slow to come.
   const slow = useAfter(frame === undefined && !away, SLOW_MS);
   // Its machine isn't linked this moment (it, or the hub, restarting): said over the last picture until its next frame.
@@ -307,7 +309,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
             {...(frame === undefined || picture?.jpegB64 === undefined
               ? {}
               : { image: { src: `data:image/jpeg;base64,${picture.jpegB64}`, seq: picture.seq, url: frame.url ?? picture.url, width: frame.width, height: frame.height } })}
-            videoCanvas={videoCanvas}
+            videoSurface={videoSurface}
             videoOn={videoOn}
             kind={x.kind}
             yours={yours}
@@ -411,13 +413,14 @@ function Frame({
   input,
   pageRef,
   nav,
-  videoCanvas,
+  videoSurface,
   videoOn = false,
   beside,
   orientation,
+  picture,
 }: {
   /** Where the live screen's H.264 is drawn (video.ts), over `image` while `videoOn` (it has a newer picture). */
-  videoCanvas?: (el: HTMLCanvasElement | null) => void;
+  videoSurface?: Surface;
   videoOn?: boolean;
   /** The page now: a live frame, in its own pixels. */
   image?: { readonly src: string; readonly seq?: number; readonly url?: string | undefined; readonly width: number; readonly height: number };
@@ -443,12 +446,15 @@ function Frame({
   beside?: ReactNode;
   /** Which way a phone's device is turned, as its machine says: which way the phone turns when its frame flips. */
   orientation?: string;
+  /** The size of the picture `media` draws (a replay's): the frame takes its shape, so nothing is letterboxed. */
+  picture?: { readonly width: number; readonly height: number };
 }) {
   const takes = input !== undefined;
   const url = image?.url ?? given;
   const phone = kind === "ios" || kind === "android";
   // A phone's stands up from the start, so its first frame lands without the frame changing shape.
-  const aspect = image === undefined ? (phone ? PHONE : 16 / 10) : image.width / image.height;
+  const size = image ?? (picture !== undefined && picture.width > 0 && picture.height > 0 ? picture : undefined);
+  const aspect = size === undefined ? (phone ? PHONE : 16 / 10) : size.width / size.height;
   const once = useRef(false);
   const painted = () => {
     if (once.current) return;
@@ -471,7 +477,7 @@ function Frame({
         ) : (
           <img src={image.src} alt="" draggable={false} onLoad={painted} data-seq={image.seq} />
         ))}
-      {media === undefined && videoCanvas !== undefined ? <canvas ref={videoCanvas} className={s.video} data-on={videoOn ? "" : undefined} /> : null}
+      {media === undefined && videoSurface !== undefined ? <SurfaceHost surface={videoSurface} className={s.video} on={videoOn} /> : null}
       {/* After the H.264 canvas, which fills the frame: the line is over the picture whichever shows it. */}
       {waiting === undefined || image === undefined ? null : (
         <span className={s.waiting} role="status">
@@ -673,25 +679,33 @@ function Recorded({ session: x }: { session: BrowserSession }) {
 function Player({ session: x, actions, video }: { session: BrowserSession; actions: readonly SessionAction[]; video?: Blob }) {
   const duration = x.recording?.durationMs ?? actions.at(-1)?.at ?? 0;
   const media = useRef<HTMLVideoElement>(null);
-  // The video plays from a URL for its blob, made for as long as the player shows it.
+  const [at, setAt] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  // An MP4 plays in the screen player (replay.ts): every frame, on the canvas the live view's frame takes too.
+  const { state: replay, fallback } = useReplay(
+    video,
+    (t) => setAt(t),
+    () => setPlaying(false),
+  );
+  const picture = useSurfaceSize(replay?.surface, replay?.size);
+  // A WebM plays from a URL for its blob, made for as long as the player shows it.
   useEffect(() => {
     const el = media.current;
-    if (el === null || video === undefined) return undefined;
+    if (el === null || video === undefined || !fallback) return undefined;
     const url = URL.createObjectURL(video);
     el.src = url;
     return () => {
       el.removeAttribute("src");
       URL.revokeObjectURL(url);
     };
-  }, [video]);
-  const [at, setAt] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  }, [video, fallback]);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
   const [open, setOpen] = useState<number | null>(null);
   const [steps, setSteps] = useState(false);
   useEffect(() => {
     if (media.current !== null) media.current.playbackRate = speed;
-  }, [speed, video]);
+    replay?.replay.speed(speed);
+  }, [speed, video, replay]);
   useEffect(() => {
     if (!playing || video !== undefined) return undefined;
     const timer = window.setInterval(() => {
@@ -717,9 +731,17 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   const to = (t: number) => {
     setAt(t);
     if (media.current !== null) media.current.currentTime = t / 1000;
+    replay?.replay.seek(t);
   };
   const play = () => {
     setOpen(null);
+    const r = replay?.replay;
+    if (r !== undefined) {
+      if (r.playing()) r.pause();
+      else r.play();
+      setPlaying(r.playing());
+      return;
+    }
     const v = media.current;
     if (v !== null) {
       if (v.paused) void v.play();
@@ -735,6 +757,7 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   };
   const snapshot = (i: number) => {
     media.current?.pause();
+    replay?.replay.pause();
     setPlaying(false);
     to(actions[i]?.at ?? 0);
     setOpen(i);
@@ -751,8 +774,13 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
               caption={video === undefined ? (x.note ?? "This recording has no video. Its steps and pages are under Steps.") : undefined}
               url={actions.slice(0, step + 1).findLast((a) => a.page !== undefined)?.page?.url}
               mark={shown?.box}
+              {...(picture === undefined ? {} : { picture })}
               media={
-                video === undefined ? undefined : (
+                video === undefined ? undefined : replay !== undefined ? (
+                  <SurfaceHost surface={replay.surface} />
+                ) : !fallback ? (
+                  <span className={s.blank} aria-busy="true" />
+                ) : (
                   <video
                     ref={media}
                     muted
@@ -909,4 +937,13 @@ function Snapshot({ action, snapshot, onClose }: { action: SessionAction; snapsh
       </ol>
     </section>
   );
+}
+
+/** A screen player's canvas (surface.ts), put where the page goes: the same element for as long as the player lives
+ * (`on`: shown, for the live view's canvas over its JPEG). */
+function SurfaceHost({ surface, className = s.surface, on }: { surface: Surface; className?: string | undefined; on?: boolean }) {
+  const host = useRef<HTMLSpanElement>(null);
+  useEffect(() => surface.mount(host.current), [surface]);
+  useEffect(() => surface.look(className, on), [surface, className, on]);
+  return <span ref={host} className={s.surfaceHost} />;
 }

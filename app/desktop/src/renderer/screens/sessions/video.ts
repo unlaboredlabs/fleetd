@@ -1,17 +1,20 @@
-// A live screen's H.264 (a frame's `h264B64`, contracts' BrowserFrame), decoded with WebCodecs onto a canvas that
-// lies over the screen's last JPEG: the hub sends a JPEG first, then a keyframe and the frames made from it. Every
-// H.264 frame is decoded, in order, from the store's list of those since the last keyframe (the picture takes only the
-// newest; renders batch frames). Each decoded picture is drawn as it comes, outside React's render; the canvas shows
-// once it has one newer than the JPEG. A frame let go unread watches anew (a JPEG, then a keyframe); a decoder that
-// fails watches without H.264, JPEG from then on.
-import { useCallback, useEffect, useRef, useState } from "react";
+// A live screen's H.264 (a frame's `h264B64`, contracts' BrowserFrame), decoded with WebCodecs onto the screen
+// player's canvas (player.ts's Surface, the one a replay draws into too), which lies over the screen's last JPEG: the
+// hub sends a JPEG first, then a keyframe and the frames made from it. Every H.264 frame is decoded, in order, from the
+// store's list of those since the last keyframe (the picture takes only the newest; renders batch frames). Each decoded
+// picture is drawn as it comes, outside React's render; the canvas shows once it has one newer than the JPEG. JPEGs
+// are drawn into the canvas too, so it always holds the newest picture whichever way it came: a device frame that takes
+// the surface (a 3D one's texture) never needs the <img>. A frame let go unread watches anew (a JPEG, then a keyframe);
+// a decoder that fails watches without H.264, JPEG from then on.
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BrowserFrame } from "../../../shared/contracts";
 import { H264_CODEC, H264_CONFIG } from "../../../shared/h264";
 import { useData } from "../../src/data/react";
+import { Surface } from "./player";
 
 export const CODEC = H264_CODEC;
 
-const bytes = (b64: string): Uint8Array => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const bytes = (b64: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 /** Where an H.264 frame goes: into the decoder as a chunk, or nowhere while the decoder waits for a keyframe. */
 export function chunkOf(frame: BrowserFrame, keyed: boolean): EncodedVideoChunkInit | undefined {
@@ -29,20 +32,26 @@ export function unread(frames: readonly BrowserFrame[], dropped: number, after: 
 }
 
 /**
- * Decodes the watched session's H.264 onto the canvas `canvas` attaches: whether it shows (it drew a picture newer
- * than `under`, the seq of the JPEG beneath). `again` watches the screen anew; `jpeg` watches it without H.264.
+ * Decodes the watched session's H.264 onto `surface`'s canvas: whether it shows (it drew a picture newer than `under`,
+ * the seq of the JPEG beneath, `picture`). `again` watches the screen anew; `jpeg` watches it without H.264.
  */
-export function useVideo(sessionId: string, on: boolean, under: number | undefined, again: () => void, jpeg: () => void) {
+export function useVideo(
+  sessionId: string,
+  on: boolean,
+  under: number | undefined,
+  again: () => void,
+  jpeg: () => void,
+  picture?: { readonly seq: number; readonly jpegB64?: string | undefined },
+) {
   const video = useData((st) => (on && st.browserVideo?.sessionId === sessionId ? st.browserVideo : undefined));
-  const element = useRef<HTMLCanvasElement | null>(null);
+  const surface = useMemo(() => new Surface(document.createElement("canvas")), []);
   const decoder = useRef<VideoDecoder | null>(null);
   const keyed = useRef(false);
   const decoded = useRef(-1);
   // The newest picture drawn, by its frame's seq, for the session it was drawn for.
   const [drawn, setDrawn] = useState<{ sessionId: string; seq: number } | undefined>(undefined);
-  const canvas = useCallback((el: HTMLCanvasElement | null) => {
-    element.current = el;
-  }, []);
+  // The newest picture's seq on the canvas, H.264's or a JPEG's: an older one that decodes late isn't drawn over it.
+  const onCanvas = useRef(-1);
   // A node that linked again (restarted, or the next server that took the screen over) counts its frames from the
   // start: its stream is decoded afresh, as another session's is.
   const link = video?.link;
@@ -52,10 +61,31 @@ export function useVideo(sessionId: string, on: boolean, under: number | undefin
       decoder.current = null;
       keyed.current = false;
       decoded.current = -1;
+      onCanvas.current = -1;
       setDrawn(undefined);
     },
     [sessionId, link],
   );
+  // A JPEG newer than the canvas's picture, drawn into it once decoded (off the page's main work).
+  const jpegB64 = picture?.jpegB64;
+  const jpegSeq = picture?.seq;
+  useEffect(() => {
+    if (jpegB64 === undefined || jpegSeq === undefined || jpegSeq <= onCanvas.current || typeof createImageBitmap === "undefined") return undefined;
+    let live = true;
+    void createImageBitmap(new Blob([bytes(jpegB64)], { type: "image/jpeg" })).then(
+      (bitmap) => {
+        if (live && jpegSeq > onCanvas.current) {
+          onCanvas.current = jpegSeq;
+          surface.draw(bitmap, bitmap.width, bitmap.height);
+        }
+        bitmap.close();
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [jpegB64, jpegSeq, surface]);
   useEffect(() => {
     if (video === undefined || typeof VideoDecoder === "undefined") return;
     const { fresh, lost } = unread(video.frames, video.dropped, decoded.current);
@@ -69,17 +99,14 @@ export function useVideo(sessionId: string, on: boolean, under: number | undefin
     let d = decoder.current;
     if (d === null || d.state === "closed") {
       d = new VideoDecoder({
-        output: (picture) => {
-          const c = element.current;
-          if (c !== null) {
-            if (c.width !== picture.displayWidth || c.height !== picture.displayHeight) {
-              c.width = picture.displayWidth;
-              c.height = picture.displayHeight;
-            }
-            c.getContext("2d")?.drawImage(picture, 0, 0);
-            setDrawn({ sessionId, seq: picture.timestamp / 1000 });
+        output: (decodedPicture) => {
+          const seq = decodedPicture.timestamp / 1000;
+          if (seq > onCanvas.current) {
+            onCanvas.current = seq;
+            surface.draw(decodedPicture, decodedPicture.displayWidth, decodedPicture.displayHeight);
+            setDrawn({ sessionId, seq });
           }
-          picture.close();
+          decodedPicture.close();
         },
         // This app can't decode what comes: JPEG from now on.
         error: () => {
@@ -104,7 +131,7 @@ export function useVideo(sessionId: string, on: boolean, under: number | undefin
         return;
       }
     }
-  }, [video, sessionId, again, jpeg]);
+  }, [video, sessionId, again, jpeg, surface]);
   const shows = drawn !== undefined && drawn.sessionId === sessionId && drawn.seq > (under ?? 0);
-  return { canvas, on: shows };
+  return { surface, on: shows };
 }

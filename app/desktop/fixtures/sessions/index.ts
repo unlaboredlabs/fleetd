@@ -84,7 +84,7 @@ const answerFile = (f: Fixture, sessionId: string, file: string, bytes: Buffer) 
     f.answer("browser_recording_get", { sessionId, file, offset }, {
       sessionId,
       file,
-      mime: file === "video" ? "video/webm" : "application/x-ndjson",
+      mime: file === "video" ? "video/webm" : file === "video_mp4" ? "video/mp4" : "application/x-ndjson",
       offset,
       dataB64: piece.toString("base64"),
       bytes: bytes.length,
@@ -147,6 +147,21 @@ const preview = (base: Fixture): Fixture => {
   const share = recordingOf(SHARE, shareStart);
   const pricing = recordingOf(PRICING, pricingStart);
   const video = fs.readFileSync(path.join(MEDIA, "share.webm"));
+  // An iPhone Duo's recording as the node makes it: the live stream itself, upright, the open inner panel; its log says
+  // each display the stream showed (a `device` step).
+  const duoStart = now - 20 * 60_000;
+  const duoVideo = fs.readFileSync(path.join(MEDIA, "duoReplay.mp4"));
+  const duoActions = Buffer.from(
+    [
+      { tool: "sim_start", at: 0, args: { device: "iPhone Duo on iOS 27.2", udid: "AD0B7ED0-0000-0000-0000-000000000000" } },
+      { tool: "device", at: 380, args: { model: "iPhone Duo", panel: "primary-1", orientation: "landscape_left", width: 2853, height: 2007, fold: "open" } },
+      { tool: "agent-device", at: 1_900, args: { command: "agent-device open com.apple.mobilesafari" } },
+      { tool: "agent-device", at: 7_200, args: { command: "agent-device open com.apple.Maps" } },
+      { tool: "sim_end", at: 12_600, args: {} },
+    ]
+      .map((a, i) => JSON.stringify({ seq: i + 1, at: new Date(duoStart + a.at).toISOString(), offsetMs: a.at, tool: a.tool, args: a.args, ok: true, durationMs: 0 }))
+      .join("\n") + "\n",
+  );
   const row = (id: string, task: string, purpose: string, startedAgoMs: number, more: JsonObject): JsonObject => ({
     sessionId: id,
     projectRef: STOREFRONT,
@@ -180,6 +195,15 @@ const preview = (base: Fixture): Fixture => {
         { file: "actions", bytes: share.actions.length },
         { file: "dom", bytes: share.dom.length },
         { file: "video", bytes: video.length },
+      ],
+    }),
+    row(SESSION.duoReplay, "T5", "Check the share sheet on the open iPhone Duo", now - duoStart, {
+      kind: "ios",
+      state: "recorded",
+      endedAt: new Date(duoStart + 12_600).toISOString(),
+      files: [
+        { file: "actions", bytes: duoActions.length },
+        { file: "video_mp4", bytes: duoVideo.length },
       ],
     }),
     row(SESSION.pricing, "T2", "Compare the home page copy with the PR’s wording", now - pricingStart, {
@@ -386,6 +410,8 @@ const preview = (base: Fixture): Fixture => {
   answerFile(f, SESSION.share, "actions", share.actions);
   answerFile(f, SESSION.share, "dom", share.dom);
   answerFile(f, SESSION.share, "video", video);
+  answerFile(f, SESSION.duoReplay, "actions", duoActions);
+  answerFile(f, SESSION.duoReplay, "video_mp4", duoVideo);
   answerFile(f, SESSION.pricing, "actions", pricing.actions);
   answerFile(f, SESSION.pricing, "dom", pricing.dom);
 
