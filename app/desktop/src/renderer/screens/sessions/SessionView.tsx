@@ -189,7 +189,10 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
   // Until its first frame: the empty page, quiet; words only once it is slow to come.
   const slow = useAfter(frame === undefined && !away, SLOW_MS);
   // Its machine isn't linked this moment (it, or the hub, restarting): said over the last picture until its next frame.
-  const waiting = useData((d) => (d.browserWaiting?.sessionId === x.id ? `Waiting for ${d.machines[d.browserWaiting.machineId]?.name ?? d.browserWaiting.machineId}…` : undefined));
+  // Not while its frames come on this window's own peer: the machine is reached straight, and the picture is live.
+  const waiting = useData((d) =>
+    d.browserWaiting?.sessionId === x.id && d.browserRtc !== x.id ? `Waiting for ${d.machines[d.browserWaiting.machineId]?.name ?? d.browserWaiting.machineId}…` : undefined,
+  );
   const takes = yours && !away;
   const input = useFrameInput(x.id, frame, takes);
   const page = useRef<HTMLDivElement>(null);
