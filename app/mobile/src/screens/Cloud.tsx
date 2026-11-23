@@ -13,7 +13,7 @@ import { builtCloudConfig, type CloudConfig } from "../cloud/config";
 import { invitationLine, invitationTitle, type PairFailure } from "../desktop";
 import { deviceName } from "../hub/deviceName";
 import { useHub } from "../hubContext";
-import { space, type, useTheme } from "../theme";
+import { COLUMN, space, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   strong: { fontWeight: "600" },
   center: { textAlign: "center", alignSelf: "center", maxWidth: 320 },
-  ways: { gap: space.lg, alignItems: "stretch" },
+  ways: { gap: space.lg, alignItems: "stretch", alignSelf: "center", width: "100%", maxWidth: COLUMN },
   way: { gap: space.sm },
   failure: { flexDirection: "row", gap: space.md, padding: space.md + 2, borderRadius: 16, borderCurve: "continuous" },
 });
