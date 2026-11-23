@@ -70,6 +70,14 @@
       "pattern": "^[a-z0-9-]{1,32}$",
       "type": "string"
     },
+    "MergeMode": {
+      "description": "How the train merges a bot's PRs: test_first, \"Test, then merge\" (batches whose combined tree passed CI; the\ndefault), or verify_after, \"Merge, then verify\" (each PR on its own green CI, side by side, and a red base afterwards\nbisected and its culprit reverted).",
+      "enum": [
+        "test_first",
+        "verify_after"
+      ],
+      "type": "string"
+    },
     "Merger": {
       "description": "Who merges a bot's PRs: people (on GitHub; the default for a new bot), or fleetd's merge train.",
       "enum": [
@@ -207,6 +215,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "mergeMode": {
+          "$ref": "#/$defs/MergeMode",
+          "description": "How the train merges its PRs, from the hub. Absent: \"Test, then merge\", from an older hub too."
         },
         "merges": {
           "$ref": "#/$defs/Merger",

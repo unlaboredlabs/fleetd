@@ -29,6 +29,7 @@ const SPEC = {
     "key-file": "str",
     profiles: "str",
     merges: "str",
+    "merge-mode": "str",
     model: "str",
     effort: "str",
     fast: "str",
@@ -192,8 +193,8 @@ export async function projectCommand(argv: string[]): Promise<number> {
   try {
     if (verb === "stop" && keyFile === undefined) return usage(humanKeyRequired("a stop"));
     if (verb === "profile" && keyFile === undefined) return usage(humanKeyRequired("a profile change"));
-    const picksMerges = verb === "set" && v.str("merges") !== undefined;
-    if (picksMerges && keyFile === undefined) return usage(humanKeyRequired("picking who merges"));
+    const picksMerges = verb === "set" && (v.str("merges") !== undefined || v.str("merge-mode") !== undefined);
+    if (picksMerges && keyFile === undefined) return usage(humanKeyRequired("picking who merges or how"));
     if (verb === "stop" || verb === "profile" || picksMerges) {
       let key: string;
       try {
@@ -203,7 +204,7 @@ export async function projectCommand(argv: string[]): Promise<number> {
       }
       client = await connectWith(home, v.str("hub"), "fleetd-project", key);
     } else if (keyFile !== undefined) {
-      return usage("--key-file is for project stop, project profile and project set --merges");
+      return usage("--key-file is for project stop, project profile and project set --merges or --merge-mode");
     } else {
       client = await connectTo(home, v.str("hub"), "fleetd-project");
     }
@@ -492,6 +493,14 @@ export function mergesFlag(value: string | undefined): "people" | "fleetd" | und
   throw new Stop(2, `--merges takes you or fleetd, got '${value}'`);
 }
 
+/** `--merge-mode`: test (test, then merge: batches) or verify (merge, then verify). */
+export function mergeModeFlag(value: string | undefined): "test_first" | "verify_after" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "test" || value === "test_first") return "test_first";
+  if (value === "verify" || value === "verify_after") return "verify_after";
+  throw new Stop(2, `--merge-mode takes test or verify, got '${value}'`);
+}
+
 async function set(client: McpClient, out: Out, v: Parsed) {
   const profilesFlag = v.str("profiles");
   const allowed =
@@ -503,15 +512,17 @@ async function set(client: McpClient, out: Out, v: Parsed) {
           .filter((p) => p !== "" && p !== "none");
   // null: back to its machine's cap within the fleet cap.
   const merges = mergesFlag(v.str("merges"));
+  const mergeMode = mergeModeFlag(v.str("merge-mode"));
   const maxAgents: number | null | undefined = v.str("max-agents") === "default" ? null : countOf(v, "max-agents");
   const fleetCap = countOf(v, "fleet-cap");
-  if (allowed !== undefined || merges !== undefined) {
+  if (allowed !== undefined || merges !== undefined || mergeMode !== undefined) {
     const [machine, project] = await find(client, v);
     const body = await call(client, "project_set", {
       machineId: machine,
       projectId: s(project, "/projectId"),
       ...(allowed !== undefined ? { profiles: allowed } : {}),
       ...(merges !== undefined ? { merges } : {}),
+      ...(mergeMode !== undefined ? { mergeMode } : {}),
     });
     out.success(typeof body?.next === "string" ? body.next : "Set.");
     if (maxAgents === undefined && fleetCap === undefined) return;
@@ -528,7 +539,9 @@ async function set(client: McpClient, out: Out, v: Parsed) {
     if (maxAgents === null) input.project.followDefault = true;
     else input.project.maxAgents = maxAgents;
   } else if (target !== undefined) {
-    if (allowed === undefined && merges === undefined) throw new Stop(2, "give --max-agents <n>, --profiles <names> or --merges you|fleetd for the bot");
+    if (allowed === undefined && merges === undefined && mergeMode === undefined) {
+      throw new Stop(2, "give --max-agents <n>, --profiles <names>, --merges you|fleetd or --merge-mode test|verify for the bot");
+    }
   } else if (maxAgents !== undefined) {
     throw new Stop(2, "--max-agents needs the bot as <machine>/<bot>");
   } else if (fleetCap === undefined) {

@@ -14207,6 +14207,14 @@
       ],
       "type": "object"
     },
+    "MergeMode": {
+      "description": "How the train merges a bot's PRs: test_first, \"Test, then merge\" (batches whose combined tree passed CI; the\ndefault), or verify_after, \"Merge, then verify\" (each PR on its own green CI, side by side, and a red base afterwards\nbisected and its culprit reverted).",
+      "enum": [
+        "test_first",
+        "verify_after"
+      ],
+      "type": "string"
+    },
     "MergePipeline": {
       "description": "One landed change's time in the train and its CI runs.",
       "properties": {
@@ -18362,6 +18370,10 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "mergeMode": {
+          "$ref": "#/$defs/MergeMode",
+          "description": "How the train merges its PRs from now on. A person's key only."
+        },
         "merges": {
           "$ref": "#/$defs/Merger",
           "description": "Who merges its PRs from now on: people (the train never merges one) or fleetd's merge train. A person's\nkey only."
@@ -18461,6 +18473,13 @@
         "title": {
           "type": "string"
         },
+        "upToDate": {
+          "description": "The bases of its repos that require branches up to date, read while it merges, then verifies; absent: none.",
+          "items": {
+            "$ref": "#/$defs/UpToDateRule"
+          },
+          "type": "array"
+        },
         "workspaceRoot": {
           "type": "string"
         },
@@ -18548,6 +18567,10 @@
         "machineId": {
           "$ref": "#/$defs/MachineId"
         },
+        "mergeMode": {
+          "$ref": "#/$defs/MergeMode",
+          "description": "How the train merges its PRs from now on. A person's key only."
+        },
         "mergeRules": {
           "$ref": "#/$defs/RiskRules",
           "description": "Replaces its risk rules (a person's key only); the defaults are kept as none."
@@ -18573,6 +18596,10 @@
           "minLength": 1,
           "pattern": "^[^\\r\\n]*$",
           "type": "string"
+        },
+        "upToDateOff": {
+          "$ref": "#/$defs/GitHubRepo",
+          "description": "Turns off \"require branches to be up to date\" on this repo's default branch, and nothing else of its rules (an\nadmin's key only, one of `upToDate` that can turn off)."
         }
       },
       "required": [
@@ -18944,6 +18971,10 @@
         },
         "machineId": {
           "$ref": "#/$defs/MachineId"
+        },
+        "mergeMode": {
+          "$ref": "#/$defs/MergeMode",
+          "description": "How the train merges its PRs, from the hub. Absent: \"Test, then merge\", from an older hub too."
         },
         "merges": {
           "$ref": "#/$defs/Merger",
@@ -25634,6 +25665,32 @@
       "required": [
         "repo",
         "queue"
+      ],
+      "type": "object"
+    },
+    "UpToDateRule": {
+      "description": "A base of one of a bot's repos that requires branches to be up to date before merging, so its PRs land one at a time\nin \"Merge, then verify\" however many run side by side.",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "canTurnOff": {
+          "description": "Whether this hub's GitHub access may turn it off (`project_settings_set` upToDateOff): it administers the repo,\nand the rule is the repo's own, not an organization's.",
+          "type": "boolean"
+        },
+        "line": {
+          "description": "What it means and the fix, in one line.",
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/$defs/GitHubRepo"
+        }
+      },
+      "required": [
+        "base",
+        "canTurnOff",
+        "line",
+        "repo"
       ],
       "type": "object"
     },

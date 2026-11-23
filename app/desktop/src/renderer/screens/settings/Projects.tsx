@@ -1,6 +1,6 @@
 // Settings › Projects › Project (#/settings/projects?for=<machine>/<project>, the project picked in the sidebar): its
 // picture (Picture.tsx), its bot's shape and color (BotLook.tsx), its name, its repos with their computer (RepoSetting.tsx, SetupSetting.tsx),
-// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), who merges its PRs (WhoMerges.tsx), approvals (Approvals.tsx), what it uses of
+// its agents' environment variables (on a hub with a vault, a line linking to its Vault tab), who merges its PRs (WhoMerges.tsx) and how (MergeMode.tsx), approvals (Approvals.tsx), what it uses of
 // Connections (connections/BotConnections.tsx), its browser's sign-ins and a way to its skills
 // (Signins.tsx), its card and purchases (Payments.tsx), archiving it and deleting it, and the tagged chat's trial switch. Its memory refresh is on its
 // Instructions & memory. Reads project_settings_get; writes project_settings_set, project_env_set (through main, which
@@ -27,7 +27,9 @@ import { SigninsSetting, SkillsSetting } from "./Signins";
 import { AddButton, DangerButton, NoProject, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, SwitchRow } from "./parts";
 import { PictureSetting } from "./Picture";
 import { BotLookSetting } from "./BotLook";
+import { MergeModeSetting } from "./MergeMode";
 import { WhoMergesSetting } from "./WhoMerges";
+import { mergeModeOf } from "./mergeModeModel";
 import { mergesOf } from "./whoMergesModel";
 import {
   countAfter,
@@ -157,6 +159,7 @@ function ProjectPage({ settings, refresh, onDeleted }: { settings: Settings; ref
       </RepoSection>
       <SettingsSection title="Safety">
         <WhoMergesSetting projectRef={ref} merges={mergesOf(summary)} rules={settings.mergeRules} />
+        <MergeModeSetting projectRef={ref} mode={mergeModeOf(summary)} upToDate={settings.upToDate} />
         <ApprovalsSetting projectRef={ref} />
       </SettingsSection>
       <SettingsSection title="What its lead can use">

@@ -16,6 +16,7 @@ import { batchNames, gatedName, workflows } from "./next.ts";
 import type { Watch } from "./records.ts";
 import { type Fast, isRed, short } from "./rules.ts";
 import type { Train } from "./service.ts";
+import { blame, verifying } from "./verify.ts";
 
 /** A merged commit is watched at least this long, so checks that start late are seen. */
 const WATCH_SETTLE_MS = 5 * 60_000;
@@ -38,12 +39,13 @@ const NAME_MIN = 8;
 /**
  * The checks on a merged commit that failed, in its fast set or not, or that a batch skips: the ones a fix order is
  * for. Outside the checks a batch skips, none for an empty fast set: the train then waited for every check before the
- * merge. Each with whether it passed on the batch: a fast check the batch doesn't skip.
+ * merge, except in "Merge, then verify" (`verify`), where the merged tree is one no CI ran on yet. Each with whether it
+ * passed on the batch: a fast check the batch doesn't skip.
  */
-export function failedAfter(runs: CheckRun[], fast: Fast, batch: string[]): [CheckRun, boolean][] {
+export function failedAfter(runs: CheckRun[], fast: Fast, batch: string[], verify = false): [CheckRun, boolean][] {
   const skippedByBatch = (r: CheckRun) => batch.some((n) => gatedName(n, r.name));
   return runs
-    .filter((r) => skippedByBatch(r) || (fast.set.length > 0 && r.name !== TRAIN_CONTEXT))
+    .filter((r) => skippedByBatch(r) || ((verify || fast.set.length > 0) && r.name !== TRAIN_CONTEXT))
     .filter((r) => isRed(r) && r.conclusion !== "cancelled")
     .map((r) => [r, fast.holds(r.name) && !skippedByBatch(r)]);
 }
@@ -101,7 +103,7 @@ export async function watchPass(t: Train, repo: string): Promise<void> {
     // The workflow runs it re-ran a job of in this pass: going again, though `runs` read them done.
     const reranNow = new Set<number>();
     let waiting = false;
-    for (const [check, onBatch] of failedAfter(runs, fast, batch)) {
+    for (const [check, onBatch] of failedAfter(runs, fast, batch, verifying(t, w.projectRef))) {
       if (await failedCheck(t, w, check, onBatch, runs, events, reranNow)) waiting = true;
     }
     const done = runs.every((r) => r.status === "completed");
@@ -145,8 +147,7 @@ async function failedCheck(t: Train, w: Watch, check: CheckRun, onBatch: boolean
     if (mine.did !== RERAN) return false;
     if (now - mine.atMs < RERUN_SHOW_MS) return true;
     console.warn(`train: ${name} re-run after the merge of ${repo}@${sha} never showed; opening its fix order`);
-    await fixOrder(t, w, check, true, onBatch);
-    return false;
+    return fixOrder(t, w, check, true, onBatch);
   }
   const reran = seen.some((s) => s.did === RERAN);
   const run = workflowRun(check);
@@ -173,22 +174,15 @@ async function failedCheck(t: Train, w: Watch, check: CheckRun, onBatch: boolean
     t.records.putFixOrder(repo, name, sha, order, now);
     return false;
   }
-  if (reran) {
-    await fixOrder(t, w, check, true, onBatch);
-    return false;
-  }
+  if (reran) return fixOrder(t, w, check, true, onBatch);
   // A check no Actions job reports: nothing re-runs it.
   const job = jobOf(check);
-  if (job === undefined) {
-    await fixOrder(t, w, check, false, onBatch);
-    return false;
-  }
+  if (job === undefined) return fixOrder(t, w, check, false, onBatch);
   try {
     await t.github.rerunJob(repo, job);
   } catch (error) {
     console.warn(`train: ${name} failed after the merge of ${repo}@${sha} and GitHub refused its re-run; opening its fix order: ${(error as Error).message}`);
-    await fixOrder(t, w, check, false, onBatch);
-    return false;
+    return fixOrder(t, w, check, false, onBatch);
   }
   console.info(`train: ${name} failed after the merge of ${repo}@${sha}; re-ran job ${job} once`);
   t.records.putWatchCheck(repo, sha, name, check.id, RERAN, now);
@@ -253,14 +247,27 @@ export async function fixUnderWay(t: Train, w: Watch, check: CheckRun): Promise<
   }
 }
 
-/** Opens the fix order for `check` failing on `w`'s commit (`reran`: again, after its re-run; `onBatch`: it passed on the batch), and records it. */
-async function fixOrder(t: Train, w: Watch, check: CheckRun, reran: boolean, onBatch: boolean): Promise<void> {
+/**
+ * Opens the fix order for `check` failing on `w`'s commit (`reran`: again, after its re-run; `onBatch`: it passed on the
+ * batch), and records it; in "Merge, then verify", reverts the merge that broke it instead where it can (verify.ts).
+ * True while the watch must stay for it: a bisect still waits on a run.
+ */
+async function fixOrder(t: Train, w: Watch, check: CheckRun, reran: boolean, onBatch: boolean): Promise<boolean> {
   const repo = w.repo;
   const fix = await fixUnderWay(t, w, check);
   if (fix !== undefined) {
     console.info(`train: ${check.name} failed after the merge of ${repo}@${w.sha}; ${fix} already names it, so no fix order`);
     t.records.putWatchCheck(repo, w.sha, check.name, 0, FIXING, t.nowMs());
-    return;
+    return false;
+  }
+  // "Merge, then verify": the merge that broke it is found and reverted instead, where it can be.
+  if (verifying(t, w.projectRef)) {
+    const blamed = await blame(t, w, check);
+    if (blamed === "waiting") return true;
+    if (blamed === "taken") {
+      t.records.putWatchCheck(repo, w.sha, check.name, 0, FIXING, t.nowMs());
+      return false;
+    }
   }
   try {
     const order = await t.host.openOrder(w.projectRef, fixOrderText(w, check, reran, onBatch), `train-fix:${repo}:${w.sha}:${check.name}`);
@@ -270,4 +277,5 @@ async function fixOrder(t: Train, w: Watch, check: CheckRun, reran: boolean, onB
     const message = (error as Error).message;
     t.warnHourly(["watch.fix_order", repo, w.sha, check.name], message, `train: fix order for ${check.name} on ${repo} not opened; tried again next pass: ${message}`);
   }
+  return false;
 }

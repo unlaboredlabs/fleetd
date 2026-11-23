@@ -236,7 +236,7 @@ export async function next_(t: Train, repo: string): Promise<boolean> {
 export { next_ as next };
 
 /** The ready Changes the train may take now, in order, with their PRs; settles what moved meanwhile. */
-async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Candidate[], boolean]> {
+export async function candidates(t: Train, repo: string, ready: Change[]): Promise<[Candidate[], boolean]> {
   const out: Candidate[] = [];
   let settled = false;
   for (let change of ready) {

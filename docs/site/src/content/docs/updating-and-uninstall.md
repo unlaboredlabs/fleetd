@@ -173,7 +173,7 @@ fleetd pins the `claude` version separately. See [Claude](/docs/troubleshooting#
 ## Channels {#channels}
 
 `fleetd update` stays on the channel you installed from. Releases are Edge builds for now: the newest build of main,
-published after each merge.
+published after each merge once main's CI passed on it. A commit whose CI failed is never published.
 
 Edge was called Nightly until it was renamed. A machine still on a Nightly build updates to Edge as before, and
 `--channel nightly` or `FLEETD_CHANNEL=nightly` mean Edge.

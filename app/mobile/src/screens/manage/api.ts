@@ -5,7 +5,7 @@
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, profileNameFor, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, profileNameFor, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type MergeMode, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type UpToDateRule, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -224,6 +224,24 @@ export const setWhoMerges = async (hub: Hub, p: ProjectRef, merges: Merger): Pro
 export const readRules = async (hub: Hub, p: ProjectRef): Promise<Result<RiskRules | undefined>> => {
   const r = await hub.call("project_settings_get", ref(p));
   return r.ok ? { ok: true, value: r.output.settings.mergeRules } : r;
+};
+
+/** How the train merges its PRs from now on: test, then merge, or merge, then verify. */
+export const setMergeMode = async (hub: Hub, p: ProjectRef, mergeMode: MergeMode): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), mergeMode });
+  return r.ok ? { ok: true, value: null } : r;
+};
+
+/** The bases of its repos that require branches up to date, while it merges, then verifies; an older hub's are none. */
+export const readUpToDate = async (hub: Hub, p: ProjectRef): Promise<Result<UpToDateRule[]>> => {
+  const r = await hub.call("project_settings_get", ref(p));
+  return r.ok ? { ok: true, value: r.output.settings.upToDate ?? [] } : r;
+};
+
+/** Turns off "require branches to be up to date" on `repo`'s main, and nothing else of its rules (an admin's). */
+export const turnOffUpToDate = async (hub: Hub, p: ProjectRef, repo: string): Promise<Result<null>> => {
+  const r = await hub.call("project_settings_set", { ...ref(p), upToDateOff: repo });
+  return r.ok ? { ok: true, value: null } : r;
 };
 
 /** Replaces its risk rules; the hub says which rule it can't take. */

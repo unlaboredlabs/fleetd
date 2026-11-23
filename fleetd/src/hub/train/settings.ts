@@ -1,11 +1,14 @@
 // A repo's own train checks as its base's `.fleetd/train.json` sets them (repo_checks.ts reads the file): its shape and
-// what the train waits for with it.
+// what the train waits for with it, and how many PRs it has in CI at once where they merge, then verify (`ciAtOnce`).
 
 export const PATH = ".fleetd/train.json";
 const TRAIN_CHECKS_MAX = 50;
+/** PRs in CI at once in "Merge, then verify", when the file doesn't say: CI runners are scarce. */
+export const CI_AT_ONCE = 4;
+const CI_AT_ONCE_MAX = 16;
 
-/** The project's or repo's train settings (contracts `TrainSettings`). */
-export type TrainSettings = { fastChecks: string[]; afterMerge: string[] };
+/** The repo's train settings; `ciAtOnce` absent: `CI_AT_ONCE`. */
+export type TrainSettings = { fastChecks: string[]; afterMerge: string[]; ciAtOnce?: number };
 
 /** A base's file and when it was read: empty settings when it has none, undefined when it can't be used. */
 export type Cached = [number, TrainSettings | undefined];
@@ -33,13 +36,24 @@ function list(v: unknown, key: string): string[] {
   return v as string[];
 }
 
-/** The file's shape: the two lists, nothing else, so a misspelt key isn't a list that silently does nothing. */
+const KEYS = ["fastChecks", "afterMerge", "ciAtOnce"];
+
+/** The file's shape: the two lists and the number, nothing else, so a misspelt key isn't one that silently does nothing. */
 export function parse(text: string): TrainSettings {
   const file = JSON.parse(text) as unknown;
   if (file === null || typeof file !== "object" || Array.isArray(file)) throw new Error("expected an object");
   for (const key of Object.keys(file)) {
-    if (key !== "fastChecks" && key !== "afterMerge") throw new Error(`unknown field \`${key}\`, expected \`fastChecks\` or \`afterMerge\``);
+    if (!KEYS.includes(key)) throw new Error(`unknown field \`${key}\`, expected \`fastChecks\`, \`afterMerge\` or \`ciAtOnce\``);
   }
   const f = file as Record<string, unknown>;
-  return { fastChecks: list(f.fastChecks, "fastChecks"), afterMerge: list(f.afterMerge, "afterMerge") };
+  const out: TrainSettings = { fastChecks: list(f.fastChecks, "fastChecks"), afterMerge: list(f.afterMerge, "afterMerge") };
+  if (f.ciAtOnce !== undefined) {
+    const n = f.ciAtOnce;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > CI_AT_ONCE_MAX) throw new Error(`ciAtOnce: a whole number from 1 to ${CI_AT_ONCE_MAX}`);
+    out.ciAtOnce = n;
+  }
+  return out;
 }
+
+/** How many PRs the train has in CI at once in "Merge, then verify". */
+export const ciAtOnce = (s: TrainSettings | undefined) => s?.ciAtOnce ?? CI_AT_ONCE;

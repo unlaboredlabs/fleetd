@@ -119,6 +119,7 @@ export const CARRIED = [
   "time_spans",
   "time_wakes",
   "train_fix_orders",
+  "train_reverts",
   "train_waits",
   "train_watch_checks",
   "train_watches",

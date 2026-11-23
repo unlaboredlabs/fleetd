@@ -123,6 +123,7 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
     keywords: ["setup", "setup commands", "install", "dependencies", "codegen", "worktree", "lockfile", "pnpm", "computer image", "prebuilt", "snapshot", "rebuild", "sandbox"],
   },
   { key: "projects.merges", label: "Who merges", tab: "projects", keywords: ["merge", "merge train", "pull request", "pr", "manual", "risk", "rules"] },
+  { key: "projects.merge_mode", label: "How it merges", tab: "projects", keywords: ["merge", "merge train", "batch", "verify", "revert", "bisect", "ci", "up to date"] },
   { key: "projects.approvals", label: "Approvals", tab: "projects", keywords: ["checker", "approve", "ask me", "yolo", "auto"] },
   { key: "projects.approved", label: "Ran without asking", tab: "projects", keywords: ["checker", "log", "auto-approved", "yolo", "history"] },
   { key: "projects.mcp", label: "Bot connections", tab: "projects", keywords: ["what this bot uses", "this bot's connections"] },

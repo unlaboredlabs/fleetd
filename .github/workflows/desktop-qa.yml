@@ -15,8 +15,8 @@ name: Desktop QA
 # report opens an issue when a shard fails.
 #
 # Only main's newest push runs: a push to main cancels main's older push run, queued or running. Nothing goes
-# untested: on main, Scope compares with the last push run whose shards all finished (.github/main-base.sh), or runs in
-# full without one. Manual runs and mac.yml's are never cancelled.
+# untested: on main, Scope compares with the last push run whose shards all passed (.github/main-base.sh), or runs in
+# full without one, so a run after a red one runs in full and never passes without running. Manual runs and mac.yml's are never cancelled.
 
 on:
   pull_request:
@@ -77,8 +77,8 @@ jobs:
           fetch-depth: 2
       - name: Scope
         # Runs when app/desktop or this workflow changed, and always on a manual run or for mac.yml; otherwise
-        # reports success at once, so it can be required. A push to main compares with the last push run that wasn't
-        # cancelled, and runs in full when it finds none.
+        # reports success at once, so it can be required. A push to main compares with the last push run that passed,
+        # and runs in full when it finds none.
         id: scope
         working-directory: .
         env:

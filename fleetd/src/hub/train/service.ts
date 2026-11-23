@@ -19,6 +19,8 @@ import type { TrainHost } from "./host.ts";
 import { decide, type MergeDecision, type MergeFile } from "./merge_rules.ts";
 import { ciState, GithubSync, type MainCi } from "./main_ci.ts";
 import { Locks, Mutex } from "./mutex.ts";
+import * as lanes from "./lanes.ts";
+import { BEHIND, Lanes } from "./lanes.ts";
 import * as next from "./next.ts";
 import * as person from "./person.ts";
 import { fixYourPr, type PromptsLike, SHIPPED_PROMPTS } from "./prompts.ts";
@@ -49,6 +51,8 @@ import { scheduledPass } from "./scheduled.ts";
 import { rerunStale, type StaleHead } from "./stale.ts";
 import { type FreshLike, freshGithub, freshTrain, GITHUB_STALE_MS, isoMs, parseMs, sleep, TRAIN_STALE_MS } from "./seams.ts";
 import type { TrainError } from "./tools.ts";
+import { behind } from "./up_to_date.ts";
+import { verifying } from "./verify.ts";
 import { fixing, rerunning, watchMerge, watchPass } from "./watch.ts";
 import { Repeats, warnHourly } from "./repeats.ts";
 import { openBlocking } from "../reviews/read.ts";
@@ -227,6 +231,8 @@ export class Train {
   readonly options: TrainOptions;
   /** One pass of a repo's loop at a time. */
   private readonly stepLocks = new Locks();
+  /** "Merge, then verify"'s Changes in CI side by side, per repo (lanes.ts). */
+  readonly lanes = new Lanes();
   /** One enqueue of a PR at a time, from its open check to its row. */
   private readonly enqueueLocks = new Locks();
   private readonly kicks = new Map<string, Notify>();
@@ -1390,7 +1396,7 @@ export class Train {
     const started = this.nowMs();
     const chain: batch.Stage[] = [{ pr: inCi.prNumber, sha: headSha, title: rebased.title, members: [{ change: inCi, pull: rebased }], added: 1, lone: true }];
     // No batch stacks behind it where each PR merges as itself.
-    const stack = (await this.oneAtATime(repo, base)) === undefined ? batch.stacker(this, repo, base, chain) : undefined;
+    const stack = (await this.oneAtATime(repo, base)) === undefined && !verifying(this, inCi.projectRef) ? batch.stacker(this, repo, base, chain) : undefined;
     // A repo with no CI at all goes on its review alone. One whose checks exist but haven't started waits for them, its
     // author and the lead told after `checksStartWaitMs` (`unstartedChecks`).
     const noCi = await this.withoutCi(inCi, base, true);
@@ -1495,6 +1501,12 @@ export class Train {
       const rule = `${[...why].slice(0, 1800).join("")}${RULE_HELD}`;
       this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ci_failed", lastError: errorText(rule) }));
       await this.wakeLead(inCi.projectRef, prNote(inCi.changeId, inCi.prUrl, `not merged: ${rule}. The train won't try again by itself; once the rule or the PR has changed, call \`change_enqueue\` for it again`));
+      return;
+    }
+    if (verifying(this, inCi.projectRef) && behind(message)) {
+      // Its base requires it up to date, and another PR merged during its CI: rebased and tested again, no failed try.
+      console.info(`train: merge of ${inCi.changeId} refused, its branch behind ${base}; rebasing it again`);
+      this.update(inCi.changeId, ["merging"], (c) => ({ ...c, state: "ready", lastError: errorText(`${BEHIND}${base}`) }));
       return;
     }
     const refusals = (this.mergeRefusals.get(inCi.changeId) ?? 0) + 1;
@@ -1729,7 +1741,16 @@ export class Train {
   private async recover(repo: string): Promise<void> {
     const inCi = this.records.inTrain(repo, ["ci"]);
     let resumed = false;
-    if (inCi.length === 1) resumed = (await this.resumeCi(inCi[0]!)) || (await batch.resumeBatch(this, repo, inCi));
+    const train = this.records.train(repo);
+    if (train && verifying(this, this.trainProject(repo, train.projectRef)) && inCi.length > 0) {
+      // Side by side, each in its own place: its CI watched again, or back in line.
+      for (const change of inCi) {
+        lanes.start(this, repo, change, async () => {
+          if (!(await this.resumeCi(change))) this.putBack(change, "the hub restarted while the train worked on it");
+        });
+      }
+      resumed = true;
+    } else if (inCi.length === 1) resumed = (await this.resumeCi(inCi[0]!)) || (await batch.resumeBatch(this, repo, inCi));
     else if (inCi.length > 1) resumed = await batch.resumeBatch(this, repo, inCi);
     for (const change of this.records.inTrain(repo, HEAD_STATES)) {
       if (resumed && inCi.some((c) => c.changeId === change.changeId)) continue;
@@ -1823,7 +1844,8 @@ export class Train {
       newest = Math.max(newest, at);
       if ((pr.base !== def && !guarded.has(pr.base)) || pr.head.startsWith(scratch)) continue;
       const change = this.records.latestFor(repo, pr.number);
-      if (change?.state === "merged") continue;
+      // Merged by the train, its Change about to say so: one in its own place in the line merges beside this pass.
+      if (change?.state === "merged" || change?.state === "merging") continue;
       const owner = change?.projectRef ?? projectRef;
       const data: Record<string, unknown> = { repo, prNumber: pr.number, mergedAt: isoMs(at), head: pr.head, base: pr.base };
       if (pr.mergeSha !== undefined) data.mergedSha = pr.mergeSha.toLowerCase();
@@ -1869,7 +1891,7 @@ export class Train {
     await this.checkMergedOutside(repo, train.watchSinceMs, train.projectRef);
     await batch.sweepScratch(this, repo);
     await next.afterPass(this, repo);
-    return batch.next(this, repo);
+    return verifying(this, this.trainProject(repo, train.projectRef)) ? lanes.laneNext(this, repo) : batch.next(this, repo);
   }
 
   ensureLoop(repo: string): void {
