@@ -13,7 +13,9 @@ import {
   hours,
   money,
   noBuyWhy,
+  offerWord,
   planLine,
+  planTerms,
   planWord,
   readBilling,
   readCap,
@@ -49,6 +51,15 @@ describe("the service's billing answer", () => {
     expect(readBilling({ ...BILLING_SAMPLES.plan, plan: { key: "team" } })).toBeNull();
     expect(readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "solo", name: "Solo", priceCents: -1, creditsCents: 0 }] })).toBeNull();
     expect(readBilling({ ...BILLING_SAMPLES.plan, providedOn: "yes" })).toBeNull();
+  });
+
+  it("reads each plan's agents at once where the cloud sends it, and words a plan without it as before", () => {
+    const [, team] = state("plan").plans;
+    expect(team && offerWord(team, "usd")).toBe("Team · $50 a month, $60 of computer time included, 100 agents at once");
+    const [older] = readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 }] })?.plans ?? [];
+    expect(older && planTerms(older, "usd")).toBe("$50 a month, $60 of computer time included");
+    const odd = readBilling({ ...BILLING_SAMPLES.plan, plans: [{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00, agentsAtOnce: "lots" }] });
+    expect(odd?.plans).toEqual([{ key: "team", name: "Team", priceCents: 50_00, creditsCents: 60_00 }]);
   });
 
   it("keeps a notice's action only when the app knows it", () => {

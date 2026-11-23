@@ -60,7 +60,8 @@ export interface BillingState {
   readonly notice: BillingNotice | null;
   /** The caller is an owner or admin: buys, opens the portal and sets the cap. */
   readonly canBuy: boolean;
-  readonly plans: ReadonlyArray<{ readonly key: string; readonly name: string; readonly priceCents: number; readonly creditsCents: number }>;
+  /** `agentsAtOnce`: the agents the plan runs at once on fleetd's computers, from a cloud that sends it. */
+  readonly plans: ReadonlyArray<{ readonly key: string; readonly name: string; readonly priceCents: number; readonly creditsCents: number; readonly agentsAtOnce?: number }>;
   readonly topUps: ReadonlyArray<{ readonly key: string; readonly priceCents: number; readonly creditsCents: number }>;
   readonly rates: ReadonlyArray<{ readonly cpu: number; readonly memGb: number; readonly centsPerHour: number }>;
 }
@@ -132,7 +133,11 @@ export const readBilling = (json: unknown): BillingState | null => {
   if (credits.capSpentCents !== undefined && !int(credits.capSpentCents)) return null;
   if (!time(usage.from) || !time(usage.to) || !int(usage.seconds) || !int(usage.cents)) return null;
   const bySize = list(usage.bySize, (r) => (int(r.cpu, 1) && int(r.memGb, 1) && int(r.seconds) && int(r.cents) ? { cpu: r.cpu, memGb: r.memGb, seconds: r.seconds, cents: r.cents } : null));
-  const plans = list(o.plans, (r) => (words(r.key, 32) && words(r.name, 40) && int(r.priceCents) && int(r.creditsCents) ? { key: r.key, name: r.name, priceCents: r.priceCents, creditsCents: r.creditsCents } : null));
+  const plans = list(o.plans, (r) =>
+    words(r.key, 32) && words(r.name, 40) && int(r.priceCents) && int(r.creditsCents)
+      ? { key: r.key, name: r.name, priceCents: r.priceCents, creditsCents: r.creditsCents, ...(int(r.agentsAtOnce, 1) ? { agentsAtOnce: r.agentsAtOnce } : {}) }
+      : null,
+  );
   const topUps = list(o.topUps, (r) => (words(r.key, 32) && int(r.priceCents, 1) && int(r.creditsCents, 1) ? { key: r.key, priceCents: r.priceCents, creditsCents: r.creditsCents } : null));
   const rates = o.rates === undefined ? [] : list(o.rates, (r) => (int(r.cpu, 1) && int(r.memGb, 1) && int(r.centsPerHour) ? { cpu: r.cpu, memGb: r.memGb, centsPerHour: r.centsPerHour } : null));
   if (bySize === null || plans === null || topUps === null || rates === null) return null;
@@ -219,9 +224,13 @@ export const planLine = (state: BillingState, nowMs: number): string | null => {
   return p.renews ? `Renews ${dayWord(end, nowMs)}` : `Ends ${dayWord(end, nowMs)}`;
 };
 
-/** A plan offered, as a choice reads: "Team · $50 a month, $60 of computer time included". */
-export const offerWord = (offer: BillingState["plans"][number], currency: string): string =>
-  `${offer.name} · ${money(offer.priceCents, currency)} a month, ${money(offer.creditsCents, currency)} of computer time included`;
+/** What a plan gives: "$50 a month, $60 of computer time included, 100 agents at once" (the last when the cloud says). */
+export const planTerms = (offer: BillingState["plans"][number], currency: string): string =>
+  `${money(offer.priceCents, currency)} a month, ${money(offer.creditsCents, currency)} of computer time included` +
+  (offer.agentsAtOnce === undefined ? "" : `, ${offer.agentsAtOnce} agents at once`);
+
+/** A plan offered, as a choice reads: "Team · $50 a month, $60 of computer time included, 100 agents at once". */
+export const offerWord = (offer: BillingState["plans"][number], currency: string): string => `${offer.name} · ${planTerms(offer, currency)}`;
 
 /** A size's rate: "$0.06 an hour". */
 export const rateWord = (centsPerHour: number, currency: string): string => `${money(centsPerHour, currency)} an hour`;
