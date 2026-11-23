@@ -5,7 +5,7 @@
 // and name (person_avatar_set, person_name_set), Agent Profiles (project_set), Approvals, its Computer (project_settings_get for each repo's setup and image, project_image_rebuild), Forget
 // Sign-ins and Delete (project_settings_get for its worktrees, then project_remove with them).
 // A project's own tools go by the desktop's names for them (PROJECT_TOOLS); Payments' calls are its own (Payments.tsx).
-import { allowedAfter, APPROVED_FIRST_PAGE, profileNameFor, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type MergeMode, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type UpToDateRule, type TodoItem } from "../../desktop";
+import { allowedAfter, APPROVED_FIRST_PAGE, APPROVED_PAGE, discovery, PROJECT_TOOLS, type ApprovedPages, type CreateCall, type ApprovalMode, type ApprovalsOutput, type AttachmentMime, type ComputerImage, type ComputerPick, type AvatarCrop, type AgentRow, type Discovery, type HubError, type Merger, type MergeMode, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectRef, type ProjectSettings, type ProjectSummary, type RiskRules, type SkillSummary, type UpToDateRule, type TodoItem } from "../../desktop";
 import type { Session } from "../../session";
 import { upload, UPLOAD_TIMEOUT_MS } from "../../upload";
 import { MERGES_DAYS } from "./model";
@@ -156,15 +156,6 @@ export const setProfile = async (hub: Hub, p: ProjectRef, view: ProfilesListOutp
 export const setLeadProfile = async (hub: Hub, p: ProjectRef, name: string | undefined): Promise<Result<null>> => {
   const r = await hub.call("project_set", { ...ref(p), ...(name === undefined ? { leadDefault: true } : { leadProfile: name }) });
   return r.ok ? { ok: true, value: null } : r;
-};
-
-/** Starts its lead on `model`, which no profile runs on yet: a profile is made on it (named for it, at high effort),
- * and its lead picks that. */
-export const startLeadOn = async (hub: Hub, p: ProjectRef, model: string, profiles: ReadonlyArray<{ name: string }>): Promise<Result<null>> => {
-  const name = profileNameFor(model, profiles);
-  const made = await hub.call("profile_create", { name, note: "", model, effort: "high", fast: false });
-  if (!made.ok) return made;
-  return setLeadProfile(hub, p, name);
 };
 
 /** Starts its lead again on its lead profile now, or once its turn ends. */

@@ -136,8 +136,34 @@ export {
   type RepoDraft,
   type RepoJob,
 } from "../../desktop/src/renderer/screens/projects/create";
-export { allowedAfter, leadChoices, leadOf, MODEL_CHOICE, runsLine } from "../../desktop/src/renderer/screens/settings/profilesModel";
-export { googleConnected, googleWords, modelShort, profileNameFor, providerOf, runsWords } from "../../desktop/src/shared/agentProviders";
+export {
+  allowedAfter,
+  createInput,
+  deleteWords as profileDeleteWords,
+  draftOf,
+  EFFORT_WORD,
+  hasFast,
+  byProviderOf,
+  leadOf,
+  newDraft,
+  NOTE_MAX,
+  problem as profileProblem,
+  providerModels,
+  runsLine,
+  updateInput,
+  type ProfileDraft,
+} from "../../desktop/src/renderer/screens/settings/profilesModel";
+export {
+  AGENT_PROVIDERS,
+  googleConnected,
+  googleWords,
+  modelShort,
+  profileNameFor,
+  providerOf,
+  runsWords,
+  type AgentProvider,
+  type AgentProviderId,
+} from "../../desktop/src/shared/agentProviders";
 export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export {
   connectedOf,

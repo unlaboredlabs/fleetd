@@ -1,19 +1,21 @@
 // Settings › Hub › Providers (#/settings/hub/providers): what agents run on, one row per provider (shared/
-// agentProviders.ts), each with how it is connected beside its name, the models it offers under it, and its one action
-// at its end. A row opens its setup in its place: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
+// agentProviders.ts), each with how it is connected beside its name, the models it offers under it, its one action and
+// Add profile at its end, and under it the task profiles that run on it (Profiles.tsx), each opening its editor in its
+// place; one whose provider isn't connected says it can't be used until it is. A row opens its setup under it: Anthropic's is the hub's Claude API key (admin/Claude.tsx, the same
 // controls Setup's Claude step holds); Google's is a sign-in on each machine agents run on (GoogleSignIn.tsx), the team's
 // Gemini API key, and the bots whose Vault holds a key of their own, which wins there. A link to Google's setup (a model
 // picker's Sign in with Google, a search) lands with Google's row open. Every row reads the same way: a provider fleetd
 // adds is one more entry in AGENT_PROVIDERS and its setup here.
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import type { Person, ProfileModel } from "../../../shared/contracts";
 import { AGENT_PROVIDERS, googleConnected, googleWords, runsWords, type AgentProvider, type AgentProviderId } from "../../../shared/agentProviders";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Text } from "../../ui";
 import { ClaudeAdmin } from "../admin/Claude";
 import { AntigravityRow, GeminiKeyRow, useGoogle, useMachineName } from "./GoogleSignIn";
-import { useLive } from "./hub";
-import { PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects, type Mark } from "./parts";
+import { errorText, useLive } from "./hub";
+import { AddButton, GroupNote, PageHead, SettingsList, SettingsListRow, SettingsRow, SettingsSection, useProjects, type Mark } from "./parts";
+import { ProviderProfiles, type Editing } from "./Profiles";
 import { useWanted } from "./reveal";
 import s from "./settings.module.css";
 
@@ -21,6 +23,9 @@ const noInput = {};
 
 /** The reveal key of each provider's row: a link or a search for it opens it. */
 const revealOf = (id: AgentProviderId): string => `hub.providers.${id}`;
+
+/** Where Anthropic's models come from, on its row's hover, while the hub has no Claude API key to list them. */
+const BUILTIN = " The models offered are fleetd's own list until a Claude API key is saved in Setup.";
 
 /** One provider's row at rest: how it is connected, its state as a dot, and its one action. */
 type RowView = { words: string; mark: Mark; action?: ReactNode };
@@ -39,7 +44,13 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
   }
   // Sign in with Google on the row: the row opens, and with one machine to sign in, its sign-in starts.
   const [signing, setSigning] = useState(false);
-  const models = useToolQuery("profiles_list", noInput, { enabled: live }).data?.models ?? [];
+  const profiles = useToolQuery("profiles_list", noInput, { enabled: live });
+  const models = profiles.data?.models ?? [];
+  // One profile's editor open on the page at a time, and what the hub said of the last change.
+  const [editing, setEditing] = useState<Editing | undefined>(undefined);
+  const [echo, setEcho] = useState<string | undefined>(undefined);
+  const edit = (next: Editing) => (setEcho(undefined), setEditing(next));
+  const done = (said: string | undefined) => (setEditing(undefined), setEcho(said));
   const claude = useToolQuery("claude_accounts_get", noInput, { enabled: live }).data;
   const google = useGoogle();
   const name = useMachineName();
@@ -94,41 +105,58 @@ export function ProvidersPage({ me }: { me: Person | undefined }) {
       </SettingsSection>
     );
 
-  const row = (p: AgentProvider) => {
+  // Each provider, its profiles under its row: a section of its own, its setup open under it.
+  const provider = (p: AgentProvider, first: boolean) => {
     const id = p.id;
     const v = views[id];
+    const runs = runsWords(models, id);
+    const add =
+      profiles.data === undefined || runs === "" ? null : (
+        <AddButton label={`Add ${p.name} profile`} disabled={!live || (editing?.kind === "new" && editing.provider === id)} onClick={() => edit({ kind: "new", provider: id })} />
+      );
     return (
-      <SettingsListRow
-        key={id}
-        name={p.name}
-        label={p.name}
-        mark={v.mark}
-        meta={v.words}
-        hint={runsWords(models, id) === "" ? undefined : `Runs ${runsWords(models, id).replaceAll(" · ", ", ")}.`}
-        data={{ "data-provider": id }}
-        open={{ onClick: () => (setSigning(false), setOpen(open === id ? undefined : id)) }}
-        expanded={open === id}
-        controls={v.action}
-      >
-        <ModelsLine models={models} provider={id} />
-      </SettingsListRow>
+      <Fragment key={id}>
+        <SettingsSection reveal={first ? "hub.profiles" : undefined} data={{ "data-provider-group": id }}>
+          <SettingsList label="Providers">
+            <SettingsListRow
+              name={p.name}
+              label={p.name}
+              mark={v.mark}
+              meta={v.words}
+              hint={runs === "" ? undefined : `Runs ${runs.replaceAll(" · ", ", ")}.${id === "anthropic" && profiles.data?.modelsFrom === "builtin" ? BUILTIN : ""}`}
+              data={{ "data-provider": id }}
+              open={{ onClick: () => (setSigning(false), setOpen(open === id ? undefined : id)) }}
+              expanded={open === id}
+              controls={
+                v.action === undefined && add === null ? undefined : (
+                  <>
+                    {v.action}
+                    {add}
+                  </>
+                )
+              }
+            >
+              <ModelsLine models={models} provider={id} />
+            </SettingsListRow>
+          </SettingsList>
+          {profiles.data === undefined ? null : (
+            <ProviderProfiles provider={p} view={profiles.data} unusable={v.mark === "off"} editing={editing} onEdit={(pid) => edit({ kind: "edit", id: pid })} onDone={done} />
+          )}
+        </SettingsSection>
+        {open === id ? setup(id) : null}
+      </Fragment>
     );
   };
-  const at = AGENT_PROVIDERS.findIndex((p) => p.id === open);
-  const before = at === -1 ? AGENT_PROVIDERS : AGENT_PROVIDERS.slice(0, at + 1);
-  const after = at === -1 ? [] : AGENT_PROVIDERS.slice(at + 1);
   return (
     <div className={s.scroll} data-screen="settings.hub.providers">
       <div className={s.column}>
         <PageHead title="Providers" />
-        <SettingsSection reveal="hub.providers">
-          <SettingsList label="Providers">{before.map(row)}</SettingsList>
-        </SettingsSection>
-        {open === undefined ? null : setup(open)}
-        {after.length === 0 ? null : (
-          <SettingsSection>
-            <SettingsList label="Providers">{after.map(row)}</SettingsList>
-          </SettingsSection>
+        {profiles.error ? <GroupNote tone="danger">{`Profiles not read: ${errorText(profiles.error)}`}</GroupNote> : null}
+        {AGENT_PROVIDERS.map((p, ix) => provider(p, ix === 0))}
+        {echo === undefined ? null : (
+          <GroupNote>
+            <span role="status">{echo}</span>
+          </GroupNote>
         )}
       </div>
     </div>

@@ -141,7 +141,8 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   });
   const offAdmin = registerCommands([
     hubPage("go:hub.machines", "Machines", "Add a machine, its roles, max agents, updates", "hub.machines", ["machine", "add machine", "fleet cap", "machine roles", "update", "upgrade"]),
-    hubPage("go:hub.profiles", "Agents for every bot", "Bot defaults: task profiles, global MCP servers and hub-wide skills", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
+    hubPage("go:hub.agents", "Agents for every bot", "Bot defaults: the default profile, what leads run on, global MCP servers and hub-wide skills", "hub.agents", ["default profile", "lead", "every bot"]),
+    hubPage("go:hub.profiles", "Profiles", "Providers: each provider's task profiles, their models and effort", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
     hubPage("go:hub.tools", "Tools & skills", "Bot defaults › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
     hubPage("go:hub.instructions", "Instructions for every bot", "Bot defaults: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
     hubPage("go:hub.accounts", "Hub accounts", "Setup: the Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),

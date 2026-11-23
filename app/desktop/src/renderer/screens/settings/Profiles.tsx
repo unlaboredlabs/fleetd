@@ -1,16 +1,18 @@
-// Task profiles (W146): Settings › Hub › Every project › Agents lists the hub's profiles, each with its model, effort,
-// fast mode and note, and creates, edits, renames and deletes them and marks the default (profile_create,
-// profile_update, profile_delete: an owner's or admin's), and picks the one leads start on (Lead runs on: profile_update's
-// `lead`). Each project's Agents page picks which it allows (AllowedProfiles, project_set) and its lead's own (Lead model).
+// Task profiles (W146): Settings › Hub › Providers lists the hub's profiles under the provider each runs on, each with
+// its model, effort, fast mode and note, and creates, edits, renames and deletes them (profile_create, profile_update,
+// profile_delete: an owner's or admin's). Every project › Agents picks the default and the one leads start on (Default
+// profile and Lead runs on: profile_update's `default` and `lead`). Each project's Agents page picks which it allows
+// (AllowedProfiles, project_set) and its lead's own (Lead model).
 import { useState } from "react";
-import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef, ProjectSetInput } from "../../../shared/contracts";
-import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
+import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProfileUpdateInput, ProjectRef, ProjectSetInput } from "../../../shared/contracts";
+import { Button, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
 import { useCloudTeam, useToolQuery } from "../../src/data/react";
 import { useAdministers } from "../admin/role";
-import { modelShort, profileNameFor, providerOf } from "../../../shared/agentProviders";
+import { modelShort, providerOf, type AgentProvider } from "../../../shared/agentProviders";
 import { GoogleConnect } from "./GoogleSignIn";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
 import {
+  ADD_PROFILE,
   allowedAfter,
   createInput,
   deleteWords,
@@ -19,97 +21,168 @@ import {
   hasFast,
   byProviderOf,
   leadOf,
-  leadChoices,
-  MODEL_CHOICE,
-  modelChoices,
   newDraft,
   NOTE_MAX,
   problem,
+  providerModels,
   runsLine,
   updateInput,
   type ProfileDraft,
 } from "./profilesModel";
 import { AddButton, DangerButton, GroupNote, Notice, SettingsList, SettingsListRow, SettingsRow, SettingsSection } from "./parts";
 import s from "./settings.module.css";
-import { adminGroup } from "../../../shared/settingsPages";
+import { settingsPath } from "../../../shared/settingsPages";
+import { navigate } from "../shell/navigation";
 
 const noInput = {};
 /** The Lead model option that follows the hub's lead profile: no profile can be named it. */
 const HUB_LEAD = "@hub";
 
-/** Which profile is open in the editor: a new one, or one by id. */
-type Editing = { kind: "new" } | { kind: "edit"; id: number };
+/** Add profile… opens Providers, where a profile is made under its provider. */
+const openProviders = () => navigate({ id: "settings", tab: "hub.providers" });
 
-/** The hub's profiles, each a row with Edit, and New profile; one opens in the editor in its row's place. */
-export function ProfilesEditor() {
-  const live = useLive();
-  const list = useToolQuery("profiles_list", noInput, { enabled: live });
-  const [editing, setEditing] = useState<Editing | undefined>(undefined);
-  const [echo, setEcho] = useState<string | undefined>(undefined);
-  if (!live)
-    return (
-      <SettingsSection>
-        <GroupNote>Connect to the hub to see and change its profiles.</GroupNote>
-      </SettingsSection>
-    );
-  const view = list.data;
-  if (view === undefined)
-    return (
-      <SettingsSection>
-        <GroupNote tone={list.error ? "danger" : "quiet"}>{list.error ? `Not read: ${errorText(list.error)}` : "Loading…"}</GroupNote>
-      </SettingsSection>
-    );
-  const done = (said: string | undefined) => {
-    setEditing(undefined);
-    setEcho(said);
-  };
+/**
+ * A profile picker's options: the profiles by provider (one claude refused can't be picked, and says why), then Add
+ * profile…, which a member sees greyed, with who makes one and where.
+ */
+function profileOptions(view: ProfilesListOutput, admin: boolean, cloud: boolean, more: (p: Profile) => string = () => "") {
+  return [
+    ...byProviderOf(view.profiles).map(({ profile: p, group }) => ({
+      value: p.name,
+      label: (
+        <>
+          <Text mono>{p.name}</Text>
+          <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${more(p)}`}</Text>
+        </>
+      ),
+      textValue: p.name,
+      group,
+      ...(p.refused === undefined ? {} : { disabled: true, title: p.refused }),
+    })),
+    {
+      value: ADD_PROFILE,
+      label: "Add profile…",
+      textValue: "Add profile…",
+      ...(admin ? {} : { disabled: true, title: `An owner or admin adds profiles under each provider in ${settingsPath(cloud, "Providers")}.` }),
+    },
+  ];
+}
+
+/** Which profile is open in Providers' editor: a new one under a provider, or one by id. */
+export type Editing = { kind: "new"; provider: AgentProvider["id"] } | { kind: "edit"; id: number };
+
+/**
+ * A provider's profiles, under its row on Providers: each a row that opens its editor in the row's place, and a new
+ * one's editor at their end once its provider's Add profile is pressed. While the provider isn't connected
+ * (`unusable`), each says so: agents can't run on it until it does. Nothing while it has none and none is being added.
+ */
+export function ProviderProfiles(props: {
+  provider: AgentProvider;
+  view: ProfilesListOutput;
+  unusable: boolean;
+  editing: Editing | undefined;
+  onEdit: (id: number) => void;
+  onDone: (said: string | undefined) => void;
+}) {
+  const { provider, view, editing } = props;
+  const mine = view.profiles.filter((p) => providerOf(p.model).id === provider.id);
+  const lead = leadOf(view.profiles)?.id;
   const row = (p: Profile) => (
-    <ProfileRow key={p.id} profile={p} lead={p.id === leadOf(view.profiles)?.id} models={view.models} onEdit={() => (setEcho(undefined), setEditing({ kind: "edit", id: p.id }))} />
+    <ProfileRow
+      key={p.id}
+      profile={p}
+      lead={p.id === lead}
+      models={view.models}
+      unusable={props.unusable ? `Unusable until ${provider.name} connects` : undefined}
+      onEdit={() => props.onEdit(p.id)}
+    />
   );
   // The profile open in the editor takes its row's place: the rows before it, the editor, the rows after it.
-  const at = editing?.kind === "edit" ? view.profiles.findIndex((p) => p.id === editing.id) : -1;
-  const open = view.profiles[at];
-  const before = at === -1 ? view.profiles : view.profiles.slice(0, at);
-  const after = at === -1 ? [] : view.profiles.slice(at + 1);
+  const at = editing?.kind === "edit" ? mine.findIndex((p) => p.id === editing.id) : -1;
+  const open = mine[at];
+  const before = at === -1 ? mine : mine.slice(0, at);
+  const after = at === -1 ? [] : mine.slice(at + 1);
+  const adding = editing?.kind === "new" && editing.provider === provider.id;
+  const label = `${provider.name} profiles`;
+  if (mine.length === 0 && !adding) return null;
   return (
     <>
-      <SettingsSection
-        title="Profiles"
-        reveal="hub.task-profiles"
-        hint={`What agents run on: a model, its effort and speed, under a name the lead picks it by.${view.modelsFrom === "api" ? "" : " The models offered are fleetd's own list until a Claude API key is saved in Setup."}`}
-        aside={editing?.kind === "new" ? undefined : <AddButton label="New profile" onClick={() => (setEcho(undefined), setEditing({ kind: "new" }))} />}
-      >
-        {before.length === 0 ? null : <SettingsList label="Profiles">{before.map(row)}</SettingsList>}
-        {open === undefined ? null : <ProfileForm view={view} saved={open} onDone={done} />}
-        {after.length === 0 ? null : <SettingsList label="Profiles">{after.map(row)}</SettingsList>}
-        {editing?.kind === "new" ? <ProfileForm view={view} onDone={done} /> : null}
-        {echo === undefined ? null : (
-          <GroupNote>
-            <span role="status">{echo}</span>
-          </GroupNote>
-        )}
-      </SettingsSection>
-      <SettingsSection title="Leads">
-        <LeadPicker view={view} onDone={done} />
-      </SettingsSection>
+      {before.length === 0 ? null : (
+        <SettingsList label={label} nested>
+          {before.map(row)}
+        </SettingsList>
+      )}
+      {open === undefined ? null : <ProfileForm view={view} provider={provider} saved={open} onDone={props.onDone} />}
+      {after.length === 0 ? null : (
+        <SettingsList label={label} nested>
+          {after.map(row)}
+        </SettingsList>
+      )}
+      {adding ? <ProfileForm view={view} provider={provider} onDone={props.onDone} /> : null}
     </>
   );
 }
 
-/** Lead runs on: the profile every lead starts on, the default until another is picked. Picking the default
- * has leads follow the default again. */
-function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said: string | undefined) => void }) {
+/**
+ * Every project › Agents' profiles: the default (every bot allows it; reviews and tasks that name no profile run on it)
+ * and the one every lead runs on, each picked from the profiles Providers lists under each provider.
+ */
+export function ProfilePicks() {
+  const live = useLive();
+  const cloud = useCloudTeam();
+  const list = useToolQuery("profiles_list", noInput, { enabled: live });
+  const [echo, setEcho] = useState<string | undefined>(undefined);
+  const view = list.data;
+  return (
+    <SettingsSection title="Profiles" hint={`Made under each provider in ${settingsPath(cloud, "Providers")}.`}>
+      {!live ? (
+        <GroupNote>Connect to the hub to see and change its profiles.</GroupNote>
+      ) : view === undefined ? (
+        <GroupNote tone={list.error ? "danger" : "quiet"}>{list.error ? `Not read: ${errorText(list.error)}` : "Loading…"}</GroupNote>
+      ) : (
+        <>
+          <ProfilePick view={view} kind="default" reveal="hub.default-profile" onDone={setEcho} />
+          <ProfilePick view={view} kind="lead" reveal="hub.lead" onDone={setEcho} />
+          {echo === undefined ? null : (
+            <GroupNote>
+              <span role="status">{echo}</span>
+            </GroupNote>
+          )}
+        </>
+      )}
+    </SettingsSection>
+  );
+}
+
+const PICK = {
+  default: {
+    title: "Default profile",
+    hint: "Every bot allows it; every review, helper call and task that names no profile runs on it.",
+  },
+  lead: {
+    title: "Lead runs on",
+    hint: "Every bot's lead but those that pick their own on their Agents page. Each running lead switches to it at its next idle moment, keeping its chat. Reviews and tasks that name no profile stay on the default.",
+  },
+} as const;
+
+/** Default profile, or Lead runs on: the profile every lead starts on, the default until another is picked. Picking
+ * the default there has leads follow the default again. */
+function ProfilePick({ view, kind, reveal, onDone }: { view: ProfilesListOutput; kind: keyof typeof PICK; reveal: string; onDone: (said: string | undefined) => void }) {
   const call = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const lead = leadOf(view.profiles);
+  const current = kind === "lead" ? leadOf(view.profiles) : view.profiles.find((p) => p.default);
+  const words = PICK[kind];
+  const cloud = useCloudTeam();
   const pick = (name: string) => {
+    if (name === ADD_PROFILE) return openProviders();
     const p = view.profiles.find((q) => q.name === name);
-    if (p === undefined || p.id === lead?.id) return;
+    if (p === undefined || p.id === current?.id) return;
     setBusy(true);
     setError(undefined);
-    call("profile_update", { id: p.id, lead: true })
+    const input: ProfileUpdateInput = kind === "lead" ? { id: p.id, lead: true } : { id: p.id, default: true };
+    call("profile_update", input)
       .then((out) => {
         refetch(["profiles_list", "project_get"]);
         onDone(out.next);
@@ -119,27 +192,17 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
   };
   return (
     <SettingsRow
-      reveal="hub.lead"
-      title="Lead runs on"
-      hint="Every bot's lead but those that pick their own on their Agents page. Each running lead switches to it at its next idle moment, keeping its chat. Reviews and tasks that name no profile stay on the default."
+      reveal={reveal}
+      title={words.title}
+      hint={words.hint}
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={
         <Select
-          aria-label="Lead runs on"
-          value={lead?.name ?? ""}
+          aria-label={words.title}
+          value={current?.name ?? ""}
           disabled={busy}
-          options={byProviderOf(view.profiles).map(({ profile: p, group }) => ({
-            value: p.name,
-            label: (
-              <>
-                <Text mono>{p.name}</Text>
-                <Text size="xs" tone="quiet">{` ${runsLine(view.models, p)}${p.default ? " · default" : ""}`}</Text>
-              </>
-            ),
-            textValue: p.name,
-            group,
-          }))}
+          options={profileOptions(view, true, cloud, (p) => (kind === "lead" && p.default ? " · default" : ""))}
           onValueChange={pick}
         />
       }
@@ -147,13 +210,14 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
   );
 }
 
-function ProfileRow({ profile: p, lead, models, onEdit }: { profile: Profile; lead: boolean; models: ReadonlyArray<ProfileModel>; onEdit: () => void }) {
+function ProfileRow({ profile: p, lead, models, unusable, onEdit }: { profile: Profile; lead: boolean; models: ReadonlyArray<ProfileModel>; unusable: string | undefined; onEdit: () => void }) {
   return (
     <SettingsListRow
       name={<Text mono>{p.name}</Text>}
       label={p.name}
-      data={{ "data-profile": p.name }}
+      data={{ "data-profile": p.name, ...(unusable === undefined ? {} : { "data-unusable": "" }) }}
       meta={[p.default ? "default" : null, lead ? "lead" : null].filter((w) => w !== null).join(" · ") || undefined}
+      state={unusable === undefined ? undefined : { word: unusable, tone: "warning" }}
       hint={p.note === "" ? undefined : p.note}
       open={{ onClick: onEdit }}
       controls={
@@ -167,11 +231,13 @@ function ProfileRow({ profile: p, lead, models, onEdit }: { profile: Profile; le
   );
 }
 
-/** A profile's editor: a new one without `saved`. Its default can't be unmarked or deleted, only replaced. */
-function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?: Profile; onDone: (said: string | undefined) => void }) {
+/** A profile's editor under its provider, on that provider's models: a new one without `saved`. The default can't be
+ * deleted, only replaced (Every project › Agents' Default profile). */
+function ProfileForm({ view, provider, saved, onDone }: { view: ProfilesListOutput; provider: AgentProvider; saved?: Profile; onDone: (said: string | undefined) => void }) {
   const call = useHubCall();
   const refetch = useRefetch();
-  const [draft, setDraft] = useState<ProfileDraft>(() => (saved ? draftOf(saved) : newDraft(view.models)));
+  const models = providerModels(view.models, provider.id, saved?.model);
+  const [draft, setDraft] = useState<ProfileDraft>(() => (saved ? draftOf(saved) : newDraft(models)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [deleting, setDeleting] = useState(false);
@@ -200,7 +266,7 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
     if (saved === undefined) run(call("profile_create", createInput(view.models, draft)));
     else if (update !== undefined) run(call("profile_update", update));
   };
-  const label = saved ? `Edit ${saved.name}` : "New profile";
+  const label = saved ? `Edit ${saved.name}` : `New ${provider.name} profile`;
   return (
     <SettingsRow title={label}>
       <Field label="Name" description="The word the lead names it by: lowercase, no spaces." error={draft.name !== "" && wrong?.field === "name" ? wrong.text : undefined}>
@@ -211,35 +277,18 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
       </Field>
       <div className={s.inline}>
         <Field label="Model">
-          <Select
-            aria-label="Model"
-            value={draft.model}
-            options={modelChoices(view.models, saved?.model).map((m) => ({ value: m.id, label: modelShort(m), textValue: m.displayName ?? m.id, group: providerOf(m.id).name }))}
-            onValueChange={(model) => set({ model })}
-          />
+          <Select aria-label="Model" value={draft.model} options={models.map((m) => ({ value: m.id, label: modelShort(m), textValue: m.displayName ?? m.id }))} onValueChange={(model) => set({ model })} />
         </Field>
         <Field label="Reasoning">
           <Select<Effort> aria-label="Reasoning" value={draft.effort} options={view.efforts.map((e) => ({ value: e, label: EFFORT_WORD[e] }))} onValueChange={(effort) => set({ effort })} />
         </Field>
       </div>
-      {providerOf(draft.model).id === "google" ? <GoogleConnect flush /> : null}
       <Switch
         label="Fast mode"
         description={fast ? "Faster answers at a higher price per token." : "This model has no fast mode."}
         checked={draft.fast && fast}
         disabled={!fast}
         onCheckedChange={(on) => set({ fast: on })}
-      />
-      <Checkbox
-        label="The default"
-        description={
-          saved?.default
-            ? "Every bot allows it; every review, helper call and task that names no profile runs on it. Make another the default to change it."
-            : "Every bot allows it; every review, helper call and task that names no profile runs on it."
-        }
-        checked={draft.default}
-        disabled={saved?.default === true}
-        onCheckedChange={(on) => set({ default: on === true })}
       />
       <div className={s.actions}>
         <Button variant="primary" disabled={busy || wrong !== undefined || (saved !== undefined && update === undefined)} onClick={save}>
@@ -290,6 +339,8 @@ function ProfileForm({ view, saved, onDone }: { view: ProfilesListOutput; saved?
  * (project_set). The default is always allowed: checked, and can't be unchecked. Under them, Lead model: the profile
  * its lead starts on, the hub's lead profile until it picks its own (project_set leadProfile, any of the hub's but
  * one claude refused), with Restart lead beside it: on the pick, or on the one it runs on, as a stuck lead needs.
+ * Profiles alone, by provider: a new one is made on Providers, which the section's plus and the picker's Add profile…
+ * open for an admin.
  */
 export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const cloud = useCloudTeam();
@@ -316,22 +367,8 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
   const toggle = (name: ProfileName, on: boolean) => set(name, { profiles: allowedAfter(allowed, defaultName, name, on) });
   const pickLead = (name: string) => {
     if (name === (view.leadProfile ?? HUB_LEAD)) return;
-    if (name.startsWith(MODEL_CHOICE)) {
-      startOn(name.slice(MODEL_CHOICE.length));
-      return;
-    }
+    if (name === ADD_PROFILE) return openProviders();
     set("lead", name === HUB_LEAD ? { leadDefault: true } : { leadProfile: name });
-  };
-  // A model no profile runs on: a profile is made on it (named for it, at high effort), and the lead starts on that.
-  const startOn = (model: string) => {
-    const name = profileNameFor(model, view.profiles);
-    setBusy("lead");
-    setError(undefined);
-    call("profile_create", { name, note: "", model, effort: "high", fast: false })
-      .then(() => call("project_set", { ...projectRef, leadProfile: name }))
-      .then(() => refetch(["profiles_list", "project_get"]))
-      .catch((e: unknown) => setError(errorText(e)))
-      .finally(() => setBusy(undefined));
   };
   const leadModel = view.profiles.find((p) => p.name === (view.leadProfile ?? lead?.name))?.model;
   const restart = () => set("lead", { leadRestart: true });
@@ -339,7 +376,8 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
     <SettingsSection
       title="Allowed profiles"
       reveal="agents.profiles"
-      hint={`The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles in ${adminGroup(cloud)} › Bot defaults › Agents.`}
+      aside={admin ? <AddButton label="Add profile" onClick={openProviders} /> : undefined}
+      hint={`The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles under each provider in ${settingsPath(cloud, "Providers")}.`}
     >
       {view.profiles.map((p) => (
         <SettingsRow
@@ -386,28 +424,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
                 disabled={!live || busy !== undefined}
                 options={[
                   { value: HUB_LEAD, label: `Hub default (${lead.name})`, textValue: `Hub default (${lead.name})` },
-                  ...leadChoices(view.profiles, view.models).map((c) =>
-                    c.kind === "profile"
-                      ? {
-                          value: c.profile.name,
-                          label: (
-                            <>
-                              <Text mono>{c.profile.name}</Text>
-                              <Text size="xs" tone="quiet">{` ${runsLine(view.models, c.profile)}`}</Text>
-                            </>
-                          ),
-                          textValue: c.profile.name,
-                          group: c.group,
-                          ...(c.profile.refused === undefined ? {} : { disabled: true, title: c.profile.refused }),
-                        }
-                      : {
-                          value: `${MODEL_CHOICE}${c.model.id}`,
-                          label: modelShort(c.model),
-                          textValue: modelShort(c.model),
-                          group: c.group,
-                          ...(admin ? {} : { disabled: true, title: `An owner or admin starts a profile on it in ${adminGroup(cloud)} › Bot defaults › Agents.` }),
-                        },
-                  ),
+                  ...profileOptions(view, admin, cloud),
                 ]}
                 onValueChange={pickLead}
               />

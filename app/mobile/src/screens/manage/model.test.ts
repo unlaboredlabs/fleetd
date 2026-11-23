@@ -164,18 +164,12 @@ describe("its screen", () => {
         { id: "gemini-4-argon", displayName: "Gemini 4 Argon (Antigravity)", fast: false },
       ],
     } as unknown as ProfilesListOutput;
-    // A member picks among the profiles alone: a new one is an admin's to make.
-    expect(leadSections(leadLines(view)).map((s) => [s.group, ...s.lines.map((l) => l.value)])).toEqual([
-      [undefined, LEAD_HUB],
+    // Profiles alone, by provider: Google's models no profile runs on (Neon, Argon) are never offered as they are.
+    expect(leadSections(leadLines(view)).map((s) => [s.group, ...s.lines.map((l) => l.title)])).toEqual([
+      [undefined, "Hub default (high)"],
       ["Anthropic", "high"],
       ["Google", "gemini"],
     ]);
-    expect(leadSections(leadLines(view, true)).map((s) => [s.group, ...s.lines.map((l) => l.title)])).toEqual([
-      [undefined, "Hub default (high)"],
-      ["Anthropic", "high"],
-      ["Google", "gemini", "Gemini 4 Neon"],
-    ]);
-    expect(leadLines(view, true).at(-1)?.value).toBe("model:gemini-4-neon");
   });
 });
 

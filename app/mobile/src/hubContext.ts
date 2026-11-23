@@ -3,7 +3,7 @@ import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigat
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { createContext, useContext } from "react";
 import type { KeptHub, SavedAccount } from "./cloud/account";
-import type { SkillOrigin } from "./desktop";
+import type { AgentProviderId, SkillOrigin } from "./desktop";
 import type { OnSignedIn } from "./screens/Cloud";
 import type { AgentMessage } from "./screens/dms/model";
 import type { VaultItemSummary, VaultKind } from "./screens/vault/types";
@@ -55,8 +55,8 @@ export const useSession = (): Session => {
 export type RootParams = {
   /** Chats; Open Approvals (a Shortcuts action) opens it on Needs You. */
   Home: NavigatorScreenParams<ChatsParams> | undefined;
-  /** The person's avatar on Chats opens it. */
-  Settings: undefined;
+  /** The person's avatar on Chats opens it; a bot's Lead Model's Add Profile… opens it at Providers. */
+  Settings: NavigatorScreenParams<SettingsParams> | undefined;
   /**
    * `messageId`: a search hit; `requestId`: an approval, at its card. Either is scrolled to and lit for a moment.
    * `tap`: one notification tap from the next, so a second tap on the same one while the chat is open lands again (a
@@ -148,8 +148,10 @@ export type SettingsParams = {
   Machines: undefined;
   /** One provider: connect it, its limit, Test, Disconnect. */
   Provider: { id: string };
-  /** What agents run on, a row per provider (Anthropic, Google), for admins. */
+  /** What agents run on, a section per provider (Anthropic, Google) with its profiles under it, for admins. */
   Providers: undefined;
+  /** A provider's profile, changed or (no `id`) added: its name, note, model, reasoning and fast mode (ProfileEdit.tsx). */
+  ProfileEdit: { provider: AgentProviderId; id?: number };
   /** The hub's Claude API key and its endpoint, for admins: Providers › Anthropic. */
   Claude: undefined;
   /** Google's sign-in on each machine, and the bots with a Gemini key: Providers › Google. */

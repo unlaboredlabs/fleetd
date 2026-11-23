@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-// Settings › Hub › Every project › Agents: the hub's profiles listed with the default marked, one created with fast
-// mode, one renamed and deleted, fast mode off where the model has none, the default neither unmarked nor deleted; Lead
-// runs on, picked with profile_update's lead and back on the default when its profile is deleted; and a project's Agents
-// page, where the default is checked for good and another is allowed with project_set, and its Lead model: the hub's
-// lead profile until the bot picks its own (project_set leadProfile), with Restart lead always beside it.
-// Both pickers list models by provider, Google's beside Anthropic's: a pick of Google's while Google isn't connected
-// offers Sign in with Google right there, and Lead model starts a lead on a Gemini model no profile runs on yet.
+// Settings › Hub › Providers: the hub's profiles listed under their provider with the default marked, one added under
+// Anthropic with fast mode and one under Google, unusable while Google isn't connected, one renamed and deleted, fast
+// mode off where the model has none, the default never deleted; Every project › Agents' Default profile and Lead runs
+// on, picked with profile_update's default and lead, leads back on the default when their profile is deleted; and a
+// project's Agents page, where the default is checked for good and another is allowed with project_set, and its Lead
+// model: the hub's lead profile until the bot picks its own (project_set leadProfile), with Restart lead always beside
+// it, which starts a lead on a Gemini model no profile runs on yet.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -14,7 +14,8 @@ import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { DataProvider } from "../../src/data/react";
 import { UiProvider } from "../../ui";
-import { AllowedProfiles, ProfilesEditor } from "./Profiles";
+import { ProvidersPage } from "./AgentProviders";
+import { AllowedProfiles, ProfilePicks } from "./Profiles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.hoisted(() => {
@@ -149,7 +150,14 @@ const render = async (page: "editor" | "project") => {
   await act(async () => {
     root.render(
       <UiProvider>
-        <DataProvider layer={createDataLayer(hub)}>{page === "editor" ? <ProfilesEditor /> : <AllowedProfiles projectRef={storefront} />}</DataProvider>
+        <DataProvider layer={createDataLayer(hub)}>{page === "editor" ? (
+            <>
+              <ProvidersPage me={undefined} />
+              <ProfilePicks />
+            </>
+          ) : (
+            <AllowedProfiles projectRef={storefront} />
+          )}</DataProvider>
       </UiProvider>,
     );
     await Promise.resolve();
@@ -215,10 +223,14 @@ it("lists the hub's profiles, the default marked, and creates one in fast mode",
     expect.stringMatching(/^mediumClaude Opus 5.5 · medium effort$/u),
     expect.stringMatching(/^wideClaude Sonnet 5.5 · extra high effort$/u),
   ]);
-  // Where the models come from is the section's hover, never a line at rest.
-  expect(host.textContent).toContain("The models offered are fleetd's own list until a Claude API key is saved in Setup.");
+  // Each under its provider: Anthropic's three, none under Google.
+  expect([...host.querySelectorAll("[data-provider-group='anthropic'] [data-profile]")].map((r) => r.getAttribute("data-profile"))).toEqual(["high", "medium", "wide"]);
+  expect(host.querySelector("[data-provider-group='google'] [data-profile]")).toBeNull();
+  // Where the models come from is Anthropic's hover, never a line at rest.
+  expect(host.querySelector("[data-provider='anthropic']")?.textContent).toContain("The models offered are fleetd's own list until a Claude API key is saved in Setup.");
   expect(host.textContent).not.toContain("the hub has no API key");
-  await click(button("New profile"));
+  await click(button("Add Anthropic profile"));
+  expect(host.textContent).toContain("New Anthropic profile");
   expect(button("Create profile").disabled).toBe(true);
   type(field("Name"), "Quick fix");
   expect(host.textContent).toContain("Lowercase letters, digits, - _ and ., up to 32.");
@@ -245,13 +257,16 @@ it("renames a profile, sends only what changed, and deletes it after a confirm",
   await click(edit("medium"));
   expect(button("Save").disabled).toBe(true);
   type(field("Name"), "chores");
-  await click(toggle("checkbox", "The default"));
+  // Which is the default is Every project › Agents' pick, not the editor's.
+  expect(() => toggle("checkbox", "The default")).toThrow();
   await click(button("Save"));
-  expect(calls).toEqual([{ tool: "profile_update", input: { id: 2, name: "chores", default: true } }]);
+  expect(calls).toEqual([{ tool: "profile_update", input: { id: 2, name: "chores" } }]);
+  await pickLead("chores", "Default profile");
+  expect(calls.at(-1)).toEqual({ tool: "profile_update", input: { id: 2, default: true } });
+  expect(leadPicker("Default profile").textContent).toContain("chores");
   expect(rows()[1]).toMatch(/^choresdefault · lead/u);
   await click(edit("chores"));
-  // The default can be neither unmarked nor deleted, only replaced.
-  expect(toggle("checkbox", "The default").disabled).toBe(true);
+  // The default can't be deleted, only replaced.
   expect(() => button("Delete…")).toThrow();
   await click(button("Cancel"));
   await click(edit("high"));
@@ -374,65 +389,75 @@ it("allows a bot the default for good and another with project_set", async () =>
 const groups = () =>
   [...document.querySelectorAll<HTMLElement>("[role='group']")].map((g) => [g.querySelector("[id]")?.textContent ?? "", ...[...g.querySelectorAll("[role='option']")].map((o) => o.textContent)]);
 
-it("lists a profile's models by provider; on Google's while it isn't connected, Sign in with Google signs devbox in right there", async () => {
+it("offers a profile only its provider's models; one added under Google is unusable until Google connects", async () => {
   await render("editor");
   await click(edit("medium"));
-  await openPicker("Model");
-  expect(groups()).toEqual([
-    ["Anthropic", "Claude Opus 5.5", "Claude Sonnet 5.5"],
-    ["Google", "Gemini 4 Neon"],
-  ]);
-  // Claude's model: nothing about Google.
+  expect((await openPicker("Model")).map((o) => o.textContent)).toEqual(["Claude Opus 5.5", "Claude Sonnet 5.5"]);
   act(() => {
     document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   });
   await settle();
-  expect(host.querySelector("[data-google-connect]")).toBeNull();
-  await pickLead("Gemini 4 Neon", "Model");
-  expect(host.querySelector("[data-google-connect]")?.textContent).toContain("Google isn't connected");
-  await click(button("Sign in with Google"));
-  expect(calls).toEqual([{ tool: "machine_antigravity_login", input: { machineId: "devbox" } }]);
-  expect(host.textContent).toContain("https://accounts.google.com/o/oauth2/auth?state=g1");
-  type(field("The code the page shows"), " g#1 ");
-  await click(button("Sign in"));
-  expect(calls.at(-1)).toEqual({ tool: "machine_antigravity_login", input: { machineId: "devbox", code: "g#1" } });
-  // Connected now: the row goes, and the profile saves on Gemini.
-  expect(host.querySelector("[data-google-connect]")).toBeNull();
-  await click(button("Save"));
-  expect(calls.at(-1)).toEqual({ tool: "profile_update", input: { id: 2, model: "gemini-4-neon" } });
+  await click(button("Cancel"));
+  await click(button("Add Google profile"));
+  expect(leadPicker("Model").textContent).toBe("Gemini 4 Neon");
+  type(field("Name"), "neon");
+  await click(button("Create profile"));
+  expect(calls).toEqual([{ tool: "profile_create", input: { name: "neon", note: "", model: "gemini-4-neon", effort: "high", fast: false } }]);
+  const neon = host.querySelector("[data-provider-group='google'] [data-profile='neon']");
+  expect(neon?.hasAttribute("data-unusable")).toBe(true);
+  expect(neon?.textContent).toContain("Unusable until Google connects");
+  // Anthropic's are usable all the while.
+  expect(host.querySelectorAll("[data-unusable]")).toHaveLength(1);
 });
 
-it("says nothing about Google once it is connected, and on a hub without antigravity_status still offers the sign-in", async () => {
+it("marks no profile unusable once Google is connected, or on a hub that can't say", async () => {
+  profiles = [...profiles, profile(4, "neon", { model: "gemini-4-neon" })];
   google = { machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }], keyIn: [] };
   await render("editor");
-  await click(edit("medium"));
-  await pickLead("Gemini 4 Neon", "Model");
-  expect(host.querySelector("[data-google-connect]")).toBeNull();
+  expect(host.querySelector("[data-provider-group='google'] [data-profile='neon']")).not.toBeNull();
+  expect(host.querySelector("[data-unusable]")).toBeNull();
   act(() => root.unmount());
   root = createRoot(host);
   google = undefined;
   await render("editor");
-  await click(edit("medium"));
-  await pickLead("Gemini 4 Neon", "Model");
-  expect(button("Sign in with Google", host.querySelector("[data-google-connect]") ?? host)).toBeDefined();
+  expect(host.querySelector("[data-unusable]")).toBeNull();
 });
 
-it("starts a bot's lead on a Gemini model no profile runs on: a profile is made on it, and the lead picks it", async () => {
-  google = { machines: [{ machineId: "devbox", checked: true }], keyIn: [storefront] };
-  await render("project");
-  await openPicker("Lead model");
-  expect(groups()).toEqual([
-    ["Anthropic", "high Claude Opus 5.5 · high effort", "medium Claude Opus 5.5 · medium effort", "wide Claude Sonnet 5.5 · extra high effort"],
-    ["Google", "Gemini 4 Neon"],
-  ]);
-  const neon = [...document.querySelectorAll<HTMLElement>("[role='option']")].find((o) => o.textContent === "Gemini 4 Neon");
-  if (neon === undefined) throw new Error("no option Gemini 4 Neon");
-  await click(neon);
-  expect(calls).toEqual([
-    { tool: "profile_create", input: { name: "gemini-4-neon", note: "", model: "gemini-4-neon", effort: "high", fast: false } },
-    { tool: "project_set", input: { ...storefront, leadProfile: "gemini-4-neon" } },
-  ]);
-  expect(leadPicker("Lead model").textContent).toMatch(/^gemini-4-neon/u);
-  // This bot holds a Gemini key: Google is connected for it, though no machine is signed in.
-  expect(host.querySelector("[data-google-connect]")).toBeNull();
+it("lists only profiles in every picker, by provider, and Add profile… opens Providers", async () => {
+  // A Google profile, and Google models no profile runs on: those are never offered as they are.
+  profiles = [...profiles, profile(4, "neon", { model: "gemini-4-neon" })];
+  const more = [...MODELS, { id: "gemini-4-argon", displayName: "Gemini 4 Argon (Antigravity)", fast: false }];
+  MODELS.push(more[3] as ProfileModel);
+  try {
+    await render("project");
+    await openPicker("Lead model");
+    expect(groups()).toEqual([
+      ["Anthropic", "high Claude Opus 5.5 · high effort", "medium Claude Opus 5.5 · medium effort", "wide Claude Sonnet 5.5 · extra high effort"],
+      ["Google", "neon Gemini 4 Neon · high effort"],
+    ]);
+    const words = [...document.querySelectorAll<HTMLElement>("[role='option']")].map((o) => o.textContent);
+    expect(words.at(-1)).toBe("Add profile…");
+    expect(words.some((w) => w.startsWith("Gemini"))).toBe(false);
+    const add = [...document.querySelectorAll<HTMLElement>("[role='option']")].at(-1);
+    if (add === undefined) throw new Error("no Add profile…");
+    await click(add);
+    // No profile is made and nothing is set: Providers opens, where one is.
+    expect(calls).toEqual([]);
+    expect(window.location.hash).toBe("#/settings/hub/providers");
+    act(() => root.unmount());
+    root = createRoot(host);
+    await render("editor");
+    for (const label of ["Default profile", "Lead runs on"]) {
+      window.location.hash = "";
+      const shown = (await openPicker(label)).map((o) => o.textContent);
+      expect(shown.at(-1), label).toBe("Add profile…");
+      expect(shown.some((w) => w.startsWith("Gemini")), label).toBe(false);
+      act(() => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      await settle();
+    }
+  } finally {
+    MODELS.pop();
+  }
 });

@@ -51,10 +51,11 @@ describe("settings search", () => {
       "connections",
       "connections",
     ]);
-    // Task profiles are the hub's, on Every project › Agents (W146).
+    // Task profiles are the hub's, under each provider on Providers (W146, W849).
     const tabs = (q: string, admin: boolean) => searchSettings(q, optionsFor(admin)).map((o) => o.tab);
-    expect(tabs("task profiles", false)).not.toContain("hub.profiles");
-    expect(tabs("task profiles", true)).toContain("hub.profiles");
+    expect(tabs("task profiles", false)).not.toContain("hub.providers");
+    expect(tabs("task profiles", true)).toContain("hub.providers");
+    for (const q of ["profile", "model", "effort"]) expect(searchSettings(q, optionsFor(true)).find((o) => o.key === "hub.profiles")?.tab, q).toBe("hub.providers");
     // Memory is yours on You › Your memory, a project's on its Instructions & memory, with its nightly refresh (D212).
     expect([tabOf("instructions"), tabOf("memory"), tabOf("bot memory"), tabOf("nightly")]).toEqual(["instructions", "your-memory", "instructions", "instructions"]);
     expect([tabOf("setup commands"), tabOf("subscription")]).toEqual(["projects", "accounts"]);
@@ -123,11 +124,15 @@ describe("settings search", () => {
     expect(first("hubs")).toEqual(["hubs", "hubs", "Hubs & devices"]);
     expect(first("updates")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
     expect(first("update automatically")).toEqual(["hub.updates", "hub.machines", "Hub › Machines"]);
-    expect(first("profiles")).toEqual(["hub.task-profiles", "hub.profiles", "Bot defaults › Agents"]);
+    // The task profiles, Every project › Agents' once, are under each provider now; the default and the lead's stay.
+    expect(first("profiles")).toEqual(["hub.profiles", "hub.providers", "Hub › Providers"]);
+    expect(first("add profile")).toEqual(["hub.profiles", "hub.providers", "Hub › Providers"]);
+    expect(first("default profile")).toEqual(["hub.default-profile", "hub.agents", "Bot defaults › Agents"]);
+    expect(first("lead runs on")).toEqual(["hub.lead", "hub.agents", "Bot defaults › Agents"]);
     // The page by its name in the sidebar.
-    expect(first("bot defaults")).toEqual(["hub.profiles", "hub.profiles", "Bot defaults › Agents"]);
-    expect(first("tools & skills")).toEqual(["hub.tools", "hub.profiles", "Bot defaults › Agents"]);
-    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.profiles", "Bot defaults › Agents"]);
+    expect(first("bot defaults")).toEqual(["hub.agents", "hub.agents", "Bot defaults › Agents"]);
+    expect(first("tools & skills")).toEqual(["hub.tools", "hub.agents", "Bot defaults › Agents"]);
+    expect(first("hub-wide skills")).toEqual(["hub.skills", "hub.agents", "Bot defaults › Agents"]);
     expect(first("instructions for every bot")).toEqual(["hub.instructions", "hub.instructions", "Bot defaults › Instructions"]);
     // The hub's vault for every project is the team vault now (D492): its old name finds the Vault page.
     expect(first("vault for every bot")).toEqual(["vault", "vault", "Vault"]);

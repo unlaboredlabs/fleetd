@@ -42,7 +42,13 @@ The lead reads each profile's note and picks one per piece of work. Work that fa
 ### Change profiles {#change-profiles}
 
 - **Which profiles a bot may use:** Settings › Bots › *your bot* › Agents › **Allowed profiles**.
-- **Add or edit a profile:** Settings › Hub › Bot defaults › Agents › **Profiles** (owners and admins). Pick its model, effort (low to max), fast mode and note.
+- **Add or edit a profile:** Settings › Hub › **Providers** (owners and admins). Each provider lists its profiles under
+  it: click one to edit it, or **+** on the provider's row to add one. Pick its model (that provider's), effort (low to
+  max), fast mode and note. On the phone: Settings › Providers › **Add Profile**.
+- **The default profile:** Settings › Hub › Bot defaults › Agents › **Default profile**. Reviews and work that names
+  no profile run on it.
+
+A profile whose provider isn't connected stays listed under it, marked unusable until you connect the provider.
 
 A change applies to agents started after it. Running agents keep the model they started on.
 
@@ -65,7 +71,7 @@ A profile can run on Google's Gemini models through Antigravity, Google's coding
 
 1. Open **Settings › Hub › Providers** and find **Google**.
 2. Click **Sign in with Google** to sign in a machine, or add a **Gemini API key** for the whole hub.
-3. Pick a Gemini model in any model picker.
+3. Under Google, click **+** to add a profile on a Gemini model, or pick one in a bot's **Lead model**.
 
 A bot can use its own key: add `GEMINI_API_KEY` to its [Vault](/docs/vault). Agents on Gemini run on your own machines.
 

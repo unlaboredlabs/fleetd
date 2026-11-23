@@ -209,8 +209,8 @@ it("lists the Hub group's pages flat, Setup last saying how many required steps 
   expect(host.querySelector("nav[aria-label='Settings'] [role='combobox']")).toBeNull();
 
   await click(button("Bot defaults", nav() ?? document));
-  expect(window.location.hash).toBe("#/settings/hub/profiles");
-  expect(host.querySelector("[data-screen='settings.hub.profiles']")).not.toBeNull();
+  expect(window.location.hash).toBe("#/settings/hub/agents");
+  expect(host.querySelector("[data-screen='settings.hub.agents']")).not.toBeNull();
   expect(button("Bot defaults", nav() ?? document).getAttribute("aria-current")).toBe("page");
   const tabs = host.querySelector<HTMLElement>("[role='tablist'][aria-label='Bot defaults']");
   expect([...(tabs?.querySelectorAll("[role='tab']") ?? [])].map((t) => t.textContent)).toEqual(["Agents", "Instructions"]);
@@ -267,10 +267,10 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
 });
 
 it("gathers what reaches every bot on Every bot's pages, and saves its instructions hub-wide", async () => {
-  // Tools & skills is a part of Agents, under the task profiles: its old link opens there.
+  // Tools & skills is a part of Agents, under the default profile and the lead's: its old link opens there.
   window.location.hash = "#/settings/hub/tools";
   await render(admin);
-  expect(host.querySelector("[data-screen='settings.hub.profiles'] [data-screen='settings.hub.tools']")).not.toBeNull();
+  expect(host.querySelector("[data-screen='settings.hub.agents'] [data-screen='settings.hub.tools']")).not.toBeNull();
   expect(parts()).toEqual(["hub.skills"]);
   window.location.hash = "#/settings/hub/instructions";
   await settle();

@@ -1,6 +1,6 @@
 // What a project's screens show and offer, from the hub's answers: pure, so the tests pin them. The hub checks every
 // call; these say in the desktop's words what a delete does.
-import { deleteWords as eraseWords, leadChoices, leadOf, MODEL_CHOICE, modelShort, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
+import { byProviderOf, deleteWords as eraseWords, leadOf, RUNNER_ID, settingsPath, tilde, type AgentRow, type OffReason, type OrderCard, type PrRow, type ProfilesListOutput, type ProjectSettings, type ProjectSummary, type TodoItem } from "../../desktop";
 import type { Machine } from "../../store";
 
 /** A machine by its name; on a fleetd cloud team, its hosted runner is fleetd's computers, not a machine of the team's. */
@@ -169,19 +169,16 @@ export interface LeadLine {
 }
 
 /**
- * Its lead's model: the hub's lead profile first, then each of the hub's by provider, checked on the one its lead
- * starts on; for an admin, each of Google's models no profile runs on too (`model:<id>`), which a profile is made on.
+ * Its lead's model: the hub's lead profile first, then each of the hub's profiles by provider, checked on the one its
+ * lead starts on. Profiles alone, never a bare model: a new one is made under its provider in Settings › Providers,
+ * which Lead Model's Add Profile… opens for an admin.
  */
-export const leadLines = (view: ProfilesListOutput, admin = false): LeadLine[] => {
+export const leadLines = (view: ProfilesListOutput): LeadLine[] => {
   const pick = view.leadProfile ?? LEAD_HUB;
   return [
     { value: LEAD_HUB, title: `Hub default (${leadOf(view.profiles)?.name ?? ""})`, checked: pick === LEAD_HUB, disabled: false },
-    ...leadChoices(view.profiles, view.models).flatMap((c): LeadLine[] =>
-      c.kind === "profile"
-        ? [{ value: c.profile.name, title: c.profile.name, checked: pick === c.profile.name, disabled: c.profile.refused !== undefined, ...(c.profile.refused === undefined ? {} : { why: c.profile.refused }), group: c.group }]
-        : admin
-          ? [{ value: `${MODEL_CHOICE}${c.model.id}`, title: modelShort(c.model), checked: false, disabled: false, group: c.group }]
-          : [],
+    ...byProviderOf(view.profiles).map(
+      ({ profile: p, group }): LeadLine => ({ value: p.name, title: p.name, checked: pick === p.name, disabled: p.refused !== undefined, ...(p.refused === undefined ? {} : { why: p.refused }), group }),
     ),
   ];
 };

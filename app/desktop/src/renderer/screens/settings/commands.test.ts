@@ -37,8 +37,9 @@ it("opens each Settings command on the page that holds it now", () => {
   expect(lands("go:settings.hubs")).toEqual(["hubs", "hubs"]);
   expect(lands("setting:Hub")).toEqual(["hubs", "hubs"]);
   expect(lands("go:hub.machines")).toEqual(["hub.machines", "hub.machines"]);
-  expect(lands("go:hub.profiles")).toEqual(["hub.profiles", "hub.profiles"]);
-  expect(lands("go:hub.tools")).toEqual(["hub.tools", "hub.profiles"]);
+  expect(lands("go:hub.agents")).toEqual(["hub.agents", "hub.agents"]);
+  expect(lands("go:hub.profiles")).toEqual(["hub.profiles", "hub.providers"]);
+  expect(lands("go:hub.tools")).toEqual(["hub.tools", "hub.agents"]);
   expect(lands("go:hub.instructions")).toEqual(["hub.instructions", "hub.instructions"]);
   // Hub accounts is a part of Hub › Setup: its command still opens it, by its old name, and Setup has one of its own.
   expect(lands("go:hub.accounts")).toEqual(["hub.accounts", "hub.setup"]);
@@ -49,6 +50,6 @@ it("opens each Settings command on the page that holds it now", () => {
 
 it("offers a member no Hub page", () => {
   off = registerSettingsCommands(layer(false));
-  for (const id of ["go:hub.machines", "go:hub.profiles", "go:hub.tools", "go:hub.instructions", "go:hub.accounts", "go:hub.setup"]) expect(commandFor(id), id).toBeUndefined();
+  for (const id of ["go:hub.machines", "go:hub.agents", "go:hub.profiles", "go:hub.tools", "go:hub.instructions", "go:hub.accounts", "go:hub.setup"]) expect(commandFor(id), id).toBeUndefined();
   expect(lands("go:settings.devices")).toEqual(["devices", "hubs"]);
 });

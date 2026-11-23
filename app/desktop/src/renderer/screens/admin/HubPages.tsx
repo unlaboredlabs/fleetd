@@ -3,8 +3,9 @@
 // Machines (the machines, Add machine at the title's end or in the empty list, each machine's
 // page with Repair while it isn't well, what is wrong with it, its role, its screens, its max agents and Remove; then updates, Updates.tsx:
 // where the hub and each machine stand, Update now and Update automatically; and recordings); Providers (what agents
-// run on, Anthropic and Google, each with how it is connected and its setup: settings/AgentProviders.tsx); Every project, laid out
-// as a project's own pages are: Agents (the profiles and the skills), Instructions (and the hub-wide
+// run on, Anthropic and Google, each with how it is connected, its setup and the task profiles that run on it:
+// settings/AgentProviders.tsx); Every project, laid out as a project's own pages are: Agents (the default profile, what
+// leads run on, and the skills), Instructions (and the hub-wide
 // built-in prompts from its foot) and Vault (the vault key, settings/Vault.tsx), each reaching every project on the hub; and Setup (SetupPage.tsx): the hub's accounts (its
 // Claude API key and its GitHub App among them, Hub accounts once) and its other setup steps still left, always listed,
 // with how many required ones are left. With several hubs the group manages one hub at a time, named above every
@@ -22,7 +23,7 @@ import { EveryProjectFrame, Part } from "../settings/Frames";
 import { PageHead, SettingsSection } from "../settings/parts";
 import { revealNext, useReveal } from "../settings/search";
 import { hostedReveal, RUNNER_ID } from "../../../shared/providers";
-import { ProfilesEditor } from "../settings/Profiles";
+import { ProfilePicks } from "../settings/Profiles";
 import { Prompts } from "../settings/Prompts";
 import { isEveryProject, replaceHash, type SettingsRoute } from "../settings/route";
 import { HubSkills } from "../settings/Skills";
@@ -141,7 +142,9 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
   switch (tab) {
     case "hub.people":
       return <People me={me} />;
+    // The task profiles are a part of Providers, under each provider (settings/route.ts).
     case "hub.providers":
+    case "hub.profiles":
       return <ProvidersPage me={me} />;
     case "hub.billing":
       return <Billing />;
@@ -150,7 +153,7 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
     // Updates is a part of Machines, and Tools & skills of Every project › Agents (settings/route.ts).
     case "hub.updates":
       return <Machines />;
-    case "hub.profiles":
+    case "hub.agents":
     case "hub.tools":
       return <EveryAgents />;
     case "hub.instructions":
@@ -206,16 +209,17 @@ function Machines() {
 }
 
 /**
- * Every project › Agents: what every project's agents run on and get. The task profiles (each a model, an effort, fast
- * mode and a note, and the hub's default; each project picks which it allows on its own Agents page), then the
- * skills, which come before a project's own (Tools & skills, a page of its own once). MCP servers are Connections'.
+ * Every project › Agents: what every project's agents run on and get. The default profile and the one leads run on,
+ * picked from the task profiles Providers lists under each provider (each project picks which it allows on its own
+ * Agents page), then the skills, which come before a project's own (Tools & skills, a page of its own once). MCP
+ * servers are Connections'.
  */
 function EveryAgents() {
   return (
-    <div className={s.scroll} data-screen="settings.hub.profiles">
+    <div className={s.scroll} data-screen="settings.hub.agents">
       <div className={s.column}>
         <PageHead title="Agents" />
-        <ProfilesEditor />
+        <ProfilePicks />
         <Part reveal="hub.tools" screen="settings.hub.tools">
           <HubSkills />
         </Part>

@@ -101,8 +101,8 @@ Tap your picture at the top of Chats:
 - Your photo and name.
 - **Connections**, **Devices**, **Vault**, **Memory** (with **Import Memory**) and **Notifications**.
 
-Admins also get **Machines**, **Providers** (the hub's Anthropic key, and Google sign-in per machine), **Update**
-(updates the hub and every machine), **Restart Hub**, and **Billing** on a cloud team.
+Admins also get **Machines**, **Providers** (the hub's Anthropic key, Google sign-in per machine, and each provider's
+profiles), **Update** (updates the hub and every machine), **Restart Hub**, and **Billing** on a cloud team.
 
 ### Devices {#devices}
 

@@ -138,7 +138,7 @@ it("lists each provider with how it is connected and its models, Google's Sign i
   await render();
   expect(rows()).toEqual(["AnthropicAPI keyClaude Opus 5.5 · Claude Sonnet 5.5", "GoogleNot connectedGemini 4 NeonSign in with Google"]);
   // What a row runs, all of it, is its hover.
-  expect(host.querySelector("[data-provider='anthropic'] [data-hint]")?.textContent).toBe("Runs Claude Opus 5.5, Claude Sonnet 5.5.");
+  expect(host.querySelector("[data-provider='anthropic'] [data-hint]")?.textContent).toBe("Runs Claude Opus 5.5, Claude Sonnet 5.5. The models offered are fleetd's own list until a Claude API key is saved in Setup.");
   // The setup shows only once a row opens.
   expect(host.querySelector("[data-provider-setup]")).toBeNull();
 });
