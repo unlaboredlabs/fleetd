@@ -157,7 +157,7 @@ Add these secrets, and one variable, `FLEETD_APP_ID`:
 - Your bundle id, such as `com.example.fleetd`: `FLEETD_APP_ID`
 
 Tick **Send the iOS build to TestFlight** to upload it. With the key set, **Mobile release** also runs by itself after
-each merge to `main` whose CI passed (and every 3 hours), and uploads a new build when the phone app changed since the
+each merge to `main` whose CI passed, builds that commit, and uploads a new build when the phone app changed since the
 last one that went to TestFlight. A build you sign yourself needs
 [its own notification relay](/docs/phone-notifications#own).
 
