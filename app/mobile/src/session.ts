@@ -652,8 +652,11 @@ export class Session {
       // Someone may have pinned or unpinned while the link was down.
       if (this.#open !== null) void this.readMessagePins(this.#open);
       this.#resumable = null;
-      // The screens of the chats looked at may have changed while the link was down.
-      for (const key of Object.keys(this.#state.screens)) void this.readScreens(key);
+      // The screens of the chats looked at may have changed while the link was down; the open chat's too, which a
+      // cold start opens before the link is up, when its read can't go.
+      const looked = Object.keys(this.#state.screens);
+      if (this.#open !== null && !looked.includes(this.#open)) looked.push(this.#open);
+      for (const key of looked) void this.readScreens(key);
       for (const [key, rows] of Object.entries(this.#state.sends)) {
         for (const row of toResend(rows)) void this.#send(key, { ...row, state: { t: "sending" } });
       }
