@@ -21,6 +21,7 @@ export class FakeLink {
   readonly handlers = new Map<string, ((machineId: string, frame: NodeToHubFrame) => void)[]>();
   readonly linked = new Map<string, { id: number; caps: Set<string>; out: HubToNodeFrame[] }>();
   readonly linkedFns: ((linked: Linked) => void)[] = [];
+  readonly unlinkedFns: ((machineId: string, linkId: number) => void)[] = [];
   private readonly loads = new Map<string, NodeLoad>();
   /** How a test answers `request`. */
   answer: (machineId: string, frame: HubToNodeFrame) => Promise<unknown> = async () => {
@@ -58,6 +59,10 @@ export class FakeLink {
     this.linkedFns.push(fn);
     return () => {};
   }
+  onUnlinked(fn: (machineId: string, linkId: number) => void): () => void {
+    this.unlinkedFns.push(fn);
+    return () => {};
+  }
   load(machineId: string): NodeLoad | undefined {
     return this.loads.get(machineId);
   }
@@ -72,7 +77,9 @@ export class FakeLink {
     for (const fn of this.linkedFns) fn({ machineId, linkId: id } as Linked);
   }
   unlink(machineId: string): void {
+    const was = this.linked.get(machineId);
     this.linked.delete(machineId);
+    if (was) for (const fn of this.unlinkedFns) fn(machineId, was.id);
   }
   /** A frame from a node; a heartbeat's load is kept as the link keeps it. */
   deliver(machineId: string, frame: NodeToHubFrame): void {

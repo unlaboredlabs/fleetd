@@ -189,6 +189,34 @@ describe("a screen's peer", () => {
     await vi.advanceTimersByTimeAsync(RETRY_MS[2] * 2);
     expect(h.peers).toHaveLength(3);
   });
+
+  it("tries a new peer at once when the screen's machine is back after a wait, not at the end of its back-off", async () => {
+    const h = harness();
+    h.viewer.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // While the machine is away each peer fails, and the wait grows to its longest.
+    for (let i = 0; i < 3; i++) {
+      const [peer] = there(h.signals.at(-1));
+      h.answer({ t: "browser_rtc", session: S, peer, error: "machine away" });
+      await vi.advanceTimersByTimeAsync(there(RETRY_MS[Math.min(i, RETRY_MS.length - 1)]));
+    }
+    expect(h.peers).toHaveLength(4);
+    const [last] = there(h.signals.at(-1));
+    h.answer({ t: "browser_rtc", session: S, peer: last, error: "machine away" });
+    // It's back: a peer now, and the back-off starts again from its shortest.
+    h.viewer.again();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.peers).toHaveLength(5);
+    // One trying already, or open, isn't started again.
+    h.viewer.again();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.peers).toHaveLength(5);
+    const [now] = there(h.signals.at(-1));
+    h.answer({ t: "browser_rtc", session: S, peer: now, error: "too old" });
+    await vi.advanceTimersByTimeAsync(RETRY_MS[0]);
+    expect(h.peers).toHaveLength(6);
+    h.viewer.stop();
+  });
 });
 
 describe("a window's peer for a screen", () => {
@@ -218,7 +246,7 @@ describe("a window's peer for a screen", () => {
   const layer = (features: string[]) =>
     ({
       hub: "devbox",
-      store: { getState: () => ({ features }), setState: vi.fn() },
+      store: { getState: () => ({ features }), setState: vi.fn(), subscribe: () => () => undefined },
       frame: vi.fn(),
       onRtc: () => () => undefined,
     }) as unknown as DataLayer;

@@ -224,7 +224,9 @@ export function browserWatch(
     c.sender.offer({ seq: frame.seq, bytes: Math.floor((frame.jpegB64 ?? frame.h264B64 ?? "").length / 4) * 3, h264, key: frame.key === true, data: textOf(frame) });
   };
   try {
-    c.watch = startWatch(hub, caller, session, onFrame, msg.video === true);
+    // While its machine isn't linked, the app shows it waits for it, over the last picture, until the next frame.
+    const waiting = (machine: string) => appWs(hub).sendTo(conn, { t: "browser_waiting", sessionId: session, machineId: machine });
+    c.watch = startWatch(hub, caller, session, onFrame, msg.video === true, waiting);
     c.asked = asked;
     if (msg.acks) {
       const w = c.watch;

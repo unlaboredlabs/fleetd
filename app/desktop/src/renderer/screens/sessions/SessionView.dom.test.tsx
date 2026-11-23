@@ -173,6 +173,21 @@ it("shows a screen it showed before at once, its last frame, until the live one 
   expect(host.querySelector("img")?.dataset["seq"]).toBe("8");
 });
 
+it("says over the last picture that it waits for the screen's machine while that's away, and clears it with the next frame", async () => {
+  await mount("bs-live");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 3, jpegB64: "AAAA", width: 1280, height: 800, control: "agent" } }));
+  await settle();
+  act(() => send({ t: "browser_waiting", sessionId: "bs-live", machineId: "box-7" }));
+  await settle();
+  // The last picture stays; one quiet line over it, the machine by its id when the hub names none.
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("3");
+  expect(host.querySelector("[role='status']")?.textContent).toBe("Waiting for box-7…");
+  act(() => send({ t: "browser_frame", frame: { sessionId: "bs-live", seq: 1, jpegB64: "AAAB", width: 1280, height: 800, control: "agent", link: 2 } }));
+  await settle();
+  expect(host.querySelector("[role='status']")).toBeNull();
+  expect(host.querySelector("img")?.dataset["seq"]).toBe("1");
+});
+
 it("plays an ended screen's recording the full width, its steps behind Steps, closed until opened and closed again", async () => {
   await mount("bs-ended");
   expect(host.querySelector("[data-screen='sessions.replay']")).not.toBeNull();

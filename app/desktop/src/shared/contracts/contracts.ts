@@ -710,6 +710,10 @@ export type AppServerMessage = {
   peer: string;
   session: BrowserSessionId;
   t: "browser_rtc";
+} | {
+  machineId: MachineId;
+  sessionId: BrowserSessionId;
+  t: "browser_waiting";
 };
 
 export type ApprovalAnswerInput = {
