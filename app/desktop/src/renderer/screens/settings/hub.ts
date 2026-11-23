@@ -5,9 +5,11 @@ import { useCallback } from "react";
 import type { ToolInput, ToolName, ToolOutput } from "../../../shared/contracts";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer } from "../../src/data/react";
+import { sentence } from "../onboarding/form";
 
+/** A call's refusal as Settings shows it: what happened, then what to do, each a sentence of its own. */
 export const errorText = (e: unknown): string => {
-  if (e instanceof CallError) return e.error.fix ? `${e.error.message} ${e.error.fix}` : e.error.message;
+  if (e instanceof CallError) return e.error.fix ? `${sentence(e.error.message)} ${sentence(e.error.fix)}` : e.error.message;
   return e instanceof Error ? e.message : String(e);
 };
 
