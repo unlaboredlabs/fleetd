@@ -18,9 +18,10 @@ export type ReplayState = {
 
 /**
  * The replay of `video` (an MP4 this player reads), its time to `onTime` as it plays, `onEnd` at its end. Undefined
- * while it reads, and for a video it doesn't play (`fallback` is then true: a <video> plays it).
+ * while it reads, and for a video it doesn't play (`fallback` is then true: a <video> plays it). One whose frames this
+ * app can't decode falls back the same way, `failed` saying so in plain words.
  */
-export function useReplay(video: Blob | undefined, onTime: (ms: number) => void, onEnd: () => void): { state?: ReplayState; fallback: boolean } {
+export function useReplay(video: Blob | undefined, onTime: (ms: number) => void, onEnd: () => void): { state?: ReplayState; fallback: boolean; failed?: string } {
   // What was read, for the video it was read from: another video reads as not read yet.
   const [read, setRead] = useState<{ video: Blob | undefined; got: { file: Uint8Array; track: Track } | null } | undefined>(undefined);
   const plays = video !== undefined && video.type === "video/mp4" && typeof VideoDecoder !== "undefined";
@@ -47,6 +48,8 @@ export function useReplay(video: Blob | undefined, onTime: (ms: number) => void,
   });
   const surface = useMemo(() => new Surface(document.createElement("canvas")), []);
   const [state, setState] = useState<(ReplayState & { got: unknown }) | undefined>(undefined);
+  // The video whose frames didn't decode here.
+  const [broken, setBroken] = useState<{ got: unknown } | undefined>(undefined);
   useEffect(() => {
     if (!got) return undefined;
     let last = 0;
@@ -58,12 +61,17 @@ export function useReplay(video: Blob | undefined, onTime: (ms: number) => void,
         hooks.current.onTime(ms);
       },
       onEnd: () => hooks.current.onEnd(),
+      onError: () => {
+        replay.close();
+        setBroken({ got });
+      },
     });
     // Its first picture at once, as a paused player shows it.
     replay.seek(0);
     setState({ got, surface, replay, size: { width: got.track.width, height: got.track.height } });
     return () => replay.close();
   }, [got, surface]);
+  if (got && broken?.got === got) return { fallback: true, failed: "This app couldn’t decode its frames, so it plays in the basic player." };
   const current = state?.got === got ? state : undefined;
   return { ...(current === undefined ? {} : { state: current }), fallback: got === null };
 }

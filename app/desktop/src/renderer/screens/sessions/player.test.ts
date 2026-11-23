@@ -183,4 +183,110 @@ describe("the screen player's replay", () => {
     expect(replay.playing()).toBe(false);
     expect(drawn.at(-1)).toBe(2_120);
   });
+
+  it("never moves its clock back through a still stretch on a slow decoder: it waits only for a picture due, and plays on in real time", () => {
+    // A screen still for 3 s between two runs of frames, on a decoder whose pictures come two animation frames late.
+    const frames = [
+      { at: 0, ms: 40, key: true, byte: 1 },
+      { at: 40, ms: 40, key: false, byte: 2 },
+      { at: 80, ms: 2_920, key: false, byte: 3 },
+      { at: 3_000, ms: 40, key: false, byte: 4 },
+      { at: 3_040, ms: 960, key: false, byte: 5 },
+    ];
+    const file = nodeMp4(frames);
+    const track = readMp4(file) as Track;
+    const page = fakePage();
+    let output: (p: Picture) => void = () => {};
+    const late: { timestamp: number; in: number }[] = [];
+    const decoder: Decoder = {
+      get decodeQueueSize() {
+        return late.length;
+      },
+      state: "configured",
+      configure() {},
+      decode: (c) => void late.push({ timestamp: c.timestamp, in: 2 }),
+      flush: () => Promise.resolve(),
+      reset: () => void (late.length = 0),
+      close() {},
+    };
+    // Each animation frame, the decoder's pictures a frame nearer; those due come out first.
+    const frame = (fn: () => void) =>
+      page.frame(() => {
+        for (const l of [...late]) {
+          l.in -= 1;
+          if (l.in <= 0) {
+            late.splice(late.indexOf(l), 1);
+            output({ timestamp: l.timestamp, displayWidth: 1600, displayHeight: 1126, close() {} });
+          }
+        }
+        fn();
+      });
+    const times: number[] = [];
+    const replay = new Replay(file, track, { draw: () => {} }, { onTime: (t) => times.push(t) }, { make: (out) => ((output = out), decoder), now: page.now, frame });
+    replay.play();
+    page.advance(4_200);
+    expect(times.every((t, i) => i === 0 || t >= (times[i - 1] ?? 0))).toBe(true);
+    // Through to the end in about real time: never more than a few animation frames behind.
+    expect(times.at(-1) ?? 0).toBeGreaterThanOrEqual(track.endMs - 1);
+  });
+
+  it("says when its frames don't decode, and a seek after that throws nothing on the closed decoder", () => {
+    const file = nodeMp4(FRAMES);
+    const track = readMp4(file) as Track;
+    const page = fakePage();
+    const errors: string[] = [];
+    let state = "configured";
+    let fail: (e: Error) => void = () => {};
+    const decoder: Decoder = {
+      decodeQueueSize: 0,
+      get state() {
+        return state;
+      },
+      configure() {
+        if (state === "closed") throw new Error("configure on a closed decoder");
+      },
+      decode() {
+        // WebCodecs closes the decoder and calls its error callback.
+        state = "closed";
+        fail(new Error("unsupported"));
+      },
+      flush: () => Promise.resolve(),
+      reset() {},
+      close() {},
+    };
+    const replay = new Replay(file, track, { draw: () => {} }, { onError: (why) => errors.push(why) }, { make: (_out, err) => ((fail = err), decoder), now: page.now, frame: page.frame });
+    replay.seek(2_100);
+    expect(errors).toEqual(["unsupported"]);
+    expect(() => replay.seek(500)).not.toThrow();
+    replay.play();
+    expect(replay.playing()).toBe(false);
+  });
+
+  it("feeds a paused seek a few chunks at a time, never the whole run from its keyframe at once", () => {
+    const frames = Array.from({ length: 40 }, (_, i) => ({ at: i * 40, ms: 40, key: i === 0, byte: i }));
+    const file = nodeMp4(frames);
+    const track = readMp4(file) as Track;
+    const page = fakePage();
+    let queued = 0;
+    let most = 0;
+    const decoder: Decoder = {
+      get decodeQueueSize() {
+        return queued;
+      },
+      state: "configured",
+      configure() {},
+      decode() {
+        queued += 1;
+        most = Math.max(most, queued);
+      },
+      flush: () => Promise.resolve(),
+      reset: () => void (queued = 0),
+      close() {},
+    };
+    const replay = new Replay(file, track, { draw: () => {} }, {}, { make: () => decoder, now: page.now, frame: (fn) => page.frame(() => ((queued = 0), fn())) });
+    replay.seek(1_500);
+    page.advance(200);
+    expect(most).toBeLessThanOrEqual(8);
+  });
 });
+

@@ -682,7 +682,7 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
   const [at, setAt] = useState(0);
   const [playing, setPlaying] = useState(false);
   // An MP4 plays in the screen player (replay.ts): every frame, on the canvas the live view's frame takes too.
-  const { state: replay, fallback } = useReplay(
+  const { state: replay, fallback, failed } = useReplay(
     video,
     (t) => setAt(t),
     () => setPlaying(false),
@@ -794,6 +794,13 @@ function Player({ session: x, actions, video }: { session: BrowserSession; actio
               }
               note={shown !== undefined ? `Snapshot at ${fmtDuration(shown.at)}` : yours.some(([a, b]) => at >= a && at < b) ? "You had the page" : "Recording"}
             />
+            {failed === undefined ? null : (
+              <span role="status">
+                <Text size="xs" tone="quiet">
+                  {failed}
+                </Text>
+              </span>
+            )}
             <div className={s.transport}>
               <Button variant="quiet" size="sm" iconOnly icon={playing ? <Pause aria-hidden /> : <Play aria-hidden />} aria-label={playing ? "Pause" : "Play"} onClick={play} />
               <div className={s.scrub}>

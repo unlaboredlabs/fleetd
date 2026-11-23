@@ -15,10 +15,12 @@ const LEAD_MS = 500;
 const QUEUE = 12;
 /** Chunks in the decoder, at most. */
 const DECODING = 8;
-/** How far the clock may run past the newest picture decoded while pictures due are still decoding: past it, the clock
- * waits for them (a 4× replay on a slow machine plays as fast as it decodes, every picture shown, never frozen while
- * its time runs on). */
+/** How far the clock may run past a picture due that is still decoding: past it, the clock waits for it (a 4× replay on
+ * a slow machine plays as fast as it decodes, never frozen while its time runs on). It never goes back: a still
+ * stretch of the recording (the node writes a frame only when the screen changes) waits for nothing. */
 const STALL_MS = 150;
+/** A picture the decoder hasn't given this long after it was fed (wall ms) is given up on: the clock goes on. */
+const GIVE_UP_MS = 2_000;
 
 /** A decoded picture: what VideoFrame gives, as the player uses it. */
 export type Picture = { readonly timestamp: number; readonly displayWidth: number; readonly displayHeight: number; close(): void };
@@ -81,6 +83,11 @@ export class Surface implements ScreenSurface {
     for (const fn of this.listeners) fn();
   }
 
+  /** Whether anyone takes its pictures (a 3D frame's texture): a hidden canvas nobody takes needs none drawn. */
+  taken(): boolean {
+    return this.listeners.size > 0;
+  }
+
   onPicture(cb: () => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
@@ -121,8 +128,10 @@ export class Replay {
   private wanted: number | undefined;
   /** The time of the picture on the canvas: decoded again (play after a paused seek), it isn't drawn again. */
   private onCanvas: number | undefined;
-  /** The newest picture's time the decoder gave since the last seek. */
-  private decodedTo = Number.NEGATIVE_INFINITY;
+  /** Samples fed and not yet decoded, since the last seek: their times, and when each was fed (wall ms). */
+  private decoding: { pts: number; at: number }[] = [];
+  /** The time the last animation frame showed: the clock never goes back from it but by a seek. */
+  private shownTime = 0;
   /** Bumped at each seek: a flush of the one before draws nothing. */
   private generation = 0;
   /** The decoder was flushed (a paused seek, the end): the next chunk it takes must be a keyframe. */
@@ -167,11 +176,12 @@ export class Replay {
   }
 
   play(): void {
-    if (this.clock.playing || this.closed) return;
+    if (this.clock.playing || this.closed || this.failed) return;
     const from = this.time() >= this.track.endMs ? 0 : this.time();
     // After a paused seek the decoder was flushed: it starts again at the keyframe before.
     if (this.flushed || this.wanted !== undefined || from === 0) this.restart(from);
     this.clock = { at: from, since: this.now(), speed: this.clock.speed, playing: true };
+    this.shownTime = from;
     this.tick();
   }
 
@@ -192,34 +202,48 @@ export class Replay {
     const playing = this.clock.playing && t < this.track.endMs;
     if (this.clock.playing && !playing) this.hooks.onEnd?.();
     this.clock = { ...this.clock, at: t, since: this.now(), playing };
+    this.shownTime = t;
     this.hooks.onTime?.(t);
+    if (this.failed) return;
     this.restart(t);
     if (this.clock.playing) return this.tick();
-    // Paused: decode up to the picture shown at `t` (and past it while frames reorder), then flush it out.
+    // Paused: decode up to the picture shown at `t` (and past it while frames reorder), DECODING chunks at a time, then
+    // flush it out.
     const at = shownAt(this.track.samples, t);
     if (!at) return;
     this.wanted = at.pts;
-    while (this.fed < this.track.samples.length && (this.fed <= at.shown || this.dtsOf(this.fed) <= at.pts)) this.feed();
     const generation = this.generation;
-    this.flushed = true;
-    this.decoder.flush().then(
-      () => {
-        if (generation === this.generation) this.drawWanted();
-      },
-      () => {},
-    );
+    const step = () => {
+      if (generation !== this.generation || this.closed || this.failed) return;
+      const more = () => this.fed < this.track.samples.length && (this.fed <= at.shown || this.dtsOf(this.fed) <= at.pts);
+      while (more() && this.decoder.decodeQueueSize < DECODING) this.feed();
+      if (more()) return this.frame(step);
+      this.flushed = true;
+      this.decoder.flush().then(
+        () => {
+          if (generation === this.generation) this.drawWanted();
+        },
+        () => {},
+      );
+    };
+    step();
+  }
+
+  private frame(fn: () => void): void {
+    (this.env.frame ?? ((f) => requestAnimationFrame(f)))(fn);
   }
 
   /** Feeding starts again at the keyframe before `t`; pictures before the one shown at `t` are decoded, never drawn. */
   private restart(t: number): void {
     this.generation += 1;
+    if (this.decoder.state === "closed") return this.fail("the decoder closed");
     if (this.decoder.state === "configured") this.decoder.reset();
     this.configure();
     for (const p of this.queue) p.close();
     this.queue = [];
     this.flushed = false;
     this.wanted = undefined;
-    this.decodedTo = Number.NEGATIVE_INFINITY;
+    this.decoding = [];
     const at = shownAt(this.track.samples, t);
     this.fed = at?.from ?? 0;
     this.floor = at ? at.pts : Number.NEGATIVE_INFINITY;
@@ -233,6 +257,7 @@ export class Replay {
   private feed(): void {
     const s: Sample | undefined = this.track.samples[this.fed++];
     if (s === undefined) return;
+    this.decoding.push({ pts: s.pts, at: this.now() });
     try {
       this.decoder.decode({ type: s.key ? "key" : "delta", timestamp: Math.round(s.pts * 1000), data: chunkData(this.file, this.track, s) });
     } catch (e) {
@@ -242,8 +267,9 @@ export class Replay {
 
   private output(p: Picture): void {
     const pts = p.timestamp / 1000;
+    const i = this.decoding.findIndex((d) => Math.abs(d.pts - pts) < 0.5);
+    if (i >= 0) this.decoding.splice(i, 1);
     if (this.closed || pts < this.floor - 0.5) return p.close();
-    this.decodedTo = Math.max(this.decodedTo, pts);
     this.queue.push(p);
     this.queue.sort((a, b) => a.timestamp - b.timestamp);
     if (!this.clock.playing && this.wanted !== undefined) return;
@@ -282,12 +308,15 @@ export class Replay {
       if (this.closed || !this.clock.playing || this.failed) return;
       const samples = this.track.samples;
       let t = this.time();
-      // Pictures due and still decoding: the clock waits for them.
-      const due = this.decoder.decodeQueueSize > 0 || this.dtsOf(this.fed) <= t;
-      if (due && this.decodedTo > Number.NEGATIVE_INFINITY && t > this.decodedTo + STALL_MS) {
-        t = this.decodedTo + STALL_MS;
-        this.clock = { ...this.clock, at: t, since: this.now() };
+      // A picture due and still decoding: the clock waits for it, never going back from what it last showed.
+      const now = this.now();
+      this.decoding = this.decoding.filter((d) => now - d.at < GIVE_UP_MS);
+      const due = this.decoding.reduce((m, d) => (d.pts <= t ? Math.min(m, d.pts) : m), Number.POSITIVE_INFINITY);
+      if (t > due + STALL_MS) {
+        t = Math.max(this.shownTime, due + STALL_MS);
+        this.clock = { ...this.clock, at: t, since: now };
       }
+      this.shownTime = t;
       while (this.dtsOf(this.fed) <= t + LEAD_MS * this.clock.speed && this.decoder.decodeQueueSize < DECODING && this.queue.length < QUEUE) this.feed();
       // The last pictures held back by reordering come out at the end.
       if (this.fed >= samples.length && !this.flushed) {
@@ -295,16 +324,18 @@ export class Replay {
         void this.decoder.flush().catch(() => {});
       }
       this.present(t);
-      this.hooks.onTime?.(t);
       if (t >= this.track.endMs) {
+        // Paused first, so the end's time reaches the scrubber whole, not throttled as a playing one is.
         this.pause();
+        this.hooks.onTime?.(t);
         this.hooks.onEnd?.();
         return;
       }
+      this.hooks.onTime?.(t);
       this.ticking = true;
-      (this.env.frame ?? ((fn) => requestAnimationFrame(fn)))(step);
+      this.frame(step);
     };
-    (this.env.frame ?? ((fn) => requestAnimationFrame(fn)))(step);
+    this.frame(step);
   }
 
   private fail(why: string): void {
