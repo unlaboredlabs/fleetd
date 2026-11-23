@@ -1212,6 +1212,33 @@ describe.each([
     }
   });
 
+  // The browser picked that touch's scroller from the frame on screen, the list on its way and taking no pointer, so
+  // it scrolls nothing for it (W864, on the Mac runner): the list follows it itself. happy-dom scrolls nothing either.
+  it("scrolls the list with a scroll that began while a slide settled, its glide included, never a later one", async () => {
+    await twoHubs();
+    const { lift, done } = swiping();
+    const list = () => host.querySelector<HTMLElement>("nav[aria-label='Sidebar'] [class*='list']");
+    try {
+      replay(swipe(1, 2), mac);
+      act(() => void vi.advanceTimersByTime(120));
+      const scroll = scrollDown();
+      const glide = scroll.findIndex((s) => s.momentum !== MOMENTUM.none);
+      replay(scroll.slice(0, glide), mac);
+      expect(marks()).toEqual(["Personal", "[Acme]"]);
+      const touched = list()?.scrollTop ?? 0;
+      expect(touched).toBeGreaterThan(0);
+      replay(scroll.slice(glide), mac);
+      expect(list()?.scrollTop ?? 0).toBeGreaterThan(touched);
+      lift();
+      // The next touch begins on a list in place, which the browser scrolls: it is left to it.
+      const before = list()?.scrollTop ?? 0;
+      replay(scrollDown(), mac);
+      expect(list()?.scrollTop).toBe(before);
+    } finally {
+      done();
+    }
+  });
+
   it("springs back on a swipe that turns back before it lifts", async () => {
     await twoHubs();
     const { lift, done } = swiping();
