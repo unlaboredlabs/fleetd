@@ -93,6 +93,22 @@ test("a failed check outside the fast set is waited for on its re-run, and faili
   expect(k.host.wakes.some((w) => w.includes("flaky CI on"))).toBe(false);
 });
 
+test("a failed manual or scheduled run on a PR's head is neither waited for nor re-run: the PR merges on its own CI", async () => {
+  for (const event of ["workflow_dispatch", "schedule"]) {
+    const k = kit();
+    k.gh.required = ["build"];
+    // The PR's own CI passes; a Nightly someone ran on its branch (run 2) failed a Mac check it has under another name.
+    k.gh.runs = () => [job(5, 1, "build", "success"), job(10, 2, "qa / qa (macos-latest, 1/4)", "failure")];
+    k.gh.runEvents.push([1, "pull_request"], [2, event]);
+    k.pr(7, "fleetd/T7-docs", { "docs.md": "docs\n" });
+    await k.enqueue(7);
+    await k.settle();
+    expect(k.change(7).state).toBe("merged");
+    expect(k.gh.reruns).toEqual([]);
+    expect(k.gh.runReruns).toEqual([]);
+  }
+});
+
 test("a failed check outside the fast set merges once its re-run passed, called flaky then", async () => {
   const k = kit();
   const seen = nonFastReRun(k, "success");
