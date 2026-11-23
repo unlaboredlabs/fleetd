@@ -910,8 +910,43 @@ test("a hub and its machines on a day-numbered build (2026.11.23.x) update to 0.
   const after = updatesIn(dir, fake);
   await after.resume();
   expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
-  expect(fake.sent.at(-1)).toMatchObject({ version: nine, build: "0.9.0" });
+  // Its fleetd reads only day-numbered build names: sent 0.9.0, the release's newest, without one.
+  expect(fake.sent.at(-1)).toEqual({ version: nine, channel: "edge", flavour: "bun" });
   // On 0.9.0 now: the day-numbered build is older, so nothing to do.
   await after.prefetch();
   expect(after.ready()).toBeUndefined();
+});
+
+test("a node on a day-numbered build is never sent a 0.9.x build name it can't read: it takes the newest, or waits saying why", async () => {
+  const day = "0.0.0-edge.202611231632.1+1333328";
+  const nine = "0.9.0+20261124.abc1234";
+  const bytes = new TextEncoder().encode("fleetd 0.9.0");
+  for (const newest of [true, false]) {
+    const dir = join(home.dir, `day-node-${newest}`);
+    // It says it takes named builds (2026.11.23.x does), but only day-numbered ones.
+    const fake = new Fake(dir, [{ version: day }]);
+    fake.version = day;
+    fake.now = Date.parse("2026-11-24T12:00:00Z");
+    const r = rolledOut([
+      ...(newest ? [] : [{ build: "0.9.1", version: "0.9.1+20261124.def5678", bytes: new TextEncoder().encode("fleetd 0.9.1") }]),
+      { build: "0.9.0", version: nine, bytes, passedAt: "2026-11-24T05:00:00Z" },
+    ]);
+    fake.release = r.edge;
+    fake.buildFeed = r.of;
+    const u = updatesIn(dir, fake);
+    u.start(undefined, true);
+    await until(() => fake.plans.length === 1);
+    writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: "runs 0.9.0" }));
+    fake.version = nine;
+    const after = updatesIn(dir, fake);
+    await after.resume();
+    if (newest) {
+      // 0.9.0 is the release's newest: sent without its name, the node takes it from release.json as it always did.
+      expect(byMachine(after.status()!).get("m0")!.state).toBe("done");
+      expect(fake.sent.at(-1)).toEqual({ version: nine, channel: "edge", flavour: "bun" });
+    } else {
+      expect(fake.sent).toEqual([]);
+      expect(byMachine(after.status()!).get("m0")!.message).toContain("only takes fleetd's newest build");
+    }
+  }
 });

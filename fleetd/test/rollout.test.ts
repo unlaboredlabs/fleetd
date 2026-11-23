@@ -152,8 +152,8 @@ test("the list keeps every build up to the newest that reached everyone, one to 
     b(4, { publishedAt: ago(29), passedAt: ago(28) }),
     b(3, { publishedAt: ago(29.5), passedAt: ago(28.5) }),
     b(2, { publishedAt: ago(100), passedAt: ago(99) }),
-  ];
-  expect(prune(builds, NOW).map((x) => x.build.split(".")[3])).toEqual(["9", "8", "7", "6", "4"]);
+  ].map((x, i) => ({ ...x, build: `0.9.${9 - i}` }));
+  expect(prune(builds, NOW).map((x) => x.build.split(".")[2])).toEqual(["9", "8", "7", "6", "4"]);
 });
 
 test("the first ring waits for the cloud, but a stale or silent cloud never holds everyone back", () => {
@@ -194,4 +194,17 @@ test("the ticker ticks on while a build waits on the gate or hasn't reached ever
   // Nothing passed fleetd's own hub yet, or what moved was halted: nothing for the ticker to do.
   expect(moving({ builds: [b(3)] }, NOW)).toBe(false);
   expect(moving({ builds: [b(3, { passedAt: ago(1), haltedAt: ago(0.5) })] }, NOW)).toBe(false);
+});
+
+test("day-numbered builds stay listed for good, so a hub still on one moves to 0.9.x however long it was away", () => {
+  const nine = (n: number, more: Partial<RolloutBuild>) => ({ ...b(n, more), build: `0.9.${n}`, version: `0.9.${n}+20261124.abc1234` });
+  const builds = [nine(1, { publishedAt: ago(1), passedAt: ago(0.5) }), nine(0, { publishedAt: ago(5), passedAt: ago(4) }), b(3, { publishedAt: ago(30), passedAt: ago(29) }), b(2, { publishedAt: ago(31), passedAt: ago(30) }), b(1, { publishedAt: ago(32), passedAt: ago(31) })];
+  // 0.9.0 reached everyone: everything older would go but the day-numbered builds, kept for hubs still on them.
+  expect(prune(builds, NOW).map((x) => x.build)).toEqual(["0.9.1", "0.9.0", "2026.11.23.3", "2026.11.23.2", "2026.11.23.1"]);
+  // A year on, past the Steady window and the cap on listed builds alike, they are all still there.
+  const many = Array.from({ length: 70 }, (_, i) => nine(100 - i, { publishedAt: ago(i), passedAt: ago(i) }));
+  const later = prune([...many, ...builds.slice(2)], NOW + 365 * 24 * 3_600_000);
+  expect(later.map((x) => x.build).slice(-3)).toEqual(["2026.11.23.3", "2026.11.23.2", "2026.11.23.1"]);
+  // A hub on one of them, its build listed, takes 0.9.0.
+  expect(pick({ builds: prune(builds, NOW) }, fast(80), b(1).version, NOW)).toMatchObject({ kind: "move", build: { build: "0.9.0" } });
 });

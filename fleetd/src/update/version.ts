@@ -16,6 +16,9 @@ const RELEASED = /^v?(\d+\.\d+\.\d+)\+(\d{4})(\d{2})(\d{2})(?:\.|$)/;
 /** One from the day-numbered builds before it (D701's first weeks): `0.0.0-edge.<minute stamp>.<nth>+<commit>`. */
 const DAY_NUMBERED = /^v?\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)(?:\+|$)/;
 
+/** A day-numbered build (2026.11.23.x): its node reads only day-numbered build names (`NodeUpdate.build`). */
+export const isDayNumbered = (version: string): boolean => DAY_NUMBERED.test(version.trim());
+
 /**
  * A build's number, what the rollout, its releases (`build-<number>`) and support go by: `0.9.4` for a published build,
  * `2026.11.23.4` for a day-numbered one from before; undefined for any other version (a local build, an old edge one).

@@ -60,6 +60,8 @@ const PLATFORMS = ["mac", "linux"] as const;
 const ms = (iso: string | undefined) => (iso === undefined ? Number.NaN : Date.parse(iso));
 const iso = (at: number) => new Date(at).toISOString().replace(/\.\d{3}Z$/, "Z");
 
+/** A day-numbered build's number, from before release.version-scheme. */
+const DAY_NUMBERED_BUILD = /^\d{4}\.\d{1,2}\.\d{1,2}\.\d+$/;
 /** A build number as the rollout lists it: `0.9.4` (release.version-scheme), or a day-numbered one from before. */
 export const BUILD_NUMBER = /^(?:\d+\.\d+\.\d+|\d{4}\.\d{1,2}\.\d{1,2}\.\d+)$/;
 
@@ -93,11 +95,15 @@ export function plainNotes(subjects: string[]): string[] {
  * go back to, and for Steady, the newest passed build of each 6 hours of the last 3 days; MAX_BUILDS at most. */
 export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
   const good = (b: RolloutBuild) => b.haltedAt === undefined && b.pulledAt === undefined;
+  // A day-numbered build (2026.11.23.x, eleven of them) stays listed for good: a hub on one, from before 0.MINOR.PATCH,
+  // orders a build that isn't listed by its minute stamp, which a 0.9.x version hasn't, so it finds 0.9.x newer only
+  // while its own build is listed (fleetd/src/update/rollout.ts `pick`), however long it was away.
+  const dayNumbered = (b: RolloutBuild) => DAY_NUMBERED_BUILD.test(b.build);
   const full = builds.findIndex((b) => good(b) && percentAt(b, now) === 100);
   const fallback = full < 0 ? -1 : builds.findIndex((b, i) => i > full && good(b) && b.passedAt !== undefined);
   const slots = new Set<number>();
   const kept = builds.filter((b, i) => {
-    if (full < 0 ? now - ms(b.publishedAt) < KEEP_MS : i <= full) return true;
+    if (dayNumbered(b) || (full < 0 ? now - ms(b.publishedAt) < KEEP_MS : i <= full)) return true;
     const slot = Math.floor(ms(b.publishedAt) / SLOT_MS);
     if (i === fallback) {
       slots.add(slot);
@@ -108,7 +114,7 @@ export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
     slots.add(slot);
     return true;
   });
-  return kept.slice(0, MAX_BUILDS);
+  return kept.filter((b, i) => i < MAX_BUILDS || dayNumbered(b));
 }
 
 /** What the cloud says it runs. */
