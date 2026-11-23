@@ -38,6 +38,15 @@ const read = async (url: string, fetcher: typeof fetch): Promise<unknown> => {
   }
 };
 
+/** Whether a file beside the feed is there (a stage's feed). Never rejects: unreadable reads as absent. */
+export const feedExists = async (url: string, fetcher: typeof fetch = fetch): Promise<boolean> => {
+  try {
+    return (await fetcher(url, { method: "HEAD", signal: AbortSignal.timeout(15_000) })).ok;
+  } catch {
+    return false;
+  }
+};
+
 /** A JSON file beside the feed (rollout.json), or null when it can't be read. Never rejects. */
 export const readJson = (url: string, fetcher: typeof fetch = fetch): Promise<unknown> => read(url, fetcher);
 

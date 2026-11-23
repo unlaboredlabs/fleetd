@@ -22,7 +22,7 @@ vi.mock("electron", () => ({
 }));
 vi.mock("./build", () => ({ RELEASE_BUILD: true }));
 const release = { cli: "0.6.0", app: "0.6.0" };
-vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve({ ...release, app: fake.feed }), readJson: () => Promise.resolve(null) }));
+vi.mock("./update-release", () => ({ fetchRelease: () => Promise.resolve({ ...release, app: fake.feed }), readJson: () => Promise.resolve(null), feedExists: () => Promise.resolve(false) }));
 vi.mock("electron-updater", async () => {
   const { EventEmitter } = await import("node:events");
   class FakeUpdater extends EventEmitter {
