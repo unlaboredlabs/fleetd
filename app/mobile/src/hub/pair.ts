@@ -3,6 +3,7 @@
 // header: the code is the credential, so it goes to the typed address only, never where a redirect points. React
 // Native's fetch may follow one anyway (its XMLHttpRequest does), so an answer from another URL is refused too.
 import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../desktop";
+import { CLOUD_CODE } from "./pairLink";
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -17,14 +18,14 @@ export interface Paired {
 
 export type PairResult = { readonly ok: true; readonly paired: Paired } | { readonly ok: false; readonly failure: PairFailure };
 
-const NEW_CODE = "Run `fleetd pair` on the hub and type the code it prints.";
+const NEW_CODE = `Run \`fleetd pair\` on your hub and type the code it prints. ${CLOUD_CODE}`;
 
 /** The hub's refusals of a code, in the phone's words (the hub's are a terminal's). */
 const CODE_REFUSED: Readonly<Record<string, string>> = {
   pair_code_expired: "This pairing code has expired: a code works for 15 minutes.",
   pair_code_invalid: "This pairing code was already used, or isn't one this hub made.",
 };
-const NEW_SCAN = "Show a new code on the hub (`fleetd pair`, or the desktop app) and scan or type it.";
+const NEW_SCAN = `Show a new code on the hub (\`fleetd pair\`, or the desktop app) and scan or type it. ${CLOUD_CODE}`;
 
 const failed = (message: string, fix?: string): PairResult => ({ ok: false, failure: fix === undefined ? { code: "", message } : { code: "", message, fix } });
 

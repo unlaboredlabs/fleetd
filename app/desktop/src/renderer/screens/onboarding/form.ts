@@ -1,7 +1,7 @@
 // The connect form's state: what it shows and when it pairs by itself. Pure, so the decisions are tested.
 import type { LinkHandlerStatus } from "../../../shared/app";
 import type { HubState } from "../../../shared/hub";
-import { hubOrigin, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
+import { hubOrigin, LOCAL_HUB, protocolFit, type PairFailure, type PairStart } from "../../../shared/pairing";
 
 export interface Form {
   readonly hub: string;
@@ -144,6 +144,24 @@ export const reduce = (form: Form, action: Action): Form => {
     case "paired":
       return { ...form, busy: false, code: "", key: "", error: null, status: `Paired with ${action.hubName}. Connecting…` };
   }
+};
+
+/**
+ * What the form refuses before sending anything: an empty address, code or key. Main's request check refuses them too,
+ * but as a thrown error the page can't put in words, which left the button on "Connecting…".
+ */
+export const missingField = (form: Pick<Form, "hub" | "code" | "key" | "useKey">): { field: "hub" | "code" | "key"; failure: PairFailure } | null => {
+  if (form.hub.trim() === "") {
+    return { field: "hub", failure: { code: "", message: "Enter your hub's address.", fix: `For a hub on this computer, that's ${LOCAL_HUB}.` } };
+  }
+  if (form.useKey && form.key.trim() === "") {
+    return { field: "key", failure: { code: "", message: "Paste a key for this device.", fix: `On the hub, run \`${KEY_CREATE}\` and paste the key it prints.` } };
+  }
+  if (!form.useKey && form.code.trim() === "") {
+    // Where a code comes from is the hint just under the form.
+    return { field: "code", failure: { code: "", message: "Enter a pairing code." } };
+  }
+  return null;
 };
 
 /**

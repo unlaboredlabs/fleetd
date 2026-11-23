@@ -7,7 +7,10 @@ import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../..
 
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
 
-const SCAN_AGAIN = "Show a new pairing code on the hub (`fleetd pair`, or the desktop app) and scan it again, or enter the code by hand.";
+/** Where a fleetd cloud team's code comes from, said wherever the phone asks for one beside `fleetd pair`. */
+export const CLOUD_CODE = "On fleetd cloud, choose Pair a phone in the web app's Settings › Hubs & devices.";
+
+const SCAN_AGAIN = `Show a new pairing code on the hub (\`fleetd pair\`, or the desktop app) and scan it again, or enter the code by hand. ${CLOUD_CODE}`;
 
 const bad = (message: string): PairLink => ({ ok: false, failure: { code: "", message, fix: SCAN_AGAIN } });
 

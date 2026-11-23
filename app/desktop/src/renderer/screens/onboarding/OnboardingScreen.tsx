@@ -6,7 +6,7 @@ import { keyStoreLine, LOCAL_HUB, protocolFit, type PairFailure, type PairOutcom
 import { Button, Field, Input, Text } from "../../ui";
 import { useHub, useSeveralHubs } from "../../src/data/react";
 import { ColorPick } from "../shell/ColorPick";
-import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, needsOnboarding, reduce, type Reaching } from "./form";
+import { formatCodeAt, initialForm, KEY_CREATE, mismatchFailure, missingField, needsOnboarding, reduce, type Reaching } from "./form";
 import { useHubState, useKeyStore, useReaching, useSecondsUntil } from "./hooks";
 import { Mark } from "./Mark";
 import { CommandLine, Failure, Prose } from "./Prose";
@@ -141,6 +141,9 @@ function SetupHere() {
   );
 }
 
+/** A request main refused before it reached the hub: nothing was sent, so trying again is safe. */
+const UNSENT: PairFailure = { code: "", message: "This app couldn't send that request.", fix: "Check the address and code, then connect again." };
+
 function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }) {
   const [form, dispatch] = useReducer(reduce, undefined, () => initialForm(state, link));
   const self = useHub();
@@ -159,6 +162,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     const label = cleanLabel(name);
     return label === null ? null : { label, ...(color === null ? {} : { color }) };
   };
+  const hubField = useRef<HTMLInputElement>(null);
   const codeField = useRef<HTMLInputElement>(null);
   const keyField = useRef<HTMLInputElement>(null);
   // Formatting a code mid-edit would send the caret to the end; it goes back after the same characters.
@@ -176,7 +180,8 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
 
   const pair = useCallback(async (request: () => Promise<PairOutcome>) => {
     dispatch({ type: "submitting" });
-    const outcome = await request();
+    // A request main refuses throws rather than answering: it ends as a plain failure, never as a button left busy.
+    const outcome = await request().catch((): PairOutcome => ({ ok: false, failure: UNSENT }));
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: outcome.hubName });
       done();
@@ -220,6 +225,10 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
     if (into === null) {
       return fail({ code: "", message: `Name the hub, in up to ${String(LABEL_MAX)} characters.`, fix: "Any name you like: Personal, Acme, Side project." }, nameField.current);
     }
+    const missing = missingField(form);
+    if (missing !== null) {
+      return fail(missing.failure, missing.field === "hub" ? hubField.current : missing.field === "key" ? keyField.current : codeField.current);
+    }
     if (!form.useKey) {
       const request = { hub: form.hub, code: form.code, target: into };
       const fromLink = form.linkCode !== null && form.linkCode === form.code;
@@ -230,14 +239,8 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
       return;
     }
     const key = form.key.trim();
-    if (key === "") {
-      return fail(
-        { code: "", message: "Paste a key for this device.", fix: `On the hub, run \`${KEY_CREATE}\` and paste the key it prints.` },
-        keyField.current,
-      );
-    }
     dispatch({ type: "submitting" });
-    const outcome = await window.fleetd.hub.connect(form.hub.trim(), key, into);
+    const outcome = await window.fleetd.hub.connect(form.hub.trim(), key, into).catch(() => ({ ok: false as const, message: UNSENT.message }));
     if (outcome.ok) {
       dispatch({ type: "paired", hubName: form.hub.trim() });
       done();
@@ -265,6 +268,7 @@ function ConnectForm({ state, link }: { state: HubState; link: OnboardingProps }
         ) : null}
         <Field label="Hub address">
           <Input
+            ref={hubField}
             mono
             value={form.hub}
             onChange={(e) => dispatch({ type: "edit", field: "hub", value: e.target.value })}

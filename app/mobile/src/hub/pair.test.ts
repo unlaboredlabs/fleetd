@@ -54,6 +54,13 @@ describe("pair", () => {
     expect(used).toMatchObject({ ok: false, failure: { code: "pair_code_invalid", message: "This pairing code was already used, or isn't one this hub made." } });
   });
 
+  it("says where a new code comes from on fleetd cloud too, not only `fleetd pair`", async () => {
+    const used = await pair(answering(401, { code: "pair_code_invalid", message: "unknown or already used pairing code" }), "https://acme.fleetd.dev", "ABCD2345", "Pixel");
+    expect(used.ok ? null : used.failure.fix).toContain("Pair a phone");
+    const shape = await pair(answering(200, {}), "https://acme.fleetd.dev", "ABC", "Pixel");
+    expect(shape.ok ? null : shape.failure.fix).toMatch(/fleetd pair.*Pair a phone/u);
+  });
+
   it("says when nothing answers", async () => {
     const down: Fetch = () => Promise.reject(new TypeError("Network request failed"));
     const result = await pair(down, "http://devbox:4790", "ABCD2345", "Pixel");

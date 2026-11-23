@@ -1,5 +1,6 @@
 // A chat with no messages yet: what to ask the lead, just above the box, and a few starters that fill the box (never
 // send) so the first message is yours to edit.
+import type { ProjectSummary } from "../../../shared/contracts";
 import { Text } from "../../ui";
 import { ProjectAvatar } from "../projects/ProjectAvatar";
 import { projectKey } from "../../src/data/store";
@@ -14,8 +15,16 @@ export const STARTERS = [
   "Explain how this bot's code is put together.",
 ] as const;
 
-export function EmptyChat({ project, title, pictured }: { project: ProjectRef; title: string; pictured?: Parameters<typeof ProjectAvatar>[0]["project"] | undefined }) {
+/** A bot with no repo has no code or CI to ask about. */
+export const NO_REPO_STARTERS = [
+  "Tell me what you can do for me here.",
+  "Research something and write it up for me.",
+  "Plan a project with me, step by step.",
+] as const;
+
+export function EmptyChat({ project, title, pictured }: { project: ProjectRef; title: string; pictured?: ProjectSummary | undefined }) {
   const [, setDraft] = useDraft(projectKey(project));
+  const starters = (pictured?.repos?.length ?? 0) > 0 ? STARTERS : NO_REPO_STARTERS;
   return (
     <div className={s.empty} data-entry="empty">
       <div className={s.emptyBody}>
@@ -24,7 +33,7 @@ export function EmptyChat({ project, title, pictured }: { project: ProjectRef; t
           {title === "" ? "What should the lead do?" : `What should the lead do in ${title}?`}
         </Text>
         <div className={s.starters}>
-          {STARTERS.map((text) => (
+          {starters.map((text) => (
             <button
               key={text}
               type="button"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PairStart } from "../../../shared/pairing";
-import { formatCode, formatCodeAt, initialForm, needsOnboarding, reaching, reduce } from "./form";
+import { formatCode, formatCodeAt, initialForm, missingField, needsOnboarding, reaching, reduce } from "./form";
 
 const unpaired = { phase: "unpaired" } as const;
 const answering = { answers: true, hub: "http://100.64.0.1:4790", version: "0.5.0", protocol: 1 } as const;
@@ -27,6 +27,15 @@ describe("the connect form", () => {
     const linked = initialForm(unpaired, { hub: "http://hub.example.ts.net:4790", code: "WXYZ-6789" });
     expect(linked.status).toContain("Check this is your hub");
     expect(reduce(linked, { type: "started", start: fresh })).toBe(linked);
+  });
+
+  it("refuses an empty code, address or key at once, in a plain line, before anything is sent", () => {
+    const form = { hub: "https://acme.fleetd.dev", code: "", key: "", useKey: false };
+    expect(missingField(form)).toEqual({ field: "code", failure: { code: "", message: "Enter a pairing code." } });
+    expect(missingField({ ...form, code: "  " })?.field).toBe("code");
+    expect(missingField({ ...form, hub: " " })?.failure.message).toBe("Enter your hub's address.");
+    expect(missingField({ ...form, useKey: true })?.field).toBe("key");
+    expect(missingField({ ...form, code: "ABCD-2345" })).toBeNull();
   });
 
   it("won't send a key to an address a link chose", () => {

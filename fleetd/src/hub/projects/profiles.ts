@@ -48,6 +48,17 @@ export const ANTIGRAVITY_MODELS: [string, string][] = [
 ];
 const antigravityModels = (): ProfileModel[] => ANTIGRAVITY_MODELS.map(([id, name]) => ({ id, displayName: name, fast: false }) as ProfileModel);
 
+/**
+ * How a chat line names what a lead runs on: a profile a person named, by its name; one of fleetd's own, named after
+ * its effort (`high`, `medium`), by its model and effort ("Opus 5.5, medium effort"), as a name like "medium" says little.
+ */
+export const runsOnLabel = (c: { profile: string; model?: string | undefined; effort?: string | undefined; fast?: boolean | undefined }): string => {
+  if (!(EFFORTS as string[]).includes(c.profile)) return c.profile;
+  const known = [...BUILTIN_MODELS, ...ANTIGRAVITY_MODELS].find(([id]) => id === c.model)?.[1];
+  const model = known?.replace(/^Claude /u, "").replace(/ \(Antigravity\)$/u, "") ?? c.model ?? "its default model";
+  return `${model}${c.effort === undefined ? "" : `, ${c.effort} effort`}${c.fast === true ? ", fast mode" : ""}`;
+};
+
 /** The models Claude Code offers fast mode on. */
 export const FAST_MODELS = ["claude-opus-5-5", "claude-opus-5", "claude-opus-4-8"];
 export const hasFast = (model: string) => FAST_MODELS.includes(model);

@@ -18,7 +18,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc-rs -p tsconfig.node.json --noEmit && tsc-rs -p tsconfig.web.json --noEmit && tsc-rs -p tsconfig.tools.json --noEmit",
+    "typecheck": "tsc-rs -p tsconfig.node.json --noEmit && tsc-rs -p tsconfig.web.json --noEmit && tsc-rs -p tsconfig.tools.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "lint": "eslint --max-warnings 0 src/renderer src/web && eslint --max-warnings 0 --ignore-pattern src/renderer/ --ignore-pattern src/web/ .",
     "test": "vitest run",
     "qa:build": "VITE_FLEETD_QA=1 MAIN_VITE_FLEETD_TEST_BUILD=1 electron-vite build",

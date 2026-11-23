@@ -16,7 +16,7 @@ import type { PairFailure } from "../desktop";
 import type { PairParams } from "../hubContext";
 import { deviceName } from "../hub/deviceName";
 import { pair, type Paired } from "../hub/pair";
-import { pairLinkStep, pastedPair, type Pasted } from "../hub/pairLink";
+import { CLOUD_CODE, pairLinkStep, pastedPair, type Pasted } from "../hub/pairLink";
 import { COLUMN, mono, space, TOUCH, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
@@ -48,7 +48,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
-        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways ? "Your bots and approvals." : "Your bots and approvals, from your own hub."}</Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways || !own ? "Your bots and approvals." : "Your bots and approvals, from your own hub."}</Text>
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
       {ways ? (
@@ -58,7 +58,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
           <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
           <Button label="Enter Code Manually" kind="plain" size="large" onPress={() => navigation.navigate("Pair")} />
           <Text style={[type.footnote, styles.center, styles.hint, { color: t.secondary }]}>
-            Your hub shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app.
+            Your hub shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app. {CLOUD_CODE}
           </Text>
         </View>
       )}
@@ -216,7 +216,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
       <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
         <Text style={[type.subhead, styles.lead, { color: t.secondary }]}>
-          Type the hub's address and the code that <Text style={styles.code}>fleetd pair</Text> or the desktop app shows. On a tailnet, keep Tailscale on.
+          Type the hub's address and the code that <Text style={styles.code}>fleetd pair</Text> or the desktop app shows. On a tailnet, keep Tailscale on. {CLOUD_CODE}
         </Text>
         <ListSection header="Hub address">
           <View style={styles.fieldRow}>

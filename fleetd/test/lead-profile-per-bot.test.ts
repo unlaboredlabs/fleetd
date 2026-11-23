@@ -236,6 +236,25 @@ test("a bot's Lead model pick answers at once; the switch goes on in the backgro
   expect(t.launched[1]).toBe("opus");
 });
 
+test("a lead that starts again on a new model says so in the chat in one quiet line; a restart on the same one says nothing", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "idle");
+  const lines = () => chat(t.hub).page(PROJECT, undefined, undefined, 50).messages.filter((m) => m.author === "system").map((m) => m.text);
+  await t.call("project_set", { ...PROJECT, leadProfile: "opus", leadRestart: true });
+  await until(() => t.launched.length === 2);
+  expect(lines()).toEqual(["The lead restarted on opus."]);
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadRestart: true });
+  await until(() => t.launched.length === 3);
+  expect(lines()).toEqual(["The lead restarted on opus."]);
+  // One of fleetd's own profiles, named after its effort, is said by its model and effort.
+  threadIs(t.hub, "idle");
+  await t.call("project_set", { ...PROJECT, leadProfile: "medium", leadRestart: true });
+  await until(() => t.launched.length === 4);
+  expect(lines()).toEqual(["The lead restarted on opus.", "The lead restarted on Opus 5.5, medium effort."]);
+});
+
 test("leadRestart starts a lead on its pick now", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
