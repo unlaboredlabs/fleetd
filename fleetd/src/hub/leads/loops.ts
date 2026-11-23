@@ -8,6 +8,9 @@ import type { Hub } from "../api/hub.ts";
 import { registerLeadCalls as artifactCalls } from "../artifacts/calls.ts";
 import { registerLeadCalls as checklistCalls } from "../checklist/calls.ts";
 import { chat } from "../chat/index.ts";
+import { latestRun } from "../executor/sessions.ts";
+import { link } from "../link/server.ts";
+import { CAP_LAUNCH_AHEAD } from "../../shared/node_link.ts";
 import { accounts } from "../claude_accounts/tools.ts";
 import { executors } from "../executor/index.ts";
 import { executorHooks } from "../executor/hooks.ts";
@@ -202,6 +205,30 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
     retryWhenDue(hub, r, lead, (p, line) => area.wakes.trigger(p, { kind: "line", line: "cut_off", text: line }), sleep, () => area.records.leadGet(r), seq);
   for (const lead of area.records.leadsList()) retryLater(lead.projectRef, lead);
   executorHooks(hub).onMcpSkipped((thread, change, at) => mcpSkipped(hub, thread, change, at));
+  // A lead whose run the stall watchdog stopped, still on after STALL_GRACE_MS on its machine: started again.
+  // As the chat's line said: one that carries on starts with a turn, one that waits for the person starts with none.
+  const restartFrozen = async (r: ProjectRef, run: string, carries: boolean) => {
+    const lead = area.records.leadGet(r);
+    if (lead === undefined) return;
+    const thread = { machineId: r.machineId, threadId: lead.threadId };
+    const status = store(hub).threadGet(thread)?.thread.status;
+    if ((status !== "running" && status !== "waiting") || latestRun(hub, thread)?.runId !== run) return;
+    // A node too old to start a lead with no turn starts it with one: the chat then says it carries on after all, as when a
+  // message of the person's waits for an answer as it starts.
+    const quiet = !carries && link(hub).can(r.machineId, CAP_LAUNCH_AHEAD);
+    try {
+      await area.switchSoon(r, { waitForMessage: quiet });
+      // Said only once it really started again: a start that waits (its machine away, a refusal) says nothing yet. One
+      // that was to wait for the person but started with a turn (a message of theirs waited for an answer, or its node
+      // can't start a lead with none) says it carries on.
+      const now = area.records.leadGet(r)?.threadId;
+      if (now === undefined || now === lead.threadId) return;
+      const waits = area.startedQuiet(now) === true;
+      chat(hub).add(r, { author: "system", text: carries || waits ? FROZEN_LINE : FROZEN_CARRIES_LINE, source: `lead_restarted:${run}` });
+    } catch (error) {
+      console.warn(`leads: the frozen lead of ${r.machineId}/${r.projectId} not started again:`, error);
+    }
+  };
   // Leads whose turn was cut off carry on; one woken after its own turn ended badly waits for a completed turn.
   const carriedOn = new Set<string>();
   follow(hub, ["thread.failed", "thread.interrupted", "thread.completed"], (e) => {
@@ -238,6 +265,10 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
       if (e.type === "thread.failed" && stalled?.reason === "stalled") {
         const run = typeof stalled.runId === "string" ? stalled.runId : String(e.seq);
         chat(hub).add(found.project, { author: "system", text: stalledLine(carries), source: `lead_stalled:${run}` });
+        // Its machine may never end the run (a claude frozen, a host that lost it): then the lead starts again, as a
+        // person's Restart lead does, so it carries on, takes the next message, and Stop and its orders read it right.
+        const r = found.project;
+        void sleep(STALL_GRACE_MS).then(() => restartFrozen(r, run, carries));
       }
       if (!carries) return;
       carriedOn.add(key);
@@ -249,3 +280,13 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
 /** The chat's line for a lead's turn the stall watchdog stopped: that it carries on by itself, or what starts it again. */
 export const stalledLine = (carriesOn: boolean): string =>
   `The lead stopped making progress, so fleetd stopped its turn. ${carriesOn ? "It carries on by itself." : "Your next message starts it again."}`;
+
+/** How long the machine of a lead's run the stall watchdog stopped gets to end it before the lead starts again. */
+export const STALL_GRACE_MS = 60_000;
+
+/** The chat's line when a lead's stopped run never ended on its machine and fleetd started the lead again. */
+export const FROZEN_LINE = "Its machine didn't end the stopped turn, so fleetd started the lead again.";
+
+/** The same, for a lead that was to wait for the person but started with a turn: a message of theirs waited for an
+ * answer, or its node can only start it with one. */
+export const FROZEN_CARRIES_LINE = "Its machine didn't end the stopped turn, so fleetd started the lead again, and it carries on.";

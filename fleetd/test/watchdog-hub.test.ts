@@ -1,12 +1,14 @@
 // The stall watchdog through the hub's own watch (`hubWatch`): the real executor and its followed sessions, a stand-in
 // node and the kit's clock. A run with no frame past its threshold is failed as stalled and interrupted once; a run that
 // is slow, waiting on a person, between turns, or on a machine that came back is left alone.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { leadWorking } from "../src/hub/chat/flow.ts";
 import { chat } from "../src/hub/chat/index.ts";
 import { executors, type HubToNodeSession } from "../src/hub/executor/index.ts";
 import { leads } from "../src/hub/leads/index.ts";
-import { start as startLeads } from "../src/hub/leads/loops.ts";
+import { FROZEN_CARRIES_LINE, FROZEN_LINE, start as startLeads } from "../src/hub/leads/loops.ts";
+import { link } from "../src/hub/link/server.ts";
+import { CAP_LAUNCH_AHEAD } from "../src/shared/node_link.ts";
 import { store } from "../src/hub/store/hub_store.ts";
 import { hubWatch, STALL_MS, Watchdog } from "../src/hub/watchdog/index.ts";
 import type { MachineEvent, RunInfo, SessionCall, SessionSummary, ThreadEvent, ThreadItem } from "../src/shared/sessions.ts";
@@ -268,5 +270,104 @@ test("a lead's run the watchdog stopped is no longer working, though its node ne
   expect(leadWorking(n.hub, r)).toBe(false);
   for (let i = 0; i < 100 && said().length < 2; i++) await Bun.sleep(10);
   expect(said().map((m) => m.text)[1]).toBe("The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.");
+  n.end();
+});
+
+// A lead's stopped run that its machine never ends: past the grace, the lead starts again (a person's Restart lead), so
+// "it carries on by itself" is true, the next message reaches it, and Stop and its orders read its new session.
+test("a lead's stopped run its machine never ends starts the lead again, and its chat says so", async () => {
+  const n = await standIn();
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  leads(n.hub).settleMs = 10;
+  // The grace passes at once.
+  startLeads(n.hub, { sleep: () => Promise.resolve() });
+  await n.set("s1", running("r1"));
+  await n.link();
+  await n.minutes(10);
+  expect(n.interrupts().length).toBeGreaterThanOrEqual(1);
+  const said = () => chat(n.hub).page(r, undefined, undefined, 10).messages.filter((m) => m.author === "system").map((m) => m.text);
+  for (let i = 0; i < 200 && !said().includes(FROZEN_LINE); i++) await Bun.sleep(10);
+  expect(said()).toEqual(["The lead stopped making progress, so fleetd stopped its turn. It carries on by itself.", FROZEN_LINE]);
+  const lead = leads(n.hub).records.leadGet(r);
+  expect(lead?.sessionGeneration).toBe(2);
+  expect(lead?.threadId).not.toBe("s1");
+  // It carries on, as the line said: its new session starts with a turn.
+  const launches = n.calls.filter((c) => c.op === "launch");
+  expect(launches.at(-1)).not.toHaveProperty("ahead");
+  n.end();
+});
+
+const CASES = [
+  { ahead: true, asked: false, how: "with no turn" },
+  { ahead: false, asked: false, how: "with one on a node too old for that, and says it carries on" },
+  // The review of #2149: a message sent within the grace went into the frozen turn; a start with no turn left it unanswered.
+  { ahead: true, asked: true, how: "with one when the person wrote meanwhile, which it answers, and says it carries on" },
+];
+for (const { ahead, asked, how } of CASES) {
+test(`a second stall that waits for the person, never ended by its machine, starts the lead again ${how}`, async () => {
+  const n = await standIn();
+  // Whether its node can start a lead with no turn (CAP_LAUNCH_AHEAD).
+  spyOn(link(n.hub), "can").mockImplementation((_machine: string, cap: string) => (cap === CAP_LAUNCH_AHEAD ? ahead : true));
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  leads(n.hub).settleMs = 10;
+  // Each grace passes when the test says.
+  const graces: (() => void)[] = [];
+  const pass = async () => {
+    for (let i = 0; i < 100 && graces.length === 0; i++) await Bun.sleep(10);
+    for (const done of graces.splice(0)) done();
+    await Bun.sleep(30);
+  };
+  startLeads(n.hub, { sleep: () => new Promise<void>((done) => graces.push(done)) });
+  await n.set("s1", running("r1"));
+  await n.link();
+  // The first stall ends on its machine (its interrupt took, the run interrupted): it carries on, and nothing is started
+  // again.
+  await n.minutes(10);
+  await n.set("s1", { status: "idle", latestRun: runOf("r1", "interrupted") });
+  await pass();
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(1);
+  // The second, with no completed turn between, waits for the person; and this one its machine never ends.
+  await n.set("s1", running("r2"));
+  await n.minutes(10);
+  // Within the grace, the person writes, as the line asked: it goes into the frozen turn, which never reads it.
+  if (asked) chat(n.hub).add(r, { author: "human", text: "Are you there?", request: "k:1", by: "a person" });
+  await pass();
+  const said = () => chat(n.hub).page(r, undefined, undefined, 10).messages.filter((m) => m.author === "system").map((m) => m.text);
+  for (let i = 0; i < 200 && !said().includes(FROZEN_LINE); i++) await Bun.sleep(10);
+  expect(said()).toEqual([
+    "The lead stopped making progress, so fleetd stopped its turn. It carries on by itself.",
+    "The lead stopped making progress, so fleetd stopped its turn. Your next message starts it again.",
+    ahead && !asked ? FROZEN_LINE : FROZEN_CARRIES_LINE,
+  ]);
+  // As the lines said: started again with no turn, its claude waiting for the person's next message; or, on an older
+  // node, with one.
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(2);
+  const launch = n.calls.filter((c) => c.op === "launch").at(-1);
+  if (ahead && !asked) expect(launch).toMatchObject({ ahead: true });
+  else expect(launch).not.toHaveProperty("ahead");
+  // The person's message is in its first turn, marked for an answer.
+  if (asked) expect(JSON.stringify(launch)).toContain("Are you there?");
+  n.end();
+});
+}
+
+test("a lead's stopped run that its machine ends in time is not started again", async () => {
+  const n = await standIn();
+  const r = { machineId: "devbox", projectId: "app" };
+  leads(n.hub).records.leadPut({ projectRef: r, threadId: "s1", startedAt: AT, sessionGeneration: 1 });
+  let grace: (() => void) | undefined;
+  startLeads(n.hub, { sleep: () => new Promise<void>((done) => (grace = done)) });
+  await n.set("s1", running("r1"));
+  await n.link();
+  await n.minutes(10);
+  // The interrupt took: the run ended before the grace passed.
+  await n.set("s1", ended("r1"));
+  for (let i = 0; i < 100 && grace === undefined; i++) await Bun.sleep(10);
+  grace?.();
+  await Bun.sleep(50);
+  expect(leads(n.hub).records.leadGet(r)?.sessionGeneration).toBe(1);
+  expect(chat(n.hub).page(r, undefined, undefined, 10).messages.map((m) => m.text)).not.toContain(FROZEN_LINE);
   n.end();
 });
