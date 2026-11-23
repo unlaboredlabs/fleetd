@@ -17,7 +17,7 @@ import type { PairParams } from "../hubContext";
 import { deviceName } from "../hub/deviceName";
 import { pair, type Paired } from "../hub/pair";
 import { pairLinkStep, pastedPair, type Pasted } from "../hub/pairLink";
-import { mono, space, TOUCH, type, useTheme } from "../theme";
+import { COLUMN, mono, space, TOUCH, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
@@ -214,7 +214,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
   const field = { ...type.body, color: t.label };
   return (
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.xl }} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
+      <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
         <Text style={[type.subhead, styles.lead, { color: t.secondary }]}>
           Type the hub's address and the code that <Text style={styles.code}>fleetd pair</Text> or the desktop app shows. On a tailnet, keep Tailscale on.
         </Text>
@@ -290,7 +290,8 @@ const styles = StyleSheet.create({
   hero: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.md },
   mark: { width: 100, height: 100, borderRadius: 23, borderCurve: "continuous", marginBottom: space.sm },
   center: { textAlign: "center", maxWidth: 320 },
-  actions: { gap: space.xs, alignItems: "stretch" },
+  actions: { gap: space.xs, alignItems: "stretch", alignSelf: "center", width: "100%", maxWidth: COLUMN },
+  form: { alignSelf: "center", width: "100%", maxWidth: COLUMN },
   hint: { alignSelf: "center", marginTop: space.sm },
   lead: { paddingHorizontal: space.xl, paddingTop: space.sm, textAlign: "center" },
   code: { fontFamily: mono },

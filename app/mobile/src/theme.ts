@@ -226,6 +226,12 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 /** Apple's minimum touch target. */
 export const TOUCH = 44;
 
+/**
+ * The widest a column of buttons or a short form grows (signing in, pairing): a large phone's width. On a wide window
+ * (the iPhone Duo unfolded, an iPad) it stands centred, as iOS's own setup screens do, rather than spanning it.
+ */
+export const COLUMN = 440;
+
 /** iOS 26 and later: rounder grouped lists and cards, taller rows, and capsule buttons, as its own apps draw them. */
 const ios26 = Platform.OS === "ios" && Number.parseInt(String(Platform.Version), 10) >= 26;
 
