@@ -197,6 +197,17 @@ test("remove runs the undo steps, erases each bot through the erase it is given,
   expect(JSON.parse(readFileSync(join(hubHome, "setup.json"), "utf8")).machines).toEqual({});
 });
 
+test("leadsOn names every bot whose lead the machine runs, in a person's words", () => {
+  const side: HubSide = { db, home: hubHome, by: "a test", erase: () => undefined };
+  const lead = (p: string) => db.conn.query("INSERT INTO leads (machine_id, project_id, thread_id, started_at, session_generation) VALUES ('lab', ?, ?, 't', 1)").run(p, `lead-${p}`);
+  lead("app");
+  expect(leadsOn(side, "lab")).toBe("lab still runs app's lead. Removing it anyway deletes that bot, with its chat and history");
+  lead("site");
+  expect(leadsOn(side, "lab")).toBe("lab still runs the leads of app and site. Removing it anyway deletes those bots, with their chats and history");
+  for (const p of ["a", "b", "c", "d"]) lead(p);
+  expect(leadsOn(side, "lab")).toBe("lab still runs the leads of a, app, b, c, d and 1 more. Removing it anyway deletes those bots, with their chats and history");
+});
+
 test("candidates: this machine first, then those set up, then ssh hosts and peers, each id once", () => {
   const out = candidates(
     { "builder-1": { sshHost: "builder-1.example", platform: "linux", home: "/h", configHome: "/h/.config", uid: 1 } },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { fixPlace, needsOf, problemsOf, refusedLine, removeLine, repairOf, statusWords } from "./machines";
+import { fixPlace, needsOf, problemsOf, removeLine, repairOf, statusWords } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -55,14 +55,6 @@ describe("Administration › Machines' model", () => {
   it("says what Remove does: the service and the key, or the key alone", () => {
     expect(removeLine("builder-1", hosts)).toContain("stops and removes builder-1's node service");
     expect(removeLine("laptop", hosts)).toContain("It joined by itself");
-  });
-
-  it("says why the hub refused a Remove in a person's words, never the tool's", () => {
-    expect(refusedLine("qa-linux", ["qa linux"])).toBe("qa-linux still runs qa linux's lead. Remove anyway stops it and deletes that bot.");
-    expect(refusedLine("devbox", ["app", "site"])).toBe("devbox still runs the leads of app and site. Remove anyway stops them and deletes those bots.");
-    expect(refusedLine("devbox", ["a", "b", "c", "d", "e"])).toBe("devbox still runs the leads of a, b, c and 2 more. Remove anyway stops them and deletes those bots.");
-    expect(refusedLine("builder-1", [])).toBe("builder-1 is still being added. Remove anyway stops that halfway.");
-    for (const line of [refusedLine("devbox", ["app"]), refusedLine("devbox", [])]) expect(line).not.toMatch(/machine_|force|rejoin|true/u);
   });
 
   it("makes a problem of each of the machine's own checks that failed or warns, failed first, and none of one that passed", () => {
