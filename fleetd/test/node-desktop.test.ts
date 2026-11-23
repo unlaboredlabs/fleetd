@@ -343,7 +343,8 @@ test("a Linux desktop encodes each grab once: its video is the encoder's H.264, 
   await until("a second", () => recorded.length > 1);
   expect(recorded.every((r) => r.kind === "h264")).toBe(true);
   expect(recorded[0]!.key).toBe(true);
-  expect(recorded[1]!.atMs).toBeGreaterThan(recorded[0]!.atMs);
+  // Two grabs can land in the same millisecond on a loaded machine: never earlier is what holds.
+  expect(recorded[1]!.atMs).toBeGreaterThanOrEqual(recorded[0]!.atMs);
   expect(jpegs).toBe(0);
 
   // A watcher that decodes H.264: the screen now, made a JPEG of the last grab only now, then the same encoder's frames.
