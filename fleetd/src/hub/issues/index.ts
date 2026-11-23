@@ -135,12 +135,15 @@ export class IssueOrders {
 
   /**
    * The repos the hub watches, each with the bot an issue there goes to: a bot with the switch on that isn't archived,
-   * the one whose own directory is the repo first.
+   * the one whose own directory is the repo first. Never a checkout another bot holds as one of its repos: it is
+   * archived read-only by that (projects/repos.ts `holder`) with no archive time, its lead refused every start, and the
+   * bot that holds it takes the issue.
    */
   watched(): Map<string, ProjectRef> {
     const out = new Map<string, { r: ProjectRef; own: boolean }>();
     for (const r of repos.cachedProjects(this.hub.db.conn)) {
       if (!on(this.hub, r) || projectSettings.kept(this.hub.db.conn, r)?.archivedAt !== undefined) continue;
+      if (repos.holders(this.hub.db.conn, r).length > 0) continue;
       const ownKey = repos.own(this.hub.db.conn, r)?.repoKey;
       for (const repo of githubRepos(this.hub, r)) {
         const own = ownKey === `github.com/${repo}`;
