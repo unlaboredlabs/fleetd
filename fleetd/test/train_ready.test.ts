@@ -88,3 +88,82 @@ test("a writer's PR in a repo of the bot with no train yet goes on the train whe
   await passes(k, 2);
   for (const n of [5, 8]) expect(changesOf(k, n)).toHaveLength(1);
 });
+
+// On 2026-11-23 #742 (`…-flaky-3`, 05:24:45) and #743 (`…-failing-3`, 05:29:21) opened while the cloud's train waited
+// on CI of the PR ahead of them: a pass waits there for minutes, and its ready pass ran only before it, so neither was
+// taken until its writer's end put its result's PR on, with no slice line.
+test("a writer's PR opened while the train waits on another PR's CI goes on the train during that wait", async () => {
+  let during: (() => void) | undefined;
+  const k: Kit = new Kit({
+    sleep: async (ms) => {
+      k.clock.ms += ms;
+      during?.();
+      await Bun.sleep(0);
+    },
+  });
+  kits.push(k);
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  k.host.tasks.get("T7")!.state = "done";
+  k.host.branches.set("T7", "fleetd/T7-pricing");
+  let done = false;
+  k.gh.runs = () => [{ id: 1, name: "ci", status: done ? "completed" : "in_progress", conclusion: done ? "success" : null }];
+  await k.enqueue(7);
+  let opened = false;
+  let sevenWhenTaken: string | undefined;
+  let sleeps = 0;
+  during = () => {
+    if (k.change(7).state !== "ci") return;
+    sleeps++;
+    if (!opened) {
+      opened = true;
+      // The writer, ended already, opens its third PR: its `gh pr create` tells the train.
+      openPr(k, 8, "fleetd/T7-pricing-3");
+      void k.train.writerOpenedPr(PROJECT);
+    } else if (sevenWhenTaken === undefined && changesOf(k, 8).length > 0) sevenWhenTaken = k.change(7).state;
+    if (sevenWhenTaken !== undefined || sleeps > 30) done = true;
+  };
+  await k.train.step(REPO);
+  expect(opened).toBe(true);
+  expect(sevenWhenTaken).toBe("ci");
+  expect(changesOf(k, 8).map((c) => [c.taskId, c.workstreamId])).toEqual([["T7", "W1"]]);
+});
+
+test("a ready pass that throws while the train waits on CI is logged, and the wait goes on to the merge", async () => {
+  let during: (() => void) | undefined;
+  const k: Kit = new Kit({
+    sleep: async (ms) => {
+      k.clock.ms += ms;
+      during?.();
+      await Bun.sleep(0);
+    },
+  });
+  kits.push(k);
+  k.pr(7, "fleetd/T7-pricing", { "pricing.md": "pricing\n" });
+  k.host.branches.set("T7", "fleetd/T7-pricing");
+  let done = false;
+  k.gh.runs = () => [{ id: 1, name: "ci", status: done ? "completed" : "in_progress", conclusion: done ? "success" : null }];
+  await k.enqueue(7);
+  let thrown = 0;
+  let sleeps = 0;
+  during = () => {
+    if (k.change(7).state !== "ci") return;
+    // From the first poll in CI, the writers can't be read: every ready pass there throws.
+    k.host.writers = () => {
+      thrown++;
+      throw new Error("writers unread");
+    };
+    void k.train.writerOpenedPr(PROJECT);
+    if (++sleeps > 5) done = true;
+  };
+  const warn = console.warn;
+  const lines: string[] = [];
+  console.warn = (...a: unknown[]) => void lines.push(a.join(" "));
+  try {
+    await k.train.step(REPO);
+  } finally {
+    console.warn = warn;
+  }
+  expect(thrown).toBeGreaterThan(1);
+  expect(k.change(7).state).toBe("merged");
+  expect(lines.filter((l) => l.includes(`ready pass of ${REPO} in CI failed: Error: writers unread`))).toHaveLength(1);
+});
