@@ -906,7 +906,7 @@ export const screens: readonly Screen[] = [
   // F4 (A3): the composer under storefront's chat while the lead works. Sent from the box: refused (Resend, Edit,
   // Dismiss), cut off by the link, unanswered (Resend, Dismiss), and one still sending; then a message that found no
   // hub, queued to go when the link is back, and a file attached beside it. composer-waiting: the hub stored the
-  // message, but the lead can't take it yet, and says why.
+  // message, but the lead can't take it yet: the bot in the reply's place says why (W852).
   { id: "chat", route: CHAT, fixtures: ["composer-sends"] },
   {
     id: "chat.composer",
@@ -940,7 +940,8 @@ export const screens: readonly Screen[] = [
       const box = page.getByRole("textbox", { name: "Message the lead" });
       await box.fill(CHAT_SENDS.waiting);
       await box.press("Enter");
-      await expect(page.getByText(/the lead doesn’t have it yet/)).toBeVisible();
+      await expect(page.locator("[data-wake='held']")).toHaveText("devbox is offline; it starts when devbox is back.");
+      await expect(page.locator("[data-wake] [data-typing]")).toHaveCount(0);
     },
   },
   // `$` in the box: storefront's skills that fit, the repo's first; the outranked project copy of release is not
@@ -1044,7 +1045,8 @@ export const screens: readonly Screen[] = [
     check: islandHolds,
   },
   // The human's screenshot (W669): "start", then "1-16" as a steer, nothing from the lead yet. The composer shows Stop
-  // and says the lead reads it at its next step; the island shows the lead at work, its glyph alone.
+  // and says the lead reads it at its next step; the bot stands in the reply's place with its typing dots (W852), so
+  // the island doesn't show the lead's glyph again.
   {
     id: "chat",
     route: CHAT,
@@ -1055,9 +1057,9 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("button", { name: "Stop the lead and its agents" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Message the lead" })).toHaveAttribute("placeholder", /It reads this at its next step/u);
       await atTheEnd(page);
-      await leadGlyphAlone(page);
+      await expect(page.locator("[data-wake] [data-typing]")).toBeVisible();
+      await expect(page.locator("[data-band] > [data-island]")).toHaveCount(0);
     },
-    check: islandHolds,
   },
   {
     id: "chat",
