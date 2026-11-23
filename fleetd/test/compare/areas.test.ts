@@ -11,8 +11,9 @@ import { Refusal, standIn, type StandInTeam, type StandInTool } from "../../../t
 import type { Team } from "../../../tests/compare/target.ts";
 import { reportLines } from "../../../tests/compare/twoTeams.ts";
 import { openSealed, publicKeyOf } from "../../src/shared/sealed_box_core.ts";
+import { importedText } from "../../src/shared/imported_text.ts";
 
-const doc = JSON.parse(mcpToolsText) as { $defs: Record<string, any> };
+const doc = JSON.parse(importedText(mcpToolsText)) as { $defs: Record<string, any> };
 const input = (type: string) => ({ ...doc.$defs[type], $defs: doc.$defs });
 
 /** decisions_record and decisions_search over each team's own decisions, numbered per team (D1 in each). */

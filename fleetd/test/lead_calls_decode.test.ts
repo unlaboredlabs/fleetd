@@ -5,6 +5,7 @@ import { LEAD_CALLS } from "../src/shared/wire_tags.ts";
 import { leadCalls, type LeadCall, type LeadResultFrame } from "../src/hub/lead_calls/index.ts";
 import { build } from "../src/hub/serve/index.ts";
 import { hubHome } from "./helpers.ts";
+import { importedText } from "../src/shared/imported_text.ts";
 
 const home = hubHome();
 const { hub } = build(home.dir, { host: "127.0.0.1", port: 0 });
@@ -40,7 +41,7 @@ const SESSION = {
 test("every lead call op has its contract in LeadCall.json, and the defs it shares with McpTools.json are the same", () => {
   const variants = (LEAD_CALL_DEFS.LeadCall?.oneOf ?? []).map((v) => (v.properties?.op as { const?: string }).const);
   expect(new Set(variants)).toEqual(new Set(LEAD_CALLS));
-  const mcp = (JSON.parse(mcpToolsText) as { $defs: Record<string, unknown> }).$defs;
+  const mcp = (JSON.parse(importedText(mcpToolsText)) as { $defs: Record<string, unknown> }).$defs;
   for (const [name, def] of Object.entries(LEAD_CALL_DEFS)) {
     if (name in mcp) expect([name, mcp[name]]).toEqual([name, def]);
   }

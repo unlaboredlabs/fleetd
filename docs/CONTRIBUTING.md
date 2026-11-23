@@ -157,7 +157,7 @@ build slot) comes in as an option, and the node passes its own.
 
 ## Conventions
 
-- TypeScript on Bun, checked with tsc-rs (`bun run typecheck`).
+- TypeScript on Bun, checked with tsc-rs and then TypeScript's own tsc (`bun run typecheck`), which flags what tsc-rs lets through.
 - fleetd never calls a model or usage API directly; Claude runs only through the `claude` CLI.
 - Tests cover real logic and observable behaviour, not wiring, and don't sleep or poll.
 - Conventional commit titles in plain language (`feat(hub): ...`, `fix(node): ...`), one branch per PR.

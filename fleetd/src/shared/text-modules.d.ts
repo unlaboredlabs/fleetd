@@ -21,3 +21,15 @@ declare module "*/Dockerfile" {
   const text: string;
   export default text;
 }
+
+// `import path from "x.c" with { type: "file" }`: Bun gives the file's path (embedded by `bun build --compile`).
+declare module "*.c" {
+  const path: string;
+  export default path;
+}
+
+// `import path from "x.swift" with { type: "file" }`: a helper the node compiles on the agents' Mac.
+declare module "*.swift" {
+  const path: string;
+  export default path;
+}

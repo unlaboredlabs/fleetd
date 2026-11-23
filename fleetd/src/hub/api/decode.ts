@@ -11,6 +11,7 @@ import schemaText from "../../../../app/desktop/src/shared/contracts/schema/McpT
 // The node's lead calls, rendered the same way; its defs join
 // McpTools' (test/lead_calls_decode.test.ts holds every name the two share to one schema).
 import leadCallText from "../../../../app/desktop/src/shared/contracts/schema/LeadCall.json" with { type: "text" };
+import { importedText } from "../../shared/imported_text.ts";
 
 type Schema = {
   $ref?: string;
@@ -37,9 +38,9 @@ type Schema = {
   "x-open"?: boolean;
 };
 
-const DEFS = (JSON.parse(schemaText) as { $defs: Record<string, Schema> }).$defs;
+const DEFS = (JSON.parse(importedText(schemaText)) as { $defs: Record<string, Schema> }).$defs;
 /** LeadCall.json's own defs, as rendered, for the test that holds shared names to one schema. */
-export const LEAD_CALL_DEFS = (JSON.parse(leadCallText) as { $defs: Record<string, Schema> }).$defs;
+export const LEAD_CALL_DEFS = (JSON.parse(importedText(leadCallText)) as { $defs: Record<string, Schema> }).$defs;
 for (const [name, def] of Object.entries(LEAD_CALL_DEFS)) DEFS[name] ??= def;
 const TOOLS = (DEFS.McpTools?.properties ?? {}) as Record<string, Schema>;
 /** Rust's `Line`: a Text that refuses `\r` and `\n`. */

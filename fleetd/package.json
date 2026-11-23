@@ -5,7 +5,7 @@
   "scripts": {
     "gen": "bun scripts/gen.ts && bun scripts/docs.ts && bun scripts/setup-fixtures.ts",
     "gen:check": "bun scripts/gen.ts --check && bun scripts/docs.ts --check && bun scripts/setup-fixtures.ts --check",
-    "typecheck": "tsc-rs -p tsconfig.json",
+    "typecheck": "tsc-rs -p tsconfig.json && tsc -p tsconfig.json",
     "test": "bun test --parallel=4",
     "compile": "bun build --compile --minify --bytecode --sourcemap --root . src/main.ts src/hub/store/read-worker.ts src/hub/projects/avatar-worker.ts --outfile dist/fleetd",
     "smoke": "bun scripts/smoke.ts",
@@ -16,7 +16,8 @@
   "devDependencies": {
     "@types/bun": "1.4.3",
     "@types/ssh2": "^1.15.6",
-    "tsc-rs": "0.8.0"
+    "tsc-rs": "0.8.0",
+    "typescript": "6.0.3"
   },
   "dependencies": {
     "acorn": "8.19.0",
