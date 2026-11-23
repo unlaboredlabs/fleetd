@@ -1,16 +1,24 @@
 # Moves builds through the rollout (D701, .github/release/rollout.ts): every 10 minutes it checks the first ring's gate
-# and points the desktop app's and the phone's feeds at the builds each stage has reached. fleetd's own hub starts it
-# with `pass` once it passed its self-check on a build. Halting or pulling a build is one command:
+# and points the desktop app's and the phone's feeds at the builds each stage has reached. GitHub's schedule alone lags by
+# hours on this repo, so the ticker also starts after each edge run and each flag, and ticks every 10 minutes for as
+# long as a build is still moving (waiting on the gate, or not yet at everyone), then ends; one ticker at a time.
+# fleetd's own hub starts it with `pass` once it passed its self-check on a build. Halting or pulling a build is one
+# command:
 #
 #   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=2026.11.23.4
 #
-# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) No concurrency
-# group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back instead.
+# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) A flag has no
+# concurrency group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back
+# instead. Only the ticker has one, which never cancels the ticker running.
 name: Rollout
 
 on:
   schedule:
     - cron: "*/10 * * * *"
+  workflow_run:
+    workflows: [Edge]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -27,8 +35,8 @@ permissions:
   contents: write
 
 jobs:
-  rollout:
-    if: github.repository == 'unlaboredlabs/fleetd'
+  flag:
+    if: github.repository == 'unlaboredlabs/fleetd' && github.event_name == 'workflow_dispatch' && inputs.action != 'tick'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -39,15 +47,40 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      - name: Rollout
+      - name: Flag
         env:
           GH_TOKEN: ${{ github.token }}
-          ACTION: ${{ inputs.action || 'tick' }}
+          ACTION: ${{ inputs.action }}
           BUILD: ${{ inputs.build }}
           SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
+        run: bun .github/release/rollout.ts "$ACTION" "$BUILD"
+
+  ticker:
+    needs: flag
+    if: always() && github.repository == 'unlaboredlabs/fleetd' && needs.flag.result != 'failure'
+    # One ticker at a time; a newer start waits, and runs once the one ticking ends.
+    concurrency:
+      group: rollout-ticker
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Tick while a build is moving
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
         run: |
-          if [ "$ACTION" = tick ]; then
+          end=$(( $(date +%s) + 340 * 60 ))
+          while :; do
+            # The cloud's fleetd may be newer than this checkout knows: the gate fetches what it lacks.
             bun .github/release/rollout.ts tick
-          else
-            bun .github/release/rollout.ts "$ACTION" "$BUILD"
-          fi
+            bun .github/release/rollout.ts moving || { echo "nothing is moving: the ticker ends"; break; }
+            [ "$(date +%s)" -lt "$end" ] || { echo "the next start ticks on"; break; }
+            sleep 600
+          done
