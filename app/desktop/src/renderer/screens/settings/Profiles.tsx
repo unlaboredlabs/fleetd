@@ -6,7 +6,7 @@ import { useState } from "react";
 import type { Effort, Profile, ProfileModel, ProfileName, ProfilesListOutput, ProjectRef, ProjectSetInput } from "../../../shared/contracts";
 import { Button, Checkbox, Field, Input, Select, Switch, Text, Toggle } from "../../ui";
 import { useCloudTeam, useToolQuery } from "../../src/data/react";
-import { useAdministers, useServes } from "../admin/role";
+import { useAdministers } from "../admin/role";
 import { modelShort, profileNameFor, providerOf } from "../../../shared/agentProviders";
 import { GoogleConnect } from "./GoogleSignIn";
 import { errorText, useHubCall, useLive, useRefetch } from "./hub";
@@ -104,7 +104,6 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const lead = leadOf(view.profiles);
-  const restarts = useServes("hub_restart");
   const pick = (name: string) => {
     const p = view.profiles.find((q) => q.name === name);
     if (p === undefined || p.id === lead?.id) return;
@@ -122,7 +121,7 @@ function LeadPicker({ view, onDone }: { view: ProfilesListOutput; onDone: (said:
     <SettingsRow
       reveal="hub.lead"
       title="Lead runs on"
-      hint={`Every bot's lead but those that pick their own on their Agents page. Takes effect at each lead's next start; running leads keep theirs until then${restarts ? ", or until Restart hub in Settings › Hubs & devices" : ""}. Reviews and tasks that name no profile stay on the default.`}
+      hint="Every bot's lead but those that pick their own on their Agents page. Each running lead switches to it at its next idle moment, keeping its chat. Reviews and tasks that name no profile stay on the default."
       line={error === undefined ? null : `Not changed: ${error}`}
       lineTone={error === undefined ? undefined : "danger"}
       control={

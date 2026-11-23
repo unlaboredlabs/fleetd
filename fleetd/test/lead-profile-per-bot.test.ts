@@ -18,6 +18,7 @@ import type { ProfilesListOutput, ProjectSetOutput } from "../src/shared/contrac
 import { caller, PROJECT, testHub } from "./hub-helpers.ts";
 
 const PERSON = caller("operate", true, { personId: "p_ada", name: "Ada" });
+const ADMIN = caller("admin", true, { personId: "p_ada", name: "Ada" });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -47,8 +48,8 @@ function hubWithTools() {
   leads(t.hub).settleMs = 10;
   const tools = new Registry();
   registerAll(tools);
-  const call = async <T>(tool: string, input: unknown): Promise<T> => {
-    const out = await tools.call(t.hub, PERSON, tool, input);
+  const call = async <T>(tool: string, input: unknown, who = PERSON): Promise<T> => {
+    const out = await tools.call(t.hub, who, tool, input);
     if ("output" in out) return out.output as T;
     // A call its schema refuses has no ToolError: its message says why.
     throw out.error.kind === "tool" ? out.error.error : new Error(`${out.error.kind}: ${"message" in out.error ? out.error.message : tool}`);
@@ -170,6 +171,38 @@ test("a bot's own pick reaches a lead mid-turn once the turn ends: its next mess
   expect(lead.threadId).not.toBe(old);
   expect(leads(t.hub).records.leadProfileGet(PROJECT)).toBe("sonnet");
   expect((await view(t)).leadRestarting).toBeUndefined();
+});
+
+test("a change of the hub's lead profile switches each lead on it at its next idle moment; a bot's own pick stays", async () => {
+  const t = hubWithTools();
+  // Ada is the hub's owner: she changes its profiles.
+  t.hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_ada', 'Ada', 'owner', 1)");
+  const other = { machineId: PROJECT.machineId, projectId: "p2" };
+  store(t.hub).projectsUpsertMany(PROJECT.machineId, [store(t.hub).projectGet(PROJECT)!, { ...store(t.hub).projectGet(PROJECT)!, projectId: other.projectId, title: "Docs" }]);
+  // p2 picked its own: the hub's change isn't its lead's.
+  await t.call("project_set", { ...other, leadProfile: "opus" });
+  await leads(t.hub).start(PROJECT);
+  await leads(t.hub).start(other);
+  threadIs(t.hub, "idle");
+  const p2 = leads(t.hub).records.leadGet(other)!;
+  expect(t.launched).toEqual([profiles(t.hub).leadProfile().name, "opus"]);
+
+  // An admin makes sonnet the hub's lead profile: the idle lead on the hub's switches by itself.
+  await t.call("profile_update", { id: t.sonnet.id, lead: true }, ADMIN);
+  await until(() => t.launched.length === 3);
+  expect(t.launched[2]).toBe("sonnet");
+  expect(leads(t.hub).records.leadGet(other)?.threadId).toBe(p2.threadId);
+
+  // An edit of the profile it runs on (its effort) reaches it too, at its next idle moment: once its turn ends.
+  const old = threadIs(t.hub, "running");
+  await t.call("profile_update", { id: t.sonnet.id, effort: "max" }, ADMIN);
+  await settle();
+  expect(t.launched.length).toBe(3);
+  threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId: old, summary: "" });
+  await until(() => t.launched.length === 4);
+  expect(t.launched[3]).toBe("sonnet");
+  expect(t.interrupted).toEqual([]);
 });
 
 test("leadRestart starts a lead on its pick now", async () => {
