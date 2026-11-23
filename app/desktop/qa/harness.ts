@@ -226,7 +226,9 @@ export async function setView(app: ElectronApplication, page: Page, size: SizeNa
   views.set(page, { width, height });
   await applyView(page);
   await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-  await holdView(page);
+  // It returns with the page settled: holdView settles after a resize, and a change of theme alone settles here. A
+  // caller that settled again paid three more frames for nothing, at each size of every screen.
+  if (!(await holdView(page))) await settle(page);
 }
 
 // For a picture of the real window (the macOS traffic lights are native, so a page screenshot can't show them): no
@@ -279,10 +281,10 @@ async function applyView(page: Page) {
 // override again once and lets the layout settle at it (a virtual list moves its rewrapped rows a frame or more
 // later). It settles too when the page is at its size but resized since it last settled: on macOS the override can
 // come back by itself a frame after the knock, with the rows not yet moved. Run before checking and before every
-// screenshot, so both see the size that was asked for, laid out.
-async function holdView(page: Page) {
+// screenshot, so both see the size that was asked for, laid out. Says whether it settled.
+async function holdView(page: Page): Promise<boolean> {
   const view = views.get(page);
-  if (!view) return;
+  if (!view) return false;
   // The page itself waits, and looks before it checks the time: a renderer that stalls (a busy runner) looks again when
   // it wakes, before any deadline counts. waitForFunction's deadline ran in the test process, so a page stalled past it
   // failed while it was already at the size ("the page is 1024×700 @1, not the 1024×700 @1 it was set to").
@@ -301,7 +303,7 @@ async function holdView(page: Page) {
       { v: { ...view, scale }, ms },
     );
   if (await at(2_000)) {
-    if (!(await resizedSinceSettle(page))) return;
+    if (!(await resizedSinceSettle(page))) return false;
   } else {
     await applyView(page);
     if (!(await at(3_000))) {
@@ -310,6 +312,7 @@ async function holdView(page: Page) {
     }
   }
   await settle(page);
+  return true;
 }
 
 // Whether the page's viewport has changed since settle() last saw its layout hold still.

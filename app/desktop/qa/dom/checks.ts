@@ -304,6 +304,47 @@ export function runChecks(opts: CheckOptions): Finding[] {
   // tight line-height never counts. A box that clips is held to the glyphs' measured ink as well (`inkOfRun`), since
   // what it cuts is the ink: a descender cut off is reported. Glyphs a little past a box that doesn't clip are drawn
   // whole, and the overlap check sees them if they run into something.
+  // What the walk asks of each box, read once: every run walks up its ancestors, so a long list's few hundred boxes
+  // were asked tens of thousands of times a call (a computed style's fields and a layout read each time), most of a
+  // screen's checking on the macOS runners. Nothing moves while the checks run. An inline box holds nothing (null);
+  // `exempt` stops the walk.
+  interface Holder {
+    exempt: boolean;
+    r: DOMRect;
+    box: Rect;
+    clipsX: boolean;
+    clipsY: boolean;
+    containsX: boolean;
+    containsY: boolean;
+    positioned: boolean;
+  }
+  const holders = new Map<Element, Holder | null>();
+  const holderOf = (e: Element): Holder | null => {
+    const known = holders.get(e);
+    if (known !== undefined) return known;
+    const s = style(e);
+    let holder: Holder | null = null;
+    if (s.display !== "inline" && s.display !== "contents") {
+      const r = e.getBoundingClientRect();
+      holder = {
+        exempt: exempt(e, "overflow"),
+        r,
+        box: {
+          left: r.left + e.clientLeft,
+          top: r.top + e.clientTop,
+          right: r.left + e.clientLeft + e.clientWidth,
+          bottom: r.top + e.clientTop + e.clientHeight,
+        },
+        clipsX: clips(s.overflowX),
+        clipsY: clips(s.overflowY),
+        containsX: scrolls(s.overflowX) || ellipsizes(s),
+        containsY: scrolls(s.overflowY) || (s.getPropertyValue("-webkit-line-clamp") !== "none" && clips(s.overflowY)),
+        positioned: s.position === "absolute" || s.position === "fixed",
+      };
+    }
+    holders.set(e, holder);
+    return holder;
+  };
   const reportedOverflow = new Set<Element>();
   for (const run of allRuns) {
     const trimmed = inkOf(run.rect);
@@ -311,28 +352,20 @@ export function runChecks(opts: CheckOptions): Finding[] {
     const extent = { left: run.rect.left, right: run.rect.right, top: trimmed.top, bottom: trimmed.bottom };
     const ink = { top: Math.min(trimmed.top, measured.top), bottom: Math.max(trimmed.bottom, measured.bottom) };
     for (let e: Element | null = run.el; e && e !== document.documentElement; e = e.parentElement) {
-      const s = style(e);
-      if (s.display === "inline" || s.display === "contents") continue;
-      if (exempt(e, "overflow")) break;
-      const r = e.getBoundingClientRect();
-      const box = {
-        left: r.left + e.clientLeft,
-        top: r.top + e.clientTop,
-        right: r.left + e.clientLeft + e.clientWidth,
-        bottom: r.top + e.clientTop + e.clientHeight,
-      };
-      const containsX = scrolls(s.overflowX) || ellipsizes(s);
-      const containsY = scrolls(s.overflowY) || (s.getPropertyValue("-webkit-line-clamp") !== "none" && clips(s.overflowY));
+      const h = holderOf(e);
+      if (!h) continue;
+      if (h.exempt) break;
+      const { box, containsX, containsY } = h;
       const outX = extent.left < box.left - SLOP || extent.right > box.right + SLOP;
-      const reach = clips(s.overflowY) ? ink : extent;
+      const reach = h.clipsY ? ink : extent;
       const outY = reach.top < box.top - SLOP || reach.bottom > box.bottom + SLOP;
       const problem =
         outX && !containsX
-          ? clips(s.overflowX)
+          ? h.clipsX
             ? "text is cut off at the side: wrap it or truncate with an ellipsis (a flex child needs min-width: 0)"
             : "text runs out of its box sideways: wrap it or truncate with an ellipsis (a flex child needs min-width: 0)"
           : outY && !containsY
-            ? clips(s.overflowY)
+            ? h.clipsY
               ? "text is cut off at the bottom: the box must grow to fit its wrapped text"
               : "text spills out of its box: the box must grow to fit its wrapped text"
             : undefined;
@@ -344,7 +377,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
             message: problem,
             text: snippet(e.textContent),
             where: describe(e),
-            box: toBox(intersect(rectOf(r), viewport)),
+            box: toBox(intersect(rectOf(h.r), viewport)),
           });
         }
         break;
@@ -355,7 +388,7 @@ export function runChecks(opts: CheckOptions): Finding[] {
         Object.assign(ink, { top: box.top, bottom: box.bottom });
       }
       // A positioned box sits where it is put, past its ancestors' edges on purpose (popovers, badges).
-      if (s.position === "absolute" || s.position === "fixed") break;
+      if (h.positioned) break;
     }
   }
 
@@ -407,11 +440,27 @@ export function runChecks(opts: CheckOptions): Finding[] {
 
   // 2b. Overlap between sibling boxes that carry text: rows and cells that do not size to their content. In-flow
   // siblings are compared with each other, and absolutely positioned ones with each other (virtual list rows).
+  // Whether a box holds any words, as its textContent would say, read once for every box (textContent at every level
+  // reads each subtree again).
+  const textMemo = new Map<Element, boolean>();
+  const hasText = (el: Element): boolean => {
+    const known = textMemo.get(el);
+    if (known !== undefined) return known;
+    let result = false;
+    for (const n of el.childNodes) {
+      if (n instanceof Text ? n.data.trim() !== "" : n instanceof Element && hasText(n)) {
+        result = true;
+        break;
+      }
+    }
+    textMemo.set(el, result);
+    return result;
+  };
   for (const parent of document.body.querySelectorAll("*")) {
     if (parent.childElementCount < 2 || hidden(parent)) continue;
     const groups = new Map<string, { el: Element; rect: Rect }[]>();
     for (const child of parent.children) {
-      if (!(child instanceof HTMLElement) || hidden(child) || !child.textContent.trim() || screenReaderOnly(child)) continue;
+      if (!(child instanceof HTMLElement) || hidden(child) || !hasText(child) || screenReaderOnly(child)) continue;
       const s = style(child);
       // Sticky and fixed boxes, and a floating row (data-floats), overlap the content scrolling under them by design
       // (see occluders above).
@@ -712,14 +761,15 @@ function alignments(): (Alignment & { svg: SVGSVGElement })[] {
   };
   const beside = (line: Line, svg: Element) => inList(line, svg) && !empty(intersect(line.rect, clipped(line.el)));
   // Where an element can be seen: the viewport cut by every ancestor that clips (a scrolled list, a sheet's edge, a
-  // clamped paragraph's own box).
+  // clamped paragraph's own box). Kept per element: each icon asks it of every line it might sit beside.
+  const clipMemo = new Map<Element, Rect>();
   const clipped = (el: Element): Rect => {
-    let clip = viewport;
-    for (let e: Element | null = el; e && e !== document.documentElement; e = e.parentElement) {
-      const st = getComputedStyle(e);
-      if (st.overflowX !== "visible" || st.overflowY !== "visible") clip = intersect(clip, rectOf(e.getBoundingClientRect()));
-      if (st.position === "fixed") break;
-    }
+    const known = clipMemo.get(el);
+    if (known) return known;
+    const st = getComputedStyle(el);
+    const outer = st.position === "fixed" || !el.parentElement || el.parentElement === document.documentElement ? viewport : clipped(el.parentElement);
+    const clip = st.overflowX !== "visible" || st.overflowY !== "visible" ? intersect(outer, rectOf(el.getBoundingClientRect())) : outer;
+    clipMemo.set(el, clip);
     return clip;
   };
 
