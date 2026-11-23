@@ -360,31 +360,43 @@ export class Leads {
    * is stopped (or its stalled thread left) and it starts now. One whose profile is the one it runs on again (and no
    * person asked), or whose project is gone or archived, is unmarked.
    */
-  switchIfDue(r: ProjectRef): Promise<Lead | undefined> {
-    return this.locked(async () => {
-      if (this.restarting || !this.records.leadSwitchDue(r)) return undefined;
-      const project = store(this.hub).projectGet(r);
-      if (!project || project.archivedAt !== undefined || !this.switchWanted(r)) {
+  async switchIfDue(r: ProjectRef): Promise<Lead | undefined> {
+    const first = await this.locked(() => this.switchStep(r));
+    if (first === undefined) return undefined;
+    if ("lead" in first) return first.lead;
+    // Outside the lock, which every bot's lead start takes: one bot's stopped turn holds up no other bot.
+    await this.stopped(first.stop);
+    const then = await this.locked(() => this.switchStep(r, first.stop.threadId));
+    return then !== undefined && "lead" in then ? then.lead : undefined;
+  }
+
+  /**
+   * `switchIfDue`'s step under the lock: the new session, nothing, or the thread whose turn a person's Restart lead stops
+   * first. `stopped`: the thread whose turn was stopped since, which is no longer waited on.
+   */
+  private async switchStep(r: ProjectRef, stopped?: string): Promise<{ lead: Lead } | { stop: ThreadRef } | undefined> {
+    if (this.restarting || !this.records.leadSwitchDue(r)) return undefined;
+    const project = store(this.hub).projectGet(r);
+    if (!project || project.archivedAt !== undefined || !this.switchWanted(r)) {
+      this.records.leadSwitchSet(r, false);
+      return undefined;
+    }
+    const lead = this.records.leadGet(r)!;
+    if (this.records.leadRestartAsked(r)) {
+      // A launch refused since the ask (archived, moved, out of usage) stops nothing: the ask is dropped.
+      const refused = this.refusal(r, "restarted");
+      if (refused) {
         this.records.leadSwitchSet(r, false);
-        return undefined;
+        throw refused;
       }
-      const lead = this.records.leadGet(r)!;
-      if (this.records.leadRestartAsked(r)) {
-        // A launch refused since the ask (archived, moved, out of usage) stops nothing: the ask is dropped.
-        const refused = this.refusal(r, "restarted");
-        if (refused) {
-          this.records.leadSwitchSet(r, false);
-          throw refused;
-        }
-        // A person's Restart lead stops the turn under way first; while its machine can't, it stays marked.
-        const ref = { machineId: r.machineId, threadId: lead.threadId };
-        const thread = store(this.hub).threadGet(ref)?.thread;
-        if (thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) await this.stopped(ref);
-      } else if (!this.idle(r)) return undefined;
-      // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
-      // nothing to answer, and it made up a message from the person (W787).
-      return this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r));
-    });
+      // A person's Restart lead stops the turn under way first; while its machine can't, it stays marked.
+      const ref = { machineId: r.machineId, threadId: lead.threadId };
+      const thread = store(this.hub).threadGet(ref)?.thread;
+      if (lead.threadId !== stopped && thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) return { stop: ref };
+    } else if (!this.idle(r)) return undefined;
+    // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
+    // nothing to answer, and it made up a message from the person (W787).
+    return { lead: await this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r)) };
   }
 
   /**
