@@ -16,7 +16,7 @@ import { headUtf16, tailUtf16 } from "../../util.ts";
 import type { ExitInfo, RunOutcome, RunnerEvent } from "./events.ts";
 import { evidence, type FailureEvidence } from "./failure.ts";
 import type { Now } from "./mapper.ts";
-import type { AcpSpec } from "../antigravity_spec.ts";
+import { type AcpSpec, FLEETD, GATEWAY } from "../antigravity_spec.ts";
 
 export type { AcpSpec };
 
@@ -44,12 +44,38 @@ const firstLine = (s: string) => (s.split("\n")[0] ?? "").replace(/\r$/, "");
 /** A glob as Claude's permission rules read one: `*` is any run of characters. */
 const glob = (pattern: string, text: string) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "s").test(text);
 
+/** The MCP tool an agy call runs, with its arguments. agy 1.5 names one `mcp_<server>_<tool>`, its input the tool's
+ * arguments (and a `toolSummary` of its own); a session's agy has only fleetd's own server and fleetd's gateway
+ * (../antigravity_spec.ts `mcpServers`), so the name says which. An input naming `ServerName` and `ToolName` says so
+ * outright. Through the gateway, `call` names the server's own tool, which is what the rules, the asks and the thread
+ * name. */
+function mcpTool(call: Record<string, any>): { server: string; tool: string; args: unknown } | undefined {
+  const input = rec(call.rawInput) ?? rec(call.args) ?? {};
+  let server = str(input.ServerName);
+  let tool = str(input.ToolName);
+  let args: unknown = input.Arguments;
+  if (!server || !tool) {
+    const name = str(call.name) ?? "";
+    const own = [FLEETD, GATEWAY].find((s) => name.startsWith(`mcp_${s}_`));
+    if (!own) return undefined;
+    const { toolSummary: _, ...rest } = input;
+    [server, tool, args] = [own, name.slice(own.length + 5), rest];
+  }
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args);
+    } catch {}
+  }
+  const inner = rec(args);
+  if (server === GATEWAY && tool === "call" && str(inner?.server) && str(inner?.tool)) return { server: inner!.server, tool: inner!.tool, args: inner!.arguments ?? {} };
+  return { server, tool, args: args ?? input };
+}
+
 /** The tool's name in Claude's rule words, and what a `Name(pattern)` rule matches. */
 export function ruleName(call: Record<string, any>): [string, string | undefined] {
   const input = rec(call.rawInput) ?? {};
-  const server = str(input.ServerName);
-  const tool = str(input.ToolName);
-  if (server && tool) return [`mcp__${server}__${tool}`, undefined];
+  const mcp = mcpTool(call);
+  if (mcp) return [`mcp__${mcp.server}__${mcp.tool}`, undefined];
   const name = str(call.name) ?? "";
   if (call.kind === "execute" || name === "run_command") return ["Bash", str(input.CommandLine) ?? ""];
   if (name === "write_file") return ["Write", str(input.Path)];
@@ -77,9 +103,11 @@ function toolKind(call: Record<string, any>): [ItemKind, string] {
   const name = str(call.name) ?? str(call.kind) ?? "tool";
   const title = str(call.title) ?? name;
   const path = str(rec(call.locations?.[0])?.path) ?? str(input.Path);
-  const server = str(input.ServerName);
-  const tool = str(input.ToolName);
-  if (server && tool) return [{ type: "tool", toolName: `mcp__${server}__${tool}`, input: input.Arguments ?? input, outputOmitted: false, class: { type: "mcp", server, tool } }, `${server} ${tool}`];
+  const mcp = mcpTool(call);
+  if (mcp) {
+    const { server, tool } = mcp;
+    return [{ type: "tool", toolName: `mcp__${server}__${tool}`, input: mcp.args, outputOmitted: false, class: { type: "mcp", server, tool } }, `${server} ${tool}`];
+  }
   switch (call.kind) {
     case "execute":
       return [{ type: "command", command: str(input.CommandLine) ?? title, outputOmitted: false }, str(input.toolSummary) ?? title];

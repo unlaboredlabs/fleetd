@@ -143,9 +143,10 @@ test("a hosted sandbox refuses an Antigravity profile, saying so, and starts no 
 });
 
 // agy shows its model at most TOOL_BUDGET bytes of MCP tools, every server's together, and hides the biggest past it
-// (src/node/agy_budget.ts, W844): a lead on Antigravity goes without the bot's biggest servers so fleetd's own tools all
-// fit, and says which in its summary, for the hub's chat line; agents keep them.
-test("a lead on Antigravity goes without the bot's biggest servers when they and fleetd's tools are more than agy shows; agents keep them", async () => {
+// (W844): Paper's alone are about 55 KB. So an Antigravity session's agy gets fleetd's own server and fleetd's MCP
+// gateway, which holds every one of the bot's servers, however many tools they have, and gives their tools on demand
+// (src/cli/mcp_gateway.ts): nothing is left out, and the lead's chat has nothing to say of it.
+test("an Antigravity lead and writer reach every one of the bot's servers through fleetd's gateway, nothing left out", async () => {
   const listing = (name: string, n: number, pad: number) => ({
     name,
     secrets: { kind: "global" },
@@ -155,54 +156,21 @@ test("a lead on Antigravity goes without the bot's biggest servers when they and
   });
   // About 52 KB of tools beside fleetd's own 44 KB, and a small server.
   const servers = [listing("paper", 50, 1000), listing("notes", 2, 10)];
-  const launch = (sessionId: string, role: string, model = "gemini-4-neon") =>
-    ok("launch", { sessionId, projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role, mcpRole: role === "lead" ? "lead" : "writer", profile: "gemini", model, effort: "high", mcp: { userServers: false, servers } });
-  const loaded = (id: string) => JSON.parse(readFileSync(join(home.dir, "node", "sessions", id, "acp.json"), "utf8")).mcpServers.map((m: { name: string }) => m.name);
-  await launch("g-heavy", "lead");
-  await until("the lead's run", () => summary("g-heavy")?.latestRun?.status === "completed");
-  expect(loaded("g-heavy")).toEqual(["notes", "fleetd"]);
-  expect(summary("g-heavy")).toMatchObject({ mcpHeavy: ["paper"], mcpChange: { down: [], back: [], heavy: ["paper"] } });
-  // A writer on Antigravity keeps it.
-  await launch("g-heavy-writer", "worker");
-  await until("the writer's run", () => summary("g-heavy-writer")?.latestRun?.status === "completed");
-  expect(loaded("g-heavy-writer")).toEqual(["paper", "notes", "fleetd"]);
-  expect(summary("g-heavy-writer")?.mcpHeavy).toBeUndefined();
-  // Without the big one, the lead's tools all fit: nothing is left out.
-  servers.splice(0, 1, listing("paper", 5, 1000));
-  await launch("g-light", "lead");
-  await until("the light lead's run", () => summary("g-light")?.latestRun?.status === "completed");
-  expect(loaded("g-light")).toEqual(["paper", "notes", "fleetd"]);
-  expect(summary("g-light")?.mcpHeavy).toBeUndefined();
-  expect(summary("g-light")?.mcpChange).toEqual({ down: [], back: [] });
-});
-
-// A server that doesn't list its tools within the weigh time can't be weighed: counted as nothing, it could push
-// fleetd's own tools out once agy loads it. So the lead starts without it, as without one that doesn't answer, and its
-// next start weighs it again.
-test("a lead on Antigravity starts without a server it couldn't weigh, and weighs it again at its next start", async () => {
-  const broken = join(home.dir, "broken-mcp");
-  writeFileSync(broken, "#!/bin/sh\nexit 3\n");
-  chmodSync(broken, 0o755);
-  const server = (name: string, transport: Record<string, unknown>, env: Record<string, string> = {}) => ({
-    name,
-    secrets: { kind: "global" },
-    roles: { lead: true, writers: true, reviewers: false },
-    transport,
-    env: Object.entries(env).map(([k, value]) => ({ kind: "plain", name: k, value })),
-  });
-  const notes = server("notes", { type: "stdio", command: process.execPath, args: [join(import.meta.dir, "fake-mcp-tools.ts")] }, { TOOLS_N: "2", TOOLS_PAD: "10" });
-  const mcp = (slow: Record<string, unknown>) => ({ userServers: false, servers: [notes, slow] });
-  const loaded = (id: string) => JSON.parse(readFileSync(join(home.dir, "node", "sessions", id, "acp.json"), "utf8")).mcpServers.map((m: { name: string }) => m.name);
-  await ok("launch", { sessionId: "g-slow", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role: "lead", mcpRole: "lead", profile: "gemini", model: "gemini-4-neon", effort: "high", mcp: mcp(server("slow", { type: "stdio", command: broken })) });
-  await until("the lead's first run", () => summary("g-slow")?.latestRun?.status === "completed");
-  expect(loaded("g-slow")).toEqual(["notes", "fleetd"]);
-  expect(summary("g-slow")).toMatchObject({ mcpSkipped: ["slow"], mcpChange: { down: ["slow"], back: [] } });
-  expect(summary("g-slow")?.mcpHeavy).toBeUndefined();
-  // Its next start, the server now listing: weighed, loaded, and back.
-  await ok("stop", { sessionId: "g-slow" });
-  const fixed = server("slow", { type: "stdio", command: process.execPath, args: [join(import.meta.dir, "fake-mcp-tools.ts")] }, { TOOLS_N: "2", TOOLS_PAD: "10" });
-  await ok("send", { sessionId: "g-slow", runId: "r2", text: "again", mcpRole: "lead", mcp: mcp(fixed) });
-  await until("the lead's second run", () => summary("g-slow")?.latestRun?.id === "r2" && summary("g-slow")?.latestRun?.status === "completed");
-  expect(loaded("g-slow")).toEqual(["notes", "slow", "fleetd"]);
-  expect(summary("g-slow")).toMatchObject({ mcpSkipped: [], mcpChange: { down: [], back: ["slow"] } });
+  const launch = (sessionId: string, role: string) =>
+    ok("launch", { sessionId, projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role, mcpRole: role === "lead" ? "lead" : "writer", profile: "gemini", model: "gemini-4-neon", effort: "high", mcp: { userServers: false, servers } });
+  for (const [id, role] of [["g-many", "lead"], ["g-many-writer", "worker"]] as const) {
+    await launch(id, role);
+    await until(`the ${role}'s run`, () => summary(id)?.latestRun?.status === "completed");
+    const spec = JSON.parse(readFileSync(join(home.dir, "node", "sessions", id, "acp.json"), "utf8"));
+    expect(spec.mcpServers.map((m: { name: string }) => m.name)).toEqual(["fleetd", "servers"]);
+    const fleetd = spec.mcpServers[0];
+    const gateway = spec.mcpServers[1];
+    // Run by the session's own fleetd, as fleetd's own server is, with its socket and thread.
+    expect(gateway.command).toBe(fleetd.command);
+    expect(gateway.args.at(-1)).toBe("mcp-gateway");
+    const env = Object.fromEntries(gateway.env.map((e: { name: string; value: string }) => [e.name, e.value]));
+    expect(env.FLEETD_THREAD_ID).toBe(id);
+    expect(Object.keys(JSON.parse(env.FLEETD_MCP_GATEWAY).mcpServers)).toEqual(["paper", "notes"]);
+  }
+  expect(summary("g-many")).toMatchObject({ mcpSkipped: [], mcpChange: { down: [], back: [] } });
 });

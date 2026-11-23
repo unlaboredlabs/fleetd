@@ -50,10 +50,6 @@ import { nodeTailnet } from "../sandbox/tailnet.ts";
 import { handles, nodeCall, type CallContext } from "../actions/calls.ts";
 import * as mcp from "../actions/mcp.ts";
 import * as reach from "../mcp_reach.ts";
-import * as budget from "../agy_budget.ts";
-import { listTools } from "../actions/mcp_probe.ts";
-import { spawnGroup } from "../actions/mcp_spawn.ts";
-import { VERSION } from "../../shared/version.ts";
 import { fallback as onepasswordFallback } from "../actions/onepassword.ts";
 import { CallRefusal } from "../actions/refusal.ts";
 import { forgetSignins, signinsKept } from "../actions/signins.ts";
@@ -1630,43 +1626,18 @@ export class SessionService {
       // which the hub's chat line says (src/hub/leads/loops.ts `mcpSkipped`); any other agent hears it with its next
       // message.
       const before = row.summary.mcpSkipped ?? [];
-      const heavyBefore = row.summary.mcpHeavy ?? [];
       delete row.summary.mcpSkipped;
       delete row.summary.mcpChange;
       delete row.summary.mcpSkippedAt;
-      delete row.summary.mcpHeavy;
-      const lead = role === "lead" || role === "assistant";
-      // A lead on Antigravity goes without the biggest of the bot's servers when theirs and fleetd's own tools together
-      // are more than agy shows its model, and without any that didn't list its tools in time, whose size is unknown
-      // (../agy_budget.ts): it is left out as one that doesn't answer is, and weighed again at the next start. Its
-      // agents keep them all.
-      let heavy: string[] = [];
-      let unweighed: string[] = [];
-      let looked = reach.addressed(servers).map((s) => s.name);
-      if (lead && antigravity.agyModel(row.summary.model) !== undefined) {
-        const io = { fetch, spawn: spawnGroup, cwd: existsSync(row.local.cwd) ? row.local.cwd : this.home, env: base, version: VERSION };
-        const weighing = reach.without(servers, skipped);
-        ({ left: heavy, unweighed } = await budget.overBudget(weighing, (server) => listTools(server, io, budget.WEIGH_MS)));
-        // A server weighed this start answered, though a heavy one stays off: the chat says so of it instead.
-        looked = [...new Set([...looked, ...Object.keys(weighing)])].filter((n) => !unweighed.includes(n) && !heavy.includes(n));
-      }
-      const down = [...skipped, ...unweighed];
-      if (lead) {
-        row.summary.mcpSkipped = down;
-        row.summary.mcpChange = {
-          ...reach.startChange(before, down, looked),
-          ...(heavy.length ? { heavy: heavy.filter((n) => !heavyBefore.includes(n)) } : {}),
-        };
+      if (role === "lead" || role === "assistant") {
+        row.summary.mcpSkipped = skipped;
+        row.summary.mcpChange = reach.startChange(before, skipped, reach.addressed(servers).map((s) => s.name));
         row.summary.mcpSkippedAt = nowIso();
-        if (heavy.length) row.summary.mcpHeavy = heavy;
-      }
-      if (down.length || heavy.length) mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, [...down, ...heavy]) })}\n`;
-      if (unweighed.length) console.log(`${nowIso()} WARN MCP server left out of this Antigravity lead's start: it didn't list its tools within ${budget.WEIGH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(unweighed)}}`);
+      } else if (skipped.length) this.#mcpSkipped.set(id, reach.skippedNote(skipped));
       if (skipped.length) {
-        if (!lead) this.#mcpSkipped.set(id, reach.skippedNote(skipped));
+        mcpJson = `${JSON.stringify({ mcpServers: reach.without(servers, skipped) })}\n`;
         console.log(`${nowIso()} WARN MCP server left out of this start: it didn't answer within ${reach.MCP_REACH_MS / 1000} s {"session":"${id}","servers":${JSON.stringify(skipped)}}`);
       }
-      if (heavy.length) console.log(`${nowIso()} WARN MCP server left out of this Antigravity lead's start: too many tools beside fleetd's {"session":"${id}","servers":${JSON.stringify(heavy)}}`);
     }
     writeAtomic(mcpConfig, mcpJson);
     const env: Env = { ...base };

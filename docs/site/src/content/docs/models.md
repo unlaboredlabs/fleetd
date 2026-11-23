@@ -75,7 +75,6 @@ A profile can run on Google's Gemini models through Antigravity, Google's coding
 
 A bot can use its own key: add `GEMINI_API_KEY` to its [Vault](/docs/vault). Agents on Gemini run on your own machines.
 
-Antigravity shows its model only about 60 KB of MCP tools. When a bot's own servers would go past that, its lead
-starts without the biggest of them, and the chat says which. A server that doesn't list its tools within 10 seconds
-is left out the same way, and the next start tries it again. fleetd's own tools always fit, and its agents keep every
-server.
+Antigravity shows its model only about 60 KB of MCP tools, and a server like Paper has 55 KB on its own. So agents on
+Gemini get every one of the bot's servers through two small tools: one searches the servers' tools and gives the
+model the ones it needs, the other runs them. Every server stays reachable, however many tools it has.
