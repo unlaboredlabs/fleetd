@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Staples a release's already-published fleetd.app once Apple accepts its notarization, without rebuilding: the
 # release job ships the app signed but unstapled when Apple's queue outlasts its wait (see macos-sign.sh). The app is
-# fleetd-desktop-macos-universal.zip, notarized as fleetd-desktop-notarize.zip; its latest-mac.yml is rewritten for
-# the new zip, with its blockmap.
+# fleetd-desktop-macos-universal.zip, notarized as fleetd-desktop-notarize.zip; its feed is rewritten for the new zip,
+# with its blockmap. For a numbered build (D701) that feed is the latest-mac.yml of the build's own release
+# (build-<number>, publish.sh), which gets the stapled zip under its new pin beside the old one, never replacing it;
+# edge's latest-mac.yml is then the rollout's (rollout.ts), left alone. Else it is edge's.
 #
 #   TAG=edge [SUBMISSION=<id>] .github/release/macos-staple.sh
 #
@@ -56,12 +58,12 @@ staple() {
   local work="$RUNNER_TEMP/staple-$name"
   rm -rf "$work" && mkdir -p "$work/app"
   local files=(-p "$asset" -p SHA256SUMS -p release.json)
-  [ -z "$feed" ] || files+=(-p "$feed")
   if ! gh release download "$TAG" "${files[@]}" -D "$work" 2>/dev/null || [ ! -f "$work/$asset" ]; then
     echo "no $asset on $TAG"
     return 0
   fi
-  [ -z "$feed" ] || [ -f "$work/$feed" ] || die "$TAG has $asset but no $feed"
+  [ -z "$feed" ] || gh release download "$feed_tag" -p "$feed" -D "$work" 2>/dev/null || true
+  [ -z "$feed" ] || [ -f "$work/$feed" ] || die "$feed_tag has no $feed for $TAG's $asset"
   ditto -x -k "$work/$asset" "$work/app"
   local app="$work/app/fleetd.app"
   [ -d "$app" ] || die "$asset has no fleetd.app"
@@ -160,7 +162,14 @@ for s in sorted(json.load(sys.stdin)["history"], key=lambda s: s["createdDate"],
   fi
   gh release upload "$TAG" "$work/pins/"* --clobber
   gh release upload "$TAG" "$work/out/$asset" --clobber
-  [ -z "$feed" ] || gh release upload "$TAG" "$work/out/$asset.blockmap" "$work/out/$feed" --clobber
+  if [ "$feed_tag" != "$TAG" ]; then
+    # The build's own release: the new pin beside the old, then the feed that names it.
+    gh release upload "$feed_tag" "$work/pins/"* --clobber
+    gh release upload "$feed_tag" "$work/out/$feed" --clobber
+    gh release upload "$TAG" "$work/out/$asset.blockmap" --clobber
+  else
+    [ -z "$feed" ] || gh release upload "$TAG" "$work/out/$asset.blockmap" "$work/out/$feed" --clobber
+  fi
   gh release upload "$TAG" "${lists[@]}" --clobber
   echo "stapled and replaced $asset on $TAG"
 }
@@ -198,6 +207,15 @@ mirror() {
   echo "copied edge's $asset to nightly"
 }
 
+# Where the app's feed is (see the top): the release of the build rollout.json lists with release.json's app version.
+feed_tag="$TAG"
+lookup="$RUNNER_TEMP/staple-feed"
+rm -rf "$lookup" && mkdir -p "$lookup"
+if gh release download "$TAG" -p release.json -p rollout.json -D "$lookup" 2>/dev/null && [ -f "$lookup/rollout.json" ]; then
+  made="$(jq -rn '(input.appVersion // "") as $v | [input.builds[]? | select(.version == $v)] | .[0].build // empty' \
+    "$lookup/release.json" "$lookup/rollout.json")"
+  if [ -n "$made" ]; then feed_tag="build-$made"; fi
+fi
 staple fleetd-desktop-macos-universal.zip fleetd-desktop-notarize.zip latest-mac.yml
 if [ "$TAG" = edge ]; then mirror fleetd-desktop-macos-universal.zip latest-mac.yml; fi
 # An explicit id that doesn't fit the app is a mistake; the scheduled check just waits for Apple.

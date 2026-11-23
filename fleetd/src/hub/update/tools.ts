@@ -7,6 +7,7 @@ import type { Caller, Registry } from "../api/registry.ts";
 import { allowsEverywhere } from "../claude_accounts/people.ts";
 import { isoMs } from "../store/time.ts";
 import { versionLabel } from "../../update/version.ts";
+import { parseSpeed } from "../../update/rollout.ts";
 import { join } from "node:path";
 import { defaultTiming, DRAIN_MINUTES_MAX, type Refused, Updates } from "./index.ts";
 import { hubPorts } from "./ports.ts";
@@ -105,7 +106,9 @@ export function register(tools: Registry): void {
       throw new ToolError("invalid", `drainMinutes must be 0-${DRAIN_MINUTES_MAX}`);
     }
     try {
-      updates(hub).setSettings(input.auto, input.drainMinutes);
+      const speed = input.speed === undefined ? undefined : parseSpeed(input.speed);
+      if (input.speed !== undefined && speed === undefined) throw new ToolError("invalid", "speed must be fast or steady");
+      updates(hub).setSettings(input.auto, input.drainMinutes, speed);
     } catch (e) {
       throw new ToolError("failed", `The hub couldn't write its update settings: ${(e as Error).message}`);
     }

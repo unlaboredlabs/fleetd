@@ -3,7 +3,7 @@
 # the pushed v* tag (CHANNEL=stable).
 #
 # Next to the assets it uploads SHA256SUMS (plain `sha256sum` output, one line per asset), release.json
-# ({channel, version, commit, date, cliVersion, appVersion, appCommit, sha256}), which `fleetd update`, the app's update
+# ({channel, version, build, commit, date, cliVersion, appVersion, appCommit, sha256}), which `fleetd update`, the app's update
 # notice and the next edge build's "did the app change" check read, and changes.json, the channel's "what's new" since
 # the previous release's commit (changes.sh). An edge build that skipped the app (unchanged) or the CLI keeps the
 # previous run's assets, checksums and versions for it. These files go up last, so a reader never sees checksums for
@@ -35,10 +35,17 @@
 # The desktop app's update feeds (latest-mac.yml, latest-linux.yml, from update-yml.sh) go up after the assets they
 # point at, for the same reason. An edge build that didn't build the desktop app keeps the previous feeds.
 #
-# Env: CHANNEL, VERSION, APP_BUILT, CLI_PUBLISH, GH_TOKEN, RELEASE_SHA (the commit built; GITHUB_SHA without it),
-# GITHUB_REF_NAME.
+# A numbered edge build (BUILD, D701) is also a release of its own, `build-<number>`: its pinned files (the Bun CLI's
+# builds and the desktop app's packages this run built), its feeds and, from the mobile job, its phone bundle. Nothing
+# there is ever replaced (a stapled app goes up under its own pin, macos-staple.sh), so a reader can't get half a build.
+# Then, last, the build goes into rollout.json on edge (rollout.ts add), which names it: hubs take it from there ring by
+# ring, and which build edge's latest-*.yml and phone bundle offer is the rollout's (rollout.ts tick), so a numbered
+# build doesn't upload them to edge.
+#
+# Env: CHANNEL, VERSION, BUILD (its number, 2026.11.23.4), APP_BUILT, CLI_PUBLISH, GH_TOKEN, RELEASE_SHA (the commit
+# built; GITHUB_SHA without it), GITHUB_REF_NAME.
 set -euo pipefail
-: "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${RELEASE_SHA:=${GITHUB_SHA:?}}"
+: "${CHANNEL:?}" "${VERSION:?}" "${APP_BUILT:?}" "${CLI_PUBLISH:?}" "${RELEASE_SHA:=${GITHUB_SHA:?}}" "${BUILD:=}"
 here="$(cd "$(dirname "$0")" && pwd)"
 cd dist
 if [ "$CLI_PUBLISH" != true ]; then rm -f fleetd-bun-*; fi
@@ -126,17 +133,18 @@ done
 # The previous release's pins carry on for what this run didn't build (the CLI or the app), as in SHA256SUMS; what it
 # built replaces its kind's, so a build that stops being made drops out. A release with none pinned leaves sha256 out,
 # and its readers take SHA256SUMS.
-jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg commit "$RELEASE_SHA" --arg date "$(date -u +%FT%TZ)" \
+jq -n --arg channel "$CHANNEL" --arg version "$VERSION" --arg build "$BUILD" --arg commit "$RELEASE_SHA" --arg date "$(date -u +%FT%TZ)" \
   --arg cli "$cli_built" --arg app "$APP_BUILT" --slurpfile prev "$prev/release.json" --rawfile pinned "$prev/pinned" '
   $prev[0] as $p
   | (($p.sha256 // {} | with_entries(select(if (.key | startswith("fleetd-desktop-")) then $app != "true" else $cli != "true" end)))
     + ($pinned | split("\n") | map(select(. != "") | split(" ") | {(.[1]): .[0]}) | add // {})) as $sha
   | {
     channel: $channel, version: $version, commit: $commit, date: $date,
+    build: (if $build == "" then null else $build end),
     cliVersion: (if $cli == "true" then $version else $p.cliVersion end),
     appVersion: (if $app == "true" then $version else $p.appVersion end),
     appCommit: (if $app == "true" then $commit else $p.appCommit end)
-  } + (if ($sha | length) > 0 then {sha256: $sha} else {} end)' > release.json
+  } + (if ($sha | length) > 0 then {sha256: $sha} else {} end) | with_entries(select(.value != null))' > release.json
 cat SHA256SUMS release.json
 jq -r '.changes[:20][] | "\(.commit[:7]) \(.areas | join(",")): \(.subject)"' changes.json
 
@@ -163,6 +171,23 @@ upload() {
 }
 
 feeds=(latest-*.yml)
+numbered=false
+if [ "$CHANNEL" = edge ] && [ -n "$BUILD" ]; then numbered=true; fi
+if [ "$numbered" = true ]; then
+  # The build's own release (see the top): its pins but the Rust-era CLI names, which only release.json's readers use,
+  # then its feeds.
+  own="build-$BUILD"
+  gh release view "$own" >/dev/null 2>&1 ||
+    gh release create "$own" --prerelease --latest=false --target "$RELEASE_SHA" --title "fleetd $BUILD" \
+      --notes "Build $BUILD of main at $RELEASE_SHA."
+  mine=()
+  for pin in ${pins[@]+"${pins[@]}"}; do
+    [[ "$(basename "$pin")" =~ ^fleetd-(linux|darwin)- ]] || mine+=("$pin")
+  done
+  if [ ${#mine[@]} -gt 0 ]; then gh release upload "$own" "${mine[@]}" --clobber; fi
+  if [ ${#feeds[@]} -gt 0 ]; then gh release upload "$own" "${feeds[@]}" --clobber; fi
+  feeds=()
+fi
 if [ "$CHANNEL" = edge ]; then
   notes="Rolling build of main at ${RELEASE_SHA} (${VERSION}), published after each merge."
   notes+=" Install: curl -fsSL https://fleetd.sh | sh"
@@ -173,7 +198,7 @@ else
 fi
 # The pins first: the release.json that names them goes up after them.
 if [ ${#pins[@]} -gt 0 ]; then gh release upload "$tag" "${pins[@]}" --clobber; fi
-upload "$tag" . "${feeds[@]}"
+upload "$tag" . ${feeds[@]+"${feeds[@]}"}
 if [ "$CHANNEL" = edge ]; then
   keep="$(jq -r '.sha256 // {} | to_entries[] | "\(.key) \(.value)"' release.json | while read -r name sum; do
     pin="$(pinned "$name" "$sum")"
@@ -191,7 +216,7 @@ if [ "$CHANNEL" = edge ]; then
   # The copy for builds from before the rename (see the top): the same files, with a nightly-named app version.
   mkdir -p "$prev/nightly" "$prev/nightly-was"
   nightly_feeds=()
-  for feed in "${feeds[@]}"; do
+  for feed in latest-*.yml; do
     unpinned "$feed" | sed 's/^\(version: .*\)-edge\./\1-nightly./' > "$prev/nightly/$feed"
     nightly_feeds+=("$prev/nightly/$feed")
   done
@@ -207,4 +232,9 @@ if [ "$CHANNEL" = edge ]; then
   notes+=" from then on."
   rolling nightly "Nightly (now Edge)" "$notes"
   upload nightly "$prev/nightly" "${nightly_feeds[@]}"
+fi
+
+if [ "$numbered" = true ]; then
+  # Hubs take the build from here, ring by ring (rollout.ts).
+  BUILD="$BUILD" VERSION="$VERSION" RELEASE_SHA="$RELEASE_SHA" bun "$here/rollout.ts" add
 fi

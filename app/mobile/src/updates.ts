@@ -69,8 +69,9 @@ export const updateSection = ({ admin, hub, machines, run, flow, ready, auto, re
 };
 
 /**
- * The hub's version short enough for a row's value: a release as itself, an Edge build by its day and minute
- * ("Edge · Oct 29, 23:01"). The whole of it, commit and all, is a tap away.
+ * The hub's version short enough for a row's value: a numbered build by its number ("2026.11.23.4"), a release as
+ * itself, an Edge build from before numbers by its day and minute ("Edge · Oct 29, 23:01"). The whole of it, commit and
+ * all, is a tap away.
  */
 export const shortVersion = (version: string): string => {
   const [channel, when] = versionLabel(version).split(" · ");

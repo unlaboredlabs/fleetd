@@ -1,0 +1,53 @@
+# Moves builds through the rollout (D701, .github/release/rollout.ts): every 10 minutes it checks the first ring's gate
+# and points the desktop app's and the phone's feeds at the builds each stage has reached. fleetd's own hub starts it
+# with `pass` once it passed its self-check on a build. Halting or pulling a build is one command:
+#
+#   gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=2026.11.23.4
+#
+# (action=pull sends everyone on the build back to the build before it; action=resume undoes either.) No concurrency
+# group: a queued run would cancel a waiting one and drop its halt; each write reads rollout.json back instead.
+name: Rollout
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "tick, or for one build: pass, halt, pull or resume"
+        type: choice
+        options: [tick, pass, halt, pull, resume]
+        default: tick
+      build:
+        description: The build's number, as 2026.11.23.4 (not for tick)
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  rollout:
+    if: github.repository == 'unlaboredlabs/fleetd'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The first ring's gate compares commits: the cloud's fleetd holds the build's.
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Rollout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ inputs.action || 'tick' }}
+          BUILD: ${{ inputs.build }}
+          SITE_DEPLOY_HOOK: ${{ secrets.SITE_DEPLOY_HOOK }}
+        run: |
+          if [ "$ACTION" = tick ]; then
+            bun .github/release/rollout.ts tick
+          else
+            bun .github/release/rollout.ts "$ACTION" "$BUILD"
+          fi

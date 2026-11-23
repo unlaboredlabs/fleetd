@@ -103,7 +103,7 @@ export default defineConfig({
         },
         {
           label: "Running a hub",
-          items: ["config-and-files", "security", "moving-a-hub", "updating-and-uninstall", "troubleshooting"],
+          items: ["config-and-files", "security", "moving-a-hub", "updating-and-uninstall", "releases", "troubleshooting"],
         },
         { label: "Reference", items: ["reference/cli", "reference/agent-tools", "glossary"] },
       ],

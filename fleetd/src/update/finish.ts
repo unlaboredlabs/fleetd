@@ -146,13 +146,13 @@ export const planText = (plan: Plan) =>
 
 const verdictText = (v: Verdict) => JSON.stringify({ state: v.state, stage: v.stage ?? null, message: v.message }, null, 2);
 
-/** Writes `plan` beside its verdict and starts the watcher from `plan.prev`, outside the service. */
-export function start(plan: Plan, planPath: string): void {
+/** Writes `plan` beside its verdict and starts the watcher from `from` (`plan.prev` by default), outside the service. */
+export function start(plan: Plan, planPath: string, from: string = plan.prev): void {
   mkdirSync(dirname(planPath), { recursive: true });
   rmSync(plan.verdict, { force: true });
   if (plan.answered) rmSync(plan.answered, { force: true });
   replaceFile(planPath, planText(plan));
-  spawnOutside(plan.prev, ["update-finish", planPath]);
+  spawnOutside(from, ["update-finish", planPath]);
 }
 
 /** The real world: the service manager, `/healthz` and the node's up file. */

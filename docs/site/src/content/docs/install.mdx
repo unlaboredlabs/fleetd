@@ -61,10 +61,10 @@ curl -fsSL https://fleetd.sh | sh -s -- --no-init
 - `--mac`: with `--join`, join as [the agents' Mac](/docs/agents-mac).
 - `--uninstall`: remove the CLI and the app. See [Updating & uninstall](/docs/updating-and-uninstall#remove).
 
-## Release channels
+## Builds
 
-You get Edge builds: a new one after each change to fleetd that passes its tests. To pick the stable channel, put
-`FLEETD_CHANNEL=stable` before `sh`. See [Channels](/docs/updating-and-uninstall#channels).
+You install the newest build: a new one comes after each change to fleetd that passes its tests. From then on your hub
+takes builds in stages, at the [update speed](/docs/releases#speed) you pick. See [Builds & rollout](/docs/releases).
 
 ## Build from source {#from-source}
 

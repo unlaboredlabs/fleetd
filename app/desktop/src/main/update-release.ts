@@ -38,6 +38,9 @@ const read = async (url: string, fetcher: typeof fetch): Promise<unknown> => {
   }
 };
 
+/** A JSON file beside the feed (rollout.json), or null when it can't be read. Never rejects. */
+export const readJson = (url: string, fetcher: typeof fetch = fetch): Promise<unknown> => read(url, fetcher);
+
 /** Never rejects: without it this app's update is still offered, just without the hub's newest. */
 export const fetchRelease = async (feed: string, fetcher: typeof fetch = fetch): Promise<Release> => {
   const release = await read(`${feed}/release.json`, fetcher);

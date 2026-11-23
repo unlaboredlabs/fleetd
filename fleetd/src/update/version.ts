@@ -11,8 +11,22 @@ export function edgeStamp(version: string): [string, string] | undefined {
   return undefined;
 }
 
-/** `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56 UTC · 1b563d7"; any other version is itself. */
+/**
+ * A build's number (D701), `<year>.<month>.<day>.<nth build that UTC day>`, from its version
+ * `0.0.0-edge.<minute stamp>.<nth>+<commit>`; undefined for a version from before build numbers.
+ */
+export function buildNumber(raw: string): string | undefined {
+  const m = /^v?\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)(?:\+|$)/.exec(raw.trim());
+  return m ? `${m[1]}.${Number(m[2])}.${Number(m[3])}.${m[4]}` : undefined;
+}
+
+/**
+ * `0.0.0-edge.202611231406.4+5877c50` reads "2026.11.23.4", its build number; `0.0.0-edge.202610261056+1b563d7`, from
+ * before build numbers, "Edge · Oct 26, 10:56 UTC · 1b563d7"; any other version is itself.
+ */
 export function versionLabel(raw: string): string {
+  const number = buildNumber(raw);
+  if (number !== undefined) return number;
   let version = raw.trim();
   if (version.startsWith("v")) version = version.slice(1);
   const plus = version.indexOf("+");

@@ -141,4 +141,8 @@ describe("shortVersion", () => {
     expect(shortVersion("0.9.1")).toBe("0.9.1");
     expect(shortVersion("0.9.1+abc1234")).toBe("0.9.1");
   });
+
+  it("shows a numbered build by its number (D701)", () => {
+    expect(shortVersion("0.0.0-edge.202611231406.4+5877c50")).toBe("2026.11.23.4");
+  });
 });

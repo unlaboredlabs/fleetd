@@ -55,15 +55,21 @@ const withoutBuild = (version: string): string => version.trim().replace(/^v/u, 
 const EDGE = /^\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/u;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** A build with a number (D701): `0.0.0-edge.<minute stamp>.<nth build that UTC day>`. */
+const BUILD = /^\d+\.\d+\.\d+-(?:edge|nightly)\.(\d{4})(\d{2})(\d{2})\d{4}\.(\d+)$/u;
+
 /**
- * A version as people read it. An Edge build by when it was built (UTC), since its minute stamp is what tells two
- * apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56", and so does
+ * A version as people read it. A build by its number, `0.0.0-edge.202611231406.4+5877c50` reading "2026.11.23.4"
+ * (fleetd/src/update/version.ts `buildNumber`). One from before build numbers by when it was built (UTC), since its
+ * minute stamp is what tells two apart: `0.0.0-edge.202610261056+1b563d7` reads "Edge · Oct 26, 10:56", and so does
  * `0.0.0-nightly.202610261056+1b563d7`, from before the rename.
  * Any other version is itself, without a build part. Only for showing: the updaters compare the raw version, and the
  * raw version is what gets copied.
  */
 export const versionLabel = (version: string): string => {
   const bare = withoutBuild(version);
+  const numbered = BUILD.exec(bare);
+  if (numbered !== null) return `${numbered[1] ?? ""}.${String(Number(numbered[2]))}.${String(Number(numbered[3]))}.${numbered[4] ?? ""}`;
   const edge = EDGE.exec(bare);
   const month = MONTHS[Number(edge?.[2]) - 1];
   if (edge === null || month === undefined) return bare;

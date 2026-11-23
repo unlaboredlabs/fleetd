@@ -192,13 +192,13 @@ export default defineGroup({
       // the everyday page, on and up to date.
       (() => {
         const f = withHub("auto-on", "Update automatically on: the ready build it installs by itself, and when.", OLDER, { release: { ...RELEASE, cli: NEXT } });
-        return says(f, { ready: NEXT, settings: { auto: true, drainMinutes: 2 }, autoAt: "2026-10-19T10:30:00.000Z" });
+        return says(f, { ready: NEXT, settings: { auto: true, drainMinutes: 2, speed: "fast" }, autoAt: "2026-10-19T10:30:00.000Z" });
       })(),
       (() => {
         const f = withHub("auto-held", "Update automatically holding back, with why: Update available.", OLDER, { release: { ...RELEASE, cli: NEXT } });
-        return says(f, { ready: NEXT, settings: { auto: true, drainMinutes: 2 }, skipReason: "An update someone started is still running." });
+        return says(f, { ready: NEXT, settings: { auto: true, drainMinutes: 2, speed: "fast" }, skipReason: "An update someone started is still running." });
       })(),
-      says(withHub("auto-current", "The everyday page: up to date, Update automatically on.", MINE), { settings: { auto: true, drainMinutes: 2 } }),
+      says(withHub("auto-current", "The everyday page: up to date, Update automatically on.", MINE), { settings: { auto: true, drainMinutes: 2, speed: "fast" } }),
       make("idle", "Not checked yet (just started).", { kind: "idle" }, null),
       make("checking", "A check someone asked for, under way.", { kind: "checking" }, null),
       make("unsupported", "A development or test build, which doesn't update itself.", { kind: "unsupported" }, null),

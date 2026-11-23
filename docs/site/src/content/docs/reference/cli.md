@@ -31,10 +31,10 @@ fleetd help
 
 ### fleetd update {#update}
 
-Replace this fleetd with the latest release, then restart its hub at once and its node once its agents finish the step they're on (10 min at most; `--now` doesn't wait).
+Replace this fleetd with the build the rollout has for it, then restart its hub at once and its node once its agents finish the step they're on (10 min at most; `--now` doesn't wait).
 
 ```text
-fleetd update [--check] [--channel <c>] [--now]
+fleetd update [--check] [--speed fast|steady] [--now]
 ```
 
 

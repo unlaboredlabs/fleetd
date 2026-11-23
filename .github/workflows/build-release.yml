@@ -44,6 +44,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
       has-cli: ${{ steps.plan.outputs.has-cli }}
       build-app: ${{ steps.plan.outputs.build-app }}
     steps:
@@ -57,14 +58,24 @@ jobs:
           PUBLISH: ${{ inputs.publish }}
           FORCE_APP: ${{ inputs.force-app }}
         run: |
+          build=""
           if [ "$CHANNEL" = stable ]; then
             version="${GITHUB_REF_NAME#v}"
           else
             base="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
             base="${base#v}"
+            # The build's number (D701): the UTC day and its nth build, after the build edge holds (edge builds one at
+            # a time, edge.yml). A build that fails or isn't published leaves its number to the next.
+            now="$(date -u +%Y%m%d%H%M)"
+            day="${now:0:4}.$((10#${now:4:2})).$((10#${now:6:2}))"
+            held="$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/download/edge/release.json" 2>/dev/null | jq -r '.build // empty' || true)"
+            nth=1
+            if [ "${held%.*}" = "$day" ]; then nth=$((${held##*.} + 1)); fi
+            build="$day.$nth"
             # Valid semver that orders by build time, which the desktop app's updater compares: one numeric
-            # minute stamp (no leading zero), and the commit as build metadata (a hash can start with 0).
-            version="${base:-0.0.0}-edge.$(date -u +%Y%m%d%H%M)+${RELEASE_SHA::7}"
+            # minute stamp (no leading zero) and the day's count, and the commit as build metadata (a hash can start
+            # with 0). Apps and hubs show the build's number (version.ts `buildNumber`).
+            version="${base:-0.0.0}-edge.$now.$nth+${RELEASE_SHA::7}"
           fi
           has_cli=false
           if [ -f fleetd/package.json ]; then has_cli=true; fi
@@ -81,9 +92,10 @@ jobs:
             fi
             echo "app last built from: ${prev:-none}"
           fi
-          echo "version=$version has-cli=$has_cli build-app=$build_app"
+          echo "version=$version build=$build has-cli=$has_cli build-app=$build_app"
           {
             echo "version=$version"
+            echo "build=$build"
             echo "has-cli=$has_cli"
             echo "build-app=$build_app"
           } >> "$GITHUB_OUTPUT"
@@ -510,12 +522,18 @@ jobs:
             echo "edge already holds a newer commit; not publishing"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
+      - uses: oven-sh/setup-bun@v2
+        if: steps.newer.outputs.skip != 'true'
+        with:
+          # As the cli job's. publish.sh adds the build to rollout.json with it (rollout.ts).
+          bun-version: 1.4.3
       - name: Publish
         if: steps.newer.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
           VERSION: ${{ needs.plan.outputs.version }}
+          BUILD: ${{ needs.plan.outputs.build }}
           APP_BUILT: ${{ needs.plan.outputs.build-app }}
           # The repo variable that ships the CLI; a fork without it publishes only the apps.
           CLI_PUBLISH: ${{ vars.FLEETD_RELEASE_CLI == 'true' }}
@@ -575,7 +593,7 @@ jobs:
     # own modules: no npm install here) and puts them on the release as mobile-updates.tar.gz. fleetd.sh's build
     # unpacks each channel's (site/mobile-updates.sh) and serves them by the app's request headers (site/vercel.json).
     # Without the key, nothing is published and the job passes.
-    needs: mobile-export
+    needs: [plan, mobile-export]
     if: always() && needs.mobile-export.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -630,11 +648,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel }}
+          BUILD: ${{ needs.plan.outputs.build }}
         run: |
           if [ "$CHANNEL" = edge ]; then tag=edge; else tag="${GITHUB_REF_NAME:?}"; fi
           cat "$RUNNER_TEMP/updates/updates.txt"
+          if [ "$CHANNEL" = edge ] && [ -n "$BUILD" ]; then
+            # The build's own release's (publish.sh): the rollout puts it on edge once the build reached everyone, and
+            # deploys fleetd.sh then (rollout.ts tick).
+            gh release upload "build-$BUILD" "$RUNNER_TEMP/mobile-updates.tar.gz" --clobber
           # Edge re-exports on every push; when the JavaScript is the same, the release keeps what it has.
-          if gh release download "$tag" -p mobile-updates.tar.gz -O "$RUNNER_TEMP/held.tar.gz" 2>/dev/null &&
+          elif gh release download "$tag" -p mobile-updates.tar.gz -O "$RUNNER_TEMP/held.tar.gz" 2>/dev/null &&
             tar -xzOf "$RUNNER_TEMP/held.tar.gz" ./updates.txt 2>/dev/null | cmp -s - "$RUNNER_TEMP/updates/updates.txt"; then
             echo "$tag already holds these updates"
           else

@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "the stable channel has no fleetd CLI build yet\n",
+  "stdout": "the release has no fleetd build yet\n",
   "stderr": ""
 }

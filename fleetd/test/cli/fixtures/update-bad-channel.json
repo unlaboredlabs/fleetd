@@ -1,5 +1,5 @@
 {
   "code": 1,
   "stdout": "",
-  "stderr": "fleetd: unknown channel \"beta\": use edge or stable\n"
+  "stderr": "fleetd: unknown speed \"beta\": use fast or steady\n"
 }
