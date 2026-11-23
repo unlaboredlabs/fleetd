@@ -8,6 +8,8 @@ import { browserDeps } from "./browser";
 import { clearWebCache, keepSession, keptSession } from "./cache";
 import type { GateView } from "./Gate";
 import { createWebShell, followBrowser, followFreshBuild } from "./shell";
+import { followNewBuild } from "./build";
+import { heldOnReload } from "../renderer/src/held";
 import { afterKeptStart, NOT_LISTED_YET, readSession, removedNotice, signInPath, teamFromAddress, teamHubIds, untilListed, webCall, type WebFailure, type WebSession } from "./session";
 import { startScreen, takeGithubReturn } from "../renderer/screens/start/kept";
 import { toHash } from "../renderer/screens/shell/routes";
@@ -19,6 +21,12 @@ document.documentElement.dataset["shell"] = "web";
 applyTheme();
 
 followFreshBuild(window);
+followNewBuild(window, {
+  own: document.querySelector('script[type="module"][src^="/assets/"]')?.getAttribute("src") ?? null,
+  fetch: (url, init) => window.fetch(url, init),
+  go: (url) => window.location.replace(url),
+  holding: heldOnReload,
+});
 
 const element = document.getElementById("root");
 if (element === null) throw new Error("index.html has no #root");

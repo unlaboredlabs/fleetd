@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 interface Sw {
   kindOf: (r: Request, origin: string) => string | null;
@@ -14,7 +14,8 @@ interface Sw {
 const ORIGIN = "https://app.fleetd.dev";
 const load = (): Sw => {
   const box: { fleetdSw?: Sw } = {};
-  const context = vm.createContext({ globalThis: box, URL, Request, Response, Set, Promise, setTimeout });
+  // setTimeout read at each call, so a test's fake timers reach the worker.
+  const context = vm.createContext({ globalThis: box, URL, Request, Response, Set, Promise, setTimeout: (f: () => void, ms: number) => setTimeout(f, ms) });
   (context as { globalThis: unknown }).globalThis = context;
   vm.runInContext(fs.readFileSync(path.join(import.meta.dirname, "public/sw.js"), "utf8"), context);
   return (context as unknown as { fleetdSw: Sw }).fleetdSw;
@@ -106,6 +107,30 @@ describe("the web app's service worker", () => {
     expect(await res.text()).toBe(index("main-2.js"));
     await Promise.all(waits);
     expect(await (await (await caches.open("fleetd-shell-v1")).match("/index.html"))?.text()).toBe(index("main-2.js"));
+  });
+
+  afterEach(() => void vi.useRealTimers());
+
+  it("waits for a far link's index: a reload after a deploy opens the new build at once, not the kept one", async () => {
+    vi.useFakeTimers();
+    const caches = new FakeCaches();
+    await (await caches.open("fleetd-shell-v1")).put("/index.html", new Response(index("main-1.js")));
+    await (await caches.open("fleetd-assets-v1")).put("/assets/main-1.js", new Response("one"));
+    // The index across the world, through the edge and the tunnel: 2.5 s, past the old 1.5 s wait.
+    const far = ((input: Request | string) =>
+      new Promise<Response>((r) => setTimeout(() => r(new Response(new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname === "/index.html" ? index("main-2.js") : "two")), 2500))) as typeof fetch;
+    const waits: Array<Promise<unknown>> = [];
+    const opened = sw.page(caches, far, nav("/"), (p) => waits.push(p));
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(await (await opened).text()).toBe(index("main-2.js"));
+  });
+
+  it("opens the kept page when the network answers with an error (a host restarting in a deploy)", async () => {
+    const caches = new FakeCaches();
+    await (await caches.open("fleetd-shell-v1")).put("/index.html", new Response(index("main-1.js")));
+    await (await caches.open("fleetd-assets-v1")).put("/assets/main-1.js", new Response("one"));
+    const down = (() => Promise.resolve(new Response("bad gateway", { status: 502 }))) as typeof fetch;
+    expect(await (await sw.page(caches, down, nav("/"), () => undefined)).text()).toBe(index("main-1.js"));
   });
 
   it("opens the kept page on a slow link or offline, and keeps the network's when it comes", async () => {

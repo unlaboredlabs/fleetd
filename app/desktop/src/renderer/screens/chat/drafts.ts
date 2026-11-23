@@ -8,6 +8,7 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { AttachmentMime, AttachmentRef } from "../../../shared/contracts";
 import type { DataLayer } from "../../src/data/queries";
 import { useDataLayer } from "../../src/data/react";
+import { holdOnReload } from "../../src/held";
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/contracts";
 import { sendFile, type Wait } from "../../../shared/transfer";
 import { TAKES } from "../../../shared/files";
@@ -202,6 +203,9 @@ export function useDrafts(): Drafts {
     d = createDrafts(layer, readSaved(window.localStorage));
     flushes.add(persistDrafts(d, window.localStorage));
     all.set(layer, d);
+    const { store } = d;
+    // Files outlive no reload: the web page waits for them before it switches builds.
+    holdOnReload(() => Object.values(store.getState()).some((x) => x.attached.length > 0));
   }
   return d;
 }

@@ -1,9 +1,11 @@
-// The web app's service worker: a page opened again starts from this browser when the network is slow or gone. Only the
+// The web app's service worker: a page opened again starts from this browser when the network is gone. Only the
 // app's own files, which name no one and hold nothing of an account:
 // - /assets/*: named by their content, so a cached copy is right forever: from the cache, else the network (kept).
-// - the app's page (a navigation to / or /index.html, the app routing by its hash): index.html from the network when it
-//   answers within NETWORK_FIRST_MS, so a deploy's new build is what opens; else (a slow link, offline) the kept one,
-//   when every file it names is kept too. Either way the network's answer is kept, with its files, for the next load.
+// - the app's page (a navigation to / or /index.html, the app routing by its hash): index.html from the network, waited
+//   for up to NETWORK_FIRST_MS, so a deploy's new build is what opens, on a far link too; the kept one (when every file
+//   it names is kept too) only when the network fails, answers an error or hangs past that. Either way the network's
+//   answer is kept, with its files, for the next load. A page that opened on the kept one learns of the new build and
+//   switches to it by itself (../build.ts).
 // Everything else goes past it untouched: any other path (the sign-in's way back, /signin/callback, and every route of
 // the cloud's), the session and sign-in (/web/…), the teams' sockets, calls, reports and files (/t/…), any other origin,
 // anything but a GET, and a page asked for with `fresh` (main.tsx, after a chunk of an older build failed to load).
@@ -16,10 +18,12 @@ const SHELL = "fleetd-shell-v1";
 const ASSETS = "fleetd-assets-v1";
 const INDEX = "/index.html";
 /**
- * How long a page waits for the network's index.html before it opens the kept one: a fast link gets the current build
- * (5 KB, a round trip or two); a slow or dead one opens from here, and the network's answer is kept for next time.
+ * How long a page waits for the network's index.html before it opens the kept one. Long enough for any working link to
+ * get the current build (5 KB, a round trip or two, which from across the world through the edge and the tunnel took
+ * past the 1.5 s this was: the first reload after a deploy opened the old build); offline or an error answer opens from
+ * here at once, and only a hung link waits it out.
  */
-const NETWORK_FIRST_MS = 1500;
+const NETWORK_FIRST_MS = 10_000;
 /** The paths that are the app's page; any other navigation is the cloud's (its sign-in's way back among them). */
 const PAGES = new Set(["/", INDEX]);
 const later = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -76,8 +80,8 @@ const keptWhole = async (caches) => {
 };
 
 /**
- * The app's page: the network's index when it answers within `waitMs`, else the kept one (a slow link, offline); the
- * network's answer, whenever it comes, kept with its files for the next load.
+ * The app's page: the network's index when it answers within `waitMs`, else the kept one (offline, an error, a hung
+ * link); the network's answer, whenever it comes, kept with its files for the next load.
  */
 const page = async (caches, fetch, request, waitUntil, waitMs = NETWORK_FIRST_MS) => {
   // Two copies of one answer: one for the page, one to keep.
