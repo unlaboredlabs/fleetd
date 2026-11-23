@@ -76,7 +76,7 @@ const HUB_PAGES: ReadonlyArray<{
   { tab: "hub.machines", label: HUB_PAGES_SHOWN.machines, icon: <Server /> },
   { tab: "hub.providers", label: HUB_PAGES_SHOWN.providers, icon: <KeyRound /> },
   { tab: "hub.billing", label: HUB_PAGES_SHOWN.billing, icon: <CreditCard /> },
-  { tab: "hub.profiles", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
+  { tab: "hub.agents", label: HUB_PAGES_SHOWN.botDefaults, icon: <Layers /> },
   { tab: "hub.setup", label: HUB_PAGES_SHOWN.setup, icon: <ListChecks /> },
 ];
 
@@ -246,7 +246,7 @@ function useEntries() {
         key: p.tab,
         label: p.label,
         icon: p.icon,
-        current: p.tab === "hub.profiles" ? isEveryProject(on) : on === p.tab,
+        current: p.tab === "hub.agents" ? isEveryProject(on) : on === p.tab,
         badge:
           p.tab === "hub.setup" && left > 0
             ? `${String(left)} left`

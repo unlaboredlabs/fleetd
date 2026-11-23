@@ -47,7 +47,7 @@ describe("the room every screen keeps out of the Duo's side strip", () => {
 
   it("is a sheet's own safe area for every sheet screen, so a card centred on the unfolded Duo stays centred", () => {
     const sheets = all(/\w+\.Screen/u).filter((s) => /sheet\(t|presentation: "(modal|formSheet|pageSheet)"/u.test(s.tag));
-    expect(sheets.map((s) => named(s.tag))).toEqual(["VaultEdit", "VaultImport", "VaultMove", "NewProject", "NewScreen", "Icon", "SkillEdit", "VaultEdit", "VaultImport", "VaultMove"]);
+    expect(sheets.map((s) => named(s.tag))).toEqual(["ProfileEdit", "VaultEdit", "VaultImport", "VaultMove", "NewProject", "NewScreen", "Icon", "SkillEdit", "VaultEdit", "VaultImport", "VaultMove"]);
     for (const s of sheets) expect(s.tag, s.path).toContain("layout={sheetRoom}");
   });
 

@@ -93,7 +93,8 @@ await withFleet(path.join(run, "f"), bin, async (fleet) => {
       ["hub machines", "#/settings/hub/machines"],
       ["hub machine", `#/settings/hub/machines/${machineId}`],
       ["hub people", "#/settings/hub/people"],
-      ["hub profiles", "#/settings/hub/profiles"],
+      ["hub providers", "#/settings/hub/providers"],
+      ["hub agents", "#/settings/hub/agents"],
       ["hub tools", "#/settings/hub/tools"],
       ["hub setup", "#/settings/hub/setup"],
     ];

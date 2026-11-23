@@ -1,13 +1,16 @@
-// Settings › Providers, for admins, as the desktop's Settings › Hub › Providers: what agents run on, a row per provider
-// (the desktop's shared/agentProviders.ts) with how it is connected and the models it offers under its name. Anthropic
-// opens the hub's Claude API key (Claude.tsx); Google opens its own (Google below): a sign-in on each machine agents run
-// on, the team's Gemini API key, and the bots whose Vault holds a key of their own, which wins there.
+// Settings › Providers, for admins, as the desktop's Settings › Hub › Providers: what agents run on, a section per
+// provider (the desktop's shared/agentProviders.ts): how it is connected and the models it offers, then the task
+// profiles that run on it, each opening its editor (ProfileEdit.tsx), and Add Profile. While a provider isn't connected
+// its profiles say they can't be used until it is. Anthropic's connection opens the hub's Claude API key (Claude.tsx);
+// Google's opens its own (Google below): a sign-in on each machine agents run on, the team's Gemini API key, and the
+// bots whose Vault holds a key of their own, which wins there.
 import { getRandomBytes } from "expo-crypto";
-import { useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import type { AntigravityStatusOutput, ClaudeAccountsGetOutput, GeminiKey, ProfileModel } from "../../../desktop/src/shared/contracts";
+import type { AntigravityStatusOutput, ClaudeAccountsGetOutput, GeminiKey, Profile, ProfileModel } from "../../../desktop/src/shared/contracts";
 import { boxesOf, endpointOk, geminiKeyWords, keyOf as keyOfTyped, sealEach } from "../claude";
-import { googleConnected, googleWords, runsWords } from "../desktop";
+import { AGENT_PROVIDERS, googleConnected, googleWords, leadOf, providerOf, runsLine, runsWords, type AgentProviderId } from "../desktop";
 import { useHub, type SettingsProps } from "../hubContext";
 import { keyOf } from "../store";
 import { shape, space, type, useTheme } from "../theme";
@@ -37,11 +40,27 @@ export function Providers({ navigation }: SettingsProps<"Providers">) {
   const models = useRead(() => session.call("profiles_list", {}), [session]);
   const claude = useRead(() => session.call("claude_accounts_get", {}), [session]);
   const google = useGoogle();
+  // Back from a profile's editor: read again (the first focus is the mount's read).
+  const { reload } = models;
+  const shown = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (shown.current) reload();
+      shown.current = true;
+    }, [reload]),
+  );
   const list: ReadonlyArray<ProfileModel> = models.value?.ok === true ? models.value.output.models : [];
+  const profiles: ReadonlyArray<Profile> = models.value?.ok === true ? models.value.output.profiles : [];
   const accounts = claude.value?.ok === true ? (claude.value.output as ClaudeAccountsGetOutput) : undefined;
   const anthropic = [accounts?.hubApi === undefined ? null : "API Key", (accounts?.people ?? []).some((p) => p.subscription !== undefined) ? "Subscriptions" : null].filter((w) => w !== null).join(" · ");
   const connected = googleConnected(google.status);
   if (models.value === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
+  const lead = leadOf(profiles)?.id;
+  // Each provider's connection, as its first row: its words, and whether its profiles can't be used until it connects.
+  const connection: Record<AgentProviderId, { value: string | undefined; off: boolean; open: () => void }> = {
+    anthropic: { value: anthropic === "" ? "Sign-In" : anthropic, off: false, open: () => navigation.navigate("Claude") },
+    google: { value: googleWords(google.status) ?? (connected === "no" ? "Not Connected" : undefined), off: connected === "no", open: () => navigation.navigate("Google") },
+  };
   return (
     <ScrollView
       style={{ backgroundColor: t.grouped }}
@@ -49,16 +68,34 @@ export function Providers({ navigation }: SettingsProps<"Providers">) {
       contentContainerStyle={{ paddingBottom: space.xxl }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={() => (models.reload(), claude.reload(), google.reload())} tintColor={t.secondary} />}
     >
-      <ListSection>
-        <ListRow title="Anthropic" detail={runsWords(list, "anthropic", MODELS_SHOWN)} value={anthropic === "" ? "Sign-In" : anthropic} onPress={() => navigation.navigate("Claude")} />
-        <ListRow
-          title="Google"
-          detail={runsWords(list, "google", MODELS_SHOWN)}
-          value={googleWords(google.status) ?? (connected === "no" ? "Not Connected" : undefined)}
-          {...(connected === "yes" ? {} : { valueColor: t.warning })}
-          onPress={() => navigation.navigate("Google")}
-        />
-      </ListSection>
+      {AGENT_PROVIDERS.map((p) => {
+        const c = connection[p.id];
+        const mine = profiles.filter((q) => providerOf(q.model).id === p.id);
+        const runs = runsWords(list, p.id, MODELS_SHOWN);
+        return (
+          <ListSection key={p.id} header={p.name} {...(c.off && mine.length > 0 ? { footer: `${p.name} isn't connected: agents can't run on its profiles until it is.` } : {})}>
+            <ListRow
+              title="Connection"
+              detail={runs}
+              value={c.value}
+              {...(p.id === "google" && connected !== "yes" ? { valueColor: t.warning } : {})}
+              onPress={c.open}
+            />
+            {mine.map((q) => (
+              <ListRow
+                key={q.id}
+                title={q.name}
+                detail={runsLine(list, q)}
+                value={c.off ? "Unusable" : [q.default ? "Default" : null, q.id === lead ? "Lead" : null].filter((w) => w !== null).join(" · ") || undefined}
+                {...(c.off ? { valueColor: t.warning } : {})}
+                onPress={() => navigation.navigate("ProfileEdit", { provider: p.id, id: q.id })}
+              />
+            ))}
+            {runs === "" ? null : <ListRow icon="plus" title="Add Profile" chevron={false} onPress={() => navigation.navigate("ProfileEdit", { provider: p.id })} />}
+          </ListSection>
+        );
+      })}
+      <Problem text={models.value.ok ? undefined : `Profiles not read: ${errorWords(models.value.error)}`} />
     </ScrollView>
   );
 }

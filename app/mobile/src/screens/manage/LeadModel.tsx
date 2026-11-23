@@ -1,23 +1,23 @@
 // Lead Model, pushed from a project's screen, as the desktop's Lead model on its Agents page: the profile its lead
 // starts on, the hub's lead profile until it picks its own (project_set leadProfile), and Restart Lead under them,
 // whichever profile its lead runs on (leadRestart), which stops a turn under way, waiting on it while its machine can't (leadRestarting). A profile claude refused can't be picked, and says why.
-// The profiles are in a section per provider (Anthropic, Google); an admin also finds each of Google's models no profile
-// runs on yet, which makes a profile on it and picks it. While its lead runs on Google and Google isn't connected (no
+// The profiles are in a section per provider (Anthropic, Google), profiles alone: an admin's Add Profile… under them
+// opens Settings › Providers, where a profile is made under its provider. While its lead runs on Google and Google isn't connected (no
 // machine signed in, no Gemini key in this bot), Sign In with Google is right under them.
 import { useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView } from "react-native";
-import { googleConnected, MODEL_CHOICE, providerOf, type AntigravityStatusOutput, type HubError } from "../../desktop";
+import { googleConnected, providerOf, type AntigravityStatusOutput, type HubError } from "../../desktop";
 import { useHub, type ChatInfoProps } from "../../hubContext";
 import { refOf } from "../../store";
 import { space, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow, ListSection } from "../../ui/List";
-import { restartLead, setLeadProfile, startLeadOn } from "./api";
+import { restartLead, setLeadProfile } from "./api";
 import { GoogleSignIn } from "../GoogleSignIn";
 import { LEAD_HUB, leadLines, leadRestartRow, leadSections, machineName } from "./model";
 import { CheckRow, errorWords, Problem, useRead } from "./parts";
 
-export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
+export function LeadModel({ navigation, route }: ChatInfoProps<"LeadModel">) {
   const t = useTheme();
   const { session, state, paired } = useHub();
   const ref = refOf(route.params.key);
@@ -60,7 +60,7 @@ export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
           <ListRow title={read.value?.ok === false ? "Couldn't read the profiles" : "Reading…"} />
         </ListSection>
       ) : (
-        leadSections(leadLines(view, admin)).map((s) => (
+        leadSections(leadLines(view)).map((s) => (
           <ListSection key={s.group ?? "hub"} {...(s.group === undefined ? {} : { header: s.group })}>
             {s.lines.map((l) => (
               <CheckRow
@@ -71,13 +71,17 @@ export function LeadModel({ route }: ChatInfoProps<"LeadModel">) {
                 disabled={l.disabled || busy !== null}
                 onPress={() => {
                   if (l.checked) return;
-                  if (l.value.startsWith(MODEL_CHOICE)) void run("pick", () => startLeadOn(session, ref, l.value.slice(MODEL_CHOICE.length), view.profiles));
-                  else void run("pick", () => setLeadProfile(session, ref, l.value === LEAD_HUB ? undefined : l.value));
+                  void run("pick", () => setLeadProfile(session, ref, l.value === LEAD_HUB ? undefined : l.value));
                 }}
               />
             ))}
           </ListSection>
         ))
+      )}
+      {view === undefined || !admin ? null : (
+        <ListSection>
+          <ListRow icon="plus" title="Add Profile…" chevron={false} onPress={() => navigation.navigate("Settings", { screen: "Providers" })} />
+        </ListSection>
       )}
       {admin && onGoogle && googleConnected(status, ref) !== "yes"
         ? signIns.map((m) => <GoogleSignIn key={m.machineId} machineId={m.machineId} name={machineName(state.machines, m.machineId, paired.cloud === true)} signedIn={m.signedIn} onSigned={google.reload} />)

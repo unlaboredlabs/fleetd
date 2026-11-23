@@ -83,9 +83,13 @@ export function Select<V extends string>(props: SelectProps<V>) {
       <S.Portal>
         <S.Content className={cx(s.surface, s.selectContent)} position="popper" sideOffset={4} collisionPadding={8}>
           <S.Viewport>
-            {runsOf(options).map((run, i) =>
+            {runsOf(options).map((run, i, runs) =>
               run.group === undefined ? (
-                run.options.map(item)
+                // Words of no group after a group's (Add profile… after the profiles) stand apart from it, under a rule.
+                <Fragment key={`none-${i}`}>
+                  {runs[i - 1]?.group === undefined ? null : <S.Separator className={s.separator} />}
+                  {run.options.map(item)}
+                </Fragment>
               ) : (
                 <S.Group key={`${run.group}-${i}`}>
                   <S.Label className={s.label}>{run.group}</S.Label>

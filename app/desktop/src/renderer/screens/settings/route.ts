@@ -38,14 +38,15 @@ export const PROJECT_TABS: ReadonlyArray<Tab> = ["projects", "agents", "instruct
 export const isProjectTab = (tab: Tab): boolean => tab === "prompts" || PROJECT_TABS.includes(tab);
 
 /** Hub › Every project's pages, under tabs as a project's are: Agents, Instructions and Vault. */
-export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.profiles", "hub.instructions", "hub.vault"];
+export const EVERY_PROJECT: ReadonlyArray<HubTab> = ["hub.agents", "hub.instructions", "hub.vault"];
 
 /**
  * The tabs that were pages of their own and are now a part of another: Your devices on Hubs & devices, Updates on
- * Machines, Tools & skills on Every project › Agents, Hub accounts on Setup. Every link to one still works: it opens
+ * Machines, the task profiles (Every project › Agents once) on Providers, under each provider, Tools & skills on Every
+ * project › Agents, Hub accounts on Setup. Every link to one still works: it opens
  * the page at that part, which is marked for reveal by the tab's own name.
  */
-const PART_OF: Partial<Record<Tab, Tab>> = { devices: "hubs", "hub.updates": "hub.machines", "hub.tools": "hub.profiles", "hub.accounts": "hub.setup" };
+const PART_OF: Partial<Record<Tab, Tab>> = { devices: "hubs", "hub.updates": "hub.machines", "hub.profiles": "hub.providers", "hub.tools": "hub.agents", "hub.accounts": "hub.setup" };
 /** The page a tab is on: itself, unless it is a part of another. */
 export const pageOf = (tab: Tab): Tab => PART_OF[tab] ?? tab;
 

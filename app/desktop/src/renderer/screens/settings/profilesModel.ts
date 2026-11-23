@@ -1,7 +1,7 @@
-// The task profiles' page (Settings › Hub › Every project › Agents) and a project's allowed ones, kept free of
+// The task profiles under each provider (Settings › Hub › Providers) and a project's allowed ones, kept free of
 // React: a profile's draft, what it checks before the hub does, and the calls it makes.
 import type { Effort, Profile, ProfileCreateInput, ProfileModel, ProfileUpdateInput } from "../../../shared/contracts";
-import { byProvider, providerOf } from "../../../shared/agentProviders";
+import { byProvider, modelShort, providerOf, type AgentProviderId } from "../../../shared/agentProviders";
 
 /** The name `spawn_agent` takes: as the hub checks it. */
 const NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/u;
@@ -15,20 +15,18 @@ export interface ProfileDraft {
   readonly model: string;
   readonly effort: Effort;
   readonly fast: boolean;
-  readonly default: boolean;
 }
 
-/** A new profile starts on the list's first model, at high, not fast. */
+/** A new profile starts on the first of its provider's models, at high, not fast. */
 export const newDraft = (models: ReadonlyArray<ProfileModel>): ProfileDraft => ({
   name: "",
   note: "",
   model: models[0]?.id ?? "claude-opus-5-5",
   effort: "high",
   fast: false,
-  default: false,
 });
 
-export const draftOf = (p: Profile): ProfileDraft => ({ name: p.name, note: p.note, model: p.model, effort: p.effort, fast: p.fast, default: p.default });
+export const draftOf = (p: Profile): ProfileDraft => ({ name: p.name, note: p.note, model: p.model, effort: p.effort, fast: p.fast });
 
 /** Whether Claude Code offers fast mode on `model`. */
 export const hasFast = (models: ReadonlyArray<ProfileModel>, model: string): boolean => models.some((m) => m.id === model && m.fast);
@@ -37,8 +35,18 @@ export const hasFast = (models: ReadonlyArray<ProfileModel>, model: string): boo
 export const modelChoices = (models: ReadonlyArray<ProfileModel>, current: string | undefined): ReadonlyArray<ProfileModel> =>
   current === undefined || models.some((m) => m.id === current) ? models : [...models, { id: current, fast: false }];
 
-/** A model as a person reads it: its display name, else its id. */
-export const modelWord = (models: ReadonlyArray<ProfileModel>, model: string): string => models.find((m) => m.id === model)?.displayName ?? model;
+/** A provider's models to pick from, for a profile under it: its own in the list, and the one the profile runs on. */
+export const providerModels = (models: ReadonlyArray<ProfileModel>, provider: AgentProviderId, current: string | undefined): ReadonlyArray<ProfileModel> =>
+  modelChoices(
+    models.filter((m) => providerOf(m.id).id === provider),
+    current,
+  );
+
+/** A model as a person reads it: its display name (Google's without the hub's "(Antigravity)"), else its id. */
+export const modelWord = (models: ReadonlyArray<ProfileModel>, model: string): string => {
+  const m = models.find((x) => x.id === model);
+  return m === undefined ? model : modelShort(m);
+};
 
 /** One line under a profile's name: its model, effort and fast mode. */
 export const runsLine = (models: ReadonlyArray<ProfileModel>, p: Pick<Profile, "model" | "effort" | "fast">): string =>
@@ -60,7 +68,7 @@ const settled = (models: ReadonlyArray<ProfileModel>, d: ProfileDraft): ProfileD
 
 export function createInput(models: ReadonlyArray<ProfileModel>, draft: ProfileDraft): ProfileCreateInput {
   const d = settled(models, draft);
-  return { name: d.name, note: d.note.trim(), model: d.model, effort: d.effort, fast: d.fast, ...(d.default ? { default: true } : {}) };
+  return { name: d.name, note: d.note.trim(), model: d.model, effort: d.effort, fast: d.fast };
 }
 
 /** Only what changed, so the hub keeps a refusal while the model stays; none when nothing did. */
@@ -73,7 +81,6 @@ export function updateInput(models: ReadonlyArray<ProfileModel>, saved: Profile,
     ...(d.model !== saved.model ? { model: d.model } : {}),
     ...(d.effort !== saved.effort ? { effort: d.effort } : {}),
     ...(d.fast !== saved.fast ? { fast: d.fast } : {}),
-    ...(d.default && !saved.default ? { default: true } : {}),
   };
   return Object.keys(input).length > 1 ? input : undefined;
 }
@@ -97,21 +104,9 @@ export function allowedAfter(allowed: ReadonlyArray<string>, defaultName: string
 export const byProviderOf = (profiles: ReadonlyArray<Profile>): { profile: Profile; group: string }[] =>
   byProvider(profiles, (p) => p.model).flatMap((g) => g.items.map((profile) => ({ profile, group: g.provider.name })));
 
-/** A choice of Lead model past Hub default: a profile, or a model no profile runs on yet, which a profile is made on. */
-export type LeadChoice = { kind: "profile"; profile: Profile; group: string } | { kind: "model"; model: ProfileModel; group: string };
-
 /**
- * Lead model's choices past Hub default, by provider: each profile, and each model of a provider other than Anthropic's
- * that no profile runs on (Google's Gemini), so a lead can start on one from here; Anthropic's are the profiles alone.
+ * Every profile picker's last entry (Lead model, Lead runs on, Default profile): Add profile…, which opens Providers,
+ * where a profile is made under its provider. A picker lists profiles alone, never a bare model. Never a profile's
+ * name, which can't start with "@".
  */
-export function leadChoices(profiles: ReadonlyArray<Profile>, models: ReadonlyArray<ProfileModel>): LeadChoice[] {
-  const bare = models.filter((m) => providerOf(m.id).id !== "anthropic" && !profiles.some((p) => p.model === m.id));
-  const all: ({ kind: "profile"; profile: Profile } | { kind: "model"; model: ProfileModel })[] = [
-    ...profiles.map((profile) => ({ kind: "profile" as const, profile })),
-    ...bare.map((model) => ({ kind: "model" as const, model })),
-  ];
-  return byProvider(all, (c) => (c.kind === "profile" ? c.profile.model : c.model.id)).flatMap((g) => g.items.map((c) => ({ ...c, group: g.provider.name })));
-}
-
-/** A model choice's value in Lead model's picker: never a profile's name, which can't hold a colon. */
-export const MODEL_CHOICE = "model:";
+export const ADD_PROFILE = "@add-profile";

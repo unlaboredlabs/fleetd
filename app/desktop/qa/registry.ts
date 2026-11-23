@@ -4619,12 +4619,13 @@ export const screens: readonly Screen[] = [
     },
   },
   { id: "settings.hub.tools", route: "#/settings/hub/tools", fixtures: ["admin-owner", "settings-agents", "admin-old-hub"] },
-  // Every project › Agents: the hub's three profiles, high the default and quick in fast mode; medium open in its
-  // editor, its model, reasoning, fast mode and the default mark. Under them, Lead runs on.
-  { id: "settings.hub.profiles", route: "#/settings/hub/profiles", fixtures: ["admin-owner", "settings-agents"] },
+  // Every project › Agents: the Default profile and Lead runs on, picked from the profiles Providers lists, then skills.
+  { id: "settings.hub.agents", route: "#/settings/hub/agents", fixtures: ["admin-owner", "settings-agents"] },
+  // Providers with the hub's three profiles under Anthropic, high the default and quick in fast mode; medium open in
+  // its editor, on Anthropic's models, its reasoning and fast mode.
   {
-    id: "settings.hub.profiles",
-    route: "#/settings/hub/profiles",
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
     fixtures: ["settings-agents"],
     variant: "edit",
     open: async (page) => {
@@ -4669,24 +4670,22 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox", { name: "Gemini API key" }).waitFor();
     },
   },
-  // A profile's editor on a Gemini model while Google isn't connected: Sign in with Google right under the model.
+  // A new profile under Google, which isn't connected: the editor on Google's models.
   {
-    id: "settings.hub.profiles",
-    route: "#/settings/hub/profiles",
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
     fixtures: ["settings-agents"],
-    variant: "google-model",
+    variant: "google-profile",
     sizes: ["medium"],
     open: async (page) => {
-      await page.locator("[data-profile='medium'] button").first().click();
-      await page.getByRole("combobox", { name: "Model" }).click();
-      await page.getByRole("option", { name: "Gemini 4 Neon" }).click();
-      await page.locator("[data-google-connect]").waitFor();
+      await page.getByRole("button", { name: "Add Google profile" }).click();
+      await page.getByRole("region", { name: "New Google profile" }).waitFor();
     },
   },
-  // A profile's Model open: Anthropic's models, then Google's, each under its provider's name.
+  // A profile's Model open: its provider's models alone.
   {
-    id: "settings.hub.profiles",
-    route: "#/settings/hub/profiles",
+    id: "settings.hub.providers",
+    route: "#/settings/hub/providers",
     fixtures: ["settings-agents"],
     variant: "models",
     sizes: ["medium"],
