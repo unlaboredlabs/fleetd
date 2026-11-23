@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
-import { sentenceCase, useSteady, wakeSpeaks, workedFor } from "../desktop";
+import { sentenceCase, useSteady, wakeShown, workedFor } from "../desktop";
 import { LOOP_BEATS } from "../glyph";
 import { useHub } from "../hubContext";
 import type { Key } from "../store";
@@ -52,9 +52,9 @@ export function TurnLine({ chatKey, writing, still }: { chatKey: Key; writing: b
     const timer = setTimeout(() => setHeld(seen), HOLD_MS);
     return () => clearTimeout(timer);
   }, [over, seen]);
-  // The bot in the reply's place saying what holds its lead up (a computer starting, a reason; WakeRow.tsx): the line
-  // says nothing then. While it works, the line says what it does, beside the bot's typing dots.
-  const waking = wakeSpeaks(wakeIn(state, chatKey, writing));
+  // The bot in the reply's place (WakeRow.tsx) says the lead is on your message: one sign of it, so the line says
+  // nothing then.
+  const waking = wakeShown(wakeIn(state, chatKey, writing));
   const view = running && !waking ? turnView(writing ? { kind: "writing" } : activity, since, 0) : undefined;
   const worked = over && held !== seen ? workedFor(ended.until - ended.since) : undefined;
   const glyph = view?.glyph;

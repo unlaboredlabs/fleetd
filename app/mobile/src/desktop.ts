@@ -204,6 +204,7 @@ export {
   replied,
   SLOW_MS,
   START_STALE_MS,
+  endedAt,
   STIR_MS,
   tryAgainLabel,
   tryAgainNote,
@@ -213,7 +214,6 @@ export {
   wakeOf,
   wakePose,
   wakeShown,
-  wakeSpeaks,
   wakeWords,
   type Wake,
 } from "../../desktop/src/shared/wake";

@@ -135,6 +135,8 @@ export interface State {
    * ended without a reply ends the bot's wait in the reply's place too (wake.ts). Absent from a cache before it.
    */
   readonly turnEnded?: Readonly<Record<Key, number>> | undefined;
+  /** Why each bot read can't start, as Status said when its chat opened or you sent to it ("" with no reason); absent: not blocked. */
+  readonly blocked?: Readonly<Record<Key, string>> | undefined;
   /** Each chat's screens, newest first (browser_sessions), read as it opens and again as one changes. */
   readonly screens: Readonly<Record<Key, readonly BrowserSession[]>>;
   /** Each project's agents at work, its lead not counted, from the open orders (orders_board): its bot works while any do, as the desktop's does. */
@@ -202,6 +204,8 @@ export type Action =
   | { readonly t: "discard"; readonly key: Key; readonly clientRequestId: string }
   | { readonly t: "requests"; readonly requests: readonly HumanRequest[] }
   | { readonly t: "board"; readonly orders: readonly OrderCard[] }
+  /** Status's word on whether a bot is blocked, and why. */
+  | { readonly t: "blocked"; readonly key: Key; readonly reason: string | undefined }
   /** A message moved to another order (chat_about_set's answer), before its event comes. */
   | { readonly t: "retagged"; readonly key: Key; readonly message: ChatMessage }
   | { readonly t: "screens"; readonly key: Key; readonly sessions: readonly BrowserSession[] }
@@ -338,6 +342,11 @@ export const reduce = (s: State, a: Action): State => {
     }
     case "board":
       return { ...s, running: runningOf(a.orders), orders: a.orders };
+    case "blocked": {
+      if (s.blocked?.[a.key] === a.reason) return s;
+      const { [a.key]: _was, ...rest } = s.blocked ?? {};
+      return { ...s, blocked: a.reason === undefined ? rest : { ...rest, [a.key]: a.reason } };
+    }
     case "retagged": {
       const chat = s.chats[a.key];
       return chat === undefined ? s : withChat(s, a.key, mergeMessages(chat, [a.message]));

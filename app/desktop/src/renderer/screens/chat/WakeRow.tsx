@@ -1,7 +1,7 @@
 // The bot in the reply's place (shared/wake.ts, the person's pick of W792's designs, for every turn since W852): from
 // your send until the reply lands or the turn ends, the bot under your message with the lead's typing bubble beside
 // it, as a person's avatar and dots in Messages, its own look thinking or working. While the lead can't take it, one
-// plain line instead says why. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
+// plain line instead says why; a start that never came, that it didn't start and what to do. A cloud bot asleep arrives asleep, stirs, and wakes with its computer's steps, one quiet
 // word beside it that rises out as the next rises in. A failed try slumps, with one plain reason and a Try again that
 // counts down to the start's own retry and goes at once when pressed; a press that starts nothing says why beside it.
 import { useEffect, useState, type ReactNode } from "react";
@@ -36,6 +36,8 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
   }, []);
   const now = useHubNow(wake.phase === "waking" || wake.phase === "failed" || wake.phase === "received");
   const said = wakeWords(wake, now);
+  // A reason, or that the lead didn't start: a line that wraps, not a word that gives way to the next.
+  const plain = wake.phase === "held" || wake.phase === "unstarted";
   const words =
     said === undefined ? undefined : (
       <>
@@ -53,8 +55,8 @@ function Woken({ project, wake }: { project: ProjectRef; wake: Wake }) {
           <TypingBubble label={wake.phase === "working" ? "The lead is working" : "The lead is thinking"} />
         </span>
       ) : null}
-      <span className={wake.phase === "held" ? s.reason : s.words}>
-        {words === undefined ? null : wake.phase === "held" ? words : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
+      <span className={plain ? s.reason : s.words}>
+        {words === undefined ? null : plain ? words : <Swap id={said?.count === undefined ? (said?.words ?? "") : "slow"}>{words}</Swap>}
         {wake.phase === "failed" ? <TryAgain key={`${wake.reason}|${String(wake.retryAt)}`} project={project} wake={wake} now={now} /> : null}
       </span>
     </div>

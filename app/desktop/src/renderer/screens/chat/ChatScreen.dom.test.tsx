@@ -143,7 +143,12 @@ it("says only that it is blocked when the hub gave no reason, and nothing when i
 
 it("says what the lead is doing in the island over the composer, never as a row of the conversation", async () => {
   const reading = { activity: { kind: "read" as const, path: "src/checkout/summary/rounding/half-cent-edge-cases.ts" }, since: AT };
-  await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: reading }));
+  // The lead answered and reads on: nothing of yours waits on it, so the bot isn't in the reply's place to say it.
+  const messages = [
+    { messageId: "m1", projectRef: project, seq: 1, author: "human", state: "final", text: "Add dark mode", createdAt: AT },
+    { messageId: "m2", projectRef: project, seq: 2, author: "lead", state: "final", text: "On it.", createdAt: AT },
+  ];
+  await mount({ state: "working" }, liveLane(leadLaneId(project), "working", { activity: reading }), { messages });
   const island = host.querySelector("[data-band] > [data-island]");
   // Its file's name as code; the whole name is held, the shown copy cut to the room it has. With no agents, main green
   // and no DMs its card would be empty: it says the step, and is no button.

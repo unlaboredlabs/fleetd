@@ -94,3 +94,22 @@ test("Try again asks the lead's node to start now, and answers false where no st
   // A bot with no lead yet has nothing to start.
   expect(await startNow(kit().hub, { machineId: "devbox", projectId: "none" })).toBe(false);
 });
+
+// W852: the apps take a person's message from before the lead's latest turn ended as one that turn had, answered or
+// not, so the bot leaves the reply's place on a quiet turn though the app was closed when it ended.
+test("the chat state says when the lead's latest turn ended, and nothing while it is mid-turn", async () => {
+  const n = await node();
+  const ended = "2026-11-23T10:00:05.000Z";
+  await n.updated(lead({ status: "running", activeRunId: "run-1", latestRun: { id: "run-1", status: "running", ordinal: 1 } }));
+  expect(state(n.hub, r).leadWorking).toBe(true);
+  expect(state(n.hub, r).leadIdleAt).toBeUndefined();
+  await n.updated(lead({ updatedAt: ended, latestRun: { id: "run-1", status: "completed", ordinal: 1 } }));
+  expect(state(n.hub, r)).toMatchObject({ leadWorking: false, leadIdleAt: ended });
+  // The flip to idle is told with it, so an app that sees it live has the end too.
+  const last = events(n.hub)
+    .page(0)
+    .events.filter((e) => e.type === "chat.waiting")
+    .at(-1);
+  expect((last?.data as ProjectChatState).leadIdleAt).toBe(ended);
+  n.done();
+});

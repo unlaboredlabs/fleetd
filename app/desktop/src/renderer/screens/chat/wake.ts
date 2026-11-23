@@ -1,12 +1,12 @@
 // The bot in the reply's place in its chat (shared/wake.ts): what the chat knows of it, read from the store. Its lead
-// asleep (the chat state's leadAsleep), at work, and what its live lane does now; whether your newest message waits for
-// it (no reply since, and no turn of its lead ended since: the store's chatTurnEnds) and what holds it up (chat_send's
-// leadWaiting, the bot blocked); whether this turn began with a start and its reply hasn't landed yet is held here, one
-// record for every chat and bot, so the row in the reply's place, the typing bubble, the island and the bot in every
-// list agree.
+// asleep (the chat state's leadAsleep), at work, and what its live lane does now; whether your newest message has an
+// answer, when the lead last stopped (the chat state's leadIdleAt, or a stop seen here: the store's chatTurnEnds), and
+// what holds it up (chat_send's leadWaiting, the bot blocked); whether this turn began with a start and its reply hasn't
+// landed yet is held here, one record for every chat and bot, so the row in the reply's place, the typing bubble, the
+// island and the bot in every list agree.
 import { useEffect, useMemo, useState } from "react";
 import { leadLaneId } from "../../../shared/turnWords";
-import { askedAt, ColdTurns, heldWords, replied, START_STALE_MS, waitingFor, wakeOf, type Wake } from "../../../shared/wake";
+import { askedAt, ColdTurns, endedAt, heldWords, replied, START_STALE_MS, waitingFor, wakeOf, type Wake } from "../../../shared/wake";
 import { useData, useToolQuery } from "../../src/data/react";
 import type { DataState, ProjectKey } from "../../src/data/store";
 
@@ -42,13 +42,16 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   // One of yours on its way was asked just now: its own time comes with the hub's copy.
   const asked = useData((s) => (sending ? undefined : askedAt(s.chats[key]?.messages)));
   // Offline, whether the lead started can't be known: only a start already seen shows.
-  const waiting = useData((s) => s.fresh && waitingFor(s.chats[key]?.messages, sending, s.chatTurnEnds?.[key]));
+  const waiting = useData((s) => s.fresh && waitingFor(s.chats[key]?.messages, sending));
+  // When the lead last stopped: the hub's word, kept in every state it sends, or a stop seen here.
+  const idleAt = useData((s) => s.chatStates[key]?.leadIdleAt);
+  const ended = useData((s) => endedAt(s.chatStates[key]?.leadIdleAt, s.chatTurnEnds?.[key]));
   const leadWaiting = useData((s) => leadWaitingOf(s, key));
   const skew = useData((s) => s.live.skewMs ?? 0);
   const row = useToolQuery("status_get", ALL).data?.rows?.find((r) => `${r.projectRef.machineId}/${r.projectRef.projectId}` === key);
   const held = heldWords({ leadWaiting });
   const blocked = heldWords({ blocked: row?.state === "blocked" ? (row.blockedReason ?? "") : undefined });
-  // A wait for a start goes once it is stale (START_STALE_MS on the hub's clock): the message it went stale for.
+  // A wait for a start is over once it is stale (START_STALE_MS on the hub's clock): the message it went stale for.
   const [staleAt, setStaleAt] = useState<number>();
   useEffect(() => {
     if (!waiting || working || asked === undefined) return;
@@ -58,8 +61,8 @@ export function useWake(key: ProjectKey, writing = false): Wake | undefined {
   const isCold = cold.see(key, working, activity, landed);
   const stale = asked !== undefined && staleAt === asked;
   return useMemo(
-    () => wakeOf({ asleep, working, activity, cold: isCold, writing, asked, waiting, held, blocked, stale }),
-    [asleep, working, activity, isCold, writing, asked, waiting, held, blocked, stale],
+    () => wakeOf({ asleep, working, activity, cold: isCold, writing, asked, waiting, endedAt: ended, idleKnown: idleAt !== undefined, held, blocked, stale }),
+    [asleep, working, activity, isCold, writing, asked, waiting, ended, idleAt, held, blocked, stale],
   );
 }
 

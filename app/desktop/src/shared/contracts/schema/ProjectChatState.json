@@ -81,6 +81,10 @@
           "description": "The lead's computer is asleep (fleetd cloud): the next message starts it before the lead reads it. Absent: awake,\nor a hub whose leads never sleep.",
           "type": "boolean"
         },
+        "leadIdleAt": {
+          "$ref": "#/$defs/Timestamp",
+          "description": "When the lead's latest turn ended, while it isn't mid-turn: its thread's last progress. A person's message from\nbefore it was in the chat when a turn ended, answered or not (a quiet turn). Absent: mid-turn, never started, or an\nolder hub."
+        },
         "leadWorking": {
           "description": "The lead is mid-turn.",
           "type": "boolean"

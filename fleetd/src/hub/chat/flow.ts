@@ -96,9 +96,22 @@ export const leadAsleep = (hub: Hub, r: ProjectRef) => {
   return thread !== undefined && store(hub).threadGet(thread)?.thread.asleep === true && !midTurn(hub, thread);
 };
 
+/**
+ * When the project's lead's latest turn ended, while it isn't mid-turn: its thread's last progress. The apps take a
+ * person's message from before it as one a turn had, answered or not, so the bot leaves the reply's place.
+ */
+export const leadIdleAt = (hub: Hub, r: ProjectRef): string | undefined => {
+  const thread = leadThread(hub, r);
+  if (thread === undefined || midTurn(hub, thread)) return undefined;
+  return store(hub).threadGet(thread)?.thread.lastProgressAt;
+};
+
+/** The project's chat state, as the lead's thread says it now. */
+export const chatState = (hub: Hub, r: ProjectRef): ProjectChatState => chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r), leadIdleAt(hub, r));
+
 /** The project's chat state, announced as `chat.waiting` when it changed. */
 export function state(hub: Hub, r: ProjectRef): ProjectChatState {
-  const s = chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r));
+  const s = chatState(hub, r);
   chat(hub).tellState(s);
   return s;
 }
@@ -737,7 +750,7 @@ export function states(hub: Hub): ProjectChatState[] {
   return projects.flatMap((p) => {
     const r = { machineId: p.machineId, projectId: p.projectId };
     try {
-      return [chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r))];
+      return [chatState(hub, r)];
     } catch {
       return [];
     }

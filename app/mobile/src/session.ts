@@ -15,7 +15,7 @@ import { registerDevice, signOut, type PushDeps } from "./push";
 import { farPageFrom } from "./chatView";
 import { FIND_PINS } from "./messagePins";
 import { cachedOf, parseCached, withCached, type Cached, type OpenAt } from "./cache";
-import { initial, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
+import { initial, keyOf, LATEST, reduce, refOf, effectsOf, type Action, type Key, type State } from "./store";
 
 const CHAT_PAGE = 50;
 /** A chat's screens read at once: its live ones are among its newest. */
@@ -513,9 +513,20 @@ export class Session {
         ? { t: "sent", key, clientRequestId: row.clientRequestId, result: { ok: true, message: r.output.message }, leadWaiting: r.output.leadWaiting }
         : { t: "sent", key, clientRequestId: row.clientRequestId, result: r },
     );
+    if (r.ok) void this.#readBlocked(key);
+  }
+
+  /** Whether the bot is blocked and why (its usage paused, its machine offline), as the desktop's chat reads it from Status:
+   * the bot in the reply's place says so (wake.ts). */
+  async #readBlocked(key: Key): Promise<void> {
+    const r = await this.#client.call("status_get", {});
+    if (!r.ok) return;
+    const row = r.output.rows?.find((p) => keyOf(p.projectRef) === key);
+    this.#dispatch({ t: "blocked", key, reason: row?.state === "blocked" ? (row.blockedReason ?? "") : undefined });
   }
 
   async #loadLatest(key: Key): Promise<void> {
+    void this.#readBlocked(key);
     const r = await this.#client.call("chat_history", { projectRef: refOf(key), limit: CHAT_PAGE });
     if (r.ok) this.#dispatch({ t: "history", key, page: r.output, direction: "latest" });
     else if (r.error.code !== "offline") this.#dispatch({ t: "history_failed", key, error: r.error, direction: "latest" });

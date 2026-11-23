@@ -87,7 +87,7 @@ import { setupLine } from "./setupChanged";
 import { SetupChangedLine } from "./SetupChangedLine";
 import { TURN_LINE_HEIGHT, TurnLine } from "./TurnLine";
 import { WakeRow } from "./WakeRow";
-import { wakeIn } from "../wake";
+import { staleAt, wakeIn } from "../wake";
 import { useNow } from "./time";
 
 /**
@@ -177,6 +177,14 @@ export function Chat({ navigation, route }: NativeStackScreenProps<RootParams, "
   // A cloud bot waking: shown from its start until its reply's first words do (wake.ts).
   const newest = items.at(-1);
   const writing = newest?.state === "streaming";
+  // A wait for the lead's start turns stale on the clock, with nothing else changing: drawn again then (wake.ts staleAt).
+  const staleBy = staleAt(state, chatKey);
+  const [, setStaleTick] = useState(0);
+  useEffect(() => {
+    if (staleBy === undefined) return;
+    const timer = setTimeout(() => setStaleTick((n) => n + 1), Math.max(0, staleBy - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [staleBy]);
   const waking = wakeIn(state, chatKey, writing);
   const wake = win === undefined && wakeShown(waking) && !(writing && newest !== undefined && partBubbles(newest).length > 0) ? waking : undefined;
   const live = state.hub.phase === "live";

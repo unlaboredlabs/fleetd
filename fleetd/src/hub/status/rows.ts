@@ -4,8 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { Machine, ProjectRef, ProjectStatusRow, StaleMark } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { hubZone } from "../attention/index.ts";
-import { leadAsleep, leadWorking } from "../chat/flow.ts";
-import { chat } from "../chat/index.ts";
+import { chatState } from "../chat/flow.ts";
 import { leadAccountKey } from "../claude_accounts/index.ts";
 import { link } from "../link/index.ts";
 import { store } from "../store/hub_store.ts";
@@ -172,7 +171,7 @@ export function read(hub: Hub, fresh: Fresh, now: number): ProjectStatusRow[] {
     // The lead chat's own rule, so the row and the chat's needs-you dot never disagree; a read that announces nothing.
     let state: { needsYou: boolean; leadWorking: boolean } | undefined;
     try {
-      state = chat(hub).state(r, leadWorking(hub, r), leadAsleep(hub, r));
+      state = chatState(hub, r);
     } catch {
       state = undefined;
     }
