@@ -207,7 +207,9 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
   executorHooks(hub).onMcpSkipped((thread, change, at) => mcpSkipped(hub, thread, change, at));
   // A lead whose run the stall watchdog stopped, still on after STALL_GRACE_MS on its machine: started again.
   // As the chat's line said: one that carries on starts with a turn, one that waits for the person starts with none.
-  const restartFrozen = async (r: ProjectRef, run: string, carries: boolean) => {
+  // Each bot's stall-restarts in a row, for the person's message they were for ("" for none); a completed turn ends a row.
+  const restarts = new Map<string, { readonly ask: string; readonly n: number }>();
+  const restartFrozen = async (r: ProjectRef, run: string, carries: boolean, ask: string) => {
     const lead = area.records.leadGet(r);
     if (lead === undefined) return;
     const thread = { machineId: r.machineId, threadId: lead.threadId };
@@ -223,6 +225,9 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
       // can't start a lead with none) says it carries on.
       const now = area.records.leadGet(r)?.threadId;
       if (now === undefined || now === lead.threadId) return;
+      const key = `${r.machineId}/${r.projectId}`;
+      const before = restarts.get(key);
+      restarts.set(key, { ask, n: before?.ask === ask ? before.n + 1 : 1 });
       const waits = area.startedQuiet(now) === true;
       chat(hub).add(r, { author: "system", text: carries || waits ? FROZEN_LINE : FROZEN_CARRIES_LINE, source: `lead_restarted:${run}` });
     } catch (error) {
@@ -237,6 +242,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
     const key = `${found.project.machineId}/${found.project.projectId}`;
     if (found.end.kind === "completed") {
       carriedOn.delete(key);
+      restarts.delete(key);
       return switchLead(found.project);
     }
     // Its claude never started: the person reads why, and the lead is started again by itself once its provider is
@@ -264,11 +270,20 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
       const stalled = e.data as { reason?: unknown; runId?: unknown } | undefined;
       if (e.type === "thread.failed" && stalled?.reason === "stalled") {
         const run = typeof stalled.runId === "string" ? stalled.runId : String(e.seq);
-        chat(hub).add(found.project, { author: "system", text: stalledLine(carries), source: `lead_stalled:${run}` });
+        const r = found.project;
+        // Started again STALL_RESTARTS_MAX times in a row for the same message of the person's, and stalled each time:
+        // its machine is the trouble. Nothing more starts by itself, and the chat says so, and what to do.
+        const ask = area.waitingAsk(r) ?? "";
+        const before = restarts.get(key);
+        if (before?.ask === ask && before.n >= STALL_RESTARTS_MAX) {
+          const machine = store(hub).machineGet(r.machineId)?.name ?? r.machineId;
+          chat(hub).add(r, { author: "system", text: stuckLine(machine), source: `lead_stuck:${run}` });
+          return;
+        }
+        chat(hub).add(r, { author: "system", text: stalledLine(carries), source: `lead_stalled:${run}` });
         // Its machine may never end the run (a claude frozen, a host that lost it): then the lead starts again, as a
         // person's Restart lead does, so it carries on, takes the next message, and Stop and its orders read it right.
-        const r = found.project;
-        void sleep(STALL_GRACE_MS).then(() => restartFrozen(r, run, carries));
+        void sleep(STALL_GRACE_MS).then(() => restartFrozen(r, run, carries, ask));
       }
       if (!carries) return;
       carriedOn.add(key);
@@ -290,3 +305,10 @@ export const FROZEN_LINE = "Its machine didn't end the stopped turn, so fleetd s
 /** The same, for a lead that was to wait for the person but started with a turn: a message of theirs waited for an
  * answer, or its node can only start it with one. */
 export const FROZEN_CARRIES_LINE = "Its machine didn't end the stopped turn, so fleetd started the lead again, and it carries on.";
+
+/** How many times in a row a lead stalled on the same message of the person's is started again by itself. */
+export const STALL_RESTARTS_MAX = 2;
+
+/** The chat's line once a lead stalled again past STALL_RESTARTS_MAX: what's wrong, and what the person can do. */
+export const stuckLine = (machine: string): string =>
+  `The lead keeps stalling on ${machine}, so fleetd stopped starting it again. Restart the lead from the bot's settings to try once more, or check ${machine}.`;
