@@ -32,6 +32,7 @@ import {
   CAP_SESSION_SEAL,
   CAP_UPDATE_FETCH,
   CAP_UPDATE_HOLD,
+  CAP_UPDATE_BUILD,
 } from "../../shared/node_link.ts";
 import { CAP_SCREEN_CONTROL } from "../../shared/screens_wire.ts";
 import type { Node } from "../api.ts";
@@ -71,6 +72,7 @@ const KEPT = new Set([
   CAP_SELF_UPDATE,
   CAP_UPDATE_FETCH,
   CAP_UPDATE_HOLD,
+  CAP_UPDATE_BUILD,
   CAP_PROJECT_SETTINGS,
   CAP_SESSION_END,
   CAP_SESSION_HOST,

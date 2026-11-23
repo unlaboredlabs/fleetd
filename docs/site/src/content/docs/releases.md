@@ -26,6 +26,10 @@ Each hub is in a fixed stage, worked out from a random id it creates for itself 
 build they run, and nothing is sent from your hub. The desktop app follows the same stages with its own id. The phone
 gets a new over-the-air bundle once its build has reached every hub.
 
+A machine still on a fleetd from before numbered builds can only take the newest build. While your hub runs an older
+one, Settings › Hub › Machines › Updates says that machine is waiting. It updates once the hub runs the newest build,
+or right away if you run `fleetd update` on it.
+
 ## Update speed {#speed}
 
 Settings › Hub › Machines › Updates › **Update speed**:
@@ -43,8 +47,10 @@ After the hub restarts on a new build, it checks itself before its machines upda
 
 1. The hub comes up healthy within 90 seconds.
 2. Every machine that was online before the update reconnects within 3 minutes.
-3. A lead turn works: one finishes normally within 5 minutes, or none ends at all. Two failed turns with no successful
-   one fail the check.
+3. Lead turns still work. Two failed turns with none finishing normally fail the check. A failure counts whether
+   Claude exited, hit a fatal error or stalled, or the machine lost its link. Failures whose error the provider
+   reported don't count, because a new build can't cause them: a refused sign-in, a quota or rate limit, or an API
+   outage. The update's record notes them instead.
 
 If any step fails, the hub puts the previous build back by itself and restarts on it. Settings › Hub › Machines ›
 Updates then says which step failed. Automatic updates skip that build until a newer one is out. **Update** still
@@ -60,6 +66,6 @@ gh workflow run rollout.yml -R unlaboredlabs/fleetd -f action=halt -f build=2026
 
 - `halt`: no new hub takes the build. Hubs already on it keep it.
 - `pull`: every hub on the build goes back to the newest earlier build that has reached it. Its machines go back too.
-- `resume`: undoes a halt or a pull.
+- `resume`: undoes a halt or a pull. Hubs on Steady still never take a build that was halted once.
 
 Hubs see the change at their next check, within 2 minutes.

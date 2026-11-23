@@ -82,6 +82,8 @@ export const CAP_CLAUDE_LOGIN = "claude_login";
 export const CAP_ANTIGRAVITY_LOGIN = "antigravity_login";
 export const CAP_UPDATE_FETCH = "update_fetch";
 export const CAP_UPDATE_HOLD = "update_hold";
+/** The node takes a build the hub names by its number and checksums (`NodeUpdate.build`), not only the newest (D701). */
+export const CAP_UPDATE_BUILD = "update_build";
 export const CAP_SESSION_HOST = "session_host";
 export const CAP_ASSISTANT = "assistant";
 /** `signins_forget`: the node forgets a project's kept browser sign-ins. */

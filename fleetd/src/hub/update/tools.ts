@@ -105,9 +105,9 @@ export function register(tools: Registry): void {
     if (input.drainMinutes !== undefined && input.drainMinutes > DRAIN_MINUTES_MAX) {
       throw new ToolError("invalid", `drainMinutes must be 0-${DRAIN_MINUTES_MAX}`);
     }
+    const speed = input.speed === undefined ? undefined : parseSpeed(input.speed);
+    if (input.speed !== undefined && speed === undefined) throw new ToolError("invalid", "speed must be fast or steady");
     try {
-      const speed = input.speed === undefined ? undefined : parseSpeed(input.speed);
-      if (input.speed !== undefined && speed === undefined) throw new ToolError("invalid", "speed must be fast or steady");
       updates(hub).setSettings(input.auto, input.drainMinutes, speed);
     } catch (e) {
       throw new ToolError("failed", `The hub couldn't write its update settings: ${(e as Error).message}`);

@@ -114,6 +114,8 @@ test("a build goes from publish through fleetd's own hub to everyone's stages, a
   await rollout(["resume", "2026.11.23.4"]);
   expect(listed()[0]).not.toHaveProperty("haltedAt");
   expect(listed()[0]).not.toHaveProperty("pulledAt");
+  // Steady never takes it now.
+  expect(listed()[0]!.wasHalted).toBe(true);
   // A build that isn't listed is refused, naming the ones that are.
   await expect(rollout(["halt", "2026.1.1.1"])).rejects.toThrow("2026.1.1.1 isn't in rollout.json (builds listed: 2026.11.23.4)");
 });

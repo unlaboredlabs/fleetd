@@ -24,7 +24,7 @@
 // files named by their full address in that build's release. The phone takes its over-the-air bundle when a build
 // reaches everyone: edge's mobile-updates.tar.gz is then that build's, and fleetd.sh deploys it.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
@@ -97,7 +97,8 @@ export function prune(builds: RolloutBuild[], now: number): RolloutBuild[] {
       slots.add(slot);
       return true;
     }
-    if (!(now - ms(b.publishedAt) < KEEP_MS) || !good(b) || b.passedAt === undefined || slots.has(slot)) return false;
+    // Steady's: never a build that was halted once.
+    if (!(now - ms(b.publishedAt) < KEEP_MS) || !good(b) || b.wasHalted === true || b.passedAt === undefined || slots.has(slot)) return false;
     slots.add(slot);
     return true;
   });
@@ -154,6 +155,9 @@ export function gate(r: Rollout, cloud: () => Cloud, now: number, contains: (a: 
 export function stageSources(r: Rollout, now: number, hasFeed: (build: string) => boolean): { feed: string; from: string | undefined }[] {
   return FEEDS.map((f) => ({ feed: f.name, from: feedBuild(r, f.percent, now, hasFeed) }));
 }
+
+/** A feed as the nightly copy serves it: its version nightly-named, which apps from before Edge's rename compare. */
+export const nightlyFeed = (feed: string) => feed.replace(/^(version: .*)-edge\./m, "$1-nightly.");
 
 /** The newest build that reached `percent` of hubs and has a desktop feed (its own or the nearest older build's). */
 export function feedBuild(r: Rollout, percent: number, now: number, hasFeed: (build: string) => boolean): string | undefined {
@@ -283,12 +287,26 @@ function writeFeeds(r: Rollout, now: number, work: string, filesOf: (build: stri
       else if (feed !== "latest" && edge.has(own)) text = readFileSync(download(TAG, own, join(work, "edge-latest")), "utf8");
       else continue;
       const target = `${feed}-${platform}.yml`;
-      if (same(target, text)) continue;
-      const out = join(work, target);
-      writeFileSync(out, text);
-      gh(["release", "upload", TAG, out, "--clobber"]);
-      edge.add(target);
-      console.log(`${target}: ${from ?? "edge's latest"}`);
+      if (!same(target, text)) {
+        const out = join(work, target);
+        writeFileSync(out, text);
+        gh(["release", "upload", TAG, out, "--clobber"]);
+        edge.add(target);
+        console.log(`${target}: ${from ?? "edge's latest"}`);
+      }
+      // Apps from before Edge's rename read the nightly copy (publish.sh): only a build that reached everyone, under
+      // the nightly-named version they compare.
+      if (feed === "latest" && from !== undefined) {
+        const old = nightlyFeed(text);
+        const was = assets("nightly").includes(target) ? readFileSync(download("nightly", target, join(work, "nightly")), "utf8") : "";
+        if (was !== old) {
+          const out = join(work, "nightly-out", target);
+          mkdirSync(join(work, "nightly-out"), { recursive: true });
+          writeFileSync(out, old);
+          gh(["release", "upload", "nightly", out, "--clobber"]);
+          console.log(`nightly ${target}: ${from}`);
+        }
+      }
     }
   }
 }
@@ -348,9 +366,11 @@ function flag(kind: "halt" | "pull" | "resume" | "pass", build: string): Rollout
       if (kind === "halt") {
         if (b.haltedAt !== undefined) return false;
         b.haltedAt = now;
+        b.wasHalted = true;
       } else if (kind === "pull") {
         if (b.pulledAt !== undefined) return false;
         b.pulledAt = now;
+        b.wasHalted = true;
       } else if (kind === "pass") {
         if (b.hubPassedAt !== undefined) return false;
         b.hubPassedAt = now;

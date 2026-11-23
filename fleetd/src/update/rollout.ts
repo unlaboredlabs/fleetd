@@ -40,6 +40,8 @@ export type RolloutBuild = {
   passedAt?: string;
   /** Nobody new takes it. */
   haltedAt?: string;
+  /** It was halted or pulled once: a resume lets Fast hubs take it again, never Steady ones. */
+  wasHalted?: boolean;
   /** Everyone on it goes back to the build before. */
   pulledAt?: string;
 };
@@ -78,7 +80,7 @@ export function reaches(b: RolloutBuild, who: Picker, now: number): boolean {
   if (b.haltedAt !== undefined || b.pulledAt !== undefined) return false;
   if (who.ring === "first") return true;
   if (who.bucket >= percentAt(b, now)) return false;
-  return who.speed !== "steady" || now - ms(b.publishedAt) >= STEADY_MS;
+  return who.speed !== "steady" || (now - ms(b.publishedAt) >= STEADY_MS && b.wasHalted !== true);
 }
 
 /** What a machine on `running` does: stay, or move to `build` (`back` when that is older, after a pull). */
@@ -163,7 +165,7 @@ export async function readRollout(feed: Feed): Promise<Rollout | undefined> {
 /** The build to move to, with where its files are and their checksums (read only when asked: a release from before
  * pins keeps them in SHA256SUMS); or why the machine stays. */
 export type Choice =
-  | { kind: "move"; to: string; sums: () => Promise<Sums>; feed: Feed; back: boolean; build?: RolloutBuild }
+  | { kind: "move"; to: string; sums: () => Promise<Sums>; feed: Feed; back: boolean; build?: RolloutBuild; newest?: string }
   | { kind: "stay"; why: string; newest?: string };
 
 /**
@@ -182,7 +184,7 @@ export async function choose(feed: Feed, who: Picker, running: string, now: numb
   const p = pick(r, who, running, now);
   if (p.kind === "stay") return { kind: "stay", why: p.why, ...(r.builds[0] ? { newest: r.builds[0].version } : {}) };
   const s = sumsOf(p.build.sha256);
-  return { kind: "move", to: p.build.version, sums: async () => s, feed: files(p.build.build), back: p.back, build: p.build };
+  return { kind: "move", to: p.build.version, sums: async () => s, feed: files(p.build.build), back: p.back, build: p.build, newest: r.builds[0]!.version };
 }
 
 /** The hub's rollout id, made once at `path`: random, kept on the hub only, so its bucket never moves. */

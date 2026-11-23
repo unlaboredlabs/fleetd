@@ -15,15 +15,15 @@ import { versionLabel } from "../../update/version.ts";
 import { TESTED } from "../../node/runner/claude.ts";
 import type { HubUpdateData } from "../../shared/contracts.ts";
 import type { TrainArea } from "../train/index.ts";
-import { CAP_BUILD_BUN, CAP_BUILD_RUST } from "../../shared/node_link.ts";
+import { CAP_BUILD_BUN, CAP_BUILD_RUST, CAP_UPDATE_BUILD } from "../../shared/node_link.ts";
 import { leads } from "../leads/index.ts";
 import { leadWorking } from "../chat/flow.ts";
 import { runGh } from "../train/gh.ts";
 import { buildFeed } from "../../update/rollout.ts";
 import type { HubEventType } from "../../shared/contracts.ts";
-import type { Held, NodeActionResult, NodeAnswer, NodeFacts, UpdatePorts } from "./index.ts";
+import { type Held, leadEnd, type LeadTurns, type NodeActionResult, type NodeAnswer, type NodeFacts, type UpdatePorts } from "./index.ts";
 
-const LEAD_ENDS: HubEventType[] = ["thread.completed", "thread.failed"];
+const LEAD_ENDS: HubEventType[] = ["thread.completed", "thread.failed", "thread.interrupted"];
 
 /** The Claude Code version this fleetd was tested with. */
 export const CLAUDE_TESTED = TESTED;
@@ -84,19 +84,25 @@ export function hubPorts(hub: Hub): UpdatePorts {
       mark: () => events(hub).head(),
       since(mark) {
         const threads = new Set(leads(hub).records.leadsList().map((l) => `${l.projectRef.machineId}/${l.threadId}`));
-        let completed = 0;
-        let failed = 0;
+        const t: LeadTurns = { completed: 0, failed: 0, why: [], provider: 0, providerWhy: [] };
         for (let after = mark; ; ) {
           const page = events(hub).page(after, LEAD_ENDS);
           for (const e of page.events) {
             if (!threads.has(`${e.machineId}/${e.threadId}`)) continue;
-            if (e.type === "thread.completed") completed++;
-            else failed++;
+            const end = leadEnd(e.type, e.data as Record<string, unknown> | undefined, e.machineId ?? "");
+            if (end?.end === "completed") t.completed++;
+            else if (end?.end === "failed") {
+              t.failed++;
+              if (!t.why.includes(end.why)) t.why.push(end.why);
+            } else if (end?.end === "provider") {
+              t.provider++;
+              if (!t.providerWhy.includes(end.why)) t.providerWhy.push(end.why);
+            }
           }
           if (!page.more) break;
           after = page.cursor;
         }
-        return { completed, failed };
+        return t;
       },
       working: () => leads(hub).records.leadsList().filter((l) => leadWorking(hub, l.projectRef)).length,
     },
@@ -119,6 +125,7 @@ export function hubPorts(hub: Hub): UpdatePorts {
             canUpdate: l.can(m.machineId, "self_update"),
             canFetch: l.can(m.machineId, "update_fetch"),
             canHold: l.can(m.machineId, "update_hold"),
+            canPickBuild: l.can(m.machineId, CAP_UPDATE_BUILD),
             canInstallClaude: l.can(m.machineId, "claude_install"),
             agentsMac: l.can(m.machineId, "agents_mac"),
           };

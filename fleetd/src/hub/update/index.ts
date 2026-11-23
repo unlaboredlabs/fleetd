@@ -22,6 +22,7 @@ import {
   APP_CLOSE_UPDATING,
   type AutoUpdateResult,
   type HubChannel,
+  type HubEventType,
   type HubUpdateData,
   type HubUpdateMachine,
   type HubUpdatePhase,
@@ -35,12 +36,13 @@ import {
 } from "../../shared/contracts.ts";
 import type { Clock } from "../../shared/clock.ts";
 import { checkedTo, channelOf, type Channel, Failure, type Feed, FLAVOUR, type Flavour, isBuild, replaceFile, restore, type Sums, swap, retireHelper } from "../../update/index.ts";
-import { bucketOf, choose, type Choice, type Picker, parseSpeed, rolloutId, type Speed } from "../../update/rollout.ts";
+import { bucketOf, choose, type Choice, type Picker, parseSpeed, readRollout, type Rollout, rolloutId, type Speed } from "../../update/rollout.ts";
 import { HEALTH_WAIT_SECS, type Plan, readVerdict, type Verdict } from "../../update/finish.ts";
 import type { Service } from "../../update/service.ts";
 import { atLeast, buildNumber, versionCmp, versionLabel } from "../../update/version.ts";
 import { PROTOCOL as HOST_PROTOCOL } from "../../node/runner/host.ts";
 import { pause } from "../serve/every.ts";
+import { death } from "../leads/cut_off.ts";
 import { isoMs } from "../store/time.ts";
 
 /**
@@ -77,6 +79,8 @@ export type NodeFacts = {
   canUpdate: boolean;
   canFetch: boolean;
   canHold: boolean;
+  /** It takes a build the hub names (`NodeUpdate.build`); one from before rollouts takes only the newest. */
+  canPickBuild?: boolean;
   /** Its Claude Code, as `claude --version` printed it at the node's last probe. */
   claude?: string;
   canInstallClaude: boolean;
@@ -115,7 +119,49 @@ const nodeUpdate = (to: string, channel: HubChannel, target?: Target): NodeUpdat
 
 /** The build the hub chose last (`<hub home>/update/target.json`): what its nodes are sent to, and whether it was a
  * step back from a pulled build, where nodes go back too. */
-export type Target = { version: string; build?: string; sha256?: Record<string, string>; back?: boolean };
+export type Target = { version: string; build?: string; sha256?: Record<string, string>; back?: boolean; newest?: string };
+/** The node can install `update`: it takes a named build, or the build is the release's newest, the only one a node
+ * from before rollouts takes. */
+const takes = (n: NodeFacts, update: NodeUpdate, t: Target | undefined) =>
+  update.build === undefined || n.canPickBuild === true || t?.version !== update.version || t.newest === undefined || t.newest === update.version;
+
+/** Lead turns that ended since the hub's restart: well, failed (with why, in a few words each), or failed for the
+ * provider's reasons. */
+export type LeadTurns = { completed: number; failed: number; why: string[]; provider: number; providerWhy: string[] };
+
+/** Error classes that are the provider's: a sign-in it refused, a quota or rate limit, its API reporting an outage. */
+const PROVIDER: Record<string, string> = {
+  auth: "a sign-in refused",
+  usage_limit: "a usage limit",
+  rate_limit: "a rate limit",
+  pool_exhausted: "a usage limit",
+  overloaded: "the provider's API reporting an outage",
+};
+
+/**
+ * How a lead's turn ended, for the self-check: `completed`, `failed` (its claude exiting, a fatal error, a stall, its
+ * machine's link dropping: what a build can cause), `provider` (its error classed as the provider's, from the error's
+ * own class), or undefined for an end that isn't a failure (stopped by a person, replaced by a newer message).
+ */
+export function leadEnd(type: HubEventType, data: Record<string, unknown> | undefined, machine: string): { end: "completed" } | { end: "failed" | "provider"; why: string } | undefined {
+  if (type === "thread.completed") return { end: "completed" };
+  const error = data?.error;
+  const cls = error !== null && typeof error === "object" && typeof (error as { class?: unknown }).class === "string" ? (error as { class: string }).class : undefined;
+  if (type === "thread.failed" && cls !== undefined && PROVIDER[cls] !== undefined && data?.reason !== "stalled") return { end: "provider", why: PROVIDER[cls]! };
+  const d = death(type, data, machine);
+  if (d.kind === "not_dead" || d.kind === "cut") return undefined;
+  const why: Record<string, string> = {
+    node_lost: "its machine's link dropped",
+    stalled: "it stalled",
+    exited: "its claude exited",
+    context_full: "its context was full",
+    no_sandbox: "its sandbox didn't come up",
+    signed_out: "a sign-in refused",
+    unreachable: "the provider unreachable",
+  };
+  return { end: "failed", why: why[d.kind] ?? "a fatal error" };
+}
+
 /** A node's answer to its update, and its second, sent only when its restart was refused. */
 export type NodeAnswer = [NodeActionResult, { tryTake(): NodeActionResult | undefined }];
 
@@ -150,8 +196,9 @@ export interface UpdatePorts {
   announce(update: HubUpdateData): void;
   /** The merge train's batches being landed now, which the hub's restart would cut off between their merge and closes. */
   trainLandings?(): number;
-  /** The leads' turns that ended since `mark()`, and how many leads are mid-turn now: for the self-check after an update. */
-  leadTurns?: { mark(): number; since(mark: number): { completed: number; failed: number }; working(): number };
+  /** The leads' turns that ended since `mark()`, as `leadEnd` sorts them, and how many leads are mid-turn now: for the
+   * self-check after an update. */
+  leadTurns?: { mark(): number; since(mark: number): LeadTurns; working(): number };
   /** fleetd's own hub tells the rollout its self-check passed on `build` (`ring: "first"`, settings' `reportTo`). */
   reportPass?(repo: string, build: string): Promise<void>;
 }
@@ -470,13 +517,50 @@ export class Updates {
 
   /** Remembers `c`, the build chosen, for the nodes and for the hub that comes up on it. */
   keepTarget(c: Extract<Choice, { kind: "move" }>): void {
-    const t: Target = { version: c.to, ...(c.build ? { build: c.build.build, sha256: c.build.sha256 } : {}), ...(c.back ? { back: true } : {}) };
+    this.saveTarget({
+      version: c.to,
+      ...(c.build ? { build: c.build.build, sha256: c.build.sha256 } : {}),
+      ...(c.back ? { back: true } : {}),
+      ...(c.newest !== undefined ? { newest: c.newest } : {}),
+    });
+  }
+
+  private saveTarget(t: Target): void {
     try {
       mkdirSync(this.dir, { recursive: true });
       replaceFile(join(this.dir, "target.json"), pretty(t));
     } catch (e) {
       console.warn(`update: couldn't write ${join(this.dir, "target.json")}: ${(e as Error).message}`);
     }
+  }
+
+  /**
+   * The build `to` as the rollout lists it, for its nodes: the one the hub chose, or, for a build the hub came to
+   * another way (`fleetd update` on its machine), read from rollout.json. A newer build pulled means `to` is a step
+   * back. Undefined for a build the rollout doesn't list (a release from before rollouts).
+   */
+  async targetFor(ports: UpdatePorts, to: string): Promise<Target | undefined> {
+    const kept = this.target();
+    if (kept?.version === to) return kept;
+    let r: Rollout | undefined;
+    try {
+      r = await readRollout(ports.feed("edge"));
+    } catch (e) {
+      console.warn(`update: couldn't read the rollout for the nodes: ${(e as Error).message}`);
+      return undefined;
+    }
+    const at = r?.builds.findIndex((b) => b.version === to) ?? -1;
+    if (!r || at < 0) return undefined;
+    const b = r.builds[at]!;
+    const t: Target = {
+      version: to,
+      build: b.build,
+      sha256: b.sha256,
+      newest: r.builds[0]!.version,
+      ...(r.builds.slice(0, at).some((x) => x.pulledAt !== undefined) ? { back: true } : {}),
+    };
+    this.saveTarget(t);
+    return t;
   }
 
   /** What the rollout says the hub runs now: `choose` from the release, as this hub. */
@@ -726,7 +810,9 @@ export class Updates {
     this.keepTarget(c);
     const update = nodeUpdate(to, "edge", this.target());
     for (const node of ports.nodes()) {
-      if (node.liveSince !== undefined && node.canFetch && !runs(node, to, this.back(to))) ports.fetchOnNode(node.machineId, update);
+      if (node.liveSince !== undefined && node.canFetch && takes(node, update, this.target()) && !runs(node, to, this.back(to))) {
+        ports.fetchOnNode(node.machineId, update);
+      }
     }
     this.ready_ = to;
   }
@@ -755,7 +841,7 @@ export class Updates {
     this.save(run);
     const to = run.to;
     void this.drive(run.id, async (d) => {
-      const update = nodeUpdate(to, this.run?.channel ?? "edge", this.target());
+      const update = nodeUpdate(to, this.run?.channel ?? "edge", await this.targetFor(ports, to));
       await d.updateNode(ports, machineId, update);
       await d.updateClaude(ports, machineId);
       d.settleNodes("failed", "the update of this node stopped without a result");
@@ -1129,7 +1215,7 @@ class Drive {
     const waiting = run.parts.filter((p) => p.part === "node" && p.state === "waiting").map((p) => p.machineId);
     const update = nodeUpdate(to, run.channel, this.u.target());
     for (const node of ports.nodes()) {
-      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && !runs(node, to, this.u.back(to))) {
+      if (waiting.includes(node.machineId) && node.liveSince !== undefined && node.canFetch && takes(node, update, this.u.target()) && !runs(node, to, this.u.back(to))) {
         ports.fetchOnNode(node.machineId, update);
       }
     }
@@ -1148,10 +1234,10 @@ class Drive {
         // Up on the new build: before its nodes follow, it checks itself, and goes back to the build before by itself
         // when that fails.
         this.setPart(undefined, "restarting", undefined, `checking itself on ${versionLabel(to)}: machines relink, a lead turn works`);
-        const failed = await this.selfCheck(ports, run);
+        const check = await this.selfCheck(ports, run);
         if (this.stopped()) return;
-        if (failed !== undefined) return this.rollBack(ports, hub.from, to, failed);
-        this.setPart(undefined, "done", undefined, v.message);
+        if (check.failed !== undefined) return this.rollBack(ports, hub.from, to, check.failed);
+        this.setPart(undefined, "done", undefined, check.note === undefined ? v.message : `${v.message}; ${check.note}`);
         this.reportPass(ports, to);
         return this.driveNodes(ports, to);
       }
@@ -1164,12 +1250,17 @@ class Drive {
 
   /**
    * After the hub came up on a new build: every machine online when the update started relinks (within
-   * `Timing.relink`), and a lead turn works: one ends well, not two fail with none that ended well. With no lead mid-turn
-   * and none ended there is nothing to judge, and a turn that runs on is waited for `Timing.leadCheck` at most. Why it
-   * failed, or undefined. Nothing leaves the hub.
+   * `Timing.relink`), and a lead turn works: one ends well, not two fail with none that ended well. Every failed turn
+   * counts (its claude exiting, a fatal error, a stall, its link dropping) but one its error classes as the provider's
+   * (`leadEnd`): those can't come from the build, so they never roll it back, and the note says so. With no lead
+   * mid-turn and none ended there is nothing to judge, and a turn that runs on is waited for `Timing.leadCheck` at most.
+   * Why it failed, else what to note. Nothing leaves the hub.
    */
-  async selfCheck(ports: UpdatePorts, run: UpdateRun): Promise<string | undefined> {
+  async selfCheck(ports: UpdatePorts, run: UpdateRun): Promise<{ failed?: string; note?: string }> {
     const started = this.u.clockNow();
+    const leads = ports.leadTurns;
+    // From the hub's restart: a turn that ends while machines relink counts too.
+    const mark = leads?.mark();
     const online = run.parts.filter((p) => p.part === "node" && p.machineId !== undefined && p.state !== "skipped");
     for (;;) {
       const live = new Set(ports.nodes().filter((n) => n.liveSince !== undefined).map((n) => n.machineId));
@@ -1177,20 +1268,22 @@ class Drive {
       if (away.length === 0) break;
       if (this.u.clockNow() - started >= this.u.timing.relink) {
         const names = away.slice(0, 3).map((p) => p.name).join(", ") + (away.length > 3 ? ` and ${away.length - 3} more` : "");
-        return `${names} didn't relink within ${Math.round(this.u.timing.relink / 60_000)} min`;
+        return { failed: `${names} didn't relink within ${Math.round(this.u.timing.relink / 60_000)} min` };
       }
-      if (this.stopped()) return undefined;
+      if (this.stopped()) return {};
       await this.u.sleep(this.u.timing.nodePoll, this.signal);
     }
-    const leads = ports.leadTurns;
-    if (!leads) return undefined;
-    const mark = leads.mark();
+    if (!leads || mark === undefined) return {};
+    const noted = (t: LeadTurns) =>
+      t.provider > 0 && t.completed === 0
+        ? { note: `${t.provider === 1 ? "a lead turn" : `${t.provider} lead turns`} failed for the provider's reasons (${t.providerWhy.join(", ")}), which a build can't cause` }
+        : {};
     for (;;) {
       const t = leads.since(mark);
-      if (t.completed > 0) return undefined;
-      if (t.failed >= 2) return `${t.failed} lead turns failed and none ended well`;
-      if (t.failed === 0 && leads.working() === 0) return undefined;
-      if (this.u.clockNow() - started >= this.u.timing.leadCheck || this.stopped()) return undefined;
+      if (t.completed > 0) return {};
+      if (t.failed >= 2) return { failed: `${t.failed} lead turns failed (${t.why.join(", ")}) and none ended well` };
+      if (t.failed === 0 && leads.working() === 0) return noted(t);
+      if (this.u.clockNow() - started >= this.u.timing.leadCheck || this.stopped()) return noted(t);
       await this.u.sleep(this.u.timing.nodePoll, this.signal);
     }
   }
@@ -1268,7 +1361,7 @@ class Drive {
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && !settled(p.state)).map((p) => p.machineId!);
-    const update = nodeUpdate(to, run.channel, this.u.target());
+    const update = nodeUpdate(to, run.channel, await this.u.targetFor(ports, to));
     await Promise.allSettled(
       waiting.map(async (m) => {
         await this.updateNode(ports, m, update);
@@ -1315,6 +1408,17 @@ class Drive {
         "skipped",
         undefined,
         `its fleetd (${versionLabel(node.version)}) is too old to update from the hub: run \`fleetd update\` on ${node.name} once`,
+      );
+    }
+    // A node from before rollouts takes only the newest build: it waits, saying why, until the hub's build is the
+    // newest, rather than refusing it again at each look.
+    const t = this.u.target();
+    if (!takes(node, update, t) && t?.newest !== undefined) {
+      return this.setPart(
+        machineId,
+        "skipped",
+        undefined,
+        `its fleetd (${versionLabel(node.version)}) only takes fleetd's newest build (${versionLabel(t.newest)}), not the hub's ${label} yet: it updates once the hub runs the newest, or run \`fleetd update\` on ${node.name} now`,
       );
     }
     // The node waits only for what its restart would cut off: a live session, an approved command, a check the hub runs
