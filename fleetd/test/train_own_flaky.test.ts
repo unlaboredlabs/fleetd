@@ -196,3 +196,41 @@ test("a check red on main still opens its one fix order when no PR or task names
   expect(k.host.orders[0]![1]).toStartWith("Fix the check `fleetd` on main");
   expect(k.train.mainCiNote(REPO)).toBe("`fleetd` is red on main, fix in progress");
 });
+
+test("a check the train re-ran that GitHub leaves out of its list for a while stays pending, never read as green (fleetd-cloud #824)", async () => {
+  const k = kit();
+  // As fleetd-cloud #824 on 3d379d34, a repo that requires no checks: `check` failed (job 10) and the train re-ran it.
+  // Until the re-run (job 11) started, GitHub listed only `pin` and `infra`, both green; then job 11 failed too.
+  k.gh.jobLogs.set(10, bunLog(OLD_TEST));
+  let reads = 0;
+  k.gh.runs = () => {
+    const green = [job(1, 2, "pin", "success"), job(2, 2, "infra", "success")];
+    if (k.gh.reruns.length === 0) return [...green, job(10, 2, "check", "failure")];
+    reads += 1;
+    if (reads <= 3) return green;
+    if (reads <= 6) return [...green, { ...job(11, 2, "check", "failure"), status: "in_progress", conclusion: null }];
+    return [...green, job(11, 2, "check", "failure")];
+  };
+  k.pr(8, "fleetd/T8-x", { "x.md": "x\n" });
+  await k.enqueue(8);
+  await k.settle();
+  expect(k.gh.reruns).toEqual([10]);
+  expect(k.gh.log.filter((l) => l.startsWith("merge") || l.startsWith("status fleetd/train success"))).toEqual([]);
+  expect(k.change(8).state).toBe("ci_failed");
+});
+
+test("a required commit status read before any check run is listed holds the head no longer than its own success", async () => {
+  const k = kit();
+  // A repo that requires Vercel's status and a GitHub Actions check: the first read comes after the status posted
+  // and before Actions listed its run, so the head's checks are read from its statuses once.
+  k.gh.required = ["vercel", "check"];
+  k.gh.provider = () => [["vercel", "success"]];
+  let reads = 0;
+  k.gh.runs = () => (++reads <= 4 ? [] : [job(5, 2, "check", "success")]);
+  k.pr(9, "fleetd/T9-x", { "x.md": "x\n" });
+  const start = k.clock.ms;
+  await k.enqueue(9);
+  await k.settle();
+  expect(k.change(9).state).toBe("merged");
+  expect(k.clock.ms - start).toBeLessThan(15 * MINUTE);
+});
