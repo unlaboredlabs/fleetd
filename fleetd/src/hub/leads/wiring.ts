@@ -1,12 +1,13 @@
 // The leads area's ports over the hub: a lead launches through the
-// executor on the account its project runs on, its wakes go through the offline write queue, and the node's hello says
-// whether it runs one lead per machine.
+// executor on the account its project runs on, its wakes go through the offline write queue, its turn stops as the
+// chat's Stop stops it, and the node's hello says whether it runs one lead per machine.
 import { ToolError } from "../../shared/errors.ts";
 import { CAP_ASSISTANT, CAP_LAUNCH_AHEAD, CAP_ONE_LEAD_MODE } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import { forLead as accountForLead, isRefusal, type NodeAccounts } from "../claude_accounts/index.ts";
 import { CAP_CLAUDE_ACCOUNTS } from "../claude_accounts/tools.ts";
 import { ExecutorError } from "../executor/index.ts";
+import { interruptNow } from "../executor/projects.ts";
 import { launch } from "../executor/sessions.ts";
 import { fromExecutor } from "../executor/tools.ts";
 import { link } from "../link/server.ts";
@@ -19,7 +20,7 @@ function nodeAccounts(hub: Hub, m: string): NodeAccounts {
   return l.can(m, CAP_CLAUDE_ACCOUNTS) ? "runs" : l.lacks(m, CAP_CLAUDE_ACCOUNTS) ? "too_old" : "offline";
 }
 
-/** Sets the leads area's launch, send and one-lead mode on `leadWiring(hub).ports`. */
+/** Sets the leads area's launch, send, interrupt and one-lead mode on `leadWiring(hub).ports`. */
 export function wire(hub: Hub): void {
   Object.assign(leadWiring(hub).ports, {
     launch: async (machineId: string, input: Parameters<typeof launch>[2], role: "lead" | "assistant") => {
@@ -64,6 +65,14 @@ export function wire(hub: Hub): void {
         }
         // The node's own words and fix, e.g. claude not logged in and how to log it in.
         throw new ToolError("failed", error.message, error.kind === "NodeRequestFailed" ? error.fix : undefined);
+      }
+    },
+    interrupt: async (thread: { machineId: string; threadId: string }) => {
+      try {
+        await interruptNow(hub, thread);
+      } catch (error) {
+        if (error instanceof ExecutorError && error.kind === "thread_not_found") return;
+        throw error instanceof ExecutorError ? fromExecutor(error) : error;
       }
     },
     oneLeadMode: (machineId: string) => link(hub).can(machineId, CAP_ONE_LEAD_MODE),

@@ -16972,7 +16972,7 @@
           "type": "boolean"
         },
         "leadRestarting": {
-          "description": "With projectRef: its lead was asked to restart (`project_set` leadRestart) and does once its turn ends.",
+          "description": "With projectRef: its lead was asked to restart (`project_set` leadRestart) and waits on its turn or its machine.",
           "type": "boolean"
         },
         "models": {
@@ -18368,7 +18368,7 @@
           "description": "The profile its lead starts on from its next start, any of the hub's; absent: unchanged."
         },
         "leadRestart": {
-          "description": "Start its lead again on its lead profile now, keeping its chat, memory and orders; mid-turn, once the turn ends.",
+          "description": "Start its lead again on its lead profile now, keeping its chat, memory and orders; a turn under way is stopped first.",
           "type": "boolean"
         },
         "machineId": {

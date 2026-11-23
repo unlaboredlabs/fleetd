@@ -327,9 +327,10 @@ export class Leads {
   }
 
   /**
-   * `project_set` leadRestart: the project's lead starts again on its lead profile, as Restart hub does for every lead:
-   * now when idle on a linked machine, else once its turn ends or its machine is back. Its profile needn't have changed:
-   * a stuck lead is started again on the one it runs on. False when the project has no lead.
+   * `project_set` leadRestart: the project's lead starts again on its lead profile now, keeping its chat, memory and orders:
+   * a turn under way is stopped first, as the chat's Stop does, then it starts at once; one whose machine doesn't answer
+   * starts once its turn ends or its machine is back. Its profile needn't have changed: a stuck lead is started again on
+   * the one it runs on. False when the project has no lead.
    */
   async switchSoon(r: ProjectRef): Promise<boolean> {
     if (!this.records.leadGet(r)) return false;
@@ -350,8 +351,9 @@ export class Leads {
 
   /**
    * A lead marked by `markProfileSwitches` starts again on its current profile, as `restart` does: it keeps its chat,
-   * memory and open orders. One that is mid-turn stays marked until its turn ends; one whose profile is the one it
-   * runs on again (and no person asked), or whose project is gone or archived, is unmarked.
+   * memory and open orders. One that is mid-turn stays marked until its turn ends, unless a person asked: then its turn
+   * is stopped (or its stalled thread left) and it starts now. One whose profile is the one it runs on again (and no
+   * person asked), or whose project is gone or archived, is unmarked.
    */
   switchIfDue(r: ProjectRef): Promise<Lead | undefined> {
     return this.locked(async () => {
@@ -361,10 +363,17 @@ export class Leads {
         this.records.leadSwitchSet(r, false);
         return undefined;
       }
-      const idle = this.idle(r);
+      const lead = this.records.leadGet(r)!;
+      if (this.records.leadRestartAsked(r)) {
+        // A person's Restart lead stops the turn under way first; while its machine can't, it stays marked.
+        const thread = store(this.hub).threadGet({ machineId: r.machineId, threadId: lead.threadId })?.thread;
+        if (thread && !thread.stale && (thread.status === "running" || thread.status === "waiting")) {
+          await leadWiring(this.hub).ports.interrupt({ machineId: r.machineId, threadId: lead.threadId });
+        }
+      } else if (!this.idle(r)) return undefined;
       // Its first turn reads the chat it carries on, as `freshIfDue`'s does: a start with the digest alone left a lead with
       // nothing to answer, and it made up a message from the person (W787).
-      return idle ? this.launch(r, project, idle.lead.sessionGeneration + 1, this.startedAgain(r)) : undefined;
+      return this.launch(r, project, lead.sessionGeneration + 1, this.startedAgain(r));
     });
   }
 

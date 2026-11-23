@@ -198,7 +198,7 @@ export const leadSections = (lines: ReadonlyArray<LeadLine>): { group: string | 
 };
 
 /** Its Restart Lead row: offered whichever profile its lead runs on (a stuck lead starts again on its own), or waiting on
- * its turn once asked mid-turn. */
+ * its turn while its machine can't stop it. */
 export const leadRestartRow = (view: ProfilesListOutput): "offer" | "waits" => (view.leadRestarting === true ? "waits" : "offer");
 
 /** The value on its Lead Model row. */
