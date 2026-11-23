@@ -1,6 +1,6 @@
 // A bot's own lead profile (W825, project_set leadProfile): its lead starts on it, a bot that picked none starts on the
-// hub's lead profile, and a change reaches the lead at its next start, or now with leadRestart (mid-turn: once the turn
-// ends). The lead's own setup calls carry no such field (D442). Fake ports throughout: no node.
+// hub's lead profile, and a change reaches the lead at its next start, or now with leadRestart, which stops a turn
+// under way as Stop does (a profile switch alone waits for the turn to end). The lead's own setup calls carry no such field (D442). Fake ports throughout: no node.
 import { afterEach, expect, test } from "bun:test";
 import type { Hub } from "../src/hub/api/hub.ts";
 import { Registry } from "../src/hub/api/registry.ts";
@@ -31,12 +31,14 @@ function hubWithTools() {
   cleanups.push(t.done);
   start(t.hub);
   const launched: string[] = [];
+  const interrupted: string[] = [];
   Object.assign(leadWiring(t.hub).ports, {
     launch: async (_machineId: string, input: { profile: string }) => {
       launched.push(input.profile);
       return `lead-${++threads}`;
     },
     send: async () => false,
+    interrupt: async (thread: { threadId: string }) => void interrupted.push(thread.threadId),
   });
   const tools = new Registry();
   registerAll(tools);
@@ -49,7 +51,7 @@ function hubWithTools() {
   const s = profiles(t.hub);
   const opus = s.create({ name: "opus", model: "claude-opus-5-5", effort: "max", default: false }, isoMs(t.clock.now()));
   const sonnet = s.create({ name: "sonnet", model: "claude-sonnet-5-5", effort: "high", default: false }, isoMs(t.clock.now()));
-  return { ...t, launched, call, opus, sonnet };
+  return { ...t, launched, interrupted, call, opus, sonnet };
 }
 
 /** The lead's thread as its node last reported it. */
@@ -139,22 +141,68 @@ test("a change reaches a running lead at its next start; leadRestart starts it o
   expect((await view(t)).leadRestart).toBeUndefined();
 });
 
-test("a lead mid-turn asked to restart starts on its new profile once its turn ends", async () => {
+test("a lead mid-turn asked to restart has its turn stopped, as Stop does, and starts on its new profile at once", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  const threadId = threadIs(t.hub, "running");
+  await t.call("project_set", { ...PROJECT, leadProfile: "sonnet", leadRestart: true });
+  await until(() => t.launched.length === 2);
+  expect(t.interrupted).toEqual([threadId]);
+  expect(t.launched[1]).toBe("sonnet");
+  const after = await view(t);
+  expect([after.leadRestart, after.leadRestarting]).toEqual([undefined, undefined]);
+});
+
+test("a lead whose turn can't be stopped (its machine doesn't answer) stays asked, and starts again once it can", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
   threadIs(t.hub, "running");
-  await t.call("project_set", { ...PROJECT, leadProfile: "sonnet", leadRestart: true });
+  leadWiring(t.hub).ports.interrupt = async () => {
+    throw new Error("machine lab-a has no live node link");
+  };
+  await t.call("project_set", { ...PROJECT, leadRestart: true });
   await settle();
   expect(t.launched.length).toBe(1);
-  // The apps show it waiting on the turn, not Restart lead again.
-  expect(await view(t)).toMatchObject({ leadRestarting: true });
-  expect((await view(t)).leadRestart).toBeUndefined();
+  // The apps show it waiting, not Restart lead's plain state.
+  expect((await view(t)).leadRestarting).toBe(true);
+  const threadId = threadIs(t.hub, "idle");
+  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
+  await until(() => t.launched.length === 2);
+});
+
+test("a restart a launch would refuse (out of usage, moved to the cloud) never stops the turn, and says why", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "running");
+  const hooks = leadWiring(t.hub).hooks;
+  hooks.usageGate = () => "the login is out of usage until 14:00";
+  await expect(t.call("project_set", { ...PROJECT, leadRestart: true })).rejects.toMatchObject({ code: "invalid", message: expect.stringContaining("out of usage") });
+  await settle();
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+  // Nothing waits marked either: the apps offer Restart lead again, not "Restarts after its turn".
+  expect((await view(t)).leadRestarting).toBeUndefined();
+  delete hooks.usageGate;
+  hooks.moved = () => "this hub's bots moved to fleetd cloud";
+  await expect(t.call("project_set", { ...PROJECT, leadRestart: true })).rejects.toMatchObject({ message: expect.stringContaining("moved to fleetd cloud") });
+  await settle();
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
+});
+
+test("a profile switch alone waits for a lead's turn to end: nothing stops it", async () => {
+  const t = hubWithTools();
+  await leads(t.hub).start(PROJECT);
+  threadIs(t.hub, "running");
+  await t.call("project_set", { ...PROJECT, leadProfile: "sonnet" });
+  // As Restart hub marks it (markProfileSwitches), for the switch at the lead's next idle.
+  leads(t.hub).records.leadSwitchSet(PROJECT, true);
+  await leads(t.hub).switchIfDue(PROJECT);
+  await settle();
+  expect([t.launched.length, t.interrupted]).toEqual([1, []]);
   const threadId = threadIs(t.hub, "idle");
   events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
   await until(() => t.launched.length === 2);
   expect(t.launched[1]).toBe("sonnet");
-  const after = await view(t);
-  expect([after.leadRestart, after.leadRestarting]).toEqual([undefined, undefined]);
+  expect(t.interrupted).toEqual([]);
 });
 
 test("a restart asked of a lead already on its profile starts it again on it: a stuck lead is restarted without a model switch", async () => {
@@ -178,17 +226,14 @@ test("a restart asked of a lead already on its profile starts it again on it: a 
   expect(t.launched.length).toBe(2);
 });
 
-test("a lead mid-turn on its own profile, asked to restart, starts again once its turn ends", async () => {
+test("a stuck lead on its own profile, asked to restart, has its turn stopped and starts again at once", async () => {
   const t = hubWithTools();
   await leads(t.hub).start(PROJECT);
-  threadIs(t.hub, "running");
+  const threadId = threadIs(t.hub, "running");
   await t.call("project_set", { ...PROJECT, leadRestart: true });
-  await settle();
-  expect(t.launched.length).toBe(1);
-  expect(await view(t)).toMatchObject({ leadRestarting: true });
-  const threadId = threadIs(t.hub, "idle");
-  events(t.hub).append({ at: isoMs(t.clock.now()), type: "thread.completed", machineId: PROJECT.machineId, threadId, summary: "" });
   await until(() => t.launched.length === 2);
+  expect(t.interrupted).toEqual([threadId]);
+  expect(t.launched[1]).toBe(t.launched[0]);
   expect((await view(t)).leadRestarting).toBeUndefined();
 });
 

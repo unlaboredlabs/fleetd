@@ -28,6 +28,8 @@ export type LeadPorts = {
   launch(machineId: string, input: LaunchInput, role: SessionRole): Promise<string>;
   /** Sends `message` to the thread, through the offline write queue: true when it was queued for the machine. */
   send(thread: ThreadRef, message: string, clientRequestId: string): Promise<boolean>;
+  /** Stops the thread's turn now, as the chat's Stop does; a thread its node no longer has is nothing to stop. */
+  interrupt(thread: ThreadRef): Promise<void>;
   oneLeadMode(machineId: string): boolean;
 };
 
@@ -71,6 +73,9 @@ export const leadWiring = (hub: Hub) =>
       },
       send: async () => {
         throw unwired("Sending to a lead thread");
+      },
+      interrupt: async () => {
+        throw unwired("Stopping a lead's turn");
       },
       oneLeadMode: () => false,
     },
