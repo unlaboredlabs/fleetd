@@ -1,0 +1,43 @@
+# After each push to main whose CI passed, starts the cloud's pin bump (fleetd-cloud's fleet-pin-bump.yml) for that
+# very commit (`sha`), so the cloud's fleetd pin follows main's green builds within minutes. The cloud's half-hourly
+# schedule stays as a backstop: GitHub starts scheduled runs in these repositories hours late or not at all.
+#
+# The cloud's run decides and acts: it takes the commit only when its CI passed on main and it is newer than the
+# pin, then opens or moves its standing pull request, which the merge train lands and the canary deploys.
+#
+# CLOUD_PIN_TOKEN: a fine-grained token on unlaboredlabs/fleetd-cloud with Actions read and write only (this
+# workflow's own token can't reach another repository). The job never fails: the train reads a workflow_run's
+# result on main as main's CI, and nothing here is about the merges. A missing secret or a refused dispatch leaves a
+# warning on the run, and the cloud's schedule moves the pin instead.
+name: Cloud pin on merge
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    name: cloud pin on merge
+    if: >-
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.CLOUD_PIN_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::The cloud's pin bump wasn't started: this repository has no CLOUD_PIN_TOKEN secret (a fine-grained token on unlaboredlabs/fleetd-cloud with Actions read and write). The cloud's schedule moves the pin meanwhile."
+            exit 0
+          fi
+          if gh workflow run fleet-pin-bump.yml -R unlaboredlabs/fleetd-cloud --ref main -f sha="$SHA"; then
+            echo "The cloud's pin bump started for fleetd ${SHA:0:7}" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::The cloud's pin bump wasn't started for fleetd ${SHA:0:7}: GitHub refused the dispatch (CLOUD_PIN_TOKEN expired, or without Actions write on fleetd-cloud?). The cloud's schedule moves the pin meanwhile."
+          fi
