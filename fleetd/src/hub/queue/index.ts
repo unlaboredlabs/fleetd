@@ -4,6 +4,7 @@
 import type { HubEvent, ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
+import { threadOnAntigravity } from "../executor/sessions.ts";
 import { runnerProblem } from "../link/server.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
@@ -50,12 +51,13 @@ export class WriteError extends Error {
 
 /** How a write reaches a thread: the executor's `is_connected`, `await_live` and `send_with` (queue/ports.rs). */
 export interface ThreadWriter {
-  isConnected(machineId: string): boolean;
+  /** Whether the machine takes writes now; for `threadId`'s, when named (one on Antigravity doesn't need claude). */
+  isConnected(machineId: string, threadId?: string): boolean;
   /** Resolves once the machine takes writes, at once if it does now; on `signal`, early. */
-  awaitLive(machineId: string, signal?: AbortSignal): Promise<void>;
+  awaitLive(machineId: string, signal?: AbortSignal, threadId?: string): Promise<void>;
   sendWith(target: ThreadRef, message: string, clientRequestId: string, opts: SendOpts): Promise<Sent>;
-  /** Why a linked machine can't take a message at all (its runner logged out), so a send fails at once. */
-  refusal?(machineId: string): WriteError | undefined;
+  /** Why a linked machine can't take a thread's message at all (its runner logged out), so a send fails at once. */
+  refusal?(machineId: string, threadId?: string): WriteError | undefined;
 }
 
 type Row = {
@@ -150,11 +152,11 @@ export class WriteQueue {
    */
   async send(target: ThreadRef, message: string, clientRequestId: string, wakeId?: string, opts: SendOpts = {}): Promise<SendResult> {
     // Linked but unusable (logged out, claude out of range): fail now in the runner's words.
-    const refused = this.writer.refusal?.(target.machineId);
+    const refused = this.writer.refusal?.(target.machineId, target.threadId);
     if (refused) throw refused;
     const behind =
       this.hub.db.conn.query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM queued_writes WHERE machine_id = ?").get(target.machineId)?.n ?? 0;
-    if (behind > 0 || !this.writer.isConnected(target.machineId)) return this.enqueue(target, message, clientRequestId, wakeId, opts);
+    if (behind > 0 || !this.writer.isConnected(target.machineId, target.threadId)) return this.enqueue(target, message, clientRequestId, wakeId, opts);
     let sent: Sent | typeof TIMED_OUT;
     try {
       sent = await within(SEND_TIMEOUT_MS, this.writer.sendWith(target, message, clientRequestId, opts));
@@ -272,9 +274,9 @@ export class WriteQueue {
           this.expired(row, "ttl");
           continue;
         }
-        if (!this.writer.isConnected(machineId)) {
+        if (!this.writer.isConnected(machineId, row.thread_id)) {
           // The head may expire meanwhile, so it is read again once the machine is back.
-          await this.writer.awaitLive(machineId, signal);
+          await this.writer.awaitLive(machineId, signal, row.thread_id);
           continue;
         }
         // Withdrawn between the read and now: nothing to send.
@@ -292,7 +294,7 @@ export class WriteQueue {
         else if (result instanceof Error) {
           // Lost the connection mid-send: wait for it again. Refused on a live connection: retrying won't help.
           if (result instanceof WriteError && result.kind === "MachineNotConnected") continue;
-          if (!this.writer.isConnected(machineId)) continue;
+          if (!this.writer.isConnected(machineId, row.thread_id)) continue;
           console.warn(`write queue: the node on ${machineId} refused a queued message to ${row.thread_id}: ${result.message}`);
           this.expired(row, "refused");
         } else this.delivered(row, result.runId);
@@ -338,20 +340,24 @@ type ExecutorSend = {
  * The queue's writer over the hub's executor (queue/ports.rs `impl ThreadWriter for Executors`): a machine takes
  * writes once it is ready (live, and announced online), a linked one whose runner can't run refuses in the runner's
  * words, and a send goes through the executor's `sendWith`. Until the executor has `sendWith`, no machine reads as
- * ready, so every write waits in the queue and none is dropped as refused.
+ * ready, so every write waits in the queue and none is dropped as refused. A thread on Antigravity runs on its own
+ * sign-in, never claude: it takes writes once the machine is live, whatever the machine's Claude login says.
  */
 export function executorWriter(hub: Hub): ThreadWriter {
   const ex = () => executors(hub);
   const send = () => (ex() as unknown as ExecutorSend).sendWith;
+  const agy = (m: string, threadId: string | undefined) => threadId !== undefined && threadOnAntigravity(hub, { machineId: m, threadId });
   return {
-    isConnected: (m) => send() !== undefined && ex().isReady(m) && ex().isConnected(m),
-    awaitLive: (m, signal) =>
+    isConnected: (m, threadId) => send() !== undefined && (agy(m, threadId) || ex().isReady(m)) && ex().isConnected(m),
+    awaitLive: (m, signal, threadId) =>
       send() !== undefined
-        ? ex().awaitReady(m, signal)
+        ? agy(m, threadId)
+          ? ex().awaitLive(m, signal)
+          : ex().awaitReady(m, signal)
         : new Promise<void>((resolve) => (signal?.aborted ? resolve() : signal?.addEventListener("abort", () => resolve(), { once: true }))),
-    refusal: (m) => {
+    refusal: (m, threadId) => {
       // Only while linked: a machine that is away waits in the queue whatever its runner said last.
-      if (!ex().isConnected(m)) return undefined;
+      if (!ex().isConnected(m) || agy(m, threadId)) return undefined;
       const info = ex().cachedRunner(m);
       const problem = info ? runnerProblem(info as never) : undefined;
       // TODO(hub-work): the fix line (executor/providers.rs `runner_fix`) once the providers' guides are ported.

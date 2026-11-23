@@ -58,3 +58,32 @@ test("the executor's sendWith answers as the queue's writer reads it", async () 
   reply(frame, { kind: "sent", runId: "run-1", queued: true });
   expect(await out).toEqual({ runId: "run-1", behindRun: true });
 });
+
+test("a Gemini thread takes writes where claude is logged out; a Claude thread there is refused", async () => {
+  const { hub, ex, reply, next } = await readyNode();
+  // The link found the runner logged out: the machine is degraded, not ready.
+  ex.rememberRunner("devbox", { runner: "claude", supported: ">=2", versionOk: true, login: "logged_out", problem: "claude is not logged in" });
+  ex.setRunnerReady("devbox", false);
+  const row = (sessionId: string, model: string) => ({
+    type: "session_updated",
+    sessionId,
+    projectId: "p1",
+    title: "t",
+    status: "idle",
+    model,
+    effort: "medium",
+    runtimeMode: "approval-required",
+    createdAt: AT,
+    updatedAt: AT,
+  });
+  ex.handleFrame("devbox", { t: "machine_event", seq: 1, at: AT, event: { type: "snapshot", projects: [{ projectId: "p1", title: "P1", workspaceRoot: "/w", updatedAt: AT }], sessions: [] } });
+  ex.handleFrame("devbox", { t: "machine_event", seq: 2, at: AT, event: row("lead-g", "gemini-3.8-flash") as never });
+  ex.handleFrame("devbox", { t: "machine_event", seq: 3, at: AT, event: row("lead-c", "claude-opus-5-5") as never });
+  await settle();
+  const sent = writeQueue(hub).send({ machineId: "devbox", threadId: "lead-g" }, "hi", "req-g");
+  const frame = await next();
+  expect(frame.call).toMatchObject({ op: "send", sessionId: "lead-g", text: "hi" });
+  reply(frame, { kind: "sent", runId: "run-g", queued: false });
+  expect(await sent).toMatchObject({ runId: "run-g", queued: false });
+  await expect(writeQueue(hub).send({ machineId: "devbox", threadId: "lead-c" }, "hi", "req-c")).rejects.toThrow("claude is not logged in");
+});
