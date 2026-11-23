@@ -161,7 +161,7 @@ it("says in words that a sign-in is starting, never a bare disabled button, unti
   expect(row()?.querySelector("[role='status']")?.textContent).toBe("Starting a sign-in… Google's sign-in link shows here once it's ready.");
   expect([...(row()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([]);
   expect(host.textContent).not.toContain("Checking");
-  await act(async () => answer());
+  act(() => answer());
   await settle();
   expect(row()?.querySelector("[role='status']")).toBeNull();
   expect(row()?.querySelector("form[aria-label='Sign in']")).not.toBeNull();
