@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProjectRepo, ProjectSettings as Settings } from "../../../shared/contracts";
+import type { ProjectRepo, ProjectSettings as Settings, ProjectSummary } from "../../../shared/contracts";
 import type { CallOutcome, HubFrame } from "../../../shared/hub";
 import type { ProjectEnvRequest } from "../../../shared/ipc";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
@@ -62,9 +62,14 @@ const snapshotWith = (repos: ProjectRepo[], extra: Record<string, unknown> = {})
         ...(repos.length > 0 ? { repos } : {}),
         ...extra,
       },
+      ...others,
     ],
   },
 });
+/** Other projects in the snapshot: a repo's checkout is a project of its own, as the hub lists it. */
+let others: ProjectSummary[] = [];
+/** The project the page opens for. */
+let routeFor = "devbox/p1";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -117,6 +122,8 @@ beforeEach(() => {
   approvalsFail = 0;
   readMs = 0;
   summaryExtra = {};
+  others = [];
+  routeFor = "devbox/p1";
   features = [];
   window.location.hash = "#/settings/projects?for=devbox/p1";
   vi.stubGlobal("fleetd", {
@@ -220,7 +227,7 @@ const render = async (page: "project" | "instructions" = "project") => {
       <UiProvider>
         <DataProvider layer={layer}>
           {page === "project" ? (
-            <ProjectSettings route={{ tab: "projects", prompt: null, for: "devbox/p1" }} />
+            <ProjectSettings route={{ tab: "projects", prompt: null, for: routeFor }} />
           ) : (
             <Instructions route={{ tab: "instructions", prompt: null, for: "devbox/p1" }} />
           )}
@@ -268,6 +275,17 @@ const dialog = () => {
 };
 
 describe("Settings → Bots", () => {
+  // W791 (fleetd cloud): a checkout's settings, reached by its id, offered Who merges for a repo that isn't a bot.
+  it("opens the bot's settings for a repo checkout it holds, never the checkout's own page", async () => {
+    repos = [web, api];
+    others = [{ machineId: "devbox", projectId: "p9", title: "api", workspaceRoot: "/home/w/src/api", threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: AT }];
+    routeFor = "devbox/p9";
+    window.location.hash = "#/settings/projects?for=devbox/p9";
+    await render();
+    for (let i = 0; i < 20 && !window.location.hash.endsWith("for=devbox/p1"); i++) await act(() => new Promise((r) => setTimeout(r, 5)));
+    expect(window.location.hash).toBe("#/settings/projects?for=devbox/p1");
+  });
+
   it("shows a secret by its fingerprint only, and no read-only Worktrees row", async () => {
     await render();
     const text = document.body.textContent;
