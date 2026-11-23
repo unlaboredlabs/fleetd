@@ -18,7 +18,8 @@ export const MODES: ReadonlyArray<{ readonly mode: ApprovalMode; readonly label:
 ];
 
 /** What every mode keeps, YOLO included. */
-export const FLOORS = "In every mode: no moving money or trading, no passwords or keys sent out, spending always asks you, and nothing that would wipe the computer.";
+export const FLOORS =
+  "In every mode: no moving money or trading, no passwords or keys sent out, and nothing that would wipe the computer. A purchase with your card fills at the checkout without asking; paying through a connected app or a payment command asks you first.";
 
 /** Why one action ran without asking: the checker's reason, or YOLO. */
 export const logWhy = (e: AutoApproved): string => (e.by === "yolo" ? "YOLO: nothing asks" : e.reason === undefined ? "The checker let it through" : `Checker: ${e.reason}`);

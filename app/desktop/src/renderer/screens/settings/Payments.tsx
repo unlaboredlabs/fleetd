@@ -182,7 +182,7 @@ export function PaymentsSetting({ projectRef }: { projectRef: Ref }) {
                     }
                   >
                     <Text size="sm" tone="quiet">
-                      {`${purchaseState(p)} · asked ${when(p.askedAt, nowMs)}${p.answeredBy === undefined ? "" : ` · by ${p.answeredBy.replace(/^human:/u, "")}`} · ${cardLabel(p.purchase.card)}`}
+                      {`${purchaseState(p)} · ${when(p.askedAt, nowMs)}${p.answeredBy === undefined ? "" : ` · by ${p.answeredBy.replace(/^human:/u, "")}`} · ${cardLabel(p.purchase.card)}`}
                     </Text>
                   </SettingsListRow>
                 );

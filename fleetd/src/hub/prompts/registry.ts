@@ -72,7 +72,7 @@ export const ENTRIES: RegistryEntry[] = [
     default: d1,
     placeholders: "project!=the bot's name; projectRef!=<machineId>/<projectId>; folder!=its folder on its machine",
     rules: [
-      { id: "asks-before-risky", label: "asks before sending, spending, posting, deleting or accepting terms, by trying the tool so a person approves it", needle: "Ask first, every time", enforced: "code" },
+      { id: "asks-before-risky", label: "asks before sending, posting, deleting or accepting terms, by trying the tool so a person approves it; a purchase with the card doesn't ask", needle: "Ask first, every time", enforced: "code" },
       { id: "blocked-even-if-approved", label: "never moves money, trades, creates accounts or shares credentials, even if approved", needle: "even if they approve", enforced: "prompt" },
       { id: "secrets-via-request", label: "secrets only through `request_secret`", needle: "request_secret", enforced: "code" },
       { id: "private-memory", label: "keeps the person's private life in its own memory, never in user scope", needle: "project scope, your own memory", enforced: "prompt" },
