@@ -141,6 +141,40 @@ export type StartView =
 
 export type StepId = "computer" | "tailscale" | "claude" | "github" | "project";
 
+/** The Claude step's facts (state.ts reads them from the hub): what reaches the agents, and the steps before it. */
+export interface ClaudeFacts {
+  /** The hub's API key is saved. */
+  readonly hubKey: boolean;
+  /** What the team's leads run on (claude_accounts_get `leadsRunOn`); undefined until it is read. */
+  readonly leadsRunOn: "account" | "machine_login" | "refused" | undefined;
+  /** A computer of the team's own, online with its claude logged in: its name. */
+  readonly ready: string | null;
+  readonly computer: ComputerStep;
+  /** Where hosted agents run, in words (fleetd's computers on a cloud team). */
+  readonly provider: string;
+  /** A joined computer whose claude is logged out: its Log in step. */
+  readonly login: Extract<ClaudeStep, { at: "login" }> | null;
+  readonly key?: KeyState;
+}
+
+/**
+ * The Claude step, done only when Claude really reaches the agents: the hub's API key; a computer's own login; or, in
+ * hosted sandboxes (fleetd's computers), an account the leads run on, since a box has no login of its own. A runner
+ * that is up is no Claude: a new cloud team's was, and its first bot was refused for its sign-in (G1).
+ */
+export const claudeStepOf = (f: ClaudeFacts): ClaudeStep =>
+  f.hubKey
+    ? { at: "done", what: "API key" }
+    : f.ready !== null
+      ? { at: "done", what: f.ready }
+      : f.computer.at === "hosted" && f.leadsRunOn === "account"
+        ? { at: "done", what: "Claude subscription" }
+        : f.login !== null && f.computer.at === "ready"
+          ? f.login
+          : f.computer.at === "hosted"
+            ? { at: "account", provider: f.provider, ...(f.key === undefined ? {} : { key: f.key }) }
+            : { at: "wait" };
+
 /** GitHub needs nothing more for now: connected, skipped, or asked of an organization's owner. */
 const githubSettled = (github: GithubStep): boolean => github.at === "done" || github.at === "skipped" || github.at === "requested";
 

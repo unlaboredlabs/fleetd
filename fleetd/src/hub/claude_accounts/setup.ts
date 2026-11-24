@@ -154,6 +154,18 @@ export function launchAccount(setup: Setup, whose: Whose, machine: string, node:
 
 export const isRefusal = (v: ClaudeAccount | undefined | Refusal): v is Refusal => v !== undefined && "message" in v;
 
+/**
+ * Whether a lead on `machine` would launch now on another account than its thread did (`was`; none: the machine's own
+ * login): the hub's API key or the owner's subscription saved since its bot was made without one, or removed since.
+ * Its next turn then starts a fresh session on the one it runs on now (the hub's leads/index.ts, fleetd cloud's
+ * leads/fresh.ts). A lead refused now keeps its thread, as its launch would be refused.
+ */
+export function leadAccountMoved(setup: Setup, machine: string, was: ClaudeAccount | undefined): boolean {
+  const on = setup.runsOn({ hub: true }, machine);
+  if (on.kind === "refused") return false;
+  return (on.kind === "account" ? accountKey(on.account) : undefined) !== (was === undefined ? undefined : accountKey(was));
+}
+
 /** The node capability a machine needs to run work on a Claude account. */
 export const CAP_CLAUDE_ACCOUNTS = "claude_accounts";
 

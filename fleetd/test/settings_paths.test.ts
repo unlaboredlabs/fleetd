@@ -9,6 +9,7 @@ import { noMacFix } from "../src/hub/machine_roles/calls.ts";
 import { signedOutLine } from "../src/hub/leads/cut_off.ts";
 import { PEOPLE_ONLY } from "../src/hub/projects/people_only.ts";
 import { runnerNoProvider } from "../src/node/place/index.ts";
+import { RUNNER_ID } from "../src/shared/sandbox.ts";
 import { settingsPath, setSettingsFlavour } from "../src/shared/settings_path.ts";
 
 const SRC = join(import.meta.dir, "..", "src");
@@ -38,12 +39,17 @@ test("no line of fleetd's writes Settings › Hub itself: every one takes the gr
 });
 
 test("on fleetd cloud, the lines fleetd builds name Settings › Team, never Settings › Hub; a self-hosted hub keeps Hub", () => {
-  const lines = () => [signedOutLine({ kind: "hub" }), noMacFix(), PEOPLE_ONLY.mcp_servers, runnerNoProvider(), settingsPath("Machines")];
+  const lines = () => [signedOutLine({ kind: "hub" }), signedOutLine(undefined, RUNNER_ID), noMacFix(), PEOPLE_ONLY.mcp_servers, runnerNoProvider(), settingsPath("Machines")];
   expect(lines().every((l) => l.includes("Settings › Hub"))).toBe(true);
   setSettingsFlavour("team");
   expect(lines().filter((l) => l.includes("Settings › Hub"))).toEqual([]);
   expect(lines().every((l) => l.includes("Settings › Team"))).toBe(true);
   expect(signedOutLine({ kind: "hub" })).toContain("an admin replaces it in Settings › Team › Setup › Claude.");
+  // A bot on fleetd's computers with no account has no machine to run `claude auth login` on: where an admin adds the key.
+  expect(signedOutLine(undefined, RUNNER_ID)).toBe(
+    "This bot has no Claude account to run on yet: an admin adds a Claude API key in Settings › Team › Providers › Anthropic. The lead carries on by itself once it is.",
+  );
+  expect(signedOutLine(undefined, "devbox")).toContain("`claude auth login`");
   expect(lines().flatMap(settingsPathProblems)).toEqual([]);
 });
 

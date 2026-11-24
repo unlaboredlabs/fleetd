@@ -258,7 +258,7 @@ export function start(hub: Hub, o: { sleep?: Sleep } = {}): void {
     if (found.end.kind === "signed_out") {
       const thread = area.records.leadGet(found.project)?.threadId;
       const account = thread ? accounts(hub).threadAccount(found.project.machineId, thread) : undefined;
-      chat(hub).add(found.project, { author: "system", text: signedOutLine(account), source: `lead_auth:${found.end.runId ?? e.seq}` });
+      chat(hub).add(found.project, { author: "system", text: signedOutLine(account, found.project.machineId), source: `lead_auth:${found.end.runId ?? e.seq}` });
       return;
     }
     if (found.end.kind === "own") {

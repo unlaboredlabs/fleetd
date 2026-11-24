@@ -1,7 +1,7 @@
 // Get started's model: which step is open and how many are left, for both paths; GitHub's way back; a last push and a
 // teammate's bot in words; a machine whose claude is logged out.
 import { describe, expect, it } from "vitest";
-import { botOf, claudeLoggedOut, currentStep, githubReturnOf, projectLine, pushedWords, stepsLeft, stepsOf, withoutGithubReturn } from "./model";
+import { botOf, claudeLoggedOut, claudeStepOf, currentStep, githubReturnOf, projectLine, pushedWords, stepsLeft, stepsOf, withoutGithubReturn } from "./model";
 import { SAMPLES } from "./samples";
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
@@ -115,5 +115,28 @@ describe("words", () => {
       }),
     ).toBe(false);
     expect(claudeLoggedOut({ status: "online" })).toBe(false);
+  });
+});
+
+describe("the Claude step", () => {
+  const computers = { at: "hosted", provider: "fleetd's computers" } as const;
+  const facts = { hubKey: false, leadsRunOn: "machine_login", ready: null, computer: computers, provider: "fleetd's computers", login: null } as const;
+
+  it("on fleetd's computers with no Claude account is open, never ticked for the computers alone (G1)", () => {
+    expect(claudeStepOf(facts)).toEqual({ at: "account", provider: "fleetd's computers" });
+    expect(claudeStepOf({ ...facts, leadsRunOn: undefined })).toEqual({ at: "account", provider: "fleetd's computers" });
+    expect(claudeStepOf({ ...facts, leadsRunOn: "refused" })).toEqual({ at: "account", provider: "fleetd's computers" });
+  });
+
+  it("is done once Claude reaches the agents: the hub's key, a subscription the leads run on, a computer's own login", () => {
+    expect(claudeStepOf({ ...facts, hubKey: true, leadsRunOn: "account" })).toEqual({ at: "done", what: "API key" });
+    expect(claudeStepOf({ ...facts, leadsRunOn: "account" })).toEqual({ at: "done", what: "Claude subscription" });
+    expect(claudeStepOf({ ...facts, ready: "devbox", computer: { at: "ready", machine: "devbox" } })).toEqual({ at: "done", what: "devbox" });
+  });
+
+  it("asks a logged-out computer to log in, and waits while nothing runs agents", () => {
+    const login = { at: "login", machine: "devbox", login: "start" } as const;
+    expect(claudeStepOf({ ...facts, computer: { at: "ready", machine: "devbox" }, login })).toBe(login);
+    expect(claudeStepOf({ ...facts, computer: { at: "line", line: null } })).toEqual({ at: "wait" });
   });
 });

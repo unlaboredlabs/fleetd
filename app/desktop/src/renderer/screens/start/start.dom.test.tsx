@@ -31,6 +31,8 @@ let joinHeld: Promise<void> | null = null;
 /** What the app sealed for the hub's key, and whether the hub has one since. */
 let sealed: ClaudeAccountRequest[] = [];
 let hubKey = false;
+/** What the team's leads run on, as claude_accounts_get says: the hub's key once it is saved. */
+let leadsRunOn: { kind: "machine_login" } | { kind: "account"; account: { kind: "person"; personId: string } } = { kind: "machine_login" };
 /** The team's billing as GET /billing/v1 answers: before the switch to fleetd's computers unless a test says. */
 let billing: BillingState = BILLING_SAMPLES.off;
 
@@ -171,7 +173,7 @@ const render = async (team: Team, at: "start" | "first-run" = "start") => {
                       message: "logged in",
                     }
                 : tool === "claude_accounts_get"
-                  ? { settings: { membersUseHubApi: true }, leadsRunOn: { kind: "machine_login" }, people: [], ...(hubKey ? { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" } } : {}) }
+                  ? { settings: { membersUseHubApi: true }, leadsRunOn: hubKey ? { kind: "account", account: { kind: "hub" } } : leadsRunOn, people: [], ...(hubKey ? { hubApi: { sealedOn: [], updatedAt: "2026-11-18T00:00:00Z" } } : {}) }
                   : tool === "tailnet_connect"
                     ? (team.tailnet = { status: "login", loginUrl: "https://login.tailscale.com/a/standin" })
                     : tool === "tailnet_get"
@@ -241,6 +243,7 @@ beforeEach(() => {
   joinHeld = null;
   sealed = [];
   hubKey = false;
+  leadsRunOn = { kind: "machine_login" };
   billing = BILLING_SAMPLES.off;
   window.localStorage.clear();
   window.history.replaceState(null, "", "/");
@@ -330,10 +333,39 @@ it("a provider connected and no computer: step 1 is done on it, and Claude takes
   stop();
   act(() => root.unmount());
   host.remove();
+  // Its runner up is no Claude: still no account reaches the sandboxes, so Claude stays open (G1).
   const { degradedReason: _was, degradedCause: _cause, ...online } = runner;
   stop = await render({ machines: [{ ...online, status: "online" }], sandbox });
+  expect(screen()).toBe("start.claude");
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  // The owner's subscription connected: the leads run on it, and Claude is done.
+  leadsRunOn = { kind: "account", account: { kind: "person", personId: "p_aaaaaaaa" } };
+  stop = await render({ machines: [{ ...online, status: "online" }], sandbox });
   expect(screen()).toBe("start.github");
+  expect(host.querySelector('[data-step="claude"]')?.textContent).toContain("Claude subscription");
   expect(host.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
+  stop();
+}, 20_000);
+
+it("a new cloud team on fleetd's computers, its runner up, has no Claude ticked until a key is saved (G1)", async () => {
+  billing = { ...BILLING_SAMPLES.plan, providedOn: true };
+  const runner = machine({ machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "online", boxPubKey: "Az+6kf/abi0V7SO+sn4h++sIgyPoNDAneLBDFaJf3TA=" });
+  const stop = await render({ machines: [runner] });
+  await until("start.claude");
+  expect(host.querySelector('[data-step="claude"]')?.textContent).not.toContain("fleetd's computers");
+  const field = host.querySelector<HTMLInputElement>("input[aria-label='API key']");
+  if (field === null) throw new Error("no API key field");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(field, "sk-ant-api03-standin");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+  await click("Save");
+  await settle();
+  expect(host.querySelector('[data-step="claude"]')?.textContent).toContain("API key");
+  expect(screen()).toBe("start.github");
   stop();
 }, 20_000);
 
