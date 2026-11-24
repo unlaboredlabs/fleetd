@@ -10,6 +10,20 @@ describe("app.config.ts", () => {
   it("lets plain HTTP reach a hub at any address", () => {
     expect(problems(infoPlist)).toEqual([]);
   });
+
+  it("declares in its privacy manifest the data fleetd cloud keeps, linked to the account and never for tracking", () => {
+    const manifest = config({ projectRoot: process.cwd() } as ConfigContext).ios?.privacyManifests;
+    expect(manifest?.NSPrivacyTracking).toBe(false);
+    expect(manifest?.NSPrivacyCollectedDataTypes?.map((d) => d.NSPrivacyCollectedDataType)).toEqual([
+      "NSPrivacyCollectedDataTypeEmailAddress",
+      "NSPrivacyCollectedDataTypePhotosorVideos",
+      "NSPrivacyCollectedDataTypeOtherUserContent",
+      "NSPrivacyCollectedDataTypeDeviceID",
+    ]);
+    for (const d of manifest?.NSPrivacyCollectedDataTypes ?? []) {
+      expect(d).toMatchObject({ NSPrivacyCollectedDataTypeLinked: true, NSPrivacyCollectedDataTypeTracking: false, NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"] });
+    }
+  });
 });
 
 describe("problems", () => {

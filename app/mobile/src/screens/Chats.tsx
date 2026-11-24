@@ -20,6 +20,7 @@ import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reani
 import { filterChoices, filterLabel, meAvatar, type FilterChoice, type MeTone } from "../chatsBar";
 import { listTime } from "../chatView";
 import { needsComputer } from "../cloud/account";
+import { firstRunShown } from "../firstRun";
 import { useHub, type ChatsParams, type RootParams } from "../hubContext";
 import { chatList, rowLine, type ChatRow, type Filter } from "../lists";
 import { pinnedSplit } from "../pinnedGrid";
@@ -48,6 +49,7 @@ import { SwipeRow, useSwipes, type SwipeAction } from "../ui/SwipeRow";
 import { Toolbar, bottomBar } from "../ui/Toolbar";
 import { unreachable } from "../link";
 import { ConnectComputer } from "./Cloud";
+import { FirstRun } from "./FirstRun";
 import { useHubWord, useLinkDown } from "./linkHeader";
 import { newChatItem } from "./manage";
 import { setArchived } from "./manage/api";
@@ -102,7 +104,15 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
   const own = useNavigation<NavigationProp<RootParams>>();
   // Beside the chat, the list is a navigation tree of its own: its chats, Settings and + go to the root stack beside it.
   const beside = useBeside();
-  const root = useMemo(() => ({ settings: beside?.settings ?? (() => own.navigate("Settings")), newChat: beside?.newChat ?? (() => own.navigate("NewProject")) }), [beside, own]);
+  const root = useMemo(
+    () => ({
+      settings: beside?.settings ?? (() => own.navigate("Settings")),
+      // One of its screens over it: the first run's Billing and Anthropic.
+      settingsAt: beside?.settingsAt ?? ((screen: "Billing" | "Claude") => own.navigate("Settings", { screen, initial: false })),
+      newChat: beside?.newChat ?? (() => own.navigate("NewProject")),
+    }),
+    [beside, own],
+  );
   const [typed, setTyped] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   // A link's filter (Open Approvals: Needs You), each time it's opened.
@@ -298,6 +308,8 @@ export function Chats({ navigation, route }: NativeStackScreenProps<ChatsParams,
       <EmptyState icon="archive" title="Nothing Archived" body="Hold a bot in Chats and pick Archive to set it aside here, with everything kept." />
     ) : needsComputer(paired, state) ? (
       <ConnectComputer />
+    ) : firstRunShown(paired, state) ? (
+      <FirstRun open={(step) => (step === "bot" ? root.newChat() : root.settingsAt(step === "plan" ? "Billing" : "Claude"))} />
     ) : (
       <EmptyState icon="bubble" title="No Chats Yet" body="Tap + to start a bot, and its chat shows up here." />
     );

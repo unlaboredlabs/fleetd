@@ -202,16 +202,21 @@ export function metaOf(kind: VaultKind, secret: Secret, given: Partial<Meta>): M
 
 type Totp = { key: Uint8Array; digits: number; period: number; algorithm: "sha1" | "sha256" | "sha512" };
 
+/** A setup key under 80 bits is no site's: RFC 4226 asks for 128, and the shortest in use are 16 base32 letters. */
+export const TOTP_KEY_MIN_BYTES = 10;
+const KEY_FIX = "Copy the setup key, or the otpauth:// link, again from the site's two-factor settings.";
+
 function base32(text: string): Uint8Array {
   const clean = text.toUpperCase().replace(/[\s=-]/g, "");
   const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   let bits = "";
   for (const c of clean) {
     const v = A.indexOf(c);
-    if (v < 0) throw invalid("The one-time code seed isn't base32.");
+    if (v < 0) throw invalid("That isn't a one-time code setup key: it holds letters A to Z and digits 2 to 7 only.", KEY_FIX);
     bits += v.toString(2).padStart(5, "0");
   }
   const out = new Uint8Array(Math.floor(bits.length / 8));
+  if (out.length < TOTP_KEY_MIN_BYTES) throw invalid("That one-time code setup key is too short: a site's has at least 16 letters and digits.", KEY_FIX);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2);
   return out;
 }
@@ -222,8 +227,10 @@ export function totpParams(totp: string): Totp {
     try {
       url = new URL(totp);
     } catch {
-      throw invalid("The one-time code setting isn't an otpauth:// link.");
+      throw invalid("The one-time code setting isn't an otpauth:// link.", KEY_FIX);
     }
+    // An hotp:// link counts presses, not time: its codes would never match.
+    if (url.host.toLowerCase() !== "totp") throw invalid("That otpauth:// link isn't for time-based codes (otpauth://totp/…).", KEY_FIX);
     const alg = (url.searchParams.get("algorithm") ?? "SHA1").toLowerCase();
     if (alg !== "sha1" && alg !== "sha256" && alg !== "sha512") throw invalid("The one-time code's algorithm isn't SHA1, SHA256 or SHA512.");
     const digits = Number(url.searchParams.get("digits") ?? 6);
