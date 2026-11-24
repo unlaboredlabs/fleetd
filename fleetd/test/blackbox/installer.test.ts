@@ -3,7 +3,7 @@
 // outside a throwaway HOME. It needs no fleetd build: the join line is the CLI's own (src/cli/pair.ts).
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { joinLine } from "../../src/cli/pair.ts";
 import { tempHome } from "../helpers.ts";
@@ -49,6 +49,10 @@ function release() {
         HOME: join(dir, "home"),
         FLEETD_BASE_URL: `file://${assets}`,
         XDG_DATA_HOME: undefined,
+        // Never this machine's own startup files, units or user manager.
+        XDG_CONFIG_HOME: undefined,
+        XDG_RUNTIME_DIR: undefined,
+        ZDOTDIR: undefined,
         DISPLAY: undefined,
         WAYLAND_DISPLAY: undefined,
       }),
@@ -361,4 +365,154 @@ test.skipIf(process.platform !== "linux")("without FUSE 2 the app runs unpacked 
   ({ exec, said } = await entry("\tlibfuse.so.2 (libc6,x86-64) => /lib/x86_64-linux-gnu/libfuse.so.2"));
   expect(exec).not.toContain("APPIMAGE_EXTRACT_AND_RUN");
   expect(said).not.toContain("FUSE");
+});
+
+// A dropped network left curl waiting forever (W890): the spinner turned for minutes at "Release" and at 50% of the
+// download. Every download now goes through get(), which gives up on a stalled connection and retries.
+test("every download gives up on a stalled network", () => {
+  const text = readFileSync(INSTALLER, "utf8");
+  const get = text.split("\n").find((l) => l.startsWith("get() {"));
+  expect(get, "get() is defined").toBeDefined();
+  for (const flag of ["--connect-timeout", "--speed-limit", "--speed-time", "--retry"]) expect(get).toContain(flag);
+  const bare = text
+    .split("\n")
+    .flatMap((line, i) => (/^\s*[^#\s].*\bcurl -/.test(line) && !line.startsWith("get() {") && !line.includes("https://fleetd.sh |") ? [`site/install.sh:${i + 1}: ${line.trim()}`] : []));
+  expect(bare, "call get, not curl").toEqual([]);
+});
+
+// The network dropping half way through the CLI's download left a 63 MB ~/.fleetd/bin/.fleetd.new behind.
+test("a download cut off half way leaves no partial file", async () => {
+  const r = release();
+  const bin = join(r.dir, "bin");
+  mkdirSync(bin);
+  // A curl that writes half the file it was asked for, then times out (curl's exit 28), as a dropped network does.
+  script(
+    join(bin, "curl"),
+    `dest=""; url=""
+while [ $# -gt 0 ]; do case "$1" in -o) dest="$2"; shift ;; -*) ;; *) url="$1" ;; esac; shift; done
+case "$url" in */assets/fleetd-bun-*) ;; *) cp "\${url#file://}" "$dest"; exit ;; esac
+head -c 10 "\${url#file://}" >"$dest"
+exit 28
+`,
+  );
+  const out = await r.sh(`PATH=${bin}:$PATH sh "$INSTALLER" --no-init`);
+  expect(out.code, out.stderr).toBe(1);
+  expect(out.stderr).toContain("download failed");
+  expect(existsSync(join(r.home, ".fleetd/bin/.fleetd.new")), "the partial download is gone").toBe(false);
+});
+
+// ~/.local/bin off PATH: `fleetd` alone wasn't found, in this shell or the next. Its line goes in the shell's
+// startup file (once), and this shell gets it to paste; the uninstall takes it out again.
+test("off PATH, ~/.local/bin goes on it in the shell's startup file", async () => {
+  const r = release();
+  let out = await r.sh('SHELL=/bin/bash sh "$INSTALLER" --no-init');
+  expect(out.code, out.stderr).toBe(0);
+  const line = 'export PATH="$HOME/.local/bin:$PATH" # added by fleetd';
+  expect(readFileSync(join(r.home, ".bashrc"), "utf8")).toContain(line);
+  expect(out.stdout).toContain("added ~/.local/bin to PATH in ~/.bashrc");
+  expect(out.stdout).toContain('in this one, run: export PATH="$HOME/.local/bin:$PATH"');
+  out = await r.sh('SHELL=/bin/bash sh "$INSTALLER" --no-init');
+  expect(readFileSync(join(r.home, ".bashrc"), "utf8").split(line).length, "added once").toBe(2);
+  // zsh reads ~/.zshrc.
+  out = await r.sh('SHELL=/usr/bin/zsh sh "$INSTALLER" --no-init');
+  expect(readFileSync(join(r.home, ".zshrc"), "utf8")).toContain(line);
+  out = await r.sh('sh "$INSTALLER" --uninstall');
+  expect(out.code, out.stderr).toBe(0);
+  expect(readFileSync(join(r.home, ".bashrc"), "utf8")).not.toContain(line);
+  expect(readFileSync(join(r.home, ".zshrc"), "utf8")).not.toContain(line);
+});
+
+/** A machine fleetd set up: the node's unit, and a CLI whose `uninstall` removes it (as it does now), or leaves it
+ * (as it did before W890). systemctl and launchctl are stand-ins that write down how they were called. */
+function setUp(r: ReturnType<typeof release>, uninstallRemoves: boolean) {
+  const units = join(r.home, ".config/systemd/user");
+  mkdirSync(units, { recursive: true });
+  writeFileSync(join(units, "fleetd-node.service"), "[Service]\nExecStart=fleetd node run\n");
+  mkdirSync(join(r.home, ".fleetd/bin"), { recursive: true });
+  script(
+    join(r.home, ".fleetd/bin/fleetd"),
+    `case "$1" in
+  uninstall) echo "fleetd uninstall" >>"$HOME/calls"; ${uninstallRemoves ? 'rm -f "$HOME/.config/systemd/user/fleetd-node.service"' : ":"} ;;
+esac
+`,
+  );
+  const stand = join(r.dir, "stand-ins");
+  mkdirSync(stand, { recursive: true });
+  for (const tool of ["systemctl", "launchctl"]) script(join(stand, tool), `echo "${tool} $*" >>"$HOME/calls"\n`);
+  const calls = () => (existsSync(join(r.home, "calls")) ? readFileSync(join(r.home, "calls"), "utf8") : "");
+  return { path: `PATH=${stand}:$PATH`, unit: join(units, "fleetd-node.service"), calls };
+}
+
+// Uninstall printed "✓ Remove the fleetd CLI and app" and deleted the CLI while the node kept running, its unit
+// enabled, from the deleted binary (W890). The CLI and the app now go only once no fleetd service or process is left.
+test("uninstall never says done while a fleetd service is left, and keeps the CLI until then", async () => {
+  let r = release();
+  let m = setUp(r, false);
+  let out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+  expect(out.code, out.stdout).toBe(1);
+  expect(out.stderr).toContain("fleetd still runs here, so its CLI stays for now");
+  expect(out.stderr).toContain(`service: ${m.unit}`);
+  expect(out.stdout + out.stderr).not.toContain("✓");
+  expect(existsSync(join(r.home, ".fleetd/bin/fleetd")), "the CLI stays").toBe(true);
+
+  r = release();
+  m = setUp(r, true);
+  out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+  expect(out.code, out.stderr).toBe(0);
+  expect(m.calls()).toContain("fleetd uninstall");
+  expect(out.stdout).toContain("✓  Remove    the fleetd CLI and app; no fleetd service or process is left");
+  expect(existsSync(join(r.home, ".fleetd/bin"))).toBe(false);
+});
+
+test("uninstall names a fleetd process still running, and leaves it to the person", async () => {
+  const r = release();
+  const m = setUp(r, true);
+  const exe = join(r.home, ".fleetd/bin/fleetd");
+  // A hub started by hand, as ps shows it: the CLI's path, then its arguments.
+  const own = Bun.spawn(["sleep", "30"], { argv0: `${exe} hub start`, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  try {
+    await Bun.sleep(200);
+    const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+    expect(out.code, out.stdout).toBe(1);
+    expect(out.stderr).toContain(`running: pid ${own.pid}, ${exe} hub start 30`);
+    expect(existsSync(exe)).toBe(true);
+  } finally {
+    own.kill();
+  }
+});
+
+// Someone who uninstalled before W890 has no CLI left, and the node still running from the deleted binary, with the
+// agents' session hosts beside it: the installer stops them itself, as `fleetd uninstall` would.
+test("with its CLI gone, uninstall stops what an older uninstall left running", async () => {
+  const r = release();
+  const m = setUp(r, true);
+  const exe = join(r.home, ".fleetd/bin/fleetd");
+  // An agent's session host, as ps shows it, which a TERM stops.
+  const host = Bun.spawn(["sleep", "30"], { argv0: `${exe} session-host x`, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+  await Bun.sleep(200);
+  rmSync(exe);
+  try {
+    // A CLI that can't run here is the same as none.
+    writeFileSync(exe, "\0\0\0\0");
+    Bun.spawnSync(["chmod", "755", exe]);
+    const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+    expect(out.code, out.stderr).toBe(0);
+    expect(m.calls()).toContain("systemctl --user disable --now fleetd-node.service");
+    expect(existsSync(m.unit)).toBe(false);
+    expect(await Promise.race([host.exited.then(() => "stopped"), Bun.sleep(5000).then(() => "running")])).toBe("stopped");
+    expect(out.stdout).toContain("no fleetd service or process is left");
+  } finally {
+    host.kill();
+  }
+});
+
+// FLEETD_CHANNEL=stable got a 404 and "check this machine's connection": no stable release exists (D701), and it
+// says so. It asks GitHub's latest release for real, and gets nothing either way: a 404, or no network.
+test("a stable channel with no release says so", async () => {
+  const r = release();
+  const out = await run(["sh", INSTALLER, "--no-init"], cleanEnv({ HOME: r.home, FLEETD_CHANNEL: "stable", XDG_CONFIG_HOME: undefined, ZDOTDIR: undefined }));
+  expect(out.code, out.stderr).toBe(1);
+  expect(out.stderr).toContain("fleetd has no stable release yet");
+  expect(out.stderr).toContain("run the installer without FLEETD_CHANNEL");
+  expect(existsSync(join(r.home, ".fleetd/bin/fleetd"))).toBe(false);
 });

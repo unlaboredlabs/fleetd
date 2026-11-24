@@ -1,6 +1,6 @@
 // What setup's commands share: the usage, `say` (which the wizard can capture),
 // listen addresses, who holds the hub's database, and this machine's dirs.
-import { readdirSync, readlinkSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { homeDir } from "../common.ts";
 import { SETUP_USAGE } from "../usages.ts";
@@ -90,6 +90,62 @@ export function processesHolding(file: string): number[] {
     .split("\n")
     .map((l) => Number(l))
     .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid);
+}
+
+/** The programs listening on TCP `port` that this user can see, by pid and name: on Linux from /proc (a socket's
+ * inode in /proc/net/tcp{,6}, then which process has it open), elsewhere from lsof. */
+export function listeners(port: number): { pid: number; name: string }[] {
+  if (process.platform !== "linux") {
+    const out = Bun.spawnSync(["lsof", "-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"], { stderr: "ignore" });
+    const found: { pid: number; name: string }[] = [];
+    for (const line of out.stdout.toString().split("\n")) {
+      if (line.startsWith("p")) found.push({ pid: Number(line.slice(1)), name: "" });
+      else if (line.startsWith("c") && found.length > 0) found.at(-1)!.name = line.slice(1);
+    }
+    return found;
+  }
+  const inodes = new Set<string>();
+  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try {
+      text = readFileSync(table, "utf8");
+    } catch {
+      continue;
+    }
+    // sl local_address rem_address st … inode: the local address is HEXIP:HEXPORT, and st 0A is LISTEN.
+    for (const line of text.split("\n").slice(1)) {
+      const f = line.trim().split(/\s+/);
+      if (f.length > 9 && f[3] === "0A" && parseInt(f[1]!.split(":")[1] ?? "", 16) === port) inodes.add(`socket:[${f[9]}]`);
+    }
+  }
+  const found: { pid: number; name: string }[] = [];
+  if (inodes.size === 0) return found;
+  let pids: string[] = [];
+  try {
+    pids = readdirSync("/proc").filter((n) => /^[0-9]+$/.test(n));
+  } catch {}
+  for (const name of pids) {
+    let fds: string[];
+    try {
+      fds = readdirSync(`/proc/${name}/fd`);
+    } catch {
+      continue;
+    }
+    const holds = fds.some((fd) => {
+      try {
+        return inodes.has(readlinkSync(`/proc/${name}/fd/${fd}`));
+      } catch {
+        return false;
+      }
+    });
+    if (!holds) continue;
+    let comm = "";
+    try {
+      comm = readFileSync(`/proc/${name}/comm`, "utf8").trim();
+    } catch {}
+    found.push({ pid: Number(name), name: comm });
+  }
+  return found;
 }
 
 /** `--listen` of the hub process that has this home's database open. */

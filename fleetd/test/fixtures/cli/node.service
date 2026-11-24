@@ -1,7 +1,6 @@
 [Unit]
 Description=fleetd node
-StartLimitIntervalSec=300
-StartLimitBurst=5
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

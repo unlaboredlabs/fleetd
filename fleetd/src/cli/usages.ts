@@ -37,7 +37,8 @@ export const SETUP_USAGE = `  init [--yes] [--listen <host:port>] [--url <url>]
              run every setup check on the hub now: the setup steps first, then each other
              problem with its fix
   uninstall [--purge]
-             stop and remove the hub's service; its data stays unless --purge
+             stop and remove what fleetd runs on this machine: the hub's and the node's services,
+             the agents still running and what setup arranged as root; the data stays unless --purge
 `;
 
 export const PAIR_USAGE = `  pair [--name <device>] [--role <read|operate|admin>] [--no-qr]

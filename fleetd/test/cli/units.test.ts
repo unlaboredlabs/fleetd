@@ -48,3 +48,17 @@ test("ownUnit: the service under the user's manager, not an agent's scope or a s
   expect(ownUnit("0::/user.slice/user-1000.slice/user@1000.service\n")).toBeUndefined();
   expect(ownUnit("")).toBeUndefined();
 });
+
+// A hub whose port another program held for half a minute gave up after 5 starts (StartLimitBurst=5 in 300 s) and
+// stayed down once the port was free again (W890). systemd now never stops trying, and a unit an older fleetd wrote
+// gets that at its next start.
+test("systemd never gives up starting the hub or the node", () => {
+  for (const role of ["hub", "node"] as const) {
+    const unit = renderSystemdUnit({ ...spec(), role });
+    expect(unit).toContain("\nStartLimitIntervalSec=0\n");
+    expect(unit).not.toContain("StartLimitBurst");
+    expect(unit).toContain("\nRestart=always\nRestartSec=5\n");
+    const before = unit.replace("StartLimitIntervalSec=0\n", "StartLimitIntervalSec=300\nStartLimitBurst=5\n");
+    expect(refreshSystemdUnit(before, role)).toBe(unit);
+  }
+});
