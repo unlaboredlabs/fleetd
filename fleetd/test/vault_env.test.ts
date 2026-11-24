@@ -1,7 +1,8 @@
 // Variables from the vault to the nodes (src/hub/vault/deliver.ts): through today's node files, the order's over the
-// project's, a variable set aside nowhere; caught up when an offline machine is back; taken back when deleted; the Rust mirror rows
+// project's, at the bot and at each checkout of its repos; a variable set aside nowhere; caught up when an offline machine is back; taken back when deleted; the Rust mirror rows
 // kept; one inject row per launch with names only.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import * as repos from "../src/hub/repos/store.ts";
 import { deliveries } from "../src/hub/vault/deliver.ts";
 import { beforeLaunch, dropClosed, injected } from "../src/hub/vault/loops.ts";
 import { M, OTHER, PROJECT, type VaultHub, vaultHub } from "./vault-kit.ts";
@@ -105,4 +106,25 @@ test("a launch in a new order delivers its variables first; the inject row lists
   expect(Object.fromEntries(k.node.orderFiles.get("p1/W9") ?? [])).toEqual({ BO_TOKEN: "bo-tok" });
   injected(k.hub, PROJECT, "W9", "t1");
   expect(JSON.parse(k.hub.db.all<{ data: string }>("SELECT data FROM vault_audit WHERE action = 'inject'")[0]!.data)).toEqual({ names: ["BO_TOKEN"] });
+});
+
+test("an order's variable set while its agents run reaches them in each of the bot's repo checkouts, and goes with the order", async () => {
+  // p2 is the checkout of p1's second repo: the order's agents in that repo run in p2 and read p2's order file.
+  repos.attach(k.hub.db.conn, PROJECT, "cloud", OTHER);
+  order(11, PROJECT, k.member.personId);
+  await sync();
+  await save({ kind: "env", scope: "order", ...PROJECT, workstreamId: "W11", envName: "LIVE_KEY", sealed: k.sealToHub({ value: "dummy-live" }) });
+  await sync();
+  expect(Object.fromEntries(k.node.orderFiles.get("p1/W11") ?? [])).toEqual({ LIVE_KEY: "dummy-live" });
+  expect(Object.fromEntries(k.node.orderFiles.get("p2/W11") ?? [])).toEqual({ LIVE_KEY: "dummy-live" });
+  injected(k.hub, OTHER, "W11", "t-cloud");
+  expect(JSON.parse(k.hub.db.all<{ data: string }>("SELECT data FROM vault_audit WHERE action = 'inject'")[0]!.data)).toEqual({ names: ["LIVE_KEY"] });
+  k.hub.db.conn.query("UPDATE workstreams SET state = 'done' WHERE n = 11").run();
+  dropClosed(k.hub);
+  expect(k.hub.db.all("SELECT * FROM vault_deliveries WHERE target LIKE 'order:%'")).toEqual([]);
+  // Another bot's order never reaches a checkout it doesn't hold.
+  order(12, OTHER, k.member.personId);
+  await save({ kind: "env", scope: "order", ...OTHER, workstreamId: "W12", envName: "BLOG_KEY", sealed: k.sealToHub({ value: "dummy-blog" }) });
+  await sync();
+  expect(k.node.orderFiles.get("p1/W12")).toBeUndefined();
 });

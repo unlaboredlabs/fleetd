@@ -3,7 +3,8 @@
 // machine per delivery, so the node's spawn, masking and the Rust node stay as they are:
 // - a project's file (`project_env`): its project variables, then the variables of every project whose repo checkout
 //   it is (W79);
-// - an order's file (`secret_deliver` to `order:<machine>:<W>`): its order variables;
+// - an order's file (`secret_deliver` to `order:<machine>:<W>`): its order variables, at the order's bot and at each
+//   checkout of that bot's repos, where its agents in that repo read them;
 // - a `request_secret` env:/file: sink: the item's value, written where the sink says.
 // `vault_deliveries` records which version each machine holds. `reconcile` sends what's missing or older and takes back
 // what went, on each change and each time a node links, so setting a variable no longer needs its machine online.
@@ -64,19 +65,27 @@ function layered(...layers: ItemRow[][]): Map<string, ItemRow> {
 const envOf = (v: Vault, where: string, params: (string | null)[]) => v.store.select(`kind = 'env' AND ${where}`, params);
 const projectVars = (v: Vault, r: ProjectRef) => envOf(v, "scope = 'project' AND machine_id = ? AND project_id = ? AND json_extract(meta, '$.sink') IS NULL", [r.machineId, r.projectId]);
 
-/** Each project's variables as its sessions get them: its own, then its repo holders'. */
-export function projectSet(hub: Hub, r: ProjectRef): Map<string, ItemRow> {
-  const v = vault(hub);
-  const holders = store(hub)
+/** The projects on `r`'s machine that hold it as a checkout of one of their repos (W79). */
+function holdersOf(hub: Hub, r: ProjectRef): ProjectRef[] {
+  return store(hub)
     .projectsList(r.machineId)
     .map((p) => ({ machineId: p.machineId, projectId: p.projectId }))
     .filter((h) => h.projectId !== r.projectId && otherCheckouts(hub, h).some((c) => c.projectId === r.projectId));
-  return layered(projectVars(v, r), ...holders.map((h) => projectVars(v, h)));
 }
 
-/** An order's own variables. */
+/** Each project's variables as its sessions get them: its own, then its repo holders'. */
+export function projectSet(hub: Hub, r: ProjectRef): Map<string, ItemRow> {
+  const v = vault(hub);
+  return layered(projectVars(v, r), ...holdersOf(hub, r).map((h) => projectVars(v, h)));
+}
+
+const orderVars = (v: Vault, r: ProjectRef, order: string) =>
+  envOf(v, "scope = 'order' AND machine_id = ? AND project_id = ? AND workstream_id = ?", [r.machineId, r.projectId, order]);
+
+/** An order's variables as its sessions in `r` get them: the order's own, whether `r` is its bot or a repo checkout of it. */
 export function orderSet(hub: Hub, r: ProjectRef, order: string): Map<string, ItemRow> {
-  return layered(envOf(vault(hub), "scope = 'order' AND machine_id = ? AND project_id = ? AND workstream_id = ?", [r.machineId, r.projectId, order]));
+  const v = vault(hub);
+  return layered(orderVars(v, r, order), ...holdersOf(hub, r).map((h) => orderVars(v, h, order)));
 }
 
 export class Deliveries {
@@ -145,13 +154,18 @@ export class Deliveries {
     const hub = this.hub;
     const v = vault(hub);
     const out = new Map<string, Map<string, ItemRow>>();
+    const openOf = (r: ProjectRef) =>
+      hub.db.conn
+        .query<{ n: number }, [string, string]>("SELECT n FROM workstreams WHERE machine_id = ? AND project_id = ? AND state = 'open'")
+        .all(r.machineId, r.projectId)
+        .map((x) => x.n);
     for (const p of store(hub).projectsList(m)) {
       const r = { machineId: m, projectId: p.projectId };
       out.set(projectTarget(p.projectId), projectSet(hub, r));
-      const open = hub.db.conn
-        .query<{ n: number }, [string, string]>("SELECT n FROM workstreams WHERE machine_id = ? AND project_id = ? AND state = 'open'")
-        .all(m, p.projectId);
-      for (const { n } of open) {
+      // Its own open orders, and those of the bots it is a repo checkout of: their agents there read the order's file
+      // under this checkout.
+      const open = new Set([r, ...holdersOf(hub, r)].flatMap(openOf));
+      for (const n of open) {
         const set = orderSet(hub, r, `W${n}`);
         if (set.size > 0) out.set(orderTarget(p.projectId, `W${n}`), set);
       }
