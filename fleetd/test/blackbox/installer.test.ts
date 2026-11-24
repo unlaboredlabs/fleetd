@@ -445,22 +445,41 @@ esac
 
 // Uninstall printed "✓ Remove the fleetd CLI and app" and deleted the CLI while the node kept running, its unit
 // enabled, from the deleted binary (W890). The CLI and the app now go only once no fleetd service or process is left.
-test("uninstall never says done while a fleetd service is left, and keeps the CLI until then", async () => {
-  let r = release();
-  let m = setUp(r, false);
-  let out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
-  expect(out.code, out.stdout).toBe(1);
-  expect(out.stderr).toContain("fleetd still runs here, so its CLI stays for now");
-  expect(out.stderr).toContain(`service: ${m.unit}`);
-  expect(out.stdout + out.stderr).not.toContain("✓");
-  expect(existsSync(join(r.home, ".fleetd/bin/fleetd")), "the CLI stays").toBe(true);
-
-  r = release();
-  m = setUp(r, true);
-  out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+test("uninstall removes the CLI once its own uninstall removed the services", async () => {
+  const r = release();
+  const m = setUp(r, true);
+  const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
   expect(out.code, out.stderr).toBe(0);
   expect(m.calls()).toContain("fleetd uninstall");
+  expect(m.calls()).not.toContain("disable --now");
   expect(out.stdout).toContain("✓  Remove    the fleetd CLI and app; no fleetd service or process is left");
+  expect(existsSync(join(r.home, ".fleetd/bin"))).toBe(false);
+});
+
+// A CLI from before W890 removed only the hub's service and exited 0, so the node's stayed, and every run of the
+// installer refused the same way with nothing that would remove it. The installer stops what it left itself.
+test("an older CLI's uninstall that leaves the node: the installer stops and removes it", async () => {
+  const r = release();
+  const m = setUp(r, false);
+  const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+  expect(out.code, out.stderr).toBe(0);
+  expect(m.calls()).toContain("fleetd uninstall");
+  expect(m.calls()).toContain("systemctl --user disable --now fleetd-node.service");
+  expect(existsSync(m.unit)).toBe(false);
+  expect(out.stdout).toContain("no fleetd service or process is left");
+  expect(existsSync(join(r.home, ".fleetd/bin"))).toBe(false);
+});
+
+// A unit at the same path whose --home is outside ~/.fleetd runs another fleet (FLEETD_HOME): `fleetd uninstall` leaves
+// it alone, and so does the installer, which neither stops it nor waits on it.
+test("uninstall leaves another fleet's unit alone and still finishes", async () => {
+  const r = release();
+  const m = setUp(r, false);
+  writeFileSync(m.unit, `[Service]\nExecStart=/srv/other/bin/fleetd node run --home /srv/other/node\n`);
+  const out = await r.sh(`${m.path} sh "$INSTALLER" --uninstall`);
+  expect(out.code, out.stderr).toBe(0);
+  expect(m.calls()).not.toContain("disable --now");
+  expect(existsSync(m.unit), "another fleet's unit stays").toBe(true);
   expect(existsSync(join(r.home, ".fleetd/bin"))).toBe(false);
 });
 

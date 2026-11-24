@@ -511,12 +511,15 @@ From a terminal: APPIMAGE_EXTRACT_AND_RUN=1 $(tilde "$app_dir/fleetd-desktop.App
   installed=1
 }
 
-# units: fleetd's service files here, a path a line: what `fleetd init`, `machine add` and `init --join` write.
+# units: fleetd's service files here, a path a line: what `fleetd init`, `machine add` and `init --join` write. One
+# whose --home is outside ~/.fleetd runs another fleet (FLEETD_HOME), which `fleetd uninstall` leaves alone too.
 units() {
   for u in "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fleetd-hub.service" \
     "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fleetd-node.service" \
     "$HOME/Library/LaunchAgents/sh.fleetd.hub.plist" "$HOME/Library/LaunchAgents/sh.fleetd.node.plist"; do
-    [ ! -f "$u" ] || printf '%s\n' "$u"
+    [ -f "$u" ] || continue
+    if grep -q -- '--home' "$u" && ! grep -qF "$HOME/.fleetd/" "$u"; then continue; fi
+    printf '%s\n' "$u"
   done
 }
 
@@ -594,9 +597,10 @@ uninstall() {
     rc=0
     "$bin_dir/fleetd" uninstall || rc=$?
   fi
-  # 126 and 127: no CLI that runs here (deleted, damaged, another machine's build).
+  # 126 and 127: no CLI that runs here (deleted, damaged, another machine's build). A CLI from before W890 removes only
+  # the hub's service and exits 0, so what it left goes the same way.
   case "$rc" in
-    0) ;;
+    0) [ -z "$(units)" ] || stop_units ;;
     126 | 127) stop_units ;;
     *) die "fleetd uninstall stopped, so nothing else was removed
 Fix what it said, then run the uninstall again." ;;
@@ -606,7 +610,6 @@ Fix what it said, then run the uninstall again." ;;
     running | sed 's/^\([0-9]*\) \(.*\)$/running: pid \1, \2/'
   })"
   if [ -n "$left" ]; then
-    why=""
     die "fleetd still runs here, so its CLI stays for now
 ${left}
 Stop what runs (kill <pid> for a fleetd you started yourself), then run the uninstall again."
