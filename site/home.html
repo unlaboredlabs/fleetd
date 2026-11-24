@@ -36,8 +36,18 @@
 <meta name="description" content="fleetd is a software factory. Other tools give developers more threads; fleetd gives the whole team one lead agent.">
 <meta property="og:title" content="fleetd: a software factory on your own machines">
 <meta property="og:description" content="Other tools give developers more threads. fleetd gives the whole team one lead agent.">
-<meta property="og:image" content="https://fleetd.sh/showcase-lead-dark.jpg">
+<link rel="canonical" href="https://fleetd.sh/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/">
+<meta property="og:image" content="https://fleetd.sh/card.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="fleetd’s bot beside the headline “Software factories, reinvented as fast as the models improve.” and the install line, curl -fsSL https://fleetd.sh | sh.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="alternate" type="text/plain" href="/fleetd.txt" title="fleetd.sh as plain text">
 <link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -1186,8 +1196,9 @@ var fleetdMedia={};
     let paused = calm.matches;
     let near = false;
     const source = () => {
-      // A frame under 1600 device pixels wide gets the half-size clip: as sharp there, at half the bytes.
-      const small = box.clientWidth * (window.devicePixelRatio || 1) < 1600;
+      // A frame no wider in device pixels than the small clip (1120) gets it: as sharp there, at a fraction of the
+      // bytes. Any wider (a 2x laptop's frame is ~1450) would scale it up and blur it, so that gets the full one.
+      const small = box.clientWidth * (window.devicePixelRatio || 1) <= 1120;
       // VP9 WebM where the browser is sure of it, else the H.264 MP4 (an older Safari).
       const webm = video.canPlayType('video/webm; codecs="vp9"') === "probably";
       const name = "showcase-" + box.dataset.clip + "-" + fleetdTheme.get() + (small ? "-small" : "") + (webm ? ".webm" : ".mp4");
