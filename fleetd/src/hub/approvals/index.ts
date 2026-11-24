@@ -624,8 +624,10 @@ export class Approvals {
     if (cwd === undefined) {
       ran = { outputTail: "", timedOut: false, error: "the bot has no workspace on record" };
     } else {
-      const input: Record<string, unknown> = { argv: spec.argv, cwd, timeoutSec: spec.timeoutSec, requestId: id };
-      if (spec.secretEnv !== undefined) input.secretEnv = spec.secretEnv;
+      const input: Record<string, unknown> = { argv: spec.argv, cwd, timeoutSec: spec.timeoutSec, requestId: id, projectId: project.projectId };
+      // An order's command may read that order's variables on the node (an order: sink), each by the name its request gave.
+      if (r.workstreamId) input.orderId = r.workstreamId;
+      if (spec.secretEnv !== undefined) input.secretEnv = this.orderNames(r, spec.secretEnv);
       try {
         ran = await this.runOnceLinked(machine, input);
       } catch (e) {
@@ -648,6 +650,24 @@ export class Approvals {
     }
     const done = this.quietly(() => this.settle(r, ran));
     if (done) await this.deps.hub.wakeRequest(done);
+  }
+
+  /** `secretEnv` with each entry the command's order was given by an `order:` request under its own `envName` naming
+   * that variable, so the node finds it in the order's variables. */
+  private orderNames<E extends { name: string; secretKey: string }>(r: HumanRequest, env: E[]): (E & { envName?: string })[] {
+    const order = r.workstreamId;
+    if (!order) return env;
+    const sink = `order:${r.projectRef.machineId}:${order}`;
+    // Newest first: the latest request for a key gave the name its value is under now.
+    const named = new Map<string, string | undefined>();
+    for (const asked of this.listQuiet({ projectRef: projectOf(r), states: ["stored"], kind: "secret" })) {
+      const s = asked.secret;
+      if (s?.sink === sink && !named.has(s.key)) named.set(s.key, s.envName);
+    }
+    return env.map((e) => {
+      const envName = named.get(e.secretKey);
+      return envName !== undefined ? { ...e, envName } : e;
+    });
   }
 
   /** Runs an approved command on `machine`'s node. Offline, nothing was sent: a node restarting (an update) gets

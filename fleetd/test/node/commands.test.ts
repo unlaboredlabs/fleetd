@@ -89,6 +89,41 @@ test("an order: sink becomes one variable of the order's agents, sourced from a 
   }
 });
 
+test("an approved command of order W reads a secret delivered to order:<machine>:W; another order's is refused", async () => {
+  const home = tempHome();
+  try {
+    const box = loadOrCreateBoxKey(home.dir);
+    const ctx: SecretsContext = { machineId: "devbox", roots: [home.dir], home: home.dir, boxKey: box };
+    const seal = (v: string) => Buffer.from(box.seal(new TextEncoder().encode(v))).toString("base64");
+    deliverSecret({ id: "o1", sink: "order:devbox:W21", sealed: seal("dummy-order-value"), secretKey: "stripe.live_key", projectId: "p1" }, ctx);
+    deliverSecret({ id: "o2", sink: "order:devbox:W21", sealed: seal("dummy-named"), secretKey: "gh.token", envName: "GH_TOKEN", projectId: "p1" }, ctx);
+    const gated = new GatedRuns(home.dir, "devbox");
+    const run = {
+      id: "g1",
+      argv: ["sh", "-c", 'test "$K" = dummy-order-value && test "$T" = dummy-named && echo "set $K"'],
+      cwd: home.dir,
+      timeoutSec: 10,
+      secretEnv: [{ name: "K", secretKey: "stripe.live_key" }, { name: "T", secretKey: "gh.token", envName: "GH_TOKEN" }],
+      requestId: "Q1",
+      projectId: "p1",
+      orderId: "W21",
+    };
+    expect(await gated.run(run, "hub-1", ctx)).toMatchObject({ exitCode: 0, outputTail: "set [secret]\n" });
+
+    const other = await gated.run({ ...run, id: "g2", requestId: "Q2", orderId: "W22" }, "hub-1", ctx);
+    expect(other.exitCode).toBeNull();
+    expect(other.error).toStartWith("secret stripe.live_key is order W21's variable STRIPE_LIVE_KEY on devbox, and only that order's approved commands read it");
+    expect(other.error).not.toContain("dummy");
+    const none = await gated.run({ ...run, id: "g3", requestId: "Q3", orderId: undefined }, "hub-1", ctx);
+    expect(none.error).toContain("run this command again with workstreamId W21");
+    // Another bot's order of the same id holds nothing of p1's.
+    const otherBot = await gated.run({ ...run, id: "g4", requestId: "Q4", projectId: "p2" }, "hub-1", ctx);
+    expect(otherBot.error).toStartWith("secret stripe.live_key was never delivered to devbox or to order W21's variables: ask the person for it once");
+  } finally {
+    home.done();
+  }
+});
+
 test("an order's variable delivered after a session started is in its next command's shell", () => {
   const home = tempHome();
   try {

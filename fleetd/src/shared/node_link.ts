@@ -264,6 +264,8 @@ export type GatedRun = {
   timeoutSec: number;
   secretEnv?: unknown;
   requestId?: string;
+  projectId?: string;
+  orderId?: string;
 };
 
 /** Hub -> node, only to nodes listing CAP_GATED_RESUME: the result of the command it ran for `requestId`. */

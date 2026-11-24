@@ -8,7 +8,7 @@ import { confine, runConfined } from "../cmd/index.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { headUtf16, scrubbedEnv } from "../util.ts";
 import type { GatedResult, GatedRun, SecretDeliver, SecretResult } from "../wire.ts";
-import { deliverOrderVar } from "./env.ts";
+import { deliverOrderVar, orderVar, ordersHolding } from "./env.ts";
 import { fingerprintOf, writeAtomic } from "./files.ts";
 import { parseSecretSink } from "./sink.ts";
 
@@ -132,8 +132,35 @@ export function deliverSecret(frame: SecretDeliver, ctx: SecretsContext): Secret
   return { id: frame.id, fingerprint };
 }
 
-/** A delivered secret's value, read back from its sink; throws why it cannot be read. */
-export function readSecret(secretKey: string, ctx: SecretsContext): string {
+/** Whose approved command reads a secret: its bot and order, which may read that order's variables. */
+export type SecretReader = { projectId?: string; orderId?: string; envName?: string };
+
+/** A secret delivered to an `order:` sink: the reader's own order's variable, else why it can't have it. */
+function orderSecret(secretKey: string, ctx: SecretsContext, reader: SecretReader): string {
+  const name = reader.envName ?? secretEnvName(secretKey);
+  const { projectId, orderId } = reader;
+  if (name && projectId && orderId) {
+    const value = orderVar(ctx.home, projectId, orderId, name);
+    if (value !== undefined) return value;
+  }
+  const holders = name && projectId ? ordersHolding(ctx.home, projectId, name).filter((o) => o !== orderId) : [];
+  if (holders.length > 0) {
+    const of = holders.join(", ");
+    throw new Error(
+      `secret ${secretKey} is order ${of}'s variable ${name} on ${ctx.machineId}, and only that order's approved commands read it: ` +
+        `run this command again with workstreamId ${holders[0]} rather than asking for the value again`,
+    );
+  }
+  const order = orderId ? ` or to order ${orderId}'s variables` : "";
+  throw new Error(
+    `secret ${secretKey} was never delivered to ${ctx.machineId}${order}: ask the person for it once with request_secret, ` +
+      `to sink order:${ctx.machineId}:<this command's order> or an env: or file: sink on ${ctx.machineId}, then run the command again`,
+  );
+}
+
+/** A delivered secret's value, read back from its sink, or for `reader` from its order's variables; throws why it
+ * cannot be read. */
+export function readSecret(secretKey: string, ctx: SecretsContext, reader: SecretReader = {}): string {
   let index: Record<string, SinkRecord>;
   try {
     index = readIndex(ctx.home);
@@ -141,8 +168,7 @@ export function readSecret(secretKey: string, ctx: SecretsContext): string {
     throw new Error(`cannot read the node's secret index: ${ioCode(error)}`);
   }
   const record = index[secretKey];
-  if (!record)
-    throw new Error(`secret ${secretKey} was never delivered to ${ctx.machineId}: ask for it with fleetd ask --kind secret`);
+  if (!record) return orderSecret(secretKey, ctx, reader);
   const target = confineSink(record.path, ctx.roots);
   if (typeof target !== "string") throw new Error(target.refused);
   let content: string;
@@ -159,8 +185,8 @@ export function readSecret(secretKey: string, ctx: SecretsContext): string {
 /** Set for an approved command to its request: it runs as one of the node's own processes. */
 export const APPROVED_RUN_ENV = "FLEETD_APPROVED_RUN";
 
-/** Runs one approved command like a `cmd_check`, each `secretEnv` value read from this node's sinks and injected into
- * its environment, then scrubbed from the output. Always answers. */
+/** Runs one approved command like a `cmd_check`, each `secretEnv` value read from this node's sinks (or its own
+ * order's variables) and injected into its environment, then scrubbed from the output. Always answers. */
 export async function runGated(frame: GatedRun, ctx: SecretsContext): Promise<GatedResult> {
   const notRun = (error: string): GatedResult => ({ id: frame.id, exitCode: null, outputTail: "", timedOut: false, error: head(error) });
   const env = scrubbedEnv();
@@ -168,7 +194,7 @@ export async function runGated(frame: GatedRun, ctx: SecretsContext): Promise<Ga
   const values: string[] = [];
   for (const entry of frame.secretEnv ?? []) {
     try {
-      const value = readSecret(entry.secretKey, ctx);
+      const value = readSecret(entry.secretKey, ctx, { projectId: frame.projectId, orderId: frame.orderId, envName: entry.envName });
       env[entry.name] = value;
       values.push(value);
     } catch (error) {

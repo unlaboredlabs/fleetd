@@ -48,9 +48,11 @@ export const HUB_CAP = {
 
 /** `secret_deliver` as the node reads it: its sink is a string (SecretSink). */
 export type SecretDeliver = Omit<link.SecretDeliver, "sink"> & { sink: string };
-export type SecretEnvEntry = { name: string; secretKey: string };
-/** `gated_run` as the node reads it: `secretEnv` names each variable and the secret it is read from. */
-export type GatedRun = Omit<link.GatedRun, "secretEnv"> & { secretEnv?: SecretEnvEntry[] };
+/** `envName`: the order variable holding it, when its `order:` request named one. */
+export type SecretEnvEntry = { name: string; secretKey: string; envName?: string };
+/** `gated_run` as the node reads it: `secretEnv` names each variable and the secret it is read from; `projectId` and
+ * `orderId` are the command's bot and order, whose variables on this node it may read. */
+export type GatedRun = Omit<link.GatedRun, "secretEnv"> & { secretEnv?: SecretEnvEntry[]; projectId?: string; orderId?: string };
 
 /** `text` held to `max` UTF-16 units from its start (a message), as the Rust `head_text`. */
 export { headUtf16 as headText, tailUtf16 as tailText } from "./util.ts";

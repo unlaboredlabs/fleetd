@@ -208,6 +208,29 @@ export function orderVarsForSpawn(home: string, projectId: string, orderId: stri
   }
 }
 
+/** The order's variable `name`, for one of that order's approved commands; undefined when it holds none. */
+export function orderVar(home: string, projectId: string, orderId: string, name: string): string | undefined {
+  const path = orderFile(home, projectId, orderId);
+  if (!path) return undefined;
+  try {
+    const value = readJson<OrderFile>(path, { vars: {} }).vars[name];
+    return typeof value === "string" && value !== "" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The project's orders on this machine whose variables name `name`; read for their names only. */
+export function ordersHolding(home: string, projectId: string, name: string): string[] {
+  if (!plain(projectId)) return [];
+  const dir = join(home, ORDER_DIR, projectId);
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")) : [];
+  return files
+    .map((f) => f.slice(0, -5))
+    .filter((orderId) => orderVar(home, projectId, orderId, name) !== undefined)
+    .sort();
+}
+
 /** A session of the order's `CLAUDE_ENV_FILE`: one line that sources the order's script as it is at each command. */
 export function orderEnvFile(home: string, projectId: string, orderId: string): string | undefined {
   const path = orderFile(home, projectId, orderId);

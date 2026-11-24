@@ -137,7 +137,7 @@ test("approve runs the stored command and wakes the lead with its outcome", asyn
   const approved = await a.answer(person, "Q1", true);
   expect(approved.answeredBy).toBe("human:desk");
   await fake.wokenTimes(1);
-  expect(fake.runs).toEqual([["lab-a", { argv: ["sh", "-c", "make migrate"], cwd: "/w/p1", timeoutSec: 600, requestId: "Q1" }]]);
+  expect(fake.runs).toEqual([["lab-a", { argv: ["sh", "-c", "make migrate"], cwd: "/w/p1", timeoutSec: 600, requestId: "Q1", projectId: "p1" }]]);
   const ran = fake.request("Q1");
   expect([ran.state, ran.exitCode, ran.evidence]).toEqual(["ran", 0, "exit 0 on lab-a, approved by human:desk"]);
   expect(ran.outputTail).toBe("migrated 3 tables");
@@ -268,6 +268,36 @@ test("an order sink is checked by its order's hooks", async () => {
   expect(fake.delivered[0]![1]).toEqual({ sink, sealed: SEALED, secretKey: "gh.token", projectId: "p1" });
   expect(saved).toEqual([{ project: p1, orderId: "W12", name: "GH_TOKEN", fingerprint: "ab12cd34", bytes: 12, requestId: "Q1" }]);
   expect(requestOutcome(fake.request("Q1")).outcome).toStartWith("set for W12's agents on lab-a (fingerprint ab12cd34)");
+});
+
+test("an order's approved command names its order, and each secret its order request gave a name", async () => {
+  const fake = new Fake();
+  const a = fake.approvals();
+  fake.hooks.orderRefusal = async () => undefined;
+  fake.hooks.orderEnvSaved = async () => undefined;
+  await a.requestSecret(p1, { key: "gh.token", sink: "order:lab-a:W12", text: "t", envName: "OLD_NAME" });
+  await a.submitSecret(person, "Q1", SEALED);
+  await a.requestSecret(p1, { key: "gh.token", sink: "order:lab-a:W12", text: "t", envName: "GH_TOKEN" });
+  await a.submitSecret(person, "Q2", SEALED);
+  await a.requestSecret(p1, { key: "stripe.key", sink: "order:lab-a:W12", text: "t" });
+  await a.submitSecret(person, "Q3", SEALED);
+  // Another order's request names nothing for W12's command.
+  await a.requestSecret(p1, { key: "x.y", sink: "order:lab-a:W13", text: "t", envName: "XY" });
+  await a.submitSecret(person, "Q4", SEALED);
+  const secretEnv = [
+    { name: "G", secretKey: "gh.token" },
+    { name: "S", secretKey: "stripe.key" },
+    { name: "X", secretKey: "x.y" },
+  ];
+  await a.gatedRun(p1, { ...migration(), secretEnv, workstreamId: "W12" });
+  await a.answer(person, "Q5", true);
+  await fake.wokenTimes(5);
+  expect(fake.runs[0]![1]).toMatchObject({
+    projectId: "p1",
+    orderId: "W12",
+    secretEnv: [{ name: "G", secretKey: "gh.token", envName: "GH_TOKEN" }, { name: "S", secretKey: "stripe.key" }, { name: "X", secretKey: "x.y" }],
+  });
+  expect((fake.runs[0]![1] as { secretEnv: object[] }).secretEnv[1]).not.toHaveProperty("envName");
 });
 
 test("a lead withdraws its own bot's requests only, and a removed bot's close", async () => {
