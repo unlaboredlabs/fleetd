@@ -9,6 +9,12 @@ export const BILLING_CHECKOUT_PATH = "/billing/v1/checkout";
 export const BILLING_PORTAL_PATH = "/billing/v1/portal";
 export const BILLING_CAP_PATH = "/billing/v1/cap";
 
+/**
+ * Where a person writes about a payment, named in full wherever the apps send them to support (the cloud can import it
+ * from the package too). A placeholder until the address reaches an inbox: launch-readiness step 2 routes it.
+ */
+export const SUPPORT_EMAIL = "support@fleetd.dev";
+
 export interface BillingPlan {
   readonly key: string;
   readonly name: string;
@@ -338,5 +344,5 @@ export const paidLine = (said: "paid" | "cancelled" | null, state: BillingState,
   if (said !== "paid" || showsPaid(state)) return null;
   return waitedMs < PAID_WAIT_MS
     ? "Payment received. The credits show here in a moment, once Stripe confirms it."
-    : "Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to fleetd's support.";
+    : `Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to ${SUPPORT_EMAIL}.`;
 };

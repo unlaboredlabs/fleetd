@@ -84,6 +84,16 @@ export const explainLoss = (hub: string, code: number, reason: string, error: So
       fix: "If the hub serves plain HTTP, use an http:// address. Otherwise its certificate isn't one this computer trusts.",
     };
   }
+  // Node's HTTP parser (HPE_…: "Parse Error: Expected HTTP/…"): something answered that doesn't speak HTTP at all, most
+  // often another program that took the hub's port.
+  if (errCode.startsWith("HPE_")) {
+    return {
+      reason: `Something other than a fleetd hub answered at ${host}`,
+      fix: known
+        ? "Another program may have taken the hub's port. Run `fleetd doctor` on the hub's machine."
+        : "Check the address and port. If they're your hub's, another program may have taken its port: run `fleetd doctor` on the hub's machine.",
+    };
+  }
   const status = /Unexpected server response: (\d+)/u.exec(error?.message ?? "")?.[1];
   if (status !== undefined) {
     return status.startsWith("5")

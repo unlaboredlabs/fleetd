@@ -14,6 +14,7 @@ let host: HTMLDivElement;
 let root: Root;
 const actions = {
   signIn: vi.fn(),
+  signUp: vi.fn(),
   retry: vi.fn(),
   join: vi.fn(),
   later: vi.fn(),
@@ -48,11 +49,15 @@ afterEach(() => {
   host.remove();
 });
 
-it("signed out: Welcome to fleetd, and Sign in in the box", async () => {
+it("signed out: Welcome to fleetd, and Sign in or Make an account in the box", async () => {
   await show({ at: "signed-out" });
   expect(host.querySelector("[data-screen]")?.getAttribute("data-screen")).toBe("web.sign-in");
   expect(host.querySelector("h1")?.textContent).toBe("Welcome to fleetd");
   await press("Sign in");
+  expect(actions.signIn).toHaveBeenCalledOnce();
+  // The site's Sign up lands here: making an account is a button of its own, not a link under Sign in on WorkOS's page.
+  await press("Make an account");
+  expect(actions.signUp).toHaveBeenCalledOnce();
   expect(actions.signIn).toHaveBeenCalledOnce();
 });
 
