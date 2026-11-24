@@ -103,7 +103,10 @@ const answer = (tool: string): unknown =>
       : tool === "github_app_get"
         ? { authorizeUrl: "https://github.com/login/oauth/authorize" }
         : tool === "claude_accounts_get"
-          ? accounts
+          ? // Once the owner's subscription is sealed, the leads run on it.
+            fake.sealed.length > 0
+            ? { ...accounts, leadsRunOn: { kind: "account", account: { kind: "person", personId: sam.personId } } }
+            : accounts
           : tool === "orders_board"
             ? { orders: [] }
             : undefined;
@@ -187,7 +190,7 @@ it("a cloud team with only a hosted provider: Connect Claude opens Settings over
   // Sealed to the hub's runner, where the hosted agents run.
   expect(fake.sealed).toEqual([expect.objectContaining({ account: "mine", boxes: [expect.objectContaining({ machineId: "hosted" })] })]);
 
-  // The runner's next check finds the account: online. Closing Settings is back on Get started, step 1 done.
+  // The runner's next check finds the account: online. Closing Settings is back on Get started, Claude done on it.
   await act(async () => {
     send(snapshot(2, [runner("online")]));
     await new Promise((r) => setTimeout(r, 0));
@@ -197,4 +200,5 @@ it("a cloud team with only a hosted provider: Connect Claude opens Settings over
   await until(() => document.querySelector('[data-sheet="settings"]') === null, "Get started without the sheet");
   expect(document.querySelector("[data-screen^='start.']")?.getAttribute("data-screen")).toBe("start.github");
   expect(document.querySelector('[data-step="computer"]')?.textContent).toContain("fleetd's computers");
+  expect(document.querySelector('[data-step="claude"]')?.textContent).toContain("Claude subscription");
 }, 20_000);
