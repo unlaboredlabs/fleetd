@@ -81,12 +81,31 @@ export async function asOwner<T>(home: string, use: (client: McpClient) => Promi
   }
 }
 
+/** Why no key can be saved yet, in plain words: it is kept only on machines that run agents, and there are none. */
+export const NO_MACHINE: Failure = {
+  message: "no machine runs agents yet, and the key is kept only on those, so it can't be saved yet",
+  fix: "add this machine first: fleetd machine add --local (it says if claude needs installing), then fleetd init --step claude",
+};
+
 /**
  * The hub's API key: its endpoint (Anthropic's own prefilled) and the key, typed hidden, sealed to each machine here,
- * saved as an administrator (`admin`: in `fleetd init`, the owner's key made for it).
+ * saved as an administrator (`admin`: in `fleetd init`, the owner's key made for it). The machines come first: with
+ * none to keep it, nothing is asked for.
  */
 export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admin: AsAdmin): Promise<boolean> {
   if (!ui.interactive) return false;
+  let boxes: { machineId: string; boxPubKey: string }[];
+  try {
+    boxes = boxesOf((await callFor(client, "fleetd_status", {}, 30_000))?.machines);
+  } catch (f) {
+    if (!isFailure(f)) throw f;
+    list.failed("hub API key", f.message, f.fix);
+    return false;
+  }
+  if (boxes.length === 0) {
+    list.failed("hub API key", NO_MACHINE.message, NO_MACHINE.fix);
+    return false;
+  }
   const endpoint = await ui.input(list, "Claude endpoint", ANTHROPIC_ENDPOINT, "", endpointProblem);
   const key = keyOf(await ui.secret(list, "Claude API key (hidden): "));
   if (key === undefined) {
@@ -95,16 +114,11 @@ export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admi
   }
   list.start("Sealing the key to each machine");
   try {
-    const status = await callFor(client, "fleetd_status", {}, 30_000);
-    const boxes = boxesOf(status?.machines);
-    if (boxes.length === 0) {
-      list.failed("hub API key", "no machine takes secrets yet: no node has a box key", "add a machine or connect a provider, then fleetd init --step claude");
-      return false;
-    }
     const saved = endpointToSave(endpoint);
     const sealed = sealTo(boxes, key);
     await admin((owner) => callFor(owner, "claude_hub_api_set", { sealed, ...(saved === undefined ? {} : { endpoint: saved }) }, 120_000));
-    list.done("hub API key", `sealed to ${boxes.map((b) => b.machineId).join(", ")}${saved === undefined ? "" : `, through ${saved}`}`);
+    // Saved is not working: the step's Test, next, tries it.
+    list.done("hub API key", `saved on ${boxes.map((b) => b.machineId).join(", ")}${saved === undefined ? "" : `, through ${saved}`}; testing it next`);
   } catch (f) {
     if (!isFailure(f)) throw f;
     list.failed("hub API key", f.message, f.fix);

@@ -167,7 +167,7 @@ export function kvmAt(dev: string, groupFile: string, sgOpen: (dev: string) => b
   }
   return {
     err: {
-      why: `${user} can't open /dev/kvm read-write: the command adds them to group kvm. The node then starts ${what} with that group through \`sg kvm\`, within minutes, with no restart.`,
+      why: `${user} can't open /dev/kvm, which ${what} needs: the command adds them to group kvm, and the node then starts ${what} within minutes, with no restart.`,
       fix: `sudo usermod -aG kvm ${user}`,
     },
   };
