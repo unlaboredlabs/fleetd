@@ -73,6 +73,12 @@ describe("signInPath and teamHubId", () => {
     expect(signInPath("https://evil.example/")).toBe("/web/sign-in");
   });
 
+  it("asks for WorkOS's sign-up form for Make an account, the way back kept", () => {
+    expect(signInPath("/", true)).toBe("/web/sign-in?screen_hint=sign-up");
+    expect(signInPath("/#/settings/general", true)).toBe("/web/sign-in?return=%2F%23%2Fsettings%2Fgeneral&screen_hint=sign-up");
+    expect(signInPath("//evil.example/x", true)).toBe("/web/sign-in?screen_hint=sign-up");
+  });
+
   it("makes a team's id a hub id the routes take", () => {
     expect(teamHubId("3F2B9C1E-0000-4000-8000-000000000001")).toBe("3f2b9c1e00004000");
     expect(teamHubId("---")).toBe("team");

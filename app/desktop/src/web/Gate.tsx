@@ -18,6 +18,8 @@ export type GateView =
 
 export interface GateActions {
   readonly signIn: () => void;
+  /** WorkOS's page on its sign-up form: the site's Sign up lands here, so making an account is a button, not a link under Sign in. */
+  readonly signUp: () => void;
   readonly retry: () => void;
   /** Joins one invitation; its refusal, or null once joined. */
   readonly join: (invitation: WebInvitation) => Promise<WebFailure | null>;
@@ -56,6 +58,9 @@ export function Gate({ view, actions }: { view: GateView; actions: GateActions }
         <div className={st.actions}>
           <Button variant="primary" size="md" onClick={actions.signIn}>
             Sign in
+          </Button>
+          <Button size="md" onClick={actions.signUp}>
+            Make an account
           </Button>
         </div>
       </Stage>
