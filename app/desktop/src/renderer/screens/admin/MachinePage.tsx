@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { versionLabel } from "../../../shared/updates";
 import { callKey } from "../../src/data/queries";
-import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
+import { useCloudTeam, useData, useDataLayer, useToolQuery } from "../../src/data/react";
 import { Button, Text, toast } from "../../ui";
 import { AddMachine, type View } from "../addMachine";
 import { useNow } from "../live";
@@ -29,7 +29,7 @@ import { AntigravityRow, SignInForm } from "../settings/GoogleSignIn";
 import { machineMark } from "../settings/placesModel";
 import { MachineScreens } from "../settings/Screens";
 import { toHash } from "../shell/routes";
-import { fixPlace, MACHINE_WAIT_MS, needsOf, problemsOf, REMOVE_LINE, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
+import { fixPlace, MACHINE_WAIT_MS, needsOf, problemsOf, removeHint, REPAIR_LINE, repairOf, statusWords, type Problem } from "./machines";
 import { RemoveMachine } from "./RemoveMachine";
 import { useServes } from "./role";
 import s from "../settings/settings.module.css";
@@ -41,6 +41,7 @@ const noInput = {};
 const toList = () => (window.location.hash = toHash({ id: "settings", tab: "hub.machines" }));
 
 export function MachinePage({ machineId }: { machineId: string }) {
+  const cloud = useCloudTeam();
   const known = useData((d) => d.machines[machineId]);
   // The feed's status is newer than the snapshot's when it has one, as the list reads it.
   const status = useData((d) => d.live.machines[machineId]?.status);
@@ -181,7 +182,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
             <SettingsSection>
               <SettingsRow
                 title={`Remove ${machine.name}`}
-                hint={REMOVE_LINE}
+                hint={removeHint(cloud)}
                 control={
                   <DangerButton onClick={() => setRemoving(true)}>
                     Remove…

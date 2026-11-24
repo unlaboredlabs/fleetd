@@ -4,7 +4,7 @@
 import { useState } from "react";
 import type { Machine } from "../../../shared/contracts";
 import { CallError } from "../../src/data/queries";
-import { useToolQuery } from "../../src/data/react";
+import { useCloudTeam, useToolQuery } from "../../src/data/react";
 import { Button, Dialog, Text, toast } from "../../ui";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import { MACHINE_WAIT_MS, removeLine } from "./machines";
@@ -16,6 +16,7 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
   const call = useHubCall();
   const refetch = useRefetch();
   const live = useLive();
+  const cloud = useCloudTeam();
   const hosts = useToolQuery("machine_hosts", noInput, { enabled: useServes("machine_hosts") }).data?.hosts;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -53,7 +54,7 @@ export function RemoveMachine(props: { machine: Machine; onClose: () => void; on
       open
       onOpenChange={(open) => !open && !busy && props.onClose()}
       title={`Remove ${m.name}?`}
-      description={removeLine(m.machineId, hosts)}
+      description={removeLine(m.machineId, hosts, cloud)}
       footer={
         <>
           <Button variant="ghost" disabled={busy} onClick={props.onClose}>

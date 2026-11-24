@@ -23,14 +23,18 @@ export const repairOf = (machineId: string, hosts: ReadonlyArray<MachineHost> | 
   return host === undefined ? { kind: "line", machineId, rejoin: true } : { kind: "plan", host: { ...host, joined: true } };
 };
 
-/** What Remove does to it: the hub undoes what it set up; a machine that joined by itself only loses its key. */
-export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> | undefined): string =>
-  hosts?.some((h) => h.machineId === machineId && (h.source === "set_up" || h.source === "hub"))
+/** What Remove does to it: the hub undoes what it set up; a machine that joined by itself only loses its key. On a cloud
+ * team every machine joined by itself, and its bots move to fleetd's computers rather than go. */
+export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> | undefined, cloud = false): string =>
+  cloud
+    ? `fleetd revokes ${machineId}'s key and forgets it. Its bots move to fleetd's computers with their chats, memory and orders; their folders stay on ${machineId}. It joined by itself, so stop its node on it by hand.`
+    : hosts?.some((h) => h.machineId === machineId && (h.source === "set_up" || h.source === "hub"))
     ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its bots are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
     : `The hub revokes ${machineId}'s key and forgets it, and its bots are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
 /** What Remove does, on hovering it on the machine's page; the dialog it opens says the rest (removeLine). */
-export const REMOVE_LINE = "Its bots are deleted from fleetd with their chats and orders. Its repos and worktrees stay.";
+export const removeHint = (cloud: boolean): string =>
+  cloud ? "Its bots move to fleetd's computers with their chats and orders." : "Its bots are deleted from fleetd with their chats and orders. Its repos and worktrees stay.";
 
 type Seen = Pick<Machine, "name" | "status" | "degradedReason"> & { lastSeenAt?: string | undefined };
 

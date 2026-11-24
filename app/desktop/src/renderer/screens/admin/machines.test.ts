@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
-import { fixPlace, needsOf, problemsOf, removeLine, repairOf, statusWords } from "./machines";
+import { fixPlace, needsOf, problemsOf, removeHint, removeLine, repairOf, statusWords } from "./machines";
 
 const hosts: MachineHost[] = [
   { machineId: "devbox", source: "hub", joined: true },
@@ -55,6 +55,11 @@ describe("Administration › Machines' model", () => {
   it("says what Remove does: the service and the key, or the key alone", () => {
     expect(removeLine("builder-1", hosts)).toContain("stops and removes builder-1's node service");
     expect(removeLine("laptop", hosts)).toContain("It joined by itself");
+    // On a cloud team its bots move to fleetd's computers: nothing says they're deleted.
+    expect(removeLine("laptop", hosts, true)).toBe(
+      "fleetd revokes laptop's key and forgets it. Its bots move to fleetd's computers with their chats, memory and orders; their folders stay on laptop. It joined by itself, so stop its node on it by hand.",
+    );
+    expect(removeHint(true)).not.toContain("deleted");
   });
 
   it("makes a problem of each of the machine's own checks that failed or warns, failed first, and none of one that passed", () => {
