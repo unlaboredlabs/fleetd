@@ -1,7 +1,7 @@
 <!doctype html>
-<!-- Type-led and quiet. One thing moves: the bot beside the headline, drawn by the app's own code (pebble.js, from
-     app/desktop's shared/bot.ts and ui/lib/botLife.ts by `pnpm site:pebble`). Every other bot is a still pose beside the
-     idea it stands for. IBM Plex Sans for every human sentence and Lilex for machine text, the two faces the app itself
+<!-- Type-led and quiet. The bot beside the headline moves, drawn by the app's own code (pebble.js, from app/desktop's
+     shared/bot.ts and ui/lib/botLife.ts by `pnpm site:pebble`), and under it the desktop and phone apps sit on a
+     MacBook Pro and an iPhone Duo that opens once. Every other bot is a still pose beside the idea it stands for. IBM Plex Sans for every human sentence and Lilex for machine text, the two faces the app itself
      renders in, so the page and the recorded app read as one document. Dark unless the reader picks Light. -->
 <html lang="en" data-theme="dark">
 <head>
@@ -10,7 +10,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#121212">
 <script>
-// Light or Dark, from the header's switch; Dark until the reader picks Light. Kept under the docs' own key (Starlight's
+// Light or Dark, from the footer's switch; Dark until the reader picks Light. Kept under the docs' own key (Starlight's
 // starlight-theme: "light", "dark", or empty for its Auto), so the choice carries over between this page and /docs;
 // anything but "light" (the docs' Auto, or an "auto" this page once stored) reads as Dark here. Applied before the
 // first paint; the switch's script applies it again once the posters are parsed. It sets data-theme for the CSS and
@@ -66,6 +66,9 @@
   --well-press:rgba(255,255,255,.11);
   --soft:#b9b9b9;
   --dim:rgba(162,163,165,.7);
+  --floor:#161616;
+  --floor-lit:rgba(255,255,255,.06);
+  --floor-ring:rgba(255,255,255,.06);
   --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
   --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
   --pad:clamp(20px,4.4vw,64px);
@@ -90,6 +93,9 @@
   --well-press:rgba(0,0,0,.09);
   --soft:#3d3f43;
   --dim:#8a8c8f;
+  --floor:#ebebe7;
+  --floor-lit:rgba(255,255,255,.55);
+  --floor-ring:rgba(0,0,0,.06);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
@@ -107,22 +113,18 @@ p,h1,h2,figure{margin:0}
 .nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
 .nav a{text-decoration:none}
 .nav a:hover{color:var(--ink)}
-.theme{display:flex;border:1px solid var(--rule);border-radius:5px;padding:1px;font-size:13px;line-height:1.5}
-.theme button{font:inherit;color:var(--grey);background:none;border:0;border-radius:3px;padding:1px 8px;cursor:pointer}
-.theme button:hover{color:var(--ink)}
-.theme button[aria-pressed="true"]{color:var(--ink);background:var(--tone)}
-/* Sign up: the one filled control on the page, ink on paper, sized to the theme switch beside it. */
+/* Sign up: the one filled control on the page, ink on paper. */
 .nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
 .nav .up:hover{color:var(--paper);opacity:.88}
 
-/* hero: the headline set as large as the measure allows, the bot the one thing that moves */
-.hero{padding-top:clamp(40px,7vw,104px);padding-bottom:clamp(64px,9vw,136px)}
-.lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,4.4vw,72px);align-items:center;--av:clamp(160px,24vw,330px)}
+/* hero: the bot beside the headline set as large as the measure allows, then the apps on their devices */
+.hero{padding-top:clamp(24px,3.6vw,60px);padding-bottom:clamp(64px,8vw,120px)}
+.lockup{display:grid;grid-template-columns:auto minmax(0,1fr);gap:clamp(28px,5.5vw,88px);align-items:center;--av:clamp(140px,19vw,272px);padding-left:clamp(0px,2vw,32px)}
 /* The bot as the app draws it: a box, and a canvas a quarter past each side so a hop or a slump is never cut off
    (botLife.ts's PAD, Bot.module.css's .canvas). */
 .pb{position:relative;display:block;flex:none}
 .pb canvas{position:absolute;left:-25%;top:-25%;width:150%;height:150%;pointer-events:none}
-#hero-bot{width:var(--av);height:var(--av)}
+#hero-bot{width:var(--av);height:var(--av);transform-origin:50% 92%}
 h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2vw,76px);text-wrap:balance;max-width:12em}
 .install{margin-top:clamp(28px,3.2vw,44px);max-width:31em}
 /* The install command: one quiet surface sized to it, the prompt dim and left out of a selection, a small copy icon
@@ -196,9 +198,151 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .note{padding-top:8px;padding-bottom:clamp(40px,5vw,72px);font-size:13px;color:var(--faint)}
 
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
-.foot nav{display:flex;gap:20px}
+.foot nav{display:flex;align-items:center;gap:20px}
 .foot a{text-decoration:none}
 .foot a:hover{color:var(--ink)}
+/* Light or Dark: one small icon at the footer's end, the other theme's. */
+.theme{display:grid;place-items:center;width:24px;height:24px;margin:-4px -4px -4px 0;padding:0;border:0;border-radius:6px;background:none;color:var(--faint);cursor:pointer}
+.theme:hover{color:var(--ink);background:var(--well-hover)}
+.theme svg{width:14px;height:14px}
+.theme .i-moon,[data-theme="light"] .theme .i-sun{display:none}
+[data-theme="light"] .theme .i-moon{display:block}
+
+/* The stage: the desktop app on a laptop's display and the phone app on a foldable phone in front of its corner, on
+   one quiet surface. Both devices are drawn here, generic ones: no maker's details. Every length is a share of the stage
+   (cqw), so the picture scales as one. Each screen is the app itself (site/README.md). */
+.stage{position:relative;margin-top:clamp(36px,4.2vw,64px);container-type:inline-size}
+.floor{position:relative;aspect-ratio:100/52;border-radius:clamp(12px,1.5vw,20px);background:radial-gradient(ellipse 62% 58% at 52% 62%,var(--floor-lit),transparent 72%),var(--floor);box-shadow:inset 0 0 0 1px var(--floor-ring);overflow:hidden;isolation:isolate}
+.stage img{display:block}
+
+/* The laptop's display alone, front on: a silver lid round black glass with a camera in its top edge. Its screen is
+   1512x993 points, the shot's. */
+.lap{position:absolute;left:4cqw;top:5cqw;width:60cqw}
+.lid{position:relative;aspect-ratio:1.4384;border-radius:2.1cqw;background:linear-gradient(135deg,#f4f5f6 0%,#d6d8db 22%,#b4b7bb 56%,#9ea1a6 82%,#c2c5c8 100%);box-shadow:0 0 0 .03cqw rgba(0,0,0,.55),inset .03cqw .045cqw 0 rgba(255,255,255,.92),inset -.03cqw -.045cqw 0 rgba(0,0,0,.26),0 .9cqw 2.6cqw -1.2cqw rgba(0,0,0,.5)}
+/* Black glass to the aluminium's edge, its rim catching a hair of light. */
+.lid::before{content:"";position:absolute;inset:.2cqw;border-radius:1.92cqw;background:#030304;box-shadow:inset 0 0 0 .03cqw rgba(255,255,255,.08)}
+/* Grounding, lit from the top left like the phone: a tight contact shadow at its foot and a soft one cast down. */
+.lap::after{content:"";position:absolute;left:3%;right:1%;bottom:-1cqw;height:1.6cqw;background:radial-gradient(closest-side,rgba(0,0,0,.62),rgba(0,0,0,.3) 50%,rgba(0,0,0,0));z-index:-1}
+.lap .screen{position:absolute;left:1.62%;right:1.62%;top:2.79%;bottom:5.81%;overflow:hidden;border-radius:.75cqw .75cqw 0 0;background:#fff;container-type:inline-size}
+/* The screen is 1512x993 points: a macOS menu bar 37 points tall (the notch's height), the app's window under it
+   (1512x956, its shot). Lengths here in shares of the screen's width: 1 point is 100/1512 cqw. */
+.lap .screen img{position:absolute;left:0;bottom:0;width:100%;height:auto}
+.menubar{position:absolute;left:0;right:0;top:0;height:2.447cqw;display:flex;align-items:center;gap:1.39cqw;padding:0 1.06cqw 0 1.39cqw;background:#e9e9eb;color:#1d1d1f;font:500 .86cqw/1 -apple-system,BlinkMacSystemFont,"SF Pro Text",var(--sans);letter-spacing:-.01em;white-space:nowrap}
+.menubar b{font-weight:700}
+.menubar svg{display:block;height:.86cqw;width:auto;fill:currentColor}
+.menubar .right{margin-left:auto;display:flex;align-items:center;gap:1.19cqw;font-style:normal}
+.menubar .right svg:last-of-type{height:.8cqw}
+/* The camera notch: the bezel reaching into the screen at its top centre, as tall as the menu bar. */
+.lap .notch{position:absolute;z-index:2;left:50%;top:0;width:12.6cqw;height:2.447cqw;margin-left:-6.3cqw;background:#060607;border-radius:0 0 .9cqw .9cqw}
+/* The glass: one faint sheen across the lid, the light of the room on it. */
+.lid::after{content:"";position:absolute;inset:.2cqw;border-radius:1.92cqw;pointer-events:none;background:linear-gradient(118deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.025) 26%,rgba(255,255,255,0) 27%);z-index:3}
+
+/* The foldable: two halves on a hinge down its middle, a titanium band round black glass, one display across both open
+   and a smaller one on the outside. The right half lies still; the left half is one leaf on the hinge, its outer
+   display on one face, its half of the inner display on the other and its edge at its free end. Shut, the leaf lies
+   over the right half, outer display up; it turns over on the hinge in perspective, on a spring that lands it flat
+   against the hinge's stop, and at rest the phone is the one piece it is open (.whole), drawn the same. The light comes
+   from the top left, as on the laptop: highlights on top and left edges, shade bottom right, the folding half darker
+   the further it turns from the light. The script turns it with Web Animations of transforms and opacity only, so the
+   compositor runs it at the display's rate. */
+.fold{--sw:31.68cqw;--band:.24cqw;--bezel:.42cqw;--r:2.2cqw;position:absolute;left:63.1cqw;top:21.6cqw;width:33cqw;aspect-ratio:1.396;perspective:calc(var(--sw) * 4.2)}
+.fold .r{position:absolute;top:0;bottom:0;right:0;width:50%}
+.fold .leaf{position:absolute;top:0;bottom:0;left:50%;width:50%;transform-origin:0 50%;transform-style:preserve-3d;transform:rotateY(-.01deg)}
+.fold .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+/* The inner face, turned to show when the leaf lies open: the left half of the display. One face shows at a time (by
+   opacity, which the animation sets), rather than left to backface-visibility, which not every renderer honours. */
+.fold .l{transform:rotateY(180deg);opacity:0}
+/* Titanium: a brushed grey lit from the top left, a hairline of light along its top and left, its outer edge a touch
+   darker where it turns away. */
+.fold .band{position:absolute;inset:0;background:linear-gradient(135deg,#f1efeb 0%,#cfccc6 18%,#a9a6a0 52%,#8c8984 78%,#b4b0aa 100%);box-shadow:0 0 0 .03cqw rgba(0,0,0,.6),inset .03cqw .04cqw 0 rgba(255,255,255,.85),inset -.03cqw -.04cqw 0 rgba(0,0,0,.28)}
+.fold .r .band{border-radius:0 var(--r) var(--r) 0}
+.fold .l .band{border-radius:var(--r) 0 0 var(--r)}
+.fold .o .band{border-radius:var(--r)}
+.fold .whole .band{border-radius:var(--r)}
+/* Black glass inside the band, its edge catching a little light. */
+.fold .band::before{content:"";position:absolute;inset:var(--band);background:#030304;border-radius:inherit;box-shadow:inset 0 0 0 .025cqw rgba(255,255,255,.07)}
+.fold .r .band::before{left:0;border-radius:0 calc(var(--r) - var(--band)) calc(var(--r) - var(--band)) 0}
+.fold .l .band::before{right:0;border-radius:calc(var(--r) - var(--band)) 0 0 calc(var(--r) - var(--band))}
+.fold .o .band::before{border-radius:calc(var(--r) - var(--band))}
+.fold .whole .band::before{border-radius:calc(var(--r) - var(--band))}
+.fold .scr{position:absolute;inset:calc(var(--band) + var(--bezel));overflow:hidden;background:#000;isolation:isolate}
+.fold .r .scr{left:0;border-radius:0 calc(var(--r) - var(--band) - var(--bezel)) calc(var(--r) - var(--band) - var(--bezel)) 0}
+/* The left half's screen a pixel over the hinge, so no seam shows where the halves meet. */
+.fold .l .scr{right:-1px;border-radius:calc(var(--r) - var(--band) - var(--bezel)) 0 0 calc(var(--r) - var(--band) - var(--bezel))}
+.fold .o .scr{inset:calc(var(--band) + .62cqw);border-radius:1.35cqw}
+.fold .whole .scr{border-radius:calc(var(--r) - var(--band) - var(--bezel))}
+/* The open display's picture, in each half its own half of it, sized by the whole display (--sw). */
+.fold :is(.r,.l) .scr img{position:absolute;top:0;height:100%;width:var(--sw);left:0;object-fit:cover}
+.fold .r .scr img{left:calc(var(--sw) / -2)}
+.fold :is(.o,.whole) .scr img{width:100%;height:100%;object-fit:cover}
+/* The camera: in the inner display's bezel over the right half, and in the outer display's top right corner. */
+.fold .cam{position:absolute;z-index:4;width:.36cqw;height:.36cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#3a4660 0,#0b0e16 55%,#000 100%);box-shadow:0 0 0 .03cqw rgba(255,255,255,.06)}
+.fold :is(.r,.whole) .cam{top:calc(var(--band) + .03cqw);right:22%}
+/* The inner display's camera sits under the leaf shut, so below it. */
+.fold .r .cam{z-index:0}
+.fold .o .cam{width:.55cqw;height:.55cqw;top:calc(var(--band) + .62cqw + .3cqw);left:calc(50% - .275cqw)}
+/* The hinge: its barrel's ends in the band at the top and bottom of the fold, flush with it, the band's own titanium
+   turned round the hinge's axis (a touch of shade either side) between two fine seams; the glass meets across it
+   unbroken. */
+.fold .hinge{position:absolute;z-index:4;left:50%;width:1.7cqw;height:var(--band);margin-left:-.85cqw;background:linear-gradient(90deg,rgba(0,0,0,.16),rgba(255,255,255,.1) 50%,rgba(0,0,0,.16));box-shadow:inset .025cqw 0 0 rgba(0,0,0,.42),inset -.025cqw 0 0 rgba(0,0,0,.42)}
+.fold .hinge.t{top:0}
+.fold .hinge.b{bottom:0}
+/* The right half carries them while the leaf turns, from when it stands past upright (shut, the spine is the phone's
+   edge and they'd stand off it): the leaf's band meets the right half's at them as it does at a real hinge. */
+.fold .r .hinge{left:0;z-index:5;opacity:0}
+/* The side buttons on the right half's top edge: a rocker and a key, titanium, a step proud of the band. */
+.fold .key{position:absolute;z-index:-1;top:-.12cqw;height:.18cqw;border-radius:.1cqw .1cqw 0 0;background:linear-gradient(#cfcbc5,#8f8c86);box-shadow:inset 0 .025cqw 0 rgba(255,255,255,.7),0 0 0 .02cqw rgba(0,0,0,.5)}
+.fold .key.a{right:24%;width:3.2cqw}
+.fold .key.b{right:12%;width:1.7cqw}
+.fold .r .key.a{right:48%}
+.fold .r .key.b{right:24%}
+/* A face turned from the light darkens a little (.dim; a screen gives its own light, so not much): by opacity, which
+   the animation sets from the face's angle to the light. The right half too, in the leaf's shadow while it's over it. */
+.fold .dim{position:absolute;z-index:3;inset:0;opacity:0;pointer-events:none}
+.fold .dim{background:#000}
+.fold .r .dim{border-radius:0 var(--r) var(--r) 0}
+.fold .l .dim{border-radius:var(--r) 0 0 var(--r)}
+.fold .l .dim{opacity:.3}
+.fold .o .dim{border-radius:var(--r)}
+/* Under the leaf, the right half is as round at the hinge as the leaf is (so no corner of it shows past the phone
+   shut); it squares off there once the leaf stands past upright (data-over, the renderer's), to meet it open. */
+.fold:is([data-fold="shut"],[data-over]) .r :is(.band,.dim){border-radius:var(--r)}
+.fold:is([data-fold="shut"],[data-over]) .r .band::before{border-radius:calc(var(--r) - var(--band))}
+.fold:is([data-fold="shut"],[data-over]) .r .scr{border-radius:calc(var(--r) - var(--band) - var(--bezel))}
+/* The leaf's free edge: its thickness, titanium, square to both faces, seen only while it stands off flat. */
+.fold .edge{position:absolute;top:.5cqw;bottom:.5cqw;left:100%;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#6f6c67,#dedad4 38%,#fbfaf8 50%,#b9b5af 62%,#6f6c67);border-radius:.43cqw;opacity:0}
+.fold .off{position:absolute;z-index:2;inset:0;background:#000;opacity:0;pointer-events:none}
+.fold[data-fold="shut"] .off{opacity:1}
+/* Grounding, lit from the top left: a tight contact shadow just under the phone's bottom edge and a soft one cast
+   down and right, both gradients (no filter), stretched as the phone opens. */
+.fold .shade{position:absolute;left:-3%;right:-6%;top:12%;bottom:-13%;transform-origin:100% 50%;background:radial-gradient(closest-side at 54% 50%,rgba(0,0,0,.42),rgba(0,0,0,.22) 55%,rgba(0,0,0,0))}
+.fold .contact{position:absolute;left:4%;right:1%;bottom:-.9cqw;height:1.4cqw;transform-origin:100% 50%;background:radial-gradient(closest-side,rgba(0,0,0,.7),rgba(0,0,0,.35) 50%,rgba(0,0,0,0))}
+/* The phone in one piece: open, with no animation, or once it has come to rest. A layer of its own always, so it is
+   drawn the same while the video's frames were made (when it's a layer) and after (the page's open phone). */
+.fold .whole{position:absolute;z-index:2;inset:0;opacity:0;will-change:opacity}
+.fold:is(:not([data-fold]),[data-fold="open"]) .whole{opacity:1}
+.fold:is(:not([data-fold]),[data-fold="open"]) :is(.r,.leaf){display:none}
+/* Shut: the leaf over the right half, outer display up, the inner display off, the shadows under one half. */
+.fold[data-fold="shut"] :is(.shade,.contact){transform:scaleX(.52)}
+/* Lying flat it needs no turn: drawn in the plane, as sharp as the rest of the page (anything turned in 3D is drawn soft). */
+.fold[data-fold="shut"] .leaf{transform:none}
+/* On layers of their own from the start, so nothing is promoted (and redrawn) as it begins. */
+.fold[data-fold] :is(.shade,.contact,.off,.dim,.edge){will-change:opacity,transform}
+.fold[data-fold] .face{will-change:opacity}
+
+/* The unfold as it plays: a video of it, rendered offline frame by frame at 2x from this page (scripts/hero-unfold.mjs,
+   site/README.md), its first frame the phone shut as drawn here and its last the phone open, laid exactly over the
+   phone, its shadows and what's behind them. */
+.unfold{position:absolute;z-index:5;left:60.6cqw;top:20cqw;width:38cqw;height:28.74cqw;display:block;pointer-events:none;visibility:hidden}
+.unfold.on{visibility:visible}
+
+/* A phone's width: the phone alone, large enough to read. */
+@container (max-width:620px){
+  .unfold{left:0;top:0;width:100cqw;height:76cqw}
+  .floor{aspect-ratio:100/76}
+  .lap{display:none}
+  .fold{--sw:88.68cqw;left:5cqw;top:5cqw;width:90cqw}
+}
 
 @media (max-width:1000px){
   .sec{grid-template-columns:minmax(0,1fr)}
@@ -215,7 +359,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .ways{grid-template-columns:minmax(0,1fr)}
   .ways>div,.ways>div+div{padding:0 0 18px;border-left:0}
   .ways>div+div{padding-top:18px;border-top:1px solid var(--rule)}
-  .lockup{grid-template-columns:minmax(0,1fr);--av:150px}
+  .lockup{grid-template-columns:minmax(0,1fr);--av:112px;gap:20px;padding-left:0}
   .nav{gap:14px}
   .nav .gh,.nav .in{display:none}
   .phil p{line-height:1.35}
@@ -229,7 +373,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
   .nav .docs{display:none}
 }
 @media (prefers-reduced-motion:no-preference){
-  .nav a,a,.theme button{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
+  .nav a,a,.theme{transition:color .14s var(--snap),border-color .14s var(--snap),text-decoration-color .14s var(--snap)}
   .shot video,.play{transition:opacity .14s var(--snap),visibility .14s var(--snap)}
 }
 </style>
@@ -242,10 +386,6 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <a href="/pricing">Pricing</a>
     <a class="docs" href="/docs">Docs</a>
     <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
-    <div class="theme" role="group" aria-label="Colour theme">
-      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
-      <button type="button" data-theme-set="dark" aria-pressed="true">Dark</button>
-    </div>
     <a class="in" href="https://app.fleetd.dev">Sign in</a>
     <a class="up" href="https://app.fleetd.dev">Sign up</a>
   </nav>
@@ -260,6 +400,51 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
       <div class="install">
         <div class="cmd"><code><span class="ps" aria-hidden="true">$</span><span class="line" id="cmd">curl -fsSL https://fleetd.sh | sh</span></code><button class="copy" type="button" data-copy="cmd" aria-label="Copy the install command" title="Copy"><svg class="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 3.2A1.7 1.7 0 0 0 9 2.5H4.2a1.7 1.7 0 0 0-1.7 1.7V9c0 .6.3 1.2.8 1.5"/></svg><svg class="i-done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg></button><span class="sr" role="status" id="copied"></span></div>
         <p class="facts">macOS or Linux x64. Open source, MIT. <a href="/docs/install">Install</a> · <a href="/docs/quick-start">Quick start</a> · <a href="/pricing">Pricing</a></p>
+      </div>
+    </div>
+  </div>
+  <!-- The device stage: the apps as they are, on a laptop's display and a foldable phone drawn here (site/README.md). -->
+  <div class="stage" role="img" aria-label="The fleetd desktop app on a laptop’s display: storefront’s chat, where you asked to let shoppers save their cart and pick it up on the web or the iPhone app, the lead split it between three writers and #231 is up; the panel lists the agents at work. In front of it, a foldable phone opens to the fleetd phone app: Chats beside storefront’s chat, where the lead says #231 merged and the web and iPhone parts are in review. Each bot wears its own colour and shape.">
+    <div class="floor" aria-hidden="true">
+      <div class="lap">
+        <div class="lid">
+          <div class="screen">
+            <div class="menubar">
+              <b>fleetd</b><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span>
+              <i class="right">
+                <svg viewBox="0 0 18 13" aria-hidden="true"><path d="M9 2.2c2.6 0 5 1 6.8 2.7l1.2-1.3C14.9 1.6 12.1.4 9 .4S3.1 1.6 1 3.6l1.2 1.3C4 3.2 6.4 2.2 9 2.2zm0 3.6c1.6 0 3 .6 4.2 1.6L14.4 6C12.9 4.7 11 4 9 4S5.1 4.7 3.6 6l1.2 1.4C6 6.4 7.4 5.8 9 5.8zm0 3.5c-.7 0-1.4.3-1.9.7L9 12.2l1.9-2.2c-.5-.4-1.2-.7-1.9-.7z"/></svg>
+                <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <svg viewBox="0 0 18 14" aria-hidden="true"><rect x="1" y="2" width="7" height="4" rx="2"/><rect x="10" y="2" width="7" height="4" rx="2" opacity=".45"/><rect x="1" y="8" width="7" height="4" rx="2" opacity=".45"/><rect x="10" y="8" width="7" height="4" rx="2"/></svg>
+                <svg viewBox="0 0 26 13" aria-hidden="true"><rect x=".6" y=".6" width="21.8" height="11.8" rx="3.4" fill="none" stroke="currentColor" stroke-width="1.1" opacity=".5"/><rect x="2.4" y="2.4" width="16" height="8.2" rx="1.9"/><path d="M24.2 4.4v4.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity=".5"/></svg>
+                <span>Mon 23 Nov&nbsp; 9:41</span>
+              </i>
+            </div>
+            <span class="notch"></span>
+            <img src="/hero/desk-1440.webp" srcset="/hero/desk-720.webp 720w, /hero/desk-1440.webp 1440w" sizes="(min-width: 700px) 58vw, 1px" width="1440" height="910" alt="">
+          </div>
+        </div>
+      </div>
+      <video class="unfold" muted playsinline preload="none" disablepictureinpicture tabindex="-1" aria-hidden="true"></video>
+      <div class="fold" id="duo">
+        <script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.getElementById("duo").dataset.fold="shut"</script>
+        <div class="shade"></div><div class="contact"></div>
+        <div class="r"><span class="key a"></span><span class="key b"></span><div class="band"></div><div class="scr">
+          <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
+          <span class="off"></span>
+        </div><span class="cam"></span><span class="dim"></span><span class="hinge t"></span><span class="hinge b"></span></div>
+        <div class="leaf">
+          <div class="face o"><div class="band"></div><div class="scr">
+            <img src="/hero/duo-closed-672.webp" srcset="/hero/duo-closed-336.webp 336w, /hero/duo-closed-672.webp 672w" sizes="(min-width: 700px) 16vw, 44vw" width="672" height="978" alt="">
+          </div><span class="cam"></span><span class="dim"></span></div>
+          <div class="face l"><div class="band"></div><div class="scr">
+            <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
+            <span class="off"></span>
+          </div><span class="dim"></span></div>
+          <span class="edge"></span>
+        </div>
+        <div class="whole"><span class="key a"></span><span class="key b"></span><div class="band"></div><div class="scr">
+          <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
+        </div><span class="cam"></span><span class="hinge t"></span><span class="hinge b"></span></div>
       </div>
     </div>
   </div>
@@ -395,6 +580,7 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
     <a href="/docs">Docs</a>
     <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
     <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
   </nav>
 </footer>
 
@@ -426,7 +612,7 @@ var fleetdMedia={};
     hero?.release();
     heroBox = box;
     heroRig = newRig(heroState, drawnAt(box), 11, true);
-    hero = bringToLife(canvasIn(heroHost), heroRig, box);
+    hero = bringToLife(canvasIn(heroHost), heroRig, box, ...look);
   };
   const mountStills = () => {
     document.querySelectorAll("[data-bot]").forEach((host, n) => {
@@ -440,9 +626,11 @@ var fleetdMedia={};
     });
   };
 
-  // The hero shows itself early and often, on the rig's own springs: a glance within a second of load, then a change
-  // every 2.6 to 3.4 s through working, done, a glance and needs you. Off screen or in a hidden tab it waits where it
-  // is; with reduced motion it stays still in idle.
+  // The hero shows itself early and often, on the rig's own springs: a first change within a second of load, then one
+  // every 2.4 s or so, through the bots' colours and five bodies and their states (thinking, working, needs you, done,
+  // a glance). A new colour or body dissolves in over 170 ms with a small scale pop, then the bot springs up from its
+  // seat: a stretch and a hop on its own springs. Off screen or in a hidden tab it waits where it is; with reduced motion it stays still,
+  // grey and idle.
   const glance = (side) => {
     // The rig's own glance (shared/bot.ts's moment): a look aside that springs back at its end, with a blink as it turns.
     const t = heroRig.t;
@@ -451,7 +639,16 @@ var fleetdMedia={};
     heroRig.glanceEnd = t + 1.1;
     heroRig.blinks.push(t, t + 0.075);
   };
-  const PLAN = [["working", 3.2], ["done", 3], ["glance", 2.6], ["needs", 3.4], ["working", 3], ["done", 2.8], ["glance", 2.6], ["needs", 3.2]];
+  // [colour, body, state]: each step changes one or two of them.
+  const PLAN = [
+    ["blue", "pebble", "done"], ["blue", "kitty", "thinking"], ["orange", "kitty", "needs"], ["orange", "bunny", "glance"],
+    ["purple", "bunny", "working"], ["teal", "ghost", "done"], ["teal", "toast", "thinking"], ["pink", "toast", "needs"],
+    ["pink", "pebble", "glance"], ["green", "pebble", "working"], ["green", "ghost", "done"], ["amber", "kitty", "glance"],
+    ["red", "bunny", "thinking"], ["grey", "pebble", "idle"],
+  ];
+  // The rig's channels a pop pushes (shared/bot.ts: SQUASH, LIFT).
+  const SQUASH = 6, LIFT = 7;
+  let look = ["grey", "pebble"];
   let step = -1;
   let side = 1;
   let seen = true;
@@ -461,26 +658,50 @@ var fleetdMedia={};
       heroState = "idle";
       hero.set("idle");
       side = -side;
-      setTimeout(() => glance(side), 260);
+      setTimeout(() => glance(side), 200);
     } else {
       heroState = what;
       hero.set(what);
     }
   };
+  const pop = (color, shape) => {
+    // A quick dissolve, never a cut: the old look, as last drawn, stays over the new one while the new one fades in
+    // under it (so what only the new body has, a pair of ears, comes in softly too), then fades out itself.
+    const live = heroHost.querySelector("canvas");
+    const ghost = live.cloneNode();
+    ghost.getContext("2d").drawImage(live, 0, 0);
+    heroHost.append(ghost);
+    live.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 90, easing: "cubic-bezier(.3,0,.2,1)" });
+    ghost.animate([{ opacity: 1 }, { opacity: 1, offset: 0.45 }, { opacity: 0 }], { duration: 170, easing: "cubic-bezier(.3,0,.2,1)" }).finished.then(() => ghost.remove(), () => ghost.remove());
+    look = [color, shape];
+    hero.paint(color, shape);
+    // And it springs up from its seat as it changes: a small scale pop at once, which moves the old look and the new
+    // together, then, once the old one has gone, a stretch and a hop on the rig's own springs.
+    setTimeout(() => {
+      heroRig.v[SQUASH] -= 1.6;
+      heroRig.v[LIFT] += 26;
+      hero.set(heroState);
+    }, 160);
+    const { easing, duration } = impulseCurve(260, 14);
+    heroHost.animate([{ transform: "none" }, { transform: "scale(.94)" }], { duration, easing });
+  };
   const next = () => {
     if (calm.matches || document.hidden || !seen) { timer = setTimeout(next, 600); return; }
     step = (step + 1) % PLAN.length;
-    act(PLAN[step][0]);
-    timer = setTimeout(next, PLAN[step][1] * 1000);
+    const [color, shape, what] = PLAN[step];
+    // A new look first, its state once the old look has dissolved: the state's own arrival (a hop, a squish) never
+    // moves the body under the fading old one.
+    if (color !== look[0] || shape !== look[1]) {
+      pop(color, shape);
+      setTimeout(() => act(what), 170);
+    } else act(what);
+    // The first change follows sooner, so the first three seconds show two.
+    timer = setTimeout(next, step === 0 ? 1700 : 2200 + Math.random() * 500);
   };
   const begin = () => {
     clearTimeout(timer);
     if (calm.matches) return;
-    timer = setTimeout(() => {
-      if (calm.matches) return;
-      glance(-1);
-      timer = setTimeout(next, 1300);
-    }, 700);
+    timer = setTimeout(next, 700);
   };
   new IntersectionObserver((es) => { seen = es[es.length - 1].isIntersecting; }).observe(heroHost);
   calm.addEventListener("change", () => {
@@ -488,17 +709,424 @@ var fleetdMedia={};
     clearTimeout(timer);
     heroState = "idle";
     hero.set("idle");
+    look = ["grey", "pebble"];
+    hero.paint(...look);
   });
   addEventListener("resize", mountHero);
 
-  // ---- Light or Dark, nothing else: the pressed button is the stored choice; a press stores it, and the CSS, the
+  // ---- Light or Dark, nothing else: the footer's icon is the other theme; a press stores it, and the CSS, the
   // theme-color, the pictures, the clips and the bots follow (fleetdTheme, in the head).
-  const themeButtons = [...document.querySelectorAll("[data-theme-set]")];
-  const showTheme = () => { const t = fleetdTheme.get(); themeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t))); };
-  themeButtons.forEach((b) => b.addEventListener("click", () => { fleetdTheme.set(b.dataset.themeSet); showTheme(); }));
+  const themeButton = document.getElementById("theme");
+  const showTheme = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; themeButton.setAttribute("aria-label", other); themeButton.title = other; };
+  themeButton.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); showTheme(); });
   // Another tab (this page or the docs) changed it.
   addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); dispatchEvent(new Event("fleetdtheme")); showTheme(); } });
   addEventListener("fleetdtheme", () => setTimeout(mountStills, 0));
+
+  /** A spring's curve from 0 to 1 (mass 1), for CSS linear(): its points 1/60 s apart, and how long it takes. */
+  const springCurve = (k, c) => {
+    let x = 0, v = 0, t = 0;
+    const pts = [0];
+    for (let i = 1; t < 3; i++) {
+      for (let s = 0; s < 2; s++) { v += (k * (1 - x) - c * v) / 120; x += v / 120; t += 1 / 120; }
+      pts.push(Math.round(x * 1e4) / 1e4);
+      if (Math.abs(1 - x) < 0.002 && Math.abs(v) < 0.02) break;
+    }
+    pts[pts.length - 1] = 1;
+    return { easing: CSS.supports("transition-timing-function", "linear(0, 1)") ? `linear(${pts.join(", ")})` : "cubic-bezier(.2,.9,.25,1)", duration: Math.round(t * 1000) };
+  };
+  /** A struck spring's curve (mass 1, at rest, given a push): out to 1 at its furthest and back through 0, settling
+   * there, for CSS linear(); and how long it takes. A pop that starts from where the thing is, never a jump. */
+  const impulseCurve = (k, c) => {
+    let x = 0, v = 1, t = 0, most = 0;
+    const pts = [0];
+    while (t < 2) {
+      for (let s = 0; s < 2; s++) { v += (-k * x - c * v) / 120; x += v / 120; t += 1 / 120; }
+      pts.push(x);
+      most = Math.max(most, Math.abs(x));
+      if (t > 0.1 && Math.abs(x) < 0.002 * most && Math.abs(v) < 0.02 * most * 10) break;
+    }
+    pts[pts.length - 1] = 0;
+    const curve = pts.map((p) => Math.round((p / most) * 1e4) / 1e4);
+    return { easing: CSS.supports("transition-timing-function", "linear(0, 1)") ? `linear(${curve.join(", ")})` : "ease", duration: Math.round(t * 1000) };
+  };
+  // ---- The foldable opens once, 500 ms after the whole phone is in view (on load too, when it already is), as a video
+  // of it rendered offline from this page (below): sharp at 2x in every browser, as a turn in CSS perspective isn't
+  // mid-turn. The unfold it shows: the leaf swings over on a spring with mass (a thumb's push, then the hinge's own
+  // weight), lands flat against the hinge's stop with a small rebound, and rests; the inner display wakes as the leaf
+  // stands up, playing the recording of the phone app unfolding on the iPhone Duo simulator, the system's own
+  // transition, from where its blur has cleared; each face's shade follows its angle to the light (top left, as the
+  // laptop's). Shut until then
+  // (the inline script set data-fold before the first paint, unless reduced motion).
+  const duo = document.getElementById("duo");
+  /** The hinge's angle over time, 0 shut to 180 flat: a spring (mass 1) after a push that builds over 0.35 s, as a thumb
+   * lifts it, stopped hard at flat with a little of its speed coming back (a 1.8° rebound), sampled every 1/120 s until
+   * it rests: upright at 0.36 s, flat at 0.62 s, at rest by 1.16 s. */
+  const swing = (() => {
+    const k = 70, c = 12, e = 0.32, push = 0.35, dt = 1 / 120;
+    let x = 0, v = 0, t = 0;
+    const out = [0];
+    for (let i = 0; i < 600; i++) {
+      for (let s = 0; s < 4; s++) {
+        t += dt / 4;
+        const u = Math.min(1, t / push);
+        v += (k * (180 * u * u * (3 - 2 * u) - x) - c * v) * (dt / 4);
+        x += v * (dt / 4);
+        if (x > 180) { x = 360 - x; v = -v * e; }
+      }
+      out.push(x);
+      if (t > push && Math.abs(180 - x) < 0.04 && Math.abs(v) < 0.6) break;
+    }
+    out[out.length - 1] = 180;
+    return out;
+  })();
+  const TOTAL = (swing.length - 1) / 120;
+  const STAND = swing.findIndex((a) => a >= 90) / (swing.length - 1);
+  /** When the leaf lies flat for good, past its rebound: within 0.15 degrees of open from there on. */
+  const SETTLED = (swing.findLastIndex((a) => a < 179.85) + 1) / (swing.length - 1);
+  const WAKE = swing.findIndex((a) => a >= 45) / (swing.length - 1);
+  const rad = Math.PI / 180;
+  /** A face's shade turned `θ` degrees from facing you (positive: toward the left, where the light is, `LIGHT` degrees
+   * off), by Lambert's cosine to the light, scaled so a face facing you is fully lit (none at rest, shut or open): the
+   * outer face lifts toward the light and darkens only past it; the inner one comes up turned away from it, dark, and
+   * lightens as it lies down. */
+  const LIGHT = 25;
+  const shade = (θ) => 0.42 * (1 - Math.min(1, Math.max(0, Math.cos((θ - LIGHT) * rad)) / Math.cos(LIGHT * rad)));
+  const sampled = (value) => swing.map((a, i) => ({ ...value(a), offset: i / (swing.length - 1) }));
+  // Each face shows only on its side of standing up: opacity steps there, with no frame between.
+  const flip = (before, after) => [
+    { opacity: before, offset: 0 },
+    { opacity: before, offset: STAND },
+    { opacity: after, offset: Math.min(1, STAND + 0.0005) },
+    { opacity: after, offset: 1 },
+  ];
+  const motions = () => [
+    [".leaf", sampled((a) => ({ transform: `rotateY(${-Math.min(179.99, Math.max(0.01, a))}deg)` }))],
+    [".o", flip(1, 0)],
+    [".l", flip(0, 1)],
+    [".r .hinge", flip(0, 1)],
+    // The outer face turns from facing you (0) through edge on; the inner one from edge on to facing you (180).
+    [".o .dim", sampled((a) => ({ opacity: shade(a) }))],
+    [".l .dim", sampled((a) => ({ opacity: shade(a - 180) }))],
+    [".r .dim", sampled((a) => ({ opacity: a < 90 ? 0.1 * Math.sin(2 * a * rad) : 0 }))],
+    [".edge", sampled((a) => ({ opacity: a > 15 && a < 165 ? 1 : 0 }))],
+    [":is(.shade,.contact)", sampled((a) => ({ transform: `scaleX(${0.52 + 0.48 * ((1 - Math.cos(Math.min(180, a) * rad)) / 2)})` }))],
+    // The inner display wakes as soon as the leaf lifts past 45 degrees, in 0.05 s: lit before its inner face comes into
+    // view, so no half of it is seen grey on the way.
+    [".off", [{ opacity: 1, offset: 0 }, { opacity: 1, offset: WAKE }, { opacity: 0, offset: Math.min(1, WAKE + 0.05 / TOTAL), easing: "ease-out" }, { opacity: 0, offset: 1 }]],
+    // The phone in one piece, as the page shows it open, comes up over the halves once the leaf lies flat for good: over
+    // the spring's rebound the leaf still stands a degree or two up, and the two would show a pixel apart at its edge.
+    [".whole", [{ opacity: 0, offset: 0 }, { opacity: 0, offset: SETTLED }, { opacity: 1, offset: Math.min(1, SETTLED + 0.07 / TOTAL), easing: "ease-in-out" }, { opacity: 1, offset: 1 }]],
+  ];
+  // The offline renderer (scripts/hero-unfold.mjs) draws each frame of the unfold from here: the phone at `t` seconds
+  // into it, the recording of the phone app unfolding (`foot`, a frame's picture, or none) on its inner display.
+  if (new URLSearchParams(location.search).has("unfold-render")) {
+    // The turning leaf's screens are drawn here, not by CSS: Chrome rasters anything under a 3D transform at a lower
+    // scale, soft even held still, so each screen is projected onto a canvas through the same perspective as the leaf,
+    // a strip per pixel, its corners rounded as the glass is. The canvas has twice the display's pixels and is drawn
+    // down to them, as the browser draws a picture down: the turning half's type is as crisp as the flat one's (at the
+    // display's own pixels, each strip placed between two of them comes out soft). The leaf's frame, glass and edge stay
+    // CSS (no detail to soften); its pictures are hidden under the drawing. With the leaf past standing up, the right
+    // half's screen is drawn too, from the same pictures: one image across both halves, cut at the hinge. The drawing is
+    // shown as a picture (a canvas gets a layer of its own, placed by other rounding than the phone's parts).
+    const prepared = { runs: null };
+    const device = 2, scale = 2 * device;
+    const canvas = document.createElement("canvas");
+    const drawn = new Image();
+    drawn.alt = "";
+    drawn.style.cssText = "position:absolute;z-index:4;pointer-events:none;max-width:none";
+    const pics = new Map();
+    const picture = (src) => {
+      let i = pics.get(src);
+      if (!i) { i = new Image(); i.src = src; pics.set(src, i); }
+      return i.decode().then(() => i, () => i);
+    };
+    /** A picture brought down at once to its size on the display in device pixels (`w` by `h`), as the browser draws a
+     * picture, and moved by the part of a pixel (`dx`, `dy`) it lies off the canvas's pixels, as the page's own lies off
+     * the page's: a column copied from it, the leaf near flat, falls on whole pixels and keeps the type as crisp as the
+     * half beside it (each 1-pixel column scaled down, or placed between pixels, on its own comes out soft). */
+    const sizes = new Map();
+    const sized = async (src, w, h, dx, dy, paint, quality = "high") => {
+      const key = `${src} ${Math.round(w)}x${Math.round(h)} ${dx.toFixed(3)},${dy.toFixed(3)} ${paint ? "+" : ""}${quality}`;
+      if (!sizes.has(key)) {
+        sizes.set(key, (async () => {
+          const bitmap = await createImageBitmap(await picture(src), { resizeWidth: Math.round(w), resizeHeight: Math.round(h), resizeQuality: quality });
+          const c = new OffscreenCanvas(bitmap.width + 1, bitmap.height + 1);
+          c.getContext("2d").drawImage(bitmap, dx, dy);
+          paint?.(c);
+          return c;
+        })());
+      }
+      return sizes.get(key);
+    };
+    const frac = (v) => v - Math.floor(v);
+    /** One screen of the leaf, its picture (`img`, in the screen's own box: `fit`) projected at the hinge's angle: each
+     * device pixel column of the canvas traced back through the perspective to the picture's columns it shows, so
+     * columns meet exactly, none drawn twice. `g` draws in device pixels, the hinge at `hx`, the phone's top at `ty`. */
+    const project = (g, geo, a, img, fit, dark, alpha, hx, ty) => {
+      const { oy, P, W, H, inset, radius, near = 0, fromHinge } = geo;
+      const width = W - inset - (fromHinge ? inset : 0);
+      const cos = Math.cos(a * rad), sin = Math.sin(a * rad);
+      const at = (u) => (u * cos * P) / (P - u * sin);
+      /** The distance from the hinge along the leaf seen at `x` (CSS px from the hinge). */
+      const back = (x) => (x * P) / (cos * P + x * sin);
+      const uNear = fromHinge ? inset : W - inset - width, uFar = fromHinge ? inset + width : W - inset;
+      const xs = [at(uNear), at(uFar)];
+      // Columns of the canvas itself, the hinge at the fractional device position `hx`, so the drawn half meets the
+      // page's half without a hairline between them.
+      const left = Math.floor(hx + Math.min(...xs) * scale), right = Math.ceil(hx + Math.max(...xs) * scale);
+      const top = inset - oy, bottom = H - inset - oy;
+      g.globalAlpha = alpha;
+      for (let c = left; c < right; c++) {
+        const ua = back((c - hx) / scale), ub = back((c + 1 - hx) / scale);
+        let u0 = Math.max(uNear, Math.min(ua, ub)), u1 = Math.min(uFar, Math.max(ua, ub));
+        if (!(u1 > u0)) continue;
+        // The columns of the picture this device column shows, from the picture's own left edge.
+        const p0 = fromHinge ? u0 - inset : W - inset - u1, p1 = fromHinge ? u1 - inset : W - inset - u0;
+        const um = (u0 + u1) / 2;
+        const k = P / (P - um * sin);
+        // Rounded as the glass is: `radius` at its outer corners, `near` at the hinge's.
+        const fromOuter = fromHinge ? width - (p0 + p1) / 2 : (p0 + p1) / 2;
+        const round = (r, d) => (d < r ? r - Math.sqrt(Math.max(0, r * r - (r - d) ** 2)) : 0);
+        const cut = Math.max(round(radius, fromOuter), round(near, width - fromOuter));
+        const [sx, sw, sy, sh] = fit(p0, p1 - p0, cut);
+        // Partly covered columns (the screen's own edges) drawn at their share; the inner display's column at the
+        // hinge whole, as the one display runs on across it (part covered, the band under it would show as a line).
+        const xa = hx + at(u0) * scale, xb = hx + at(u1) * scale;
+        const cover = !fromHinge && u0 <= uNear ? 1 : Math.min(1, Math.abs(xb - xa));
+        const dy = (ty + oy + (top + cut) * k) * scale, dh = (bottom - top - 2 * cut) * k * scale;
+        if (sw <= 0 || sh <= 0 || dh <= 0) continue;
+        g.globalAlpha = alpha * cover;
+        g.drawImage(img, sx, sy, sw, sh, c, dy, 1, dh);
+        if (dark > 0.001) { g.globalAlpha = alpha * cover * dark; g.fillStyle = "#000"; g.fillRect(c, dy, 1, dh); }
+      }
+      g.globalAlpha = 1;
+    };
+    window.heroUnfold = {
+      TOTAL,
+      STAND: STAND * TOTAL,
+      nudge: [0, 0],
+      nudgeShut: [0, 0],
+      // The phone as the page draws it still, open and shut, for the leaf ({ src, x, y }: a 2x shot and its corner on the
+      // page), set by the renderer, with how far its drawing lies off the page's (nudgeFace…, as nudge is for the
+      // screens); `only: "face"` draws the leaf and no screens, to measure that.
+      faces: null,
+      nudgeFace: [0, 0],
+      nudgeFaceShut: [0, 0],
+      only: null,
+      frame: async (t, foot, fade) => {
+        duo.append(drawn);
+        duo.querySelector(".whole").style.zIndex = "6";
+        prepared.runs ??= motions().flatMap(([sel, frames]) => [...duo.querySelectorAll(sel)].map((el) => el.animate(frames, { duration: TOTAL * 1000, easing: "linear", fill: "both" })));
+        duo.dataset.fold = "opening";
+        duo.toggleAttribute("data-over", swing[Math.min(swing.length - 1, Math.round(Math.min(TOTAL, t) * 120))] < 90);
+        for (const r of prepared.runs) { r.pause(); r.currentTime = Math.min(TOTAL, t) * 1000; }
+        // The leaf's screens hidden whole (the canvas draws them): their box reaches a pixel past the hinge, black.
+        for (const i of duo.querySelectorAll(".leaf .scr")) i.style.visibility = "hidden";
+        const { faces } = window.heroUnfold;
+        for (const f of duo.querySelectorAll(".leaf .face")) f.style.visibility = faces ? "hidden" : "";
+        // The right half's screen and the one piece: the recording over their pictures, as on a flat screen.
+        for (const scr of duo.querySelectorAll(":is(.r,.whole) .scr")) {
+          let over = scr.querySelector(".rec");
+          if (!over) {
+            // A new picture, not a copy of the one there: a copy keeps the density its srcset chose, and draws small.
+            over = document.createElement("img");
+            over.className = "rec"; // (not .foot: the page's footer has that class)
+            over.alt = "";
+            // Over its picture exactly: the halves' are placed by their rules; the one piece's flows, so place it.
+            if (scr.closest(".whole")) over.style.cssText = "position:absolute;top:0;left:0";
+            scr.querySelector("img").after(over);
+          }
+          if (foot) over.src = foot;
+          over.style.opacity = foot ? String(fade) : "0";
+        }
+        await Promise.all([...duo.querySelectorAll(".rec")].map((i) => i.decode().catch(() => {})));
+        // The leaf's screens, drawn.
+        const fold = duo.getBoundingClientRect();
+        const W = fold.width / 2, H = fold.height;
+        // A margin round the phone for the leaf's sweep, a whole number of device pixels: Chrome draws the phone's parts
+        // from its corner (which may fall between two pixels) and a picture there is moved onto whole pixels from it, so
+        // the drawing, at whole pixels already, stays exactly where it is put.
+        const padX = Math.ceil(0.25 * fold.width * device) / device;
+        const padY = fold.top - Math.floor((fold.top - 0.25 * fold.width) * device) / device;
+        // A whole number of device pixels each way: one half a pixel over, Chrome scales the picture to fit, and blurs it.
+        const step = scale / device;
+        canvas.width = Math.ceil(((fold.width + 2 * padX) * scale) / step) * step;
+        canvas.height = Math.ceil(((H + 2 * padY) * scale) / step) * step;
+        drawn.style.left = `${-padX}px`;
+        drawn.style.top = `${-padY}px`;
+        drawn.style.width = `${canvas.width / scale}px`;
+        drawn.style.height = `${canvas.height / scale}px`;
+        const g = canvas.getContext("2d");
+        g.imageSmoothingQuality = "high";
+        // The drawing's corner as Chrome shows it: on whole device pixels (it moves a picture onto them), where the phone's
+        // own corner may lie between two; every place on the canvas is measured from there.
+        const cornerX = Math.floor((fold.left - padX) * device) / device, cornerY = fold.top - padY;
+        const hx = (fold.left + W - cornerX) * scale, ty = fold.top - cornerY;
+        const P = parseFloat(getComputedStyle(duo).perspective);
+        const a = Math.min(179.99, Math.max(0.01, swing[Math.min(swing.length - 1, Math.round(Math.min(TOTAL, t) * 120))]));
+        const inner = getComputedStyle(duo.querySelector(".l .scr"));
+        const outer = getComputedStyle(duo.querySelector(".o .scr"));
+        const geoInner = { ox: 0, oy: H / 2, P, W, H, inset: parseFloat(inner.top), radius: parseFloat(inner.borderTopLeftRadius), fromHinge: false };
+        const geoOuter = { ox: 0, oy: H / 2, P, W, H, inset: parseFloat(outer.top), radius: parseFloat(outer.borderTopRightRadius), near: parseFloat(outer.borderTopLeftRadius), fromHinge: true };
+        // The open picture across both halves is the display's width (--sw), its left half on the leaf.
+        const swPx = duo.querySelector(".r .scr img").getBoundingClientRect().width;
+        const hIn = H - 2 * geoInner.inset;
+        // The leaf itself, its band, glass and screen as the page draws the phone still (open past upright, else shut),
+        // projected as its screens are: a frame turned in CSS 3D is drawn soft, its thin metal edge smeared into two.
+        if (faces) {
+          const past = a > 90, tex = past ? faces.open : faces.shut;
+          const [nx, ny] = past ? window.heroUnfold.nudgeFace : window.heroUnfold.nudgeFaceShut;
+          const R = parseFloat(getComputedStyle(duo.querySelector(".whole .band")).borderTopLeftRadius);
+          const pic = await picture(tex.src);
+          const px = (tex.x - cornerX + nx / device) * scale, py = (tex.y - cornerY + ny / device) * scale;
+          // The face's own left edge in the shot: the phone's, open; the hinge, shut (the leaf lies over the right half).
+          const ox0 = (past ? fold.left : fold.left + W) - tex.x, oy0 = fold.top - tex.y;
+          const bitmap = await sized(tex.src, (pic.naturalWidth * scale) / device, (pic.naturalHeight * scale) / device, frac(px), frac(py), null, "pixelated");
+          const bx = hx - (past ? W * scale : 0) - Math.floor(px) - ox0 * scale, by = ty * scale - Math.floor(py) - oy0 * scale;
+          const geo = { oy: H / 2, P, W, H, inset: 0, radius: R, near: past ? 0 : R, fromHinge: !past };
+          project(g, geo, a, bitmap, (p, w, cut) => [(p + ox0) * scale + bx, w * scale, (cut + oy0) * scale + by, (H - 2 * cut) * scale], past ? shade(a - 180) : shade(a), 1, hx, ty);
+        }
+        if (window.heroUnfold.only === "face") {
+          // The leaf alone.
+        } else if (a > 90) {
+          // Where the open picture's corner falls on the canvas, moved by `nudge` (device pixels): Chrome rounds where it
+          // shows a picture and where it shows the drawing each its own way, so the renderer measures how far the drawing,
+          // flat, lies off the page's open phone and sets that, and the two meet with nothing to see when one gives way
+          // to the other. The picture fills the display as the page's does (object-fit: cover), cropped evenly.
+          const box = duo.querySelector(".whole .scr img").getBoundingClientRect();
+          const [nx, ny] = window.heroUnfold.nudge;
+          const cx = (box.left - cornerX + nx / device) * scale;
+          const cy = (box.top - cornerY + ny / device) * scale;
+          const open = async (src) => {
+            const pic = await picture(src);
+            const fill = Math.max(swPx / pic.naturalWidth, hIn / pic.naturalHeight);
+            const wc = pic.naturalWidth * fill, hc = pic.naturalHeight * fill;
+            const ox0 = (wc - swPx) / 2, oy0 = (hc - hIn) / 2;
+            const px = cx - ox0 * scale, py = cy - oy0 * scale;
+            const kx = Math.round(wc * scale) / wc, ky = Math.round(hc * scale) / hc;
+            const bx = hx - (W - geoInner.inset) * scale - Math.floor(px) - ox0 * scale, by = (ty + geoInner.inset) * scale - Math.floor(py) - oy0 * scale;
+            const bitmap = await sized(src, wc * scale, hc * scale, frac(px), frac(py));
+            return { bitmap, fit: (p, w, cut) => [(p + ox0) * kx + bx, w * kx, (cut + oy0) * ky + by, (hIn - 2 * cut) * ky], at: [Math.floor(px), Math.floor(py)] };
+          };
+          const pictures = [[await open(duo.querySelector(".whole .scr img").currentSrc), 1]];
+          if (foot && fade > 0) pictures.push([await open(foot), fade]);
+          // The right half's screen, flat: drawn here too, from the same pictures, so the two halves are one image cut
+          // at the hinge and can't fall apart by Chrome placing two pictures each its own way.
+          const rr = parseFloat(getComputedStyle(duo.querySelector(".r .scr")).borderTopRightRadius) * scale;
+          const x0 = hx, x1 = hx + (W - geoInner.inset) * scale, y0 = (ty + geoInner.inset) * scale, y1 = (ty + H - geoInner.inset) * scale;
+          g.save();
+          g.beginPath();
+          g.roundRect(x0, y0, x1 - x0, y1 - y0, [0, rr, rr, 0]);
+          g.clip();
+          for (const [{ bitmap, at }, alpha] of pictures) { g.globalAlpha = alpha; g.drawImage(bitmap, at[0], at[1]); }
+          g.restore();
+          for (const [{ bitmap, fit }, alpha] of pictures) project(g, geoInner, a, bitmap, fit, shade(a - 180), alpha, hx, ty);
+        } else {
+          const src = duo.querySelector(".o .scr img").currentSrc;
+          const pic = await picture(src);
+          const wO = W - 2 * geoOuter.inset, hO = H - 2 * geoOuter.inset;
+          const fill = Math.max(wO / pic.naturalWidth, hO / pic.naturalHeight);
+          const ox0 = (pic.naturalWidth * fill - wO) / 2, oy0 = (pic.naturalHeight * fill - hO) / 2;
+          // Where the picture's corner falls on the canvas with the leaf shut (cropped to fill the display), moved by
+          // `nudgeShut` as the open one is by `nudge`, onto the page's phone shut.
+          const [nx, ny] = window.heroUnfold.nudgeShut;
+          const px = hx + (geoOuter.inset - ox0 + nx / device) * scale, py = (ty + geoOuter.inset - oy0 + ny / device) * scale;
+          // The display's camera, a hole in its glass over the picture: the drawing covers the page's, so it is drawn in.
+          const cam = getComputedStyle(duo.querySelector(".o .cam"));
+          const camD = parseFloat(cam.width);
+          const camX = parseFloat(cam.left) - geoOuter.inset + camD / 2 + ox0, camY = parseFloat(cam.top) - geoOuter.inset + camD / 2 + oy0;
+          const paint = (c) => {
+            const k = c.getContext("2d"), x = camX * scale + frac(px), y = camY * scale + frac(py), r = (camD / 2) * scale;
+            const glass = k.createRadialGradient(x - 0.3 * r, y - 0.3 * r, 0, x - 0.3 * r, y - 0.3 * r, 1.3 * r);
+            glass.addColorStop(0, "#3a4660");
+            glass.addColorStop(0.55, "#0b0e16");
+            glass.addColorStop(1, "#000");
+            k.fillStyle = glass;
+            k.beginPath();
+            k.arc(x, y, r, 0, 2 * Math.PI);
+            k.fill();
+          };
+          const shut = await sized(src, pic.naturalWidth * fill * scale, pic.naturalHeight * fill * scale, frac(px), frac(py), paint);
+          const kx = Math.round(pic.naturalWidth * fill * scale) / (pic.naturalWidth * fill), ky = Math.round(pic.naturalHeight * fill * scale) / (pic.naturalHeight * fill);
+          const bx = hx + geoOuter.inset * scale - Math.floor(px) - ox0 * scale, by = (ty + geoOuter.inset) * scale - Math.floor(py) - oy0 * scale;
+          const fitShut = (p, w, cut) => [(ox0 + p) * kx + bx, w * kx, (oy0 + cut) * ky + by, (hO - 2 * cut) * ky];
+          project(g, geoOuter, a, shut, fitShut, shade(a), 1, hx, ty);
+        }
+        const old = drawn.src;
+        drawn.src = URL.createObjectURL(await new Promise((r) => canvas.toBlob(r)));
+        await drawn.decode();
+        if (old) URL.revokeObjectURL(old);
+      },
+      shut: () => { duo.dataset.fold = "shut"; duo.removeAttribute("data-over"); },
+      // Open as the page leaves it: no data-fold at all, as after the video.
+      open: () => {
+        for (const r of prepared.runs ?? []) r.cancel();
+        prepared.runs = null;
+        duo.querySelectorAll(".rec").forEach((i) => i.remove());
+        for (const i of duo.querySelectorAll(".leaf :is(.scr,.face)")) i.style.visibility = "";
+        drawn.remove();
+        duo.querySelector(".whole").style.zIndex = "";
+        delete duo.dataset.fold;
+        duo.removeAttribute("data-over");
+      },
+    };
+  } else if (duo.dataset.fold === "shut") {
+    // The video for this width and theme, loaded once any of the phone shows (never with reduced motion); it plays 500
+    // ms after the whole phone is in view (on load too, when it already is), once. Its first frame is the phone shut as
+    // drawn under it, its last the phone open: shown over the phone as it starts, the phone opened under it as it ends,
+    // then gone. Not ready in 4 s, or it fails: the phone is shown open.
+    const video = document.querySelector(".unfold");
+    const pick = () => {
+      const narrow = duo.closest(".stage").clientWidth <= 620;
+      const name = `/hero/unfold-${narrow ? "phone" : "wide"}-${fleetdTheme.get()}`;
+      const webm = video.canPlayType('video/webm; codecs="vp9"') === "probably";
+      return name + (webm ? ".webm" : ".mp4");
+    };
+    let loading;
+    const load = () =>
+      (loading ??= new Promise((done) => {
+        video.src = pick();
+        video.preload = "auto";
+        video.addEventListener("canplaythrough", () => done(true), { once: true });
+        video.addEventListener("error", () => done(false), { once: true });
+        setTimeout(() => done(video.readyState >= 4), 4000);
+      }));
+    const opened = () => { delete duo.dataset.fold; video.classList.remove("on"); video.removeAttribute("src"); video.load(); };
+    // Its frames are the page's own pixels at 2x: snapped to device pixels, as the renderer snapped them, and drawn at
+    // their own size, so none is resampled (on a 2x screen) and the handover shows nothing.
+    const snap = () => {
+      video.style.transform = "";
+      const r = video.getBoundingClientRect();
+      const d = (v) => Math.round(v * 2) / 2;
+      const w = d(r.width), h = d(r.height);
+      video.style.transform = `translate(${d(r.left) - r.left}px, ${d(r.top) - r.top}px) scale(${w / r.width}, ${h / r.height})`;
+      video.style.transformOrigin = "0 0";
+    };
+    const loaded = new Promise((done) => (document.readyState === "complete" ? done() : addEventListener("load", done, { once: true })));
+    const shown = () => new Promise((done) => (document.hidden ? addEventListener("visibilitychange", done, { once: true }) : done()));
+    const watch = new IntersectionObserver((es) => {
+      const e = es[es.length - 1];
+      if (e.isIntersecting) load();
+      if (e.intersectionRatio < 0.99) return;
+      watch.disconnect();
+      const start = performance.now();
+      Promise.all([load(), loaded.then(shown)]).then(([ok]) => {
+        if (!ok) return opened();
+        setTimeout(() => {
+          video.addEventListener("ended", () => {
+            // The phone open under the video's last frame (the same picture), then the video gone the frame after.
+            delete duo.dataset.fold;
+            requestAnimationFrame(() => requestAnimationFrame(opened));
+          }, { once: true });
+          snap();
+          video.play().then(() => video.classList.add("on"), opened);
+        }, Math.max(0, 500 - (performance.now() - start)));
+      });
+    }, { threshold: [0, 0.99, 1] });
+    watch.observe(duo);
+    calm.addEventListener("change", () => { if (calm.matches) { watch.disconnect(); opened(); } });
+  }
 
   // ---- Copy: the clipboard where the page may use it, else the command selected and copied the old way.
   const said = document.getElementById("copied");

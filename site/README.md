@@ -2,7 +2,7 @@
 
 The static site behind `curl -fsSL https://fleetd.sh | sh`. `vercel.json` serves `install.sh` at `/` to curl, Wget and
 fetch user agents and `home.html` to everyone else. `install.sh` is also at `/install.sh` for reading first. `home.html` is the landing page: a hero
-with the bot beside the headline and the install line, what fleetd is (two lines set big and a paragraph), then four
+with the bot beside the headline and the install line, then the desktop and phone apps on a MacBook Pro and an iPhone Duo, what fleetd is (two lines set big and a paragraph), then four
 short sections, each with its own clip or still of the app (`showcase-*`), and two last ones in words: the models
 agents run on, and self-hosted or fleetd cloud, linking to `pricing.html` (`/pricing`). The header's Sign in and Sign up
 go to the cloud's web app, app.fleetd.dev. The models section's marks are each company's own (Anthropic's press kit, Google's own
@@ -11,15 +11,69 @@ inline in the text colour. The pricing page's estimate and its per-hour or per-m
 plans as the rest of it. That page holds the cloud's plans, computer time and credits, and
 self-hosted and cloud side by side; its prices are fleetd-cloud's (`src/billing/stripe/prices.ts`, `src/billing/rates.ts`)
 and the docs' Billing page, so change the three together. It is dark until
-the reader picks Light in the header; the choice is kept under the docs' `starlight-theme` key, where anything but
+the reader picks Light with the small icon at the footer's end; the choice is kept under the docs' `starlight-theme` key, where anything but
 `light` (the docs' Auto included) reads as dark. `fleetd.txt` is its plain-text twin (not `index.txt`: Vercel would serve that at `/` and break the curl rewrite) for agents, and `fonts/`
 holds the self-hosted IBM Plex Sans and Lilex (both SIL OFL, licences alongside).
 
 The bot is the app's own: `pebble.js` is `app/desktop`'s bot code (`src/shared/bot.ts`, the rig, and
 `src/renderer/ui/lib/botLife.ts`, its canvas and clock) bundled by `pnpm site:pebble` in `app/desktop`, and
-`src/shared/bot.site.test.ts` fails while it is stale, so run that after changing either. The hero's bot takes its first
-glance within a second of load, then changes state every 3 s or so (working, done, a glance, needs you); it waits off
-screen or in a hidden tab, and stays still with reduced motion. The bots beside the sections are still poses.
+`src/shared/bot.site.test.ts` fails while it is stale, so run that after changing either. The hero's bot changes within
+a second of load, then every 2.4 s or so, through the bots' colours, their five bodies and their states (thinking,
+working, needs you, done, a glance); a new colour or body pops in on the rig's own springs. It waits off screen or in a
+hidden tab, and stays still, grey and idle, with reduced motion. The bots beside the sections are still poses.
+
+Under the hero, the stage shows the desktop app on a laptop's display, under a macOS menu bar (fleetd's menus,
+status icons and clock) with the camera notch in it (drawn in `home.html`), and the phone app on a foldable phone in front
+of its corner. Both devices are drawn in `home.html` (HTML and CSS, lengths in shares of the stage). The phone is a
+titanium foldable with its cameras and side keys but no maker's marks (no island, no logos); the laptop's screen is a
+Mac's, its menu bar and notch as macOS shows them. Their screens are the apps themselves, in `hero/`: `desk-*` the
+desktop app, `duo-open-*` and `duo-closed-*` the phone app's inner and outer screens (WebP at 2x and 1x).
+
+- The desktop app: `QA_SCALE=2 pnpm exec playwright test -c qa/playwright.config.ts --project=showcase -g "showcase
+  hero"` in `app/desktop` (after `pnpm fixtures && pnpm qa:build`) shoots the app's window as on a Mac (traffic lights,
+  ⌘ shortcuts) at 1512x956 points at 2x, the screen under the menu bar, on the `showcase-hero` fixture: the showcase
+  with each bot in its own colour and body and five more agents at work, its clock at 9:40 (every device on the stage
+  tells 9:41), 25.5 s into the request (`HERO_AT` picks another moment), without the island over the composer (at the
+  laptop's size its agents' glyphs read as broken letters).
+- The phone app: on an iPhone Duo simulator on the agents' Mac (`mac sim start --device "iPhone Duo"`), paired with
+  `node tests/lab/heroLab.ts <dir> <tailnet address>` run under libfaketime with its clock at 08:40 UTC (09:40 on the
+  Mac, in Amsterdam: `FAKETIME_TIMESTAMP_FILE=<file holding -<seconds>s> LD_PRELOAD=<libfaketime.so.1>`, the file set
+  to `+0` once it is seeded, so pairing runs on the real clock), so the chats read 09:40 under the status bar's 09:41
+  (`xcrun simctl status_bar … override --time 9:41`), the app a Release build from the Mac's own Xcode (a simulator
+  build linked against an older iOS SDK runs letterboxed on the Duo open) with `EXPO_PUBLIC_FLEETD_SCREENS=1` (no
+  notification prompt, which the simulator's driver can't answer on the Duo). Open: storefront's chat beside Chats
+  (`mac sim fold open`); shut: Chats (`mac sim fold closed`), each `mac sim screenshot`, 2853x2007 and 1398x2034.
+
+The foldable opens once, 500 ms after the whole phone is in view (on load too, when it already is), as a video:
+`hero/unfold-{wide,phone}-{dark,light}.webm` (VP9) with an `.mp4` (H.264) twin for Safari, the one for the stage's width
+and the theme, loaded only once the phone shows (never with reduced motion) and laid exactly over the phone. A turn in
+CSS perspective is rastered soft while it moves, so the unfold is rendered offline from the page itself, a frame at a
+time held still until it is drawn sharp, at 2x for a wide stage (876x662) and a phone's (700x532), each placed on
+whole device pixels by the renderer and the page alike so a 2x screen shows its frames unresampled:
+
+```sh
+FOOTAGE=<frames dir> FFMPEG=<ffmpeg with libvpx-vp9 and libx264> node scripts/hero-unfold.mjs
+```
+
+Its first frame is the phone shut as the page draws it and its last the phone open, so the page hands over with
+nothing to see at either end. What it shows: the right half lies still; the left half is one leaf on the hinge, turned
+over in perspective on a spring with mass (upright at 0.36 s, flat at 0.62 s against the hinge's stop with a 1.8°
+rebound, at rest by 1.16 s), each face shaded by its angle to the light, which comes from the top left on both
+devices (the inner face comes up turned away from it, dark, and lightens as it lies down); past upright the hinge's
+barrels show at its ends, flush in the band. The leaf and the screens are drawn by the page onto a canvas (anything in
+CSS 3D is drawn soft): the leaf from 2x shots the renderer takes of the page's own phone at rest, open and shut, and its
+screens from their pictures, each projected column by column through the same perspective; past upright both halves
+of the inner display come from one picture, cut at the hinge, so they line up at every angle. Before the frames, the
+renderer measures how far each drawing, flat, lies off the page's own phone (Chrome rounds where it puts each picture),
+and moves it by that. As the leaf stands up the inner display wakes and plays the recording of the phone
+app unfolding on the iPhone Duo simulator, the system's own transition, then fades into the still. FOOTAGE is that recording's inner
+display as `f001.png…` at 60 fps and 1376x968: on the simulator, shut on storefront's chat, `xcrun simctl io <sim>
+recordVideo --codec=h264 --display=<the inner display's port>` while `mac sim fold half-open`, then `open`, cut from its
+first blurred frame to its settled one (0.5 s; the renderer starts at its 20th frame, `FROM`, once the system's blur
+has cleared), turned upright and scaled (`ffmpeg -vf
+"transpose=1,fps=60,scale=1376:968:flags=lanczos"`). Run it again when the page's phone, its pictures or the footage
+change. With reduced motion, no script or no video, the phone is shown open. At a phone's width the stage shows the
+foldable alone.
 
 There is deliberately no `index.html` at the root: Vercel serves files before applying rewrites, so an `index.html`
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
