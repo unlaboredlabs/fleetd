@@ -1075,7 +1075,9 @@ var fleetdMedia={};
     // The video for this width and theme, loaded once any of the phone shows (never with reduced motion); it plays 500
     // ms after the whole phone is in view (on load too, when it already is), once. Its first frame is the phone shut as
     // drawn under it, its last the phone open: shown over the phone as it starts, the phone opened under it as it ends,
-    // then gone. Not ready in 4 s, or it fails: the phone is shown open.
+    // then gone. It is asked to play as soon as it is due, not first waited on to load: iOS Safari loads a video only
+    // once asked to play it, so a page that waits for it never plays it there. Shown once it plays; not playing in 4 s,
+    // failing, or stalling for a second on the way: the phone is shown open.
     const video = document.querySelector(".unfold");
     const pick = () => {
       const narrow = duo.closest(".stage").clientWidth <= 620;
@@ -1083,16 +1085,23 @@ var fleetdMedia={};
       const webm = video.canPlayType('video/webm; codecs="vp9"') === "probably";
       return name + (webm ? ".webm" : ".mp4");
     };
-    let loading;
-    const load = () =>
-      (loading ??= new Promise((done) => {
-        video.src = pick();
-        video.preload = "auto";
-        video.addEventListener("canplaythrough", () => done(true), { once: true });
-        video.addEventListener("error", () => done(false), { once: true });
-        setTimeout(() => done(video.readyState >= 4), 4000);
-      }));
-    const opened = () => { delete duo.dataset.fold; video.classList.remove("on"); video.removeAttribute("src"); video.load(); };
+    let loading = false;
+    const load = () => {
+      if (loading) return;
+      loading = true;
+      video.src = pick();
+      video.preload = "auto";
+      video.load();
+    };
+    let over = false;
+    const opened = () => {
+      if (over) return;
+      over = true;
+      delete duo.dataset.fold;
+      video.classList.remove("on");
+      video.removeAttribute("src");
+      video.load();
+    };
     // Its frames are the page's own pixels at 2x: snapped to device pixels, as the renderer snapped them, and drawn at
     // their own size, so none is resampled (on a 2x screen) and the handover shows nothing.
     const snap = () => {
@@ -1111,16 +1120,28 @@ var fleetdMedia={};
       if (e.intersectionRatio < 0.99) return;
       watch.disconnect();
       const start = performance.now();
-      Promise.all([load(), loaded.then(shown)]).then(([ok]) => {
-        if (!ok) return opened();
+      loaded.then(shown).then(() => {
         setTimeout(() => {
+          load();
+          let playing = false, stall;
+          const late = setTimeout(opened, 4000);
+          video.addEventListener("playing", () => {
+            playing = true;
+            clearTimeout(late);
+            clearTimeout(stall);
+            video.classList.add("on");
+          });
+          video.addEventListener("waiting", () => { if (playing) stall = setTimeout(opened, 1000); });
+          video.addEventListener("error", opened, { once: true });
           video.addEventListener("ended", () => {
+            clearTimeout(stall);
             // The phone open under the video's last frame (the same picture), then the video gone the frame after.
             delete duo.dataset.fold;
             requestAnimationFrame(() => requestAnimationFrame(opened));
           }, { once: true });
           snap();
-          video.play().then(() => video.classList.add("on"), opened);
+          video.muted = true;
+          video.play().catch(opened);
         }, Math.max(0, 500 - (performance.now() - start)));
       });
     }, { threshold: [0, 0.99, 1] });
