@@ -220,6 +220,17 @@ export function orderVar(home: string, projectId: string, orderId: string, name:
   }
 }
 
+/** The order's variables' names on this machine, sorted; none when its file can't be read. */
+export function orderVarNames(home: string, projectId: string, orderId: string): string[] {
+  const path = orderFile(home, projectId, orderId);
+  if (!path) return [];
+  try {
+    return Object.keys(readJson<OrderFile>(path, { vars: {} }).vars).sort();
+  } catch {
+    return [];
+  }
+}
+
 /** The project's orders on this machine whose variables name `name`; read for their names only. */
 export function ordersHolding(home: string, projectId: string, name: string): string[] {
   if (!plain(projectId)) return [];

@@ -652,9 +652,9 @@ export class Approvals {
     if (done) await this.deps.hub.wakeRequest(done);
   }
 
-  /** `secretEnv` with each entry the command's order was given by an `order:` request under its own `envName` naming
-   * that variable, so the node finds it in the order's variables. */
-  private orderNames<E extends { name: string; secretKey: string }>(r: HumanRequest, env: E[]): (E & { envName?: string })[] {
+  /** `secretEnv` with each entry that names no order variable itself, and that the command's order was given by an
+   * `order:` request under its own `envName`, naming that variable, so the node finds it in the order's variables. */
+  private orderNames<E extends { name: string; secretKey: string; envName?: string }>(r: HumanRequest, env: E[]): E[] {
     const order = r.workstreamId;
     if (!order) return env;
     const sink = `order:${r.projectRef.machineId}:${order}`;
@@ -666,7 +666,7 @@ export class Approvals {
     }
     return env.map((e) => {
       const envName = named.get(e.secretKey);
-      return envName !== undefined ? { ...e, envName } : e;
+      return e.envName === undefined && envName !== undefined ? { ...e, envName } : e;
     });
   }
 

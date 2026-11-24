@@ -8,7 +8,7 @@ import { confine, runConfined } from "../cmd/index.ts";
 import type { NodeBoxKey } from "../identity.ts";
 import { headUtf16, scrubbedEnv } from "../util.ts";
 import type { GatedResult, GatedRun, SecretDeliver, SecretResult } from "../wire.ts";
-import { deliverOrderVar, orderVar, ordersHolding } from "./env.ts";
+import { deliverOrderVar, orderVar, orderVarNames, ordersHolding } from "./env.ts";
 import { fingerprintOf, writeAtomic } from "./files.ts";
 import { parseSecretSink } from "./sink.ts";
 
@@ -149,6 +149,14 @@ function orderSecret(secretKey: string, ctx: SecretsContext, reader: SecretReade
     throw new Error(
       `secret ${secretKey} is order ${of}'s variable ${name} on ${ctx.machineId}, and only that order's approved commands read it: ` +
         `run this command again with workstreamId ${holders[0]} rather than asking for the value again`,
+    );
+  }
+  // The order's own variables, by name only: the lead names the one it meant with the entry's envName.
+  const own = projectId && orderId ? orderVarNames(ctx.home, projectId, orderId) : [];
+  if (own.length > 0) {
+    throw new Error(
+      `order ${orderId}'s variables on ${ctx.machineId} hold no ${name ?? secretKey}, only ${own.join(", ")}: ` +
+        `if one of them is ${secretKey}, give its secretEnv entry envName set to that name and run the command again`,
     );
   }
   const order = orderId ? ` or to order ${orderId}'s variables` : "";

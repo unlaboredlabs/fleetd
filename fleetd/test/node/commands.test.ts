@@ -116,6 +116,16 @@ test("an approved command of order W reads a secret delivered to order:<machine>
     expect(other.error).not.toContain("dummy");
     const none = await gated.run({ ...run, id: "g3", requestId: "Q3", orderId: undefined }, "hub-1", ctx);
     expect(none.error).toContain("run this command again with workstreamId W21");
+    // A Vault variable of the order comes as vault.env under its own name: the entry names it, else the error lists the
+    // order's names (never a value).
+    deliverSecret({ id: "o3", sink: "order:devbox:W21", sealed: seal("dummy-vault"), secretKey: "vault.env", envName: "stripe_Key", projectId: "p1" }, ctx);
+    const vaultRun = { ...run, argv: ["sh", "-c", 'test "$V" = dummy-vault && echo ok'], secretEnv: [{ name: "V", secretKey: "stripe.key" }] };
+    const unnamed = await gated.run({ ...vaultRun, id: "g5", requestId: "Q5" }, "hub-1", ctx);
+    expect(unnamed.error).toBe(
+      "order W21's variables on devbox hold no STRIPE_KEY, only GH_TOKEN, STRIPE_LIVE_KEY, stripe_Key: if one of them is stripe.key, give its secretEnv entry envName set to that name and run the command again",
+    );
+    const named = { ...vaultRun, id: "g6", requestId: "Q6", secretEnv: [{ name: "V", secretKey: "stripe.key", envName: "stripe_Key" }] };
+    expect(await gated.run(named, "hub-1", ctx)).toMatchObject({ exitCode: 0, outputTail: "ok\n" });
     // Another bot's order of the same id holds nothing of p1's.
     const otherBot = await gated.run({ ...run, id: "g4", requestId: "Q4", projectId: "p2" }, "hub-1", ctx);
     expect(otherBot.error).toStartWith("secret stripe.live_key was never delivered to devbox or to order W21's variables: ask the person for it once");

@@ -288,6 +288,8 @@ test("an order's approved command names its order, and each secret its order req
     { name: "G", secretKey: "gh.token" },
     { name: "S", secretKey: "stripe.key" },
     { name: "X", secretKey: "x.y" },
+    // The lead's own name for the order's variable (a Vault one) is kept.
+    { name: "V", secretKey: "gh.token", envName: "VAULT_GH" },
   ];
   await a.gatedRun(p1, { ...migration(), secretEnv, workstreamId: "W12" });
   await a.answer(person, "Q5", true);
@@ -295,7 +297,7 @@ test("an order's approved command names its order, and each secret its order req
   expect(fake.runs[0]![1]).toMatchObject({
     projectId: "p1",
     orderId: "W12",
-    secretEnv: [{ name: "G", secretKey: "gh.token", envName: "GH_TOKEN" }, { name: "S", secretKey: "stripe.key" }, { name: "X", secretKey: "x.y" }],
+    secretEnv: [{ name: "G", secretKey: "gh.token", envName: "GH_TOKEN" }, { name: "S", secretKey: "stripe.key" }, { name: "X", secretKey: "x.y" }, { name: "V", secretKey: "gh.token", envName: "VAULT_GH" }],
   });
   expect((fake.runs[0]![1] as { secretEnv: object[] }).secretEnv[1]).not.toHaveProperty("envName");
 });

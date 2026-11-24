@@ -8233,6 +8233,9 @@ export type SealedSecret = string;
 export type SecretEnvEntry = {
   name: EnvName;
   secretKey: DecisionKey;
+  /** For a command of an order: the order's variable it reads (its Vault or order: name), when that isn't secretKey's
+   * default name (stripe.key reads STRIPE_KEY). */
+  envName?: EnvName;
 };
 
 /** 8 lowercase hex characters: the sha256 prefix of the plaintext */

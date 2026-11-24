@@ -421,7 +421,7 @@
    "lead": true,
    "worker": false,
    "browser": false,
-   "description": "A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; secrets come from the node's own sinks. The exit code and output tail arrive in a later wake.",
+   "description": "A prod write, spend, delete or credential use: the chat shows the human exactly this argv with Approve / Deny, and the node runs it only once approved; each secretEnv value comes from the node's sinks or, for a command with workstreamId, that order's own variables (secretKey stripe.key reads STRIPE_KEY; envName names any other). The exit code and output tail arrive in a later wake.",
    "inputSchema": {
     "properties": {
      "argv": {
@@ -452,6 +452,10 @@
      "secretEnv": {
       "items": {
        "properties": {
+        "envName": {
+         "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
+         "type": "string"
+        },
         "name": {
          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$",
          "type": "string"
@@ -2650,8 +2654,13 @@
     "expected": "struct SecretEnvEntry",
     "fields": [
      "name",
-     "secretKey"
+     "secretKey",
+     "envName"
     ]
+   },
+   "/secretEnv/*/envName": {
+    "expected": "a string",
+    "pattern": "expected a string matching ^[A-Za-z_][A-Za-z0-9_]{0,127}$, got {got}"
    },
    "/secretEnv/*/name": {
     "expected": "a string",
