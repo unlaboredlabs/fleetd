@@ -484,9 +484,10 @@ function accountEntry(
       manual(`Save it again while ${list} ${missing.length === 1 ? "is" : "are"} online`),
     );
   }
+  // Saved is set up: untested, it wants a look rather than reading as nothing there (setup reads the first set up).
   return lastTest
     ? hubEntry(name, "ok", `${what} works: tested on ${lastTest.machineId}.`)
-    : hubEntry(name, "unknown", `${what} is saved but not tested yet.`, manual("Press Test beside it"));
+    : hubEntry(name, "warn", `${what} is saved but not tested yet.`, manual("Press Test beside it"));
 }
 
 /** `hub/claude_key`: the hub's API configuration. */
@@ -646,7 +647,7 @@ export function serviceManager(scope: string, what: "hub" | "node", manager: Nod
     return entry("ok", `If ${user}'s service manager stops, systemd starts it again within seconds, and the ${what} with it.`);
   }
   const where = scope === "hub" ? "the hub's machine" : scope;
-  const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid));
+  const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid, !manager.linger));
   return manager.linger
     ? entry(
         "warn",
@@ -716,24 +717,27 @@ export function macDisk(machineId: string, offline: boolean, disk: NodeDisk | un
   );
 }
 
-/** A screen kind's health from the heartbeat: `unavailable` fails, the rest pass. */
-function screen(machineId: string, name: string, offline: boolean, health: ScreenHealth | undefined): DoctorCheck | undefined {
+/**
+ * A screen kind's health from the heartbeat: `unavailable` fails, the rest pass. Android and Linux desktop screens are
+ * optional extras (`optional`): one unavailable warns, as a machine runs agents without it.
+ */
+function screen(machineId: string, name: string, offline: boolean, health: ScreenHealth | undefined, optional = false): DoctorCheck | undefined {
   if (!health || offline) return undefined;
-  const status: DoctorStatus = health.state === "unavailable" ? "fail" : "ok";
+  const status: DoctorStatus = health.state === "unavailable" ? (optional ? "warn" : "fail") : "ok";
   const fix = health.fix === undefined ? undefined : manual(`On ${machineId}; its node checks again by itself within minutes`, health.fix);
   return machineEntry(machineId, name, status, health.message, fix);
 }
 
 /** Whether the machine can host android sessions; undefined where they are off (or offline, or an older node). */
 export const androidSessions = (machineId: string, offline: boolean, health?: ScreenHealth) =>
-  screen(machineId, "android", offline, health);
+  screen(machineId, "android", offline, health, true);
 
 /** Whether the Mac can host iOS sessions; undefined where they are off (or offline, or an older node). */
 export const iosSessions = (machineId: string, offline: boolean, health?: ScreenHealth) => screen(machineId, "ios", offline, health);
 
 /** Whether the machine can host Linux desktop sessions; undefined where they are off (or offline, or an older node). */
 export const desktopSessions = (machineId: string, offline: boolean, health?: ScreenHealth) =>
-  screen(machineId, "desktop", offline, health);
+  screen(machineId, "desktop", offline, health, true);
 
 /** The agents' Mac's setup checks (`mac_<check>`), as its node ran them last, from its heartbeat. */
 export function macSetup(machineId: string, offline: boolean, health: MacHealth | undefined): DoctorCheck[] {

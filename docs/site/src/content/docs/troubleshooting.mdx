@@ -29,12 +29,15 @@ with `Fix:` and the command to run, on the machine the line names.
 
 ```console capture=doctor-no-hub
 $ fleetd doctor
-✗  doctor the hub does not answer at http://127.0.0.1:4778: error sending request for url (http://127.0.0.1:4778/mcp): client error (Connect): tcp connect error: Connection refused (os error 111). Fix: fleetd init (it starts the hub and repairs its setup)
+✗  doctor nothing answers at http://127.0.0.1:4778: the hub isn't running. Fix: fleetd init (it starts the hub and repairs its setup)
 [exit 4]
 ```
 
 Run `fleetd init`: it starts the hub and repairs its setup. If it still doesn't answer, [restart the hub](#restart)
 and read its log, `~/.fleetd/hub/hub.log`.
+
+If it says *something else answers*, another program took the hub's port. Its fix line names the command that shows
+which; stop that program, then run `fleetd init`.
 
 ### The hub's address isn't HTTPS
 

@@ -196,7 +196,7 @@ describe("Stripe's way back", () => {
     expect(none.credits.leftCents).toBe(0);
     expect(paidLine("paid", none, 0)).toBe("Payment received. The credits show here in a moment, once Stripe confirms it.");
     expect(paidLine("paid", none, PAID_WAIT_MS)).toBe(
-      "Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to fleetd's support.",
+      "Stripe hasn't confirmed the payment yet. It shows here once it does; if it doesn't within a few minutes, write to support@fleetd.dev.",
     );
     expect(paidLine("paid", paid, 0)).toBeNull();
     expect(paidLine("cancelled", none, 0)).toBeNull();

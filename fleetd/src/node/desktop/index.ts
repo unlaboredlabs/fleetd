@@ -168,11 +168,11 @@ export async function healthOf(home: string, config: DesktopConfig, ask = true):
     return health(
       "unavailable",
       "container",
-      `Desktop screens can't run here: ${answers}, and there's no Xvfb. Install Xvfb, or make \`${runtime.name()} info\` answer for this user (${runtime.bin}).`,
+      `Desktop screens are optional, and can't run here: ${answers}, and there's no Xvfb. Install Xvfb, or make \`${runtime.name()} info\` answer for this user (${runtime.bin}).`,
       installFix(),
     );
   }
-  return health("unavailable", undefined, "Desktop screens need docker or podman, or Xvfb; this machine has none that works.", installFix());
+  return health("unavailable", undefined, "Desktop screens are optional: they need docker or podman, or Xvfb, and this machine has none that works.", installFix());
 }
 
 /** What the node lists at its link's hello for desktop sessions. Never asks the runtime: one not checked yet counts

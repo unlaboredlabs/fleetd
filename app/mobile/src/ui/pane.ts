@@ -25,6 +25,8 @@ export interface Beside {
   /** Shows the chat `key` in the chat's pane, in place of whatever was there; `messageId` a search hit in it. */
   readonly open: (key: Key, messageId?: string) => void;
   readonly settings: () => void;
+  /** One of Settings' screens over it: the first run's Billing and Anthropic. */
+  readonly settingsAt: (screen: "Billing" | "Claude") => void;
   readonly newChat: () => void;
   /** The chat open in the other pane, whose row the list marks. */
   readonly openKey: Key | undefined;

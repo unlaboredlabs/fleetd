@@ -63,9 +63,23 @@ test("Anthropic's own endpoint, as prefilled, is saved as none", async () => {
 });
 
 test("no key typed saves nothing", async () => {
-  const { client, calls } = hub({});
+  const { client, calls } = hub({ fleetd_status: [{ machines }] });
   expect(await claudeKey(ui({ key: "" }), new Checklist(), client, (use) => use(client))).toBe(false);
-  expect(calls).toEqual([]);
+  expect(calls.map(([t]) => t)).toEqual(["fleetd_status"]);
+});
+
+test("with no machine to keep it, the key isn't asked for, and the line says why in plain words", async () => {
+  const { client, calls } = hub({ fleetd_status: [{ machines: [{ machineId: "mac", boxPubKey: machines[2]!.boxPubKey, agentsMac: true }] }] });
+  let asked = false;
+  const typing = { ...ui({ key: "sk-ant-api03-standin" }), secret: async () => ((asked = true), "sk-ant-api03-standin") } as unknown as Ui;
+  const list = new Checklist();
+  expect(await claudeKey(typing, list, client, (use) => use(client))).toBe(false);
+  expect(asked).toBe(false);
+  expect(calls.map(([t]) => t)).toEqual(["fleetd_status"]);
+  const [line] = list.failures();
+  expect(line?.detail).toBe("no machine runs agents yet, and the key is kept only on those, so it can't be saved yet");
+  expect(line?.fix).toStartWith("add this machine first: fleetd machine add --local");
+  expect(JSON.stringify(list.items)).not.toMatch(/box key|provider/);
 });
 
 test("the save speaks for the hub's owner, as only a person who administers it may, through a key revoked after", async () => {

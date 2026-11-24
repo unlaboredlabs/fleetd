@@ -6,6 +6,7 @@ import type { ChatMessage, Lead, Profile, ProjectRef, ProjectSummary, ThreadRef,
 import { ToolError } from "../../shared/errors.ts";
 import type { Hub } from "../api/hub.ts";
 import { chat } from "../chat/index.ts";
+import { leadMoved } from "../claude_accounts/index.ts";
 import { Memory, youForLead } from "../memory/index.ts";
 import { type LeadMcpSet, mcpServers, newSince } from "../mcp_servers/index.ts";
 import { leadPeople } from "../people/store.ts";
@@ -252,12 +253,18 @@ export class Leads {
     return mcpServers(this.hub).leadSet(r);
   }
 
+  /** While the lead is idle and would launch now on another Claude account than its session did (a key saved since). */
+  private accountMoved(r: ProjectRef): boolean {
+    const idle = this.idle(r);
+    return idle !== undefined && leadMoved(this.hub.db, r, idle.lead.threadId);
+  }
+
   /**
-   * Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, its profile switch is due,
-   * or it was started ahead on what its bot has changed since.
+   * Whether the lead's next turn starts a fresh session: it is cold, its MCP servers changed, its Claude account moved,
+   * its profile switch is due, or it was started ahead on what its bot has changed since.
    */
   freshDue(r: ProjectRef): boolean {
-    return this.cold(r) || this.mcpChanged(r) !== undefined || this.switchReady(r) || this.aheadStale(r);
+    return this.cold(r) || this.mcpChanged(r) !== undefined || this.accountMoved(r) || this.switchReady(r) || this.aheadStale(r);
   }
 
   /** What a lead's start hangs on besides the digest: whether it does its own work (no repo), and its bot's repos. */
@@ -455,7 +462,7 @@ export class Leads {
     return this.locked(async () => {
       const changed = this.mcpChanged(r);
       const existing = this.records.leadGet(r);
-      if (!existing || (!changed && !this.cold(r) && !this.switchReady(r) && !this.aheadStale(r))) return undefined;
+      if (!existing || (!changed && !this.cold(r) && !this.accountMoved(r) && !this.switchReady(r) && !this.aheadStale(r))) return undefined;
       const project = this.projectOf(r);
       // The old session's last wake stays until the new one is launched: a failed start leaves the lead as it was.
       const chatTail = this.recentChat(r);

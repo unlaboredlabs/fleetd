@@ -454,8 +454,9 @@ function workerEnd(list: Checklist, ok: string, enrolled: boolean): number {
   return failed ? 1 : 0;
 }
 
-/** The worker's claude login: done, or offered at a terminal, else failed with how to log in. */
-export async function workerClaude(ui: Ui, list: Checklist, added: Added) {
+/** The worker's claude login: done, or offered at a terminal, else failed with how to log in. With the hub's own
+ * Claude account (`account`, what its leads sign in with) a login there isn't needed. */
+export async function workerClaude(ui: Ui, list: Checklist, added: Added, account?: string) {
   const title = `claude on ${added.machineId}`;
   const login = loginCommand(added.claude, added.claudeConfigDir);
   const fix = added.target.local ? login : `ssh -t ${added.target.host} ${q(login)}`;
@@ -464,6 +465,10 @@ export async function workerClaude(ui: Ui, list: Checklist, added: Added) {
   for (;;) {
     if (loggedIn) {
       list.done(title, "logged in");
+      return;
+    }
+    if (account !== undefined) {
+      list.done(title, `agents sign in with ${account}, so it needs no login there`);
       return;
     }
     if (offered || !(await ui.offerToRun(list, `claude on ${added.machineId} isn't logged in. Log in now?`))) {
@@ -486,14 +491,16 @@ export async function workerClaude(ui: Ui, list: Checklist, added: Added) {
 
 // ---- the hub's setup steps (`fleetd init --step <id>`) ----
 
-/** setup_test, said as the step's line. */
-async function tested(list: Checklist, client: import("../mcp_client.ts").McpClient, id: string): Promise<string> {
+/** setup_test, said as the step's line. Its fix is never this step again (`fleetd init --step <id>`, the one open):
+ * the check's own words instead, where it has them. */
+export async function tested(list: Checklist, client: import("../mcp_client.ts").McpClient, id: string): Promise<string> {
   const steps = await import("./steps.ts");
   list.start("Testing");
   try {
     const step = await steps.test(client, id);
     const [state, detail, fix] = steps.line(step);
-    list.finish(step.title, state, detail, fix);
+    const own = fix === `fleetd init --step ${id}` ? (typeof step.fix?.label === "string" ? step.fix.label : undefined) : fix;
+    list.finish(step.title, state, detail, own);
     return step.status;
   } catch (f) {
     if (!steps.isFailure(f)) throw f;

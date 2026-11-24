@@ -16,7 +16,9 @@ Sign in with Google, GitHub or a code sent by email. A new team opens on **Get s
 1. **Where agents run**: a computer of yours, fleetd's computers, or both. For your own computer, paste the line shown
    into its terminal. fleetd's computers need a plan or credits; see [Billing](/docs/billing).
 2. **Tailscale** (optional): lets agents on fleetd's computers reach your tailnet.
-3. **Claude**: an API key, or a Claude login on your computer.
+3. **Claude**: an API key, or a Claude login on your computer. fleetd's computers have no login of their own: they
+   need the API key or your Claude subscription. A bot made before then runs on the key from its next message, and
+   later you add or change the key in Settings › Team › Providers › Anthropic.
 4. **GitHub**: sign in and pick the repos fleetd may work on.
 5. **Start a bot**: pick a repo, or start an empty bot.
 

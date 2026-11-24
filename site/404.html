@@ -1,0 +1,161 @@
+<!doctype html>
+<!-- What Vercel serves, with a 404, for any address under fleetd.sh it has no file for, /docs ones included (the docs
+     turn off their own 404, docs/site/astro.config.mjs). It's served at the missing address, so every link and asset
+     here is absolute. The same page as pricing.html in type, colour, header and footer. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<meta name="robots" content="noindex">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Page not found · fleetd</title>
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Lilex";src:url(/fonts/lilex-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
+
+:root{
+  color-scheme:dark;
+  --paper:#121212;
+  --tone:#1c1c1c;
+  --ink:#ededeb;
+  --grey:#a2a3a5;
+  --faint:#76787b;
+  --rule:#2c2c2e;
+  --sans:"Plex",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Lilex",ui-monospace,"SF Mono",Menlo,monospace;
+  --pad:clamp(20px,4.4vw,64px);
+  --max:1280px;
+  --snap:cubic-bezier(.2,0,0,1);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --paper:#f4f4f1;
+  --tone:#e9e9e5;
+  --ink:#17181a;
+  --grey:#5b5d61;
+  --faint:#8a8c8f;
+  --rule:#d6d6d1;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);font:400 17px/1.55 var(--sans);font-kerning:normal;-webkit-font-smoothing:antialiased}
+main{flex:1}
+a{color:inherit;text-decoration-thickness:1px;text-underline-offset:.22em;text-decoration-color:var(--rule)}
+a:hover{text-decoration-color:currentColor}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:2px}
+p,h1{margin:0}
+.w{width:100%;max-width:var(--max);margin:0 auto;padding:0 var(--pad)}
+
+/* header, as on home.html */
+.top{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:24px;padding-bottom:24px}
+.mark{font-weight:600;font-size:19px;letter-spacing:-.015em;text-decoration:none}
+.nav{display:flex;align-items:center;gap:22px;font-size:14px;color:var(--grey)}
+.nav a{text-decoration:none}
+.nav a:hover{color:var(--ink)}
+.nav .up{font-size:13px;font-weight:500;line-height:20px;color:var(--paper);background:var(--ink);border-radius:5px;padding:3px 10px}
+.nav .up:hover{color:var(--paper);opacity:.88}
+
+/* the headline, as on pricing.html, then where to go instead */
+.head{padding-top:clamp(40px,6vw,96px);padding-bottom:clamp(40px,5vw,72px)}
+.code{font:400 14px/1 var(--mono);color:var(--faint)}
+h1{margin-top:18px;font-weight:600;letter-spacing:-.04em;line-height:1.23;font-size:clamp(34px,4.24vw,61px);text-wrap:balance;max-width:899px}
+.sub{margin-top:clamp(16px,1.8vw,26px);color:var(--grey);font-size:clamp(18px,1.6vw,23px);line-height:1.4;letter-spacing:-.008em;max-width:590px;text-wrap:balance}
+.go{display:flex;flex-wrap:wrap;gap:10px 28px;margin-top:clamp(28px,3vw,40px);font-size:15px}
+.go a{color:var(--ink)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px 24px;padding-top:20px;padding-bottom:40px;margin-top:clamp(24px,3vw,40px);background:linear-gradient(var(--rule),var(--rule)) no-repeat center top/calc(100% - 2*var(--pad)) 1px;font-size:13px;color:var(--faint)}
+.foot nav{display:flex;align-items:center;gap:20px}
+.foot a{text-decoration:none}
+.foot a:hover{color:var(--ink)}
+/* Light or Dark, as on home.html: one small icon at the footer's end, the other theme's. */
+.theme{display:grid;place-items:center;width:24px;height:24px;margin:-4px -4px -4px 0;padding:0;border:0;border-radius:6px;background:none;color:var(--faint);cursor:pointer}
+.theme:hover{color:var(--ink);background:var(--tone)}
+.theme svg{width:14px;height:14px}
+.theme .i-moon,[data-theme="light"] .theme .i-sun{display:none}
+[data-theme="light"] .theme .i-moon{display:block}
+
+@media (max-width:640px){
+  .nav{gap:14px}
+  .nav .gh,.nav .in{display:none}
+}
+/* The narrowest phones: Docs stays in the footer and in the links above it. */
+@media (max-width:400px){
+  .nav .docs{display:none}
+}
+@media (prefers-reduced-motion:no-preference){
+  .nav a,a,.theme{transition:color .14s var(--snap),text-decoration-color .14s var(--snap)}
+}
+</style>
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main>
+<section class="w head" aria-labelledby="h">
+  <p class="code">404</p>
+  <h1 id="h">There’s no page here.</h1>
+  <p class="sub">The address may have a typo, or the page has moved.</p>
+  <nav class="go" aria-label="Where to go">
+    <a href="/">Home</a>
+    <a href="/docs">Docs</a>
+    <a href="/pricing">Pricing</a>
+  </nav>
+</section>
+</main>
+
+<footer class="w foot">
+  <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

@@ -17,7 +17,7 @@ import type {
 } from "../../shared/contracts.ts";
 import type { HubDb } from "../store/db.ts";
 import { activePeople } from "./people.ts";
-import { accountFromKey, accountKey, launchAccount, type NodeAccounts, type Refusal, Setup, type Whose } from "./setup.ts";
+import { accountFromKey, accountKey, launchAccount, leadAccountMoved, type NodeAccounts, type Refusal, Setup, type Whose } from "./setup.ts";
 
 export {
   accountFromKey,
@@ -25,6 +25,7 @@ export {
   CONNECT_REFUSAL,
   isRefusal,
   launchAccount,
+  leadAccountMoved,
   type NodeAccounts,
   type Refusal,
   Setup,
@@ -205,6 +206,16 @@ export function forLead(db: HubDb, node: (m: string) => NodeAccounts, r: Project
     return launchAccount(setup, whoseForLead(), r.machineId, () => node(r.machineId));
   } catch (e) {
     return unread(e);
+  }
+}
+
+/** `leadAccountMoved` for the lead of project `r`, on its thread `threadId`. */
+export function leadMoved(db: HubDb, r: ProjectRef, threadId: string): boolean {
+  try {
+    const s = new ClaudeAccountStore(db);
+    return leadAccountMoved(s.setup(), r.machineId, s.threadAccount(r.machineId, threadId));
+  } catch {
+    return false;
   }
 }
 

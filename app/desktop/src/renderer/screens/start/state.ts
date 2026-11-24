@@ -20,10 +20,10 @@ import { navigate } from "../shell/navigation";
 import { toHash } from "../shell/routes";
 import {
   claudeLoggedOut,
+  claudeStepOf,
   projectLine,
   pushedWords,
   stepsLeft,
-  type ClaudeStep,
   type ComputerStep,
   type GithubStep,
   type KeyState,
@@ -240,26 +240,26 @@ export function useStart(
   const accounts = useToolQuery("claude_accounts_get", noInput, { enabled: owner && live });
   const [keyState, setKeyState] = useState<KeyState | undefined>(undefined);
   const withKey = keyState === undefined ? {} : { key: keyState };
-  const claude: ClaudeStep =
-    accounts.data?.hubApi !== undefined
-      ? { at: "done", what: "API key" }
-      : ready !== null
-        ? { at: "done", what: ready.name }
-        : computer.at === "hosted" && runnerMachine?.status === "online"
-          ? { at: "done", what: providerName }
-          : loggedOut !== undefined && computer.at === "ready"
-            ? {
-                at: "login",
-                machine: loggedOut.name,
-                login: login?.machineId === loggedOut.machineId ? login.login : "start",
-                ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.url !== undefined ? { url: login.url } : {}),
-                ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.opened === false ? { opened: false } : {}),
-                ...(login?.machineId === loggedOut.machineId && login.error !== undefined ? { error: login.error } : {}),
-                ...withKey,
-              }
-            : computer.at === "hosted"
-              ? { at: "account", provider: providerName, ...withKey }
-              : { at: "wait" };
+  const claude = claudeStepOf({
+    hubKey: accounts.data?.hubApi !== undefined,
+    leadsRunOn: accounts.data?.leadsRunOn.kind,
+    ready: ready?.name ?? null,
+    computer,
+    provider: providerName,
+    login:
+      loggedOut === undefined
+        ? null
+        : {
+            at: "login",
+            machine: loggedOut.name,
+            login: login?.machineId === loggedOut.machineId ? login.login : "start",
+            ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.url !== undefined ? { url: login.url } : {}),
+            ...(login?.machineId === loggedOut.machineId && login.login !== "start" && login.opened === false ? { opened: false } : {}),
+            ...(login?.machineId === loggedOut.machineId && login.error !== undefined ? { error: login.error } : {}),
+            ...withKey,
+          },
+    ...withKey,
+  });
 
   // GitHub: the person's own connection, and for an owner the App installed on the team.
   const [githubBusy, setGithubBusy] = useState<string | null | true>(null);

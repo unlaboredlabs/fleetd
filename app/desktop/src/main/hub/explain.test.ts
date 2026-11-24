@@ -22,6 +22,18 @@ describe("explainLoss", () => {
     }
   });
 
+  it("says another program answered, never the HTTP parser's words, when the port speaks no HTTP", () => {
+    // Node's exact error when the hub's port is held by a program that isn't a web server.
+    const parse = err("HPE_INVALID_CONSTANT", "Parse Error: Expected HTTP/, RTSP/ or ICE/");
+    for (const known of [false, true]) {
+      const loss = explainLoss(lan, 1006, "", parse, false, known);
+      expect(loss.reason).toBe("Something other than a fleetd hub answered at devbox:4790");
+      expect(`${loss.reason} ${loss.fix}`).not.toMatch(/Parse Error|HTTP\/|HPE_/u);
+      expect(loss.fix).toContain("fleetd doctor");
+    }
+    expect(explainLoss(lan, 1006, "", parse, false, true).fix).not.toContain("Check the address");
+  });
+
   it("points a tailnet address at Tailscale", () => {
     expect(explainLoss(tailnet, 1006, "", err("EHOSTUNREACH"), false).fix).toContain("Tailscale");
     expect(explainLoss("http://devbox.tail1234.ts.net:4790", 1006, "", err("ENOTFOUND"), false).fix).toContain("Tailscale");

@@ -1,6 +1,6 @@
 // fleetd.sh's pages fit every width. Run by CI's `site` job from the repo root:
 //   node .github/site-layout-check.mjs
-// Renders each of PAGES (site/home.html, site/pricing.html) in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
+// Renders each of PAGES (site/home.html, site/pricing.html, site/404.html) in headless Chrome ($CHROME, else google-chrome or chromium on PATH) at each width below and
 // fails, one line per page and width, when the page scrolls sideways: something on it is wider than the viewport.
 // It also checks the landing page's device stage once its foldable has opened (STAGE_WIDTHS, at 2x): nothing drawn
 // beside the two devices (no hairline from the folding half, the line a person found on Nov 23), no line on the
@@ -20,7 +20,7 @@ const SITE = path.resolve("site");
 /** The widths the stage is checked at, at 2x in a window 800 px tall, scrolled to as a reader does: laptops' and
  * wider screens', and a phone's (the phone alone). At the first, the window is also resized while the phone unfolds. */
 const STAGE_WIDTHS = [1280, 1440, 1512, 1728, 390];
-const PAGES = ["home.html", "pricing.html"];
+const PAGES = ["home.html", "pricing.html", "404.html"];
 const TYPES = { ".js": "text/javascript", ".woff2": "font/woff2", ".png": "image/png", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".webm": "video/webm", ".json": "application/json" };
 
 function chromePath() {

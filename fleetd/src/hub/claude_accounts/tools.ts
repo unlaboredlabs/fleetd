@@ -159,23 +159,10 @@ export function register(tools: Registry): void {
     } else {
       throw new ToolError("invalid", "account is hub_api or mine.");
     }
-    const machineId = holding(hub, held, input.machineId, "No machine holding it is online to test it on.", "Start a node, then test again.");
-    const [out, override] = await Promise.all([sessionCall(hub, machineId, { op: "claude_account_test", account }), overriding(hub, machineId)]);
-    // The machine's own claude settings replace the account there: a Test that worked tried them, not the account.
-    const ok = out.ok === true && override === undefined;
-    const said = [typeof out.error === "string" ? out.error : undefined, override].filter((x) => x !== undefined).join(" ") || undefined;
-    const tried: ClaudeTest = { at: isoMs(hub.clock.now()), machineId, ok, ...(!ok && said !== undefined ? { error: said } : {}) };
-    // Recorded on the account as it is now; one replaced or removed meanwhile keeps its own.
-    if (account.kind === "hub") {
-      const api = s.hubApi();
-      if (api) s.putHubApi({ ...api, lastTest: tried });
-    } else {
-      const sub = s.subscription(account.personId);
-      if (sub) s.putSubscription(account.personId, { ...sub, lastTest: tried });
-    }
+    const tried = await testAccount(hub, account, held, input.machineId);
     return {
       test: tried,
-      ...(!ok
+      ...(!tried.ok
         ? {
             next:
               account.kind === "hub"
@@ -185,6 +172,29 @@ export function register(tools: Registry): void {
         : {}),
     };
   });
+}
+
+/**
+ * One tiny claude call on `account` on a machine holding it (`asked`, else the first online), kept as the account's
+ * last Test, which its doctor check reads. Throws a ToolError when no machine holding it is online.
+ */
+export async function testAccount(hub: Hub, account: ClaudeAccount, held: ClaudeSealedOn[], asked?: string): Promise<ClaudeTest> {
+  const s = accounts(hub);
+  const machineId = holding(hub, held, asked, "No machine holding it is online to test it on.", "Start a node, then test again.");
+  const [out, override] = await Promise.all([sessionCall(hub, machineId, { op: "claude_account_test", account }), overriding(hub, machineId)]);
+  // The machine's own claude settings replace the account there: a Test that worked tried them, not the account.
+  const ok = out.ok === true && override === undefined;
+  const said = [typeof out.error === "string" ? out.error : undefined, override].filter((x) => x !== undefined).join(" ") || undefined;
+  const tried: ClaudeTest = { at: isoMs(hub.clock.now()), machineId, ok, ...(!ok && said !== undefined ? { error: said } : {}) };
+  // Recorded on the account as it is now; one replaced or removed meanwhile keeps its own.
+  if (account.kind === "hub") {
+    const api = s.hubApi();
+    if (api) s.putHubApi({ ...api, lastTest: tried });
+  } else {
+    const sub = s.subscription(account.personId);
+    if (sub) s.putSubscription(account.personId, { ...sub, lastTest: tried });
+  }
+  return tried;
 }
 
 /** What claude_account_override warns of on the machine, with its fix; none when its settings override nothing or its

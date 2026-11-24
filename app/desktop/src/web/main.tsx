@@ -57,6 +57,7 @@ const show = async (view: GateView) => {
           view={view}
           actions={{
             signIn: () => window.location.assign(signInPath(here())),
+            signUp: () => window.location.assign(signInPath(here(), true)),
             retry: () => void boot(),
             join: async (invitation): Promise<WebFailure | null> => {
               const out = await webCall(window.fetch.bind(window), "POST", "/web/accept", { json: { accept: invitation.accept } });

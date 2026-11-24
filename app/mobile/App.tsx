@@ -516,7 +516,7 @@ function Root() {
       setAsked(undefined);
     };
   }, [wide]);
-  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), newChat: () => nav.navigate("NewProject"), openKey, asked } : null), [wide, openKey, asked]);
+  const beside = useMemo((): Beside | null => (wide ? { open: openBeside, settings: () => nav.navigate("Settings"), settingsAt: (screen) => nav.navigate("Settings", { screen, initial: false }), newChat: () => nav.navigate("NewProject"), openKey, asked } : null), [wide, openKey, asked]);
   return (
     <BesideContext.Provider value={beside}>
       <View style={styles.panes}>

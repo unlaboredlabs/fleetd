@@ -431,7 +431,7 @@ export function planMachineAdd(facts: Facts, input: MachineAddInput): MachinePla
   const asRoot = facts.root === "root" ? "" : facts.root === "sudo" ? "sudo -n " : undefined;
   if (input.service && platform === "linux" && !keepsRunning && asRoot !== undefined) {
     steps.push(
-      step(`keep ${facts.user}'s service manager running by itself`, `${asRoot}sh -c "${keepManagerScript(facts.user, facts.uid)}"`),
+      step(`keep ${facts.user}'s service manager running by itself`, `${asRoot}sh -c "${keepManagerScript(facts.user, facts.uid, facts.linger !== "yes")}"`),
     );
   }
   if (input.service) {
@@ -450,7 +450,7 @@ export function planMachineAdd(facts: Facts, input: MachineAddInput): MachinePla
       facts.linger !== "yes"
         ? `linger is ${facts.linger} for ${u}, so the node stops when ${u} logs out`
         : `if ${u}'s service manager (systemd --user) stops, nothing starts it again until ${u} logs in, so the node stays down`;
-    notes.push(`${why}. Fix: ${keepManagerCommand(u, facts.uid)}`);
+    notes.push(`${why}. Fix: ${keepManagerCommand(u, facts.uid, facts.linger !== "yes")}`);
   }
   if (platform === "darwin") {
     notes.push(`launchd runs the node while ${facts.user} is logged in at this Mac's screen; after a restart, log that user in again.`);

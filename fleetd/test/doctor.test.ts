@@ -87,10 +87,10 @@ test("a bot git can't fetch fails the check with the login fix", () => {
   expect(yesterday.message).toContain("as of 10-25 06:00 UTC");
 });
 
-test("screens fail with the fix a person runs, and say nothing where they are off or offline", () => {
+test("screens say the fix a person runs, Android and desktops only warn as optional extras, and nothing where off or offline", () => {
   const broken = { state: "unavailable", message: "devuser may not use /dev/kvm.", fix: "sudo usermod -aG kvm devuser" };
   const entry = c.androidSessions("devbox", false, broken)!;
-  expect([entry.id, entry.status, entry.fix?.command]).toEqual(["devbox/android", "fail", "sudo usermod -aG kvm devuser"]);
+  expect([entry.id, entry.status, entry.fix?.command]).toEqual(["devbox/android", "warn", "sudo usermod -aG kvm devuser"]);
   const ready = c.androidSessions("devbox", false, { state: "ready", message: "ok" })!;
   expect([ready.status, ready.fix]).toEqual(["ok", undefined]);
   expect(c.androidSessions("devbox", true, broken)).toBeUndefined();
@@ -99,7 +99,7 @@ test("screens fail with the fix a person runs, and say nothing where they are of
   expect([ios.id, ios.status, ios.fix?.command]).toEqual(["mac/ios", "fail", "xcodebuild -downloadPlatform iOS"]);
   const desktop = c.desktopSessions("devbox", false, { state: "ready", backend: "xvfb", message: "Desktop screens run on Xvfb." })!;
   expect([desktop.id, desktop.status]).toEqual(["devbox/desktop", "ok"]);
-  expect(c.desktopSessions("devbox", false, { state: "unavailable", message: "x", fix: "sudo apt install xvfb" })!.status).toBe("fail");
+  expect(c.desktopSessions("devbox", false, { state: "unavailable", message: "x", fix: "sudo apt install xvfb" })!.status).toBe("warn");
 });
 
 test("a fork behind upstream warns", () => {
@@ -278,7 +278,8 @@ test("the Claude checks read the key and the owner's subscription", () => {
   expect(partly.status).toBe("warn");
   expect(partly.message).toContain("isn't on buildbox");
   expect(partly.fix?.label).toBe("Save it again while buildbox is online");
-  expect(c.claudeKey(withApi(api(both))).status).toBe("unknown");
+  // Saved is set up: untested, it wants a look, so setup never reads it as no key and passes on a machine's login.
+  expect(c.claudeKey(withApi(api(both))).status).toBe("warn");
   expect(c.claudeKey(withApi(api(both, tested(true)))).status).toBe("ok");
   const owner = (lastTest?: ClaudeTest): c.ClaudeSetupView => ({
     ...none,

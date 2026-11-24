@@ -6,7 +6,7 @@
 // it away. A new login, card or address goes to the team vault; a new variable to the project it was added from. What's
 // typed is sealed to the hub as ✓ is tapped (api.ts saveItem), and goes with the sheet.
 import { useLayoutEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
+import { Keyboard, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from "react-native";
 import { useHub } from "../../hubContext";
 import { shape, space, type, useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
@@ -40,6 +40,8 @@ export function VaultEdit() {
     const c = check(draft, editing, new Date());
     if (!c.ok) {
       haptics.warning();
+      // The problem's line is under the form, where the keyboard would cover it.
+      Keyboard.dismiss();
       return setProblem(c.problem);
     }
     setBusy(true);
@@ -58,6 +60,7 @@ export function VaultEdit() {
     setBusy(false);
     if (!r.ok) {
       haptics.warning();
+      Keyboard.dismiss();
       return setProblem(`Not saved: ${vaultErrorWords(r.error) ?? errorWords(r.error)}`);
     }
     haptics.success();
@@ -127,12 +130,14 @@ export function VaultEdit() {
           <ListSection footer="Agents fill it in only on these sites and their subdomains. Paste an address and it's cut to its site.">
             {sites("Website, like amazon.com")}
           </ListSection>
+          {/* iOS takes a user name over secure fields for a sign-up form and offers "Use Strong Password?", which would
+              replace the password being stored and save one to iCloud; "none" doesn't stop it, a one-time code's type does. */}
           <ListSection>
-            {row("username", "User name", { autoCapitalize: "none", keyboardType: "email-address", textContentType: "username", autoFocus: !editing })}
-            {row("password", "Password", { autoCapitalize: "none", secureTextEntry: true, textContentType: "none" })}
+            {row("username", "User name", { autoCapitalize: "none", keyboardType: "email-address", textContentType: "none", autoComplete: "off", autoFocus: !editing })}
+            {row("password", "Password", { autoCapitalize: "none", secureTextEntry: true, textContentType: "oneTimeCode", autoComplete: "off" })}
           </ListSection>
           <ListSection footer="The setup key or otpauth:// link a site shows for an authenticator app. fleetd makes the codes, and agents fill them in.">
-            {row("totp", "Verification code setup key", { autoCapitalize: "none", secureTextEntry: true, textContentType: "none" })}
+            {row("totp", "Verification code setup key", { autoCapitalize: "none", secureTextEntry: true, textContentType: "oneTimeCode", autoComplete: "off" })}
           </ListSection>
           <ListSection>
             {label("Label")}

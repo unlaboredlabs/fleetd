@@ -2,6 +2,7 @@
 // the doctor's checks.
 import type { DoctorCheck, HubSetupStep } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
+import { accounts, testAccount } from "../claude_accounts/tools.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller, Registry } from "../api/registry.ts";
 import { SETUP_CHECK_IDS } from "../doctor/checks.ts";
@@ -72,6 +73,18 @@ export function register(tools: Registry): void {
         await testOnePassword(hub, caller, {});
       } catch (error) {
         console.info(`setup: no 1Password token of the caller's own tested: ${(error as Error).message ?? error}`);
+      }
+    }
+    // Claude's Test tries the hub's API key, when it has one, with one tiny claude call: a key sealed to the machines
+    // isn't one that works (each machine's login reads "logged in" with it either way).
+    if (input.step === "claude") {
+      const api = accounts(hub).hubApi();
+      if (api) {
+        try {
+          await testAccount(hub, { kind: "hub" }, api.sealedOn);
+        } catch (error) {
+          console.info(`setup: the hub's Claude API key wasn't tested: ${(error as Error).message ?? error}`);
+        }
       }
     }
     // Machines, Claude and the Mac read every machine's checks; the rest, the hub's own.

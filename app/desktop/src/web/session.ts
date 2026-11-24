@@ -3,6 +3,7 @@
 // agreed with fleetd-cloud's side (the docs' Web app page has it too, docs/site/src/content/docs/web-app.md):
 //   GET  /web/session              200 { email, teams: [{ id, name, url }], invitations? } or 401 when signed out
 //   GET  /web/sign-in?return=<path> a top-level navigation: WorkOS's sign-in, then back to <path> signed in
+//                                  (&screen_hint=sign-up, Make an account's: WorkOS's sign-up form, once the cloud passes it on)
 //   POST /web/sign-out             204
 //   POST /web/accept { accept }    200 { team }: an invitation joined
 //   POST /t/<team>/web/frames      200 { url }: an HTML report's page, served on the team's own address
@@ -142,10 +143,17 @@ export const untilListed = async (read: () => Promise<SessionRead>, wait: (ms: n
   return !last.ok && last.signedOut === true ? "signed_out" : "not_yet";
 };
 
-/** Where Sign in goes: WorkOS's page, then back to `back` (this page's path and route), only ever a path of this origin. */
-export const signInPath = (back: string): string => {
+/**
+ * Where Sign in goes: WorkOS's page, then back to `back` (this page's path and route), only ever a path of this origin.
+ * `signUp`: Make an account's, which asks WorkOS for its sign-up form (WorkOS's own name for it, screen_hint).
+ */
+export const signInPath = (back: string, signUp = false): string => {
   const path = back.startsWith("/") && !back.startsWith("//") ? back : "/";
-  return path === "/" ? "/web/sign-in" : `/web/sign-in?return=${encodeURIComponent(path)}`;
+  const q = new URLSearchParams();
+  if (path !== "/") q.set("return", path);
+  if (signUp) q.set("screen_hint", "sign-up");
+  const query = q.toString();
+  return query === "" ? "/web/sign-in" : `/web/sign-in?${query}`;
 };
 
 /** A team's own paths on this origin: `/t/<team>…`. */

@@ -79,6 +79,13 @@ There is deliberately no `index.html` at the root: Vercel serves files before ap
 would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and fine. `cleanUrls` serves
 `docs/<page>.html` at `/docs/<page>`.
 
+Vercel serves `404.html`, with a 404, for any address it has no file for, `/docs` ones included (the docs turn off
+their own); it shows at the missing address, so its links and assets are absolute. `robots.txt` names `sitemap.xml`
+(home and pricing) and the docs' own sitemap. `favicon.ico` and `apple-touch-icon.png` come from `npm run icons` in
+`app/mobile`, with `icon.svg`. `card.jpg` is the link card (og:image) of home, pricing and the docs: the page's own hero
+at 1200x630 and 2x, shot in Chrome from `node .github/docs-serve.mjs` with the header's nav, the stage, the facts
+line and everything under the hero hidden, once the bot has its first colour. Shoot it again when the hero changes.
+
 ## Refreshing the clips
 
 Each section of `home.html` has its own clip, a few seconds of the app on the `showcase-order` fixture

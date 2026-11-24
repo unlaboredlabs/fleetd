@@ -48,6 +48,14 @@ const channel = process.env.FLEETD_UPDATES_CHANNEL === "stable" ? "stable" : "ed
 const updatesUrl = process.env.FLEETD_UPDATES_URL || "https://fleetd.sh/updates";
 const googleServices = process.env.FLEETD_GOOGLE_SERVICES_FILE || undefined;
 
+/** Apple's names for the data the app collects (ios.privacyManifests). */
+const COLLECTED = [
+  "NSPrivacyCollectedDataTypeEmailAddress",
+  "NSPrivacyCollectedDataTypePhotosorVideos",
+  "NSPrivacyCollectedDataTypeOtherUserContent",
+  "NSPrivacyCollectedDataTypeDeviceID",
+] as const;
+
 export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
   name: "fleetd",
   slug: "fleetd",
@@ -87,6 +95,20 @@ export default ({ projectRoot }: ConfigContext): ExpoConfig => ({
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       NSLocalNetworkUsageDescription: "fleetd connects to your hub on your network.",
       ITSAppUsesNonExemptEncryption: false,
+    },
+    // What the app sends that fleetd cloud keeps, for the App Store's privacy report; App Store Connect's App Privacy
+    // answers say the same. Each is linked to the person's account, only for the app to work, and never for tracking:
+    // the account's email at Sign In, the photos and messages sent in a chat, and the push token notifications go to.
+    // Expo merges it into the PrivacyInfo.xcprivacy that already lists the API reasons React Native's pods declare.
+    privacyManifests: {
+      NSPrivacyTracking: false,
+      NSPrivacyTrackingDomains: [],
+      NSPrivacyCollectedDataTypes: COLLECTED.map((type) => ({
+        NSPrivacyCollectedDataType: type,
+        NSPrivacyCollectedDataTypeLinked: true,
+        NSPrivacyCollectedDataTypeTracking: false,
+        NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
+      })),
     },
   },
   android: {

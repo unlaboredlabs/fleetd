@@ -7,7 +7,7 @@
 // revoked token, a bad key) wakes nothing, which would be refused the same way: the person reads where to reconnect it,
 // and the lead carries on once they do (`signed_out`, ./signed_in.ts).
 import type { ClaudeAccount, HubEvent, HubEventType, ProjectRef } from "../../shared/contracts.ts";
-import { ASIDE_MS, providerName, RATE_MS, RATE_WORDS } from "../../shared/sandbox.ts";
+import { ASIDE_MS, providerName, RATE_MS, RATE_WORDS, RUNNER_ID } from "../../shared/sandbox.ts";
 import { oneLine } from "./text.ts";
 import type { StoredLead } from "./stored.ts";
 import { settingsPath } from "../../shared/settings_path.ts";
@@ -92,10 +92,15 @@ export type End =
   | { kind: "completed" };
 
 /** The chat's line when Claude refused the lead's sign-in, by what the lead runs on (the thread's account; none: the
- * machine's own login): where it is reconnected, and that the lead then carries on by itself. */
-export function signedOutLine(account: ClaudeAccount | undefined): string {
+ * machine's own login) and where (`machineId`): where it is reconnected, and that the lead then carries on by itself.
+ * A bot in hosted sandboxes (fleetd's computers on a cloud team) has no machine of its own to sign in on: with no
+ * account it is told where an admin adds the key, which its next turn then runs on (leads/index.ts `accountMoved`). */
+export function signedOutLine(account: ClaudeAccount | undefined, machineId?: string): string {
   if (account?.kind === "hub") return `The hub's Claude API key stopped working for this bot: an admin replaces it in ${settingsPath()} › Setup › Claude. The lead carries on by itself once it is.`;
   if (account) return "Your Claude sign-in for this bot stopped working: reconnect it in Settings › Accounts › Claude. The lead carries on by itself once it is.";
+  if (machineId === RUNNER_ID) {
+    return `This bot has no Claude account to run on yet: an admin adds a Claude API key in ${settingsPath("Providers", "Anthropic")}. The lead carries on by itself once it is.`;
+  }
   return "Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message.";
 }
 

@@ -16,7 +16,8 @@
 //   and icons/<n>x<n>.png (Linux, the same).
 // - app/desktop/src/main/trayIcon.ts: the menu bar's template image, at 1x and 2x.
 // - The favicons: tab.svg as site/icon.svg (fleetd.sh), docs/site/public/favicon.svg and the web app's
-//   public/favicon.svg, and that one's favicon.ico (16, 32 and 48 px).
+//   public/favicon.svg, and the .ico of it (16, 32 and 48 px) for the web app and fleetd.sh.
+// - site/apple-touch-icon.png: fleetd.sh's home-screen icon, the iOS icon at 180 px.
 // - docs/site/src/assets/icon.svg, the docs' logo: the small master, cropped to its tile.
 //
 //   npm run icons
@@ -148,6 +149,8 @@ write(trayFile, trayTs);
 // The favicons: the tab's master, and the .ico of it for what asks /favicon.ico itself.
 const tab = master("tab");
 for (const path of ["site/icon.svg", "docs/site/public/favicon.svg", "app/desktop/src/web/public/favicon.svg"]) write(path, tab);
-write("app/desktop/src/web/public/favicon.ico", ico([16, 32, 48].map((size) => [size, png(tab, size)] as const)));
+const favicon = ico([16, 32, 48].map((size) => [size, png(tab, size)] as const));
+for (const path of ["site/favicon.ico", "app/desktop/src/web/public/favicon.ico"]) write(path, favicon);
+write("site/apple-touch-icon.png", opaquePng(master("ios-light"), 180));
 // The docs' logo: the small master's tile, edge to edge.
 write("docs/site/src/assets/icon.svg", macSmall.replace(/ width="1024" height="1024" viewBox="0 0 1024 1024"/u, ' viewBox="100 100 824 824"'));

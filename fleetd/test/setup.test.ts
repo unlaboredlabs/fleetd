@@ -139,3 +139,77 @@ test("the 1Password step's Test tests the caller's own token and keeps it as its
   expect(out.step).toMatchObject({ status: "done", said: "Ann's 1Password token reads one vault, fleetd." });
 });
 
+
+test("a hub key set up decides Claude, as leads run on it: failing or untested, a machine logged in doesn't make it done", () => {
+  const steps = guides("http://devbox:4790");
+  const claude = (checks: DoctorCheck[]) => read(steps, checks).find((s) => s.id === "claude");
+  const login = check("devbox/claude_login", "ok", "devbox: claude 2.1.331, logged in (API key)");
+  const failing = claude([
+    check("hub/claude_key", "fail", "The hub's Claude API key failed its Test on devbox: Invalid API key", {
+      kind: "manual",
+      label: "Check the key and endpoint, then save them again",
+    } as never),
+    login,
+  ]);
+  expect([failing?.status, failing?.failing, failing?.way]).toEqual(["look", true, "the hub's API key"]);
+  expect(requiredLeft(failing as HubSetupStep)).toBe(true);
+  const untested = claude([check("hub/claude_key", "warn", "The hub's Claude API key is saved but not tested yet."), login]);
+  expect([untested?.status, untested?.said]).toEqual(["look", "The hub's Claude API key is saved but not tested yet."]);
+  const works = claude([check("hub/claude_key", "ok", "The hub's Claude API key works: tested on devbox."), check("devbox/claude_login", "fail")]);
+  expect([works?.status, works?.way]).toEqual(["done", "the hub's API key"]);
+  // No key and no subscription: each machine's own login decides, as before.
+  const none = claude([check("hub/claude_key", "unknown"), check("hub/claude_owner", "unknown"), login]);
+  expect([none?.status, none?.way]).toEqual(["done", "each machine's own login"]);
+});
+
+test("the Claude step's Test tries the hub's key with a claude call, and a wrong key fails the step", async () => {
+  const { Hub } = await import("../src/hub/api/hub.ts");
+  const { Registry } = await import("../src/hub/api/registry.ts");
+  const { registerAll } = await import("../src/hub/serve/areas.ts");
+  const { HubDb } = await import("../src/hub/store/db.ts");
+  const { fakeNodePort } = await import("../src/hub/link/node_port.ts");
+  const { store } = await import("../src/hub/store/hub_store.ts");
+  const { doctor } = await import("../src/hub/doctor/index.ts");
+  const at = "2026-11-24T10:00:00.000Z";
+  const hub = new Hub({ home: "", listen: { host: "127.0.0.1", port: 4790 } }, HubDb.memory(), { now: () => Date.parse(at) });
+  const probes = doctor(hub);
+  probes.health = async () => ({ ok: true });
+  probes.runCmd = async () => ({ ran: false, error: "ENOENT" });
+  const calls: Record<string, unknown>[] = [];
+  // A node on lab that keeps the key and answers its Test as Anthropic answers a wrong key.
+  hub.area("node_port", () =>
+    fakeNodePort({
+      async request(_m: string, frame: Record<string, unknown>) {
+        const call = frame.call as Record<string, unknown>;
+        calls.push(call);
+        const ok =
+          call.op === "claude_account_test"
+            ? { kind: "claude_account_tested", ok: false, error: "Invalid API key" }
+            : call.op === "claude_account_secret"
+              ? { kind: "saved", fingerprint: "ab12cd34" }
+              : { kind: "unknown" };
+        return { id: "1", result: { ok } };
+      },
+      can: () => true,
+      linkId: (m: string) => `L-${m}`,
+    } as never),
+  );
+  store(hub).machineUpsert({ machineId: "lab", name: "lab", nodeVersion: "1", status: "online", lastSeenAt: at } as never);
+  hub.db.conn.run("INSERT INTO people (person_id, name, role, created_ms) VALUES ('p_aaaaaaaa', 'Ann', 'owner', 0)");
+  const tools = new Registry();
+  registerAll(tools);
+  const ann = {
+    keyId: "k_ann", name: "ann-desk", prefix: "fld_x", grants: [{ role: "admin" as const, machines: "*" as const }], createdAt: at,
+    kind: "human" as const, person: { personId: "p_aaaaaaaa", name: "Ann" },
+  };
+  const ok = async (tool: string, input: unknown) => {
+    const r = await tools.call(hub, ann, tool, input);
+    if ("error" in r) throw new Error(JSON.stringify(r.error));
+    return r.output as Record<string, unknown>;
+  };
+  await ok("claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: Buffer.alloc(60, 1).toString("base64") }] });
+  const out = await ok("setup_test", { step: "claude" });
+  expect(calls.some((c) => c.op === "claude_account_test")).toBe(true);
+  expect(out.step).toMatchObject({ status: "look", failing: true, way: "the hub's API key" });
+  expect((out.step as { said: string }).said).toContain("failed its Test on lab: Invalid API key");
+});
