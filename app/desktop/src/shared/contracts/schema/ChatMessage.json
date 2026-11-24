@@ -1513,6 +1513,9 @@
     },
     "SecretEnvEntry": {
       "properties": {
+        "envName": {
+          "$ref": "#/$defs/EnvName"
+        },
         "name": {
           "$ref": "#/$defs/EnvName"
         },
