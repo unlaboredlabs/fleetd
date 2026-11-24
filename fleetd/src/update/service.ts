@@ -116,16 +116,30 @@ export function ownUnit(cgroup: string): string | undefined {
  * systemd never restarts a unit that was stopped. */
 export const managerDropIn = (uid: number) => `/etc/systemd/system/user@${uid}.service.d/fleetd.conf`;
 
+/** The drop-in's first line when linger was off before fleetd turned it on: `fleetd uninstall` then turns it off again,
+ * and otherwise leaves it, as something else may need it. */
+export const LINGER_MARK = "# fleetd turned linger on";
+
 /** What root runs to keep `user`'s service manager running by itself: linger, so it starts at boot and outlives a
- * logout, and the drop-in, so it starts again 5 s after it stops. Run again, it changes nothing; the manager that
- * runs now carries on. */
-export function keepManagerScript(user: string, uid: number): string {
+ * logout, and the drop-in, so it starts again 5 s after it stops. `lingerWasOff` marks the drop-in (LINGER_MARK). Run
+ * again, it changes nothing; the manager that runs now carries on. */
+export function keepManagerScript(user: string, uid: number, lingerWasOff = false): string {
   const file = managerDropIn(uid);
-  return `loginctl enable-linger ${user} && mkdir -p ${file.slice(0, file.lastIndexOf("/"))} && printf '[Service]\\nRestart=always\\nRestartSec=5\\n' > ${file} && systemctl daemon-reload`;
+  const mark = lingerWasOff ? `${LINGER_MARK}\\n` : "";
+  return `loginctl enable-linger ${user} && mkdir -p ${file.slice(0, file.lastIndexOf("/"))} && printf '${mark}[Service]\\nRestart=always\\nRestartSec=5\\n' > ${file} && systemctl daemon-reload`;
 }
 
 /** keepManagerScript as the one line an admin pastes. */
-export const keepManagerCommand = (user: string, uid: number) => `sudo sh -c "${keepManagerScript(user, uid)}"`;
+export const keepManagerCommand = (user: string, uid: number, lingerWasOff = false) =>
+  `sudo sh -c "${keepManagerScript(user, uid, lingerWasOff)}"`;
+
+/** What root runs to undo keepManagerScript: the drop-in goes, and linger too when the drop-in says fleetd turned it
+ * on (`dropIn`, its text). */
+export function undoManagerScript(user: string, uid: number, dropIn: string): string {
+  const file = managerDropIn(uid);
+  const linger = dropIn.split("\n").includes(LINGER_MARK) ? `loginctl disable-linger ${user}; ` : "";
+  return `rm -f ${file}; rmdir ${file.slice(0, file.lastIndexOf("/"))} 2>/dev/null; ${linger}systemctl daemon-reload`;
+}
 
 /** Whether systemd brings this user's service manager back by itself, read from inside it: undefined off Linux, when
  * this process isn't a systemd user service, and when systemd can't be asked. */

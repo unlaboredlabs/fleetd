@@ -63,11 +63,36 @@ On the hub:
 fleetd machine remove <id>
 ```
 
-Add `--purge` to delete its data too. See [Machines](/docs/machines#remove).
+It stops the machine's node and its agents, and the hub forgets it. Add `--purge` to delete its data too. A machine
+that still runs a bot's lead is refused unless you add `--force`, which deletes those bots. See
+[Machines](/docs/machines#remove).
 
-## Uninstall the hub {#uninstall}
+## Remove fleetd from a machine {#remove}
 
-Remove each machine first. Then, on the hub:
+On each machine, the hub's included:
+
+```sh
+curl -fsSL https://fleetd.sh | sh -s -- --uninstall
+```
+
+It runs `fleetd uninstall` first, which stops and removes everything fleetd runs there:
+
+- the node's service, and the agents it left running, their Claude sessions included;
+- the hub's service, on the hub's machine;
+- the root drop-in setup wrote so the services keep running, and linger if fleetd turned it on. Without sudo it
+  prints the one command to run as root.
+
+Then it checks that no fleetd service or process is left, and only then removes the CLI and the app. If something
+still runs, it names it with its pid and keeps the CLI, so you can stop it and run the uninstall again.
+
+Your data in `~/.fleetd` stays; delete it yourself if you want it gone.
+
+On the hub, uninstalling names any machine that still runs this hub's node. Run the same line there. A machine that
+joined by itself stays listed on its hub until an admin removes it in Settings › Hub › Machines.
+
+## Uninstall from a terminal {#uninstall}
+
+`fleetd uninstall` alone does the first half: it removes fleetd's services on this machine and keeps the CLI.
 
 ```console capture=uninstall
 $ fleetd uninstall
@@ -75,13 +100,10 @@ no hub service at ~/.config/systemd/user/fleetd-hub.service
 kept the hub's data in ~/.fleetd/hub; fleetd init starts it again, --purge deletes it
 ```
 
-It removes the hub's service and keeps its data. `--purge` deletes the data in `~/.fleetd/hub` too.
+`--purge` also deletes the hub's data in `~/.fleetd/hub` and the node's files.
 
-## Remove the CLI and app {#remove}
+## If the hub's port is taken {#port}
 
-```sh
-curl -fsSL https://fleetd.sh | sh -s -- --uninstall
-```
-
-It runs `fleetd uninstall`, then removes the CLI and the app. Your data in `~/.fleetd` stays; delete it yourself if
-you want it gone.
+If another program takes the hub's port, systemd keeps starting the hub every 5 seconds, and the hub is back within
+seconds of the port coming free. `fleetd init` names the program holding the port, and gives the command that moves
+the hub to a free port on the same address instead.

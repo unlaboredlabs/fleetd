@@ -59,7 +59,8 @@ curl -fsSL https://fleetd.sh | sh -s -- --no-init
 - `--join <url> --code <code>`: join a hub as a machine instead of running the wizard. `fleetd pair --worker` prints
   this line for you. See [Machines](/docs/machines#join).
 - `--mac`: with `--join`, join as [the agents' Mac](/docs/agents-mac).
-- `--uninstall`: remove the CLI and the app. See [Updating & uninstall](/docs/updating-and-uninstall#remove).
+- `--uninstall`: stop and remove fleetd's services on this machine, then the CLI and the app. See
+  [Updating & uninstall](/docs/updating-and-uninstall#remove).
 
 ## Builds
 

@@ -2,14 +2,17 @@
 // --yes (or --join) only sets up the hub, as scripts expect: setup.json, and unless --no-service the user service
 // that runs it. The wizard (a terminal, --yes, --join, --step) is listed as not ported in PORT_MAP.md.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { NotImplemented } from "../../shared/errors.ts";
-import { fleetdDir } from "../../shared/home.ts";
+import { fleetdDir, relocated } from "../../shared/home.ts";
+import { settingsPath } from "../../shared/settings_path.ts";
 import { ArgError, parse } from "../args.ts";
 import { type Failure, type GitIdentity, ioMessage, isLiveHubHome, isNoreply, liveHubRefusal, mkdirPrivate, parseGitIdentity, readSetup, resolveHome, type SetupState, writeSetup } from "../common.ts";
-import { currentExe, DEFAULT_LISTEN, localDirs, localPlatform, localUid, parseListen, type Probe, probeListen, processesHolding, say, SETUP_USAGE } from "./shared.ts";
+import { machineLayout, machineLayoutAt, planMachineRemove } from "./machine_plan.ts";
+import { currentExe, DEFAULT_LISTEN, listeners, localDirs, localPlatform, localUid, parseListen, type Platform, type Probe, probeListen, processesHolding, say, SETUP_USAGE } from "./shared.ts";
 import { type InitOptions, joinedHere, openStep, run } from "./wizard.ts";
-import { foreignUnit, renderUnit, ServiceManager, type ServiceSpec, systemdName, unitPath } from "./units.ts";
+import { foreignUnit, managerDropIn, renderUnit, ServiceManager, type ServiceSpec, systemdName, undoManagerScript, unitPath } from "./units.ts";
 
 const STEPS = ["address", "machines", "claude", "github", "onepassword", "people", "mac"];
 
@@ -55,14 +58,30 @@ export function hubServiceSpec(home: string, listen: string, exe: string, path: 
 type Unit = "missing" | "same" | "changed";
 type HubAction = "install" | "keep" | "by_hand" | "not_running" | Failure;
 
+/** What holds the hub's address when something else does: the program seen listening there (`by`, "nginx (pid
+ * 812)"), and the command that moves the hub to a free port on the same address (`move`). */
+export type Busy = { by?: string; move?: string };
+
 /** What `fleetd init` does about the hub, from what it found. */
-export function hubAction(withService: boolean, unit: Unit, holders: number[], probe: Probe, listen: string, home: string): HubAction {
+export function hubAction(
+  withService: boolean,
+  unit: Unit,
+  holders: number[],
+  probe: Probe,
+  listen: string,
+  home: string,
+  taken: Busy = {},
+): HubAction {
   const pids = holders.join(", ");
+  // Never onto another address: a hub on the LAN or the tailnet moved to 127.0.0.1 is out of its devices' reach.
   const busy = (what: string): Failure => ({
-    message: `${listen} is in use by ${what}`,
-    fix: "pick a free address: fleetd init --listen 127.0.0.1:4791",
+    message: `${listen} is in use by ${what}${taken.by === undefined ? "" : `: ${taken.by}`}`,
+    fix: `stop it, and the hub's service starts again by itself within seconds; or move the hub to another port on the same address: ${taken.move ?? `fleetd init --listen ${listen.slice(0, listen.lastIndexOf(":") + 1)}<free port>`} (paired devices then reach it there)`,
   });
   const held = holders.length > 0;
+  // A program seen on the port that isn't this home's hub: so whatever this hub's service does (it starts again every
+  // 5 s, and may hold its database just then), it can't listen there.
+  if (probe === "other" && taken.by !== undefined) return busy("something else");
   if (withService && held && unit === "missing") {
     return {
       message: `a hub started by hand runs on ${home} (pid ${pids})`,
@@ -80,6 +99,26 @@ export function hubAction(withService: boolean, unit: Unit, holders: number[], p
   }
   if (probe === "free") return withService ? "install" : "not_running";
   return busy(probe === "hub" ? "another fleetd hub" : "something else");
+}
+
+/** Who holds `listen` besides this fleet's hub (`hubs`, the processes with its database open), and the first free port after it on the same host, as `fleetd init`
+ * would be told to move there (with `url`'s port moved along when it was the same). */
+async function taken([host, port]: [string, number], url: string, hubs: number[]): Promise<Busy> {
+  const held = listeners(port).filter((l) => l.pid !== process.pid && !hubs.includes(l.pid));
+  const by = held.length === 0 ? undefined : held.map((l) => `${l.name || "a program"} (pid ${l.pid})`).join(", ");
+  let free = port + 1;
+  while (free < port + 20 && (await probeListen([host, free])) !== "free") free++;
+  if (free >= port + 20) return by === undefined ? {} : { by };
+  const h = host.includes(":") ? `[${host}]` : host;
+  let move = `fleetd init --listen ${h}:${free}`;
+  try {
+    const u = new URL(url);
+    if (u.port === String(port)) {
+      u.port = String(free);
+      move += ` --url ${u.toString().replace(/\/$/, "")}`;
+    }
+  } catch {}
+  return { ...(by === undefined ? {} : { by }), move };
 }
 
 export type HubPlan = { home: string; listen: string; url: string; identity?: GitIdentity; withService: boolean; restart: boolean };
@@ -116,7 +155,8 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
     throw { message: `${unitFile} runs another fleet's hub`, fix: "pass --no-service to run the hub yourself" } satisfies Failure;
   }
   const holders = processesHolding(join(plan.home, "hub.sqlite"));
-  let action = hubAction(plan.withService, unit, holders, await probeListen(listen), plan.listen, plan.home);
+  const probe = await probeListen(listen);
+  let action = hubAction(plan.withService, unit, holders, probe, plan.listen, plan.home, probe === "free" ? {} : await taken(listen, plan.url, holders));
   if (typeof action === "object") throw action;
   if (action === "keep" && plan.restart) action = "install";
   try {
@@ -270,9 +310,14 @@ export async function initCommand(argv: string[]): Promise<number> {
   return initPlain(opts);
 }
 
+/** `fleetd uninstall`: everything fleetd runs on this machine stops and goes, its data stays (`--purge` deletes it).
+ * The node first, with the agents it left running, then the hub, then, once no fleetd service is left, the root
+ * drop-in setup wrote for the user's service manager, with linger when fleetd turned that on. A machine still running
+ * this hub's node elsewhere is named, with the line that removes fleetd there. */
 export async function uninstallCommand(argv: string[]): Promise<number> {
   const v = parse(argv, { options: { purge: "bool" }, positionals: false });
   if (v instanceof ArgError) return usage(v.message);
+  const purge = v.flag("purge");
   const home = resolveHome();
   if (isLiveHubHome(home)) return fail(liveHubRefusal("fleetd uninstall"));
   let state: SetupState | undefined;
@@ -283,6 +328,9 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
   }
   const platform = localPlatform();
   if (platform !== undefined) {
+    const node = await removeNode(platform, purge, state === undefined);
+    if (typeof node === "number") return node;
+    let removed = node.removed;
     const file = unitPath(platform, localDirs(), "hub");
     let existing: string | undefined;
     try {
@@ -293,7 +341,7 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
     } else if (existing !== undefined) {
       const uid = localUid();
       try {
-        await sh(new ServiceManager(platform, uid, () => file).remove("hub"), say);
+        await sh(new ServiceManager(platform, uid, () => file).remove("hub"), () => {});
       } catch (error) {
         return fail((error as Error).message);
       }
@@ -302,20 +350,28 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
       } catch (error) {
         return fail(`cannot remove ${file}: ${ioMessage(error)}`);
       }
-      say(`removed ${file}`);
-      if (platform === "linux") await sh(`XDG_RUNTIME_DIR=/run/user/${uid} systemctl --user daemon-reload`, say).catch(() => {});
-    } else {
+      say(`stop and remove the hub service (${file})`);
+      removed = true;
+      if (platform === "linux") await sh(`XDG_RUNTIME_DIR=/run/user/${uid} systemctl --user daemon-reload`, () => {}).catch(() => {});
+    } else if (state !== undefined || existsSync(home)) {
       say(`no hub service at ${file}`);
     }
+    if (platform === "linux" && removed) await removeManagerDropIn();
   }
-  const machines = Object.keys(state?.machines ?? {});
-  if (machines.length > 0) {
-    say(`machines still set up from this hub: ${machines.join(", ")} (fleetd machine remove <id> undoes each)`);
+  const elsewhere = Object.entries(state?.machines ?? {})
+    .filter(([, r]) => r.local !== true)
+    .map(([id]) => id);
+  if (elsewhere.length > 0) {
+    say(
+      `${elsewhere.join(", ")} still ${elsewhere.length === 1 ? "runs" : "run"} this hub's node: on each, run ${UNINSTALL_LINE} (or remove it from here first: fleetd machine remove <id>)`,
+    );
   }
-  if (!v.flag("purge")) {
-    say(`kept the hub's data in ${home}; fleetd init starts it again, --purge deletes it`);
+  if (!purge) {
+    if (state !== undefined || existsSync(join(home, "hub.sqlite"))) say(`kept the hub's data in ${home}; fleetd init starts it again, --purge deletes it`);
     return 0;
   }
+  // A worker or a laptop has no hub to delete.
+  if (!existsSync(home)) return 0;
   if (!existsSync(join(home, "hub.sqlite")) && state === undefined) {
     return fail(`${home} does not look like a hub home (no hub.sqlite or setup.json); not deleting it`);
   }
@@ -328,4 +384,76 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
   }
   say(`deleted ${home}`);
   return 0;
+}
+
+/** What removes fleetd from a machine, as a person pastes it there. */
+export const UNINSTALL_LINE = "curl -fsSL https://fleetd.sh | sh -s -- --uninstall";
+
+/** This machine's node, as `machine remove` undoes it (machine_plan.ts planMachineRemove): its service stopped and
+ * removed, the agents it left running stopped, and with `purge` its files deleted. A worker that joined by itself
+ * (`worker`, no hub here) says where the hub still lists it. Whether a service was removed, or the exit code of a step
+ * that failed. */
+async function removeNode(platform: Platform, purge: boolean, worker: boolean): Promise<{ removed: boolean } | number> {
+  const dirs = localDirs();
+  const fleetd = relocated();
+  const layout = fleetd === undefined ? machineLayout(dirs.home) : machineLayoutAt(dirs.home, fleetd);
+  const file = unitPath(platform, dirs, "node");
+  let text: string | undefined;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {}
+  if (text !== undefined && foreignUnit(text, layout.nodeHome)) {
+    say(`left ${file} alone: it runs another fleet's node`);
+    return { removed: false };
+  }
+  if (text === undefined && !(purge && existsSync(layout.nodeHome))) return { removed: false };
+  let joined: { hub?: unknown; machineId?: unknown } | undefined;
+  try {
+    joined = JSON.parse(readFileSync(layout.nodeConfig, "utf8"));
+  } catch {}
+  const steps = planMachineRemove(platform, dirs.home, fleetd, dirs.configHome, localUid(), text !== undefined, purge);
+  for (const [i, step] of steps.entries()) {
+    const proc = Bun.spawn(["/bin/sh", "-c", step.command], { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    if (code !== 0) {
+      const rest = steps.slice(i).map((s) => `    ${s.command}`);
+      return fail(`couldn't ${step.title} (exit ${code}): ${stderr.trim()}. Fix: run the remaining steps yourself:\n${rest.join("\n")}`);
+    }
+    if (step.title.startsWith("forget")) continue;
+    say(`${step.title}${i === 0 ? ` (${file})` : ""}${stdout.trim() === "" ? "" : `: ${stdout.trim()}`}`);
+  }
+  if (!purge && existsSync(layout.nodeHome)) say(`kept the node's files in ${layout.nodeHome}; --purge deletes them`);
+  if (worker && typeof joined?.hub === "string" && typeof joined.machineId === "string") {
+    say(`the hub at ${joined.hub} still lists ${joined.machineId}: an admin removes it there, in ${settingsPath("Machines")}`);
+  }
+  return { removed: text !== undefined };
+}
+
+/** The drop-in setup writes as root so systemd starts the user's service manager again (units.ts keepManagerScript),
+ * and linger when fleetd turned that on: undone once no fleetd service is left, as root where that needs no password,
+ * else said with the one command. Only by an uninstall that removed one of this home's services: another fleet on this
+ * machine (its own fleetd dir), or a throwaway HOME (tests, the docs' captures), shares the user and leaves them. */
+async function removeManagerDropIn(): Promise<void> {
+  if (relocated() !== undefined) return;
+  const dirs = localDirs();
+  if ((["hub", "node"] as const).some((role) => existsSync(unitPath("linux", dirs, role)))) return;
+  const uid = localUid();
+  const file = managerDropIn(uid);
+  let dropIn: string;
+  try {
+    dropIn = readFileSync(file, "utf8");
+  } catch {
+    return;
+  }
+  // As the probe names the user (machine_plan.ts): userInfo() can't always.
+  const user = Bun.spawnSync(["id", "-un"], { stdin: "ignore", stderr: "ignore" }).stdout.toString().trim() || userInfo().username;
+  const script = undoManagerScript(user, uid, dropIn);
+  const linger = script.includes("disable-linger");
+  const what = `${file}${linger ? ` and linger for ${user}` : ""}`;
+  const asRoot = uid === 0 ? "" : Bun.spawnSync(["sudo", "-n", "true"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exitCode === 0 ? "sudo -n " : undefined;
+  if (asRoot !== undefined) await sh(`${asRoot}sh -c "${script}"`, () => {}).catch(() => {});
+  // logind keeps linger as a file per user.
+  const undone = !existsSync(file) && !(linger && existsSync(`/var/lib/systemd/linger/${user}`));
+  say(undone ? `removed ${what}` : `left ${what}, which only root can remove: sudo sh -c "${script}"`);
+  if (!linger) say(`linger stays on for ${user}, as fleetd didn't turn it on; sudo loginctl disable-linger ${user} turns it off`);
 }

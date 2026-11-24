@@ -646,7 +646,7 @@ export function serviceManager(scope: string, what: "hub" | "node", manager: Nod
     return entry("ok", `If ${user}'s service manager stops, systemd starts it again within seconds, and the ${what} with it.`);
   }
   const where = scope === "hub" ? "the hub's machine" : scope;
-  const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid));
+  const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid, !manager.linger));
   return manager.linger
     ? entry(
         "warn",

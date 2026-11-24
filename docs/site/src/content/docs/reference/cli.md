@@ -78,7 +78,7 @@ fleetd doctor
 
 ### fleetd uninstall {#uninstall}
 
-Stop and remove the hub's service; its data stays unless `--purge`.
+Stop and remove what fleetd runs on this machine.
 
 ```text
 fleetd uninstall [--purge]

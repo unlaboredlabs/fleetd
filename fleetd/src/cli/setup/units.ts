@@ -9,7 +9,7 @@ import type { Platform } from "./shared.ts";
 
 export type Role = "hub" | "node";
 export { q };
-export { keepManagerCommand, keepManagerScript, managerDropIn, ownUnit, readManager } from "../../update/service.ts";
+export { keepManagerCommand, keepManagerScript, managerDropIn, ownUnit, readManager, undoManagerScript } from "../../update/service.ts";
 
 export type ServiceSpec = {
   role: Role;
@@ -44,7 +44,8 @@ function systemdValue(value: string, exec: boolean): string {
  * its services by default. systemd-oomd, where it runs, picks other cgroups first. */
 const OOM_LINES = ["OOMScoreAdjust=-900", "ManagedOOMPreference=avoid"];
 
-/** Every key renderSystemdUnit writes, or has written. A unit with any other was edited by hand, and is left alone. */
+/** Every key renderSystemdUnit writes, or has written (`StartLimitBurst`, before systemd was told never to give up). A
+ * unit with any other was edited by hand, and is left alone. */
 const UNIT_KEYS = new Set([
   "Description",
   "StartLimitIntervalSec",
@@ -196,12 +197,14 @@ export function refreshOwnUnit(): void {
   else warn(name, `it may not start at the next boot: ${why}`);
 }
 
+/** systemd starts a service that exits again 5 s later, for good: with a start limit (5 in 300 s, until W890) a hub
+ * whose port another program held for half a minute stayed down once that program let go, until someone ran
+ * `fleetd init`. */
 export function renderSystemdUnit(spec: ServiceSpec): string {
   const lines = [
     "[Unit]",
     `Description=${spec.description}`,
-    "StartLimitIntervalSec=300",
-    "StartLimitBurst=5",
+    "StartLimitIntervalSec=0",
     "",
     "[Service]",
     "Type=simple",

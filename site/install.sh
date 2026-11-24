@@ -21,7 +21,8 @@
 # the hub's Update then brings the hub level with it. FLEETD_CHANNEL is then not read.
 #
 # FLEETD_CHANNEL=edge|stable picks the release (default edge, the newest build of main; nightly, its name until
-# D203, is edge too). FLEETD_BASE_URL points at another directory of release assets.
+# D203, is edge too). Every build goes out on edge (D701); stable, a tagged release, has none yet, and says so.
+# FLEETD_BASE_URL points at another directory of release assets.
 #
 # Everything runs from main at the end, so a partly downloaded script does nothing.
 set -eu
@@ -189,6 +190,10 @@ spin() {
 }
 spin_draw() { draw "$1" "$spin_title" "$spin_detail"; }
 
+# get <curl arguments>: curl, which gives up on a connection not open within 20 s or a transfer under 1 KB/s for 30 s,
+# and then tries 3 times more (curl retries a timeout), rather than wait forever on a network that dropped.
+get() { curl -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --retry 3 "$@"; }
+
 # download <url> <dest> <what>: curl <url> to <dest>; on a terminal with a progress bar of the bytes on disk against
 # the last Content-Length curl got (a redirect's comes first), or only the bytes when there is none.
 download() {
@@ -197,10 +202,10 @@ download() {
   dl_total=0
   dl_got=0
   if [ "$rich" = 0 ]; then
-    curl -fsSL --retry 3 -o "$2" "$1" || return
+    get -o "$2" "$1" || return
   else
     rm -f "$tmp/headers" "$2"
-    run_live download_draw curl -fsSL --retry 3 -D "$tmp/headers" -o "$2" "$1" || return
+    run_live download_draw get -D "$tmp/headers" -o "$2" "$1" || return
   fi
   [ ! -f "$2" ] || dl_got=$(($(wc -c <"$2")))
   done_step Download "$dl_what · $(size "$dl_got")"
@@ -252,7 +257,8 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
                 command fleetd pair --worker prints on the hub; --mac joins the agents'
                 Mac, from Terminal logged in at its screen; --version installs the
                 hub's own build
-  --uninstall   remove the CLI and the app (fleetd's data in ~/.fleetd stays)
+  --uninstall   stop and remove fleetd's services on this machine, then the CLI and
+                the app (fleetd's data in ~/.fleetd stays)
 
 Environment: FLEETD_CHANNEL=edge|stable (default edge), FLEETD_BASE_URL=<asset directory>
 EOF
@@ -288,9 +294,9 @@ pin() {
 
 # lists: the release's release.json, else (a release from before it) its SHA256SUMS, into $tmp.
 lists() {
-  curl -fsSL --retry 3 -o "$tmp/release.json" "$base/release.json" 2>/dev/null && return 0
+  get -o "$tmp/release.json" "$base/release.json" 2>/dev/null && return 0
   rm -f "$tmp/release.json"
-  curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+  get -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
 }
 
 # fetch <asset> <dest> <what>: download one release asset and check it. Edge republishes its names in place, and a
@@ -310,7 +316,7 @@ Run the installer again; if it keeps failing, report it at https://github.com/$R
     checked "$actual"
     return 0
   fi
-  [ -f "$tmp/SHA256SUMS" ] || curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
+  [ -f "$tmp/SHA256SUMS" ] || get -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
 Check this machine's connection and run the installer again."
   tries=0
   while :; do
@@ -329,7 +335,7 @@ Check this machine's connection and run the installer again."
 Run the installer again; if it keeps failing, report it at https://github.com/$REPO/issues."
     warn "checksum mismatch for $1, perhaps a new release going up; checking again in 10 s"
     sleep 10
-    curl -fsSL --retry 3 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
+    get -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS
 Check this machine's connection and run the installer again."
   done
 }
@@ -370,10 +376,47 @@ install_cli() {
     done_step Install "$(tilde "$bin_dir/fleetd")"
     case ":$PATH:" in
       *":$HOME/.local/bin:"*) done_step PATH "$(tilde "$link")" ;;
-      *) done_step PATH "$(tilde "$link") · $(tilde "$HOME/.local/bin") isn't on your PATH yet" ;;
+      *) add_path ;;
     esac
   fi
   installed=1
+}
+
+# The line add_path puts in a shell's startup file, and uninstall takes out again. Single quotes: it is written as is.
+# shellcheck disable=SC2016
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH" # added by fleetd'
+
+# profile: the startup file of this user's shell, where ~/.local/bin goes on PATH; nothing for a shell that takes no
+# sh line (fish). bash on macOS opens login shells, which read ~/.bash_profile.
+profile() {
+  case "${SHELL:-}" in
+    */zsh) printf '%s' "${ZDOTDIR:-$HOME}/.zshrc" ;;
+    */bash) if [ "$(uname -s)" = Darwin ]; then printf '%s' "$HOME/.bash_profile"; else printf '%s' "$HOME/.bashrc"; fi ;;
+    */fish) ;;
+    *) printf '%s' "$HOME/.profile" ;;
+  esac
+}
+
+# add_path: ~/.local/bin isn't on PATH, so `fleetd` alone isn't found: it goes on it for every new shell, in the
+# shell's startup file, unless that file has a line for it already; this shell gets the line to paste.
+add_path() {
+  file="$(profile)"
+  # shellcheck disable=SC2016
+  now='export PATH="$HOME/.local/bin:$PATH"'
+  if [ -z "$file" ]; then
+    done_step PATH "$(tilde "$link")"
+    warn "$(tilde "$HOME/.local/bin") isn't on your PATH: fish_add_path ~/.local/bin puts it there"
+  elif [ -f "$file" ] && grep -q '\.local/bin' "$file"; then
+    done_step PATH "$(tilde "$link") · $(tilde "$file") adds $(tilde "$HOME/.local/bin") in new shells"
+    say "in this one, run: ${now}"
+  elif printf '\n%s\n' "$PATH_LINE" >>"$file" 2>/dev/null; then
+    done_step PATH "$(tilde "$link") · added $(tilde "$HOME/.local/bin") to PATH in $(tilde "$file")"
+    say "new shells find fleetd; in this one, run: ${now}"
+  else
+    done_step PATH "$(tilde "$link")"
+    warn "$(tilde "$HOME/.local/bin") isn't on your PATH, and $(tilde "$file") can't be written: add this line to your shell's startup file
+${now}"
+  fi
 }
 
 install_app_macos() {
@@ -468,19 +511,124 @@ From a terminal: APPIMAGE_EXTRACT_AND_RUN=1 $(tilde "$app_dir/fleetd-desktop.App
   installed=1
 }
 
+# units: fleetd's service files here, a path a line: what `fleetd init`, `machine add` and `init --join` write.
+units() {
+  for u in "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fleetd-hub.service" \
+    "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/fleetd-node.service" \
+    "$HOME/Library/LaunchAgents/sh.fleetd.hub.plist" "$HOME/Library/LaunchAgents/sh.fleetd.node.plist"; do
+    [ ! -f "$u" ] || printf '%s\n' "$u"
+  done
+}
+
+# running [<what>]: the processes run from fleetd's CLI (<what> one of its commands, as session-host), "<pid> <command
+# line>" a line. A binary an earlier uninstall deleted under a running node still shows its path.
+running() {
+  { ps -eo pid=,args= 2>/dev/null || ps -o pid=,args=; } | awk -v exe="$bin_dir/fleetd" -v what="${1:-}" '
+    { pid = $1; sub(/^[ \t]*[0-9]+[ \t]+/, "") }
+    index($0, exe) == 1 && (substr($0, length(exe) + 1, 1) == " " || length($0) == length(exe)) {
+      if (what == "" || $2 == what) print pid " " $0
+    }'
+}
+
+user_ctl() { XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" systemctl --user "$@"; }
+
+# stop_units: what `fleetd uninstall` does, without the CLI (an uninstall from before W890 deleted it under a running
+# node): each service stopped and its file removed, then the agents' session hosts, which outlive the node on purpose,
+# told to stop as the CLI's `session-host stop-all` would.
+stop_units() {
+  units | while IFS= read -r u; do
+    case "$u" in
+      *.service)
+        # Only the unit the user's manager loaded from this very file: a unit of the same name from elsewhere is
+        # another fleetd's.
+        name="${u##*/}"
+        from="$(user_ctl show -p FragmentPath --value "$name" 2>/dev/null || true)"
+        if [ -z "$from" ] || [ "$from" = "$u" ]; then user_ctl disable --now "$name" 2>/dev/null || true; fi
+        ;;
+      *.plist)
+        label="${u##*/}"
+        launchctl bootout "gui/$(id -u)/${label%.plist}" 2>/dev/null || true
+        ;;
+    esac
+    rm -f "$u"
+    say "stopped and removed $(tilde "$u")"
+  done
+  ! command -v systemctl >/dev/null 2>&1 || user_ctl daemon-reload 2>/dev/null || true
+  # Only root removes the drop-in setup wrote for the user's service manager (the CLI's uninstall does, with sudo).
+  dropin="/etc/systemd/system/user@$(id -u).service.d/fleetd.conf"
+  if [ -f "$dropin" ]; then
+    off=""
+    ! grep -qx '# fleetd turned linger on' "$dropin" 2>/dev/null || off="; loginctl disable-linger $(id -un)"
+    say "left ${dropin}, which only root can remove: sudo sh -c \"rm -f ${dropin}${off}; systemctl daemon-reload\""
+  fi
+  hosts="$(running session-host | cut -d' ' -f1)"
+  # shellcheck disable=SC2086 # one pid a word
+  [ -z "$hosts" ] || kill $hosts 2>/dev/null || true
+  i=0
+  while [ -n "$(running session-host)" ] && [ "$i" -lt 10 ]; do
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
+# unpath: add_path's line out of each startup file it may be in, once nothing else is in ~/.local/bin, which other
+# programs' installers use too.
+unpath() {
+  [ -z "$(ls -A "$HOME/.local/bin" 2>/dev/null)" ] || return 0
+  for f in "${ZDOTDIR:-$HOME}/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    if [ ! -f "$f" ] || ! grep -qxF "$PATH_LINE" "$f"; then continue; fi
+    grep -vxF "$PATH_LINE" "$f" >"$f.fleetd-tmp" || true
+    cat "$f.fleetd-tmp" >"$f" && rm -f "$f.fleetd-tmp"
+    say "took the PATH line out of $(tilde "$f")"
+  done
+}
+
+# uninstall: fleetd's services stop and go first (`fleetd uninstall`), and only once none is left, and nothing runs from
+# the CLI any more, do the CLI and the app go: a CLI deleted under a running node left it, and its agents, running
+# from a deleted binary, and a service that crash-looped after the next reboot.
 uninstall() {
+  rc=127
   if [ -x "$bin_dir/fleetd" ]; then
-    # Stops and removes the services `fleetd init` created; keeps their data.
-    "$bin_dir/fleetd" uninstall || warn "fleetd uninstall failed; remove its services by hand if any are left"
+    # Stops and removes this machine's services, the agents they left running and what setup arranged as root; keeps
+    # their data.
+    rc=0
+    "$bin_dir/fleetd" uninstall || rc=$?
+  fi
+  # 126 and 127: no CLI that runs here (deleted, damaged, another machine's build).
+  case "$rc" in
+    0) ;;
+    126 | 127) stop_units ;;
+    *) die "fleetd uninstall stopped, so nothing else was removed
+Fix what it said, then run the uninstall again." ;;
+  esac
+  left="$({
+    units | sed 's/^/service: /'
+    running | sed 's/^\([0-9]*\) \(.*\)$/running: pid \1, \2/'
+  })"
+  if [ -n "$left" ]; then
+    why=""
+    die "fleetd still runs here, so its CLI stays for now
+${left}
+Stop what runs (kill <pid> for a fleetd you started yourself), then run the uninstall again."
   fi
   rm -rf "$bin_dir"
   link="$HOME/.local/bin/fleetd"
   if [ -L "$link" ] && [ "$(readlink "$link")" = "$bin_dir/fleetd" ]; then rm -f "$link"; fi
+  unpath
   # fleetd.desktop is the GPUI app's menu entry.
   rm -rf "$HOME/Applications/fleetd.app" "$app_dir" "$apps_dir/fleetd.desktop" "$apps_dir/fleetd-desktop.desktop"
-  rmdir "$app_dir_parent" 2>/dev/null || true
-  done_step Remove "the fleetd CLI and app"
-  footer "Your data in ~/.fleetd is still there; delete it yourself if you want it gone."
+  rmdir "$app_dir_parent" "$HOME/.fleetd" 2>/dev/null || true
+  done_step Remove "the fleetd CLI and app; no fleetd service or process is left"
+  kept=""
+  [ ! -d "$HOME/.fleetd" ] || kept="$(tilde "$HOME/.fleetd")"
+  for d in "${XDG_CONFIG_HOME:-$HOME/.config}/fleetd" "$HOME/Library/Application Support/fleetd"; do
+    [ ! -d "$d" ] || kept="${kept:+${kept} and }$(tilde "$d")"
+  done
+  if [ -n "$kept" ]; then
+    footer "Your data in ${kept} is still there; delete it yourself if you want it gone."
+  else
+    footer "fleetd is gone from this machine."
+  fi
 }
 
 # agents_mac_user: --mac joins the agents' Mac from the account logged in at its screen (an admin's is fine), where
@@ -624,8 +772,9 @@ main() {
   command -v curl >/dev/null 2>&1 || die "need curl to download fleetd
 Install it with this machine's package manager (sudo apt install curl, say), then run the installer again."
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t fleetd)"
-  # A download still running in the background goes with the script, and so does the hidden cursor.
-  trap 'rm -rf "$tmp"; [ -z "$job" ] || kill "$job" 2>/dev/null; unlive; [ "$rich" = 0 ] || printf "\033[?25h"' EXIT
+  # A download still running in the background goes with the script, and so does the hidden cursor, and what it left
+  # half written (a dropped network, Ctrl-C): a finished step has renamed its .new into place already.
+  trap '[ -z "$job" ] || kill "$job" 2>/dev/null; rm -rf "$tmp" "${bin_dir}/.fleetd.new" "${HOME}/Applications/.fleetd.app.new" "${app_dir}.new"; unlive; [ "$rich" = 0 ] || printf "\033[?25h"' EXIT
   trap 'exit 1' INT TERM
   # release.json first: it names the channel's build and pins its assets (fetch). A release without one has SHA256SUMS.
   if ! spin Release "looking for the $channel release" lists; then
@@ -638,9 +787,15 @@ Install it with this machine's package manager (sudo apt install curl, say), the
       warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
       base="https://github.com/$REPO/releases/latest/download"
     fi
-    spin Release "looking for the $channel release" lists ||
+    if ! spin Release "looking for the $channel release" lists; then
+      # Every build of fleetd is published on edge (D701), and none on stable yet: GitHub has no latest release.
+      if [ "$channel" = stable ] && [ -z "$hub_version" ] && [ -z "${FLEETD_BASE_URL:-}" ]; then
+        die "fleetd has no stable release yet
+Every build goes out on the edge release, with a staged rollout: run the installer without FLEETD_CHANNEL."
+      fi
       die "could not download $base/release.json or $base/SHA256SUMS
 Check this machine's connection, and that the $channel channel has a release, then run the installer again."
+    fi
   fi
   version=""
   [ ! -f "$tmp/release.json" ] ||
