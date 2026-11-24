@@ -4,6 +4,7 @@
 // sections and search. Values never come through here except as the person types them into a form; the lists
 // hold metadata alone.
 import { isArchived, type HubState, type ProjectSummary } from "../../desktop";
+import { totpKeyProblem } from "./totp";
 import type { VaultAuditEntry, VaultImportCard, VaultItemSummary, VaultKind } from "./types";
 
 /** Whether the hub has a vault: an older one shows no Vault rows rather than a screen that fails. */
@@ -385,6 +386,9 @@ export const check = (d: Draft, editing: boolean, now: Date): { ok: true; value:
       put("username", f("username"));
       // A password is kept exactly as typed: spaces may be part of it.
       if ((d.fields.password ?? "") !== "") secret.password = d.fields.password!;
+      // Only a key that makes codes: the hub refuses any other, and the item screen shows its code.
+      const totp = totpKeyProblem(f("totp"));
+      if (totp !== undefined) return { ok: false, problem: totp };
       put("totp", f("totp").replace(/\s/gu, ""));
       put("notes", f("notes"));
       if (label === "") label = sites[0] ?? "";

@@ -1,6 +1,7 @@
 // One vault item, as iOS's Passwords opens one: its tile, label and line on top; then its fields, each hidden until
 // the person asks. Tapping a hidden field asks for Face ID (or the passcode), then shows every field of the item for 30
-// seconds; tapping a shown one copies it to a clipboard that stays on this phone and empties itself after a minute.
+// seconds; tapping a shown one copies it to a clipboard that stays on this phone and empties itself after a minute. A
+// login's verification code shows as the code its setup key makes now, with the seconds it has left, never the key.
 // Leaving the screen, or the app going to the background, hides them at once: a value lives in this screen's state
 // only while it's on screen, and is never logged. A plain variable shows as it is, its value in the list's metadata.
 // Then the sites it fills on, its last 20 uses (vault_get's activity), and Delete. Only its creator or an admin may
@@ -20,6 +21,7 @@ import { confirmDestructive, errorWords, Problem, Symbol, useRead } from "../man
 import { deleteItem, readItem, reveal, vaultErrorWords, vaultHub } from "./api";
 import { auditLine, KIND_WORDS, CLIPBOARD_MS, copyText, isSecretEnv, offWhy, presentFields, REVEAL_MS, rowLine, sealedFields, shownFields, sitesMeta, titleOf, type FieldSpec } from "./model";
 import { KindTile, useVaultChanged, useVaultNav, useVaultRoute } from "./parts";
+import { groupCode, totpNow } from "./totp";
 import { unlock } from "./unlock";
 
 const DOTS = "••••••••";
@@ -87,11 +89,24 @@ export function VaultItem() {
   // A plain variable's value comes with the list: there's nothing to guard.
   const values = plain && item?.value !== undefined ? { value: item.value } : shown;
 
+  // A shown verification code turns over every 30 seconds: the screen ticks each second while it's there.
+  const seed = shown?.totp;
+  const [tickMs, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (seed === undefined) return;
+    setTick(Date.now());
+    const every = setInterval(() => setTick(Date.now()), 1000);
+    return () => clearInterval(every);
+  }, [seed]);
+  const code = seed === undefined ? undefined : totpNow(seed, tickMs);
+
   const copy = async (f: FieldSpec) => {
     // A shown value was unlocked a moment ago; a hidden one asks first.
-    const value = (values ?? (await open(`Copy ${f.label.toLowerCase()}`)))?.[f.key];
+    const raw = (values ?? (await open(`Copy ${f.label.toLowerCase()}`)))?.[f.key];
+    // A verification code copies as the code it makes this second.
+    const value = f.key === "totp" && raw !== undefined ? totpNow(raw, Date.now())?.code : raw === undefined ? undefined : copyText(f.key, raw);
     if (value === undefined || value === "") return;
-    await Clipboard.setStringAsync(copyText(f.key, value), { ios: { localOnly: true, expiresAt: new Date(Date.now() + CLIPBOARD_MS) }, android: { isSensitive: true } });
+    await Clipboard.setStringAsync(value, { ios: { localOnly: true, expiresAt: new Date(Date.now() + CLIPBOARD_MS) }, android: { isSensitive: true } });
     haptics.success();
     setCopied(f.key);
     setTimeout(() => setCopied((c) => (c === f.key ? null : c)), 1500);
@@ -176,7 +191,8 @@ export function VaultItem() {
           <FieldRow
             key={f.key}
             field={f}
-            value={values?.[f.key]}
+            value={f.key === "totp" && seed !== undefined ? (code === undefined ? undefined : groupCode(code.code)) : values?.[f.key]}
+            {...(f.key === "totp" && seed !== undefined ? { note: code === undefined ? "Its setup key makes no codes. Edit it to add the site's." : `${String(code.left)} s` } : {})}
             shown={values !== null}
             copied={copied === f.key}
             busy={busy}
@@ -217,7 +233,24 @@ export function VaultItem() {
 }
 
 /** A field as iOS's Passwords shows one: its name small above, its value (or dots) below, and Copy's mark once shown. */
-function FieldRow({ field, value, shown, copied, busy, onPress }: { field: FieldSpec; value: string | undefined; shown: boolean; copied: boolean; busy: boolean; onPress?: () => void }) {
+function FieldRow({
+  field,
+  value,
+  note,
+  shown,
+  copied,
+  busy,
+  onPress,
+}: {
+  field: FieldSpec;
+  value: string | undefined;
+  /** A quiet word at its end (a code's seconds left), or under it when there's no value (why there's no code). */
+  note?: string;
+  shown: boolean;
+  copied: boolean;
+  busy: boolean;
+  onPress?: () => void;
+}) {
   const t = useTheme();
   const secret = field.masked || field.key === "number";
   const text = copied ? "Copied" : shown ? (value === undefined || value === "" ? "—" : value) : field.masked ? DOTS : "Hidden";
@@ -233,7 +266,9 @@ function FieldRow({ field, value, shown, copied, busy, onPress }: { field: Field
         >
           {text}
         </Text>
+        {note !== undefined && quiet && !copied ? <Text style={[type.footnote, { color: t.secondary }]}>{note}</Text> : null}
       </View>
+      {note !== undefined && !quiet ? <Text style={[type.subhead, { color: t.secondary, fontVariant: ["tabular-nums"] }]}>{note}</Text> : null}
       {busy && !shown ? <ActivityIndicator color={t.secondary} /> : shown && value !== undefined && value !== "" ? <Symbol ios="doc.on.doc" android="content_copy" size={17} color={t.tertiary} /> : null}
     </View>
   );

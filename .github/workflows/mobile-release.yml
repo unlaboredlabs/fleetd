@@ -287,6 +287,10 @@ jobs:
         run: |
           built="$(find "$RUNNER_TEMP/fleetd.xcarchive/Products/Applications" -path '*/EXUpdates.bundle/fingerprint' | head -1)"
           ../../.github/release/mobile-env.sh check "${built:-/nonexistent}" "$RUNTIME"
+      - name: Framework dSYMs
+        # Xcode writes dSYMs only for what it compiles: the prebuilt frameworks' (React Native's, Expo's precompiled
+        # modules') come from where they're published, so TestFlight crashes in them are symbolicated too.
+        run: ../../.github/release/ios-dsyms.sh "$RUNNER_TEMP/fleetd.xcarchive"
       # mobile-due.sh finds the builds that went to TestFlight by this step's name.
       - name: ${{ needs.signing.outputs.upload == 'true' && 'Upload to TestFlight' || 'Export' }}
         env:

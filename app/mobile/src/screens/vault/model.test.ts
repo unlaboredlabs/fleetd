@@ -207,6 +207,14 @@ describe("a form, checked", () => {
     expect(check(draft("login", { sites: "nope" }, { password: "x" }), false, NOW)).toEqual({ ok: false, problem: "nope isn't a website." });
   });
 
+  it("refuses a verification code setup key that makes no codes, as the hub does", () => {
+    const login = (totp: string) => check(draft("login", { sites: "shop.example" }, { password: "x", totp }), false, NOW);
+    expect(login("3")).toEqual({ ok: false, problem: "That setup key is too short: a site's has at least 16 letters and digits." });
+    expect(login("not a key at all!")).toMatchObject({ ok: false, problem: expect.stringContaining("letters A to Z and digits 2 to 7") });
+    expect(login("jbsw y3dp ehpk 3pxp")).toMatchObject({ ok: true, value: { secret: { password: "x", totp: "jbswy3dpehpk3pxp" } } });
+    expect(login("otpauth://totp/Shop:ada?secret=JBSWY3DPEHPK3PXP&issuer=Shop")).toMatchObject({ ok: true });
+  });
+
   it("checks a card and splits its expiry", () => {
     const ok = check(draft("card", {}, { number: "4242 4242 4242 4242", expiry: "04/28", cvc: "123", name: "A Person" }), false, NOW);
     expect(ok).toEqual({ ok: true, value: { secret: { number: "4242424242424242", month: "04", year: "28", cvc: "123", name: "A Person" }, label: "Visa ••4242", sites: [] } });
@@ -229,7 +237,7 @@ describe("a form, checked", () => {
     expect(check(login, true, NOW)).toEqual({ ok: true, value: { secret: { totp: "" }, label: "Shop", sites: [] } });
     // Undo keeps it; a field typed into again is sent as typed; a street can't be cleared; a new item clears nothing.
     expect(check(toggleCleared(login, "totp"), true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "Shop", sites: [] } });
-    expect(check({ ...login, fields: { totp: "JBSWY3DP" }, cleared: [] }, true, NOW)).toMatchObject({ ok: true, value: { secret: { totp: "JBSWY3DP" } } });
+    expect(check({ ...login, fields: { totp: "JBSWY3DPEHPK3PXP" }, cleared: [] }, true, NOW)).toMatchObject({ ok: true, value: { secret: { totp: "JBSWY3DPEHPK3PXP" } } });
     expect(check({ ...draft("address", { label: "Home" }), cleared: ["line1", "city"] }, true, NOW)).toEqual({ ok: true, value: { secret: {}, label: "Home", sites: [] } });
     expect(check({ ...draft("login", { sites: "x.com" }, { password: "p" }), cleared: ["notes"] }, false, NOW)).toMatchObject({ ok: true, value: { secret: { password: "p" } } });
   });
