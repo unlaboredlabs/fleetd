@@ -388,10 +388,20 @@ function readWay(w: SetupWay, checks: DoctorCheck[]): [SetupStatus, DoctorCheck 
   return [status, worst];
 }
 
-/** Each step's status is its best way's: one way done is enough, else one set up but failing wants a look, else to do. */
+/**
+ * Steps whose ways are in the order the hub uses them, the first set up the one that runs: Claude's (claude_accounts
+ * `runsOn`: the hub's key, else the owner's subscription, else each machine's login). A machine logged in doesn't
+ * make a failing hub key work.
+ */
+const FIRST_SET_UP_RUNS = new Set<SetupStepId>(["claude"]);
+
+/** Each step's status is its best way's: one way done is enough, else one set up but failing wants a look, else to do.
+ * A step of {@link FIRST_SET_UP_RUNS} reads only its first way that is set up. */
 export function read(steps: HubSetupStep[], checks: DoctorCheck[]): HubSetupStep[] {
   return steps.map((step) => {
-    const reads = step.ways.map((w) => [w, ...readWay(w, checks)] as const);
+    let reads = step.ways.map((w) => [w, ...readWay(w, checks)] as const);
+    const runs = FIRST_SET_UP_RUNS.has(step.id) ? reads.find(([, status]) => status !== "todo") : undefined;
+    if (runs) reads = [runs];
     let best: (typeof reads)[number] | undefined;
     for (const s of ["done", "look", "todo"] as const) {
       best = reads.find(([, status]) => status === s);

@@ -69,8 +69,33 @@ export async function connectWith(home: string, hub: string | undefined, client:
   try {
     return await McpClient.connect(listen, key, client, 15_000);
   } catch (error) {
-    throw again(`the hub does not answer at ${listen}: ${(error as Error).message}`);
+    throw unreachable(listen, (error as Error).message);
   }
+}
+
+/**
+ * Why the hub at `listen` didn't answer, in plain words rather than the HTTP client's (Bun's "socket connection was
+ * closed unexpectedly … pass `verbose: true`"): nothing there, something that isn't the hub holding its port, or slow.
+ */
+export function unreachable(listen: string, said: string): Failure {
+  let port = "4790";
+  try {
+    port = new URL(listen).port || port;
+  } catch {}
+  if (/ConnectionRefused|ECONNREFUSED|Unable to connect/i.test(said)) {
+    return again(`nothing answers at ${listen}: the hub isn't running`);
+  }
+  if (/closed unexpectedly|ECONNRESET|Malformed_HTTP_Response|Parse Error|Expected HTTP|HTTP \d{3}|invalid JSON|no answer to|without text content/i.test(said)) {
+    const which = process.platform === "darwin" ? `lsof -nP -iTCP:${port} -sTCP:LISTEN` : `ss -ltnp 'sport = :${port}'`;
+    return {
+      message: `something else answers at ${listen}, not fleetd's hub: another program may have taken port ${port}`,
+      fix: `see which with ${which}, stop it, then run fleetd init`,
+    };
+  }
+  if (/timed out|timeout/i.test(said)) {
+    return { message: `the hub at ${listen} didn't answer within 15 seconds`, fix: "fleetd doctor again in a minute; if it keeps failing, fleetd init" };
+  }
+  return again(`the hub doesn't answer at ${listen}: ${said.replace(/\s*For more information, pass `verbose: true`.*$/s, "").replace(/\.+$/, "")}`);
 }
 
 async function listChecks(client: McpClient): Promise<any[]> {
@@ -141,11 +166,42 @@ export async function hubHasTool(home: string, name: string): Promise<boolean> {
   }
 }
 
-/** One checklist line per check that isn't ok, except for machines in `idle`; how many passed. */
-export function show(list: Checklist, checks: any[], idle: string[]): number {
+/** Screens agents may use, which a machine needs only if they want them: the Android emulator and Linux desktops. */
+const OPTIONAL = [["android", "Android screens"], ["desktop", "Desktop screens"]] as const;
+
+/** An optional extra's name, for a check that is one (`<machine>/android`, `<machine>/desktop`). */
+export const optionalExtra = (id: unknown): string | undefined =>
+  typeof id === "string" ? OPTIONAL.find(([name]) => id.endsWith(`/${name}`))?.[1] : undefined;
+
+/** How many checks passed, of those that count: an optional extra that's off isn't a check failing. */
+export type Tally = [ok: number, of: number];
+
+/** The doctor's line under the checks: ✓ when every one that counts passes, else ! (each failing one is above). */
+export function tally(list: Checklist, [ok, of]: Tally, what: string) {
+  const text = `${ok} of ${of} ${what} pass`;
+  if (ok === of) list.done("doctor", text);
+  else list.warn("doctor", text);
+}
+
+/**
+ * One checklist line per check that isn't ok, except for machines in `idle`; an optional extra that's off reads as
+ * optional (–), with its fix, never as something that needs you.
+ */
+export function show(list: Checklist, checks: any[], idle: string[]): Tally {
   const said: [string | undefined, string][] = [];
+  let optionalOff = 0;
   for (const check of checks) {
     if (check.status === "ok" || (check.machineId !== undefined && idle.includes(check.machineId))) continue;
+    const extra = optionalExtra(check.id);
+    if (extra !== undefined) {
+      optionalOff++;
+      const fix = check.fix?.command ?? check.fix?.label;
+      const message = String(check.message).replace(/\.+$/, "");
+      // This hub's nodes say what it is and that it's optional; an older node's words don't.
+      const said = /optional/i.test(message) ? message : `${extra} are optional: ${message}`;
+      list.finish(check.machineId ?? "hub", "skipped", said, typeof fix === "string" ? fix : undefined);
+      continue;
+    }
     if (said.some(([m, msg]) => m === check.machineId && msg === check.message)) continue;
     said.push([check.machineId, check.message]);
     const state: State = check.status === "fail" ? "failed" : "warn";
@@ -162,7 +218,7 @@ export function show(list: Checklist, checks: any[], idle: string[]): number {
     }
     list.finish(`doctor ${title}`, state, String(check.message).replace(/\.+$/, ""), fix);
   }
-  return checks.filter((c) => c.status === "ok").length;
+  return [checks.filter((c) => c.status === "ok").length, checks.length - optionalOff];
 }
 
 export async function doctorCommand(argv: string[]): Promise<number> {
@@ -198,9 +254,9 @@ export async function doctorCommand(argv: string[]): Promise<number> {
       other = "other ";
     }
   } catch {}
-  const ok = show(list, checks, []);
+  const counted = show(list, checks, []);
   const line = await versions.line(client);
   if (line !== undefined) list.warn("versions", line);
-  list.done("doctor", `${ok} of ${checks.length} ${other}checks pass`);
+  tally(list, counted, `${other}checks`);
   return list.failures().length > 0 ? 1 : 0;
 }

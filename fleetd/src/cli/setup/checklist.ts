@@ -2,7 +2,7 @@
 // per group, a spinner while a check runs that resolves to one ✓/✗/!/– line and a one-line fix under a failure;
 // without one the same items as plain lines. Colors follow NO_COLOR.
 export type State = "done" | "failed" | "skipped" | "warn";
-export type Item = { title: string; state: State; detail: string; fix?: string };
+export type Item = { title: string; state: State; detail: string; fix?: string; settled?: true };
 
 /** As the Rust CLI's console crate colors stderr: only a terminal, and never with NO_COLOR. */
 const colored = () => process.stderr.isTTY === true && !process.env.NO_COLOR;
@@ -113,8 +113,16 @@ export class Checklist {
   warn(title: string, detail: string, fix?: string) {
     this.finish(title, "warn", detail, fix);
   }
+  /** What failed and still stands: not settled since. */
   failures() {
-    return this.items.filter((i) => i.state === "failed");
+    return this.items.filter((i) => i.state === "failed" && i.settled !== true);
+  }
+  /** Lines said already that the end list and the exit code no longer count: a step's tries inside it, or the step's
+   * own line once it is done. */
+  settle(which: (item: Item, at: number) => boolean) {
+    this.items.forEach((item, at) => {
+      if (which(item, at)) item.settled = true;
+    });
   }
   todo(title: string, detail: string, what: string, command: string) {
     this.skipped(title, detail);

@@ -4,6 +4,7 @@
 import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, setupLine } from "../../node/runner/claude/describe.ts";
+import { ClaudeAccountStore } from "../../hub/claude_accounts/index.ts";
 import type { HubDb } from "../../hub/store/db.ts";
 import { HubStore } from "../../hub/store/hub_store.ts";
 import { type GitIdentity, homeDir, isNoreply, type MachineRecord, parseGitIdentity, readSetup, resolveHome } from "../common.ts";
@@ -23,7 +24,7 @@ import {
   shortRemote,
   type Tailnet,
 } from "./detect.ts";
-import { addProject, connect, hubHasTool, run as runDoctor, show as showChecks, stillChecking } from "./doctor.ts";
+import { addProject, connect, hubHasTool, run as runDoctor, show as showChecks, stillChecking, tally } from "./doctor.ts";
 import { installHub } from "./index.ts";
 import { type Added, add as addMachine, candidates, Stop } from "./machine.ts";
 import { CLAUDE_INSTALL, claudeVerdict, verdictFix, verdictProblem } from "./machine_plan.ts";
@@ -72,10 +73,10 @@ function hubEnvRun(program: string, args: string[]): { code: number; stdout: str
 }
 
 /** A login flow or a clone with this terminal attached. */
-function attached(list: Checklist, program: string, args: string[]): boolean {
+function attached(list: Checklist, program: string, args: string[], env?: Record<string, string>): boolean {
   list.stopSpinner();
   try {
-    return Bun.spawnSync([program, ...args], { stdio: [terminal(), "inherit", "inherit"] }).exitCode === 0;
+    return Bun.spawnSync([program, ...args], { stdio: [terminal(), "inherit", "inherit"], ...(env ? { env: { ...process.env, ...env } } : {}) }).exitCode === 0;
   } catch {
     return false;
   }
@@ -185,7 +186,7 @@ async function reachability(
     let port = PORT;
     while (port < PORT + 10 && (await probeListen([ip, port])) !== "free") port++;
     const url = `http://${name}:${port}`;
-    choices.push([i, label, `${url} · ${why}`]);
+    choices.push([i, label, `${url} · ${why}${port === PORT ? "" : ` · ${PORT} is taken`}`]);
     addrs.push([`${ip}:${port}`, url]);
   }
   list.stopSpinner();
@@ -205,12 +206,57 @@ export function updateCommandFor(path: string): string {
   return "claude update";
 }
 
-/** The user's own claude, as fleetd's sessions run it. Offers the login when it is logged out. */
-async function hubClaude(ui: Ui, list: Checklist) {
-  const binary = which("claude");
+/** claude on PATH, else where its installers put it (machine_plan's lookup): one just installed isn't on PATH yet. */
+function claudeBinary(): string | undefined {
+  const home = homeDir();
+  const known = [join(home, ".local/bin/claude"), join(home, ".claude/local/claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
+  return which("claude") ?? known.find((f) => {
+    try {
+      return statSync(f).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** What the hub's leads sign in to Claude with when it isn't each machine's own login (claude_accounts `runsOn`: the
+ * hub's key, else the owner's subscription): then a machine's claude needs no login. Undefined on a hub not set up
+ * yet, or with no account of its own. */
+export function hubClaudeAccount(home: string): string | undefined {
+  let db: HubDb;
+  try {
+    db = openHub(home);
+  } catch {
+    return undefined;
+  }
+  try {
+    const setup = new ClaudeAccountStore(db).setup();
+    if (setup.hubApi !== undefined) return "the hub's API key";
+    return setup.owner !== undefined && setup.subscriptions.has(setup.owner) ? "the owner's subscription" : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    db.conn.close();
+  }
+}
+
+/**
+ * The user's own claude, as fleetd's sessions run it: installed first (offered here, as the machines that run agents
+ * need it), then logged in, or not, when the hub has an account of its own (`account`). Logged out with none, the
+ * login is offered; turned down, the Claude step at the end has the other ways. Whether claude is installed now.
+ */
+async function hubClaude(ui: Ui, list: Checklist, account: string | undefined): Promise<boolean> {
+  let binary = claudeBinary();
   if (binary === undefined) {
-    list.failed("claude", "is not installed; fleetd's agents run through it", install("claude"));
-    return;
+    const command = install("claude");
+    if (await ui.offerToRun(list, `claude isn't installed; fleetd's agents run through it. Install it now? (${command})`)) {
+      attached(list, "/bin/sh", ["-c", command]);
+      binary = claudeBinary();
+    }
+    if (binary === undefined) {
+      list.failed("claude", "is not installed; fleetd's agents run through it", command);
+      return false;
+    }
   }
   let real = binary;
   try {
@@ -235,16 +281,23 @@ async function hubClaude(ui: Ui, list: Checklist) {
     }
     const detail = setupLine(setup).replace(/^claude /, "");
     if (setup.loginKind === undefined) {
-      if (setup.version !== undefined && !logged && (await ui.offerToRun(list, "claude isn't logged in. Log in now?"))) {
+      if (setup.version !== undefined && account !== undefined) {
+        list.done("claude", `${detail.split(",")[0]}; agents sign in with ${account}, so it needs no login here`);
+        return true;
+      }
+      if (setup.version !== undefined && !logged && (await ui.offerToRun(list, "claude isn't logged in. Log in now? (No: give the hub an API key at the end instead)"))) {
         logged = true;
-        attached(list, "claude", ["auth", "login"]);
+        attached(list, binary, ["auth", "login"]);
         continue;
       }
       if (setup.version === undefined && setup.problem !== undefined) {
         const [why, fix] = splitFix(setup.problem);
         list.failed("claude", why.replace(/^claude /, ""), fix);
-      } else list.failed("claude", detail, "claude auth login");
-      return;
+      } else {
+        // Not a failure of its own: the Claude step at the end is where it's required, with every way to do it.
+        list.skipped("claude", `${detail}: log in with claude auth login, or give the hub an API key in the Claude step at the end`);
+      }
+      return true;
     }
     if (setup.proxySource === "environment") {
       list.warn(
@@ -258,14 +311,14 @@ async function hubClaude(ui: Ui, list: Checklist) {
       const [why, fix] = splitFix(setup.problem);
       list.failed("claude protocol", why.replace(/^claude /, ""), fix);
     }
-    return;
+    return true;
   }
 }
 
 /** gh installed and logged in, as the hub service runs it; offers `gh auth login` right here. */
 async function ghCheck(ui: Ui, list: Checklist): Promise<boolean> {
   if (which("gh") === undefined) {
-    list.failed("gh", "is not installed; the merge train and PR checks need it", `${install("gh")}, then gh auth login`);
+    list.failed("gh", "is not installed; the merge train and PR checks need it", ghInstall(install("gh")));
     return false;
   }
   let offered = false;
@@ -324,6 +377,7 @@ async function workers(
   list: Checklist,
   net: Tailnet | undefined,
   claudeHere: boolean,
+  account: string | undefined,
 ): Promise<[string | undefined, string[], string[]]> {
   let recorded: Record<string, MachineRecord> = {};
   try {
@@ -360,6 +414,11 @@ async function workers(
   const [ids, byHand]: [string[], string[]] = [[], []];
   for (const c of found.filter((x) => chosen.includes(x.machineId))) {
     const again = c.host === undefined ? "fleetd machine add --local" : `fleetd machine add ${c.host}`;
+    // This machine without claude: its line under Logins says how to install it, and setting it up would only stop.
+    if (c.host === undefined && !claudeHere) {
+      list.skipped(c.machineId, "runs agents once claude is installed here (see claude above); then run fleetd init again");
+      continue;
+    }
     list.start(`Setting up ${c.machineId}`);
     capture();
     let added: Added | undefined;
@@ -390,7 +449,7 @@ async function workers(
     nodeLine(list, c.machineId, added, "online");
     notes(list, said);
     // This machine's claude was checked under Logins, its login offered there.
-    if (!(c.host === undefined && claudeHere)) await workerClaude(ui, list, added);
+    if (c.host !== undefined) await workerClaude(ui, list, added, account);
     (added.runByHand === undefined ? ids : byHand).push(added.machineId);
     if (c.host === undefined) local = added.machineId;
   }
@@ -426,6 +485,15 @@ async function awaitRunnerChecks(opts: InitOptions, list: Checklist, ids: string
   } finally {
     db.conn.close();
   }
+}
+
+/** gh's fix where it isn't installed: the gh line's and a clone's, so the end list says it once. */
+const ghInstall = (installGh: string) => `${installGh}, then gh auth login`;
+
+/** A clone that failed, and what to do: without gh logged in, a private repo needs it first (the gh line said how). */
+export function cloneFailed(full: string, path: string, ghOk: boolean, installGh: string, ghThere = which("gh") !== undefined): [string, string] {
+  if (ghOk) return [`cloning ${full} failed`, `gh repo clone ${full} ${path}, then run fleetd init again`];
+  return [`cloning ${full} failed; a private repo needs your GitHub login on this machine`, ghThere ? "gh auth login" : ghInstall(installGh)];
 }
 
 async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: string | undefined, ghOk: boolean): Promise<string | undefined> {
@@ -478,11 +546,13 @@ async function firstProject(opts: InitOptions, ui: Ui, list: Checklist, local: s
     if (!isDir(join(path, ".git"))) {
       mkdirSync(parent, { recursive: true });
       const full = `${repo[0]}/${repo[1]}`;
+      // Without gh, git never asks for a GitHub password, which GitHub refuses anyway: a private repo fails plainly.
       const cloned = ghOk
         ? attached(list, "gh", ["repo", "clone", full, path])
-        : attached(list, "git", ["clone", `https://github.com/${full}`, path]);
+        : attached(list, "git", ["clone", `https://github.com/${full}`, path], { GIT_TERMINAL_PROMPT: "0" });
       if (!cloned) {
-        list.failed(title, `cloning ${full} failed`, `gh repo clone ${full} ${tildeOf(path)}, then run fleetd init again`);
+        const [why, fix] = cloneFailed(full, tildeOf(path), ghOk, install("gh"));
+        list.failed(title, why, fix);
         return undefined;
       }
     }
@@ -572,22 +642,32 @@ async function setupSteps(opts: InitOptions, ui: Ui, list: Checklist, idle: stri
     return;
   }
   if (all === undefined) {
-    const ok = showChecks(list, checks, idle);
-    list.done("doctor", `${ok} of ${checks.length} checks pass`);
+    tally(list, showChecks(list, checks, idle), "checks");
     return;
   }
   steps.show(list, all);
-  const rest = steps.unowned(checks, all);
-  const ok = showChecks(list, rest, idle);
-  list.done("doctor", `${ok} of ${rest.length} other checks pass`);
+  tally(list, showChecks(list, steps.unowned(checks, all), idle), "other checks");
   const left: [string, string, string][] = all.filter((s) => s.status !== "done").map((s) => [s.id, s.title, steps.needWords(s.need)]);
   if (left.length === 0 || !ui.interactive) return;
   const picked = await ui.multi(list, `Set up any of these now? (the app's ${settingsPath()} › Setup has them too)`, left, []);
-  for (const step of all.filter((s) => picked.includes(s.id))) await walk(opts, ui, list, client, step);
+  for (const step of all.filter((s) => picked.includes(s.id))) {
+    // The step's last line says where it stands now: its line above and its tries before that (a key that didn't
+    // save) leave the end list. Done, none stays; left untried, its line above does.
+    const from = list.items.length;
+    const status = await walk(opts, ui, list, client, step);
+    const last = list.items.findLastIndex((item, at) => at >= from && item.title === step.title);
+    const stands = status === "done" ? undefined : last >= 0 ? last : list.items.findLastIndex((item, at) => at < from && item.title === step.title);
+    list.settle((item, at) => (at >= from || item.title === step.title) && at !== stands);
+  }
 }
+
+/** The line that makes `fleetd` work in this shell, while the installer's ~/.local/bin isn't on its PATH: every fix
+ * below it starts with `fleetd`. */
+const PATH_LINE = 'export PATH="$HOME/.local/bin:$PATH"';
 
 function finish(list: Checklist, summary: Summary, paired: boolean) {
   const needs = list.needsYou();
+  if (needs.length > 0 && which("fleetd") === undefined) needs.unshift(`fleetd isn't on this shell's PATH yet: ${PATH_LINE}`);
   if (list.failures().length > 0) {
     list.outro(needs, "Fix those, then run fleetd init again; it keeps what's done.");
     return;
@@ -601,7 +681,7 @@ function finish(list: Checklist, summary: Summary, paired: boolean) {
   if (summary.workers.length > 0) lines.push(`workers   ${summary.workers.join(", ")}`);
   if (summary.project) lines.push(`bot       ${summary.project}`);
   if (summary.pairing) lines.push(`app       ${summary.pairing}`);
-  if (which("fleetd") === undefined) lines.push('PATH      add: export PATH="$HOME/.local/bin:$PATH"');
+  if (which("fleetd") === undefined) lines.push(`PATH      add: ${PATH_LINE}`);
   if (list.rich) list.boxed("fleetd is ready", lines.join("\n"));
   else {
     process.stderr.write("\nfleetd is ready\n");
@@ -622,8 +702,9 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
   const [listen, url] = await reachability(opts, ui, list, net, await lanIpv4());
   const summary: Summary = { hub: url, workers: [] };
   list.sectionHeader("Logins");
-  const claudeHere = which("claude") !== undefined;
-  await hubClaude(ui, list);
+  // A hub set up before may hold a Claude account of its own: then no machine needs claude logged in.
+  const account = opts.previous === undefined ? undefined : hubClaudeAccount(opts.home);
+  const claudeHere = await hubClaude(ui, list, account);
   const ghOk = await ghCheck(ui, list);
   const identity = await commitIdentity(opts, ui, list, ghOk);
   list.sectionHeader("Hub");
@@ -653,7 +734,7 @@ export async function hubSteps(opts: InitOptions, ui: Ui, list: Checklist): Prom
   let idle: string[] = [];
   list.sectionHeader("Workers");
   if (hubUp) {
-    const [local, ids, byHand] = await workers(opts, ui, list, net, claudeHere);
+    const [local, ids, byHand] = await workers(opts, ui, list, net, claudeHere, account);
     summary.workers = [...ids, ...byHand];
     [added, idle] = [ids, byHand];
     list.sectionHeader("Bot");

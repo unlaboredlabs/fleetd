@@ -87,7 +87,8 @@ export function health(home: string, kvmCheck: KvmCheck = kvm): AndroidHealth | 
     ...(fix ? { fix: cut(fix) } : {}),
   });
   const k = kvmCheck();
-  if ("err" in k) return of("unavailable", k.err.why, k.err.fix);
+  // Optional: a machine runs agents without them, and the doctor's line says so before why.
+  if ("err" in k) return of("unavailable", `Android screens are optional, and can't run here yet: ${k.err.why}`, k.err.fix);
   if (installed) return of("ready", `Android screens are ready: ${PINS}, agent-device ${AGENT_DEVICE_VERSION}.`);
   const state = readState(home);
   if (state.installing) {
