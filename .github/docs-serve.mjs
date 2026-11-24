@@ -1,4 +1,5 @@
-// Serves site/ the way Vercel does for a browser (clean URLs, `/` is home.html), to read the docs locally:
+// Serves site/ the way Vercel does for a browser (clean URLs, `/` is home.html, a miss gets 404.html), to read the docs
+// locally:
 //   node .github/docs-serve.mjs [port]     then open http://127.0.0.1:4791/docs
 import fs from "node:fs";
 import http from "node:http";
@@ -6,7 +7,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../site");
 const port = Number(process.argv[2] ?? 4791);
-const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".xml": "application/xml", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".sh": "text/plain; charset=utf-8" };
+const types = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".ico": "image/x-icon", ".mp4": "video/mp4", ".webm": "video/webm", ".xml": "application/xml", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".sh": "text/plain; charset=utf-8" };
 
 /** The file a clean URL names: /docs -> docs/index.html, /docs/x -> docs/x.html, /docs/reference/x ->
  * docs/reference/x.html, / -> home.html. */
@@ -25,7 +26,8 @@ if (import.meta.main) {
     .createServer((req, res) => {
       const file = resolve(new URL(req.url, "http://x").pathname);
       if (file === undefined) {
-        res.writeHead(404).end("not found\n");
+        res.writeHead(404, { "content-type": types[".html"] });
+        fs.createReadStream(path.join(root, "404.html")).pipe(res);
         return;
       }
       res.writeHead(200, { "content-type": types[path.extname(file)] ?? "application/octet-stream" });

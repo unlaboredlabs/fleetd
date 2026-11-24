@@ -38,7 +38,13 @@ export default defineConfig({
       // Vercel serves site/404 for the whole site; a /docs/404 page would never be reached.
       disable404Route: true,
       customCss: ["./src/styles/theme.css"],
+      // Canonical links and og:url at the clean address, not the built .html file.
+      routeMiddleware: "./src/route-data.ts",
       head: [
+        // The site's link card (site/card.jpg, site/README.md), for the large card Starlight's twitter:card asks for.
+        { tag: "meta", attrs: { property: "og:image", content: "https://fleetd.sh/card.jpg" } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "2400" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "1260" } },
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Regular.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
         { tag: "link", attrs: { rel: "preload", href: "/fonts/plex-sans-Medium.woff2", as: "font", type: "font/woff2", crossorigin: "" } },
         // Old links to a section that moved go on to where it lives now (src/old-anchors.mjs).
