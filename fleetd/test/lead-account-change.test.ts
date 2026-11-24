@@ -68,11 +68,11 @@ function withLead(r: ProjectRef) {
     return out.output;
   };
   const lead = () => leads(t.hub).records.leadGet(r)!;
-  /** The lead's thread as its node reports it once its turn ended. */
-  const idle = () => {
+  /** The lead's thread as its node reports it once its turn ended: idle, or failed (a turn Claude refused). */
+  const idle = (status: "idle" | "failed" = "idle") => {
     const now = isoMs(t.hub.clock.now());
     store(t.hub).threadUpsert({
-      thread: { machineId: r.machineId, threadId: lead().threadId, projectId: r.projectId, title: "lead", status: "idle", headline: "", latestMessageTail: "", lastProgressAt: now, stale: false, asOf: now } as never,
+      thread: { machineId: r.machineId, threadId: lead().threadId, projectId: r.projectId, title: "lead", status, headline: "", latestMessageTail: "", lastProgressAt: now, stale: false, asOf: now } as never,
     });
   };
   /** The hub's API key saved, held where the bot runs (claude_hub_api_set's record, the seal relayed). */
@@ -146,7 +146,8 @@ test("a lead refused for its sign-in on no account carries on by itself once the
   });
   for (let i = 0; i < 200 && t.lines().length === 0; i++) await Bun.sleep(10);
   expect(t.lines()).toEqual(["Claude's sign-in on this bot's machine stopped working: sign it in again there with `claude auth login`, then send a message."]);
-  t.idle();
+  // The refused turn leaves its thread failed, not idle, as the node reports it (the real cloud's case).
+  t.idle("failed");
   // An admin saves the key: the lead carries on by itself, on the key rather than the login that refused it.
   t.saveKey();
   signedInAgain(t.hub);
@@ -156,6 +157,18 @@ test("a lead refused for its sign-in on no account carries on by itself once the
   expect(t.sends).toEqual([]);
   expect(t.runsOn()).toEqual({ kind: "hub" });
 }, 30_000);
+
+test("after a refused turn, the person's next message runs on the key saved since, not the session with no login", async () => {
+  const t = withLead(PROJECT);
+  await t.say("hello");
+  t.idle("failed");
+  t.saveKey();
+  await t.say("try again");
+  expect(t.launches.length).toBe(2);
+  expect(t.sends).toEqual([]);
+  expect(t.launches[1]).toContain("try again");
+  expect(t.runsOn()).toEqual({ kind: "hub" });
+});
 
 test("leadAccountMoved, the rule fleetd cloud's leads read too: moved to a key saved or from one removed, never to a refusal", () => {
   const api = (machineId: string) => ({ sealedOn: [{ machineId, fingerprint: "sha256:aa" }], updatedAt: "2026-11-08T10:00:00Z" }) as never;

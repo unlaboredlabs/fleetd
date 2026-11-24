@@ -253,10 +253,15 @@ export class Leads {
     return mcpServers(this.hub).leadSet(r);
   }
 
-  /** While the lead is idle and would launch now on another Claude account than its session did (a key saved since). */
+  /**
+   * While no turn of the lead's runs (idle, or its last one failed: a turn Claude refused for its sign-in leaves its
+   * thread failed) and it would launch now on another Claude account than its session did (a key saved since).
+   */
   private accountMoved(r: ProjectRef): boolean {
-    const idle = this.idle(r);
-    return idle !== undefined && leadMoved(this.hub.db, r, idle.lead.threadId);
+    const lead = this.records.leadGet(r);
+    if (!lead) return false;
+    const failed = store(this.hub).threadGet({ machineId: r.machineId, threadId: lead.threadId })?.thread.status === "failed";
+    return (failed || this.idle(r) !== undefined) && leadMoved(this.hub.db, r, lead.threadId);
   }
 
   /**
