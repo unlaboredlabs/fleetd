@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- fleetd.sh/imprint: the Imprint page, one of the five pages (terms, privacy, refunds, imprint, support) that share legal.css.
+     The same page as pricing.html in type, colour, header and footer; the text is set plain and dense, like the docs. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Imprint · fleetd</title>
+<meta name="description" content="Unlabored Labs, Inc., the company behind fleetd and fleetd cloud: address, registration and contact.">
+<link rel="canonical" href="https://fleetd.sh/imprint">
+<meta property="og:title" content="Imprint · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/imprint">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/refunds">Refund Policy</a>
+    <a href="/imprint" aria-current="page">Imprint</a>
+    <a href="/support">Support</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Imprint</h1>
+    <p><b>Unlabored Labs, Inc.</b></p>
+    <ul class="facts">
+      <li><span>Address</span><span>131 Continental Dr Suite 305, Newark, Delaware 19713, United States</span></li>
+      <li><span>Incorporated in</span><span>Delaware, USA</span></li>
+      <li><span>Registration number</span><span>10626862 (Delaware Division of Corporations)</span></li>
+      <li><span>Represented by</span><span>Weishang Lu, CEO</span></li>
+      <li><span>EU VAT number</span><span>Registration pending</span></li>
+      <li><span>Email</span><span><a href="mailto:support@fleetd.dev">support@fleetd.dev</a></span></li>
+    </ul>
+    <p>fleetd is open-source software under the MIT licence. fleetd cloud at app.fleetd.dev is operated by Unlabored Labs, Inc.</p>
+    <p><b>Online dispute resolution.</b> The European Commission’s platform for this has closed. We don’t take part in dispute resolution before a consumer arbitration board, and we aren’t required to. Write to <a href="mailto:support@fleetd.dev">support@fleetd.dev</a> and we’ll work it out with you.</p>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint" aria-current="page">Imprint</a>
+      <a href="/support">Support</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

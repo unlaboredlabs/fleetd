@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- fleetd.sh/refunds: the Refund Policy page, one of the five pages (terms, privacy, refunds, imprint, support) that share legal.css.
+     The same page as pricing.html in type, colour, header and footer; the text is set plain and dense, like the docs. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Refund Policy · fleetd</title>
+<meta name="description" content="Refunds for fleetd cloud’s plans and credits: the 14-day right to withdraw, what happens after 14 days, and the model withdrawal form.">
+<link rel="canonical" href="https://fleetd.sh/refunds">
+<meta property="og:title" content="Refund Policy · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/refunds">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/refunds" aria-current="page">Refund Policy</a>
+    <a href="/imprint">Imprint</a>
+    <a href="/support">Support</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Refund Policy</h1>
+    <p class="when">Effective November 26, 2026</p>
+    <p>This policy covers what you buy on fleetd cloud: plans and credits. Stripe handles payments. A refund goes back to the card or account you paid with, usually within 5–10 days.</p>
+
+    <h2 id="withdraw">Within 14 days: your right to withdraw</h2>
+    <p>If you are a consumer in the EU, the EEA or the UK, you can withdraw from any purchase within <b>14 days</b> of it. You don’t need to give a reason.</p>
+    <p>You asked us to start at once, so you pay for what you used before you withdrew. We refund the rest:</p>
+    <ul>
+      <li><b>A plan:</b> we refund the plan price minus the computer time you used, at the pay-as-you-go rates, up to the plan price. Your plan ends when we process the refund.</li>
+      <li><b>Credits:</b> we refund the credits you haven’t used.</li>
+    </ul>
+    <p>To withdraw, write to <a href="mailto:support@fleetd.dev"><b>support@fleetd.dev</b></a> from your account’s email. Say what you are withdrawing from; the <a href="#form">form below</a> is enough. We refund within 14 days of your message.</p>
+    <p>We offer the same to everyone, consumer or not, for a <b>first purchase</b> made within the last 14 days.</p>
+
+    <h2 id="after">After 14 days</h2>
+    <ul>
+      <li><b>Plans:</b> cancel at any time in Settings › Workspace › Billing › Manage billing. Your plan runs to the end of the month you paid for and then stops. We don’t refund part of a month.</li>
+      <li><b>Credits:</b> we don’t refund credits after 14 days. They stay usable until they expire, 12 months after you bought them. Expired credits aren’t refunded.</li>
+      <li><b>Computer time</b> already used isn’t refunded.</li>
+    </ul>
+
+    <h2 id="anyway">When we refund anyway</h2>
+    <ul>
+      <li><b>A billing error</b>, such as a double charge or a wrong amount: we refund it in full.</li>
+      <li><b>Our fault:</b> if an outage on our side wasted your computer time, write to us and we give the time back as credits.</li>
+      <li><b>We close the Service, or end your account without cause:</b> we refund credits you paid for and haven’t used.</li>
+    </ul>
+    <p>We don’t refund an account we close for breaking the Terms’ <a href="/terms#acceptable-use">acceptable use rules</a>, except where the law requires it.</p>
+
+    <h2 id="effects">What a refund changes</h2>
+    <p>A refund takes back the credits or included time it paid for, in proportion to the amount refunded. A refunded plan ends.</p>
+    <p>If you dispute a charge with your bank, the credits from that payment are held until the dispute is settled. Please write to us first; it’s usually faster.</p>
+
+    <h2 id="form">Model withdrawal form</h2>
+    <blockquote>
+      <p>To: Unlabored Labs, Inc., 131 Continental Dr Suite 305, Newark, Delaware 19713, United States, support@fleetd.dev</p>
+      <p>I hereby withdraw from my contract for the following service: [plan or credits], bought on [date].</p>
+      <p>Name: … · Account email: … · Workspace: … · Date: …</p>
+    </blockquote>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds" aria-current="page">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support">Support</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>

@@ -81,10 +81,15 @@ would win over the user-agent rewrite at `/`. `docs/index.html` is `/docs` and f
 
 Vercel serves `404.html`, with a 404, for any address it has no file for, `/docs` ones included (the docs turn off
 their own); it shows at the missing address, so its links and assets are absolute. `robots.txt` names `sitemap.xml`
-(home and pricing) and the docs' own sitemap. `favicon.ico` and `apple-touch-icon.png` come from `npm run icons` in
+(home, pricing, the legal pages and support) and the docs' own sitemap. `favicon.ico` and `apple-touch-icon.png` come from `npm run icons` in
 `app/mobile`, with `icon.svg`. `card.jpg` is the link card (og:image) of home, pricing and the docs: the page's own hero
 at 1200x630 and 2x, shot in Chrome from `node .github/docs-serve.mjs` with the header's nav, the stage, the facts
 line and everything under the hero hidden, once the bot has its first colour. Shoot it again when the hero changes.
+
+The legal pages, `terms.html`, `privacy.html`, `refunds.html` and `imprint.html` (`/terms`, `/privacy`, `/refunds`,
+`/imprint`), and `support.html` (`/support`, the App Store's Support URL) share `legal.css`: pricing's header and footer,
+then the text set plain like the docs, beside a list of the five. Every page's footer links them. Their text is Unlabored Labs, Inc.'s, as the person approved it: change it only on
+their word, and move a page's Effective date when its text changes.
 
 ## Refreshing the clips
 

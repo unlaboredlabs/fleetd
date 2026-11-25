@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- fleetd.sh/support: the Support page, one of the five pages (terms, privacy, refunds, imprint, support) that share legal.css.
+     The same page as pricing.html in type, colour, header and footer; the text is set plain and dense, like the docs. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<script>
+// Light or Dark, as on home.html: kept under the docs' starlight-theme key, Dark unless it says "light".
+(function(){
+  var KEY="starlight-theme",root=document.documentElement;
+  var get=function(){try{return localStorage.getItem(KEY)==="light"?"light":"dark"}catch(e){return "dark"}};
+  var apply=function(){
+    var t=get();
+    root.dataset.theme=t;
+    document.querySelector('meta[name="theme-color"]').setAttribute("content",t==="light"?"#f4f4f1":"#121212");
+  };
+  window.fleetdTheme={get:get,apply:apply,set:function(t){try{localStorage.setItem(KEY,t)}catch(e){}apply()}};
+  apply();
+})();
+</script>
+<title>Support · fleetd</title>
+<meta name="description" content="How to get help with fleetd, fleetd cloud and fleetd’s apps: email support@fleetd.dev, read the docs, and our postal address.">
+<link rel="canonical" href="https://fleetd.sh/support">
+<meta property="og:title" content="Support · fleetd">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="fleetd">
+<meta property="og:url" content="https://fleetd.sh/support">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/plex-sans-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/plex-sans-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+
+<header class="w top">
+  <a class="mark" href="/">fleetd</a>
+  <nav class="nav" aria-label="Site">
+    <a href="/pricing">Pricing</a>
+    <a class="docs" href="/docs">Docs</a>
+    <a class="gh" href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a class="in" href="https://app.fleetd.dev">Sign in</a>
+    <a class="up" href="https://app.fleetd.dev">Sign up</a>
+  </nav>
+</header>
+
+<main class="w legal">
+  <nav class="pages" aria-label="Policies and support">
+    <a href="/terms">Terms of Service</a>
+    <a href="/privacy">Privacy Policy</a>
+    <a href="/refunds">Refund Policy</a>
+    <a href="/imprint">Imprint</a>
+    <a href="/support" aria-current="page">Support</a>
+  </nav>
+  <article class="doc" aria-labelledby="h">
+    <h1 id="h">Support</h1>
+    <p>Help with fleetd, fleetd cloud and fleetd’s apps.</p>
+
+    <h2 id="email">Email us</h2>
+    <p>Write to <a href="mailto:support@fleetd.dev"><b>support@fleetd.dev</b></a>. If your question is about your account, a workspace or billing, send it from your account’s email and say which workspace it is about.</p>
+    <p>For a problem with the app, tell us what you did, what you saw, and which app you use, on which device.</p>
+
+    <h2 id="docs">Read the docs</h2>
+    <ul>
+      <li><a href="/docs/quick-start">Quick start</a>: install fleetd or sign in to fleetd cloud, and start your first bot.</li>
+      <li><a href="/docs/troubleshooting">Troubleshooting</a>: what to do when something doesn’t work.</li>
+      <li><a href="/docs/billing">Billing</a>: plans, credits and computer time on fleetd cloud.</li>
+      <li><a href="/docs">All docs</a></li>
+    </ul>
+
+    <h2 id="open-source">Self-hosted fleetd</h2>
+    <p>fleetd is open source. Report a bug or follow its fixes on <a href="https://github.com/unlaboredlabs/fleetd/issues">GitHub</a>, or write to us by email.</p>
+
+    <h2 id="billing">Billing and refunds</h2>
+    <p>Manage your plan and payment method in Settings › Workspace › Billing › Manage billing. Refunds are covered by our <a href="/refunds">Refund Policy</a>.</p>
+
+    <h2 id="address">Postal address</h2>
+    <p>Unlabored Labs, Inc.<br>131 Continental Dr Suite 305<br>Newark, Delaware 19713<br>United States</p>
+  </article>
+</main>
+
+<footer class="w foot">
+  <div class="fine">
+    <span>fleetd · MIT · Written in TypeScript, on Bun.</span>
+    <nav aria-label="Legal and support">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="/imprint">Imprint</a>
+      <a href="/support" aria-current="page">Support</a>
+    </nav>
+  </div>
+  <nav aria-label="Footer">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+    <a href="https://github.com/unlaboredlabs/fleetd">GitHub</a>
+    <a href="/fleetd.txt" type="text/plain">Plain text</a>
+    <button class="theme" type="button" id="theme" aria-label="Light theme" title="Light theme"><svg class="i-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg><svg class="i-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9"/></svg></button>
+  </nav>
+</footer>
+
+<script>
+"use strict";
+(() => {
+  // The footer's icon is the other theme; a press stores it.
+  const button = document.getElementById("theme");
+  const show = () => { const other = fleetdTheme.get() === "light" ? "Dark theme" : "Light theme"; button.setAttribute("aria-label", other); button.title = other; };
+  button.addEventListener("click", () => { fleetdTheme.set(fleetdTheme.get() === "light" ? "dark" : "light"); show(); });
+  addEventListener("storage", (e) => { if (e.key === "starlight-theme") { fleetdTheme.apply(); show(); } });
+  show();
+})();
+</script>
+</body>
+</html>
