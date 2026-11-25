@@ -22,14 +22,16 @@ const save = async (hub: Hub, input: ReturnType<typeof namedInput>): Promise<Res
   return r.ok ? { ok: true, value: r.output.server } : r;
 };
 
-/** Saved as the manual form would save it, under its own name or the first free one. */
-export const connect = (hub: Hub, entry: Named, servers: readonly McpServer[]): Promise<Result<McpServer>> =>
+/** Saved as the manual form would save it, under its own name or the first free one; another account under the
+ * name the person gave it. */
+export const connect = (hub: Hub, entry: Named, servers: readonly McpServer[], name?: string): Promise<Result<McpServer>> =>
   save(
     hub,
     namedInput(
       entry,
       TEAM,
       servers.map((s) => s.name),
+      name,
     ),
   );
 

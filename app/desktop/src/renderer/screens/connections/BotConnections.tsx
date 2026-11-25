@@ -5,16 +5,23 @@ import type { McpServer } from "../../../shared/contracts";
 import { useToolQuery } from "../../src/data/react";
 import { Button } from "../../ui";
 import { useLive } from "../settings/hub";
-import { namedOf } from "../settings/namedServers";
+import { accountLabel, namedOf } from "../settings/namedServers";
 import { SettingsRow } from "../settings/parts";
 import { usable, usedBy } from "./model";
 import { openConnections } from "./state";
 
-/** What a bot uses, by name: the named services first as they are called, then the rest by server name. */
+/** What a bot uses, by name: the named services first as they are called (an account by its own name when the bot
+ * uses two of one), then the rest by server name. */
 export const usesLine = (servers: ReadonlyArray<McpServer>, bot: { machineId: string; projectId: string }): string | null => {
   const used = servers.filter((s) => usable(s) && usedBy(s, bot));
   if (used.length === 0) return null;
-  const names = [...used.flatMap((s) => namedOf(s)?.label ?? []), ...used.filter((s) => namedOf(s) === undefined).map((s) => s.name)];
+  const names = [
+    ...used.flatMap((s) => {
+      const entry = namedOf(s);
+      return entry === undefined ? [] : [accountLabel(entry, s, used)];
+    }),
+    ...used.filter((s) => namedOf(s) === undefined).map((s) => s.name),
+  ];
   return names.length <= 3 ? names.join(", ") : `${names.slice(0, 2).join(", ")} and ${String(names.length - 2)} more`;
 };
 

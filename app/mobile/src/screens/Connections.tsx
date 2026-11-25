@@ -1,5 +1,6 @@
 // Settings › Connections (D653), the desktop's Connections sheet on the phone: what is connected on top (each one's
-// mark, overlapping, and how many), then Paper, Notion (Named.tsx: Connect, the service's own sign-in) and Tailscale
+// mark, overlapping, and how many), then Paper, Notion (Named.tsx: Connect, the service's own sign-in, a row per
+// account once there are several) and Tailscale
 // (an admin's Connect, its sign-in or approval, Disconnect), then Custom MCP: the team's other servers, each with
 // where it stands, a tap offering Test, Sign In when it wants one, and Disconnect. Add Custom MCP takes a URL (iOS's
 // prompt), saves it for every bot, and signs in when the server offers OAuth, else tests it. A command or headers
@@ -15,6 +16,7 @@ import {
   countText,
   customOf,
   customState,
+  accountsOf,
   freeName,
   initialOf,
   needsSignIn,
@@ -101,7 +103,13 @@ export function Connections() {
       <Strip items={strip} />
       {servers.value !== undefined && !servers.value.ok ? <Problem text={`Couldn't read the connections: ${errorWords(servers.value.error)}`} /> : null}
       <ListSection>
-        {servers.value?.ok === true ? NAMED.map((entry) => <NamedRow key={entry.id} entry={entry} servers={team} reload={servers.reload} />) : null}
+        {servers.value?.ok === true
+          ? NAMED.flatMap((entry) => {
+              const accounts = accountsOf(entry, team);
+              if (accounts.length === 0) return [<NamedRow key={entry.id} entry={entry} servers={team} reload={servers.reload} />];
+              return accounts.map((s) => <NamedRow key={`${entry.id}:${s.name}`} entry={entry} server={s} several={accounts.length > 1} servers={team} reload={servers.reload} />);
+            })
+          : null}
         {ts === undefined ? null : <TailscaleRow state={ts} admin={admin} reload={tailnet.reload} />}
       </ListSection>
       {servers.value?.ok === true ? (
