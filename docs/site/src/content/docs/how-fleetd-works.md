@@ -42,7 +42,7 @@ The product is the same. The difference is who runs the hub and where agents can
 
 | | Self-hosted | fleetd cloud |
 |---|---|---|
-| Who runs the hub | You | fleetd, in the EU |
+| Who runs the hub | You | Unlabored Labs, Inc., on servers in the EU |
 | Agents run on | Your machines | Your machines, fleetd's computers, or both |
 | Apps | Desktop, phone | Desktop, phone, web |
 | Cost | Free | Plans from $20 a month; see [Billing](/docs/billing) |

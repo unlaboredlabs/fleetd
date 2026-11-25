@@ -37,7 +37,7 @@ import { sameHub } from "./src/devices";
 import { chatAt, type Route } from "./src/push";
 import { Chat, chatOptions } from "./src/screens/Chat";
 import { Chats, searchBar } from "./src/screens/Chats";
-import { cloud, type OnSignedIn } from "./src/screens/Cloud";
+import { cloud, ReviewSignIn, type OnSignedIn } from "./src/screens/Cloud";
 import { Pair, Scan, Welcome } from "./src/screens/Connect";
 import { backTo, infoOptions, manageScreens, newChatOptions, pushed, sheet } from "./src/screens/manage";
 import { Devices } from "./src/screens/Devices";
@@ -275,6 +275,9 @@ function Pairing({ note, onPaired, onSignedIn }: { note: string | undefined; onP
       </PairStack.Screen>
       <PairStack.Screen name="OwnHub" options={{ title: "", headerTransparent: true, headerBackButtonDisplayMode: "minimal", contentStyle: { backgroundColor: t.bg } }}>
         {(props) => <Welcome {...props} note={undefined} onSignedIn={onSignedIn} own />}
+      </PairStack.Screen>
+      <PairStack.Screen name="ReviewSignIn" options={{ title: "Review Code", headerBackButtonDisplayMode: "minimal" }}>
+        {() => <ReviewSignIn onSignedIn={onSignedIn} />}
       </PairStack.Screen>
       <PairStack.Screen name="Scan" component={Scan} options={{ headerShown: false, presentation: "fullScreenModal", contentStyle: { backgroundColor: "#000000" } }} />
       <PairStack.Screen name="Pair" options={{ title: "Enter Code", headerBackButtonDisplayMode: "minimal" }}>

@@ -46,4 +46,10 @@ describe("a cloud team's first run", () => {
     expect(firstRunSteps(readBilling(BILLING_SAMPLES.off), accounts()).map((s) => s.id)).toEqual(["claude", "bot"]);
     expect(firstRunSteps(undefined, undefined).map((s) => s.id)).toEqual(["claude", "bot"]);
   });
+
+  it("on an iPhone, the plan step names no buy: Plan or Credits, in Billing's plain words", () => {
+    const steps = firstRunSteps(readBilling(BILLING_SAMPLES.none), accounts(), false);
+    expect(steps[0]).toEqual({ id: "plan", title: "Plan or Credits", detail: "This team has no plan and no credits, so fleetd can't start a computer for its bots.", done: false });
+    expect(firstRunSteps(readBilling(BILLING_SAMPLES.plan), accounts(), false)[0]!.done).toBe(true);
+  });
 });

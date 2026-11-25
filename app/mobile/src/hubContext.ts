@@ -168,6 +168,8 @@ export type PairParams = {
   /** Use Your Own Hub, from a first screen that offers fleetd cloud's Sign In too: the welcome with the pairing's two ways. */
   OwnHub: undefined;
   Scan: undefined;
+  /** App Review's way in (D737): the demo address and its fixed code, instead of WorkOS's page. */
+  ReviewSignIn: undefined;
   /** A scanned or opened pairing link's hub and code, which `auto` pairs with at once. */
   Pair: { hub?: string; code?: string; auto?: boolean } | undefined;
 };

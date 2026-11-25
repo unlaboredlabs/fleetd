@@ -11,7 +11,7 @@
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { ActionSheetIOS, Alert, Platform, RefreshControl, ScrollView } from "react-native";
 import type { MachineRolesOutput, ProjectSummary, SandboxState } from "../../../desktop/src/shared/contracts";
-import { billingOn, readTeamBilling, sizeWord } from "../billing";
+import { billingOn, readTeamBilling, sells, shownTopLine, sizeWord } from "../billing";
 import { useHub, type SettingsParams } from "../hubContext";
 import {
   atOnceWord,
@@ -172,7 +172,7 @@ export function Machines() {
             <ListRow
               title="At Once"
               {...(atOnce === null
-                ? { value: "None", detail: heldLine(bill), valueColor: t.danger, onPress: () => navigation.navigate("Billing") }
+                ? { value: "None", detail: shownTopLine(bill, sells(Platform.OS))?.message ?? heldLine(bill), valueColor: t.danger, onPress: () => navigation.navigate("Billing") }
                 : { value: atOnce.replace(/ at once$/u, ""), chevron: false })}
             />
           )}

@@ -2,7 +2,8 @@
 // desktop's, shared/billing.ts): plain HTTP calls to the team's own address with this phone's key, as the desktop's
 // main makes them. Checkout and the portal are Stripe's own pages, which the phone opens in its browser sheet; no card
 // is ever typed into fleetd. Only a fleetd cloud team is asked, signed in or paired with a code: a self-hosted hub has
-// no Billing, and a team has none until fleetd's computers are on for it.
+// no Billing, and a team has none until fleetd's computers are on for it. The iPhone app sells nothing (D733, App
+// Review 3.1.1): there Billing reads the plan and credits only, with no price, no buy and no word of buying elsewhere.
 import {
   BILLING_CAP_PATH,
   BILLING_CHECKOUT_PATH,
@@ -12,12 +13,29 @@ import {
   readBilling,
   readCap,
   readPage,
+  topLine,
   type BillingBuy,
   type BillingState,
 } from "../../desktop/src/shared/billing";
 import type { KeptHub } from "./cloud/account";
 
 export * from "../../desktop/src/shared/billing";
+
+/** Whether this phone sells plans and credits: Android does, iOS doesn't (D733). `os` is Platform.OS. */
+export const sells = (os: string): boolean => os !== "ios";
+
+/**
+ * The top line as this phone shows it. One that sells nothing keeps what's wrong and drops the call to buy and its
+ * row: the service's notice, its first sentence without its fix, and credits run out said plainly. The cap's line and row stay, as
+ * setting a cap buys nothing.
+ */
+export const shownTopLine = (state: BillingState, selling: boolean): ReturnType<typeof topLine> => {
+  const top = topLine(state);
+  if (top === null || selling || top.fix === "cap") return top;
+  // Its first sentence: what's wrong. What follows may say how to pay ("Update it by …").
+  if (state.notice !== null) return { tone: top.tone, message: state.notice.message.match(/^.+?[.!?](?=\s|$)/u)?.[0] ?? state.notice.message, fix: null };
+  return { tone: top.tone, message: "No credits left, so bots on fleetd's computers are stopped.", fix: null };
+};
 
 const CALL_TIMEOUT_MS = 20_000;
 

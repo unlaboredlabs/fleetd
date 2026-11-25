@@ -14,12 +14,15 @@
 // whose person connected their own GitHub (`githubConnected`) gets GitHub's install page for fleetd's App with a state
 // made for them; one who didn't, 409; with `githubSetUp` false, 503. And POST ACCOUNTS_TEAM_DELETE_PATH as fleetd-cloud's
 // accounts area does: an owner's key with the team's name typed again deletes it (its keys open nothing then); anyone
-// else is refused, as are a wrong name and agents running (`running`).
+// else is refused, as are a wrong name and agents running (`running`). With `demo` set, POST ACCOUNTS_DEMO_SIGN_IN_PATH
+// signs in App Review's address and code (D737) to its one team, answered as a sign-in is; a wrong address or code is
+// one refusal, and with no `demo` the demo sign-in is off.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
   ACCOUNTS_ACCEPT_PATH,
+  ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_INVITES_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_TEAM_DELETE_PATH,
@@ -125,6 +128,8 @@ export class FakeAccounts {
   refuseNext: { status: number; failure: AccountsFailure } | null = null;
   /** The team (by name) the next sign-in says was picked on WorkOS's page, as a person in several picks one. */
   pickNext: string | null = null;
+  /** App Review's demo sign-in: its address, code and team (by name); null, off. */
+  demo: { email: string; code: string; team: string } | null = null;
   /** Every invitation email sent, in order. */
   readonly sent: FakeInviteEmail[] = [];
   /** Each invitation joined through the accept call, as `<team> <email>`, in order. */
@@ -294,6 +299,7 @@ export class FakeAccounts {
     }
     if (path === ACCOUNTS_ACCEPT_PATH) return this.#accept(body, res);
     if (path === ACCOUNTS_TEAM_PATH) return this.#make(body, res);
+    if (path === ACCOUNTS_DEMO_SIGN_IN_PATH) return this.#demo(body, res);
     if (path !== ACCOUNTS_SIGN_IN_PATH) return fail(res, 404, { code: "not_found", message: "Nothing here." });
     const input = {
       code: str(body, "code"),
@@ -348,6 +354,28 @@ export class FakeAccounts {
     this.pickNext = null;
     if (picked !== undefined && answer.teams.some((t) => t.id === picked.id)) answer.picked = picked.id;
     send(res, 200, answer);
+  }
+
+  /** POST ACCOUNTS_DEMO_SIGN_IN_PATH: the demo address and code to the demo team alone, as a sign-in answers it. */
+  #demo(body: unknown, res: ServerResponse): void {
+    const email = str(body, "email")?.trim().toLowerCase();
+    const code = str(body, "code");
+    if (email === undefined || code === undefined || str(body, "deviceName") === undefined) {
+      return fail(res, 400, { code: "invalid", message: "A demo sign-in needs email, code and deviceName." });
+    }
+    if (this.refuseNext !== null) {
+      const { status, failure } = this.refuseNext;
+      this.refuseNext = null;
+      return fail(res, status, failure);
+    }
+    if (this.demo === null) return fail(res, 403, { code: "signin_closed", message: "The review sign-in is off." });
+    const team = this.#teams.get(this.demo.team);
+    if (email !== this.demo.email.toLowerCase() || code !== this.demo.code || team === undefined) {
+      return fail(res, 401, { code: "signin_refused", message: "That address and code don't sign in.", fix: "Check both, then try again." });
+    }
+    const sessionId = `session_${randomBytes(8).toString("hex")}`;
+    this.sessions.add(sessionId);
+    send(res, 200, { email: this.demo.email, sessionId, teams: [{ ...this.#entry(team, this.demo.email), made: true }] } satisfies AccountsSignInOutput);
   }
 
   /** POST ACCOUNTS_TEAM_PATH: a team of the person's own, made once, answered with a pairing code. */

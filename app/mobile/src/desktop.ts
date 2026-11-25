@@ -94,12 +94,14 @@ export type {
 export {
   ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_APP_REDIRECT,
+  ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   ACCOUNTS_TEAM_PATH,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_PART_BYTES,
   type AccountsInvitation,
+  type AccountsDemoSignInInput,
   type AccountsSignInInput,
   type AccountsTeam,
 } from "../../desktop/src/shared/contracts";

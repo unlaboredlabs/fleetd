@@ -4,7 +4,9 @@
 // soonest that lapse within 30 days, Add Credits; Manage Payment; the computer time used this period by size; and the
 // monthly spend cap, set in a prompt. Stripe's checkout and portal open in the browser sheet, and the screen reads
 // again when it closes. Before fleetd's computers are on for the team there is no Billing (Settings lists no row), and
-// a screen opened just as they went off goes back.
+// a screen opened just as they went off goes back. The iPhone app sells nothing (D733, App Review 3.1.1): there it reads
+// the plan without its price and the credits left, with no Choose a Plan, Change Plan, Add Credits or Manage Payment,
+// and a top line that says what's wrong without a call to buy; the cap still sets, as it buys nothing.
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
@@ -25,9 +27,10 @@ import {
   noBuyWhy,
   planChoice,
   readTeamBilling,
+  sells,
   setTeamCap,
+  shownTopLine,
   sizeWord,
-  topLine,
   usageRows,
   periodWord,
   type BillingBuy,
@@ -120,9 +123,10 @@ export function Billing() {
   }
   const state = read.value;
   const nowMs = Date.now();
-  const top = topLine(state);
-  const can = buys(state);
-  const why = noBuyWhy(state);
+  const selling = sells(Platform.OS);
+  const top = shownTopLine(state, selling);
+  const can = selling && buys(state);
+  const why = selling ? noBuyWhy(state) : null;
   const label = (l: string) => (busy === l ? "Opening…" : l);
   const tap = (go: () => void) => (busy === null ? { onPress: go } : {});
   const choosePlan = () =>
@@ -175,7 +179,7 @@ export function Billing() {
     }
   };
   const fixRow =
-    top === null || top.fix === null || !can ? null : (
+    top === null || top.fix === null || !buys(state) ? null : (
       <ListRow
         title={label(FIX_TITLE[top.fix])}
         {...tap(top.fix === "portal" ? () => open("portal", FIX_TITLE.portal) : top.fix === "buy" ? addCredits : capPrompt)}
@@ -196,7 +200,7 @@ export function Billing() {
         </ListSection>
       )}
       <ListSection header="Plan" {...(why === null ? {} : { footer: why })}>
-        <ListRow title={state.plan?.name ?? "No Plan"} value={state.plan === null ? undefined : `${money(state.plan.priceCents, state.currency)} a month`} />
+        <ListRow title={state.plan?.name ?? "No Plan"} value={state.plan === null || !selling ? undefined : `${money(state.plan.priceCents, state.currency)} a month`} />
         {plan === null || ends === null ? null : <ListRow title={plan.renews ? "Renews" : "Ends"} value={dayWord(ends, nowMs)} />}
         {!can ? null : state.plan === null ? (
           <ListRow title={label("Choose a Plan")} {...tap(choosePlan)} chevron={false} />

@@ -4,9 +4,9 @@
 // or on the web shows ticked.
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef } from "react";
-import { ActivityIndicator, AppState, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import type { ClaudeAccountsGetOutput } from "../../../desktop/src/shared/contracts";
-import { readTeamBilling } from "../billing";
+import { readTeamBilling, sells } from "../billing";
 import { firstRunSteps, nextStep, type FirstRunId } from "../firstRun";
 import { useHub } from "../hubContext";
 import { space, type, useTheme } from "../theme";
@@ -41,7 +41,7 @@ export function FirstRun({ open }: { open: (step: FirstRunId) => void }) {
 
   // Both read before any row shows, so none moves in late. Billing that can't be read is a team with nothing to buy.
   if (billing.value === undefined || claude.value === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
-  const steps = firstRunSteps(billing.value.ok ? billing.value.value : null, claude.value.ok ? (claude.value.output as ClaudeAccountsGetOutput) : undefined);
+  const steps = firstRunSteps(billing.value.ok ? billing.value.value : null, claude.value.ok ? (claude.value.output as ClaudeAccountsGetOutput) : undefined, sells(Platform.OS));
   const next = nextStep(steps);
 
   return (

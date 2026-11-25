@@ -16,7 +16,10 @@ Owners and admins open **Settings › Team › Billing** in the desktop, web or 
 - **Spend cap**: an optional monthly limit.
 - **Manage billing**: Stripe's page for your card, invoices and cancelling.
 
-Payment happens on Stripe's pages; fleetd never sees your card.
+Payment happens on Stripe's pages; fleetd never sees your card. The seller is Unlabored Labs, Inc.
+
+The iPhone app shows the plan, credits, computer time and spend cap, but buys nothing: plans and credits are bought in
+the desktop or web app.
 
 ## Plans {#plans}
 
@@ -29,7 +32,7 @@ Payment happens on Stripe's pages; fleetd never sees your card.
 - Leads don't count toward agents at once. With credits and no plan, it's 25.
 - Included time is used before credits, and doesn't roll over.
 - A plan change applies from the next month. Cancelling stops renewal at the end of the paid month.
-- Prices are before VAT.
+- Prices are in US dollars, plus VAT where it applies, shown at checkout.
 
 There's no free tier: with no plan and no credits, fleetd's computers don't start.
 

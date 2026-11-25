@@ -3,17 +3,21 @@
 // and in Settings, the hubs this phone keeps with a tap to switch, and the fleetd account with Sign In or Sign Out.
 // Only a build given the cloud's two values (cloud/config.ts) shows any of it; any other is the self-hosted app alone.
 // Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
-// ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept).
+// ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept). Under the two
+// ways, a quiet Sign in with a review code opens App Review's way in (D737): the demo address and its fixed code, sent
+// in place of the page, then the same questions and pairing.
 import { getRandomBytes } from "expo-crypto";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AppState, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
+import { Alert, AppState, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { signInAsking, type AfterSignInAsk, type SignInOutcome, type SignInPorts, type TeamOutcome } from "../cloud/account";
 import { builtCloudConfig, type CloudConfig } from "../cloud/config";
 import { invitationLine, invitationTitle, type PairFailure } from "../desktop";
 import { deviceName } from "../hub/deviceName";
 import { useHub } from "../hubContext";
-import { COLUMN, space, type, useTheme } from "../theme";
+import { COLUMN, space, TOUCH, type, useTheme } from "../theme";
 import { useAnnounce } from "../ui/announce";
 import { Button } from "../ui/Button";
 import { haptics } from "../ui/haptics";
@@ -84,13 +88,14 @@ export function useSignIn(onSignedIn: OnSignedIn) {
     };
   }, []);
   useAnnounce(note?.message);
-  const start = useCallback(() => {
+  /** Signs in on WorkOS's page, or with `review`'s address and code (App Review's way in). */
+  const start = useCallback((review?: { email: string; code: string }) => {
     if (cloud === null || running.current) return;
     running.current = true;
     haptics.tap();
     setBusy(true);
     setNote(null);
-    void signInAsking(ports(cloud), alertAsk)
+    void signInAsking(ports(cloud), alertAsk, review)
       .then(async (out): Promise<PairFailure | null> => {
         if (!out.ok) return out.cancelled === true ? null : out.failure;
         missed = out.teams.filter((t): t is TeamOutcome & { ok: false } => !t.ok);
@@ -126,21 +131,88 @@ function Failure({ failure }: { failure: PairFailure }) {
 }
 
 /** The first screen's two ways in, each a full-width button and its line: your own hub is no small link under the other. */
-export function Ways({ onOwn, onSignedIn }: { onOwn: () => void; onSignedIn: OnSignedIn }) {
+export function Ways({ onOwn, onReview, onSignedIn }: { onOwn: () => void; onReview: () => void; onSignedIn: OnSignedIn }) {
   const t = useTheme();
   const { busy, note, start } = useSignIn(onSignedIn);
   return (
     <View style={styles.ways}>
       {note === null ? null : <Failure failure={note} />}
       <View style={styles.way}>
-        <Button label={busy ? "Signing In…" : note === null ? WAYS.signIn.name : "Sign In Again"} size="large" busy={busy} onPress={start} />
+        <Button label={busy ? "Signing In…" : note === null ? WAYS.signIn.name : "Sign In Again"} size="large" busy={busy} onPress={() => start()} />
         <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{WAYS.signIn.line}</Text>
       </View>
       <View style={styles.way}>
         <Button label={WAYS.own.name} kind="tinted" size="large" disabled={busy} onPress={onOwn} />
         <Text style={[type.footnote, styles.center, { color: t.secondary }]}>{WAYS.own.line}</Text>
       </View>
+      <Text style={[type.footnote, styles.review, { color: t.tertiary }]} accessibilityRole="link" onPress={busy ? undefined : onReview} suppressHighlighting={false}>
+        Sign in with a review code
+      </Text>
     </View>
+  );
+}
+
+/** App Review's way in: the demo address and its code, then the same questions and pairing as Sign In's. */
+export function ReviewSignIn({ onSignedIn }: { onSignedIn: OnSignedIn }) {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+  const { busy, note, start } = useSignIn(onSignedIn);
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const codeField = useRef<ComponentRef<typeof TextInput>>(null);
+  const ready = email.trim() !== "" && code.trim() !== "" && !busy;
+  const submit = () => {
+    if (ready) start({ email, code });
+  };
+  const field = [type.body, styles.input, { color: t.label }];
+  const common = { selectionColor: t.accent, placeholderTextColor: t.tertiary, autoCapitalize: "none", autoCorrect: false, keyboardAppearance: t.dark ? "dark" : "light", editable: !busy } as const;
+  return (
+    <KeyboardAvoidingView style={styles.grow} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
+      <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
+        <ListSection header="Email">
+          <View style={styles.fieldRow}>
+            <TextInput
+              {...common}
+              style={field}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="review@example.com"
+              autoFocus
+              keyboardType="email-address"
+              textContentType="username"
+              returnKeyType="next"
+              onSubmitEditing={() => codeField.current?.focus()}
+              accessibilityLabel="Email"
+            />
+          </View>
+        </ListSection>
+        <ListSection header="Code">
+          <View style={styles.fieldRow}>
+            <TextInput
+              {...common}
+              ref={codeField}
+              style={field}
+              value={code}
+              onChangeText={setCode}
+              placeholder="Review code"
+              textContentType="oneTimeCode"
+              returnKeyType="go"
+              onSubmitEditing={submit}
+              accessibilityLabel="Code"
+            />
+          </View>
+        </ListSection>
+        {note === null ? null : (
+          <View style={styles.formFailure}>
+            <Failure failure={note} />
+          </View>
+        )}
+        <View style={styles.submit}>
+          <Button label={busy ? "Signing In…" : "Sign In"} size="large" busy={busy} disabled={!ready} onPress={submit} />
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -204,7 +276,7 @@ export function CloudSettings() {
       )}
       {cloud === null ? null : account === null ? (
         <ListSection header="fleetd account" footer={note === null ? WAYS.signIn.line : `${note.message} ${note.fix ?? ""}`.trim()}>
-          <ListRow title={busy ? "Signing In…" : "Sign In"} {...(busy ? {} : { onPress: start })} chevron={false} />
+          <ListRow title={busy ? "Signing In…" : "Sign In"} {...(busy ? {} : { onPress: () => start() })} chevron={false} />
         </ListSection>
       ) : (
         <ListSection
@@ -225,5 +297,11 @@ const styles = StyleSheet.create({
   center: { textAlign: "center", alignSelf: "center", maxWidth: 320 },
   ways: { gap: space.lg, alignItems: "stretch", alignSelf: "center", width: "100%", maxWidth: COLUMN },
   way: { gap: space.sm },
+  review: { textAlign: "center", alignSelf: "center", paddingVertical: space.xs },
+  form: { alignSelf: "center", width: "100%", maxWidth: COLUMN },
+  fieldRow: { minHeight: TOUCH, justifyContent: "center", paddingHorizontal: space.lg },
+  input: { paddingVertical: 11 },
+  formFailure: { marginHorizontal: space.lg, marginTop: space.lg },
+  submit: { marginHorizontal: space.lg, marginTop: space.xl },
   failure: { flexDirection: "row", gap: space.md, padding: space.md + 2, borderRadius: 16, borderCurve: "continuous" },
 });
