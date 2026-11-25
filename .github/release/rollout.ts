@@ -29,6 +29,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRollout, percentAt, STAGES, type Rollout, type RolloutBuild } from "../../fleetd/src/update/rollout.ts";
+import { httpStatus, transient } from "../../fleetd/src/hub/train/github.ts";
 
 const HOUR = 3_600_000;
 const TAG = "edge";
@@ -224,15 +225,43 @@ export function releaseNotes(r: Rollout, now: number): string {
 
 // ---- The edge release, through gh ----
 
+/** Tries of one gh call whose failure may well pass a moment later; the waits between them double from GH_RETRY_MS. */
+const GH_TRIES = 5;
+const GH_RETRY_MS = Number(process.env.ROLLOUT_GH_RETRY_MS ?? 5000);
+/** One try's longest: a call GitHub never answers is a failure to try again, not a hung ticker. */
+const GH_TRY_MS = 5 * 60_000;
+/** gh's words when it never got GitHub's answer. */
+const NETWORK = /connection reset|connection refused|no such host|i\/o timeout|tls handshake timeout|unexpected eof|network is unreachable|ETIMEDOUT/i;
+
+/** Whether a failed gh call may well pass a moment later: GitHub's 5xx, its rate limit, or no answer at all. */
+export const ghTransient = (stderr: string) => transient(httpStatus(stderr), stderr) || NETWORK.test(stderr);
+
+/**
+ * One gh call, tried again (GH_TRIES at most, about 75 s of waits) while it fails on GitHub rather than on what it
+ * asked: on Nov 25 an edit of edge's notes got HTTP 500 twice through an incident. Any other failure ends at once.
+ */
+function runGh(args: string[], input?: string): { status: number; stdout: string; stderr: string; transient: boolean } {
+  for (let attempt = 1; ; attempt++) {
+    const r = spawnSync("gh", args, { encoding: "utf8", input, maxBuffer: 64 << 20, timeout: GH_TRY_MS });
+    const stderr = r.error ? `${r.stderr ?? ""}${String(r.error)}` : (r.stderr ?? "");
+    if (r.status === 0) return { status: 0, stdout: r.stdout, stderr, transient: false };
+    const again = ghTransient(stderr);
+    if (!again || attempt >= GH_TRIES) return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr, transient: again };
+    const wait = GH_RETRY_MS * 2 ** (attempt - 1);
+    console.log(`::warning::gh ${args.slice(0, 2).join(" ")} failed (try ${attempt} of ${GH_TRIES}), retrying in ${wait / 1000} s: ${stderr.trim()}`);
+    Bun.sleepSync(wait);
+  }
+}
+
 function gh(args: string[], input?: string): string {
-  const r = spawnSync("gh", args, { encoding: "utf8", input, maxBuffer: 64 << 20 });
+  const r = runGh(args, input);
   if (r.status !== 0) throw new Error(`gh ${args.join(" ")}: ${(r.stderr || r.stdout).trim()}`);
   return r.stdout;
 }
 
 function readRollout(): Rollout {
   const dir = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "rollout-"));
-  const r = spawnSync("gh", ["release", "download", TAG, "-p", "rollout.json", "-D", dir], { encoding: "utf8" });
+  const r = runGh(["release", "download", TAG, "-p", "rollout.json", "-D", dir]);
   if (r.status !== 0 || !existsSync(join(dir, "rollout.json"))) {
     if (/no assets match|not found/i.test(r.stderr)) return { builds: [] };
     throw new Error(`couldn't read rollout.json: ${r.stderr.trim()}`);
@@ -262,9 +291,10 @@ function update(change: (r: Rollout) => boolean, holds: (r: Rollout) => boolean)
   }
 }
 
-/** A release's file names; none when it doesn't exist (any more). */
+/** A release's file names; none when it doesn't exist (any more). GitHub failing isn't "none": it throws. */
 function assets(tag: string): string[] {
-  const r = spawnSync("gh", ["release", "view", tag, "--json", "assets", "-q", ".assets[].name"], { encoding: "utf8" });
+  const r = runGh(["release", "view", tag, "--json", "assets", "-q", ".assets[].name"]);
+  if (r.status !== 0 && r.transient) throw new Error(`gh release view ${tag}: ${r.stderr.trim()}`);
   return r.status === 0 ? r.stdout.split("\n").filter((n) => n !== "") : [];
 }
 
@@ -461,7 +491,7 @@ async function tick(): Promise<void> {
 
   // The builds this tick stopped listing lose their files; their releases stay, for their notes.
   for (const build of dropped) {
-    for (const name of filesOf(build)) spawnSync("gh", ["release", "delete-asset", releaseOf(build), name, "-y"]);
+    for (const name of filesOf(build)) runGh(["release", "delete-asset", releaseOf(build), name, "-y"]);
     console.log(`${releaseOf(build)}: files removed, no longer listed`);
   }
   gh(["release", "edit", TAG, "--notes", releaseNotes(r, now)]);
