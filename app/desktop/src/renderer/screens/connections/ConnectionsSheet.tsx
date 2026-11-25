@@ -165,7 +165,10 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
                 {NAMED.map((entry) => {
                   const accounts = accountsOf(entry, team);
                   if (accounts.length === 0) return <NamedRow key={entry.id} entry={entry} team={team} bots={bots} tests={tests} onDialog={setDialog} />;
-                  return accounts.map((server) => <NamedRow key={`${entry.id}:${server.name}`} entry={entry} server={server} team={team} bots={bots} tests={tests} onDialog={setDialog} />);
+                  // The first account keeps the entry's own key: the row that ran Connect stays the same row.
+                  return accounts.map((server, i) => (
+                    <NamedRow key={i === 0 ? entry.id : `${entry.id}:${server.name}`} entry={entry} server={server} team={team} bots={bots} tests={tests} onDialog={setDialog} />
+                  ));
                 })}
                 {tailnet.state === undefined ? null : <TailscaleRow state={tailnet.state} tailnet={tailnet} admin={admin} onDisconnect={(state) => setDialog({ kind: "tailscale-off", state })} />}
               </ul>

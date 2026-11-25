@@ -124,12 +124,17 @@ export function NamedRow({ entry, server, servers, reload }: { entry: Named; ser
       ActionSheetIOS.showActionSheetWithOptions({ title: label, options: [first, "Add Another Account", "Disconnect", "Cancel"], destructiveButtonIndex: 2, cancelButtonIndex: 3 }, pick);
       return;
     }
-    Alert.alert(label, undefined, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Disconnect", style: "destructive", onPress: () => pick(2) },
-      { text: "Add Another Account", onPress: () => pick(1) },
-      { text: first, onPress: () => pick(0) },
-    ]);
+    // Android's alert shows three buttons at most: no Cancel button, a tap outside cancels.
+    Alert.alert(
+      label,
+      undefined,
+      [
+        { text: "Disconnect", style: "destructive", onPress: () => pick(2) },
+        { text: "Add Another Account", onPress: () => pick(1) },
+        { text: first, onPress: () => pick(0) },
+      ],
+      { cancelable: true },
+    );
   };
 
   // One more account: saved under the name the person gives it (the first free one offered), then signed in.

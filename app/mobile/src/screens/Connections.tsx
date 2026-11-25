@@ -107,7 +107,8 @@ export function Connections() {
           ? NAMED.flatMap((entry) => {
               const accounts = accountsOf(entry, team);
               if (accounts.length === 0) return [<NamedRow key={entry.id} entry={entry} servers={team} reload={servers.reload} />];
-              return accounts.map((s) => <NamedRow key={`${entry.id}:${s.name}`} entry={entry} server={s} servers={team} reload={servers.reload} />);
+              // The first account keeps the entry's own key, so the row that ran Connect stays mounted through its sign-in.
+              return accounts.map((s, i) => <NamedRow key={i === 0 ? entry.id : `${entry.id}:${s.name}`} entry={entry} server={s} servers={team} reload={servers.reload} />);
             })
           : null}
         {ts === undefined ? null : <TailscaleRow state={ts} admin={admin} reload={tailnet.reload} />}
