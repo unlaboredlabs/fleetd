@@ -2,7 +2,7 @@
 // added by publish, its pass on fleetd's own hub and the first ring's gate (the cloud saying nothing), the desktop
 // app's stage feeds, and a halt, a pull and a resume, each read back from rollout.json as hubs read it.
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseRollout, percentAt } from "../src/update/rollout.ts";
 import { tempHome } from "./helpers.ts";
@@ -18,7 +18,7 @@ const bin = join(home.dir, "bin");
 
 /** `gh release …` over `releases/<tag>/<file>`: what rollout.ts asks of it. */
 const GH = `#!/usr/bin/env bun
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 const root = ${JSON.stringify(releases)};
 const [, , group, cmd, tag, ...rest] = process.argv;
@@ -26,6 +26,14 @@ const dir = join(root, tag ?? "");
 const fail = (why) => { process.stderr.write(why + "\\n"); process.exit(1); };
 if (group !== "release") fail("only release");
 const flag = (f) => { const i = rest.indexOf(f); return i < 0 ? undefined : rest[i + 1]; };
+// GH_FAIL="<cmd> <status> <times>": that many of <cmd>'s calls answer HTTP <status> first; each call is counted.
+const [failCmd, failStatus, failTimes] = (process.env.GH_FAIL ?? "").split(" ");
+if (cmd === failCmd) {
+  const counter = join(root, ".calls-" + cmd);
+  const calls = (existsSync(counter) ? Number(readFileSync(counter, "utf8")) : 0) + 1;
+  writeFileSync(counter, String(calls));
+  if (calls <= Number(failTimes)) fail("HTTP " + failStatus + ": (https://api.github.com/repos/unlaboredlabs/fleetd/releases/426013942)");
+}
 if (cmd === "view") {
   if (!existsSync(dir)) fail("release not found");
   const names = readdirSync(dir).filter((n) => !n.startsWith("."));
@@ -55,7 +63,7 @@ chmodSync(join(bin, "gh"), 0o755);
 const cloud = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("not found", { status: 404 }) });
 afterAll(() => cloud.stop(true));
 
-const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, FLEETD_CLOUD_VERSION_URL: `http://127.0.0.1:${cloud.port}/version`, GITHUB_REPOSITORY: "unlaboredlabs/fleetd" };
+const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, FLEETD_CLOUD_VERSION_URL: `http://127.0.0.1:${cloud.port}/version`, GITHUB_REPOSITORY: "unlaboredlabs/fleetd", ROLLOUT_GH_RETRY_MS: "10" };
 /** Run apart from this process, whose fake cloud answers meanwhile. */
 const rollout = async (args: string[], cwd = ROOT, more: Record<string, string> = {}) => {
   const child = Bun.spawn(["bun", join(ROOT, ".github/release/rollout.ts"), ...args], { cwd, env: { ...env, ...more }, stdout: "pipe", stderr: "pipe" });
@@ -118,4 +126,21 @@ test("a build goes from publish through fleetd's own hub to everyone's stages, a
   expect(listed()[0]!.wasHalted).toBe(true);
   // A build that isn't listed is refused, naming the ones that are.
   await expect(rollout(["halt", "2026.1.1.1"])).rejects.toThrow("2026.1.1.1 isn't in rollout.json (builds listed: 2026.11.23.4)");
+});
+
+test("a GitHub 5xx on a write is tried again until it passes, and a 4xx fails at once", async () => {
+  mkdirSync(join(releases, "edge"), { recursive: true });
+  const calls = join(releases, ".calls-edit");
+  rmSync(calls, { force: true });
+  rmSync(join(releases, "edge/.notes"), { force: true });
+  // Edge's notes edit, as on Nov 25: GitHub answers 500, then takes it.
+  const out = await rollout(["tick"], ROOT, { GH_FAIL: "edit 500 1" });
+  expect(out).toContain("gh release edit failed (try 1 of 5)");
+  expect(readFileSync(calls, "utf8")).toBe("2");
+  expect(existsSync(join(releases, "edge/.notes"))).toBe(true);
+
+  // A refusal of what was asked isn't GitHub's blip: one try, and the tick fails with GitHub's answer.
+  rmSync(calls, { force: true });
+  await expect(rollout(["tick"], ROOT, { GH_FAIL: "edit 422 1" })).rejects.toThrow("HTTP 422");
+  expect(readFileSync(calls, "utf8")).toBe("1");
 });
