@@ -95,8 +95,9 @@ describe("Connections", () => {
     ]);
     expect(countText(strip.length)).toBe("2 connected");
     expect(customOf(team, [])).toEqual([]);
-    // Disconnect one, and the other is the service again, by its name.
-    expect(connectedOf(team.slice(1, 2), [], undefined).map((i) => i.label)).toEqual(["Notion"]);
+    // Disconnect one, and the other is the service again, by the service's name, or by its own when it has one.
+    expect(connectedOf(team.slice(0, 1), [], undefined).map((i) => i.label)).toEqual(["Notion"]);
+    expect(connectedOf(team.slice(1, 2), [], undefined).map((i) => i.label)).toEqual(["notion-work"]);
   });
 
   it("checks a name as the form does", () => {

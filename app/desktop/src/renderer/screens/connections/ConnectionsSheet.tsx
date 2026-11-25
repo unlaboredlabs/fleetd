@@ -16,7 +16,7 @@ import { useData, useDataLayer, useToolQueries, useToolQuery } from "../../src/d
 import { Button, cx, Dialog, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger, Switch, Tooltip } from "../../ui";
 import { useSettledAdministers } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { accountsOf, accountState, NAMED, nameFor, namedInput, turnOnInput, type Named } from "../settings/namedServers";
+import { accountLabel, accountsOf, accountState, NAMED, nameFor, namedInput, turnOnInput, type Named } from "../settings/namedServers";
 import { useProjects } from "../settings/parts";
 import { useTailnet, type Tailnet } from "../settings/Tailscale";
 import { canConnect, lineOf, MACHINES_URL, waiting, wordOf } from "../settings/tailscaleModel";
@@ -165,9 +165,7 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
                 {NAMED.map((entry) => {
                   const accounts = accountsOf(entry, team);
                   if (accounts.length === 0) return <NamedRow key={entry.id} entry={entry} team={team} bots={bots} tests={tests} onDialog={setDialog} />;
-                  return accounts.map((server) => (
-                    <NamedRow key={`${entry.id}:${server.name}`} entry={entry} server={server} several={accounts.length > 1} team={team} bots={bots} tests={tests} onDialog={setDialog} />
-                  ));
+                  return accounts.map((server) => <NamedRow key={`${entry.id}:${server.name}`} entry={entry} server={server} team={team} bots={bots} tests={tests} onDialog={setDialog} />);
                 })}
                 {tailnet.state === undefined ? null : <TailscaleRow state={tailnet.state} tailnet={tailnet} admin={admin} onDisconnect={(state) => setDialog({ kind: "tailscale-off", state })} />}
               </ul>
@@ -337,11 +335,10 @@ function BotsSub({ server, bots, onPick }: { server: McpServer; bots: ReadonlyAr
 }
 
 /** A named service not added yet (Connect), or one of its accounts: each signs in, takes bots and disconnects on its
- * own. With several, each says its name beside the service's. */
+ * own. With several, or one named otherwise (notion-work), each says its name beside the service's. */
 function NamedRow(props: {
   entry: Named;
   server?: McpServer;
-  several?: boolean;
   team: ReadonlyArray<McpServer>;
   bots: ReadonlyArray<Bot>;
   tests: ReturnType<typeof useTests>;
@@ -353,7 +350,7 @@ function NamedRow(props: {
   const [busy, setBusy] = useState<"connect" | "on" | "bots" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const state = server === undefined ? ({ kind: "add" } as const) : accountState(server);
-  const label = props.several === true && server !== undefined ? server.name : entry.label;
+  const label = server === undefined ? entry.label : accountLabel(entry, server, props.team);
   const tested = server === undefined ? undefined : props.tests.of(server);
   const result = tested === undefined || tested === "testing" ? undefined : tested;
   const signIn = server !== undefined && (state.kind === "signin" || (state.kind === "connected" && needsSignIn(server, result)));
@@ -389,7 +386,7 @@ function NamedRow(props: {
     <Row
       tile={<Mark entry={entry} />}
       name={entry.label}
-      where={props.several === true && server !== undefined ? server.name : undefined}
+      where={label === entry.label ? undefined : label}
       word={word}
       line={line}
       data={{ "data-named": entry.id, "data-state": state.kind, ...(server === undefined ? {} : { "data-account": server.name }) }}

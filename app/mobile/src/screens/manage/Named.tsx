@@ -8,7 +8,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ActionSheetIOS, ActivityIndicator, Alert, AppState, Platform } from "react-native";
 import Svg, { Path } from "react-native-svg";
-import { accountState, nameFor, serverNameProblem, type McpServer, type Named } from "../../desktop";
+import { accountLabel, accountState, nameFor, serverNameProblem, type McpServer, type Named } from "../../desktop";
 import { useHub } from "../../hubContext";
 import { useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
@@ -26,8 +26,9 @@ function Mark({ entry }: { entry: Named }) {
 }
 
 /** A named service on Connections, or one of its accounts: Connect, its sign-in, then its state with Test, Add
- * Another Account and Disconnect. With several, each says its own name under the service's. */
-export function NamedRow({ entry, server, several = false, servers, reload }: { entry: Named; server?: McpServer; several?: boolean; servers: McpServer[]; reload: () => void }) {
+ * Another Account and Disconnect. With several, or one named otherwise (notion-work), each says its own name under the
+ * service's. */
+export function NamedRow({ entry, server, servers, reload }: { entry: Named; server?: McpServer; servers: McpServer[]; reload: () => void }) {
   const t = useTheme();
   const { session, state: hub, paired } = useHub();
   const cloud = paired.cloud === true;
@@ -35,7 +36,7 @@ export function NamedRow({ entry, server, several = false, servers, reload }: { 
   const [line, setLine] = useState<{ text: string } | null>(null);
   const state = server === undefined ? ({ kind: "add" } as const) : accountState(server);
   const row = rowOf(state);
-  const label = several && server !== undefined ? server.name : entry.label;
+  const label = server === undefined ? entry.label : accountLabel(entry, server, servers);
 
   const failed = (what: string, e: { message: string; fix?: string | undefined }) => {
     haptics.warning();
@@ -172,8 +173,8 @@ export function NamedRow({ entry, server, several = false, servers, reload }: { 
 
   const tone = row.tone === "accent" ? t.accent : row.tone === "danger" ? t.danger : t.secondary;
   // What the last press found, else why it is signed out.
-  // Else, one of several accounts, its name.
-  const detail = line?.text ?? (state.kind === "signin" ? state.problem?.replace(/`/gu, "") : undefined) ?? (several && server !== undefined ? server.name : undefined);
+  // Else an account's own name, when it has one.
+  const detail = line?.text ?? (state.kind === "signin" ? state.problem?.replace(/`/gu, "") : undefined) ?? (label === entry.label ? undefined : label);
   return (
     <ListRow
       title={entry.label}

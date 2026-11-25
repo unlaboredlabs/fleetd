@@ -66,9 +66,10 @@ export const accountsOf = (entry: Named, servers: ReadonlyArray<McpServer>): Mcp
 /** The servers the list shows as themselves: every one at no entry's URL. */
 export const unnamed = (servers: ReadonlyArray<McpServer>): McpServer[] => servers.filter((s) => namedOf(s) === undefined);
 
-/** An account as a list names it: the service's name while it is the only one, else its own (notion-work). */
+/** An account as a list names it: the service's name while it is the only one and by the service's name, else its
+ * own (notion-work). */
 export const accountLabel = (entry: Named, server: McpServer, servers: ReadonlyArray<McpServer>): string =>
-  accountsOf(entry, servers).length > 1 ? server.name : entry.label;
+  accountsOf(entry, servers).length > 1 || server.name !== entry.name ? server.name : entry.label;
 
 /** The entry's name, or the first free one after it (paper-2) when another server, an account of it or not, has it. */
 export const nameFor = (entry: Named, taken: ReadonlyArray<string>): string => {

@@ -107,7 +107,7 @@ export function Connections() {
           ? NAMED.flatMap((entry) => {
               const accounts = accountsOf(entry, team);
               if (accounts.length === 0) return [<NamedRow key={entry.id} entry={entry} servers={team} reload={servers.reload} />];
-              return accounts.map((s) => <NamedRow key={`${entry.id}:${s.name}`} entry={entry} server={s} several={accounts.length > 1} servers={team} reload={servers.reload} />);
+              return accounts.map((s) => <NamedRow key={`${entry.id}:${s.name}`} entry={entry} server={s} servers={team} reload={servers.reload} />);
             })
           : null}
         {ts === undefined ? null : <TailscaleRow state={ts} admin={admin} reload={tailnet.reload} />}

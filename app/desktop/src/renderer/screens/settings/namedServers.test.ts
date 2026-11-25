@@ -51,6 +51,7 @@ describe("named MCP servers", () => {
     if (work === undefined || own === undefined) throw new Error("no servers");
     expect(accountLabel(PAPER, work, list)).toBe("paper-work");
     expect(accountLabel(PAPER, own, [own])).toBe("Paper");
+    expect(accountLabel(PAPER, work, [work])).toBe("paper-work");
   });
 
   it("takes the first free name after paper, or the one the person gives another account", () => {
