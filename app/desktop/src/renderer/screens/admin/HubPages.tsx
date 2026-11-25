@@ -93,7 +93,7 @@ function Managing({ tab }: { tab: HubTab }) {
         <Text size="sm" tone="quiet">
           Managing
         </Text>
-        <div className={a.hubChoices} role="group" aria-label="Hub to manage">
+        <div className={a.hubChoices} role="group" aria-label="Workspace to manage">
           {hubs.map((h) => (
             <HubScope key={h.id} hub={h}>
               <HubChoice hub={h} tab={tab} current={h.id === hub.id} onPick={() => navigate({ id: "settings", tab, at: h.id })} />
@@ -126,14 +126,14 @@ function page(tab: HubTab, route: SettingsRoute, { administers, me, pending, off
   if (!administers) {
     // A member who follows a link here sees why, and nothing else; with no hub, there is no one to ask yet.
     const [screen, text] = offline
-      ? ["settings.hub.offline", "Connect to a hub to see and change this."]
+      ? ["settings.hub.offline", "Connect to a workspace to see and change this."]
       : pending
         ? ["settings.hub.loading", "Loading…"]
-        : ["settings.hub.denied", "This page is for the hub's owners and admins. Ask one of them for what you need."];
+        : ["settings.hub.denied", "This page is for the workspace's owners and admins. Ask one of them for what you need."];
     return (
       <div className={s.scroll} data-screen={screen}>
         <div className={s.column}>
-          <PageHead title="Hub" />
+          <PageHead title="Workspace" />
           <Text tone="quiet">{text}</Text>
         </div>
       </div>

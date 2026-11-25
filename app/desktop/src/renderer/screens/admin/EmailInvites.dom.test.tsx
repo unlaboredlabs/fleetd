@@ -223,10 +223,10 @@ it("shows each refusal as one line by the field, in the team's words", async () 
   await click(button("Invite by email"));
   for (const failure of [
     { code: "invalid", message: "That isn't an email address.", fix: "Type the person's email." },
-    { code: "already_member", message: "bob@acme.example is on this team already." },
+    { code: "already_member", message: "bob@acme.example is on this workspace already." },
     { code: "already_invited", message: "dana@example.com is invited already.", fix: "Revoke that invite first to send a new one." },
-    { code: "failed", message: "This team has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
-    { code: "forbidden", message: "Only an owner or admin invites people.", fix: "Ask an owner or admin of this team." },
+    { code: "failed", message: "This workspace has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
+    { code: "forbidden", message: "Only an owner or admin invites people.", fix: "Ask an owner or admin of this workspace." },
   ]) {
     refuse = failure;
     await type("someone@example.com");

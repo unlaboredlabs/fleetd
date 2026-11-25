@@ -82,11 +82,11 @@ describe("a typed code", () => {
 
   it("passes the hub's message and fix through", async () => {
     const { service } = setup(() =>
-      json(401, { code: "pair_code_expired", message: "That code expired.", fix: "Run `fleetd pair` on the hub for a new code." }),
+      json(401, { code: "pair_code_expired", message: "That code expired.", fix: "Run `fleetd pair` on the workspace for a new code." }),
     );
     expect(await service.redeem({ hub: "http://127.0.0.1:4790", code: "ABCD-2345" })).toEqual({
       ok: false,
-      failure: { code: "pair_code_expired", message: "That code expired.", fix: "Run `fleetd pair` on the hub for a new code." },
+      failure: { code: "pair_code_expired", message: "That code expired.", fix: "Run `fleetd pair` on the workspace for a new code." },
     });
   });
 
@@ -97,7 +97,7 @@ describe("a typed code", () => {
     expect(old.ok || old.failure.fix).toContain("fleetd update");
     const other = setup(() => json(200, { hello: "world" }));
     const odd = await other.service.redeem({ hub: "127.0.0.1:4790", code: "ABCD-2345" });
-    expect(odd.ok || odd.failure.message).toContain("not like a fleetd hub");
+    expect(odd.ok || odd.failure.message).toContain("not like a fleetd workspace");
     expect(other.seen.connected).toEqual([]);
   });
 

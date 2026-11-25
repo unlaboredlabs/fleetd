@@ -294,7 +294,7 @@ describe("why a kind can't open", () => {
     expect(reason).toEqual({ why: "The agents’ Mac screen needs a Mac joined as the agents’ Mac.", short: "Needs a Mac", fix: "add" });
     expect(askLine(must(reason), "mac", ["Ana"])).toBe("Ask Ana to add a Mac set aside for agents.");
     expect(askLine(must(reason), "android", ["Ana"])).toBe("Ask Ana to add a Linux machine.");
-    expect(askLine(must(reason), "mac", [])).toBe("Ask a hub admin to add a Mac set aside for agents.");
+    expect(askLine(must(reason), "mac", [])).toBe("Ask a workspace admin to add a Mac set aside for agents.");
     expect(fixLabel("add")).toBe("Add machine");
   });
 
@@ -323,7 +323,7 @@ describe("why a kind can't open", () => {
   it("names an older node and a machine whose role is agents only", () => {
     expect(whyOff([off("devbox", {}, { hosts: [] })], "browser")).toMatchObject({ fix: "update", short: "Needs an update" });
     expect(whyOff([off("devbox", {}, { roles: ["agents"] })], "browser")).toMatchObject({ why: "devbox doesn’t host screens: its role is agents only.", fix: "roles" });
-    expect(whyOff([], "browser")).toMatchObject({ why: "No machine has joined this hub yet.", fix: "add" });
+    expect(whyOff([], "browser")).toMatchObject({ why: "No machine has joined this workspace yet.", fix: "add" });
   });
 
   it("keeps a bot's browser to its own machine's reason", () => {

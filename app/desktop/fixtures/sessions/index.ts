@@ -97,7 +97,7 @@ const preview = (base: Fixture): Fixture => {
   const f = Fixture.from(base, "sessions-preview", "Screens: storefront's agents, one in a browser, one asking you to take over its browser.");
   const iso = (agoMs: number) => new Date(Date.parse(f.now) - agoMs).toISOString();
   // The hub says it serves browser sessions: the Agents section shows them (no other fixture's hub says so).
-  if (f.state.phase !== "live") throw new Error("many-agents' hub isn't live");
+  if (f.state.phase !== "live") throw new Error("many-agents' workspace isn't live");
   f.state = { ...f.state, features: ["presence", "browser_sessions", "screen_open"] };
   for (const tool of ["orders_board", "order_get"]) f.update(tool, (out) => patchLane(out, "T4", { status: "waiting", statusReason: ASKS }));
   // Its own work: the browser tools it called, the login filled from 1Password by reference, and why it asked.
@@ -219,7 +219,7 @@ const preview = (base: Fixture): Fixture => {
     row(SESSION.receipt, "T1", "Check the receipt email shows dates in the shopper’s locale", 2 * 3_600_000, {
       state: "lost",
       endedAt: iso(2 * 3_600_000 - 41_000),
-      note: "the upload failed three times while the hub was unreachable",
+      note: "the upload failed three times while the workspace was unreachable",
     }),
     row(SESSION.expired, "T8", "Check the pricing page on staging after the copy change", 33 * 86_400_000, { state: "expired", endedAt: iso(33 * 86_400_000 - 95_000) }),
   ];

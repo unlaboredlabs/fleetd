@@ -76,7 +76,7 @@ function PresenceSetting() {
   return (
     <SwitchRow
       reveal="general.presence"
-      title="Tell the hub when I'm using the app"
+      title="Tell the workspace when I'm using the app"
       hint="Once a minute: whether the app is in front and which bot is open, to measure your time per merged PR. Never what you type or see."
       checked={on ?? true}
       disabled={on === null}

@@ -45,7 +45,7 @@ const hubKey = async (call: Call): Promise<{ ok: true; key: Uint8Array } | { ok:
   if (!status.ok) return status;
   const out = status.output as { hubBoxKey?: unknown; locked?: unknown };
   const key = typeof out.hubBoxKey === "string" ? fromBase64(out.hubBoxKey) : null;
-  if (key?.length !== 32) return refused("The hub sent no box key to seal to.", "Update fleetd on the hub, then try again.", "failed");
+  if (key?.length !== 32) return refused("The workspace sent no box key to seal to.", "Update fleetd on the workspace, then try again.", "failed");
   return { ok: true, key };
 };
 
@@ -107,7 +107,7 @@ const openFields = async (request: VaultRevealRequest, call: Call): Promise<Vaul
     try {
       plain = sodium.crypto_box_seal_open(fromBase64(typeof sealed === "string" ? sealed : "") ?? new Uint8Array(0), keys.publicKey, keys.privateKey);
     } catch {
-      return refused("The hub's answer didn't open here.", "Try again; if it keeps failing, update fleetd on the hub.", "failed");
+      return refused("The workspace's answer didn't open here.", "Try again; if it keeps failing, update fleetd on the workspace.", "failed");
     }
     try {
       const parsed: unknown = JSON.parse(new TextDecoder().decode(plain));
@@ -115,7 +115,7 @@ const openFields = async (request: VaultRevealRequest, call: Call): Promise<Vaul
       if (typeof parsed === "object" && parsed !== null) for (const [k, v] of Object.entries(parsed)) if (typeof v === "string") fields[k] = v;
       return { ok: true, fields };
     } catch {
-      return refused("The hub's answer didn't open here.", "Try again; if it keeps failing, update fleetd on the hub.", "failed");
+      return refused("The workspace's answer didn't open here.", "Try again; if it keeps failing, update fleetd on the workspace.", "failed");
     } finally {
       plain.fill(0);
     }

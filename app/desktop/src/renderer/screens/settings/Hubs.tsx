@@ -24,14 +24,14 @@ export function HubsSettings() {
   const hubs = useHubs();
   return (
     <SettingsSection
-      title="Paired hubs"
+      title="Paired workspaces"
       reveal="hubs.add"
-      hint="The hubs this app is paired with. It acts as you on each. With two hubs or more, a hub's name shows above its bots and beside its work."
+      hint="The workspaces this app is paired with. It acts as you on each. With two workspaces or more, a workspace's name shows above its bots and beside its work."
       aside={
         // The web app is fleetd cloud's: its hubs are the account's teams, and pairing one of your own is the desktop app's.
         onWeb() ? undefined : (
           <AddButton
-            label="Add a hub"
+            label="Add a workspace"
             onClick={() => {
               window.location.hash = "#/onboarding?add";
             }}
@@ -69,7 +69,7 @@ function phaseLine(state: HubState): { tone: TextTone; text: string } {
     case "refused":
       return { tone: "danger", text: `It refused this app's key: ${sentence(state.message)} Pair again to get a new key.` };
     case "unpaired":
-      return { tone: "quiet", text: state.note ?? "This app isn't paired with a hub." };
+      return { tone: "quiet", text: state.note ?? "This app isn't paired with a workspace." };
   }
 }
 
@@ -86,8 +86,8 @@ export function ForgetHubDialog({ open, onOpenChange, only = true }: { open: boo
       title={only ? "Disconnect and forget the key?" : `Remove ${hub.label}?`}
       description={
         only
-          ? "This app stops showing the hub's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
-          : `This app forgets ${hub.label}'s key and stops showing its work, and drops messages to it still waiting to send. Your other hubs stay as they are, and agents on ${hub.label} keep running.`
+          ? "This app stops showing the workspace's work until you pair it again with a code from fleetd pair, and drops messages still waiting to send. Agents keep running."
+          : `This app forgets ${hub.label}'s key and stops showing its work, and drops messages to it still waiting to send. Your other workspaces stay as they are, and agents on ${hub.label} keep running.`
       }
       footer={
         <>
@@ -114,7 +114,7 @@ function RestartHubDialog({ open, onOpenChange, onRestart, only }: { open: boole
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={only ? "Restart the hub?" : `Restart ${hub.label}?`}
+      title={only ? "Restart the workspace?" : `Restart ${hub.label}?`}
       description="It is back in about a second, and running agents carry on. A lead whose profile changed since it started comes back on the current one, with its chat, memory and open orders."
       footer={
         <>
@@ -177,7 +177,7 @@ function HubSetting({ only }: { only: boolean }) {
                 window.location.hash = `#/onboarding?another&at=${self.id}`;
               }}
             >
-              {hub === null ? "Pair with a hub" : "Pair again"}
+              {hub === null ? "Pair with a workspace" : "Pair again"}
             </Button>
           ) : null}
           {/* Admins of this hub only, and only while it is there to ask. */}
@@ -187,7 +187,7 @@ function HubSetting({ only }: { only: boolean }) {
               disabled={busy}
               items={[
                 ...(hub !== null ? [{ label: "Name and colour…", onSelect: () => setEditing(true) }] : []),
-                ...(administers && restarts && (state.phase === "live" || busy) ? [{ label: "Restart hub…", onSelect: () => setConfirmRestart(true) }] : []),
+                ...(administers && restarts && (state.phase === "live" || busy) ? [{ label: "Restart workspace…", onSelect: () => setConfirmRestart(true) }] : []),
                 ...(hub && !onWeb() ? [{ label: only ? "Disconnect and forget key…" : "Remove…", onSelect: () => setConfirm(true), danger: true }] : []),
               ]}
             />

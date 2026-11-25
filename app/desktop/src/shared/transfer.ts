@@ -105,7 +105,7 @@ export const sendFile = async (
   wait: Wait = sleep,
   now: () => number = Date.now,
 ): Promise<Sent> => {
-  const failed = (o: TransferOutcome): Sent => ({ ok: false, message: o.ok ? "The hub didn't store the file." : o.error.message });
+  const failed = (o: TransferOutcome): Sent => ({ ok: false, message: o.ok ? "The workspace didn't store the file." : o.error.message });
   const paced = pace(ATTACHMENT_PART_BYTES, UP_PIECE_TARGET_MS, now);
   for (let fresh = 0; ; fresh++) {
     progress(0);
@@ -145,7 +145,7 @@ export const sendFile = async (
 /** A read file, or why not: the hub's or the link's error code (`invalid` when the hub sent no file) and its words. */
 export type Read = { readonly ok: true; readonly file: AttachmentGetOutput } | { readonly ok: false; readonly code: string; readonly message: string };
 
-const readFailed = (o: TransferOutcome): Read => (o.ok ? { ok: false, code: "invalid", message: "The hub sent no file." } : { ok: false, code: o.error.code, message: o.error.message });
+const readFailed = (o: TransferOutcome): Read => (o.ok ? { ok: false, code: "invalid", message: "The workspace sent no file." } : { ok: false, code: o.error.code, message: o.error.message });
 
 /** Pieces asked for at once while a file is read: the next is on its way while one comes, so no round trip idles. */
 export const READS_IN_FLIGHT = 2;

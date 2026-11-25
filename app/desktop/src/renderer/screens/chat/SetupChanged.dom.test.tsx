@@ -98,7 +98,7 @@ describe("a lead's setup change in the chat", () => {
     expect(pageOf({ kind: "repo_added" })).toBe("projects");
     expect(pageOf({ kind: "instructions" })).toBe("instructions");
     expect(pageOf({ kind: "env", names: ["API_BASE"] })).toBe("project-vault");
-    expect(pageOf({ kind: "a newer hub's" })).toBe("projects");
+    expect(pageOf({ kind: "a newer workspace's" })).toBe("projects");
     await render(line("Set the variable API_BASE", { kind: "env", names: ["API_BASE"] }));
     await click("Open");
     expect(window.location.hash).toBe("#/settings/project-vault?for=devbox/shop");

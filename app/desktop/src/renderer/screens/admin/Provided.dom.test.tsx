@@ -215,7 +215,7 @@ it("with a machine of the team's own, Linux machine picks between it and fleetd'
   });
   await settle();
   // The cloud refuses the team's own machines while none runs agents: its words, under the row.
-  whereSet = () => ({ code: "invalid", message: "Add a computer first: no machine of the team's runs agents." });
+  whereSet = () => ({ code: "invalid", message: "Add a computer first: no machine of the workspace's runs agents." });
   await choose("Your machines");
   expect(where("linux")?.querySelector("[role='alert']")?.textContent).toContain("Add a computer first");
 });
@@ -259,11 +259,11 @@ it("says why nothing runs while fleetd's computers are held, in Billing's words 
   // No plan and no credits: the service's own words and fix.
   billing = read(BILLING_SAMPLES.none);
   await render();
-  expect(section()?.textContent).toContain("This team has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
+  expect(section()?.textContent).toContain("This workspace has no plan and no credits, so fleetd can't start a computer for its bots. Pick a plan or buy credits.");
 });
 
 it("on a cloud that doesn't answer the pick yet, still says agents run on fleetd's computers", async () => {
-  sandbox = { code: "not_found", message: "fleetd provides the hosted computers here: no team brings a boat.dev key." };
+  sandbox = { code: "not_found", message: "fleetd provides the hosted computers here: no workspace brings a boat.dev key." };
   await render();
   expect(where("linux")?.querySelector("[data-where-value]")?.textContent).toBe("fleetd's computers");
   expect(where("mac")?.textContent).toContain("fleetd's computers don't run Macs");

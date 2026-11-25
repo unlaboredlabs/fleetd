@@ -44,7 +44,7 @@ export interface Cloud {
 }
 
 /** Asked of a hub that didn't come with the account: the page never offers it there. */
-const NOT_CLOUD = { ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } } as const;
+const NOT_CLOUD = { ok: false, failure: { code: "", message: "That workspace isn't one of your fleetd cloud workspaces." } } as const;
 
 /** Who is signed in, beside the hubs' list; no token is in it. */
 export const ACCOUNT_FILE = "desktop-account.json";
@@ -82,7 +82,7 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     const service = config === null ? undefined : hubs.get(id);
     const keyed = service?.keyed() ?? null;
     const origin = keyed === null || config === null ? null : teamOrigin(keyed.url, config.accountsUrl, local);
-    return keyed === null || origin === null ? null : { origin, key: keyed.key, name: hubs.list().find((h) => h.id === id)?.label ?? "Hub" };
+    return keyed === null || origin === null ? null : { origin, key: keyed.key, name: hubs.list().find((h) => h.id === id)?.label ?? "Workspace" };
   };
   const cloudHub = ({ id, label, service }: { id: HubId; label: string; service: HubService }): CloudHub => ({
     id,
@@ -120,15 +120,15 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
     move: async (from, to) => {
       const service = hubs.get(from);
       const t = team(to);
-      if (service === undefined) return { ok: false, message: "That hub was removed from this app." };
-      if (t === null) return { ok: false, message: "That team isn't connected to this app any more. Sign in again." };
+      if (service === undefined) return { ok: false, message: "That workspace was removed from this app." };
+      if (t === null) return { ok: false, message: "That workspace isn't connected to this app any more. Sign in again." };
       // The team's key goes to the hub that moves, never through the page.
       const started = await service.call({ tool: "hub_move_start", input: { url: t.origin, key: t.key, team: t.name } });
       return started.ok ? { ok: true } : { ok: false, message: started.error.message };
     },
     connectComputer: async (id) => {
       const service = hubs.get(id);
-      if (service === undefined) return { ok: false, message: "That hub was removed from this app." };
+      if (service === undefined) return { ok: false, message: "That workspace was removed from this app." };
       return connectComputer((tool, input) => service.call({ tool, input }), realTerminalDeps());
     },
     invites: async (id) => {

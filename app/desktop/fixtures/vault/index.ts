@@ -30,7 +30,7 @@ const typed = { kind: "typed" };
 const teamItems = (f: Fixture, admin: boolean): JsonObject[] => [
   item(f, 1, { kind: "login", scope: "hub", label: "GitHub (bot)", meta: { source: typed, sites: ["github.com"], fields: ["username", "password", "totp"] } }),
   item(f, 2, { kind: "login", scope: "hub", label: "Stripe dashboard", meta: { source: { kind: "1password", ref: "op://Shared/Stripe", importedMs: Date.parse(at(f.now, -5 * 86_400_000)) }, sites: ["dashboard.stripe.com", "stripe.com"], fields: ["username", "password"] } }),
-  item(f, 3, { kind: "card", scope: "hub", label: "Team Visa", canEdit: admin, canReveal: admin, meta: { source: typed, brand: "visa", last4: "4242" } }),
+  item(f, 3, { kind: "card", scope: "hub", label: "Workspace Visa", canEdit: admin, canReveal: admin, meta: { source: typed, brand: "visa", last4: "4242" } }),
   item(f, 4, { kind: "address", scope: "hub", label: "Office", meta: { source: typed, country: "DE" } }),
 ];
 
@@ -63,9 +63,9 @@ const vault = (f: Fixture, features: string[], list: JsonObject[], admin: boolea
 
 export default defineGroup({
   fixtures: (base) => [
-    vault(Fixture.from(base("typical"), "vault-team", "Vault: the team's items, storefront's variables and two of Sam's set aside."), ["vault", "vault_team"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
-    vault(Fixture.from(base("typical"), "vault-team-member", "Vault as a member: a team card someone else added, which only its creator or an admin may show or change."), ["vault", "vault_team"], teamItems(base("typical"), false), false),
+    vault(Fixture.from(base("typical"), "vault-team", "Vault: the workspace's items, storefront's variables and two of Sam's set aside."), ["vault", "vault_team"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
+    vault(Fixture.from(base("typical"), "vault-team-member", "Vault as a member: a workspace card someone else added, which only its creator or an admin may show or change."), ["vault", "vault_team"], teamItems(base("typical"), false), false),
     vault(Fixture.from(base("typical"), "vault-empty", "Vault with nothing in it yet: its words and its own add, and the trash under them."), ["vault", "vault_team"], [], true),
-    vault(Fixture.from(base("typical"), "vault-old-hub", "Vault on a hub from before the team vault: one list, Sam's own among them, nothing set aside."), ["vault"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
+    vault(Fixture.from(base("typical"), "vault-old-hub", "Vault on a workspace from before the workspace vault: one list, Sam's own among them, nothing set aside."), ["vault"], [...teamItems(base("typical"), true), ...setAside(base("typical"))], true),
   ],
 });

@@ -42,7 +42,7 @@ export function UpdatesHost({ commands = true }: { commands?: boolean }) {
     {
       id: "app.checkForUpdates",
       title: "Check for updates",
-      detail: "The hub, its machines and this app",
+      detail: "The workspace, its machines and this app",
       group: "actions" as const,
       keywords: ["update", "upgrade", "version"],
       run: () => {

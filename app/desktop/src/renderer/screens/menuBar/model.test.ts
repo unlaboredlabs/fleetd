@@ -139,7 +139,7 @@ describe("the Mac's health", () => {
     const sleeps: MacCheck = {
       id: "keep_awake",
       state: "warn",
-      message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its hub.",
+      message: "The Mac sleeps after 1 min idle whenever fleetd's node isn't holding it awake (an update, a restart), and drops off its workspace.",
       fix: "Turn on Prevent automatic sleeping when the display is off in System Settings › Energy",
       command: 'open "x-apple.systempreferences:com.apple.Energy-Settings.extension"',
     };
@@ -173,7 +173,7 @@ describe("Update", () => {
   it("shows only while this Mac is behind its hub: an admin's button, else who can and where", () => {
     expect(menuBarView(read(), hub(), NOW).update).toBeNull();
     const behind = (who: "admin" | "member" | "unknown") => menuBarView(read({ macBehind: { macVersion: "0.9.0", hubVersion: "0.9.2", who } }), hub(), NOW).update;
-    expect(behind("admin")).toEqual({ line: "This Mac runs fleetd 0.9.0; devbox runs 0.9.2. Update brings every machine level with the hub.", admin: true });
+    expect(behind("admin")).toEqual({ line: "This Mac runs fleetd 0.9.0; devbox runs 0.9.2. Update brings every machine level with the workspace.", admin: true });
     expect(behind("member")).toMatchObject({ admin: false, where: `Ask an admin of devbox: ${HUB_UPDATE_WHERE}` });
     expect(behind("unknown")).toMatchObject({ admin: false, where: HUB_UPDATE_WHERE });
   });

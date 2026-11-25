@@ -12,7 +12,7 @@ const runOf = (hub: UpdatePart["state"], finished: boolean): UpdateRun => ({
   to: NEXT,
   startedAt: "2026-10-26T10:00:00.000Z",
   ...(finished ? { finishedAt: "2026-10-26T10:03:00.000Z" } : {}),
-  parts: [{ part: "hub", name: "the hub", from: "0.0.0", state: hub }],
+  parts: [{ part: "hub", name: "the workspace", from: "0.0.0", state: hub }],
 });
 
 type Answer = { ok: true; run?: UpdateRun; ready?: string } | { ok: false; error: HubError };
@@ -44,7 +44,7 @@ const deps = (start: Answer, statuses: Answer[], app: AppUpdate | AppUpdate[]) =
   return { d, calls, inputs };
 };
 
-const offline: Answer = { ok: false, error: { code: "offline", message: "Not connected to the hub." } };
+const offline: Answer = { ok: false, error: { code: "offline", message: "Not connected to the workspace." } };
 
 describe("the Update button's run", () => {
   afterEach(resetFlow);
@@ -103,20 +103,20 @@ describe("the Update button's run", () => {
   });
 
   it("tells a hub from before the Update button to run fleetd update there once", async () => {
-    const { d } = deps({ ok: false, error: { code: "not_found", message: "No tool hub_update.", fix: "Use a tool name from the hub's MCP tool list." } }, [], { kind: "current" });
+    const { d } = deps({ ok: false, error: { code: "not_found", message: "No tool workspace_update.", fix: "Use a tool name from the workspace's MCP tool list." } }, [], { kind: "current" });
     await startUpdate(d);
     expect(currentFlow()).toEqual({ phase: "refused", message: BEFORE_UPDATE });
-    expect(BEFORE_UPDATE).toContain("Run `fleetd update` on the hub's machine once");
+    expect(BEFORE_UPDATE).toContain("Run `fleetd update` on the workspace's machine once");
   });
 
   it("says why the hub refused", async () => {
     const { d } = deps(
-      { ok: false, error: { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the hub machine." } },
+      { ok: false, error: { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the workspace machine." } },
       [],
       { kind: "current" },
     );
     await startUpdate(d);
-    expect(currentFlow()).toEqual({ phase: "refused", message: "This key lacks the admin role. Run `fleetd pair` on the hub machine." });
+    expect(currentFlow()).toEqual({ phase: "refused", message: "This key lacks the admin role. Run `fleetd pair` on the workspace machine." });
   });
 
   it("follows a run another window started, and only shows a finished one", async () => {

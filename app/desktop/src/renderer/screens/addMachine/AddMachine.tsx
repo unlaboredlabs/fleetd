@@ -172,7 +172,7 @@ export function AddMachine({
         })());
 
   // The hub's own machine, where a command that lets the hub reach another one runs.
-  const hubMachine = hosts.data?.hosts.find((h) => h.source === "hub")?.machineId ?? "the hub's machine";
+  const hubMachine = hosts.data?.hosts.find((h) => h.source === "hub")?.machineId ?? "the workspace's machine";
   const hostList = ssh ? hosts.data?.hosts : [];
   const here =
     hostList && hostName !== undefined && computer !== undefined && !info.isPending ? hereOf(hostList, hubFingerprint, hostName, computer, new Set(Object.keys(machines))) : undefined;
@@ -217,7 +217,7 @@ export function AddMachine({
   return (
     <section ref={ref} className={s.panel} aria-label="Add machine" data-state={shown.kind}>
       {!live ? (
-        <Text tone="quiet">Connect to the hub to add a machine.</Text>
+        <Text tone="quiet">Connect to the workspace to add a machine.</Text>
       ) : shown.kind === "choose" ? (
         <Choose
           here={here}
@@ -306,9 +306,9 @@ function Choose(props: {
         {props.ssh ? (
           <li className={s.row}>
             <div className={s.rowText}>
-              <Text>A machine the hub can reach</Text>
+              <Text>A machine the workspace can reach</Text>
               <Text size="sm" tone="quiet">
-                Over SSH from the hub: one in its ~/.ssh/config or on its tailnet.
+                Over SSH from the workspace: one in its ~/.ssh/config or on its tailnet.
               </Text>
             </div>
             <Button className={s.rowAction} onClick={props.onHosts}>
@@ -320,7 +320,7 @@ function Choose(props: {
           <div className={s.rowText}>
             <Text>{props.ssh ? "Any other machine" : "Another machine"}</Text>
             <Text size="sm" tone="quiet">
-              {props.ssh ? "A laptop, or one behind NAT: one line to paste in its terminal. It must reach the hub." : "One line to paste in its terminal. On fleetd cloud, machines join this way, not over SSH."}
+              {props.ssh ? "A laptop, or one behind NAT: one line to paste in its terminal. It must reach the workspace." : "One line to paste in its terminal. On fleetd cloud, machines join this way, not over SSH."}
             </Text>
           </div>
           <Button className={s.rowAction} onClick={props.onLine}>
@@ -348,10 +348,10 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
   return (
     <>
       <Head
-        title="A machine the hub can reach"
+        title="A machine the workspace can reach"
         line={
           <>
-            The hub connects with its own SSH keys, so <InlineCode>ssh &lt;host&gt; true</InlineCode> must work from the hub without a password.
+            The workspace connects with its own SSH keys, so <InlineCode>ssh &lt;host&gt; true</InlineCode> must work from the workspace without a password.
           </>
         }
       />
@@ -365,7 +365,7 @@ function Hosts(props: { read: ReturnType<typeof useToolQuery<"machine_hosts">>; 
         </div>
       ) : pickable(hosts).length === 0 ? (
         <div className={s.body}>
-          <Text tone="quiet">{`The hub finds none. Name the machine in ~/.ssh/config on ${props.hubMachine}, or add it as any other machine.`}</Text>
+          <Text tone="quiet">{`The workspace finds none. Name the machine in ~/.ssh/config on ${props.hubMachine}, or add it as any other machine.`}</Text>
         </div>
       ) : (
         <ul className={s.rows} aria-label="Hosts">
@@ -516,7 +516,7 @@ function Run(props: { run: MachineAddRun | undefined; pending: boolean; busy: bo
           <Text tone="quiet">Loading…</Text>
         ) : (
           <>
-            <Text tone="quiet">The hub no longer has this run: it restarted. Add the machine again; finished steps are skipped.</Text>
+            <Text tone="quiet">The workspace no longer has this run: it restarted. Add the machine again; finished steps are skipped.</Text>
             <div className={s.actions}>
               <Button onClick={props.onBack}>Back</Button>
             </div>
@@ -715,8 +715,8 @@ function Line(props: { machineId: string | undefined; rejoin: boolean; mac?: boo
           mac
             ? MAC_HEAD
             : props.rejoin
-              ? "Run this line in a terminal on it: it installs this hub's fleetd again and enrolls the machine with a new code."
-              : "Run one line in a terminal on it: it installs this hub's fleetd and joins. The machine needs claude and must reach the hub."
+              ? "Run this line in a terminal on it: it installs this workspace's fleetd again and enrolls the machine with a new code."
+              : "Run one line in a terminal on it: it installs this workspace's fleetd and joins. The machine needs claude and must reach the workspace."
         }
       />
       {mac && guide?.[0] !== undefined ? <GuideParts parts={[guide[0]]} /> : null}

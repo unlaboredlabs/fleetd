@@ -137,7 +137,7 @@ export function ProfilePicks() {
   return (
     <SettingsSection title="Profiles" hint={`Made under each provider in ${settingsPath(cloud, "Providers")}.`}>
       {!live ? (
-        <GroupNote>Connect to the hub to see and change its profiles.</GroupNote>
+        <GroupNote>Connect to the workspace to see and change its profiles.</GroupNote>
       ) : view === undefined ? (
         <GroupNote tone={list.error ? "danger" : "quiet"}>{list.error ? `Not read: ${errorText(list.error)}` : "Loading…"}</GroupNote>
       ) : (
@@ -384,7 +384,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
       title="Allowed profiles"
       reveal="agents.profiles"
       aside={admin ? <AddButton label="Add profile" onClick={openProviders} /> : undefined}
-      hint={`The task profiles its lead may run agents on. The hub's default is always allowed; the hub's admins make profiles under each provider in ${settingsPath(cloud, "Providers")}.`}
+      hint={`The task profiles its lead may run agents on. The workspace's default is always allowed; the workspace's admins make profiles under each provider in ${settingsPath(cloud, "Providers")}.`}
     >
       {view.profiles.map((p) => (
         <SettingsRow
@@ -398,7 +398,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
             </span>
           }
           label={p.name}
-          hint={p.default ? `Always allowed: the hub's default.${p.note === "" ? "" : ` ${p.note}`}` : p.note === "" ? undefined : p.note}
+          hint={p.default ? `Always allowed: the workspace's default.${p.note === "" ? "" : ` ${p.note}`}` : p.note === "" ? undefined : p.note}
           control={
             p.default ? (
               <Text size="sm" tone="quiet">
@@ -430,7 +430,7 @@ export function AllowedProfiles({ projectRef }: { projectRef: ProjectRef }) {
                 value={view.leadProfile ?? HUB_LEAD}
                 disabled={!live || busy !== undefined}
                 options={[
-                  { value: HUB_LEAD, label: `Hub default (${lead.name})`, textValue: `Hub default (${lead.name})` },
+                  { value: HUB_LEAD, label: `Workspace default (${lead.name})`, textValue: `Workspace default (${lead.name})` },
                   ...profileOptions(view, admin, cloud),
                 ]}
                 onValueChange={pickLead}

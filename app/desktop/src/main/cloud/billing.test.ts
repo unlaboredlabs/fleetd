@@ -63,10 +63,10 @@ describe("a cloud team's billing", () => {
     };
     const odd = standIn(() => ({ status: 200, body: { url: "http://checkout.example.com" } }));
     expect(await openBilling(odd.fetch, TEAM, { plan: "solo" }, open)).toMatchObject({ ok: false });
-    const taken = standIn(() => ({ status: 409, body: { code: "already_subscribed", message: "This team has the Team plan already.", fix: "Change or cancel it in Manage billing." } }));
+    const taken = standIn(() => ({ status: 409, body: { code: "already_subscribed", message: "This workspace has the Team plan already.", fix: "Change or cancel it in Manage billing." } }));
     expect(await openBilling(taken.fetch, TEAM, { plan: "solo" }, open)).toEqual({
       ok: false,
-      failure: { code: "already_subscribed", message: "This team has the Team plan already.", fix: "Change or cancel it in Manage billing." },
+      failure: { code: "already_subscribed", message: "This workspace has the Team plan already.", fix: "Change or cancel it in Manage billing." },
     });
     expect(opened).toEqual([]);
   });
@@ -76,7 +76,7 @@ describe("a cloud team's billing", () => {
     expect(await setBillingCap(fetch, TEAM, 5000)).toEqual({ ok: true, capCents: 5000 });
     expect(await setBillingCap(fetch, TEAM, null)).toEqual({ ok: true, capCents: null });
     expect(sent.map((s) => s.body)).toEqual([{ capCents: 5000 }, { capCents: null }]);
-    const member = standIn(() => ({ status: 403, body: { code: "forbidden", message: "Only the team's owners and admins set its spend cap.", fix: "Ask an owner or admin of the team." } }));
+    const member = standIn(() => ({ status: 403, body: { code: "forbidden", message: "Only the workspace's owners and admins set its spend cap.", fix: "Ask an owner or admin of the workspace." } }));
     expect(await setBillingCap(member.fetch, TEAM, 100)).toMatchObject({ ok: false, failure: { code: "forbidden" } });
   });
 

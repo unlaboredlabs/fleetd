@@ -33,7 +33,7 @@ export const connectComputer = async (call: (tool: "machine_join", input: Record
   const hub = str(join.output, "hubUrl");
   const code = str(join.output, "code");
   if (hub === undefined || code === undefined || !httpUrl(hub) || !/^[A-Za-z0-9_-]{1,200}$/u.test(code)) {
-    return { ok: false, message: "The hub answered with a join line this app doesn't understand. Copy the line below instead." };
+    return { ok: false, message: "The workspace answered with a join line this app doesn't understand. Copy the line below instead." };
   }
   const opened = await openJoinLine(terminal, joinLine(hub, code, str(join.output, "gitIdentity")));
   return opened.ok ? opened : { ok: false, message: "Couldn't open a terminal. Run the line below in one on this computer." };

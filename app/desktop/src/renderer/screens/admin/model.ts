@@ -13,8 +13,8 @@ export const roleWord = (role: HubRole): string => ROLE_WORD[role] ?? role;
 /** What each role may do, in a line, under the role picker. */
 export const ROLE_HELP: Readonly<Record<string, string>> = {
   owner: "Everything an admin does, and makes or removes owners.",
-  admin: "Invites and removes people, and changes hub-wide settings.",
-  member: "Works in every bot. Sees no Hub pages in Settings.",
+  admin: "Invites and removes people, and changes workspace-wide settings.",
+  member: "Works in every bot. Sees no Workspace pages in Settings.",
 };
 
 export interface PersonRow {
@@ -90,11 +90,11 @@ export function nameProblem(name: string): string | undefined {
  * A person's accounts on their People row, in one line: what the work they start runs on in Claude, and the GitHub
  * their PRs open as. A part the hub doesn't say (an older hub, or no GitHub App yet) is left out; null when both are.
  */
-export function accountsLine(claude: PersonClaude | undefined, github: { readonly account?: GithubAccount } | undefined, githubApp: boolean, noMachine = false, team = false): string | null {
+export function accountsLine(claude: PersonClaude | undefined, github: { readonly account?: GithubAccount } | undefined, githubApp: boolean, noMachine = false): string | null {
   const parts: string[] = [];
   if (claude !== undefined) {
     const failed = claude.subscription?.lastTest?.ok === false && claude.runsOn.kind === "account" && claude.runsOn.account.kind !== "hub";
-    parts.push(`Claude: ${theirRunsOn(claude.runsOn, noMachine, team)}${failed ? ", its last Test failed" : ""}`);
+    parts.push(`Claude: ${theirRunsOn(claude.runsOn, noMachine)}${failed ? ", its last Test failed" : ""}`);
   }
   if (githubApp && github !== undefined) {
     const a = github.account;

@@ -269,13 +269,13 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
         />
       </div>
       {state.askHub ? (
-        <Field label="Hub address" description="Shown under the code on your main machine.">
+        <Field label="Workspace address" description="Shown under the code on your main machine.">
           <Input ref={hubField} value={state.hub} placeholder="http://devbox:4790" mono autoComplete="off" disabled={state.busy} onChange={(e) => dispatch({ type: "hub", value: e.target.value })} />
         </Field>
       ) : null}
       {state.failure === undefined ? null : <Failure failure={state.failure} />}
       {state.choices === undefined ? null : (
-        <ul className={s.choices} aria-label="Hubs this Mac found">
+        <ul className={s.choices} aria-label="Workspaces this Mac found">
           {state.choices.map((hub) => (
             <li key={hub}>
               <Button variant="secondary" size="md" disabled={state.busy} onClick={() => dispatch({ type: "pick", hub })}>
@@ -289,11 +289,11 @@ function CodeStep({ state, dispatch }: { state: Extract<State, { step: "code" }>
       {state.failure?.updateApp === true ? null : (
         <div className={s.actions}>
           <Button type="submit" variant="primary" size="md" disabled={state.busy || state.code.length !== 6}>
-            {state.busy ? (state.askHub && state.hub.trim() !== "" ? "Asking the hub…" : "Finding your hub…") : "Continue"}
+            {state.busy ? (state.askHub && state.hub.trim() !== "" ? "Asking the workspace…" : "Finding your workspace…") : "Continue"}
           </Button>
           {state.askHub ? null : (
             <Button type="button" variant="ghost" size="md" disabled={state.busy} onClick={() => dispatch({ type: "askHub" })}>
-              Type the hub's address
+              Type the workspace's address
             </Button>
           )}
         </div>

@@ -98,7 +98,7 @@ const published = (base: Fixture): Fixture => {
 };
 
 const none = (base: Fixture): Fixture => {
-  const f = Fixture.from(base, "artifacts-none", "Artifacts: a hub that serves them, none published in this chat yet.");
+  const f = Fixture.from(base, "artifacts-none", "Artifacts: a workspace that serves them, none published in this chat yet.");
   if (f.state.phase === "live") f.state = { ...f.state, features: [...(f.state.features ?? []), "artifacts"] };
   f.answer("artifacts_list", { projectRef: STOREFRONT }, { artifacts: [], files: [] });
   return f;

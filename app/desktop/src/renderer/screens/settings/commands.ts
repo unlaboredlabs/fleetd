@@ -68,17 +68,17 @@ const pages: Command[] = [
   {
     id: "go:settings.devices",
     title: "Your devices",
-    detail: "Hubs & devices: the devices signed in as you, and Pair a phone",
+    detail: "Workspaces & devices: the devices signed in as you, and Pair a phone",
     group: "settings",
     keywords: ["phone", "pair", "qr", "mobile", "devices"],
     run: () => go(tabHref("devices")),
   },
   {
     id: "go:settings.hubs",
-    title: "Hubs & devices",
-    detail: "The hubs this app is paired with, and your devices",
+    title: "Workspaces & devices",
+    detail: "The workspaces this app is paired with, and your devices",
     group: "settings",
-    keywords: ["hub", "hubs", "pair", "add a hub", "connections"],
+    keywords: ["hub", "hubs", "pair", "add a workspace", "connections"],
     run: () => go(tabHref("hubs")),
   },
   {
@@ -96,7 +96,7 @@ const pages: Command[] = [
   ...(
     [
       ["Max agents", "How many of a bot's agents run at once", "agents", ["agents", "limit", "at once", "cap", "concurrency"]],
-      ["Hub", "The connection, and this app's key", "hubs", ["connection", "disconnect", "key"]],
+      ["Workspace", "The connection, and this app's key", "hubs", ["connection", "disconnect", "key"]],
     ] as const
   ).map(
     ([title, detail, tab, keywords]): Command => ({
@@ -123,7 +123,7 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
     {
       id: "settings.open",
       title: "Settings",
-      detail: "You, your bots, and the hub",
+      detail: "You, your bots, and the workspace",
       group: "settings",
       keywords: ["preferences", "administration"],
       run: () => go(left() > 0 ? toHash({ id: "settings", tab: "hub.setup" }) : tabHref("general")),
@@ -141,11 +141,11 @@ export function registerSettingsCommands(layer: DataLayer): () => void {
   });
   const offAdmin = registerCommands([
     hubPage("go:hub.machines", "Machines", "Add a machine, its roles, max agents, updates", "hub.machines", ["machine", "add machine", "fleet cap", "machine roles", "update", "upgrade"]),
-    hubPage("go:hub.agents", "Agents for every bot", "Bot defaults: the default profile, what leads run on, global MCP servers and hub-wide skills", "hub.agents", ["default profile", "lead", "every bot"]),
+    hubPage("go:hub.agents", "Agents for every bot", "Bot defaults: the default profile, what leads run on, global MCP servers and workspace-wide skills", "hub.agents", ["default profile", "lead", "every bot"]),
     hubPage("go:hub.profiles", "Profiles", "Providers: each provider's task profiles, their models and effort", "hub.profiles", ["profiles", "task profiles", "model", "effort"]),
-    hubPage("go:hub.tools", "Tools & skills", "Bot defaults › Agents: global MCP servers and hub-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
+    hubPage("go:hub.tools", "Tools & skills", "Bot defaults › Agents: global MCP servers and workspace-wide skills", "hub.tools", ["mcp", "skills", "global", "every bot"]),
     hubPage("go:hub.instructions", "Instructions for every bot", "Bot defaults: instructions and shared memory", "hub.instructions", ["instructions", "memory caps", "global"]),
-    hubPage("go:hub.accounts", "Hub accounts", "Setup: the Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
+    hubPage("go:hub.accounts", "Workspace accounts", "Setup: the Claude API key and GitHub App", "hub.accounts", ["claude", "api key", "github app", "connections"]),
     hubPage("go:hub.setup", "Setup", "Its accounts and its other setup steps", "hub.setup", ["setup", "guided setup", "accounts", "steps"]),
   ]);
   return () => {

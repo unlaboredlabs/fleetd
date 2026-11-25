@@ -43,7 +43,7 @@ describe("the code", () => {
     const s = run([
       typed("123456"),
       { type: "submit" },
-      { type: "redeemed", outcome: { ok: false, failure: { message: "Can't reach a hub", field: "hub", hub: "http://devbox:4790" } } },
+      { type: "redeemed", outcome: { ok: false, failure: { message: "Can't reach a workspace", field: "hub", hub: "http://devbox:4790" } } },
     ]);
     expect(s).toMatchObject({ step: "code", askHub: true, hub: "http://devbox:4790", code: "123456", busy: false });
   });
@@ -60,7 +60,7 @@ describe("which hub", () => {
     const asked = run([
       typed("123456"),
       { type: "submit" },
-      { type: "redeemed", outcome: { ok: false, failure: { message: "This Mac found 2 hubs. Which is yours?", field: "hub", choices: ["http://a:4790", "http://b:4790"] } } },
+      { type: "redeemed", outcome: { ok: false, failure: { message: "This Mac found 2 workspaces. Which is yours?", field: "hub", choices: ["http://a:4790", "http://b:4790"] } } },
     ]);
     expect(asked).toMatchObject({ step: "code", busy: false, code: "123456", choices: ["http://a:4790", "http://b:4790"], askHub: false });
     expect(reduce(asked, { type: "pick", hub: "http://b:4790" })).toMatchObject({ hub: "http://b:4790", askHub: true, busy: true, choices: undefined, failure: undefined });
@@ -248,7 +248,7 @@ describe("every check a row, live", () => {
     const dialing = read([check("accessibility", "ok")], { writtenAt: 1500, checkedAt: null, link: { state: "linking", since: 1400 } });
     expect(rowsAt(dialing, 1400 + STALL_MS + 1)["link"]).toMatchObject({ state: "failed", line: "devbox isn't answering this Mac.", action: { kind: "restart" } });
     // The hub refuses it: only a new code joins it, and the row says so in the hub's words.
-    const refused = read([check("accessibility", "ok")], { writtenAt: 1500, link: { state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the hub", since: 1450 } });
+    const refused = read([check("accessibility", "ok")], { writtenAt: 1500, link: { state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the workspace", since: 1450 } });
     expect(rowsAt(refused, 1500)["link"]).toMatchObject({ state: "failed", action: { kind: "newCode" } });
     expect(rowsAt(refused, 1500)["link"]?.line).toContain("devbox refused this Mac: mac is not enrolled");
   });

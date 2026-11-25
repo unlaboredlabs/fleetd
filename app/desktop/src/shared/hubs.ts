@@ -40,9 +40,9 @@ export const defaultLabel = (url: string): string => {
     const host = new URL(/^[a-z][a-z0-9+.-]*:\/\//iu.test(url) ? url : `http://${url}`).hostname;
     // A tailnet name's first part is the machine.
     const first = /^\d+\.\d+\.\d+\.\d+$/u.test(host) || host.startsWith("[") ? host : (host.split(".")[0] ?? host);
-    return cleanLabel(first) ?? cleanLabel(url.slice(0, LABEL_MAX)) ?? "Hub";
+    return cleanLabel(first) ?? cleanLabel(url.slice(0, LABEL_MAX)) ?? "Workspace";
   } catch {
-    return cleanLabel(url.slice(0, LABEL_MAX)) ?? "Hub";
+    return cleanLabel(url.slice(0, LABEL_MAX)) ?? "Workspace";
   }
 };
 

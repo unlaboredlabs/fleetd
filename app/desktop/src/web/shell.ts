@@ -176,7 +176,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
   const hubs = new Map<HubId, WebHub>();
   for (const [id, team] of teams) hubs.set(id, new WebHub(team.url, socketUrl(deps.origin, team.id), deps.transport, onState));
 
-  const gone: CallOutcome = { ok: false, error: { code: "offline", message: "That team isn't in this account." } };
+  const gone: CallOutcome = { ok: false, error: { code: "offline", message: "That workspace isn't in this account." } };
   const call = (id: HubId) => (tool: string, input: unknown, timeoutMs?: number) =>
     hubs.get(id)?.call({ tool, input: input as CallRequest["input"], ...(timeoutMs === undefined ? {} : { timeoutMs }) }) ?? Promise.resolve(gone);
 
@@ -191,14 +191,14 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
     for (const [k, v] of Object.entries(WEB_HEADER)) headers.set(k, v);
     return deps.fetch(input, { ...init, headers, credentials: "same-origin" });
   };
-  const notTeam = { ok: false as const, failure: { code: "", message: "That team isn't in this account." } };
+  const notTeam = { ok: false as const, failure: { code: "", message: "That workspace isn't in this account." } };
 
   const readBytes = async (id: HubId, request: FileRequest): Promise<{ ok: true; name: string; blob: Blob } | { ok: false; message: string }> => {
     const got = await readFile((tool, input) => call(id)(tool, input), { projectRef: request.projectRef, attachmentId: request.attachmentId });
     if (!got.ok) return { ok: false, message: `The file couldn't be read: ${got.message}` };
     const { name, mime, dataB64 } = got.file as { name?: unknown; mime?: unknown; dataB64?: unknown };
     const bytes = typeof dataB64 === "string" ? fromBase64(dataB64) : null;
-    if (typeof name !== "string" || typeof mime !== "string" || bytes === null) return { ok: false, message: "The hub sent no file." };
+    if (typeof name !== "string" || typeof mime !== "string" || bytes === null) return { ok: false, message: "The workspace sent no file." };
     // Saved, never shown in a tab here: a page or picture an agent made would run on this origin.
     return { ok: true, name: safeFileName(name, mime), blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "application/octet-stream" }) };
   };
@@ -236,7 +236,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
     copy: (text) => deps.copy(text),
     artifactFrame: async (html, hub) => {
       const team = hub === undefined ? session.teams[0] : teams.get(hub);
-      if (team === undefined) throw new Error("No team to show this report on.");
+      if (team === undefined) throw new Error("No workspace to show this report on.");
       const key = hex(deps.random(16));
       const answer = await webCall(deps.fetch, "POST", teamPath(team.id, "/web/frames"), { html: framedPage(html, key) });
       if (!answer.ok) throw new Error(answer.signedOut === true ? "Signed out." : answer.failure.message);
@@ -297,7 +297,7 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
       update: async (hub, change) => {
         const team = teams.get(hub);
         const label = cleanLabel(change.label);
-        if (team === undefined) return { ok: false, message: "That team isn't in this account." };
+        if (team === undefined) return { ok: false, message: "That workspace isn't in this account." };
         if (label === null) return { ok: false, message: "Give it a name." };
         if (change.color !== null && !HUB_COLORS.includes(change.color)) return { ok: false, message: "Pick one of the colours." };
         const color = change.color === null ? {} : { color: change.color };
@@ -306,8 +306,8 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
         // says so: the team keeps its name, never one only this browser knows.
         const renamed = label === team.name ? null : await webCall(deps.fetch, "POST", teamPath(team.id, "/accounts/v1/team"), { json: { name: label } });
         if (renamed !== null && !renamed.ok) {
-          if (renamed.signedOut === true) return { ok: false, message: "The team wasn't renamed: you're signed out. Sign in again, then rename it." };
-          if (renamed.failure.code !== "forbidden") return { ok: false, message: `The team wasn't renamed: ${renamed.failure.message}${renamed.failure.fix === undefined ? "" : ` ${renamed.failure.fix}`}` };
+          if (renamed.signedOut === true) return { ok: false, message: "The workspace wasn't renamed: you're signed out. Sign in again, then rename it." };
+          if (renamed.failure.code !== "forbidden") return { ok: false, message: `The workspace wasn't renamed: ${renamed.failure.message}${renamed.failure.fix === undefined ? "" : ` ${renamed.failure.fix}`}` };
         }
         const named = renamed?.ok === true ? (renamed.body as { name?: unknown }).name : undefined;
         if (typeof named === "string") {

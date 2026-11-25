@@ -16,11 +16,11 @@ import type { AgentRole, Coverage, InsightRule, Span, SpanKind, ThreadWindowOutp
 export type Answer<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: string };
 
 const SAID: Record<string, string> = {
-  offline: "Not connected to the hub. The figures come back when it reconnects.",
-  disconnected: "Not connected to the hub. The figures come back when it reconnects.",
-  timeout: "The hub took too long to answer. Try a shorter range.",
-  forbidden: "This app's key can't read time data on this hub.",
-  not_found: "The hub has no time data for this yet.",
+  offline: "Not connected to the workspace. The figures come back when it reconnects.",
+  disconnected: "Not connected to the workspace. The figures come back when it reconnects.",
+  timeout: "The workspace took too long to answer. Try a shorter range.",
+  forbidden: "This app's key can't read time data on this workspace.",
+  not_found: "The workspace has no time data for this yet.",
 };
 
 /**
@@ -28,13 +28,13 @@ const SAID: Record<string, string> = {
  * message (tool names, inputs) is for logs, never the screen.
  */
 export const errorText = (error: HubError): string => {
-  const said = SAID[error.code] ?? "The hub couldn't answer.";
+  const said = SAID[error.code] ?? "The workspace couldn't answer.";
   return error.fix === undefined ? said : `${said} ${error.fix}`;
 };
 
 const failure = (error: unknown): Answer<never> => ({
   ok: false,
-  error: error instanceof CallError ? errorText(error.error) : "The hub couldn't answer.",
+  error: error instanceof CallError ? errorText(error.error) : "The workspace couldn't answer.",
 });
 
 /** A query's state as the screens read it: undefined while it is out. */

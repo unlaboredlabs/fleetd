@@ -22,7 +22,7 @@ const read = async (call: Call, request: FileRequest, wait?: Wait): Promise<Got>
   const got = await readFile((tool, input) => call(tool, input), { projectRef: request.projectRef, attachmentId: request.attachmentId }, undefined, wait);
   if (!got.ok) return { ok: false, message: `The file couldn't be read: ${got.message}` };
   const out = got.file as { name?: unknown; mime?: unknown; dataB64?: unknown };
-  if (typeof out.name !== "string" || typeof out.mime !== "string" || typeof out.dataB64 !== "string") return { ok: false, message: "The hub sent no file." };
+  if (typeof out.name !== "string" || typeof out.mime !== "string" || typeof out.dataB64 !== "string") return { ok: false, message: "The workspace sent no file." };
   return { ok: true, name: safeFileName(out.name, out.mime), mime: out.mime, bytes: Buffer.from(out.dataB64, "base64") };
 };
 

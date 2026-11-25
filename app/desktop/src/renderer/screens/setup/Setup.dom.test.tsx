@@ -255,8 +255,8 @@ describe("setup", () => {
   it("holds the hub's Claude key and endpoint on its step, and opens Your accounts for a subscription", async () => {
     await render(<SetupScreen view="claude" />);
     // The key's own controls, as Settings › Hub › Setup › Claude has them: nothing to open for it.
-    expect(pane()?.textContent).toContain("Hub API key");
-    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Hub › Setup › Claude")).toBe(false);
+    expect(pane()?.textContent).toContain("Workspace API key");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Open Workspace › Setup › Claude")).toBe(false);
     // Done, so its guide folds under the controls.
     await click(button("Show the guide"));
     await click(button("Open Accounts"));
@@ -477,10 +477,10 @@ describe("Settings › Hub › Setup", () => {
     await render(page);
     await click(button("Claude"));
     expect(pane()?.getAttribute("data-step")).toBe("claude");
-    const key = pane()?.querySelector<HTMLElement>("section[aria-label='Hub API key']");
+    const key = pane()?.querySelector<HTMLElement>("section[aria-label='Workspace API key']");
     expect(key?.textContent).toContain("Sealed on devbox.");
     expect([...(key?.querySelectorAll("button") ?? [])].map((b) => b.textContent.trim())).toEqual(["Test", "Change", "Remove"]);
-    expect(pane()?.querySelector("section[aria-label=\"Members may use the hub's API key\"] [role='switch']")).not.toBeNull();
+    expect(pane()?.querySelector("section[aria-label=\"Members may use the workspace's API key\"] [role='switch']")).not.toBeNull();
     // The guide and the step's Test wait behind one line: at rest the key's own Test is the only one.
     const tests = () => [...(pane()?.querySelectorAll("button") ?? [])].filter((b) => b.textContent.trim() === "Test");
     expect(pane()?.textContent).not.toContain("Give the hub an API key");
@@ -507,7 +507,7 @@ describe("Settings › Hub › Setup", () => {
     expect(pane()?.getAttribute("data-step")).toBe("people");
     expect(pane()?.querySelector("[data-part]")).toBeNull();
     expect(pane()?.textContent).not.toContain("Show the guide");
-    await click(button("Open Hub › People"));
+    await click(button("Open Workspace › People"));
     expect(parseHash(window.location.hash)).toMatchObject({ id: "settings", tab: "hub.people" });
   });
 });

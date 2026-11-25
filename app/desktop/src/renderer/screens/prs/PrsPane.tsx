@@ -69,7 +69,7 @@ export function PrsPane({ project, pr, tab, onTab, at = null }: PrsPaneProps) {
   if (missing) {
     return (
       <div className={s.screen} data-screen="prs.missing">
-        <PanelEmpty title="This bot isn’t on the hub" />
+        <PanelEmpty title="This bot isn’t on the workspace" />
       </div>
     );
   }

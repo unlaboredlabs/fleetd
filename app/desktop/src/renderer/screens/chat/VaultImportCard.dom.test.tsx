@@ -76,7 +76,7 @@ it("imports only the ticked items, with the proposal, then says how it went", as
   await render();
   expect(host.textContent).toContain("To sign in to Amazon for the order.");
   expect(host.textContent).toContain("Login · amazon.com");
-  expect(host.textContent).toContain("Into the team vault");
+  expect(host.textContent).toContain("Into the workspace vault");
   await click(host.querySelectorAll("[role='checkbox']")[1]);
   await click(button("Import 1"));
   // The proposal says where they go: the import names no scope, so a team-vault hub never gets a personal one.

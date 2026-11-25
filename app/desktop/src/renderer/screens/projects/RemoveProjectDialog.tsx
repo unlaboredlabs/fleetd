@@ -77,7 +77,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
     close();
     onRemoved?.();
     if (gone) {
-      toast({ title: `${p.title} forgotten`, description: `${machine} is no longer in this hub, so fleetd no longer lists it.` });
+      toast({ title: `${p.title} forgotten`, description: `${machine} is no longer in this workspace, so fleetd no longer lists it.` });
       return;
     }
     if (folderToo) {
@@ -102,7 +102,7 @@ export function RemoveProjectDialog({ project, onClose, onRemoved }: { project: 
       title={project ? (gone ? `Forget ${project.title}?` : `Delete ${project.title}?`) : ""}
       description={
         gone
-          ? `${machine} is no longer in this hub, so no machine holds its files. This only forgets the bot, its chat and its settings in fleetd.`
+          ? `${machine} is no longer in this workspace, so no machine holds its files. This only forgets the bot, its chat and its settings in fleetd.`
           : deleting && project
             ? `${deleteWords(project.title, machine, tilde(project.path)).message}${deleting.plain === false ? " The worktrees its agents worked in are removed; its branches and pull requests stay." : ""}`
             : ""

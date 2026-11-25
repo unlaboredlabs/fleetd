@@ -183,8 +183,8 @@ const typical = (f: Fixture) => {
 const problems: ReadonlyArray<readonly [JsonObject, string, string, string]> = [
   [{ url: "acme/payments" }, "machine_offline", "buildbox is offline", "Start the node on buildbox (fleetd node run) or check its network, then retry"],
   [{ url: "acme/no-worker" }, "no_worker", "no machine is online to add the bot on", "Start a node (fleetd node run on the machine) or pass a machine id"],
-  [{ url: "acme/gh-missing" }, "gh_unavailable", "gh isn't logged in on the hub or any worker", "Run gh auth login on the hub, then add it again"],
-  [{ url: "acme/secret" }, "gh_no_access", "gh on the hub can't see acme/secret: it is private to another account, renamed, or misspelled", "On devbox, run `gh auth login` with an account that can read acme/secret, then add it again"],
+  [{ url: "acme/gh-missing" }, "gh_unavailable", "gh isn't logged in on the workspace or any worker", "Run gh auth login on the workspace, then add it again"],
+  [{ url: "acme/secret" }, "gh_no_access", "gh on the workspace can't see acme/secret: it is private to another account, renamed, or misspelled", "On devbox, run `gh auth login` with an account that can read acme/secret, then add it again"],
   [{ path: "/home/dev/src/missing" }, "path_missing", "/home/dev/src/missing does not exist on devbox", "Check the path, or clone the repo there first"],
   [{ path: "/home/dev/code/notes-cli" }, "not_a_git_repo", "/home/dev/code/notes-cli on devbox is not a git checkout", "Run git init there, or pick the repo's folder"],
   [{ url: "acme/ledger-ui" }, "dest_exists", "/home/dev/src/ledger-ui already exists on devbox", "Add the existing checkout at /home/dev/src/ledger-ui on devbox instead, or clone into another folder"],
@@ -215,7 +215,7 @@ export default defineGroup({
       f.drop("project_discover");
       f.answer("project_discover", undefined, {
         machines: machinesOf(f).map((m) => ({ machineId: asText(m["machineId"]), online: true, cloneRoot: "/home/dev/src", repos: [] })),
-        github: { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh isn't logged in on the hub or any worker", fix: "Run gh auth login on the hub, then reopen New bot" } },
+        github: { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh isn't logged in on the workspace or any worker", fix: "Run gh auth login on the workspace, then reopen New bot" } },
         ...(machinesOf(f)[0] ? { best: asText(machinesOf(f)[0]?.["machineId"]) } : {}),
       });
     },
@@ -239,7 +239,7 @@ export default defineGroup({
   fixtures: (base) => [
     (() => {
       // Each ProjectProblemCode fails one input to project_add.
-      const f = Fixture.from(base("typical"), "projects-errors", "New bot: every problem the hub can report, one input each");
+      const f = Fixture.from(base("typical"), "projects-errors", "New bot: every problem the workspace can report, one input each");
       for (const [input, code, message, fix] of problems) {
         f.fail("project_add", input, { code: ERROR_CODE[code] ?? "failed", message, fix });
       }
@@ -285,8 +285,8 @@ export default defineGroup({
     })(),
     (() => {
       // The link drops before project_add answers, then comes back with a snapshot that doesn't list the bot yet.
-      const f = Fixture.from(base("typical"), "projects-dropped", "New bot: the link drops before the hub answers");
-      f.fail("project_add", { create: true, title: "Checkout" }, { code: "disconnected", message: "The connection to the hub closed." });
+      const f = Fixture.from(base("typical"), "projects-dropped", "New bot: the link drops before the workspace answers");
+      f.fail("project_add", { create: true, title: "Checkout" }, { code: "disconnected", message: "The connection to the workspace closed." });
       f.later(6_000, "state", { phase: "connecting", hub: HUB, attempt: 1 });
       f.later(6_300, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
       if (f.snapshot !== undefined) f.later(6_600, "snapshot", f.snapshot);
@@ -296,7 +296,7 @@ export default defineGroup({
     (() => {
       // A new bot with no repo: the hub's next snapshot lists it, a plain folder, and Settings says so. Timed past the
       // QA step's Create, as projects-cloning's progress is.
-      const f = Fixture.from(base("typical"), "projects-new", "New bot: one with no repo, made in a folder the hub makes, then opened");
+      const f = Fixture.from(base("typical"), "projects-new", "New bot: one with no repo, made in a folder the workspace makes, then opened");
       const made: JsonObject = { machineId: "devbox", projectId: "field-notes", title: "Field notes", workspaceRoot: `${PROJECTS_ROOT}/field-notes`, threads: { running: 0, waiting: 0, idle: 0, failed: 0 }, lastActivityAt: f.now, repos: [] };
       if (f.snapshot !== undefined) f.later(6_000, "snapshot", { ...f.snapshot, projects: [...projectsOf(f), made] });
       f.answer("project_settings_get", { machineId: "devbox", projectId: "field-notes" }, {

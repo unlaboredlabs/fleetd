@@ -110,9 +110,9 @@ describe("filters", () => {
 describe("errors", () => {
   it("say what happened in a sentence, never the raw call", () => {
     const raw = "fixture empty has no answer for time_spans {\"scope\":{}}";
-    expect(errorText({ code: "not_found", message: raw })).toBe("The hub has no time data for this yet.");
+    expect(errorText({ code: "not_found", message: raw })).toBe("The workspace has no time data for this yet.");
     expect(errorText({ code: "offline", message: raw })).toMatch(/^Not connected/u);
-    expect(errorText({ code: "weird", message: raw, fix: "Restart the hub." })).toBe("The hub couldn't answer. Restart the hub.");
+    expect(errorText({ code: "weird", message: raw, fix: "Restart the workspace." })).toBe("The workspace couldn't answer. Restart the workspace.");
   });
 });
 

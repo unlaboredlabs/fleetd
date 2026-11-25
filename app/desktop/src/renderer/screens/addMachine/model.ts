@@ -40,21 +40,21 @@ export const hereOf = (
 /** "This computer"'s line under its name. */
 export const hereLine = (here: Here | undefined): string => {
   if (here === undefined) return "Looking at this computer…";
-  if (here.kind === "other-hub") return "This computer runs a different hub, so it can't be one of this hub's machines.";
+  if (here.kind === "other-hub") return "This computer runs a different workspace, so it can't be one of this workspace's machines.";
   if (here.kind === "node") {
     return here.ours
-      ? `This computer is already part of the hub as ${here.machineId}.`
-      : `This computer is already part of ${here.hub === "" ? "another hub" : `another hub (${here.hub})`} as ${here.machineId}.`;
+      ? `This computer is already part of the workspace as ${here.machineId}.`
+      : `This computer is already part of ${here.hub === "" ? "another workspace" : `another workspace (${here.hub})`} as ${here.machineId}.`;
   }
-  if (here.joined) return `${here.machineId} is a machine of this hub already: adding it again repairs it.`;
+  if (here.joined) return `${here.machineId} is a machine of this workspace already: adding it again repairs it.`;
   return here.kind === "hub"
-    ? `${here.machineId}, the hub's own computer.`
-    : `${here.machineId}: installs fleetd here and joins the hub.`;
+    ? `${here.machineId}, the workspace's own computer.`
+    : `${here.machineId}: installs fleetd here and joins the workspace.`;
 };
 
 const SOURCE: Record<string, string> = {
-  hub: "the hub's own machine",
-  set_up: "set up from this hub",
+  hub: "the workspace's own machine",
+  set_up: "set up from this workspace",
   ssh_config: "~/.ssh/config",
   tailnet: "tailnet",
 };
@@ -85,7 +85,7 @@ export const sentence = (text: string): string => {
 
 /** A run's title: its machine, with its host when that says more. */
 export const runTitle = (run: { readonly machineId: string; readonly host?: string | undefined }): string =>
-  run.host === undefined ? `${run.machineId}, the hub's own machine` : run.host === run.machineId ? run.machineId : `${run.machineId} · ${run.host}`;
+  run.host === undefined ? `${run.machineId}, the workspace's own machine` : run.host === run.machineId ? run.machineId : `${run.machineId} · ${run.host}`;
 
 /** What a done step printed, when it is one short line worth showing ("enrolled"); never a file's content. */
 export const shortOutput = (step: { state: string; output?: string | undefined }): string | undefined => {
@@ -135,13 +135,13 @@ export const sshProblem = (host: string, message: string): SshProblem | undefine
     return { kind: "host-key", command: `ssh ${host} true`, note: `It shows ${host}'s host key: check it, answer yes, then Try again.` };
   }
   if (/permission denied|too many authentication failures/iu.test(message)) {
-    return { kind: "key", command: `ssh-copy-id ${host}`, note: `It asks for ${host}'s password once, then the hub logs in with its key. Then Try again.` };
+    return { kind: "key", command: `ssh-copy-id ${host}`, note: `It asks for ${host}'s password once, then the workspace logs in with its key. Then Try again.` };
   }
   if (UNREACHABLE.test(message)) {
     return {
       kind: "unreachable",
       command: `ssh ${host} true`,
-      note: `${host} didn't answer: check it is on and awake, on the hub's network or tailnet, and has SSH on (a Mac: System Settings › General › Sharing › Remote Login). This tries it again from the hub; then Try again.`,
+      note: `${host} didn't answer: check it is on and awake, on the workspace's network or tailnet, and has SSH on (a Mac: System Settings › General › Sharing › Remote Login). This tries it again from the workspace; then Try again.`,
     };
   }
   return undefined;
@@ -149,7 +149,7 @@ export const sshProblem = (host: string, message: string): SshProblem | undefine
 
 /** Why a name can't be a machine id, or undefined when it can. */
 export const machineIdProblem = (name: string): string | undefined => {
-  if (name.trim() === "") return "Give it a name: how the hub and its agents will call it.";
+  if (name.trim() === "") return "Give it a name: how the workspace and its agents will call it.";
   return /^[a-z0-9-]{1,32}$/u.test(name.trim()) ? undefined : "Lower-case letters, digits and dashes, up to 32.";
 };
 
@@ -199,7 +199,7 @@ export const onlyHereLine = (hubUrl: string): string | undefined => {
   }
   const loopback = host === "localhost" || host.endsWith(".localhost") || /^127\./u.test(host) || host === "::1" || host === "0.0.0.0" || host === "::";
   return loopback
-    ? `The hub is only at ${hubUrl}, which no other machine reaches, so this line works only on the hub's own computer. For another machine, give the hub its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the hub listens, then make the line again.`
+    ? `The workspace is only at ${hubUrl}, which no other machine reaches, so this line works only on the workspace's own computer. For another machine, give the workspace its tailnet or LAN address in ${settingsPath(false, "Setup")} › Where the workspace listens, then make the line again.`
     : undefined;
 };
 

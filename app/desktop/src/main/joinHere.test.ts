@@ -132,19 +132,19 @@ describe("joining this computer", () => {
 
   /** A fleetd dir with a hub or a node in it, and its bin/fleetd: none of it may change. */
   const occupied = (dir: string, files: Record<string, string>) => {
-    for (const [file, text] of Object.entries({ ...files, "bin/fleetd": "the hub's own build" })) {
+    for (const [file, text] of Object.entries({ ...files, "bin/fleetd": "the workspace's own build" })) {
       fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
       fs.writeFileSync(path.join(dir, file), text);
     }
   };
 
   for (const [what, files, says] of [
-    ["the hub's database", { "hub/hub.sqlite": "" }, "This computer runs the hub"],
-    ["the hub's setup", { "hub/setup.json": "{}" }, "This computer runs the hub"],
+    ["the workspace's database", { "hub/hub.sqlite": "" }, "This computer runs the workspace"],
+    ["the workspace's setup", { "hub/setup.json": "{}" }, "This computer runs the workspace"],
     [
       "a node enrolled under another id",
       { "node/node.json": JSON.stringify({ hub: "http://devbox.example.ts.net:4790", machineId: "studio", enrolled: true }) },
-      "This computer is already part of the hub at http://devbox.example.ts.net:4790 as studio",
+      "This computer is already part of the workspace at http://devbox.example.ts.net:4790 as studio",
     ],
   ] as const) {
     it(`never replaces the fleetd or enrolls again where the fleetd dir holds ${what}`, async () => {
@@ -159,7 +159,7 @@ describe("joining this computer", () => {
       expect(calls).toEqual(["hub_info"]);
       expect(fetched).toEqual([]);
       expect(ran).toEqual([]);
-      expect(fs.readFileSync(path.join(dir, "bin", "fleetd"), "utf8")).toBe("the hub's own build");
+      expect(fs.readFileSync(path.join(dir, "bin", "fleetd"), "utf8")).toBe("the workspace's own build");
     });
   }
 
@@ -170,7 +170,7 @@ describe("joining this computer", () => {
     const call = p.call.bind(p);
     const end = await joinHere({ ...p, call: (tool, input) => (calls.push(tool), call(tool, input)) }, "laptop", () => undefined);
     expect(end.state).toBe("failed");
-    expect(end.message).toContain("This computer runs the hub");
+    expect(end.message).toContain("This computer runs the workspace");
     expect(calls).toEqual(["hub_info"]);
     expect(fetched).toEqual([]);
     expect(ran).toEqual([]);
@@ -178,10 +178,10 @@ describe("joining this computer", () => {
   });
 
   it("joins nothing while the hub can't say which computer it runs on", async () => {
-    const { p, fetched, ran } = ports({ info: { ok: false, error: { code: "timeout", message: "The hub didn't answer." } } });
+    const { p, fetched, ran } = ports({ info: { ok: false, error: { code: "timeout", message: "The workspace didn't answer." } } });
     const end = await joinHere(p, "laptop", () => undefined);
     expect(end.state).toBe("failed");
-    expect(end.message).toContain("Couldn't ask the hub which computer it runs on");
+    expect(end.message).toContain("Couldn't ask the workspace which computer it runs on");
     expect(fetched).toEqual([]);
     expect(ran).toEqual([]);
   });
@@ -224,7 +224,7 @@ describe("joining this computer", () => {
     const { p, dir, ran } = ports({ version: "0.9.3" });
     const end = await joinHere({ ...p, download: (url) => Promise.reject(new Error(`${url} answered 404`)) }, "laptop", () => undefined);
     expect(end.state).toBe("failed");
-    expect(end.message).toContain("There is no release for v0.9.3, the version the hub runs");
+    expect(end.message).toContain("There is no release for v0.9.3, the version the workspace runs");
     expect(fs.existsSync(path.join(dir, "bin", "fleetd"))).toBe(false);
     expect(ran).toEqual([]);
   });

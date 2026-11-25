@@ -141,12 +141,12 @@ export class FixtureCloud implements Cloud {
   }
 
   invites(): Promise<InvitesOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     return Promise.resolve({ ok: true, invites: [...this.#invites] });
   }
 
   invite(_hub: string, request: InviteRequest): Promise<InviteOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     const refusal = this.#section?.inviteFailure;
     if (refusal !== undefined) return Promise.resolve(failed(refusal));
     const email = request.email.trim().toLowerCase();
@@ -173,18 +173,18 @@ export class FixtureCloud implements Cloud {
 
   // A fixture's team stays: the shot shows the sheet's refusal or its press, never the app without it.
   deleteTeam(_hub: string, name: string): Promise<DeleteTeamOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
-    return Promise.resolve(name.trim() === "" ? failed({ code: "invalid", message: "The team's name is missing.", fix: "Type the team's name to delete it." }) : { ok: true });
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
+    return Promise.resolve(name.trim() === "" ? failed({ code: "invalid", message: "The workspace's name is missing.", fix: "Type the workspace's name to delete it." }) : { ok: true });
   }
 
   // A fixture's hubs are fixed: nothing is made, the dialog shows the cloud's refusal.
   newWorkspace(): Promise<NewWorkspaceOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     return Promise.resolve(failed(this.#section?.newWorkspaceFailure ?? { code: "", message: "Sample data, not connected: nothing is made." }));
   }
 
   billing(): Promise<BillingOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     const refusal = this.#section?.billingFailure;
     if (refusal !== undefined) return Promise.resolve(failed(refusal));
     if (this.#billing === null) return Promise.resolve(failed({ code: "not_found", message: "Nothing is here." }));
@@ -192,12 +192,12 @@ export class FixtureCloud implements Cloud {
   }
 
   billingOpen(): Promise<BillingOpenOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     return Promise.resolve({ ok: true });
   }
 
   billingCap(_hub: string, capCents: number | null): Promise<BillingCapOutcome> {
-    if (!this.#team() || this.#billing === null) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team() || this.#billing === null) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     const credits = { ...this.#billing.credits, capCents };
     const reached = capCents !== null && credits.capSpentCents >= capCents;
     const held = reached ? "cap" : this.#billing.held === "cap" ? null : this.#billing.held;
@@ -206,7 +206,7 @@ export class FixtureCloud implements Cloud {
   }
 
   installGithub(): Promise<InstallGithubOutcome> {
-    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That workspace isn't one of your fleetd cloud workspaces." }));
     const refusal = this.#section?.githubInstallFailure;
     if (refusal === undefined) return Promise.resolve({ ok: true });
     const { connectFirst, ...rest } = refusal;

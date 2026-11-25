@@ -25,8 +25,8 @@ export function ClaudeSettings() {
   const live = useLive();
   const read = useToolQuery("claude_accounts_get", noInput, { enabled: live });
   const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="claude" mark="off" title="Claude" hint={HINT} line={line} lineTone={tone} />;
-  if (!live) return note("Not connected. Connect to a hub to choose your Claude account.");
-  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub runs every agent on each machine's own Claude login. Update fleetd on the hub to choose your own account.");
+  if (!live) return note("Not connected. Connect to a workspace to choose your Claude account.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This workspace runs every agent on each machine's own Claude login. Update fleetd on the workspace to choose your own account.");
   if (read.isLoadingError) return note(errorText(read.error), "danger");
   if (read.data === undefined) return note("Loading…");
   if (read.data.me === undefined) return note("This device's key belongs to no person. Pair the app as yourself to choose one.");
@@ -40,7 +40,6 @@ export function ClaudeSettings() {
 function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude }) {
   const machines = useMachines();
   const noMachine = useNoMachine();
-  // A fleetd cloud team is a team to the person, never a hub.
   const team = useHub().cloud === true;
   const save = useSave();
   const test = useTest();
@@ -107,7 +106,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       </div>
     </div>
   );
-  const hint = [HINT, !offer && data.hubApi !== undefined ? `The ${team ? "team" : "hub"}'s API key is kept for leads and unrequested work.` : null, sub === undefined ? null : `${sealedLine(sub.sealedOn)}.`]
+  const hint = [HINT, !offer && data.hubApi !== undefined ? `The workspace's API key is kept for leads and unrequested work.` : null, sub === undefined ? null : `${sealedLine(sub.sealedOn)}.`]
     .filter((x) => x !== null)
     .join(" ");
   return (
@@ -117,7 +116,7 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
       markLabel={none ? CONNECT : "Claude: in use"}
       title="Claude"
       hint={hint}
-      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId, noMachine, team)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
+      line={refused === null ? <HubText>{runsOnLine(me.runsOn, [me.person], me.person.personId, noMachine)}</HubText> : <HubText>{`${CONNECT}. ${refused.fix}`}</HubText>}
       lineTone={none ? "warning" : "quiet"}
       control={
         sub === undefined ? (
@@ -149,8 +148,8 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
           title="Disconnect your subscription?"
           description={
             team
-              ? "Agents started from then on run on the team's API key if you may use it; otherwise you connect again before you start work."
-              : "Each machine forgets the token. Agents started from then on run on the hub's API key if you may use it; otherwise you connect again before your next order."
+              ? "Agents started from then on run on the workspace's API key if you may use it; otherwise you connect again before you start work."
+              : "Each machine forgets the token. Agents started from then on run on the workspace's API key if you may use it; otherwise you connect again before your next order."
           }
           action="Disconnect"
           onRemove={() => hubCall("claude_subscription_remove", {})}
@@ -163,7 +162,6 @@ function Mine({ data, me }: { data: ClaudeAccountsGetOutput; me: PersonClaude })
 
 /** Runs on, as a line of its own under Claude's title: the two accounts as one switch. */
 function Choice({ me }: { me: PersonClaude }) {
-  const team = useHub().cloud === true;
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
@@ -185,7 +183,7 @@ function Choice({ me }: { me: PersonClaude }) {
   };
   return (
     <>
-      <div className={s.subRow} title={`Your subscription: your plan's limits, and only your work runs on it. The ${team ? "team" : "hub"}'s API key: billed to the ${team ? "team" : "hub"}'s Claude account. Agents started after a switch use the new one.`}>
+      <div className={s.subRow} title={`Your subscription: your plan's limits, and only your work runs on it. The workspace's API key: billed to the workspace's Claude account. Agents started after a switch use the new one.`}>
         <Text size="sm" tone="quiet">
           Runs on
         </Text>
@@ -196,7 +194,7 @@ function Choice({ me }: { me: PersonClaude }) {
           onChange={pick}
           options={[
             { value: "subscription", label: "My subscription" },
-            ...(me.mayUseHubApi || shown === "hub_api" ? [{ value: "hub_api" as const, label: team ? "Team's API key" : "Hub's API key" }] : []),
+            ...(me.mayUseHubApi || shown === "hub_api" ? [{ value: "hub_api" as const, label: "Workspace's API key" }] : []),
           ]}
         />
       </div>
@@ -209,7 +207,7 @@ function Choice({ me }: { me: PersonClaude }) {
             </Button>
           }
         >
-          The hub&apos;s admins turned their API key off for members.
+          The workspace&apos;s admins turned their API key off for members.
         </Notice>
       ) : null}
       <Problem text={problem} />

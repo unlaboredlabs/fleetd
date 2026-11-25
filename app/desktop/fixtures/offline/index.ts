@@ -81,7 +81,7 @@ const WOKE_MS = 4000;
 export default defineGroup({
   fixtures: (base) => [
     (() => {
-      const f = Fixture.from(base("chat-long"), "offline-held", "The hub doesn't answer; the last launch's cache holds the bots and storefront's chat, with one message queued.");
+      const f = Fixture.from(base("chat-long"), "offline-held", "The workspace doesn't answer; the last launch's cache holds the bots and storefront's chat, with one message queued.");
       const down = base("hub-unreachable").state;
       // The next attempt counted from this fixture's own clock, not the base's.
       f.state = down.phase === "retrying" ? { ...down, retryAt: Date.parse(f.now) + 8000 } : down;
@@ -89,14 +89,14 @@ export default defineGroup({
       return f;
     })(),
     waking(base("typical"), "offline-waking", "The computer just woke; the link that was live is dialled again and hasn't answered yet.", 2_000),
-    waking(base("typical"), "offline-waking-long", "The computer woke a minute ago and the hub still doesn't answer.", 60_000),
+    waking(base("typical"), "offline-waking-long", "The computer woke a minute ago and the workspace still doesn't answer.", 60_000),
     reread(base("chat-long"), "offline-reread", "Back online; storefront's chat from the cache isn't read again yet, so it is marked as last known.", (f, input) => {
       const page = f.output("chat_history", input);
       // Longer than any QA run: the read is still out when the shot is taken.
       if (page !== undefined) f.answer("chat_history", input, page, 600_000);
     }),
     reread(base("chat-long"), "offline-reread-failed", "Back online; reading storefront's chat again failed, so it stays marked as last known, with why and Retry.", (f, input) => {
-      f.fail("chat_history", input, { code: "timeout", message: "The hub didn't answer chat_history within 15 s." });
+      f.fail("chat_history", input, { code: "timeout", message: "The workspace didn't answer chat_history within 15 s." });
     }),
   ],
 });

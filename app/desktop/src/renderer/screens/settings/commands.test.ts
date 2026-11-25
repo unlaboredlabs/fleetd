@@ -32,10 +32,10 @@ it("opens each Settings command on the page that holds it now", () => {
   expect(lands("settings.open")).toEqual(["general", "general"]);
   expect(lands("go:settings.accounts")).toEqual(["accounts", "accounts"]);
   expect(lands("go:settings.your-memory")).toEqual(["your-memory", "your-memory"]);
-  // Your devices is a part of Hubs & devices, and the hub's Tools & skills of Every project › Agents.
+  // Your devices is a part of Workspaces & devices, and the hub's Tools & skills of Every project › Agents.
   expect(lands("go:settings.devices")).toEqual(["devices", "hubs"]);
   expect(lands("go:settings.hubs")).toEqual(["hubs", "hubs"]);
-  expect(lands("setting:Hub")).toEqual(["hubs", "hubs"]);
+  expect(lands("setting:Workspace")).toEqual(["hubs", "hubs"]);
   expect(lands("go:hub.machines")).toEqual(["hub.machines", "hub.machines"]);
   expect(lands("go:hub.agents")).toEqual(["hub.agents", "hub.agents"]);
   expect(lands("go:hub.profiles")).toEqual(["hub.profiles", "hub.providers"]);
@@ -43,9 +43,9 @@ it("opens each Settings command on the page that holds it now", () => {
   expect(lands("go:hub.instructions")).toEqual(["hub.instructions", "hub.instructions"]);
   // Hub accounts is a part of Hub › Setup: its command still opens it, by its old name, and Setup has one of its own.
   expect(lands("go:hub.accounts")).toEqual(["hub.accounts", "hub.setup"]);
-  expect(commandFor("go:hub.accounts")?.title).toBe("Hub accounts");
+  expect(commandFor("go:hub.accounts")?.title).toBe("Workspace accounts");
   expect(lands("go:hub.setup")).toEqual(["hub.setup", "hub.setup"]);
-  expect(commandFor("go:settings.hubs")?.title).toBe("Hubs & devices");
+  expect(commandFor("go:settings.hubs")?.title).toBe("Workspaces & devices");
 });
 
 it("offers a member no Hub page", () => {

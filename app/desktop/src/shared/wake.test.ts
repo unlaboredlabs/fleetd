@@ -84,16 +84,16 @@ describe("a cloud bot waking", () => {
 
   test("a start the team's billing holds is held, with no Try again: it goes on by itself once that is settled", () => {
     // The cloud's held start has no retry of its own (fleetd-cloud src/hosted/start.ts).
-    const w = some({ working: true, waiting: true, activity: starting({ step: "box", failed: { reason: "This team reached its spend cap" } }) });
-    expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this team reached its spend cap.", start: true });
-    expect(wakeWords(w, T)).toEqual({ words: "The lead can’t start now: this team reached its spend cap." });
+    const w = some({ working: true, waiting: true, activity: starting({ step: "box", failed: { reason: "This workspace reached its spend cap" } }) });
+    expect(w).toEqual({ phase: "held", reason: "The lead can’t start now: this workspace reached its spend cap.", start: true });
+    expect(wakeWords(w, T)).toEqual({ words: "The lead can’t start now: this workspace reached its spend cap." });
     expect(wakePose(w, true)).toBe("idle");
     expect(wakeDots(w)).toBe(false);
     // The bot rests, as the row shows it, never at work while nothing runs: the lead still "works" on its start.
     expect(startOf(w)).toBe("held");
     expect(botStateOf({ needs: false, blocked: false, running: 0, doing: "Starting its computer", done: false, start: startOf(w) })).toBe("idle");
     // The cloud's other reasons that wait on billing or on ops, each said plainly.
-    expect(some({ working: true, activity: starting({ failed: { reason: "This team's credits are used up" } }) })).toMatchObject({ reason: "The lead can’t start now: this team's credits are used up." });
+    expect(some({ working: true, activity: starting({ failed: { reason: "This workspace's credits are used up" } }) })).toMatchObject({ reason: "The lead can’t start now: this workspace's credits are used up." });
     expect(some({ working: true, activity: starting({ failed: { reason: "fleetd paused new computers" } }) })).toMatchObject({ reason: "The lead can’t start now: fleetd paused new computers." });
     // A message the hub holds is no held start: the bot shows what its lead does.
     expect(startOf(some({ waiting: true, held: "devbox is offline." }))).toBeUndefined();
@@ -145,10 +145,10 @@ describe("a cloud bot waking", () => {
   test("Try again that starts nothing says why: the hub's word, nothing waiting, or why the call failed", async () => {
     expect(tryAgainNote({ ok: true, output: { started: true } })).toBeUndefined();
     expect(tryAgainNote({ ok: true, output: { started: false } })).toBe("Nothing to retry");
-    expect(tryAgainNote({ ok: true, output: { started: false, next: "Your team is out of credits. It goes on by itself once that is done." } })).toBe(
-      "Your team is out of credits. It goes on by itself once that is done.",
+    expect(tryAgainNote({ ok: true, output: { started: false, next: "Your workspace is out of credits. It goes on by itself once that is done." } })).toBe(
+      "Your workspace is out of credits. It goes on by itself once that is done.",
     );
-    expect(tryAgainNote({ ok: false, error: { message: "The hub didn't answer in time." } })).toBe("Couldn’t try again: The hub didn't answer in time");
+    expect(tryAgainNote({ ok: false, error: { message: "The workspace didn't answer in time." } })).toBe("Couldn’t try again: The workspace didn't answer in time");
     // A call that throws rather than answers says why too.
     expect(await tryAgainNow(() => Promise.reject(new Error("offline")))).toBe("Couldn’t try again: offline");
     expect(await tryAgainNow(() => Promise.resolve({ ok: true, output: { started: true } }))).toBeUndefined();

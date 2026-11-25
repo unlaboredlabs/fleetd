@@ -104,9 +104,9 @@ export const normalizeCode = (input: string): string | null => {
  */
 export const hubOrigin = (input: string): { ok: true; origin: string } | { ok: false; failure: PairFailure } => {
   const fail = (message: string) =>
-    ({ ok: false, failure: { code: "", message, fix: `Use the hub's address, e.g. ${LOCAL_HUB}.` } }) as const;
+    ({ ok: false, failure: { code: "", message, fix: `Use the workspace's address, e.g. ${LOCAL_HUB}.` } }) as const;
   const trimmed = input.trim();
-  if (trimmed === "") return fail("Enter your hub's address.");
+  if (trimmed === "") return fail("Enter your workspace's address.");
   const scheme = /^([a-z][a-z0-9+.-]*):\/\//iu.exec(trimmed)?.[1]?.toLowerCase();
   const web = scheme === undefined ? "http" : { http: "http", ws: "http", https: "https", wss: "https" }[scheme];
   if (web === undefined) return fail("Use an http:// or https:// address.");

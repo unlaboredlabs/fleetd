@@ -131,7 +131,7 @@ export function VaultEditor({ whose = { kind: "team" }, kind, item, onClose, onS
       open
       onOpenChange={(o) => (o ? undefined : onClose())}
       title={editing ? `Edit ${titleOf(item)}` : `New ${words.one.toLowerCase()}`}
-      description={editing ? "Its saved values aren't shown here. Type a new one to replace it; leave a field empty to keep it." : "Sealed on this computer before it goes to the hub."}
+      description={editing ? "Its saved values aren't shown here. Type a new one to replace it; leave a field empty to keep it." : "Sealed on this computer before it goes to the workspace."}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

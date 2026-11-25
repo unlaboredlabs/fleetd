@@ -11,7 +11,7 @@ export type SetupStep = HubSetupStep;
 export const needWords = (need: SetupNeed): string =>
   need.kind === "required" ? "Required" : need.kind === "before" ? `Before ${need.what}` : "Optional";
 
-const GROUP_WORDS: Readonly<Record<string, string>> = { hub: "This hub", accounts: "Accounts", people: "People" };
+const GROUP_WORDS: Readonly<Record<string, string>> = { hub: "This workspace", accounts: "Accounts", people: "People" };
 
 export const groupWords = (group: SetupGroup): string => GROUP_WORDS[group] ?? group;
 

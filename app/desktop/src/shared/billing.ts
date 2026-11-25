@@ -308,7 +308,7 @@ export const buys = (state: BillingState): boolean => state.providedOn && state.
 
 /** Why buying is off, for the one place that says so; null when it is on. */
 export const noBuyWhy = (state: BillingState): string | null => {
-  if (!state.canBuy) return "Only the team's owners and admins buy plans and credits.";
+  if (!state.canBuy) return "Only the workspace's owners and admins buy plans and credits.";
   if (!state.setUp) return "Payments aren't set up on fleetd cloud yet.";
   return null;
 };

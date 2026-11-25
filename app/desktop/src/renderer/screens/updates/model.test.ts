@@ -26,7 +26,7 @@ const status = (over: Partial<Omit<StatusInput, "app" | "hub">> & { app?: AppUpd
   });
 };
 
-const hubPart = (over: Partial<UpdatePart> = {}): UpdatePart => ({ part: "hub", name: "the hub", from: OLDER, state: "done", ...over });
+const hubPart = (over: Partial<UpdatePart> = {}): UpdatePart => ({ part: "hub", name: "the workspace", from: OLDER, state: "done", ...over });
 const node = (name: string, over: Partial<UpdatePart> = {}): UpdatePart => ({ part: "node", machineId: name, name, from: OLDER, state: "done", ...over });
 const runOf = (parts: UpdatePart[], over: Partial<UpdateRun> = {}): UpdateRun => ({ id: "U1", channel: "edge", to: MINE, startedAt: "2026-10-26T09:50:00.000Z", parts, ...over });
 const finished = (parts: UpdatePart[], ago = 60_000, over: Partial<UpdateRun> = {}): UpdateRun => runOf(parts, { finishedAt: new Date(NOW - ago).toISOString(), ...over });
@@ -45,12 +45,12 @@ describe("up to date", () => {
   });
 
   it("says a version nobody knows as that, never as behind", () => {
-    expect(status({ version: undefined })).toMatchObject({ kind: "none", title: "Version unknown", detail: "The hub hasn't said which fleetd it runs." });
-    expect(status({ version: "0.0.0" })).toMatchObject({ kind: "none", title: "Version unknown", detail: "The hub runs a local build, which doesn't update itself." });
+    expect(status({ version: undefined })).toMatchObject({ kind: "none", title: "Version unknown", detail: "The workspace hasn't said which fleetd it runs." });
+    expect(status({ version: "0.0.0" })).toMatchObject({ kind: "none", title: "Version unknown", detail: "The workspace runs a local build, which doesn't update itself." });
   });
 
   it("says Not connected without a hub, unless this app has an update of its own", () => {
-    expect(status({ url: null })).toEqual({ kind: "none", title: "Not connected", detail: "Updates show here once the hub answers.", rows: [] });
+    expect(status({ url: null })).toEqual({ kind: "none", title: "Not connected", detail: "Updates show here once the workspace answers.", rows: [] });
     expect(status({ url: null, app: { kind: "ready", version: NEXT } }).action).toEqual({ label: "Restart to update", act: "app" });
   });
 });
@@ -138,9 +138,9 @@ describe("this app's own update", () => {
 
 describe("updating", () => {
   it("is one line: the hub first", () => {
-    expect(status({ cli: NEXT, flow: { phase: "starting" } })).toEqual({ kind: "updating", title: "Updating the hub…", detail: "fleetd Edge · Oct 23, 10:30", rows: [] });
+    expect(status({ cli: NEXT, flow: { phase: "starting" } })).toEqual({ kind: "updating", title: "Updating the workspace…", detail: "fleetd Edge · Oct 23, 10:30", rows: [] });
     const run = runOf([hubPart({ state: "restarting" }), node("devbox", { state: "waiting" })], { to: NEXT });
-    expect(status({ run, flow: following })).toEqual({ kind: "updating", title: "Updating the hub…", detail: "fleetd Edge · Oct 23, 10:30", rows: [] });
+    expect(status({ run, flow: following })).toEqual({ kind: "updating", title: "Updating the workspace…", detail: "fleetd Edge · Oct 23, 10:30", rows: [] });
   });
 
   it("then its machines, counted as each settles, its Claude Code with it", () => {
@@ -164,7 +164,7 @@ describe("updating", () => {
     expect(status({ run, flow: { ...following, leftOver: true } })).toEqual({
       kind: "failed",
       title: "The update stopped",
-      detail: "Nothing in the hub drives it any more.",
+      detail: "Nothing in the workspace drives it any more.",
       action: { label: "Start over", act: "startOver" },
       rows: [],
     });
@@ -176,10 +176,10 @@ describe("updating", () => {
   });
 
   it("says the hub's words and fix when it wouldn't start", () => {
-    expect(status({ flow: { phase: "refused", message: "This key lacks the admin role. Run `fleetd pair` on the hub machine" } })).toEqual({
+    expect(status({ flow: { phase: "refused", message: "This key lacks the admin role. Run `fleetd pair` on the workspace machine" } })).toEqual({
       kind: "failed",
       title: "The update didn't start",
-      detail: "This key lacks the admin role. Run `fleetd pair` on the hub machine.",
+      detail: "This key lacks the admin role. Run `fleetd pair` on the workspace machine.",
       action: { label: "Try again", act: "update" },
       rows: [],
     });
@@ -191,7 +191,7 @@ describe("a problem", () => {
     const failed = (over: Partial<UpdatePart>) => status({ version: OLDER, run: finished([hubPart(over)]) });
     expect(failed({ state: "failed", stage: "checksum" })).toEqual({
       kind: "failed",
-      title: "The hub didn't update",
+      title: "The workspace didn't update",
       detail: "The download didn't match its checksum, so nothing changed.",
       action: { label: "Try again", act: "update" },
       rows: [],
@@ -200,7 +200,7 @@ describe("a problem", () => {
     expect(failed({ state: "failed", stage: "download" }).detail).toBe("Couldn't download the new build.");
     expect(failed({ state: "failed", stage: "download", message: "GitHub's downloads are failing right now, try again later: 503" }).detail).toBe("GitHub's downloads are failing right now. Try again later.");
     // Installing fails for reasons only the hub can name: its own words, as a sentence.
-    expect(failed({ state: "failed", stage: "install", message: "the hub runs a local build: run `fleetd update` on it" }).detail).toBe("The hub runs a local build: run `fleetd update` on it.");
+    expect(failed({ state: "failed", stage: "install", message: "the workspace runs a local build: run `fleetd update` on it" }).detail).toBe("The workspace runs a local build: run `fleetd update` on it.");
   });
 
   it("stays a day, then is history; and is over once the hub runs that build", () => {
@@ -226,8 +226,8 @@ describe("a problem", () => {
   });
 
   it("says the hub's fix for a machine too old to update from the hub, and offers no button that would only skip it again", () => {
-    const old = node("buildbox", { state: "skipped", message: "its fleetd (0.8.0) is too old to update from the hub: run `fleetd update` on buildbox once" });
-    const rows = [{ key: "buildbox", name: "buildbox", why: "Its fleetd (0.8.0) is too old to update from the hub: run `fleetd update` on buildbox once.", tone: "quiet" }];
+    const old = node("buildbox", { state: "skipped", message: "its fleetd (0.8.0) is too old to update from the workspace: run `fleetd update` on buildbox once" });
+    const rows = [{ key: "buildbox", name: "buildbox", why: "Its fleetd (0.8.0) is too old to update from the workspace: run `fleetd update` on buildbox once.", tone: "quiet" }];
     const run = finished([hubPart(), old, node("devbox")]);
     expect(status({ run, machines: [machine("buildbox", OLDER), machine("devbox", MINE)] })).toEqual({ kind: "available", title: "1 machine is behind", rows });
     // It stays as long as a failure does, and beside a machine Update can bring up it only adds its line.

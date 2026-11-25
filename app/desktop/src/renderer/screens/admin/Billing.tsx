@@ -314,7 +314,7 @@ function Cap({ state, field, can }: { state: BillingState; field: RefObject<HTML
           title={<label htmlFor={id}>Monthly cap</label>}
           label="Monthly cap"
           hint="Bots on fleetd's computers stop when this month's spend reaches it, and start again next month or when it's raised. Empty: no cap."
-          line={line ?? (can ? undefined : "Only the team's owners and admins set it.")}
+          line={line ?? (can ? undefined : "Only the workspace's owners and admins set it.")}
           lineTone={error !== null || (typed.trim() !== "" && cents === undefined) ? "danger" : undefined}
           control={
             <div className={s.inline}>

@@ -181,7 +181,7 @@ function EmailInviteRow({ invite: i }: { invite: AccountsInvite }) {
       .then((out) => {
         if (!out.ok) setError(`Not revoked: ${said(out.failure)}`);
       })
-      .catch(() => setError("Not revoked: this app couldn't ask the team. Try again."))
+      .catch(() => setError("Not revoked: this app couldn't ask the workspace. Try again."))
       .finally(() => {
         setBusy(false);
         // Either way the list is read again: a refused revoke is mostly an invite used or gone meanwhile.

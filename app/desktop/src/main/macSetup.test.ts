@@ -142,7 +142,7 @@ describe("trading the code", () => {
   });
 
   it("sends the code to one hub only: found several, it lists them for the person to pick, sending none", async () => {
-    const wrong = () => json(401, { code: "pair_code_invalid", message: "that code isn't open on this hub", fix: "Get a new code." });
+    const wrong = () => json(401, { code: "pair_code_invalid", message: "that code isn't open on this workspace", fix: "Get a new code." });
     const hubs = { "http://lan-hub:4790": () => json(200, ANSWER), "http://devbox.example.ts.net:4790": () => json(200, ANSWER) };
     const { p, traded } = ports({ known: ["http://lan-hub:4790"], hubs });
     const several = await redeemMac(p, { code: "123456" });
@@ -154,14 +154,14 @@ describe("trading the code", () => {
     expect(traded).toEqual(["http://devbox.example.ts.net:4790"]);
     // One hub found is the hub: a wrong code there says so, and goes nowhere else.
     const one = ports({ hubs: { "http://devbox.example.ts.net:4790": wrong } });
-    expect((await redeemMac(one.p, { code: "123456" })).outcome).toEqual({ ok: false, failure: { message: "That code isn't open on this hub.", fix: "Get a new code.", field: "code" } });
+    expect((await redeemMac(one.p, { code: "123456" })).outcome).toEqual({ ok: false, failure: { message: "That code isn't open on this workspace.", fix: "Get a new code.", field: "code" } });
     expect(one.traded).toEqual(["http://devbox.example.ts.net:4790"]);
   });
 
   it("passes on what a hub that refuses the code says to do", async () => {
-    const other = () => json(409, { code: "mac_other_computer", message: "this hub's agents' Mac is another computer", fix: "Remove the old one, then type this code again." });
+    const other = () => json(409, { code: "mac_other_computer", message: "this workspace's agents' Mac is another computer", fix: "Remove the old one, then type this code again." });
     const { outcome } = await redeemMac(ports({ hubs: { "http://devbox.example.ts.net:4790": other } }).p, { code: "123456" });
-    expect(outcome).toEqual({ ok: false, failure: { message: "This hub's agents' Mac is another computer.", fix: "Remove the old one, then type this code again." } });
+    expect(outcome).toEqual({ ok: false, failure: { message: "This workspace's agents' Mac is another computer.", fix: "Remove the old one, then type this code again." } });
   });
 
   it("trades nothing on a Mac that runs a hub, or for a code that isn't six digits", async () => {
@@ -169,7 +169,7 @@ describe("trading the code", () => {
     expect((await redeemMac(p, { code: "12345" })).outcome).toMatchObject({ ok: false, failure: { field: "code" } });
     fs.mkdirSync(path.join(dir, "hub"), { recursive: true });
     fs.writeFileSync(path.join(dir, "hub", "hub.sqlite"), "");
-    expect(JSON.stringify((await redeemMac(p, { code: "123456" })).outcome)).toContain("runs a fleetd hub");
+    expect(JSON.stringify((await redeemMac(p, { code: "123456" })).outcome)).toContain("runs a fleetd workspace");
     expect(traded).toEqual([]);
   });
 });
@@ -273,7 +273,7 @@ describe("opening the window again", () => {
   });
   it("a Mac its hub refused as one it doesn't know says so, and its checks' read carries it, so setup goes to a new code", async () => {
     const { p, dir } = ports({ node: { enrolled: false, removed: true, agentsMac: true, machineId: "mac", hub: "http://devbox.example.ts.net:4790" } });
-    fs.writeFileSync(path.join(dir, "node", "mac-link.json"), JSON.stringify({ state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the hub", since: 1 }));
+    fs.writeFileSync(path.join(dir, "node", "mac-link.json"), JSON.stringify({ state: "refused", why: "mac is not enrolled: run fleetd pair --worker mac on the workspace", since: 1 }));
     const setup = new MacSetup(p, () => undefined);
     expect(await setup.status()).toMatchObject({ kind: "spent", failure: { message: "devbox doesn't know this Mac any more." } });
     const read = await setup.health("http://devbox.example.ts.net:4790");
@@ -359,7 +359,7 @@ describe("a version difference", () => {
     const { outcome } = await redeemMac(p, { code: "123456" });
     expect(outcome).toEqual({ ok: false, failure: APP_BEHIND });
     expect(APP_BEHIND.updateApp).toBe(true);
-    expect(APP_BEHIND.message).toBe("This app is older than your hub, so it can't set up this Mac.");
+    expect(APP_BEHIND.message).toBe("This app is older than your workspace, so it can't set up this Mac.");
     expect(words(outcome)).not.toContain("mismatch");
   });
 
@@ -375,8 +375,8 @@ describe("a version difference", () => {
   it("a hub older than Mac setup codes says to update the hub, and where", async () => {
     const { p } = ports({ hubs: { [ANSWER.hubUrl]: () => json(404, {}) } });
     const { outcome } = await redeemMac(p, { code: "123456" });
-    expect(outcome).toMatchObject({ ok: false, failure: { message: `The hub at ${ANSWER.hubUrl} runs an older fleetd that doesn't take Mac setup codes yet.` } });
-    expect(outcome.ok ? "" : outcome.failure.fix).toContain("Settings › Hub › Machines › Updates");
+    expect(outcome).toMatchObject({ ok: false, failure: { message: `The workspace at ${ANSWER.hubUrl} runs an older fleetd that doesn't take Mac setup codes yet.` } });
+    expect(outcome.ok ? "" : outcome.failure.fix).toContain("Settings › Workspace › Machines › Updates");
   });
 
   it("an edge release that moved on past the hub's build: the Mac joins on the newer build, and says so in its first step", async () => {
@@ -384,15 +384,15 @@ describe("a version difference", () => {
     const seen: MacJoin[] = [];
     const end = await joinMac(p, edgePending, (j) => seen.push(j));
     expect(end.state).toBe("done");
-    expect(end.steps[0]?.title).toBe("download the newest edge fleetd, newer than the hub's");
+    expect(end.steps[0]?.title).toBe("download the newest edge fleetd, newer than the workspace's");
     // Said while it downloads, not only once it's done.
     const downloading = seen.filter((j) => j.steps[0]?.state === "running").map((j) => j.steps[0]?.title);
-    expect(downloading.at(-1)).toBe("download the newest edge fleetd, newer than the hub's");
+    expect(downloading.at(-1)).toBe("download the newest edge fleetd, newer than the workspace's");
     expect(fetched[0]).toBe("https://github.com/unlaboredlabs/fleetd/releases/download/edge/release.json");
     expect(ran).toHaveLength(1);
     // While the release is still the hub's own, the step says so.
     const same = await joinMac(ports({ edgeHolds: OLD }).p, edgePending, () => undefined);
-    expect(same.steps[0]?.title).toBe("download the hub's own fleetd, an edge build");
+    expect(same.steps[0]?.title).toBe("download the workspace's own fleetd, an edge build");
   });
 
   it("then says the hub is behind, with who can update it, until it runs this Mac's build", async () => {
@@ -451,11 +451,11 @@ describe("a version difference", () => {
   });
 
   it("a hub on an older link protocol: refused before the code is spent, in words, and the same code tries again", async () => {
-    const output = "fleetd: the hub runs an older fleetd than this machine. Fix: update the hub (Updates in the app on your main machine, or fleetd update on the hub), then run fleetd init again\n";
+    const output = "fleetd: the workspace runs an older fleetd than this machine. Fix: update the workspace (Updates in the app on your main machine, or fleetd update on the workspace), then run fleetd init again\n";
     const { p } = ports({ exit: 1, output });
     const end = await joinMac(p, edgePending, () => undefined);
-    expect(end).toMatchObject({ state: "failed", retry: true, failure: { message: "Your hub runs an older fleetd than this Mac, so this Mac can't join it yet." } });
-    expect(end.failure?.fix).toContain("Settings › Hub › Machines › Updates");
+    expect(end).toMatchObject({ state: "failed", retry: true, failure: { message: "Your workspace runs an older fleetd than this Mac, so this Mac can't join it yet." } });
+    expect(end.failure?.fix).toContain("Settings › Workspace › Machines › Updates");
     expect(words(end.failure)).not.toMatch(/mismatch|protocol/u);
   });
 
@@ -477,7 +477,7 @@ describe("a version difference", () => {
     const elsewhere = signedInPorts(() => [{ ...hub({}), url: "http://other:4790" }]);
     expect(await elsewhere.hubRole(ANSWER.hubUrl)).toBe("unknown");
     const refused = await elsewhere.updateHub(ANSWER.hubUrl);
-    expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Hub › Machines › Updates");
+    expect(refused.ok ? "" : refused.failure.fix).toContain("Settings › Workspace › Machines › Updates");
 
     // fleetd cloud, whose hub_info leaves hub_update out: never asked, and it says why.
     calls.length = 0;

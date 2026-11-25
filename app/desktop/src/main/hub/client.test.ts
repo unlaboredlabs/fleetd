@@ -297,7 +297,7 @@ describe("HubClient", () => {
     const { hub, client } = setup();
     client.start();
     hub.ready();
-    hub.close(1001, "hub restarting");
+    hub.close(1001, "workspace restarting");
     expect(client.state).toMatchObject({ phase: "retrying", retryAt: Date.now() + 250, restarting: Date.now() });
     expect(client.state).not.toHaveProperty("updatingTo");
     vi.advanceTimersByTime(250);
@@ -474,7 +474,7 @@ describe("HubClient", () => {
     client.start();
     hub.ready();
     hub.close(4401, "unauthorized");
-    expect(client.state).toEqual({ phase: "refused", hub: "http://devbox:4790", message: "The hub refused the key (unauthorized)." });
+    expect(client.state).toEqual({ phase: "refused", hub: "http://devbox:4790", message: "The workspace refused the key (unauthorized)." });
     vi.advanceTimersByTime(60_000);
     expect(hub.urls).toHaveLength(1);
   });
@@ -676,7 +676,7 @@ describe("HubClient", () => {
     // A hub that doesn't serve peers: the window hears so at once, and stays on the socket.
     hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions"] });
     client.rtc(session, "w1", "v=0 offer");
-    expect(rtc()).toEqual([{ t: "browser_rtc", session, peer: "w1", error: "This hub doesn't pass screen peers on." }]);
+    expect(rtc()).toEqual([{ t: "browser_rtc", session, peer: "w1", error: "This workspace doesn't pass screen peers on." }]);
     hub.close(1006);
     vi.advanceTimersByTime(500);
     hub.open();
@@ -695,7 +695,7 @@ describe("HubClient", () => {
     client.rtcWatch(session, "w2");
     // The connection drops: the hub ends its peers, so the windows hear the peer is gone, and the next watch has none.
     hub.close(1006);
-    expect(rtc().at(-1)).toEqual({ t: "browser_rtc", session, peer: "w2", error: "The connection to the hub dropped." });
+    expect(rtc().at(-1)).toEqual({ t: "browser_rtc", session, peer: "w2", error: "The connection to the workspace dropped." });
     vi.advanceTimersByTime(10_000);
     hub.open();
     hub.frame({ t: "ready", protocol: 1, features: ["browser_sessions", "browser_rtc"] });
@@ -762,7 +762,7 @@ describe("HubClient", () => {
     expect(hub.urls).toHaveLength(1);
     expect(states().at(-1)).toBe("live");
     // Any other session error still resumes the stream.
-    hub.frame({ t: "error", code: "failed", message: "The hub failed to answer that request." });
+    hub.frame({ t: "error", code: "failed", message: "The workspace failed to answer that request." });
     vi.advanceTimersByTime(500);
     expect(hub.sent.at(-1)).toEqual({ t: "events", cursor: 11 });
     // A new connection asks again by what its `ready` says.

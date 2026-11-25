@@ -160,7 +160,7 @@ function HubPick() {
       <Text size="sm" tone="quiet">
         Adds to
       </Text>
-      <Select aria-label="Hub" className={s.inlineSelect} value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={pick} />
+      <Select aria-label="Workspace" className={s.inlineSelect} value={hub.id} options={hubs.map((h) => ({ value: h.id, label: h.label }))} onValueChange={pick} />
     </div>
   );
 }

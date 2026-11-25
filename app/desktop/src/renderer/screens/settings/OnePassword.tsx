@@ -51,7 +51,7 @@ export function vaultsLine(test: OnePasswordTest, nowMs: number): { ok: boolean;
 
 /** On a hub with a vault, 1Password is only where items come from (vault-design §6): fills use the vault. */
 const IMPORT_INTRO =
-  "Optional: a place to import logins, cards and addresses from into the team vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
+  "Optional: a place to import logins, cards and addresses from into the workspace vault. Agents fill from the vault, never from 1Password; your leads can search it and offer you items to import.";
 
 /** 1Password, as one row of Your accounts. */
 export function OnePasswordSettings() {
@@ -62,8 +62,8 @@ export function OnePasswordSettings() {
     ? IMPORT_INTRO
     : "The logins your agents sign in to sites with, in the orders you start. They name a 1Password item and fleetd types the value in; no agent ever sees it.";
   const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="onepassword" mark="off" title="1Password" hint={hint} line={line} lineTone={tone} />;
-  if (!live) return note("Not connected. Connect to a hub to set up 1Password.");
-  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub reads 1Password only with a bot's OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the hub to save your own.");
+  if (!live) return note("Not connected. Connect to a workspace to set up 1Password.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This workspace reads 1Password only with a bot's OP_SERVICE_ACCOUNT_TOKEN variable. Update fleetd on the workspace to save your own.");
   if (read.error instanceof CallError && read.error.error.code === "forbidden") return note("This device's key belongs to no person. Pair the app as yourself to set it up.");
   if (read.isLoadingError) return note(errorText(read.error), "danger");
   if (read.data === undefined) return note("Loading…");
@@ -150,7 +150,7 @@ function ServiceAccount({ token, hint }: { token: OnePasswordToken | undefined; 
       mark={token === undefined ? "off" : failed ? "needs" : "ready"}
       markLabel={token === undefined ? "1Password: not set up" : failed ? "1Password: needs a look" : "1Password: set up"}
       title="1Password"
-      hint={`${hint} The token is kept encrypted on the hub's machines. A bot's own 1Password token wins over it.${sealed}`}
+      hint={`${hint} The token is kept encrypted on the workspace's machines. A bot's own 1Password token wins over it.${sealed}`}
       line={
         testing ? (
           <span role="status">Testing…</span>

@@ -15,9 +15,9 @@ export const TOKEN_PLACEHOLDER = "sk-ant-oat01-…";
 export const KEY_PLACEHOLDER = "sk-ant-api03-…";
 export const CONSOLE_KEYS = "https://console.anthropic.com/settings/keys";
 
-/** An account by whose it is: "the hub's API key", "your subscription", "Sam Rivera's subscription". */
-export function accountWords(account: ClaudeAccount, people: ReadonlyArray<PersonRef>, me?: string, team = false): string {
-  if (account.kind === "hub") return team ? "the team's API key" : "the hub's API key";
+/** An account by whose it is: "the workspace's API key", "your subscription", "Sam Rivera's subscription". */
+export function accountWords(account: ClaudeAccount, people: ReadonlyArray<PersonRef>, me?: string): string {
+  if (account.kind === "hub") return "the workspace's API key";
   if (account.personId === me) return "your subscription";
   const name = people.find((p) => p.personId === account.personId)?.name;
   return name === undefined ? "a person's subscription" : `${name}'s subscription`;
@@ -29,24 +29,24 @@ const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
  * What some work runs on now, as one line: "Your subscription.", "Each machine's own Claude login.". `noMachine`: the
  * team has no machine of its own (a fleetd cloud team before its first computer), so a machine's login is nothing.
  */
-export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string, noMachine = false, team = false): string {
+export function runsOnLine(runsOn: ClaudeRunsOn, people: ReadonlyArray<PersonRef>, me?: string, noMachine = false): string {
   switch (runsOn.kind) {
     case "machine_login":
       return noMachine ? "Not connected." : "Each machine's own Claude login.";
     case "account":
-      return `${capital(accountWords(runsOn.account, people, me, team))}.`;
+      return `${capital(accountWords(runsOn.account, people, me))}.`;
     case "refused":
       return runsOn.message;
   }
 }
 
-/** Someone's account in a list of everyone's: "Own subscription", "Hub API key", "Nothing to run on". */
-export function theirRunsOn(runsOn: ClaudeRunsOn, noMachine = false, team = false): string {
+/** Someone's account in a list of everyone's: "Own subscription", "Workspace API key", "Nothing to run on". */
+export function theirRunsOn(runsOn: ClaudeRunsOn, noMachine = false): string {
   switch (runsOn.kind) {
     case "machine_login":
       return noMachine ? "Not connected" : "Machine's own login";
     case "account":
-      return runsOn.account.kind === "hub" ? (team ? "Team API key" : "Hub API key") : "Own subscription";
+      return runsOn.account.kind === "hub" ? "Workspace API key" : "Own subscription";
     case "refused":
       return "Nothing to run on";
   }

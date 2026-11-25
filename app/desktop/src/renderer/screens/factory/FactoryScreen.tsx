@@ -39,7 +39,7 @@ export interface FactoryScreenProps {
   readonly tabs?: ReactNode;
 }
 
-const OFFLINE = "Not connected to the hub. The figures come back when it reconnects.";
+const OFFLINE = "Not connected to the workspace. The figures come back when it reconnects.";
 
 const navigate = (hash: string) => {
   window.location.hash = hash;
@@ -114,16 +114,16 @@ export function FactoryScreen(props: FactoryScreenProps) {
       state = "factory.unsupported";
       body = (
         <div className={cx(s.empty)}>
-          <Text strong>This hub doesn&apos;t report metrics yet</Text>
-          <Text tone="quiet">Update fleetd on the hub&apos;s machine, and merges, order to merged and your minutes show here.</Text>
+          <Text strong>This workspace doesn&apos;t report metrics yet</Text>
+          <Text tone="quiet">Update fleetd on the workspace&apos;s machine, and merges, order to merged and your minutes show here.</Text>
         </div>
       );
     } else if (query.isError) {
       state = "factory.error";
       body = (
         <div className={cx(s.empty)} role="alert">
-          <Text strong>The hub couldn&apos;t answer</Text>
-          <Text tone="quiet">{query.error instanceof CallError ? errorText(query.error.error) : "The hub couldn't answer."}</Text>
+          <Text strong>The workspace couldn&apos;t answer</Text>
+          <Text tone="quiet">{query.error instanceof CallError ? errorText(query.error.error) : "The workspace couldn't answer."}</Text>
         </div>
       );
     } else if (offline !== undefined) {

@@ -22,7 +22,7 @@ export const HUB_LIST = "desktop-hubs.json";
 /** Where an unreadable list goes, kept for the person rather than overwritten. */
 export const HUB_LIST_BAD = "desktop-hubs.json.bad";
 /** The hubs found again from their keys when the list was lost: they have no name until the person gives one. */
-export const RECOVERED_NOTE = `This app's list of hubs (${HUB_LIST}) couldn't be read, so its hubs were found again from their saved keys, without their names. The old list is kept as ${HUB_LIST_BAD}.`;
+export const RECOVERED_NOTE = `This app's list of workspaces (${HUB_LIST}) couldn't be read, so its workspaces were found again from their saved keys, without their names. The old list is kept as ${HUB_LIST_BAD}.`;
 
 const Stored = z.object({
   id: z.string().regex(HUB_ID),
@@ -97,7 +97,7 @@ export const readHubList = (dir: string): { hubs: Stored[]; recovered: boolean }
     // Left where it is: the recovered list is written over it, the hubs themselves being safe.
   }
   const ids = savedIds(dir);
-  console.warn(`${HUB_LIST} couldn't be read; found ${String(ids.length)} hubs again from their keys, and kept it as ${HUB_LIST_BAD}.`);
+  console.warn(`${HUB_LIST} couldn't be read; found ${String(ids.length)} workspaces again from their keys, and kept it as ${HUB_LIST_BAD}.`);
   return { hubs: (ids.length === 0 ? [FIRST_HUB] : ids).map((id) => ({ id })), recovered: true };
 };
 
@@ -161,7 +161,7 @@ export class Hubs {
   }
 
   #service(id: HubId, loaded: Loaded): HubService {
-    if (this.#mode.kind !== "hub") throw new Error("a fixture's hubs are fixed");
+    if (this.#mode.kind !== "hub") throw new Error("a fixture's workspaces are fixed");
     const { credentials, transport, cacheDir } = this.#mode;
     const service = new HubService({ kind: "hub", id, credentials, loaded, ephemeral: this.#ephemeral, transport, cache: new HubCacheFile(join(cacheDir, cacheFileName(id))) });
     if (this.#started) service.start();
@@ -184,7 +184,7 @@ export class Hubs {
       const url = this.#services.get(id)?.url() ?? null;
       return {
         id,
-        label: label ?? (url === null ? "Hub" : defaultLabel(url)),
+        label: label ?? (url === null ? "Workspace" : defaultLabel(url)),
         ...(color === undefined ? {} : { color }),
         ...(cloud === undefined ? {} : { cloud }),
         ...(invited === undefined ? {} : { invited }),
@@ -218,13 +218,13 @@ export class Hubs {
   connect(request: { readonly url: string; readonly key: string }, target?: PairTarget): ConnectOutcome {
     if (target === undefined || "hub" in target) {
       const service = this.#services.get(target?.hub ?? this.#entries[0]?.id ?? FIRST_HUB);
-      if (service === undefined) return { ok: false, message: "That hub was removed." };
+      if (service === undefined) return { ok: false, message: "That workspace was removed." };
       const outcome = service.connect(request);
       if (outcome.ok) this.#changed();
       return outcome;
     }
     const label = cleanLabel(target.label);
-    if (label === null) return { ok: false, message: `Name the hub in 1 to ${String(LABEL_MAX)} characters.` };
+    if (label === null) return { ok: false, message: `Name the workspace in 1 to ${String(LABEL_MAX)} characters.` };
     if (this.#mode.kind !== "hub") return this.all()[0]?.connect(request) ?? { ok: false, message: "Not available." };
     // A hub already listed (a pairing link for it, or its address typed again) is paired again, not added twice.
     const listed = this.#entries.find((e) => {
@@ -250,8 +250,8 @@ export class Hubs {
   /** A new label or colour; null takes the colour away. */
   update(id: HubId, change: { readonly label: string; readonly color: HubColor | null }): ConnectOutcome {
     const label = cleanLabel(change.label);
-    if (label === null) return { ok: false, message: `Name the hub in 1 to ${String(LABEL_MAX)} characters.` };
-    if (!this.#entries.some((e) => e.id === id)) return { ok: false, message: "That hub was removed." };
+    if (label === null) return { ok: false, message: `Name the workspace in 1 to ${String(LABEL_MAX)} characters.` };
+    if (!this.#entries.some((e) => e.id === id)) return { ok: false, message: "That workspace was removed." };
     this.#entries = this.#entries.map((e) => (e.id === id ? { id, label, ...(change.color === null ? {} : { color: change.color }), ...(e.cloud === undefined ? {} : { cloud: e.cloud }), ...(e.invited === undefined ? {} : { invited: e.invited }) } : e));
     return this.#save();
   }
@@ -285,7 +285,7 @@ export class Hubs {
     const entry = this.#at(url);
     const service = entry === undefined ? undefined : this.#services.get(entry.id);
     if (entry === undefined || service === undefined || service.keyed() === null) return null;
-    return { id: entry.id, label: this.list().find((h) => h.id === entry.id)?.label ?? "Hub", service };
+    return { id: entry.id, label: this.list().find((h) => h.id === entry.id)?.label ?? "Workspace", service };
   }
 
   /** The hubs that came with the fleetd cloud account. */
@@ -293,7 +293,7 @@ export class Hubs {
     const labels = new Map(this.list().map((h) => [h.id, h.label]));
     return this.#entries.flatMap((e) => {
       const service = this.#services.get(e.id);
-      return e.cloud === true && service !== undefined ? [{ id: e.id, label: labels.get(e.id) ?? "Hub", service }] : [];
+      return e.cloud === true && service !== undefined ? [{ id: e.id, label: labels.get(e.id) ?? "Workspace", service }] : [];
     });
   }
 
@@ -351,7 +351,7 @@ export class Hubs {
       try {
         writePrivate(this.#mode.dir, HUB_LIST, JSON.stringify({ version: 1, hubs: this.#entries }));
       } catch (error) {
-        outcome = { ok: false, message: `Couldn't save the list of hubs: ${String(error)}` };
+        outcome = { ok: false, message: `Couldn't save the list of workspaces: ${String(error)}` };
       }
     }
     this.#changed();

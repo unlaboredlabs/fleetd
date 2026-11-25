@@ -50,7 +50,7 @@ const PERMISSION_WORDS: Record<string, string> = {
  */
 export const appName = (label: string, address: string): string => {
   const host = address.replace(/^[a-z]+:\/\//u, "").split(/[.:/]/u)[0] ?? "";
-  const hub = label.trim() !== "" ? label.trim() : /^\d+$/u.test(host) || host === "" ? "my hub" : host;
+  const hub = label.trim() !== "" ? label.trim() : /^\d+$/u.test(host) || host === "" ? "my workspace" : host;
   return `fleetd on ${hub}`.slice(0, 34).trim();
 };
 
@@ -83,11 +83,11 @@ export function AdminGithub() {
   // Said once the App's own section has gone with it.
   const [removed, setRemoved] = useState<string | null>(null);
   if (!live || read.data === undefined) {
-    const text = !live ? "Not connected. Connect to a hub to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
+    const text = !live ? "Not connected. Connect to a workspace to set up GitHub." : read.error !== null ? errorText(read.error) : "Loading…";
     const old = read.error instanceof CallError && lacksTool(read.error.error);
     return (
       <SettingsSection reveal="admin.github">
-        <GroupNote tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This hub is too old for a GitHub App. Update fleetd on the hub first." : text}</GroupNote>
+        <GroupNote tone={read.error !== null && !old ? "danger" : "quiet"}>{old ? "This workspace is too old for a GitHub App. Update fleetd on the workspace first." : text}</GroupNote>
       </SettingsSection>
     );
   }
@@ -111,7 +111,7 @@ export function AdminGithub() {
 
 function NoApp({ removed }: { removed: string | null }) {
   return (
-    <SettingsRow title="No App yet" label="GitHub App" hint="Until there is one, the hub uses gh as it is logged in on the hub’s machine. Create the App below.">
+    <SettingsRow title="No App yet" label="GitHub App" hint="Until there is one, the workspace uses gh as it is logged in on the workspace’s machine. Create the App below.">
       {removed === null ? null : (
         <div role="status">
           <Text size="sm">{removed}</Text>
@@ -159,7 +159,7 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
     <SettingsRow
       title={app.name}
       label="GitHub App"
-      hint="Its keys are sealed on the hub."
+      hint="Its keys are sealed on the workspace."
       line={`Owned by ${app.owner}. Created ${dayWords(app.createdAt)}.`}
       control={
         <Button size="sm" disabled={testing} onClick={test}>
@@ -183,12 +183,12 @@ function AppStatus({ app, onRemoved }: { app: GithubApp; onRemoved: (line: strin
       <ProblemLine text={problem} />
       {removing ? (
         <ConfirmRemove
-          title={`Remove ${app.name} from the hub?`}
-          description="The hub forgets the App and its keys, and goes back to each machine's own GitHub login. GitHub keeps the App until you delete it there."
+          title={`Remove ${app.name} from the workspace?`}
+          description="The workspace forgets the App and its keys, and goes back to each machine's own GitHub login. GitHub keeps the App until you delete it there."
           action="Remove"
           onRemove={() =>
             hubCall("github_app_remove", {}).then((out) => {
-              onRemoved(`Removed from the hub. Delete it on GitHub too, under Advanced: ${out.settingsUrl}/advanced`);
+              onRemoved(`Removed from the workspace. Delete it on GitHub too, under Advanced: ${out.settingsUrl}/advanced`);
               // The step, ConfirmRemove reads again itself.
               refetch(["github_app_get"]);
             })
@@ -344,7 +344,7 @@ function CloudApp({ app, me, back }: { app: GithubApp; me: GithubAccount | undef
       <ProblemLine text={problem} />
       {removed === null ? null : (
         <div role="status" className={s.links}>
-          <Text size="sm">Taken off this team.</Text>
+          <Text size="sm">Taken off this workspace.</Text>
           <Button variant="ghost" icon={<ExternalLink size={14} />} onClick={() => void window.fleetd.openExternal(removed)}>
             Uninstall on GitHub
           </Button>
@@ -352,7 +352,7 @@ function CloudApp({ app, me, back }: { app: GithubApp; me: GithubAccount | undef
       )}
       {removing ? (
         <ConfirmRemove
-          title="Take GitHub off this team?"
+          title="Take GitHub off this workspace?"
           description="Agents stop working on its repositories. It stays installed on GitHub until you uninstall it there."
           action="Remove"
           onRemove={() =>
@@ -418,7 +418,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
   return (
     <SettingsSection
       title={fresh ? "Create the App" : "Replace it with a new App"}
-      hint={fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the hub; delete the old one on GitHub."}
+      hint={fresh ? "On your GitHub account or an organization you administer." : "A new App replaces this one on the workspace; delete the old one on GitHub."}
       aside={
         fresh ? undefined : (
           <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -456,7 +456,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
               </Field>
             </div>
           </SettingsRow>
-          <SettingsRow title="What it asks for" hint="On each repository you install it on. It needs no webhooks: the hub polls GitHub, as the merge train already does.">
+          <SettingsRow title="What it asks for" hint="On each repository you install it on. It needs no webhooks: the workspace polls GitHub, as the merge train already does.">
             <ul className={s.list} aria-label="Permissions">
               {info.permissions.map(([key, level]) => (
                 <li key={key}>
@@ -472,7 +472,7 @@ function Create({ info }: { info: GithubAppGetOutput }) {
           </SettingsRow>
           <SettingsRow
             title="Create it on GitHub"
-            hint="GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the hub, and you come back here to install it. No desktop app at hand? On the hub’s machine, fleetd github-app create does the same from a terminal."
+            hint="GitHub opens in your browser with all of this filled in. Press Create GitHub App there; GitHub sends its keys to the workspace, and you come back here to install it. No desktop app at hand? On the workspace’s machine, fleetd github-app create does the same from a terminal."
             line={why ?? null}
             control={
               <>

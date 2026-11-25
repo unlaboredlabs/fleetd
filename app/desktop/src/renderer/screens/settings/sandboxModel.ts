@@ -15,7 +15,7 @@ export const providerHint = (p: SandboxProvider): string | undefined => HINTS[p]
 
 /** Providers' hover: what a provider costs, the order agents go to them, and that keys stay sealed. */
 export const SECTION_HINT =
-  "Your team's own accounts, which bill you while they run. Agents go to the connected ones in the order listed once " +
+  "Your workspace's own accounts, which bill you while they run. Agents go to the connected ones in the order listed once " +
   "your machines are full, up to each one's limit. Keys are sealed and never shown again.";
 
 /** The limit's choices: none, then up to 500, and the one set when it isn't among them. */

@@ -585,7 +585,7 @@ function HubDots({ ref, at }: { ref: RefObject<HTMLDivElement | null>; at: numbe
   if (hubs.length < 2) return null;
   return (
     <div className={s.marksSlot}>
-      <div ref={ref} className={s.marks} role="group" aria-label="Hubs" style={{ "--at": String(at), "--hubs": String(hubs.length) } as CSSProperties}>
+      <div ref={ref} className={s.marks} role="group" aria-label="Workspaces" style={{ "--at": String(at), "--hubs": String(hubs.length) } as CSSProperties}>
         {hubs.map((h, i) => (
           <Tooltip key={h.id} content={h.label} side="top">
             <button type="button" className={s.markHub} aria-label={h.label} {...(i === at ? { "aria-current": "true" as const } : {})} onClick={() => switchHub(h.id)} />

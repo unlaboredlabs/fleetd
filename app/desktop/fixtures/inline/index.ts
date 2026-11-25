@@ -120,7 +120,7 @@ const inlineItems = (
  * the secret's field checks no machine (none are held offline).
  */
 const inlineOffline = (items: Fixture, down: Fixture["state"]): Fixture => {
-  const f = Fixture.from(items, "inline-offline", "The inline items' chat from the disk cache, the hub out of reach: nothing can be answered now.");
+  const f = Fixture.from(items, "inline-offline", "The inline items' chat from the disk cache, the workspace out of reach: nothing can be answered now.");
   f.state = down.phase === "retrying" ? { ...down, retryAt: Date.parse(f.now) + 8000 } : down;
   f.cache = heldCache(f, f.state.phase === "retrying" ? f.state.hub : "", false);
   return f;
@@ -128,10 +128,10 @@ const inlineOffline = (items: Fixture, down: Fixture["state"]): Fixture => {
 
 /** Every answer fails, each in its own way: the hub's raw message never shows, only one plain line and Retry. */
 const inlineFailures = (base: Fixture): Fixture => {
-  const f = inlineItems(base, "inline-failures", "The inline items' answers fail: the hub errs on Approve and Deny, and a secret save gets no answer in time.");
+  const f = inlineItems(base, "inline-failures", "The inline items' answers fail: the workspace errs on Approve and Deny, and a secret save gets no answer in time.");
   f.drop("approval_answer");
   f.fail("approval_answer", undefined, { code: "failed", message: 'tool approval_answer failed: {"requestId":"Q10","decision":"approve"}' });
-  f.fail("secret_submit", undefined, { code: "timeout", message: "The hub didn't answer secret_submit within 30 s." });
+  f.fail("secret_submit", undefined, { code: "timeout", message: "The workspace didn't answer secret_submit within 30 s." });
   return f;
 };
 
@@ -141,7 +141,7 @@ const inlineFailures = (base: Fixture): Fixture => {
  * approval and reopen in one refetch.
  */
 const inlineReopened = (base: Fixture): Fixture => {
-  const f = inlineItems(base, "inline-reopened", "Two approvals the hub reopens after Approve because the node is offline: one gains why, one says the same as before.");
+  const f = inlineItems(base, "inline-reopened", "Two approvals the workspace reopens after Approve because the node is offline: one gains why, one says the same as before.");
   const list = f.output("requests_list", { limit: 100 }) as { requests: JsonObject[] };
   const q4 = list.requests.find((r) => r["requestId"] === "Q4");
   const q7 = list.requests.find((r) => r["requestId"] === "Q7");

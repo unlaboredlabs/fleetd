@@ -170,7 +170,7 @@ export const when = (iso: string): string =>
 export function runNote(run: AutomationRun): string | null {
   if (run.said) return run.said;
   if (run.why) return run.why;
-  if (run.lateMin !== undefined) return `Missed while the hub was down; ran once on its return.`;
+  if (run.lateMin !== undefined) return `Missed while the workspace was down; ran once on its return.`;
   if (run.payloadBytes !== undefined) return `Body of ${run.payloadBytes.toLocaleString("en-US")} bytes.`;
   return null;
 }

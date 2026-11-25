@@ -16,7 +16,7 @@ const sources = (dir: string): string[] =>
 const served = (): string[] => {
   const hub = readFileSync(join(root, "fleetd/src/hub/app_ws/server.ts"), "utf8");
   const list = /export const APP_FEATURES = \[([^\]]*)\]/.exec(hub)?.[1];
-  if (list === undefined) throw new Error("APP_FEATURES not found in the hub's app_ws/server.ts");
+  if (list === undefined) throw new Error("APP_FEATURES not found in the workspace's app_ws/server.ts");
   return [...list.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? "");
 };
 

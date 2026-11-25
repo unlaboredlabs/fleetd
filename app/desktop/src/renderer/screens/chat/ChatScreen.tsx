@@ -487,7 +487,7 @@ export function ChatScreen({ project, message }: { project: ProjectRef; message?
       <div ref={stage} className={s.stage}>
         {data.missing ? (
           <div className={s.loading} role="status">
-            <Text tone="quiet">This bot isn’t on the hub. It may have been removed.</Text>
+            <Text tone="quiet">This bot isn’t on the workspace. It may have been removed.</Text>
           </div>
         ) : rows === undefined && data.loadError !== undefined ? (
           <div className={s.loading} role="alert">

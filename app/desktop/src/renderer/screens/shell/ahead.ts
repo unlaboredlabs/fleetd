@@ -106,7 +106,7 @@ export const ahead = <T, R extends "chat_pins_get" | "chat_sections_get">(o: {
         // Asked now (or the read on its way waited for), with no retries of its own.
         await layer.queryClient.query({ ...layer.toolQuery(o.read, none), staleTime: 0, retry: false });
       } catch (e) {
-        toast({ title: o.refused, description: e instanceof CallError ? (o.why?.(e.error) ?? e.error.message) : "The hub didn’t answer.", tone: "danger" });
+        toast({ title: o.refused, description: e instanceof CallError ? (o.why?.(e.error) ?? e.error.message) : "The workspace didn’t answer.", tone: "danger" });
         return;
       }
     }

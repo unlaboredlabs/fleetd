@@ -25,7 +25,7 @@ const setupLeft = (f: Fixture): void => {
 };
 
 /** A label as long as a hub's can be (40 characters), and a machine's name as long. */
-const LONG_HUB = "Acme Robotics shared build hub, Berlin 2";
+const LONG_HUB = "Acme Robotics shared workspace, Berlin 2";
 const LONG_OTHER = "Personal bots and garden experiments";
 const LONG_MACHINE = "buildbox-ci-runner-eu-central-berlin-002";
 
@@ -85,7 +85,7 @@ const update = (f: Fixture, how: "updating" | "updated" | "machine" | "hub", adm
       to: NEXT,
       ...times,
       parts: [
-        { part: "hub", name: "the hub", from: OLDER, state: hub, ...(how === "hub" ? failed : {}) },
+        { part: "hub", name: "the workspace", from: OLDER, state: hub, ...(how === "hub" ? failed : {}) },
         { part: "node", machineId: "devbox", name: "devbox", from: OLDER, state: devbox },
         { part: "node", machineId: "buildbox", name: "buildbox", from: OLDER, state: buildbox, ...(how === "machine" ? failed : {}) },
       ],
@@ -102,9 +102,9 @@ export default defineGroup({
       return f;
     };
     return [
-      made("setup", "Sam's hub with one required setup step left: the menu's line, and Finish.", setupLeft),
-      made("machine-offline", "Sam's hub with buildbox offline: the menu names it, and Open goes to its page.", (f) => offline(f, "buildbox")),
-      made("hosted-account", "Sam's hub whose hosted agents have no Claude account: fleetd's computers aren't ready, and Connect opens Accounts.", (f) => {
+      made("setup", "Sam's workspace with one required setup step left: the menu's line, and Finish.", setupLeft),
+      made("machine-offline", "Sam's workspace with buildbox offline: the menu names it, and Open goes to its page.", (f) => offline(f, "buildbox")),
+      made("hosted-account", "Sam's workspace whose hosted agents have no Claude account: fleetd's computers aren't ready, and Connect opens Accounts.", (f) => {
         const hosted = {
           machineId: "hosted",
           name: "Hosted sandboxes",
@@ -112,12 +112,12 @@ export default defineGroup({
           status: "degraded",
           lastSeenAt: f.now,
           nodeVersion: "0.9.0",
-          degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+          degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the workspace's API key or your Claude subscription in Settings",
           degradedCause: "claude_login",
         };
         if (f.snapshot !== undefined) f.snapshot["machines"] = [...arr(f.snapshot["machines"]), hosted];
       }),
-      made("hosted-refused", "Sam's hub whose fleetd's computers refused a sandbox for billing: fleetd's computers aren't ready, why, and Try again.", (f) => {
+      made("hosted-refused", "Sam's workspace whose fleetd's computers refused a sandbox for billing: fleetd's computers aren't ready, why, and Try again.", (f) => {
         const hosted = { machineId: "hosted", name: "Hosted sandboxes", runner: true, status: "online", lastSeenAt: f.now, nodeVersion: "0.9.0" };
         if (f.snapshot === undefined) return;
         f.snapshot["machines"] = [...arr(f.snapshot["machines"]), hosted];
@@ -126,20 +126,20 @@ export default defineGroup({
         f.snapshot["slots"] = slots(f.snapshot["slots"]);
         for (const frame of f.live) if (frame["slots"] !== undefined) frame["slots"] = slots(frame["slots"]);
       }),
-      made("offline", "Sam's hub stops answering once the app is open: Can't reach devbox, and Retry.", (f) => {
-        f.later(300, "state", { phase: "retrying", hub: f.state.phase === "live" ? f.state.hub : "", reason: "Nothing is listening at devbox:4790", fix: "Start the hub on that machine (`fleetd doctor` there says why it's down).", retryAt: Date.parse(f.now) + 25_000 });
+      made("offline", "Sam's workspace stops answering once the app is open: Can't reach devbox, and Retry.", (f) => {
+        f.later(300, "state", { phase: "retrying", hub: f.state.phase === "live" ? f.state.hub : "", reason: "Nothing is listening at devbox:4790", fix: "Start the workspace on that machine (`fleetd doctor` there says why it's down).", retryAt: Date.parse(f.now) + 25_000 });
       }),
-      made("refused", "Two hubs, Personal and Acme; Acme refused this app's key: Pair again.", (f) => {
+      made("refused", "Two workspaces, Personal and Acme; Acme refused this app's key: Pair again.", (f) => {
         f.label = "Personal";
         f.color = "green";
-        const acme = Fixture.from(base("status-rows"), "menu-refused-acme", "Acme's hub, which refused this app's key.");
+        const acme = Fixture.from(base("status-rows"), "menu-refused-acme", "Acme's workspace, which refused this app's key.");
         acme.state = { phase: "refused", hub: "https://hub.acme.example", message: "This key was revoked" };
         f.hubs = [{ label: "Acme", color: "amber", fixture: acme }];
       }),
-      made("updating", "Sam's hub updating: it runs the new build, buildbox restarts onto it.", (f) => update(f, "updating")),
-      made("updated", "Sam's hub and its machines updated themselves three minutes ago.", (f) => update(f, "updated")),
-      made("update-failed", "The hub updated, and buildbox didn't start the new build, so its old one runs again: Sam can try again.", (f) => update(f, "machine")),
-      made("member-update-failed", "The hub's own update was put back, as Bob, a member, reads it: he is told who to ask.", (f) => update(f, "hub", false), bob),
+      made("updating", "Sam's workspace updating: it runs the new build, buildbox restarts onto it.", (f) => update(f, "updating")),
+      made("updated", "Sam's workspace and its machines updated themselves three minutes ago.", (f) => update(f, "updated")),
+      made("update-failed", "The workspace updated, and buildbox didn't start the new build, so its old one runs again: Sam can try again.", (f) => update(f, "machine")),
+      made("member-update-failed", "The workspace's own update was put back, as Bob, a member, reads it: he is told who to ask.", (f) => update(f, "hub", false), bob),
       made("member-no-machine", "Bob, a member, with every machine offline: nothing of his runs, and he is told who to ask.", (f) => {
         offline(f, "devbox");
         offline(f, "buildbox");
@@ -148,29 +148,29 @@ export default defineGroup({
         degraded(f, "devbox");
         degraded(f, "buildbox");
       }, bob),
-      made("long-refused", "Two hubs with 40-character labels, one with a long-named machine offline, the other refusing this app's key: the names are cut short, never what is wrong.", (f) => {
+      made("long-refused", "Two workspaces with 40-character labels, one with a long-named machine offline, the other refusing this app's key: the names are cut short, never what is wrong.", (f) => {
         f.label = LONG_OTHER;
         f.color = "green";
         machine(f, "buildbox", { name: LONG_MACHINE, status: "offline" });
-        const acme = Fixture.from(base("status-rows"), "menu-long-refused-acme", "A hub with a 40-character label, which refused this app's key.");
+        const acme = Fixture.from(base("status-rows"), "menu-long-refused-acme", "A workspace with a 40-character label, which refused this app's key.");
         acme.state = { phase: "refused", hub: "https://hub.acme.example", message: "This key was revoked" };
         f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
       }),
-      made("long-offline", "Two hubs with 40-character labels; the second can't be reached: its name is cut short, Retry and the words stay whole.", (f) => {
+      made("long-offline", "Two workspaces with 40-character labels; the second can't be reached: its name is cut short, Retry and the words stay whole.", (f) => {
         f.label = LONG_OTHER;
         f.color = "green";
-        const acme = Fixture.from(base("status-rows"), "menu-long-offline-acme", "A hub with a 40-character label, out of reach.");
-        acme.state = { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 };
+        const acme = Fixture.from(base("status-rows"), "menu-long-offline-acme", "A workspace with a 40-character label, out of reach.");
+        acme.state = { phase: "retrying", hub: "https://hub.acme.example", reason: "The workspace didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 };
         f.hubs = [{ label: LONG_HUB, color: "amber", fixture: acme }];
       }),
-      made("app-update", "Two hubs, Sam's own and the fleetd cloud team weishang, both up to date, and this app has an update: Restart to update.", (f) => {
+      made("app-update", "Two workspaces, Sam's own and the fleetd cloud workspace weishang, both up to date, and this app has an update: Restart to update.", (f) => {
         f.label = "devbox";
         f.color = "green";
         // The hub and its machines on this app's build, the channel's newest; this app has the next one downloaded.
         if (f.state.phase === "live") f.state = { ...f.state, version: MINE };
         if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? { ...m, nodeVersion: MINE } : m));
         f.appUpdate = { current: MINE, app: { kind: "ready", version: NEXT }, release: { cli: MINE, app: NEXT } };
-        const team = hub("app-update-cloud", "The fleetd cloud team weishang, which updates itself: hub_info leaves the hub's update out.");
+        const team = hub("app-update-cloud", "The fleetd cloud workspace weishang, which updates itself: workspace_info leaves the workspace's update out.");
         team.state = { phase: "live", hub: "https://weishang.fleetd.dev", protocol: PROTOCOL, version: "0.9.0" };
         team.drop("hub_info").answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true, me: sam, people: 4, leftOut: LEFT_OUT });
         f.hubs = [{ label: "weishang", color: "amber", fixture: team }];

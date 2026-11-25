@@ -218,7 +218,7 @@ describe("Hub › Setup › GitHub", () => {
   it("names the App after the hub, and says where it reaches", () => {
     expect(appName("devbox", "")).toBe("fleetd on devbox");
     expect(appName("", "http://devbox.example.ts.net:4790")).toBe("fleetd on devbox");
-    expect(appName("", "100.64.0.7:4790")).toBe("fleetd on my hub");
+    expect(appName("", "100.64.0.7:4790")).toBe("fleetd on my workspace");
     expect(appName("a hub with a very long label indeed", "")).toHaveLength(34);
     expect(reachWords({ installationId: 1, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/web", "acme/api"] })).toBe("acme: acme/web and acme/api");
     expect(reachWords({ installationId: 1, account: "sam", allRepositories: true, repositoryCount: 31 })).toBe("sam: all 31 repositories");
@@ -378,13 +378,13 @@ describe("Hub › Setup › GitHub on a fleetd cloud team", () => {
     await render();
     await click(button("Remove"));
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain("Take GitHub off this team?");
+    expect(dialog?.textContent).toContain("Take GitHub off this workspace?");
     expect(dialog?.textContent).toContain("It stays installed on GitHub until you uninstall it there.");
     const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((b) => b.textContent.trim() === "Remove");
     if (confirm === undefined) throw new Error("no confirm");
     await click(confirm);
     expect(calls.some((c) => c.tool === "github_app_remove")).toBe(true);
-    expect(document.body.textContent).toContain("Taken off this team.");
+    expect(document.body.textContent).toContain("Taken off this workspace.");
     expect(document.body.textContent).not.toContain("Delete it on GitHub");
     expect(document.body.textContent).not.toContain("No App yet");
     await click(button("Uninstall on GitHub"));

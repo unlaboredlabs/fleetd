@@ -96,7 +96,7 @@ const render = async (info: Partial<HubInfoOutput> | null, what: "page" | "sideb
     call: (tool, input) => {
       calls.push({ tool, input });
       if ((old && tool !== "hub_info") || (info === null && tool === "hub_info")) return Promise.resolve({ ok: false, error: { code: "not_found", message: `No tool ${tool}.` } });
-      if (down) return Promise.resolve({ ok: false, error: { code: "offline", message: "Not connected to the hub.", fix: "Wait for the connection to come back." } });
+      if (down) return Promise.resolve({ ok: false, error: { code: "offline", message: "Not connected to the workspace.", fix: "Wait for the connection to come back." } });
       const output =
         tool === "hub_info"
           ? { version: "0.0.0", protocol: 1, busy: [], ...info }
@@ -177,7 +177,7 @@ const row = (name: string) => {
 const sent = (tool: string) => calls.filter((c) => c.tool === tool).map((c) => c.input);
 
 const hubGroup = () =>
-  [...host.querySelectorAll("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Hub") ?? null;
+  [...host.querySelectorAll("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Workspace") ?? null;
 
 it("shows Settings' Hub group to an owner or admin, and to nobody else; the main sidebar has no Administration row", async () => {
   for (const [info, shown] of [
@@ -254,7 +254,7 @@ it("marks the hub switcher for an admin while required setup steps are left, and
   const switcher = host.querySelector<HTMLElement>("[data-opens='hubs']");
   expect(switcher?.dataset["mark"]).toBe("warning");
   expect(switcher?.getAttribute("aria-label")).toContain("2 setup steps left");
-  if (switcher === null) throw new Error("no hub switcher");
+  if (switcher === null) throw new Error("no workspace switcher");
   // A menu opens from the keys as from a press (on pointer-down, which the DOM here can't give).
   act(() => void switcher.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
   const setup = document.querySelector<HTMLElement>("[role='menu'] [data-line='setup']");
@@ -276,7 +276,7 @@ it("tells a member who follows a link to a Hub page that it isn't theirs, and re
     window.location.hash = hash;
     await render({ me: bob, admin: false });
     expect(host.querySelector("[data-screen='settings.hub.denied']"), hash).not.toBeNull();
-    expect(host.textContent).toContain("This page is for the hub's owners and admins.");
+    expect(host.textContent).toContain("This page is for the workspace's owners and admins.");
     act(() => root.unmount());
     root = createRoot(host);
   }
@@ -319,7 +319,7 @@ it("removes a person once confirmed", async () => {
   window.location.hash = "#/settings/hub/people";
   await render({ me: sam, admin: true });
   expect(row("Sam Rivera").querySelector("button[aria-label$=': more']")).toBeNull();
-  await chooseFromRow("Bob Okafor", "Remove from hub");
+  await chooseFromRow("Bob Okafor", "Remove from workspace");
   await settle();
   expect(document.body.textContent).toContain("Their 1 device is signed out at once.");
   await click(button("Remove Bob Okafor"));
@@ -376,9 +376,9 @@ it("asks for a hub update on a hub from before people, in place of a raw error",
   for (const page of ["people", "invites"]) {
     window.location.hash = `#/settings/hub/${page}`;
     await render({ admin: true }, "page", true);
-    expect(host.textContent).toContain("This hub needs updating to manage people.");
+    expect(host.textContent).toContain("This workspace needs updating to manage people.");
     expect(host.textContent).not.toContain("No tool");
-    expect(button("Update the hub")).toBeDefined();
+    expect(button("Update the workspace")).toBeDefined();
     expect(host.querySelector("form")).toBeNull();
     act(() => root.unmount());
     root = createRoot(host);
@@ -416,6 +416,6 @@ it("says to connect a hub, not Loading… for ever, with no hub and nothing kept
   });
   await settle();
   expect(host.querySelector("[data-screen='settings.hub.offline']")).not.toBeNull();
-  expect(host.textContent).toContain("Connect to a hub to see and change this.");
+  expect(host.textContent).toContain("Connect to a workspace to see and change this.");
   expect(host.textContent).not.toContain("Loading…");
 });

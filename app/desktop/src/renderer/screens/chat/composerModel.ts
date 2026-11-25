@@ -81,12 +81,12 @@ function receiptOf(m: Sendable, latest: boolean): Receipt | undefined {
       // Written offline: it goes by itself, under its own id, when the link is back. Until then it can be taken back.
       return { kind: "quiet", line: "queued; sends when the connection is back", acts: ["edit", "dismiss"] };
     case "reconnecting":
-      return { kind: "quiet", line: "sending… the link to the hub dropped; it goes again when the link is back" };
+      return { kind: "quiet", line: "sending… the link to the workspace dropped; it goes again when the link is back" };
     case "unanswered":
       // Safe to send again: the hub keeps one message per id.
-      return { kind: "warn", line: "no answer from the hub yet; it may have it", acts: ["resend", "dismiss"] };
+      return { kind: "warn", line: "no answer from the workspace yet; it may have it", acts: ["resend", "dismiss"] };
     case "failed":
-      return { kind: "bad", line: "not sent: the hub refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
+      return { kind: "bad", line: "not sent: the workspace refused it", ...(m.error ? { detail: m.error.message } : {}), acts: ["resend", "edit", "dismiss"] };
     case "sent":
     case "streaming":
       if (m.delivery === "now") return { kind: "quiet", line: "delivered; the lead stopped its step to read this" };
@@ -134,9 +134,9 @@ export function stopFailed(code: string): string {
       return "This computer’s key can’t stop this bot’s work.";
     case "offline":
     case "disconnected":
-      return "Not connected to the hub, so nothing was stopped.";
+      return "Not connected to the workspace, so nothing was stopped.";
     case "timeout":
-      return "The hub didn’t answer, so the lead and its agents may still be working. Try Stop again.";
+      return "The workspace didn’t answer, so the lead and its agents may still be working. Try Stop again.";
     default:
       return "Couldn’t stop the lead and its agents. Try Stop again.";
   }

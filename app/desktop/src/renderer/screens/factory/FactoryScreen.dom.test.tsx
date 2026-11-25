@@ -172,7 +172,7 @@ it("on a hub without metrics_get, says to update fleetd rather than that the hub
     await vi.advanceTimersByTimeAsync(0);
   });
   expect(screen()).toBe("factory.unsupported");
-  expect(text()).toContain("This hub doesn't report metrics yet");
+  expect(text()).toContain("This workspace doesn't report metrics yet");
   expect(text()).toContain("Update fleetd");
   expect(text()).not.toContain("couldn't answer");
 });

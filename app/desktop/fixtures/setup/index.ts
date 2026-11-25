@@ -28,9 +28,9 @@ const step = (id: string, read: JsonObject | undefined): JsonObject => {
 };
 
 const NOTES: Readonly<Record<string, string>> = {
-  "setup-fresh": "A hub fleetd init just made on devbox: the hub and devbox up, Claude and GitHub to do (devbox's claude logged out), the rest optional.",
-  "setup-claude-logins": "Claude done the plain way: no hub key, devbox's own claude logged in.",
-  "setup-github": "Claude done with the hub's API key; GitHub is next, and its Test finds gh logged in on the hub.",
+  "setup-fresh": "A workspace fleetd init just made on devbox: the workspace and devbox up, Claude and GitHub to do (devbox's claude logged out), the rest optional.",
+  "setup-claude-logins": "Claude done the plain way: no workspace key, devbox's own claude logged in.",
+  "setup-github": "Claude done with the workspace's API key; GitHub is next, and its Test finds gh logged in on the workspace.",
   "setup-done": "Everything required and GitHub done; people left to do.",
   "setup-all": "Every step done: Ada joined, 1Password reads one vault and the agents' Mac is in.",
 };
@@ -78,14 +78,20 @@ const githubApp = (app: boolean): JsonObject => ({
   people: [],
 });
 
+/** Whether a scenario's step goes its way by `end`: the setup catalog (steps.json, made by fleetd) words whose it is. */
+const wayEnds = (sc: Scenario, id: string, end: string): boolean => {
+  const way = sc.list[id]?.["way"];
+  return typeof way === "string" && way.endsWith(end);
+};
+
 export default defineGroup({
   fixtures: (base) =>
     Object.entries(scenarios).map(([name, sc]) => {
       const f = Fixture.from(base("empty"), name, NOTES[name] ?? name);
       f.state = { phase: "live", hub: steps.hub, protocol: PROTOCOL };
       f.answer("hub_info", undefined, { version: "0.9.0", protocol: 1, busy: [], admin: true });
-      f.answer("claude_accounts_get", undefined, claude(sc.list["claude"]?.["way"] === "the hub's API key"));
-      f.answer("github_app_get", undefined, githubApp(sc.list["github"]?.["way"] === "the hub's GitHub App"));
+      f.answer("claude_accounts_get", undefined, claude(wayEnds(sc, "claude", "API key")));
+      f.answer("github_app_get", undefined, githubApp(wayEnds(sc, "github", "GitHub App")));
       f.answer("usage_status", undefined, { machines: [] });
       // The hub's Tailscale device: connected once its step is done, else off, Connect on its step.
       f.answer("tailnet_get", undefined, sc.list["tailscale"]?.["status"] === "done" ? { status: "connected", tailnet: "acme.com", device: "fleetd-devbox" } : { status: "off" });

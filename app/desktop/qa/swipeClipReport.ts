@@ -117,7 +117,7 @@ export const numbers = (c: Clip): Numbers => {
 
 export const table = (rows: readonly Numbers[]): string =>
   [
-    "| scene | hubs | frames | dropped | longest frame (ms) | landing frame (ms) | off the fingers (px) | let go before the lift (ms) | still after the lift (ms) | lift → still (ms) | furthest (px) | long frames |",
+    "| scene | workspaces | frames | dropped | longest frame (ms) | landing frame (ms) | off the fingers (px) | let go before the lift (ms) | still after the lift (ms) | lift → still (ms) | furthest (px) | long frames |",
     "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows.map(
       (r) =>

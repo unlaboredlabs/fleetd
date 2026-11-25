@@ -47,7 +47,7 @@ describe("Notifier", () => {
     n.push(event("buildbox breaker open", "loud", { type: "usage.breaker" }));
     expect(n.due(T0 + 60 * MIN, policy, needed)?.target).toEqual({ kind: "machines" });
     // A hub-wide item names no project: home.
-    n.push(event("the hub restarted", "loud", { type: "outage.ended" }));
+    n.push(event("the workspace restarted", "loud", { type: "outage.ended" }));
     expect(n.due(T0 + 80 * MIN, policy, needed)?.target).toEqual({ kind: "home" });
   });
 

@@ -177,7 +177,7 @@ it("says who to ask where fleetd can't turn it off, or the person isn't an admin
   admin = false;
   await render("verify_after");
   expect(find("Turn off")).toBeUndefined();
-  expect(document.body.textContent).toContain("Ask a hub admin to turn it off.");
+  expect(document.body.textContent).toContain("Ask a workspace admin to turn it off.");
 });
 
 it("shows no line while the bot tests, then merges", async () => {

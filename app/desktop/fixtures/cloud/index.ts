@@ -192,30 +192,30 @@ const fleetd = (base: Fixture, name: string, note: string, own: boolean, older =
       ? { ...out, machines: own ? out["machines"].filter(isObject).filter((m) => m["machineId"] === "laptop").map((m) => ({ ...m, name: "laptop", roles: ["agents", "sessions"] })) : [] }
       : out,
   );
-  if (older) f.fail("sandbox_get", undefined, { code: "not_found", message: "fleetd provides the hosted computers here: no team brings a key of its own." });
+  if (older) f.fail("sandbox_get", undefined, { code: "not_found", message: "fleetd provides the hosted computers here: no workspace brings a key of its own." });
   else f.answer("sandbox_get", undefined, { boxPubKey: "", placing: true, provided: true, providers: [{ provider: "boat", connected: true, limit: 10, running: 2 }], linux: own ? "ours_first" : "boat" });
   return f;
 };
 
 export default defineGroup({
   fixtures: (base) => [
-    unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own hub under it.", {}),
+    unpaired("first-screen", "First launch on a build with fleetd cloud: Sign in, and Use your own workspace under it.", {}),
     unpaired("sign-in-refused", "Sign in came back from the browser without signing in.", {
       signIn: { failure: { code: "refused", message: "The browser came back without signing you in.", fix: "Nothing was changed. Sign in again." } },
     }),
     unpaired("signed-in", "Back from the browser: who signed in, before anything connects.", {
       signIn: { arrival: { email: EMAIL, invitations: [] } },
     }),
-    unpaired("invited", "Back from the browser with an invitation from someone else's team: asked before it connects.", {
+    unpaired("invited", "Back from the browser with an invitation from someone else's workspace: asked before it connects.", {
       signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }] } },
     }),
-    unpaired("no-team", "Back from the browser in no team of their own, with one invitation: Not now leaves No team yet, with Make a team.", {
+    unpaired("no-team", "Back from the browser in no workspace of their own, with one invitation: Not now leaves No workspace yet, with Make a workspace.", {
       signIn: { arrival: { email: EMAIL, invitations: [{ name: "security", invitedBy: "eve@example.com", role: "admin" }], canMake: true } },
     }),
     unpaired("sign-in-timeout", "The sign-in page was left unfinished and ran out.", {
       signIn: { failure: { code: "timeout", message: "The sign-in page wasn't finished, so it ran out after 10 minutes." } },
     }),
-    team(base("empty"), "connect", "Signed in, the team has no machine: Connect a computer, and a terminal opens.", { terminal: "a terminal" }),
+    team(base("empty"), "connect", "Signed in, the workspace has no machine: Connect a computer, and a terminal opens.", { terminal: "a terminal" }),
     team(base("empty"), "connect-no-terminal", "Connect a computer where no terminal opens: the line is the way.", {}),
     (() => {
       // W743: fleetd's computers connected, its sandboxes stuck coming up: past the wait (3 s in the QA build), why, the fix and
@@ -232,7 +232,7 @@ export default defineGroup({
       return f.settleAt(4_500);
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "cloud-account", "Settings with a fleetd account signed in, and its team acme.");
+      const f = Fixture.from(base("typical"), "cloud-account", "Settings with a fleetd account signed in, and its workspace acme.");
       f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
       f.label = "acme";
       f.cloud = { email: EMAIL, hub: true };
@@ -250,21 +250,21 @@ export default defineGroup({
       };
       return f;
     })(),
-    people(base("chat-empty"), "owner", "People on a cloud team, as its owner: Invite by email, and two invites waiting.", sam),
-    people(base("chat-empty"), "admin", "People on a cloud team, as an admin: the same field and list.", alice),
-    people(base("chat-empty"), "member", "A member of a cloud team: no People page, so no field and no invites.", bob),
-    people(base("chat-empty"), "limit", "People on a cloud team at its limit of people: the invite is refused by the field.", sam, {
-      inviteFailure: { code: "failed", message: "This team has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
+    people(base("chat-empty"), "owner", "People on a cloud workspace, as its owner: Invite by email, and two invites waiting.", sam),
+    people(base("chat-empty"), "admin", "People on a cloud workspace, as an admin: the same field and list.", alice),
+    people(base("chat-empty"), "member", "A member of a cloud workspace: no People page, so no field and no invites.", bob),
+    people(base("chat-empty"), "limit", "People on a cloud workspace at its limit of people: the invite is refused by the field.", sam, {
+      inviteFailure: { code: "failed", message: "This workspace has reached its limit of people (50).", fix: "Remove one first, or ask fleetd's operator for a higher limit." },
     }),
-    github(base("typical"), "install", "GitHub on a cloud team: fleetd's App, installed nowhere yet; the owner's own GitHub is connected, so Install.", fleetdApp([]), true),
+    github(base("typical"), "install", "GitHub on a cloud workspace: fleetd's App, installed nowhere yet; the owner's own GitHub is connected, so Install.", fleetdApp([]), true),
     github(
       base("typical"),
       "installed",
-      "GitHub on a cloud team with fleetd's App installed on acme's repositories: Test, Install on more, Remove.",
+      "GitHub on a cloud workspace with fleetd's App installed on acme's repositories: Test, Install on more, Remove.",
       fleetdApp([{ installationId: 7, account: "acme", allRepositories: false, repositoryCount: 2, repositories: ["acme/web", "acme/api"] }]),
       true,
     ),
-    github(base("typical"), "connect-first", "Install on a cloud team that answers 409, the owner's own GitHub no longer taken: Connect GitHub first.", fleetdApp([]), true, {
+    github(base("typical"), "connect-first", "Install on a cloud workspace that answers 409, the owner's own GitHub no longer taken: Connect GitHub first.", fleetdApp([]), true, {
       githubInstallFailure: {
         connectFirst: true,
         code: "failed",
@@ -272,9 +272,9 @@ export default defineGroup({
         fix: "Connect GitHub in Settings › Accounts › GitHub, then install again.",
       },
     }),
-    github(base("typical"), "not-set-up", "GitHub on a cloud team whose service wasn't given fleetd's App.", null, true),
+    github(base("typical"), "not-set-up", "GitHub on a cloud workspace whose service wasn't given fleetd's App.", null, true),
     (() => {
-      const f = admin(base("typical"), "cloud-admin", "Settings' Hub group as the owner of a team of fleetd cloud, which leaves its own updates, restart, setup and SSH out.");
+      const f = admin(base("typical"), "cloud-admin", "Settings' Workspace group as the owner of a workspace of fleetd cloud, which leaves its own updates, restart, setup and SSH out.");
       f.answer("machine_join", undefined, {
         machineId: "laptop",
         hubUrl: TEAM,
@@ -284,21 +284,21 @@ export default defineGroup({
       });
       return f;
     })(),
-    billing(base("typical"), "none", "Billing on a cloud team with no plan and no credits: one line with Add credits, Pick a plan, nothing used."),
+    billing(base("typical"), "none", "Billing on a cloud workspace with no plan and no credits: one line with Add credits, Pick a plan, nothing used."),
     billing(base("typical"), "plan", "Billing on the Team plan with credits left, $10 lapsing within 30 days, two sizes used and a cap."),
     billing(base("typical"), "failed", "Billing after the Team plan's card was declined: one line with Update card, and the plan ends."),
     billing(base("typical"), "cap", "Billing with this month's spend cap reached: one line with Raise cap."),
     (() => {
-      const f = billing(base("typical"), "off", "Settings on a team before fleetd's computers are on for it, beside a self-hosted hub: no Billing anywhere.");
-      const own = answerHub(Fixture.from(base("typical"), "cloud-billing-off-devbox", "devbox, a self-hosted hub Sam owns"));
+      const f = billing(base("typical"), "off", "Settings on a workspace before fleetd's computers are on for it, beside a self-hosted workspace: no Billing anywhere.");
+      const own = answerHub(Fixture.from(base("typical"), "cloud-billing-off-devbox", "devbox, a self-hosted workspace Sam owns"));
       own.state = { phase: "live", hub: HUB, protocol: PROTOCOL };
       f.hubs = [{ label: "devbox", color: "blue", fixture: own }];
       return f;
     })(),
-    fleetd(base("typical"), "only", "Machines on a team on fleetd's computers with no machine of its own: they run its bots, at once and time used.", false),
-    fleetd(base("typical"), "own", "Machines on a team with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
+    fleetd(base("typical"), "only", "Machines on a workspace on fleetd's computers with no machine of its own: they run its bots, at once and time used.", false),
+    fleetd(base("typical"), "own", "Machines on a workspace with a machine of its own and fleetd's computers: Linux machine picks between them.", true),
     fleetd(base("typical"), "older", "Machines on fleetd's computers where the cloud doesn't answer the pick yet: still says where agents run.", false, true),
-    admin(base("typical"), "cloud-billing-unreachable", "Billing when the team doesn't answer: why, and Try again.", {
+    admin(base("typical"), "cloud-billing-unreachable", "Billing when the workspace doesn't answer: why, and Try again.", {
       billingFailure: { code: "offline", message: "Can't reach acme.", fix: "Check your connection, then try again." },
     }),
     (() => {

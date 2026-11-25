@@ -1248,7 +1248,7 @@ export const screens: readonly Screen[] = [
       await page.keyboard.press("Escape");
       await expect(page.locator('[data-banner="reconnecting"]')).toHaveCount(0);
       await expect(page.locator("[data-say]").getByText(/^Offline/u)).toHaveCount(0);
-      await expect(page.getByText("Offline: stop the lead and its agents once the hub is back.")).toHaveCount(0);
+      await expect(page.getByText("Offline: stop the lead and its agents once the workspace is back.")).toHaveCount(0);
     },
   },
   // ...and a minute on: offline as of the wake, why, and that it reconnects by itself; never the address or update advice.
@@ -1265,7 +1265,7 @@ export const screens: readonly Screen[] = [
       await expect(banner).not.toContainText("fleetd update");
       await expect(banner).not.toContainText("address");
       await expect(page.locator("[data-say]").getByText(/^Offline, as of/u)).toBeVisible();
-      await expect(page.getByText("Offline: stop the lead and its agents once the hub is back.")).toBeVisible();
+      await expect(page.getByText("Offline: stop the lead and its agents once the workspace is back.")).toBeVisible();
     },
   },
   // Back online before the chat is read again: marked as last known, never as current; and when that read failed,
@@ -1361,7 +1361,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const box = await page.getByRole("navigation", { name: "Sidebar" }).boundingBox();
       if (box === null) throw new Error("no sidebar");
-      const on = page.locator("[role='group'][aria-label='Hubs'] button[aria-current]");
+      const on = page.locator("[role='group'][aria-label='Workspaces'] button[aria-current]");
       await expect(on).toHaveAttribute("aria-label", "Personal");
       await page.mouse.move(box.x + box.width / 2, box.y + 160);
       for (const dy of [12, 24, 30, 24, 12]) await page.mouse.wheel(dy / 4, dy);
@@ -1429,8 +1429,8 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       // In the hub row's "…".
       await page.getByRole("button", { name: /: more$/u }).first().click();
-      await page.getByRole("menuitem", { name: "Restart hub…" }).click();
-      await expect(page.getByRole("dialog", { name: "Restart the hub?" })).toBeVisible();
+      await page.getByRole("menuitem", { name: "Restart workspace…" }).click();
+      await expect(page.getByRole("dialog", { name: "Restart the workspace?" })).toBeVisible();
     },
   },
   { id: "onboarding", route: "#/onboarding?add", fixtures: ["sidebar-hubs"], variant: "add-hub" },
@@ -2885,8 +2885,8 @@ export const screens: readonly Screen[] = [
     variant: "inline-offline",
     open: async (page) => {
       await page.locator('[data-screen="chat"]').waitFor({ timeout: 30_000 });
-      await expect(page.getByText("Offline: approve once the hub is back.").first()).toBeAttached();
-      await expect(page.getByText("Offline: save it once the hub is back.").first()).toBeAttached();
+      await expect(page.getByText("Offline: approve once the workspace is back.").first()).toBeAttached();
+      await expect(page.getByText("Offline: save it once the workspace is back.").first()).toBeAttached();
       await expect(page.getByText(/doesn't know the machine/u)).toHaveCount(0);
     },
   },
@@ -3314,7 +3314,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await page.getByRole("button", { name: "Continue" }).click();
       await page.getByRole("button", { name: "Not now" }).click();
-      await page.getByText("No team yet").waitFor({ timeout: 10_000 });
+      await page.getByText("No workspace yet").waitFor({ timeout: 10_000 });
     },
   },
   {
@@ -3323,8 +3323,8 @@ export const screens: readonly Screen[] = [
     fixtures: ["cloud-first-screen"],
     variant: "own-hub",
     open: async (page) => {
-      await page.getByRole("button", { name: /^Use your own hub/u }).click();
-      await page.getByRole("textbox", { name: "Hub address" }).waitFor({ timeout: 10_000 });
+      await page.getByRole("button", { name: /^Use your own workspace/u }).click();
+      await page.getByRole("textbox", { name: "Workspace address" }).waitFor({ timeout: 10_000 });
     },
   },
   // Where agents run: a team of fleetd cloud with nothing to run agents on, as its owner. A computer: Connect this
@@ -3493,7 +3493,7 @@ export const screens: readonly Screen[] = [
     fixtures: ["onboarding-code-refused"],
     variant: "refused",
     open: async (page) => {
-      await page.getByRole("textbox", { name: "Hub address" }).fill("http://buildbox:4790");
+      await page.getByRole("textbox", { name: "Workspace address" }).fill("http://buildbox:4790");
       const code = page.getByRole("textbox", { name: "Pairing code" });
       await code.fill("wxyz6789");
       await expect(code).toHaveValue("WXYZ-6789");
@@ -3531,7 +3531,7 @@ export const screens: readonly Screen[] = [
     variant: "wrong-code",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("000000");
-      await page.getByText("That code isn't open on this hub.").waitFor({ timeout: 10_000 });
+      await page.getByText("That code isn't open on this workspace.").waitFor({ timeout: 10_000 });
     },
   },
   {
@@ -3596,7 +3596,7 @@ export const screens: readonly Screen[] = [
     variant: "app-older",
     open: async (page) => {
       await page.getByRole("textbox").first().fill("222222");
-      await page.getByText("This app is older than your hub").waitFor({ timeout: 10_000 });
+      await page.getByText("This app is older than your workspace").waitFor({ timeout: 10_000 });
     },
   },
   {
@@ -3610,7 +3610,7 @@ export const screens: readonly Screen[] = [
       await page.getByRole("textbox").first().fill("111111");
       await page.getByRole("heading", { name: "Setting up mac" }).waitFor({ timeout: 20_000 });
       await allowAll(page);
-      await page.getByRole("button", { name: "Update the hub" }).waitFor({ timeout: 10_000 });
+      await page.getByRole("button", { name: "Update the workspace" }).waitFor({ timeout: 10_000 });
     },
   },
   // A Mac with no Xcode yet (the fixture's code 333333): setup still ends, its Xcode check amber with the App
@@ -3731,12 +3731,12 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox", { name: "Name" }).fill("Garden notes");
       await page.locator("[data-screen='projects.add']").evaluate((el) => el.setAttribute("data-qa-first", ""));
-      await page.getByRole("combobox", { name: "Hub" }).click();
+      await page.getByRole("combobox", { name: "Workspace" }).click();
       await page.getByRole("option", { name: "Acme" }).click();
-      await expect(page.getByRole("combobox", { name: "Hub" })).toHaveText("Acme");
+      await expect(page.getByRole("combobox", { name: "Workspace" })).toHaveText("Acme");
       await expect(page.locator("[data-screen='projects.add'][data-qa-first]")).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Name" })).toHaveValue("Garden notes");
-      await expect(page.getByRole("combobox", { name: "Hub" })).toBeFocused();
+      await expect(page.getByRole("combobox", { name: "Workspace" })).toBeFocused();
     },
   },
   // On a machine whose node is too old to make a bot's folder: Create says why and the fix.
@@ -3789,7 +3789,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       await page.getByRole("textbox", { name: "Name" }).fill("Checkout");
       await page.keyboard.press("Enter");
-      await page.getByText("Lost the connection to the hub before it answered.").waitFor();
+      await page.getByText("Lost the connection to the workspace before it answered.").waitFor();
     },
   },
   // A folder that isn't on the machine: the hub refuses the bot, and says so.
@@ -4412,7 +4412,7 @@ export const screens: readonly Screen[] = [
     route: "#/settings/vault",
     fixtures: ["vault-team-member"],
     open: async (page) => {
-      await page.getByRole("listitem", { name: "Team Visa" }).getByRole("button").click();
+      await page.getByRole("listitem", { name: "Workspace Visa" }).getByRole("button").click();
       await expect(page.getByText("Only its creator or an admin can show it. Agents still fill it.")).toBeVisible();
     },
   },
@@ -5008,7 +5008,7 @@ export const screens: readonly Screen[] = [
     open: async (page) => {
       const storefront = page.getByRole("region", { name: "Max agents" });
       await storefront.scrollIntoViewIfNeeded();
-      await storefront.getByRole("button", { name: "devbox's max in Hub › Machines" }).waitFor();
+      await storefront.getByRole("button", { name: "devbox's max in Workspace › Machines" }).waitFor();
     },
   },
   // A project's allowed profiles: high (the default, always), medium switched on, quick off; and storefront
@@ -5071,7 +5071,7 @@ export const screens: readonly Screen[] = [
       await storefront.getByText("Set for this bot. The default is 16.").waitFor();
       await storefront.getByRole("button", { name: "Use the default" }).click();
       await storefront.getByText("Max agents, the default: 16, was 12.").waitFor();
-      await storefront.getByText("Follows the default: the hub's fleet cap.").waitFor();
+      await storefront.getByText("Follows the default: the workspace's fleet cap.").waitFor();
     },
   },
   // A fleet cap the CLI set below the machines' total: no slider, a line in the machines' group saying it and how to change it.
@@ -5527,7 +5527,7 @@ export const screens: readonly Screen[] = [
       await expect(page.getByRole("tooltip")).toHaveCount(0);
     },
     check: async (page) => {
-      const toggle = page.getByRole("switch", { name: "Tell the hub when I'm using the app" });
+      const toggle = page.getByRole("switch", { name: "Tell the workspace when I'm using the app" });
       await toggle.blur();
       await toggle.focus();
       await expect(page.getByRole("tooltip")).toContainText("Never what you type or see.");

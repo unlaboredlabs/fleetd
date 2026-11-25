@@ -139,7 +139,7 @@ it("the sheet signs in, names the team and its machines, moves, and a move that 
 it("a moved hub's banner says its bots are paused here, and Undo runs them here again", async () => {
   move = { phase: "done", machines: [], team: "acme", paused: { team: "acme", url: "https://acme.fleetd.dev", since: AT } };
   await render(<MovedBanner />);
-  expect(host.querySelector("[data-banner='moved']")?.textContent).toContain("This hub moved to fleetd cloud (acme). Its bots are paused here.");
+  expect(host.querySelector("[data-banner='moved']")?.textContent).toContain("This workspace moved to fleetd cloud (acme). Its bots are paused here.");
   await click("Undo");
   expect(calls).toContain("hub_move_resume");
   for (let i = 0; i < 4; i++) await settle();

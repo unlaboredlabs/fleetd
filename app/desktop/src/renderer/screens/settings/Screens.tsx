@@ -115,11 +115,11 @@ export function Recordings() {
   const cloud = useHub().cloud === true;
   const updatable = servesUpdate && !cloud;
   const retention = read.data?.retention;
-  if (!live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
+  if (!live) return <GroupNote>Connect to a workspace to see and change this.</GroupNote>;
   if (read.error) return <GroupNote tone="danger">{`Couldn't read it: ${errorText(read.error)}`}</GroupNote>;
   if (read.data === undefined) return <GroupNote>Loading…</GroupNote>;
   // A hub from before retention was in machine_roles.
-  if (retention === undefined) return updatable ? <GroupNote>Update the hub&apos;s fleetd to change this here.</GroupNote> : null;
+  if (retention === undefined) return updatable ? <GroupNote>Update the workspace&apos;s fleetd to change this here.</GroupNote> : null;
   const set = (retentionDays: number) => {
     setBusy(true);
     setEcho(null);

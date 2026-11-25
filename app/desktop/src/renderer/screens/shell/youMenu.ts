@@ -86,9 +86,9 @@ export const hubLine = (hub: HubState, label: string | null, quiet: Quiet | null
   const line = { key: "hub" } as const;
   if (hub.phase === "unpaired") {
     const pair = { action: "Pair", does: { to: "pair" } } as const;
-    return label === null ? { ...line, mark: "quiet", text: "Not paired with a hub", ...pair } : { ...line, mark: "quiet", text: `${label} isn't paired`, name: label, ...pair };
+    return label === null ? { ...line, mark: "quiet", text: "Not paired with a workspace", ...pair } : { ...line, mark: "quiet", text: `${label} isn't paired`, name: label, ...pair };
   }
-  const name = label ?? (hub.hub === "" ? "the hub" : hubName(hub.hub));
+  const name = label ?? (hub.hub === "" ? "the workspace" : hubName(hub.hub));
   const named = { ...line, name };
   // On the web a key comes with the sign-in, so a refused one is signed in again (HubStatus).
   if (hub.phase === "refused") return { ...named, mark: "danger", text: `${name} refused the key`, action: onWeb() ? "Sign in again" : "Pair again", does: { to: "pair" } };

@@ -94,12 +94,12 @@ describe("receipts", () => {
 
   it("tell a cut-off link, no answer, no hub and a refusal apart, each with its way out", () => {
     expect(receiptFor(m({ state: "pending" }), false)).toEqual({ kind: "quiet", line: "sending…" });
-    expect(receiptFor(m({ state: "reconnecting" }), false)?.line).toMatch(/link to the hub dropped/);
+    expect(receiptFor(m({ state: "reconnecting" }), false)?.line).toMatch(/link to the workspace dropped/);
     expect(receiptFor(m({ state: "unanswered" }), false)).toMatchObject({ kind: "warn", acts: ["resend", "dismiss"] });
     // Written offline: it waits quietly and goes by itself, and can still be taken back.
     expect(receiptFor(m({ state: "queued" }), false)).toEqual({ kind: "quiet", line: "queued; sends when the connection is back", acts: ["edit", "dismiss"] });
     const refused = receiptFor(m({ state: "failed", error: { code: "forbidden", message: "This key can't send." } }), false);
-    expect(refused).toEqual({ kind: "bad", line: "not sent: the hub refused it", detail: "This key can't send.", acts: ["resend", "edit", "dismiss"] });
+    expect(refused).toEqual({ kind: "bad", line: "not sent: the workspace refused it", detail: "This key can't send.", acts: ["resend", "edit", "dismiss"] });
   });
 });
 
@@ -127,12 +127,12 @@ describe("a bot's draft", () => {
   it("says at once why a file didn't upload, and Try again uploads it in its place", async () => {
     let fail = true;
     const d = createDrafts(
-      layer(() => (fail ? Promise.resolve({ ok: false, error: { code: "unavailable", message: "The team's file store didn't answer." } }) : Promise.resolve({ ok: true, output: { attachmentId: "att-2", bytes: 5, sha256: "x" } }))),
+      layer(() => (fail ? Promise.resolve({ ok: false, error: { code: "unavailable", message: "The workspace's file store didn't answer." } }) : Promise.resolve({ ok: true, output: { attachmentId: "att-2", bytes: 5, sha256: "x" } }))),
     );
     d.attach("devbox/api", [new File(["notes"], "notes.txt", { type: "text/plain" })]);
     await vi.waitFor(() => expect(d.store.getState()["devbox/api"]?.attached[0]?.upload).toBeDefined());
     const failed = d.store.getState()["devbox/api"];
-    expect(failed?.error).toMatch(/^notes.txt didn’t upload: The team's file store didn't answer/);
+    expect(failed?.error).toMatch(/^notes.txt didn’t upload: The workspace's file store didn't answer/);
     expect(failed?.attached[0]?.file).toBeDefined();
     fail = false;
     d.retry("devbox/api", failed?.attached[0]?.local ?? -1);

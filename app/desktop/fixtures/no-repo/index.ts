@@ -133,7 +133,7 @@ const two = (base: Fixture): Fixture => {
         handle: "N8",
         to: storefront,
         toTitle: "storefront",
-        text: "Follow-up to my last message (the Machines setup page): please don't take my guess at the cause at face value. Check the hub's logs and the node's reported version first, and if part of my report is wrong, say so.",
+        text: "Follow-up to my last message (the Machines setup page): please don't take my guess at the cause at face value. Check the workspace's logs and the node's reported version first, and if part of my report is wrong, say so.",
         at: at(f.now, -600_000),
         // Folded into the order opened for N7.
         orders: [{ workstreamId: "W14", title: "Machines setup gives exact commands, and the update notice clears", state: "open", headline: "A writer is on the copyable commands; the stale version is next." }],
