@@ -22,7 +22,7 @@ describe("linkStatus", () => {
   });
 
   it("says Not Connected, still, once the key is refused", () => {
-    expect(linkStatus({ phase: "refused", hub: "h", message: "The hub refused the key." })).toEqual({ text: "Not Connected", busy: false });
+    expect(linkStatus({ phase: "refused", hub: "h", message: "The workspace refused the key." })).toEqual({ text: "Not Connected", busy: false });
   });
 });
 

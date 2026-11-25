@@ -59,7 +59,7 @@ describe("hub_restart's answer", () => {
       at: "failed",
       message: "The hub doesn't run as a service, so it can't restart itself. Restart it on its machine.",
     });
-    expect(afterAnswer(T, { ok: false, error: { code: "not_found", message: "No tool hub_restart." } })).toEqual({ at: "failed", message: "This hub runs a fleetd from before Restart Hub. Update fleetd on it first." });
+    expect(afterAnswer(T, { ok: false, error: { code: "not_found", message: "No tool hub_restart." } })).toEqual({ at: "failed", message: "This workspace runs a fleetd from before Restart Workspace. Update fleetd on it first." });
   });
 });
 
@@ -78,7 +78,7 @@ describe("the link, as a restart goes", () => {
   });
 
   it("says a hub still up long after it took the restart didn't restart", () => {
-    expect(afterLink(restarting, live, null, T + RESTART_WAIT_MS)).toEqual({ at: "failed", message: "The hub took the restart but is still up. Try again, or restart its service on the hub's machine." });
+    expect(afterLink(restarting, live, null, T + RESTART_WAIT_MS)).toEqual({ at: "failed", message: "The workspace took the restart but is still up. Try again, or run `fleetd workspace restart` on its machine." });
     // Away that long is another matter: the chats list says so.
     expect(afterLink(restarting, retrying, down, T + RESTART_WAIT_MS)).toBe(restarting);
   });

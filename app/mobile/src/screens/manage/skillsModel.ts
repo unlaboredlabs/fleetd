@@ -97,7 +97,7 @@ export const rowLine = (s: Skill, clock: Clock, meName: string | undefined): str
   if (used !== undefined && (changed === undefined || Date.parse(used) > Date.parse(changed.at))) return `Used ${ago(used, clock)}`;
   if (changed !== undefined) return `${changed.version === 1 ? "Made" : "Changed"} by ${whoOf(changed, meName)} · ${ago(changed.at, clock)}`;
   if (s.install !== undefined) return `From ${s.install.source}`;
-  if (s.origin === "global") return "Hub-wide";
+  if (s.origin === "global") return "Workspace-wide";
   return undefined;
 };
 
@@ -140,7 +140,7 @@ export const isOff = (s: Pick<Skill, "origin" | "install" | "off">): boolean => 
 /** The view's line under the description: where it is from and its version. */
 export const sourceLine = (s: Skill, title: string, versions: number): string => {
   const kind = kindOf(s);
-  const where = kind === "own" ? `Made by ${title}` : s.install !== undefined ? `Installed from ${s.install.source}` : kind === "installed" ? "Hub-wide" : (s.path ?? "In its folder");
+  const where = kind === "own" ? `Made by ${title}` : s.install !== undefined ? `Installed from ${s.install.source}` : kind === "installed" ? "Workspace-wide" : (s.path ?? "In its folder");
   return versions > 1 ? `${where} · ${String(versions)} versions` : where;
 };
 

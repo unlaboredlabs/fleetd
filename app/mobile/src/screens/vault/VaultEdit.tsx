@@ -199,7 +199,7 @@ export function VaultEdit() {
             {row("phone", "Phone (optional)", { keyboardType: "phone-pad", textContentType: "telephoneNumber", autoComplete: "tel" })}
             {row("email", "Email (optional)", { autoCapitalize: "none", keyboardType: "email-address", textContentType: "emailAddress", autoComplete: "email" })}
           </ListSection>
-          <ListSection footer="Agents fill it in at a checkout they record, on these sites, and on sites the team vault has a login for.">
+          <ListSection footer="Agents fill it in at a checkout they record, on these sites, and on sites the workspace vault has a login for.">
             {label("Label, like Home")}
             {sites("Websites (optional)")}
           </ListSection>

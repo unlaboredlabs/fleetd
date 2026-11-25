@@ -83,7 +83,7 @@ export const providerValue = (p: ProviderState, runner?: HostedRunner): { text: 
  */
 export const providersFooter = (sandboxes: Pick<SandboxState, "removed"> | undefined): string => {
   const removed = (sandboxes?.removed ?? []).map((line) => `\n\n${line}`).join("");
-  return `Your team's own accounts, which bill you. Agents go to the connected ones in this order once your machines are full.${removed}`;
+  return `Your workspace's own accounts, which bill you. Agents go to the connected ones in this order once your machines are full.${removed}`;
 };
 
 /** The limit's choices, as an action sheet lists them: none up to 500, and the one set when it isn't among them. */

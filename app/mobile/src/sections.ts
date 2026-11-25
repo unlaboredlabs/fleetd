@@ -174,7 +174,7 @@ export const memorySections = (start: readonly Section[] = []): SectionStore => 
 const refused = (code: string): boolean => code === "invalid" || code === "not_found" || code === "forbidden";
 
 /** What the person reads when a change was taken back: the hub's own words for a list it won't keep. */
-const refusalWords = (error: HubError): string => (error.code === "not_found" ? "This hub doesn't keep sections yet. Update it to use them." : error.message);
+const refusalWords = (error: HubError): string => (error.code === "not_found" ? "This workspace doesn't keep sections yet. Update it to use them." : error.message);
 
 export class Sections {
   readonly #call: SectionCall;

@@ -131,7 +131,7 @@ export function Settings() {
         .then((out) => {
           if (!out.ok) {
             haptics.warning();
-            Alert.alert("The team wasn't deleted", `${out.failure.message} ${out.failure.fix ?? ""}`.trim());
+            Alert.alert("The workspace wasn't deleted", `${out.failure.message} ${out.failure.fix ?? ""}`.trim());
             return;
           }
           haptics.success();
@@ -150,7 +150,7 @@ export function Settings() {
         "plain-text",
       );
     } else {
-      Alert.alert("Delete Team", "Delete the team on the desktop app or the web app.");
+      Alert.alert("Delete Workspace", "Delete the workspace in the desktop app or the web app.");
     }
   };
   const picture = <Avatar person name={name} size={58} picture={me === undefined ? undefined : { personId: me, avatar: state.meAvatar }} />;
@@ -176,8 +176,8 @@ export function Settings() {
           </>
         )}
       </View>
-      {/* A fleetd cloud team is a team to the person, and it updates itself: no version of its own to read. */}
-      <ListSection header={paired.cloud === true ? "Team" : "Hub"}>
+      {/* A workspace either way; a fleetd cloud one updates itself: no version of its own to read. */}
+      <ListSection header="Workspace">
         <ListRow title="Status" value={statusOf(hub.phase)} valueDot={{ live: t.success, busy: t.warning, down: t.tertiary }[linkTone(hub.phase)]} />
         <ListRow title="Address" value={paired.hub} selectable />
         {hub.phase === "live" && hub.version !== undefined && paired.cloud !== true ? (
@@ -191,7 +191,7 @@ export function Settings() {
             chevron={false}
           />
         ) : null}
-        {deleteTeamShown(paired, state.meRole) ? <ListRow title={deleting ? "Deleting…" : "Delete Team"} destructive {...(deleting ? {} : { onPress: onDeleteTeam })} chevron={false} /> : null}
+        {deleteTeamShown(paired, state.meRole) ? <ListRow title={deleting ? "Deleting…" : "Delete Workspace"} destructive {...(deleting ? {} : { onPress: onDeleteTeam })} chevron={false} /> : null}
       </ListSection>
       <ListSection>
         <ListRow title="Connections" onPress={() => navigation.navigate("Connections")} />
@@ -208,7 +208,7 @@ export function Settings() {
         </ListSection>
       ) : null}
       {vaultShown(hub) ? (
-        <ListSection footer="The team's logins, cards and addresses, which agents use without seeing them.">
+        <ListSection footer="The workspace's logins, cards and addresses, which agents use without seeing them.">
           <ListRow title="Vault" onPress={() => navigation.navigate("Vault")} />
         </ListSection>
       ) : null}

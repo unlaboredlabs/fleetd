@@ -134,12 +134,12 @@ describe("its screen", () => {
       allowed: ["high"],
     } as unknown as ProfilesListOutput;
     expect(leadLines(view)).toEqual([
-      { value: LEAD_HUB, title: "Hub default (max)", checked: true, disabled: false },
+      { value: LEAD_HUB, title: "Workspace default (max)", checked: true, disabled: false },
       { value: "high", title: "high", checked: false, disabled: false, group: "Anthropic" },
       { value: "max", title: "max", checked: false, disabled: false, group: "Anthropic" },
       { value: "quick", title: "quick", checked: false, disabled: true, why: "claude refused claude-haiku-5-5", group: "Anthropic" },
     ]);
-    expect(leadValue(view)).toBe("Hub default");
+    expect(leadValue(view)).toBe("Workspace default");
     const own = { ...view, leadProfile: "high" };
     expect(leadLines(own).filter((l) => l.checked).map((l) => l.value)).toEqual(["high"]);
     expect(leadValue(own)).toBe("high");
@@ -166,7 +166,7 @@ describe("its screen", () => {
     } as unknown as ProfilesListOutput;
     // Profiles alone, by provider: Google's models no profile runs on (Neon, Argon) are never offered as they are.
     expect(leadSections(leadLines(view)).map((s) => [s.group, ...s.lines.map((l) => l.title)])).toEqual([
-      [undefined, "Hub default (high)"],
+      [undefined, "Workspace default (high)"],
       ["Anthropic", "high"],
       ["Google", "gemini"],
     ]);

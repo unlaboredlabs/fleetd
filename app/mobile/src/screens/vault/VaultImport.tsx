@@ -132,7 +132,7 @@ export function VaultImport() {
       )}
       {groups.length === 0 ? null : (
         <Text style={[type.footnote, styles.note, { color: t.secondary }]}>
-          They go to the team vault. Your machine reads them and seals them for the hub: no value passes through this phone.
+          They go to the workspace vault. Your machine reads them and seals them for the workspace: no value passes through this phone.
         </Text>
       )}
     </ScrollView>

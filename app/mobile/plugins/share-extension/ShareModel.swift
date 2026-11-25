@@ -65,7 +65,7 @@ final class ShareModel: ObservableObject {
     self.items = items
   }
 
-  var hubName: String { pairing?.hubName ?? "your hub" }
+  var hubName: String { pairing?.hubName ?? "your workspace" }
 
   /// The most recent chats, for the row on top.
   var recent: [ChatTarget] { Array(chats.prefix(8)) }

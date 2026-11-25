@@ -81,7 +81,7 @@ extension HubCalls {
     }
     let last = ranges.last.map { file.data.subdata(in: $0) } ?? Data()
     guard let id = try await call("attachment_put", Calls.put(file, last: last, uploadId: uploadId))["attachmentId"] as? String else {
-      throw Problem.hub(code: "", message: "The hub didn't store \(file.name).", fix: nil)
+      throw Problem.hub(code: "", message: "The workspace didn't store \(file.name).", fix: nil)
     }
     return id
   }
@@ -100,7 +100,7 @@ struct Problem: Equatable, Error {
 
   static let notPaired = Problem(
     title: "Pair fleetd first",
-    message: "This phone isn't connected to a hub yet. Open fleetd and pair it with your hub, then share again.",
+    message: "This phone isn't connected to a workspace yet. Open fleetd and pair it with your workspace, then share again.",
     retry: false,
     symbol: "qrcode.viewfinder"
   )
@@ -108,7 +108,7 @@ struct Problem: Equatable, Error {
   static func unreachable(_ p: Pairing) -> Problem {
     Problem(
       title: "Can't reach \(p.hubName)",
-      message: "\(p.host) didn't answer. Check that the hub is running and that this phone reaches it: on a tailnet, that Tailscale is on.",
+      message: "\(p.host) didn't answer. Check that the workspace is running and that this phone reaches it: on a tailnet, that Tailscale is on.",
       retry: true,
       symbol: "wifi.exclamationmark"
     )
@@ -117,7 +117,7 @@ struct Problem: Equatable, Error {
   static func refused(_ p: Pairing) -> Problem {
     Problem(
       title: "\(p.hubName) refused this phone",
-      message: "Its key was revoked, or the hub was set up again. Open fleetd and pair it again.",
+      message: "Its key was revoked, or the workspace was set up again. Open fleetd and pair it again.",
       retry: false,
       symbol: "lock.slash"
     )
@@ -126,7 +126,7 @@ struct Problem: Equatable, Error {
   static func dropped(_ p: Pairing) -> Problem {
     Problem(
       title: "Lost \(p.hubName)",
-      message: "The connection dropped before the hub answered. Nothing is sent twice: try again.",
+      message: "The connection dropped before the workspace answered. Nothing is sent twice: try again.",
       retry: true,
       symbol: "wifi.exclamationmark"
     )
@@ -141,7 +141,7 @@ struct Problem: Equatable, Error {
   }
 
   static func hub(code: String, message: String, fix: String?) -> Problem {
-    Problem(title: "The hub didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle", code: code)
+    Problem(title: "The workspace didn't take it", message: [message, fix].compactMap { $0 }.joined(separator: " "), retry: true, symbol: "exclamationmark.triangle", code: code)
   }
 }
 
@@ -166,7 +166,7 @@ enum Frame {
       guard let id = f["id"] as? String else { return nil }
       return .result(id: id, output: f["output"] as? [String: Any] ?? [:])
     case "error":
-      return .error(id: f["id"] as? String, code: f["code"] as? String ?? "", message: f["message"] as? String ?? "The hub refused it.", fix: f["fix"] as? String)
+      return .error(id: f["id"] as? String, code: f["code"] as? String ?? "", message: f["message"] as? String ?? "The workspace refused it.", fix: f["fix"] as? String)
     default: return nil
     }
   }

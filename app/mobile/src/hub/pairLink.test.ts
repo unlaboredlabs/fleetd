@@ -34,8 +34,8 @@ describe("parsePairLink", () => {
   });
 
   it("says what's wrong with a broken pairing link", () => {
-    expect(parsePairLink("fleetd://pair?code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "This pairing QR code has no hub address or no code." } });
-    expect(parsePairLink("fleetd://pair?hub=devbox%3A4790")).toMatchObject({ ok: false, failure: { message: "This pairing QR code has no hub address or no code." } });
+    expect(parsePairLink("fleetd://pair?code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "This pairing QR code has no workspace address or no code." } });
+    expect(parsePairLink("fleetd://pair?hub=devbox%3A4790")).toMatchObject({ ok: false, failure: { message: "This pairing QR code has no workspace address or no code." } });
     expect(parsePairLink("fleetd://pair?hub=ftp%3A%2F%2Fdevbox&code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "Use an http:// or https:// address." } });
     expect(parsePairLink("fleetd://pair?hub=devbox&code=nope")).toMatchObject({ ok: false, failure: { message: "This pairing QR code's code isn't a pairing code." } });
     expect(parsePairLink("fleetd://pair?hub=%E0%A4%A&code=ABCD-2345")).toMatchObject({ ok: false, failure: { message: "This pairing QR code is damaged." } });
@@ -75,7 +75,7 @@ describe("pairLinkStep", () => {
       hub: "http://devbox.tail1234.ts.net:4790",
       code: "ABCD-2345",
       title: "Connect to devbox.tail1234.ts.net:4790?",
-      message: "This phone pairs with the hub at http://devbox.tail1234.ts.net:4790, which then sees it and sends it notifications. Connect only to a hub you or your team run.",
+      message: "This phone pairs with the workspace at http://devbox.tail1234.ts.net:4790, which then sees it and sends it notifications. Connect only to a workspace you or your team run.",
     });
   });
 
@@ -87,8 +87,8 @@ describe("pairLinkStep", () => {
       message: "This is a fleetd cloud team. Anyone can make one, so join only if you know who sent you this link. This phone then gets its notifications.",
     });
     // A build with no cloud, and a hub elsewhere, ask as before.
-    expect(pairLinkStep(team, "outside", null, null)).toMatchObject({ message: expect.stringContaining("Connect only to a hub you or your team run.") });
-    expect(pairLinkStep(LINK, "outside", null, "fleetd.dev")).toMatchObject({ message: expect.stringContaining("Connect only to a hub you or your team run.") });
+    expect(pairLinkStep(team, "outside", null, null)).toMatchObject({ message: expect.stringContaining("Connect only to a workspace you or your team run.") });
+    expect(pairLinkStep(LINK, "outside", null, "fleetd.dev")).toMatchObject({ message: expect.stringContaining("Connect only to a workspace you or your team run.") });
   });
 
   it("pairs at once with a code from the app's own scanner", () => {
@@ -97,7 +97,7 @@ describe("pairLinkStep", () => {
 
   it("never pairs a paired phone, refuses a broken link, and ignores anything else", () => {
     expect(pairLinkStep(LINK, "outside", "devbox")).toMatchObject({ t: "paired", title: "Connected to devbox" });
-    expect(pairLinkStep("fleetd://pair?code=ABCD-2345", "outside", null)).toMatchObject({ t: "refuse", failure: { message: "This pairing QR code has no hub address or no code." } });
+    expect(pairLinkStep("fleetd://pair?code=ABCD-2345", "outside", null)).toMatchObject({ t: "refuse", failure: { message: "This pairing QR code has no workspace address or no code." } });
     expect(pairLinkStep("https://example.com", "scanner", null)).toEqual({ t: "ignore" });
   });
 });

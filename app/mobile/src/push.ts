@@ -84,7 +84,7 @@ export const signOut = async (client: HubClient, deps: Pick<PushDeps, "loadDevic
   const people = await client.call("people_list", {});
   if (!people.ok) return people;
   const mine = people.output.devices.find((d) => key.startsWith(d.prefix) && (people.output.me === undefined || d.person?.personId === people.output.me));
-  if (mine === undefined) return { ok: false, error: { code: "not_found", message: "The hub doesn't list this phone's key." } };
+  if (mine === undefined) return { ok: false, error: { code: "not_found", message: "The workspace doesn't list this phone's key." } };
   const revoked = await client.call("device_revoke", { keyId: mine.keyId });
   // A hub seldom answers the revoke of the caller's own key: revoking it closes the very link the call came on (4401),
   // so the call fails and the hub then refuses the key, which is the revoke done.
@@ -211,7 +211,7 @@ export const withHub = <T>(link: HubLink, use: (client: HubClient) => Promise<T>
         void use(client).then((value) => finish({ ok: true, value }));
       },
     });
-    const timer = setTimeout(() => finish({ ok: false, error: { code: "offline", message: "The hub can't be reached." } }), READY_TIMEOUT_MS);
+    const timer = setTimeout(() => finish({ ok: false, error: { code: "offline", message: "The workspace can't be reached." } }), READY_TIMEOUT_MS);
     client.start();
   });
 

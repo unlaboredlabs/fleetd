@@ -45,7 +45,7 @@ export const firstRunSteps = (billing: BillingState | null | undefined, accounts
     });
   }
   const claude = claudeConnected(accounts);
-  steps.push({ id: "claude", title: claude ? "Claude Connected" : "Connect Claude", detail: claude ? undefined : "The team's Anthropic API key, or a Claude subscription, for its agents.", done: claude });
+  steps.push({ id: "claude", title: claude ? "Claude Connected" : "Connect Claude", detail: claude ? undefined : "The workspace's Anthropic API key, or a Claude subscription, for its agents.", done: claude });
   steps.push({ id: "bot", title: "Start a Bot", detail: "Make one, and its chat shows up here.", done: false });
   return steps;
 };

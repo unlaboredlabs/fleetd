@@ -30,8 +30,8 @@ export const cloud: CloudConfig | null = builtCloudConfig();
 
 /** The two ways in, and what each means in a line: the desktop's words (onboarding/SignIn.tsx WAYS). */
 export const WAYS = {
-  signIn: { name: "Sign In", line: "fleetd hosts your team. Agents run on fleetd's computers or your own." },
-  own: { name: "Use Your Own Hub", line: "A hub you run yourself. No fleetd account." },
+  signIn: { name: "Sign In", line: "fleetd hosts your workspace. Agents run on fleetd's computers or your own." },
+  own: { name: "Use Your Own Workspace", line: "A workspace you run yourself. No fleetd account." },
 } as const;
 
 const ports = (config: CloudConfig): SignInPorts => ({
@@ -62,9 +62,9 @@ const alertAsk: AfterSignInAsk = {
     ),
   makeTeam: (email) =>
     new Promise((resolve) =>
-      Alert.alert("No Team Yet", `Make one of your own for ${email}, or ask a teammate to invite this email.`, [
+      Alert.alert("No Workspace Yet", `Make one of your own for ${email}, or ask a teammate to invite this email.`, [
         { text: "Not Now", style: "cancel", onPress: () => resolve(false) },
-        { text: "Make a Team", isPreferred: true, onPress: () => resolve(true) },
+        { text: "Make a Workspace", isPreferred: true, onPress: () => resolve(true) },
       ], { cancelable: false }),
     ),
 };
@@ -101,7 +101,7 @@ export function useSignIn(onSignedIn: OnSignedIn) {
         missed = out.teams.filter((t): t is TeamOutcome & { ok: false } => !t.ok);
         return onSignedIn(out).then(
           () => null,
-          (): PairFailure => ({ code: "", message: "This phone couldn't keep your team's key in its keychain.", fix: "Sign in again." }),
+          (): PairFailure => ({ code: "", message: "This phone couldn't keep your workspace's key in its keychain.", fix: "Sign in again." }),
         );
       })
       .then((failure) => {

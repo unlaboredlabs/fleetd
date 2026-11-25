@@ -115,7 +115,7 @@ export const saveItem = async (hub: VaultHub, s: SaveItem): Promise<Result<Vault
     if (!status.ok) return status;
     if (status.value.locked) return failed("The vault is locked. An owner unlocks it in the desktop app.");
     sealed = sealToHub(s.fields, status.value.hubBoxKey) ?? undefined;
-    if (sealed === undefined) return failed("The hub's key didn't come through. Try again.");
+    if (sealed === undefined) return failed("The workspace's key didn't come through. Try again.");
   }
   const r = await hub.call("vault_save", {
     ...(s.itemId === undefined ? {} : { itemId: s.itemId }),
@@ -153,16 +153,16 @@ export const reveal = async (hub: VaultHub, itemId: string, fields: readonly str
     if (!r.ok) return r;
     const box = fromBase64((r.output as { sealed?: unknown }).sealed as string);
     const plain = box === null ? null : openSealed(box, keys);
-    if (plain === null) return failed("The hub's answer didn't open on this phone.");
+    if (plain === null) return failed("The workspace's answer didn't open on this phone.");
     const text = utf8(plain);
     plain.fill(0);
     const parsed: unknown = text === null ? null : JSON.parse(text);
-    if (parsed === null || typeof parsed !== "object") return failed("The hub's answer didn't open on this phone.");
+    if (parsed === null || typeof parsed !== "object") return failed("The workspace's answer didn't open on this phone.");
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) if (typeof v === "string") out[k] = v;
     return { ok: true, value: out };
   } catch {
-    return failed("The hub's answer didn't open on this phone.");
+    return failed("The workspace's answer didn't open on this phone.");
   } finally {
     random.fill(0);
     keys.secretKey.fill(0);
@@ -218,7 +218,7 @@ export const vaultErrorWords = (e: HubError): string | undefined => {
   const reason = e.reason;
   if (reason === "vault_locked") return "The vault is locked. An owner unlocks it in the desktop app, under Settings › Vault.";
   if (reason === "vault_rate_limited") return "Too many reveals in the last hour. Try again later.";
-  if (reason === "vault_key_missing") return "The vault's key is missing on the hub. An owner restores it with the recovery code.";
-  if (reason === "vault_update_app") return "This app is older than the hub. Update it to add vault items.";
+  if (reason === "vault_key_missing") return "The vault's key is missing on the workspace. An owner restores it with the recovery code.";
+  if (reason === "vault_update_app") return "This app is older than the workspace. Update it to add vault items.";
   return undefined;
 };

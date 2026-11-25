@@ -277,7 +277,7 @@ describe("Sections", () => {
     // Asked what it has first: it has no such tool, and the set is refused in its words.
     await hub.next("chat_sections_get", { error: { code: "not_found" } });
     await hub.next("chat_sections_set", { error: { code: "not_found", message: "No tool chat_sections_set." } });
-    expect(said).toEqual(["This hub doesn't keep sections yet. Update it to use them."]);
+    expect(said).toEqual(["This workspace doesn't keep sections yet. Update it to use them."]);
     expect(store.pending()).toBe(false);
     await hub.next("chat_sections_get", { error: { code: "not_found" } });
     expect(hub.calls).toHaveLength(0);

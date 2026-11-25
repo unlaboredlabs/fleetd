@@ -244,7 +244,7 @@ export class HubClient {
     const connection = this.#connection;
     this.#connection = null;
     connection?.close();
-    this.#dropLink("The app disconnected from the hub.");
+    this.#dropLink("The app disconnected from the workspace.");
     // Started again (another hub, or after a Disconnect), it reads everything.
     this.#resumeFrom = null;
   }
@@ -303,14 +303,14 @@ export class HubClient {
     const connection = this.#connection;
     this.#connection = null;
     connection?.close();
-    this.#dropLink("The connection to the hub dropped before it answered.");
+    this.#dropLink("The connection to the workspace dropped before it answered.");
     this.#attempt = 0;
     this.#connect();
   }
 
   call<T extends ToolName>(tool: T, input: ToolInput<T>, timeoutMs = DEFAULT_CALL_TIMEOUT_MS): Promise<Typed<T>> {
     if (!this.#ready) {
-      return Promise.resolve(fail("offline", "Not connected to the hub.", "Wait for the connection to come back.") as Typed<T>);
+      return Promise.resolve(fail("offline", "Not connected to the workspace.", "Wait for the connection to come back.") as Typed<T>);
     }
     const id = `c${String(++this.#nextId)}`;
     // Alone on the link: its answer is the next frame, so silence after it says the link is gone. Behind others, or
@@ -319,7 +319,7 @@ export class HubClient {
     const alone = this.#front && this.#pending.size === 0 && timeoutMs <= DEFAULT_CALL_TIMEOUT_MS;
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${String(Math.round(timeoutMs / 1000))} s.`));
+        this.#settle(id, fail("timeout", `The workspace didn't answer ${tool} within ${String(Math.round(timeoutMs / 1000))} s.`));
       }, timeoutMs);
       const heard = this.#heard;
       const due = alone
@@ -410,7 +410,7 @@ export class HubClient {
         if (text !== null) return this.#take(connection, text);
         // What follows a frame that won't inflate can't be read either: dial again, plain.
         this.#plain = true;
-        if (connection === this.#connection) this.#abandon("A frame from the hub didn't inflate");
+        if (connection === this.#connection) this.#abandon("A frame from the workspace didn't inflate");
         else this.#dropSpare();
       },
       onClose: (code, reason) => {
@@ -421,14 +421,14 @@ export class HubClient {
         }
         if (this.#connection !== connection) return;
         this.#connection = null;
-        if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
+        if (code === CLOSE_UNAUTHORIZED) this.#refuse(`The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`);
         // The old link ended while a fresh one was on its way: that one is the link now.
         else if (this.#spare !== null) this.#adoptSpare();
         else if (CLOSE_RESTART.has(code) && this.#ready) {
           this.#restartUntil = Date.now() + RESTART_FAST_MS;
           this.#options.emit({ t: "restart", code, reason });
           this.#lost(`${this.#options.hub} is restarting`);
-        } else this.#lost(opened ? "The connection to the hub dropped" : `Can't reach ${this.#options.hub}`);
+        } else this.#lost(opened ? "The connection to the workspace dropped" : `Can't reach ${this.#options.hub}`);
       },
     }, headers);
     return connection;
@@ -462,7 +462,7 @@ export class HubClient {
     this.#connection = null;
     old?.close();
     this.#clearTimers();
-    this.#dropLink("The connection to the hub dropped before it answered.");
+    this.#dropLink("The connection to the workspace dropped before it answered.");
     this.#attempt = 0;
     this.#connection = spare.connection;
     this.#heardAt = Date.now();
@@ -493,7 +493,7 @@ export class HubClient {
       if (slept) return this.#askAlive();
       if (this.#aliveTimer !== null) return;
       const quiet = now - this.#heardAt;
-      if (quiet >= (this.#front ? SILENT_DEAD_FRONT_MS : SILENT_DEAD_MS)) this.#abandon("The hub stopped answering");
+      if (quiet >= (this.#front ? SILENT_DEAD_FRONT_MS : SILENT_DEAD_MS)) this.#abandon("The workspace stopped answering");
       else if (quiet >= (this.#front ? QUIET_FRONT_MS : QUIET_BEHIND_MS)) this.#sendProbe();
     }, PROBE_EVERY_MS);
   }
@@ -619,7 +619,7 @@ export class HubClient {
 
   #lost(reason: string): void {
     const wasReady = this.#ready;
-    this.#dropLink("The connection to the hub dropped before it answered.");
+    this.#dropLink("The connection to the workspace dropped before it answered.");
     this.#clearTimers();
     if (this.#stopped) return;
     if (wasReady && Date.now() - this.#readyAt >= STABLE_MS) this.#attempt = 0;
