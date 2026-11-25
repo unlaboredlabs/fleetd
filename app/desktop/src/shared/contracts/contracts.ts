@@ -125,6 +125,8 @@ export const ACCOUNTS_INVITES_PATH = "/accounts/v1/invites";
 
 /** A team deleted for good by its owner, on the team's own address with an owner's device key (and as `/t/<team>/accounts/v1/team/delete` with the web app's session): POST `{ name }`, the team's name typed again. */
 export const ACCOUNTS_TEAM_DELETE_PATH = "/accounts/v1/team/delete";
+/** A new empty workspace owned by the person, asked on any team's own address with their device key (and as `/t/<team>/accounts/v1/workspaces` with the web app's session): POST `{ name? }`, answered `{ team }` as POST /v1/app/team answers (the web app's with no pairing code: its session is paired in already). Refused `workspace_cap`, `rate_limited`, `forbidden`, `invalid`. */
+export const ACCOUNTS_WORKSPACES_PATH = "/accounts/v1/workspaces";
 
 /** fleetd cloud's GitHub App installed on a team (decision hosted.github-app), on the team's own address, with an owner's or admin's device key: POST answers `{ url }`, GitHub's install page to open, whose `state` only that person of that team can finish; 409 while the person's own GitHub isn't connected. */
 export const GITHUB_INSTALL_PATH = "/github/v1/install";

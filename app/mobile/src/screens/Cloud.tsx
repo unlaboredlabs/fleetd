@@ -1,6 +1,7 @@
 // fleetd cloud on the phone (decision hosted.first-screen, artifact hosted-signin-design): the first screen's two ways
 // in, a line each, Sign In and Use Your Own Hub; Where Agents Run, the chats list of a team with nothing to run agents on yet;
-// and in Settings, the hubs this phone keeps with a tap to switch, and the fleetd account with Sign In or Sign Out.
+// and in Settings, the workspaces this phone keeps with a tap to switch and New Workspace, and the fleetd account with
+// Sign In or Sign Out.
 // Only a build given the cloud's two values (cloud/config.ts) shows any of it; any other is the self-hosted app alone.
 // Back from the sign-in page, iOS's own alerts name the account ("Signed in as <email>", Sign Out or Continue), then
 // ask about each invitation, Join or Not Now, before anything pairs (decision hosted.invites-need-accept). Under the two
@@ -245,25 +246,48 @@ export function ConnectComputer() {
 }
 
 /**
- * Settings' hubs and fleetd account: every hub this phone keeps, the one shown checked, a tap on another to switch
- * (its notifications come only from the one shown); then who is signed in, with Sign Out, or Sign In. Only a build
- * with the cloud's values shows the account, and only a phone with more than one hub the list.
+ * Settings' workspaces and fleetd account: every workspace this phone keeps (the account's cloud ones and any
+ * self-hosted one paired), the one shown checked, a tap on another to switch (its notifications come only from the one
+ * shown), and with a signed-in account New Workspace: a name in iOS's prompt, then an empty workspace of the person's
+ * own, shown at once; the cloud's refusal (the most one person may make, too many new ones) in an alert with what to
+ * do. Then who is signed in, with Sign Out, or Sign In. Only a build with the cloud's values shows the account, and the
+ * list only when there is more than one workspace or a new one to make.
  */
 export function CloudSettings() {
   const t = useTheme();
-  const { paired, hubs, account, switchTo, signedIn, signOutCloud } = useHub();
+  const { paired, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace } = useHub();
   const { busy, note, start } = useSignIn(signedIn);
   const [leaving, setLeaving] = useState(false);
+  const [making, setMaking] = useState(false);
   const signOut = () => {
     setLeaving(true);
     void signOutCloud().finally(() => setLeaving(false));
   };
   const teams = hubs.filter((h) => h.cloud === true);
   const late = account === null ? [] : missed;
+  const canMake = cloud !== null && account !== null && teams.length > 0;
+  const make = (name: string) => {
+    setMaking(true);
+    void newWorkspace(name).then((failure) => {
+      // Made, this screen goes with the workspace it was on.
+      if (failure === null) return;
+      setMaking(false);
+      haptics.warning();
+      Alert.alert(failure.message, failure.fix);
+    });
+  };
+  const askName = () => {
+    haptics.tap();
+    if (Platform.OS === "ios") {
+      Alert.prompt(NEW_WORKSPACE.title, NEW_WORKSPACE.line, [{ text: "Cancel", style: "cancel" }, { text: "Create", isPreferred: true, onPress: (name?: string) => make(name ?? "") }], "plain-text", "");
+    } else {
+      Alert.alert(NEW_WORKSPACE.title, NEW_WORKSPACE.line, [{ text: "Cancel", style: "cancel" }, { text: "Create", onPress: () => make("") }]);
+    }
+  };
   return (
     <>
-      {hubs.length < 2 ? null : (
-        <ListSection header="Hubs" footer="Notifications come from the hub shown.">
+      {hubs.length < 2 && !canMake ? null : (
+        <ListSection header="Workspaces" footer="Notifications come from the workspace shown.">
           {hubs.map((h) => (
             <ListRow
               key={h.hub}
@@ -272,6 +296,7 @@ export function CloudSettings() {
               chevron={false}
             />
           ))}
+          {canMake ? <ListRow title={making ? "Creating…" : `${NEW_WORKSPACE.title}…`} {...(making ? {} : { onPress: askName })} chevron={false} /> : null}
         </ListSection>
       )}
       {cloud === null ? null : account === null ? (
@@ -290,6 +315,12 @@ export function CloudSettings() {
     </>
   );
 }
+
+/** New Workspace's words: the desktop's dialog's (shell/NewWorkspace.tsx). */
+export const NEW_WORKSPACE = {
+  title: "New Workspace",
+  line: "An empty workspace of your own on fleetd cloud, with its own address, members, bots, plan and credits.",
+} as const;
 
 const styles = StyleSheet.create({
   grow: { flex: 1 },

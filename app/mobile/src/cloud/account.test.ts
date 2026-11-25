@@ -3,12 +3,15 @@
 // Back from it, the person is asked who signed in and about each invitation before anything pairs. Then sign-out, its
 // revoke of this phone's own key on a hub that closes the link on it, and the first screen.
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeAccounts } from "../../../../fleetd/test/fake-accounts.ts";
 import { fakeHub } from "../hub/fake";
 import {
   afterSignIn,
   authorizeUrl,
+  makeWorkspace,
   needsComputer,
   pkce,
   queryOf,
@@ -110,6 +113,38 @@ describe("No team yet", () => {
     const out = await signInAsking(ports("ada@example.com"), { ...answering(), makeTeam: () => ((asked = true), Promise.resolve(true)) });
     expect(out.ok).toBe(true);
     expect(asked).toBe(false);
+  });
+});
+
+describe("New Workspace", () => {
+  it("asks one of the account's workspaces with this phone's key, and pairs the new one as a workspace they made", async () => {
+    const url = await fake.team("acme", ["eve@other.example", "ada@example.com"]);
+    const acme: KeptHub = { hub: url, key: fake.keyFor("acme", "ada@example.com"), hubName: "acme", cloud: true };
+    const out = await makeWorkspace(ports("ada@example.com"), acme, "  Side project ");
+    expect(out).toMatchObject({ name: "side-project", ok: true, hub: { hubName: "side-project", cloud: true } });
+    expect(out.ok && out.hub.invited).toBeUndefined();
+    expect(fake.keys.at(-1)).toMatchObject({ team: "side-project", email: "ada@example.com", deviceName: "Ada's iPhone" });
+    // No name: the cloud names it after the person.
+    expect(await makeWorkspace(ports("ada@example.com"), acme, "")).toMatchObject({ ok: true, hub: { hubName: "adas-workspace" } });
+  });
+
+  it("says the cloud's refusal as written, with what to do, and no network as no network", async () => {
+    const url = await fake.team("acme", ["ada@example.com"]);
+    const acme: KeptHub = { hub: url, key: fake.keyFor("acme", "ada@example.com"), hubName: "acme", cloud: true };
+    fake.workspaceCap = 1;
+    expect(await makeWorkspace(ports("ada@example.com"), acme, "More")).toEqual({
+      name: "More",
+      ok: false,
+      failure: { code: "workspace_cap", message: "You've made 1 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." },
+    });
+    // A status alone (an older cloud, or something in between): said as the workspace's, not as the sign-in's.
+    const bare = createServer((_req, res) => res.writeHead(404).end());
+    await new Promise<void>((resolve) => bare.listen(0, "127.0.0.1", resolve));
+    const at = `http://127.0.0.1:${String((bare.address() as AddressInfo).port)}`;
+    expect(await makeWorkspace(ports("ada@example.com"), { ...acme, hub: at }, "More")).toEqual({ name: "More", ok: false, failure: { code: "", message: "acme answered HTTP 404.", fix: "Try again in a minute." } });
+    bare.close();
+    await fake.stop();
+    expect(await makeWorkspace(ports("ada@example.com"), acme, "More")).toMatchObject({ ok: false, failure: { code: "offline", message: "Can't reach acme." } });
   });
 });
 

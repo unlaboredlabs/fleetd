@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { readBilling, type BillingState } from "../../shared/billing";
-import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import type { Arrival, BillingCapOutcome, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { AccountsInvite } from "../../shared/contracts";
 import type { Cloud } from "./index";
 
@@ -47,6 +47,8 @@ export const CloudSection = z.object({
   billing: z.unknown().optional(),
   /** Reading the billing fails so, as the team would. */
   billingFailure: Failure.optional(),
+  /** New workspace is refused so, as the cloud would (the most one person may make). Absent: refused as sample data. */
+  newWorkspaceFailure: Failure.optional(),
 });
 export type CloudSection = z.infer<typeof CloudSection>;
 
@@ -173,6 +175,12 @@ export class FixtureCloud implements Cloud {
   deleteTeam(_hub: string, name: string): Promise<DeleteTeamOutcome> {
     if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
     return Promise.resolve(name.trim() === "" ? failed({ code: "invalid", message: "The team's name is missing.", fix: "Type the team's name to delete it." }) : { ok: true });
+  }
+
+  // A fixture's hubs are fixed: nothing is made, the dialog shows the cloud's refusal.
+  newWorkspace(): Promise<NewWorkspaceOutcome> {
+    if (!this.#team()) return Promise.resolve(failed({ code: "", message: "That hub isn't one of your fleetd cloud teams." }));
+    return Promise.resolve(failed(this.#section?.newWorkspaceFailure ?? { code: "", message: "Sample data, not connected: nothing is made." }));
   }
 
   billing(): Promise<BillingOutcome> {

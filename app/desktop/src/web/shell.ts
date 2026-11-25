@@ -35,7 +35,9 @@ import type { Transport } from "../main/hub/link";
 import { submitClaudeAccount, submitMcpOauthClient, submitMcpServer, submitOnePassword, submitProjectEnv, submitSandboxKey, submitSecret } from "../main/secret";
 import { sessionHash } from "../shared/sessionHash";
 import { saveVaultItem, unlockVault } from "../main/vault";
-import { clearWebCache, webCache, type CacheStorage } from "./cache";
+import { clearWebCache, keepSession, webCache, type CacheStorage } from "./cache";
+import { startScreen } from "../renderer/screens/start/kept";
+import { toHash } from "../renderer/screens/shell/routes";
 import { WebHub } from "./hub";
 import { readSession, signInPath, teamHubId, teamHubIds, teamPath, webCall, WEB_HEADER, type Fetch, type WebSession, type WebTeam } from "./session";
 
@@ -395,6 +397,21 @@ export const createWebShell = (session: WebSession, deps: WebDeps): { readonly a
           deps.go("/");
         }
         return out;
+      },
+      // Made, the page starts again with it among the account's workspaces, on its Get started: the session it reads
+      // next is kept first, so the page opens on it at once rather than on the workspaces it had.
+      newWorkspace: async (from, name) => {
+        const team = keyed(from);
+        if (team === null) return notTeam;
+        const made = await (await invites()).makeWorkspace(teamFetch, team, name);
+        if (!made.ok) return { ok: false, failure: made.failure };
+        const id = (made.body as { team?: { id?: unknown } } | undefined)?.team?.id;
+        if (typeof id !== "string" || id === "") return { ok: false, failure: { code: "", message: "fleetd cloud answered in a way this page doesn't read.", fix: "Reload the page." } };
+        const read = await readSession(deps.fetch);
+        if (read.ok) keepSession(deps.storage, read.session);
+        const hub = teamHubIds(read.ok ? read.session.teams.map((t) => t.id) : [...session.teams.map((t) => t.id), id]).get(id) ?? teamHubId(id);
+        deps.go(`/?team=${encodeURIComponent(id)}${toHash(startScreen(hub))}`);
+        return { ok: true, hub };
       },
       installGithub: (hub): Promise<InstallGithubOutcome> => {
         const team = keyed(hub);

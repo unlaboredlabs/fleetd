@@ -10,7 +10,8 @@
 // as Sign out does. The app keeps the email and WorkOS's session id, never a WorkOS token, and never the verifier.
 // Sign out drops this phone's key on each of the account's hubs, then ends the session. App Review signs in without
 // WorkOS's page (D737): its address and fixed code go to ACCOUNTS_DEMO_SIGN_IN_PATH, which answers as the sign-in does,
-// and everything after is the same.
+// and everything after is the same. New Workspace (Settings' Workspaces) asks one of the account's workspaces, with this
+// phone's key there, for a new empty one of the person's own (ACCOUNTS_WORKSPACES_PATH), and pairs it as a sign-in's.
 //
 // The phone's own code, not the desktop's: that one listens on a loopback port with node:http and checks with zod,
 // neither of which the phone has. The contract's paths and shapes are shared (desktop.ts).
@@ -22,6 +23,7 @@ import {
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   ACCOUNTS_TEAM_PATH,
+  ACCOUNTS_WORKSPACES_PATH,
   madeTeam,
   readAccepted,
   readSignIn,
@@ -132,11 +134,12 @@ export const queryOf = (url: string): ReadonlyMap<string, string> => {
 };
 
 /** A POST of JSON with a timeout: React Native has no AbortSignal.timeout. Throws when it gets no answer. */
-const post = async (fetch: Fetch, url: string, body: unknown): Promise<Response> => {
+const post = async (fetch: Fetch, url: string, body: unknown, key?: string): Promise<Response> => {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), CALL_TIMEOUT_MS);
   try {
-    return await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: abort.signal, redirect: "error" });
+    const headers = { "content-type": "application/json", ...(key === undefined ? {} : { authorization: `Bearer ${key}` }) };
+    return await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: abort.signal, redirect: "error" });
   } finally {
     clearTimeout(timer);
   }
@@ -283,7 +286,34 @@ const call = async (ports: SignInPorts, path: string, body: { accept: string } |
   return team === null ? { ok: false, failure: UNREADABLE } : { ok: true, team };
 };
 
-const pairTeam = async (ports: SignInPorts, team: AccountsTeam, invited: boolean): Promise<TeamOutcome> => {
+/** What New Workspace needs of a sign-in's ports: no page opens. */
+export type WorkspacePorts = Pick<SignInPorts, "config" | "local" | "fetch" | "deviceName">;
+
+/**
+ * A new empty workspace of the person's own, asked on `on` (one of the account's, its key saying who asks), named
+ * `name` or, empty, as the cloud names a first one; paired as a sign-in's team of their own. The cloud's refusal (the
+ * most one person may make, too many new ones from this address) comes back as written.
+ */
+export const makeWorkspace = async (ports: WorkspacePorts, on: KeptHub, name: string): Promise<TeamOutcome> => {
+  const named = name.trim();
+  let response: Response;
+  try {
+    response = await post(ports.fetch, `${on.hub}${ACCOUNTS_WORKSPACES_PATH}`, named === "" ? {} : { name: named }, on.key);
+  } catch {
+    return { name: named, ok: false, failure: { code: "offline", message: `Can't reach ${on.hubName}.`, fix: "Check your connection, then try again." } };
+  }
+  const json = await readJson(response);
+  if (!response.ok) {
+    // The cloud's refusal in its words; a status alone is the workspace's, not the sign-in's.
+    const said = text((json as { message?: unknown } | undefined)?.message, 500);
+    const failure: PairFailure = said ? refusal(json, response.status).failure : { code: "", message: `${on.hubName} answered HTTP ${String(response.status)}.`, fix: "Try again in a minute." };
+    return { name: named, ok: false, failure };
+  }
+  const team = readAccepted(json);
+  return team === null ? { name: named, ok: false, failure: UNREADABLE } : pairTeam(ports, team, false);
+};
+
+const pairTeam = async (ports: WorkspacePorts, team: AccountsTeam, invited: boolean): Promise<TeamOutcome> => {
   const name = team.name;
   const origin = teamOrigin(team.url, ports.config.accountsUrl, ports.local);
   if (origin === null) return { name, ok: false, failure: { code: "", message: `${name}'s address isn't one this app connects to.`, fix: "Update the app, then sign in again." } };

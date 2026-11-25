@@ -219,7 +219,7 @@ it("shows each hub's bots, each hub with its own connection, one offline beside 
   await settle();
   // One offline marks the switcher, saying which; its menu has both hubs, and under Acme what is off.
   expect(switcher()?.getAttribute("aria-label")).toBe("Personal, Can't reach Acme");
-  expect(hubMenu()).toEqual(["Personal", "Acme", "  Can't reach Acme", "Add a hub…"]);
+  expect(hubMenu()).toEqual(["Personal", "Acme", "  Can't reach Acme", "Connect a self-hosted workspace…"]);
 
   // Acme comes back: its project joins the list, and the badge counts both hubs' projects that need you.
   act(() => {
@@ -231,7 +231,7 @@ it("shows each hub's bots, each hub with its own connection, one offline beside 
   await settle();
   expect(bots("storefront", "billing")).toEqual(["billing"]);
   // Back: nothing off with either hub (Personal's bot still wants you, which the switcher says on its own).
-  expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another hub needs you");
+  expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another workspace needs you");
   expect(fake.badge.at(-1)).toBe(2);
 });
 
@@ -636,7 +636,7 @@ it("with one hub, shows no name and no group: the sidebar is as it always was", 
   await settle();
   expect(host.textContent).not.toContain("Bots");
   expect(switcher()?.getAttribute("aria-label")).toBe("devbox");
-  expect(hubMenu()).toEqual(["devbox", "Add a hub…"]);
+  expect(hubMenu()).toEqual(["devbox", "Connect a self-hosted workspace…"]);
   act(() => rowNamed("storefront")?.click());
   expect(window.location.hash).toBe("#/project/devbox/storefront");
 });
@@ -1603,7 +1603,7 @@ it("switches from the marks at the foot and from ⇧⌘[ / ⇧⌘], and the mark
     act(() => void runCommand("hub.next"));
     act(() => void runCommand("hub.next"));
     lift();
-    expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another hub needs you, Can't reach Acme");
+    expect(switcher()?.getAttribute("aria-label")).toBe("Acme, another workspace needs you, Can't reach Acme");
     inPlace();
     // There and straight back, and the same mark clicked mid-slide: the hub on show never changes, and the list is
     // drawn in place, clickable, with nothing beside it.

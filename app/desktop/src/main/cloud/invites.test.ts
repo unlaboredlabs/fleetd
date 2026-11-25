@@ -12,7 +12,7 @@ import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
 import { cloudConfig } from "./config";
 import { realCloud } from "./index";
-import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, makeWorkspace, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 // The stand-in's clock, so nothing here reads today's date.
 const NOW = Date.parse("2026-10-19T10:30:00.000Z");
@@ -149,9 +149,55 @@ describe("a cloud team's invites by email", () => {
     }
   });
 
+  it("makes a new empty workspace of the person's own, connects it as one they made, and opens nothing past the cap", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "fleetd-cloud-"));
+    try {
+      const connected: Array<{ url: string; key: string; label: string; invited: boolean; id: string }> = [];
+      const service = { keyed: () => ({ url, key: fake.keyFor("acme", "bob@acme.example") }) } as unknown as HubService;
+      const hubs = {
+        get: (id: string) => (id === "hub" ? service : undefined),
+        list: () => [{ id: "hub", label: "acme" }],
+        connectCloud: (request: { url: string; key: string }, label: string, invited: boolean) => {
+          connected.push({ ...request, label, invited, id: `h${String(connected.length + 2)}` });
+          return { ok: true };
+        },
+        heldAt: (origin: string) => {
+          const held = connected.find((c) => c.url === origin);
+          return held === undefined ? null : { id: held.id, label: held.label, service: { url: () => held.url } as unknown as HubService };
+        },
+      } as unknown as Hubs;
+      const cloud = realCloud(cloudConfig(fake.url, fake.clientId, true, fake.authorizeUrl), hubs, dir, true, () => Promise.resolve());
+      // Any key of the person's says who asks: a member of acme makes one of their own.
+      expect(await cloud.newWorkspace("hub", " Side project ")).toEqual({ ok: true, hub: "h2" });
+      expect(connected).toMatchObject([{ label: "side-project", invited: false }]);
+      expect(fake.keys.map((k) => `${k.team} ${k.email}`)).toContain("side-project bob@acme.example");
+      // No name: after the person, as a first one is.
+      expect(await cloud.newWorkspace("hub", "")).toEqual({ ok: true, hub: "h3" });
+      expect(connected[1]?.label).toBe("bobs-workspace");
+      fake.workspaceCap = 2;
+      expect(await cloud.newWorkspace("hub", "Third")).toEqual({
+        ok: false,
+        failure: { code: "workspace_cap", message: "You've made 2 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." },
+      });
+      expect(connected).toHaveLength(2);
+      // A self-hosted hub asks nobody.
+      expect(await cloud.newWorkspace("own", "x")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends a name only when one is typed, and the cloud's refusal of a long one as written", async () => {
+    const bob = as("bob@acme.example");
+    expect(await makeWorkspace(fetch, bob, "x".repeat(61))).toMatchObject({ ok: false, failure: { code: "invalid", message: "A workspace's name is 60 characters at most." } });
+    expect(await makeWorkspace(fetch, bob, "   ")).toMatchObject({ ok: true, body: { team: { name: "bobs-workspace", made: true } } });
+  });
+
   it("takes only a hub id, an email and a role, and an invite id, from the page", () => {
     expect(parseRequest(IPC.cloudDeleteTeam, ["hub", "acme"]).ok).toBe(true);
     expect(parseRequest(IPC.cloudDeleteTeam, ["hub", "x".repeat(201)]).ok).toBe(false);
+    expect(parseRequest(IPC.cloudNewWorkspace, ["hub", "Side project"]).ok).toBe(true);
+    expect(parseRequest(IPC.cloudNewWorkspace, ["../hub", "Side project"]).ok).toBe(false);
     expect(parseRequest(IPC.cloudInvites, ["hub"]).ok).toBe(true);
     expect(parseRequest(IPC.cloudInvite, ["hub", { email: "eve@example.com", role: "admin" }]).ok).toBe(true);
     expect(parseRequest(IPC.cloudInvite, ["hub", { email: "eve@example.com", role: "owner" }]).ok).toBe(false);

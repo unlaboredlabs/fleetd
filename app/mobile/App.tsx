@@ -27,8 +27,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { diskCache, diskPreviews, forgetCache, forgetPreviews } from "./src/cacheStore";
 import { watchNetwork } from "./src/networkWatch";
 import { webSocketTransport } from "./src/hub/socket";
-import { afterSignIn, endSession, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
-import { cloudDomain } from "./src/desktop";
+import { afterSignIn, endSession, makeWorkspace, revokeDropped, revokeOver, shownAfterSignIn, shownHub, signOutAll, type KeptHub, type SavedAccount } from "./src/cloud/account";
+import { cloudDomain, type PairFailure } from "./src/desktop";
+import { deviceName } from "./src/hub/deviceName";
 import { pairLinkStep } from "./src/hub/pairLink";
 import { HubContext, SessionContext, type ChatsParams, type HubContextValue, type PairParams, type RootParams, type SettingsParams } from "./src/hubContext";
 import { pushDeps, useTappedRoute } from "./src/notifications";
@@ -240,6 +241,7 @@ export default function App() {
             account={account}
             onForget={forget}
             onShow={(h) => void show(h, hubs).catch(() => Alert.alert("Couldn't switch hubs", "This phone couldn't write its keychain. Try again."))}
+            onMade={(h) => show(h, [...hubs.filter((k) => k.hub !== h.hub), h])}
             onSignedIn={signedIn}
             onSignedOut={signedOut}
             opened={opened}
@@ -340,6 +342,8 @@ interface HubProps {
   readonly onForget: (why?: string) => void;
   /** Shows another hub kept. */
   readonly onShow: (hub: KeptHub) => void;
+  /** Keeps a workspace just made beside the others, and shows it. */
+  readonly onMade: (hub: KeptHub) => Promise<void>;
   readonly onSignedIn: OnSignedIn;
   /** The account's teams are signed out, `rest` the hubs left. */
   readonly onSignedOut: (rest: readonly KeptHub[]) => Promise<void>;
@@ -347,7 +351,7 @@ interface HubProps {
   readonly onOpened: () => void;
 }
 
-function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
+function Hub({ paired, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut, opened, onOpened }: HubProps) {
   const session = useMemo(() => new Session({ hub: paired.hub, key: paired.key, transport: webSocketTransport, push: pushDeps, pins: pinStoreFor(paired.hub), sections: sectionStoreFor(paired.hub), cache: diskCache, previews: diskPreviews }), [paired]);
   const state = useSyncExternalStore(session.subscribe, session.getState);
   const t = useTheme();
@@ -433,6 +437,19 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
       await session.leave().catch(() => undefined);
       await onSignedIn(out);
     };
+    // Asked on the workspace shown when it came with the account, else on the first that did: its key says who asks.
+    const newWorkspace = async (name: string): Promise<PairFailure | null> => {
+      const on = hubs.find((h) => h.cloud === true && h.hub === paired.hub) ?? hubs.find((h) => h.cloud === true);
+      if (cloud === null || on === undefined) return { code: "", message: "Sign in to fleetd cloud first.", fix: "Sign In is under fleetd account below." };
+      const made = await makeWorkspace({ config: cloud, local: typeof __DEV__ !== "undefined" && __DEV__, fetch, deviceName: deviceName() }, on, name);
+      if (!made.ok) return made.failure;
+      haptics.success();
+      await session.leave().catch(() => undefined);
+      return onMade(made.hub).then(
+        () => null,
+        (): PairFailure => ({ code: "", message: "Your workspace is made, but this phone couldn't keep its key in its keychain.", fix: "Sign in again to open it." }),
+      );
+    };
     const teams = hubs.filter((h) => h.cloud === true);
     const names = teams.map((h) => h.hubName).join(", ");
     const signOutCloud = () =>
@@ -462,8 +479,8 @@ function Hub({ paired, hubs, account, onForget, onShow, onSignedIn, onSignedOut,
           resolve,
         ),
       );
-    return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud };
-  }, [session, state, paired, shown, hubs, account, onForget, onShow, onSignedIn, onSignedOut]);
+    return { session, state, paired: shown, disconnect, forget: forgetHub, hubs, account, switchTo, signedIn, signOutCloud, newWorkspace };
+  }, [session, state, paired, shown, hubs, account, onForget, onShow, onMade, onSignedIn, onSignedOut]);
 
   // A refused key is the one link state that asks something of the person: iOS's own alert, over whatever shows.
   const refused = state.hub.phase === "refused" ? state.hub.message : undefined;

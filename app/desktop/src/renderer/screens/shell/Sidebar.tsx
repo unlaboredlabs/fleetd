@@ -27,7 +27,7 @@
 // Which are folded is this device's (sidebarLayout.ts useFolded). Its menu (right-click, or its ⋯ under the pointer)
 // renames the section, moves it up or down, or removes it (its chats go back on top). A pinned chat shows among the pins
 // only, and keeps its section.
-import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search } from "lucide-react";
+import { Archive, ArrowRight, Check, ChevronDown, Ellipsis, Pin, Plus, Rows3, Search, Server } from "lucide-react";
 import { display } from "../../../shared/shortcuts";
 import { openPalette } from "../palette";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
@@ -56,6 +56,8 @@ import { holdRows } from "./sidebarState";
 import { foldKey, openHub, setListView, shownRows, SORTS, sortRows, toggleFold, useFolded, useSidebarView, viewedHub, type SidebarSort, type SidebarView } from "./sidebarLayout";
 import { HubLines, useHubUpdate } from "./HubStatus";
 import { onWeb } from "../../src/web";
+import { useCloud } from "../onboarding/cloud";
+import { askedOn, NewWorkspaceDialog } from "./NewWorkspace";
 import { PlaceIcons, useHubsMark, You } from "./You";
 import s from "./sidebar.module.css";
 
@@ -170,14 +172,19 @@ export function HubMark({ hub, size = 20 }: { hub: Pick<HubView, "label" | "colo
 }
 
 /**
- * The hub row's switcher: the hub on show, its name strong; a click lists every hub as a menu, the one on show ticked
- * and a dot by each where a bot wants you, and under each what is off with it (can't reach it, a machine to look at,
- * setup left) with the one thing to do (HubStatus.tsx HubLines). Hubs live here, not in the menu under your name. Add
- * a hub at its foot (the desktop app's; the web app's teams come with the sign-in).
+ * The hub row's switcher: the workspace on show, its name strong; a click lists every workspace this app knows (all of
+ * the account's cloud ones, and on the desktop each self-hosted one paired) as a menu, the one on show ticked and a dot
+ * by each where a bot wants you, and under each what is off with it (can't reach it, a machine to look at, setup left)
+ * with the one thing to do (HubStatus.tsx HubLines). A pick switches at once: each keeps its own data layer, so its
+ * chats and screens are as it left them. Workspaces live here, not in the menu under your name. At its foot New
+ * workspace (NewWorkspace.tsx), an empty cloud one of your own; with no cloud workspace yet, the desktop's sign-in, which
+ * makes a first; and on the desktop, Connect a self-hosted workspace.
  */
 function HubSwitcher({ hub: id }: { hub: string }) {
   const hubs = useHubs();
   const rows = useHubRows();
+  const cloud = useCloud().state.available || onWeb();
+  const [making, setMaking] = useState(false);
   // Something is off with a hub, its update waits on someone, or another hub wants you: the switcher says so, quietly,
   // without opening.
   const off = useHubsMark();
@@ -185,40 +192,46 @@ function HubSwitcher({ hub: id }: { hub: string }) {
   const hub = hubs.find((h) => h.id === id) ?? hubs[0];
   if (hub === undefined) return null;
   const elsewhere = hubs.some((h) => h.id !== hub.id && wantingOn(rows, h.id) > 0);
-  // Only fleetd cloud teams here: they are the person's teams, not hubs.
-  const teams = hubs.every((h) => h.cloud === true);
+  const from = askedOn(hubs, hub.id);
+  const connect = () => (window.location.hash = "#/onboarding?add");
   return (
-    <Menu>
-      <Tooltip content={off?.why ?? update ?? undefined}>
-        <MenuTrigger asChild>
-          <button type="button" className={s.switcher} aria-label={[hub.label, elsewhere ? "another hub needs you" : null, off?.why, update].filter((w) => w != null).join(", ")} data-opens="hubs" data-mark={off?.tone}>
-            <HubMark hub={hub} size={20} />
-            <span className={s.switcherName}>{hub.label}</span>
-            <ChevronDown className={s.switcherChevron} aria-hidden />
-            {elsewhere || off !== null || update !== null ? <span className={s.dot} data-want="you" data-tone={off?.tone} aria-hidden /> : null}
-          </button>
-        </MenuTrigger>
-      </Tooltip>
-      <MenuContent align="start" className={s.hubCard} aria-label={teams ? "Teams" : "Hubs"}>
-        <MenuLabel>{teams ? "Teams" : "Hubs"}</MenuLabel>
-        {hubs.map((h) => (
-          <HubScope key={h.id} hub={h}>
-            <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(rows, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => openHub(h.id)}>
-              {h.label}
+    <>
+      <Menu>
+        <Tooltip content={off?.why ?? update ?? undefined}>
+          <MenuTrigger asChild>
+            <button type="button" className={s.switcher} aria-label={[hub.label, elsewhere ? "another workspace needs you" : null, off?.why, update].filter((w) => w != null).join(", ")} data-opens="hubs" data-mark={off?.tone}>
+              <HubMark hub={hub} size={20} />
+              <span className={s.switcherName}>{hub.label}</span>
+              <ChevronDown className={s.switcherChevron} aria-hidden />
+              {elsewhere || off !== null || update !== null ? <span className={s.dot} data-want="you" data-tone={off?.tone} aria-hidden /> : null}
+            </button>
+          </MenuTrigger>
+        </Tooltip>
+        <MenuContent align="start" className={s.hubCard} aria-label="Workspaces">
+          <MenuLabel>Workspaces</MenuLabel>
+          {hubs.map((h) => (
+            <HubScope key={h.id} hub={h}>
+              <MenuItem icon={<HubMark hub={h} size={18} />} hint={h.id === hub.id ? <Check className={s.hubItemCheck} aria-hidden /> : wantingOn(rows, h.id) > 0 ? <span className={s.dot} data-want="you" aria-label="A bot needs you" /> : undefined} onSelect={() => openHub(h.id)}>
+                {h.label}
+              </MenuItem>
+              <HubLines />
+            </HubScope>
+          ))}
+          <MenuSeparator />
+          {cloud ? (
+            <MenuItem icon={<Plus aria-hidden />} data-opens="workspace.new" onSelect={() => (from === null ? connect() : setMaking(true))}>
+              New workspace…
             </MenuItem>
-            <HubLines />
-          </HubScope>
-        ))}
-        {onWeb() ? null : (
-          <>
-            <MenuSeparator />
-            <MenuItem icon={<Plus aria-hidden />} onSelect={() => (window.location.hash = "#/onboarding?add")}>
-              Add a hub…
+          ) : null}
+          {onWeb() ? null : (
+            <MenuItem icon={<Server aria-hidden />} onSelect={connect}>
+              Connect a self-hosted workspace…
             </MenuItem>
-          </>
-        )}
-      </MenuContent>
-    </Menu>
+          )}
+        </MenuContent>
+      </Menu>
+      {from === null ? null : <NewWorkspaceDialog from={from} open={making} onClose={() => setMaking(false)} />}
+    </>
   );
 }
 

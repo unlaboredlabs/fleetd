@@ -33,6 +33,22 @@ move leads onto a changed model.
 It works for a hub run as a service (`fleetd init` sets one up). A hub started by hand with `fleetd hub start`
 needs to be stopped and started again on its machine. The phone app has the same under Settings.
 
+## Make a new workspace {#new}
+
+Signed in to fleetd cloud, you can make another workspace of your own from the desktop app, the web app or the phone
+app:
+
+1. Click the workspace's name at the top of the sidebar. On the phone, open Settings › Workspaces.
+2. Pick **New workspace…** and give it a name, or leave the name empty to have it named after you.
+3. Click **Create**. The new workspace opens on its Get started.
+
+A new workspace starts empty, with its own address, members, bots, plan and credits, and is billed on its own like
+your first. One person can make up to 10. Past that, or when too many new workspaces were made from your network
+recently, the app says so and what to do.
+
+In the desktop app, **Connect a self-hosted workspace…** in the same menu pairs one you run yourself, as in
+[Add a hub](#add).
+
 ## Switch between hubs {#sidebar}
 
 The sidebar shows one hub at a time, with its name at the top. To switch:
@@ -42,7 +58,8 @@ The sidebar shows one hub at a time, with its name at the top. To switch:
 - click a hub's square at the bottom of the sidebar;
 - press ⇧⌘] or ⇧⌘[ (Ctrl+Shift+] or Ctrl+Shift+[ on Linux).
 
-Each hub opens on the chat you last had open there.
+Each hub opens on the chat you last had open there. In the web app, the name at the top lists all your cloud
+workspaces; on the phone, Settings › Workspaces lists every one it keeps.
 
 ## What needs you, on every hub {#attention}
 

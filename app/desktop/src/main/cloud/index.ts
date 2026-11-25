@@ -4,8 +4,8 @@
 import { readFileSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
-import { cloudDomain, teamOrigin } from "../../shared/accounts";
-import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
+import { cloudDomain, readAccepted, teamOrigin } from "../../shared/accounts";
+import type { BillingCapOutcome, BillingOpen, BillingOpenOutcome, BillingOutcome, CloudState, ConnectComputerOutcome, DeleteTeamOutcome, FinishOutcome, NewWorkspaceOutcome, InstallGithubOutcome, InviteOutcome, InviteRequest, InvitesOutcome, MoveOutcome, MoveTarget, RevokeInviteOutcome, SignInOutcome, SignOutOutcome } from "../../shared/cloud";
 import type { HubId } from "../../shared/hubs";
 import type { Hubs } from "../hub/hubs";
 import type { HubService } from "../hub/service";
@@ -17,7 +17,7 @@ import type { CloudConfig } from "./config";
 import { openBilling, readTeamBilling, setBillingCap } from "./billing";
 import { connectComputer } from "./connect";
 import { installGithub } from "./github";
-import { deleteTeam, listInvites, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
+import { deleteTeam, listInvites, makeWorkspace, odd, revokeInvite, sendInvite, type KeyedTeam } from "./invites";
 
 export interface Cloud {
   state(): CloudState;
@@ -35,6 +35,8 @@ export interface Cloud {
   invite(hub: HubId, request: InviteRequest): Promise<InviteOutcome>;
   revokeInvite(hub: HubId, inviteId: string): Promise<RevokeInviteOutcome>;
   deleteTeam(hub: HubId, name: string): Promise<DeleteTeamOutcome>;
+  /** A new empty workspace of the person's own, asked on `from` (one of their cloud workspaces), connected here. */
+  newWorkspace(from: HubId, name: string): Promise<NewWorkspaceOutcome>;
   installGithub(hub: HubId): Promise<InstallGithubOutcome>;
   billing(hub: HubId): Promise<BillingOutcome>;
   billingOpen(hub: HubId, what: BillingOpen): Promise<BillingOpenOutcome>;
@@ -148,6 +150,14 @@ export const realCloud = (config: CloudConfig | null, hubs: Hubs, dir: string, l
       // Gone from the cloud: its key opens nothing now, so the app forgets it as signing out would.
       if (out.ok) hubs.remove(id);
       return out;
+    },
+    newWorkspace: async (from, name) => {
+      const t = team(from);
+      if (t === null) return NOT_CLOUD;
+      const made = await makeWorkspace(fetch, t, name);
+      if (!made.ok) return { ok: false, failure: made.failure };
+      const got = readAccepted(made.body);
+      return got === null ? odd(t) : account.connectMade(got);
     },
     installGithub: async (id) => {
       const t = team(id);

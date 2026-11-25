@@ -239,6 +239,17 @@ export default defineGroup({
       f.answer("people_list", undefined, { people: [], devices: [], invites: [] });
       return f;
     })(),
+    (() => {
+      const f = Fixture.from(base("typical"), "cloud-workspace-cap", "A fleetd account's workspace acme, whose switcher's New workspace the cloud refuses: its person has made the most.");
+      f.state = { phase: "live", hub: TEAM, protocol: PROTOCOL };
+      f.label = "acme";
+      f.cloud = {
+        email: EMAIL,
+        hub: true,
+        newWorkspaceFailure: { code: "workspace_cap", message: "You've made 10 workspaces, the most one person can have.", fix: "Delete one you don't use in Settings › Workspace, then make a new one." },
+      };
+      return f;
+    })(),
     people(base("chat-empty"), "owner", "People on a cloud team, as its owner: Invite by email, and two invites waiting.", sam),
     people(base("chat-empty"), "admin", "People on a cloud team, as an admin: the same field and list.", alice),
     people(base("chat-empty"), "member", "A member of a cloud team: no People page, so no field and no invites.", bob),

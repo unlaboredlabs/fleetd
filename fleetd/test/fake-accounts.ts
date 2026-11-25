@@ -16,7 +16,9 @@
 // accounts area does: an owner's key with the team's name typed again deletes it (its keys open nothing then); anyone
 // else is refused, as are a wrong name and agents running (`running`). With `demo` set, POST ACCOUNTS_DEMO_SIGN_IN_PATH
 // signs in App Review's address and code (D737) to its one team, answered as a sign-in is; a wrong address or code is
-// one refusal, and with no `demo` the demo sign-in is off.
+// one refusal, and with no `demo` the demo sign-in is off. And POST ACCOUNTS_WORKSPACES_PATH as fleetd-cloud's does: any
+// key of a person's makes them a new empty workspace of their own (named, or after them), answered as POST
+// ACCOUNTS_TEAM_PATH answers, up to `workspaceCap` they made; past it, refused `workspace_cap`.
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -28,6 +30,7 @@ import {
   ACCOUNTS_TEAM_DELETE_PATH,
   ACCOUNTS_TEAM_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
+  ACCOUNTS_WORKSPACES_PATH,
   GITHUB_INSTALL_PATH,
   type AccountsFailure,
   type AccountsInvitation,
@@ -155,6 +158,8 @@ export class FakeAccounts {
   readonly deleted: string[] = [];
   /** Each team made on asking (POST ACCOUNTS_TEAM_PATH), as `<team> <email>`. */
   readonly madeOnAsking: string[] = [];
+  /** The most workspaces one person may have made (POST ACCOUNTS_WORKSPACES_PATH), counting those still there. */
+  workspaceCap = 10;
 
   /** The accounts service's origin, once started. */
   get url(): string {
@@ -416,6 +421,7 @@ export class FakeAccounts {
     if (path === ACCOUNTS_INVITES_PATH || path.startsWith(`${ACCOUNTS_INVITES_PATH}/`)) return this.#invites(name, path, req, res);
     if (req.method === "POST" && path === GITHUB_INSTALL_PATH) return this.#githubInstall(name, req, res);
     if (req.method === "POST" && path === ACCOUNTS_TEAM_DELETE_PATH) return this.#deleteTeam(name, req, res);
+    if (req.method === "POST" && path === ACCOUNTS_WORKSPACES_PATH) return this.#newWorkspace(name, req, res);
     fail(res, 404, { code: "not_found", message: "Nothing here." });
   }
 
@@ -435,6 +441,24 @@ export class FakeAccounts {
     }
     this.deleted.push(name);
     send(res, 200, { deleted: name });
+  }
+
+  /** POST ACCOUNTS_WORKSPACES_PATH, in fleetd-cloud's words: a new empty workspace of the caller's own, its address from its name. */
+  async #newWorkspace(name: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const bearer = /^Bearer (.+)$/u.exec(req.headers.authorization ?? "")?.[1];
+    const caller = this.keys.find((k) => k.team === name && k.key === bearer);
+    if (caller === undefined || this.deleted.includes(name)) return fail(res, 401, { code: "unauthorized", message: "This key isn't one of the hub's." });
+    const given = str(await readBody(req), "name")?.trim() ?? "";
+    if (given.length > 60) return fail(res, 400, { code: "invalid", message: "A workspace's name is 60 characters at most.", fix: "Give it a shorter name." });
+    const made = [...this.#teams.values()].filter((t) => t.maker === caller.email && !this.deleted.includes(t.name)).length;
+    if (made >= this.workspaceCap) {
+      return fail(res, 403, { code: "workspace_cap", message: `You've made ${String(this.workspaceCap)} workspaces, the most one person can have.`, fix: "Delete one you don't use in Settings › Workspace, then make a new one." });
+    }
+    const base = (given === "" ? `${caller.email.split("@")[0]!}s workspace` : given).toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "") || "workspace";
+    let slug = base;
+    for (let n = 2; this.#teams.has(slug); n++) slug = `${base}-${String(n)}`;
+    await this.team(slug, [caller.email]);
+    send(res, 200, { team: this.#entry(this.#teams.get(slug)!, caller.email) });
   }
 
   /** Agents running in a team now: its owner's delete is refused while any is. */

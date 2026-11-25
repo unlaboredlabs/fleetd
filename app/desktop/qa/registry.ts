@@ -201,6 +201,8 @@ export const fixtures = [
   "cloud-hosted-stuck",
   "cloud-account",
   "cloud-account-signed-out",
+  // ...and New workspace in the switcher, refused at the most one person may make.
+  "cloud-workspace-cap",
   // ...and People on a team: its owner and an admin invite by email, a member sees no People page, and a team at its
   // limit refuses an invite.
   "cloud-people-owner",
@@ -1374,15 +1376,40 @@ export const screens: readonly Screen[] = [
     },
   },
   // The hub row's switcher, which carries a dot while another hub has a bot that wants you; its menu lists them all,
-  // the one on show ticked, each other with its own dot, and Add a hub.
+  // the one on show ticked, each other with its own dot, and Connect a self-hosted workspace (a build with no cloud).
   {
     id: "shell",
     route: "#/",
     fixtures: ["sidebar-hubs"],
     variant: "hub-switcher",
     open: async (page) => {
-      await page.getByRole("button", { name: "Personal, another hub needs you" }).click();
-      await expect(page.getByRole("menuitem")).toHaveText(["PPersonal", "AAcme", "Add a hub…"]);
+      await page.getByRole("button", { name: "Personal, another workspace needs you" }).click();
+      await expect(page.getByRole("menuitem")).toHaveText(["PPersonal", "AAcme", "Connect a self-hosted workspace…"]);
+    },
+  },
+  // A fleetd account's switcher ends with New workspace, then Connect a self-hosted workspace.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["cloud-workspace-cap"],
+    variant: "workspace-switcher",
+    open: async (page) => {
+      await page.locator("[data-opens='hubs']").click();
+      await expect(page.getByRole("menuitem")).toHaveText(["Aacme", "New workspace…", "Connect a self-hosted workspace…"]);
+    },
+  },
+  // New workspace asks for a name; the cloud's refusal (the most one person may make) says what to do.
+  {
+    id: "shell",
+    route: "#/",
+    fixtures: ["cloud-workspace-cap"],
+    variant: "new-workspace-refused",
+    open: async (page) => {
+      await page.locator("[data-opens='hubs']").click();
+      await page.getByRole("menuitem", { name: "New workspace…" }).click();
+      await page.getByLabel("Name").fill("Side project");
+      await page.getByRole("button", { name: "Create" }).click();
+      await expect(page.getByRole("alert")).toContainText("Delete one you don't use");
     },
   },
   {

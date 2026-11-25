@@ -1,11 +1,11 @@
 // A fleetd cloud team's invites by email (contracts: Accounts.json, ACCOUNTS_INVITES_PATH): three plain HTTP calls to
 // the team's own address with this device's key, as an owner or admin; and the owner's delete of the team
-// (ACCOUNTS_TEAM_DELETE_PATH). The team answers who may and what it refuses
+// (ACCOUNTS_TEAM_DELETE_PATH), and a new workspace of the person's own (ACCOUNTS_WORKSPACES_PATH). The team answers who may and what it refuses
 // (not an email, someone already on the team or invited, the team at its limit of people); its words are shown as
 // written. Main makes them for a hub that came with the account only, so a self-hosted hub is never asked.
 import { z } from "zod";
 import type { DeleteTeamOutcome, InviteOutcome, InviteRequest, InvitesOutcome, RevokeInviteOutcome } from "../../shared/cloud";
-import { ACCOUNTS_INVITES_PATH, ACCOUNTS_TEAM_DELETE_PATH } from "../../shared/contracts";
+import { ACCOUNTS_INVITES_PATH, ACCOUNTS_TEAM_DELETE_PATH, ACCOUNTS_WORKSPACES_PATH } from "../../shared/contracts";
 import type { PairFailure } from "../../shared/pairing";
 import type { Fetch } from "../pairing/hubHttp";
 
@@ -92,4 +92,14 @@ export const revokeInvite = async (fetch: Fetch, team: KeyedTeam, inviteId: stri
 export const deleteTeam = async (fetch: Fetch, team: KeyedTeam, name: string): Promise<DeleteTeamOutcome> => {
   const answer = await call(fetch, team, "POST", ACCOUNTS_TEAM_DELETE_PATH, { name: name.trim() });
   return answer.ok ? { ok: true } : { ok: false, failure: answer.failure };
+};
+
+/**
+ * A new empty workspace of the person's own, asked on `team` (any of theirs: the key only says who asks), named
+ * `name` or, empty, as the cloud names a first one. The answer's team is the caller's to read: the app's carries a
+ * pairing code, the web app's none.
+ */
+export const makeWorkspace = async (fetch: Fetch, team: KeyedTeam, name: string): Promise<Answer> => {
+  const named = name.trim();
+  return call(fetch, team, "POST", ACCOUNTS_WORKSPACES_PATH, named === "" ? {} : { name: named });
 };
