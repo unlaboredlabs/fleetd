@@ -55,7 +55,8 @@ export function NamedRow({ entry, server, servers, reload }: { entry: Named; ser
   // The account whose sign-in is open in the browser, until the person is back from it.
   const away = useRef<string | null>(null);
 
-  // Back from the service's page: the row reads again, and a sign-in that took is tested.
+  // Back from the service's page: the row reads again, and a sign-in that took is tested. Another account, added from
+  // this row, is a row of its own: its Test isn't said under this one.
   const back = async () => {
     const name = away.current;
     away.current = null;
@@ -63,7 +64,9 @@ export function NamedRow({ entry, server, servers, reload }: { entry: Named; ser
     const now = await readServers(session);
     if (!now.ok) return failed("Couldn't read it again", now.error);
     const after = now.value.find((s) => s.name === name);
-    if (after !== undefined && accountState(after).kind === "connected") await runTest(after);
+    if (after === undefined || accountState(after).kind !== "connected") return;
+    if (server === undefined || after.name === server.name) await runTest(after);
+    else haptics.success();
   };
 
   // The service's own page in the in-app browser. iOS returns once its sheet is closed; Android's Custom Tab returns
