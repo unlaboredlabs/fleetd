@@ -263,7 +263,7 @@ async function settingsOf(hub: Hub, r: ProjectRef, repo: ProjectRepo | undefined
   const m = r.machineId;
   let worktrees: (ProjectWorktrees & { signinsKept?: boolean }) | undefined;
   let worktreesUnknown: string | undefined;
-  if (!store(hub).machineGet(m)) worktreesUnknown = `${m} was removed from this hub.`;
+  if (!store(hub).machineGet(m)) worktreesUnknown = `${m} was removed from this workspace.`;
   else if (!executors(hub).isConnected(m)) worktreesUnknown = `${m} is offline.`;
   else if (!link(hub).can(m, CAP_PROJECT_SETTINGS)) worktreesUnknown = `${m}'s node is too old to say: update fleetd there.`;
   else {
@@ -529,7 +529,7 @@ export function register(tools: Registry): void {
     // A self-hosted hub's bots run on their machine: there is no computer to pick (an app made for fleetd's cloud may
     // still send one).
     if (input.computer !== undefined)
-      throw new ToolError("invalid", "This hub's bots run on their own machine: there is no computer to pick.", "Leave the computer out.");
+      throw new ToolError("invalid", "This workspace's bots run on their own machine: there is no computer to pick.", "Leave the computer out.");
     const settings = await settingsOf(hub, r, repo);
     let next = "New tasks of the bot use these settings.";
     if ((input.avatarColor !== undefined || input.avatarShape !== undefined) && input.setup === undefined && input.title === undefined) {

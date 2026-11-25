@@ -45,7 +45,7 @@ const MODULES = [
   "watchers/rules",
 ];
 
-test("each module the cloud copied from is the package's, with no hub behind it", () => {
+test("each module the cloud copied from is the package's, with no workspace behind it", () => {
   for (const m of MODULES) {
     const path = `fleetd/src/hub/${m}.ts`;
     expect(exported()).toContainEqual({ name: `./hub/${m}`, path });
@@ -134,10 +134,10 @@ test("a key's refusals, and an enroll code's", () => {
   expect(shownPrefix("fld_abcdefghij")).toBe("fld_abcdef");
   expect(keyRefusal(undefined)?.message).toBe("unknown agent key");
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: 5, person_removed: 0 })?.message).toBe("agent key fld_abc was revoked");
-  expect(keyRefusal({ prefix: "fld_abc", revoked_ms: null, person_removed: 1 })?.message).toBe("the person key fld_abc belongs to was removed from the hub");
+  expect(keyRefusal({ prefix: "fld_abc", revoked_ms: null, person_removed: 1 })?.message).toBe("the person key fld_abc belongs to was removed from the workspace");
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: null, person_removed: 0 })).toBeUndefined();
-  expect(codeRefusal(undefined, "devbox", 10).reason()).toBe("unknown, replaced or revoked enrollment token. Fix: on the hub, run fleetd pair --worker devbox for a new code");
-  expect(codeRefusal({ machine_id: NAMELESS, expires_ms: 5, used_ms: null }, "devbox", 10).reason()).toBe("enrollment token expired. Fix: ask the hub for a new join line");
+  expect(codeRefusal(undefined, "devbox", 10).reason()).toBe("unknown, replaced or revoked enrollment token. Fix: fleetd pair --worker devbox on the workspace's machine");
+  expect(codeRefusal({ machine_id: NAMELESS, expires_ms: 5, used_ms: null }, "devbox", 10).reason()).toBe("enrollment token expired. Fix: ask the workspace's admin for a new join line");
   expect(codeRefusal({ machine_id: "box", expires_ms: 50, used_ms: null }, "devbox", 10).message).toBe("enrollment token is for machine box, not devbox");
   expect([suffixed("devbox", 2), suffixed("a".repeat(31) + "-", 3)]).toEqual(["devbox-2", `${"a".repeat(30)}-3`]);
 });
@@ -160,7 +160,7 @@ test("a purchase's line, a claim's refusals and a fill's evidence; a vault card 
   expect(cardShown("Visa (Personal)", { brand: "visa", last4: "4242" })).toEqual({ label: "Visa (Personal) ••4242", brand: "visa", last4: "4242" });
 });
 
-test("a tracker's live parts are what the hub's live lane gives for the same events", () => {
+test("a tracker's live parts are what the workspace's live lane gives for the same events", () => {
   const T0 = 1_760_000_000_000;
   let now = T0;
   let area: unknown;

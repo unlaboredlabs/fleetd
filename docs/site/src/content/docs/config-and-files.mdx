@@ -50,7 +50,7 @@ hub. The files stay the truth: the app rewrites them on every change.
 
 - **Services** (set up by `fleetd init` or `fleetd machine add`): the hub logs to `~/.fleetd/hub/hub.log`, each
   machine to `~/.fleetd/logs/node.log`.
-- **By hand** (`fleetd hub start`, `fleetd node join`, `fleetd node run`): the terminal.
+- **By hand** (`fleetd workspace start`, `fleetd node join`, `fleetd node run`): the terminal.
 - **The desktop app**: `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux. Help ›
   Reveal Logs opens it. It holds errors only, never keys or message text.
 
@@ -204,7 +204,7 @@ command then keeps its files there and never touches `~/.fleetd`.
 2. Start the hub, and keep the terminal open:
 
    ```sh
-   fleetd hub start --listen 127.0.0.1:4797
+   fleetd workspace start --listen 127.0.0.1:4797
    ```
 
 3. In another terminal, add this machine to the test hub:

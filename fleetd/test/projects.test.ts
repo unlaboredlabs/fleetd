@@ -19,7 +19,7 @@ function owner(k: ReturnType<typeof kit>) {
   return key("admin", { human: true, person: { personId: "p-own", name: "Own" } });
 }
 
-test("a fresh hub has its two profiles, the default first, and fleetd's own model list", async () => {
+test("a fresh workspace has its two profiles, the default first, and fleetd's own model list", async () => {
   const k = kit();
   const out = await k.ok(key("read"), "profiles_list", {});
   expect(out.profiles.map((p: { name: string; default: boolean }) => [p.name, p.default])).toEqual([
@@ -83,7 +83,7 @@ test("a model list the endpoint can't give is logged once, with its host and why
   } finally {
     console.warn = warn;
   }
-  expect(warned).toEqual([`models: the hub's API key listed no models through devbox.example:8317 on devbox, using fleetd's own list: ${why}`]);
+  expect(warned).toEqual([`models: the workspace's API key listed no models through devbox.example:8317 on devbox, using fleetd's own list: ${why}`]);
 });
 
 test("only an owner or admin changes profiles; create, rename, default, lead, delete", async () => {

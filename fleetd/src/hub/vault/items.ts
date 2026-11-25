@@ -23,7 +23,7 @@ export { type SaveSpec, sinkEnvName } from "./item.ts";
 /** `sealed` opened with the hub's box key: its bytes. */
 export function openRawToHub(hub: Hub, sealed: string): Uint8Array {
   const bytes = openSealed(boxKey(hub), new Uint8Array(Buffer.from(sealed, "base64")));
-  if (!bytes) throw new ToolError("invalid", "The value wasn't sealed to this hub's key.", "Seal it to hubBoxKey from vault_status and try again.");
+  if (!bytes) throw new ToolError("invalid", "The value wasn't sealed to this workspace's key.", "Seal it to hubBoxKey from vault_status and try again.");
   return bytes;
 }
 

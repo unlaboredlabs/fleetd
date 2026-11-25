@@ -468,7 +468,7 @@ export class Devices implements Screens {
     try {
       await this.hub(session.thread, session.cwd, "browser_session", { ...report(meta, state, session.control(), []), ...(device ? { device } : {}) });
     } catch (e) {
-      console.warn(`device ${session.id}: not reported to the hub: ${(e as Error).message}`);
+      console.warn(`device ${session.id}: not reported to the workspace: ${(e as Error).message}`);
     }
   }
 

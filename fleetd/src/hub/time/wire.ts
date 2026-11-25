@@ -36,7 +36,7 @@ export function gap(now: number, count: number): NewSpan {
     ids: {},
     lane: "fleet",
     status: "incomplete",
-    extra: { count, reason: "the hub's span writer was full" },
+    extra: { count, reason: "the workspace's span writer was full" },
   };
 }
 

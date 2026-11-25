@@ -32,12 +32,13 @@ export const REASON_MAX_BYTES = 123;
 
 /** What an UNAUTHORIZED close says, and only says, for a machine the hub removed: its node stops as enrolled. A hub
  * that doesn't know a node for another reason (an import, which leaves keys behind) says it isn't enrolled. */
+// Its words stay "hub": a node of any version matches the reason on them, and an older one would miss "workspace".
 export const REMOVED = "was removed from this hub";
 export const removedReason = (machineId: string) => `${machineId} ${REMOVED}: its node key is revoked`;
 /** What an UNAUTHORIZED close says for a node whose key the hub doesn't hold at all: the agents' Mac stops as enrolled
  * on it too, as only a new code joins it again. */
 export const NOT_ENROLLED = "is not enrolled";
-export const notEnrolledReason = (machineId: string) => `${machineId} ${NOT_ENROLLED}: run fleetd pair --worker ${machineId} on the hub`;
+export const notEnrolledReason = (machineId: string) => `${machineId} ${NOT_ENROLLED}: run fleetd pair --worker ${machineId} on the workspace's machine`;
 
 /** Both directions every 15 s. */
 export const HEARTBEAT_INTERVAL_SECS = 15;
@@ -427,8 +428,8 @@ export const REPLY_TAGS: ReadonlySet<string> = new Set(Object.values(REPLY_OF));
 /** `crate::protocol_behind`: the close reason for a node on another protocol, its fix in it. */
 export function protocolBehind(hub: number, node: number): string {
   return hub < node
-    ? "the hub runs an older fleetd than this machine. Fix: update the hub (Updates in the app on your main machine, or fleetd update on the hub)"
-    : "this machine runs an older fleetd than the hub. Fix: update this machine (fleetd update on it)";
+    ? "the workspace runs an older fleetd than this machine. Fix: update the workspace (Updates in the app on your main machine, or fleetd update on the workspace's machine)"
+    : "this machine runs an older fleetd than the workspace. Fix: update this machine (fleetd update on it)";
 }
 
 /** WebSocket close reasons are capped at 123 bytes: a longer one is cut at a character, with "...". */

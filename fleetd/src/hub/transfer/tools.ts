@@ -11,7 +11,7 @@ function refuseUnlessAdminEverywhere(caller: Caller): void {
   if (!allowsEverywhere(caller, "admin") || caller.kind !== "human") {
     throw new ToolError(
       "forbidden",
-      "Moving this hub moves every machine's bots: it needs a person's key with Admin on every machine.",
+      "Moving this workspace moves every machine's bots: it needs a person's key with Admin on every machine.",
       caller.kind === "human" ? REPAIR_FIX : "Use an Admin key for all machines (`--machines '*'`).",
     );
   }

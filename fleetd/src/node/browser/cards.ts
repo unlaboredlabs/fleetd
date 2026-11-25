@@ -180,7 +180,7 @@ async function fillClaimed(broker: Broker, session: Session, domain: string, ref
   const masked = reference.startsWith("vault:") ? "vault:card/" : `${reference} `;
   try {
     if (sealedCard !== undefined && sealedCard !== null) card = openCard(broker, sealedCard);
-    else if (reference.startsWith("vault:")) throw notTyped("the hub sent no card for this vault card");
+    else if (reference.startsWith("vault:")) throw notTyped("the workspace sent no card for this vault card");
     else {
       const vault = broker.vault(session);
       if (!vault.vault.card) throw new Error(`${reference} can't be read as a card here`);

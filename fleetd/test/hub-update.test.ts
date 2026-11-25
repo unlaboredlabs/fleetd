@@ -161,7 +161,7 @@ async function until(f: () => boolean) {
   expect(f()).toBe(true);
 }
 
-test("the hub stages its new build for the watcher, and the hub that comes up updates the nodes", async () => {
+test("the workspace stages its new build for the watcher, and the workspace that comes up updates the nodes", async () => {
   const dir = join(home.dir, "a");
   const fake = new Fake(dir, [{}, { liveSince: undefined }]);
   const u = updatesIn(dir, fake);
@@ -235,7 +235,7 @@ test("a release republished mid-update installs the build its release.json named
   expect(readFileSync(fake.exePath, "utf8")).toBe(`fleetd ${NEW}`);
 });
 
-test("a stale release.json naming an older build than the hub's installs nothing", async () => {
+test("a stale release.json naming an older build than the workspace's installs nothing", async () => {
   const dir = join(home.dir, "stale");
   const fake = new Fake(dir, []);
   fake.version = NEWER;
@@ -249,7 +249,7 @@ test("a stale release.json naming an older build than the hub's installs nothing
   expect(fake.plans).toEqual([]);
 });
 
-test("a hub on the channel's build only updates its nodes; a node that refuses says why", async () => {
+test("a workspace on the channel's build only updates its nodes; a node that refuses says why", async () => {
   const dir = join(home.dir, "b");
   const fake = new Fake(dir, [{}, {}]);
   fake.version = NEW;
@@ -284,7 +284,7 @@ test("a node waits for its agents, at most the drain, and Update now doesn't wai
   await until(() => byMachine(u.status()!).get("m0")!.state === "done");
 });
 
-test("the hub's restart waits for a batch the merge train is landing, the drain at most", async () => {
+test("the workspace's restart waits for a batch the merge train is landing, the drain at most", async () => {
   const hub = (u: Updates) => byMachine(u.status()!).get("")!;
   // The batch lands: the hub stages its build once it has.
   const landed = new Fake(join(home.dir, "landing"), []);
@@ -337,7 +337,7 @@ test("settings, the automatic update's due time, and its last result", () => {
       to: NEW,
       startedAt: "2026-11-08T10:00:00.000Z",
       parts: [
-        { part: "hub", name: "the hub", from: OLD, state: "done" },
+        { part: "hub", name: "the workspace", from: OLD, state: "done" },
         { part: "node", machineId: "m0", name: "lab", from: OLD, state: "failed", message: "didn't come back" },
         { part: "node", machineId: "m1", name: "mac", from: OLD, state: "skipped", message: "offline" },
       ],
@@ -359,7 +359,7 @@ test("the apps hear updating, each machine coming back, and updated, once per ch
   expect(u.restartReason()).toBe(`updating to ${NEW}`);
   const last = fake.announced.at(-1)!;
   expect([last.state, last.hub, last.from, last.to]).toEqual(["updating", "restarting", OLD, NEW]);
-  expect(updateSummary(last)).toBe(`Updating fleetd to ${NEW}: the hub restarts`);
+  expect(updateSummary(last)).toBe(`Updating fleetd to ${NEW}: the workspace restarts`);
 
   // The hub that comes up tells the apps again: its own state isn't the old process's.
   writeFileSync(fake.plans[0]!.verdict, JSON.stringify({ state: "done", stage: null, message: `runs ${NEW}` }));
@@ -393,7 +393,7 @@ test("a finished run reads put back, failed, updated or current; past ten machin
     to: NEW,
     startedAt: "2026-11-08T10:00:00.000Z",
     finishedAt: "2026-11-08T10:00:05.000Z",
-    parts: [{ part: "hub", name: "the hub", from: OLD, state: hub, message: "the new build didn't answer /healthz" }, ...nodes],
+    parts: [{ part: "hub", name: "the workspace", from: OLD, state: hub, message: "the new build didn't answer /healthz" }, ...nodes],
     auto: true,
   });
   const putBack = signal(run("rolled_back", []));
@@ -427,7 +427,7 @@ test("a finished run reads put back, failed, updated or current; past ten machin
 function autoAfter(dir: string, fake: Fake, ago: number, to = OLD) {
   require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
   const at = new Date(fake.now - ago).toISOString();
-  const hub = { part: "hub", name: "the hub", from: OLD, state: "current" };
+  const hub = { part: "hub", name: "the workspace", from: OLD, state: "current" };
   writeFileSync(join(dir, "update", "run.json"), JSON.stringify({ id: "U0", channel: "edge", to, startedAt: at, finishedAt: at, parts: [hub] }));
   const u = new Updates(join(dir, "update"), { now: () => fake.now }, { ...timing(), autoGap: defaultTiming().autoGap });
   u.setPorts(fake);
@@ -567,13 +567,13 @@ test("without scopes, or across a host protocol change, agents are held as befor
 
 // The update that installs the hub without cloud machines was planned by one with them: its cloud machines' parts,
 // skipped as asleep, are of machines this hub no longer has. They neither show nor make the update partial.
-test("a run an older hub planned drops its cloud machines' asleep parts as it loads", () => {
+test("a run an older workspace planned drops its cloud machines' asleep parts as it loads", () => {
   const dir = join(home.dir, "gone");
   require("node:fs").mkdirSync(join(dir, "update"), { recursive: true });
   const at = new Date(0).toISOString();
-  const asleep = "asleep: it takes the hub's build when it wakes";
+  const asleep = "asleep: it takes the workspace's build when it wakes";
   const parts = [
-    { part: "hub", name: "the hub", from: OLD, state: "done" },
+    { part: "hub", name: "the workspace", from: OLD, state: "done" },
     { part: "node", machineId: "m0", name: "builder", from: OLD, state: "done" },
     { part: "node", machineId: "boat-1", name: "boat-1", from: OLD, state: "skipped", message: asleep },
     { part: "claude", machineId: "boat-1", name: "boat-1", from: "2.1.310", state: "skipped", message: asleep },
@@ -595,7 +595,7 @@ test("a node waits 2 minutes at most by default", () => {
 // other flavour is behind whatever its version: the next update sends it the hub's build, flavour named, and it counts
 // as current only once it runs Bun. A node that names no flavour (older than any hub that sends one) is taken at its
 // version.
-test("a Rust-reporting node is behind a Bun hub of its version, and told to switch to Bun", async () => {
+test("a Rust-reporting node is behind a Bun workspace of its version, and told to switch to Bun", async () => {
   const dir = join(home.dir, "flavour");
   const fake = new Fake(dir, [
     { name: "builder-2", version: NEW, flavour: "rust", claude: "2.1.314 (Claude Code)" },
@@ -631,7 +631,7 @@ test("a node from before flavours comes back as build_rust and switches to Bun i
   await resumed;
 });
 
-test("versions order by their numbers first, then within a channel only, and the watcher's health URL reaches the hub", () => {
+test("versions order by their numbers first, then within a channel only, and the watcher's health URL reaches the workspace", () => {
   expect([versionCmp("1.2.0", "1.10.0"), versionCmp("1.2.0-rc.2", "1.2.0"), versionCmp("0.0.0-edge.202611080900", "0.0.0-nightly.202611071200")]).toEqual([-1, -1, 1]);
   // Numbers first, across channels: 0.9.0 is newer than every 0.0.0-edge build (release.version-scheme).
   expect(versionCmp("0.0.0-edge.1", "1.0.0")).toBe(-1);
@@ -683,7 +683,7 @@ function rolledOut(builds: { build: string; version: string; bytes: Uint8Array; 
   return { edge, of, reads };
 }
 
-test("with a rollout, the hub takes the newest build that reached its bucket, and its nodes get that build's own files", async () => {
+test("with a rollout, the workspace takes the newest build that reached its bucket, and its nodes get that build's own files", async () => {
   const dir = join(home.dir, "rollout");
   const fake = new Fake(dir, [{}]);
   const at = (h: number) => new Date(Date.parse("2026-11-23T12:00:00Z") - h * 3_600_000).toISOString();
@@ -716,7 +716,7 @@ test("with a rollout, the hub takes the newest build that reached its bucket, an
   expect(fake.sent.at(-1)).toMatchObject({ version: NEW, build: "2026.11.23.1", sha256: { "fleetd-linux-x64": sha256Hex(one) } });
 });
 
-test("a pulled build sends the hub, and its nodes, back to the build before it", async () => {
+test("a pulled build sends the workspace, and its nodes, back to the build before it", async () => {
   const dir = join(home.dir, "pulled");
   const fake = new Fake(dir, [{ version: NEWER }]);
   fake.version = NEWER;
@@ -741,7 +741,7 @@ test("a pulled build sends the hub, and its nodes, back to the build before it",
   expect(fake.facts[0]!.version).toBe(NEW);
 });
 
-test("a hub whose machines don't relink on the new build puts the build before back by itself", async () => {
+test("a workspace whose machines don't relink on the new build puts the build before back by itself", async () => {
   const dir = join(home.dir, "selfcheck");
   const fake = new Fake(dir, [{ name: "builder" }]);
   const u = updatesIn(dir, fake, { relink: 20 });
@@ -772,7 +772,7 @@ test("a hub whose machines don't relink on the new build puts the build before b
   expect(after.autoSkips()).toBe(NEW);
 });
 
-test("lead turns that fail twice with none ending well fail the self-check, but never the provider's failures, which the hub notes", async () => {
+test("lead turns that fail twice with none ending well fail the self-check, but never the provider's failures, which the workspace notes", async () => {
   const turns = (completed: number, failed: number, provider = 0): LeadTurns => ({
     completed,
     failed,
@@ -817,7 +817,7 @@ test("a lead's turn counts against a build unless its own error class is the pro
   expect(leadEnd("thread.interrupted", { endCause: "node_restarted" }, "m1")).toEqual({ end: "failed", why: "its machine's link dropped" });
 });
 
-test("fleetd's own hub (ring first) tells the rollout each build its self-check passed on", async () => {
+test("fleetd's own workspace (ring first) tells the rollout each build its self-check passed on", async () => {
   const dir = join(home.dir, "ring");
   const fake = new Fake(dir, []);
   fake.version = "0.0.0-edge.202611231406.4+5877c50";
@@ -856,7 +856,7 @@ test("after `fleetd update` put a build in place by hand, its nodes still get th
   expect(fake.sent.at(-1)).toMatchObject({ version: NEW, build: "2026.11.23.1", sha256: { "fleetd-linux-x64": sha256Hex(one) } });
 });
 
-test("a node from before rollouts waits, saying why, while the hub's build isn't the newest; it takes the newest", async () => {
+test("a node from before rollouts waits, saying why, while the workspace's build isn't the newest; it takes the newest", async () => {
   const dir = join(home.dir, "old-node");
   const fake = new Fake(dir, [{ name: "lab", canPickBuild: false }, { name: "new" }]);
   fake.now = Date.parse("2026-11-23T12:00:00Z");
@@ -878,7 +878,7 @@ test("a node from before rollouts waits, saying why, while the hub's build isn't
   const run = after.status()!;
   expect(byMachine(run).get("m0")).toMatchObject({
     state: "skipped",
-    message: `its fleetd (${OLD}) only takes fleetd's newest build (${NEWER}), not the hub's ${NEW} yet: it updates once the hub runs the newest, or run \`fleetd update\` on lab now`,
+    message: `its fleetd (${OLD}) only takes fleetd's newest build (${NEWER}), not the workspace's ${NEW} yet: it updates once the workspace runs the newest, or run \`fleetd update\` on lab now`,
   });
   expect(byMachine(run).get("m1")!.state).toBe("done");
   expect(fake.updated).toEqual(["m1"]);
@@ -887,7 +887,7 @@ test("a node from before rollouts waits, saying why, while the hub's build isn't
   expect(after.autoAt()).toBeUndefined();
 });
 
-test("a hub and its machines on a day-numbered build (2026.11.23.x) update to 0.9.x, never back", async () => {
+test("a workspace and its machines on a day-numbered build (2026.11.23.x) update to 0.9.x, never back", async () => {
   const dir = join(home.dir, "to-0.9");
   const day = "0.0.0-edge.202611231632.1+1333328";
   const nine = "0.9.0+20261124.abc1234";

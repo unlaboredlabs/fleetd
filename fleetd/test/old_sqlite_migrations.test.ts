@@ -13,7 +13,7 @@ const VAULT = "202611121235_one_team_vault";
 const columns = (conn: Database, table: string) =>
   (conn.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
 
-test("a hub that ran the rewritten migrations as they shipped reads no drift, and nothing runs again", () => {
+test("a workspace that ran the rewritten migrations as they shipped reads no drift, and nothing runs again", () => {
   expect(Object.keys(REWRITTEN).sort()).toEqual([OWN, VAULT]);
   const conn = new Database(":memory:", { strict: true });
   migrate(conn, MIGRATIONS);
@@ -41,7 +41,7 @@ test("a migration that failed half-way left nothing, and the next start runs it 
   }
   expect(error).toBeInstanceOf(MigrationFailed);
   const found = (conn.query("SELECT sqlite_version() AS v").get() as { v: string }).v;
-  expect((error as Error).message).toStartWith(`the hub's database can't update: migration ${OWN} failed on SQLite ${found}`);
+  expect((error as Error).message).toStartWith(`the workspace's database can't update: migration ${OWN} failed on SQLite ${found}`);
   expect(columns(conn, "project_settings")).not.toContain("only_me");
   expect(conn.query("SELECT 1 FROM migrations_applied WHERE name = ?").get(OWN)).toBeNull();
 
@@ -56,7 +56,7 @@ test("an SQLite older than the oldest supported is named with the one needed", (
   expect(olderThan("3.43.2", "3.44")).toBe(true);
   expect(olderThan("3.100.0", "3.44.0")).toBe(false);
   expect(failure(OWN, "3.36.0", 'near "ORDER": syntax error')).toBe(
-    `the hub's database can't update: migration ${OWN} needs SQLite ${OLDEST_SQLITE} or newer, and this machine's is ` +
+    `the workspace's database can't update: migration ${OWN} needs SQLite ${OLDEST_SQLITE} or newer, and this machine's is ` +
       `3.36.0 (near "ORDER": syntax error)`,
   );
 });

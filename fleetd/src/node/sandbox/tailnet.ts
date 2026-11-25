@@ -112,11 +112,11 @@ export class NodeTailnet implements TailnetHooks {
         if (!("duplex" in v)) ws.close();
         resolve(v);
       };
-      const timer = setTimeout(() => done({ error: `the hub didn't answer the dial within ${DIAL_WAIT_MS / 1000} s` }), DIAL_WAIT_MS);
-      ws.onerror = () => done({ error: "the hub refused the dial" });
-      ws.onclose = () => done({ error: "the hub ended the dial" });
+      const timer = setTimeout(() => done({ error: `the workspace didn't answer the dial within ${DIAL_WAIT_MS / 1000} s` }), DIAL_WAIT_MS);
+      ws.onerror = () => done({ error: "the workspace refused the dial" });
+      ws.onclose = () => done({ error: "the workspace ended the dial" });
       ws.onmessage = (e) => {
-        if (typeof e.data !== "string") return done({ error: "the hub's first answer to a dial wasn't its word" });
+        if (typeof e.data !== "string") return done({ error: "the workspace's first answer to a dial wasn't its word" });
         let m: { ok?: unknown; error?: unknown; retry?: unknown };
         try {
           m = JSON.parse(e.data) as typeof m;
@@ -147,7 +147,7 @@ function wsDuplex(ws: WebSocket): Duplex {
       void (async () => {
         for (let at = 0; at < chunk.length; at += ACK_EVERY) {
           if (unacked >= WINDOW) await new Promise<void>((r) => (waiting = r));
-          if (ws.readyState !== WebSocket.OPEN) return callback(new Error("the hub's side of the connection closed"));
+          if (ws.readyState !== WebSocket.OPEN) return callback(new Error("the workspace's side of the connection closed"));
           const piece = chunk.subarray(at, at + ACK_EVERY);
           ws.send(piece);
           unacked += piece.length;
@@ -187,7 +187,7 @@ async function words(res: Response): Promise<string> {
     const j = (await res.json()) as { error?: unknown };
     if (typeof j.error === "string") return j.error;
   } catch {}
-  return `the hub answered ${res.status}`;
+  return `the workspace answered ${res.status}`;
 }
 
 let current: NodeTailnet | undefined;

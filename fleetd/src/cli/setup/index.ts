@@ -76,7 +76,7 @@ export function hubAction(
   // Never onto another address: a hub on the LAN or the tailnet moved to 127.0.0.1 is out of its devices' reach.
   const busy = (what: string): Failure => ({
     message: `${listen} is in use by ${what}${taken.by === undefined ? "" : `: ${taken.by}`}`,
-    fix: `stop it, and the hub's service starts again by itself within seconds; or move the hub to another port on the same address: ${taken.move ?? `fleetd init --listen ${listen.slice(0, listen.lastIndexOf(":") + 1)}<free port>`} (paired devices then reach it there)`,
+    fix: `stop it, and the workspace's service starts again by itself within seconds; or move the workspace to another port on the same address: ${taken.move ?? `fleetd init --listen ${listen.slice(0, listen.lastIndexOf(":") + 1)}<free port>`} (paired devices then reach it there)`,
   });
   const held = holders.length > 0;
   // A program seen on the port that isn't this home's hub: so whatever this hub's service does (it starts again every
@@ -84,7 +84,7 @@ export function hubAction(
   if (probe === "other" && taken.by !== undefined) return busy("something else");
   if (withService && held && unit === "missing") {
     return {
-      message: `a hub started by hand runs on ${home} (pid ${pids})`,
+      message: `a workspace started by hand runs on ${home} (pid ${pids})`,
       fix: `stop it (kill ${pids}), then run fleetd init again; or keep running it yourself: fleetd init --no-service`,
     };
   }
@@ -93,12 +93,12 @@ export function hubAction(
   if (!withService && held && probe === "hub") return "by_hand";
   if (!withService && held) {
     return {
-      message: `a hub runs on ${home} (pid ${pids}) but does not answer at ${listen}`,
+      message: `a workspace runs on ${home} (pid ${pids}) but does not answer at ${listen}`,
       fix: `run fleetd init --no-service --listen <the address it listens on>, or stop it (kill ${pids})`,
     };
   }
   if (probe === "free") return withService ? "install" : "not_running";
-  return busy(probe === "hub" ? "another fleetd hub" : "something else");
+  return busy(probe === "hub" ? "another fleetd workspace" : "something else");
 }
 
 /** Who holds `listen` besides this fleet's hub (`hubs`, the processes with its database open), and the first free port after it on the same host, as `fleetd init`
@@ -131,8 +131,8 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
   const platform = localPlatform();
   if (plan.withService && platform === undefined) {
     throw {
-      message: `fleetd runs the hub as a systemd or launchd service, not on ${process.platform}`,
-      fix: "fleetd init --no-service, then run fleetd hub start yourself",
+      message: `fleetd runs the workspace as a systemd or launchd service, not on ${process.platform}`,
+      fix: "fleetd init --no-service, then run fleetd workspace start yourself",
     } satisfies Failure;
   }
   const dirs = localDirs();
@@ -152,7 +152,7 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
   } catch {}
   const unit: Unit = existing === undefined ? "missing" : existing === text ? "same" : "changed";
   if (plan.withService && foreignUnit(existing, plan.home) && unitFile !== undefined) {
-    throw { message: `${unitFile} runs another fleet's hub`, fix: "pass --no-service to run the hub yourself" } satisfies Failure;
+    throw { message: `${unitFile} runs another fleet's workspace`, fix: "pass --no-service to run the workspace yourself" } satisfies Failure;
   }
   const holders = processesHolding(join(plan.home, "hub.sqlite"));
   const probe = await probeListen(listen);
@@ -177,7 +177,7 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
   if (action === "keep") return `runs as a service and answers at ${plan.listen}`;
   if (action === "by_hand") return `answers at ${plan.listen}; you run it yourself`;
   if (action === "not_running") {
-    return `not started; run it yourself with: fleetd hub start --home ${plan.home} --listen ${plan.listen}`;
+    return `not started; run it yourself with: fleetd workspace start --home ${plan.home} --listen ${plan.listen}`;
   }
   try {
     mkdirSync(dirname(unitFile!), { recursive: true });
@@ -193,7 +193,7 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
       message: serviceFailure((error as Error).message),
       fix:
         platform === "linux"
-          ? `systemctl --user status ${systemdName("hub")} shows why. Without a user systemd (a container, WSL), fleetd init --no-service prints how to run the hub yourself`
+          ? `systemctl --user status ${systemdName("hub")} shows why. Without a user systemd (a container, WSL), fleetd init --no-service prints how to run the workspace yourself`
           : `see ${spec.logPath}`,
     } satisfies Failure;
   }
@@ -201,7 +201,7 @@ export async function installHub(plan: HubPlan, log: (line: string) => void): Pr
   while ((await probeListen(listen)) !== "hub") {
     if (Date.now() > deadline) {
       throw {
-        message: `the hub service did not answer at ${plan.listen} within 30 s`,
+        message: `the workspace service did not answer at ${plan.listen} within 30 s`,
         fix: `read ${spec.logPath} for why, then run fleetd init again`,
       } satisfies Failure;
     }
@@ -241,7 +241,7 @@ function initOptions(argv: string[]): InitOptions | number {
   if (listen !== undefined && !parseListen(listen)) return usage(`--listen must be host:port, got '${listen}'`);
   const url = v.str("url");
   if (url !== undefined && !URL.canParse(url)) {
-    return usage(`--url must be the hub's address, e.g. https://devbox.tailnet.ts.net, got '${url}'`);
+    return usage(`--url must be the workspace's address, e.g. https://devbox.tailnet.ts.net, got '${url}'`);
   }
   const idText = v.str("git-identity");
   const identity = idText === undefined ? undefined : parseGitIdentity(idText);
@@ -279,7 +279,7 @@ async function initPlain(opts: InitOptions): Promise<number> {
   const listen = opts.listen ?? opts.previous?.listen ?? DEFAULT_LISTEN;
   const url = opts.url ?? opts.previous?.url ?? `http://${listen}`;
   const identity = opts.identity ?? opts.previous?.gitIdentity;
-  say(`hub home ${opts.home}`);
+  say(`workspace home ${opts.home}`);
   if (identity === undefined) {
     say(`no commit identity yet: add one with --git-identity "Name <id+user@users.noreply.github.com>" before adding machines`);
   } else {
@@ -287,7 +287,7 @@ async function initPlain(opts: InitOptions): Promise<number> {
   }
   try {
     const how = await installHub({ home: opts.home, listen, url, ...(identity ? { identity } : {}), withService: opts.withService, restart: false }, say);
-    say(`the hub ${how}`);
+    say(`the workspace ${how}`);
   } catch (f) {
     const failure = f as Failure;
     if (typeof failure?.message !== "string" || f instanceof Error) throw f;
@@ -337,7 +337,7 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
       existing = readFileSync(file, "utf8");
     } catch {}
     if (foreignUnit(existing, home)) {
-      say(`left ${file} alone: it runs another fleet's hub, not the one in ${home}`);
+      say(`left ${file} alone: it runs another fleet's workspace, not the one in ${home}`);
     } else if (existing !== undefined) {
       const uid = localUid();
       try {
@@ -350,11 +350,11 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
       } catch (error) {
         return fail(`cannot remove ${file}: ${ioMessage(error)}`);
       }
-      say(`stop and remove the hub service (${file})`);
+      say(`stop and remove the workspace service (${file})`);
       removed = true;
       if (platform === "linux") await sh(`XDG_RUNTIME_DIR=/run/user/${uid} systemctl --user daemon-reload`, () => {}).catch(() => {});
     } else if (state !== undefined || existsSync(home)) {
-      say(`no hub service at ${file}`);
+      say(`no workspace service at ${file}`);
     }
     if (platform === "linux" && removed) await removeManagerDropIn();
   }
@@ -363,20 +363,20 @@ export async function uninstallCommand(argv: string[]): Promise<number> {
     .map(([id]) => id);
   if (elsewhere.length > 0) {
     say(
-      `${elsewhere.join(", ")} still ${elsewhere.length === 1 ? "runs" : "run"} this hub's node: on each, run ${UNINSTALL_LINE} (or remove it from here first: fleetd machine remove <id>)`,
+      `${elsewhere.join(", ")} still ${elsewhere.length === 1 ? "runs" : "run"} this workspace's node: on each, run ${UNINSTALL_LINE} (or remove it from here first: fleetd machine remove <id>)`,
     );
   }
   if (!purge) {
-    if (state !== undefined || existsSync(join(home, "hub.sqlite"))) say(`kept the hub's data in ${home}; fleetd init starts it again, --purge deletes it`);
+    if (state !== undefined || existsSync(join(home, "hub.sqlite"))) say(`kept the workspace's data in ${home}; fleetd init starts it again, --purge deletes it`);
     return 0;
   }
   // A worker or a laptop has no hub to delete.
   if (!existsSync(home)) return 0;
   if (!existsSync(join(home, "hub.sqlite")) && state === undefined) {
-    return fail(`${home} does not look like a hub home (no hub.sqlite or setup.json); not deleting it`);
+    return fail(`${home} does not look like a workspace home (no hub.sqlite or setup.json); not deleting it`);
   }
   const holders = processesHolding(join(home, "hub.sqlite"));
-  if (holders.length > 0) return fail(`a hub still runs on ${home} (pid ${holders.join(", ")}); stop it before --purge`);
+  if (holders.length > 0) return fail(`a workspace still runs on ${home} (pid ${holders.join(", ")}); stop it before --purge`);
   try {
     rmSync(home, { recursive: true, force: true });
   } catch (error) {
@@ -424,7 +424,7 @@ async function removeNode(platform: Platform, purge: boolean, worker: boolean): 
   }
   if (!purge && existsSync(layout.nodeHome)) say(`kept the node's files in ${layout.nodeHome}; --purge deletes them`);
   if (worker && typeof joined?.hub === "string" && typeof joined.machineId === "string") {
-    say(`the hub at ${joined.hub} still lists ${joined.machineId}: an admin removes it there, in ${settingsPath("Machines")}`);
+    say(`the workspace at ${joined.hub} still lists ${joined.machineId}: an admin removes it there, in ${settingsPath("Machines")}`);
   }
   return { removed: text !== undefined };
 }

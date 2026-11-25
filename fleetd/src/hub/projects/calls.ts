@@ -208,7 +208,7 @@ async function repoCreate(hub: Hub, caller: LeadCaller, call: LeadCall): Promise
   const me = await asked(() => gh.get("user"));
   const login = me.ok ? (me.value as { login?: unknown } | null)?.login : undefined;
   if (typeof login !== "string") {
-    throw new ToolError("forbidden", `GitHub didn't say whose login the hub's gh is${me.ok ? "" : `: ${me.message}`}.`, `${GH_AUTH_FIX}, then try again`);
+    throw new ToolError("forbidden", `GitHub didn't say whose login the workspace's gh is${me.ok ? "" : `: ${me.message}`}.`, `${GH_AUTH_FIX}, then try again`);
   }
   const { path, body } = create.createRequest(want, login);
   const full = `${create.ownerOf(want, login)}/${want.name}`;
@@ -218,13 +218,13 @@ async function repoCreate(hub: Hub, caller: LeadCaller, call: LeadCall): Promise
   if (!out.ok) {
     const grant =
       path === "user/repos"
-        ? `The hub signs in to GitHub as ${login} with gh: ${GH_AUTH_FIX} with an account that may create repos`
+        ? `The workspace signs in to GitHub as ${login} with gh: ${GH_AUTH_FIX} with an account that may create repos`
         : `An owner of ${want.owner} lets ${login} create repos there (the organisation's Settings › Member privileges), or the person names an account ${login} may create in`;
     let said = out.message.trim().replace(/\.$/u, "");
     try {
       said = create.githubSaid(JSON.parse(out.body ?? "")) || said;
     } catch {}
-    throw create.createRefused(out.status, said, full, `The hub's GitHub login ${login}`, grant);
+    throw create.createRefused(out.status, said, full, `The workspace's GitHub login ${login}`, grant);
   }
   let made = full;
   let url = `https://github.com/${full}`;
@@ -278,7 +278,7 @@ function tellInterrupted(hub: Hub): void {
       { machineId: row.machine_id, projectId: row.project_id },
       "request",
       row.proposed === null
-        ? `repo_add: the hub restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url or path again: a clone that finished on the machine is added as it is.`
+        ? `repo_add: the workspace restarted while cloning ${row.repo} into ${row.path}, so it was not added. Call repo_add with the same url or path again: a clone that finished on the machine is added as it is.`
         : propose.interrupted(row.proposed, row.repo, row.path),
     );
   }

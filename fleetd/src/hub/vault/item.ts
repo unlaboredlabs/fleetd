@@ -78,7 +78,7 @@ export const keyMissing = () =>
   new ToolError(
     "failed",
     "Can't open: the vault key is missing.",
-    "Re-enter the recovery code with `fleetd vault restore-key` on the hub.",
+    "Re-enter the recovery code with `fleetd vault restore-key` on the workspace's machine.",
     "vault_key_missing",
   );
 export const damaged = (id: string) =>
@@ -88,8 +88,8 @@ export const damaged = (id: string) =>
 export const updateApp = () =>
   new ToolError(
     "invalid",
-    "This app is older than the hub: update it to add vault items.",
-    "The hub keeps logins, cards and addresses in one team vault now, and variables per bot.",
+    "This app is older than the workspace: update it to add vault items.",
+    "The workspace keeps logins, cards and addresses in one team vault now, and variables per bot.",
     "vault_update_app",
   );
 

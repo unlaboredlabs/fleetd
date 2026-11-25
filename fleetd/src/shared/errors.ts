@@ -39,4 +39,4 @@ export class ToolError extends Error {
 
 /** Store failures and crashes: logged, and answered with this. */
 export const internalError = () =>
-  new ToolError("failed", "The hub failed to answer that request.", "Retry; if it keeps failing, check the hub log.");
+  new ToolError("failed", "The workspace failed to answer that request.", "Retry; if it keeps failing, check the workspace log.");

@@ -29,16 +29,16 @@ function fakeHub(refuse?: [number, string]) {
   return { url: `http://127.0.0.1:${server.port}`, hellos, stop: () => server.stop(true) };
 }
 
-test("the hub's ask is a team's address and a code, never this machine's own hub", () => {
+test("the workspace's ask is a team's address and a code, never this machine's own workspace", () => {
   expect(readRejoin({ hub: "https://acme.fleetd.dev", code: "fle_abcdefgh123" }, config.hub)).toEqual({ hub: "https://acme.fleetd.dev", code: "fle_abcdefgh123" });
-  expect(readRejoin({ hub: "http://acme.fleetd.dev", code: "fle_abcdefgh123" }, config.hub)).toBe("the new hub's address isn't one");
-  expect(readRejoin({ hub: "https://acme.fleetd.dev/x?y", code: "fle_abcdefgh123" }, config.hub)).toBe("the new hub's address isn't one");
+  expect(readRejoin({ hub: "http://acme.fleetd.dev", code: "fle_abcdefgh123" }, config.hub)).toBe("the new workspace's address isn't one");
+  expect(readRejoin({ hub: "https://acme.fleetd.dev/x?y", code: "fle_abcdefgh123" }, config.hub)).toBe("the new workspace's address isn't one");
   expect(readRejoin({ hub: "https://acme.fleetd.dev", code: "a b" }, config.hub)).toBe("the code isn't one");
-  expect(readRejoin({ hub: "http://127.0.0.1:4790", code: "fle_abcdefgh123" }, config.hub)).toBe("that is this machine's hub already");
-  expect(readRejoin(undefined, config.hub)).toBe("the new hub's address isn't one");
+  expect(readRejoin({ hub: "http://127.0.0.1:4790", code: "fle_abcdefgh123" }, config.hub)).toBe("that is this machine's workspace already");
+  expect(readRejoin(undefined, config.hub)).toBe("the new workspace's address isn't one");
 });
 
-test("the node enrols at the new hub with its own key and the code, and node.json then names that hub", async () => {
+test("the node enrols at the new workspace with its own key and the code, and node.json then names that workspace", async () => {
   const home = tempHome();
   const hub = fakeHub();
   try {
@@ -53,23 +53,23 @@ test("the node enrols at the new hub with its own key and the code, and node.jso
   }
 });
 
-test("a code the new hub refuses is said, and the node stays on its hub", async () => {
+test("a code the new workspace refuses is said, and the node stays on its workspace", async () => {
   const home = tempHome();
   const hub = fakeHub([4001, "invalid, used or expired enroll token"]);
   try {
     const out = await enrolAt({ hub: hub.url, code: "fle_code12345" }, { config, identity: loadOrCreateIdentity(home.dir), nodeVersion: "1.2.3" });
-    expect(out).toEqual({ ok: false, message: "the new hub refused it: invalid, used or expired enroll token" });
+    expect(out).toEqual({ ok: false, message: "the new workspace refused it: invalid, used or expired enroll token" });
   } finally {
     hub.stop();
     home.done();
   }
 });
 
-test("a new hub that doesn't answer is given up on, the node staying on its hub", async () => {
+test("a new workspace that doesn't answer is given up on, the node staying on its workspace", async () => {
   const home = tempHome();
   try {
     const out = await enrolAt({ hub: "http://127.0.0.1:9", code: "fle_code12345" }, { config, identity: loadOrCreateIdentity(home.dir), nodeVersion: "1.2.3", waitMs: 300 });
-    expect(out).toEqual({ ok: false, message: "the new hub didn't answer within a minute" });
+    expect(out).toEqual({ ok: false, message: "the new workspace didn't answer within a minute" });
   } finally {
     home.done();
   }

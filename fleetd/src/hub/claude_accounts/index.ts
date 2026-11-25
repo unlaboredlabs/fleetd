@@ -185,8 +185,8 @@ export function whoseForTask(db: HubDb, setup: Setup, order?: string): Whose {
 export const whoseForLead = (): Whose => ({ hub: true });
 
 const unread = (error: unknown): Refusal => ({
-  message: `The hub could not read its Claude accounts: ${error instanceof Error ? error.message : String(error)}.`,
-  fix: "Try again; if it keeps failing, run fleetd doctor on the hub.",
+  message: `The workspace could not read its Claude accounts: ${error instanceof Error ? error.message : String(error)}.`,
+  fix: "Try again; if it keeps failing, run fleetd doctor on the workspace's machine.",
 });
 
 /** `launchAccount` for a task of `order` in project `r` on `machine`. */

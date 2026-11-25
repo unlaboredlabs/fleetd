@@ -129,7 +129,7 @@ test("a source flips stale at its deadline and fresh on touch", () => {
   const f = new Fresh();
   const s = "github:acme/storefront";
   f.expect(s, 180_000, 0);
-  expect(f.view(s, 1000)?.stale?.reason).toBe("not checked since the hub started");
+  expect(f.view(s, 1000)?.stale?.reason).toBe("not checked since the workspace started");
   expect(f.nextDeadline()).toBeUndefined();
   f.touch(s, 10_000);
   expect(f.check(10_000)).toEqual([{ kind: "fresh", source: s, staleMs: 10_000 }]);
@@ -202,7 +202,7 @@ test("the status area hands factory_status its rows through the inbox bridge's h
   hub.shutdown.abort();
 });
 
-test("the areas the hub starts give a row its running agents, a red main, a usage pause and the week's merges", async () => {
+test("the areas the workspace starts give a row its running agents, a red main, a usage pause and the week's merges", async () => {
   const { hub, r } = setup();
   const other = { machineId: "lab-b", projectId: "docs" };
   store(hub).projectsUpsertMany("lab-b", [{ ...other, title: "docs", workspaceRoot: "/work/docs", lastActivityAt: "2026-10-19T10:00:00.000Z" } as never]);

@@ -244,12 +244,12 @@ export function cliPage(help: string = usageText()): string {
       seen.add(id);
     }
     md += `\n## ${mdText(capitalize(short))} {#${group.id}}\n\n`;
-    // "on the hub machine" -> "Run these on the hub machine."
+    // "on the workspace's machine" -> "Run these on the workspace's machine."
     if (aside !== undefined) md += `${mdText(/^on /.test(aside) ? `Run these ${aside}` : capitalize(aside))}.\n\n`;
-    // `hub start` alone leaves a hub the other commands can't use; the docs walk through the order that works.
+    // `workspace start` alone leaves a workspace the other commands can't use; the docs walk through the order that works.
     if (group.id === "running-by-hand") {
       md +=
-        ":::tip\nRun `fleetd init --no-service` before `fleetd hub start`: it writes the setup the other commands read. " +
+        ":::tip\nRun `fleetd init --no-service` before `fleetd workspace start`: it writes the setup the other commands read. " +
         "The whole order is in [Run a second fleet on one machine](/docs/config-and-files#second-fleet).\n:::\n\n";
     }
     // The help gives forms of one command that share a description one description, after the last: they make one

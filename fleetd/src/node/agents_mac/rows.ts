@@ -49,7 +49,7 @@ export function setupRows(home: string, hubName: string, now = Date.now()): Row[
       title: `Linked to ${hubName}`,
       state: "failed",
       detail: `${hubName} isn't answering this Mac`,
-      fix: `Check this Mac is on ${hubName}'s network and that the hub runs`,
+      fix: `Check this Mac is on ${hubName}'s network and that the workspace runs`,
     });
   } else rows.push({ title: `Linked to ${hubName}`, state: "waiting", detail: "linking" });
   for (const check of readHealth(home)?.health.checks ?? []) {

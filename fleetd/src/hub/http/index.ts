@@ -51,7 +51,7 @@ const compiled: Compiled[] = ROUTES.map(([method, path, route]) => ({ method, ro
 
 /** What escapes a route (and Bun.serve's own failures): logged, and answered `failed` as JSON. */
 export function onError(error: Error): Response {
-  console.error("hub http:", error);
+  console.error("workspace http:", error);
   return json(internalError().toJSON(), 500);
 }
 
@@ -89,9 +89,9 @@ export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port):
           return await r.route(req, ctx);
         } catch (error) {
           if (error instanceof NotImplemented) {
-            return json({ code: "failed", message: error.message, fix: "Use the Rust hub for this for now." }, 501);
+            return json({ code: "failed", message: error.message, fix: "Use the Rust workspace for this for now." }, 501);
           }
-          console.error(`hub http ${req.method} ${path}:`, error);
+          console.error(`workspace http ${req.method} ${path}:`, error);
           return json(internalError().toJSON(), 500);
         }
       }

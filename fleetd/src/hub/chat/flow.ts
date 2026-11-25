@@ -254,7 +254,7 @@ function writerOf(hub: Hub, caller: Caller, input: ChatSendInput): Writer {
       throw refusedWith("A task can't write to its own lead's chat.", "Tell your lead through your fleetd tools: report, or ask_lead.");
     }
     if (isHuman(caller)) {
-      throw refusedWith("An agent's session can't write as the human.", "Write with an agent key of your own: fleetd hub key create --agent <name>.");
+      throw refusedWith("An agent's session can't write as the human.", "Write with an agent key of your own: fleetd workspace key create --agent <name>.");
     }
   }
   if (isHuman(caller)) {
@@ -439,7 +439,7 @@ function waits(hub: Hub, r: ProjectRef, gone: Gone): Gone {
 /** Why nothing reaches the machine's lead now, and what brings it back; undefined while it is linked. */
 function machineAway(hub: Hub, m: MachineId): string | undefined {
   if (!store(hub).machineGet(m)) {
-    return `${m} isn't one of this hub's machines now (it was removed), so its lead can't take this. It goes in once ${m} joins again: on the hub, run \`fleetd pair --worker ${m}\`, then run what it prints on ${m} with --rejoin.`;
+    return `${m} isn't one of this workspace's machines now (it was removed), so its lead can't take this. It goes in once ${m} joins again: on the workspace's machine, run \`fleetd pair --worker ${m}\`, then run what it prints on ${m} with --rejoin.`;
   }
   if (!writeQueue(hub).isConnected(m)) {
     return `${m} is offline: its node isn't connected. It goes in when ${m} is back. If ${m} is on, Repair it in ${settingsPath()} › Machines.`;

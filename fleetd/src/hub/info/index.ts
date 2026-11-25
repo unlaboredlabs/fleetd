@@ -73,6 +73,6 @@ export function busy(hub: Hub): HubBusyItem[] {
   } catch (error) {
     if (error instanceof ToolError) throw error;
     console.error("hub_info: busy not read:", error);
-    throw new ToolError("failed", "The hub failed to answer that request.", "Retry; if it keeps failing, check the hub log.");
+    throw new ToolError("failed", "The workspace failed to answer that request.", "Retry; if it keeps failing, check the workspace log.");
   }
 }

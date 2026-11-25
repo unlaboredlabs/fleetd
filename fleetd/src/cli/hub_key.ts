@@ -7,12 +7,12 @@ import { ArgError, parse } from "./args.ts";
 import { type CliResult, err, ok } from "./result.ts";
 import { isLiveHubHome, isMachineId, liveHubRefusal, newPrivateFile, resolveHome } from "./common.ts";
 import { createKey, type KeyInfo, listKeys, openHub, releaseClaims, revokeKey } from "./store.ts";
-import { HUB_KEY_USAGE } from "./usages.ts";
-export { HUB_KEY_USAGE };
+import { WORKSPACE_KEY_USAGE } from "./usages.ts";
+export { WORKSPACE_KEY_USAGE };
 
 
 const fail = (code: number, message: string) => err(code, `fleetd: ${message}\n`);
-const keyUsage = (message: string) => fail(2, `${message}\n\nusage:\n${HUB_KEY_USAGE}`);
+const keyUsage = (message: string) => fail(2, `${message}\n\nusage:\n${WORKSPACE_KEY_USAGE}`);
 
 /** `[A-Za-z0-9_-]{1,40}`. */
 const isFileName = (name: string) => /^[A-Za-z0-9_-]{1,40}$/.test(name);
@@ -65,7 +65,7 @@ export function hubKey(argv: string[], home?: string): CliResult {
   if (v instanceof ArgError) return keyUsage(v.message);
   // Inside an agent's session the live hub's keys are only listed: no key, nor key file, is written there.
   if ((command === "create" || command === "revoke") && isLiveHubHome(resolveHome(home))) {
-    return fail(1, liveHubRefusal(command === "create" ? "Creating a hub key" : "Revoking a hub key"));
+    return fail(1, liveHubRefusal(command === "create" ? "Creating a workspace key" : "Revoking a workspace key"));
   }
   switch (command) {
     case "create": {
@@ -130,7 +130,7 @@ export function hubKey(argv: string[], home?: string): CliResult {
       });
     case "revoke": {
       const keyId = v.positionals[0];
-      if (!keyId) return keyUsage("revoke needs a key id (see `fleetd hub key list`)");
+      if (!keyId) return keyUsage("revoke needs a key id (see `fleetd workspace key list`)");
       return withHub(home, (db) => {
         try {
           revokeKey(db, keyId);
@@ -147,8 +147,8 @@ export function hubKey(argv: string[], home?: string): CliResult {
       });
     }
     case undefined:
-      return keyUsage("missing hub key command");
+      return keyUsage("missing workspace key command");
     default:
-      return keyUsage(`unknown hub key command '${command}'`);
+      return keyUsage(`unknown workspace key command '${command}'`);
   }
 }

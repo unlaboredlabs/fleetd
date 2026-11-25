@@ -457,7 +457,7 @@ export function planMachineAdd(facts: Facts, input: MachineAddInput): MachinePla
   }
   if (input.gitIdentity === undefined) {
     notes.push(
-      `no commit identity for this machine's agents. Fix: on the hub, fleetd init --git-identity "Name <id+user@users.noreply.github.com>", then add this machine again; a machine joining by itself gets it in the line fleetd pair --worker prints.`,
+      `no commit identity for this machine's agents. Fix: on the workspace's machine, fleetd init --git-identity "Name <id+user@users.noreply.github.com>", then add this machine again; a machine joining by itself gets it in the line fleetd pair --worker prints.`,
     );
   }
   return { platform, layout: l, steps, notes, nodeRestarts, ...(runByHand === undefined ? {} : { runByHand }) };

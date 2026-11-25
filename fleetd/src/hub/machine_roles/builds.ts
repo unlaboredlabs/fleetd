@@ -47,7 +47,7 @@ export class Builds {
       out = await this.gh.run(args);
     } catch (e) {
       const why = (e as Error).message;
-      throw new Error(why === "ENOENT" ? "the GitHub CLI (gh) isn't installed on the hub's machine" : why);
+      throw new Error(why === "ENOENT" ? "the GitHub CLI (gh) isn't installed on the workspace's machine" : why);
     }
     if (out.exitCode !== 0) {
       const said = out.stderr.trim();
@@ -118,7 +118,7 @@ export class Builds {
     try {
       mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     } catch (e) {
-      throw new Error(`the hub can't keep downloads: ${(e as Error).message}`);
+      throw new Error(`the workspace can't keep downloads: ${(e as Error).message}`);
     }
     const tmp = mkdtempSync(join(this.dir, "pr-"));
     try {

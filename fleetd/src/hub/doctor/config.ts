@@ -77,8 +77,10 @@ export function addCommand(m: MachineSetup): string {
   return m.local || m.sshHost === "localhost" ? "fleetd machine add --local" : `fleetd machine add ${m.sshHost}`;
 }
 
-/** The command that restarts a fleetd service, named as the CLI's setup names its units. */
+/** The command that restarts a fleetd service, named as the CLI's setup names its units. The workspace's has a fleetd
+ * command of its own, so a person never needs its unit's old name (fleetd-hub). */
 export function restartCommand(role: string, setup: MachineSetup | undefined): string {
+  if (role === "hub") return "fleetd workspace restart";
   return setup?.platform === "darwin"
     ? `launchctl kickstart -k gui/${setup.uid}/sh.fleetd.${role}`
     : `systemctl --user restart fleetd-${role}.service`;

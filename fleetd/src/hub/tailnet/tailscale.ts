@@ -23,7 +23,7 @@ const archOf = (arch: string): Arch | undefined => (arch === "x64" ? "amd64" : a
 /** Why the gateway can't run on this hub, in plain words; undefined where it can. */
 export function unsupported(platform: string = process.platform, arch: string = process.arch): string | undefined {
   if (platform === "linux" && archOf(arch)) return undefined;
-  return `Tailscale's gateway runs on Linux hubs, and this hub runs on ${platform} (${arch})`;
+  return `Tailscale's gateway runs on Linux workspaces, and this workspace runs on ${platform} (${arch})`;
 }
 
 export const tarballUrl = (arch: Arch, version: string = TAILSCALE.version) => `https://pkgs.tailscale.com/stable/tailscale_${version}_${arch}.tgz`;

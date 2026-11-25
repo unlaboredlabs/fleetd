@@ -2,7 +2,7 @@
 # fleetd installer: curl -fsSL https://fleetd.sh | sh
 #
 #   sh -s -- [--no-app] [--app] [--no-init] [--uninstall]
-#   sh -s -- --join <hub url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
+#   sh -s -- --join <workspace url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
 #            [--version <hub's version>]
 #
 # Installs the fleetd CLI to ~/.fleetd/bin/fleetd (symlinked from ~/.local/bin/fleetd) and the desktop app to
@@ -253,10 +253,10 @@ Usage: curl -fsSL https://fleetd.sh | sh -s -- [options]
   --no-init     don't start the setup wizard (fleetd init) after installing
   --join <url> --code <code> [--machine-id <id>] [--git-identity "Name <email>"] [--rejoin] [--mac]
          [--version <version>]
-                join that hub as a worker (fleetd init --join) after installing: the
-                command fleetd pair --worker prints on the hub; --mac joins the agents'
-                Mac, from Terminal logged in at its screen; --version installs the
-                hub's own build
+                join that workspace as a worker (fleetd init --join) after installing:
+                the command fleetd pair --worker prints on the workspace's machine;
+                --mac joins the agents' Mac, from Terminal logged in at its screen;
+                --version installs the workspace's own build
   --uninstall   stop and remove fleetd's services on this machine, then the CLI and
                 the app (fleetd's data in ~/.fleetd stays)
 
@@ -766,7 +766,7 @@ main() {
     macos="$(sw_vers -productVersion 2>/dev/null || true)"
     case "${macos%%.*}" in
       "" | *[!0-9]*) ;;
-      *) [ "${macos%%.*}" -ge 13 ] || die "fleetd's CLI and hub need macOS 13 or newer, and this Mac runs ${macos}; nothing was changed." ;;
+      *) [ "${macos%%.*}" -ge 13 ] || die "fleetd's CLI and workspace need macOS 13 or newer, and this Mac runs ${macos}; nothing was changed." ;;
     esac
   fi
   platform="$os $arch"
@@ -787,7 +787,7 @@ Install it with this machine's package manager (sudo apt install curl, say), the
     fi
     # A hub built from source runs a version no release was made for: the newest stable build joins it.
     if [ "$base" = "https://github.com/$REPO/releases/download/v${hub_version#v}" ]; then
-      warn "there is no release of fleetd $hub_version, the hub's version, so this machine gets the newest stable one"
+      warn "there is no release of fleetd $hub_version, the workspace's version, so this machine gets the newest stable one"
       base="https://github.com/$REPO/releases/latest/download"
     fi
     if ! spin Release "looking for the $channel release" lists; then
@@ -809,7 +809,7 @@ Check this machine's connection, and that the $channel channel has a release, th
   if [ "$channel" = edge ] && [ -n "$hub_version" ] && [ -f "$tmp/release.json" ]; then
     edge_now="$(tr -d '\n' < "$tmp/release.json" | sed -n 's/.*"cliVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     if [ -n "$edge_now" ] && [ "$edge_now" != "$hub_version" ]; then
-      say "your hub runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the hub level, press Update in the app on your main machine (or run fleetd update on the hub)."
+      say "your workspace runs an older edge build ($hub_version) than the newest ($edge_now), which this machine gets. To bring the workspace level, press Update in the app on your main machine (or run fleetd update on the workspace's machine)."
     fi
   fi
 
@@ -838,7 +838,7 @@ There is no fleetd build for $os-$arch on the $channel channel yet."
   fi
   summary="Installed fleetd${version:+ $version}"
   if [ -n "$join" ]; then
-    footer "$summary. Joining the hub at $join"
+    footer "$summary. Joining the workspace at $join"
     join_hub
     return
   fi

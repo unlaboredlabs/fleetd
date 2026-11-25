@@ -23,7 +23,7 @@ export function every(hub: Hub, ms: number, fn: () => Promise<void> | void): voi
     try {
       await fn();
     } catch (error) {
-      console.warn("hub loop failed:", error);
+      console.warn("workspace loop failed:", error);
     }
     if (!hub.shutdown.signal.aborted) timer = setTimeout(tick, ms);
   };

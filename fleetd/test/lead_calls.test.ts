@@ -90,7 +90,7 @@ test("a cwd outside every workspace is refused, naming the roots", async () => {
     fix: "run fleetd from the bot's workspace or a worktree under it (/work/app, /work/app/tools, /work/other)",
   });
   expect(error(await answer("/x", DECIDE, undefined, "laptop"))?.message).toBe(
-    "the hub knows no bots on laptop yet, so it cannot tell which bot /x belongs to",
+    "the workspace knows no bots on laptop yet, so it cannot tell which bot /x belongs to",
   );
 });
 
@@ -135,7 +135,7 @@ test("leads, tasks and the memory refresh are told apart, and the policy holds",
 test("an op nobody registered, a refusal and a crash", async () => {
   expect(error(await answer("/work/app", { op: "close", workstreamId: "W1", why: "done" }))).toEqual({
     code: "forbidden",
-    message: "this hub does not take lead-side calls yet",
+    message: "this workspace does not take lead-side calls yet",
     fix: "carry on without this call and say so in your result",
   });
   expect(error(await answer("/work/app", { ...DECIDE, key: "no" }))).toEqual({ code: "invalid", message: "not that key", fix: "pick another" });
@@ -143,7 +143,7 @@ test("an op nobody registered, a refusal and a crash", async () => {
   console.error = () => {};
   const crashed = await answer("/work/app", { ...DECIDE, key: "boom" });
   console.error = quiet;
-  expect(error(crashed)).toEqual({ code: "failed", message: "the hub failed while handling this call", fix: "try again shortly" });
+  expect(error(crashed)).toEqual({ code: "failed", message: "the workspace failed while handling this call", fix: "try again shortly" });
   // A part not ported yet is said as such, never "try again": it can't work on this hub.
   expect(error(await answer("/work/app", { ...DECIDE, key: "later" }))).toEqual({
     code: "failed",
@@ -249,7 +249,7 @@ test("a repeated callId from the same session is answered once and acts once", a
 
 // The hub keeps its answers in memory: one that restarted between a call and its repeat can't tell whether the call
 // ran, so the repeat isn't run, for as long as a repeat may come. Nor is one a node from before sent on without its id.
-test("a repeat a restarted hub doesn't know, or one with no callId, isn't run again", async () => {
+test("a repeat a restarted workspace doesn't know, or one with no callId, isn't run again", async () => {
   let now = 2_000_000;
   const clocked = Object.create(hub, { clock: { value: { now: () => now } } }) as typeof hub;
   const restarted = new LeadCalls(clocked);
@@ -259,7 +259,7 @@ test("a repeat a restarted hub doesn't know, or one with no callId, isn't run ag
   const callId = "cli-42-2b5e6a2c-3f1d-4e7a-9c2b-5d8e7f6a1b2c";
   const unsure = {
     code: "machine_offline" as const,
-    message: "this call was cut before its answer, and the hub can't tell whether it ran; the call may or may not have gone through",
+    message: "this call was cut before its answer, and the workspace can't tell whether it ran; the call may or may not have gone through",
     fix: "try again shortly",
   };
   expect(error(await restarted.answer("devbox", { ...frame, callId, resent: true }))).toEqual(unsure);

@@ -182,7 +182,7 @@ test("a clone that fails wakes the lead with why and the fix, and posts no line"
   expect(refusal(await k.send("th-lead", { op: "repo_add", url: "acme/shop", path: "/home/me/src/api" }))?.code).toBe("invalid");
 });
 
-test("a lead whose clone a hub restart cut off is told at the hub's next start", async () => {
+test("a lead whose clone a workspace restart cut off is told at the workspace's next start", async () => {
   const k = await rig();
   k.db.run("INSERT INTO project_setup_clones (add_id, machine_id, project_id, repo, path) VALUES ('a1', 'devbox', 'notes', 'acme/shop', '/home/me/src/shop')");
   registerLeadCalls(k.hub);
@@ -191,7 +191,7 @@ test("a lead whose clone a hub restart cut off is told at the hub's next start",
       kind: "line",
       line: "request",
       text:
-        "repo_add: the hub restarted while cloning acme/shop into /home/me/src/shop, so it was not added. Call repo_add with the same url or path again: " +
+        "repo_add: the workspace restarted while cloning acme/shop into /home/me/src/shop, so it was not added. Call repo_add with the same url or path again: " +
         "a clone that finished on the machine is added as it is.",
     },
   ]);

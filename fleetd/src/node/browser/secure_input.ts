@@ -146,7 +146,7 @@ export async function deliver(
   const session = broker.byId(sink.path);
   if (!session) return fail("that browser session has ended: ask the lead to open the page and ask again");
   const requestId = (frame as { requestId?: unknown }).requestId;
-  if (typeof requestId !== "string") return fail("the hub didn't say which secure input this is: update fleetd on the hub");
+  if (typeof requestId !== "string") return fail("the workspace didn't say which secure input this is: update fleetd on the workspace's machine");
   const key = waitingKey(sink.path, requestId);
   const waiting = broker.waiting.get(key);
   if (!waiting) return fail(`nothing waits for ${requestId} in that browser session: it was filled already`);

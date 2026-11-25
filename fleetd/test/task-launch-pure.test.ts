@@ -32,5 +32,5 @@ test("why a start failed, and the ids a task's writes carry", () => {
 test("an instant on a person's clock, with how their zone was chosen", () => {
   const at = Date.parse("2026-11-03T17:05:00Z");
   expect(short({ tz: "Europe/Berlin", source: "device" }, at)).toBe("Tue 3 Nov, 18:05");
-  expect(stamp({ tz: "UTC", source: "hub" }, at)).toBe("Tue 3 Nov 2026, 17:05 UTC, the hub machine's zone: theirs isn't known yet");
+  expect(stamp({ tz: "UTC", source: "hub" }, at)).toBe("Tue 3 Nov 2026, 17:05 UTC, the workspace's machine's zone: theirs isn't known yet");
 });

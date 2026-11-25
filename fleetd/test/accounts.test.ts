@@ -65,11 +65,11 @@ test("an order runs on its starter's account and never on anyone else's subscrip
   expect(refused(setup.runsOn(person("p_bbbbbbbb"), "lab"))).toBe(CONNECT_REFUSAL);
 });
 
-test("the members switch turns the hub's API off for members only", () => {
+test("the members switch turns the workspace's API off for members only", () => {
   const setup = team({ hubApi: api(["lab"]), members: false, subscriptions: new Map([["p_cccccccc", sub(["lab"])]]) });
   const bob = setup.runsOn(person("p_bbbbbbbb"), "lab");
   expect(bob.kind === "refused" && bob.message).toBe(CONNECT_REFUSAL);
-  expect(bob.kind === "refused" && bob.fix).toContain("Members may not use the hub's API");
+  expect(bob.kind === "refused" && bob.fix).toContain("Members may not use the workspace's API");
   expect(setup.runsOn(person("p_cccccccc"), "lab")).toEqual(account("p_cccccccc"));
   expect(setup.runsOn(person("p_dddddddd"), "lab")).toEqual(account("hub"));
   expect(setup.runsOn(person("p_aaaaaaaa"), "lab")).toEqual(account("hub"));
@@ -91,7 +91,7 @@ test("a way missing from the machine gives way to one there, or refuses the work
   setup = team({ hubApi: api(["mac"]), subscriptions: subs, choices });
   expect(setup.runsOn({ hub: true }, "lab")).toEqual(account("p_aaaaaaaa"));
   subs.delete("p_aaaaaaaa");
-  expect(refused(setup.runsOn({ hub: true }, "lab"))).toContain("hub's API key isn't on lab");
+  expect(refused(setup.runsOn({ hub: true }, "lab"))).toContain("workspace's API key isn't on lab");
   // Only members' subscriptions: leads keep the machines' own login.
   const members = team({ subscriptions: new Map([["p_cccccccc", sub(["lab"])]]) });
   expect(members.runsOn({ hub: true }, "lab")).toEqual({ kind: "machine_login" });
@@ -164,12 +164,12 @@ function setup() {
 
 const SEALED = Buffer.alloc(60, 1).toString("base64");
 
-test("only admins set the hub's API, and its key reaches the nodes sealed, never the hub", async () => {
+test("only admins set the workspace's API, and its key reaches the nodes sealed, never the workspace", async () => {
   const { hub, link, call, ann, bob } = setup();
   await expect(call(bob, "claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: SEALED }] })).rejects.toMatchObject({
     code: "forbidden",
   });
-  await expect(call(ann, "claude_hub_api_set", {})).rejects.toMatchObject({ message: "The hub has no API key to keep." });
+  await expect(call(ann, "claude_hub_api_set", {})).rejects.toMatchObject({ message: "The workspace has no API key to keep." });
   const out = await call(ann, "claude_hub_api_set", {
     sealed: [
       { machineId: "lab", sealed: SEALED },
@@ -232,12 +232,12 @@ test("a removed machine neither holds an account nor stands as its last Test, in
   expect(got.hubApi).toEqual({ endpoint: row.endpoint, sealedOn: [sealedOn[1]], updatedAt: row.updatedAt });
   expect((got.me as { subscription: unknown }).subscription).toEqual({ sealedOn: [sealedOn[1]], connectedAt: row.updatedAt });
   const view = { configured: true, machines: ["lab", "mac"], hubApi: accounts(hub).hubApi()!, owner: ["Ann", accounts(hub).subscription("p_aaaaaaaa")] as [string, ClaudeSubscription] };
-  expect(claudeKey(view).message).toBe("The hub's Claude API key (through http://100.100.1.1:8317) isn't on mac, so nothing runs on it there.");
+  expect(claudeKey(view).message).toBe("The workspace's Claude API key (through http://100.100.1.1:8317) isn't on mac, so nothing runs on it there.");
   expect(claudeOwner(view).message).toBe("Ann's Claude subscription isn't on mac, so nothing runs on it there.");
   // A Test on a machine that is still there stays the current result.
   hub.db.conn.query("UPDATE claude_accounts SET data = json_set(data, '$.lastTest.machineId', 'lab') WHERE account = 'hub'").run();
   expect(claudeKey({ ...view, hubApi: accounts(hub).hubApi()! }).message).toBe(
-    "The hub's Claude API key (through http://100.100.1.1:8317) failed its Test on lab: claude did not answer within 90s.",
+    "The workspace's Claude API key (through http://100.100.1.1:8317) failed its Test on lab: claude did not answer within 90s.",
   );
 });
 
@@ -316,7 +316,7 @@ test("1Password: a person's token is kept as fingerprints, tested, listed and fo
   expect(await call(bob, "onepassword_get", {})).toEqual({});
 });
 
-test("whose work a task is: its order's starter, while they are on the hub", () => {
+test("whose work a task is: its order's starter, while they are on the workspace's machine", () => {
   const { hub } = setup();
   hub.db.conn.run(`INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (3, 'lab', 'p2', 'open', '{"startedBy":{"personId":"p_bbbbbbbb","name":"Bob"}}')`);
   hub.db.conn.run(`INSERT INTO workstreams (n, machine_id, project_id, state, data) VALUES (4, 'lab', 'p2', 'open', '{"startedBy":{"personId":"p_zzzzzzzz","name":"Gone"}}')`);

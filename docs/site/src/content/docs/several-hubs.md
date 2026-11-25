@@ -30,7 +30,7 @@ Owners and admins see **Restart hub…** on a hub's row. The hub is back in abou
 reconnect by themselves, and running agents carry on. Use it when a hub needs to drop what it holds in memory, or to
 move leads onto a changed model.
 
-It works for a hub run as a service (`fleetd init` sets one up). A hub started by hand with `fleetd hub start`
+It works for a hub run as a service (`fleetd init` sets one up). A hub started by hand with `fleetd workspace start`
 needs to be stopped and started again on its machine. The phone app has the same under Settings.
 
 ## Switch between hubs {#sidebar}

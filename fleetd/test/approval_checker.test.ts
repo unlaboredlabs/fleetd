@@ -175,7 +175,7 @@ test("the checker's turn not ported yet asks the person", async () => {
   const { hub } = setup();
   const note = await judged(hub, checkerSeams(hub).turn as Model, mailSend({ to: ["sam@friends.example"], body: "ok" }), ["Reply to Sam"]);
   expect(note.verdict).toBe("ask");
-  expect(note.reason).toContain("the Bun hub can't run the checker's session yet");
+  expect(note.reason).toContain("the Bun workspace can't run the checker's session yet");
 });
 
 test("the review is JSON no text can break out of", () => {

@@ -24,7 +24,7 @@ export function sinceOf(days: number, now: number, zone: string): string {
 
 export function parseMetricsArgs(argv: string[], now: number, zone: string): MetricsArgs {
   const v = parse(argv, {
-    options: { hub: "str", "key-file": "str", project: "str", days: "str", json: "bool" },
+    options: { workspace: "str", "key-file": "str", project: "str", days: "str", json: "bool" },
     positionals: false,
   });
   if (v instanceof ArgError) throw v;

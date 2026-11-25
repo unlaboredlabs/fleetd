@@ -30,7 +30,7 @@ test("/mcp checks the key on every request", async () => {
   expect(await none.json()).toEqual({
     code: "forbidden",
     message: "The MCP endpoint needs an agent key.",
-    fix: "Send Authorization: Bearer fld_… (create one with fleetd hub key create).",
+    fix: "Send Authorization: Bearer fld_… (create one with fleetd workspace key create).",
   });
   const unknown = await fetch(`${base}/mcp`, { method: "POST", headers: { authorization: `Bearer fld_${"a".repeat(52)}` } });
   expect(unknown.status).toBe(401);
@@ -74,7 +74,7 @@ test("a malformed escape is a 400 and a crash is JSON, never Bun's error page", 
   expect(await crashed.json()).toEqual(internalError().toJSON());
 });
 
-test("hub start's flags, with the Rust hub's messages", () => {
+test("workspace start's flags, with the Rust workspace's messages", () => {
   expect(parseListen("4791")).toEqual({ host: "127.0.0.1", port: 4791 });
   expect(parseListen("[::1]:4790")).toEqual({ host: "::1", port: 4790 });
   expect(parseListen("devbox:0")).toBeUndefined();
@@ -85,7 +85,7 @@ test("hub start's flags, with the Rust hub's messages", () => {
   expect(parseHubArgs(["--listen", "nope"])).toBe("--listen must be host:port, got 'nope'");
 });
 
-test.if(score() !== undefined)("hub start lowers its own OOM score as far as the kernel lets it", async () => {
+test.if(score() !== undefined)("workspace start lowers its own OOM score as far as the kernel lets it", async () => {
   const dir = hubHome();
   // What this test's process may go down to is what the hub, its child, may: the first of the ladder a shell takes.
   const before = score() ?? 0;
@@ -117,7 +117,7 @@ test.if(score() !== undefined)("hub start lowers its own OOM score as far as the
   }
 }, 20_000);
 
-test("each line the hub logs starts with its time and level, unless it carries its own", () => {
+test("each line the workspace logs starts with its time and level, unless it carries its own", () => {
   const methods = ["debug", "log", "info", "warn", "error"] as const;
   const saved = methods.map((m) => console[m]);
   const said: unknown[][] = [];

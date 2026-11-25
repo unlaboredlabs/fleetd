@@ -21,7 +21,7 @@ const proofAt = (now: number, who = id, url = "wss://devbox:4790/node/link", mac
   readUpgradeProof(new Headers(makeUpgradeProof({ url, machineId, pubKey: who.pubKey(), now, sign: (m) => who.signUpgrade(m) })))!;
 const expected = { machineId: "devbox", pubKey: id.pubKey(), host: "devbox:4790", path: "/node/link", now: NOW, skewMs: SKEW };
 
-test("a proof made for the hub's host and path verifies against the machine's enrolled key", () => {
+test("a proof made for the workspace's host and path verifies against the machine's enrolled key", () => {
   const headers = makeUpgradeProof({ url: "wss://devbox:4790/node/link", machineId: "devbox", pubKey: id.pubKey(), now: NOW, sign: (m) => id.signUpgrade(m) });
   expect(Object.keys(headers).sort()).toEqual(Object.values(H).sort());
   expect(headers).toMatchObject({ [H.machineId]: "devbox", [H.pubKey]: id.pubKey(), [H.at]: String(NOW), [H.host]: "devbox:4790", [H.path]: "/node/link" });
@@ -83,7 +83,7 @@ test("a hello's signature is no upgrade proof, and a proof's signature is no hel
   // A proof's signature offered as a hello's, over any nonce the hub sent.
   expect(verifyNonceSignature(id.pubKey(), nonce, proof.sig)).toBe(false);
   // A hub that sends a proof's message as its nonce gets no signature for it.
-  expect(() => id.sign(upgradeProofMessage(proof))).toThrow("the hub's challenge is not a nonce");
+  expect(() => id.sign(upgradeProofMessage(proof))).toThrow("the workspace's challenge is not a nonce");
   expect(() => id.signUpgrade(nonce)).toThrow("not an upgrade proof");
 });
 

@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "usage:\n  hub start [--home <dir>] [--listen <host:port>]\n             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,\n             writes to an offline machine wait 24 h)\n",
+  "stdout": "usage:\n  workspace start [--home <dir>] [--listen <host:port>]\n             run the workspace (default home ~/.fleetd/hub, listen 127.0.0.1:4790,\n             writes to an offline machine wait 24 h)\n  workspace stop\n             stop this machine's workspace service (systemd or launchd), as before fleetd import\n  workspace restart\n             restart this machine's workspace service, or start it when stopped\n",
   "stderr": ""
 }

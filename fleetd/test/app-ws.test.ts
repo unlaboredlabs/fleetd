@@ -76,12 +76,12 @@ test("events stream from the cursor, then as they happen, only for machines the 
   const { app } = await authed(key);
   await app.send({ t: "events", cursor: before.seq - 1 });
   expect(await app.tag("event")).toMatchObject({ seq: before.seq, summary: "before", machineId: "devbox" });
-  const hubWide = append(undefined, "the hub's own");
+  const hubWide = append(undefined, "the workspace's own");
   append("secret-box", "still not");
   const after = append("devbox", "after");
   expect(await app.tag("event")).toMatchObject({ seq: hubWide.seq });
   expect(await app.tag("event")).toMatchObject({ seq: after.seq, summary: "after" });
-  expect(app.frames.filter((f) => f.t === "event").map((f) => f.summary)).toEqual(["before", "the hub's own", "after"]);
+  expect(app.frames.filter((f) => f.t === "event").map((f) => f.summary)).toEqual(["before", "the workspace's own", "after"]);
   // A new `events` replaces the stream.
   await app.send({ t: "events", cursor: after.seq });
   const last = append("devbox", "last");
@@ -122,7 +122,7 @@ test("a compressed frame that inflates past the cap, or isn't DEFLATE, closes th
   }
 });
 
-test("a key revoked on this hub closes its connections as unauthorized", async () => {
+test("a key revoked on this workspace closes its connections as unauthorized", async () => {
   const key = insertKey(hub.db, all, "lost");
   const { app } = await authed(key);
   hub.db.conn.query("UPDATE agent_keys SET revoked_ms = 1 WHERE name = 'lost'").run();
@@ -252,7 +252,7 @@ function ownHub() {
   return { hub: built.hub, url: `ws://127.0.0.1:${server.port}/app`, done };
 }
 
-test("a hub that stops closes its apps as going away, saying it restarts; with no update, the snapshot has none", async () => {
+test("a workspace that stops closes its apps as going away, saying it restarts; with no update, the snapshot has none", async () => {
   const own = ownHub();
   updates(own.hub);
   const app = new FakeApp(own.url);
@@ -261,10 +261,10 @@ test("a hub that stops closes its apps as going away, saying it restarts; with n
   await app.send({ t: "snapshot" });
   expect("update" in (await app.tag("snapshot"))).toBe(false);
   await own.done();
-  expect(await app.closed).toEqual({ code: 1001, reason: "hub restarting" });
+  expect(await app.closed).toEqual({ code: 1001, reason: "workspace restarting" });
 });
 
-test("while an update restarts the hub, the snapshot has it and the close names the build the hub comes back on", async () => {
+test("while an update restarts the workspace, the snapshot has it and the close names the build the workspace comes back on", async () => {
   const own = ownHub();
   const from = "0.0.0-nightly.202611070900+aaaaaaa";
   const to = "0.0.0-nightly.202611081000+bbbbbbb";
@@ -274,7 +274,7 @@ test("while an update restarts the hub, the snapshot has it and the close names 
     to,
     startedAt: "2026-11-08T10:00:00.000Z",
     parts: [
-      { part: "hub", name: "the hub", from, state: "restarting" },
+      { part: "hub", name: "the workspace", from, state: "restarting" },
       { part: "node", machineId: "devbox", name: "devbox", from, state: "waiting" },
     ],
   });

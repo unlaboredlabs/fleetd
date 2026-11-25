@@ -41,7 +41,7 @@ export class NodeCommandError extends Error {
 }
 
 const offline = (machineId: string) =>
-  new NodeCommandError(machineId, "offline", `${machineId}'s node is not linked to the hub`);
+  new NodeCommandError(machineId, "offline", `${machineId}'s node is not linked to the workspace`);
 const lost = (machineId: string) =>
   new NodeCommandError(machineId, "lost", `the link to ${machineId}'s node dropped while the command ran`);
 

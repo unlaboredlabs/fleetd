@@ -207,13 +207,13 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
   const stage = join(o.home, `.import-${randomBytes(6).toString("hex")}`);
   try {
     if (hub.drift.some((d) => d.kind === "unknown")) {
-      throw new TransferError("newer", "A newer fleetd wrote this hub's database. Update fleetd (fleetd update), then import again.");
+      throw new TransferError("newer", "A newer fleetd wrote this workspace's database. Update fleetd (fleetd update), then import again.");
     }
     const held = holds(hub.conn, o.home);
     if (held.length > 0) {
       throw new TransferError(
         "refused",
-        `This hub already has data (${held.join(", ")}). An export loads into a fresh hub only, before any bot is added or machine with bots joins. Nothing was changed.`,
+        `This workspace already has data (${held.join(", ")}). An export loads into a fresh workspace only, before any bot is added or machine with bots joins. Nothing was changed.`,
       );
     }
     const skipped: string[] = [];
@@ -242,7 +242,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
         // A table a later migration drops loads nowhere: its rows are named as left behind below.
         if ((!key && secret(t.name)) || DROPPED[t.name] !== undefined) continue;
         const columns = there.has(t.name) ? new Set(columnsOf(staged, t.name)) : undefined;
-        if (!columns || t.columns.some((c) => !columns.has(c))) throw damaged(`its table ${t.name} isn't the hub's at its migrations`);
+        if (!columns || t.columns.some((c) => !columns.has(c))) throw damaged(`its table ${t.name} isn't the workspace's at its migrations`);
         const insert = staged.query(`INSERT INTO ${quoted(t.name)} (${t.columns.map(quoted).join(", ")}) VALUES (${t.columns.map(() => "?").join(", ")})`);
         tables.set(t.name, { t, insert, load: loader(t, key, target) });
         for (const p of t.parts) parts.set(p.path, { table: t.name, ...p });
@@ -266,7 +266,7 @@ export async function importHub(o: ImportOptions): Promise<ImportSummary> {
               })();
             } catch (e) {
               if (e instanceof TransferError) throw e;
-              throw damaged(`${entry.path} holds a row the hub's table refuses (${(e as Error).message})`);
+              throw damaged(`${entry.path} holds a row the workspace's table refuses (${(e as Error).message})`);
             }
             loaded.set(part.table, (loaded.get(part.table) ?? 0) + rows.length);
           } else if (file) await stageFile(join(stage, entry.path), file, entry.body());

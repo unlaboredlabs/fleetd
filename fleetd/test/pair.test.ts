@@ -64,7 +64,7 @@ test("five failures in a minute block that address, an IPv6 /64 counts together"
   expect(bucket("::ffff:10.0.0.1")).toBe("10.0.0.1");
 });
 
-test("POST /pair trades a code for a human key of the owner, says where the hub is, and logs key.paired", async () => {
+test("POST /pair trades a code for a human key of the owner, says where the workspace is, and logs key.paired", async () => {
   const { hub } = testHub({ url: "http://devbox:4790" });
   const minted = pairCodes(hub).create(undefined, "admin");
   const res = (await pair(post("/pair", { code: minted.code, deviceName: " phone\u0007 " }), ctx(hub))) as Response;
@@ -77,7 +77,7 @@ test("POST /pair trades a code for a human key of the owner, says where the hub 
   expect(caller.name).toBe("phone");
   expect(caller.person?.personId).toMatch(/^p_/);
   const [paired] = eventsOf(hub, "key.paired");
-  expect(paired?.summary).toBe("phone paired with the hub");
+  expect(paired?.summary).toBe("phone paired with the workspace");
   expect(paired?.data).toEqual({ keyId: caller.keyId, deviceName: "phone", personId: caller.person?.personId, inviteId: null });
 
   const again = (await pair(post("/pair", { code: minted.code }), ctx(hub))) as Response;
@@ -85,7 +85,7 @@ test("POST /pair trades a code for a human key of the owner, says where the hub 
   expect(await again.json()).toEqual({
     code: "pair_code_invalid",
     message: "unknown or already used pairing code",
-    fix: "Run `fleetd pair` on the hub for a new code, or ask whoever invited you for a new invite.",
+    fix: "Run `fleetd pair` on the workspace's machine for a new code, or ask whoever invited you for a new invite.",
   });
   const bad = (await pair(post("/pair", "{}"), ctx(hub))) as Response;
   expect(bad.status).toBe(400);
@@ -97,7 +97,7 @@ test("POST /pair trades a code for a human key of the owner, says where the hub 
   expect(limited.status).toBe(429);
 });
 
-test("a hub on every interface with no URL answers with the address the device used", async () => {
+test("a workspace on every interface with no URL answers with the address the device used", async () => {
   const { hub } = testHub({ host: "0.0.0.0" });
   const minted = pairCodes(hub).create(undefined, "read");
   const res = (await pair(post("/pair", { code: minted.code }, "100.64.0.5:4790"), ctx(hub))) as Response;
@@ -114,7 +114,7 @@ test("pair a phone mints a code for the caller's own person at the app's address
   // Saved without its scheme: http's.
   expect((await call<{ hubUrl: string }>(me, "pair_code_create", { hubUrl: "devbox:4790" })).hubUrl).toBe("http://devbox:4790");
   const loopback = await refusal(call(me, "pair_code_create", { hubUrl: "http://127.0.0.1:4790" }));
-  expect(loopback.message).toBe("The hub is only at http://127.0.0.1:4790, which a phone can't reach.");
+  expect(loopback.message).toBe("The workspace is only at http://127.0.0.1:4790, which a phone can't reach.");
   expect((await refusal(call(agent(), "pair_code_create", {}))).message).toBe("Only a person's own device pairs a phone.");
   const some = device([{ role: "admin", machines: ["lab-a"] }]);
   expect((await refusal(call(some, "pair_code_create", { hubUrl: "http://devbox:4790" }))).code).toBe("forbidden");
@@ -175,7 +175,7 @@ test("the sweep drops codes spent a day ago and keeps open ones", async () => {
   expect(hub.db.all("SELECT 1 FROM pair_codes").length).toBe(1);
 });
 
-test("hub addresses rank tailnet first and a phone never gets loopback", () => {
+test("workspace addresses rank tailnet first and a phone never gets loopback", () => {
   expect(hubUrls("0.0.0.0", 4790, undefined, "100.100.1.2", "192.168.1.5")).toEqual([
     "http://100.100.1.2:4790",
     "http://192.168.1.5:4790",

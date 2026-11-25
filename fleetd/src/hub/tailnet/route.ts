@@ -27,7 +27,7 @@ export function caller(hub: Hub, req: Request, op: "dial" | "dns", what: string,
   const nonce = req.headers.get(NONCE_HEADER) ?? "";
   const sig = req.headers.get(SIG_HEADER) ?? "";
   if (!machineId || !Number.isFinite(at) || !/^[A-Za-z0-9_-]{16,64}$/u.test(nonce) || !sig) return { refused: "unsigned" };
-  if (Math.abs(now - at) > SKEW_MS) return { refused: "the call's time is too far from the hub's" };
+  if (Math.abs(now - at) > SKEW_MS) return { refused: "the call's time is too far from the workspace's" };
   let key: string | undefined;
   try {
     key = hub.auth.nodes.nodePubKey(machineId);
@@ -76,7 +76,7 @@ export async function tailnetAddress(d: Dialer, host: string): Promise<{ ip: str
   try {
     ip = await d.lookup(host.replace(/^\[(.*)\]$/u, "$1"));
   } catch {
-    return { error: `the hub's computer can't find ${host} on its tailnet` };
+    return { error: `the workspace's computer can't find ${host} on its tailnet` };
   }
   return tailnetIp(ip) ? { ip } : { error: `${host} isn't on the tailnet` };
 }
@@ -109,7 +109,7 @@ function handler(hub: Hub): SocketHandler {
       try {
         conn = await dialer(hub).connect(at.ip, st.port);
       } catch (e) {
-        return fail(`${st.host}:${st.port} refused the hub's computer (${(e as Error).message})`);
+        return fail(`${st.host}:${st.port} refused the workspace's computer (${(e as Error).message})`);
       }
       if (st.closed) return void conn.destroy();
       st.conn = conn;

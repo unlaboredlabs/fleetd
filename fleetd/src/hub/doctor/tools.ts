@@ -24,7 +24,7 @@ export function register(tools: Registry): void {
       ? "Run doctor_fix with a checkId to apply its automatic fix; manual fixes name the command to run."
       : failing.length > 0
         ? "Each failing check names the command that fixes it."
-        : "Every check passes. rerun: true runs them now; the hub also runs them every 15 minutes and emits doctor.changed.";
+        : "Every check passes. rerun: true runs them now; the workspace also runs them every 15 minutes and emits doctor.changed.";
     // Each machine's check carries when that machine's checks last ran.
     const checks: DoctorCheck[] = shown.map((c) => {
       const at = c.machineId === undefined ? undefined : results.machinesCheckedAt.get(c.machineId);
@@ -41,7 +41,7 @@ export function register(tools: Registry): void {
       throw new ToolError(
         "forbidden",
         "doctor_fix needs an admin key, or a person's device (a human key) with operate on the machine.",
-        "Run it from the desktop app, or with a key from fleetd hub key create --role admin.",
+        "Run it from the desktop app, or with a key from fleetd workspace key create --role admin.",
       );
     }
     const refused = await doctor(hub).fix(input.checkId);

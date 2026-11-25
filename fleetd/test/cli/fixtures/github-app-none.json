@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "This hub has no GitHub App yet: `fleetd github-app create`, or Settings › Hub › Setup › GitHub in the app.\nUntil then the hub's gh uses this machine's own login.\n",
+  "stdout": "This workspace has no GitHub App yet: `fleetd github-app create`, or Settings › Workspace › Setup › GitHub in the app.\nUntil then the workspace's gh uses this machine's own login.\n",
   "stderr": ""
 }

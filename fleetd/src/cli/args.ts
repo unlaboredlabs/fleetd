@@ -42,6 +42,9 @@ export class ArgError extends Error {}
 const unexpected = (arg: string) =>
   `Unexpected argument '${arg}'. This command does not take positional arguments`;
 
+/** Old option names still taken for their new ones, in no usage: scripts written before "hub" became "workspace". */
+const HIDDEN_ALIASES: Record<string, string> = { hub: "workspace", "hub-url": "workspace-url" };
+
 export function parse(args: string[], spec: Spec): Parsed | ArgError {
   const unknown = (raw: string) =>
     spec.positionals
@@ -64,11 +67,12 @@ export function parse(args: string[], spec: Spec): Parsed | ArgError {
       const name = eq < 0 ? body : body.slice(0, eq);
       const inline = eq < 0 ? undefined : body.slice(eq + 1);
       const raw = `--${name}`;
-      const kind = Object.hasOwn(spec.options, name) ? spec.options[name] : undefined;
+      const known = Object.hasOwn(spec.options, name) ? name : HIDDEN_ALIASES[name];
+      const kind = known !== undefined && Object.hasOwn(spec.options, known) ? spec.options[known] : undefined;
       if (!kind) return new ArgError(unknown(raw));
       if (kind === "bool") {
         if (inline !== undefined) return new ArgError(`Option '${raw}' does not take an argument`);
-        parsed.set(name, { kind: "bool" });
+        parsed.set(known!, { kind: "bool" });
         continue;
       }
       let value = inline;
@@ -83,7 +87,7 @@ export function parse(args: string[], spec: Spec): Parsed | ArgError {
         }
         value = next;
       }
-      parsed.set(name, kind === "multi" ? { kind: "multi", items: [value] } : { kind: "str", value });
+      parsed.set(known!, kind === "multi" ? { kind: "multi", items: [value] } : { kind: "str", value });
       continue;
     }
     if (arg.length > 1 && arg.startsWith("-")) {

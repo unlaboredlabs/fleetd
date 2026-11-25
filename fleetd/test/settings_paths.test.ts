@@ -20,7 +20,7 @@ const sources = (dir: string): string[] =>
     return e.name.endsWith(".ts") ? [path] : [];
   });
 
-test("the hub's Settings paths name pages the apps' Settings has", () => {
+test("the workspace's Settings paths name pages the apps' Settings has", () => {
   const found = sources(SRC).flatMap((path) =>
     readableLines(readFileSync(path, "utf8")).flatMap((line) => settingsPathProblems(line).map((p) => `${path.slice(SRC.length + 1)}: ${p}`)),
   );
@@ -29,37 +29,37 @@ test("the hub's Settings paths name pages the apps' Settings has", () => {
 
 afterEach(() => setSettingsFlavour("hub"));
 
-// The admins' group is a self-hosted hub's Hub and a fleetd cloud team's Team: fleetd's lines take it from
-// shared/settings_path.ts, which fleetd cloud sets as it starts, and never write it themselves.
-test("no line of fleetd's writes Settings › Hub itself: every one takes the group from settingsPath", () => {
+// The admins' group is Workspace, on a self-hosted workspace and on a fleetd cloud one alike (it was Hub and Team):
+// fleetd's lines take it from shared/settings_path.ts, and never write it themselves.
+test("no line of fleetd's writes Settings › Workspace itself: every one takes the group from settingsPath", () => {
   const found = sources(SRC)
     .filter((path) => !path.endsWith("shared/settings_path.ts"))
-    .flatMap((path) => readableLines(readFileSync(path, "utf8")).filter((line) => line.includes("Settings › Hub")).map((line) => `${path.slice(SRC.length + 1)}: ${line.trim().slice(0, 120)}`));
+    .flatMap((path) => readableLines(readFileSync(path, "utf8")).filter((line) => line.includes("Settings › Workspace")).map((line) => `${path.slice(SRC.length + 1)}: ${line.trim().slice(0, 120)}`));
   expect(found).toEqual([]);
 });
 
-test("on fleetd cloud, the lines fleetd builds name Settings › Team, never Settings › Hub; a self-hosted hub keeps Hub", () => {
+test("the lines fleetd builds name Settings › Workspace, on fleetd cloud too", () => {
   const lines = () => [signedOutLine({ kind: "hub" }), signedOutLine(undefined, RUNNER_ID), noMacFix(), PEOPLE_ONLY.mcp_servers, runnerNoProvider(), settingsPath("Machines")];
-  expect(lines().every((l) => l.includes("Settings › Hub"))).toBe(true);
+  expect(lines().every((l) => l.includes("Settings › Workspace"))).toBe(true);
+  const selfHosted = lines();
   setSettingsFlavour("team");
-  expect(lines().filter((l) => l.includes("Settings › Hub"))).toEqual([]);
-  expect(lines().every((l) => l.includes("Settings › Team"))).toBe(true);
-  expect(signedOutLine({ kind: "hub" })).toContain("an admin replaces it in Settings › Team › Setup › Claude.");
+  expect(lines()).toEqual(selfHosted);
+  expect(signedOutLine({ kind: "hub" })).toContain("an admin replaces it in Settings › Workspace › Setup › Claude.");
   // A bot on fleetd's computers with no account has no machine to run `claude auth login` on: where an admin adds the key.
   expect(signedOutLine(undefined, RUNNER_ID)).toBe(
-    "This bot has no Claude account to run on yet: an admin adds a Claude API key in Settings › Team › Providers › Anthropic. The lead carries on by itself once it is.",
+    "This bot has no Claude account to run on yet: an admin adds a Claude API key in Settings › Workspace › Providers › Anthropic. The lead carries on by itself once it is.",
   );
   expect(signedOutLine(undefined, "devbox")).toContain("`claude auth login`");
   expect(lines().flatMap(settingsPathProblems)).toEqual([]);
 });
 
-test("fleetd cloud sets the flavour through the package's export, and fleetd's lines then name Team", async () => {
+test("fleetd cloud still sets the flavour through the package's export, and fleetd's lines name Workspace there", async () => {
   // The cloud's way in: the root package.json's export, which must be the very module every line above reads.
   const root = join(import.meta.dir, "..", "..");
   const exported = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { exports: Record<string, string> }).exports["./shared/settings_path"];
   expect(exported).toBe("./fleetd/src/shared/settings_path.ts");
   const pkg = (await import(join(root, exported ?? ""))) as typeof import("../src/shared/settings_path.ts");
   pkg.setSettingsFlavour("team");
-  expect(signedOutLine({ kind: "hub" })).toContain("Settings › Team › Setup › Claude");
-  expect(settingsPath("Machines")).toBe("Settings › Team › Machines");
+  expect(signedOutLine({ kind: "hub" })).toContain("Settings › Workspace › Setup › Claude");
+  expect(settingsPath("Machines")).toBe("Settings › Workspace › Machines");
 });

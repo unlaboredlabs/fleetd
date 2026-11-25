@@ -46,7 +46,7 @@ pair() {
   # The lab's own FLEETD_HOME and HOME: `pair` mints the code in the lab hub's database, never the real hub's.
   out=$(FLEETD_HOME=$home HOME=$home/hub-user "$(cat "$DIR/fleetd.bin")" pair --no-qr --name "iPhone simulator")
   link=$(sed -n 's/^Pairing link: //p' <<<"$out")
-  echo "$out" | grep -E '^(Pairing code|Hub address):'
+  echo "$out" | grep -E '^(Pairing code|Workspace):'
   echo "Pairing link: $link"
   echo
   echo "Pair a simulator on the agents' Mac (the app installed in it already):"

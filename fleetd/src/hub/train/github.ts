@@ -19,7 +19,7 @@ import { type UpToDate, upToDateFrom } from "./up_to_date.ts";
 export { type CheckRun, type CommitStatus, jobOf, workflowRun } from "./checks.ts";
 export { MERGED_LABEL, NEXT_LABEL, TRAIN_CONTEXT, TRAIN_MARK } from "./text.ts";
 
-export const GH_AUTH_FIX = "run `gh auth login` on the hub machine";
+export const GH_AUTH_FIX = "run `gh auth login` on the workspace's machine";
 /** How often a read GitHub fails transiently is tried in all, the waits between doubling from `READ_RETRY_FIRST_MS`. */
 export const READ_TRIES = 3;
 const READ_RETRY_FIRST_MS = 1000;
@@ -201,7 +201,7 @@ async function stablePatchId(diff: string): Promise<string> {
   try {
     child = Bun.spawn(["git", "patch-id", "--stable"], { stdin: "pipe", stdout: "pipe", stderr: "ignore" });
   } catch (error) {
-    throw new Error(`git patch-id could not start on the hub: ${error}`);
+    throw new Error(`git patch-id could not start on the workspace's machine: ${error}`);
   }
   child.stdin.write(diff);
   await child.stdin.end();
@@ -412,7 +412,7 @@ export class TrainGitHub {
     } catch (error) {
       const spawn = error instanceof GhStartError ? error.message : String((error as Error)?.message ?? error);
       if (spawn === "ENOENT") {
-        throw new GhError("missing", `gh is not installed on the hub machine: install the GitHub CLI, then ${GH_AUTH_FIX}`);
+        throw new GhError("missing", `gh is not installed on the workspace's machine: install the GitHub CLI, then ${GH_AUTH_FIX}`);
       }
       throw GhError.failed(`gh could not start: ${spawn}`);
     }

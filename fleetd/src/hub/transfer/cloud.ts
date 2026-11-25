@@ -83,7 +83,7 @@ export class CloudTransfer {
     const b = record(await this.call("POST", "/transfer/v1/imports"));
     const runId = str(b.runId);
     const pieceBytes = b.pieceBytes;
-    if (runId === undefined || typeof pieceBytes !== "number" || pieceBytes < 1) throw new CloudUnreached("fleetd cloud answered the import's start in a way this hub doesn't understand");
+    if (runId === undefined || typeof pieceBytes !== "number" || pieceBytes < 1) throw new CloudUnreached("fleetd cloud answered the import's start in a way this workspace doesn't understand");
     const migrations = Array.isArray(b.migrations) && b.migrations.every((m) => typeof m === "string") ? (b.migrations as string[]) : undefined;
     return { runId, pieceBytes, ...(typeof b.maxBytes === "number" ? { maxBytes: b.maxBytes } : {}), ...(migrations ? { migrations } : {}) };
   }
@@ -103,7 +103,7 @@ export class CloudTransfer {
   async run(runId: string): Promise<RunAnswer> {
     const b = record(await this.call("GET", `/transfer/v1/runs/${runId}`));
     const state = str(b.state) as RunState | undefined;
-    if (state === undefined) throw new CloudUnreached("fleetd cloud answered the import's state in a way this hub doesn't understand");
+    if (state === undefined) throw new CloudUnreached("fleetd cloud answered the import's state in a way this workspace doesn't understand");
     const e = record(b.error);
     const error = str(e.message) === undefined ? undefined : { code: str(e.code) ?? "", message: str(e.message)!, ...(str(e.fix) ? { fix: str(e.fix)! } : {}), ...(str(e.reason) ? { reason: str(e.reason)! } : {}) };
     return { state, ...(b.summary !== undefined ? { summary: record(b.summary) } : {}), ...(error ? { error } : {}) };

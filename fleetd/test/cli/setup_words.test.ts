@@ -13,10 +13,10 @@ import { HubDb } from "../../src/hub/store/db.ts";
 const dir = mkdtempSync(join(process.env.TMPDIR ?? "/tmp", "fleetd-setup-words-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-test("a hub that doesn't answer is said plainly: not running, or something else on its port, never the HTTP client's words", () => {
+test("a workspace that doesn't answer is said plainly: not running, or something else on its port, never the HTTP client's words", () => {
   const listen = "http://172.17.0.4:4790";
   const reset = unreachable(listen, "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()");
-  expect(reset.message).toBe("something else answers at http://172.17.0.4:4790, not fleetd's hub: another program may have taken port 4790");
+  expect(reset.message).toBe("something else answers at http://172.17.0.4:4790, not fleetd's workspace: another program may have taken port 4790");
   expect(reset.fix).toContain(":4790");
   // A LAN hub stays where it is: the fix never moves it to loopback.
   expect(reset.fix).not.toContain("127.0.0.1");
@@ -25,8 +25,8 @@ test("a hub that doesn't answer is said plainly: not running, or something else 
   // What Bun says when an SSH server, say, holds the port.
   expect(unreachable(listen, 'Malformed_HTTP_Response fetching "http://172.17.0.4:4790/mcp"').message).toStartWith("something else answers at");
   const refused = unreachable(listen, "Unable to connect. Is the computer able to access the url?");
-  expect(refused.message).toBe("nothing answers at http://172.17.0.4:4790: the hub isn't running");
-  expect(unreachable(listen, "operation timed out").message).toBe("the hub at http://172.17.0.4:4790 didn't answer within 15 seconds");
+  expect(refused.message).toBe("nothing answers at http://172.17.0.4:4790: the workspace isn't running");
+  expect(unreachable(listen, "operation timed out").message).toBe("the workspace at http://172.17.0.4:4790 didn't answer within 15 seconds");
   for (const f of [reset, parse, refused]) expect(`${f.message} ${f.fix}`).not.toMatch(/verbose|fetch\(\)|ECONNRESET/);
 });
 
@@ -78,7 +78,7 @@ test("a clone that failed with no GitHub login says to log in, never to use gh w
   expect(cloneFailed("o/r", "~/src/r", true, "")[1]).toBe("gh repo clone o/r ~/src/r, then run fleetd init again");
 });
 
-test("a hub with its own Claude API key needs no machine logged in; a fresh one says nothing", () => {
+test("a workspace with its own Claude API key needs no machine logged in; a fresh one says nothing", () => {
   const home = join(dir, "hub");
   const db = HubDb.open(home);
   try {
@@ -87,6 +87,6 @@ test("a hub with its own Claude API key needs no machine logged in; a fresh one 
   } finally {
     db.conn.close();
   }
-  expect(hubClaudeAccount(home)).toBe("the hub's API key");
+  expect(hubClaudeAccount(home)).toBe("the workspace's API key");
   expect(hubClaudeAccount(join(dir, "none"))).toBeUndefined();
 });

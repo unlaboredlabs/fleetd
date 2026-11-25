@@ -35,7 +35,7 @@ test("up to the limit a minute each is refused alone; one more ends the link, an
   for (let minute = 0; minute < 5; minute++) for (let i = 0; i < BAD_FRAMES_PER_MINUTE; i++) expect(again.take(minute * 60_000)).toBe(true);
 });
 
-test("each hub request the node can't read is answered in its reply kind; a gated_resume and a frame with no id get none", () => {
+test("each workspace request the node can't read is answered in its reply kind; a gated_resume and a frame with no id get none", () => {
   for (const [asked, reply] of [
     ["cmd_check", "cmd_result"],
     ["secret_deliver", "secret_result"],
@@ -50,7 +50,7 @@ test("each hub request the node can't read is answered in its reply kind; a gate
     t: "cmd_result",
     id: "r1",
     exitCode: null,
-    outputTail: "the node could not read this cmd_check (it and the hub may run different fleetd versions): e",
+    outputTail: "the node could not read this cmd_check (it and the workspace may run different fleetd versions): e",
     timedOut: false,
   });
   expect(refusal({ tag: "gated_resume", id: "r1", error: "e" })).toBeUndefined();
@@ -106,12 +106,12 @@ test("on a live link a bad frame is refused alone, a request whose handler throw
     await until("the cmd_check's answer", () => conns[0]!.frames.some((f) => f.t === "cmd_result"));
     expect(conns[0]!.frames.find((f) => f.t === "cmd_result")).toMatchObject({ id: "c1", exitCode: null, timedOut: false });
     expect(conns[0]!.frames.find((f) => f.t === "cmd_result")!.outputTail).toContain("argv must hold at least one word");
-    expect(logged.filter((m) => m === "a hub frame does not decode; refused it alone")).toHaveLength(2);
+    expect(logged.filter((m) => m === "a workspace frame does not decode; refused it alone")).toHaveLength(2);
     expect(conns).toHaveLength(1);
     // Past the minute's limit (two already taken), the link ends and the node dials again.
     for (let i = 0; i < BAD_FRAMES_PER_MINUTE - 1; i++) hub.send("garbage");
     await until("the link dropped and dialled again", () => conns.length === 2);
-    expect(logged).toContain("too many hub frames that do not decode; dropping the link");
+    expect(logged).toContain("too many workspace frames that do not decode; dropping the link");
   } finally {
     stop.abort();
     server.stop(true);

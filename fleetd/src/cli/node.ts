@@ -44,7 +44,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
   const v = parse(rest, {
     options: {
       home: "str",
-      hub: "str",
+      workspace: "str",
       token: "str",
       "token-file": "str",
       "enroll-only": "bool",
@@ -73,13 +73,13 @@ export async function nodeCommand(argv: string[]): Promise<number> {
           return usage(`cannot read --token-file: ${(error as Error).message}`);
         }
       }
-      for (const [name, value] of [["hub", v.str("hub")], ["token", token], ["machine", v.str("machine")]] as const) {
+      for (const [name, value] of [["workspace", v.str("workspace")], ["token", token], ["machine", v.str("machine")]] as const) {
         if (!value) return usage(`--${name} is required`);
       }
       const home = v.str("home");
       const dir = v.str("claude-config-dir");
       return (await node()).join_({
-        hub: v.str("hub")!,
+        hub: v.str("workspace")!,
         token: token!,
         machine: v.str("machine")!,
         ...(home === undefined ? {} : { home }),

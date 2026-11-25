@@ -60,13 +60,13 @@ function mayEdit(caller: Caller, scope: PromptScope, r: ProjectRef | undefined):
     throw new ToolError(
       "forbidden",
       "Prompts steer every agent they reach; this key may not change them there.",
-      "Use the desktop app, or a key from fleetd hub key create --role admin.",
+      "Use the desktop app, or a key from fleetd workspace key create --role admin.",
     );
   }
   if (allowsEverywhere(caller, "admin")) return;
   throw new ToolError(
     "forbidden",
-    "Hub-wide prompts and instructions reach every teammate's agents: only the hub's owners and admins change them.",
+    "Workspace-wide prompts and instructions reach every teammate's agents: only the workspace's owners and admins change them.",
     `Ask an owner or admin (${settingsPath()} › Bot defaults › Instructions), or edit this bot's own text instead.`,
   );
 }
@@ -77,7 +77,7 @@ export function changed(hub: Hub, id: string, scope: PromptScope, project: Proje
     at: isoMs(nowMs(hub.clock)),
     type: "prompt.changed",
     ...(project ? { machineId: project.machineId, projectId: project.projectId } : {}),
-    summary: project ? `Prompt ${id} changed for ${project.machineId}/${project.projectId}` : `Prompt ${id} changed hub-wide`,
+    summary: project ? `Prompt ${id} changed for ${project.machineId}/${project.projectId}` : `Prompt ${id} changed workspace-wide`,
     data: { ...data, id, scope, ...(project ? { projectRef: project } : {}) },
   });
 }

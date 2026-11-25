@@ -202,8 +202,8 @@ async function answers(k: Opened, f: Filled, as = k.device().caller) {
   return out;
 }
 
-describe("a hub's export into a fresh hub", () => {
-  test("the hub's own tools answer the same on the hub it loads into", async () => {
+describe("a workspace's export into a fresh workspace", () => {
+  test("the workspace's own tools answer the same on the workspace's machine it loads into", async () => {
     const from = newPlace();
     const a = await start(from);
     const f = await fill(from, a);
@@ -265,7 +265,7 @@ describe("a hub's export into a fresh hub", () => {
     expect(`W${next}`).toBe(`W${Number(f.order.workstreamId.slice(1)) + 1}`);
   });
 
-  test("the file holds no secret in the clear and neither hub's own keys", async () => {
+  test("the file holds no secret in the clear and neither workspace's own keys", async () => {
     const from = newPlace();
     const a = await start(from);
     await fill(from, a);
@@ -393,7 +393,7 @@ describe("an import that can't go through changes nothing", () => {
     return { from, to, before: stateOf(to) };
   }
 
-  test("one byte changed anywhere in the file: every checksum is checked before the hub is touched", async () => {
+  test("one byte changed anywhere in the file: every checksum is checked before the workspace is touched", async () => {
     const { from, to, before } = await pair();
     const good = readFileSync(from.file);
     const entries = await entriesOf(from.file);
@@ -416,7 +416,7 @@ describe("an import that can't go through changes nothing", () => {
       const e = await refusal(importInto(to, file));
       // A header that no longer reads as one is a file that isn't an export; anything else is damage.
       if (kind === "fleetd-export.json") expect(["damaged", "not_an_export"]).toContain(e.reason);
-      else expect({ kind, reason: e.reason, line: e.message.endsWith("Nothing was changed; export the hub again.") }).toEqual({ kind, reason: "damaged", line: true });
+      else expect({ kind, reason: e.reason, line: e.message.endsWith("Nothing was changed; export the workspace again.") }).toEqual({ kind, reason: "damaged", line: true });
       expect({ kind, state: stateOf(to) }).toEqual({ kind, state: before });
     }
   });
@@ -454,7 +454,7 @@ describe("an import that can't go through changes nothing", () => {
     expect(stateOf(to)).toEqual(before);
   });
 
-  test("a hub's database a newer fleetd migrated is refused the same way", async () => {
+  test("a workspace's database a newer fleetd migrated is refused the same way", async () => {
     const { from, to, before } = await pair();
     const newer = join(from.dir, "export-newer-schema.tar");
     await rewritten(from.file, newer, { manifest: (m) => void m.schema.push({ name: "209901010000_from_the_future", sha256: "0".repeat(64) }) });
@@ -486,14 +486,14 @@ describe("an import that can't go through changes nothing", () => {
     stop(b);
   });
 
-  test("a hub that already has data is refused, and says what it has", async () => {
+  test("a workspace that already has data is refused, and says what it has", async () => {
     const { from, before } = await pair();
     // The hub the export came from, and a hub with one decision: neither is fresh.
     const own = stateOf(from);
     const e = await refusal(importInto(from, from.file));
     expect(e.reason).toBe("refused");
-    expect(e.message).toStartWith("This hub already has data (projects, chat messages, orders, tasks, ");
-    expect(e.message).toEndWith("An export loads into a fresh hub only, before any bot is added or machine with bots joins. Nothing was changed.");
+    expect(e.message).toStartWith("This workspace already has data (projects, chat messages, orders, tasks, ");
+    expect(e.message).toEndWith("An export loads into a fresh workspace only, before any bot is added or machine with bots joins. Nothing was changed.");
     expect(stateOf(from)).toEqual(own);
 
     const { p: used } = await fresh();
@@ -501,14 +501,14 @@ describe("an import that can't go through changes nothing", () => {
     await k.call(k.device().caller, "decisions_record", { key: "a.b", scope: { kind: "global" }, value: "x" });
     stop(k);
     const state = stateOf(used);
-    expect((await refusal(importInto(used, from.file))).message).toStartWith("This hub already has data (decisions).");
+    expect((await refusal(importInto(used, from.file))).message).toStartWith("This workspace already has data (decisions).");
     expect(stateOf(used)).toEqual(state);
 
     const { p: invited } = await fresh();
     const k2 = await start(invited);
     people(k2.hub).create("Cy", "member");
     stop(k2);
-    expect((await refusal(importInto(invited, from.file))).message).toStartWith("This hub already has data (people).");
+    expect((await refusal(importInto(invited, from.file))).message).toStartWith("This workspace already has data (people).");
     expect(before.rows.people).toHaveLength(1);
   });
 

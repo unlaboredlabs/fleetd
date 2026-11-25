@@ -14,8 +14,8 @@ export async function callFor(client: McpClient, tool: string, input: unknown, w
     throw {
       message: `${tool} failed: ${m}`,
       fix: m.includes("not found")
-        ? "fleetd update, so the hub has setup steps"
-        : "fleetd doctor shows whether the hub is up; then run fleetd init again",
+        ? "fleetd update, so the workspace has setup steps"
+        : "fleetd doctor shows whether the workspace is up; then run fleetd init again",
     } satisfies Failure;
   }
   if (result.isError) {
@@ -91,13 +91,13 @@ export function unowned(checks: any[], steps: any[]): any[] {
 
 function placeWords(place: string): string {
   if (place === "claude") {
-    return `${settingsPath()} › Setup › Claude for the hub's API key; Settings › Accounts › Claude for your own subscription`;
+    return `${settingsPath()} › Setup › Claude for the workspace's API key; Settings › Accounts › Claude for your own subscription`;
   }
   const names: Record<string, string> = {
-    github: "Hub › Setup › GitHub",
-    invites: "Hub › People",
-    people: "Hub › People",
-    machines: "Hub › Machines",
+    github: "Workspace › Setup › GitHub",
+    invites: "Workspace › People",
+    people: "Workspace › People",
+    machines: "Workspace › Machines",
     onepassword: "Accounts › 1Password",
   };
   return `Settings › ${names[place] ?? place}`;

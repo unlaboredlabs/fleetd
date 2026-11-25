@@ -240,7 +240,7 @@ test("a box calls Claude's endpoint as set, with nothing relayed; a private one 
   );
   expect(failure).toBeInstanceOf(BoxNotReady);
   const refused = failure!.message;
-  expect(refused).toContain("a sandbox at fleetd's computers couldn't reach the hub's Claude account at 100.104.249.49");
+  expect(refused).toContain("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at 100.104.249.49");
   expect(refused).not.toContain("settings.json");
   expect(refused).not.toContain("curl");
   expect(refused).toContain("Connect Tailscale in Connections");
@@ -282,7 +282,7 @@ test("a start that fails once its box exists deletes the box and its record, and
   };
   const failed = await place.start({ fleetd: [], dir, sessionId: "s-unreached", program: "claude", args: [], cwd, env: { ...env, CLAUDE_CODE_OAUTH_TOKEN: "tok-123" } }).catch((e: Error) => e);
   expect(failed).toBeInstanceOf(BoxNotReady);
-  expect((failed as Error).message).toContain("a sandbox at fleetd's computers couldn't reach the hub's Claude account at ");
+  expect((failed as Error).message).toContain("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at ");
   expect((failed as Error).message).not.toContain("curl");
   // Claude never started: it fails as a box that didn't come up, so a lead's chat says why and its message is kept;
   // and the box came up, so the provider isn't set aside.
@@ -290,7 +290,7 @@ test("a start that fails once its box exists deletes the box and its record, and
   expect(boxes.usable()).toContain("boat");
   // The line the lead's chat shows for it, from the node's own failure text (sessions/index.ts).
   const line = notStartedLine(`could not start ${env.HOME}/.local/bin/claude: ${(failed as Error).message} (cwd ${cwd})`, 1);
-  expect(line).toStartWith("The lead couldn't start: a sandbox at fleetd's computers couldn't reach the hub's Claude account at ");
+  expect(line).toStartWith("The lead couldn't start: a sandbox at fleetd's computers couldn't reach the workspace's Claude account at ");
   expect(line).toEndWith("It tries again by itself in about 10 minutes, and your message is kept for it.");
   expect(line).not.toContain(home);
   // The box is deleted once, nothing keeps it alive here, and no record is left for the reaper to spare it by.

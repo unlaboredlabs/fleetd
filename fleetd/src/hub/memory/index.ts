@@ -113,7 +113,7 @@ export class Memory {
   }
 
   private root(): string {
-    if (this.dir === undefined) throw new ToolError("failed", "This hub has no home to keep memory in.");
+    if (this.dir === undefined) throw new ToolError("failed", "This workspace has no home to keep memory in.");
     return this.dir;
   }
 

@@ -299,7 +299,7 @@ async function hand(
   } else {
     const got = await apps.installationToken(at.repo, APP_MARGIN_MS);
     if (!got) {
-      const e = `GitHub gave the hub's App no token for ${at.repo}`;
+      const e = `GitHub gave the workspace's App no token for ${at.repo}`;
       if (wait) return waitForToken(hub, pending, e);
       throw new Error(e);
     }
@@ -463,7 +463,7 @@ async function put(hub: Hub, r: ProjectRef, order: WorkstreamId, token: string):
   const m = r.machineId;
   if (!seams.machine(hub.db.conn, m)) {
     throw new Error(
-      `${m} isn't one of the hub's machines now (removed, or enrolled again under another id): the token waits until it's back`,
+      `${m} isn't one of the workspace's machines now (removed, or enrolled again under another id): the token waits until it's back`,
     );
   }
   if (seams.nodeLacks(hub, m, CAP_ORDER_ENV)) throw new Error(`${m}'s node is too old to hand agents a GitHub token: update fleetd there`);

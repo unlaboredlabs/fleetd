@@ -165,7 +165,7 @@ A lead runs in Claude Code's `manual` permission mode, with no sandbox ([how lea
 - `Write`: A lead that does its own work writes what the person can; a lead with repos has no Write.
 - `WebSearch`: A search sends only its query, to the search provider.
 - `Skill`: Loads a skill's instructions; runs nothing.
-- `mcp__fleetd`: fleetd's own tools. The hub checks every call.
+- `mcp__fleetd`: fleetd's own tools. The workspace checks every call.
 - `Bash(agent-device *)`: Phone screens work for a lead as for any agent. A final Send or Pay is the person's, through request_takeover.
 
 These go through the bot's approval mode first:

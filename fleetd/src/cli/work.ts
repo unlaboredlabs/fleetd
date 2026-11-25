@@ -39,7 +39,7 @@ const isClaimId = (id: string) => /^C[1-9][0-9]*$/.test(id);
 export function parseWorkArgs(argv: string[], envKeyFile?: string): WorkArgs {
   const v = parse(argv, {
     options: {
-      hub: "str",
+      workspace: "str",
       "key-file": "str",
       issue: "multi",
       paths: "str",
@@ -102,10 +102,10 @@ export function parseWorkArgs(argv: string[], envKeyFile?: string): WorkArgs {
   const keyFile = v.str("key-file") ?? envKeyFile;
   if (!keyFile) {
     throw new ArgError(
-      "--key-file (or FLEETD_KEY_FILE) is required: the key says whose claim it is. The one Claude Code uses for the hub's MCP will do",
+      "--key-file (or FLEETD_KEY_FILE) is required: the key says whose claim it is. The one Claude Code uses for the workspace's MCP will do",
     );
   }
-  const hub = v.str("hub") || undefined;
+  const hub = v.str("workspace") || undefined;
   return { command, ...(hub === undefined ? {} : { hub }), keyFile };
 }
 

@@ -67,7 +67,7 @@ test("a node exits at once on SIGTERM, and starts again on the same home", async
       const n = node(root);
       running.push(n.child);
       // Its first try to link (the hub is unreachable) comes after it listens for SIGTERM.
-      await n.said(["hub link lost"]);
+      await n.said(["workspace link lost"]);
       await stop(n.child);
     }
   } finally {

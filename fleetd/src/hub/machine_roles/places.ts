@@ -163,7 +163,7 @@ export function runners(hub: Hub): RunnerRow[] {
     let othersNote: string | undefined;
     if (m.boxPubKey === undefined) {
       othersNote =
-        "It gave the hub no key to seal a screen's secrets to: it hosts only its own agents' screens until its node links again.";
+        "It gave the workspace no key to seal a screen's secrets to: it hosts only its own agents' screens until its node links again.";
     } else if (!(nodes.can(m.machineId, CAP_SESSION_HOST) && nodes.can(m.machineId, CAP_SESSION_SEAL))) {
       othersNote =
         m.status === "offline"

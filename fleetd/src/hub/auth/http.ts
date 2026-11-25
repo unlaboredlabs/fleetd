@@ -8,7 +8,7 @@ const missingBearer = () =>
   new ToolError(
     "forbidden",
     "The MCP endpoint needs an agent key.",
-    "Send Authorization: Bearer fld_… (create one with fleetd hub key create).",
+    "Send Authorization: Bearer fld_… (create one with fleetd workspace key create).",
   );
 
 const unauthorized = (error: ToolError) =>

@@ -62,7 +62,7 @@ test("a worker joins with the code", async () => {
   const joined = await join_();
   expect(joined.node.enrolled).toBe(true);
   expect(joined.node.machineId).toBe("builder-1");
-  expect(joined.shown.stderr).toContain("\nJoin a hub  1/2\n\nWorker  2/2\n–  builder-1 enrolled; its node isn't started (--no-service)\n");
+  expect(joined.shown.stderr).toContain("\nJoin a workspace  1/2\n\nWorker  2/2\n–  builder-1 enrolled; its node isn't started (--no-service)\n");
   expect(joined.shown.stderr).toContain("start builder-1's node: $HOME/bin/fleetd node run --home $HOME/node");
   // With nobody to ask, claude's login is a step left to the person with its command, and the run ends clean.
   expect(joined.shown.stderr).toContain("–  claude on builder-1 not logged in\n");

@@ -113,7 +113,7 @@ To redirect the lead without stopping it, see [Steer and stop](/docs/steering).
 Make a key once, on the hub machine:
 
 ```sh
-fleetd hub key create --human --name terminal --out ~/.fleetd/human.key
+fleetd workspace key create --human --name terminal --out ~/.fleetd/human.key
 ```
 
 Then:

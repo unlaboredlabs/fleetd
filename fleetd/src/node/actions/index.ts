@@ -68,7 +68,7 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
       if (hooks.update) return hooks.update(frame);
       return answer(frame.id, false, "this node doesn't update itself", { stage: frame.action === "fetch" ? "download" : "install" });
     case "claude": {
-      if (!frame.claude) return answer(frame.id, false, "the hub named no Claude Code version", { stage: "install" });
+      if (!frame.claude) return answer(frame.id, false, "the workspace named no Claude Code version", { stage: "install" });
       if (!hooks.claude) return answer(frame.id, false, "this node doesn't install Claude Code", { stage: "install" });
       try {
         const installed = await bringTo(hooks.claude.installer, frame.claude);
@@ -97,7 +97,7 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
       }
     }
     case "claude_login_code": {
-      if (!frame.code) return answer(frame.id, false, "the hub sent no code");
+      if (!frame.code) return answer(frame.id, false, "the workspace sent no code");
       if (!hooks.claude) return answer(frame.id, false, "this node doesn't log Claude Code in");
       try {
         const said = await hooks.claude.logins.finish(frame.code);
@@ -136,7 +136,7 @@ export async function runNodeAction(frame: NodeAction, hooks: ActionHooks): Prom
       }
     }
     case "antigravity_login_code": {
-      if (!frame.code) return answer(frame.id, false, "the hub sent no code");
+      if (!frame.code) return answer(frame.id, false, "the workspace sent no code");
       if (!hooks.antigravity) return answer(frame.id, false, "this node doesn't sign Antigravity in");
       try {
         const said = await hooks.antigravity.logins.finish(frame.code);

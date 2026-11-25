@@ -276,7 +276,7 @@ export class DesktopSessions {
     try {
       await this.host.call("browser_session", report(session.meta(endedAt), state, session.control(), []), { threadId: session.thread, cwd: session.cwd });
     } catch (e) {
-      console.warn(`desktop session ${session.id} not reported to the hub: ${(e as Error).message}`);
+      console.warn(`desktop session ${session.id} not reported to the workspace: ${(e as Error).message}`);
     }
   }
 
@@ -516,7 +516,7 @@ export class DesktopSessions {
       const endedAt = new Date().toISOString();
       await this.host
         .call("browser_session", report({ ...meta, endedAt, note }, "uploading", "agent", []), { threadId: thread, cwd: snapshot.cwd })
-        .catch((e: Error) => console.warn(`desktop session ${snapshot.id} not reported to the hub: ${e.message}`));
+        .catch((e: Error) => console.warn(`desktop session ${snapshot.id} not reported to the workspace: ${e.message}`));
       await recording.end({ endedAt, credentialsFilled: 0, note }, scrub, offsetMs).catch(() => {});
       this.host.changed?.(thread);
       return { adopted: false, note };

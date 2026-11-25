@@ -207,7 +207,7 @@ export type Swept = { rows: number; touches: number };
 
 /** A failure's words: the host's own, or the hub's database's. */
 const whyOf = (error: unknown) =>
-  error instanceof HostError ? error.message : `the hub's database: ${error instanceof Error ? error.message : String(error)}`;
+  error instanceof HostError ? error.message : `the workspace's database: ${error instanceof Error ? error.message : String(error)}`;
 
 /** Reads one repo from its host and writes what it found; on failure the repo keeps its rows and says why (thrown as a HostError). */
 export async function sweepRepo(hub: Hub, source: GitHostSource, remote: string, now: number): Promise<Swept> {

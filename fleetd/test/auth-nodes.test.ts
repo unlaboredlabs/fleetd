@@ -39,7 +39,7 @@ test("enroll codes: one open per machine, burned once, and each refusal says how
     return "accepted";
   };
   expect(refusal(() => nodes.enrollNode(first.token, "devbox", "k1"))).toBe(
-    "unknown, replaced or revoked enrollment token. Fix: on the hub, run fleetd pair --worker devbox for a new code",
+    "unknown, replaced or revoked enrollment token. Fix: fleetd pair --worker devbox on the workspace's machine",
   );
   expect(refusal(() => nodes.enrollNode(second.token, "laptop", "k1"))).toBe(
     "enrollment token is for machine devbox, not laptop. Fix: join as devbox (--machine-id devbox)",
@@ -58,7 +58,7 @@ test("enroll codes: one open per machine, burned once, and each refusal says how
   );
   now += 16 * 60_000;
   expect(refusal(() => nodes.enrollNode(again.token, "devbox", "k1"))).toBe(
-    "enrollment token expired. Fix: on the hub, run fleetd pair --worker devbox for a new code",
+    "enrollment token expired. Fix: on the workspace's machine, run fleetd pair --worker devbox for a new code",
   );
   expect(nodes.revokeNode("devbox")).toBe(true);
   expect(nodes.nodePubKey("devbox")).toBeUndefined();
@@ -82,7 +82,7 @@ test("a nameless code enrolls the computer under the name it asks for, made uniq
   expect(nodes.enrollNode(first, "laptop", "k1", "fp1")).toBe("laptop");
   expect(nodes.nodePubKey("laptop")).toBe("k1");
   expect(refusal(() => nodes.enrollNode(first, "laptop", "k9", "fp9"))).toBe(
-    "enrollment token was already used. Fix: ask the hub for a new join line",
+    "enrollment token was already used. Fix: ask the workspace's admin for a new join line",
   );
   // Another computer by that name gets the next free one.
   expect(nodes.enrollNode(second, "laptop", "k2", "fp2")).toBe("laptop-2");

@@ -172,7 +172,7 @@ test("deny never runs the command", async () => {
 });
 
 const offline = async (): Promise<GatedOutcome> => {
-  throw new NodeCommandError("offline", "lab-a's node is not linked to the hub");
+  throw new NodeCommandError("offline", "lab-a's node is not linked to the workspace");
 };
 
 // An approval given while its node restarts (an update) waits for the node to link again, then runs, once.
@@ -325,7 +325,7 @@ test("after a restart an approved command goes back to the person and never runs
   });
   fake.approvals().reopenUnfinished();
   const back = fake.request("Q1");
-  expect([back.state, back.evidence]).toEqual(["open", "not run: the hub restarted before it ran; approve it again to run it"]);
+  expect([back.state, back.evidence]).toEqual(["open", "not run: the workspace restarted before it ran; approve it again to run it"]);
   expect(fake.runs).toEqual([]);
 });
 
@@ -360,7 +360,7 @@ test("a command whose run spans a restart or a dropped link reports its kept res
   const q2 = fake.request("Q2");
   expect(q2.state).toBe("open");
   expect(q2.evidence).toBe(
-    "interrupted, may have run: the hub restarted while it ran on lab-a, and it has no result for Q2; check on lab-a whether it ran before you approve it again",
+    "interrupted, may have run: the workspace restarted while it ran on lab-a, and it has no result for Q2; check on lab-a whether it ran before you approve it again",
   );
   expect(fake.runs).toEqual([]);
 
@@ -556,7 +556,7 @@ test("a secure input is a sealed field, or a 1Password fill with no ask", async 
   );
 });
 
-test("sinks, names and argv read as the Rust hub's", () => {
+test("sinks, names and argv read as the Rust workspace's", () => {
   expect(parseSecretSink("env:devbox:/home/w/.env")).toEqual({ machineId: "devbox" });
   expect(parseSecretSink("order:devbox:W12")).toEqual({ machineId: "devbox", order: "W12" });
   expect(parseSecretSink(`fill:devbox:B${"0".repeat(32)}`)).toEqual({ machineId: "devbox", fill: `B${"0".repeat(32)}` });
@@ -568,7 +568,7 @@ test("sinks, names and argv read as the Rust hub's", () => {
   expect(shownArgv(["git", "commit", "-m", "a b", "naïve"])).toBe('git commit -m "a b" naïve');
 });
 
-test("the tools and lead calls go through the hub's registries", async () => {
+test("the tools and lead calls go through the workspace's registries", async () => {
   const { Hub } = await import("../src/hub/api/hub.ts");
   const { Registry } = await import("../src/hub/api/registry.ts");
   const { registerAll } = await import("../src/hub/serve/areas.ts");

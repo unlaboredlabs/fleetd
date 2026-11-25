@@ -138,7 +138,7 @@ export class ProfileStore {
   /** The hub's default; a hub keeps one from its migration on. */
   defaultProfile(): Profile {
     const found = this.one("is_default = 1");
-    if (!found) throw refused("the hub has no default profile");
+    if (!found) throw refused("the workspace has no default profile");
     return found;
   }
 
@@ -394,7 +394,7 @@ async function askModels(hub: Hub, machine: string, host: string, cache: ModelCa
   }
   // Once per failure, not at every retry: profiles fall back to fleetd's own list, and this says why.
   if (failed !== undefined && failed !== cache.logged) {
-    console.warn(`models: the hub's API key listed no models through ${host} on ${machine}, using fleetd's own list: ${failed}`);
+    console.warn(`models: the workspace's API key listed no models through ${host} on ${machine}, using fleetd's own list: ${failed}`);
   }
   cache.logged = failed;
   const listed = fromApi
@@ -419,7 +419,7 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
   if (administrator(hub, caller)) return;
   throw new ToolError(
     "forbidden",
-    "Only the hub's owners and admins change task profiles.",
+    "Only the workspace's owners and admins change task profiles.",
     `Ask an owner or admin; they change them on ${settingsPath()} › Providers in the app.`,
   );
 }
@@ -441,7 +441,7 @@ async function checkModel(hub: Hub, model: string | undefined, kept: string | un
   if (model !== undefined && model !== kept) {
     const [offered] = await models(hub);
     if (!offered.some((m) => m.id === model) && !/^antigravity\/\S+$/.test(model)) {
-      throw new ToolError("invalid", `${model} is not among the models this hub offers.`, `Pick one of: ${offered.map((m) => m.id).join(", ")}.`);
+      throw new ToolError("invalid", `${model} is not among the models this workspace offers.`, `Pick one of: ${offered.map((m) => m.id).join(", ")}.`);
     }
   }
   const effective = model ?? kept;
@@ -477,7 +477,7 @@ export function register(tools: Registry): void {
     requireAdministrator(hub, caller);
     const s = profiles(hub);
     if (s.list().length >= PROFILES_MAX) {
-      throw new ToolError("invalid", `The hub already keeps ${PROFILES_MAX} profiles.`, "Delete one it no longer needs first.");
+      throw new ToolError("invalid", `The workspace already keeps ${PROFILES_MAX} profiles.`, "Delete one it no longer needs first.");
     }
     const fast = input.fast ?? false;
     await checkModel(hub, input.model, undefined, fast);

@@ -11,7 +11,7 @@ leads.
 1. On the hub machine, create a key and save it to a file only you can read:
 
    ```sh
-   fleetd hub key create --name laptop --role operate --machines '*' --out ~/.fleetd/agent.key
+   fleetd workspace key create --name laptop --role operate --machines '*' --out ~/.fleetd/agent.key
    ```
 
 2. Copy the file to the computer that runs Claude Code, keeping it private:
@@ -46,8 +46,8 @@ Each key has a role:
 Manage keys on the hub machine:
 
 ```sh
-fleetd hub key list
-fleetd hub key revoke <keyId>     # ends it at once
+fleetd workspace key list
+fleetd workspace key revoke <keyId>     # ends it at once
 ```
 
 ### Human keys {#human-key}
@@ -55,7 +55,7 @@ fleetd hub key revoke <keyId>     # ends it at once
 A human key speaks as you. Create one with `--human`:
 
 ```sh
-fleetd hub key create --human --name terminal --out ~/.fleetd/human.key
+fleetd workspace key create --human --name terminal --out ~/.fleetd/human.key
 ```
 
 - With a human key, messages to a lead count as yours.

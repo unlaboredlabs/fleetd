@@ -172,8 +172,8 @@ export function listenFromArgs(args: string): string | undefined {
 export function noSetupFix(home: string): string {
   const running = runningListen(home);
   return running !== undefined
-    ? `a hub you started yourself answers there: fleetd init --no-service --listen ${running}`
-    : "fleetd init (it starts the hub and repairs its setup)";
+    ? `a workspace you started yourself answers there: fleetd init --no-service --listen ${running}`
+    : "fleetd init (it starts the workspace and repairs its setup)";
 }
 
 export type Platform = "linux" | "darwin";

@@ -99,7 +99,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
     ...rest,
   });
   return [
-    step("address", "hub", "Where the hub listens", "Your devices and machines reach the hub at this address; a tailnet keeps it off the internet.", { kind: "required" }, {
+    step("address", "hub", "Where the workspace listens", "Your devices and machines reach the workspace at this address; a tailnet keeps it off the internet.", { kind: "required" }, {
       parts: [
         part(
           "Pick the address",
@@ -107,18 +107,18 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
           [link("Tailscale admin", "https://login.tailscale.com/admin/machines")],
           [
             noted(
-              "Hub address",
+              "Workspace address",
               base,
               // "This machine only" is a fine choice, so the step stays done; it just says what it rules out.
               phoneUrl([base]) === undefined
-                ? "Only this machine can reach the hub: phones and other machines can't join. To change that, on " +
-                    "the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>."
-                : "Another address: on the hub, run fleetd init --listen <ip>:<port> --url http://<name>:<port>.",
+                ? "Only this machine can reach the workspace: phones and other machines can't join. To change that, on " +
+                    "the workspace, run fleetd init --listen <ip>:<port> --url http://<name>:<port>."
+                : "Another address: on the workspace's machine, run fleetd init --listen <ip>:<port> --url http://<name>:<port>.",
             ),
           ],
         ),
       ],
-      test: "Reach the hub at its address",
+      test: "Reach the workspace at its address",
       ways: [way(undefined, ["hub/reachable", "hub/https", "hub/service_manager"])],
     }),
     // Where agents run (D594): a computer of the team's, directly on it.
@@ -126,15 +126,15 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       parts: [
         part(
           "A computer",
-          `The hub's own machine can run agents too. In the app, ${settingsPath()} › Machines › Add machine does each of these.`,
+          `The workspace's own machine can run agents too. In the app, ${settingsPath()} › Machines › Add machine does each of these.`,
           [],
           [
-            command("The hub's own machine, on it", "fleetd machine add --local"),
+            command("The workspace's own machine, on it", "fleetd machine add --local"),
             command(
-              "Another machine, on the hub",
+              "Another machine, on the workspace's machine",
               "fleetd pair --worker <name>",
               workerReachNote(base) ??
-                "It prints one line to run on that machine, which installs fleetd and joins. Or, over SSH from the hub: fleetd machine add <ssh host>.",
+                "It prints one line to run on that machine, which installs fleetd and joins. Or, over SSH from the workspace: fleetd machine add <ssh host>.",
             ),
           ],
         ),
@@ -151,11 +151,11 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       ways: [way(undefined, ["*/online", "*/service_manager"])],
     }),
     // Any one way is enough (D200): the hub's API key, the owner's subscription, or every machine's own login.
-    step("claude", "accounts", "Claude", "Agents think with Claude: the hub's API key, your subscription, or each machine's login.", { kind: "required" }, {
+    step("claude", "accounts", "Claude", "Agents think with Claude: the workspace's API key, your subscription, or each machine's login.", { kind: "required" }, {
       parts: [
         part(
-          "Give the hub an API key",
-          "Bots' leads and work nobody started run on it, and so does anyone who picks the hub's API in Settings › " +
+          "Give the workspace an API key",
+          "Bots' leads and work nobody started run on it, and so does anyone who picks the workspace's API in Settings › " +
             "Accounts › Claude. Machines need no login of their own.",
           [link("Claude Console › API keys", "https://console.anthropic.com/settings/keys")],
           [
@@ -163,13 +163,13 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             plain(
               "Where",
               `Paste it on ${settingsPath()} › Setup › Claude, the app sealing it on your device, or give it to fleetd init ` +
-                "--step claude on the hub. The endpoint is Anthropic's own unless you type a gateway's.",
+                "--step claude on the workspace's machine. The endpoint is Anthropic's own unless you type a gateway's.",
             ),
           ],
         ),
         part(
           "Or connect your own subscription",
-          "Without a hub key, leads and work nobody started run on the owner's subscription. Paste the token in " +
+          "Without a workspace key, leads and work nobody started run on the owner's subscription. Paste the token in " +
             "Settings › Accounts › Claude; the app seals it on your device.",
           [],
           [command("On any computer with claude", "claude setup-token")],
@@ -184,19 +184,19 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       place: "claude",
       test: "Read the account's last Test and each machine's login",
       ways: [
-        way("the hub's API key", ["hub/claude_key"]),
+        way("the workspace's API key", ["hub/claude_key"]),
         way("the owner's subscription", ["hub/claude_owner"]),
         way("each machine's own login", ["*/claude_login"]),
       ],
     }),
     // The hub's own GitHub App (D190) first; gh logged in on the hub still works without one.
-    step("github", "accounts", "GitHub", "The hub opens PRs, reads their CI and merges them.", { kind: "before", what: "the first PR" }, {
+    step("github", "accounts", "GitHub", "The workspace opens PRs, reads their CI and merges them.", { kind: "before", what: "the first PR" }, {
       parts: [
         part(
-          "Create the hub's GitHub App",
-          `On ${settingsPath()} › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the hub.`,
+          "Create the workspace's GitHub App",
+          `On ${settingsPath()} › Setup › GitHub: one button, nothing to paste. GitHub hands the App's keys straight to the workspace.`,
           [],
-          [command("Or on the hub, from a terminal", "fleetd github-app create")],
+          [command("Or on the workspace's machine, from a terminal", "fleetd github-app create")],
         ),
         part(
           "Install it on the repositories fleetd works on",
@@ -207,7 +207,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
       ],
       place: "github",
       test: "Mint a token for each installation, or ask gh who it is logged in as",
-      ways: [way("the hub's GitHub App", ["hub/github_app"]), way("gh on the hub", ["hub/gh_auth"])],
+      ways: [way("the workspace's GitHub App", ["hub/github_app"]), way("gh on the workspace's machine", ["hub/gh_auth"])],
     }),
     // 1Password (D235, D313): one vault of its own, holding only what fleetd needs.
     step(
@@ -263,7 +263,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             "Invite someone",
             "The invite is a link and a code, for one person, good for 7 days. Send it to them yourself.",
             [],
-            [command("On the hub", "fleetd invite --name <name>", "--role admin for another admin.")],
+            [command("On the workspace", "fleetd invite --name <name>", "--role admin for another admin.")],
           ),
         ],
         place: "invites",
@@ -303,7 +303,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
               command(
                 "In Terminal, logged in at the Mac's screen",
                 `curl -fsSL https://fleetd.sh | sh -s -- --join ${base} --code <code> --machine-id mac${macFlags(version)}`,
-                `Or on the hub: fleetd pair --worker mac, then add${macFlags(version)} to the line it prints.`,
+                `Or on the workspace's machine: fleetd pair --worker mac, then add${macFlags(version)} to the line it prints.`,
               ),
             ],
           ),
@@ -336,7 +336,7 @@ export function guides(hub: string, version = VERSION): HubSetupStep[] {
             [],
             [
               command(
-                "On the hub, for an old machine of another name",
+                "On the workspace, for an old machine of another name",
                 "fleetd machine remove <old name>",
                 "Where it ran in another account on the Mac, stop it there too: launchctl bootout gui/$(id -u)/sh.fleetd.node",
               ),

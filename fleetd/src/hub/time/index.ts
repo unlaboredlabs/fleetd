@@ -99,7 +99,7 @@ export class Time {
           if (dropped > 0) write(c, gap(now, dropped));
         });
       } catch (error) {
-        console.error("time: hub spans not stored:", error);
+        console.error("time: workspace spans not stored:", error);
       }
     }
   }

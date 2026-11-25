@@ -78,8 +78,8 @@ async function vaultKeys(home: string, create: boolean): Promise<VaultKeys> {
   const keys = new VaultKeys(keyDir(home));
   await keys.load(create);
   if (keys.mode === "passphrase") {
-    const pass = process.env[VAULT_PASSPHRASE_ENV] || (await readHidden("This hub's vault passphrase: "));
-    if (pass === undefined || !keys.unlock(pass)) throw new VaultKeyError("vault_locked", "That passphrase doesn't open this hub's vault key.");
+    const pass = process.env[VAULT_PASSPHRASE_ENV] || (await readHidden("This workspace's vault passphrase: "));
+    if (pass === undefined || !keys.unlock(pass)) throw new VaultKeyError("vault_locked", "That passphrase doesn't open this workspace's vault key.");
   }
   return keys;
 }
@@ -91,8 +91,8 @@ export async function exportCommand(argv: string[]): Promise<CliResult> {
   if (args instanceof ArgError) return usage(args.message);
   const home = resolveHome(args.str("home"));
   // The file holds everything the hub knows, its secrets under a passphrase the caller picks.
-  if (isLiveHubHome(home)) return fail(3, "Inside an agent's session the fleetd CLI doesn't export the live hub. For a throwaway hub, set FLEETD_HOME.");
-  if (!existsSync(join(home, "hub.sqlite"))) return fail(1, `There is no hub at ${home}.`);
+  if (isLiveHubHome(home)) return fail(3, "Inside an agent's session the fleetd CLI doesn't export the live workspace. For a throwaway workspace, set FLEETD_HOME.");
+  if (!existsSync(join(home, "hub.sqlite"))) return fail(1, `There is no workspace at ${home}.`);
   const out = resolve(args.str("out") ?? `fleetd-export-${stamp(Date.now())}.tar`);
   if (existsSync(out)) return fail(1, `${out} is already there: name another file with --out.`);
 
@@ -141,14 +141,14 @@ export async function exportCommand(argv: string[]): Promise<CliResult> {
     await file.close();
     renameSync(part, out);
     const lines = [
-      `Exported the hub at ${home} to ${out} (${size(statSync(out).size)}).`,
+      `Exported the workspace at ${home} to ${out} (${size(statSync(out).size)}).`,
       `  data      ${plural(done.rows, "row")} in ${plural(done.tables, "table")}`,
       `  files     ${filesLine(done.files)}`,
       `  secrets   ${done.secrets ? "sealed under the passphrase; the file opens them only with it, so keep it" : "left out (--no-secrets)"}`,
       ...(done.skipped.length > 0 ? ["  left out:", ...done.skipped.map((s) => `    ${s}`)] : []),
       "",
       "Machines, their keys and everyone's device sign-ins aren't in it: after fleetd import, machines join",
-      "again and people sign in again. Load it into a fresh hub with:",
+      "again and people sign in again. Load it into a fresh workspace with:",
       `  fleetd import ${out}`,
       "",
     ];
@@ -173,7 +173,7 @@ export async function importCommand(argv: string[]): Promise<CliResult> {
     const checked = await checkExport(file);
     const db = join(home, "hub.sqlite");
     if (existsSync(db) && processesHolding(realpathSync(db)).length > 0) {
-      return fail(3, `A hub is running on ${home}. Stop it (systemctl --user stop fleetd-hub, or on a Mac launchctl bootout gui/$(id -u)/sh.fleetd.hub), then import. Nothing was changed.`);
+      return fail(3, `A workspace is running on ${home}. Stop it (fleetd workspace stop), then import. Nothing was changed.`);
     }
     let key: Uint8Array | undefined;
     if (checked.header.secrets && !args.flag("no-secrets")) {
@@ -188,19 +188,18 @@ export async function importCommand(argv: string[]): Promise<CliResult> {
     key?.fill(0);
     const others = done.people.filter((p) => p.role !== "owner");
     const lines = [
-      `Loaded ${file} (written by fleetd ${checked.header.fleetd}, ${checked.header.createdAt}) into the hub at ${home}.`,
+      `Loaded ${file} (written by fleetd ${checked.header.fleetd}, ${checked.header.createdAt}) into the workspace at ${home}.`,
       `  data      ${plural(done.rows, "row")} in ${plural(done.tables, "table")}`,
       `  files     ${filesLine(done.files)}`,
-      `  secrets   ${done.secrets ? "loaded, sealed to this hub's own keys" : "not loaded"}`,
+      `  secrets   ${done.secrets ? "loaded, sealed to this workspace's own keys" : "not loaded"}`,
       ...(done.skipped.length > 0 ? ["  skipped:", ...done.skipped.map((s) => `    ${s}`)] : []),
       "",
-      "Start the hub (systemctl --user start fleetd-hub; on a Mac, launchctl bootstrap gui/$(id -u)",
-      "~/Library/LaunchAgents/sh.fleetd.hub.plist). Then:",
+      "Start the workspace (fleetd workspace restart). Then:",
       ...(done.machines.length > 0
         ? [
             "  Machines aren't carried. Join each one again under its id, so its bots find it: run this on",
-            "  the hub machine, then the command it prints on that machine (with --rejoin when this hub",
-            "  answers at the old hub's address).",
+            "  the workspace's machine, then the command it prints on that machine (with --rejoin when this",
+            "  workspace answers at the old one's address).",
             ...done.machines.map((m) => `    fleetd pair --worker ${m.machineId}${m.name && m.name !== m.machineId ? `    # ${m.name}` : ""}`),
           ]
         : []),

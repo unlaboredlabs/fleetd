@@ -55,7 +55,7 @@ test("a lead writes to another bot's lead as its bot, and a retry is the first a
   expect(((await answer(hub, inbox, message("Gift cards, please."))) as { handle: string }).handle).toBe("N3");
   // Its own project, an unknown one, and an archived asker are refused.
   await expect(answer(hub, inbox, { op: "project_message", project: "Home", text: "x" })).rejects.toThrow("That is this lead's own bot.");
-  await expect(answer(hub, inbox, { op: "project_message", project: "nope", text: "x" })).rejects.toThrow("No bot nope on this hub.");
+  await expect(answer(hub, inbox, { op: "project_message", project: "nope", text: "x" })).rejects.toThrow("No bot nope on this workspace.");
   hub.db.conn.run("UPDATE project_settings SET archived_ms = 1 WHERE project_id = 'inbox'");
   await expect(answer(hub, inbox, message("x"))).rejects.toThrow("This bot is archived");
 });

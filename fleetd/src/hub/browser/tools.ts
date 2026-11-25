@@ -52,7 +52,7 @@ export const unknownMachine = (m: string) =>
     `No machine ${m}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
+    `This workspace has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the workspace admin.`,
   );
 
 /** Some grant on every machine gives at least `role` (api/grants.rs `allows_everywhere`). */
@@ -267,7 +267,7 @@ function browserRecordingGet(hub: Hub, caller: Caller, input: { sessionId: strin
     }
   } catch (e) {
     console.warn(`browser recording of ${id} not read:`, e);
-    throw new ToolError("failed", `The hub could not read ${id}'s recording.`);
+    throw new ToolError("failed", `The workspace could not read ${id}'s recording.`);
   }
   const done = offset + data.length >= bytes;
   return {

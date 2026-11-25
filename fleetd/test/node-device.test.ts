@@ -74,7 +74,7 @@ test("kvm says what is wrong and how to fix it", () => {
   expect(kvmAt(dev, group, () => true)).toEqual({ ok: "sg" });
   // Where sg can't, only a reboot gives it the group: said with what it stops, and no command to copy.
   const reboot = kvmAt(dev, group, never);
-  expect("err" in reboot && reboot.err.why).toContain("the hub");
+  expect("err" in reboot && reboot.err.why).toContain("the workspace");
   expect("err" in reboot && reboot.err.fix).toBeUndefined();
   expect(quoted("it's")).toBe("'it'\\''s'");
 });

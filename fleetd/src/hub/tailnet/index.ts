@@ -18,7 +18,7 @@ import { store } from "../store/hub_store.ts";
 
 /** Why the row is off and the one fix, when the hub's computer has no Tailscale running. */
 export const NOT_RUNNING =
-  "Tailscale isn't running on the hub's computer. Install Tailscale there and sign in to your tailnet, then Connect";
+  "Tailscale isn't running on the workspace's computer. Install Tailscale there and sign in to your tailnet, then Connect";
 
 /** How the hub reads its computer's Tailscale; a test makes the `tailnet.host` area first with its own. */
 export type HostTailscale = () => Promise<LocalTailscale>;
@@ -55,7 +55,7 @@ export const state = async (hub: Hub): Promise<TailnetState> => stateOf(routeOn(
 
 export async function connect(hub: Hub): Promise<TailnetState> {
   const t = await read(hub);
-  if (!t.running) throw new ToolError("failed", `${NOT_RUNNING.split(". ")[0]}.`, "Install Tailscale on the hub's computer and sign in to your tailnet, then Connect again.");
+  if (!t.running) throw new ToolError("failed", `${NOT_RUNNING.split(". ")[0]}.`, "Install Tailscale on the workspace's computer and sign in to your tailnet, then Connect again.");
   setRoute(hub, true);
   sendState(hub);
   return stateOf(true, t);

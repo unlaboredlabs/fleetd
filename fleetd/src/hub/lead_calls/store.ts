@@ -25,7 +25,7 @@ export function projectsOn(hub: Hub, machineId: MachineId): WorkspaceProject[] {
 }
 
 const lookupFailed = () =>
-  new ToolError("failed", "the hub failed while checking who made this call", "try again shortly");
+  new ToolError("failed", "the workspace failed while checking who made this call", "try again shortly");
 
 export function directoryOver(db: HubDb): Directory {
   const one = <R>(sql: string, ...params: string[]): R | null => {

@@ -54,7 +54,7 @@ export function register(tools: Registry): void {
     const s = accounts(hub);
     const before = s.hubApi();
     if (seals.length === 0 && !before) {
-      throw new ToolError("invalid", "The hub has no API key to keep.", "Paste the key: the app seals it to each machine.");
+      throw new ToolError("invalid", "The workspace has no API key to keep.", "Paste the key: the app seals it to each machine.");
     }
     const [held, problems] = await relay(hub, { kind: "hub" }, seals, endpoint, before?.sealedOn ?? []);
     if (held.length === 0) throw noneTook(problems);
@@ -86,8 +86,8 @@ export function register(tools: Registry): void {
     return {
       ok: true,
       next:
-        "Leads and work nobody started run on the hub owner's subscription from their next start, else each " +
-        "machine's own login; people who used the hub's API connect their own subscription.",
+        "Leads and work nobody started run on the workspace owner's subscription from their next start, else each " +
+        "machine's own login; people who used the workspace's API connect their own subscription.",
     };
   });
 
@@ -147,7 +147,7 @@ export function register(tools: Registry): void {
     if (input.account === "hub_api") {
       requireAdministrator(hub, caller);
       const api = s.hubApi();
-      if (!api) throw new ToolError("not_found", "The hub has no API key.", "Save one first with claude_hub_api_set.");
+      if (!api) throw new ToolError("not_found", "The workspace has no API key.", "Save one first with claude_hub_api_set.");
       [account, held] = [{ kind: "hub" }, api.sealedOn];
     } else if (input.account === "mine") {
       const p = me(hub, caller);
@@ -220,8 +220,8 @@ function requireAdministrator(hub: Hub, caller: Caller): Person {
   if (!admin) {
     throw new ToolError(
       "forbidden",
-      "Only the hub's owners and admins set up the hub's Claude API configuration.",
-      "Ask an owner or admin; they set it on the Hub pages of the app's Settings.",
+      "Only the workspace's owners and admins set up the workspace's Claude API configuration.",
+      "Ask an owner or admin; they set it on the Workspace pages of the app's Settings.",
     );
   }
   return admin;

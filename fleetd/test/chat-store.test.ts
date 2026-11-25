@@ -117,7 +117,7 @@ test("an agent's message to another lead is stored once, held, and says why it w
   const { hub, done } = testHub();
   const first = await sendAsAgent(hub, PROJECT, "Ada (bot)", "Can you book the room?", "ask:1");
   expect(first.message).toMatchObject({ author: "agent", by: "Ada (bot)", delivery: "queued", text: "Can you book the room?" });
-  expect(first.leadWaiting).toBe("Launching a lead thread is not wired in this hub yet.");
+  expect(first.leadWaiting).toBe("Launching a lead thread is not wired in this workspace yet.");
   const again = await sendAsAgent(hub, PROJECT, "Ada (bot)", "Can you book the room?", "ask:1");
   expect(again.message.messageId).toBe(first.message.messageId);
   expect(chat(hub).held(PROJECT).length).toBe(1);

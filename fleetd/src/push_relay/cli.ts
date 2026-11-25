@@ -38,7 +38,7 @@ async function serveCommand(listen: string): Promise<number> {
 
 export async function pushRelayCommand(argv: string[]): Promise<number> {
   const v = parse(argv, {
-    options: { listen: "str", "relay-key-file": "str", hub: "str", "key-file": "str" },
+    options: { listen: "str", "relay-key-file": "str", workspace: "str", "key-file": "str" },
     positionals: true,
   });
   if (v instanceof ArgError) {
@@ -53,9 +53,9 @@ export async function pushRelayCommand(argv: string[]): Promise<number> {
 }
 
 async function set(v: Parsed, raw: string): Promise<number> {
-  const [hubUrl, keyFile] = [v.str("hub"), v.str("key-file")];
+  const [hubUrl, keyFile] = [v.str("workspace"), v.str("key-file")];
   if ((hubUrl === undefined) !== (keyFile === undefined)) {
-    eprintln("fleetd push-relay: --hub and --key-file go together");
+    eprintln("fleetd push-relay: --workspace and --key-file go together");
     return 2;
   }
   try {
@@ -74,7 +74,7 @@ async function set(v: Parsed, raw: string): Promise<number> {
       const got = await hub.call("hub_info", {});
       const pub = Buffer.from(typeof got?.boxPubKey === "string" ? got.boxPubKey : "", "base64");
       if (pub.length !== 32) {
-        eprintln("fleetd push-relay: the hub sent no key to seal the relay's key to");
+        eprintln("fleetd push-relay: the workspace sent no key to seal the relay's key to");
         return 1;
       }
       input.key = Buffer.from(seal(new Uint8Array(pub), new TextEncoder().encode(key.trim()))).toString("base64");
