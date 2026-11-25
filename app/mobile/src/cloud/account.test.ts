@@ -288,6 +288,31 @@ describe("Sign In", () => {
   });
 });
 
+describe("App Review's review code (D737)", () => {
+  it("signs the demo address in to the demo team with no page, after the same Signed in as", async () => {
+    await fake.team("demo", ["owner@fleetd.dev"]);
+    fake.demo = { email: "review@fleetd.dev", code: "review-code-123", team: "demo" };
+    const p = ports("nobody@example.com");
+    const ask = answering();
+    const out = await signInAsking(p, ask, { email: "  Review@Fleetd.dev ", code: "review-code-123" });
+    expect(p.opened).toEqual([]);
+    expect(ask.asked).toEqual(["Signed in as review@fleetd.dev"]);
+    expect(out).toMatchObject({ ok: true, account: { email: "review@fleetd.dev" }, teams: [{ name: "demo", ok: true }] });
+    if (!out.ok) throw new Error("not signed in");
+    expect(out.teams[0]!.ok && out.teams[0]!.hub.invited).toBeUndefined();
+  });
+
+  it("shows a wrong code, a closed demo and a busy service in the service's words", async () => {
+    await fake.team("demo", ["owner@fleetd.dev"]);
+    const typed = { email: "review@fleetd.dev", code: "review-code-123" };
+    expect(await signInAsking(ports("x@example.com"), answering(), typed)).toMatchObject({ ok: false, failure: { code: "signin_closed" } });
+    fake.demo = { ...typed, team: "demo" };
+    expect(await signInAsking(ports("x@example.com"), answering(), { ...typed, code: "wrong-code" })).toMatchObject({ ok: false, failure: { code: "signin_refused", fix: "Check both, then try again." } });
+    fake.refuseNext = { status: 429, failure: { code: "rate_limited", message: "Too many tries.", fix: "Try again in 10 minutes." } };
+    expect(await signInAsking(ports("x@example.com"), answering(), typed)).toMatchObject({ ok: false, failure: { code: "rate_limited", fix: "Try again in 10 minutes." } });
+  });
+});
+
 describe("Sign Out", () => {
   const team = (name: string): KeptHub => ({ hub: `https://${name}.fleetd.dev`, key: `fld_${name}`, hubName: name, cloud: true });
   const own: KeptHub = { hub: "http://devbox:4790", key: "fld_own", hubName: "devbox" };

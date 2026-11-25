@@ -2,7 +2,7 @@
 // and the shared words in each state as Hermes runs them (no Array.prototype.toSorted).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BILLING_SAMPLES, SAMPLE_NOW } from "../../desktop/src/shared/billing.samples";
-import { billingPage, billingShown, failureWords, readBilling, readTeamBilling, setTeamCap, topLine, usageRows } from "./billing";
+import { billingPage, billingShown, failureWords, readBilling, readTeamBilling, sells, setTeamCap, shownTopLine, topLine, usageRows } from "./billing";
 
 const HUB = { hub: "https://acme.fleetd.dev/", key: "fk_phone_key", hubName: "acme" };
 
@@ -88,5 +88,25 @@ describe("Billing's words on Hermes", () => {
     expect(topLine(await read(BILLING_SAMPLES.off))).toBeNull();
     expect(usageRows(await read(BILLING_SAMPLES.cap)).map((r) => r.cpu)).toEqual([16, 8, 2]);
     expect(SAMPLE_NOW).toBeGreaterThan(0);
+  });
+});
+
+describe("Billing on an iPhone, which sells nothing (D733)", () => {
+  it("sells on Android only", () => {
+    expect(sells("android")).toBe(true);
+    expect(sells("ios")).toBe(false);
+  });
+
+  it("says what's wrong with no call to buy and no row for it, and keeps the cap's", () => {
+    const words = (sample: keyof typeof BILLING_SAMPLES | "empty") =>
+      shownTopLine(sample === "empty" ? { ...readBilling(BILLING_SAMPLES.plan)!, held: "empty", credits: { ...readBilling(BILLING_SAMPLES.plan)!.credits, leftCents: 0 } } : readBilling(BILLING_SAMPLES[sample])!, false);
+    expect(words("none")).toEqual({ tone: "danger", message: "This team has no plan and no credits, so fleetd can't start a computer for its bots.", fix: null });
+    expect(words("empty")).toEqual({ tone: "danger", message: "No credits left, so bots on fleetd's computers are stopped.", fix: null });
+    expect(words("failed")).toEqual({ tone: "danger", message: "The card for the Team plan was declined.", fix: null });
+    expect(words("cap")).toEqual(topLine(readBilling(BILLING_SAMPLES.cap)!));
+    expect(words("plan")).toBeNull();
+    for (const sample of ["none", "empty", "failed"] as const) expect(words(sample)?.message).not.toMatch(/\b(buy|pick|add|choose|update|plan or)\b/iu);
+    // Android keeps the shared line, buy and all.
+    expect(shownTopLine(readBilling(BILLING_SAMPLES.none)!, true)).toEqual(topLine(readBilling(BILLING_SAMPLES.none)!));
   });
 });

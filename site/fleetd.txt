@@ -74,8 +74,9 @@ run. No seats and no tokens. Every plan covers the whole team.
   Team    $50 a month    1,000 hours of computer time    100 agents at once
   Scale  $200 a month    4,300 hours of computer time    300 agents at once
 
-Hours are for the smallest computer. Unused time doesn't roll over. Prices
-exclude VAT. Billing details: https://fleetd.sh/docs/billing
+Hours are for the smallest computer. Unused time doesn't roll over. Prices are
+in US dollars, plus VAT where it applies, shown at checkout. Sold by Unlabored
+Labs, Inc. Billing details: https://fleetd.sh/docs/billing
 
 Pay as you go, for extra time beyond a plan or no plan at all. Metered to the
 millisecond, only while a computer is running (a month is 730 hours; a second
@@ -97,7 +98,8 @@ $69 past the $30 it includes paid from credits ($89 in all).
 SELF-HOSTED OR CLOUD
 The same product either way. The difference is who runs it.
                      Self-hosted                     fleetd cloud
-Who runs it          You, on your own machine        We do, in the EU
+Who runs it          You, on your own machine        Unlabored Labs, Inc.,
+                                                     on servers in the EU
 Agents run on        Your own machines               Our computers, or your own
 Apps                 Desktop and phone               Desktop, phone and web
 Models and GitHub    Your own accounts               Your own accounts

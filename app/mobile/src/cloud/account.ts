@@ -8,7 +8,9 @@
 // a typed one does (hub/pair.ts), joins each invitation chosen (POST ACCOUNTS_ACCEPT_PATH) and pairs it the same way,
 // and each key is kept as any hub's (vault.ts); a key it replaces, and a previous account's teams, are revoked there
 // as Sign out does. The app keeps the email and WorkOS's session id, never a WorkOS token, and never the verifier.
-// Sign out drops this phone's key on each of the account's hubs, then ends the session.
+// Sign out drops this phone's key on each of the account's hubs, then ends the session. App Review signs in without
+// WorkOS's page (D737): its address and fixed code go to ACCOUNTS_DEMO_SIGN_IN_PATH, which answers as the sign-in does,
+// and everything after is the same.
 //
 // The phone's own code, not the desktop's: that one listens on a loopback port with node:http and checks with zod,
 // neither of which the phone has. The contract's paths and shapes are shared (desktop.ts).
@@ -16,6 +18,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import {
   ACCOUNTS_ACCEPT_PATH,
   ACCOUNTS_APP_REDIRECT,
+  ACCOUNTS_DEMO_SIGN_IN_PATH,
   ACCOUNTS_SIGN_IN_PATH,
   ACCOUNTS_SIGN_OUT_PATH,
   ACCOUNTS_TEAM_PATH,
@@ -23,6 +26,7 @@ import {
   readAccepted,
   readSignIn,
   teamOrigin,
+  type AccountsDemoSignInInput,
   type AccountsInvitation,
   type AccountsSignInInput,
   type AccountsTeam,
@@ -177,8 +181,8 @@ export const askAfterSignIn = async (ask: AfterSignInAsk, answer: SignedIn): Pro
 };
 
 /** A whole sign-in: the page, who signed in and each invitation asked, then a key per team and per invitation joined. */
-export const signInAsking = async (ports: SignInPorts, ask: AfterSignInAsk): Promise<SignInOutcome> => {
-  const arrived = await signIn(ports);
+export const signInAsking = async (ports: SignInPorts, ask: AfterSignInAsk, review?: { email: string; code: string }): Promise<SignInOutcome> => {
+  const arrived = review === undefined ? await signIn(ports) : await reviewSignIn(ports, review);
   if (!arrived.ok) return arrived;
   const join = await askAfterSignIn(ask, arrived.answer).catch(() => null);
   if (join === null) {
@@ -213,11 +217,15 @@ export const signIn = async (ports: SignInPorts): Promise<Arrived> => {
   return exchange(ports, { code, codeVerifier: verifier, redirectUri: ACCOUNTS_APP_REDIRECT, deviceName: ports.deviceName });
 };
 
+/** App Review's sign-in with the demo address and code instead of the page, its answer held as the sign-in's. */
+export const reviewSignIn = (ports: SignInPorts, typed: { email: string; code: string }): Promise<Arrived> =>
+  exchange(ports, { email: typed.email.trim(), code: typed.code.trim(), deviceName: ports.deviceName }, ACCOUNTS_DEMO_SIGN_IN_PATH);
+
 /** The accounts service's answer, held: nothing pairs before the person has said it's them. */
-const exchange = async (ports: SignInPorts, body: AccountsSignInInput): Promise<Arrived> => {
+const exchange = async (ports: SignInPorts, body: AccountsSignInInput | AccountsDemoSignInInput, path = ACCOUNTS_SIGN_IN_PATH): Promise<Arrived> => {
   let response: Response;
   try {
-    response = await post(ports.fetch, `${ports.config.accountsUrl}${ACCOUNTS_SIGN_IN_PATH}`, body);
+    response = await post(ports.fetch, `${ports.config.accountsUrl}${path}`, body);
   } catch {
     return { ok: false, failure: OFFLINE_FAILURE };
   }

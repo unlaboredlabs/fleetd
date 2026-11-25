@@ -108,6 +108,9 @@ export const SLEPT_SHOWN_MS = 3600000;
 /** The accounts service's sign-in, under its origin (fleetd cloud's `https://accounts.<base>`): POST, JSON. */
 export const ACCOUNTS_SIGN_IN_PATH = "/v1/app/sign-in";
 
+/** The accounts service's demo sign-in for App Review (D737), answered as the sign-in is: POST, JSON. */
+export const ACCOUNTS_DEMO_SIGN_IN_PATH = "/v1/app/demo-sign-in";
+
 /** The accounts service's accept of an invitation the sign-in answered: POST, JSON. */
 export const ACCOUNTS_ACCEPT_PATH = "/v1/app/accept";
 
@@ -150,10 +153,20 @@ export type AccountsAcceptOutput = {
 
 /** A refusal from the accounts service, any non-2xx: the hub's own failure shape, its words shown as written. */
 export type AccountsFailure = {
-  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Team: invalid (400), make_refused (401: a make value unknown, used before or run out), already_own (409: the person has a team of their own), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
+  /** Sign-in: invalid (400), signin_refused (401: a code or verifier WorkOS refused, or one used before), signin_closed (403), rate_limited (429). Demo sign-in: invalid (400), signin_refused (401: a wrong address or code, the same answer for both), signin_closed (403: the demo sign-in is off), rate_limited (429), unavailable (503: WorkOS didn't answer). Accept: invalid (400), accept_refused (401: an accept value unknown, used before or run out, or its invite revoked), failed (403: the team is at its limit of people), rate_limited (429). Team: invalid (400), make_refused (401: a make value unknown, used before or run out), already_own (409: the person has a team of their own), rate_limited (429). Invites: invalid (400: not an email, or no such role), forbidden (403: not an owner's or admin's device, or an admin naming an owner), failed (403: the team is at its limit of people), not_found (404: no such open invite), already_invited (409), already_member (409: the email is a person of the team), invite_refused (409: WorkOS wouldn't send it), not_signed_in_team (409: a team with no sign-in). */
   code: string;
   fix?: string;
   message: string;
+};
+
+/** POST /v1/app/demo-sign-in: App Review's sign-in to the demo team (D737), the address and the fixed review code typed in the phone app, and this device's name. It answers exactly as /v1/app/sign-in does (AccountsSignInOutput), with the demo team alone; no auth header. */
+export type AccountsDemoSignInInput = {
+  /** The fixed review code, as typed. */
+  code: string;
+  /** Names the key the team's /pair makes: the phone's name. */
+  deviceName: string;
+  /** The demo address as typed, trimmed; the service compares it case-insensitively. */
+  email: string;
 };
 
 /** An open invite by email: sent, not yet used, revoked or run out. */

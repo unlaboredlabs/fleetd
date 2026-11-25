@@ -52,7 +52,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
       {ways ? (
-        <Ways onOwn={() => navigation.navigate("OwnHub")} onSignedIn={onSignedIn} />
+        <Ways onOwn={() => navigation.navigate("OwnHub")} onReview={() => navigation.navigate("ReviewSignIn")} onSignedIn={onSignedIn} />
       ) : (
         <View style={styles.actions}>
           <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
