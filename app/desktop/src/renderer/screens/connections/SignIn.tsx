@@ -11,6 +11,7 @@ import { Button, Dialog, Field, InlineCode, Input, SecretInput, Text } from "../
 import { CommandLine } from "../onboarding/Prose";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
 import type { Named } from "../settings/namedServers";
+import { HttpsFix, needsHttps } from "./SignInAddress";
 import { hostOf, markOf, signInOutcome, type SignInMark } from "./signInModel";
 import c from "./connections.module.css";
 
@@ -42,6 +43,8 @@ function useSignIn(scope: McpScope, name: string, onSignedIn: () => void) {
   const oauth = [...(read.data?.project ?? []), ...(read.data?.global ?? [])].find((x) => x.name === name && x.oauth !== undefined)?.oauth;
   const [phase, setPhase] = useState<Phase>({ kind: "ready" });
   const [problem, setProblem] = useState<string | null>(null);
+  // The service takes only an https sign-in address and the workspace has none: one line and the fix, not its words.
+  const [https, setHttps] = useState(false);
   const hubUrl = appUrl === undefined ? {} : { hubUrl: appUrl.includes("://") ? appUrl : `http://${appUrl}` };
   const opened = (out: McpOauthStartOutput) => {
     if (out.authorizeUrl !== undefined) {
@@ -57,11 +60,13 @@ function useSignIn(scope: McpScope, name: string, onSignedIn: () => void) {
   };
   const failed = (e: unknown, back: Phase) => {
     setPhase(back);
-    setProblem(errorText(e));
+    setHttps(needsHttps(e));
+    setProblem(needsHttps(e) ? null : errorText(e));
   };
   const begin = () => {
     setPhase({ kind: "starting" });
     setProblem(null);
+    setHttps(false);
     hubCall("mcp_oauth_start", { scope, name, ...hubUrl }).then(opened, (e: unknown) => failed(e, { kind: "ready" }));
   };
   const withClient = (clientId: string, clientSecret: string) => {
@@ -86,13 +91,13 @@ function useSignIn(scope: McpScope, name: string, onSignedIn: () => void) {
   useEffect(() => {
     if (phase.kind === "connected") signedIn();
   }, [phase.kind]);
-  return { phase, problem, oauth, begin, withClient };
+  return { phase, problem, https, oauth, begin, withClient };
 }
 
 type SignIn = ReturnType<typeof useSignIn>;
 
 /** What the sign-in shows: why it signs in again, the person's own app's fields, or that the browser is open. */
-function Body({ signIn, url, why, client, setClient }: { signIn: SignIn; url: string; why?: string | undefined; client: { id: string; secret: string }; setClient: (c: { id: string; secret: string }) => void }) {
+function Body({ signIn, url, label, why, client, setClient }: { signIn: SignIn; url: string; label: string; why?: string | undefined; client: { id: string; secret: string }; setClient: (c: { id: string; secret: string }) => void }) {
   const { phase } = signIn;
   if (phase.kind === "connected") {
     return (
@@ -142,6 +147,7 @@ function Body({ signIn, url, why, client, setClient }: { signIn: SignIn; url: st
         </Text>
       )}
       <Text size="sm">Your browser opens <InlineCode>{hostOf(url)}</InlineCode>'s own sign-in page. You come back here once it's done.</Text>
+      {signIn.https ? <HttpsFix label={label} onFixed={signIn.begin} /> : null}
       <Problem text={signIn.problem} />
     </div>
   );
@@ -200,7 +206,7 @@ export function SignInDialog(props: { server: McpServer; named?: Named | undefin
       title={again && props.named === undefined ? `Sign in to ${label} again` : `Sign in to ${label}`}
       footer={<Footer signIn={signIn} client={client} onCancel={props.onClose} />}
     >
-      <Body signIn={signIn} url={url} why={server.oauth?.problem} client={client} setClient={setClient} />
+      <Body signIn={signIn} url={url} label={label} why={server.oauth?.problem} client={client} setClient={setClient} />
     </Dialog>
   );
 }

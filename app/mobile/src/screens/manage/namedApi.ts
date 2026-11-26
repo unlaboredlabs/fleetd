@@ -3,7 +3,7 @@
 // mcp_server_set (the record the manual form saves, with no key: namedInput), mcp_oauth_start for its sign-in page,
 // mcp_server_test, Turn On (mcp_server_set again) and Disconnect (mcp_server_remove). And what each row shows and does
 // on a tap.
-import { namedInput, turnOnInput, withEnabled, type McpServer, type McpTestResult, type Named, type NamedState } from "../../desktop";
+import { namedInput, turnOnInput, withEnabled, type HubError, type McpServer, type McpTestResult, type Named, type NamedState, type SignIns } from "../../desktop";
 import type { Hub, Result } from "./api";
 
 /** A test reaches the server from the project's machine, as the desktop's waits for it. */
@@ -88,4 +88,19 @@ export const testLine = (t: { machineId: string; result: McpTestResult }, machin
   if (t.result.error !== undefined) return { text: `Failed on ${machine}: ${t.result.error}`, signIn: false };
   const n = (t.result.tools ?? []).length;
   return { text: `Works on ${machine}: ${String(n)} ${n === 1 ? "tool" : "tools"}.`, signIn: false };
+};
+
+/** Tailscale Serve answers in seconds; a first certificate can take longer. */
+const HTTPS_MS = 60_000;
+
+/** Whether a sign-in failed because the service takes only an https address and the workspace has none. */
+export const needsHttps = (e: HubError): boolean => e.reason === "needs_https";
+
+/** The one line a sign-in refused for want of https shows on its row. */
+export const httpsLine = (label: string): string => `${label} only signs in to a workspace with an https address.`;
+
+/** "Give the workspace an https address": Tailscale Serve on the workspace's computer (https_address_add). */
+export const addHttps = async (hub: Hub): Promise<Result<SignIns>> => {
+  const r = await hub.call("https_address_add", {}, HTTPS_MS);
+  return r.ok ? { ok: true, value: r.output } : r;
 };

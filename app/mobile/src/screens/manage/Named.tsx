@@ -14,8 +14,8 @@ import { useTheme } from "../../theme";
 import { haptics } from "../../ui/haptics";
 import { ListRow } from "../../ui/List";
 import { machineName } from "./model";
-import { connect, disconnect, readServers, rowOf, signInPage, test, testLine, turnOn } from "./namedApi";
-import { confirmDestructive, errorWords } from "./parts";
+import { connect, disconnect, httpsLine, needsHttps, readServers, rowOf, signInPage, test, testLine, turnOn } from "./namedApi";
+import { confirmDestructive, errorWords, offerHttps } from "./parts";
 
 function Mark({ entry }: { entry: Named }) {
   return (
@@ -73,6 +73,12 @@ export function NamedRow({ entry, server, servers, reload }: { entry: Named; ser
   // as it opens ("opened"), so there the app coming back to the front is the return.
   const signIn = async (sv: McpServer) => {
     const page = await signInPage(session, sv, entry.label);
+    if (!page.ok && needsHttps(page.error)) {
+      // One line, and the one fix: an admin's tap gives the workspace an https address and signs in again.
+      haptics.warning();
+      setLine({ text: httpsLine(entry.label) });
+      return offerHttps(session, entry.label, hub.admin === true, () => go(() => signIn(sv)), (text) => setLine({ text }));
+    }
     if (!page.ok) return failed("Couldn't sign in", page.error);
     away.current = sv.name;
     const shown = await WebBrowser.openBrowserAsync(page.value);

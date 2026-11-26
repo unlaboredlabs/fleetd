@@ -7,9 +7,9 @@
 // from the vault are the desktop's to add. Replaces the Vault's Integrations and Machines' Network.
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
-import type { TailnetState } from "../../../desktop/src/shared/contracts";
+import type { SignIns, TailnetState } from "../../../desktop/src/shared/contracts";
 import {
   connectedOf,
   connectionTestLine,
@@ -38,9 +38,9 @@ import { haptics } from "../ui/haptics";
 import { ListRow, ListSection } from "../ui/List";
 import { pick } from "./Machines";
 import { NamedRow } from "./manage/Named";
-import { disconnect, readServers, setOn, signInPage, test } from "./manage/namedApi";
+import { addHttps, disconnect, httpsLine, needsHttps, readServers, setOn, signInPage, test } from "./manage/namedApi";
 import { machineName } from "./manage/model";
-import { confirmDestructive, errorWords, Problem, useRead } from "./manage/parts";
+import { confirmDestructive, errorWords, offerHttps, Problem, useRead } from "./manage/parts";
 
 const DOTS: ReadonlyArray<readonly [number, number, boolean]> = [
   [3, 3, false],
@@ -70,11 +70,13 @@ export function Connections() {
   const { session, state } = useHub();
   const servers = useRead(() => readServers(session), [session]);
   const tailnet = useRead(() => session.call("tailnet_get", {}), [session]);
+  const signIns = useRead(() => session.call("sign_ins_get", {}), [session]);
   const team = servers.value?.ok === true ? servers.value.value : [];
   const ts = tailnet.value?.ok === true ? (tailnet.value.output as TailnetState) : undefined;
   const reload = () => {
     servers.reload();
     tailnet.reload();
+    signIns.reload();
   };
   // The person signs in on Tailscale's page: its state is read again until it isn't waiting on them.
   const waitingOn = tailnetWaits(ts);
@@ -121,7 +123,60 @@ export function Connections() {
           <AddRow taken={team.map((s) => s.name)} tell={tell} reload={servers.reload} />
         </ListSection>
       ) : null}
+      {admin && signIns.value?.ok === true ? <SigningIn state={signIns.value.output} reload={signIns.reload} /> : null}
     </ScrollView>
+  );
+}
+
+/**
+ * Where services send a sign-in back, an admin's (desktop: SignInRow): the workspace's https address once it has one;
+ * else fleetd's return page with its switch, and Give the Workspace an HTTPS Address.
+ */
+function SigningIn({ state, reload }: { state: SignIns; reload: () => void }) {
+  const t = useTheme();
+  const { session } = useHub();
+  const [busy, setBusy] = useState<"https" | "switch" | null>(null);
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const run = (what: "https" | "switch", work: () => Promise<{ ok: boolean; error?: { message: string; fix?: string | undefined } }>) => {
+    if (busy !== null) return;
+    haptics.tap();
+    setBusy(what);
+    setProblem(undefined);
+    void work()
+      .then((out) => {
+        if (out.ok) haptics.success();
+        else {
+          haptics.warning();
+          if (out.error !== undefined) setProblem(errorWords(out.error));
+        }
+      })
+      .finally(() => {
+        setBusy(null);
+        reload();
+      });
+  };
+  if (state.https !== undefined) {
+    return (
+      <ListSection header="Signing In" footer="Services send you back to this address.">
+        <ListRow title="Sign-in Address" icon="lock" value={state.https.replace(/^https:\/\//u, "")} selectable />
+      </ListSection>
+    );
+  }
+  return (
+    <ListSection header="Signing In" footer={state.returnPage ? "Sign-ins that need https come back through fleetd.dev." : "Off: services that need https can't sign in."}>
+      <ListRow
+        title="Sign-in Return Page"
+        icon="lock"
+        accessory={<Switch value={state.returnPage} disabled={busy !== null} onValueChange={(on) => run("switch", () => session.call("sign_ins_set", { returnPage: on }))} accessibilityLabel="Sign-in Return Page" />}
+      />
+      <ListRow
+        title="Give the Workspace an HTTPS Address"
+        {...(problem === undefined ? {} : { detail: problem, detailColor: t.danger })}
+        chevron={false}
+        onPress={() => run("https", () => addHttps(session))}
+        {...(busy === "https" ? { accessory: <ActivityIndicator color={t.secondary} /> } : {})}
+      />
+    </ListSection>
   );
 }
 
@@ -238,9 +293,13 @@ function CustomRow({ server, line, tell, reload }: { server: McpServer; line: Li
       reload();
     });
   };
-  const signInNow = () =>
+  const signInNow = (): void =>
     go(async () => {
       const page = await signInPage(session, server, server.name);
+      if (!page.ok && needsHttps(page.error)) {
+        setLine({ text: httpsLine(server.name), tone: "danger" });
+        return offerHttps(session, server.name, hub.admin === true, signInNow, (text) => setLine({ text, tone: "danger" }));
+      }
       if (!page.ok) return setLine({ text: errorWords(page.error), tone: "danger" });
       await WebBrowser.openBrowserAsync(page.value);
     });
@@ -322,6 +381,7 @@ function AddRow({ taken, tell, reload }: { taken: string[]; tell: (name: string,
       const server = saved.output.server;
       if (needsSignIn(server)) {
         const page = await signInPage(session, server, free);
+        if (!page.ok && needsHttps(page.error)) return setLine(`${httpsLine(free)} Tap it in the list to fix that.`);
         if (!page.ok) return setLine(errorWords(page.error));
         await WebBrowser.openBrowserAsync(page.value);
         return;

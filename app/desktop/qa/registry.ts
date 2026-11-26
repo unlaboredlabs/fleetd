@@ -92,6 +92,7 @@ export const fixtures = [
   "connections-tailnet",
   "connections-tailnet-off",
   "connections-member",
+  "connections-https",
   // Hub › Machines (fixtures/machines): Add machine's three ways in, a run at its install step, and one
   // stopped at the node's service with its output and Retry.
   "machines-add",
@@ -5524,6 +5525,34 @@ export const screens: readonly Screen[] = [
       const dialog = page.getByRole("dialog", { name: "Sign in to Notion" });
       await expect(dialog.getByRole("status")).toContainText("Finish signing in on mcp.notion.com");
       await expect(dialog.getByRole("button", { name: "Open the sign-in page again" })).toBeVisible();
+    },
+  },
+  // ...a service that takes only https, on a workspace without it and its return page off: one line and the fix, in
+  // the dialog and at the sheet's foot.
+  {
+    id: "connections",
+    variant: "needs-https",
+    route: "#/connections",
+    fixtures: ["connections-https"],
+    open: async (page) => {
+      await expect(page.getByRole("listitem", { name: "Sign-in return page" })).toContainText("Off: services that need https can't sign in.");
+      await page.getByRole("listitem", { name: "Notion" }).getByRole("button", { name: "Connect" }).click();
+      const dialog = page.getByRole("dialog", { name: "Sign in to Notion" });
+      await expect(dialog.getByRole("alert")).toHaveText("Notion only signs in to a workspace with an https address.");
+      await expect(dialog.getByRole("button", { name: "Give the workspace an https address" })).toBeVisible();
+    },
+  },
+  // ...the return page on, as every self-hosted workspace starts: its line, its switch and the https button.
+  {
+    id: "connections",
+    variant: "return-page",
+    route: "#/connections",
+    fixtures: ["connections-empty"],
+    open: async (page) => {
+      const row = page.getByRole("listitem", { name: "Sign-in return page" });
+      await row.scrollIntoViewIfNeeded();
+      await expect(row).toContainText("come back through fleetd.dev");
+      await expect(row.getByRole("switch", { name: "Sign-in return page" })).toBeChecked();
     },
   },
   // ...a bot's own server whose service lets no app sign up: the person's own app, with the redirect URL to paste.

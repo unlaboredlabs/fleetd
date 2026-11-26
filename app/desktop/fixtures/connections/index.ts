@@ -4,6 +4,8 @@
 // connections-failing: the same, github's Test failing. connections-oauth: Notion's Connect waiting on its sign-in,
 // and linear signed out. connections-tailnet: a custom MCP on the tailnet added and tested through Tailscale;
 // connections-tailnet-off the same URL while Tailscale isn't connected. connections-member: the same as some, as Bob.
+// connections-https: Notion's Connect refused for want of an https address (the workspace's return page off), and
+// "Give the workspace an https address" in the dialog and at the sheet's foot. Each but that one has the return page on.
 import { Fixture } from "../kit/fixture.ts";
 import { defineGroup } from "../kit/group.ts";
 import type { JsonObject } from "../kit/json.ts";
@@ -45,6 +47,7 @@ function id(n: number): string {
 
 const TAILNET_ON = { status: "connected", tailnet: "acme.com", device: "fleetd-devbox" };
 const TAILNET_OFF = { status: "off" };
+const RETURN_PAGE = "https://accounts.fleetd.dev/oauth/return";
 
 /** The team vault's logins and variables, which a header or env picks from. */
 const items = (f: Fixture): JsonObject[] => {
@@ -56,12 +59,13 @@ const items = (f: Fixture): JsonObject[] => {
   ];
 };
 
-const connections = (base: Fixture, name: string, note: string, opts: { team: JsonObject[]; tailnet: JsonObject; me?: JsonObject }): Fixture => {
+const connections = (base: Fixture, name: string, note: string, opts: { team: JsonObject[]; tailnet: JsonObject; me?: JsonObject; returnPage?: boolean }): Fixture => {
   const f = Fixture.from(base, name, note);
   const admin = (opts.me ?? sam) === sam;
   answerHub(f, opts.me ?? sam, admin);
   f.answer("mcp_servers_get", undefined, { global: opts.team, project: [] });
   f.answer("tailnet_get", undefined, opts.tailnet);
+  f.answer("sign_ins_get", undefined, { returnPage: opts.returnPage ?? true, returnPageUrl: RETURN_PAGE });
   f.answer("vault_list", {}, { items: items(f) });
   f.answer("mcp_server_test", { scope: TEAM, name: "paper" }, { machineId: "devbox", result: { server: "Paper MCP 0.4.0", tools: [{ name: "get_basic_info" }, { name: "write_html" }, { name: "get_screenshot" }] } });
   f.answer("mcp_server_test", { scope: TEAM, name: "github" }, { machineId: "devbox", result: { server: "github-mcp 0.6.2", tools: Array.from({ length: 26 }, (_, i) => ({ name: `tool_${String(i)}` })) } });
@@ -94,6 +98,17 @@ export default defineGroup({
       scope: TEAM,
     });
 
+    const https = connections(typical, "connections-https", "Notion's Connect refused for want of an https address, with the one-click fix.", { team: [paper], tailnet: TAILNET_ON, returnPage: false });
+    https.answer("mcp_server_set", { scope: TEAM, name: "notion" }, { server: notion });
+    https.fail("mcp_oauth_start", { scope: TEAM, name: "notion" }, {
+      code: "failed",
+      message: "Couldn't sign in to notion: it needs the workspace on an https address.",
+      fix: "Turn on the sign-in return page in Connections, or give the workspace an https address.",
+      reason: "needs_https",
+    });
+    https.answer("https_address_add", {}, { https: "https://devbox.example.com", returnPage: false, returnPageUrl: RETURN_PAGE });
+    https.answer("sign_ins_set", { returnPage: true }, { returnPage: true, returnPageUrl: RETURN_PAGE });
+
     const added = (f: Fixture): Fixture => {
       const saved = server("docs", { type: "http", url: TAILNET_URL });
       f.answer("mcp_server_set", { scope: TEAM, name: "docs" }, { server: saved });
@@ -110,6 +125,7 @@ export default defineGroup({
       oauth,
       added(connections(typical, "connections-tailnet", "A custom MCP on the tailnet, added and tested through the Tailscale connection.", { team: [paper], tailnet: TAILNET_ON })),
       added(connections(typical, "connections-tailnet-off", "A custom MCP on the tailnet while Tailscale isn't connected: the form says so, with Connect Tailscale.", { team: [paper], tailnet: TAILNET_OFF })),
+      https,
       connections(typical, "connections-member", "Connections as Bob, a member: the same list, Tailscale an admin's to connect.", { team: SOME, tailnet: TAILNET_OFF, me: bob }),
     ];
   },
