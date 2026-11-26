@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DoctorCheck, MachineHost } from "../../../shared/contracts";
+import { selectMachines } from "../../src/data/selectors";
 import { fixPlace, needsOf, problemsOf, removeHint, removeLine, repairOf, statusWords } from "./machines";
 
 const hosts: MachineHost[] = [
@@ -30,6 +31,14 @@ describe("Administration › Machines' model", () => {
     expect(statusWords({ name: "laptop", status: "offline" })).toBe("Offline");
     // The hub last heard from it then.
     expect(statusWords({ name: "laptop", status: "offline", lastSeenAt: "2026-10-27T10:00:00.000Z" }, Date.parse("2026-11-07T12:00:00.000Z"))).toBe("Offline since Oct 27");
+  });
+
+  it("says a machine that dropped is offline since its last heartbeat, not since the list was read", () => {
+    // The Nov 26 sweep: the list was read at 11:56, the machine's last heartbeat was 11:59:35, then it dropped.
+    const row = { machineId: "box", name: "box", nodeVersion: "1", status: "online" as const, lastSeenAt: "2026-11-26T11:56:00.000Z" };
+    const live = { machineId: "box", name: "box", running: 0, status: "offline" as const, asOf: "2026-11-26T11:59:35.000Z" };
+    const [view] = selectMachines({ fresh: true, machines: { box: row }, live: { machines: { box: live } } } as never) ?? [];
+    expect(view?.machine).toMatchObject({ status: "offline", lastSeenAt: "2026-11-26T11:59:35.000Z" });
   });
 
   it("gives a list row its dot only where the machine needs someone, with why", () => {
