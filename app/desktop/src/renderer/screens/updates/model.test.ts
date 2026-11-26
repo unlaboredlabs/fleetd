@@ -199,6 +199,10 @@ describe("a problem", () => {
     expect(failed({ state: "rolled_back", stage: "health" }).detail).toBe("Didn't start on the new build, so its old one runs again.");
     expect(failed({ state: "failed", stage: "download" }).detail).toBe("Couldn't download the new build.");
     expect(failed({ state: "failed", stage: "download", message: "GitHub's downloads are failing right now, try again later: 503" }).detail).toBe("GitHub's downloads are failing right now. Try again later.");
+    // No network on the machine: its connection, not GitHub, is what to check (the second quality sweep).
+    expect(failed({ state: "failed", stage: "download", message: "this machine can't reach github.com (no answer in 30 s): check its connection, then try again" }).detail).toBe(
+      "Couldn't reach GitHub. Check the machine's connection, then try again.",
+    );
     // Installing fails for reasons only the hub can name: its own words, as a sentence.
     expect(failed({ state: "failed", stage: "install", message: "the workspace runs a local build: run `fleetd update` on it" }).detail).toBe("The workspace runs a local build: run `fleetd update` on it.");
   });
