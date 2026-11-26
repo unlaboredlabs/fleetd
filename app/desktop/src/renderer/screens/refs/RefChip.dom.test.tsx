@@ -41,10 +41,13 @@ const launch: OrderCard = {
 };
 
 let host: HTMLDivElement;
+// What each attachment_get asked for: a chip reads one byte for a file's name, never the file.
+let fileReads: unknown[] = [];
 let root: Root | undefined;
 let send: Parameters<HubApi["subscribe"]>[0] = () => undefined;
 
 beforeEach(() => {
+  fileReads = [];
   vi.stubGlobal("fleetd", { platform: "darwin", fixture: null });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -66,6 +69,7 @@ const mount = async (body: ReactNode) => {
       if (tool === "orders_board") return Promise.resolve({ ok: true, output: { at: AT, orders: [launch], trains: [] } });
       if (tool === "decisions_list") return Promise.resolve({ ok: true, output: { decisions: [{ decisionId: "D5" }], orders: [] } });
       if (tool === "attachment_get") {
+        fileReads.push(input);
         const id = (input as { attachmentId: string }).attachmentId;
         return Promise.resolve(id === "F2" ? { ok: true, output: { attachmentId: "F2", bytes: 10, dataB64: "", mime: "application/pdf", name: "brief.pdf" } } : { ok: false, error: { code: "not_found", message: `No file ${id}.` } });
       }
@@ -124,6 +128,9 @@ it("makes a decision's or a file's id a chip only once the bot has it, and leave
     ["D5", "A decision", "#/project/devbox/storefront/decisions"],
     ["F2", "brief.pdf", null],
   ]);
+  // Each file read is a one-byte piece from its start (offset and length), which the workspace reads alone.
+  expect(fileReads.length).toBeGreaterThan(0);
+  for (const read of fileReads) expect(read).toMatchObject({ offset: 0, length: 1 });
   window.location.hash = "";
 });
 
