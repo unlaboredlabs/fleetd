@@ -1,5 +1,6 @@
 // `read_image`: a piece of an image or file an agent made in
-// its own working directory, for the chat. The path must resolve inside that directory, the file is opened without
+// its own working directory or its own scratch dir ($TMPDIR), for the chat, so a screenshot taken as proof needn't
+// go into the repo. The path must resolve inside one of them, the file is opened without
 // following a last symlink and checked to be the one resolved, and its bytes must be what its name says
 // (fleetd-contracts mcp.rs `AttachmentMime`).
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
@@ -13,9 +14,9 @@ export { ofFile, ofImage, ofName } from "./chat_file.ts";
 
 export type Image = { name: string; mime: AttachmentMime; bytes: number; piece: Buffer };
 
-/** The image (or, with `file`, any file the chat takes) at `path` in `root`, and its piece from `offset`. Throws a
- * person's words for what is wrong. */
-export function readImage(root: string, path: string, offset: number, file: boolean): Image {
+/** The image (or, with `file`, any file the chat takes) at `path` in `root`, or in `scratch` (the session's $TMPDIR),
+ * and its piece from `offset`. Throws a person's words for what is wrong. */
+export function readImage(root: string, path: string, offset: number, file: boolean, scratch?: string): Image {
   let realRoot: string;
   try {
     realRoot = realpathSync(root);
@@ -24,12 +25,19 @@ export function readImage(root: string, path: string, offset: number, file: bool
   }
   let real: string;
   try {
-    // Relative to the working directory, or absolute inside it, as the tool says.
+    // Relative to the working directory, or absolute inside it or the scratch dir, as the tool says.
     real = realpathSync(isAbsolute(path) ? path : join(realRoot, path));
   } catch (error) {
     throw new Error(refused.unreadable(path, (error as Error).message));
   }
-  if (!within(realRoot, real)) throw new Error(refused.outside(path, realRoot, file));
+  // A scratch dir not made yet holds nothing.
+  let realScratch: string | undefined;
+  try {
+    realScratch = scratch === undefined ? undefined : realpathSync(scratch);
+  } catch {
+    realScratch = undefined;
+  }
+  if (!within(realRoot, real) && !(realScratch !== undefined && within(realScratch, real))) throw new Error(refused.outside(path, realRoot, file));
   const name = basename(real);
   const byName = ofName(name);
   if (!file && !(byName && IMAGES.includes(byName))) throw new Error(refused.notImageName(path));

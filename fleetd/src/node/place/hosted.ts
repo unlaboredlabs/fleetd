@@ -875,10 +875,10 @@ export function hostedPlace(provider: ProviderId, session: string, dir: string, 
       return { ...out, outputTail: tail };
     },
 
-    async read(root, path, offset, file) {
+    async read(root, path, offset, file, scratch) {
       const l = live.get(session);
       if (!l) throw new Error(`${path} is not readable here: the agent's hosted sandbox isn't running`);
-      return readChatFile(l.box, root, path, offset, file);
+      return readChatFile(l.box, root, path, offset, file, scratch);
     },
   };
 }

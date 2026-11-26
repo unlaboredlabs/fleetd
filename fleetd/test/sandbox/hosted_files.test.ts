@@ -297,6 +297,13 @@ test("a chat file comes from the box under the machine's rules: inside the worki
   expect(img).toMatchObject({ name: "shot.png", mime: "image/png" });
   await expect(readChatFile(local, wd, "../secret.png", 0, false)).rejects.toThrow("outside your working directory");
   await expect(readChatFile(local, wd, "nope.png", 0, false)).rejects.toThrow("not readable here");
+  // The session's scratch dir is the agent's too, by its absolute path; another place still isn't.
+  const scratch = join(tmp, "box-scratch");
+  mkdirSync(scratch, { recursive: true });
+  writeFileSync(join(scratch, "proof.png"), Buffer.from("89504e470d0a1a0a0000", "hex"));
+  expect(await readChatFile(local, wd, join(scratch, "proof.png"), 0, false, scratch)).toMatchObject({ name: "proof.png", mime: "image/png" });
+  await expect(readChatFile(local, wd, join(scratch, "proof.png"), 0, false)).rejects.toThrow("outside your working directory");
+  await expect(readChatFile(local, wd, join(tmp, "secret.png"), 0, false, scratch)).rejects.toThrow("outside your working directory");
 });
 
 test("a worktree at a commit origin has goes in too: a reviewer's detached one, a writer's fresh branch", async () => {

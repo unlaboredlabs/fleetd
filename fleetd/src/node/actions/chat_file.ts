@@ -95,7 +95,8 @@ const what = (file: boolean) => (file ? "file" : "image");
 export const refused = {
   rootUnreadable: (root: string, why: string) => `your working directory ${root} is not readable: ${why}`,
   unreadable: (path: string, why: string) => `${path} is not readable here: ${why}`,
-  outside: (path: string, root: string, file: boolean) => `${path} is outside your working directory ${root}: only a${file ? "" : "n"} ${what(file)} you made there can go in the chat`,
+  outside: (path: string, root: string, file: boolean) =>
+    `${path} is outside your working directory ${root} and your $TMPDIR: only a${file ? "" : "n"} ${what(file)} you made in one of them can go in the chat`,
   notImageName: (path: string) => `${path} is not a .png, .jpg, .webp or .gif image`,
   notPlain: (path: string) => `${path} is not a plain file`,
   tooLarge: (path: string, bytes: number, file: boolean) => `${path} is ${bytes} bytes; a chat ${what(file)} is at most ${ATTACHMENT_MAX_BYTES / (1024 * 1024)} MiB`,

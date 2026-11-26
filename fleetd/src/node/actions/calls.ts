@@ -41,6 +41,8 @@ export type CallContext = {
   projectRoot(projectId: string): string;
   /** The working directory this node started a session in. */
   sessionCwd(sessionId: string): string | undefined;
+  /** Its own scratch dir ($TMPDIR), where a chat file may be too. */
+  sessionScratch?(sessionId: string): string | undefined;
   /** What every claude the node starts gets. */
   runnerEnv(): Env;
   /** A frame on the link that is up, if any. */
@@ -313,12 +315,12 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     case "skills_list":
       return { kind: "skills", skills: repoSkills(ctx.projectRoot(call.projectId)) };
     case "read_image": {
-      // The session's own working directory, as this node started it: never one the call names.
+      // The session's own working directory and scratch dir, as this node started it: never one the call names.
       const root = ctx.sessionCwd(call.sessionId);
       if (!root) throw notFound(`no session ${call.sessionId} on this machine`);
       let image;
       try {
-        image = await placeAt(hostDir(ctx.home, call.sessionId)).read(root, call.path, call.offset ?? 0, !!call.file);
+        image = await placeAt(hostDir(ctx.home, call.sessionId)).read(root, call.path, call.offset ?? 0, !!call.file, ctx.sessionScratch?.(call.sessionId));
       } catch (error) {
         throw invalid((error as Error).message);
       }
