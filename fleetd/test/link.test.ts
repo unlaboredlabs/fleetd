@@ -250,6 +250,9 @@ test("a heartbeat keeps the status; a low disk pauses new agents; silence takes 
   expect(closed).toEqual({ code: 4008, reason: "no frame for 0 s" });
   expect(store(hub).machineGet("worker-7")?.status).toBe("offline");
   expect(types()).toContain("machine.offline worker-7");
+  // The apps hold the machine from their last read: its offline event says since when, its last heartbeat (S5).
+  const offline = events(hub).page(0).events.find((e) => e.type === "machine.offline" && e.machineId === "worker-7");
+  expect((offline?.data as { lastSeenAt?: string } | undefined)?.lastSeenAt).toBe(store(hub).machineGet("worker-7")?.lastSeenAt);
   links.timings = saved;
 });
 

@@ -31,6 +31,20 @@ describe("a machine's events", () => {
   });
 });
 
+describe("a machine that drops", () => {
+  // S5 of the Nov 26 sweep: "Offline since" the time the app last read the machine, three minutes before it dropped.
+  it("is offline since the last heartbeat its offline event says, not since the snapshot", () => {
+    let s = run([live(), snapshot(10)]);
+    const read = s.machines["devbox"]?.lastSeenAt;
+    s = run([event(11, "machine.offline", { lastSeenAt: "2026-11-26T11:59:35.000Z" })], s);
+    expect(s.machines["devbox"]).toMatchObject({ status: "offline", lastSeenAt: "2026-11-26T11:59:35.000Z" });
+    // An older workspace's event says nothing of it: the time held stays.
+    s = run([event(12, "machine.online"), event(13, "machine.offline")], s);
+    expect(s.machines["devbox"]?.lastSeenAt).toBe("2026-11-26T11:59:35.000Z");
+    expect(read).not.toBe("2026-11-26T11:59:35.000Z");
+  });
+});
+
 describe("connection", () => {
   it("shows skeletons until a snapshot lands after every (re)connect, and drops the old connection's call data", () => {
     let s = run([live()]);
