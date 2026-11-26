@@ -131,8 +131,11 @@ export function previewDialRoute(req: Request, ctx: RouteContext): Response | un
   return new Response("Expected a WebSocket upgrade", { status: 426 });
 }
 
-/** A new stream to `port` on `machineId`, through the machine's own dial back. */
-export function openStream(hub: Hub, machineId: string, port: number): Promise<Duplex> {
+/**
+ * A new stream to `port` on `machineId`, through the machine's own dial back; `thread`, the agent's session that
+ * shared it, whose box the node dials into when the session runs in one.
+ */
+export function openStream(hub: Hub, machineId: string, port: number, thread?: string): Promise<Duplex> {
   return new Promise((resolve, reject) => {
     const token = newToken();
     const d = dials(hub);
@@ -141,7 +144,7 @@ export function openStream(hub: Hub, machineId: string, port: number): Promise<D
       reject(new Error("the machine didn't dial back"));
     }, DIAL_WAIT);
     d.waiting.set(token, { resolve, reject, timer });
-    if (!link(hub).send(machineId, { t: "preview_dial", token, port })) {
+    if (!link(hub).send(machineId, { t: "preview_dial", token, port, ...(thread !== undefined ? { thread } : {}) })) {
       clearTimeout(timer);
       d.waiting.delete(token);
       reject(new Error("the machine is offline"));
@@ -160,7 +163,7 @@ function upstreamOf(hub: Hub, l: Held, origin: string): Upstream {
   }
   let u = d.upstreams.get(l.name);
   if (!u) {
-    u = { up: new Upstream(() => openStream(hub, l.machineId, l.port), LIMITS, { port: l.port, origin }), port: l.port, machineId: l.machineId, usedMs: now };
+    u = { up: new Upstream(() => openStream(hub, l.machineId, l.port, l.threadId), LIMITS, { port: l.port, origin }), port: l.port, machineId: l.machineId, usedMs: now };
     d.upstreams.set(l.name, u);
   }
   u.usedMs = now;
@@ -224,7 +227,7 @@ export async function servePreview(hub: Hub, req: Request, server: Server<Socket
   const person = people(hub).get(pass.personId);
   if (!person || person.removedAt !== undefined) return notMember();
   if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-    const dev = await upgradeToDev(req, () => openStream(hub, l.machineId, l.port), LIMITS, { port: l.port, origin });
+    const dev = await upgradeToDev(req, () => openStream(hub, l.machineId, l.port, l.threadId), LIMITS, { port: l.port, origin });
     if ("refused" in dev) return dev.refused;
     let b: ReturnType<typeof bridge> | undefined;
     const handler: SocketHandler = {

@@ -11,7 +11,8 @@ import type { SocketData } from "../src/hub/http/route.ts";
 import { people } from "../src/hub/people/store.ts";
 import { LOCAL_COOKIE } from "../src/hub/share_links/cookie.ts";
 import { start } from "../src/hub/share_links/loops.ts";
-import { dial, fleetdsOwn } from "../src/node/share/index.ts";
+import { dial, fleetdsOwn, type Reach } from "../src/node/share/index.ts";
+import net from "node:net";
 import { refusal, testHub } from "./people-kit.ts";
 import { addMachine, agent, FakeLink } from "./screens_helpers.ts";
 
@@ -37,17 +38,30 @@ const dev = Bun.serve({
 afterAll(() => dev.stop(true));
 const DEV = dev.port!;
 
+// Whether the agent's session runs in a hosted box, and the box's own ports: by default none is boxed.
+let boxed: { up: boolean; ports: Record<number, number> } | undefined;
+const reach: Reach = {
+  boxed: (thread) => thread === "th7" && boxed !== undefined,
+  boxDial: (_thread, port) => {
+    if (!boxed?.up) return undefined;
+    const to = boxed.ports[port];
+    if (to === undefined) return Promise.reject(new Error("ECONNREFUSED"));
+    const s = net.connect(to, "127.0.0.1");
+    return new Promise((resolve, reject) => (s.once("connect", () => resolve(s)), s.once("error", reject)));
+  },
+};
 let t: ReturnType<typeof rig>;
 let server: Server<SocketData>;
 beforeEach(() => {
   t = rig();
   server = serve(t.hub, t.tools, 0);
   t.fake.onSend = (_machine, f) => {
-    if (f.t === "preview_dial") void dial(`http://127.0.0.1:${server.port}`, String(f.token), Number(f.port));
+    if (f.t === "preview_dial") void dial(`http://127.0.0.1:${server.port}`, String(f.token), Number(f.port), f.thread as string | undefined, reach);
   };
   t.hub.db.conn.query("INSERT INTO share_link_settings (key, value) VALUES ('preview_url', ?)").run(`http://localhost:${server.port}`);
 });
 afterEach(async () => {
+  boxed = undefined;
   await stop(server);
   t.hub.shutdown.abort();
 });
@@ -194,4 +208,21 @@ test("a port with nothing on it is a page saying so; sharing it again renews it;
   expect((await refusal(t.call(t.owner, "share_port", { machineId: "nope", port: 3000 }))).code).toBe("not_found");
   expect(fleetdsOwn("http://127.0.0.1:4790", 4790)).toBe(true);
   expect(fleetdsOwn("https://ws.example.com", 4790)).toBe(false);
+});
+
+test("a boxed agent's link reaches the port inside its box, never this machine's", async () => {
+  // The box serves the app on its port 4000; this machine has nothing there.
+  boxed = { up: true, ports: { 4000: DEV } };
+  const { link } = await agentShares(4000);
+  expect(t.fake.sent("devbox").length).toBe(0);
+  const cookie = await signIn(link, t.owner);
+  const page = await at(link, "/", { cookie });
+  expect(page.status).toBe(200);
+  expect(await page.text()).toContain("<h1>app /</h1>");
+  expect(t.fake.sent("devbox").at(-1)).toMatchObject({ t: "preview_dial", port: 4000, thread: "th7" });
+  // Its box down: the page says nothing answers, and the machine's own port of that number is never tried.
+  boxed = { up: false, ports: {} };
+  const shared = await agentShares(DEV);
+  const down = await at(shared.link, "/x", { cookie: await signIn(shared.link, t.owner) });
+  expect(down.status).toBe(502);
 });
