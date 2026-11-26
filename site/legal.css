@@ -1,6 +1,6 @@
 /* fleetd.sh's legal pages (terms.html, privacy.html, refunds.html, imprint.html) and support.html: pricing.html's type, colour, header
-   and footer, then plain prose set like the docs, small headings and a tight rhythm, beside a list of the five pages. The drafts
-   (security.html, subprocessors.html, dpa.html) share it, listing themselves after the five. */
+   and footer, then plain prose set like the docs, small headings and a tight rhythm, beside a list of the five pages. security.html
+   and subprocessors.html share it, listed after the five, and so does the DPA's draft (dpa.html). */
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Regular.woff2) format("woff2");font-weight:400;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
 @font-face{font-family:"Plex";src:url(/fonts/plex-sans-SemiBold.woff2) format("woff2");font-weight:600;font-display:swap}

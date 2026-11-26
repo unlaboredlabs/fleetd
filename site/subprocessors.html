@@ -1,6 +1,5 @@
 <!doctype html>
-<!-- fleetd.sh/subprocessors: who processes personal data for fleetd cloud, what each gets and where. A draft the person reviews before any page links it: noindex, out of sitemap.xml, and the other pages
-     neither list it nor link it. Same layout as the legal pages (legal.css); [confirm] marks what is still to check. -->
+<!-- fleetd.sh/subprocessors: who processes personal data for fleetd cloud, what each gets and where. Same layout as the legal pages (legal.css), listed after the five. -->
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -22,7 +21,6 @@
 })();
 </script>
 <title>Subprocessors · fleetd</title>
-<meta name="robots" content="noindex">
 <meta name="description" content="The companies that process personal data for fleetd cloud, what each gets and where.">
 <link rel="canonical" href="https://fleetd.sh/subprocessors">
 <meta property="og:title" content="Subprocessors · fleetd">
@@ -58,13 +56,11 @@
     <a href="/support">Support</a>
     <a href="/security" class="gap">Security</a>
     <a href="/subprocessors" aria-current="page">Subprocessors</a>
-    <a href="/dpa">Data Processing Agreement</a>
   </nav>
   <article class="doc" aria-labelledby="h">
     <h1 id="h">Subprocessors</h1>
-    <p class="when">Draft for review, November 26, 2026</p>
-    <p class="draft"><b>Draft for review.</b> Not linked from the site yet. Items marked <mark class="confirm">[confirm]</mark> are features still being built; the page goes live once they ship.</p>
-    <p>The companies that process personal data for fleetd cloud (app.fleetd.dev), what each one gets, and where. Each works only on our instructions, under a data processing agreement with us. How we use them is on <a href="/security">Security</a>; our commitments to you are in the <a href="/dpa">Data Processing Agreement</a>.</p>
+    <p class="when">Updated November 26, 2026</p>
+    <p>The companies that process personal data for fleetd cloud (app.fleetd.dev), what each one gets, and where. Each works only on our instructions, under a data processing agreement with us. How we use them is on <a href="/security">Security</a>.</p>
 
     <h2 id="list">Who processes your data</h2>
     <table class="stack">
@@ -72,7 +68,7 @@
       <tbody>
         <tr><th scope="row">Hetzner Online</th><td data-label="What for">The servers fleetd cloud runs on, and the phone notification relay</td><td data-label="What it gets">Everything the service handles while it runs: requests, chats, files, sealed vault items</td><td data-label="Where">Germany (Nuremberg)</td></tr>
         <tr><th scope="row">PlanetScale</th><td data-label="What for">The database</td><td data-label="What it gets">Accounts, workspaces, chats, agents’ work, sealed vault items, usage, billing records</td><td data-label="Where">Germany (Frankfurt, on AWS)</td></tr>
-        <tr><th scope="row">Cloudflare</th><td data-label="What for">DNS, network protection, the tunnel in front of the servers, file storage (R2), server logs, backups, email to support@fleetd.dev, and email from fleetd cloud, such as spend warnings <mark class="confirm">[confirm: ships with spend warnings]</mark></td><td data-label="What it gets">All traffic to app.fleetd.dev (it ends TLS), files and recordings, server logs, sealed backups, support emails, and the recipient’s email address and the message, for email</td><td data-label="Where">Storage in the EU (R2’s EU jurisdiction); traffic and email pass its nearest data centre, worldwide</td></tr>
+        <tr><th scope="row">Cloudflare</th><td data-label="What for">DNS, network protection, the tunnel in front of the servers, file storage (R2), server logs, backups, email to support@fleetd.dev, and email from fleetd cloud, such as spend warnings</td><td data-label="What it gets">All traffic to app.fleetd.dev (it ends TLS), files and recordings, server logs, sealed backups, support emails, and the recipient’s email address and the message, for email</td><td data-label="Where">Storage in the EU (R2’s EU jurisdiction); traffic and email pass its nearest data centre, worldwide</td></tr>
         <tr><th scope="row">WorkOS</th><td data-label="What for">Sign-in, sign-in codes and invite emails</td><td data-label="What it gets">Name, email address, sign-in method and history, IP address</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">Stripe</th><td data-label="What for">Payments, invoices and tax</td><td data-label="What it gets">Billing name, email and address, tax ID, card details (we never see the full number), what you bought</td><td data-label="Where">United States</td></tr>
         <tr><th scope="row">fleetd’s computer supplier</th><td data-label="What for">The computers agents run on, when a workspace uses fleetd’s computers</td><td data-label="What it gets">What a bot’s agents work on: its repositories, files, the variables and logins they use, their screens</td><td data-label="Where">Computers in the EU (Germany, Finland and France); a sleeping computer’s saved disk can be stored outside the EU</td></tr>
@@ -108,6 +104,8 @@
       <a href="/refunds">Refunds</a>
       <a href="/imprint">Imprint</a>
       <a href="/support">Support</a>
+      <a href="/security">Security</a>
+      <a href="/subprocessors">Subprocessors</a>
       <a href="https://status.fleetd.dev">Status</a>
     </nav>
   </div>

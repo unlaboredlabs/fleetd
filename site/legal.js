@@ -4,7 +4,7 @@
 (function () {
   var root = document.documentElement;
   if (!root.classList.contains("app")) return;
-  var POLICIES = /^\/(terms|privacy|refunds|imprint|support)$/;
+  var POLICIES = /^\/(terms|privacy|refunds|imprint|support|security|subprocessors)$/;
   document.querySelectorAll("a[href]").forEach(function (a) {
     var url = new URL(a.getAttribute("href"), location.href);
     if (url.protocol === "mailto:" || url.host === "status.fleetd.dev") return;
