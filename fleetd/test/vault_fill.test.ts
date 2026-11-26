@@ -2,7 +2,10 @@
 // record; only usable items, only on their own sites, cards never; the value sealed to the hosting node; every fill
 // and refusal audited; rate limits.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { auditLog } from "../src/hub/audit/store.ts";
+import { start as startAudit } from "../src/hub/audit/loops.ts";
 import { chat } from "../src/hub/chat/index.ts";
+import { store } from "../src/hub/store/hub_store.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { onSite, registerLeadCalls } from "../src/hub/vault/calls.ts";
 import { totpCode } from "../src/hub/vault/fields.ts";
@@ -147,4 +150,17 @@ test("a locked vault refuses fills", async () => {
   (k.v.keys as unknown as { keys: unknown[] }).keys = [];
   const e = await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/" }));
   expect(["vault_key_missing", "vault_locked"]).toContain(e.reason ?? "");
+});
+
+test("a fill whose machine takes no sealed values fails, and the workspace's audit log says so", async () => {
+  startAudit(k.hub);
+  await shopLogin();
+  const machine = store(k.hub).machineGet(M)!;
+  store(k.hub).machineUpsert({ ...machine, boxPubKey: undefined } as never);
+  expect((await refused(fill({ item: "Shop", field: "password", page: "https://shop.example/signin" }))).code).toBe("failed");
+  expect(audit().map((r) => [r.action, r.outcome])).toEqual([["fill", "failed"]]);
+  expect(auditLog(k.hub).list({ kind: "vault" }).events.map((e) => [e.kind, e.outcome, e.summary])).toEqual([
+    ["vault.filled", "failed", 'Filled "Shop" on shop.example (it failed)'],
+    ["vault.created", "ok", 'Added "Shop"'],
+  ]);
 });

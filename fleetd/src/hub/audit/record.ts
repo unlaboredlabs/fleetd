@@ -14,6 +14,7 @@ import { approvals } from "../approvals/index.ts";
 import { pairCodes } from "../pair/codes.ts";
 import { people } from "../people/store.ts";
 import { store } from "../store/hub_store.ts";
+import { cardLabelOf } from "../vault/aliases.ts";
 import { vault } from "../vault/index.ts";
 import { auditLog, type NewAuditRow } from "./store.ts";
 
@@ -165,7 +166,8 @@ const PLANS: Partial<Record<ToolName, Plan>> = {
     return typeof input.cap === "number" ? workspace(`Set the workspace's max agents to ${input.cap}`, "Max agents") : undefined;
   },
   project_card_set: (hub, input) => {
-    const label = typeof input.card === "string" ? (vault(hub).store.get(input.card)?.label ?? "a card") : undefined;
+    // A card is named by its vault reference (`vault:<item>`): its label with its last four, as Payments shows it.
+    const label = typeof input.card === "string" ? (cardLabelOf(hub, input.card)?.label ?? "a card") : undefined;
     return {
       kind: "bot.settings",
       bot: botOf(hub, refOf(input)),
@@ -339,8 +341,9 @@ function vaultRow(hub: Hub, n: number): NewAuditRow | undefined {
     : { kind: "person", name: name ?? "Someone", ...(e.personId !== undefined ? { personId: e.personId } : {}) };
   const where = e.data.site !== undefined ? ` on ${e.data.site}` : "";
   const outcome = e.outcome === "refused" || e.action === "fill_refused" ? "refused" : e.outcome === "failed" ? "failed" : "ok";
+  // Stamped when written, as every row is (a fill's is written once it settles): rows stay in time order with their
+  // numbers, which the time filters walk by.
   return {
-    atMs: e.atMs,
     kind,
     actor,
     bot: botOf(hub, { machineId: e.machineId, projectId: e.projectId }),
