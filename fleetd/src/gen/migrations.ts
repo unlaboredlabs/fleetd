@@ -193,8 +193,8 @@ import m189 from "../hub/store/migrations/202611222222_who_merges.sql" with { ty
 import m190 from "../hub/store/migrations/202611222300_merge_then_verify.sql" with { type: "text" };
 import m191 from "../hub/store/migrations/202611261317_audit_log.sql" with { type: "text" };
 import m192 from "../hub/store/migrations/202611261400_workspace_usage.sql" with { type: "text" };
-import m193 from "../hub/store/migrations/202611261853_share_links.sql" with { type: "text" };
-import m194 from "../hub/store/migrations/202611261900_machine_sims.sql" with { type: "text" };
+import m193 from "../hub/store/migrations/202611261900_machine_sims.sql" with { type: "text" };
+import m194 from "../hub/store/migrations/202611261901_share_links.sql" with { type: "text" };
 
 export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "0001_initial", sql: m0 },
@@ -390,6 +390,6 @@ export const MIGRATIONS: readonly { name: string; sql: string }[] = [
   { name: "202611222300_merge_then_verify", sql: m190 },
   { name: "202611261317_audit_log", sql: m191 },
   { name: "202611261400_workspace_usage", sql: m192 },
-  { name: "202611261853_share_links", sql: m193 },
-  { name: "202611261900_machine_sims", sql: m194 },
+  { name: "202611261900_machine_sims", sql: m193 },
+  { name: "202611261901_share_links", sql: m194 },
 ];

@@ -1,4 +1,4 @@
-// The workspace's share links (`share_links`, migration 202611261606) and its switch and preview address
+// The workspace's share links (`share_links`, migration 202611261901) and its switch and preview address
 // (`share_link_settings`). A link is open while it is neither revoked nor past `expires_ms`; ended rows go a week after.
 import type { AuditActor, MachineId, ProjectRef, ShareLink, ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
