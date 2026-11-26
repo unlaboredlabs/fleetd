@@ -5,7 +5,8 @@ import { lists } from "./lists";
 import { memoryPins } from "./pins";
 import { controlOf, PageTouches } from "./screen";
 import { memorySections } from "./sections";
-import { Session, type SessionOptions } from "./session";
+import { CACHE_LATER_MS, CACHE_SAVE_MS, FILES_KEPT, Session, type SessionOptions } from "./session";
+import { CHATS_KEPT } from "./store";
 
 const REF = { machineId: "m1", projectId: "inbox" };
 const KEY = "m1/inbox";
@@ -974,5 +975,83 @@ describe("Pinned messages", () => {
     const { hub, session } = live();
     void session.find(KEY, { words: "deploy", author: "lead", has: ["pr"] }, "msg9", 30);
     expect(pinCalls(hub, "chat_find").at(-1)?.input).toEqual({ projectRef: REF, words: "deploy", author: "lead", has: ["pr"], before: "msg9", limit: 30 });
+  });
+});
+
+describe("Long use on a busy workspace", () => {
+  /** A chat's new message from the hub, as a busy workspace sends several a second. */
+  const said = (hub: ReturnType<typeof fakeHub>, n: number) =>
+    hub.link.frame({ t: "event", seq: n, type: "chat.message", at: AT, data: { projectRef: REF, messageId: `msg${String(n + 2)}`, seq: n + 2, author: "lead", state: "final", message: message(n + 2, `Update ${String(n)}`) } });
+
+  it("writes the cache once a while, not with every event, and a message on its way within a second", async () => {
+    const saved: unknown[] = [];
+    const { hub, session } = setup({ cache: { load: () => null, save: (c) => void saved.push(c) } });
+    // A minute of events, five a second.
+    for (let n = 2; n < 302; n++) {
+      said(hub, n);
+      vi.advanceTimersByTime(200);
+    }
+    expect(saved.length).toBeLessThanOrEqual(Math.ceil(60_000 / CACHE_LATER_MS));
+    const before = saved.length;
+    session.send(KEY, "On my way");
+    await flush();
+    vi.advanceTimersByTime(CACHE_SAVE_MS);
+    expect(saved).toHaveLength(before + 1);
+    expect(saved.at(-1)).toMatchObject({ sends: { [KEY]: [{ text: "On my way" }] } });
+  });
+
+  it("holds only the chats opened last, each with all it was told since", async () => {
+    const { hub, session } = setup();
+    const keys = ["shop", "docs", "pay", "ops"].map((p) => `m1/${p}`);
+    for (const key of keys) {
+      session.openChat(key);
+      session.leaveChat(key);
+    }
+    expect(Object.keys(session.state.chats)).toEqual(keys.slice(-CHATS_KEPT));
+    // Opened again, it's held again, newest of them.
+    session.openChat(keys[0]!);
+    expect(Object.keys(session.state.chats)).toEqual([...keys.slice(-CHATS_KEPT + 1), keys[0]]);
+    expect(hub.links).toHaveLength(1);
+  });
+
+  it("follows the chat on top: one left that isn't followed any more changes nothing", () => {
+    const { hub, session } = setup();
+    session.openChat(KEY);
+    session.openChat("m1/shop");
+    // The chat under it went (its screen unmounted after the one over it opened).
+    session.leaveChat(KEY);
+    expect(session.openKey).toBe("m1/shop");
+    expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat", project: { machineId: "m1", projectId: "shop" } });
+    session.leaveChat("m1/shop");
+    expect(session.openKey).toBeNull();
+    expect(hub.sentOf("chat").at(-1)).toEqual({ t: "chat" });
+  });
+
+  it("keeps the files read last, not every one opened while the app runs", async () => {
+    const { hub, session } = setup();
+    const reads = () => hub.sentOf("call").filter((c) => c.tool === "attachment_get").length;
+    for (let i = 0; i <= FILES_KEPT; i++) {
+      const read = session.attachment(KEY, `att${String(i)}`);
+      hub.answer("attachment_get", { attachmentId: `att${String(i)}`, name: "a.png", mime: "image/png", dataB64: "iVBORw==" });
+      await read;
+    }
+    expect(reads()).toBe(FILES_KEPT + 1);
+    // The newest are kept; the first, past them, is read again.
+    void session.attachment(KEY, `att${String(FILES_KEPT)}`);
+    expect(reads()).toBe(FILES_KEPT + 1);
+    void session.attachment(KEY, "att0");
+    expect(reads()).toBe(FILES_KEPT + 2);
+  });
+
+  it("leaves no timer running once stopped", async () => {
+    const { hub, session } = setup({ cache: { load: () => null, save: () => undefined } });
+    session.openChat(KEY);
+    said(hub, 2);
+    session.send(KEY, "Hi");
+    await flush();
+    vi.advanceTimersByTime(20_000);
+    session.stop();
+    await flush();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

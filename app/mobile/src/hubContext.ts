@@ -1,7 +1,7 @@
 // What every screen of a paired hub reads: its session, the state it shows, the pairing, and the way out.
 import type { CompositeScreenProps, NavigatorScreenParams } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 import type { AccountPreview } from "./accountDelete";
 import type { BillingFailure, Got } from "./billing";
 import type { KeptHub, SavedAccount } from "./cloud/account";
@@ -46,6 +46,26 @@ export const useHub = (): HubContextValue => {
   const hub = useContext(HubContext);
   if (hub === null) throw new Error("useHub outside a paired hub");
   return hub;
+};
+
+/** The state as a view follows it: the session's, or the copy a covered screen holds (ui/Covered.tsx). */
+export interface HubStore {
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly getState: () => State;
+}
+
+export const HubStoreContext = createContext<HubStore | null>(null);
+
+const noSubscribe = () => () => undefined;
+
+/**
+ * One value from the state, for a view that shows a small part of it (a row's bot): it draws again only when that
+ * value changes, not with every change to the state as a useHub() reader does. `select` returns a primitive, or
+ * something the state itself keeps, so the same state gives the same value. Undefined outside a paired hub.
+ */
+export const useHubSelect = <T>(select: (state: State) => T): T | undefined => {
+  const store = useContext(HubStoreContext);
+  return useSyncExternalStore(store?.subscribe ?? noSubscribe, () => (store === null ? undefined : select(store.getState())));
 };
 
 /**

@@ -17,7 +17,7 @@ const fn = (src: string, name: string): string => {
 
 describe("the chat's top bar", () => {
   it("is never the stack's on iOS, over a chat as over the chats list", () => {
-    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{Home\} layout=\{ownRoom\} options=\{\{ headerShown: false/u);
+    expect(app).toMatch(/<RootStack\.Screen name="Home" component=\{Home\} layout=\{coveredRoom\} options=\{\{ headerShown: false/u);
     expect(app).toContain("return useBeside() === null ? <ChatsHome /> : <NoChatOpen />;");
     expect(app).toMatch(/<RootStack\.Screen\s+name="Chat"\s+component=\{Chat\}[^]*?options=\{[^]*?\.\.\.chatOptions\(t\)/u);
     expect(chat).toMatch(/export const chatOptions = \(t: Palette\): NativeStackNavigationOptions =>\s*Platform\.OS === "ios" \? \{ headerShown: false \} :/u);

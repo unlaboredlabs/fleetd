@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HumanRequest, ProjectSummary, ToolPreview } from "./desktop";
-import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists, moreWords, rowLine } from "./lists";
+import { approvalOutcome, approvals, approvalView, chatList, fieldCopy, lists, moreWords, rowLine, sameChatRow } from "./lists";
 import { exactRuns } from "./exact";
 import { noPrefs } from "./prefs";
 
@@ -155,6 +155,19 @@ describe("lists' order and previews", () => {
     expect(rowLine(row)).toBe("Sent both.");
     expect(rowLine({ ...row, preview: undefined })).toBe("Working…");
     expect(rowLine({ ...row, preview: undefined, working: false, want: "Waiting for your reply" })).toBe("Waiting for your reply");
+  });
+
+  it("draws again only the row whose chat changed: the rows are made anew with each change to the state", () => {
+    const projects = { "m1/a": project("a", "Ada"), "m1/b": project("b", "Bea") };
+    const latest = { "m1/a": [message("a", 7, "lead", "On it.")], "m1/b": [message("b", 3, "lead", "Done.")] };
+    const before = chatList({ projects, chatStates: {}, requests: [], latest }, noPrefs) ?? [];
+    const same = chatList({ projects, chatStates: {}, requests: [], latest }, noPrefs) ?? [];
+    expect(same.map((r, i) => r !== before[i] && sameChatRow(r, before[i]!))).toEqual([true, true]);
+    const after = chatList({ projects, chatStates: {}, requests: [], latest: { ...latest, "m1/b": [message("b", 4, "lead", "Shipped.")] } }, noPrefs) ?? [];
+    expect(after.map((r) => [r.key, sameChatRow(r, before.find((b) => b.key === r.key)!)])).toEqual([
+      ["m1/a", true],
+      ["m1/b", false],
+    ]);
   });
 
   it("previews a chat not opened yet from its newest messages", () => {
