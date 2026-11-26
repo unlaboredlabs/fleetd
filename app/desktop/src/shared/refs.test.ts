@@ -34,14 +34,18 @@ describe("splitRefs", () => {
   });
 
   it("skips what only looks like one", () => {
-    // Branches, paths, hashes, versions, longer words, everyday one-digit names and the X11 and F-key names.
-    expect(ids("fleetd/T5957-the-apps a/W3 #T4 T12-x W3C v1.T2 T12.ts T0 an M1 Mac, Q4, S3, R2, X11 and F12")).toEqual([]);
+    // Branches, paths, hashes, versions, longer words, everyday one-digit names and the X11 display server.
+    expect(ids("fleetd/T5957-the-apps a/W3 #T4 T12-x W3C v1.T2 T12.ts T0 an M1 Mac, Q4, S3, R2 and X11")).toEqual([]);
   });
 
   it("capitalizes the plain word where it opens a sentence or a line", () => {
     const refs = splitRefs("T1 started. Then T2 and\nW3 too").filter((r): r is Ref => typeof r !== "string");
     expect(refs.map(refWord)).toEqual(["An agent", "an agent", "An order"]);
   });
+});
+
+it("counts decisions and files from one digit, as a young workspace numbers them", () => {
+  expect(ids("D5 and F2, F12")).toEqual(["D5", "F2", "F12"]);
 });
 
 it("refOf reads one id alone, as an inline code span holds it", () => {

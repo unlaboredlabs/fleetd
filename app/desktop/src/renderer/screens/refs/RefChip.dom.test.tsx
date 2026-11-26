@@ -99,7 +99,7 @@ it("names an agent and an order in plain words, each opening it", async () => {
   expect(host.textContent).toBe("Get started home finished its part of Launch readiness.");
   expect(chips()).toEqual([
     ["T5945", "Get started home", "#/project/devbox/storefront/agents/T5945"],
-    ["W890", "Launch readiness", "#/project/devbox/storefront/agents"],
+    ["W890", "Launch readiness", "#/project/devbox/storefront/agents/W890"],
   ]);
 });
 

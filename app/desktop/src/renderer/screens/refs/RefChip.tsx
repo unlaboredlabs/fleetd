@@ -1,6 +1,6 @@
 // One of fleetd's ids in words a person reads (shared/refs: "T5945 finished W890"), as a chip with the thing's name as
-// the workspace has it now: an agent's or an order's title, live, and opening it (the agent's work; the order's agents
-// under its title), a decision opening the bot's decisions. One whose name can't be known (gone, unreadable now, or a
+// the workspace has it now: an agent's or an order's title, live, and opening it (the agent's work, or what it ended
+// with; the order's own view, agents/OrderView), a decision opening the bot's decisions. One whose name can't be known (gone, unreadable now, or a
 // kind with no name) says its plain word ("an agent"). The id is only in its tooltip and its right-click menu.
 import type { ReactElement } from "react";
 import type { OrderCard } from "../../../shared/contracts";
@@ -55,7 +55,7 @@ const viewOf = (r: Ref): PanelView | undefined => {
     case "agent":
       return { tab: "agents", agent: r.id };
     case "order":
-      return { tab: "agents", agent: null };
+      return { tab: "agents", agent: r.id };
     case "decision":
       return { tab: "decisions" };
     default:
