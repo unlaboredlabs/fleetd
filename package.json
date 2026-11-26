@@ -302,6 +302,7 @@
     "./hub/vault/item": "./fleetd/src/hub/vault/item.ts",
     "./hub/wakes/schedule": "./fleetd/src/hub/wakes/schedule.ts",
     "./hub/watchdog/rules": "./fleetd/src/hub/watchdog/rules.ts",
+    "./hub/watchers/checkin": "./fleetd/src/hub/watchers/checkin.ts",
     "./hub/watchers/rules": "./fleetd/src/hub/watchers/rules.ts",
     "./hub/work/check": "./fleetd/src/hub/work/check.ts",
     "./hub/work/claim_rules": "./fleetd/src/hub/work/claim_rules.ts",
