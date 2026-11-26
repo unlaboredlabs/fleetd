@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { McpServer } from "../../../shared/contracts";
 import { emptyDraft, toInput } from "../connections/model";
-import { NAMED, nameFor, namedInput, namedOf, namedState, namedWord, serverOf, turnOnInput, unnamed } from "./namedServers";
+import { accountLabel, accountsOf, accountState, NAMED, nameFor, namedInput, namedOf, namedState, namedWord, turnOnInput, unnamed } from "./namedServers";
 
 const scope = { kind: "project" as const, machineId: "devbox", projectId: "ada" };
 const PAPER = NAMED.find((n) => n.id === "paper");
@@ -43,15 +43,29 @@ describe("named MCP servers", () => {
     expect(namedOf({ ...server("x", ""), transport: { type: "stdio", command: "npx", args: [] } })).toBeUndefined();
   });
 
-  it("picks the one by its name of two at its URL, and lists the rest as themselves", () => {
-    const list = [server("design", "https://mcp.paper.design"), server("paper", "https://mcp.paper.design"), server("crm", "https://mcp.crm.example")];
-    expect(serverOf(PAPER, list)?.name).toBe("paper");
-    expect(unnamed(list).map((s) => s.name)).toEqual(["design", "crm"]);
+  it("takes every server at its URL as an account, the one by its name first, and lists the rest as themselves", () => {
+    const list = [server("paper-work", "https://mcp.paper.design"), server("design", "https://mcp.paper.design/"), server("paper", "https://mcp.paper.design"), server("crm", "https://mcp.crm.example")];
+    expect(accountsOf(PAPER, list).map((s) => s.name)).toEqual(["paper", "design", "paper-work"]);
+    expect(unnamed(list).map((s) => s.name)).toEqual(["crm"]);
+    const [work, , own] = list;
+    if (work === undefined || own === undefined) throw new Error("no servers");
+    expect(accountLabel(PAPER, work, list)).toBe("paper-work");
+    expect(accountLabel(PAPER, own, [own])).toBe("Paper");
+    expect(accountLabel(PAPER, work, [work])).toBe("paper-work");
   });
 
-  it("takes the first free name after paper", () => {
+  it("takes the first free name after paper, or the one the person gives another account", () => {
     expect(nameFor(PAPER, [])).toBe("paper");
     expect(nameFor(PAPER, ["Paper", "paper-2"])).toBe("paper-3");
+    expect(namedInput(PAPER, { kind: "global" }, ["paper"])).toMatchObject({ name: "paper-2", transport: { type: "http", url: PAPER.url } });
+    expect(namedInput(PAPER, { kind: "global" }, ["paper"], "paper-work")).toMatchObject({ name: "paper-work", transport: { type: "http", url: PAPER.url } });
+  });
+
+  it("says where each account stands on its own", () => {
+    const one = server("paper", PAPER.url, { oauth: { status: "connected", issuer: "https://app.paper.design" } });
+    const two = server("paper-2", PAPER.url, { oauth: { status: "signed_out", issuer: "https://app.paper.design", signingIn: true } });
+    expect([one, two].map((s) => accountState(s).kind)).toEqual(["connected", "signing"]);
+    expect(namedState(PAPER, [two, one]).kind).toBe("connected");
   });
 
   it("says where it stands", () => {

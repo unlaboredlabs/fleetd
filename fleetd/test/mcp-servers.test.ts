@@ -6,7 +6,7 @@ import { Hub } from "../src/hub/api/hub.ts";
 import { type Caller, Registry } from "../src/hub/api/registry.ts";
 import { fakeNodePort, type Link } from "../src/hub/link/node_port.ts";
 import { never, toolPolicy, verdict } from "../src/hub/integrations/policy.ts";
-import { getRow, hubBoxKey, putRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
+import { getRow, hubBoxKey, openOwn, putRow, renewDue } from "../src/hub/mcp_oauth/index.ts";
 import { registerLeadCalls } from "../src/hub/mcp_oauth/calls.ts";
 import { leadCalls, type LeadCaller } from "../src/hub/lead_calls/index.ts";
 import { challengeParam, secure } from "../src/hub/mcp_oauth/oauth.ts";
@@ -652,6 +652,43 @@ test("any person connects and signs in to a service for the team; its connector 
   // A server with a key of its own for every bot stays the admins'.
   const keyed = { ...input, name: "crm", headers: [{ kind: "secret", name: "X-Key", sealed: [{ machineId: "lab", sealed: sealedFor("k") }] }] };
   await expect(l.call("mcp_server_set", keyed, member)).rejects.toMatchObject({ code: "forbidden" });
+});
+
+test("two accounts of one service at one URL each sign in, take their own bots and disconnect on their own", async () => {
+  const l = lab();
+  const at = "2026-11-08T10:00:00.000Z";
+  store(l.hub).projectsUpsertMany("lab", [
+    { machineId: "lab", projectId: "p1", title: "P1", workspaceRoot: "/w", lastActivityAt: at, threads: { running: 0, total: 0 } } as never,
+    { machineId: "lab", projectId: "p2", title: "P2", workspaceRoot: "/w2", lastActivityAt: at, threads: { running: 0, total: 0 } } as never,
+  ]);
+  const p1 = { machineId: "lab", projectId: "p1" };
+  const p2 = { machineId: "lab", projectId: "p2" };
+  const account = { scope: team, enabled: true, roles: { lead: true, writers: true, reviewers: true }, transport: { type: "http", url: `${svc.base}/mcp` }, env: [], headers: [] };
+  await l.call("mcp_server_set", { ...account, name: "notion", projects: [p1] });
+  await l.call("mcp_server_set", { ...account, name: "notion-work", projects: [p2] });
+  // Both sign-ins open at once, each its own; the second finishes first.
+  const states: string[] = [];
+  for (const name of ["notion", "notion-work"]) {
+    const started = await l.call("mcp_oauth_start", { scope: team, name, hubUrl: "http://127.0.0.1:4795" });
+    states.push(new URL(started.authorizeUrl as string).searchParams.get("state") ?? "");
+  }
+  expect(new Set(states).size).toBe(2);
+  for (const st of [...states].reverse()) await oauthCallback(new Request(`http://127.0.0.1:4795/oauth/callback?state=${st}&code=c-${st.slice(0, 4)}`), { hub: l.hub } as never);
+  const token = (name: string) => openOwn(l.hub, getRow(l.hub, team, name)!.access!);
+  for (const name of ["notion", "notion-work"]) expect(mcpServers(l.hub).get(team, name)!.oauth?.status).toBe("connected");
+  expect(token("notion")).not.toBe(token("notion-work"));
+  // Each account reaches only the bot it was given.
+  const names = (r: typeof p1) => mcpServers(l.hub).sessionConfig(r).servers.map((x) => x.name);
+  expect(names(p1)).toEqual(["notion"]);
+  expect(names(p2)).toEqual(["notion-work"]);
+  // Disconnecting one leaves the other signed in, its token kept.
+  const kept = token("notion-work");
+  await l.call("mcp_server_remove", { scope: team, name: "notion" });
+  expect(mcpServers(l.hub).get(team, "notion")).toBeUndefined();
+  expect(getRow(l.hub, team, "notion")).toBeUndefined();
+  expect(mcpServers(l.hub).get(team, "notion-work")!.oauth?.status).toBe("connected");
+  expect(token("notion-work")).toBe(kept);
+  expect(names(p2)).toEqual(["notion-work"]);
 });
 
 test("a bot's server signs the team in: Connect from an older app, on a bot, ends as the team's", async () => {

@@ -1,12 +1,12 @@
 // Connections (D653), as pure functions for both apps: what the sheet's Connected strip counts, the custom MCPs it
-// lists (every server no named entry claims: the team's, and a bot's own), which bots use one in words, a Test's plain
+// lists (every server at no named entry's URL: the team's, and a bot's own), which bots use one in words, a Test's plain
 // result, a tailnet host (reached through the Tailscale connection with nothing extra), and the custom MCP form's draft
 // turned into the request main sends (mcp_server_set). Headers and env come from vault items, which the hub seals to
 // the machines itself: the app never holds their values. Imports the hub's contract types and pure modules alone, so
 // the phone reads it as it is.
 import type { McpServer, McpServerSetInput, McpTestResult, McpValueSet, ProjectRef, TailnetState } from "../../../shared/contracts";
 import { onTailnet } from "../../../shared/claudeEndpoint";
-import { keptValue, NAMED, namedState, unnamed, type Named } from "../settings/namedServers";
+import { accountLabel, accountsOf, accountState, keptValue, NAMED, unnamed, type Named } from "../settings/namedServers";
 
 /** A Test as the sheet keeps it: where it ran and what it found, or the call's own failure. */
 export type Tested = { readonly machineId: string; readonly result: McpTestResult } | { readonly error: string };
@@ -47,9 +47,14 @@ export interface StripItem {
   readonly tailscale?: true;
 }
 
-/** What the Connected strip shows: each named service connected, Tailscale when it is, then the custom MCPs in use. */
+/** What the Connected strip shows: each account of a named service connected (two Notion accounts are two, each by
+ * its name), Tailscale when it is, then the custom MCPs in use. */
 export const connectedOf = (team: ReadonlyArray<McpServer>, own: ReadonlyArray<McpServer>, tailnet: TailnetState | undefined): StripItem[] => [
-  ...NAMED.filter((n) => namedState(n, team).kind === "connected").map((n) => ({ key: n.id, label: n.label, named: n })),
+  ...NAMED.flatMap((n) =>
+    accountsOf(n, team)
+      .filter((s) => accountState(s).kind === "connected")
+      .map((s) => ({ key: `${n.id}:${s.name}`, label: accountLabel(n, s, team), named: n })),
+  ),
   ...(tailnet?.status === "connected" ? [{ key: "tailscale", label: "Tailscale", tailscale: true as const }] : []),
   ...customOf(team, own)
     .filter(usable)
@@ -228,6 +233,15 @@ const NAME = /^[A-Za-z0-9_-]{1,64}$/u;
 const HEADER = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/u;
 const ENV = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 
+/** What is wrong with a server's name, or null: agents see its tools as mcp__<name>__<tool>. */
+export const serverNameProblem = (name: string, taken: ReadonlyArray<string>): string | null => {
+  if (name === "") return "Name it.";
+  if (!NAME.test(name)) return "A name is letters, digits, _ and - only.";
+  if (name.toLowerCase() === "fleetd") return "fleetd is fleetd's own tools: pick another name.";
+  if (taken.some((t) => t.toLowerCase() === name.toLowerCase())) return `${name} is already there.`;
+  return null;
+};
+
 /** A name made from what the person typed: the URL's host's first word (an address whole), or the package or program
  * the command runs. */
 export const suggestedName = (draft: Pick<Draft, "kind" | "url" | "command">): string => {
@@ -273,10 +287,8 @@ export const toInput = (
   taken: ReadonlyArray<string>,
 ): { ok: true; input: McpServerSetInput } | { ok: false; problem: string } => {
   const name = nameOf(draft);
-  if (name === "") return { ok: false, problem: "Name it." };
-  if (!NAME.test(name)) return { ok: false, problem: "A name is letters, digits, _ and - only." };
-  if (name.toLowerCase() === "fleetd") return { ok: false, problem: "fleetd is fleetd's own tools: pick another name." };
-  if (editing?.name !== name && taken.some((t) => t.toLowerCase() === name.toLowerCase())) return { ok: false, problem: `${name} is already there.` };
+  const named = serverNameProblem(name, editing?.name === name ? [] : taken);
+  if (named !== null) return { ok: false, problem: named };
   const command = draft.kind === "command";
   const seen = new Set<string>();
   const values: McpValueSet[] = [];

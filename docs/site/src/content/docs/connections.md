@@ -26,6 +26,19 @@ Open the file in Paper's own app to watch an agent's edits live. Paper's free pl
 2. On Notion's page, pick the workspace and pages to share, and allow fleetd.
 3. The row says **Connected**.
 
+## Connect more than one account {#accounts}
+
+You can connect Paper or Notion with more than one account, for example a personal and a work Notion.
+
+1. In a connected service's row menu, press **Add another account**. On the phone, tap the row, then **Add Another
+   Account**.
+2. Keep the name it suggests (`notion-2`) or type your own (`notion-work`). Agents see its tools as
+   `mcp__notion-work__…`.
+3. On the service's page, switch to the other account and allow fleetd.
+
+Each account gets its own row and is counted on its own in **Connected**. Each one signs in, takes its own **Bots**
+and is disconnected separately. Disconnecting one leaves the others connected.
+
 Paper and Notion only accept an https sign-in address. If your hub has no https address, sign in from the hub machine
 itself. See [Troubleshooting](/docs/troubleshooting#hub).
 

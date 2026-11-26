@@ -9,6 +9,7 @@ import {
   emptyDraft,
   initialOf,
   isTailnetHost,
+  serverNameProblem,
   needsSignIn,
   onlyText,
   pickedText,
@@ -79,6 +80,32 @@ describe("Connections", () => {
     expect(countText(strip.length)).toBe("3 connected");
     expect(countText(0)).toBeNull();
     expect(connectedOf([], [], { status: "login" })).toEqual([]);
+  });
+
+  it("counts each account of a service, each by its own name, and lists none of them as custom", () => {
+    const team = [
+      server("notion", "https://mcp.notion.com/mcp", { oauth: signedIn }),
+      server("notion-work", "https://mcp.notion.com/mcp", { oauth: signedIn }),
+      server("notion-3", "https://mcp.notion.com/mcp", { oauth: { status: "signed_out", issuer: "https://mcp.notion.com" } }),
+    ];
+    const strip = connectedOf(team, [], undefined);
+    expect(strip.map((i) => [i.key, i.label, i.named?.id])).toEqual([
+      ["notion:notion", "notion", "notion"],
+      ["notion:notion-work", "notion-work", "notion"],
+    ]);
+    expect(countText(strip.length)).toBe("2 connected");
+    expect(customOf(team, [])).toEqual([]);
+    // Disconnect one, and the other is the service again, by the service's name, or by its own when it has one.
+    expect(connectedOf(team.slice(0, 1), [], undefined).map((i) => i.label)).toEqual(["Notion"]);
+    expect(connectedOf(team.slice(1, 2), [], undefined).map((i) => i.label)).toEqual(["notion-work"]);
+  });
+
+  it("checks a name as the form does", () => {
+    expect(serverNameProblem("notion-work", ["notion"])).toBeNull();
+    expect(serverNameProblem("Notion", ["notion"])).toBe("Notion is already there.");
+    expect(serverNameProblem("", [])).toBe("Name it.");
+    expect(serverNameProblem("my notion", [])).toBe("A name is letters, digits, _ and - only.");
+    expect(serverNameProblem("fleetd", [])).toBe("fleetd is fleetd's own tools: pick another name.");
   });
 
   it("says which bots use a server", () => {

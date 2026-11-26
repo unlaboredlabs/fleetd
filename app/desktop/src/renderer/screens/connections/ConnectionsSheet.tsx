@@ -1,7 +1,7 @@
 // Connections (D653): one sheet over the app, opened from the plain icon at the sidebar's foot (ConnectionsHost). Its
 // head is the title and what is connected (each one's mark and a count). Then the few named connections, one line
 // each: Paper and Notion (hosted MCP servers the team signs in to once: Connect saves it and opens the service's own
-// sign-in) and Tailscale (the hub's route to the team's tailnet). Then Custom MCP: every other server, the team's and
+// sign-in; Add another account saves one more under a name of its own and signs it in, a line per account) and Tailscale (the hub's route to the team's tailnet). Then Custom MCP: every other server, the team's and
 // a bot's own, each with its state, Sign in when it wants one, and a menu: Test, Edit, Bots, Disconnect. Add opens the
 // form in the sheet's place (CustomForm.tsx). A custom MCP on the tailnet is reached through Tailscale with nothing
 // else to set. Agents also get their machine's own Claude MCP servers, with no switch for it (W817). What replaced
@@ -13,10 +13,10 @@ import type { McpServer, McpServerSetOutput, ProjectRef, TailnetState } from "..
 import type { McpServerRequest } from "../../../shared/ipc";
 import { CallError } from "../../src/data/queries";
 import { useData, useDataLayer, useToolQueries, useToolQuery } from "../../src/data/react";
-import { Button, cx, Dialog, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger, Switch, Tooltip } from "../../ui";
+import { Button, cx, Dialog, Field, Input, Menu, MenuCheckboxItem, MenuContent, MenuItem, MenuSeparator, MenuSub, MenuTrigger, Switch, Tooltip } from "../../ui";
 import { useSettledAdministers } from "../admin/role";
 import { errorText, useHubCall, useLive, useRefetch } from "../settings/hub";
-import { NAMED, namedInput, namedState, turnOnInput, type Named } from "../settings/namedServers";
+import { accountLabel, accountsOf, accountState, NAMED, nameFor, namedInput, turnOnInput, type Named } from "../settings/namedServers";
 import { useProjects } from "../settings/parts";
 import { useTailnet, type Tailnet } from "../settings/Tailscale";
 import { canConnect, lineOf, MACHINES_URL, waiting, wordOf } from "../settings/tailscaleModel";
@@ -28,6 +28,7 @@ import {
   countText,
   customOf,
   isTailnetHost,
+  serverNameProblem,
   needsSignIn,
   onlyText,
   stateOf,
@@ -48,7 +49,11 @@ const noInput = {};
 const open = (url: string): void => void window.fleetd.openExternal(url);
 
 type View = { kind: "list" } | { kind: "add" } | { kind: "edit"; server: McpServer };
-type Dialogs = { kind: "signin"; server: McpServer; named?: Named | undefined } | { kind: "disconnect"; server: McpServer; label: string } | { kind: "tailscale-off"; state: TailnetState };
+type Dialogs =
+  | { kind: "signin"; server: McpServer; named?: Named | undefined; label?: string }
+  | { kind: "another"; entry: Named }
+  | { kind: "disconnect"; server: McpServer; label: string }
+  | { kind: "tailscale-off"; state: TailnetState };
 
 interface Bot extends ProjectRef {
   readonly title: string;
@@ -157,9 +162,14 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
           ) : (
             <div className={c.body}>
               <ul className={c.group} aria-label="Connections">
-                {NAMED.map((entry) => (
-                  <NamedRow key={entry.id} entry={entry} team={team} bots={bots} tests={tests} onDialog={setDialog} />
-                ))}
+                {NAMED.map((entry) => {
+                  const accounts = accountsOf(entry, team);
+                  if (accounts.length === 0) return <NamedRow key={entry.id} entry={entry} team={team} bots={bots} tests={tests} onDialog={setDialog} />;
+                  // The first account keeps the entry's own key: the row that ran Connect stays the same row.
+                  return accounts.map((server, i) => (
+                    <NamedRow key={i === 0 ? entry.id : `${entry.id}:${server.name}`} entry={entry} server={server} team={team} bots={bots} tests={tests} onDialog={setDialog} />
+                  ));
+                })}
                 {tailnet.state === undefined ? null : <TailscaleRow state={tailnet.state} tailnet={tailnet} admin={admin} onDisconnect={(state) => setDialog({ kind: "tailscale-off", state })} />}
               </ul>
               <div className={c.label}>
@@ -197,7 +207,10 @@ export function ConnectionsSheet({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {dialog?.kind === "signin" ? (
-            <SignInDialog server={dialog.server} named={dialog.named} onClose={() => setDialog(null)} onSignedIn={() => void tests.run(dialog.server)} />
+            <SignInDialog server={dialog.server} named={dialog.named} label={dialog.label} onClose={() => setDialog(null)} onSignedIn={() => void tests.run(dialog.server)} />
+          ) : null}
+          {dialog?.kind === "another" ? (
+            <AnotherAccount entry={dialog.entry} taken={taken} onClose={() => setDialog(null)} onSaved={(server) => setDialog({ kind: "signin", server, named: dialog.entry, label: server.name })} />
           ) : null}
           {dialog?.kind === "disconnect" ? <Disconnect server={dialog.server} label={dialog.label} onClose={() => setDialog(null)} /> : null}
           {dialog?.kind === "tailscale-off" ? <TailscaleOff state={dialog.state} tailnet={tailnet} onClose={() => setDialog(null)} /> : null}
@@ -324,14 +337,23 @@ function BotsSub({ server, bots, onPick }: { server: McpServer; bots: ReadonlyAr
   );
 }
 
-function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: ReadonlyArray<Bot>; tests: ReturnType<typeof useTests>; onDialog: (d: Dialogs) => void }) {
-  const { entry } = props;
+/** A named service not added yet (Connect), or one of its accounts: each signs in, takes bots and disconnects on its
+ * own. With several, or one named otherwise (notion-work), each says its name beside the service's. */
+function NamedRow(props: {
+  entry: Named;
+  server?: McpServer;
+  team: ReadonlyArray<McpServer>;
+  bots: ReadonlyArray<Bot>;
+  tests: ReturnType<typeof useTests>;
+  onDialog: (d: Dialogs) => void;
+}) {
+  const { entry, server } = props;
   const save = useSave();
   const machine = useMachineName();
   const [busy, setBusy] = useState<"connect" | "on" | "bots" | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const state = namedState(entry, props.team);
-  const server = state.kind === "add" ? undefined : state.server;
+  const state = server === undefined ? ({ kind: "add" } as const) : accountState(server);
+  const label = server === undefined ? entry.label : accountLabel(entry, server, props.team);
   const tested = server === undefined ? undefined : props.tests.of(server);
   const result = tested === undefined || tested === "testing" ? undefined : tested;
   const signIn = server !== undefined && (state.kind === "signin" || (state.kind === "connected" && needsSignIn(server, result)));
@@ -364,7 +386,13 @@ function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: R
   const why = problem ?? (state.kind === "signin" ? (state.problem ?? null) : null);
   const line = why !== null ? { text: why, tone: "danger" as const } : tested === "testing" ? { text: "Testing…", tone: "quiet" as const } : result !== undefined && !signIn ? testLine(result, machine("machineId" in result ? result.machineId : "")) : null;
   return (
-    <Row tile={<Mark entry={entry} />} name={entry.label} word={word} line={line} data={{ "data-named": entry.id, "data-state": state.kind }}
+    <Row
+      tile={<Mark entry={entry} />}
+      name={entry.label}
+      where={label === entry.label ? undefined : label}
+      word={word}
+      line={line}
+      data={{ "data-named": entry.id, "data-state": state.kind, ...(server === undefined ? {} : { "data-account": server.name }) }}
       controls={
         server === undefined ? (
           <Button size="sm" disabled={busy !== null} onClick={connect}>
@@ -373,7 +401,7 @@ function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: R
         ) : (
           <>
             {signIn ? (
-              <Button size="sm" onClick={() => props.onDialog({ kind: "signin", server, named: entry })}>
+              <Button size="sm" onClick={() => props.onDialog({ kind: "signin", server, named: entry, label })}>
                 Sign in
               </Button>
             ) : null}
@@ -383,13 +411,14 @@ function NamedRow(props: { entry: Named; team: ReadonlyArray<McpServer>; bots: R
               </Button>
             ) : null}
             <RowMenu
-              label={entry.label}
+              label={label}
               items={[
                 { label: "Test", onSelect: () => void props.tests.run(server) },
                 ...(state.kind === "off" ? [] : [{ label: "Turn off", onSelect: () => run("on", requestOf(withEnabled(server, false))) }]),
+                { label: "Add another account", onSelect: () => props.onDialog({ kind: "another", entry }) },
               ]}
               bots={<BotsSub server={server} bots={props.bots} onPick={(next) => run("bots", requestOf(withBots(server, next)))} />}
-              onDisconnect={() => props.onDialog({ kind: "disconnect", server, label: entry.label })}
+              onDisconnect={() => props.onDialog({ kind: "disconnect", server, label })}
             />
           </>
         )
@@ -525,6 +554,53 @@ function TailscaleRow({ state, tailnet, admin, onDisconnect }: { state: TailnetS
         )
       }
     />
+  );
+}
+
+/** Another account of a named service: its name (the first free one, or the person's), saved, then signed in. */
+function AnotherAccount({ entry, taken, onClose, onSaved }: { entry: Named; taken: ReadonlyArray<string>; onClose: () => void; onSaved: (server: McpServer) => void }) {
+  const save = useSave();
+  const [name, setName] = useState(() => nameFor(entry, taken));
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const add = () => {
+    const wrong = serverNameProblem(name.trim(), taken);
+    if (wrong !== null) return setProblem(wrong);
+    setBusy(true);
+    setProblem(null);
+    save(requestOf(namedInput(entry, { kind: "global" }, taken, name.trim()))).then(onSaved, (e: unknown) => {
+      setBusy(false);
+      setProblem(errorText(e));
+    });
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && !busy && onClose()}
+      title={`Add another ${entry.label} account`}
+      description={`It signs in on its own: on ${entry.label}'s page, pick the other account. Agents tell the two apart by name.`}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={busy} onClick={add}>
+            {busy ? "Connecting…" : "Connect"}
+          </Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          add();
+        }}
+      >
+        <Field label="Name" error={problem ?? undefined}>
+          <Input mono aria-label="Name" value={name} autoFocus onChange={(e) => setName(e.target.value)} />
+        </Field>
+      </form>
+    </Dialog>
   );
 }
 

@@ -173,7 +173,7 @@ function Footer({ signIn, client, onCancel }: { signIn: SignIn; client: { id: st
 }
 
 /** Signs in to `server`, then calls `onSignedIn` (which tests it). A named service opens its page at once. */
-export function SignInDialog(props: { server: McpServer; named?: Named | undefined; onClose: () => void; onSignedIn: () => void }) {
+export function SignInDialog(props: { server: McpServer; named?: Named | undefined; label?: string | undefined; onClose: () => void; onSignedIn: () => void }) {
   const { server } = props;
   const [client, setClient] = useState({ id: "", secret: "" });
   const signIn = useSignIn(server.scope, server.name, () => {
@@ -191,7 +191,8 @@ export function SignInDialog(props: { server: McpServer; named?: Named | undefin
     began.current = true;
     begin();
   }, [auto, begin]);
-  const label = props.named?.label ?? server.name;
+  // One of several accounts of a service by its own name (notion-work), else the service's.
+  const label = props.label ?? props.named?.label ?? server.name;
   return (
     <Dialog
       open

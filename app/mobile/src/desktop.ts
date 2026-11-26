@@ -169,13 +169,14 @@ export {
   type AgentProvider,
   type AgentProviderId,
 } from "../../desktop/src/shared/agentProviders";
-export { NAMED, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
+export { accountLabel, accountsOf, accountState, NAMED, nameFor, namedInput, namedState, turnOnInput, type Named, type NamedState } from "../../desktop/src/renderer/screens/settings/namedServers";
 export {
   connectedOf,
   countText,
   customOf,
   initialOf,
   isTailnetHost,
+  serverNameProblem,
   needsSignIn,
   stateOf as customState,
   suggestedName,

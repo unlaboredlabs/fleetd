@@ -1,7 +1,8 @@
 // The services the team connects by name, one record each, at the top of Connections (the desktop's sheet,
 // the phone's Connections screen). Connect saves the same server the manual form would (mcp_server_set), then signs in to
-// it with the person's own account (mcp_oauth_start): nothing to type. A server already saved by hand at an entry's URL
-// is that entry, not a second one. Another service is one more record in NAMED. Pure, for both apps: it imports the
+// it with the person's own account (mcp_oauth_start): nothing to type. Each account of a service is one more server at
+// its URL (notion, notion-2, or a name the person gives it), signed in, given bots and disconnected on its own; one
+// saved by hand at an entry's URL is an account of it too. Another service is one more record in NAMED. Pure, for both apps: it imports the
 // hub's contract types alone (the phone has no zod, which the desktop's ipc.ts needs).
 import type { McpScope, McpServer, McpServerSetInput, McpValue, McpValueSet } from "../../../shared/contracts";
 
@@ -58,19 +59,19 @@ export const namedOf = (server: McpServer): Named | undefined => {
   return key === null ? undefined : NAMED.find((n) => urlKey(n.url) === key);
 };
 
-/** The project's server an entry is: the one at its URL, the one by its name first when there are two. */
-export const serverOf = (entry: Named, servers: ReadonlyArray<McpServer>): McpServer | undefined => {
-  const at = servers.filter((s) => namedOf(s)?.id === entry.id);
-  return at.find((s) => s.name === entry.name) ?? at[0];
-};
+/** The entry's accounts: every saved server at its URL, the one by its own name first, then by name. */
+export const accountsOf = (entry: Named, servers: ReadonlyArray<McpServer>): McpServer[] =>
+  servers.filter((s) => namedOf(s)?.id === entry.id).sort((a, b) => (a.name === entry.name ? -1 : b.name === entry.name ? 1 : a.name.localeCompare(b.name)));
 
-/** The servers the list shows as themselves: every one no entry claims. */
-export const unnamed = (servers: ReadonlyArray<McpServer>): McpServer[] => {
-  const claimed = new Set(NAMED.flatMap((n) => serverOf(n, servers)?.name ?? []));
-  return servers.filter((s) => !claimed.has(s.name));
-};
+/** The servers the list shows as themselves: every one at no entry's URL. */
+export const unnamed = (servers: ReadonlyArray<McpServer>): McpServer[] => servers.filter((s) => namedOf(s) === undefined);
 
-/** The entry's name, or the first free one after it (paper-2) when a server of another URL already has it. */
+/** An account as a list names it: the service's name while it is the only one and by the service's name, else its
+ * own (notion-work). */
+export const accountLabel = (entry: Named, server: McpServer, servers: ReadonlyArray<McpServer>): string =>
+  accountsOf(entry, servers).length > 1 || server.name !== entry.name ? server.name : entry.label;
+
+/** The entry's name, or the first free one after it (paper-2) when another server, an account of it or not, has it. */
 export const nameFor = (entry: Named, taken: ReadonlyArray<string>): string => {
   const lower = new Set(taken.map((t) => t.toLowerCase()));
   if (!lower.has(entry.name)) return entry.name;
@@ -79,10 +80,11 @@ export const nameFor = (entry: Named, taken: ReadonlyArray<string>): string => {
   return `${entry.name}-${String(n)}`;
 };
 
-/** What Connect saves: the custom MCP form's server for the entry's URL, with no key (connections/model.ts toInput). */
-export const namedInput = (entry: Named, scope: McpScope, taken: ReadonlyArray<string>): McpServerSetInput => ({
+/** What Connect saves: the custom MCP form's server for the entry's URL, with no key (connections/model.ts toInput).
+ * Another account is saved by the name the person gave it, else the first free one. */
+export const namedInput = (entry: Named, scope: McpScope, taken: ReadonlyArray<string>, name?: string): McpServerSetInput => ({
   scope,
-  name: nameFor(entry, taken),
+  name: name ?? nameFor(entry, taken),
   enabled: true,
   roles: { lead: true, writers: entry.agents, reviewers: entry.agents },
   transport: { type: "http", url: entry.url },
@@ -124,10 +126,14 @@ export type NamedState =
   | { readonly kind: "connected"; readonly server: McpServer }
   | { readonly kind: "off"; readonly server: McpServer };
 
-/** Where an entry stands: not added, wanting a sign-in (first or again), mid sign-in, connected, or turned off. */
+/** Where an entry stands: not added, else where its first account stands (accountState). */
 export const namedState = (entry: Named, servers: ReadonlyArray<McpServer>): NamedState => {
-  const server = serverOf(entry, servers);
-  if (server === undefined) return { kind: "add" };
+  const first = accountsOf(entry, servers)[0];
+  return first === undefined ? { kind: "add" } : accountState(first);
+};
+
+/** Where one account stands: wanting a sign-in (first or again), mid sign-in, connected, or turned off. */
+export const accountState = (server: McpServer): Exclude<NamedState, { kind: "add" }> => {
   if (!server.enabled) return { kind: "off", server };
   const o = server.oauth;
   // Saved by hand with a key of its own: it doesn't sign in.
