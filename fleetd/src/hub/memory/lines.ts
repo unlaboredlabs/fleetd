@@ -89,6 +89,7 @@ export function heldOf(m: ChatMessage): MemoryHeld | undefined {
     text: item.text,
     at: m.createdAt,
     ...(item.topic === undefined ? {} : { topic: item.topic }),
+    ...(item.forgotten === true ? { forgotten: true } : {}),
     ...(item.replaced === undefined ? {} : { replaced: item.replaced }),
     ...(item.by === undefined ? {} : { by: item.by }),
   };

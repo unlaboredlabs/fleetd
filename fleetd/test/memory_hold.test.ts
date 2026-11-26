@@ -163,11 +163,12 @@ test("an admin keeps a held line or not; a member can't; kept, it's written with
 });
 
 test("a member taking out a line that names a gate is held, by forget, by remember in its place, and by an edit", async () => {
-  const { turnFor, leadCall, ok, core, lines } = setup();
+  const { turnFor, leadCall, ok, core, got, lines } = setup();
   turnFor(ADA);
   leadCall("remember", { scope: "project", effect: "none", text: "Always ask before deploying." });
   turnFor(BEA);
   expect(leadCall("forget", { scope: "project", entry: "ask before deploying" }).held).toBe(true);
+  expect((await got()).held?.map((h) => [h.text, h.forgotten, h.by?.name])).toEqual([["Always ask before deploying.", true, "Bea"]]);
   expect(leadCall("remember", { scope: "project", effect: "none", text: "Deploys go through the pipeline.", replaces: "ask before deploying" }).held).toBe(true);
   expect(core()).toBe("- Always ask before deploying.\n");
   expect(lines().slice(-2).map((m) => [m.text, m.remembered?.forgotten ?? false, m.remembered?.replaced])).toEqual([
