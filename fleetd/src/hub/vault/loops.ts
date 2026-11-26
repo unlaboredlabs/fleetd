@@ -1,8 +1,10 @@
 // The vault's background work: load the root key at start (making it on the first start), move today's variables and
 // card in, register the nodes' calls, and keep things in step: each node that links gets what it's missing and hands
-// over what it held once its link is live (the sweep tries again for one it couldn't); every sweep empties a 30-day
-// trash, drops audit rows past a year and an order's variables once it closes.
+// over what it held once its link is live (the sweep tries again for one it couldn't); an order's variable entered the
+// old way (sealed to its node) moves in at once, so it reaches the order's agents in each of the bot's repo checkouts;
+// every sweep empties a 30-day trash, drops audit rows past a year and an order's variables once it closes.
 import type { ProjectRef } from "../../shared/contracts.ts";
+import { CAP_VAULT } from "../../shared/node_link.ts";
 import type { Hub } from "../api/hub.ts";
 import { approvals } from "../approvals/index.ts";
 import { found } from "../executor/sessions.ts";
@@ -15,7 +17,7 @@ import { deliveries, orderSet, projectSet } from "./deliver.ts";
 import { registerLeadCalls as registerImports } from "./import.ts";
 import { start as startSignIn } from "./sign_in.ts";
 import { vault } from "./index.ts";
-import { adopt, copyTeamVars, migrateCards, migratePlain } from "./migrate.ts";
+import { adopt, copyTeamVars, migrateCards, migratePlain, SYSTEM_ORDER_VARS } from "./migrate.ts";
 
 /** How long a machine that came online waits for its link to go live before the sweep takes its move-in over. */
 const LIVE_WAIT_MS = 60_000;
@@ -57,6 +59,42 @@ async function moveIn(hub: Hub, m: string): Promise<void> {
 /** The machines still owed a move-in whose link is live now. */
 async function moveInOwed(hub: Hub): Promise<void> {
   for (const m of [...moveIns(hub).owed]) if (nodePort(hub).linked(m)) await moveIn(hub, m);
+}
+
+/** What machine `m`'s node holds moves into the vault, then what it's missing goes out. Never throws. */
+export async function takeIn(hub: Hub, m: string): Promise<void> {
+  if (vault(hub).keys.locked) return;
+  await moveIn(hub, m);
+  await deliveries(hub)
+    .reconcile(m)
+    .catch((e) => console.warn(`vault: ${m}'s variables not delivered: ${(e as Error).message}`));
+}
+
+/**
+ * The machines whose node holds an open order's variable a person entered the old way (sealed to the node, so kept
+ * under the order's bot only) that the vault doesn't have yet, each such value once per process while its node can
+ * hand it over: taking them in delivers them at each checkout of the bot's repos too.
+ */
+export function strays(hub: Hub, tried: Set<string>): string[] {
+  const rows = hub.db.conn
+    .query<{ machine_id: string; project_id: string; workstream_id: string; name: string; fingerprint: string; request_id: string }, []>(
+      `SELECT o.machine_id, o.project_id, o.workstream_id, o.name, o.fingerprint, o.request_id FROM order_env o
+         JOIN workstreams w ON 'W' || w.n = o.workstream_id AND w.state = 'open'
+         WHERE o.request_id NOT LIKE 'V%' AND NOT EXISTS (SELECT 1 FROM vault_items i WHERE i.kind = 'env' AND i.scope = 'order'
+           AND i.deleted_ms IS NULL AND i.machine_id = o.machine_id AND i.project_id = o.project_id
+           AND i.workstream_id = o.workstream_id AND i.env_name = o.name)`,
+    )
+    .all();
+  const port = nodePort(hub);
+  const out = new Set<string>();
+  for (const x of rows) {
+    if (SYSTEM_ORDER_VARS[x.name] === x.request_id) continue;
+    const key = [x.machine_id, x.project_id, x.workstream_id, x.name, x.fingerprint].join("/");
+    if (tried.has(key) || !port.linked(x.machine_id) || !port.can(x.machine_id, CAP_VAULT)) continue;
+    tried.add(key);
+    out.add(x.machine_id);
+  }
+  return [...out].sort();
 }
 
 /** How long a launch waits for its machine's variables to be delivered before it goes ahead anyway. */
@@ -124,6 +162,7 @@ export function start(hub: Hub): void {
   const hooks = approvals(hub).deps.hooks;
   hooks.vaultSealTo = () => (vault(hub).keys.locked ? undefined : hubSealTo(hub));
   hooks.vaultSecret = (r, sealed, by) => takeSecret(hub, r, sealed, by);
+  hooks.vaultTakeIn = (m) => takeIn(hub, m);
   found.injected = (r, order, threadId) => injected(hub, r, order, threadId);
   found.beforeLaunch = (r) => beforeLaunch(hub, r.machineId);
   const v = vault(hub);
@@ -145,6 +184,7 @@ export function start(hub: Hub): void {
     if (e.type === "machine.online" && e.machineId !== undefined) void linked(hub, e.machineId);
   });
   hub.shutdown.signal.addEventListener("abort", unsubscribe, { once: true });
+  const tried = new Set<string>();
   sweep(hub).register({
     name: "vault",
     run: async () => {
@@ -154,6 +194,7 @@ export function start(hub: Hub): void {
       dropClosed(hub);
       if (v.keys.locked) return;
       await moveInOwed(hub);
+      for (const m of strays(hub, tried)) await takeIn(hub, m);
       await deliveries(hub).reconcileAll();
     },
   });

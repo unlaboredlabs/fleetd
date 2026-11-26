@@ -156,6 +156,11 @@ export type ApprovalHooks = {
    */
   vaultSecret(request: HumanRequest, sealed: string, by: { name: string; person?: PersonRef; machines: string[] }): Promise<{ fingerprint: string; bytes: number } | undefined>;
   /**
+   * An order's variable the node saved the old way (sealed to it, under the order's bot only) moves into the vault,
+   * which then delivers it at each checkout of the bot's repos and lists it in vault_items. Never throws.
+   */
+  vaultTakeIn(machineId: string): Promise<void>;
+  /**
    * A sign-in form's box, sealed to the hub's key: opened and checked, the same fields sealed again to `nodeBox` for
    * its node (`forNode`), and `save`, run once the node filled them, which keeps the login in the team vault when the
    * person ticked "Save to Vault". Never logs or returns a value.
@@ -196,6 +201,7 @@ export const defaultHooks = (): ApprovalHooks => ({
   alwaysAsks: () => false,
   vaultSealTo: () => undefined,
   vaultSecret: async () => undefined,
+  vaultTakeIn: async () => {},
   signIn: () => {
     throw new ToolError("failed", "This workspace can't take a sign-in form yet.", "Update fleetd on the workspace's machine.");
   },
