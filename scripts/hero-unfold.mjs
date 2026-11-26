@@ -47,9 +47,10 @@ const chrome = process.env.CHROME ?? ["google-chrome", "chromium"].map((n) => sp
 const browser = await chromium.launch({ executablePath: chrome, args: ["--hide-scrollbars"] });
 const work = fs.mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "hero-unfold-"));
 try {
-  // The wide stage at its largest (the page's measure), and a phone's.
+  // The wide stage at the page's measure (1152 px, from 1512 px wide up: a laptop's Chrome and wider, where the frames
+  // then lie on the page's own pixels), and a phone's.
   // ONLY=wide-dark (or phone-light, …) renders just that one.
-  for (const [layout, width, height] of [["wide", 1440, 1400], ["phone", 390, 1100]]) {
+  for (const [layout, width, height] of [["wide", 1512, 1400], ["phone", 390, 1100]]) {
     for (const theme of ["dark", "light"]) {
       if (process.env.ONLY && process.env.ONLY !== `${layout}-${theme}`) continue;
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2, reducedMotion: "no-preference" });

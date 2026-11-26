@@ -249,14 +249,15 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .lid::after{content:"";position:absolute;inset:.2cqw;border-radius:1.92cqw;pointer-events:none;background:linear-gradient(118deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.025) 26%,rgba(255,255,255,0) 27%);z-index:3}
 
 /* The foldable: two halves on a hinge down its middle, a titanium band round black glass, one display across both open
-   and a smaller one on the outside. The right half lies still; the left half is one leaf on the hinge, its outer
+   and a smaller one on the outside. Shut, it is a D, as Apple's own pictures show it: round at its free edge, square at
+   the hinge, where the spine shows past it. The right half lies still; the left half is one leaf on the hinge, its outer
    display on one face, its half of the inner display on the other and its edge at its free end. Shut, the leaf lies
    over the right half, outer display up; it turns over on the hinge in perspective, on a spring that lands it flat
    against the hinge's stop, and at rest the phone is the one piece it is open (.whole), drawn the same. The light comes
    from the top left, as on the laptop: highlights on top and left edges, shade bottom right, the folding half darker
    the further it turns from the light. The script turns it with Web Animations of transforms and opacity only, so the
    compositor runs it at the display's rate. */
-.fold{--sw:31.68cqw;--band:.24cqw;--bezel:.42cqw;--r:2.2cqw;position:absolute;left:63.1cqw;top:21.6cqw;width:33cqw;aspect-ratio:1.396;perspective:calc(var(--sw) * 4.2)}
+.fold{--sw:31.68cqw;--band:.24cqw;--bezel:.42cqw;--r:2.45cqw;--h:.3cqw;--spine:.3cqw;position:absolute;left:63.1cqw;top:21.6cqw;width:33cqw;aspect-ratio:1.396;perspective:calc(var(--sw) * 4.2)}
 .fold .r{position:absolute;top:0;bottom:0;right:0;width:50%}
 .fold .leaf{position:absolute;top:0;bottom:0;left:50%;width:50%;transform-origin:0 50%;transform-style:preserve-3d;transform:rotateY(-.01deg)}
 .fold .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden}
@@ -268,30 +269,27 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .fold .band{position:absolute;inset:0;background:linear-gradient(135deg,#f1efeb 0%,#cfccc6 18%,#a9a6a0 52%,#8c8984 78%,#b4b0aa 100%);box-shadow:0 0 0 .03cqw rgba(0,0,0,.6),inset .03cqw .04cqw 0 rgba(255,255,255,.85),inset -.03cqw -.04cqw 0 rgba(0,0,0,.28)}
 .fold .r .band{border-radius:0 var(--r) var(--r) 0}
 .fold .l .band{border-radius:var(--r) 0 0 var(--r)}
-.fold .o .band{border-radius:var(--r)}
+.fold .o .band{border-radius:var(--h) var(--r) var(--r) var(--h)}
 .fold .whole .band{border-radius:var(--r)}
 /* Black glass inside the band, its edge catching a little light. */
 .fold .band::before{content:"";position:absolute;inset:var(--band);background:#030304;border-radius:inherit;box-shadow:inset 0 0 0 .025cqw rgba(255,255,255,.07)}
 .fold .r .band::before{left:0;border-radius:0 calc(var(--r) - var(--band)) calc(var(--r) - var(--band)) 0}
 .fold .l .band::before{right:0;border-radius:calc(var(--r) - var(--band)) 0 0 calc(var(--r) - var(--band))}
-.fold .o .band::before{border-radius:calc(var(--r) - var(--band))}
+.fold .o .band::before{border-radius:calc(var(--h) - var(--band)) calc(var(--r) - var(--band)) calc(var(--r) - var(--band)) calc(var(--h) - var(--band))}
 .fold .whole .band::before{border-radius:calc(var(--r) - var(--band))}
 .fold .scr{position:absolute;inset:calc(var(--band) + var(--bezel));overflow:hidden;background:#000;isolation:isolate}
 .fold .r .scr{left:0;border-radius:0 calc(var(--r) - var(--band) - var(--bezel)) calc(var(--r) - var(--band) - var(--bezel)) 0}
 /* The left half's screen a pixel over the hinge, so no seam shows where the halves meet. */
 .fold .l .scr{right:-1px;border-radius:calc(var(--r) - var(--band) - var(--bezel)) 0 0 calc(var(--r) - var(--band) - var(--bezel))}
-.fold .o .scr{inset:calc(var(--band) + .62cqw);border-radius:1.35cqw}
+.fold .o .scr{inset:calc(var(--band) + .35cqw);border-radius:.1cqw calc(var(--r) - var(--band) - .35cqw) calc(var(--r) - var(--band) - .35cqw) .1cqw}
 .fold .whole .scr{border-radius:calc(var(--r) - var(--band) - var(--bezel))}
 /* The open display's picture, in each half its own half of it, sized by the whole display (--sw). */
 .fold :is(.r,.l) .scr img{position:absolute;top:0;height:100%;width:var(--sw);left:0;object-fit:cover}
 .fold .r .scr img{left:calc(var(--sw) / -2)}
 .fold :is(.o,.whole) .scr img{width:100%;height:100%;object-fit:cover}
-/* The camera: in the inner display's bezel over the right half, and in the outer display's top right corner. */
-.fold .cam{position:absolute;z-index:4;width:.36cqw;height:.36cqw;border-radius:50%;background:radial-gradient(circle at 35% 35%,#3a4660 0,#0b0e16 55%,#000 100%);box-shadow:0 0 0 .03cqw rgba(255,255,255,.06)}
-.fold :is(.r,.whole) .cam{top:calc(var(--band) + .03cqw);right:22%}
-/* The inner display's camera sits under the leaf shut, so below it. */
-.fold .r .cam{z-index:0}
-.fold .o .cam{width:.55cqw;height:.55cqw;top:calc(var(--band) + .62cqw + .3cqw);left:calc(50% - .275cqw)}
+/* The outer display's camera, in its top right corner above the status column (the inner one is under the display,
+   unseen). */
+.fold .cam{position:absolute;z-index:4;width:1.18cqw;height:1.18cqw;top:1.47cqw;left:calc(100% - 2.67cqw);border-radius:50%;background:radial-gradient(circle at 60% 38%,rgba(150,168,205,.4) 0,rgba(150,168,205,0) 10%),radial-gradient(circle closest-side,#262b36 0,#151922 34%,#06070a 50%,#000 58%);box-shadow:0 0 0 .03cqw rgba(255,255,255,.06)}
 /* The hinge: its barrel's ends in the band at the top and bottom of the fold, flush with it, the band's own titanium
    turned round the hinge's axis (a touch of shade either side) between two fine seams; the glass meets across it
    unbroken. */
@@ -301,12 +299,14 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 /* The right half carries them while the leaf turns, from when it stands past upright (shut, the spine is the phone's
    edge and they'd stand off it): the leaf's band meets the right half's at them as it does at a real hinge. */
 .fold .r .hinge{left:0;z-index:5;opacity:0}
-/* The side buttons on the right half's top edge: a rocker and a key, titanium, a step proud of the band. */
-.fold .key{position:absolute;z-index:-1;top:-.12cqw;height:.18cqw;border-radius:.1cqw .1cqw 0 0;background:linear-gradient(#cfcbc5,#8f8c86);box-shadow:inset 0 .025cqw 0 rgba(255,255,255,.7),0 0 0 .02cqw rgba(0,0,0,.5)}
-.fold .key.a{right:24%;width:3.2cqw}
-.fold .key.b{right:12%;width:1.7cqw}
-.fold .r .key.a{right:48%}
-.fold .r .key.b{right:24%}
+/* The keys, titanium, a step proud of the band: the two volume keys on the right half's top edge, and Touch ID's side
+   button on its free edge. */
+.fold .key{position:absolute;z-index:-1;top:-.1cqw;height:.16cqw;width:2.1cqw;border-radius:.08cqw .08cqw 0 0;background:linear-gradient(#cfcbc5,#8f8c86);box-shadow:inset 0 .025cqw 0 rgba(255,255,255,.7),0 0 0 .02cqw rgba(0,0,0,.5)}
+.fold .key.a{right:12.3%}
+.fold .key.b{right:20.3%}
+.fold .key.s{top:28.3%;right:-.1cqw;width:.16cqw;height:16%;border-radius:0 .08cqw .08cqw 0;background:linear-gradient(90deg,#8f8c86,#cfcbc5)}
+.fold .r .key.a{right:24.6%}
+.fold .r .key.b{right:40.6%}
 /* A face turned from the light darkens a little (.dim; a screen gives its own light, so not much): by opacity, which
    the animation sets from the face's angle to the light. The right half too, in the leaf's shadow while it's over it. */
 .fold .dim{position:absolute;z-index:3;inset:0;opacity:0;pointer-events:none}
@@ -314,12 +314,13 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
 .fold .r .dim{border-radius:0 var(--r) var(--r) 0}
 .fold .l .dim{border-radius:var(--r) 0 0 var(--r)}
 .fold .l .dim{opacity:.3}
-.fold .o .dim{border-radius:var(--r)}
-/* Under the leaf, the right half is as round at the hinge as the leaf is (so no corner of it shows past the phone
-   shut); it squares off there once the leaf stands past upright (data-over, the renderer's), to meet it open. */
-.fold:is([data-fold="shut"],[data-over]) .r :is(.band,.dim){border-radius:var(--r)}
-.fold:is([data-fold="shut"],[data-over]) .r .band::before{border-radius:calc(var(--r) - var(--band))}
-.fold:is([data-fold="shut"],[data-over]) .r .scr{border-radius:calc(var(--r) - var(--band) - var(--bezel))}
+.fold .o .dim{border-radius:var(--h) var(--r) var(--r) var(--h)}
+/* Under the leaf, the right half is the leaf's D (so no corner of it shows past the phone shut); it squares off at the
+   hinge once the leaf stands past upright (data-over, the renderer's), to meet it open. */
+.fold:is([data-fold="shut"],[data-over]) .r :is(.band,.dim){border-radius:var(--h) var(--r) var(--r) var(--h)}
+/* The hinge's spine, shut: its cover rounds the halves' hinge edges, micro-blasted titanium, a sliver past the phone's
+   straight side. It turns in under the halves as the leaf lifts (the script narrows it toward the hinge). */
+.fold .spine{position:absolute;top:0;bottom:0;left:calc(50% - var(--spine));width:calc(var(--spine) + var(--h));transform-origin:calc(100% - var(--h)) 50%;border-radius:calc(var(--h) + .1cqw) 0 0 calc(var(--h) + .1cqw);background:linear-gradient(90deg,#77746f,#a29f99 30%,#b8b5af 55%,#8d8a85);box-shadow:0 0 0 .03cqw rgba(0,0,0,.55),inset 0 .04cqw 0 rgba(255,255,255,.35),inset 0 -.04cqw 0 rgba(0,0,0,.3)}
 /* The leaf's free edge: its thickness, titanium, square to both faces, seen only while it stands off flat. */
 .fold .edge{position:absolute;top:.5cqw;bottom:.5cqw;left:100%;width:.85cqw;transform-origin:0 50%;transform:rotateY(90deg);background:linear-gradient(90deg,#6f6c67,#dedad4 38%,#fbfaf8 50%,#b9b5af 62%,#6f6c67);border-radius:.43cqw;opacity:0}
 .fold .off{position:absolute;z-index:2;inset:0;background:#000;opacity:0;pointer-events:none}
@@ -332,13 +333,13 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
    drawn the same while the video's frames were made (when it's a layer) and after (the page's open phone). */
 .fold .whole{position:absolute;z-index:2;inset:0;opacity:0;will-change:opacity}
 .fold:is(:not([data-fold]),[data-fold="open"]) .whole{opacity:1}
-.fold:is(:not([data-fold]),[data-fold="open"]) :is(.r,.leaf){display:none}
+.fold:is(:not([data-fold]),[data-fold="open"]) :is(.r,.leaf,.spine){display:none}
 /* Shut: the leaf over the right half, outer display up, the inner display off, the shadows under one half. */
 .fold[data-fold="shut"] :is(.shade,.contact){transform:scaleX(.52)}
 /* Lying flat it needs no turn: drawn in the plane, as sharp as the rest of the page (anything turned in 3D is drawn soft). */
 .fold[data-fold="shut"] .leaf{transform:none}
 /* On layers of their own from the start, so nothing is promoted (and redrawn) as it begins. */
-.fold[data-fold] :is(.shade,.contact,.off,.dim,.edge){will-change:opacity,transform}
+.fold[data-fold] :is(.shade,.contact,.off,.dim,.edge,.spine){will-change:opacity,transform}
 .fold[data-fold] .face{will-change:opacity}
 
 /* The unfold as it plays: a video of it, rendered offline frame by frame at 2x from this page (scripts/hero-unfold.mjs,
@@ -438,11 +439,11 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
       <video class="unfold" muted playsinline preload="none" disablepictureinpicture tabindex="-1" aria-hidden="true"></video>
       <div class="fold" id="duo">
         <script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches)document.getElementById("duo").dataset.fold="shut"</script>
-        <div class="shade"></div><div class="contact"></div>
-        <div class="r"><span class="key a"></span><span class="key b"></span><div class="band"></div><div class="scr">
+        <div class="shade"></div><div class="contact"></div><span class="spine"></span>
+        <div class="r"><span class="key a"></span><span class="key b"></span><span class="key s"></span><div class="band"></div><div class="scr">
           <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
           <span class="off"></span>
-        </div><span class="cam"></span><span class="dim"></span><span class="hinge t"></span><span class="hinge b"></span></div>
+        </div><span class="dim"></span><span class="hinge t"></span><span class="hinge b"></span></div>
         <div class="leaf">
           <div class="face o"><div class="band"></div><div class="scr">
             <img src="/hero/duo-closed-672.webp" srcset="/hero/duo-closed-336.webp 336w, /hero/duo-closed-672.webp 672w" sizes="(min-width: 700px) 16vw, 44vw" width="672" height="978" alt="">
@@ -453,9 +454,9 @@ h1{font-weight:600;letter-spacing:-.04em;line-height:1;font-size:clamp(40px,5.2v
           </div><span class="dim"></span></div>
           <span class="edge"></span>
         </div>
-        <div class="whole"><span class="key a"></span><span class="key b"></span><div class="band"></div><div class="scr">
+        <div class="whole"><span class="key a"></span><span class="key b"></span><span class="key s"></span><div class="band"></div><div class="scr">
           <img src="/hero/duo-open-1376.webp" srcset="/hero/duo-open-688.webp 688w, /hero/duo-open-1376.webp 1376w" sizes="(min-width: 700px) 32vw, 88vw" width="1376" height="968" alt="">
-        </div><span class="cam"></span><span class="hinge t"></span><span class="hinge b"></span></div>
+        </div><span class="hinge t"></span><span class="hinge b"></span></div>
       </div>
     </div>
   </div>
@@ -831,6 +832,8 @@ var fleetdMedia={};
     [".l .dim", sampled((a) => ({ opacity: shade(a - 180) }))],
     [".r .dim", sampled((a) => ({ opacity: a < 90 ? 0.1 * Math.sin(2 * a * rad) : 0 }))],
     [".edge", sampled((a) => ({ opacity: a > 15 && a < 165 ? 1 : 0 }))],
+    // The spine turns in toward the hinge, gone by upright.
+    [".spine", sampled((a) => ({ transform: `scaleX(${Math.max(0, Math.cos(Math.min(90, a) * rad))})` }))],
     [":is(.shade,.contact)", sampled((a) => ({ transform: `scaleX(${0.52 + 0.48 * ((1 - Math.cos(Math.min(180, a) * rad)) / 2)})` }))],
     // The inner display wakes as soon as the leaf lifts past 45 degrees, in 0.05 s: lit before its inner face comes into
     // view, so no half of it is seen grey on the way.
@@ -999,13 +1002,15 @@ var fleetdMedia={};
           const past = a > 90, tex = past ? faces.open : faces.shut;
           const [nx, ny] = past ? window.heroUnfold.nudgeFace : window.heroUnfold.nudgeFaceShut;
           const R = parseFloat(getComputedStyle(duo.querySelector(".whole .band")).borderTopLeftRadius);
+          // Shut, the leaf is a D: square (nearly) at the hinge.
+          const near = parseFloat(getComputedStyle(duo.querySelector(".o .band")).borderTopLeftRadius);
           const pic = await picture(tex.src);
           const px = (tex.x - cornerX + nx / device) * scale, py = (tex.y - cornerY + ny / device) * scale;
           // The face's own left edge in the shot: the phone's, open; the hinge, shut (the leaf lies over the right half).
           const ox0 = (past ? fold.left : fold.left + W) - tex.x, oy0 = fold.top - tex.y;
           const bitmap = await sized(tex.src, (pic.naturalWidth * scale) / device, (pic.naturalHeight * scale) / device, frac(px), frac(py), null, "pixelated");
           const bx = hx - (past ? W * scale : 0) - Math.floor(px) - ox0 * scale, by = ty * scale - Math.floor(py) - oy0 * scale;
-          const geo = { oy: H / 2, P, W, H, inset: 0, radius: R, near: past ? 0 : R, fromHinge: !past };
+          const geo = { oy: H / 2, P, W, H, inset: 0, radius: R, near: past ? 0 : near, fromHinge: !past };
           project(g, geo, a, bitmap, (p, w, cut) => [(p + ox0) * scale + bx, w * scale, (cut + oy0) * scale + by, (H - 2 * cut) * scale], past ? shade(a - 180) : shade(a), 1, hx, ty);
         }
         if (window.heroUnfold.only === "face") {
@@ -1043,7 +1048,9 @@ var fleetdMedia={};
           for (const [{ bitmap, at }, alpha] of pictures) { g.globalAlpha = alpha; g.drawImage(bitmap, at[0], at[1]); }
           g.restore();
           for (const [{ bitmap, fit }, alpha] of pictures) project(g, geoInner, a, bitmap, fit, shade(a - 180), alpha, hx, ty);
-        } else {
+        } else if (!faces) {
+          // (With the leaf drawn from the page's shot of the phone shut, its outer display is in that shot already, the
+          // page's own pixels: drawn again from its picture, resampled another way, it would start a pixel off.)
           const src = duo.querySelector(".o .scr img").currentSrc;
           const pic = await picture(src);
           const wO = W - 2 * geoOuter.inset, hO = H - 2 * geoOuter.inset;
@@ -1053,20 +1060,24 @@ var fleetdMedia={};
           // `nudgeShut` as the open one is by `nudge`, onto the page's phone shut.
           const [nx, ny] = window.heroUnfold.nudgeShut;
           const px = hx + (geoOuter.inset - ox0 + nx / device) * scale, py = (ty + geoOuter.inset - oy0 + ny / device) * scale;
-          // The display's camera, a hole in its glass over the picture: the drawing covers the page's, so it is drawn in.
+          // The display's camera, a hole in its glass over the picture (black, its lens at the middle, as the CSS draws it):
+          // the drawing covers the page's, so it is drawn in.
           const cam = getComputedStyle(duo.querySelector(".o .cam"));
           const camD = parseFloat(cam.width);
           const camX = parseFloat(cam.left) - geoOuter.inset + camD / 2 + ox0, camY = parseFloat(cam.top) - geoOuter.inset + camD / 2 + oy0;
           const paint = (c) => {
             const k = c.getContext("2d"), x = camX * scale + frac(px), y = camY * scale + frac(py), r = (camD / 2) * scale;
-            const glass = k.createRadialGradient(x - 0.3 * r, y - 0.3 * r, 0, x - 0.3 * r, y - 0.3 * r, 1.3 * r);
-            glass.addColorStop(0, "#3a4660");
-            glass.addColorStop(0.55, "#0b0e16");
-            glass.addColorStop(1, "#000");
-            k.fillStyle = glass;
-            k.beginPath();
-            k.arc(x, y, r, 0, 2 * Math.PI);
-            k.fill();
+            const lens = k.createRadialGradient(x, y, 0, x, y, r);
+            for (const [at, colour] of [[0, "#262b36"], [0.34, "#151922"], [0.5, "#06070a"], [0.58, "#000"], [1, "#000"]]) lens.addColorStop(at, colour);
+            const glint = k.createRadialGradient(x + 0.2 * r, y - 0.24 * r, 0, x + 0.2 * r, y - 0.24 * r, 0.173 * r);
+            glint.addColorStop(0, "rgba(150,168,205,.4)");
+            glint.addColorStop(1, "rgba(150,168,205,0)");
+            for (const fill of [lens, glint]) {
+              k.fillStyle = fill;
+              k.beginPath();
+              k.arc(x, y, r, 0, 2 * Math.PI);
+              k.fill();
+            }
           };
           const shut = await sized(src, pic.naturalWidth * fill * scale, pic.naturalHeight * fill * scale, frac(px), frac(py), paint);
           const kx = Math.round(pic.naturalWidth * fill * scale) / (pic.naturalWidth * fill), ky = Math.round(pic.naturalHeight * fill * scale) / (pic.naturalHeight * fill);
