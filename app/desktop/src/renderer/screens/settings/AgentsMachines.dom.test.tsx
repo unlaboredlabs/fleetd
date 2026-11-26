@@ -200,7 +200,7 @@ it("takes a bot's slider to the fleet cap and says when its machine holds it, wi
   expect(thumb?.getAttribute("aria-valuemax")).toBe("50");
   expect(project.textContent).toContain("devbox runs at most 22 agents at once, so this bot runs 22 until an admin raises devbox.");
   // A member sees the line only: no raise, no fleet or machine caps, nothing about admin keys.
-  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("devbox's max in Hub › Machines");
+  expect([...project.querySelectorAll("button")].map((b) => b.textContent.trim())).not.toContain("devbox's max in Workspace › Machines");
   expect(host.textContent).not.toContain("admin key");
   expect(calls).toEqual([]);
 });
@@ -208,14 +208,14 @@ it("takes a bot's slider to the fleet cap and says when its machine holds it, wi
 it("gives an owner or admin the way to the machine's own page, where its cap is", async () => {
   await render("settings", true);
   await act(async () => new Promise((r) => setTimeout(r, 0)));
-  await click(button(section("Max agents"), "devbox's max in Hub › Machines"));
+  await click(button(section("Max agents"), "devbox's max in Workspace › Machines"));
   expect(window.location.hash).toBe("#/settings/hub/machines/devbox");
 });
 
 it("says a fleet cap the CLI set below the machines' total, and nothing without one", async () => {
   await render("hub", true, { ...slots, cap: 30, fleetCap: 30 });
   expect(host.querySelector("[data-fleet-cap]")?.textContent).toBe(
-    "All machines together run at most 30 agents: the hub's fleet cap. Change it with fleetd project set --fleet-cap <n>.",
+    "All machines together run at most 30 agents: the workspace's fleet cap. Change it with fleetd project set --fleet-cap <n>.",
   );
   act(() => root.unmount());
   root = createRoot(host);

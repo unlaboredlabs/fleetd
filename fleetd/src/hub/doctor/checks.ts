@@ -42,12 +42,12 @@ export type Probe = { ok: true } | { ok: false; why: string };
 
 export function hubReachable(url: string, probe: Probe, restart: string): DoctorCheck {
   return probe.ok
-    ? hubEntry("reachable", "ok", `The hub answers at ${url}.`)
+    ? hubEntry("reachable", "ok", `The workspace answers at ${url}.`)
     : hubEntry(
         "reachable",
         "fail",
-        `The hub does not answer at its own address ${url} (${probe.why}).`,
-        manual("Restart the hub service", restart),
+        `The workspace does not answer at its own address ${url} (${probe.why}).`,
+        manual("Restart the workspace service", restart),
       );
 }
 
@@ -60,27 +60,27 @@ export function ghAuth(outcome: CmdOutcome): DoctorCheck {
       return hubEntry(
         "gh_auth",
         "fail",
-        "The GitHub CLI (gh) is not installed on the hub; the merge train and PR checks need it.",
+        "The GitHub CLI (gh) is not installed on the workspace's machine; the merge train and PR checks need it.",
         manual("Install gh (https://cli.github.com), then log in", "gh auth login"),
       );
     }
-    return hubEntry("gh_auth", "unknown", `Could not run gh on the hub: ${outcome.error}`);
+    return hubEntry("gh_auth", "unknown", `Could not run gh on the workspace's machine: ${outcome.error}`);
   }
   if (outcome.exitCode !== 0) {
     return hubEntry(
       "gh_auth",
       "fail",
-      "gh is not logged in on the hub; the merge train and PR checks need it until the hub has its GitHub App.",
+      "gh is not logged in on the workspace's machine; the merge train and PR checks need it until the workspace has its GitHub App.",
       manual(
-        `Log gh in on the hub machine, or create the hub's GitHub App in ${settingsPath()} › Setup › GitHub`,
+        `Log gh in on the workspace's machine, or create the workspace's GitHub App in ${settingsPath()} › Setup › GitHub`,
         "gh auth login",
       ),
     );
   }
   const account = /account (\S+)/.exec(`${outcome.stdout}\n${outcome.stderr}`);
   return account
-    ? hubEntry("gh_auth", "ok", `gh is logged in on the hub as ${account[1]}.`)
-    : hubEntry("gh_auth", "ok", "gh is logged in on the hub.");
+    ? hubEntry("gh_auth", "ok", `gh is logged in on the workspace's machine as ${account[1]}.`)
+    : hubEntry("gh_auth", "ok", "gh is logged in on the workspace's machine.");
 }
 
 /** What the hub keeps of its optional setup: each check below is there only once its step is set up. */
@@ -116,14 +116,14 @@ export function vaultKey(f: VaultKeyFacts): DoctorCheck {
     return hubEntry("vault_key", "fail", `The vault key is open to other users: ${f.unsafe.join("; ")}.`, manual(`run chmod 700 on its folder and chmod 600 on ${f.path}`));
   }
   if (f.problem !== undefined) {
-    return hubEntry("vault_key", "fail", `The vault key didn't load: ${trimDots(f.problem)}.`, manual("re-enter the recovery code with `fleetd vault restore-key` on the hub"));
+    return hubEntry("vault_key", "fail", `The vault key didn't load: ${trimDots(f.problem)}.`, manual("re-enter the recovery code with `fleetd vault restore-key` on the workspace's machine"));
   }
   if (f.locked) {
     return hubEntry("vault_key", "warn", "The vault is locked until an owner or admin unlocks it with its passphrase: fills wait, variables already delivered keep working.", manual("unlock it in Settings › Vault"));
   }
   const where = f.mode === "file" ? `a file on this machine (${f.path})` : f.mode === "keyring" ? "this machine's keychain" : "a passphrase-locked file";
   if (!f.recoverySaved) {
-    return hubEntry("vault_key", "warn", `The vault key is in ${where}, and its recovery code isn't saved yet: without both, cards and logins can't be opened again.`, manual("run `fleetd vault recovery-code` on the hub and keep the code somewhere safe"));
+    return hubEntry("vault_key", "warn", `The vault key is in ${where}, and its recovery code isn't saved yet: without both, cards and logins can't be opened again.`, manual("run `fleetd vault recovery-code` on the workspace's machine and keep the code somewhere safe"));
   }
   return hubEntry("vault_key", "ok", `The vault key is in ${where}; its recovery code is saved.`);
 }
@@ -205,7 +205,7 @@ export function githubApp(app: GithubApp): DoctorCheck {
     return hubEntry(
       "github_app",
       "warn",
-      `The hub's GitHub App "${app.name}" isn't installed on any repository yet.`,
+      `The workspace's GitHub App "${app.name}" isn't installed on any repository yet.`,
       fix(`Install it on ${settingsPath()} › Setup › GitHub, then Test`),
     );
   }
@@ -213,7 +213,7 @@ export function githubApp(app: GithubApp): DoctorCheck {
   if (t && !t.ok) return hubEntry("github_app", "fail", t.said, fix(`Check it on ${settingsPath()} › Setup › GitHub, then Test`));
   if (t) return hubEntry("github_app", "ok", t.said);
   const places = installations.map((i) => i.account);
-  return hubEntry("github_app", "ok", `The hub's GitHub App "${app.name}" is installed on ${places.join(", ")}.`);
+  return hubEntry("github_app", "ok", `The workspace's GitHub App "${app.name}" is installed on ${places.join(", ")}.`);
 }
 
 function ipv4(host: string): number[] | undefined {
@@ -281,7 +281,7 @@ export function sealedHttp(url: string): string | undefined {
 export function httpsReachable(config: HubSetup, problem: string | undefined, port: number, probe?: Probe): DoctorCheck {
   const serve = () =>
     manual(
-      "Serve the hub over HTTPS (Tailscale Serve shown), then stop the hub and run fleetd init --url https://<that address>",
+      "Serve the workspace over HTTPS (Tailscale Serve shown), then stop the workspace and run fleetd init --url https://<that address>",
       `tailscale serve --bg ${port}`,
     );
   if (problem !== undefined) return hubEntry("https", "warn", problem, serve());
@@ -290,26 +290,26 @@ export function httpsReachable(config: HubSetup, problem: string | undefined, po
     return hubEntry(
       "https",
       "warn",
-      "The hub has no address set up (fleetd init --url), so the desktop app and other machines cannot reach it over HTTPS.",
+      "The workspace has no address set up (fleetd init --url), so the desktop app and other machines cannot reach it over HTTPS.",
       serve(),
     );
   }
   if (!url.startsWith("https://")) {
     const why = sealedHttp(url);
-    if (why !== undefined) return hubEntry("https", "ok", `The hub's address ${url} is plain HTTP, which is fine: ${why}.`);
+    if (why !== undefined) return hubEntry("https", "ok", `The workspace's address ${url} is plain HTTP, which is fine: ${why}.`);
     return hubEntry(
       "https",
       "warn",
-      `The hub's address ${url} is not HTTPS; keys from the desktop app and other machines would cross the network unencrypted.`,
+      `The workspace's address ${url} is not HTTPS; keys from the desktop app and other machines would cross the network unencrypted.`,
       serve(),
     );
   }
-  if (!probe || probe.ok) return hubEntry("https", "ok", `The hub is reachable over HTTPS at ${url}.`);
+  if (!probe || probe.ok) return hubEntry("https", "ok", `The workspace is reachable over HTTPS at ${url}.`);
   return hubEntry(
     "https",
     "fail",
     `${url} does not answer (${probe.why}).`,
-    manual("Check that HTTPS still points at the hub", "tailscale serve status"),
+    manual("Check that HTTPS still points at the workspace", "tailscale serve status"),
   );
 }
 
@@ -494,9 +494,9 @@ function accountEntry(
 export function claudeKey(setup: ClaudeSetupView): DoctorCheck {
   const api = setup.hubApi;
   if (!api) {
-    return hubEntry("claude_key", "unknown", "The hub has no Claude API key.", manual(`Add one on ${settingsPath()} › Setup › Claude`));
+    return hubEntry("claude_key", "unknown", "The workspace has no Claude API key.", manual(`Add one on ${settingsPath()} › Setup › Claude`));
   }
-  const what = api.endpoint ? `The hub's Claude API key (through ${api.endpoint})` : "The hub's Claude API key";
+  const what = api.endpoint ? `The workspace's Claude API key (through ${api.endpoint})` : "The workspace's Claude API key";
   return accountEntry(
     "claude_key",
     what,
@@ -509,13 +509,13 @@ export function claudeKey(setup: ClaudeSetupView): DoctorCheck {
 
 /** `hub/claude_owner`: the hub owner's own subscription. */
 export function claudeOwner(setup: ClaudeSetupView): DoctorCheck {
-  if (!setup.owner) return hubEntry("claude_owner", "unknown", "The hub has no owner to connect a subscription.");
+  if (!setup.owner) return hubEntry("claude_owner", "unknown", "The workspace has no owner to connect a subscription.");
   const [name, sub] = setup.owner;
   if (!sub) {
     return hubEntry(
       "claude_owner",
       "unknown",
-      `${name}, the hub's owner, has no Claude subscription connected.`,
+      `${name}, the workspace's owner, has no Claude subscription connected.`,
       manual(`${name} connects it in Settings › Accounts › Claude`),
     );
   }
@@ -583,7 +583,7 @@ export function unownedSessions(machineId: string, offline: boolean, sessions: U
     machineId,
     "sessions",
     "warn",
-    `${machineId} runs ${sessions.length} session${sessions.length === 1 ? "" : "s"} no agent or lead of this hub owns: ${named.join(", ")}${more}. Nothing watches or counts them.`,
+    `${machineId} runs ${sessions.length} session${sessions.length === 1 ? "" : "s"} no agent or lead of this workspace owns: ${named.join(", ")}${more}. Nothing watches or counts them.`,
     manual(`Read it with thread_tail; if nothing should be running it, stop its claude on ${machineId}`),
   );
 }
@@ -606,13 +606,13 @@ export function commitIdentity(machineId: string, read: ProbeRead, config: HubSe
     const m = config.machines[machineId];
     if (m) {
       return onHub(
-        manual(`Run machine setup again from the hub to write the hub's identity into ${machineId}'s service`, addCommand(m)),
+        manual(`Run machine setup again from the workspace to write the workspace's identity into ${machineId}'s service`, addCommand(m)),
       );
     }
     // Joined by itself (fleetd pair --worker): the join command carries the identity.
     return onHub(
       manual(
-        `Join ${machineId} again: run this on the hub, then the line it prints on ${machineId}; it carries the identity`,
+        `Join ${machineId} again: run this on the workspace's machine, then the line it prints on ${machineId}; it carries the identity`,
         `fleetd pair --worker ${machineId}`,
       ),
     );
@@ -627,7 +627,7 @@ export function commitIdentity(machineId: string, read: ProbeRead, config: HubSe
       machineId,
       "commit_identity",
       "warn",
-      `Commits on ${machineId} use ${email} (from ${from}); the hub's identity is ${want}.`,
+      `Commits on ${machineId} use ${email} (from ${from}); the workspace's identity is ${want}.`,
       set(),
     );
   }
@@ -646,7 +646,7 @@ export function serviceManager(scope: string, what: "hub" | "node", manager: Nod
   if (manager.linger && manager.restarts) {
     return entry("ok", `If ${user}'s service manager stops, systemd starts it again within seconds, and the ${what} with it.`);
   }
-  const where = scope === "hub" ? "the hub's machine" : scope;
+  const where = scope === "hub" ? "the workspace's machine" : scope;
   const fix = manual(`As an admin on ${where}, once`, keepManagerCommand(user, uid, !manager.linger));
   return manager.linger
     ? entry(
@@ -760,16 +760,16 @@ export function macSetup(machineId: string, offline: boolean, health: MacHealth 
 export function macOneNode(machineId: string, others: string[]): DoctorCheck {
   const other = others[0];
   if (other === undefined) {
-    return machineEntry(machineId, "mac_one_node", "ok", "No other fleetd node of this hub runs on this Mac.");
+    return machineEntry(machineId, "mac_one_node", "ok", "No other fleetd node of this workspace runs on this Mac.");
   }
   return machineEntry(
     machineId,
     "mac_one_node",
     "fail",
-    `${others.join(", ")} is enrolled from this Mac too, under another name: the hub would take it for another machine.`,
+    `${others.join(", ")} is enrolled from this Mac too, under another name: the workspace would take it for another machine.`,
     onHub(
       manual(
-        "On the hub (push its agents' work first). If it ran in another account on this Mac, stop it there too: launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node",
+        "On the workspace (push its agents' work first). If it ran in another account on this Mac, stop it there too: launchctl bootout gui/$(id -u)/sh.fleetd.node; rm -rf ~/.fleetd/node",
         `fleetd machine remove ${other}`,
       ),
     ),

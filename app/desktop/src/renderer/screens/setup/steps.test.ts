@@ -35,18 +35,18 @@ describe("setup steps", () => {
 
   it("opens where each step's result is saved: a Hub page, and for Claude and GitHub your own accounts too", () => {
     // The hub's side of Claude and GitHub is the step's own page on Hub › Setup, which holds the account's controls.
-    expect(placesOf(step("people"))).toEqual([{ label: "Open Hub › People", screen: { id: "settings", tab: "hub.people" } }]);
-    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Hub › Setup › Claude", "Open Accounts"]);
+    expect(placesOf(step("people"))).toEqual([{ label: "Open Workspace › People", screen: { id: "settings", tab: "hub.people" } }]);
+    expect(placesOf(step("claude")).map((p) => p.label)).toEqual(["Open Workspace › Setup › Claude", "Open Accounts"]);
     expect(placesOf(step("claude"))[1]).toEqual({ label: "Open Accounts", screen: { id: "settings", tab: "accounts" }, reveal: "claude" });
-    expect(placesOf(step("claude"))[0]).toEqual({ label: "Open Hub › Setup › Claude", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.claude" });
+    expect(placesOf(step("claude"))[0]).toEqual({ label: "Open Workspace › Setup › Claude", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.claude" });
     expect(placesOf(step("people")).map((p) => p.screen)).toEqual([{ id: "settings", tab: "hub.people" }]);
-    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Hub › Setup › GitHub", "Open Accounts"]);
-    expect(placesOf(step("github"))[0]).toEqual({ label: "Open Hub › Setup › GitHub", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.github" });
+    expect(placesOf(step("github")).map((p) => p.label)).toEqual(["Open Workspace › Setup › GitHub", "Open Accounts"]);
+    expect(placesOf(step("github"))[0]).toEqual({ label: "Open Workspace › Setup › GitHub", screen: { id: "settings", tab: "hub.setup" }, reveal: "admin.github" });
     // On that page the hub's side is already here: only yours is left to open. Other steps open what they did.
     expect(placesOf(step("claude"), true).map((p) => p.label)).toEqual(["Open Accounts"]);
     expect(placesOf(step("github"), true).map((p) => p.label)).toEqual(["Open Accounts"]);
     expect(placesOf(step("people"), true)).toEqual(placesOf(step("people")));
-    expect(placesOf(step("machines"), true).map((p) => p.label)).toEqual(["Open Hub › Machines"]);
+    expect(placesOf(step("machines"), true).map((p) => p.label)).toEqual(["Open Workspace › Machines"]);
     // 1Password is each person's own: only Your accounts.
     expect(placesOf(step("onepassword"))).toEqual([
       { label: "Open Accounts › 1Password", screen: { id: "settings", tab: "accounts" }, reveal: "onepassword" },
@@ -85,8 +85,8 @@ describe("setup steps", () => {
   });
 
   it("says what a set-up account runs on, and which steps want the admin now", () => {
-    expect(doneWords(step("claude", { status: "done", way: "the hub's API key" }))).toBe("Uses the hub's API key");
-    expect(doneWords(step("github", { status: "done", way: "gh on the hub" }))).toBe("Uses gh on the hub");
+    expect(doneWords(step("claude", { status: "done", way: "the workspace's API key" }))).toBe("Uses the workspace's API key");
+    expect(doneWords(step("github", { status: "done", way: "gh on the workspace" }))).toBe("Uses gh on the workspace");
     expect(doneWords(step("onepassword", { status: "done" }))).toBe("Done");
     // Only once it is done: a step that needs a look says that instead, and one to do says when it is needed.
     expect(doneWords(step("claude", { status: "look", way: "each machine's own login" }))).toBeUndefined();

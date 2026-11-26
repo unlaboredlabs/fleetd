@@ -146,7 +146,7 @@ const leadError = (code: ConstructorParameters<typeof ToolError>[0], message: st
 function storeError(error: unknown): ToolError {
   if (error instanceof ToolError) return error;
   console.error("tasks: store failed:", error);
-  return leadError("failed", "The hub failed to answer that request.", "Retry; if it keeps failing, check the hub's log.");
+  return leadError("failed", "The workspace failed to answer that request.", "Retry; if it keeps failing, check the workspace's log.");
 }
 
 /** The node's answer to a start, as `go` records it. */
@@ -2545,7 +2545,7 @@ export class Tasks {
         machineId: r.machineId,
         projectId: thread.projectId,
         threadId: r.threadId,
-        summary: renderSummary(`${r.machineId} runs "${thread.title}", a session no agent or lead of this hub owns`),
+        summary: renderSummary(`${r.machineId} runs "${thread.title}", a session no agent or lead of this workspace owns`),
         data: { title: thread.title, since: isoMs(entry[1]) },
         attention: "loud",
       } as NewEvent);

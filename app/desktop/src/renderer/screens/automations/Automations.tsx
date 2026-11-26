@@ -57,7 +57,7 @@ export function Automations({ route }: { route: SettingsRoute }) {
         <div className={settings.column}>
           <PageHead title="Automations" />
           <SettingsSection>
-            <GroupNote>Not connected. Connect to a hub to see its automations.</GroupNote>
+            <GroupNote>Not connected. Connect to a workspace to see its automations.</GroupNote>
           </SettingsSection>
         </div>
       </div>
@@ -330,7 +330,7 @@ function Editor(props: { projectRef: ProjectRef; automation?: Automation; onClos
   return (
     <SettingsRow
       title={a ? `Edit ${a.name}` : "New automation"}
-      hint="Something the lead does on a schedule or from a webhook. Reviews and approvals still apply. A run missed while the hub is down runs once when it is back."
+      hint="Something the lead does on a schedule or from a webhook. Reviews and approvals still apply. A run missed while the workspace is down runs once when it is back."
     >
       <Field label="Name" error={shown.name}>
         <Input value={draft.name} maxLength={NAME_MAX} placeholder="Weekly dependency check" onChange={(e) => set({ name: e.target.value })} />

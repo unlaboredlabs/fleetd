@@ -277,7 +277,7 @@ test("a person's input goes to the node only while they drive", async () => {
   expect(live(t.hub).lastInput(S1)).toBe(t.clock.now());
 });
 
-test("a screen whose task ended is ended on the hub, and its node told once per link", async () => {
+test("a screen whose task ended is ended on the workspace's machine, and its node told once per link", async () => {
   setup();
   t.hub.db.conn
     .query(
@@ -287,7 +287,7 @@ test("a screen whose task ended is ended on the hub, and its node told once per 
   await t.calls.call(agent("devbox", "p1", "T7"), report("live"));
   // The report's event wakes the hub's loop, which ends it and tells its node.
   await tick();
-  expect(get(t.hub, S1)).toMatchObject({ state: "lost", note: "its task ended with it still open, so the hub ended it" });
+  expect(get(t.hub, S1)).toMatchObject({ state: "lost", note: "its task ended with it still open, so the workspace ended it" });
   expect(t.link.sent("devbox").at(-1)).toEqual({ t: "session_end", threadId: "t1", sessionId: S1 });
   expect(endOutlived(t.hub)).toBe(0);
   // Told once per link: again after the node links again.
@@ -298,7 +298,7 @@ test("a screen whose task ended is ended on the hub, and its node told once per 
   expect(tellNodes(t.hub, told)).toBe(1);
 });
 
-test("a live screen whose task finished says when the hub ends it, and stops saying so once the task is woken", async () => {
+test("a live screen whose task finished says when the workspace ends it, and stops saying so once the task is woken", async () => {
   setup();
   const ended = new Date(t.clock.now()).toISOString();
   t.hub.db.conn
@@ -445,7 +445,7 @@ test("a node's browser call decodes as the contract has it before it reaches the
   expect((await t.calls.call(who, report("live", { files: [{ file: "dom", bytes: -1 }] }))).error?.code).toBe("invalid");
 }, 30_000);
 
-test("the hub's loops bind the live view to the hub's own /app when nothing else is bound", async () => {
+test("the workspace's loops bind the live view to the workspace's own /app when nothing else is bound", async () => {
   const { openHubDb, tempHome } = await import("./helpers.ts");
   const { Hub } = await import("../src/hub/api/hub.ts");
   const { appWs: realAppWs } = await import("../src/hub/app_ws/index.ts");

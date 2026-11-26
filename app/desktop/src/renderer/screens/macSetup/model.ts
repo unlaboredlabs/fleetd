@@ -257,7 +257,7 @@ export const checkTitle = (id: string): string =>
     keep_awake: "Stays awake",
     screen_lock: "Screen lock",
     tools: "Agent tools",
-    reaches_hub: "Reaches the hub",
+    reaches_hub: "Reaches the workspace",
   })[id] ?? id.replace(/_/gu, " ").replace(/^./u, (c) => c.toUpperCase());
 
 /** A check that passes, or the node is still at (an install, say): a warning, never a failure. */

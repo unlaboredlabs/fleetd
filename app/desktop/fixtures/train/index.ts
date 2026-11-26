@@ -75,14 +75,14 @@ export default defineGroup({
       return answerChanges(f, []);
     })(),
     (() => {
-      const f = answerTrain(Fixture.from(base("typical"), "train-loading", "The train still on its way from the hub."));
+      const f = answerTrain(Fixture.from(base("typical"), "train-loading", "The train still on its way from the workspace."));
       for (const a of f.answers("changes_list")) f.answer("changes_list", a.input, a.output, 600_000);
       // The answer never comes in a shot: shoot without waiting for it.
       return f.settleAt(0);
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "train-error", "The hub fails to read storefront's train.");
-      for (const a of changesAnswers(firstProject(f), [])) f.fail("changes_list", a.input, { code: "failed", message: "the hub's database is busy" });
+      const f = Fixture.from(base("typical"), "train-error", "The workspace fails to read storefront's train.");
+      for (const a of changesAnswers(firstProject(f), [])) f.fail("changes_list", a.input, { code: "failed", message: "the workspace's database is busy" });
       return f;
     })(),
   ],

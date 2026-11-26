@@ -424,7 +424,7 @@ it("a provider whose sandboxes don't get ready within the wait says why, the fix
     await act(() => new Promise((r) => setTimeout(r, 120)));
     const step = host.querySelector('[data-step="computer"]');
     expect(step?.querySelector("[role=alert]")?.textContent).toBe("fleetd's computers didn't get ready.");
-    expect(step?.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Team › Machines.");
+    expect(step?.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Workspace › Machines.");
     expect(step?.textContent).not.toContain("runner");
     expect(step?.textContent).not.toContain("Getting fleetd's computers ready");
     await click("Try again");

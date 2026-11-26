@@ -917,7 +917,7 @@ export async function resumeBatch(t: Train, repo: string, inCi: Change[]): Promi
       return false;
     }
   }
-  console.info(`train: the hub restarted; watching batch #${b.number}'s CI again`);
+  console.info(`train: the workspace restarted; watching batch #${b.number}'s CI again`);
   await ride(t, repo, b.base.ref, { pr: b.number, sha: b.head.sha.toLowerCase(), title: b.title, members, added: members.length, lone: false });
   return true;
 }

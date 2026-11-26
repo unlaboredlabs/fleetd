@@ -143,7 +143,7 @@ of up to 12 Mbps (5 for `-small`). Only the clip near the screen loads (`preload
 IntersectionObserver).
 
 The app shots in the docs (`docs/site/public/img/`) are the app's screens on E3b's fixtures, which are sanitized lab
-hub traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data banner. `app/desktop/qa/site.ts` lists
+workspace traffic (`app/desktop/fixtures`), at 1400x900@2x, without the sample-data banner. `app/desktop/qa/site.ts` lists
 them; `pnpm fixtures && pnpm qa:build && pnpm site:shots` in `app/desktop` writes them in place. Re-shoot them when what
 those screens show changes, and keep the captions and alt texts true to the picture.
 
@@ -156,7 +156,7 @@ node tests/lab/site-capture.ts
 ```
 
 It runs the `fleetd init --yes --no-service` wizard and `fleetd machine add builder-1 --dry-run` in a throwaway HOME
-with your claude and gh logins copied in. This machine's tailnet name and addresses become `hub.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
+with your claude and gh logins copied in. This machine's tailnet name and addresses become `fleetd.your-tailnet.ts.net` and `<tailnet-ip>`, the gh login
 `demo`, and it refuses to write text that still names this machine, its home or lab paths, a non-loopback address or
 a key. Review the result with `git diff docs/site`.
 
@@ -254,7 +254,7 @@ $ fleetd doctor
   the block's first command is `fleetd init` itself), writes each command's output under it, keeps a nonzero exit as
   a final `[exit N]` line. It refuses to write a hostname, a real `/home` path, a
   non-loopback IP or a key.
-- Output that needs a live hub, a node or claude can't be captured that way. Paste real output from a lab run into a
+- Output that needs a live workspace, a node or claude can't be captured that way. Paste real output from a lab run into a
   ` ```text ` block instead.
 - Never invent or edit output by hand inside a capture block.
 

@@ -5,7 +5,7 @@
 import type { HubRestartOutput } from "../../shared/contracts.ts";
 import { ToolError } from "../../shared/errors.ts";
 import { installedExe } from "../../update/index.ts";
-import { isHubService, restartCommand, restartOutside, type Service, services } from "../../update/service.ts";
+import { isHubService, restartOutside, type Service, services } from "../../update/service.ts";
 import type { Hub } from "../api/hub.ts";
 import type { Caller } from "../api/registry.ts";
 import { leads } from "../leads/index.ts";
@@ -29,28 +29,27 @@ export function restartHub(hub: Hub, caller: Caller): HubRestartOutput {
   if (!service) {
     throw new ToolError(
       "failed",
-      "The hub doesn't run as the service `fleetd init` sets up, so it can't restart itself.",
-      "Restart it on its machine: stop `fleetd hub start` there and start it again.",
+      "The workspace doesn't run as the service `fleetd init` sets up, so it can't restart itself.",
+      "Restart it on its machine: stop `fleetd workspace start` there and start it again.",
     );
   }
   try {
     ports.restart(service);
   } catch (e) {
-    const [cmd, args] = restartCommand(service);
     throw new ToolError(
       "failed",
-      `The hub couldn't restart itself: ${e instanceof Error ? e.message : String(e)}.`,
-      `Run \`${cmd} ${args.join(" ")}\` on the hub's machine.`,
+      `The workspace couldn't restart itself: ${e instanceof Error ? e.message : String(e)}.`,
+      "Run `fleetd workspace restart` on the workspace's machine.",
     );
   }
   // Marked only once the restart is on its way, and before this process can be told to stop.
   const switching = leads(hub).markProfileSwitches();
-  console.info(`hub: restarting, asked by ${caller.name}; ${count(switching)} again on the current lead profile`);
+  console.info(`workspace: restarting, asked by ${caller.name}; ${count(switching)} again on the current lead profile`);
   return {
     next:
       switching === 0
-        ? "The hub restarts now: the connection drops for about a second. Agents carry on."
-        : `The hub restarts now: the connection drops for about a second. Agents carry on, and ${count(switching)} again on the current lead profile, each once it is idle.`,
+        ? "The workspace restarts now: the connection drops for about a second. Agents carry on."
+        : `The workspace restarts now: the connection drops for about a second. Agents carry on, and ${count(switching)} again on the current lead profile, each once it is idle.`,
     leads: switching,
   };
 }

@@ -53,14 +53,14 @@ const MESSAGES: AgentMessage[] = [
     text: "Verified in the iOS simulator: SocketRocket rejects close code 1012. Use 1001 for the restart close.",
     sentAt: at("23:02"),
     to: [
-      { taskId: "T2577", title: "A stopping hub closes node links as a restart", outcome: "delivered", at: at("23:02") },
+      { taskId: "T2577", title: "A stopping workspace closes node links as a restart", outcome: "delivered", at: at("23:02") },
       { taskId: "T2576", title: "Agents’ tool calls ride through a restart", outcome: "delivered", at: at("23:03") },
       { taskId: "T2574", title: "Automatic updates install when a build is ready", outcome: "held" },
     ],
   },
   {
     id: "M11",
-    from: { taskId: "T2584", title: "A seeded throwaway hub for phone agents" },
+    from: { taskId: "T2584", title: "A seeded throwaway workspace for phone agents" },
     text: "Which simulator did you run the phone tests on?",
     sentAt: at("22:31"),
     to: [{ taskId: "T2567", title: "Reply shows its quote as the menu goes", outcome: "not_woken", detail: "it has finished and isn’t waiting on T2584" }],

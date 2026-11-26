@@ -466,7 +466,7 @@ function asPush(body: unknown): RelayPush | undefined {
 export async function handlePush(relay: Relay, req: Request, peer: string | undefined): Promise<Response> {
   if (!relay.allowSource(source(peer, req.headers))) return failed(429, "too many pushes from this address");
   if (!relay.admits(req.headers)) {
-    return failed(401, "this relay takes a key: set it on the hub with `fleetd push-relay set <url> --relay-key-file <path>`");
+    return failed(401, "this relay takes a key: set it on the workspace with `fleetd push-relay set <url> --relay-key-file <path>`");
   }
   const raw = await req.arrayBuffer();
   if (raw.byteLength > BODY_MAX) return new Response("length limit exceeded", { status: 413 });

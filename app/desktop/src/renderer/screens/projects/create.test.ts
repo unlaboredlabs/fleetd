@@ -58,7 +58,7 @@ describe("a new bot", () => {
   it("whose answer is lost to a drop says so, never that it failed outright", () => {
     const [s, calls] = start({ name: "Shop", machineId: "devbox", repos: [] });
     const [lost] = createStep(s, { t: "answer", call: calls[0] as Call, outcome: { ok: false, error: { code: "disconnected", message: "closed" } } });
-    expect(lost.phase).toMatchObject({ kind: "failed", message: "Lost the connection to the hub before it answered." });
+    expect(lost.phase).toMatchObject({ kind: "failed", message: "Lost the connection to the workspace before it answered." });
   });
 });
 

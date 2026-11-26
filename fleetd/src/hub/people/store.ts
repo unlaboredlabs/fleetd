@@ -214,7 +214,7 @@ export function leadPeople(db: HubDb): string {
   if (all.length === 0) return "";
   const names = all.map((p) => `${p.name} (${p.role})`).join(", ");
   return (
-    ` Several people share this hub and its chats: ${names}. "The human" below means whoever writes to you: each ` +
+    ` Several people share this workspace and its chats: ${names}. "The human" below means whoever writes to you: each ` +
     "message names its writer, so answer them by name, and take an answer to a question you asked one person " +
     "from that person."
   );

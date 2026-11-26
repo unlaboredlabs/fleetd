@@ -50,7 +50,7 @@ function NoVault({ screen }: { screen: string }) {
     <div className={s.scroll} data-screen={screen}>
       <div className={s.column}>
         <PageHead title="Vault" />
-        <Text tone="quiet">This hub has no vault yet. It comes with fleetd&apos;s Bun build: an owner updates the hub with fleetd update.</Text>
+        <Text tone="quiet">This workspace has no vault yet. It comes with fleetd&apos;s Bun build: an owner updates the workspace with fleetd update.</Text>
       </div>
     </div>
   );
@@ -104,7 +104,7 @@ function VaultList({ whose }: { whose: Whose }) {
         )}
         <SettingsSection title={trash ? "Trash" : undefined}>
           {!live ? (
-            <GroupNote>Not connected. Connect to a hub to see its vault.</GroupNote>
+            <GroupNote>Not connected. Connect to a workspace to see its vault.</GroupNote>
           ) : list.isLoadingError ? (
             <SettingsRow
               title="Couldn't read the vault"
@@ -193,7 +193,7 @@ function AddMenu({ whose, live, onPick, label }: { whose: Whose; live: boolean; 
     <Menu>
       <MenuTrigger asChild disabled={!live}>
         {label === undefined ? (
-          <AddButton label={live ? "Add to the vault" : "Add to the vault (connect to the hub first)"} disabled={!live} />
+          <AddButton label={live ? "Add to the vault" : "Add to the vault (connect to the workspace first)"} disabled={!live} />
         ) : (
           <Button icon={<Plus size={16} aria-hidden />} disabled={!live}>
             {label}
@@ -232,13 +232,13 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
     move({ itemId: item.itemId }).then(
       () => {
         refetch([...VAULT_READS]);
-        toast({ title: `Moved ${titleOf(item)} to the team vault` });
+        toast({ title: `Moved ${titleOf(item)} to the workspace vault` });
       },
       (e: unknown) => setProblem(vaultError(e)),
     );
   };
   return (
-    <SettingsSection title="Set aside" hint="Yours from before the team vault. Nothing uses them until you move them." data={{ "data-vault-set-aside": "" }}>
+    <SettingsSection title="Set aside" hint="Yours from before the workspace vault. Nothing uses them until you move them." data={{ "data-vault-set-aside": "" }}>
       <SettingsList label="Set aside">
         {shownItems(items, "all", "").map((item) => (
           <SettingsListRow
@@ -255,7 +255,7 @@ function SetAsidePart({ items }: { items: readonly VaultItemSummary[] }) {
                   </Button>
                 ) : (
                   <Button size="sm" variant="secondary" onClick={() => toTeam(item)}>
-                    Move to team vault
+                    Move to workspace vault
                   </Button>
                 )}
                 <RowMenu label={titleOf(item)} items={[{ label: "Delete", onSelect: () => setDeleting(item), danger: true }]} />
@@ -355,7 +355,7 @@ function StatusNote({ status, whose }: { status: VaultStatusOutput; whose: Whose
           <SettingsRow
             title="The vault's key is missing"
             lineTone="danger"
-            line="No item can be filled or shown. An owner restores it on the hub with fleetd vault restore-key and the recovery code."
+            line="No item can be filled or shown. An owner restores it on the workspace with fleetd vault restore-key and the recovery code."
           />
         </SettingsSection>
       </div>
@@ -370,8 +370,8 @@ function StatusNote({ status, whose }: { status: VaultStatusOutput; whose: Whose
           lineTone="warning"
           line={
             administers
-              ? "Since the hub restarted, agents can't fill anything until you unlock it. Variables already given keep working."
-              : "Since the hub restarted, agents can't fill anything until an owner or admin unlocks it."
+              ? "Since the workspace restarted, agents can't fill anything until you unlock it. Variables already given keep working."
+              : "Since the workspace restarted, agents can't fill anything until an owner or admin unlocks it."
           }
           control={
             administers && (whose === "key" || whose.kind !== "project") ? (
@@ -411,7 +411,7 @@ function UnlockDialog({ onClose }: { onClose: () => void }) {
       open
       onOpenChange={(o) => (o ? undefined : onClose())}
       title="Unlock the vault"
-      description="The passphrase set with fleetd vault key --store passphrase. It's sealed to the hub on its way."
+      description="The passphrase set with fleetd vault key --store passphrase. It's sealed to the workspace on its way."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -431,8 +431,8 @@ function UnlockDialog({ onClose }: { onClose: () => void }) {
 }
 
 const KEY_WHERE: Readonly<Record<string, string>> = {
-  file: "a file on the hub, outside its database",
-  keyring: "the hub's keychain",
+  file: "a file on the workspace, outside its database",
+  keyring: "the workspace's keychain",
   passphrase: "a passphrase, typed after each restart",
 };
 
@@ -473,7 +473,7 @@ function KeyPart({ status }: { status: VaultStatusOutput }) {
             <>
               {"Not saved yet: run "}
               <InlineCode>fleetd vault recovery-code</InlineCode>
-              {" on the hub and keep it somewhere safe. Without the key or the code, every card and login is lost."}
+              {" on the workspace and keep it somewhere safe. Without the key or the code, every card and login is lost."}
             </>
           )
         }
@@ -556,7 +556,7 @@ export function HubVault() {
       <div className={s.column}>
         <PageHead title="Vault" />
         {!live ? (
-          <GroupNote>Not connected. Connect to a hub to see its vault.</GroupNote>
+          <GroupNote>Not connected. Connect to a workspace to see its vault.</GroupNote>
         ) : status.isLoadingError ? (
           <Text tone="danger">{vaultError(status.error)}</Text>
         ) : status.data === undefined ? (

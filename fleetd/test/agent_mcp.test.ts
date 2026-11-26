@@ -58,7 +58,7 @@ describe("agent-mcp", () => {
       files: [{ file: "actions", bytes: 10 }, { file: "video_mp4", bytes: 900 }],
     });
     expect(ended).toBe(
-      "iOS session B1 ended; the simulator and everything done in it are gone. Its recording (actions, video_mp4) goes to the hub.",
+      "iOS session B1 ended; the simulator and everything done in it are gone. Its recording (actions, video_mp4) goes to the workspace.",
     );
   });
 
@@ -158,7 +158,7 @@ describe("agent-mcp", () => {
     expect(callOf("lead", "agents", { taskId: null, extra: 1 })).toEqual({ op: "task_list", taskId: null, extra: 1 });
   });
 
-  test("report is a verdict the hub completes", () => {
+  test("report is a verdict the workspace completes", () => {
     expect(callOf("worker", "report", { blocking: 0, nonBlocking: 1, summary: "ok" })).toEqual({
       op: "review_verdict", blocking: 0, nonBlocking: 1, summary: "ok",
     });
@@ -272,9 +272,9 @@ describe("agent-mcp", () => {
   });
 
   // The node relaying a call while the hub restarts says so, not that the call was refused.
-  test("a restarting hub is no refusal", () => {
+  test("a restarting workspace is no refusal", () => {
     const answer = toolResult({ t: "lead_result", id: "cli-1", error: { code: "machine_offline", message: HUB_UNREACHABLE } });
-    expect(answer.content[0]!.text).toBe("fleetd hub is restarting; try again shortly");
+    expect(answer.content[0]!.text).toBe("fleetd workspace is restarting; try again shortly");
   });
 
   test("a node that never answers times out", async () => {

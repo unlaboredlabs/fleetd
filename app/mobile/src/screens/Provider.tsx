@@ -34,7 +34,7 @@ export function Provider({ route, navigation }: SettingsProps<"Provider">) {
       {!r.ok ? (
         <Problem text={`Couldn't read it: ${errorWords(r.error)}`} />
       ) : state === undefined ? (
-        <Problem text="This hub doesn't have it." />
+        <Problem text="This workspace doesn't have it." />
       ) : (
         <Keyed p={state} boxPubKey={boxPubKey} reload={read.reload} connectClaude={() => navigation.navigate("Claude")} />
       )}
@@ -71,7 +71,7 @@ function Keyed({ p, boxPubKey, reload, connectClaude }: { p: ProviderState; boxP
     const typed = key.trim();
     if (typed === "") return;
     const sealed = sealToHub({ key: typed }, boxPubKey);
-    if (sealed === null) return setProblem("The hub's key didn't come through. Try again.");
+    if (sealed === null) return setProblem("The workspace's key didn't come through. Try again.");
     const call = () => session.call("sandbox_connect", { provider: p.id, sealed }, CHECK_TIMEOUT_MS);
     void run("connect", call, "Not connected").then(() => setKey(""));
   };
@@ -90,7 +90,7 @@ function Keyed({ p, boxPubKey, reload, connectClaude }: { p: ProviderState; boxP
   const disconnect = () =>
     confirmDestructive({
       title: `Disconnect ${name}?`,
-      message: `The team's ${name} key and its limit go from the hub.`,
+      message: `The workspace's ${name} key and its limit are removed.`,
       button: "Disconnect",
       onConfirm: () => void run("disconnect", () => session.call("sandbox_disconnect", { provider: p.id }), "Not disconnected"),
     });

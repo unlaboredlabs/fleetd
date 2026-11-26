@@ -10,7 +10,7 @@ const on = (machineId: string) => ({ machineId, fingerprint: "ab12cd34" });
 
 describe("Claude accounts in words", () => {
   it("names an account by whose it is, never by its secret", () => {
-    expect(accountWords({ kind: "hub" }, [])).toBe("the hub's API key");
+    expect(accountWords({ kind: "hub" }, [])).toBe("the workspace's API key");
     expect(accountWords({ kind: "person", personId: sam.personId }, [sam, bob], bob.personId)).toBe("Sam Rivera's subscription");
     expect(accountWords({ kind: "person", personId: bob.personId }, [sam, bob], bob.personId)).toBe("your subscription");
     expect(runsOnLine({ kind: "machine_login" }, [])).toBe("Each machine's own Claude login.");
@@ -63,8 +63,8 @@ describe("on fleetd's computers", () => {
 describe("a cloud team's words", () => {
   it("calls the shared key the team's", () => {
     const team = { kind: "account", account: { kind: "hub" } } as const;
-    expect(runsOnLine(team, [], undefined, false, true)).toBe("The team's API key.");
-    expect(theirRunsOn(team, false, true)).toBe("Team API key");
-    expect(runsOnLine(team, [])).toBe("The hub's API key.");
+    expect(runsOnLine(team, [], undefined, false)).toBe("The workspace's API key.");
+    expect(theirRunsOn(team, false)).toBe("Workspace API key");
+    expect(runsOnLine(team, [])).toBe("The workspace's API key.");
   });
 });

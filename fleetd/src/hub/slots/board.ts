@@ -618,7 +618,7 @@ export class Board {
       case "fleet":
         return `fleet cap: ${used} of ${this.cap_ ?? 0} running`;
       case "no_agents":
-        return `${name} runs no agents: its role is screens only (a hub admin changes it in ${settingsPath()} › Machines)`;
+        return `${name} runs no agents: its role is screens only (a workspace admin changes it in ${settingsPath()} › Machines)`;
       case "machine": {
         const pick = this.computerOf(r);
         if (pick && !(c.threadId !== undefined && this.places(m)[c.threadId] !== undefined)) return this.pickBlocker(r, pick, m, c.hostable === true);
@@ -938,7 +938,7 @@ export function runnerBlocker(connected: boolean, full: string[], hostable: bool
   if (!connected) return `no hosted sandbox provider is connected to run it: an admin connects ${ORDER.map((p) => NAMES[p]).join(" or ")} in ${settingsPath()} › Machines`;
   if (full.length === 0 && trouble.length > 0) return trouble.join("; ");
   if (full.length === 0) return `${ORDER.map((p) => NAMES[p]).join(" and ")} are starting: the agent starts once they are ready`;
-  if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings";
+  if (!hostable) return "agents in hosted sandboxes run on a Claude account, and this one has none: connect the workspace's API key or your Claude subscription in Settings";
   return `hosted sandboxes are full: ${full.join(", ")}`;
 }
 

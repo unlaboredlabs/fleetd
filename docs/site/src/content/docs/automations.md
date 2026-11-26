@@ -21,7 +21,7 @@ Each run hands the prompt to the lead as new work, and the lead starts it withou
 
 A schedule is a cron line in your time zone, such as `0 9 * * 1-5` for 09:00 on weekdays. The editor shows it in words as you type. `@daily`, `@hourly` and `@weekly` work too.
 
-If the hub was down when a run was due, it runs once when the hub is back, marked late.
+If the workspace was down when a run was due, it runs once when the workspace is back, marked late.
 
 ## Reminders {#one-time}
 
@@ -58,7 +58,7 @@ curl -X POST --data '{"alert":"disk 91% on db-2"}' "$FLEETD_WEBHOOK_URL"
 - Calls that arrive during a run wait, up to 20, and go to the lead together afterwards.
 - **Rotate webhook URL** makes a new URL; the old one stops at once.
 
-A service outside your network needs a tunnel or reverse proxy to reach your hub.
+A service outside your network needs a tunnel or reverse proxy to reach your workspace.
 
 | Answer | Means |
 |---|---|

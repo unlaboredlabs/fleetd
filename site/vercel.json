@@ -42,6 +42,16 @@
       "source": "/docs/integrations",
       "destination": "/docs/connections",
       "permanent": true
+    },
+    {
+      "source": "/docs/moving-a-hub",
+      "destination": "/docs/moving-a-workspace",
+      "permanent": true
+    },
+    {
+      "source": "/docs/several-hubs",
+      "destination": "/docs/several-workspaces",
+      "permanent": true
     }
   ],
   "rewrites": [

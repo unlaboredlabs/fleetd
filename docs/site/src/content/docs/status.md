@@ -13,7 +13,7 @@ The panel's **Agents** and **Shipping** tabs show the work itself.
 
 ## In the terminal {#cli}
 
-On the hub machine, run:
+On the workspace machine, run:
 
 ```console
 $ fleetd status
@@ -27,7 +27,7 @@ storefront: working
 - `fleetd status storefront` shows one bot.
 - `--watch` keeps it on screen and updates it.
 - `--json` prints JSON.
-- `--hub <url> --key-file <path>` reads a hub on another machine.
+- `--workspace <url> --key-file <path>` reads a workspace on another machine.
 
 ## Bot states {#states}
 

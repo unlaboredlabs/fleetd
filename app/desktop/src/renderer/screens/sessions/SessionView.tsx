@@ -91,7 +91,7 @@ export function SessionView({ project, id, windowed = false, onBack }: { project
             </Button>
           </div>
         )}
-        <EmptyState title="This screen isn’t here">It may be from before the hub kept screens, or from another bot.</EmptyState>
+        <EmptyState title="This screen isn’t here">It may be from before the workspace kept screens, or from another bot.</EmptyState>
       </div>
     );
   }
@@ -232,7 +232,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
       {
         id: "session.end",
         title: "End this screen",
-        detail: "Close the screen you opened; its recording goes to the hub",
+        detail: "Close the screen you opened; its recording goes to the workspace",
         group: "actions",
         enabled: () => own,
         run: end,
@@ -268,7 +268,7 @@ function Live({ session: x, windowed, back }: { session: BrowserSession; windowe
           Take control
         </Button>
       )}
-      <Tooltip content="End this screen; its recording goes to the hub">
+      <Tooltip content="End this screen; its recording goes to the workspace">
         <Button variant="quiet" size="sm" icon={<Square aria-hidden />} disabled={ending} onClick={end}>
           {ending ? "Ending…" : "End"}
         </Button>
@@ -609,10 +609,10 @@ function NoRecording({ session: x }: { session: BrowserSession }) {
     x.state === "ended"
       ? "It has no recording."
       : x.state === "saving"
-      ? "Saving the recording. It plays here once the hub has it."
+      ? "Saving the recording. It plays here once the workspace has it."
       : x.state === "lost"
         ? `Its recording was lost${x.note === undefined ? "." : `: ${x.note}.`}`
-        : "Its recording expired: the hub keeps recordings for a while, then deletes them.";
+        : "Its recording expired: the workspace keeps recordings for a while, then deletes them.";
   return (
     <div className={cx(s.body, s.note)} data-state={x.state}>
       <Text size="sm" tone={x.state === "lost" ? "danger" : "quiet"}>
@@ -629,7 +629,7 @@ function Recorded({ session: x }: { session: BrowserSession }) {
     return (
       <div className={cx(s.body, s.note)} role="alert">
         <Text size="sm" tone="danger">
-          Couldn’t read its recording from the hub. Open it again to retry.
+          Couldn’t read its recording from the workspace. Open it again to retry.
         </Text>
       </div>
     );

@@ -44,7 +44,7 @@ describe("Add machine's model", () => {
     for (const fp of ["b".repeat(64), undefined]) {
       const here = hereOf([hub, builder], fp, "studio-2", { kind: "hub", fingerprint: FP }, new Set());
       expect(here).toEqual({ kind: "other-hub" });
-      expect(hereLine(here)).toBe("This computer runs a different hub, so it can't be one of this hub's machines.");
+      expect(hereLine(here)).toBe("This computer runs a different workspace, so it can't be one of this workspace's machines.");
     }
     // A computer whose OS gives no id is never taken for the hub's.
     expect(hereOf([hub], undefined, "devbox", { kind: "none" }, new Set())?.kind).toBe("app");
@@ -53,15 +53,15 @@ describe("Add machine's model", () => {
   it("never adds a computer whose node is enrolled already", () => {
     const node = { kind: "node", machineId: "studio", hub: "http://devbox:4790" } as const;
     expect(hereOf([hub], FP, "laptop", node, new Set(["studio"]))).toEqual({ kind: "node", machineId: "studio", hub: "http://devbox:4790", ours: true });
-    expect(hereLine(hereOf([hub], FP, "laptop", node, new Set(["studio"])))).toBe("This computer is already part of the hub as studio.");
-    expect(hereLine(hereOf([hub], FP, "laptop", node, new Set()))).toBe("This computer is already part of another hub (http://devbox:4790) as studio.");
+    expect(hereLine(hereOf([hub], FP, "laptop", node, new Set(["studio"])))).toBe("This computer is already part of the workspace as studio.");
+    expect(hereLine(hereOf([hub], FP, "laptop", node, new Set()))).toBe("This computer is already part of another workspace (http://devbox:4790) as studio.");
   });
 
   it("lists hosts that aren't machines yet first, each with where the hub found it", () => {
     expect(pickable([hub, mac, builder]).map((h) => h.machineId)).toEqual(["builder-1", "devbox", "mac-mini"]);
     expect(hostLine(builder)).toBe("~/.ssh/config");
     expect(hostLine(mac)).toBe("mac-mini.tail1234.ts.net · tailnet");
-    expect(hostLine(hub)).toBe("the hub's own machine");
+    expect(hostLine(hub)).toBe("the workspace's own machine");
   });
 
   it("opens on a run still going, else on the newest if it failed", () => {

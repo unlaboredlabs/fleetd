@@ -12,11 +12,11 @@ and it gets none of your bots' secrets. A Mac nobody else uses, such as a Mac mi
 
 ### From the fleetd app {#app}
 
-1. On your main computer, open **Settings › Hub › Machines**, click **+**, then **A Mac for agents**. It shows a
+1. On your main computer, open **Settings › Workspace › Machines**, click **+**, then **A Mac for agents**. It shows a
    6-digit code.
 2. On the Mac, open the [fleetd app](/docs/desktop-app) and choose **Set up this Mac for agents** (on its first
    screen, or in the **fleetd** menu).
-3. Type the code. The app finds your hub, installs fleetd and joins.
+3. Type the code. The app finds your workspace, installs fleetd and joins.
 4. Click **Allow** for **Accessibility**, then **Screen Recording**, and turn on **fleetd** in each System Settings
    pane that opens. Then click **Allow** in macOS's screen capture prompt.
 5. Wait for the checks to turn green.
@@ -44,7 +44,7 @@ Store, and an iOS runtime with `xcodebuild -downloadPlatform iOS`.
 #### The join line {#join}
 
 ```sh
-curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac --version <hub version>
+curl -fsSL https://fleetd.sh | sh -s -- --join http://devbox.example.ts.net:4790 --code <code> --machine-id mac --mac --version <workspace version>
 ```
 
 Run it logged in at the Mac's screen, or over Screen Sharing. The code works once, for 15 minutes.
@@ -139,7 +139,7 @@ While you have control, a toolbar beside the simulator offers these. Agents run 
 
 ## Turn it off {#switch}
 
-The Mac's page in **Settings › Hub › Machines** has **Agents may use this Mac**. Turn it off and agents' `mac`
+The Mac's page in **Settings › Workspace › Machines** has **Agents may use this Mac**. Turn it off and agents' `mac`
 commands say the Mac is off.
 
 To stop using the Mac for good, click **Stop being the agents' Mac** in the fleetd app's window on the Mac.

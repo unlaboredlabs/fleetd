@@ -98,7 +98,7 @@ const render = async () => {
       }
       if (tool === "project_repo_add") {
         const { url } = input as { url?: string };
-        if (url === "acme/broken") return Promise.resolve({ ok: false, error: { code: "not_found", message: "gh on the hub can't see acme/broken", fix: "Run gh auth login with an account that can read it" } });
+        if (url === "acme/broken") return Promise.resolve({ ok: false, error: { code: "not_found", message: "gh on the workspace can't see acme/broken", fix: "Run gh auth login with an account that can read it" } });
         return Promise.resolve({ ok: true, output: { path: `/home/w/src/${url?.split("/")[1] ?? "x"}`, addId: "a1" } });
       }
       return Promise.resolve({ ok: true, output: {} });
@@ -277,7 +277,7 @@ describe("New bot", () => {
     await addRepo("acme/broken");
     await press(button("Create"));
     const row = document.querySelector('[data-state="failed"]');
-    expect(row?.textContent).toContain("gh on the hub can't see acme/broken. Run gh auth login with an account that can read it.");
+    expect(row?.textContent).toContain("gh on the workspace can't see acme/broken. Run gh auth login with an account that can read it.");
     expect(button("Retry")).toBeDefined();
     expect(button("Done")).toBeDefined();
   });

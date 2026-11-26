@@ -48,7 +48,7 @@ export function RestartHub() {
   };
   return (
     <ListSection footer={RESTART_FOOTER}>
-      <ListRow title="Restart Hub" detail={row.detail} value={row.value} {...(row.canAsk ? { onPress: confirm, chevron: false } : {})} />
+      <ListRow title="Restart Workspace" detail={row.detail} value={row.value} {...(row.canAsk ? { onPress: confirm, chevron: false } : {})} />
     </ListSection>
   );
 }

@@ -25,7 +25,7 @@ export const removedEvent = (machineId: string, at: string): NewEvent => ({
   at,
   type: "machine.removed",
   machineId,
-  summary: `${machineId} was removed from the hub`,
+  summary: `${machineId} was removed from the workspace`,
 });
 
 /** What adding a machine reaches outside the hub: the machine, the fleetd it gets, and where hosts are found. */

@@ -102,9 +102,9 @@ export function steerFailed(code: string): string {
       return "This computer’s key can’t steer this bot’s agents.";
     case "offline":
     case "disconnected":
-      return "Not connected to the hub, so it wasn’t sent.";
+      return "Not connected to the workspace, so it wasn’t sent.";
     case "timeout":
-      return "The hub didn’t answer; it may have it. Check its receipt before sending again.";
+      return "The workspace didn’t answer; it may have it. Check its receipt before sending again.";
     case "invalid":
     case "not_found":
       return "It isn’t running now, so it wasn’t sent.";

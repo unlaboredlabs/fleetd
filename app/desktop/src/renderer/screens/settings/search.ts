@@ -23,7 +23,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   vault: "Vault",
   "your-memory": "Memory",
   devices: "Your devices",
-  hubs: "Hubs & devices",
+  hubs: "Workspaces & devices",
   projects: "Bot",
   agents: "Agents",
   instructions: "Instructions & memory",
@@ -40,7 +40,7 @@ export const PAGE_LABEL: Readonly<Record<Tab, string>> = {
   "hub.tools": "Tools & skills",
   "hub.instructions": "Instructions",
   "hub.prompts": "Built-in prompts",
-  "hub.accounts": "Hub accounts",
+  "hub.accounts": "Workspace accounts",
   "hub.vault": "Vault",
   "hub.setup": "Setup",
 };
@@ -53,7 +53,7 @@ export const pagePath = (tab: Tab): string => {
   const on = pageOf(tab);
   if (on === "project-vault") return "Bot › Vault";
   if (!isHubTab(on)) return PAGE_LABEL[on];
-  return `${isEveryProject(on) ? "Bot defaults" : "Hub"} › ${PAGE_LABEL[on]}`;
+  return `${isEveryProject(on) ? "Bot defaults" : "Workspace"} › ${PAGE_LABEL[on]}`;
 };
 
 const page = (tab: Tab, keywords: ReadonlyArray<string>): SettingsOption => ({ key: tab, label: PAGE_LABEL[tab], tab, keywords });
@@ -97,20 +97,20 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
     key: "claude",
     label: "Claude",
     tab: "accounts",
-    keywords: ["claude", "anthropic", "subscription", "account", "in use", "runs on", "hub api", "api key", "switch", "token", "setup-token", "oauth", "connect", "test", "billing", "plan"],
+    keywords: ["claude", "anthropic", "subscription", "account", "in use", "runs on", "workspace api", "api key", "switch", "token", "setup-token", "oauth", "connect", "test", "billing", "plan"],
   },
   { key: "github", label: "GitHub", tab: "accounts", keywords: ["github", "git", "pull request", "pr", "account", "sign in", "connect"] },
   { key: "github.account", label: "Your GitHub", tab: "accounts", keywords: ["github", "connect", "pr", "pull request", "sign in", "token"] },
   { key: "onepassword", label: "1Password", tab: "accounts", keywords: ["1password", "one password", "password", "logins", "sign in", "vault", "fill", "credentials"] },
   { key: "onepassword.token", label: "1Password service account", tab: "accounts", keywords: ["1password", "service account", "token", "ops_", "OP_SERVICE_ACCOUNT_TOKEN", "vault", "test"] },
-  page("vault", ["vault", "team vault", "passwords", "logins", "cards", "credit card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every bot", "hub-wide"]),
+  page("vault", ["vault", "workspace vault", "team vault", "passwords", "logins", "cards", "credit card", "workspace card", "team card", "shared login", "addresses", "address", "activity", "audit", "set aside", "vault for every bot", "workspace-wide", "hub-wide"]),
   { key: "vault.import", label: "Import from 1Password", tab: "vault", keywords: ["1password", "one password", "import", "vault", "logins", "cards"] },
   page("your-memory", ["memory", "remember", "remembered", "user.md", "preferences", "how I work", "you", "forget"]),
   { key: "import-memory", label: "Import memory", tab: "your-memory", keywords: ["import", "chatgpt", "claude", "grok", "other assistant", "export", "bring", "memory"] },
-  page("hubs", ["hub", "pair", "connection", "server", "personal", "work", "team", "company"]),
-  { key: "hubs.hub", label: "Hub", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove", "restart"] },
+  page("hubs", ["workspace", "workspaces", "hub", "hubs", "pair", "connection", "server", "personal", "work", "team", "company"]),
+  { key: "hubs.hub", label: "Workspace", tab: "hubs", keywords: ["pair", "connection", "disconnect", "key", "server", "rename", "name", "label", "colour", "color", "remove", "restart"] },
   { key: "hubs.account.delete", label: "Delete account", tab: "hubs", keywords: ["delete my account", "remove account", "close account", "erase", "gdpr", "fleetd account"] },
-  { key: "hubs.add", label: "Add a hub", tab: "hubs", keywords: ["pair", "another hub", "second hub", "connect", "personal", "work"] },
+  { key: "hubs.add", label: "Add a workspace", tab: "hubs", keywords: ["pair", "another workspace", "second workspace", "another hub", "connect", "personal", "work"] },
   { key: "devices", label: PAGE_LABEL.devices, tab: "hubs", keywords: ["devices", "phone", "signed in", "keys"] },
   { key: "devices.pair", label: "Pair a phone", tab: "hubs", keywords: ["phone", "iphone", "android", "mobile", "pair", "qr", "scan", "code"] },
   page("projects", ["bot settings", "repo", "repository"]),
@@ -172,18 +172,18 @@ export const OPTIONS: ReadonlyArray<SettingsOption> = [
   { key: "hub.recordings", label: "Screen recordings", tab: "hub.machines", keywords: ["recordings", "retention", "keep", "days", "screens"] },
   { key: "hub.update_speed", label: "Update speed", tab: "hub.machines", keywords: ["update speed", "fast", "steady", "stable", "edge", "channel", "rollout"] },
   { key: "hub.updates", label: PAGE_LABEL["hub.updates"], tab: "hub.machines", keywords: ["update", "upgrade", "update automatically", "automatic updates", "auto update", "update now", "fleetd update", "release", "version", "build"] },
-  { key: "hub.agents", label: "Agents for every bot", tab: "hub.agents", keywords: ["bot defaults", "defaults", "every bot", "hub-wide"] },
+  { key: "hub.agents", label: "Agents for every bot", tab: "hub.agents", keywords: ["bot defaults", "defaults", "every bot", "workspace-wide", "hub-wide"] },
   { key: "hub.default-profile", label: "Default profile", tab: "hub.agents", keywords: ["default", "profile", "model", "effort", "reviews", "every bot"] },
   { key: "hub.lead", label: "Lead runs on", tab: "hub.agents", keywords: ["lead", "lead model", "lead effort", "profile", "model", "effort"] },
-  { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.agents", keywords: ["every bot", "hub-wide", "global"] },
-  { key: "hub.skills", label: "Hub-wide skills", tab: "hub.agents", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every bot"] },
-  { key: "hub.instructions", label: "Instructions for every bot", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "hub-wide"] },
+  { key: "hub.tools", label: PAGE_LABEL["hub.tools"], tab: "hub.agents", keywords: ["every bot", "workspace-wide", "hub-wide", "global"] },
+  { key: "hub.skills", label: "Workspace-wide skills", tab: "hub.agents", keywords: ["skill", "skills", "SKILL.md", "skills.sh", "global", "every bot"] },
+  { key: "hub.instructions", label: "Instructions for every bot", tab: "hub.instructions", keywords: ["custom instructions", "rules", "global", "workspace-wide", "hub-wide"] },
   { key: "vault.key", label: "Vault key", tab: "hub.vault", keywords: ["vault key", "recovery code", "rotate", "unlock", "passphrase", "locked"] },
   page("hub.setup", ["setup", "guided setup", "first run", "fleetd init", "steps"]),
   // Hub accounts was a page once: its name still finds the accounts, on Setup, and each of its options the account that holds it.
   { key: "hub.accounts", label: PAGE_LABEL["hub.accounts"], tab: "hub.setup", keywords: ["accounts", "connections", "claude api key", "api key", "github app", "guided setup"] },
-  { key: "admin.claude", label: "Hub Claude API key", tab: "hub.setup", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
-  { key: "admin.claude.members", label: "Members may use the hub's key", tab: "hub.setup", keywords: ["claude", "api key", "members", "allow"] },
+  { key: "admin.claude", label: "Workspace Claude API key", tab: "hub.setup", keywords: ["claude", "api key", "anthropic", "endpoint", "test", "leads", "automations", "runs on", "members may use"] },
+  { key: "admin.claude.members", label: "Members may use the workspace's key", tab: "hub.setup", keywords: ["claude", "api key", "members", "allow"] },
   { key: "admin.github", label: "GitHub App", tab: "hub.setup", keywords: ["github", "app", "manifest", "installation", "webhook"] },
 ];
 

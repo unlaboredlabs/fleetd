@@ -68,7 +68,7 @@ const specs = (long: boolean): Spec[] => {
       data: { prUrl: url(208), fix: long ? ofLength(LONG_PARAGRAPH, 160) : "Open it from a fleetd/ branch, or merge it yourself." },
     },
     { minutesAgo: 19 * 60 + 30, type: "workstream.created", summary: `W5 created: ${t.order}`, data: { workstreamId: "W5" } },
-    { minutesAgo: 20 * 60 + 20, type: "key.paired", summary: "Pixel phone paired with the hub", data: { keyId: "k-7f3a", deviceName: "Pixel phone" }, hub: true },
+    { minutesAgo: 20 * 60 + 20, type: "key.paired", summary: "Pixel phone paired with the workspace", data: { keyId: "k-7f3a", deviceName: "Pixel phone" }, hub: true },
     { minutesAgo: 23 * 60 + 30, type: "decision.recorded", summary: "D4 merge.style = squash", data: { decisionId: "D4", key: "merge.style", scope: "project" } },
     // Saturday: the second page.
     { minutesAgo: 2 * 24 * 60 + 60, type: "workstream.done", summary: "W2 done: the receipts redesign shipped", data: { workstreamId: "W2", reason: "The receipts redesign shipped", by: "lead" } },
@@ -118,7 +118,7 @@ export default defineGroup({
       return f.answer("events_list", { projectRef: firstProject(f) }, { events: [], more: false });
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "activity-loading", "storefront's activity still on its way from the hub.");
+      const f = Fixture.from(base("typical"), "activity-loading", "storefront's activity still on its way from the workspace.");
       f.drop("events_list");
       // The answers never come in a shot: shoot without waiting for them.
       return answer(f, false, 600_000).settleAt(0);
@@ -127,13 +127,13 @@ export default defineGroup({
       const f = Fixture.from(base("typical"), "activity-error", "Reading storefront's activity fails.");
       f.drop("events_list");
       // The read is tried three times before the pane says it failed (src/data/queries.ts): shoot after the last.
-      f.fail("events_list", { projectRef: firstProject(f) }, { code: "failed", message: "The hub couldn't read its event log: database is locked" });
+      f.fail("events_list", { projectRef: firstProject(f) }, { code: "failed", message: "The workspace couldn't read its event log: database is locked" });
       return f.settleAt(5_000);
     })(),
     (() => {
-      const f = Fixture.from(base("typical"), "activity-old-hub", "A hub from before events_list: it has no such tool.");
+      const f = Fixture.from(base("typical"), "activity-old-hub", "A workspace from before events_list: it has no such tool.");
       f.drop("events_list");
-      return f.fail("events_list", undefined, { code: "not_found", message: "No tool events_list.", fix: "Use a tool name from the hub's MCP tool list." });
+      return f.fail("events_list", undefined, { code: "not_found", message: "No tool events_list.", fix: "Use a tool name from the workspace's MCP tool list." });
     })(),
   ],
 });

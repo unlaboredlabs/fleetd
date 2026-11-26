@@ -87,6 +87,6 @@ function forgetGone(hub: Hub, r: ProjectRef): { ok: true; next: string } {
   });
   return {
     ok: true,
-    next: `${r.machineId} is no longer in the hub, so no machine held its files: fleetd forgot the bot, its chat and its settings.`,
+    next: `${r.machineId} is no longer in the workspace, so no machine held its files: fleetd forgot the bot, its chat and its settings.`,
   };
 }

@@ -162,9 +162,9 @@ export type Step_ = readonly [CreateState, ReadonlyArray<Call>];
 /** Codes the shell itself reports when a call never got its answer (shared/hub.ts HubError). */
 const CONNECTION = new Set(["disconnected", "offline", "timeout"]);
 const EARLY_MAX = 64;
-const LOST_CREATE = "Lost the connection to the hub before it answered.";
-const LOST_CREATE_FIX = "If the bot was made, it shows in the sidebar once the hub is back; else create it again.";
-const LOST_REPO = "Lost the connection: it shows here once the hub is back.";
+const LOST_CREATE = "Lost the connection to the workspace before it answered.";
+const LOST_CREATE_FIX = "If the bot was made, it shows in the sidebar once the workspace is back; else create it again.";
+const LOST_REPO = "Lost the connection: it shows here once the workspace is back.";
 
 const str = (data: unknown, key: string): string | undefined => {
   if (typeof data !== "object" || data === null) return undefined;
@@ -217,7 +217,7 @@ const repoInput = (bot: ProjectKey, d: RepoDraft, use: CopyChoice | undefined): 
 const sendRepo = (s: CreateState, bot: ProjectKey, key: string, use: CopyChoice | undefined): Step_ => {
   const job = s.jobs.find((j) => j.key === key);
   if (job === undefined) return [s, []];
-  const detail = job.draft.kind === "clone" ? "Asking the hub" : "Reading the folder";
+  const detail = job.draft.kind === "clone" ? "Asking the workspace" : "Reading the folder";
   const next = withJob(s, key, (j) => ({ key: j.key, draft: j.draft, state: { t: "adding", detail }, awaiting: true }));
   return [next, [{ kind: "repo", gen: s.gen, key, input: repoInput(bot, job.draft, use) }]];
 };
@@ -241,7 +241,7 @@ const start = (s: CreateState, draft: Draft): Step_ => {
 
 const onCreated = (s: CreateState, out: ProjectAddOutput, title: string, ownKey: string | undefined): Step_ => {
   if (out.projectId === undefined) {
-    return [{ ...s, phase: { kind: "failed", title, message: "The hub made it but sent no details.", fix: "Find it in the sidebar; if it isn't there, create it again." } }, []];
+    return [{ ...s, phase: { kind: "failed", title, message: "The workspace made it but sent no details.", fix: "Find it in the sidebar; if it isn't there, create it again." } }, []];
   }
   const bot: Bot = { project: { machineId: out.machineId, projectId: out.projectId }, title, path: out.path };
   let next: CreateState = { ...s, phase: { kind: "made", bot }, jobs: s.jobs.map((j) => (j.key === ownKey ? { key: j.key, draft: j.draft, state: { t: "added", path: out.path } } : j)) };

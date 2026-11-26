@@ -51,7 +51,7 @@ describe("pair", () => {
     const expired = await pair(answering(401, { code: "pair_code_expired", message: "pairing code expired", fix: "Run `fleetd pair`." }), "http://devbox:4790", "ABCD2345", "Pixel");
     expect(expired).toMatchObject({ ok: false, failure: { code: "pair_code_expired", message: "This pairing code has expired: a code works for 15 minutes." } });
     const used = await pair(answering(401, { code: "pair_code_invalid", message: "unknown or already used pairing code" }), "http://devbox:4790", "ABCD2345", "Pixel");
-    expect(used).toMatchObject({ ok: false, failure: { code: "pair_code_invalid", message: "This pairing code was already used, or isn't one this hub made." } });
+    expect(used).toMatchObject({ ok: false, failure: { code: "pair_code_invalid", message: "This pairing code was already used, or isn't one this workspace made." } });
   });
 
   it("says where a new code comes from on fleetd cloud too, not only `fleetd pair`", async () => {
@@ -69,6 +69,6 @@ describe("pair", () => {
 
   it("refuses an answer that isn't a hub's", async () => {
     const result = await pair(answering(200, { hello: "world" }), "http://devbox:4790", "ABCD2345", "Pixel");
-    expect(result).toMatchObject({ ok: false, failure: { message: "http://devbox:4790 answered, but not like a fleetd hub." } });
+    expect(result).toMatchObject({ ok: false, failure: { message: "http://devbox:4790 answered, but not like a fleetd workspace." } });
   });
 });

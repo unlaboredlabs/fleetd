@@ -389,7 +389,7 @@ describe("board", () => {
     k.release("T3");
     k.board.setHosted([]);
     expect(acquire("T6", hosted_)).toEqual(
-      queued("its bot's computer is fleetd's computers · 4 vCPU / 8 GB, and fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines, or pick another on the bot's Computer page"),
+      queued("its bot's computer is fleetd's computers · 4 vCPU / 8 GB, and fleetd's computers aren't connected: an admin connects them in Settings › Workspace › Machines, or pick another on the bot's Computer page"),
     );
     expect(k.board.placeOf("T6")).toBeUndefined();
     // Dropping the pick: placed as before again.
@@ -397,7 +397,7 @@ describe("board", () => {
     k.board.evaluate();
     expect([k.board.placeOf("T6"), k.board.sizeOf("T6")]).toEqual([LOCAL, undefined]);
   });
-  test("the hub's runner beside a computer: the computer's bots run as before, the runner's only in hosted boxes", () => {
+  test("the workspace's runner beside a computer: the computer's bots run as before, the runner's only in hosted boxes", () => {
     const [mine, hosted] = [project_("pa", "air"), project_("ph", RUNNER_ID)];
     // The runner's node may report its machine's size: it still has no slots of its own.
     const k = Kit.on(undefined, [{ ...machine("air", 1), sandboxes: ["boat"] }, { ...machine(RUNNER_ID, 8), sandboxes: ["boat"] }]);
@@ -409,7 +409,7 @@ describe("board", () => {
     expect(["T1", "T2", "T3"].map((h) => k.board.placeOf(h))).toEqual([LOCAL, "boat", "boat"]);
     expect(acquire("T4", hosted)).toEqual(queued("hosted sandboxes are full: fleetd's computers 2 of 2"));
     expect(acquire("T5", hosted, false)).toEqual(
-      queued("agents in hosted sandboxes run on a Claude account, and this one has none: connect the hub's API key or your Claude subscription in Settings"),
+      queued("agents in hosted sandboxes run on a Claude account, and this one has none: connect the workspace's API key or your Claude subscription in Settings"),
     );
     expect(k.board.ownCap(RUNNER_ID)).toBe(0);
     k.board.setHosted([]);
@@ -612,7 +612,7 @@ describe("the service", () => {
     return { hub, db, open };
   };
 
-  test("a hub from when leads held slots: their claims go, a task's stays", () => {
+  test("a workspace from when leads held slots: their claims go, a task's stays", () => {
     const conn = new Database(":memory:");
     // Found by content, not as the last migration, so later migrations don't break this test.
     const at = MIGRATIONS.findIndex((m) => m.sql.includes("DELETE FROM slot_claims WHERE priority = 'lead'"));

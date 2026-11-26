@@ -26,8 +26,8 @@ showcase-lead-dark.jpg. More: https://fleetd.sh/docs/merge-train
 
 
 YOUR TEAM IN ONE CHAT
-Everyone on the hub writes in the same bot's chat, under their own name. The
-lead answers all of you.
+Everyone on the workspace writes in the same bot's chat, under their own
+name. The lead answers all of you.
 Clip: showcase-team-dark.webm, showcase-team-light.webm. Still:
 showcase-team-dark.jpg. More: https://fleetd.sh/docs/people
 
@@ -58,9 +58,9 @@ limits; a key is billed by its provider. fleetd adds nothing on top.
 
 
 RUN IT YOURSELF, OR ON FLEETD CLOUD
-Self-hosted, free and open source: the hub and its agents run on your own
-machines, with your own Claude and GitHub. Nothing fleetd runs is needed.
-fleetd cloud, from $20 a month: fleetd runs the hub for your team, in the
+Self-hosted, free and open source: the workspace and its agents run on your
+own machines, with your own Claude and GitHub. Nothing fleetd runs is needed.
+fleetd cloud, from $20 a month: fleetd runs the workspace for your team, in the
 EU. Agents run on fleetd's computers, or on your own machines at no cost.
 More: https://fleetd.sh/pricing
 
@@ -108,7 +108,7 @@ Costs                Free                            From $20 a month; agents on
                                                      your own machines stay free
 
 Start self-hosted and move to cloud later; your projects and history come with
-you: https://fleetd.sh/docs/moving-a-hub#cloud
+you: https://fleetd.sh/docs/moving-a-workspace#cloud
 Sign in or sign up: https://app.fleetd.dev
 
 

@@ -141,7 +141,7 @@ test("the CLI never sends again a call without its own id, a browser call or a m
   expect(got).toBe(3);
 });
 
-test("the relay forwards the caller's own id, and a repeat only to a hub that answers it once", async () => {
+test("the relay forwards the caller's own id, and a repeat only to a workspace that answers it once", async () => {
   const sent: Record<string, unknown>[] = [];
   const relay = new LeadRelay();
   const call = (frame: Record<string, unknown>) => relay.call(frame as never, 50);
@@ -158,7 +158,7 @@ test("the relay forwards the caller's own id, and a repeat only to a hub that an
     id: CALL_ID,
     error: {
       code: "machine_offline",
-      message: "the connection was cut before the answer came, and this hub can't take the call again safely; the call may or may not have gone through",
+      message: "the connection was cut before the answer came, and this workspace can't take the call again safely; the call may or may not have gone through",
       fix: "try again shortly",
     },
   });

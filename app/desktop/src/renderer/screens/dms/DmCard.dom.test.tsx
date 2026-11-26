@@ -37,7 +37,7 @@ const ANSWER: AgentMessage = {
   from: { taskId: "T2573", title: "Quiet update states on the phone" },
   text: "Yes: ws.ts redials at 250 ms on 1001 and 1006, then backs off.",
   sentAt: "2026-11-08T23:09:00.000Z",
-  to: [{ taskId: "T2577", title: "A stopping hub closes node links as a restart", outcome: "woke", at: "2026-11-08T23:09:00.000Z", detail: "it answers what T2577 asked at 23:05" }],
+  to: [{ taskId: "T2577", title: "A stopping workspace closes node links as a restart", outcome: "woke", at: "2026-11-08T23:09:00.000Z", detail: "it answers what T2577 asked at 23:05" }],
 };
 
 it("shows a DM it got as from the other agent, a link to it, with how it reached it", () => {
@@ -55,7 +55,7 @@ it("shows a DM it sent to several with a receipt for each, and the guard's refus
       ...ANSWER,
       id: "M21",
       to: [
-        { taskId: "T2577", title: "A stopping hub", outcome: "delivered", at: "2026-11-08T23:02:00.000Z" },
+        { taskId: "T2577", title: "A stopping workspace", outcome: "delivered", at: "2026-11-08T23:02:00.000Z" },
         { taskId: "T2567", title: "Reply shows its quote", outcome: "not_woken", detail: "T2567 has finished and isn't waiting on T2573: it gets this only if a Monitor or wait_ci of its own wakes it, or its lead continues it" },
       ],
     },

@@ -22,7 +22,7 @@ export function InviteSection() {
   const ref = useReveal<HTMLDivElement>("hub.invite");
   return (
     <div ref={ref}>
-      <SettingsSection title="Invite someone" hint="A link they open in the fleetd app to join this hub as themselves. It works once, within 7 days.">
+      <SettingsSection title="Invite someone" hint="A link they open in the fleetd app to join this workspace as themselves. It works once, within 7 days.">
         <InviteForm onCreated={setCreated} />
         {created === null ? null : <CreatedLink created={created} />}
       </SettingsSection>
@@ -32,7 +32,7 @@ export function InviteSection() {
 
 /** Who made an invite, as its row says it: "by you", "by Sam", "from the hub machine". */
 export const invitedBy = (i: Invite, me: Person | undefined): string =>
-  i.createdBy === undefined ? "from the hub machine" : i.createdBy.personId === me?.personId ? "by you" : `by ${i.createdBy.name}`;
+  i.createdBy === undefined ? "from the workspace machine" : i.createdBy.personId === me?.personId ? "by you" : `by ${i.createdBy.name}`;
 
 function InviteForm({ onCreated }: { onCreated: (out: InviteCreateOutput) => void }) {
   const call = useHubCall();

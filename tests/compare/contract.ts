@@ -146,7 +146,7 @@ await (has("--areas") ? areas() : withFleet(path.join(scratch(`ct-${name}`), "f"
   const healthz = await fetch(`${f.hubUrl}/healthz`);
   record("GET /healthz is 200", healthz.ok, String(healthz.status));
   commandCheck("fleetd --version", () => fleet.cli("--version").trim(), (out) => /\d+\.\d+/u.test(out));
-  commandCheck("fleetd help", () => fleet.cli("help"), (out) => out.includes("hub"));
+  commandCheck("fleetd help", () => fleet.cli("help"), (out) => out.includes("workspace"));
 
   // Every tool the schema knows the hub answers, and a read of each below decodes as its output type.
   const listed = await fleet.toolNames();

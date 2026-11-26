@@ -13,7 +13,7 @@ Each bot runs as many agents at once as you allow, each on a model you choose. T
 
 **Use the default** goes back to the machine's limit. The lead never counts toward it.
 
-Each machine has its own limit too. By default it's what the machine fits: about one agent per CPU and 2 GB of memory each, at most 64. Owners and admins change it under **Settings › Hub › Machines** › the machine › **At once**.
+Each machine has its own limit too. By default it's what the machine fits: about one agent per CPU and 2 GB of memory each, at most 64. Owners and admins change it under **Settings › Workspace › Machines** › the machine › **At once**.
 
 When the limit is reached:
 
@@ -30,7 +30,7 @@ fleetd project set devbox/storefront --max-agents default
 
 ## Profiles {#profiles}
 
-A profile is a model, an effort level and a short note on what it's for. Every agent runs on one. A new hub has two:
+A profile is a model, an effort level and a short note on what it's for. Every agent runs on one. A new workspace has two:
 
 | Profile | Model | For |
 |---|---|---|
@@ -42,10 +42,10 @@ The lead reads each profile's note and picks one per piece of work. Work that fa
 ### Change profiles {#change-profiles}
 
 - **Which profiles a bot may use:** Settings › Bots › *your bot* › Agents › **Allowed profiles**.
-- **Add or edit a profile:** Settings › Hub › **Providers** (owners and admins). Each provider lists its profiles under
+- **Add or edit a profile:** Settings › Workspace › **Providers** (owners and admins). Each provider lists its profiles under
   it: click one to edit it, or **+** on the provider's row to add one. Pick its model (that provider's), effort (low to
   max), fast mode and note. On the phone: Settings › Providers › **Add Profile**.
-- **The default profile:** Settings › Hub › Bot defaults › Agents › **Default profile**. Reviews and work that names
+- **The default profile:** Settings › Workspace › Bot defaults › Agents › **Default profile**. Reviews and work that names
   no profile run on it.
 
 A profile whose provider isn't connected stays listed under it, marked unusable until you connect the provider.
@@ -56,7 +56,7 @@ If an account can't use a model, the agent carries on with Opus 5.5 and the prof
 
 ## The lead's model {#lead-model}
 
-- **For every bot:** Settings › Hub › Bot defaults › Agents › **Lead runs on**.
+- **For every bot:** Settings › Workspace › Bot defaults › Agents › **Lead runs on**.
 - **For one bot:** Settings › Bots › *your bot* › Agents › **Lead model**.
 
 A bot's own pick wins over the one for every bot. The lead switches by itself at its next idle moment: at once if it's
@@ -69,8 +69,8 @@ lead on the same model.
 
 A profile can run on Google's Gemini models through Antigravity, Google's coding agent.
 
-1. Open **Settings › Hub › Providers** and find **Google**.
-2. Click **Sign in with Google** to sign in a machine, or add a **Gemini API key** for the whole hub.
+1. Open **Settings › Workspace › Providers** and find **Google**.
+2. Click **Sign in with Google** to sign in a machine, or add a **Gemini API key** for the whole workspace.
 3. Under Google, click **+** to add a profile on a Gemini model, or pick one in a bot's **Lead model**.
 
 A bot can use its own key: add `GEMINI_API_KEY` to its [Vault](/docs/vault). Agents on Gemini run on your own machines.

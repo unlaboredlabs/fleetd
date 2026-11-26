@@ -32,11 +32,11 @@ export function ClaudeAdmin({ me }: { me: Person | undefined }) {
   return (
     <SettingsSection reveal="admin.claude">
       {!live ? (
-        <GroupNote>Connect to a hub to see and change this.</GroupNote>
+        <GroupNote>Connect to a workspace to see and change this.</GroupNote>
       ) : read.error instanceof CallError && lacksTool(read.error.error) ? (
-        <GroupNote>This hub runs every agent on each machine&apos;s own Claude login. Update fleetd on the hub to give it an API key.</GroupNote>
+        <GroupNote>This workspace runs every agent on each machine&apos;s own Claude login. Update fleetd on the workspace to give it an API key.</GroupNote>
       ) : read.isLoadingError ? (
-        <GroupNote tone="danger">{`Couldn't read the hub's Claude accounts: ${errorText(read.error)}`}</GroupNote>
+        <GroupNote tone="danger">{`Couldn't read the workspace's Claude accounts: ${errorText(read.error)}`}</GroupNote>
       ) : read.data === undefined ? (
         <GroupNote>Loading…</GroupNote>
       ) : (
@@ -50,11 +50,10 @@ function Accounts({ data, usage, me }: { data: ClaudeAccountsGetOutput; usage: R
   const nowMs = useNow(true, 60_000);
   const people = (data.people ?? []).map((p) => p.person);
   const hubPause = pauseLine({ kind: "hub" }, usage, nowMs);
-  const team = useHub().cloud === true;
   return (
     <>
       <HubKey api={data.hubApi} pause={hubPause}>
-        <Owner data={data} usage={usage} me={me} nowMs={nowMs} runsOn={runsOnLine(data.leadsRunOn, people, me?.personId, false, team)} />
+        <Owner data={data} usage={usage} me={me} nowMs={nowMs} runsOn={runsOnLine(data.leadsRunOn, people, me?.personId)} />
       </HubKey>
       <Members on={data.settings.membersUseHubApi} hubApi={data.hubApi !== undefined} />
     </>
@@ -110,7 +109,7 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
   const open = editing || api === undefined;
   return (
     <SettingsRow
-      title={team ? "Team API key" : "Hub API key"}
+      title={"Workspace API key"}
       hint="From the Claude Console. fleetd never shows it again, and no agent sees it."
       line={api === undefined ? null : `${sealedLine(api.sealedOn)}${api.endpoint === undefined ? "" : ` Through ${api.endpoint}.`}`}
       control={
@@ -176,11 +175,11 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
       <Problem text={problem} />
       {removing ? (
         <ConfirmRemove
-          title={team ? "Remove the team's API key?" : "Remove the hub's API key?"}
+          title={"Remove the workspace's API key?"}
           description={
             team
-              ? "Leads and automations run on the team owner's subscription from their next start; members who used the key connect their own subscription."
-              : "Each machine forgets it. Leads and automations run on the hub owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
+              ? "Leads and automations run on the workspace owner's subscription from their next start; members who used the key connect their own subscription."
+              : "Each machine forgets it. Leads and automations run on the workspace owner's subscription from their next start, else each machine's own login; members who used the key connect their own subscription."
           }
           action="Remove"
           onRemove={() => hubCall("claude_hub_api_remove", {})}
@@ -192,8 +191,6 @@ function HubKey({ api, pause, children }: { api: ClaudeHubApi | undefined; pause
 }
 
 function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
-  // A fleetd cloud team is a team to the person, never a hub.
-  const team = useHub().cloud === true;
   const hubCall = useHubCall();
   const refetch = useRefetch();
   const [busy, setBusy] = useState(false);
@@ -216,9 +213,9 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
     <>
       <SwitchRow
         reveal="admin.claude.members"
-        title={team ? "Members may use the team's API key" : "Members may use the hub's API key"}
+        title={"Members may use the workspace's API key"}
         hint="Off: each member connects their own subscription before they start work. Owners and admins always may."
-        line={hubApi ? null : team ? "Takes effect once the team has a key." : "Takes effect once the hub has a key."}
+        line={hubApi ? null : "Takes effect once the workspace has a key."}
         checked={on}
         disabled={busy}
         onCheckedChange={flip}
@@ -242,11 +239,10 @@ function Members({ on, hubApi }: { on: boolean; hubApi: boolean }) {
 function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutput; usage: ReadonlyArray<UsageStatus>; me: Person | undefined; nowMs: number; runsOn: string }) {
   const list = usePeople();
   const owner = list.data?.people.find((p) => p.role === "owner" && p.removedAt === undefined);
-  const team = useHub().cloud === true;
-  const whose = owner === undefined ? (team ? "the team owner's" : "the hub owner's") : me?.personId === owner.personId ? "your" : `${owner.name}'s`;
+  const whose = owner === undefined ? "the workspace owner's" : me?.personId === owner.personId ? "your" : `${owner.name}'s`;
   const lead = (
     <Text size="sm" tone="quiet" data-leads-run-on="">
-      {`Leads and automations run on ${data.hubApi === undefined ? `the ${team ? "team" : "hub"}'s key, once it has one` : "this key"}, else ${whose} subscription.`}
+      {`Leads and automations run on ${data.hubApi === undefined ? `the workspace's key, once it has one` : "this key"}, else ${whose} subscription.`}
     </Text>
   );
   const refused =
@@ -265,7 +261,7 @@ function Owner({ data, usage, me, nowMs, runsOn }: { data: ClaudeAccountsGetOutp
   const theirs = (data.people ?? []).find((p) => p.person.personId === owner.personId);
   const sub = theirs?.subscription;
   const you = me?.personId === owner.personId;
-  const line = `The ${team ? "team" : "hub"} owner's subscription (${you ? "yours" : `${owner.name}'s`}) ${sub === undefined ? "isn't connected." : `is connected. ${sealedLine(sub.sealedOn)}`}`;
+  const line = `The workspace owner's subscription (${you ? "yours" : `${owner.name}'s`}) ${sub === undefined ? "isn't connected." : `is connected. ${sealedLine(sub.sealedOn)}`}`;
   // Their pause is on their row below; said here too only while leads run on it.
   const leadsOnIt = data.leadsRunOn.kind === "account" && data.leadsRunOn.account.kind === "person" && data.leadsRunOn.account.personId === owner.personId;
   const pause = theirs === undefined || !leadsOnIt ? null : pauseLine({ kind: "person", personId: owner.personId }, usage, nowMs);

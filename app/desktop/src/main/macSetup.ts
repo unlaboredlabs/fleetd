@@ -134,7 +134,7 @@ async function trade(ports: MacSetupPorts, origin: string, code: string, fingerp
     return {
       ok: false,
       status: 0,
-      failure: { message: `Can't reach a hub at ${origin} from this Mac.`, fix: "Check the address under the code on your main machine, and that this Mac is on the same tailnet or network.", field: "hub", hub: origin },
+      failure: { message: `Can't reach a workspace at ${origin} from this Mac.`, fix: "Check the address under the code on your main machine, and that this Mac is on the same tailnet or network.", field: "hub", hub: origin },
     };
   }
   let body: unknown;
@@ -151,11 +151,11 @@ async function trade(ports: MacSetupPorts, origin: string, code: string, fingerp
     return { ok: false, status: response.status, failure: APP_BEHIND };
   }
   if (response.status === 404) {
-    return { ok: false, status: 404, failure: { message: `The hub at ${origin} runs an older fleetd that doesn't take Mac setup codes yet.`, fix: `${HUB_UPDATE_WHERE} Then get a new code.`, field: "hub" } };
+    return { ok: false, status: 404, failure: { message: `The workspace at ${origin} runs an older fleetd that doesn't take Mac setup codes yet.`, fix: `${HUB_UPDATE_WHERE} Then get a new code.`, field: "hub" } };
   }
   const failure = HUB_FAILURE.safeParse(body);
   if (!failure.success) {
-    return { ok: false, status: response.status, failure: { message: `${origin} answered, but not like a fleetd hub.`, fix: "Check the address under the code on your main machine.", field: "hub" } };
+    return { ok: false, status: response.status, failure: { message: `${origin} answered, but not like a fleetd workspace.`, fix: "Check the address under the code on your main machine.", field: "hub" } };
   }
   const { message, fix } = failure.data;
   const sentence = message.charAt(0).toUpperCase() + message.slice(1) + (/[.!?]$/u.test(message) ? "" : ".");
@@ -164,7 +164,7 @@ async function trade(ports: MacSetupPorts, origin: string, code: string, fingerp
 
 /** This app is older than the hub: its own update is the fix, offered on the page. */
 export const APP_BEHIND: MacSetupFailure = {
-  message: "This app is older than your hub, so it can't set up this Mac.",
+  message: "This app is older than your workspace, so it can't set up this Mac.",
   fix: "Update the app, then type a new code from Add machine › A Mac for agents.",
   updateApp: true,
 };
@@ -196,23 +196,23 @@ export async function redeemMac(ports: MacSetupPorts, request: MacRedeemRequest)
   if (code === undefined) return failed({ message: "The code is six digits.", fix: "Type the code Add machine › A Mac for agents shows on your main machine.", field: "code" });
   const fingerprint = await ports.fingerprint();
   const here: ThisComputer = await thisComputer(ports.fleetdDir, fingerprint);
-  if (here.kind === "hub") return failed({ message: "This Mac runs a fleetd hub, so it can't be another hub's agents' Mac.", fix: "Set up the agents' Mac on another Mac, or remove this hub first (fleetd uninstall)." });
+  if (here.kind === "hub") return failed({ message: "This Mac runs a fleetd workspace, so it can't be another workspace's agents' Mac.", fix: "Set up the agents' Mac on another Mac, or remove this workspace first (fleetd uninstall)." });
   // The code goes to one hub only: the one typed, or the one this Mac found. Found several, it asks which, sending none.
   let hub: string;
   if (request.hub !== undefined && request.hub.trim() !== "") {
     const origin = hubOrigin(request.hub);
-    if (origin === undefined) return failed({ message: `${request.hub.trim()} isn't an address.`, fix: "Type the hub's address as Add machine › A Mac for agents shows it, e.g. http://devbox:4790.", field: "hub" });
+    if (origin === undefined) return failed({ message: `${request.hub.trim()} isn't an address.`, fix: "Type the workspace's address as Add machine › A Mac for agents shows it, e.g. http://devbox:4790.", field: "hub" });
     hub = origin;
   } else {
     const hubs = await findHubs(ports);
     const [only] = hubs;
     if (only === undefined) {
-      return failed({ message: "This Mac didn't find your hub by itself.", fix: "Type its address: Add machine › A Mac for agents shows it under the code.", field: "hub" });
+      return failed({ message: "This Mac didn't find your workspace by itself.", fix: "Type its address: Add machine › A Mac for agents shows it under the code.", field: "hub" });
     }
     if (hubs.length > 1) {
       return failed({
-        message: `This Mac found ${String(hubs.length)} hubs. Which is yours?`,
-        fix: "Its address is under the code on your main machine. The code goes to that hub only.",
+        message: `This Mac found ${String(hubs.length)} workspaces. Which is yours?`,
+        fix: "Its address is under the code on your main machine. The code goes to that workspace only.",
         field: "hub",
         choices: hubs,
       });
@@ -245,15 +245,15 @@ export const cliFailure = (output: string): MacSetupFailure => {
 };
 
 const STEP_TITLES = (version: string) => [
-  isEdge(version) ? "download the hub's own fleetd, an edge build" : `download fleetd ${version}, the hub's own`,
+  isEdge(version) ? "download the workspace's own fleetd, an edge build" : `download fleetd ${version}, the workspace's own`,
   "check it against the release's checksums",
   "put it in place",
-  "join the hub and start the node in this login",
+  "join the workspace and start the node in this login",
 ];
 /** The first step once the edge release had moved on past the hub's build. */
-const NEWER_TITLE = "download the newest edge fleetd, newer than the hub's";
+const NEWER_TITLE = "download the newest edge fleetd, newer than the workspace's";
 /** How `fleetd init --join` begins its refusal of a hub on an older link protocol (crate::protocol_behind). */
-const HUB_PROTOCOL_BEHIND = "The hub runs an older fleetd than this machine";
+const HUB_PROTOCOL_BEHIND = "The workspace runs an older fleetd than this machine";
 
 /** Installs the hub's build and joins as the agents' Mac, reporting every change; resolves with how it ended. Never rejects. */
 export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (join: MacJoin) => void): Promise<MacJoin> {
@@ -301,7 +301,7 @@ export async function joinMac(ports: MacSetupPorts, pending: Pending, report: (j
     const lines = ran.output.trim().split("\n");
     // Refused before it enrolled, so the token is unspent: once the hub is updated, the same code joins.
     if (said.message.startsWith(HUB_PROTOCOL_BEHIND)) {
-      return fail({ message: "Your hub runs an older fleetd than this Mac, so this Mac can't join it yet.", fix: `${HUB_UPDATE_WHERE} Then press Try again: the same code still works.` }, true);
+      return fail({ message: "Your workspace runs an older fleetd than this Mac, so this Mac can't join it yet.", fix: `${HUB_UPDATE_WHERE} Then press Try again: the same code still works.` }, true);
     }
     return fail({ ...said, fix: `${said.fix ?? "Fix that"}, then start again with a new code from your main machine.` }, false, lines.slice(-12).join("\n"));
   }
@@ -449,7 +449,7 @@ const LEFT = /^left: (removed|unreached|old|none)$/mu;
 export async function leaveMac(ports: MacSetupPorts): Promise<MacLeaveOutcome> {
   const node = await macNode(ports);
   const machineId = node?.machineId ?? "This Mac";
-  const hubName = node?.hubName ?? "your hub";
+  const hubName = node?.hubName ?? "your workspace";
   const ran = await ports.run(path.join(ports.fleetdDir, "bin", "fleetd"), ["node", "leave", "--home", path.join(ports.fleetdDir, "node")]);
   const told = LEFT.exec(ran.output)?.[1] as "removed" | "unreached" | "old" | "none" | undefined;
   if (ran.code !== 0 || told === undefined) return { ok: false, failure: cliFailure(ran.output) };
@@ -464,7 +464,7 @@ const CANCELLED: MacSetupFailure = {
   fix: "The code you typed is spent. For a new one, open Add machine › A Mac for agents on your main machine.",
 };
 const TOKEN_EXPIRED: MacSetupFailure = {
-  message: "Your hub took the code, but this Mac didn't join within 15 minutes, so it can't any more.",
+  message: "Your workspace took the code, but this Mac didn't join within 15 minutes, so it can't any more.",
   fix: "For a new code, open Add machine › A Mac for agents on your main machine.",
 };
 
@@ -619,7 +619,7 @@ export const signedInPorts = (signedIn: () => ReadonlyArray<SignedIn>): Pick<Mac
     },
     updateHub: async (hubUrl) => {
       const hub = at(hubUrl);
-      if (hub === undefined) return { ok: false, failure: { message: "This app isn't signed in to your hub on this Mac.", fix: HUB_UPDATE_WHERE } };
+      if (hub === undefined) return { ok: false, failure: { message: "This app isn't signed in to your workspace on this Mac.", fix: HUB_UPDATE_WHERE } };
       // fleetd cloud leaves hub_update out (hub_info's leftOut): nothing to ask it.
       const info = await hub.call("hub_info", {});
       if (info.ok && !serves(info.output as { leftOut?: readonly string[] } | undefined, "hub_update")) return { ok: false, failure: { message: "fleetd cloud updates itself." } };

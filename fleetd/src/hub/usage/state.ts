@@ -115,7 +115,7 @@ export function splitLogin(login: string): [string, string | undefined] {
 function place(login: string): string {
   const [machine, account] = splitLogin(login);
   if (account === undefined) return machine;
-  if (account === "hub") return `the hub's API key on ${machine}`;
+  if (account === "hub") return `the workspace's API key on ${machine}`;
   return `${account}'s subscription on ${machine}`;
 }
 

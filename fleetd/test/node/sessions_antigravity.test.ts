@@ -138,7 +138,7 @@ test("a hosted sandbox refuses an Antigravity profile, saying so, and starts no 
   const reply = await call("launch", { sessionId: "g3", projectId: "p1", runtimeMode: "full-access", workspace: { type: "root" }, prompt: "hi", runId: "r1", role: "worker", profile: "gemini", model: "gemini-4-neon", effort: "high", place: "boat" });
   expect(reply.result).toMatchObject({ ok: { kind: "launched" } });
   await until("the run to fail", () => summary("g3")?.latestRun?.status === "failed");
-  expect(summary("g3")?.latestRun?.failure?.message).toBe("Antigravity agents run on this hub's own machines, not in hosted sandboxes yet");
+  expect(summary("g3")?.latestRun?.failure?.message).toBe("Antigravity agents run on this workspace's own machines, not in hosted sandboxes yet");
   expect(existsSync(started) ? readFileSync(started, "utf8") : "").toBe(before);
 });
 

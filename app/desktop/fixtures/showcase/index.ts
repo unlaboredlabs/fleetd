@@ -169,7 +169,7 @@ const build = (base: Fixture, other: Fixture, extra: Extra = { agents: [], order
   const iso = (ms: number) => new Date(now + ms).toISOString();
   const projectRef = { ...ref };
   // The hub serves screens: the Agents section has its Screens view.
-  if (f.state.phase !== "live") throw new Error("typical's hub isn't live");
+  if (f.state.phase !== "live") throw new Error("typical's workspace isn't live");
   f.state = { ...f.state, features: ["presence", "browser_sessions"] };
   // Every step's rows carry its own updatedAt, so one `where` picks out one step's rows in any answer.
   const STEPPED: readonly When[] = [BEFORE, ...ORDERED];

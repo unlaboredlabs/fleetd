@@ -13,7 +13,7 @@ export { USAGE_USAGE };
 export type UsageArgs = { hub?: [string, string]; home?: string; resume: boolean; machine: string; json: boolean };
 
 export function parseUsageArgs(argv: string[]): UsageArgs {
-  const v = parse(argv, { options: { hub: "str", "key-file": "str", json: "bool" }, positionals: true });
+  const v = parse(argv, { options: { workspace: "str", "key-file": "str", json: "bool" }, positionals: true });
   if (v instanceof ArgError) throw v;
   const hub = hubFlags(v);
   const p = v.positionals;

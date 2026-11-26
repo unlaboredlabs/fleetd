@@ -69,7 +69,7 @@ export async function sweepRepo(hub: Hub, remote: string, now: number): Promise<
   try {
     return await readRepo(hub, remote, now);
   } catch (error) {
-    const why = error instanceof Unread ? error.message : `the hub's database: ${whyOf(error)}`;
+    const why = error instanceof Unread ? error.message : `the workspace's database: ${whyOf(error)}`;
     failed(hub, remote, why);
     throw new Unread(why);
   }

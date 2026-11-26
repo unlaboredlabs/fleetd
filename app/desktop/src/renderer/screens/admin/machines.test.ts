@@ -44,9 +44,9 @@ describe("Administration › Machines' model", () => {
   });
 
   it("says where a fix runs as the hub says: the machine, or the hub's machine", () => {
-    const fix = { kind: "manual", label: "Run machine setup again from the hub", command: "fleetd machine add builder-1" } as const;
-    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", hosts)).toBe("devbox, the hub");
-    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", undefined)).toBe("the hub's machine");
+    const fix = { kind: "manual", label: "Run machine setup again from the workspace", command: "fleetd machine add builder-1" } as const;
+    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", hosts)).toBe("devbox, the workspace");
+    expect(fixPlace({ ...fix, on: "hub" }, "builder-1", undefined)).toBe("the workspace's machine");
     expect(fixPlace({ ...fix, on: "machine" }, "builder-1", hosts)).toBe("builder-1");
     // A hub before it says: nowhere, and the label says where.
     expect(fixPlace(fix, "builder-1", hosts)).toBeNull();
@@ -71,7 +71,7 @@ describe("Administration › Machines' model", () => {
         check("laptop/desktop", "warn", "Linux desktops are off on laptop. Turn them on in Screens."),
         check("laptop/claude_login", "fail", "laptop: claude is not logged in, so its sessions can't start."),
         check("laptop/commit_identity", "warn", "laptop has no commit identity. Fix: join it again."),
-        check("laptop/git_fetch", "unknown", "laptop's node is not linked to the hub"),
+        check("laptop/git_fetch", "unknown", "laptop's node is not linked to the workspace"),
         check("devbox/git_fetch", "fail"),
         // No iOS: the agents' Mac lends its simulators (D298), so its check isn't a screen here.
         check("laptop/ios", "fail", "iOS simulators are off"),

@@ -29,8 +29,8 @@ export const removeLine = (machineId: string, hosts: ReadonlyArray<MachineHost> 
   cloud
     ? `fleetd revokes ${machineId}'s key and forgets it. Its bots move to fleetd's computers with their chats, memory and orders; their folders stay on ${machineId}. It joined by itself, so stop its node on it by hand.`
     : hosts?.some((h) => h.machineId === machineId && (h.source === "set_up" || h.source === "hub"))
-    ? `The hub stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its bots are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
-    : `The hub revokes ${machineId}'s key and forgets it, and its bots are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
+    ? `The workspace stops and removes ${machineId}'s node service, then revokes its key. Its agents stop, and its bots are deleted from fleetd with their chats, memory, skills, files and orders; its repos and worktrees stay.`
+    : `The workspace revokes ${machineId}'s key and forgets it, and its bots are deleted from fleetd with their chats, memory, skills, files and orders. It joined by itself, so stop its node on it by hand.`;
 
 /** What Remove does, on hovering it on the machine's page; the dialog it opens says the rest (removeLine). */
 export const removeHint = (cloud: boolean): string =>
@@ -66,7 +66,7 @@ export const fixPlace = (fix: DoctorFix, machine: string, hosts: ReadonlyArray<M
   if (fix.on === "machine") return machine;
   if (fix.on !== "hub") return null;
   const hub = hosts?.find((h) => h.source === "hub")?.machineId;
-  return hub === undefined ? "the hub's machine" : `${hub}, the hub`;
+  return hub === undefined ? "the workspace's machine" : `${hub}, the workspace`;
 };
 
 /** One thing wrong with a machine, as its page shows it: a row of its own, with its one action. */

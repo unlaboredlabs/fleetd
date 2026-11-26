@@ -1,6 +1,6 @@
 ---
 title: The desktop app
-description: Connect the desktop app to your hub, find your way around it, and its keyboard shortcuts.
+description: Connect the desktop app to your workspace, find your way around it, and its keyboard shortcuts.
 ---
 
 This page is for connecting the desktop app and finding your way around it.
@@ -12,22 +12,22 @@ Ctrl.
 
 When the app first opens, pick one:
 
-- **Sign in**: for a fleetd cloud team.
-- **Use your own hub**: for a hub you run yourself.
+- **Sign in**: for a fleetd cloud workspace.
+- **Use your own workspace**: for a workspace you run yourself.
 
-On the hub's own computer, the app connects by itself. With no hub yet, click **Set up fleetd on this Mac** (on Linux,
+On the workspace's own computer, the app connects by itself. With no workspace yet, click **Set up fleetd on this Mac** (on Linux,
 **this computer**) to run the setup in a terminal.
 
 To connect from another computer:
 
-1. On the hub, run `fleetd pair`. It prints a pairing code and the hub's address.
-2. In the app, under **Or connect to a hub on another computer**, enter the address and the code.
+1. On the workspace, run `fleetd pair`. It prints a pairing code and the workspace's address.
+2. In the app, under **Or connect to a workspace on another computer**, enter the address and the code.
 3. Click **Connect**.
 
 The code works once, for 15 minutes. To pair a device that may only watch, use `fleetd pair --role read`; to let it
-drive agents but not change the hub's settings, `--role operate`.
+drive agents but not change the workspace's settings, `--role operate`.
 
-To add another hub, open **Settings › Hubs & devices** and click **Add a hub**.
+To add another workspace, open **Settings › Workspaces & devices** and click **Add a workspace**.
 
 ## The window {#window}
 
@@ -71,10 +71,10 @@ What happened while you were away: agents starting and finishing, reviews, merge
 
 Reports and files shared in the chat. The tab shows once there are some.
 
-## When the hub is out of reach {#offline}
+## When the workspace is out of reach {#offline}
 
 Your bots and recent chats stay on screen, marked **Offline**. You can keep writing: messages send by themselves once
-the app reconnects. Approvals, secrets and Stop wait until the hub is back.
+the app reconnects. Approvals, secrets and Stop wait until the workspace is back.
 
 ## Where time went {#time}
 
@@ -85,20 +85,20 @@ See [Where time went](/docs/agent-time).
 
 Press ⌘, to open Settings. Type in **Search settings** to find any option. Settings has three groups:
 
-- **You**: General (name, appearance, notifications), Accounts (your Claude and GitHub), Vault, Your memory, Hubs &
+- **You**: General (name, appearance, notifications), Accounts (your Claude and GitHub), Vault, Your memory, Workspaces &
   devices.
 - **Bots**: each bot's settings: repos, agents, instructions, automations, vault variables.
-- **Hub** (owners and admins only): People, Machines, Providers, Bot defaults, Setup, and Billing on a cloud team.
+- **Workspace** (owners and admins only): People, Machines, Providers, Bot defaults, Setup, and Billing on a cloud workspace.
 
-What changes a teammate's work outside your bot is in Hub.
+What changes a teammate's work outside your bot is in Workspace.
 
-### Hub {#hub}
+### Workspace {#workspace}
 
-- **People**: who's on the hub, their roles, and invites.
+- **People**: who's on the workspace, their roles, and invites.
 - **Machines**: the machines, what runs where, and updates. See [Machines](/docs/machines#page).
 - **Providers**: what agents run on (Anthropic, Google), how each is connected, and the profiles under each.
 - **Bot defaults**: the default profile, the lead's profile, skills and instructions for every bot.
-- **Setup**: what the hub is connected to and the steps still left.
+- **Setup**: what the workspace is connected to and the steps still left.
 
 ## Shortcuts {#shortcuts}
 
@@ -114,7 +114,7 @@ What changes a teammate's work outside your bot is in Hub.
 | ⌘1 to ⌘9 | Open that bot |
 | ⌘[ / ⌘] | Previous or next bot |
 | ⌘. | Next bot that needs you |
-| ⇧⌘[ / ⇧⌘] | Previous or next hub |
+| ⇧⌘[ / ⇧⌘] | Previous or next workspace |
 | ⌘; | Factory |
 | ⌘, | Settings |
 | ⇧⌘A | Attach a file |

@@ -691,7 +691,7 @@ export class Automations {
       const failed = storedRun({
         ...run,
         state: "failed",
-        why: why("the hub stopped before its order opened, and the automation is gone"),
+        why: why("the workspace stopped before its order opened, and the automation is gone"),
         endedAt: isoMs(this.now()),
       });
       this.putRun(failed);
@@ -701,7 +701,7 @@ export class Automations {
     this.runEvent(
       a,
       out,
-      out.workstreamId !== undefined ? `opened ${out.workstreamId} after a hub restart` : "failed: its order could not be opened after a hub restart",
+      out.workstreamId !== undefined ? `opened ${out.workstreamId} after a workspace restart` : "failed: its order could not be opened after a workspace restart",
     );
     return out;
   }

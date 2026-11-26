@@ -49,7 +49,7 @@ const runOf = (f: Fixture, hub: PartSay, nodes: readonly PartSay[], rest: PartSa
   startedAt: AT,
   ...(finished ? { finishedAt: "2026-10-19T10:03:00.000Z" } : {}),
   parts: [
-    { part: "hub", name: "the hub", from: OLDER, ...hub },
+    { part: "hub", name: "the workspace", from: OLDER, ...hub },
     ...machinesOf(f).flatMap((m, i) => {
       const node = { part: "node", machineId: m.machineId, name: m.name, from: OLDER, ...(nodes[i] ?? rest) };
       const says = claude[i];
@@ -84,27 +84,27 @@ export default defineGroup({
       const f = withHub(what, note, OLDER, { release });
       f.appUpdate = state({ kind: "available", version: NEXT, percent: 64, restart: false }, release);
       const started = run(f);
-      if (started === null) f.fail("hub_update", {}, { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the hub machine, then pair this app again with the new code: it grants admin." });
+      if (started === null) f.fail("hub_update", {}, { code: "forbidden", message: "This key lacks the admin role.", fix: "Run `fleetd pair` on the workspace machine, then pair this app again with the new code: it grants admin." });
       else f.answer("hub_update", {}, { run: started });
       // Pressed, a finished run needs no read; one going on is read again and again, and stays as it is.
       return says(f, { ...(going && started !== null ? { run: started } : {}), ...(ready === undefined ? {} : { ready }) });
     };
     const waiting: PartSay = { state: "waiting" };
     const done: PartSay = { state: "done", message: "runs it" };
-    const skipped: PartSay = { state: "skipped", message: "not asked: the hub didn't update, and nodes follow the hub" };
+    const skipped: PartSay = { state: "skipped", message: "not asked: the workspace didn't update, and nodes follow the workspace" };
 
     return [
-      withHub("hub-current", "The hub and its machines run this app's build, the newest on the channel.", MINE),
-      withHub("hub-unknown", "The hub reports 0.0.0 (a local build): its version is unknown, and nothing is flagged.", "0.0.0"),
-      withHub("hub-available", "The channel has a newer build than the hub and its machines run: Update available.", MINE, { release: { ...RELEASE, cli: NEXT } }),
-      withHub("hub-behind", "The hub and its machines run an older Edge build than this app: Update.", OLDER),
-      withHub("node-behind", "The machines' nodes are behind the hub: a row each, and Update.", MINE, { nodes: OLDER }),
+      withHub("hub-current", "The workspace and its machines run this app's build, the newest on the channel.", MINE),
+      withHub("hub-unknown", "The workspace reports 0.0.0 (a local build): its version is unknown, and nothing is flagged.", "0.0.0"),
+      withHub("hub-available", "The channel has a newer build than the workspace and its machines run: Update available.", MINE, { release: { ...RELEASE, cli: NEXT } }),
+      withHub("hub-behind", "The workspace and its machines run an older Edge build than this app: Update.", OLDER),
+      withHub("node-behind", "The machines' nodes are behind the workspace: a row each, and Update.", MINE, { nodes: OLDER }),
       // The one Update button's run, part by part (W38).
-      everything("everything", "The hub, its machines and this app all have a newer build: the one Update button.", (f) => runOf(f, { state: "downloading" }, [], waiting, false)),
-      everything("run-hub", "Update pressed: the hub restarts on the new build, its machines wait.", (f) => runOf(f, { state: "restarting", message: "restarting" }, [], waiting, false), true),
+      everything("everything", "The workspace, its machines and this app all have a newer build: the one Update button.", (f) => runOf(f, { state: "downloading" }, [], waiting, false)),
+      everything("run-hub", "Update pressed: the workspace restarts on the new build, its machines wait.", (f) => runOf(f, { state: "restarting", message: "restarting" }, [], waiting, false), true),
       everything(
         "run-nodes",
-        "The hub is updated; one machine is done, one restarts, the rest download.",
+        "The workspace is updated; one machine is done, one restarts, the rest download.",
         (f) => runOf(f, done, [done, { state: "restarting" }], { state: "downloading" }, false, [{ state: "done" }, waiting]),
         true,
       ),
@@ -113,12 +113,12 @@ export default defineGroup({
         // end, and nothing in the hub drives the run any more: The update stopped, and Start over.
         const stuck = (g: Fixture) =>
           runOf(g, done, [done, { state: "waiting", message: "waits until it's idle: 1 live session can't carry on through a restart" }], waiting, false, [{ state: "done" }, waiting]);
-        const f = everything("run-left-over", "A run nothing in the hub drives any more, one machine waiting on a session: Start over.", stuck, true);
+        const f = everything("run-left-over", "A run nothing in the workspace drives any more, one machine waiting on a session: Start over.", stuck, true);
         return says(f, { run: stuck(f), leftOver: true });
       })(),
       everything(
         "hub-ready",
-        "The hub downloaded and checked the channel's newest build ahead: Update available, and Update swaps it in.",
+        "The workspace downloaded and checked the channel's newest build ahead: Update available, and Update swaps it in.",
         (f) => runOf(f, done, [done, done], done, true, [{ state: "done" }, { state: "done" }]),
         false,
         NEXT,
@@ -130,19 +130,19 @@ export default defineGroup({
       ),
       everything(
         "run-hub-failed",
-        "The hub's download didn't match SHA256SUMS: nothing changed, and its machines weren't asked.",
+        "The workspace's download didn't match SHA256SUMS: nothing changed, and its machines weren't asked.",
         (f) => runOf(f, { state: "failed", stage: "checksum", message: "`fleetd-linux-x64`: checksum mismatch (expected `9f2c…`, got `41ab…`); nothing was changed" }, [], skipped, true),
       ),
       everything(
         "run-hub-rolled-back",
-        "The hub's new build didn't start: its old one runs again, and its machines weren't asked.",
-        (f) => runOf(f, { state: "rolled_back", stage: "health", message: `Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy within 90 s, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again` }, [], { state: "skipped", message: "not asked: the hub kept its build, and nodes follow the hub" }, true),
+        "The workspace's new build didn't start: its old one runs again, and its machines weren't asked.",
+        (f) => runOf(f, { state: "rolled_back", stage: "health", message: `Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy within 90 s, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again` }, [], { state: "skipped", message: "not asked: the workspace kept its build, and nodes follow the workspace" }, true),
       ),
       (() => {
         // The hub already runs the new build; its machines are behind it, one of them (a third, a Mac) offline.
         const f = everything(
           "run-nodes-mixed",
-          "Machines behind the hub: Update pressed, one didn't start the new build, one failed its download, one is offline.",
+          "Machines behind the workspace: Update pressed, one didn't start the new build, one failed its download, one is offline.",
           (g) => {
             const machines = arr(g.snapshot?.["machines"]).filter(isObject);
             const last = machines.at(-1);
@@ -175,7 +175,7 @@ export default defineGroup({
       // W521: the word under your name and Hub › Machines › Updates, found as the app opens (the hub's own automatic update, or one pressed
       // in another window): a machine that didn't update, then everything updated a few minutes ago.
       (() => {
-        const f = withHub("put-back", "The hub updated by itself, and one machine didn't start the new build, so its old one runs again: Not updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });
+        const f = withHub("put-back", "The workspace updated by itself, and one machine didn't start the new build, so its old one runs again: Not updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });
         const run = runOf(f, done, [{ state: "rolled_back", stage: "health", message: "Edge · Oct 23, 10:30 UTC · 9e07d31 didn't come up healthy, so Edge · Oct 20, 10:30 UTC · 1c0ffee was put back and runs again" }], done, true);
         // That machine still runs its old build.
         const first = machinesOf(f)[0]?.machineId;
@@ -183,11 +183,11 @@ export default defineGroup({
         return says(f, { run });
       })(),
       (() => {
-        const f = withHub("updated", "The hub and its machines updated themselves a few minutes ago: Updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });
+        const f = withHub("updated", "The workspace and its machines updated themselves a few minutes ago: Updated.", NEXT, { release: { ...RELEASE, cli: NEXT } });
         const run = { ...runOf(f, done, [done, done], done, true), finishedAt: "2026-10-19T10:24:00.000Z" };
         return says(f, { run });
       })(),
-      everything("refused", "Update pressed with a key that isn't Admin everywhere: the hub's words and fix.", () => null),
+      everything("refused", "Update pressed with a key that isn't Admin everywhere: the workspace's words and fix.", () => null),
       // W469: Update automatically on: the ready build it installs by itself and when; one holding back, with why; and
       // the everyday page, on and up to date.
       (() => {
@@ -204,7 +204,7 @@ export default defineGroup({
       (() => {
         const on = "0.9.3+20261122.1c0ffee";
         const ready = "0.9.4+20261123.5877c50";
-        const f = withHub("numbered", "A hub on 0.9.3 with 0.9.4 ready: Update to 0.9.4.", on, { release: { cli: ready, app: on } });
+        const f = withHub("numbered", "A workspace on 0.9.3 with 0.9.4 ready: Update to 0.9.4.", on, { release: { cli: ready, app: on } });
         f.appUpdate = { current: on, app: { kind: "current" }, release: { cli: ready, app: on } };
         return says(f, { ready, settings: { auto: false, drainMinutes: 2, speed: "fast" } });
       })(),

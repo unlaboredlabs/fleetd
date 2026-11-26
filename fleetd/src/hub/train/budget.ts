@@ -67,7 +67,7 @@ export class Budget {
     if (remaining < limit / 10 && a.warned !== a.resetMs) {
       a.warned = a.resetMs;
       console.warn(
-        `github: ${remaining} of ${owner}'s ${limit} ${resource} API calls are left until ${isoS(a.resetMs)}; the hub polls GitHub ${SPREAD} times less often until then`,
+        `github: ${remaining} of ${owner}'s ${limit} ${resource} API calls are left until ${isoS(a.resetMs)}; the workspace polls GitHub ${SPREAD} times less often until then`,
       );
     }
   }
@@ -85,7 +85,7 @@ export class Budget {
     until = Math.min(until, now + LIMIT_WAIT_MAX_MS);
     const a = this.account(owner, resource);
     if (a.usedUpUntil === undefined || a.usedUpUntil < now) {
-      console.warn(`github: ${owner}'s ${resource} API rate limit is used up until ${isoS(until)}; the hub's GitHub calls on it wait until then`);
+      console.warn(`github: ${owner}'s ${resource} API rate limit is used up until ${isoS(until)}; the workspace's GitHub calls on it wait until then`);
     }
     a.usedUpUntil = Math.max(a.usedUpUntil ?? 0, until);
     return a.usedUpUntil;

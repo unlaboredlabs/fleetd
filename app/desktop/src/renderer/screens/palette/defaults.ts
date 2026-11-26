@@ -28,7 +28,7 @@ export const defaultCommands = (): Command[] => [
     run: () => go(timeRouteFor(window.location.hash)),
   },
   // The web app's hubs are the account's teams: pairing one is the desktop app's.
-  ...(onWeb() ? [] : [{ id: "go:onboarding", title: "Connect to a hub…", detail: "Pair this app with a fleetd hub", group: "actions" as const, keywords: ["pair"], run: () => go("#/onboarding") }]),
+  ...(onWeb() ? [] : [{ id: "go:onboarding", title: "Connect to a workspace…", detail: "Pair this app with a fleetd workspace", group: "actions" as const, keywords: ["pair"], run: () => go("#/onboarding") }]),
 ];
 
 /** The appearance switches, each hidden while it is the current choice; "dark" finds one. */

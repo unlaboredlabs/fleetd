@@ -394,7 +394,7 @@ function UpdateSection({ update, hubUrl }: { update: NonNullable<View["update"]>
       ) : state === "started" ? (
         <div role="status">
           <Text as="p" size="xs" tone="quiet">
-            Updating: this Mac takes the hub’s build once its agents finish their step.
+            Updating: this Mac takes the workspace’s build once its agents finish their step.
           </Text>
         </div>
       ) : (

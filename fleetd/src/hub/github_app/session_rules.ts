@@ -13,7 +13,7 @@ export const UNRENEWED_TOKEN = "fleetd-github-token-not-renewed-ask-your-lead";
 
 /** What a task launched while GitHub gave no token for its order is told, after its prompt: it starts anyway. */
 export const TOKEN_PENDING =
-  "GitHub gave fleetd no token for this order when you started (GitHub may be unreachable from the hub), so GH_TOKEN " +
+  "GitHub gave fleetd no token for this order when you started (GitHub may be unreachable from the workspace), so GH_TOKEN " +
   "doesn't work yet and gh and git push fail. fleetd tries again every 5 minutes, and the token reaches your next " +
   "command once GitHub answers: go on with what doesn't need GitHub, keep your work committed, and push once gh works.";
 
@@ -29,8 +29,8 @@ export function blockedLine(order: string, name: string, why: Block): string {
     ? `${order}: ${name}'s GitHub is no longer connected, so its agents' gh fails (GitHub says bad credentials) rather than ` +
       `use anyone else's account. Ask ${name} to connect GitHub in Settings › Accounts › GitHub; their agents get the token back ` +
       "at their next command."
-    : `${order}: its agents' GitHub token ended and the hub couldn't renew it (${why.why}), so their gh fails (GitHub says bad ` +
-      "credentials) rather than use the machine's own login. The hub tries again every 5 minutes and the agents " +
+    : `${order}: its agents' GitHub token ended and the workspace couldn't renew it (${why.why}), so their gh fails (GitHub says bad ` +
+      "credentials) rather than use the machine's own login. The workspace tries again every 5 minutes and the agents " +
       `get the new token at their next command; if it keeps failing, an admin runs Test in ${settingsPath()} ` +
       "accounts › GitHub.";
 }

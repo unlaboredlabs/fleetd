@@ -110,7 +110,7 @@ test("a schedule fires at its cron time and opens the automation's order", async
   expect(ran[0]!.summary).toContain("on schedule");
 });
 
-test("runs missed while the hub was down run once, late", async () => {
+test("runs missed while the workspace was down run once, late", async () => {
   const { hub, clock } = setup();
   const [a] = automations(hub).create(fresh(PROJECT, schedule("0 * * * *", "UTC"), false));
   // Down from 10:00 to 13:20: the 11:00, 12:00 and 13:00 runs were missed.
@@ -450,7 +450,7 @@ test("a run a stop left without its order opens it at start, once", async () => 
   const [recovered] = automations(hub).runs(a.automationId, 10);
   expect(recovered!.workstreamId).toBeDefined();
   expect(requestIds(hub)).toEqual(["ar_leftover1"]);
-  expect(eventsOf(hub, "automation.run")[0]!.summary).toContain("after a hub restart");
+  expect(eventsOf(hub, "automation.run")[0]!.summary).toContain("after a workspace restart");
 });
 
 test("a run's order is the leads area's, and a lead that can't start says why", async () => {

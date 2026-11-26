@@ -71,7 +71,7 @@ function mayUndo(hub: Hub, caller: Caller, item: RememberedItem): void {
     throw theirs(hub, item.person);
   }
   if (mine(hub, caller).kind === "shared" || allowsEverywhere(caller, "admin")) return;
-  throw new ToolError("forbidden", "That entry is in the shared memory, which only the hub's owners and admins edit now.");
+  throw new ToolError("forbidden", "That entry is in the shared memory, which only the workspace's owners and admins edit now.");
 }
 
 /**

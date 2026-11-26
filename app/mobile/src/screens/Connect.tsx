@@ -48,7 +48,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
         <Text style={[type.largeTitle, { color: t.label }]} accessibilityRole="header">
           fleetd
         </Text>
-        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways || !own ? "Your bots and approvals." : "Your bots and approvals, from your own hub."}</Text>
+        <Text style={[type.body, styles.center, { color: t.secondary }]}>{ways || !own ? "Your bots and approvals." : "Your bots and approvals, from your own workspace."}</Text>
         {note === undefined ? null : <Text style={[type.subhead, styles.center, { color: t.warning }]}>{note}</Text>}
       </View>
       {ways ? (
@@ -58,7 +58,7 @@ export function Welcome({ navigation, note, onSignedIn, own = false }: NativeSta
           <Button label="Scan QR Code" icon="scan" size="large" onPress={() => navigation.navigate("Scan")} />
           <Button label="Enter Code Manually" kind="plain" size="large" onPress={() => navigation.navigate("Pair")} />
           <Text style={[type.footnote, styles.center, styles.hint, { color: t.secondary }]}>
-            Your hub shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app. {CLOUD_CODE}
+            Your workspace shows the code: run <Text style={styles.code}>fleetd pair</Text> on it, or pair from the desktop app. {CLOUD_CODE}
           </Text>
         </View>
       )}
@@ -118,14 +118,14 @@ export function Scan({ navigation }: NativeStackScreenProps<PairParams, "Scan">)
         <View style={styles.scanMiddle}>
           <Icon name="camera" size={44} color="rgba(255,255,255,0.6)" />
           <Text style={[type.title3, styles.onCamera, styles.center]}>Camera Access Is Off</Text>
-          <Text style={[type.subhead, styles.onCameraQuiet, styles.center]}>Allow fleetd to use the camera in Settings to scan your hub's code, or enter the code by hand.</Text>
+          <Text style={[type.subhead, styles.onCameraQuiet, styles.center]}>Allow fleetd to use the camera in Settings to scan your workspace's code, or enter the code by hand.</Text>
           <Button label="Open Settings" kind="tinted" size="small" onPress={() => void Linking.openSettings()} />
         </View>
       ) : (
         <View style={styles.scanMiddle} accessibilityLabel="Viewfinder">
           <Viewfinder />
           <View style={[styles.scanNote, problem !== undefined && styles.scanProblem]} accessibilityLiveRegion="polite">
-            <Text style={[type.subhead, styles.onCamera, styles.center]}>{problem ?? "Point the camera at the QR code your hub shows."}</Text>
+            <Text style={[type.subhead, styles.onCamera, styles.center]}>{problem ?? "Point the camera at the QR code your workspace shows."}</Text>
           </View>
         </View>
       )}
@@ -181,7 +181,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
     const failed = result.ok
       ? await onPaired(result.paired).then(
           () => null,
-          (): PairFailure => ({ code: "", message: "This phone couldn't keep the hub's key in its keychain.", fix: "Show a new code on the hub and try again." }),
+          (): PairFailure => ({ code: "", message: "This phone couldn't keep the workspace's key in its keychain.", fix: "Show a new code on the workspace and try again." }),
         )
       : result.failure;
     if (failed === null) {
@@ -216,9 +216,9 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
       <ScrollView contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + space.xl }]} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
         <Text style={[type.subhead, styles.lead, { color: t.secondary }]}>
-          Type the hub's address and the code that <Text style={styles.code}>fleetd pair</Text> or the desktop app shows. On a tailnet, keep Tailscale on. {CLOUD_CODE}
+          Type the workspace's address and the code that <Text style={styles.code}>fleetd pair</Text> or the desktop app shows. On a tailnet, keep Tailscale on. {CLOUD_CODE}
         </Text>
-        <ListSection header="Hub address">
+        <ListSection header="Workspace address">
           <View style={styles.fieldRow}>
             <TextInput
               style={[field, styles.input]}
@@ -234,7 +234,7 @@ export function Pair({ route, onPaired }: NativeStackScreenProps<PairParams, "Pa
               textContentType="URL"
               returnKeyType="next"
               onSubmitEditing={() => codeField.current?.focus()}
-              accessibilityLabel="Hub address"
+              accessibilityLabel="Workspace address"
               keyboardAppearance={t.dark ? "dark" : "light"}
               editable={!busy}
             />

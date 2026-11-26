@@ -532,7 +532,7 @@ export class SimScreens {
     try {
       await this.link.hub(screen.hostKey, "/", "browser_session", { ...report(meta, state, screen.control(), []), ...(device ? { device } : {}) });
     } catch (e) {
-      console.warn(`iOS screen ${screen.id}: not reported to the hub: ${(e as Error).message}`);
+      console.warn(`iOS screen ${screen.id}: not reported to the workspace: ${(e as Error).message}`);
     }
   }
 

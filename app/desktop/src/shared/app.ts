@@ -26,7 +26,7 @@ const hubUrl = z
     } catch {
       return false;
     }
-  }, "a http(s) hub address");
+  }, "a http(s) workspace address");
 
 /** Which of the app's hubs it is on (shared/hubs.ts); absent, the first. */
 const at = z.string().regex(HUB_ID).optional();

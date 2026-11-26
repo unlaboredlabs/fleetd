@@ -67,7 +67,7 @@ export function register(tools: Registry): void {
 function admin(hub: Hub, caller: Caller) {
   const by = administrator(hub, caller);
   if (!by) {
-    throw new ToolError("forbidden", "Only the hub's owners and admins set the team's Gemini key.", "Ask an owner or admin; they set it on the Providers page of the app's Settings.");
+    throw new ToolError("forbidden", "Only the workspace's owners and admins set the team's Gemini key.", "Ask an owner or admin; they set it on the Providers page of the app's Settings.");
   }
   return by;
 }

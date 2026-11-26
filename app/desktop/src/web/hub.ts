@@ -49,7 +49,7 @@ export const browserTransport =
       if (typeof e.data === "string") events.onText(e.data);
       else {
         socket.close(1003, "binary frames aren't read here");
-        close(1006, "the hub sent a frame this page can't read");
+        close(1006, "the workspace sent a frame this page can't read");
       }
     };
     socket.onclose = (e: CloseEvent) => close(e.code, e.reason);

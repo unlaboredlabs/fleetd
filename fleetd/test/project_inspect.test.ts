@@ -70,7 +70,7 @@ test("failed reads are unknown, not absent", () => {
     true,
   );
   expect(i.leadNeeds).toBe(
-    "CI and merge rules unknown: gh on the hub could not read workflows (HTTP 403: API rate limit exceeded) on acme/storefront",
+    "CI and merge rules unknown: gh on the workspace's machine could not read workflows (HTTP 403: API rate limit exceeded) on acme/storefront",
   );
   expect(i.notes.some((n) => n.includes("rate limit"))).toBe(true);
   const whole = answers({ unread: ["acme/storefront (HTTP 502: Bad Gateway)"] });
@@ -116,7 +116,7 @@ test("says what the lead will need", () => {
   const local = build(undefined, answers({}), { exists: true, isGit: true, defaultBranch: "main", workflowFiles: ["ci.yml"] }, [], true);
   expect(local.leadNeeds).toStartWith("no GitHub remote");
   expect(local.ci.workflows).toEqual(["ci.yml"]);
-  expect(build(repo, answers({}), undefined, [], false).leadNeeds).toStartWith("gh is not logged in on the hub");
+  expect(build(repo, answers({}), undefined, [], false).leadNeeds).toStartWith("gh is not logged in on the workspace's machine");
 });
 
 test("picks the least busy connected worker", () => {
@@ -196,7 +196,7 @@ test("reads what people paste for a repo", () => {
   expect(repoKeyOf("")).toBeUndefined();
 });
 
-test("a clone cut off by a hub restart fails once", () => {
+test("a clone cut off by a workspace restart fails once", () => {
   const k = kit();
   const log = events(k.hub);
   const at = "2026-10-18T20:00:00.000Z";
@@ -213,7 +213,7 @@ test("a clone cut off by a hub restart fails once", () => {
   expect(failInterrupted(log, at)).toBe(1);
   const failed = log.page(0, ["project.add_failed"]).events;
   expect(failed).toHaveLength(1);
-  expect(failed[0]?.data).toMatchObject({ addId: "cut-off", code: "clone_failed", message: "the hub restarted while cloning acme/storefront" });
+  expect(failed[0]?.data).toMatchObject({ addId: "cut-off", code: "clone_failed", message: "the workspace restarted while cloning acme/storefront" });
   expect(failed[0]?.machineId).toBe("devbox");
   // The next start finds nothing open.
   expect(failInterrupted(log, at)).toBe(0);

@@ -147,9 +147,9 @@ it("a failed try says why, counts down to its retry, and Try again asks the hub 
 it("a start its team's billing holds says so plainly, with no Try again: no try fixes it", async () => {
   layout();
   const n = await mount();
-  await n.lead({ kind: "starting", text: "…", step: "box", startedAt: AT, failed: { reason: "This team reached its spend cap" } });
+  await n.lead({ kind: "starting", text: "…", step: "box", startedAt: AT, failed: { reason: "This workspace reached its spend cap" } });
   expect(wake()?.dataset["wake"]).toBe("held");
-  expect(wake()?.textContent).toContain("The lead can’t start now: this team reached its spend cap.");
+  expect(wake()?.textContent).toContain("The lead can’t start now: this workspace reached its spend cap.");
   expect(wake()?.textContent).not.toContain("Couldn’t wake up");
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.startsWith("Try again"))).toBe(false);
 });
@@ -157,9 +157,9 @@ it("a start its team's billing holds says so plainly, with no Try again: no try 
 it("Try again that starts nothing says why in the row: the hub's word, or that nothing waited, or the error", async () => {
   layout();
   const cases: [Parameters<typeof mount>[0], string][] = [
-    [{ ok: true, output: { started: false, next: "Your team is out of credits. It goes on by itself once that is done." } }, "Your team is out of credits."],
+    [{ ok: true, output: { started: false, next: "Your workspace is out of credits. It goes on by itself once that is done." } }, "Your workspace is out of credits."],
     [{ ok: true, output: { started: false } }, "Nothing to retry"],
-    [{ ok: false, error: { code: "offline", message: "The hub isn't connected." } }, "Couldn’t try again: The hub isn't connected"],
+    [{ ok: false, error: { code: "offline", message: "The workspace isn't connected." } }, "Couldn’t try again: The workspace isn't connected"],
   ];
   for (const [answer, says] of cases) {
     const n = await mount(answer);

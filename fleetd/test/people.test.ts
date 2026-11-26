@@ -47,7 +47,7 @@ test("an invite redeemed binds the device to its person, capped by their role, a
   expect(await redeem(hub, out.code)).toBe(401);
   expect(eventsOf(hub, "people.changed").map((e) => e.summary)).toEqual([
     `${owner.person?.name} invited Alice as member`,
-    "Alice joined the hub on laptop",
+    "Alice joined the workspace on laptop",
   ]);
 
   const listed = await call<{ people: unknown[]; devices: { keyId: string }[]; invites: unknown[]; me: string; left: unknown[] }>(owner, "people_list");
@@ -91,14 +91,14 @@ test("members can't administer, and a promotion reaches the device their invite 
   expect(eventsOf(hub, "people.changed").some((e) => e.summary === `${owner.person?.name} made Bob admin`)).toBe(true);
 });
 
-test("the hub keeps its owners; removing a person signs out their devices; a revoked invite takes its person", async () => {
+test("the workspace keeps its owners; removing a person signs out their devices; a revoked invite takes its person", async () => {
   const { hub, call, device } = testHub({ url: URL_ });
   const owner = ownerDevice(hub, device as never);
   const ownerId = owner.person?.personId as string;
   for (const input of [{ personId: ownerId, role: "admin" }]) {
-    expect((await refusal(call(owner, "person_set", input))).message).toEndWith("is the hub's only owner.");
+    expect((await refusal(call(owner, "person_set", input))).message).toEndWith("is the workspace's only owner.");
   }
-  expect((await refusal(call(owner, "person_remove", { personId: ownerId }))).message).toEndWith("is the hub's only owner.");
+  expect((await refusal(call(owner, "person_remove", { personId: ownerId }))).message).toEndWith("is the workspace's only owner.");
   expect((await refusal(call(owner, "invite_create", { name: "  \u0007 " }))).message).toBe("A new person needs a name.");
 
   const admin = people(hub).create("Ada", "admin");
@@ -130,7 +130,7 @@ test("the hub keeps its owners; removing a person signs out their devices; a rev
   expect(people(hub).list(false).map((p) => p.name)).toEqual([owner.person?.name, "Ada"].map(String));
 });
 
-test("an older hub's human keys all bind to one owner made from the machine's user", () => {
+test("an older workspace's human keys all bind to one owner made from the machine's user", () => {
   const db = HubDb.memory();
   db.conn.run("INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms, kind) VALUES ('k1', 'h1', 'fld_a', 'a', '[]', 1, 'human')");
   db.conn.run("INSERT INTO agent_keys (key_id, hash, prefix, name, grants, created_ms, kind) VALUES ('k2', 'h2', 'fld_b', 'b', '[]', 1, 'agent')");

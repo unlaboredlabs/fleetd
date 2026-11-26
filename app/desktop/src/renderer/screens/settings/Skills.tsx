@@ -40,7 +40,7 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
       <SettingsRow
         reveal="agents.skills"
         title="Skills"
-        hint={`Workflows ${where}'s agents can follow, from its repo or kept for it here: its repo's, its own and the hub-wide ones. On a name clash the first wins. Name one in the chat with $.`}
+        hint={`Workflows ${where}'s agents can follow, from its repo or kept for it here: its repo's, its own and the workspace-wide ones. On a name clash the first wins. Name one in the chat with $.`}
         control={<SkillActions onOpen={setDialog} />}
       />
       <SkillList
@@ -51,14 +51,14 @@ export function ProjectSkills({ scope }: { scope: Scope }) {
         onDialog={setDialog}
         hubWide={(names) => (
           <SettingsRow
-            title="Hub-wide"
-            label="Hub-wide skills"
+            title="Workspace-wide"
+            label="Workspace-wide skills"
             hint="Skills every bot gets. Owners and admins manage them."
             line={names.length > 0 ? names.join(", ") : "None."}
             control={
               administers ? (
                 <Button size="sm" variant="quiet" onClick={() => (window.location.hash = toHash({ id: "settings", tab: "hub.tools" }))}>
-                  Hub-wide skills in Bot defaults
+                  Workspace-wide skills in Bot defaults
                 </Button>
               ) : undefined
             }
@@ -78,7 +78,7 @@ export function HubSkills() {
   const [dialog, setDialog] = useState<Dialogs>(null);
   return (
     <SettingsSection title="Skills" reveal="hub.skills" aside={live ? <SkillActions onOpen={setDialog} /> : undefined}>
-      {live ? <SkillList scope={HUB} where="every bot" dialog={dialog} onDialog={setDialog} /> : <GroupNote>Not connected. Connect to a hub to see its skills.</GroupNote>}
+      {live ? <SkillList scope={HUB} where="every bot" dialog={dialog} onDialog={setDialog} /> : <GroupNote>Not connected. Connect to a workspace to see its skills.</GroupNote>}
     </SettingsSection>
   );
 }
@@ -282,7 +282,7 @@ function SkillEditor({ skill, scope, onGone }: { skill: SkillSummary; scope: Sco
         open={confirm}
         onOpenChange={setConfirm}
         title={`Delete ${skill.name}?`}
-        description="Its folder goes from the hub. Sessions that start from now on don't get it."
+        description="Its folder goes from the workspace. Sessions that start from now on don't get it."
         footer={
           <>
             <Button onClick={() => setConfirm(false)}>Keep it</Button>

@@ -78,12 +78,12 @@ const machine: Runner = {
 /** The release builds: each asked-for one is the asset's name as its bytes, unless `missing`. */
 const builds: Builds = {
   async digest(version, asset) {
-    if (missing) throw new Error(`no ${asset} of fleetd ${version} to copy to the machine: the release has none. Fix: run a released fleetd on the hub`);
+    if (missing) throw new Error(`no ${asset} of fleetd ${version} to copy to the machine: the release has none. Fix: run a released fleetd on the workspace's machine`);
     return sha(asset);
   },
   async build(version, asset) {
     asked.push([version, asset]);
-    if (missing) throw new Error(`no ${asset} of fleetd ${version} to copy to the machine: the release has none. Fix: run a released fleetd on the hub`);
+    if (missing) throw new Error(`no ${asset} of fleetd ${version} to copy to the machine: the release has none. Fix: run a released fleetd on the workspace's machine`);
     return new TextEncoder().encode(asset);
   },
 };
@@ -293,7 +293,7 @@ test("a machine that runs leads is removed only with force, which erases its bot
   await expect(call("machine_remove", { machineId: "lab-a" })).rejects.toMatchObject({
     code: "invalid",
     message: "lab-a still runs Shop's lead. Removing it anyway deletes that bot, with its chat and history.",
-    fix: "to repair lab-a instead, run fleetd pair --worker lab-a on the hub and the line it prints on lab-a with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
+    fix: "to repair lab-a instead, run fleetd pair --worker lab-a on the workspace's machine and the line it prints on lab-a with --rejoin; to remove it anyway, call machine_remove again with force: true (Remove anyway in the app)",
   });
   expect(store(t.hub).machineGet("lab-a")).toBeDefined();
   const out = await call("machine_remove", { machineId: "lab-a", force: true });
@@ -302,12 +302,12 @@ test("a machine that runs leads is removed only with force, which erases its bot
   // lab-a joined by itself, so nothing ran on it: only the hub's side.
   expect(out.steps).toEqual([]);
   expect(ran).toEqual([]);
-  expect(out.next).toContain("was not set up by fleetd machine add from this hub");
+  expect(out.next).toContain("was not set up by fleetd machine add from this workspace");
   expect(out.next).toContain("erased lab-a's bot: its chat, memory, skills, files, orders and tasks.");
   expect(store(t.hub).machineGet("lab-a")).toBeUndefined();
   expect(store(t.hub).projectsList("lab-a")).toEqual([]);
   const removed = events(t.hub).page(0, ["machine.removed"]).events;
-  expect(removed.map((e) => [e.machineId, e.summary])).toEqual([["lab-a", "lab-a was removed from the hub"]]);
+  expect(removed.map((e) => [e.machineId, e.summary])).toEqual([["lab-a", "lab-a was removed from the workspace"]]);
 });
 
 test("removing a machine it set up runs the undo steps there", async () => {
@@ -436,7 +436,7 @@ test("antigravity_status says where Google is connected: each machine's sign-in,
   expect((await call("antigravity_status", {})).teamKey).toEqual(key);
 });
 
-test("a login on a machine the hub doesn't know, or with an empty code, asks nothing of a node", async () => {
+test("a login on a machine the workspace doesn't know, or with an empty code, asks nothing of a node", async () => {
   await expect(call("machine_claude_login", { machineId: "ghost" })).rejects.toMatchObject({ code: "not_found" });
   store(t.hub).machineUpsert({ machineId: "lab", name: "lab", tags: [], status: "online", lastSeenAt: new Date().toISOString(), nodeVersion: "1" } as never);
   await expect(call("machine_claude_login", { machineId: "lab", code: "  " })).rejects.toMatchObject({ code: "invalid" });
@@ -516,7 +516,7 @@ test("a machine of another OS that has this version's build already downloads no
 
 // A released hub is FLEETD_VERSION, not the crate version its install titles name: the release it fetches from is
 // its own. Run apart, since VERSION is read once, when the module loads.
-test("a released hub fetches another OS's build from its own release", async () => {
+test("a released workspace fetches another OS's build from its own release", async () => {
   const script = join(t.home, "released.ts");
   const src = (m: string) => JSON.stringify(join(import.meta.dir, "../src", m));
   writeFileSync(

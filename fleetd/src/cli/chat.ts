@@ -21,7 +21,7 @@ export type ChatArgs = { command: ChatCommand; hub?: string; home?: string; keyF
 
 export function parseChatArgs(argv: string[]): ChatArgs {
   const v = parse(argv, {
-    options: { hub: "str", "key-file": "str", wait: "bool", follow: "bool", now: "bool", page: "str" },
+    options: { workspace: "str", "key-file": "str", wait: "bool", follow: "bool", now: "bool", page: "str" },
     positionals: true,
   });
   if (v instanceof ArgError) throw v;
@@ -51,10 +51,10 @@ export function parseChatArgs(argv: string[]): ChatArgs {
   const keyFile = v.str("key-file");
   if (!keyFile) {
     throw new ArgError(
-      "--key-file is required: the key says who writes, your human key as you and an agent key as that agent. Make yours once: fleetd hub key create --human --name <device> --out <file>",
+      "--key-file is required: the key says who writes, your human key as you and an agent key as that agent. Make yours once: fleetd workspace key create --human --name <device> --out <file>",
     );
   }
-  const hub = v.str("hub") || undefined;
+  const hub = v.str("workspace") || undefined;
   return { command, ...(hub === undefined ? {} : { hub }), keyFile };
 }
 
@@ -157,7 +157,7 @@ export function appUrl(hub: string): string {
 
 const refusal = (frame: any) => {
   const fix = st(frame, "fix");
-  return new Refused(`${st(frame, "message") ?? "the hub refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
+  return new Refused(`${st(frame, "message") ?? "the workspace refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
 };
 
 /** The hub's app socket, authenticated. Frames read while waiting for a call's answer are kept, in order. */
@@ -184,7 +184,7 @@ class Socket {
       else this.queue.push(frame);
     });
     ws.addEventListener("close", () => {
-      this.closed ??= new Unreachable("the hub closed the connection");
+      this.closed ??= new Unreachable("the workspace closed the connection");
       for (const w of this.waiters.splice(0)) w(undefined);
     });
   }
@@ -193,11 +193,11 @@ class Socket {
     const url = appUrl(hub);
     const ws = new WebSocket(url);
     const opened = await new Promise<string | undefined>((resolve) => {
-      const timer = setTimeout(() => resolve(`the hub at ${hub} does not answer`), 15_000);
+      const timer = setTimeout(() => resolve(`the workspace at ${hub} does not answer`), 15_000);
       ws.addEventListener("open", () => (clearTimeout(timer), resolve(undefined)));
       ws.addEventListener("error", (e) => {
         clearTimeout(timer);
-        resolve(`cannot reach the hub at ${hub}: ${(e as ErrorEvent).message ?? "connection failed"}`);
+        resolve(`cannot reach the workspace at ${hub}: ${(e as ErrorEvent).message ?? "connection failed"}`);
       });
     });
     if (opened !== undefined) throw new Unreachable(opened);
@@ -214,7 +214,7 @@ class Socket {
     try {
       this.ws.send(JSON.stringify(frame));
     } catch (error) {
-      throw new Unreachable(`the hub connection failed: ${(error as Error).message}`);
+      throw new Unreachable(`the workspace connection failed: ${(error as Error).message}`);
     }
   }
 
@@ -249,7 +249,7 @@ class Socket {
     })();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Unreachable(`the hub did not answer ${tool}`)), CALL_TIMEOUT);
+      timer = setTimeout(() => reject(new Unreachable(`the workspace did not answer ${tool}`)), CALL_TIMEOUT);
     });
     try {
       return await Promise.race([answer, timeout]);
@@ -275,7 +275,7 @@ async function projectRef(socket: Socket, given: string): Promise<any> {
   } catch (error) {
     why =
       projects.length === 0
-        ? `no bot ${given}: the hub has none yet`
+        ? `no bot ${given}: the workspace has none yet`
         : (error as Error).message.replace(/no order or (project|bot)/, "no bot");
   }
   if (named === undefined) throw new Refused(why);

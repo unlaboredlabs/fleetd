@@ -411,7 +411,7 @@ export class AndroidSessions {
       try {
         await this.host.call("browser_session", args, { threadId: entry.thread, cwd: entry.cwd });
       } catch (e) {
-        console.warn(`device ${entry.id}: not reported to the hub: ${(e as Error).message}`);
+        console.warn(`device ${entry.id}: not reported to the workspace: ${(e as Error).message}`);
       }
     });
     return this.reports;

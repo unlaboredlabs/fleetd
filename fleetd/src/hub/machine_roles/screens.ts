@@ -298,7 +298,7 @@ async function screenOpen(
     void opening(hub, start.wait, start.start, input.pr, found);
     return {
       ...(w ? { waiting: asWait(w, all) } : {}),
-      next: "Its slot is yours. The hub reads the PR's build, starts the screen and installs it, then hands it to you: screen.wait events follow each step, and browser_sessions lists it under waits (its threadId names its session) until it is yours, or says why it failed.",
+      next: "Its slot is yours. The workspace reads the PR's build, starts the screen and installs it, then hands it to you: screen.wait events follow each step, and browser_sessions lists it under waits (its threadId names its session) until it is yours, or says why it failed.",
     };
   }
   if (start) {
@@ -364,7 +364,7 @@ async function screenEnd(hub: Hub, caller: Caller, input: { sessionId?: string; 
   if (session.state !== "live") return { session, next: "It has ended already." };
   await end(hub, session);
   const after = get(hub, id);
-  return { ...(after ? { session: after } : {}), next: "It closes on its machine; its recording goes to the hub." };
+  return { ...(after ? { session: after } : {}), next: "It closes on its machine; its recording goes to the workspace." };
 }
 
 /**

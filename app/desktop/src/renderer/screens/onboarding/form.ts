@@ -41,7 +41,7 @@ export type Action =
   | { type: "paired"; hubName: string }
   | { type: "linkChecked"; before: LinkHandlerStatus; after: LinkHandlerStatus };
 
-export const KEY_CREATE = "fleetd hub key create --human --name <device>";
+export const KEY_CREATE = "fleetd workspace key create --human --name <device>";
 
 /** The form a screen opens with. A link only fills it; nothing pairs until the person clicks Connect. */
 export const initialForm = (
@@ -56,11 +56,11 @@ export const initialForm = (
     key: "",
     useKey: link.useKey === true && link.code === undefined,
     busy: false,
-    status: linked ? "Check this is your hub, then connect." : null,
+    status: linked ? "Check this is your workspace, then connect." : null,
     setupHere: false,
     error:
       state.phase === "refused"
-        ? { code: "", message: state.message, fix: "Pair again with a code from `fleetd pair` on the hub, or use another key." }
+        ? { code: "", message: state.message, fix: "Pair again with a code from `fleetd pair` on the workspace, or use another key." }
         : null,
     notice: state.phase === "unpaired" ? (state.note ?? null) : null,
     firstRun: state.phase === "unpaired",
@@ -91,7 +91,7 @@ export const reduce = (form: Form, action: Action): Form => {
           ...form,
           hub: fill(appPair.hub),
           error,
-          status: "The code `fleetd init` left on this computer has expired. Run `fleetd pair` on the hub for a new one.",
+          status: "The code `fleetd init` left on this computer has expired. Run `fleetd pair` on the workspace for a new one.",
         };
       }
       if (form.firstRun) {
@@ -112,7 +112,7 @@ export const reduce = (form: Form, action: Action): Form => {
           hub,
           error,
           status:
-            "No hub answers on this computer. Enter your hub's address and a code from `fleetd pair` run there, or set one up here with `fleetd init`.",
+            "No workspace answers on this computer. Enter your workspace's address and a code from `fleetd pair` run there, or set one up here with `fleetd init`.",
         };
       }
       const fit = protocolFit(probe.protocol);
@@ -152,10 +152,10 @@ export const reduce = (form: Form, action: Action): Form => {
  */
 export const missingField = (form: Pick<Form, "hub" | "code" | "key" | "useKey">): { field: "hub" | "code" | "key"; failure: PairFailure } | null => {
   if (form.hub.trim() === "") {
-    return { field: "hub", failure: { code: "", message: "Enter your hub's address.", fix: `For a hub on this computer, that's ${LOCAL_HUB}.` } };
+    return { field: "hub", failure: { code: "", message: "Enter your workspace's address.", fix: `For a workspace on this computer, that's ${LOCAL_HUB}.` } };
   }
   if (form.useKey && form.key.trim() === "") {
-    return { field: "key", failure: { code: "", message: "Paste a key for this device.", fix: `On the hub, run \`${KEY_CREATE}\` and paste the key it prints.` } };
+    return { field: "key", failure: { code: "", message: "Paste a key for this device.", fix: `On the workspace, run \`${KEY_CREATE}\` and paste the key it prints.` } };
   }
   if (!form.useKey && form.code.trim() === "") {
     // Where a code comes from is the hint just under the form.
@@ -178,19 +178,19 @@ export const formatCodeAt = (input: string, caret: number): { readonly value: st
   return { value, caret: Math.min(before + Math.max(0, Math.ceil(before / 4) - 1), value.length) };
 };
 
-const found = (hub: string): string => `Found your hub at ${hub}. Enter the code from \`fleetd pair\` to connect.`;
+const found = (hub: string): string => `Found your workspace at ${hub}. Enter the code from \`fleetd pair\` to connect.`;
 
 /** A hub this app can't talk to, in words, with the side that needs updating. */
 export const mismatchFailure = (fit: "hub-older" | "app-older", hub: string): PairFailure =>
   fit === "hub-older"
     ? {
         code: "hub_too_old",
-        message: `The hub at ${hub} runs an older fleetd than this app, so they can't work together.`,
-        fix: "Update the hub: run `fleetd update` on it, then connect again.",
+        message: `The workspace at ${hub} runs an older fleetd than this app, so they can't work together.`,
+        fix: "Update the workspace: run `fleetd update` on it, then connect again.",
       }
     : {
         code: "app_too_old",
-        message: `This app is older than the hub at ${hub}, so they can't work together.`,
+        message: `This app is older than the workspace at ${hub}, so they can't work together.`,
         fix: "Update the app: choose Check for Updates… (in the fleetd menu on macOS, the Help menu on Linux), or run `fleetd update` on this computer.",
       };
 
@@ -231,5 +231,5 @@ export const sentence = (text: string): string => (/[.?!…]$/u.test(text.trim()
 export const linkNote = (before: LinkHandlerStatus, after: LinkHandlerStatus): string | null => {
   if (!after.packaged) return "This development build doesn't open fleetd:// links. Type the code from `fleetd pair` instead.";
   if (!after.handler) return "Another app opens fleetd:// links. Type the code from `fleetd pair` instead.";
-  return before.handler ? null : "fleetd:// links open this app now; another app had them. Open a new link from `fleetd pair` on the hub.";
+  return before.handler ? null : "fleetd:// links open this app now; another app had them. Open a new link from `fleetd pair` on the workspace.";
 };

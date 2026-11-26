@@ -76,7 +76,7 @@ export class ReadCounts {
       const output = await this.run(["-tinHO", "state", "established", "sport", "=", `:${local}`]);
       if (output === undefined) {
         this.usable = false;
-        console.warn("hub http: ss can't read connections' byte counts here, so node links time silence by frames");
+        console.warn("workspace http: ss can't read connections' byte counts here, so node links time silence by frames");
         return undefined;
       }
       for (const [key, bytes] of parseSs(output)) counts.set(`${local} ${key}`, bytes);

@@ -311,7 +311,7 @@ export class NodeStore {
         startMs: Math.max(0, dropped.first),
         endMs: Math.max(0, dropped.last, dropped.first),
         status: "incomplete",
-        extra: { count: dropped.n, reason: "the node's span outbox was full while the hub was away" },
+        extra: { count: dropped.n, reason: "the node's span outbox was full while the workspace was away" },
       };
       this.#openGap = Number(this.db.query("INSERT INTO spans (session_id, at_ms, json) VALUES (?, ?, ?)").run(dropped.session, nowMs, JSON.stringify(gap)).lastInsertRowid);
       console.warn(`${new Date().toISOString()} WARN span outbox full: dropped the oldest spans {"dropped":${dropped.n}}`);

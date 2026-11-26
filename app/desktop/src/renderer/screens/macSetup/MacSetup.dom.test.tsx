@@ -83,7 +83,7 @@ afterEach(() => {
 });
 
 const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
-const titles = ["download fleetd 0.9.0, the hub's own", "check it against the release's checksums", "put it in place", "join the hub and start the node in this login"];
+const titles = ["download fleetd 0.9.0, the workspace's own", "check it against the release's checksums", "put it in place", "join the workspace and start the node in this login"];
 const steps = (at: number, last: JoinStep["state"] = "running"): JoinStep[] =>
   titles.map((title, i) => ({ title, state: i < at ? "done" : i === at ? last : "planned" }));
 const report = (join: MacJoin) =>
@@ -296,13 +296,13 @@ it("an app older than the hub says so in one line, with its Update button", asyn
   redeem.mockImplementationOnce(() =>
     Promise.resolve({
       ok: false,
-      failure: { message: "This app is older than your hub, so it can't set up this Mac.", fix: "Update the app, then type a new code from Add machine › A Mac for agents.", updateApp: true },
+      failure: { message: "This app is older than your workspace, so it can't set up this Mac.", fix: "Update the app, then type a new code from Add machine › A Mac for agents.", updateApp: true },
     }),
   );
   await open();
   await typeCode();
   const alert = host.querySelector("[role='alert']");
-  expect(alert?.textContent).toContain("This app is older than your hub");
+  expect(alert?.textContent).toContain("This app is older than your workspace");
   expect(host.textContent.toLowerCase()).not.toContain("mismatch");
   await act(async () => {
     button("Update the app")?.click();
@@ -321,24 +321,24 @@ const behindOn = async (who: "admin" | "member" | "unknown") => {
 it("a hub older than this Mac's build: an admin signed in here updates it from the window", async () => {
   await behindOn("admin");
   const line = host.querySelector("[data-hub-behind]");
-  expect(line?.textContent).toContain("Your hub runs an older fleetd than this Mac.");
+  expect(line?.textContent).toContain("Your workspace runs an older fleetd than this Mac.");
   expect(line?.textContent).not.toMatch(/mismatch|0\.0\.0/u);
   await act(async () => {
-    button("Update the hub")?.click();
+    button("Update the workspace")?.click();
     await Promise.resolve();
   });
   await settle();
   expect(updateHub).toHaveBeenCalledWith("http://devbox.example.ts.net:4790");
-  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("Your hub is updating.");
-  expect(button("Update the hub")).toBeUndefined();
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("Your workspace is updating.");
+  expect(button("Update the workspace")).toBeUndefined();
 });
 
 it("a hub older than this Mac's build: anyone else is told who updates it, and where", async () => {
   await behindOn("member");
-  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("ask an admin of the hub to press Update in Settings › Hub › Machines › Updates");
-  expect(button("Update the hub")).toBeUndefined();
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("ask an admin of the workspace to press Update in Settings › Workspace › Machines › Updates");
+  expect(button("Update the workspace")).toBeUndefined();
   act(() => root.unmount());
   root = createRoot(host);
   await behindOn("unknown");
-  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("On your main machine, open Settings › Hub › Machines › Updates and press Update.");
+  expect(host.querySelector("[data-hub-behind]")?.textContent).toContain("On your main machine, open Settings › Workspace › Machines › Updates and press Update.");
 });

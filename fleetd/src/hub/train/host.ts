@@ -120,11 +120,11 @@ export const HOST_DEFAULTS = {
   githubRepos: (): [string, ProjectRef][] => [],
   repoProjects: (): ProjectRef[] => [],
   nodeRun: async (): Promise<NodeRun> => {
-    throw new Error("this hub runs nothing on its nodes for the train");
+    throw new Error("this workspace runs nothing on its nodes for the train");
   },
   branchPrefix: async (): Promise<string | undefined> => "fleetd/",
   openOrder: async (): Promise<string> => {
-    throw new Error("this hub opens no orders");
+    throw new Error("this workspace opens no orders");
   },
   landingsWatched: () => false,
   time: (): TimeSink | undefined => undefined,

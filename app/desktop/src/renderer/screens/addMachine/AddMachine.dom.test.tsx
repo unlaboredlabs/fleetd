@@ -255,8 +255,8 @@ it("offers this computer, a machine the hub can reach, and any other machine", a
   await render();
   expect(state()).toBe("choose");
   expect(host.textContent).toContain("This computer");
-  expect(host.textContent).toContain("laptop: installs fleetd here and joins the hub.");
-  expect(host.textContent).toContain("A machine the hub can reach");
+  expect(host.textContent).toContain("laptop: installs fleetd here and joins the workspace.");
+  expect(host.textContent).toContain("A machine the workspace can reach");
   expect(host.textContent).toContain("Any other machine");
   expect(button("Get the line…")?.disabled).toBe(false);
 });
@@ -274,12 +274,12 @@ it("offers no SSH way on fleetd cloud, says how machines join there, and adds th
   calls = [];
   await render();
   expect(state()).toBe("choose");
-  expect(host.textContent).not.toContain("A machine the hub can reach");
+  expect(host.textContent).not.toContain("A machine the workspace can reach");
   expect(button("Choose…")).toBeUndefined();
   expect(host.textContent).toContain("Another machine");
   expect(host.textContent).toContain("On fleetd cloud, machines join this way, not over SSH.");
   // This computer joins with a line through main, as on any hub that isn't on this computer.
-  expect(host.textContent).toContain("laptop: installs fleetd here and joins the hub.");
+  expect(host.textContent).toContain("laptop: installs fleetd here and joins the workspace.");
   await click("Add this computer");
   expect(joinHere).toHaveBeenCalledWith("laptop");
   expect(calls.filter((c) => c.tool.startsWith("machine_add") || c.tool === "machine_hosts" || c.tool === "setup_list")).toEqual([]);
@@ -504,7 +504,7 @@ it("adds the hub's own machine through the hub, and any other computer through m
   hostName = "devbox";
   computer = { kind: "hub", fingerprint: HUB_FP };
   await render();
-  expect(host.textContent).toContain("devbox is a machine of this hub already");
+  expect(host.textContent).toContain("devbox is a machine of this workspace already");
   await click("Repair");
   expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
   expect(joinHere).not.toHaveBeenCalled();
@@ -525,7 +525,7 @@ it("adds the hub's own machine through the hub, and any other computer through m
         machineId: "laptop",
         state: "failed",
         steps: [
-          { title: "get a one-time code from the hub", state: "done" },
+          { title: "get a one-time code from the workspace", state: "done" },
           { title: "download fleetd-linux-x64", state: "done" },
           { title: "check it against the release's checksum", state: "failed" },
           { title: "put it in place", state: "planned" },
@@ -547,7 +547,7 @@ it("adds the hub's machine through the hub even when its name doesn't match, and
   hostName = "studio-2";
   computer = { kind: "hub", fingerprint: HUB_FP };
   await render();
-  expect(host.textContent).toContain("devbox is a machine of this hub already");
+  expect(host.textContent).toContain("devbox is a machine of this workspace already");
   await click("Repair");
   expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
   expect(joinHere).not.toHaveBeenCalled();
@@ -558,7 +558,7 @@ it("adds the hub's machine through the hub even when its name doesn't match, and
   runs = [];
   computer = { kind: "node", machineId: "studio", hub: "http://devbox:4790" };
   await render();
-  expect(host.textContent).toContain("This computer is already part of another hub (http://devbox:4790) as studio.");
+  expect(host.textContent).toContain("This computer is already part of another workspace (http://devbox:4790) as studio.");
   expect(button("Add this computer")).toBeUndefined();
   expect(button("Repair")).toBeUndefined();
   expect(joinHere).not.toHaveBeenCalled();
@@ -567,7 +567,7 @@ it("adds the hub's machine through the hub even when its name doesn't match, and
 it("adds nothing on a computer that runs a different hub", async () => {
   computer = { kind: "hub", fingerprint: "b".repeat(64) };
   await render();
-  expect(host.textContent).toContain("This computer runs a different hub, so it can't be one of this hub's machines.");
+  expect(host.textContent).toContain("This computer runs a different workspace, so it can't be one of this workspace's machines.");
   expect(button("Add this computer")).toBeUndefined();
   expect(button("Repair")).toBeUndefined();
   expect(calls.some((c) => c.tool === "machine_add")).toBe(false);
@@ -608,7 +608,7 @@ it("decides nothing about this computer before the hub says which computer it ru
   await settle();
   await settle();
   // It is the hub's own computer: the hub repairs it, nothing is joined.
-  expect(host.textContent).toContain("devbox is a machine of this hub already");
+  expect(host.textContent).toContain("devbox is a machine of this workspace already");
   await click("Repair");
   expect(calls.find((c) => c.tool === "machine_add")?.input).toEqual({ local: true });
   expect(joinHere).not.toHaveBeenCalled();
@@ -641,7 +641,7 @@ it("shows A Mac for agents' 6-digit code, made once, with the hub's address, and
   await click("Set up…");
   expect(state()).toBe("mac");
   expect(host.querySelector("[aria-label='Setup code']")?.textContent).toContain("482 913");
-  expect(host.textContent).toContain("Should the Mac ask for the hub: http://devbox.example.ts.net:4790");
+  expect(host.textContent).toContain("Should the Mac ask for the workspace: http://devbox.example.ts.net:4790");
   expect(host.textContent).toContain("Waiting for the Mac…");
   expect(calls.filter((c) => c.tool === "mac_code_create").map((c) => c.input)).toEqual([{ hubUrl: "devbox:4790" }]);
   // Frames and re-renders mint nothing more: one code per open view.

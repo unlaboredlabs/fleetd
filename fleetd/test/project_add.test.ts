@@ -423,7 +423,7 @@ test("removing a bot checks its gates, then removes it and the checkouts only it
   ]);
 });
 
-test("a bot of a machine the hub no longer has is forgotten in the hub, and says so", async () => {
+test("a bot of a machine the workspace no longer has is forgotten in the workspace, and says so", async () => {
   const k = kit();
   const r = { machineId: "gone", projectId: "app" };
   expect(await k.refused(operate, "project_remove", r)).toBe("not_found");
@@ -431,7 +431,7 @@ test("a bot of a machine the hub no longer has is forgotten in the hub, and says
     { machineId: "gone", projectId: "app", title: "App", workspaceRoot: "/w/app", lastActivityAt: AT, threads: { running: 0, idle: 0, failed: 0, waiting: 0 } } as never,
   ]);
   const out = await k.ok(operate, "project_remove", r);
-  expect(out.next).toBe("gone is no longer in the hub, so no machine held its files: fleetd forgot the bot, its chat and its settings.");
+  expect(out.next).toBe("gone is no longer in the workspace, so no machine held its files: fleetd forgot the bot, its chat and its settings.");
   expect(store(k.hub).projectGet(r)).toBeUndefined();
   expect(events(k.hub).page(0, ["project.removed"]).events.map((e) => [e.summary, e.data])).toEqual([
     ['Bot "App" on gone was forgotten: its machine was removed', { title: "App" }],
@@ -448,7 +448,7 @@ test("an order's variables: refused for a closed order, recorded, and dropped on
   expect(refusal(k.hub, r, w.workstreamId)).toBeUndefined();
   const s = { project: r, orderId: w.workstreamId, name: "TOKEN", fingerprint: "fp1", bytes: 12, requestId: "q1" };
   expect(await saved(k.hub, s, AT)).toBeUndefined();
-  expect(await saved(k.hub, { ...s, name: "1bad" }, AT)).toBe(`1bad for ${w.workstreamId} is not a variable the hub can record`);
+  expect(await saved(k.hub, { ...s, name: "1bad" }, AT)).toBe(`1bad for ${w.workstreamId} is not a variable the workspace can record`);
   expect(orderEnvStore.list(k.hub.db.conn, r, w.workstreamId)).toEqual([{ name: "TOKEN", fingerprint: "fp1", bytes: 12, requestId: "q1", updatedAt: AT }]);
   // Open: kept.
   expect(await dropClosed(k.hub)).toBe(0);

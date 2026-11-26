@@ -71,7 +71,7 @@ describe("Copy Diagnostics", () => {
       [
         "fleetd 0.4.1 (Electron 44.9.0, Chromium 146.0.0.0)",
         "OS: darwin 25.1.0 arm64",
-        "Hub: lost, retrying",
+        "Workspace: lost, retrying",
         "Log: ~/Library/Logs/fleetd/app.log",
         "",
         "The log's last 50 lines:",

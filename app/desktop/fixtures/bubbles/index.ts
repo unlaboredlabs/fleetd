@@ -154,7 +154,7 @@ const AGENTS: Draft[] = [
 ];
 
 const agentCards = (base: Fixture): Fixture => {
-  const f = chat(base, "bubbles-agent", "Agent cards for a Monitor-woken reader no live list holds, and for a task the hub doesn't have.", AGENTS);
+  const f = chat(base, "bubbles-agent", "Agent cards for a Monitor-woken reader no live list holds, and for a task the workspace doesn't have.", AGENTS);
   const ref = firstProject(f);
   f.answer(
     "task_get",

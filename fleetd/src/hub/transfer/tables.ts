@@ -148,12 +148,12 @@ export const RETIRED: Record<string, string> = {
  * leaves it behind unopened, and says how many rows it left.
  */
 export const DROPPED: Record<string, string> = {
-  hub_links: "hub links are gone (W789): the links a bot kept to other hubs, their keys sealed",
+  hub_links: "workspace links are gone (W789): the links a bot kept to other workspaces, their keys sealed",
 };
 
 /** The tables import fills by itself, each with how. */
 export const REBUILT: Record<string, string> = {
-  chat_find: "the chats' search index, filled again from the messages while the hub runs",
+  chat_find: "the chats' search index, filled again from the messages while the workspace runs",
   chat_find_built: "how far the chats' search index is filled: set to fill it all again",
   chat_find_config: "part of the chats' search index",
   chat_find_content: "part of the chats' search index",
@@ -167,7 +167,7 @@ export const REBUILT: Record<string, string> = {
   decisions_fts_docsize: "part of the decisions' search index",
   decisions_fts_idx: "part of the decisions' search index",
   migrations_applied: "the manifest names the migrations the rows are at (`schema`); import runs the ones after them",
-  prompt_renames: "made by its migration, the same on every hub",
+  prompt_renames: "made by its migration, the same on every workspace",
 };
 
 /** The tables that stay behind, each with why. */
@@ -179,18 +179,18 @@ export const LEFT_OUT: Record<string, string> = {
   node_keys: "the machines' keys: each machine joins again",
   pair_codes: "open pairing and invite codes",
   push_devices: "the phones' push tokens, which belong to their sign-ins",
-  removed_node_keys: "the keys of machines the old hub removed: none of them links to the new one",
-  screen_waits: "a wait for a screen on one of the old hub's machines, minutes long",
+  removed_node_keys: "the keys of machines the old workspace removed: none of them links to the new one",
+  screen_waits: "a wait for a screen on one of the old workspace's machines, minutes long",
   session_places: "which machine's process hosts each screen session",
-  slot_claims: "the agent slots held on the old hub's machines; agents claim again",
-  vault_keys: "the old hub's root key ids; the new hub records its own",
+  slot_claims: "the agent slots held on the old workspace's machines; agents claim again",
+  vault_keys: "the old workspace's root key ids; the new workspace records its own",
 };
 
 /** Rows of a carried table that stay behind: the SQL that picks them, and why. */
 export const ROWS_LEFT_OUT: Record<string, { where: string; why: string }> = {
   vault_settings: {
     where: "key = 'recovery_saved_ms'",
-    why: "that the vault's recovery code was saved: the new hub's root key has a new code",
+    why: "that the vault's recovery code was saved: the new workspace's root key has a new code",
   },
 };
 
@@ -294,10 +294,10 @@ export const FILES_LEFT_OUT: Record<string, string> = {
   "attachments/uploads": "the pieces of uploads that hadn't finished",
   "browser/<session> of a session not recorded": "a recording still being made or uploaded, lost or expired",
   builds: "the builds of pull requests, made again when asked for",
-  "cli.key": "the key of the fleetd CLI on the hub machine: the new hub's CLI has its own",
-  "hub.log": "the hub's log",
-  "node-box-key.pem": "the hub's own box key: it never leaves, and the new hub has its own",
+  "cli.key": "the key of the fleetd CLI on the workspace's machine: the new workspace's CLI has its own",
+  "hub.log": "the workspace's log",
+  "node-box-key.pem": "the workspace's own box key: it never leaves, and the new workspace has its own",
   "setup.json": "this install's listen address, URL and SSH hosts",
   update: "the updater's downloads",
-  "vault/root.key": "the vault's root key: it never leaves, and the new hub has its own",
+  "vault/root.key": "the vault's root key: it never leaves, and the new workspace has its own",
 };

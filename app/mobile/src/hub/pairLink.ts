@@ -8,9 +8,9 @@ import { CODE_SHAPE, hubOrigin, normalizeCode, type PairFailure } from "../../..
 export type PairLink = { readonly ok: true; readonly hub: string; readonly code: string } | { readonly ok: false; readonly failure: PairFailure };
 
 /** Where a fleetd cloud team's code comes from, said wherever the phone asks for one beside `fleetd pair`. */
-export const CLOUD_CODE = "On fleetd cloud, choose Pair a phone in the web app's Settings › Hubs & devices.";
+export const CLOUD_CODE = "On fleetd cloud, choose Pair a phone in the web app's Settings › Workspaces & devices.";
 
-const SCAN_AGAIN = `Show a new pairing code on the hub (\`fleetd pair\`, or the desktop app) and scan it again, or enter the code by hand. ${CLOUD_CODE}`;
+const SCAN_AGAIN = `Show a new pairing code from your workspace (\`fleetd pair\`, or the desktop app) and scan it again, or enter the code by hand. ${CLOUD_CODE}`;
 
 const bad = (message: string): PairLink => ({ ok: false, failure: { code: "", message, fix: SCAN_AGAIN } });
 
@@ -33,7 +33,7 @@ export const parsePairLink = (text: string): PairLink | null => {
   }
   const hub = params.get("hub")?.trim() ?? "";
   const code = params.get("code")?.trim() ?? "";
-  if (hub === "" || code === "") return bad("This pairing QR code has no hub address or no code.");
+  if (hub === "" || code === "") return bad("This pairing QR code has no workspace address or no code.");
   const origin = hubOrigin(hub);
   if (!origin.ok) return { ok: false, failure: origin.failure };
   const normal = normalizeCode(code);
@@ -81,7 +81,7 @@ export type LinkStep =
 export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWith: string | null, cloudDomain: string | null = null): LinkStep => {
   const link = parsePairLink(text);
   if (link === null) return { t: "ignore" };
-  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another hub, disconnect under Settings first, then scan its code again." };
+  if (pairedWith !== null) return { t: "paired", title: `Connected to ${pairedWith}`, message: "To pair with another workspace, disconnect under Settings first, then scan its code again." };
   if (!link.ok) return { t: "refuse", failure: link.failure };
   if (from === "scanner") return { t: "pair", hub: link.hub, code: link.code };
   return {
@@ -91,6 +91,6 @@ export const pairLinkStep = (text: string, from: "outside" | "scanner", pairedWi
     title: `Connect to ${link.hub.replace(/^https?:\/\//u, "")}?`,
     message: inDomain(link.hub, cloudDomain)
       ? `${CLOUD_TEAM_LINK} This phone then gets its notifications.`
-      : `This phone pairs with the hub at ${link.hub}, which then sees it and sends it notifications. Connect only to a hub you or your team run.`,
+      : `This phone pairs with the workspace at ${link.hub}, which then sees it and sends it notifications. Connect only to a workspace you or your team run.`,
   };
 };

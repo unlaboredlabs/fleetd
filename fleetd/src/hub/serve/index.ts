@@ -1,4 +1,4 @@
-// `fleetd hub start`: parses its flags, opens the database in `--home`, starts
+// `fleetd workspace start` (`hub start` before): parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
 import { isLiveHubHome, liveHubRefusal } from "../../cli/common.ts";
 import { refreshOwnUnit } from "../../cli/setup/units.ts";
@@ -16,11 +16,7 @@ import { HubDb } from "../store/db.ts";
 import { MigrationFailed } from "../store/migrations.ts";
 import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
-
-export const HUB_START_USAGE = `  hub start [--home <dir>] [--listen <host:port>]
-             run the hub (default home ~/.fleetd/hub, listen 127.0.0.1:4790,
-             writes to an offline machine wait 24 h)
-`;
+import { WORKSPACE_USAGE } from "../../cli/usages.ts";
 
 export const DEFAULT_LISTEN: Listen = { host: "127.0.0.1", port: 4790 };
 
@@ -95,8 +91,8 @@ export function build(home: string, listen: Listen): { hub: Hub; tools: Registry
   for (const d of db.drift) {
     console.warn(
       d.kind === "changed"
-        ? `hub db: migration ${d.name} changed after it ran; it doesn't run again`
-        : `hub db: migration ${d.name} was run by a newer fleetd`,
+        ? `workspace db: migration ${d.name} changed after it ran; it doesn't run again`
+        : `workspace db: migration ${d.name} was run by a newer fleetd`,
     );
   }
   const url = configuredUrl(home);
@@ -136,13 +132,13 @@ export function stampLogs(): void {
 export async function hubStart(argv: string[]): Promise<number> {
   const options = parseHubArgs(argv);
   if (typeof options === "string") {
-    process.stderr.write(`fleetd: ${options}\n\nusage:\n${HUB_START_USAGE}`);
+    process.stderr.write(`fleetd: ${options}\n\nusage:\n${WORKSPACE_USAGE}`);
     return 2;
   }
   const home = options.home === undefined ? join(fleetdDir(), "hub") : expandHome(options.home);
   // A second hub on the live one's home from an agent's session would migrate and run its database beside it.
   if (isLiveHubHome(home)) {
-    process.stderr.write(`fleetd: ${liveHubRefusal("Starting a hub on the live hub's home")}\n`);
+    process.stderr.write(`fleetd: ${liveHubRefusal("Starting a workspace on the live workspace's home")}\n`);
     return 1;
   }
   stampLogs();
@@ -159,15 +155,15 @@ export async function hubStart(argv: string[]): Promise<number> {
   const { hub, tools } = built;
   const server = serve(hub, tools);
   // On stderr as the Rust hub's, which what starts a hub reads it from, and an INFO line all the same.
-  console.error(`${new Date().toISOString()} INFO fleetd hub: home ${home}, listening on ${options.listen.host}:${server.port}`);
+  console.error(`${new Date().toISOString()} INFO fleetd workspace: home ${home}, listening on ${options.listen.host}:${server.port}`);
   startAll(hub);
   // From here on one task's failure never takes the hub down, as a tokio task's panic doesn't: it is logged and the
   // hub carries on. A failure to start (above) still ends it.
-  process.on("unhandledRejection", (reason) => console.error("fleetd hub: a task failed:", reason));
-  process.on("uncaughtException", (error) => console.error("fleetd hub: a task failed:", error));
+  process.on("unhandledRejection", (reason) => console.error("fleetd workspace: a task failed:", reason));
+  process.on("uncaughtException", (error) => console.error("fleetd workspace: a task failed:", error));
   // The read worker is a separate entry point of the compiled binary: a build that left it out says so at start,
   // not at the first long read.
-  hub.db.read("SELECT 1").catch((error: Error) => console.error(`fleetd hub: ${error.message}`));
+  hub.db.read("SELECT 1").catch((error: Error) => console.error(`fleetd workspace: ${error.message}`));
   await new Promise<void>((resolve) => {
     for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => resolve());
   });

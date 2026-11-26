@@ -27,7 +27,7 @@ const CANARY = "canary-7Qx-not-a-real-secret";
 const AT = "2026-11-09T10:00:00.000Z";
 const base = { canEdit: true, canReveal: true, createdMs: 0, updatedMs: 0, updatedBy: "human:laptop", version: 1 };
 const amazon: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000001", kind: "login", scope: "hub", label: "Amazon", meta: { source: { kind: "typed" }, sites: ["amazon.com"], fields: ["username", "password"] } };
-const teamCard: VaultItemSummary = { ...base, canEdit: false, canReveal: false, itemId: "V00000000000000000000000000000002", kind: "card", scope: "hub", label: "Team Visa", meta: { source: { kind: "typed" }, brand: "visa", last4: "4242" } };
+const teamCard: VaultItemSummary = { ...base, canEdit: false, canReveal: false, itemId: "V00000000000000000000000000000002", kind: "card", scope: "hub", label: "Workspace Visa", meta: { source: { kind: "typed" }, brand: "visa", last4: "4242" } };
 /** Set aside: Sam's own from before the team vault, never shared. */
 const oldCard: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000004", kind: "card", scope: "person", label: "Sam's Amex", meta: { source: { kind: "typed" }, brand: "amex", last4: "0005" } };
 const oldEnv: VaultItemSummary = { ...base, itemId: "V00000000000000000000000000000005", kind: "env", scope: "person", label: "OPENAI_KEY", envName: "OPENAI_KEY", meta: { source: { kind: "typed" }, secret: true } };
@@ -110,7 +110,7 @@ const render = async (hash: string, features: string[] = TEAM, page?: ReactNode,
       if (tool === "project_purchases") return Promise.resolve({ ok: true, output: { purchases: [], ...(card === undefined ? {} : { card }) } });
       if (tool === "project_card_set") {
         const ref = (input as { card?: string }).card;
-        card = ref === undefined ? undefined : { ref, label: "Team Visa", brand: "visa", last4: "4242" };
+        card = ref === undefined ? undefined : { ref, label: "Workspace Visa", brand: "visa", last4: "4242" };
         return Promise.resolve({ ok: true, output: card === undefined ? {} : { card } });
       }
       return Promise.resolve({ ok: true, output: {} });
@@ -186,7 +186,7 @@ const fieldByLabel = (label: string): HTMLInputElement | HTMLTextAreaElement => 
 it("shows no Vault row on a hub that doesn't serve it, and one under You where it does", async () => {
   await render("#/settings/vault", []);
   expect([...host.querySelectorAll("nav button")].map((b) => b.textContent)).not.toContain("Vault");
-  expect(host.textContent).toContain("This hub has no vault yet.");
+  expect(host.textContent).toContain("This workspace has no vault yet.");
   act(() => root.unmount());
   root = createRoot(host);
   await render("#/settings/vault");
@@ -195,7 +195,7 @@ it("shows no Vault row on a hub that doesn't serve it, and one under You where i
 
 it("lists the team's logins, cards and addresses with no tag, and the bot's variables on its own tab", async () => {
   await render("#/settings/vault");
-  expect(rows()).toEqual(["Amazonamazon.com", "Team VisaVisa ••4242"]);
+  expect(rows()).toEqual(["Amazonamazon.com", "Workspace VisaVisa ••4242"]);
   expect(host.textContent).not.toContain("Everyone");
   expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
   act(() => root.unmount());
@@ -228,7 +228,7 @@ it("shows an item's fields as dots until Show, through main, and hides them when
 
 it("says an item only its creator or an admin may show or change, instead of greying it out", async () => {
   await render("#/settings/vault");
-  await openRow("Team Visa");
+  await openRow("Workspace Visa");
   expect(panel()?.textContent).toContain("Only its creator or an admin can show it. Agents still fill it.");
   expect(panel()?.textContent).toContain("Only its creator or an admin can change or delete it.");
   const words = [...(panel()?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
@@ -333,24 +333,24 @@ it("picks the bot's card from the vault cards its work can use, kept as vault:<i
   });
   await settle();
   const options = [...document.querySelectorAll<HTMLElement>("[role='option']")];
-  expect(options.map((o) => o.textContent)).toEqual(["Team Visa · Visa ••4242", "No card"]);
+  expect(options.map((o) => o.textContent)).toEqual(["Workspace Visa · Visa ••4242", "No card"]);
   const team = options[0];
   if (team === undefined) throw new Error("no option");
   await click(team);
   expect(calls.filter((c) => c.tool === "project_card_set").map((c) => c.input)).toEqual([{ machineId: "devbox", projectId: "shop", card: `vault:${teamCard.itemId}` }]);
-  expect(host.textContent).toContain("Pays with Team Visa");
+  expect(host.textContent).toContain("Pays with Workspace Visa");
 });
 
 it("shows the items set aside for the person under the list, each to move or delete", async () => {
   team = [amazon, teamCard, oldCard, oldEnv];
   await render("#/settings/vault");
-  expect(rows()).toEqual(["Amazonamazon.com", "Team VisaVisa ••4242"]);
+  expect(rows()).toEqual(["Amazonamazon.com", "Workspace VisaVisa ••4242"]);
   const aside = host.querySelector<HTMLElement>("[data-vault-set-aside]");
   if (aside === null) throw new Error("no set-aside section");
-  expect(aside.textContent).toContain("Yours from before the team vault. Nothing uses them until you move them.");
+  expect(aside.textContent).toContain("Yours from before the workspace vault. Nothing uses them until you move them.");
   expect([...aside.querySelectorAll("[data-vault-row]")].map((r) => r.getAttribute("aria-label"))).toEqual(["Sam's Amex", "OPENAI_KEY"]);
   // A card goes to the team vault as it is.
-  await click(button("Move to team vault", aside));
+  await click(button("Move to workspace vault", aside));
   expect(calls.filter((c) => c.tool === "vault_move").map((c) => c.input)).toEqual([{ itemId: oldCard.itemId }]);
   // A variable goes to a project, picked first: Add stays off until one is.
   await click(button("Add to a bot…", aside));
@@ -375,7 +375,7 @@ it("shows the items set aside for the person under the list, each to move or del
 it("lists an older hub's items as one list, the person's own among them, with no set-aside section", async () => {
   team = [amazon, teamCard, oldCard];
   await render("#/settings/vault", ["vault"]);
-  expect(rows()).toEqual(["Amazonamazon.com", "Sam's AmexAmex ••0005", "Team VisaVisa ••4242"]);
+  expect(rows()).toEqual(["Amazonamazon.com", "Sam's AmexAmex ••0005", "Workspace VisaVisa ••4242"]);
   expect(host.querySelector("[data-vault-set-aside]")).toBeNull();
 });
 

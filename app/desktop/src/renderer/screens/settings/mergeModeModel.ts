@@ -19,7 +19,7 @@ export const sharedText = (shared: MergeShared): string =>
 
 /** The fix after the up-to-date line where fleetd can't turn it off, and where the person can't. */
 export const OFF_ON_GITHUB = 'An admin of the repo turns off "Require branches to be up to date" on GitHub.';
-export const ASK_ADMIN = "Ask a hub admin to turn it off.";
+export const ASK_ADMIN = "Ask a workspace admin to turn it off.";
 
 /** The line under How it merges for an up-to-date rule: what it means, then the fix unless an admin has Turn off. */
 export const upToDateText = (rule: { line: string; canTurnOff: boolean }, admin: boolean): string =>

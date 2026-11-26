@@ -142,9 +142,9 @@ function LoadProblem({ t }: { t: TextState }) {
 /** Settings › Hub › Every project: the instructions every project's agents get, before a project's own. */
 export function HubInstructions() {
   const t = useText(null, "global");
-  if (!t.live) return <GroupNote>Connect to a hub to see and change this.</GroupNote>;
+  if (!t.live) return <GroupNote>Connect to a workspace to see and change this.</GroupNote>;
   return (
-    <SettingsRow title="Every bot" hint="Added to every agent's first message on this hub, the lead's too, before a bot's own.">
+    <SettingsRow title="Every bot" hint="Added to every agent's first message on this workspace, the lead's too, before a bot's own.">
       <LoadProblem t={t} />
       <Editor t={t} label="Instructions for every bot" placeholder="e.g. Keep pull requests under 400 changed lines." whose="for every bot" />
     </SettingsRow>
@@ -172,7 +172,7 @@ export function Instructions({ route }: { route: SettingsRoute }) {
         <PageHead title="Instructions & memory" />
         {!t.live ? (
           <SettingsSection title="Instructions" reveal="instructions" hint="What every agent of this bot is told, the lead too.">
-            <GroupNote>Not connected. Connect to a hub to add instructions for its agents.</GroupNote>
+            <GroupNote>Not connected. Connect to a workspace to add instructions for its agents.</GroupNote>
           </SettingsSection>
         ) : (
           <SettingsSection title="Instructions" reveal="instructions" hint="What every agent of this bot is told, the lead too." bare>

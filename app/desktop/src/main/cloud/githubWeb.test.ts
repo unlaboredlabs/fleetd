@@ -51,7 +51,7 @@ describe("the team's repositories", () => {
       await githubRepos(
         answering(404, {
           code: "not_found",
-          message: "fleetd's App isn't installed on this team.",
+          message: "fleetd's App isn't installed on this workspace.",
           fix: "Connect GitHub.",
         }),
         team,
@@ -61,7 +61,7 @@ describe("the team's repositories", () => {
       none: true,
       failure: {
         code: "not_found",
-        message: "fleetd's App isn't installed on this team.",
+        message: "fleetd's App isn't installed on this workspace.",
         fix: "Connect GitHub.",
       },
     });

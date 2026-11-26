@@ -180,34 +180,34 @@ const chatFixtures = (copy: (name: SharedName, note: string) => Fixture): Array<
 
 /** Every shared fixture, by name, freshly built. */
 export const buildShared = (): Map<SharedName, Fixture> => {
-  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab hub mid-order: one order fanned out to writers and a reviewer per PR, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
+  const typical = withChat(Fixture.from(recorded("lab-demo"), "typical", "A real lab workspace mid-order: one order fanned out to writers and a reviewer per PR, three PRs in the train, live lanes, prompts and time."), undefined, { leadWorking: true });
   // The recording's later live frames settle lanes its board answer (read a moment earlier) still shows working; the
   // app would refetch the board, a fixture can't. Its full frame alone agrees with the board.
   typical.live = typical.live.filter((frame) => frame["full"] === true);
   const copy = (name: SharedName, note: string) => Fixture.from(typical, name, note);
   const shared: Array<Fixture> = [
-    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab hub before anything happened: machines online, no bots, orders, chats or time."), []),
+    answerRows(Fixture.from(recorded("lab-start"), "empty", "A real lab workspace before anything happened: machines online, no bots, orders, chats or time."), []),
     typical,
     longText(copy("long-text", "Every title ~120 characters, a ~250-character judge criterion, long branches, paths, prose and prompt keys.")),
     manyPrompts(copy("many-prompts", "72 prompts with long dotted ids, every other one overridden for the bot.")),
     manyAgents(copy("many-agents", "One order with 12 working and 14 finished agents (26 lanes), and a board of six orders.")),
     (() => {
-      const f = new Fixture("hub-unreachable", "The saved hub doesn't answer; the app retries.");
+      const f = new Fixture("hub-unreachable", "The saved workspace doesn't answer; the app retries.");
       // The words the real client gives a refused connect (src/main/hub/explain.ts).
       f.state = { phase: "retrying", hub: HUB, ...explainLoss(HUB, 1006, "", { code: "ECONNREFUSED", message: "connect ECONNREFUSED" }, false), retryAt: Date.parse(f.now) + 8000 };
       return f;
     })(),
     (() => {
-      const f = new Fixture("pairing-failed", "The hub refused the saved key, and a new pairing code has expired.");
-      f.state = { phase: "refused", hub: HUB, message: "The hub refused this app's key: it was revoked or belongs to another hub." };
-      f.connect = { ok: false, message: "That pairing code has expired. Make a new one on the hub with `fleetd pair` and paste it again." };
+      const f = new Fixture("pairing-failed", "The workspace refused the saved key, and a new pairing code has expired.");
+      f.state = { phase: "refused", hub: HUB, message: "The workspace refused this app's key: it was revoked or belongs to another workspace." };
+      f.connect = { ok: false, message: "That pairing code has expired. Make a new one on the workspace with `fleetd pair` and paste it again." };
       // A code typed into the form meets the same expired code at the hub.
-      f.pair = { healthz: { ok: true, version: "0.5.0", protocol: PROTOCOL }, redeem: { status: 410, body: { code: "pair_code_expired", message: "That pairing code has expired.", fix: "Run `fleetd pair` on the hub for a new code." } } };
+      f.pair = { healthz: { ok: true, version: "0.5.0", protocol: PROTOCOL }, redeem: { status: 410, body: { code: "pair_code_expired", message: "That pairing code has expired.", fix: "Run `fleetd pair` on the workspace for a new code." } } };
       return f;
     })(),
     (() => {
-      const f = copy("node-too-old", "buildbox runs a node too old for the hub: it shows degraded, and finding, inspecting or cloning repos fails.");
-      const old = (m: JsonObject) => (m["machineId"] === "buildbox" ? { ...m, status: "degraded", nodeVersion: "0.3.1", degradedReason: "node 0.3.1 is older than this hub needs (0.4.0)" } : m);
+      const f = copy("node-too-old", "buildbox runs a node too old for the workspace: it shows degraded, and finding, inspecting or cloning repos fails.");
+      const old = (m: JsonObject) => (m["machineId"] === "buildbox" ? { ...m, status: "degraded", nodeVersion: "0.3.1", degradedReason: "node 0.3.1 is older than this workspace needs (0.4.0)" } : m);
       if (f.snapshot !== undefined) f.snapshot["machines"] = arr(f.snapshot["machines"]).map((m) => (isObject(m) ? old(m) : m));
       for (const frame of f.live) if (Array.isArray(frame["machines"])) frame["machines"] = frame["machines"].map((m) => (isObject(m) ? (m["machineId"] === "buildbox" ? { ...m, status: "degraded" } : m) : m));
       f.drop("project_discover");

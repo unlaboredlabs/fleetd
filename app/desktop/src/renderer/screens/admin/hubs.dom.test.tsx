@@ -379,5 +379,5 @@ it("settles with hubs from before hub_info: the Hub group shows once, and nobody
   expect(calls("hub", "hub_info").length).toBe(asked);
   expect(asked).toBeLessThan(10);
   const groups = [...host.querySelectorAll("nav[aria-label='Settings'] [role='group']")].map((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent);
-  expect(groups).toContain("Hub");
+  expect(groups).toContain("Workspace");
 });

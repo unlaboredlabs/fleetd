@@ -41,7 +41,7 @@ export function Claude() {
   }, [waitingOn, rereadTailnet]);
 
   if (accounts.value === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
-  if (!accounts.value.ok) return <Problem text={`Couldn't read the hub's Claude: ${errorWords(accounts.value.error)}`} />;
+  if (!accounts.value.ok) return <Problem text={`Couldn't read the workspace's Claude: ${errorWords(accounts.value.error)}`} />;
 
   const test = async () => {
     const out = await session.call("claude_account_test", { account: "hub_api" }, TEST_MS);
@@ -77,8 +77,8 @@ export function Claude() {
   };
   const remove = () =>
     confirmDestructive({
-      title: "Remove the hub's API key?",
-      message: "Each machine forgets it. Leads and automations run on the hub owner's subscription from their next start, else each machine's own login.",
+      title: "Remove the workspace's API key?",
+      message: "Each machine forgets it. Leads and automations run on the workspace owner's subscription from their next start, else each machine's own login.",
       button: "Remove",
       onConfirm: () => {
         setBusy("remove");
@@ -134,7 +134,7 @@ export function Claude() {
       contentContainerStyle={{ paddingBottom: space.xxl }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={() => (accounts.reload(), tailnet.reload())} tintColor={t.secondary} />}
     >
-      <ListSection header="Hub API Key" {...(words.footer === undefined ? {} : { footer: words.footer })}>
+      <ListSection header="Workspace API Key" {...(words.footer === undefined ? {} : { footer: words.footer })}>
         {field({ value: shown, onChangeText: setEndpoint, placeholder: "Endpoint", label: "Endpoint" })}
         {field({ value: key, onChangeText: setKey, placeholder: api === undefined ? "API Key" : "New API Key", label: "API key", secure: true })}
         <ListRow

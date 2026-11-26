@@ -100,7 +100,7 @@ export function MacCode(props: { onLine: () => void; onBack: () => void; onDone:
           <Text size="xs" tone="quiet">
             {made.out.hubUrl === undefined
               ? (made.out.next ?? "")
-              : `Joins as ${made.out.machineId}. Should the Mac ask for the hub: ${made.out.hubUrl}`}
+              : `Joins as ${made.out.machineId}. Should the Mac ask for the workspace: ${made.out.hubUrl}`}
           </Text>
         </div>
       )}

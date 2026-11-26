@@ -63,7 +63,7 @@ test("a crash is the generic failed, a person gets the person-facing fix", async
   const crashed = await tools.call(hub, caller("read"), "hub_info", {});
   console.error = quiet;
   expect(crashed).toEqual({
-    error: { kind: "tool", error: expect.objectContaining({ code: "failed", message: "The hub failed to answer that request." }) },
+    error: { kind: "tool", error: expect.objectContaining({ code: "failed", message: "The workspace failed to answer that request." }) },
   });
   const refused = await tools.call(hub, caller("operate", "human"), "hub_update", {});
   expect(refused).toEqual({

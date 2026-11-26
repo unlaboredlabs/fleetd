@@ -14,7 +14,7 @@ test("an MCP server's role switch, a lead's new servers, its scope and who may c
   expect(checkScope({ kind: "project", machineId: "m", projectId: "p", extra: 1 })).toEqual({ kind: "project", machineId: "m", projectId: "p" });
   expect(() => checkScope({ kind: "team" })).toThrow("scope is");
   expect(() => mayChange(key("human", "operate", ["m"]), { kind: "project", machineId: "m", projectId: "p" })).not.toThrow();
-  expect(() => mayChange(key("human", "operate", "*"), { kind: "global" })).toThrow("only the hub's owners and admins");
+  expect(() => mayChange(key("human", "operate", "*"), { kind: "global" })).toThrow("only the workspace's owners and admins");
   expect(() => mayChange(key("agent", "admin", "*"), { kind: "global" })).toThrow("Only a person");
   expect(sameTransport({ type: "stdio", command: "x" }, { type: "stdio", command: "x", args: [] })).toBe(true);
   expect(sameTransport({ type: "http", url: "https://a" }, { type: "sse", url: "https://a" })).toBe(false);

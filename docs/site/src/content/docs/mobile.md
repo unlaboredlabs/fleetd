@@ -6,18 +6,18 @@ description: Chat with your bots, answer approvals and take over screens from yo
 This page is for using fleetd from your phone, and building the app.
 
 The phone app shows your bots with what needs you on top, their chats as the lead writes, and approvals you answer
-from their card. Secrets, people and most hub settings stay in the desktop app.
+from their card. Secrets, people and most workspace settings stay in the desktop app.
 
 ## Pair it {#pair}
 
-1. In the desktop app, open **Settings › Hubs & devices** and click **Pair a phone**. Or run `fleetd pair` on the hub.
+1. In the desktop app, open **Settings › Workspaces & devices** and click **Pair a phone**. Or run `fleetd pair` on the workspace.
    Either shows a QR code.
 2. In the phone app, tap **Scan QR Code** and point the camera at it.
 
-No camera? Tap **Enter Code Manually**, enter the hub's address (such as `http://devbox:4790`) and the code, then tap
+No camera? Tap **Enter Code Manually**, enter the workspace's address (such as `http://devbox:4790`) and the code, then tap
 **Connect**. The code works once, for 15 minutes.
 
-The phone must reach the hub. On a tailnet, turn Tailscale on in the phone and use the hub's tailnet name.
+The phone must reach the workspace. On a tailnet, turn Tailscale on in the phone and use the workspace's tailnet name.
 
 To sign the phone out, tap **Disconnect** at the end of Settings.
 
@@ -28,7 +28,7 @@ To sign the phone out, tap **Disconnect** at the end of Settings.
 - **Stop** the lead: while it works, the send button is **Stop**.
 - **New bot**: tap **+** at the top of Chats.
 
-Your pins are kept on the hub, so they're the same on each of your phones.
+Your pins are kept on the workspace, so they're the same on each of your phones.
 
 ### Sections {#sections}
 
@@ -106,8 +106,8 @@ Tap your picture at the top of Chats:
 - Your photo and name.
 - **Connections**, **Devices**, **Vault**, **Memory** (with **Import Memory**) and **Notifications**.
 
-Admins also get **Machines**, **Providers** (the hub's Anthropic key, Google sign-in per machine, and each provider's
-profiles), **Update** (updates the hub and every machine), **Restart Hub**, and **Billing** on a cloud team.
+Admins also get **Machines**, **Providers** (the workspace's Anthropic key, Google sign-in per machine, and each provider's
+profiles), **Update** (updates the workspace and every machine), **Restart Workspace**, and **Billing** on a cloud workspace.
 
 ### Devices {#devices}
 
@@ -172,6 +172,6 @@ A build signed with an update certificate gets new screens and fixes without a r
 uses the new version from its next start. Native changes still need a new build.
 
 Pick the channel when you run **Mobile release**: `edge` gets each build's bundle once that build has reached every
-hub (see [Builds & rollout](/docs/releases#rings)), `stable` each tagged release. A fork that wants its own updates makes its own key with
+workspace (see [Builds & rollout](/docs/releases#rings)), `stable` each tagged release. A fork that wants its own updates makes its own key with
 `npm exec -- expo-updates codesigning:generate` in `app/mobile`, sets `UPDATES_PRIVATE_KEY_PEM`, `UPDATES_CERT_PEM` and
 `FLEETD_UPDATES_URL`, and serves its own `site/`.

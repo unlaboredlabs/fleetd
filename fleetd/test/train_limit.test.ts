@@ -299,7 +299,7 @@ test("the ready pass lists a repo's open PRs every minute, but GitHub counts non
 
 // --- done:3, under a tenth of the budget: one warning with the reset time, and polls spread out until then ---
 
-test("under a tenth of the budget left, the hub warns once with the reset time and polls less often until the reset", async () => {
+test("under a tenth of the budget left, the workspace warns once with the reset time and polls less often until the reset", async () => {
   let now = Date.parse("2026-11-12T08:00:00Z");
   const warn = spyOn(console, "warn").mockImplementation(() => {});
   try {
@@ -313,7 +313,7 @@ test("under a tenth of the budget left, the hub warns once with the reset time a
     budget.seen("unlaboredlabs", "core", at(450));
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]![0])).toBe(
-      `github: 499 of unlaboredlabs's 5000 core API calls are left until 2026-11-12T08:17:00Z; the hub polls GitHub ${SPREAD} times less often until then`,
+      `github: 499 of unlaboredlabs's 5000 core API calls are left until 2026-11-12T08:17:00Z; the workspace polls GitHub ${SPREAD} times less often until then`,
     );
     expect(budget.spread(15_000)).toBe(15_000 * SPREAD);
     expect(budget.spread(15_000, "unlaboredlabs")).toBe(15_000 * SPREAD);

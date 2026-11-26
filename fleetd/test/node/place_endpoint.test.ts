@@ -68,21 +68,21 @@ test("a hosted box is only checked, and a failed check says what to do: connect 
   const e = (url: string) => ({ url, source: "the environment" });
   const off = await unreached(e("http://100.104.249.49:8317"), "fleetd's computers", false, dns);
   // In a person's words: the account, never the check's output or the file the endpoint was set in.
-  expect(off).toBe("a sandbox at fleetd's computers couldn't reach the hub's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections");
+  expect(off).toBe("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at 100.104.249.49: it is on a private network, which hosted sandboxes reach only on the team's tailnet. Connect Tailscale in Connections");
   expect(await unreached(e("http://devbox.tail1234.ts.net:8317"), "fleetd's computers", true, dns)).toContain("the team's tailnet doesn't reach it either");
   expect(await unreached(e("http://localhost:8317"), "fleetd's computers", false, dns)).toContain("a machine's own loopback, which a hosted sandbox never reaches");
   // A public endpoint's failure is its own: nothing to connect.
-  expect(await unreached(e(ANTHROPIC_API), "fleetd's computers", false, dns)).toBe("a sandbox at fleetd's computers couldn't reach the hub's Claude account at api.anthropic.com: it didn't answer from there. Check that it is up, then try again");
+  expect(await unreached(e(ANTHROPIC_API), "fleetd's computers", false, dns)).toBe("a sandbox at fleetd's computers couldn't reach the workspace's Claude account at api.anthropic.com: it didn't answer from there. Check that it is up, then try again");
   // By its name or address alone, for the runner's word.
   for (const u of ["http://100.104.249.49:8317", "http://devbox:8317", "https://gw.tail1234.ts.net", "http://localhost:1", "http://10.0.0.5"]) expect(privateByName(u)).toBe(true);
   for (const u of [ANTHROPIC_API, "https://gw.example.com", "https://160.79.104.10"]) expect(privateByName(u)).toBe(false);
 });
 
-test("the hub's runner says to connect Tailscale while its Claude endpoint is plainly private and the tailnet is off", async () => {
+test("the workspace's runner says to connect Tailscale while its Claude endpoint is plainly private and the tailnet is off", async () => {
   const { runnerClaude } = await import("../../src/node/sessions/index.ts");
   const hub = { kind: "hub" } as const;
   expect(runnerClaude(hub, "http://100.104.249.49:8317").problem).toBe(
-    "the hub's Claude endpoint http://100.104.249.49:8317 is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections",
+    "the workspace's Claude endpoint http://100.104.249.49:8317 is on a private network, which hosted sandboxes reach only on the team's tailnet. Fix: connect Tailscale in Connections",
   );
   expect(runnerClaude(hub, "http://100.104.249.49:8317", true).problem).toBeUndefined();
   expect(runnerClaude(hub, ANTHROPIC_API).problem).toBeUndefined();

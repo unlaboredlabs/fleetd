@@ -92,7 +92,7 @@ describe("a planned restart", () => {
 describe("any other drop", () => {
   it("is today's Connecting…, with no hold and no line, and Updated when the hub came back on a new build", () => {
     let s = step(initial({ phase: "connecting", hub: HUB, attempt: 0 }), { t: "state", state: live() }, T - 1000);
-    s = step(s, { t: "state", state: { ...retrying, reason: "The connection to the hub dropped" } }, T);
+    s = step(s, { t: "state", state: { ...retrying, reason: "The connection to the workspace dropped" } }, T);
     expect(s.restart).toMatchObject({ t: "down", planned: false });
     expect(hubWord(at(s, T + 1000))).toEqual({ text: "Connecting…", tone: "quiet", busy: true });
     expect(holding(at(s, T + 1000))).toBe(false);

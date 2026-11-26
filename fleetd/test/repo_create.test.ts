@@ -81,7 +81,7 @@ const result = (frame: LeadResultFrame): Record<string, any> => {
 
 const SIGNED_IN: Replies = { "GET user": [200, { login: "ada" }] };
 
-test("a lead makes a private repo with the hub's gh login, and the bot holds it once its clone ends", async () => {
+test("a lead makes a private repo with the workspace's gh login, and the bot holds it once its clone ends", async () => {
   const replies: Replies = { ...SIGNED_IN, "POST user/repos": [201, { full_name: "ada/email-client", html_url: "https://github.com/ada/email-client" }] };
   const k = await rig(replies);
   const out = result(await k.send("th-lead", { op: "repo_create", name: "email-client", private: true, description: "Ada's mail" }));
@@ -105,7 +105,7 @@ test("a repo already on GitHub, an org that refuses, gh signed out: each is refu
   const org = await rig({ ...SIGNED_IN, "POST orgs/acme/repos": [403, { message: "You need admin access to the organization before adding a repository to it." }] });
   const refused = refusal(await org.send("th-lead", { op: "repo_create", name: "email-client", private: true, owner: "acme" }));
   expect(refused).toMatchObject({ code: "forbidden" });
-  expect(refused?.message).toBe("The hub's GitHub login ada may not create repos in acme: You need admin access to the organization before adding a repository to it.");
+  expect(refused?.message).toBe("The workspace's GitHub login ada may not create repos in acme: You need admin access to the organization before adding a repository to it.");
   expect(refused?.fix).toContain("An owner of acme lets ada create repos there");
   expect(org.names()).toEqual([]);
 
@@ -147,7 +147,7 @@ test("an organisation's policy refusal (GitHub's 422) says GitHub's own reason a
   // login: the line says both, and the fix keeps the owner's grant beside checking the name.
   const hidden = await rig({ ...SIGNED_IN, "POST orgs/acme/repos": [404, { message: "Not Found", documentation_url: "https://docs.github.com/rest/repos/repos#create-an-organization-repository", status: "404" }] });
   const unseen = refusal(await hidden.send("th-lead", { op: "repo_create", name: "open", private: true, owner: "acme" }));
-  expect(unseen).toMatchObject({ code: "forbidden", message: "The hub's GitHub login ada found no organisation acme it may create repos in: Not Found." });
+  expect(unseen).toMatchObject({ code: "forbidden", message: "The workspace's GitHub login ada found no organisation acme it may create repos in: Not Found." });
   expect(unseen?.fix).toStartWith("Check the organisation's name with the person; if it is right: An owner of acme lets ada create repos there");
   expect(hidden.names()).toEqual([]);
 }, 15_000);

@@ -186,7 +186,7 @@ export class HubService {
   /** A window's screen peer: its offer, or null to close it. A source with none says so at once. */
   rtc(session: string, peer: string, offer: string | null): void {
     if (this.#source?.rtc) this.#source.rtc(session, peer, offer);
-    else if (offer !== null) this.#broadcast({ t: "browser_rtc", session, peer, error: "This hub doesn't pass screen peers on." });
+    else if (offer !== null) this.#broadcast({ t: "browser_rtc", session, peer, error: "This workspace doesn't pass screen peers on." });
   }
 
   rtcWatch(session: string, peer: string | null): void {
@@ -194,7 +194,7 @@ export class HubService {
   }
 
   call(request: CallRequest): Promise<CallOutcome> {
-    return this.#source?.call(request) ?? Promise.resolve({ ok: false, error: { code: "offline", message: "Not paired with a hub." } });
+    return this.#source?.call(request) ?? Promise.resolve({ ok: false, error: { code: "offline", message: "Not paired with a workspace." } });
   }
 
   chat(project: ChatScope | null): void {

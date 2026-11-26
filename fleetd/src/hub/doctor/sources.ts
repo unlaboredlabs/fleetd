@@ -133,7 +133,7 @@ export function hubSources(hub: Hub): DoctorSources {
     // The tasks sweep keeps its recovery breakers and the unowned sessions in memory: tasks' start sets these two.
     recoveryPaused: () => undefined,
     claudeSetup: () =>
-      logged("the hub's Claude accounts", undefined, () => {
+      logged("the workspace's Claude accounts", undefined, () => {
         const setup = accounts(hub).setup();
         const owner = active(hub.db).find((p) => p.personId === setup.owner);
         // The agents' Mac holds no Claude account (D298): no check waits for one there.

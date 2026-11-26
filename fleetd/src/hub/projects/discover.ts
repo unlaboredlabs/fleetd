@@ -234,8 +234,8 @@ export async function readGithub(hub: Hub, repo: GitHubRepo, local: RepoFacts | 
       throw problemError(
         problem(
           "gh_no_access",
-          `gh on the hub can't see ${r}: it is private to another account, renamed, or misspelled`,
-          `Check the name; or run \`gh auth login\` on the hub machine with an account that can read ${r}`,
+          `gh on the workspace's machine can't see ${r}: it is private to another account, renamed, or misspelled`,
+          `Check the name; or run \`gh auth login\` on the workspace's machine with an account that can read ${r}`,
         ),
       );
     } else answers.unread.push(`${r} (HTTP ${got.status}: ${got.message})`);
@@ -389,8 +389,8 @@ async function ghList(hub: Hub, fallback: MachineId | undefined, scans: MachineR
     listed.problem !== undefined
       ? problem(
           "gh_unavailable",
-          `gh repo list did not run: ${listed.problem} on the hub${ghOn === "hub" ? "" : " or the worker"}`,
-          "Run `gh auth login` on the hub machine, or paste the repository's URL",
+          `gh repo list did not run: ${listed.problem} on the workspace's machine${ghOn === "hub" ? "" : " or the worker"}`,
+          "Run `gh auth login` on the workspace's machine, or paste the repository's URL",
         )
       : undefined;
   if (p) ghOn = undefined;

@@ -101,7 +101,7 @@ const planBurst = (f: Fixture, ref: Ref, seq: number, fromMs: number, n: number,
 
 /** The hub goes away at `fromMs` and is back `downMs` later with a fresh snapshot, as after a restart. */
 const restart = (f: Fixture, seq: number, fromMs: number, downMs: number): number => {
-  f.later(fromMs, "state", { phase: "retrying", hub: HUB, reason: "The hub closed the connection", retryAt: Date.parse(at(f.now, fromMs + downMs)) });
+  f.later(fromMs, "state", { phase: "retrying", hub: HUB, reason: "The workspace closed the connection", retryAt: Date.parse(at(f.now, fromMs + downMs)) });
   f.later(fromMs + downMs - 200, "state", { phase: "connecting", hub: HUB, attempt: 1 });
   f.later(fromMs + downMs, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
   const cursor = seq + 1;
@@ -121,7 +121,7 @@ export default defineGroup({
       scenario("burst", "A lead turn adds 150 plan items while a new reply streams in, its deltas ahead of its chat.message event.", (f, ref, seq) => {
         newReply(f, ref, planBurst(f, ref, seq, STREAMED_BY + 100, 150, 4), STREAMED_BY + 150, 120, 5);
       }),
-      scenario("hub-restart", "The hub restarts mid-chat: the link drops, comes back with a fresh snapshot, and the lead goes on with a new reply.", (f, ref, seq) => {
+      scenario("hub-restart", "The workspace restarts mid-chat: the link drops, comes back with a fresh snapshot, and the lead goes on with a new reply.", (f, ref, seq) => {
         newReply(f, ref, restart(f, seq, STREAMED_BY, 1200), STREAMED_BY + 1600, 120, 3);
       }),
       scenario("reconnect-streaming", "The link drops while the lead's reply streams: its deltas go on past the text the reread history holds.", (f, _ref, seq) => {

@@ -18,7 +18,7 @@ Each bot picks who merges its PRs, in its settings under **Safety › Who merges
   your [risk rules](#risk-rules) allow merge by themselves.
 - **fleetd**: the train merges each PR once it's reviewed and CI is green.
 
-You can also set it from a terminal on the hub: `fleetd project set <machine>/<bot> --merges you|fleetd --key-file
+You can also set it from a terminal on the workspace: `fleetd project set <machine>/<bot> --merges you|fleetd --key-file
 <your key>`. Only a person can change it, never an agent.
 
 ### When you merge {#people-merge}

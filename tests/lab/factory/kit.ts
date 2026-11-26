@@ -313,7 +313,7 @@ export async function withFactory(dir: string, body: (f: Factory) => Promise<voi
         const offset = fs.statSync(logPath).size;
         procs.push(start(dir, `node-${machine}`, ["node", "run", "--home", nodeHome], nodeEnv));
         await until(`${machine} relinked`, 120_000, async () =>
-          fs.readFileSync(logPath, "utf8").slice(offset).includes("linked to hub") ? true : (await sleep(250), undefined),
+          fs.readFileSync(logPath, "utf8").slice(offset).includes("linked to workspace") ? true : (await sleep(250), undefined),
         );
         await waitLive();
       },

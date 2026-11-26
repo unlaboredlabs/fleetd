@@ -66,10 +66,10 @@ test.skipIf(process.platform !== "linux" && process.platform !== "darwin")(
     expect(out.said).toContain("stop and remove the node service");
     expect(out.said).toContain("stopped 1 agent session(s)");
     // A worker that joined by itself: the hub elsewhere still lists it.
-    expect(out.said).toContain("the hub at http://hub.example:4790 still lists vps1");
+    expect(out.said).toContain("the workspace at http://hub.example:4790 still lists vps1");
     expect(out.said).toContain(`kept the node's files in ${join(m.fleetd, "node")}; --purge deletes them`);
     // No hub here: nothing about a hub's data.
-    expect(out.said).not.toContain("hub's data");
+    expect(out.said).not.toContain("workspace's data");
 
     // --purge on a machine with no hub deletes the node's files, and isn't refused for the hub it never had.
     joined(m);
@@ -93,7 +93,7 @@ test("uninstall leaves another fleet's node alone", async () => {
 
 // The hub's port taken by another program: the fix keeps the hub's address (a LAN or tailnet one stays reachable) and
 // says what holds it. It was "fleetd init --listen 127.0.0.1:4791" whatever the address.
-test("a taken port's fix keeps the hub's own address", () => {
+test("a taken port's fix keeps the workspace's own address", () => {
   const busy = hubAction(true, "same", [], "other", "172.17.0.4:4790", "/h");
   expect(typeof busy).toBe("object");
   const f = busy as { message: string; fix: string };
@@ -110,10 +110,10 @@ test("a taken port's fix keeps the hub's own address", () => {
   expect((restarting as { message: string }).message).toBe("172.17.0.4:4790 is in use by something else: nc (pid 9)");
 });
 
-test.skipIf(process.platform !== "linux")("init names the program on the hub's port and a free port beside it", async () => {
+test.skipIf(process.platform !== "linux")("init names the program on the workspace's port and a free port beside it", async () => {
   const m = machine();
   // 127.0.0.2: any address but 127.0.0.1, as a LAN hub's is.
-  const server = Bun.serve({ hostname: "127.0.0.2", port: 0, fetch: () => new Response("not a hub") });
+  const server = Bun.serve({ hostname: "127.0.0.2", port: 0, fetch: () => new Response("not a workspace") });
   try {
     const out = await m.run("init", "--no-service", "--listen", `127.0.0.2:${server.port}`);
     expect(out.code, out.said).toBe(1);

@@ -17,7 +17,7 @@ There are two kinds of memory:
 
 The lead and the bot's writers get both at the start of each session.
 
-On a hub with several people, a bot's lead starts with nobody's personal memory, since it answers everyone. What it
+On a workspace with several people, a bot's lead starts with nobody's personal memory, since it answers everyone. What it
 learns about you still goes into your memory.
 
 ## Read and edit it {#edit}
@@ -25,7 +25,7 @@ learns about you still goes into your memory.
 - Your memory: **Settings › Memory**.
 - A bot's memory: the bot's settings, then **Instructions & memory**.
 
-Memory is plain text, kept on the hub, in no repo. It never holds a secret.
+Memory is plain text, kept on the workspace, in no repo. It never holds a secret.
 
 Each memory has a size limit. When a bot's memory is full, the lead merges entries to make room. When yours is full,
 fleetd tidies it.

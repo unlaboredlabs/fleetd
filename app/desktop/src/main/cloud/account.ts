@@ -265,7 +265,7 @@ export class CloudAccount {
     if (answer === null) return UNREADABLE;
     if (answer.teams.length === 0 && answer.invitations.length === 0) {
       void this.#endSession(config, answer.sessionId);
-      return failed("", "No team of this account could be connected.");
+      return failed("", "No workspace of this account could be connected.");
     }
     this.#held = { config, answer, deviceName: body.deviceName, move: body.move === true };
     return {
@@ -300,7 +300,7 @@ export class CloudAccount {
     if (make && answer.make !== undefined) {
       const made = await this.#call(config, ACCOUNTS_TEAM_PATH, { make: answer.make });
       if (made.ok) await pairOne(made.team, false);
-      else outcomes.push({ name: "Your team", ok: false, failure: made.failure });
+      else outcomes.push({ name: "Your workspace", ok: false, failure: made.failure });
     }
     for (const at of [...new Set(join)]) {
       const invitation = answer.invitations[at];
@@ -312,8 +312,8 @@ export class CloudAccount {
     if (!outcomes.some((t) => t.ok)) {
       void this.#endSession(config, answer.sessionId);
       const first = outcomes[0];
-      if (first === undefined) return failed("none_joined", "You didn't join a team, so you aren't signed in.", "Sign in again when you want to join it.");
-      return first.ok ? failed("", "No team of this account could be connected.") : { ok: false, failure: first.failure };
+      if (first === undefined) return failed("none_joined", "You didn't join a workspace, so you aren't signed in.", "Sign in again when you want to join it.");
+      return first.ok ? failed("", "No workspace of this account could be connected.") : { ok: false, failure: first.failure };
     }
     this.#empty = move
       ? answer.teams.flatMap((t) => {

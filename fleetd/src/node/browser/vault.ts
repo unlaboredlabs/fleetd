@@ -65,11 +65,11 @@ const NO_VAULT = "vault_unavailable";
 /** A sealed box from the hub, opened with this node's box key, as JSON. Throws without saying what it held. */
 export function openSealed<T>(broker: Broker, sealed: unknown, what: string): T {
   const bytes = typeof sealed === "string" && sealed ? broker.boxKey().open(Buffer.from(sealed, "base64")) : null;
-  if (!bytes) throw new ToolError("failed", `${what} from the hub did not open on this machine.`, "try again; if it keeps failing, the machine's box key changed: restart its node");
+  if (!bytes) throw new ToolError("failed", `${what} from the workspace did not open on this machine.`, "try again; if it keeps failing, the machine's box key changed: restart its node");
   try {
     return JSON.parse(new TextDecoder().decode(bytes)) as T;
   } catch {
-    throw new ToolError("failed", `${what} from the hub is not what fleetd seals.`);
+    throw new ToolError("failed", `${what} from the workspace is not what fleetd seals.`);
   } finally {
     bytes.fill(0);
   }
@@ -86,7 +86,7 @@ export async function vaultFill(broker: Broker, session: Session, ask: VaultAsk)
     ...(ask.frame !== undefined ? { frame: [...ask.frame].slice(0, 2000).join("") } : {}),
   });
   if (answer.sealed === undefined && answer.auditId === undefined) {
-    throw new ToolError("failed", "This hub has no vault to fill from.", "update fleetd on the hub, or fill with a 1Password ref", NO_VAULT);
+    throw new ToolError("failed", "This workspace has no vault to fill from.", "update fleetd on the workspace's machine, or fill with a 1Password ref", NO_VAULT);
   }
   const auditId = Number(answer.auditId);
   const label = String(answer.label ?? ask.item ?? "the item");

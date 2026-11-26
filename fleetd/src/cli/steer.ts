@@ -16,7 +16,7 @@ const WAIT_SEC = 50;
 
 /** Why a command that speaks for the person refuses to run without `--key-file`, and how to make the key. */
 export const humanKeyRequired = (what: string) =>
-  `--key-file is required: ${what} speaks for you, so it needs your human key. Make one once: fleetd hub key create --human --name <device> --out <file>`;
+  `--key-file is required: ${what} speaks for you, so it needs your human key. Make one once: fleetd workspace key create --human --name <device> --out <file>`;
 
 type SteerCommand =
   | { kind: "send"; target: object; text: string; mode: "now" | "queue"; wait: boolean }
@@ -37,13 +37,13 @@ export function targetOf(id: string): object {
 /** `steer …` when `list` is false, `steers …` when it is. Throws ArgError. */
 export function parseSteerArgs(argv: string[], list: boolean): SteerArgs {
   const v = parse(argv, {
-    options: { hub: "str", "key-file": "str", now: "bool", wait: "bool" },
+    options: { workspace: "str", "key-file": "str", now: "bool", wait: "bool" },
     positionals: true,
   });
   if (v instanceof ArgError) throw v;
   const keyFile = v.str("key-file");
   if (!keyFile) throw new ArgError(humanKeyRequired("a steer"));
-  const hub = v.str("hub") || undefined;
+  const hub = v.str("workspace") || undefined;
   const p = v.positionals;
   const noSendFlags = (what: string) => {
     if (v.flag("now") || v.flag("wait")) throw new ArgError(`--now and --wait are for sending a steer, not ${what}`);
@@ -189,7 +189,7 @@ export function hubUrl(hub: string | undefined, home?: string): string {
     throw new Unreachable((error as Error).message);
   }
   if (state) return `http://${state.listen}`;
-  throw new Unreachable(`no hub is set up on this machine (${dir}); pass --hub <url>`);
+  throw new Unreachable(`no workspace is set up on this machine (${dir}); pass --workspace <url>`);
 }
 
 /** Exit 4: the hub could not be reached. */
@@ -221,7 +221,7 @@ export async function call(client: McpClient, tool: string, input: unknown, time
   if (result.isError) {
     const text = (k: string) => (typeof result.body?.[k] === "string" ? (result.body[k] as string) : undefined);
     const fix = text("fix");
-    throw new Refused(`${text("message") ?? "the hub refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
+    throw new Refused(`${text("message") ?? "the workspace refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
   }
   return result.body;
 }

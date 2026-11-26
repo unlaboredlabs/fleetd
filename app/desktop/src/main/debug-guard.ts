@@ -13,7 +13,7 @@ if (RELEASE_BUILD) {
   const found = debugSwitches(process.argv, process.env, (name) => app.commandLine.hasSwitch(name));
   if (found.length > 0) {
     console.error(
-      `fleetd: refusing to start with ${found.map((s) => `--${s}`).join(", ")}. A debugging switch would let any local program use your hub key.`,
+      `fleetd: refusing to start with ${found.map((s) => `--${s}`).join(", ")}. A debugging switch would let any local program use your workspace key.`,
     );
     process.exit(DEBUG_REFUSED_EXIT);
   }

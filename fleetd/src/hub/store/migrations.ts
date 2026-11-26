@@ -92,9 +92,9 @@ function failed(conn: Database, name: string, error: unknown): MigrationFailed {
 
 export function failure(name: string, found: string, why: string): string {
   return olderThan(found, OLDEST_SQLITE)
-    ? `the hub's database can't update: migration ${name} needs SQLite ${OLDEST_SQLITE} or newer, and this machine's ` +
+    ? `the workspace's database can't update: migration ${name} needs SQLite ${OLDEST_SQLITE} or newer, and this machine's ` +
         `is ${found} (${why})`
-    : `the hub's database can't update: migration ${name} failed on SQLite ${found}, which fleetd supports ` +
+    : `the workspace's database can't update: migration ${name} failed on SQLite ${found}, which fleetd supports ` +
         `(${OLDEST_SQLITE} or newer): ${why}`;
 }
 

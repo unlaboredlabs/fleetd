@@ -126,7 +126,7 @@ const before = keptPerHub("fleetd.sidebarSections", (raw): readonly ChatSection[
 
 /** Why the hub didn't answer, in words for the person: its own, but a hub from before sections has no such tool. */
 const why = (error: { readonly code: string; readonly message: string }): string =>
-  error.code === "not_found" ? "This hub doesn’t keep sections yet. Update it to use them." : error.message;
+  error.code === "not_found" ? "This workspace doesn’t keep sections yet. Update it to use them." : error.message;
 
 const saved = ahead({
   send: async (layer, sections: readonly ChatSection[]) => {

@@ -44,7 +44,7 @@ export const unknownMachine = (machineId: MachineId) =>
     `No machine ${machineId}.`,
     "Call fleetd_status to list machines.",
     undefined,
-    `This hub has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the hub admin.`,
+    `This workspace has no machine by that id: ${settingsPath()} › Machines lists the ones it has, or ask the workspace admin.`,
   );
 
 export const unknownProject = (r: ProjectRef) =>

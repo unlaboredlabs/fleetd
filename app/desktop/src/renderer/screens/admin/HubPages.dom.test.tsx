@@ -165,7 +165,7 @@ const framed = (
 
 // The Settings index's Hub group, by its label.
 const nav = () =>
-  [...host.querySelectorAll<HTMLElement>("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Hub") ?? null;
+  [...host.querySelectorAll<HTMLElement>("nav[aria-label='Settings'] [role='group']")].find((g) => document.getElementById(g.getAttribute("aria-labelledby") ?? "")?.textContent === "Workspace") ?? null;
 const button = (text: string, within: ParentNode = document) => {
   const b = [...within.querySelectorAll("button")].find((x) => x.textContent.trim() === text || x.textContent.trim().startsWith(`${text} `));
   if (b === undefined) throw new Error(`no button ${text}`);
@@ -232,7 +232,7 @@ it("keeps Machines a list (each machine's role, screens and caps on its own page
   expect(adds()).toHaveLength(1);
   expect(none?.contains(adds()[0] ?? null)).toBe(true);
   await click(adds()[0] as HTMLElement);
-  expect(host.textContent).toContain("A machine the hub can reach");
+  expect(host.textContent).toContain("A machine the workspace can reach");
   // Updates is a part of the page, after What runs where, which stands on a hub without any provider (every kind on
   // its machines); Providers stands back there, with nothing to list.
   expect(host.querySelector("[data-screen='settings.hub.machines'] [data-screen='settings.hub.updates'] [data-update-status]")).not.toBeNull();
@@ -379,7 +379,7 @@ it("shows a prompt with one text for the whole hub read only in Settings, with n
   prompts["lead.start"] = false;
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("One text for every bot: the hub's owners and admins change it in Settings › Hub › Bot defaults › Instructions.");
+  expect(host.textContent).toContain("One text for every bot: the workspace's owners and admins change it in Settings › Workspace › Bot defaults › Instructions.");
   expect(host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea")?.readOnly).toBe(true);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Save")).toBe(false);
 });
@@ -388,7 +388,7 @@ it("keeps a bot's built-in prompts to its own: a hub-wide edit shows as the text
   edited = { "lead.start": "global" };
   window.location.hash = "#/settings/prompts?prompt=lead.start&for=devbox/storefront";
   await render(<Prompts route={{ tab: "prompts", prompt: "lead.start", for: "devbox/storefront" }} />);
-  expect(host.textContent).toContain("In effect: the hub-wide edit. Saving changes it for storefront only.");
+  expect(host.textContent).toContain("In effect: the workspace-wide edit. Saving changes it for storefront only.");
   // The hub-wide edit is not the project's to reset.
   expect([...host.querySelectorAll("button")].some((b) => b.textContent.trim() === "Reset to the built-in")).toBe(false);
   const editor = host.querySelector<HTMLTextAreaElement>("[data-text='code'] textarea");

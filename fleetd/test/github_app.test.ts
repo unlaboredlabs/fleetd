@@ -238,7 +238,7 @@ test("the manifest asks for what the train needs and sets no webhook", () => {
   expect(m.callback_urls).toEqual(["http://127.0.0.1/github/callback"]);
 });
 
-test("a gh run names its repository in each shape the hub uses", () => {
+test("a gh run names its repository in each shape the workspace uses", () => {
   expect(repoOf(["pr", "view", "7", "--repo", "acme/web"])).toBe("acme/web");
   expect(repoOf(["pr", "view", "7", "-R", "acme/web"])).toBe("acme/web");
   expect(repoOf(["pr", "list", "--repo=acme/web"])).toBe("acme/web");
@@ -249,7 +249,7 @@ test("a gh run names its repository in each shape the hub uses", () => {
   expect(repoOf(["pr", "view", "--repo", "not a repo"])).toBeUndefined();
 });
 
-test("the code becomes the App, its keys sealed to the hub and never shown", async () => {
+test("the code becomes the App, its keys sealed to the workspace and never shown", async () => {
   const l = lab();
   const out = await created(l);
   expect(out.app.appId).toBe(APP_ID);
@@ -358,7 +358,7 @@ test("a person connects their GitHub, kept sealed and refreshed; a refused refre
   const l = lab();
   const sam = device(l.hub, person(l.hub, "Sam", "member"), "operate");
   const before = await refusedWith(l, sam, "github_connect", connectInput());
-  expect(before.message).toContain("This hub has no GitHub App yet");
+  expect(before.message).toContain("This workspace has no GitHub App yet");
   await created(l);
   expect((await refusedWith(l, agent, "github_connect", connectInput())).code).toBe("forbidden");
   const out = await call(l, sam, "github_connect", connectInput());
@@ -520,11 +520,11 @@ test("the GitHub setup step stops counting the App the moment it is removed", as
   const github = async () => ((await call(l, a, "setup_list")).steps as HubSetupStep[]).find((s) => s.id === "github")!;
   await created(l);
   await call(l, a, "github_app_test");
-  expect(await github()).toMatchObject({ status: "done", way: "the hub's GitHub App" });
+  expect(await github()).toMatchObject({ status: "done", way: "the workspace's GitHub App" });
   await call(l, a, "github_app_remove");
   // The doctor's kept checks still hold the App's; the step no longer reads it, whatever gh says on this machine.
   const after = await github();
-  expect(after.way).not.toBe("the hub's GitHub App");
+  expect(after.way).not.toBe("the workspace's GitHub App");
   expect(after.said ?? "").not.toContain("is installed on");
 });
 
@@ -661,7 +661,7 @@ test("two launches and a sweep at once refresh once, and a launch that read the 
   allLive(l, f, orders);
 });
 
-test("a person's token the hub can't renew before it ends is replaced, and the lead hears the plain line once", async () => {
+test("a person's token the workspace can't renew before it ends is replaced, and the lead hears the plain line once", async () => {
   const l = lab();
   const { f, orders } = await samsOrders(l, ["devbox"]);
   const lines: string[] = [];
@@ -684,7 +684,7 @@ test("a person's token the hub can't renew before it ends is replaced, and the l
   allLive(l, f, orders);
 });
 
-test("a hub back after its orders' tokens ended renews them at the node's link, before it reads its sessions or sends to any agent", async () => {
+test("a workspace back after its orders' tokens ended renews them at the node's link, before it reads its sessions or sends to any agent", async () => {
   const l = lab();
   const { f, orders } = await samsOrders(l, ["devbox"]);
   const [a] = orders as [ReturnType<typeof order>];

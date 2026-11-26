@@ -51,7 +51,7 @@ function output(hub: Hub, run: UpdateRun | undefined): HubUpdateOutput {
 /** Only a person with Admin on every machine changes how the hub updates: an update restarts every machine. */
 function refuseUnlessAdminEverywhere(
   caller: Caller,
-  why = "Updating fleetd restarts the hub and every node: it needs a person's key with Admin on every machine.",
+  why = "Updating fleetd restarts the workspace and every node: it needs a person's key with Admin on every machine.",
 ): void {
   if (!allowsEverywhere(caller, "admin") || caller.kind !== "human") {
     throw new ToolError(
@@ -63,29 +63,29 @@ function refuseUnlessAdminEverywhere(
 }
 
 function next(run: UpdateRun | undefined, leftOver: boolean): string {
-  if (!run) return "The hub hasn't updated itself yet.";
+  if (!run) return "The workspace hasn't updated itself yet.";
   if (run.finishedAt === undefined && leftOver) {
-    return "Left over: nothing in the hub drives this update any more, so it won't change again. Call hub_update to start a new one.";
+    return "Left over: nothing in the workspace drives this update any more, so it won't change again. Call hub_update to start a new one.";
   }
   if (run.finishedAt === undefined) {
-    return "Going on: the hub restarts while it updates, so the connection drops for a moment. Call hub_update_status again to follow it.";
+    return "Going on: the workspace restarts while it updates, so the connection drops for a moment. Call hub_update_status again to follow it.";
   }
   return "Finished: each part says how it went.";
 }
 
 function refusal(r: Refused): ToolError {
-  if (r.kind === "not_wired") return new ToolError("failed", "The hub's update isn't ready yet; try again in a moment.");
+  if (r.kind === "not_wired") return new ToolError("failed", "The workspace's update isn't ready yet; try again in a moment.");
   if (r.kind === "nothing_to_retry") {
     return new ToolError(
       "failed",
-      "There is nothing to retry: the last update didn't update the hub, or didn't have that machine.",
+      "There is nothing to retry: the last update didn't update the workspace, or didn't have that machine.",
       "Press Update to update everything.",
     );
   }
   return new ToolError(
     "failed",
-    `The hub runs ${versionLabel(r.running)} now, not the build that update went to, so retrying it would put this machine behind the hub.`,
-    "Press Update to bring every machine to the hub's build.",
+    `The workspace runs ${versionLabel(r.running)} now, not the build that update went to, so retrying it would put this machine behind the workspace.`,
+    "Press Update to bring every machine to the workspace's build.",
   );
 }
 
@@ -110,17 +110,17 @@ export function register(tools: Registry): void {
     try {
       updates(hub).setSettings(input.auto, input.drainMinutes, speed);
     } catch (e) {
-      throw new ToolError("failed", `The hub couldn't write its update settings: ${(e as Error).message}`);
+      throw new ToolError("failed", `The workspace couldn't write its update settings: ${(e as Error).message}`);
     }
     return output(hub, updates(hub).status());
   });
   tools.add("hub_restart", (hub, caller) => {
     // It drops every app's and machine's connection for a moment, and a person decides it.
-    refuseUnlessAdminEverywhere(caller, "Restarting the hub drops every app's and machine's connection for a moment: it needs a person's key with Admin on every machine.");
+    refuseUnlessAdminEverywhere(caller, "Restarting the workspace drops every app's and machine's connection for a moment: it needs a person's key with Admin on every machine.");
     const u = updates(hub);
     const run = u.status();
     if (run && run.finishedAt === undefined && !u.leftOver()) {
-      throw new ToolError("failed", "fleetd is updating, and the update restarts the hub itself.", "Try again once the update has finished.");
+      throw new ToolError("failed", "fleetd is updating, and the update restarts the workspace itself.", "Try again once the update has finished.");
     }
     return restartHub(hub, caller);
   });

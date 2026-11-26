@@ -95,7 +95,7 @@ export class Registry {
     } catch (error) {
       if (error instanceof ToolError) return { error: { kind: "tool", error: isHuman(caller) ? error.forPerson() : error } };
       if (error instanceof NotImplemented) {
-        return { error: { kind: "tool", error: new ToolError("failed", error.message, "Use the Rust hub for this tool for now.") } };
+        return { error: { kind: "tool", error: new ToolError("failed", error.message, "Use the Rust workspace for this tool for now.") } };
       }
       console.error(`tool call failed: ${tool}:`, error);
       return { error: { kind: "tool", error: internalError() } };

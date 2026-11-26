@@ -89,18 +89,18 @@ it("each invitation in turn: Join, a refusal said in the box, then Not now goes 
 
 it("no team (one who came by an invitation and passed), and a failure, each with its way on", async () => {
   await show({ at: "no-team", email: "lee@example.com" });
-  expect(host.textContent).toContain("lee@example.com isn't in a fleetd team");
+  expect(host.textContent).toContain("lee@example.com isn't in a fleetd workspace");
   // A team of their own, on asking; a refusal says why, in place, and it can be asked again.
-  actions.makeTeam.mockResolvedValueOnce({ code: "rate_limited", message: "fleetd cloud is taking in too many new teams right now.", fix: "Try again in an hour." });
-  await press("Make a team");
-  expect(host.textContent).toContain("fleetd cloud is taking in too many new teams right now. Try again in an hour.");
+  actions.makeTeam.mockResolvedValueOnce({ code: "rate_limited", message: "fleetd cloud is taking in too many new workspaces right now.", fix: "Try again in an hour." });
+  await press("Make a workspace");
+  expect(host.textContent).toContain("fleetd cloud is taking in too many new workspaces right now. Try again in an hour.");
   actions.makeTeam.mockResolvedValueOnce(null);
-  await press("Make a team");
+  await press("Make a workspace");
   expect(actions.makeTeam).toHaveBeenCalledTimes(2);
   // Made: the app opens on it, and a second press in the meantime would make another, so the button stays off.
-  const make = [...host.querySelectorAll("button")].find((b) => b.textContent === "Make a team");
+  const make = [...host.querySelectorAll("button")].find((b) => b.textContent === "Make a workspace");
   expect(make?.disabled).toBe(true);
-  await press("Make a team");
+  await press("Make a workspace");
   expect(actions.makeTeam).toHaveBeenCalledTimes(2);
   await press("Sign out");
   expect(actions.signOut).toHaveBeenCalledOnce();
@@ -120,7 +120,7 @@ it("no team (one who came by an invitation and passed), and a failure, each with
 it("removed from a team since the last sign-in: the no-team and invited screens say it, in one line", async () => {
   await show({ at: "no-team", email: "lee@example.com", removed: "You were removed from acme." });
   expect(host.textContent).toContain("You were removed from acme.");
-  expect(host.textContent).toContain("lee@example.com isn't in a fleetd team");
+  expect(host.textContent).toContain("lee@example.com isn't in a fleetd workspace");
   await show({
     at: "invited",
     email: "lee@example.com",

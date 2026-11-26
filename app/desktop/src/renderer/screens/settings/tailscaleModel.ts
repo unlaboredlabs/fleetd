@@ -34,7 +34,7 @@ const sentence = (text: string): string => (/[.!?]$/u.test(text) ? text : `${tex
  * of the tailnet approves the device, or (to anyone else) that an admin connects it. None at rest.
  */
 export function lineOf(s: TailnetState, admin: boolean): { text: string; tone: Tone } | null {
-  if (s.status === "failed") return { text: sentence(s.problem ?? "Tailscale isn't working on the hub"), tone: "danger" };
+  if (s.status === "failed") return { text: sentence(s.problem ?? "Tailscale isn't working on the workspace"), tone: "danger" };
   if (s.status === "approve") return { text: "An admin of your tailnet approves the device in Tailscale's admin console.", tone: "quiet" };
   if (s.problem !== undefined) return { text: sentence(s.problem), tone: s.status === "connected" ? "warning" : "quiet" };
   if (!admin && s.status === "off") return { text: "An admin connects Tailscale.", tone: "quiet" };

@@ -84,8 +84,8 @@ export const realPorts = (call: JoinPorts["call"]): JoinPorts => ({
 });
 
 const TITLES = {
-  look: "check that this computer isn't part of a hub yet",
-  code: "get a one-time code from the hub",
+  look: "check that this computer isn't part of a workspace yet",
+  code: "get a one-time code from the workspace",
   download: (asset: string) => `download ${asset}`,
   check: "check it against the release's checksum",
   install: "put it in place",
@@ -157,9 +157,9 @@ export const thisComputer = async (fleetdDir: string, fingerprint?: string): Pro
 /** Why `here` is never joined from the app. */
 export const refusal = (here: ThisComputer): string | undefined =>
   here.kind === "hub"
-    ? "This computer runs the hub, so the hub sets up its node itself, with its own fleetd; nothing was changed here."
+    ? "This computer runs the workspace, so the workspace sets up its node itself, with its own fleetd; nothing was changed here."
     : here.kind === "node"
-      ? `This computer is already part of ${here.hub === "" ? "a hub" : `the hub at ${here.hub}`} as ${here.machineId}; nothing was changed.`
+      ? `This computer is already part of ${here.hub === "" ? "a workspace" : `the workspace at ${here.hub}`} as ${here.machineId}; nothing was changed.`
       : undefined;
 
 /** The release asset for this computer, as the installer names it (fleetd-bun-<os>-<arch>); undefined where fleetd has
@@ -227,7 +227,7 @@ export async function installBuild(
       } catch (error) {
         // A hub built from source runs a version no release was made for.
         if (!edge && base.startsWith(RELEASES) && String(error).includes("answered 404")) {
-          return fail(`There is no release for v${version}, the version the hub runs (a build from source?), so there is no build to match it. Run a released fleetd on the hub, then try again.`);
+          return fail(`There is no release for v${version}, the version the workspace runs (a build from source?), so there is no build to match it. Run a released fleetd on the workspace, then try again.`);
         }
         throw error;
       }
@@ -288,9 +288,9 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
   // The hub's own computer is set up by the hub, never joined a second time: asked before anything else, and a hub
   // that can't be asked joins nothing.
   const [info, fingerprint] = await Promise.all([ports.call("hub_info", {}), ports.fingerprint()]);
-  if (!info.ok) return fail(`Couldn't ask the hub which computer it runs on: ${info.error.message} Try again once it answers.`);
+  if (!info.ok) return fail(`Couldn't ask the workspace which computer it runs on: ${info.error.message} Try again once it answers.`);
   if (fingerprint !== undefined && str(info.output, "machineFingerprint") === fingerprint) {
-    return fail("This computer runs the hub, so the hub sets up its node itself, with its own fleetd; nothing was changed here.");
+    return fail("This computer runs the workspace, so the workspace sets up its node itself, with its own fleetd; nothing was changed here.");
   }
   // Its bin/fleetd is what a hub or a node here runs: never replaced, and never enrolled a second time.
   const why = refusal(await thisComputer(ports.fleetdDir, fingerprint));
@@ -302,10 +302,10 @@ export async function joinHere(ports: JoinPorts, machineId: string, report: (sta
   if (!joined.ok) return fail(joined.error.fix ? `${joined.error.message} ${joined.error.fix}` : joined.error.message);
   const hub = str(joined.output, "hubUrl");
   const code = str(joined.output, "code");
-  if (hub === undefined || code === undefined) return fail("The hub's answer had no address or code. Update the hub, then try again.");
+  if (hub === undefined || code === undefined) return fail("The workspace's answer had no address or code. Update the workspace, then try again.");
   const identity = str(joined.output, "gitIdentity");
   const version = str(info.output, "version");
-  if (version === undefined) return fail("The hub didn't say which fleetd it runs, so there is no build to match it. Try again once it answers.");
+  if (version === undefined) return fail("The workspace didn't say which fleetd it runs, so there is no build to match it. Try again once it answers.");
   done();
 
   const installed = await installBuild(ports, version, asset, { next, done });

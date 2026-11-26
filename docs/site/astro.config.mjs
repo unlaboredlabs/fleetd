@@ -105,11 +105,11 @@ export default defineConfig({
         },
         {
           label: "Machines & screens",
-          items: ["machines", "cloud-machines", "billing", "agents-mac", "browser-sessions", "desktop-app", "several-hubs", "mobile", "web-app", "phone-notifications"],
+          items: ["machines", "cloud-machines", "billing", "agents-mac", "browser-sessions", "desktop-app", "several-workspaces", "mobile", "web-app", "phone-notifications"],
         },
         {
-          label: "Running a hub",
-          items: ["config-and-files", "security", "moving-a-hub", "updating-and-uninstall", "releases", "troubleshooting"],
+          label: "Running a workspace",
+          items: ["config-and-files", "security", "moving-a-workspace", "updating-and-uninstall", "releases", "troubleshooting"],
         },
         { label: "Reference", items: ["reference/cli", "reference/agent-tools", "glossary"] },
       ],

@@ -6,7 +6,7 @@ description: Keep logins, cards, addresses and variables that agents use without
 The vault keeps the logins, cards, addresses and environment variables your agents use. Agents fill them in or get
 them in their environment, but never read the values. Every use is logged.
 
-- **Team vault** (Settings › Vault): logins, cards and addresses. Every bot's agents may use them.
+- **Workspace vault** (Settings › Vault): logins, cards and addresses. Every bot's agents may use them.
 - **Bot variables** (Settings › Bot › Vault): environment variables for one bot's agents.
 
 The phone app has the same lists, under Settings › Vault and a bot's Info › Vault.
@@ -62,14 +62,14 @@ import, as a card in its chat.
 
 ## The vault key {#key}
 
-The vault's key is kept outside the hub's database, so a copy of the database alone opens nothing. Owners and admins
-manage it in Settings › Hub › Bot defaults › Vault.
+The vault's key is kept outside the workspace's database, so a copy of the database alone opens nothing. Owners and admins
+manage it in Settings › Workspace › Bot defaults › Vault.
 
 :::caution
-Save the recovery code. On the hub, `fleetd vault recovery-code` prints it, and `fleetd vault restore-key` takes it
+Save the recovery code. On the workspace, `fleetd vault recovery-code` prints it, and `fleetd vault restore-key` takes it
 back. Without the key file and the code, every login, card and address is lost.
 :::
 
-By default the key is a file on the hub, `~/.fleetd/vault/root.key`. You can keep it in the system keychain or behind
+By default the key is a file on the workspace, `~/.fleetd/vault/root.key`. You can keep it in the system keychain or behind
 a passphrase instead; see `fleetd vault --help`. After an admin leaves, click **Rotate…** to seal every item under a
 new key.

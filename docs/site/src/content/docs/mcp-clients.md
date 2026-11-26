@@ -1,31 +1,31 @@
 ---
 title: MCP clients
-description: Connect Claude Code or another MCP client to the hub, to read and write to your bots from there.
+description: Connect Claude Code or another MCP client to the workspace, to read and write to your bots from there.
 ---
 
-Connect Claude Code, or any MCP client, to your hub, so it can read your bots' chats and status and write to their
+Connect Claude Code, or any MCP client, to your workspace, so it can read your bots' chats and status and write to their
 leads.
 
 ## Connect Claude Code {#claude-code}
 
-1. On the hub machine, create a key and save it to a file only you can read:
+1. On the workspace machine, create a key and save it to a file only you can read:
 
    ```sh
-   fleetd hub key create --name laptop --role operate --machines '*' --out ~/.fleetd/agent.key
+   fleetd workspace key create --name laptop --role operate --machines '*' --out ~/.fleetd/agent.key
    ```
 
 2. Copy the file to the computer that runs Claude Code, keeping it private:
 
    ```sh
-   (umask 077; mkdir -p ~/.fleetd; ssh hub 'cat ~/.fleetd/agent.key' > ~/.fleetd/agent.key)
+   (umask 077; mkdir -p ~/.fleetd; ssh workspace 'cat ~/.fleetd/agent.key' > ~/.fleetd/agent.key)
    ```
 
-   `hub` is the hub machine's SSH name.
+   `workspace` is the workspace machine's SSH name.
 
-3. Add the hub to Claude Code. Use your hub's address, followed by `/mcp`:
+3. Add the workspace to Claude Code. Use your workspace's address, followed by `/mcp`:
 
    ```sh
-   claude mcp add --transport http fleetd http://hub.your-tailnet.ts.net:4790/mcp \
+   claude mcp add --transport http fleetd http://fleetd.your-tailnet.ts.net:4790/mcp \
      --header "Authorization: Bearer $(cat ~/.fleetd/agent.key)"
    ```
 
@@ -39,15 +39,15 @@ Each key has a role:
 
 - `read`: read chats, status and prompts.
 - `operate`: also write to leads and manage bots.
-- `admin`: also change hub settings.
+- `admin`: also change workspace settings.
 
 `--machines '*'` gives the role on every machine. `--machines devbox,laptop` limits it.
 
-Manage keys on the hub machine:
+Manage keys on the workspace machine:
 
 ```sh
-fleetd hub key list
-fleetd hub key revoke <keyId>     # ends it at once
+fleetd workspace key list
+fleetd workspace key revoke <keyId>     # ends it at once
 ```
 
 ### Human keys {#human-key}
@@ -55,7 +55,7 @@ fleetd hub key revoke <keyId>     # ends it at once
 A human key speaks as you. Create one with `--human`:
 
 ```sh
-fleetd hub key create --human --name terminal --out ~/.fleetd/human.key
+fleetd workspace key create --human --name terminal --out ~/.fleetd/human.key
 ```
 
 - With a human key, messages to a lead count as yours.
@@ -91,12 +91,12 @@ It works with any git host. A claim lasts 12 hours after you last renew it.
 
 ## From a script {#script}
 
-The hub speaks MCP over HTTP. A call first opens a session, then calls a tool. Save this as `mcp.sh`:
+The workspace speaks MCP over HTTP. A call first opens a session, then calls a tool. Save this as `mcp.sh`:
 
 ```sh
 #!/bin/sh
 # mcp.sh <tool> '<json arguments>'
-URL=${FLEETD_HUB:-http://hub.your-tailnet.ts.net:4790}/mcp
+URL=${FLEETD_URL:-http://fleetd.your-tailnet.ts.net:4790}/mcp
 AUTH="Authorization: Bearer $(cat "$FLEETD_KEY_FILE")"
 post() { curl -s "$URL" -H "$AUTH" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" "$@"; }
 SID=$(post -D - -o /dev/null -d '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"script","version":"1"}}}' | tr -d '\r' | awk -F': ' 'tolower($1)=="mcp-session-id"{print $2}')

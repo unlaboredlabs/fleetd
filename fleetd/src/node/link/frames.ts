@@ -60,7 +60,7 @@ export function readHubFrame(raw: string, tags: readonly string[]): { frame: Hub
 export function refusal(bad: Undecodable): NodeFrame | undefined {
   const id = bad.id;
   if (!id) return undefined;
-  const why = `the node could not read this ${bad.tag} (it and the hub may run different fleetd versions): ${bad.error}`;
+  const why = `the node could not read this ${bad.tag} (it and the workspace may run different fleetd versions): ${bad.error}`;
   const answer: Record<string, Record<string, unknown>> = {
     cmd_check: { t: "cmd_result", id, exitCode: null, outputTail: why, timedOut: false },
     secret_deliver: { t: "secret_result", id, error: why },

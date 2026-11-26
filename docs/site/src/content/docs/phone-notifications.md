@@ -5,7 +5,7 @@ description: What the phone app notifies you about, how to act on a notification
 
 This page is for phone notifications: what they show, acting on them, and turning them off.
 
-Pair the phone and allow notifications: they just work. Each one is sealed to your phone's own key on the hub, so
+Pair the phone and allow notifications: they just work. Each one is sealed to your phone's own key on the workspace, so
 only your phone can read it. They pass through fleetd's push relay, `push.fleetd.sh`, which can't read them.
 
 ## What you get {#what}
@@ -13,12 +13,12 @@ only your phone can read it. They pass through fleetd's push relay, `push.fleetd
 Each notification goes to the person it's for, not everyone on the bot:
 
 - The lead's messages, to whoever started the work, or whom it's answering.
-- Approvals and secrets, to whoever started the order. Work nobody started goes to the hub's owner.
+- Approvals and secrets, to whoever started the order. Work nobody started goes to the workspace's owner.
 - Orders that landed or stopped.
 - A screen that needs you.
 - For owners and admins, a [machine down](/docs/machines#down) for 10 minutes.
 
-During the hub's quiet hours they arrive without a sound, unless urgent (money, or a command that can't be undone).
+During the workspace's quiet hours they arrive without a sound, unless urgent (money, or a command that can't be undone).
 
 ## Act from a notification {#actions}
 
@@ -37,14 +37,14 @@ The app icon's badge counts what needs you.
 
 ## What the relay sees {#sees}
 
-- **It sees**: your phone's push token, each notification's size and time, and the hub's IP address.
+- **It sees**: your phone's push token, each notification's size and time, and the workspace's IP address.
 - **It can't see**: any content: not the text, the bot or the person.
 
 It keeps nothing.
 
 ## Turn notifications off {#off}
 
-On the hub:
+On the workspace:
 
 ```sh
 fleetd push-relay set off                       # no phone notifications
@@ -71,13 +71,13 @@ fleetd push-relay --listen 127.0.0.1:4795
 
 Set `FLEETD_APNS_SANDBOX=1` only for development builds from Xcode.
 
-### Point the hub at it {#hub}
+### Point the workspace at it {#workspace}
 
 ```sh
 fleetd push-relay set http://127.0.0.1:4795
 ```
 
-If the relay listens on more than `127.0.0.1`, give it a key so it only takes your hubs:
+If the relay listens on more than `127.0.0.1`, give it a key so it only takes your workspaces:
 
 ```sh
 openssl rand -hex 32 > ~/keys/push-relay.key

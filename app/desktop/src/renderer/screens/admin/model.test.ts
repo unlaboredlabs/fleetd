@@ -131,9 +131,9 @@ describe("a person's devices", () => {
 });
 
 describe("a cloud team's words", () => {
-  it("calls the key the team's", () => {
+  it("calls the key the workspace's, as a self-hosted one does", () => {
     const claude = { person: { personId: "p1", name: "Sam" }, runsOn: { kind: "account", account: { kind: "hub" } } } as never;
-    expect(accountsLine(claude, undefined, false, false, true)).toBe("Claude: Team API key");
-    expect(accountsLine(claude, undefined, false)).toBe("Claude: Hub API key");
+    expect(accountsLine(claude, undefined, false, false)).toBe("Claude: Workspace API key");
+    expect(accountsLine(claude, undefined, false)).toBe("Claude: Workspace API key");
   });
 });

@@ -23,7 +23,7 @@ import { formatRoute, parseRoute } from "./route";
 
 const summary = (id: string, extra: Partial<PromptSummary> = {}): PromptSummary => ({
   id,
-  title: `Hub title of ${id}`,
+  title: `Workspace title of ${id}`,
   kind: "msg",
   group: "messages",
   sentWhen: "per something",
@@ -127,9 +127,9 @@ group("the editor", () => {
     expect(editScope(d, storefront)).toBe("global");
     expect(editScope({ ...d, perProject: true }, storefront)).toBe("project");
     expect(editScope({ ...d, perProject: true }, HUB)).toBe("global");
-    expect(effectLine(d, storefront, "acme/storefront")).toBe("In effect: fleetd's built-in text. This prompt has one hub-wide text: saving changes it for every bot.");
+    expect(effectLine(d, storefront, "acme/storefront")).toBe("In effect: fleetd's built-in text. This prompt has one workspace-wide text: saving changes it for every bot.");
     expect(effectLine({ ...d, perProject: true, scope: "project" }, storefront, "acme/storefront")).toBe("In effect: acme/storefront's own edit. Saving changes it for acme/storefront only.");
-    expect(effectLine({ ...d, scope: "global" }, HUB, null)).toBe("In effect: the hub-wide edit. Saving changes it for every bot without its own edit.");
+    expect(effectLine({ ...d, scope: "global" }, HUB, null)).toBe("In effect: the workspace-wide edit. Saving changes it for every bot without its own edit.");
   });
 
   it("says who still keeps a safety rule the text dropped", () => {

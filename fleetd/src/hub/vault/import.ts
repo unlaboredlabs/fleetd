@@ -102,7 +102,7 @@ export async function propose(hub: Hub, caller: LeadCaller, call: LeadCall): Pro
   leadOnly(caller);
   const r = caller.projectRef;
   const person = leadPerson(hub);
-  if (person === undefined) throw new ToolError("failed", "Nobody's 1Password to import from on this hub.");
+  if (person === undefined) throw new ToolError("failed", "Nobody's 1Password to import from on this workspace.");
   const refs = Array.isArray(call.refs) ? [...new Set(call.refs.map(String))] : [];
   if (refs.length === 0 || refs.length > 50 || refs.some((x) => !OP_ITEM.test(x))) {
     throw new ToolError("invalid", "refs: 1 to 50 op://<vault>/<item> references from vault_import_search.");
@@ -219,7 +219,7 @@ export function registerLeadCalls(hub: Hub): void {
   calls.register("vault_import_search", async (caller, call) => {
     leadOnly(caller);
     const person = leadPerson(hub);
-    if (person === undefined) return { items: [], error: "Nobody's 1Password to search on this hub." };
+    if (person === undefined) return { items: [], error: "Nobody's 1Password to search on this workspace." };
     const kinds = Array.isArray(call.kinds) ? (call.kinds as VaultKind[]) : undefined;
     return await search(hub, person, typeof call.query === "string" ? call.query : "", kinds);
   });

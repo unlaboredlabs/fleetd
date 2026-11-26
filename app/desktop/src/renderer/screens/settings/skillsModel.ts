@@ -6,7 +6,7 @@ export const ORIGIN_LABEL: Readonly<Record<SkillOrigin, string>> = {
   repo_agents: "Repo · .agents/skills",
   repo_claude: "Repo · .claude/skills",
   project: "This bot",
-  global: "Hub-wide",
+  global: "Workspace-wide",
 };
 
 /** The Agent Skills spec's name: lowercase letters, digits and single hyphens, at most 64 characters. */

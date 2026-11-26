@@ -18,9 +18,9 @@ const sources = (dir: string): string[] =>
 describe("Settings paths", () => {
   it("reads a path's pages as Settings names them", () => {
     expect(settingsPathProblems("reconnect it in Settings › Accounts › Claude.")).toEqual([]);
-    expect(settingsPathProblems("in Settings › Hub › Setup › Claude, or Settings › Team › Billing")).toEqual([]);
+    expect(settingsPathProblems("in Settings › Workspace › Setup › Claude, or Settings › Workspace › Billing")).toEqual([]);
     expect(settingsPathProblems("in Settings › Your accounts › Claude")).toEqual(["Settings › Your accounts › Claude"]);
-    expect(settingsPathProblems("Settings › Hub › Hub accounts")).toEqual(["Settings › Hub › Hub accounts"]);
+    expect(settingsPathProblems("Settings › Workspace › Workspace accounts")).toEqual(["Settings › Workspace › Workspace accounts"]);
     // Somewhere else's settings: macOS's, a bot's own pages, a GitHub organisation's.
     expect(settingsPathProblems("System Settings › Privacy & Security; the bot's Settings › Payments; Settings › fleetd › Camera")).toEqual([]);
   });
@@ -33,7 +33,7 @@ describe("Settings paths", () => {
   });
 });
 
-describe("a fleetd cloud team's Settings group", () => {
+describe("the admins' Settings group", () => {
   it("is named by settingsPath, never written: no line of the apps names Settings › Hub or a Hub › page itself", () => {
     const found = [join(app, "desktop", "src"), join(app, "mobile", "src")].flatMap(sources).flatMap((path) =>
       readableLines(readFileSync(path, "utf8"))
@@ -43,9 +43,9 @@ describe("a fleetd cloud team's Settings group", () => {
     expect(found).toEqual([]);
   });
 
-  it("reads Team on a cloud team and Hub on a self-hosted hub", () => {
-    expect(settingsPath(true, "Machines")).toBe("Settings › Team › Machines");
-    expect(settingsPath(false, "Setup", "GitHub")).toBe("Settings › Hub › Setup › GitHub");
+  it("reads Workspace on a cloud team and on a self-hosted hub", () => {
+    expect(settingsPath(true, "Machines")).toBe("Settings › Workspace › Machines");
+    expect(settingsPath(false, "Setup", "GitHub")).toBe("Settings › Workspace › Setup › GitHub");
   });
 });
 

@@ -1,5 +1,5 @@
 {
   "code": 1,
   "stdout": "",
-  "stderr": "fleetd: no hub in $HOME/hub; run this on the hub machine\n"
+  "stderr": "fleetd: no workspace in $HOME/hub; run this on the workspace's machine\n"
 }

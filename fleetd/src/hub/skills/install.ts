@@ -32,7 +32,7 @@ async function git(dir: string, args: string[]): Promise<string> {
       stderr: "pipe",
     });
   } catch (error) {
-    throw new ToolError("failed", `cannot run git on the hub: ${(error as Error).message}`, "Install git where the hub runs.");
+    throw new ToolError("failed", `cannot run git on the workspace's machine: ${(error as Error).message}`, "Install git where the workspace runs.");
   }
   const timer = setTimeout(() => proc.kill(), FETCH_TIMEOUT_MS);
   const [code, out, err] = await Promise.all([proc.exited, new Response(proc.stdout as ReadableStream).text(), new Response(proc.stderr as ReadableStream).text()]);
@@ -40,7 +40,7 @@ async function git(dir: string, args: string[]): Promise<string> {
   if (proc.signalCode) throw new ToolError("failed", "git took too long to fetch the source.");
   if (code !== 0) {
     const line = err.split("\n").reverse().find((l) => l.trim())?.trim() ?? "failed";
-    throw new ToolError("failed", `git ${args[0]}: ${line}`, "Check the source: a public repo, or one the hub's git can read.");
+    throw new ToolError("failed", `git ${args[0]}: ${line}`, "Check the source: a public repo, or one the workspace's git can read.");
   }
   return out.trim();
 }

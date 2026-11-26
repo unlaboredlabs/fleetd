@@ -52,7 +52,7 @@ export const pickedName = (fileName: string | null | undefined, uri: string, fal
 /** Why the hub wouldn't take a file, before sending a byte; undefined when it would. */
 export const refusal = (name: string, mime: AttachmentMime | undefined, bytes: number): string | undefined => {
   if (mime === undefined) return `${name} can't be sent: chats take ${TAKES}.`;
-  if (bytes > ATTACHMENT_MAX_BYTES) return `${name} is ${fileSize(bytes)}: the hub takes files up to ${fileSize(ATTACHMENT_MAX_BYTES)}.`;
+  if (bytes > ATTACHMENT_MAX_BYTES) return `${name} is ${fileSize(bytes)}: the workspace takes files up to ${fileSize(ATTACHMENT_MAX_BYTES)}.`;
   return undefined;
 };
 

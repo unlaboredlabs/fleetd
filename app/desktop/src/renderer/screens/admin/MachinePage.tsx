@@ -123,7 +123,7 @@ export function MachinePage({ machineId }: { machineId: string }) {
               removed ? (
                 `Removed ${name}.`
               ) : fresh ? (
-                "This hub has no such machine. It may have been removed."
+                "This workspace has no such machine. It may have been removed."
               ) : (
                 "Loading…"
               )
@@ -297,7 +297,7 @@ function LoginRow({ problem, machineId, onLoggedIn }: { problem: Problem; machin
         ) : login.step === "starting" ? (
           `Starting claude auth login on ${machineId}…`
         ) : !live && waiting ? (
-          "Not connected to the hub."
+          "Not connected to the workspace."
         ) : undefined
       }
       lineTone={error === undefined ? "quiet" : "danger"}

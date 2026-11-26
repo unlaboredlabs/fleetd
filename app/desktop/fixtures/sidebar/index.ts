@@ -190,14 +190,14 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
   const f = Fixture.from(
     base("typical"),
     offline ? "sidebar-hubs-offline" : "sidebar-hubs",
-    offline ? "Two hubs, Personal and Acme; Acme can't be reached, Personal works on." : "Two hubs, Personal and Acme, each under its name in one sidebar.",
+    offline ? "Two workspaces, Personal and Acme; Acme can't be reached, Personal works on." : "Two workspaces, Personal and Acme, each under its name in one sidebar.",
   );
   retitle(f, { storefront: "blog", billing: "garden-sensors", checkout: "recipes" });
   f.label = "Personal";
   f.color = "green";
   const acme = reasons(base("status-rows"));
   acme.state = offline
-    ? { phase: "retrying", hub: "https://hub.acme.example", reason: "The hub didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 }
+    ? { phase: "retrying", hub: "https://hub.acme.example", reason: "The workspace didn't answer: connection refused", fix: "Check you're on Acme's network or VPN.", retryAt: Date.parse(f.now) + 25_000 }
     : { phase: "live", hub: "https://hub.acme.example", protocol: f.state.phase === "live" ? f.state.protocol : 1 };
   f.hubs = [{ label: "Acme", color: "amber", fixture: acme }];
   // Settings › Hubs & devices lists your devices on each.
@@ -208,7 +208,7 @@ const hubs = (base: (name: "typical" | "status-rows") => Fixture, offline: boole
 
 /** The two hubs, each with pins and sections of its own: Personal's Home, and Acme's Clients and Later. */
 const sectionHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixture => {
-  const f = Fixture.from(hubs(base, false), "sidebar-sections-hubs", "Two hubs, each with its own pins and sections: Personal's Home, Acme's Clients and Later.");
+  const f = Fixture.from(hubs(base, false), "sidebar-sections-hubs", "Two workspaces, each with its own pins and sections: Personal's Home, Acme's Clients and Later.");
   sectioned(f, ["blog"], { Home: ["garden-sensors"] });
   for (const hub of f.hubs) sectioned(colored(hub.fixture), ["storefront", "billing"], ACME_SECTIONS);
   return f;
@@ -219,7 +219,7 @@ const sectionHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixtur
  * Home, Acme's Clients and Later, and Studio's Launch and Ops, whose newsletter waits on you.
  */
 const manyHubs = (base: (name: "typical" | "status-rows") => Fixture): Fixture => {
-  const f = Fixture.from(sectionHubs(base), "sidebar-many-hubs", "Three hubs, nineteen bots, each hub with its own pins and sections: Personal, Acme and Studio.");
+  const f = Fixture.from(sectionHubs(base), "sidebar-many-hubs", "Three workspaces, nineteen bots, each workspace with its own pins and sections: Personal, Acme and Studio.");
   const studio = colored(reasons(base("status-rows")));
   retitle(studio, { storefront: "brand-site", billing: "podcast", checkout: "newsletter", docs: "handbook", inventory: "assets", search: "analytics", mobile: "ios-app", "Rewrite the pricing page headline and the Team plan comparison table from the copy review, keeping both variants": "spring-campaign" });
   sectioned(studio, ["brand-site"], { Launch: ["newsletter", "podcast", "ios-app"], Ops: ["handbook", "assets", "analytics"] });

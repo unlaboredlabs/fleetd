@@ -117,7 +117,7 @@ export const invitationLine = (i: Pick<AccountsInvitation, "role">): string =>
   `You'd join as ${i.role === "admin" || i.role === "owner" ? "an" : "a"} ${i.role}. Join only if you know who sent it.`;
 
 /** What a pairing link to a team of fleetd cloud's says before it pairs: the address alone looks like fleetd's own. */
-export const CLOUD_TEAM_LINK = "This is a fleetd cloud team. Anyone can make one, so join only if you know who sent you this link.";
+export const CLOUD_TEAM_LINK = "This is a fleetd cloud workspace. Anyone can make one, so join only if you know who sent you this link.";
 
 /**
  * A team's hub address from the accounts service, as an origin: https and under the accounts host's parent domain

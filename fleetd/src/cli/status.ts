@@ -28,16 +28,16 @@ export type StatusArgs = { hub?: [string, string]; home?: string; target: string
 
 /** `--hub` and `--key-file`, both or neither. */
 export function hubFlags(v: { str(n: string): string | undefined }): [string, string] | undefined {
-  const hub = v.str("hub") || undefined;
+  const hub = v.str("workspace") || undefined;
   const key = v.str("key-file") || undefined;
   if (hub !== undefined && key !== undefined) return [hub, key];
-  if (hub !== undefined) throw new ArgError("--hub needs --key-file");
-  if (key !== undefined) throw new ArgError("--key-file needs --hub");
+  if (hub !== undefined) throw new ArgError("--workspace needs --key-file");
+  if (key !== undefined) throw new ArgError("--key-file needs --workspace");
   return undefined;
 }
 
 export function parseStatusArgs(argv: string[]): StatusArgs {
-  const v = parse(argv, { options: { hub: "str", "key-file": "str", watch: "bool", json: "bool" }, positionals: true });
+  const v = parse(argv, { options: { workspace: "str", "key-file": "str", watch: "bool", json: "bool" }, positionals: true });
   if (v instanceof ArgError) throw v;
   if (v.positionals.length > 1) throw new ArgError(`give one bot, got '${v.positionals.join(" ")}'`);
   const hub = hubFlags(v);
@@ -151,7 +151,7 @@ export function render(rows: any[], zone: string): string {
 
 function notLiveBanner(last: any[], zone: string, reason: string): string {
   const from = last[0] === undefined ? "" : ` · rows from ${at(last[0].asOf, last[0].asOf, zone)}`;
-  return `NOT LIVE: reconnecting to the hub (${reason})${from}`;
+  return `NOT LIVE: reconnecting to the workspace (${reason})${from}`;
 }
 
 // ---- talking to the hub ----
@@ -172,7 +172,7 @@ async function connect(target: Target): Promise<McpClient> {
     return await connectAs(target.home, "fleetd-status");
   } catch (f) {
     if (!isFailure(f)) throw f;
-    throw new McpError(`${f.message}\n  fix: run it on the hub machine, or pass --hub <url> --key-file <path>`);
+    throw new McpError(`${f.message}\n  fix: run it on the workspace's machine, or pass --workspace <url> --key-file <path>`);
   }
 }
 
@@ -182,7 +182,7 @@ async function call(client: McpClient, tool: string, input: unknown, timeoutMs: 
   if (result.isError) {
     const text = (k: string) => (typeof result.body?.[k] === "string" ? (result.body[k] as string) : undefined);
     const fix = text("fix");
-    eprintln(`fleetd status: ${text("message") ?? "the hub refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
+    eprintln(`fleetd status: ${text("message") ?? "the workspace refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
     throw new Exit(3);
   }
   return result.body;

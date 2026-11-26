@@ -28,7 +28,7 @@ const PAGES = [
 ];
 const OWN = /^https:\/\/github\.com\/unlaboredlabs\/fleetd\/(?:blob|tree|edit)\/main\/(.+)$/u;
 // Hosts that are examples or this site itself (production lags a PR), never fetched.
-const SKIP = new Set(["fleetd.sh", "www.fleetd.sh", "127.0.0.1", "localhost", "hub.your-tailnet.ts.net"]);
+const SKIP = new Set(["fleetd.sh", "www.fleetd.sh", "127.0.0.1", "localhost", "fleetd.your-tailnet.ts.net"]);
 const errors = [];
 const external = new Map();
 const ids = new Map();

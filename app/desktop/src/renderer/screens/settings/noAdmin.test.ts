@@ -11,7 +11,7 @@ vi.hoisted(() => {
 describe("Settings' search for a member", () => {
   it("offers no Hub page or option", () => {
     expect(optionsFor(false).some((o) => isHubTab(o.tab))).toBe(false);
-    for (const q of ["machine cap", "max agents", "machine roles", "people", "invite", "github app", "hub accounts", "claude api key", "setup"]) {
+    for (const q of ["machine cap", "max agents", "machine roles", "people", "invite", "github app", "workspace accounts", "claude api key", "setup"]) {
       expect(searchSettings(q, optionsFor(false)).filter((o) => isHubTab(o.tab)), q).toEqual([]);
     }
   });

@@ -37,7 +37,7 @@ test.skipIf(!BIN)("FLEETD_HOME keeps init and pair in it", async () => {
   const init = await m.fleetd(["init", "--no-service", "--listen", `127.0.0.1:${freePort()}`], fleet);
   expect(init.code, init.stderr).toBe(0);
   // A fresh home gets the plain hub setup, not a repair of the real worker.
-  expect(init.stderr).toContain("hub home");
+  expect(init.stderr).toContain("workspace home");
   expect(existsSync(join(fleet, "hub/setup.json"))).toBe(true);
 
   const pair = await m.fleetd(["pair"], fleet);
@@ -55,7 +55,7 @@ test.skipIf(!BIN)("FLEETD_HOME moves every default", async () => {
   expect(existsSync(join(fleet, "app-pair.json"))).toBe(true);
 
   const status = await m.fleetd(["status"], fleet);
-  expect(status.stderr).toContain(`${join(fleet, "hub")} has no hub set up`);
+  expect(status.stderr).toContain(`${join(fleet, "hub")} has no workspace set up`);
   m.untouched();
 });
 
@@ -67,7 +67,7 @@ test.skipIf(!BIN)("client commands follow FLEETD_HOME", async () => {
   writeFileSync(key, "fld_x\n");
   for (const args of [["status"], ["time"], ["steers", "W1", "--key-file", key]]) {
     const out = await m.fleetd(args, fleet);
-    const said = out.stderr.includes(`${hub} has no hub set up`) || out.stderr.includes(`no hub is set up on this machine (${hub})`);
+    const said = out.stderr.includes(`${hub} has no workspace set up`) || out.stderr.includes(`no workspace is set up on this machine (${hub})`);
     expect(said, `${args.join(" ")}: ${out.stderr}`).toBe(true);
   }
   m.untouched();
@@ -111,7 +111,7 @@ test.skipIf(!BIN)("a second fleet never touches the first fleet's services", asy
   const removed = await m.fleetd(["machine", "remove", "here", "--purge"], fleet, env);
   expect(removed.stderr).toContain("another fleet's node");
   const uninstalled = await m.fleetd(["uninstall", "--purge"], fleet, env);
-  expect(uninstalled.stderr).toContain("another fleet's hub");
+  expect(uninstalled.stderr).toContain("another fleet's workspace");
 
   expect(readFileSync(hubUnit, "utf8")).toBe(realHub);
   expect(readFileSync(nodeUnit, "utf8")).toBe(realNode);

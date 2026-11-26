@@ -420,7 +420,7 @@ describe("a request the hub reopens", () => {
     // The link drops; the hub approves and reopens it in the gap, saying the same, and its events are never sent.
     // The fresh snapshot's reread is the only news.
     act(() => {
-      hub.send({ t: "state", state: { phase: "retrying", hub: `devbox-${String(hubs)}:4710`, reason: "The hub stopped answering", retryAt: 0 } });
+      hub.send({ t: "state", state: { phase: "retrying", hub: `devbox-${String(hubs)}:4710`, reason: "The workspace stopped answering", retryAt: 0 } });
     });
     act(() => {
       hub.send({ t: "state", state: { phase: "live", hub: `devbox-${String(hubs)}:4710`, protocol: 1 } });

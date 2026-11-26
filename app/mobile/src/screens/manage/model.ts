@@ -176,7 +176,7 @@ export interface LeadLine {
 export const leadLines = (view: ProfilesListOutput): LeadLine[] => {
   const pick = view.leadProfile ?? LEAD_HUB;
   return [
-    { value: LEAD_HUB, title: `Hub default (${leadOf(view.profiles)?.name ?? ""})`, checked: pick === LEAD_HUB, disabled: false },
+    { value: LEAD_HUB, title: `Workspace default (${leadOf(view.profiles)?.name ?? ""})`, checked: pick === LEAD_HUB, disabled: false },
     ...byProviderOf(view.profiles).map(
       ({ profile: p, group }): LeadLine => ({ value: p.name, title: p.name, checked: pick === p.name, disabled: p.refused !== undefined, ...(p.refused === undefined ? {} : { why: p.refused }), group }),
     ),
@@ -199,7 +199,7 @@ export const leadSections = (lines: ReadonlyArray<LeadLine>): { group: string | 
 export const leadRestartRow = (view: ProfilesListOutput): "offer" | "waits" => (view.leadRestarting === true ? "waits" : "offer");
 
 /** The value on its Lead Model row. */
-export const leadValue = (view: ProfilesListOutput): string => view.leadProfile ?? "Hub default";
+export const leadValue = (view: ProfilesListOutput): string => view.leadProfile ?? "Workspace default";
 
 export interface DeleteWords {
   readonly title: string;
@@ -235,7 +235,7 @@ export const deleteBlocked = (settings: ProjectSettings): string | undefined =>
   settings.worktrees === undefined ? `Its worktrees can't be listed now: ${settings.worktreesUnknown ?? "its machine hasn't listed them."} Delete once they can.` : undefined;
 
 /** New Bot's line while the hub link is down: Create stays pressable and says this rather than going grey. */
-export const NOT_CONNECTED = "Not connected to the hub. Create works once it's back.";
+export const NOT_CONNECTED = "Not connected to the workspace. Create works once it's back.";
 
 /** What New Bot still says once the link is `live` again: not that it is down. */
 export const refusalNow = (refused: string | undefined, live: boolean): string | undefined => (live && refused === NOT_CONNECTED ? undefined : refused);

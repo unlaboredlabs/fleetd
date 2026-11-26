@@ -1,5 +1,5 @@
 {
   "code": 0,
-  "stdout": "usage:\n  update [--check] [--speed fast|steady] [--now]\n             replace this fleetd with the build the rollout has for it, then restart its hub at\n             once and its node once its agents finish the step they're on (10 min at most; --now\n             doesn't wait): what they were running carries on by itself. The app's Update button\n             does this for the hub and every node; this is for a machine without the app.\n             --speed fast (each build once its staged rollout reaches this hub) or steady (builds\n             out 2 days); default: the hub's Update speed, Fast.\n",
+  "stdout": "usage:\n  update [--check] [--speed fast|steady] [--now]\n             replace this fleetd with the build the rollout has for it, then restart its workspace\n             at once and its node once its agents finish the step they're on (10 min at most; --now\n             doesn't wait): what they were running carries on by itself. The app's Update button\n             does this for the workspace and every node; this is for a machine without the app.\n             --speed fast (each build once its staged rollout reaches this workspace) or steady\n             (builds out 2 days); default: the workspace's Update speed, Fast.\n",
   "stderr": ""
 }

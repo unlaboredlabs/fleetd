@@ -91,7 +91,7 @@ export function Artifact({ navigation, route }: ChatInfoProps<"Artifact">) {
     [navigation, key],
   );
 
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   if (r === undefined) return <ActivityIndicator style={styles.loading} color={t.secondary} />;
   if (!r.ok) {
     if (r.error.code === "not_found") return <EmptyState icon="folder" title="Not Here" body="This chat doesn't have that artifact." />;

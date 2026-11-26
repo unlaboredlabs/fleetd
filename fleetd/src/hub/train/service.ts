@@ -1986,7 +1986,7 @@ export class Train {
       // Side by side, each in its own place: its CI watched again, or back in line.
       for (const change of inCi) {
         lanes.start(this, repo, change, async () => {
-          if (!(await this.resumeCi(change))) this.putBack(change, "the hub restarted while the train worked on it");
+          if (!(await this.resumeCi(change))) this.putBack(change, "the workspace restarted while the train worked on it");
         });
       }
       resumed = true;
@@ -2005,8 +2005,8 @@ export class Train {
       else if (pull && change.state === "merging" && pull.state === "open") {
         const landed = await batch.landedInBatch(this, change);
         if (landed) await batch.finishBatchMember(this, change, landed);
-        else this.putBack(change, "the hub restarted while the train worked on it");
-      } else this.putBack(change, "the hub restarted while the train worked on it");
+        else this.putBack(change, "the workspace restarted while the train worked on it");
+      } else this.putBack(change, "the workspace restarted while the train worked on it");
     }
     this.recovered.add(repo);
   }
@@ -2029,7 +2029,7 @@ export class Train {
         if (open.some((b) => batchHeads(b.body ?? "").some(([n]) => n === change.prNumber))) return false;
       } catch {}
     }
-    console.info(`train: the hub restarted; watching ${change.changeId}'s CI again`);
+    console.info(`train: the workspace restarted; watching ${change.changeId}'s CI again`);
     this.guardBase(change.repo, pull.base.ref);
     const label = await next.label(this, change.repo, change.prNumber, hasLabel(pull, NEXT_LABEL));
     try {
@@ -2378,7 +2378,7 @@ export class Train {
               again ? "nothing: the train reads it again on its next pass" : "enqueue it again in a minute",
             );
           }
-          throw err("invalid", `Could not read ${prUrl} from GitHub: ${ghMessage(error)}`, "Check the URL; the hub reads PRs with its own `gh` login.");
+          throw err("invalid", `Could not read ${prUrl} from GitHub: ${ghMessage(error)}`, "Check the URL; the workspace reads PRs with its own `gh` login.");
         }
         this.guardBase(repo, pull.base.ref);
         const now = this.nowIso();

@@ -27,7 +27,7 @@ export async function hubInfo(client: McpClient): Promise<any> {
     result = await client.callTool("hub_info", {}, 30_000);
   } catch (error) {
     const m = (error as Error).message;
-    throw new Error(m.includes("not found") ? "the hub's fleetd is too old to say" : m);
+    throw new Error(m.includes("not found") ? "the workspace's fleetd is too old to say" : m);
   }
   if (result.isError) {
     throw new Error(typeof result.body?.message === "string" ? result.body.message : JSON.stringify(result.body));
@@ -51,7 +51,7 @@ export async function line(client: McpClient): Promise<string | undefined> {
 
 export function mismatch(cli: string, hub: string | undefined, nodes: readonly (readonly [string, string])[]) {
   const who: [string, string][] = [[cli, "this CLI"]];
-  if (hub !== undefined) who.push([hub, "the hub"]);
+  if (hub !== undefined) who.push([hub, "the workspace"]);
   for (const [name, v] of nodes) who.push([v, `node ${name}`]);
   const groups: [string, string[]][] = [];
   for (const [version, name] of who) {

@@ -29,7 +29,7 @@ export const IMPORT_MS = 300_000;
 export const IMPORT_MAX = 100_000;
 
 /** A hub from before memory_import, in the person's words rather than the hub's own ("No tool memory_import."). */
-export const OLD_HUB: HubError = { code: "unsupported", message: "This hub can't import memory yet.", fix: "Update fleetd on the hub, then try again." };
+export const OLD_HUB: HubError = { code: "unsupported", message: "This workspace can't import memory yet.", fix: "Update fleetd on the workspace, then try again." };
 
 /** The link dropped or timed out before the answer: the hub may have finished the import all the same. */
 export const lostAnswer = (e: HubError): boolean => e.code === "disconnected" || e.code === "timeout";

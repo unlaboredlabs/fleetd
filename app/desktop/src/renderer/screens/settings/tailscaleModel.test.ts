@@ -19,8 +19,8 @@ describe("Tailscale's row", () => {
   });
 
   it("is off with why where the hub can't run it, and Connect off there; a member is told an admin connects it", () => {
-    const mac = { status: "off", problem: "Tailscale isn't running on the hub's computer" };
-    expect(lineOf(mac, true)?.text).toBe("Tailscale isn't running on the hub's computer.");
+    const mac = { status: "off", problem: "Tailscale isn't running on the workspace's computer" };
+    expect(lineOf(mac, true)?.text).toBe("Tailscale isn't running on the workspace's computer.");
     expect(canConnect(mac)).toBe(false);
     expect(canConnect({ status: "off" })).toBe(true);
     expect(canConnect({ status: "failed", problem: "x" })).toBe(true);

@@ -463,7 +463,7 @@ describe("a notification's buttons", () => {
     try {
       const offline = act({ t: "reply", key: "devbox/inbox", text: "Hi" }, said, link, () => "c2");
       await vi.advanceTimersByTimeAsync(READY_TIMEOUT_MS);
-      expect(await offline).toEqual({ followUp: { title: "Ada", body: "Your reply wasn't sent: The hub can't be reached.", route: { t: "chat", key: "devbox/inbox" } } });
+      expect(await offline).toEqual({ followUp: { title: "Ada", body: "Your reply wasn't sent: The workspace can't be reached.", route: { t: "chat", key: "devbox/inbox" } } });
     } finally {
       vi.useRealTimers();
     }

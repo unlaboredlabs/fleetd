@@ -19,7 +19,7 @@ function person(caller: Caller): PersonId {
   throw new ToolError(
     "forbidden",
     "Phone notifications are a person's: only a person's own paired device registers them.",
-    "Pair the phone with the hub (`fleetd pair` or an invite), then register it from the app.",
+    "Pair the phone with the workspace (`fleetd pair` or an invite), then register it from the app.",
   );
 }
 
@@ -28,14 +28,14 @@ function reseal(hub: Hub, sealed: string): string {
   const refused = () =>
     new ToolError(
       "invalid",
-      "The relay key wasn't sealed to this hub, or is empty.",
+      "The relay key wasn't sealed to this workspace, or is empty.",
       "Seal the relay's key to boxPubKey from hub_info, or run `fleetd push-relay set <url> --relay-key-file <path>`.",
     );
   let key: Uint8Array;
   try {
     key = boxKey(hub);
   } catch (error) {
-    console.error("push: the hub's box key:", error);
+    console.error("push: the workspace's box key:", error);
     throw internalError();
   }
   let plain: string | undefined;
@@ -79,7 +79,7 @@ export function register(tools: Registry): void {
     }
     return {
       device: out.device,
-      ...(out.relay ? {} : { next: "Phone notifications are off on this hub: an owner or admin turns them on with push_relay_set." }),
+      ...(out.relay ? {} : { next: "Phone notifications are off on this workspace: an owner or admin turns them on with push_relay_set." }),
       relay: out.relay,
     };
   });
@@ -103,8 +103,8 @@ export function register(tools: Registry): void {
     if (!allowsEverywhere(caller, "admin")) {
       throw new ToolError(
         "forbidden",
-        "The push relay is hub-wide: it needs Admin on every machine.",
-        "Ask an owner or admin of the hub, or run `fleetd push-relay set` on the hub.",
+        "The push relay is workspace-wide: it needs Admin on every machine.",
+        "Ask an owner or admin of the workspace, or run `fleetd push-relay set` on the workspace's machine.",
       );
     }
     const trimmed = input.url.trim().replace(/\/+$/, "");

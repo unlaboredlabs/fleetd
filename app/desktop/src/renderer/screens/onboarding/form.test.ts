@@ -25,7 +25,7 @@ describe("the connect form", () => {
 
   it("never pairs from a link by itself, and a link beats app-pair.json", () => {
     const linked = initialForm(unpaired, { hub: "http://hub.example.ts.net:4790", code: "WXYZ-6789" });
-    expect(linked.status).toContain("Check this is your hub");
+    expect(linked.status).toContain("Check this is your workspace");
     expect(reduce(linked, { type: "started", start: fresh })).toBe(linked);
   });
 
@@ -33,7 +33,7 @@ describe("the connect form", () => {
     const form = { hub: "https://acme.fleetd.dev", code: "", key: "", useKey: false };
     expect(missingField(form)).toEqual({ field: "code", failure: { code: "", message: "Enter a pairing code." } });
     expect(missingField({ ...form, code: "  " })?.field).toBe("code");
-    expect(missingField({ ...form, hub: " " })?.failure.message).toBe("Enter your hub's address.");
+    expect(missingField({ ...form, hub: " " })?.failure.message).toBe("Enter your workspace's address.");
     expect(missingField({ ...form, useKey: true })?.field).toBe("key");
     expect(missingField({ ...form, code: "ABCD-2345" })).toBeNull();
   });
@@ -50,9 +50,9 @@ describe("the connect form", () => {
     // First run offers to set fleetd up here instead; a refused key's form still says it in words.
     expect(reduce(form, { type: "started", start: noHub })).toMatchObject({ setupHere: true, status: null });
     const refused = initialForm({ phase: "refused", hub: "http://127.0.0.1:4790", message: "Unknown agent key." }, {});
-    expect(reduce(refused, { type: "started", start: noHub }).status).toContain("No hub answers");
+    expect(reduce(refused, { type: "started", start: noHub }).status).toContain("No workspace answers");
     expect(reduce(form, { type: "started", start: found(local) }).setupHere).toBe(false);
-    expect(reduce(form, { type: "started", start: found(local) }).status).toContain("Found your hub at http://127.0.0.1:4790");
+    expect(reduce(form, { type: "started", start: found(local) }).status).toContain("Found your workspace at http://127.0.0.1:4790");
     expect(reduce(form, { type: "started", start: found({ ...local, protocol: 0 }) }).error?.fix).toContain("fleetd update");
     expect(reduce(form, { type: "started", start: found({ ...local, protocol: 2 }) }).error?.code).toBe("app_too_old");
     const problem = { code: "", message: "Ignored app-pair.json: it is a symlink.", fix: "Run `fleetd pair`." };
@@ -78,7 +78,7 @@ describe("the connect form", () => {
     // fleetd init finished while the window was away: the next look finds the hub on this computer.
     const later = reduce(reduce(form, { type: "started", start: noHub }), { type: "started", start: found(local) });
     expect(later).toMatchObject({ hub: "http://127.0.0.1:4790", setupHere: false });
-    expect(later.status).toContain("Found your hub at http://127.0.0.1:4790");
+    expect(later.status).toContain("Found your workspace at http://127.0.0.1:4790");
   });
 
   it("never replaces an address the person typed when the window is refocused", () => {
@@ -144,7 +144,7 @@ describe("the connect form", () => {
 describe("reaching the hub", () => {
   const hub = "http://127.0.0.1:4790";
   it("keeps the last reason through a retry's connecting phase, so the layout holds", () => {
-    const last = { hub, reason: "Nothing is listening at 127.0.0.1:4790", fix: "Start the hub." };
+    const last = { hub, reason: "Nothing is listening at 127.0.0.1:4790", fix: "Start the workspace." };
     expect(reaching({ phase: "connecting", hub, attempt: 0 }, null)).toEqual({ hub, reason: null, fix: null, retryAt: null });
     expect(reaching({ phase: "retrying", hub, reason: last.reason, fix: last.fix, retryAt: 5 }, null)).toMatchObject({ reason: last.reason, fix: last.fix });
     expect(reaching({ phase: "connecting", hub, attempt: 3 }, last)).toEqual({ ...last, retryAt: null });

@@ -35,7 +35,7 @@ export function start(hub: Hub): void {
 
 const failed = (error: unknown) => {
   console.error(`recall store: ${(error as Error).message}`);
-  return new ToolError("failed", "The hub failed to read the chat.");
+  return new ToolError("failed", "The workspace failed to read the chat.");
 };
 
 /** The store's answer, a store failure as the call's. */

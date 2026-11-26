@@ -67,7 +67,7 @@ export async function asOwner<T>(home: string, use: (client: McpClient) => Promi
       db.conn.close();
     }
   } catch (error) {
-    throw { message: `the hub's owner key wasn't made: ${(error as Error).message}`, fix: "run fleetd init on the hub's machine, as the user the hub runs as" } satisfies Failure;
+    throw { message: `the workspace's owner key wasn't made: ${(error as Error).message}`, fix: "run fleetd init on the workspace's machine, as the user the workspace runs as" } satisfies Failure;
   }
   try {
     return await use(await connectWith(home, undefined, "fleetd-init", made.key));
@@ -99,17 +99,17 @@ export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admi
     boxes = boxesOf((await callFor(client, "fleetd_status", {}, 30_000))?.machines);
   } catch (f) {
     if (!isFailure(f)) throw f;
-    list.failed("hub API key", f.message, f.fix);
+    list.failed("workspace API key", f.message, f.fix);
     return false;
   }
   if (boxes.length === 0) {
-    list.failed("hub API key", NO_MACHINE.message, NO_MACHINE.fix);
+    list.failed("workspace API key", NO_MACHINE.message, NO_MACHINE.fix);
     return false;
   }
   const endpoint = await ui.input(list, "Claude endpoint", ANTHROPIC_ENDPOINT, "", endpointProblem);
   const key = keyOf(await ui.secret(list, "Claude API key (hidden): "));
   if (key === undefined) {
-    list.skipped("hub API key", `none typed; paste one in ${settingsPath()} › Setup › Claude, or fleetd init --step claude`);
+    list.skipped("workspace API key", `none typed; paste one in ${settingsPath()} › Setup › Claude, or fleetd init --step claude`);
     return false;
   }
   list.start("Sealing the key to each machine");
@@ -118,10 +118,10 @@ export async function claudeKey(ui: Ui, list: Checklist, client: McpClient, admi
     const sealed = sealTo(boxes, key);
     await admin((owner) => callFor(owner, "claude_hub_api_set", { sealed, ...(saved === undefined ? {} : { endpoint: saved }) }, 120_000));
     // Saved is not working: the step's Test, next, tries it.
-    list.done("hub API key", `saved on ${boxes.map((b) => b.machineId).join(", ")}${saved === undefined ? "" : `, through ${saved}`}; testing it next`);
+    list.done("workspace API key", `saved on ${boxes.map((b) => b.machineId).join(", ")}${saved === undefined ? "" : `, through ${saved}`}; testing it next`);
   } catch (f) {
     if (!isFailure(f)) throw f;
-    list.failed("hub API key", f.message, f.fix);
+    list.failed("workspace API key", f.message, f.fix);
     return false;
   }
   return true;

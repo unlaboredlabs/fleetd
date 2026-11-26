@@ -133,7 +133,7 @@ export class Fresh {
     if (s.stale) {
       // The age in the reason grows with time; recompute it so it is never stale itself.
       stale = { sinceMs: s.stale.sinceMs, reason: s.asOfMs !== undefined ? reasonFor(source, nowMs - s.asOfMs, s.lastError) : s.stale.reason };
-    } else if (s.asOfMs === undefined) stale = { sinceMs: s.expectedMs, reason: "not checked since the hub started" };
+    } else if (s.asOfMs === undefined) stale = { sinceMs: s.expectedMs, reason: "not checked since the workspace started" };
     return { ...(s.asOfMs === undefined ? {} : { asOfMs: s.asOfMs }), ...(stale ? { stale } : {}) };
   }
 }

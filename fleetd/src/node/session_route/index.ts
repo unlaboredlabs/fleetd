@@ -115,7 +115,7 @@ export class Router {
     const answer = await Promise.race([
       hubCall(this.node, "session_route", call, { threadId: thread, cwd: frame.cwd, waitMs: ROUTE_WAIT }),
       Bun.sleep(ROUTE_WAIT).then(() => {
-        throw new ToolError("failed", "the hub did not place the session in time", "try again");
+        throw new ToolError("failed", "the workspace did not place the session in time", "try again");
       }),
     ]);
     return answer as unknown as SessionRouteResult;
@@ -174,7 +174,7 @@ export class Router {
     if (routed.here) return this.here(thread, frame);
     if (op === "session_end") this.remotes.delete(thread);
     const answer = routed.answer;
-    if (!answer) throw new ToolError("failed", "the hub placed the session but sent no answer", "try again");
+    if (!answer) throw new ToolError("failed", "the workspace placed the session but sent no answer", "try again");
     if (host === "android" && op === "session_start") {
       // Placed elsewhere and already started there (a hub that doesn't ask for a seal first): ended there.
       if (answer.result) {
@@ -369,7 +369,7 @@ export class Router {
 const androidElsewhere = () =>
   new ToolError(
     "failed",
-    "The hub placed this Android session on another machine, and agent-device can't drive an emulator there from here yet.",
+    "The workspace placed this Android session on another machine, and agent-device can't drive an emulator there from here yet.",
     "say so in your result: Android sessions run only on the agent's own machine for now",
   );
 

@@ -161,7 +161,7 @@ test("a PR's red check that is red on main too tells its writer not to re-run it
   k.hub.shutdown.abort();
 });
 
-test("the hub's merge read is the train's: merged there is merged, a hold's failure is a failure", async () => {
+test("the workspace's merge read is the train's: merged there is merged, a hold's failure is a failure", async () => {
   const held = new Map([[PR2, { note: "held: waiting on acme/shop#8: its CI failed", failed: true }]]);
   const train = { upstream: async (url: string) => held.get(url) };
   const merge = (url: string) => mergeOf(train, P, { kind: "pr", repo: "acme/shop", number: Number(url.split("/").at(-1)) });

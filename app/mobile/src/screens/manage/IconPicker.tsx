@@ -45,7 +45,7 @@ export function IconPicker({ navigation, route }: NativeStackScreenProps<RootPar
   });
 
   if (p === undefined) {
-    return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+    return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   }
   const photo = (from: () => Promise<Awaited<ReturnType<typeof fromLibrary>>>) => () =>
     void from().then((got) => {

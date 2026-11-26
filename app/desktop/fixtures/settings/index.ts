@@ -393,7 +393,7 @@ export default defineGroup({
     const f = Fixture.from(
       base("typical"),
       "settings-prompts",
-      "Every prompt of this fleetd with its real text, edits hub-wide and for acme/storefront, one default changed under an edit",
+      "Every prompt of this fleetd with its real text, edits workspace-wide and for acme/storefront, one default changed under an edit",
     );
     f.drop("prompt_get");
     f.drop("project_get");

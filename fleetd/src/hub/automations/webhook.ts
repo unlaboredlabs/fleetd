@@ -29,7 +29,7 @@ export const hook: Route = async (req, ctx) => {
   try {
     target = a.webhookTarget(id, secret);
   } catch {
-    return refused(500, "The hub failed to answer.");
+    return refused(500, "The workspace failed to answer.");
   }
   if (!target) return refused(404, "This webhook URL is not valid.");
   const bytes = await bodyOf(req, WEBHOOK_BODY_MAX);

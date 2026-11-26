@@ -80,7 +80,7 @@ export async function run(args: { check: boolean; speed?: string; channel?: stri
   else if (c.kind === "stay" && c.newest === undefined) console.log(c.why);
   else if (c.kind === "stay" && c.why.startsWith("it runs the newest")) console.log(`fleetd ${versionShown(current)} is up to date (${who.speed})`);
   else if (c.kind === "stay") console.log(`fleetd ${versionShown(current)} stays: ${c.why} (${who.speed})`);
-  if (pending !== undefined) console.log(`the hub still runs ${versionShown(pending)}; a restart moves it to ${versionShown(current)}`);
+  if (pending !== undefined) console.log(`the workspace still runs ${versionShown(pending)}; a restart moves it to ${versionShown(current)}`);
   const restartDue = services.length > 0 && (cliLatest !== undefined || pending !== undefined);
   if (args.check || !restartDue) {
     if (args.check && cliLatest !== undefined) console.log("run `fleetd update` to install");

@@ -5,8 +5,8 @@ export type Zone = { tz: string; source: "device" | "policy" | "hub" };
 
 /** The zone with how it was chosen when it isn't the person's own. */
 export function told(z: Zone): string {
-  if (z.source === "policy") return `${z.tz}, the hub's policy.tz: theirs isn't known yet`;
-  if (z.source === "hub") return `${z.tz}, the hub machine's zone: theirs isn't known yet`;
+  if (z.source === "policy") return `${z.tz}, the workspace's policy.tz: theirs isn't known yet`;
+  if (z.source === "hub") return `${z.tz}, the workspace's machine's zone: theirs isn't known yet`;
   return z.tz;
 }
 

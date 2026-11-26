@@ -46,7 +46,7 @@ test("a build follows the channel its version names", () => {
   expect(channel("0.0.0", false)).toBeUndefined();
 });
 
-test("an idle hub reports its version and nothing busy; admin only for a key with admin everywhere", async () => {
+test("an idle workspace reports its version and nothing busy; admin only for a key with admin everywhere", async () => {
   const { hub, call } = setup();
   leads(hub).records.leadPut({ projectRef: { machineId: "devbox", projectId: "p1" }, threadId: "lead-thread", startedAt: AT, sessionGeneration: 1 } as never);
   putThread(hub, "lead-thread", "idle");
@@ -54,7 +54,7 @@ test("an idle hub reports its version and nothing busy; admin only for a key wit
   expect(out.version).toBe("0.0.0");
   expect(out.busy).toEqual([]);
   expect(out.admin).toBe(false);
-  expect(out.next).toBe("Nothing runs: restarting the hub now interrupts nothing.");
+  expect(out.next).toBe("Nothing runs: restarting the workspace now interrupts nothing.");
   expect(out.boxPubKey).toHaveLength(44);
   expect(out.people).toBe(0);
   expect((await call([{ role: "admin", machines: "*" }])).admin).toBe(true);
@@ -88,7 +88,7 @@ test("a working lead, running agents and a clone are busy; a node's restart cuts
   expect((await call([{ role: "read", machines: "*" }], { machineId: "buildbox" })).busy).toEqual([]);
 });
 
-test("a merge counts only while the hub rebases or merges it", () => {
+test("a merge counts only while the workspace rebases or merges it", () => {
   const change = (state: string) => ({ prNumber: 251, repo: "acme/shop", state }) as never;
   expect(hubStep(change("rebasing"))).toBe("updating PR #251 in acme/shop before it merges");
   expect(hubStep(change("merging"))).toBe("merging PR #251 into acme/shop");

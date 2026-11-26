@@ -56,7 +56,7 @@ export const UPDATE_PARTS_MAX = 401;
 export const HUB_UPDATE_MACHINES_MAX = 10;
 const OFFLINE = "offline: press Update again once it's online, or run `fleetd update` on it";
 /** How a hub from before cloud machines were removed skipped one asleep: the machine is gone, and so is its part. */
-const GONE_ASLEEP = "asleep: it takes the hub's build when it wakes";
+const GONE_ASLEEP = "asleep: it takes the workspace's build when it wakes";
 
 /** The run as this hub keeps it: without the parts an older hub planned for machines it no longer has. */
 export const withoutGone = (run: UpdateRun): UpdateRun => ({ ...run, parts: run.parts.filter((p) => p.message !== GONE_ASLEEP) });
@@ -747,11 +747,11 @@ export class Updates {
   skipReason(): string | undefined {
     if (!this.settings().auto) return undefined;
     if (this.ports_ && !this.ports_.releaseBuild()) {
-      return "the hub runs a local build of fleetd, which never updates itself: install a release with curl -fsSL https://fleetd.sh | sh";
+      return "the workspace runs a local build of fleetd, which never updates itself: install a release with curl -fsSL https://fleetd.sh | sh";
     }
     const build = this.autoSkips();
     if (build !== undefined) {
-      return `${versionLabel(build)} was put back, as the hub didn't come up healthy on it: automatic updates skip it until a newer build is out (Update still installs it)`;
+      return `${versionLabel(build)} was put back, as the workspace didn't come up healthy on it: automatic updates skip it until a newer build is out (Update still installs it)`;
     }
     return this.checkFailed;
   }
@@ -881,7 +881,7 @@ export class Updates {
     }
     const running = ports.running();
     const chosen: HubChannel = channel === "edge" || channel === "stable" ? channel : channelOf(running, ports.releaseBuild()) === "edge" ? "edge" : "stable";
-    const parts: UpdatePart[] = [part("hub", undefined, "the hub", running, "downloading")];
+    const parts: UpdatePart[] = [part("hub", undefined, "the workspace", running, "downloading")];
     const nodes = ports.nodes().sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const n of nodes.slice(0, Math.floor((UPDATE_PARTS_MAX - 1) / 2))) {
       const claude = n.claude !== undefined ? claudeNumber(n.claude) : "";
@@ -1070,7 +1070,7 @@ class Drive {
 
   private hubFailed(f: Failure): void {
     this.setPart(undefined, "failed", f.stage, f.message);
-    this.settleNodes("skipped", "not asked: the hub didn't update, and nodes follow the hub");
+    this.settleNodes("skipped", "not asked: the workspace didn't update, and nodes follow the workspace");
   }
 
   async driveHub(ports: UpdatePorts): Promise<void> {
@@ -1148,13 +1148,13 @@ class Drive {
       }
       [state, stage] = ["failed", "restart"];
       message =
-        `the hub didn't restart onto ${versionLabel(plan.to)} within ${Math.ceil(this.u.timing.restart / 60_000)} min, so it kept running ${versionLabel(plan.from)}` +
+        `the workspace didn't restart onto ${versionLabel(plan.to)} within ${Math.ceil(this.u.timing.restart / 60_000)} min, so it kept running ${versionLabel(plan.from)}` +
         (back ? " and its previous binary was put back" : "; its previous binary couldn't be put back: run `fleetd update` on its machine");
     }
     // Only the new build writes this as it comes up; this process is the old one, about to go.
     if (state === "done") return;
     this.setPart(undefined, state, stage, message);
-    this.settleNodes("skipped", "not asked: the hub kept its build, and nodes follow the hub");
+    this.settleNodes("skipped", "not asked: the workspace kept its build, and nodes follow the workspace");
   }
 
   /** Puts the build the rollout picks in place for the watcher, or undefined when the hub stays on its own. */
@@ -1167,19 +1167,19 @@ class Drive {
     const s = await c.sums();
     this.u.keepTarget(c);
     if (!ports.releaseBuild()) {
-      throw new Failure("install", "the hub runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh");
+      throw new Failure("install", "the workspace runs a local build of fleetd: install a release with curl -fsSL https://fleetd.sh | sh");
     }
     let exe: string;
     try {
       exe = ports.exe();
     } catch (e) {
-      throw new Failure("install", `couldn't find the hub's binary: ${(e as Error).message}`);
+      throw new Failure("install", `couldn't find the workspace's binary: ${(e as Error).message}`);
     }
     const service = ports.hubService(exe);
     if (!service) {
       throw new Failure(
         "restart",
-        "the hub doesn't run as the service `fleetd init` sets up, so it can't restart itself: run `fleetd update` on its machine",
+        "the workspace doesn't run as the service `fleetd init` sets up, so it can't restart itself: run `fleetd update` on its machine",
       );
     }
     let asset: string;
@@ -1237,9 +1237,9 @@ class Drive {
 
   async takeOn(ports: UpdatePorts, run: UpdateRun): Promise<void> {
     const hub = run.parts.find((p) => p.part === "hub");
-    if (!hub) return this.settleNodes("skipped", "not asked: the hub didn't update");
+    if (!hub) return this.settleNodes("skipped", "not asked: the workspace didn't update");
     if (hub.state === "downloading") {
-      return this.hubFailed(new Failure("download", "the hub restarted before the new build was in place; nothing was changed"));
+      return this.hubFailed(new Failure("download", "the workspace restarted before the new build was in place; nothing was changed"));
     }
     if (hub.state === "restarting") {
       const to = run.to ?? "";
@@ -1256,10 +1256,10 @@ class Drive {
         return this.driveNodes(ports, to);
       }
       this.setPart(undefined, v.state, v.stage ?? undefined, v.message);
-      return this.settleNodes("skipped", "not asked: the hub kept its build, and nodes follow the hub");
+      return this.settleNodes("skipped", "not asked: the workspace kept its build, and nodes follow the workspace");
     }
     if ((hub.state === "done" || hub.state === "current") && run.to !== undefined) return this.driveNodes(ports, run.to);
-    this.settleNodes("skipped", "not asked: the hub didn't update");
+    this.settleNodes("skipped", "not asked: the workspace didn't update");
   }
 
   /**
@@ -1313,15 +1313,15 @@ class Drive {
     try {
       exe = ports.exe();
       service = ports.hubService(exe);
-      if (!service) throw new Error("the hub doesn't run as the service `fleetd init` sets up");
+      if (!service) throw new Error("the workspace doesn't run as the service `fleetd init` sets up");
       replaceFile(bad, ports.previous());
       restore(exe, prev);
     } catch (e) {
       this.setPart(undefined, "failed", "health", `${said}, and ${versionLabel(from)} couldn't be put back (${(e as Error).message}): run \`fleetd update\` on its machine`);
-      return this.settleNodes("skipped", "not asked: the hub's build failed its self-check, and nodes follow the hub");
+      return this.settleNodes("skipped", "not asked: the workspace's build failed its self-check, and nodes follow the workspace");
     }
     this.setPart(undefined, "rolled_back", "health", `${said}, so ${versionLabel(from)} was put back`);
-    this.settleNodes("skipped", "not asked: the hub's build failed its self-check, and nodes follow the hub");
+    this.settleNodes("skipped", "not asked: the workspace's build failed its self-check, and nodes follow the workspace");
     const plan: Plan = {
       exe,
       prev: bad,
@@ -1337,7 +1337,7 @@ class Drive {
       // From the binary put back: the one in place now.
       ports.startWatcher(plan, join(this.u.dir, "back-plan.json"), exe);
     } catch (e) {
-      console.error(`update: the hub couldn't restart onto ${versionLabel(from)}: ${(e as Error).message}`);
+      console.error(`update: the workspace couldn't restart onto ${versionLabel(from)}: ${(e as Error).message}`);
     }
   }
 
@@ -1365,13 +1365,13 @@ class Drive {
     const running = ports.running();
     return running === to
       ? { state: "done", stage: null, message: `runs ${versionLabel(to)}` }
-      : { state: "rolled_back", stage: "health", message: `the hub came back on ${versionLabel(running)}, not ${versionLabel(to)}` };
+      : { state: "rolled_back", stage: "health", message: `the workspace came back on ${versionLabel(running)}, not ${versionLabel(to)}` };
   }
 
   /** Updates every node not settled yet to `to`, all at once. */
   private async driveNodes(ports: UpdatePorts, to: string): Promise<void> {
     const running = ports.running();
-    if (running !== to) return this.settleNodes("skipped", `the hub moved on to ${versionLabel(running)}: press Update for the newest`);
+    if (running !== to) return this.settleNodes("skipped", `the workspace moved on to ${versionLabel(running)}: press Update for the newest`);
     const run = this.u.status();
     if (!run) return;
     const waiting = run.parts.filter((p) => p.part === "node" && !settled(p.state)).map((p) => p.machineId!);
@@ -1400,7 +1400,7 @@ class Drive {
       if (at) this.setPart(machineId, "current", undefined, `already runs ${versionLabel(node.version)}`);
       return at;
     };
-    const forgotten = () => this.setPart(machineId, "skipped", undefined, "not asked: the hub no longer knows it");
+    const forgotten = () => this.setPart(machineId, "skipped", undefined, "not asked: the workspace no longer knows it");
     let changed = ports.nodeChanged(machineId);
     let node = facts();
     if (!node) return forgotten();
@@ -1421,7 +1421,7 @@ class Drive {
         machineId,
         "skipped",
         undefined,
-        `its fleetd (${versionLabel(node.version)}) is too old to update from the hub: run \`fleetd update\` on ${node.name} once`,
+        `its fleetd (${versionLabel(node.version)}) is too old to update from the workspace: run \`fleetd update\` on ${node.name} once`,
       );
     }
     // A node from before rollouts takes only the newest build: it waits, saying why, until the hub's build is the
@@ -1432,7 +1432,7 @@ class Drive {
         machineId,
         "skipped",
         undefined,
-        `its fleetd (${versionLabel(node.version)}) only takes fleetd's newest build (${versionLabel(t.newest)}), not the hub's ${label} yet: it updates once the hub runs the newest, or run \`fleetd update\` on ${node.name} now`,
+        `its fleetd (${versionLabel(node.version)}) only takes fleetd's newest build (${versionLabel(t.newest)}), not the workspace's ${label} yet: it updates once the workspace runs the newest, or run \`fleetd update\` on ${node.name} now`,
       );
     }
     // The node waits only for what its restart would cut off: a live session, an approved command, a check the hub runs

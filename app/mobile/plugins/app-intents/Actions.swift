@@ -37,7 +37,7 @@ struct ChatRef: Equatable {
 extension Problem {
   static let unpaired = Problem(
     title: "Pair fleetd first",
-    message: "This iPhone isn't connected to a hub yet. Open fleetd and pair it with your hub, then run the shortcut again.",
+    message: "This iPhone isn't connected to a workspace yet. Open fleetd and pair it with your workspace, then run the shortcut again.",
     retry: false,
     symbol: "qrcode.viewfinder"
   )
@@ -45,7 +45,7 @@ extension Problem {
   /// The phone's key to the hub opens once the phone has been unlocked since it started (src/vault.ts).
   static let locked = Problem(
     title: "Unlock your iPhone",
-    message: "fleetd's key to your hub opens once this iPhone has been unlocked since it started. Unlock it, then run the shortcut again.",
+    message: "fleetd's key to your workspace opens once this iPhone has been unlocked since it started. Unlock it, then run the shortcut again.",
     retry: true,
     symbol: "lock"
   )

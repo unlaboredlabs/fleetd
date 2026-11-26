@@ -100,8 +100,8 @@ export const installMenu = (
         item(opener, "sidebar.toggle", "Toggle Sidebar"),
         item(opener, "panel.toggle", "Toggle Panel"),
         separator,
-        item(opener, "hub.previous", "Previous Hub"),
-        item(opener, "hub.next", "Next Hub"),
+        item(opener, "hub.previous", "Previous Workspace"),
+        item(opener, "hub.next", "Next Workspace"),
         separator,
         { role: "togglefullscreen" },
         // Reload and devtools only in dev and test builds: a reload drops the live view's state for nothing, and

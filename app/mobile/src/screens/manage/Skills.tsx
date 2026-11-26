@@ -26,7 +26,7 @@ export function Skills({ navigation, route }: ChatInfoProps<"Skills">) {
   const list = useRead(() => (p === undefined ? Promise.resolve(undefined) : listSkills(session, p)), [session, p?.machineId, p?.projectId]);
   useSkillsChanged(session, p, list.reload);
   const r = list.value;
-  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The hub doesn't list it any more." />;
+  if (p === undefined) return <EmptyState icon="folder" title="Not Here" body="The workspace doesn't list it any more." />;
   const groups = r?.ok === true ? skillGroups(r.value, p.title) : [];
   return (
     <ScrollView

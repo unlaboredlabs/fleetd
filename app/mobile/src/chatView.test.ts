@@ -71,7 +71,7 @@ describe("viaNote", () => {
 describe("sendNote", () => {
   it("puts a line under a send only for what stays: a failure (a lead that can't take it yet is the bot's to say)", () => {
     expect(sendNote({ state: "failed", error: { code: "invalid", message: "Too long." } })).toBe("Not sent: Too long.");
-    expect(sendNote({ state: "unanswered" })).toBe("Not sent: the hub didn't answer.");
+    expect(sendNote({ state: "unanswered" })).toBe("Not sent: the workspace didn't answer.");
     // Nothing while it goes, linked or not: no line that comes and goes under each send.
     expect(sendNote({ state: "pending" })).toBeUndefined();
     expect(sendNote({ state: "queued" })).toBeUndefined();
@@ -110,12 +110,12 @@ describe("sendWait", () => {
   it("marks a slow send beside its bubble after a second, never in a line under it", () => {
     expect(sendWait({ state: "pending", at }, t0 + 999)).toEqual({ words: "Sending…", inMs: 1 });
     expect(shown("pending", SLOW_SEND_MS)).toEqual({ note: undefined, wait: "Sending…" });
-    expect(shown("queued", 5_000)).toEqual({ note: undefined, wait: "Not connected: it goes when the hub is back." });
-    expect(shown("reconnecting", 5_000)).toEqual({ note: undefined, wait: "The link dropped: it goes again when the hub is back." });
+    expect(shown("queued", 5_000)).toEqual({ note: undefined, wait: "Not connected: it goes when the workspace is back." });
+    expect(shown("reconnecting", 5_000)).toEqual({ note: undefined, wait: "The link dropped: it goes again when the workspace is back." });
     // Once the hub has it, or it failed, the mark goes; a failure says so in its line.
     expect(shown("sent", 5_000)).toEqual({ note: undefined, wait: undefined });
     expect(shown("failed", 5_000).wait).toBeUndefined();
-    expect(shown("failed", 5_000).note).toBe("Not sent: the hub refused it.");
+    expect(shown("failed", 5_000).note).toBe("Not sent: the workspace refused it.");
   });
 });
 

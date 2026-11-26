@@ -61,7 +61,7 @@ export function Memory({ project }: { project: Scope | null }) {
   if (!live) {
     return (
       <SettingsSection title="Memory" reveal="memory" hint={head}>
-        <GroupNote>Not connected. Connect to a hub to see what its leads remember.</GroupNote>
+        <GroupNote>Not connected. Connect to a workspace to see what its leads remember.</GroupNote>
       </SettingsSection>
     );
   }
@@ -136,7 +136,7 @@ export function YourMemory() {
   if (!live) {
     return (
       <SettingsSection>
-        <GroupNote>Not connected. Connect to a hub to see what its leads remember about you.</GroupNote>
+        <GroupNote>Not connected. Connect to a workspace to see what its leads remember about you.</GroupNote>
       </SettingsSection>
     );
   }

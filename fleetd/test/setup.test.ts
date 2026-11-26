@@ -18,19 +18,19 @@ const check = (id: string, status: DoctorCheck["status"], message = id, fix?: Do
   ...(fix ? { fix } : {}),
 });
 
-test("every step's guide is the Rust hub's own, word for word", () => {
+test("every step's guide is the Rust workspace's own, word for word", () => {
   expect(JSON.parse(JSON.stringify(guides(fixture.hub, "0.0.0")))).toEqual(fixture.guides);
 });
 
-test("values are computed for this hub, and an address only this machine reaches says so", () => {
+test("values are computed for this workspace, and an address only this machine reaches says so", () => {
   expect(hostOf("http://devbox.tail1234.ts.net:4790")).toBe("devbox");
   expect(hostOf("http://100.64.0.1:4790")).toBe("hub");
   expect(hostOf("http://[::1]:4790/")).toBe("hub");
   const local = guides("http://127.0.0.1:4790");
   const address = local.find((s) => s.id === "address");
-  expect(address?.parts[0]?.values?.[0]?.note).toStartWith("Only this machine can reach the hub");
+  expect(address?.parts[0]?.values?.[0]?.note).toStartWith("Only this machine can reach the workspace");
   const machines = local.find((s) => s.id === "machines");
-  expect(machines?.parts[0]?.values?.[1]?.note).toStartWith("The hub is only at http://127.0.0.1:4790");
+  expect(machines?.parts[0]?.values?.[1]?.note).toStartWith("The workspace is only at http://127.0.0.1:4790");
   expect(guides("http://devbox:4790", "0.6.0").find((s) => s.id === "mac")?.parts[1]?.values?.[0]?.value).toEndWith(
     "--machine-id mac --mac --version 0.6.0",
   );
@@ -55,7 +55,7 @@ test("a step is to do until a check says otherwise; any one way done is enough, 
   expect(requiredLeft(warn as HubSetupStep)).toBe(false);
 });
 
-test("the Mac's step reads its own checks on any machine; the hub's never count", () => {
+test("the Mac's step reads its own checks on any machine; the workspace's never count", () => {
   expect(matchesCheck("*/online", "devbox/online")).toBe(true);
   expect(matchesCheck("*/online", "hub/online")).toBe(false);
   expect(matchesCheck("hub/people", "hub/people")).toBe(true);
@@ -83,7 +83,7 @@ test("the setup tools are an admin's: admin on every machine", async () => {
   for (const tool of ["setup_list", "setup_test"]) {
     const out = await tools.call(hub, caller, tool, tool === "setup_test" ? { step: "address" } : {});
     expect(out).toMatchObject({
-      error: { kind: "tool", error: { code: "forbidden", message: "The hub's setup is for its owners and admins: a key with admin on every machine." } },
+      error: { kind: "tool", error: { code: "forbidden", message: "The workspace's setup is for its owners and admins: a key with admin on every machine." } },
     });
   }
 });
@@ -140,29 +140,29 @@ test("the 1Password step's Test tests the caller's own token and keeps it as its
 });
 
 
-test("a hub key set up decides Claude, as leads run on it: failing or untested, a machine logged in doesn't make it done", () => {
+test("a workspace key set up decides Claude, as leads run on it: failing or untested, a machine logged in doesn't make it done", () => {
   const steps = guides("http://devbox:4790");
   const claude = (checks: DoctorCheck[]) => read(steps, checks).find((s) => s.id === "claude");
   const login = check("devbox/claude_login", "ok", "devbox: claude 2.1.331, logged in (API key)");
   const failing = claude([
-    check("hub/claude_key", "fail", "The hub's Claude API key failed its Test on devbox: Invalid API key", {
+    check("hub/claude_key", "fail", "The workspace's Claude API key failed its Test on devbox: Invalid API key", {
       kind: "manual",
       label: "Check the key and endpoint, then save them again",
     } as never),
     login,
   ]);
-  expect([failing?.status, failing?.failing, failing?.way]).toEqual(["look", true, "the hub's API key"]);
+  expect([failing?.status, failing?.failing, failing?.way]).toEqual(["look", true, "the workspace's API key"]);
   expect(requiredLeft(failing as HubSetupStep)).toBe(true);
-  const untested = claude([check("hub/claude_key", "warn", "The hub's Claude API key is saved but not tested yet."), login]);
-  expect([untested?.status, untested?.said]).toEqual(["look", "The hub's Claude API key is saved but not tested yet."]);
-  const works = claude([check("hub/claude_key", "ok", "The hub's Claude API key works: tested on devbox."), check("devbox/claude_login", "fail")]);
-  expect([works?.status, works?.way]).toEqual(["done", "the hub's API key"]);
+  const untested = claude([check("hub/claude_key", "warn", "The workspace's Claude API key is saved but not tested yet."), login]);
+  expect([untested?.status, untested?.said]).toEqual(["look", "The workspace's Claude API key is saved but not tested yet."]);
+  const works = claude([check("hub/claude_key", "ok", "The workspace's Claude API key works: tested on devbox."), check("devbox/claude_login", "fail")]);
+  expect([works?.status, works?.way]).toEqual(["done", "the workspace's API key"]);
   // No key and no subscription: each machine's own login decides, as before.
   const none = claude([check("hub/claude_key", "unknown"), check("hub/claude_owner", "unknown"), login]);
   expect([none?.status, none?.way]).toEqual(["done", "each machine's own login"]);
 });
 
-test("the Claude step's Test tries the hub's key with a claude call, and a wrong key fails the step", async () => {
+test("the Claude step's Test tries the workspace's key with a claude call, and a wrong key fails the step", async () => {
   const { Hub } = await import("../src/hub/api/hub.ts");
   const { Registry } = await import("../src/hub/api/registry.ts");
   const { registerAll } = await import("../src/hub/serve/areas.ts");
@@ -210,6 +210,6 @@ test("the Claude step's Test tries the hub's key with a claude call, and a wrong
   await ok("claude_hub_api_set", { sealed: [{ machineId: "lab", sealed: Buffer.alloc(60, 1).toString("base64") }] });
   const out = await ok("setup_test", { step: "claude" });
   expect(calls.some((c) => c.op === "claude_account_test")).toBe(true);
-  expect(out.step).toMatchObject({ status: "look", failing: true, way: "the hub's API key" });
+  expect(out.step).toMatchObject({ status: "look", failing: true, way: "the workspace's API key" });
   expect((out.step as { said: string }).said).toContain("failed its Test on lab: Invalid API key");
 });

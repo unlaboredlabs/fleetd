@@ -60,7 +60,7 @@ export class Vault {
     this.loading ??= (async () => {
       // A hub with no home (an in-memory one) keeps no key anywhere: its vault stays shut.
       if (!this.hub.config.home && this.dir === undefined) {
-        this.problem = new VaultKeyError("vault_key_missing", "this hub has no home to keep a vault key beside");
+        this.problem = new VaultKeyError("vault_key_missing", "this workspace has no home to keep a vault key beside");
         return;
       }
       try {
@@ -88,7 +88,7 @@ export class Vault {
   /** Throws the refusal for a vault that can't open values now. */
   requireOpen(): void {
     if (this.problem?.reason === "vault_key_missing") throw keyMissing();
-    if (this.problem) throw new ToolError("failed", `The vault key can't be used: ${this.problem.message}.`, "Run fleetd doctor on the hub.", "vault_key_bad");
+    if (this.problem) throw new ToolError("failed", `The vault key can't be used: ${this.problem.message}.`, "Run fleetd doctor on the workspace's machine.", "vault_key_bad");
     if (this.keys.locked) throw this.keys.mode === "passphrase" ? locked() : keyMissing();
   }
 

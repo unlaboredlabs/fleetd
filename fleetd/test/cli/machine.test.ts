@@ -149,7 +149,7 @@ test.skipIf(process.platform !== "linux")("add copies a Mac this version's relea
     expect(prepared.fetched?.[0]).toBe("fleetd-bun-darwin-arm64");
     expect(new TextDecoder().decode(prepared.fetched?.[1])).toBe(build);
     expect(progress.lines).toContain(
-      `begin download fleetd 0.0.0 for darwin-arm64 (this hub's is a linux-${process.arch} build), checked against its release's SHA256SUMS`,
+      `begin download fleetd 0.0.0 for darwin-arm64 (this workspace's is a linux-${process.arch} build), checked against its release's SHA256SUMS`,
     );
     expect(prepared.input.binaryDigest).toBe(sha(build));
   } finally {
@@ -161,9 +161,9 @@ test("a release without the machine's build says so, and how to fix it", async (
   const server = feed({ SHA256SUMS: `${sha("x")}  fleetd-linux-x64\n` });
   try {
     await expect(releases.digest("0.0.0", "fleetd-darwin-arm64")).rejects.toThrow(
-      "no fleetd-darwin-arm64 of fleetd 0.0.0 to copy to the machine: its release has none. Fix: run a released fleetd on the hub",
+      "no fleetd-darwin-arm64 of fleetd 0.0.0 to copy to the machine: its release has none. Fix: run a released fleetd on the workspace's machine",
     );
-    await expect(releases.build("0.0.0", "fleetd-darwin-arm64")).rejects.toThrow(/^no fleetd-darwin-arm64 of fleetd 0\.0\.0 to copy to the machine: .*\. Fix: run a released fleetd on the hub$/);
+    await expect(releases.build("0.0.0", "fleetd-darwin-arm64")).rejects.toThrow(/^no fleetd-darwin-arm64 of fleetd 0\.0\.0 to copy to the machine: .*\. Fix: run a released fleetd on the workspace's machine$/);
   } finally {
     server.stop(true);
   }
@@ -193,7 +193,7 @@ test("remove runs the undo steps, erases each bot through the erase it is given,
   const removed = await remove(hubHome, "builder-1", true, side, fake(ran), progress);
   expect(removed).toEqual({ revoked: true, remoteOk: true });
   expect(ran.map((x) => x.command.split(" ")[0])).toEqual(["XDG_RUNTIME_DIR=/run/user/1000", "if", "rm", "XDG_RUNTIME_DIR=/run/user/1000"]);
-  expect(progress.lines).toContain("revoked builder-1's node key; the hub refuses that node from now on.");
+  expect(progress.lines).toContain("revoked builder-1's node key; the workspace refuses that node from now on.");
   expect(JSON.parse(readFileSync(join(hubHome, "setup.json"), "utf8")).machines).toEqual({});
 });
 

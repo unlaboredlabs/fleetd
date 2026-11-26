@@ -63,7 +63,7 @@ const APP_CHECK_EVERY_MS = 1_000;
 
 /** What a hub from before hub_update gets: `fleetd update` there once, the first time for everyone. */
 export const BEFORE_UPDATE =
-  "The hub runs a fleetd from before the Update button. Run `fleetd update` on the hub's machine once; after that, Update does the rest.";
+  "The workspace runs a fleetd from before the Update button. Run `fleetd update` on the workspace's machine once; after that, Update does the rest.";
 
 /** One hub's: each hub updates on its own, so each says its own. */
 interface Slot {

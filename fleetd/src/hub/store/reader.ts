@@ -35,11 +35,11 @@ export class Reader {
         if (lane.waiting.size === 0) lane.worker.unref();
         if ("error" in reply) {
           const t = reply.tool;
-          call?.reject(t ? new ToolError(t.code, t.message, t.fix, t.reason, t.personFix) : new Error(`hub db read: ${reply.error}`));
+          call?.reject(t ? new ToolError(t.code, t.message, t.fix, t.reason, t.personFix) : new Error(`workspace db read: ${reply.error}`));
         } else call?.resolve("rows" in reply ? reply.rows : reply.output);
       };
       lane.worker.onerror = (event) => {
-        for (const call of lane.waiting.values()) call.reject(new Error(`hub db read worker: ${event.message}`));
+        for (const call of lane.waiting.values()) call.reject(new Error(`workspace db read worker: ${event.message}`));
         lane.waiting.clear();
       };
       lane.worker.postMessage({ id: -1, path } satisfies ReadRequest);

@@ -165,14 +165,14 @@ it("lists each machine that hosts screens with no switch per kind, and nothing m
 it("tells a hub without recordings' retention to update only when it is updated from here, never fleetd cloud", async () => {
   withRetention = false;
   await render();
-  expect(host.textContent).toContain("Update the hub's fleetd to change this here.");
+  expect(host.textContent).toContain("Update the workspace's fleetd to change this here.");
   act(() => root.unmount());
   root = createRoot(host);
   leftOut = ["hub_update", "hub_restart"];
   resetServes();
   await render();
   await settle();
-  expect(host.textContent).not.toContain("Update the hub's fleetd");
+  expect(host.textContent).not.toContain("Update the workspace's fleetd");
   expect(host.querySelector("[data-screens-retention]")).toBeNull();
 });
 

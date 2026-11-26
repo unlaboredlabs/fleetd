@@ -260,8 +260,8 @@ export function register(tools: Registry): void {
     if (input.off && !kept) {
       throw new ToolError(
         "not_found",
-        `The hub keeps no skill called ${input.name} for this bot.`,
-        "Only the hub's skills turn off here: one in the repo's or a bot's folder reaches its sessions from              there, so remove it from that folder.",
+        `The workspace keeps no skill called ${input.name} for this bot.`,
+        "Only the workspace's skills turn off here: one in the repo's or a bot's folder reaches its sessions from              there, so remove it from that folder.",
       );
     }
     versions.setOff(hub.db, input.projectRef, input.name, input.off);

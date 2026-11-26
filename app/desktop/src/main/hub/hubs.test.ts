@@ -129,7 +129,7 @@ describe("hubs", () => {
     expect(seen).toEqual([["Acme"]]);
     hubs.remove(acme);
     const [left] = hubs.list();
-    expect(left?.label).toBe("Hub");
+    expect(left?.label).toBe("Workspace");
     expect([acme, "hub"]).not.toContain(left?.id);
     expect(hubs.get(left?.id ?? "")?.state().phase).toBe("unpaired");
     expect(hubs.firstRun()).toBe(true);

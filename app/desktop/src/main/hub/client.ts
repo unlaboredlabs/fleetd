@@ -216,7 +216,7 @@ export class HubClient implements HubSource {
     const connection = this.#connection;
     this.#connection = null;
     connection?.close();
-    this.#failPending("disconnected", "The app disconnected from the hub.");
+    this.#failPending("disconnected", "The app disconnected from the workspace.");
   }
 
   /**
@@ -345,7 +345,7 @@ export class HubClient implements HubSource {
 
   call(request: CallRequest): Promise<CallOutcome> {
     if (!this.#ready) {
-      return Promise.resolve(fail("offline", "Not connected to the hub.", "Wait for the connection to come back."));
+      return Promise.resolve(fail("offline", "Not connected to the workspace.", "Wait for the connection to come back."));
     }
     const id = `c${++this.#nextCallId}`;
     const { tool, input } = request;
@@ -357,7 +357,7 @@ export class HubClient implements HubSource {
     return new Promise<CallOutcome>((resolve) => {
       const timeoutMs = request.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS;
       const timer = setTimeout(() => {
-        this.#settle(id, fail("timeout", `The hub didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
+        this.#settle(id, fail("timeout", `The workspace didn't answer ${tool} within ${Math.round(timeoutMs / 1000)} s.`));
       }, timeoutMs);
       const long = timeoutMs > DEFAULT_CALL_TIMEOUT_MS;
       this.#pending.set(id, { resolve, timer, long });
@@ -436,7 +436,7 @@ export class HubClient implements HubSource {
       return;
     }
     if (!this.#ready || !this.#rtcServed) {
-      const error = this.#ready ? "This hub doesn't pass screen peers on." : "Not connected to the hub.";
+      const error = this.#ready ? "This workspace doesn't pass screen peers on." : "Not connected to the workspace.";
       this.#options.emit({ t: "browser_rtc", session, peer, error });
       return;
     }
@@ -679,7 +679,7 @@ export class HubClient implements HubSource {
 
   #onClose(code: number, reason: string, error: SocketError | undefined, opened: boolean): void {
     if (code === CLOSE_UNAUTHORIZED) {
-      this.#refuse(`The hub refused the key${reason === "" ? "" : ` (${reason})`}.`);
+      this.#refuse(`The workspace refused the key${reason === "" ? "" : ` (${reason})`}.`);
       return;
     }
     if (opened && (code === CLOSE_RESTART || code === CLOSE_GOING_AWAY)) {
@@ -728,12 +728,12 @@ export class HubClient implements HubSource {
     this.#cursor = null;
     this.#firstSnapshot = false;
     this.#snapshotDue = false;
-    this.#failPending("disconnected", "The connection to the hub dropped before it answered.");
+    this.#failPending("disconnected", "The connection to the workspace dropped before it answered.");
     // The hub closes each peer with the connection: the windows take their frames from the next one.
     this.#rtc = null;
     for (const [peer, session] of [...this.#peers]) {
       this.#peers.delete(peer);
-      this.#options.emit({ t: "browser_rtc", session, peer, error: "The connection to the hub dropped." });
+      this.#options.emit({ t: "browser_rtc", session, peer, error: "The connection to the workspace dropped." });
     }
     return wasReady;
   }

@@ -50,7 +50,7 @@ export class TransferError extends Error {
 }
 
 const notAnExport = () => new TransferError("not_an_export", "That file isn't a fleetd export.");
-export const damaged = (what: string) => new TransferError("damaged", `The export is damaged: ${what}. Nothing was changed; export the hub again.`);
+export const damaged = (what: string) => new TransferError("damaged", `The export is damaged: ${what}. Nothing was changed; export the workspace again.`);
 
 const schema = JSON.parse(importedText(schemaText)) as { $defs: Record<string, Record<string, unknown>> };
 const check = new SchemaCheck(schema);

@@ -100,8 +100,8 @@ function requireAdministrator(hub: Hub, caller: Caller): void {
   if (!administrator(hub, caller)) {
     throw new ToolError(
       "forbidden",
-      "Only the hub's owners and admins set up the hub's GitHub App.",
-      "Ask an owner or admin; they set it up on the Hub pages of the app's Settings, or with `fleetd github-app create` on the hub machine.",
+      "Only the workspace's owners and admins set up the workspace's GitHub App.",
+      "Ask an owner or admin; they set it up on the Workspace pages of the app's Settings, or with `fleetd github-app create` on the workspace's machine.",
     );
   }
 }
@@ -120,7 +120,7 @@ function me(hub: Hub, caller: Caller): PersonId {
 }
 
 const noneYet = () =>
-  new ToolError("not_found", "This hub has no GitHub App yet.", `Create one in ${settingsPath()} › Setup › GitHub.`);
+  new ToolError("not_found", "This workspace has no GitHub App yet.", `Create one in ${settingsPath()} › Setup › GitHub.`);
 
 async function get(hub: Hub, caller: Caller) {
   requireRole(caller, "read");

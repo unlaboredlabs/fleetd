@@ -44,11 +44,11 @@ Agents see only the `description` until they open the skill, so put when to use 
 
 Skills in the repo's `.agents/skills/` or `.claude/skills/` folders reach that bot's agents too. Change those in the repo itself.
 
-When two skills share a name, the first of these wins: the repo's `.agents/skills/`, the repo's `.claude/skills/`, the bot's own, then hub-wide ones.
+When two skills share a name, the first of these wins: the repo's `.agents/skills/`, the repo's `.claude/skills/`, the bot's own, then workspace-wide ones.
 
-## Skills for every bot {#hub-wide}
+## Skills for every bot {#workspace-wide}
 
-Owners and admins add hub-wide skills under **Settings › Hub › Bot defaults › Agents**. Every bot gets them.
+Owners and admins add workspace-wide skills under **Settings › Workspace › Bot defaults › Agents**. Every bot gets them.
 
 ## Skills the bot learns {#learned}
 
@@ -69,5 +69,5 @@ Type `$` in the message box to pick a skill by name. The lead uses it, or hands 
 ## Limits {#limits}
 
 - A skill holds at most 64 files and 512 KB.
-- A bot, or the hub, holds at most 200 skills.
+- A bot, or the workspace, holds at most 200 skills.
 - A skill can't hold a secret. Name the secret instead, and the agent asks for it.

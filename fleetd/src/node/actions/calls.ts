@@ -262,7 +262,7 @@ export async function nodeCall(ctx: CallContext, call: Extract<SessionCall, { op
     }
     case "vault_import_read": {
       const to = Buffer.from(call.to, "base64");
-      if (to.length !== 32) throw invalid("the hub's box key is not 32 bytes");
+      if (to.length !== 32) throw invalid("the workspace's box key is not 32 bytes");
       const refs = [...new Set(call.refs)];
       let token: string | undefined;
       try {

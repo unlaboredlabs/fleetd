@@ -195,7 +195,7 @@ async function sendFile(hub: HubCall, meta: Meta, dir: string, file: keyof typeo
       if (offset > 0 && said(e, "would leave a gap")) writeSent(dir, { ...sent, [file]: 0 });
       throw e;
     }
-    if (answer.bytes !== offset + piece.length) throw new Error(`the hub answered a piece with ${JSON.stringify(answer)}`);
+    if (answer.bytes !== offset + piece.length) throw new Error(`the workspace answered a piece with ${JSON.stringify(answer)}`);
     sent[file] = offset + piece.length;
     writeSent(dir, sent);
   }
@@ -396,7 +396,7 @@ export class DiskRecordings implements RecordingStore {
       const meta = readMeta(dir);
       if (!meta?.endedAt) continue;
       if (now - Date.parse(meta.endedAt) >= GIVE_UP_MS) {
-        await giveUp(this.hub, dir, "its recording never reached the hub").catch(() => {});
+        await giveUp(this.hub, dir, "its recording never reached the workspace").catch(() => {});
         continue;
       }
       await this.send(dir);

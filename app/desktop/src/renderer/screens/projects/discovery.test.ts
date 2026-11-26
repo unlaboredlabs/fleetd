@@ -36,7 +36,7 @@ describe("discovery", () => {
   it("lists checkouts by machine, then GitHub, and marks what is already a bot", () => {
     const d = discovery(out, names);
     expect(d.best).toBe("devbox");
-    expect(d.ghOn).toBe("the hub");
+    expect(d.ghOn).toBe("the workspace");
     expect(d.workers.map((w) => [w.name, w.online])).toEqual([
       ["devbox-name", true],
       ["buildbox-name", false],
@@ -53,10 +53,10 @@ describe("discovery", () => {
 
   it("says each problem and its fix as sentences, as the screen runs them together", () => {
     // The hub's words end without a stop: "gh is not logged in on the hub Run `gh auth login`…" read as one.
-    const github: ProjectDiscoverOutput["github"] = { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh repo list did not run: gh is not logged in on the hub", fix: "Run `gh auth login` on the hub machine, or paste the repository's URL" } };
+    const github: ProjectDiscoverOutput["github"] = { owners: [], repos: [], problem: { code: "gh_unavailable", message: "gh repo list did not run: gh is not logged in on the workspace", fix: "Run `gh auth login` on the workspace machine, or paste the repository's URL" } };
     const d = discovery({ machines: [], github }, names);
     expect(d.problems).toEqual([
-      { message: "gh repo list did not run: gh is not logged in on the hub.", fix: "Run `gh auth login` on the hub machine, or paste the repository's URL." },
+      { message: "gh repo list did not run: gh is not logged in on the workspace.", fix: "Run `gh auth login` on the workspace machine, or paste the repository's URL." },
     ]);
   });
 

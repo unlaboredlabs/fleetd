@@ -67,7 +67,7 @@ export const registerIpc = (
   cloud: Cloud,
 ): MacSetup => {
   // A hub removed while a call was on its way answers as an unpaired one would.
-  const gone = { ok: false, error: { code: "offline", message: "That hub was removed from this app." } } as const;
+  const gone = { ok: false, error: { code: "offline", message: "That workspace was removed from this app." } } as const;
   const call = (id: string) => (tool: string, input: unknown, timeoutMs?: number) =>
     hubs.get(id)?.call({ tool, input: input as CallRequest["input"], ...(timeoutMs === undefined ? {} : { timeoutMs }) }) ?? Promise.resolve(gone);
   handle(IPC.hubsList, () => hubs.list());
@@ -164,7 +164,7 @@ export const registerIpc = (
   };
   handle(IPC.machinesJoinHere, (_event, id, machineId): Promise<JoinHere> => {
     if (joining !== undefined && joining.hub !== id) {
-      const other = hubs.list().find((h) => h.id === joining?.hub)?.label ?? "another hub";
+      const other = hubs.list().find((h) => h.id === joining?.hub)?.label ?? "another workspace";
       return Promise.resolve({ machineId, state: "failed", steps: [], message: `This computer is joining ${other} now; try again once that is done.` });
     }
     if (joining === undefined) {

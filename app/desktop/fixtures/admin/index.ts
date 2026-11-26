@@ -79,7 +79,7 @@ const claudeOf = (membersUseHubApi: boolean): Record<string, JsonObject> => ({
         runsOn: {
           kind: "refused",
           message: "Connect your Claude to start this order.",
-          fix: "Members may not use the hub's API on this hub: connect your subscription in Settings › Claude (paste the token `claude setup-token` prints).",
+          fix: "Members may not use the workspace's API on this workspace: connect your subscription in Settings › Claude (paste the token `claude setup-token` prints).",
         },
       },
   [dana["personId"] as string]: { person: ref(dana), mayUseHubApi: membersUseHubApi, runsOn: membersUseHubApi ? hubAccount : { kind: "refused", message: "Connect your Claude to start this order.", fix: "Open Settings › Claude." } },
@@ -206,10 +206,10 @@ export function answerHub(f: Fixture, me: JsonObject = sam, admin = true, member
 
 /** A hub from before people: an admin key, and no people tools, which it says as it says of any unknown tool. */
 function oldHub(from: Fixture): Fixture {
-  const f = Fixture.from(from, "admin-old-hub", "A hub from before people: its admin key reaches the Hub group, and People and Invites ask for an update");
+  const f = Fixture.from(from, "admin-old-hub", "A workspace from before people: its admin key reaches the Workspace group, and People and Invites ask for an update");
   f.answer("hub_info", undefined, { version: "0.8.0", protocol: 1, busy: [], admin: true });
   for (const tool of ["people_list", "invite_create", "invite_revoke", "person_set", "person_remove"]) {
-    f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the hub's MCP tool list." });
+    f.fail(tool, undefined, { code: "not_found", message: `No tool ${tool}.`, fix: "Use a tool name from the workspace's MCP tool list." });
   }
   // Its MCP servers are older than people: Every project shows them, none here.
   f.answer("mcp_servers_get", undefined, { global: [], project: [] });
@@ -223,7 +223,7 @@ function oldHub(from: Fixture): Fixture {
  * the Hub group names the hub it manages and switches between the first two only.
  */
 function hubs(base: (name: "chat-empty") => Fixture): Fixture {
-  const f = hub(base("chat-empty"), "admin-hubs", "Sam owns Personal, is an admin on Acme and a member on Club; the Hub group manages one at a time", sam, true);
+  const f = hub(base("chat-empty"), "admin-hubs", "Sam owns Personal, is an admin on Acme and a member on Club; the Workspace group manages one at a time", sam, true);
   f.label = "Personal";
   f.color = "green";
   const acme = hub(base("chat-empty"), "admin-hubs-acme", "Acme, where Sam is an admin", { ...sam, role: "admin" }, true);
@@ -241,14 +241,14 @@ export default defineGroup({
   fixtures: (base) => [
     hubs(base),
     oldHub(base("chat-empty")),
-    hub(base("chat-empty"), "admin-owner", "Sam owns the hub: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
-    hub(base("chat-empty"), "admin-admin", "The same hub as Alice, an admin: Sam the owner is out of her reach", alice, true),
+    hub(base("chat-empty"), "admin-owner", "Sam owns the workspace: Alice is an admin, Bob a member, and Dana's invite waits", sam, true),
+    hub(base("chat-empty"), "admin-admin", "The same workspace as Alice, an admin: Sam the owner is out of her reach", alice, true),
     // Bob's device holds admin on every machine, as every paired device did before people: his role alone hides it.
-    hub(base("chat-empty"), "admin-member", "The same hub as Bob, a member: no Hub group anywhere", bob, true),
+    hub(base("chat-empty"), "admin-member", "The same workspace as Bob, a member: no Workspace group anywhere", bob, true),
     // Members may not use the hub's key there, and Bob has connected no subscription: nothing to run his orders on.
     // Providers with Google connected: devbox signed in on a Google AI Pro plan, the team's Gemini key on devbox and
     // buildbox through a gateway, and storefront holding a key of its own.
-    answerGoogle(hub(base("chat-empty"), "admin-google", "Sam's hub with Google connected: devbox signed in, the team's Gemini key, and storefront's own", sam, true), {
+    answerGoogle(hub(base("chat-empty"), "admin-google", "Sam's workspace with Google connected: devbox signed in, the workspace's Gemini key, and storefront's own", sam, true), {
       machines: [{ machineId: "devbox", checked: true, signedIn: "Google AI Pro" }],
       keyIn: [{ machineId: "devbox", projectId: "dcffccea-c5a7-40a6-940d-7f70239ffa22" }],
       teamKey: {
@@ -260,7 +260,7 @@ export default defineGroup({
         updatedAt: "2026-10-19T09:30:00.000Z",
       },
     }),
-    hub(base("chat-empty"), "admin-claude-member", "The same hub as Bob, with the hub's key kept for leads: Bob must connect his own Claude", bob, true, false),
+    hub(base("chat-empty"), "admin-claude-member", "The same workspace as Bob, with the workspace's key kept for leads: Bob must connect his own Claude", bob, true, false),
   ],
 });
 

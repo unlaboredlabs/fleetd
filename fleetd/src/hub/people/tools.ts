@@ -34,13 +34,13 @@ function requireAdministrator(hub: Hub, caller: Caller): Person {
   if (admin) return admin;
   throw new ToolError(
     "forbidden",
-    "Only the hub's owners and admins invite people, change roles and remove people.",
-    "Ask an owner or admin of the hub, on the Hub pages of the app's Settings or with `fleetd invite` on the hub.",
+    "Only the workspace's owners and admins invite people, change roles and remove people.",
+    "Ask an owner or admin of the workspace, on the Workspace pages of the app's Settings or with `fleetd invite` on the workspace's machine.",
   );
 }
 
 const unknownPerson = (id: string) =>
-  new ToolError("not_found", `No person ${id} on this hub.`, "Call people_list to see the hub's people.");
+  new ToolError("not_found", `No person ${id} on this workspace.`, "Call people_list to see the workspace's people.");
 
 /** What an admin may hand out: an owner gives any role; an admin, admin or member. */
 function mayGrant(by: Person, role: HubRole): void {
@@ -147,7 +147,7 @@ export function register(tools: Registry): void {
       }
       mayGrant(by, role);
       if (person.role === "owner" && all.owners() <= 1) {
-        throw new ToolError("invalid", `${person.name} is the hub's only owner.`, "Make someone else an owner first.");
+        throw new ToolError("invalid", `${person.name} is the workspace's only owner.`, "Make someone else an owner first.");
       }
     }
     const after = all.set(id, name, role);
@@ -170,7 +170,7 @@ export function register(tools: Registry): void {
     if (found.role === "owner") {
       if (by.role !== "owner") throw new ToolError("forbidden", "Only an owner removes an owner.", "Ask an owner.");
       if (all.owners() <= 1) {
-        throw new ToolError("invalid", `${found.name} is the hub's only owner.`, "Make someone else an owner first.");
+        throw new ToolError("invalid", `${found.name} is the workspace's only owner.`, "Make someone else an owner first.");
       }
     }
     const removed = all.remove(id);
@@ -180,7 +180,7 @@ export function register(tools: Registry): void {
     hub.auth.revokedSome();
     // Their Claude subscription, 1Password token and GitHub connection go too.
     await forgetPerson(hub, person.personId);
-    announce(hub, change("removed", refOf(person), refOf(by)), `${by.name} removed ${person.name} from the hub`);
+    announce(hub, change("removed", refOf(person), refOf(by)), `${by.name} removed ${person.name} from the workspace`);
     return { person, revoked };
   });
 

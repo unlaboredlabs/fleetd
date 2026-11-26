@@ -42,7 +42,7 @@ const refuse = (detail: string) =>
   new ToolError(
     "invalid",
     clip(`Invalid lead call: ${detail}`, 1000),
-    "Send the call as its contract has it (LeadCall.json); a node on another fleetd than the hub's may need updating.",
+    "Send the call as its contract has it (LeadCall.json); a node on another fleetd than the workspace's may need updating.",
   );
 
 /** `frame` with its call decoded; throws the `invalid` refusal. */

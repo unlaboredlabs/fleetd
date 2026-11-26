@@ -112,7 +112,7 @@ function node(m: ReturnType<typeof machine>) {
  * for SIGTERM. */
 async function upWithTheSession(n: ReturnType<typeof node>) {
   await n.said(["re-adopted a session", SESSION]);
-  await n.said(["hub link lost"]);
+  await n.said(["workspace link lost"]);
 }
 
 /** SIGTERMs the node and waits for it to exit: it stops gracefully, in under a second. */

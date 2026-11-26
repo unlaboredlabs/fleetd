@@ -46,14 +46,14 @@ export function parseSince(given: string, now: number, zone: string): string {
 
 export function parseTimeArgs(argv: string[], now: number, zone: string): TimeArgs {
   const v = parse(argv, {
-    options: { hub: "str", "key-file": "str", since: "str", json: "bool" },
+    options: { workspace: "str", "key-file": "str", since: "str", json: "bool" },
     positionals: true,
   });
   if (v instanceof ArgError) throw v;
-  const hub = v.str("hub") || undefined;
+  const hub = v.str("workspace") || undefined;
   const keyFile = v.str("key-file") || undefined;
-  if (hub !== undefined && keyFile === undefined) throw new ArgError("--hub needs --key-file");
-  if (hub === undefined && keyFile !== undefined) throw new ArgError("--key-file needs --hub");
+  if (hub !== undefined && keyFile === undefined) throw new ArgError("--workspace needs --key-file");
+  if (hub === undefined && keyFile !== undefined) throw new ArgError("--key-file needs --workspace");
   if (v.positionals.length > 1) throw new ArgError(`give one order or bot, got '${v.positionals.join(" ")}'`);
   return {
     ...(hub !== undefined ? { hub: [hub, keyFile!] as [string, string] } : {}),
@@ -252,7 +252,7 @@ export class Hub {
       return new Hub(await connectAs(resolveHome(home), clientName), name);
     } catch (f) {
       if (!isFailure(f)) throw f;
-      eprintln(`fleetd ${name}: ${f.message}\n  fix: run it on the hub machine, or pass --hub <url> --key-file <path>`);
+      eprintln(`fleetd ${name}: ${f.message}\n  fix: run it on the workspace's machine, or pass --workspace <url> --key-file <path>`);
       throw new Exit(4);
     }
   }
@@ -268,7 +268,7 @@ export class Hub {
     if (result.isError) {
       const text = (k: string) => (typeof result.body?.[k] === "string" ? (result.body[k] as string) : undefined);
       const fix = text("fix");
-      eprintln(`fleetd ${this.name}: ${text("message") ?? "the hub refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
+      eprintln(`fleetd ${this.name}: ${text("message") ?? "the workspace refused"}${fix === undefined ? "" : `\n  fix: ${fix}`}`);
       throw new Exit(1);
     }
     return result.body;

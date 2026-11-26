@@ -526,7 +526,7 @@ export class Leads {
       type: "project.settings",
       machineId: r.machineId,
       projectId: r.projectId,
-      summary: `${title}: its lead starts on ${lead.name}${picked ? "" : ", the hub's lead profile"}`,
+      summary: `${title}: its lead starts on ${lead.name}${picked ? "" : ", the workspace's lead profile"}`,
       data: { leadProfile: picked?.name ?? null },
     });
     return lead;
@@ -605,14 +605,14 @@ export class Leads {
     if (held) return held;
     const wiring = leadWiring(this.hub);
     const moved = wiring.hooks.moved?.();
-    if (moved !== undefined) return new ToolError("invalid", `The lead was not ${what}: ${moved}.`, "Its bots run on fleetd cloud now. To run them here again, press Undo on this hub's banner.");
+    if (moved !== undefined) return new ToolError("invalid", `The lead was not ${what}: ${moved}.`, "Its bots run on fleetd cloud now. To run them here again, press Undo on this workspace's banner.");
     // No lead turn goes into a login fleetd knows is exhausted.
     const paused = wiring.hooks.usageGate?.(r);
     if (paused !== undefined) {
       return new ToolError(
         "invalid",
         `The lead was not ${what}: ${paused}.`,
-        "It goes on by itself at the reset. Once the login has capacity, the human can press Resume in the app or run fleetd usage resume on the hub machine.",
+        "It goes on by itself at the reset. Once the login has capacity, the human can press Resume in the app or run fleetd usage resume on the workspace's machine.",
       );
     }
     return undefined;

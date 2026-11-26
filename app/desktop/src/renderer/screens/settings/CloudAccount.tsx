@@ -48,8 +48,8 @@ export function CloudAccountSettings() {
     <SettingsSection title="fleetd account" part="hubs.account">
       <SettingsRow
         title={state.email ?? "fleetd cloud"}
-        hint={state.email === null ? "fleetd hosts your team, and its agents run on fleetd's computers or your own. Signing in adds your teams beside these hubs." : undefined}
-        line={step.at === "finishing" ? "Connecting your teams…" : waiting ? "Finish signing in in your browser." : state.email === null ? "Not signed in." : teams.length === 0 ? "Signed in." : `Signed in. fleetd hosts ${names} for this account.`}
+        hint={state.email === null ? "fleetd hosts your workspace, and its agents run on fleetd's computers or your own. Signing in adds your workspaces beside these workspaces." : undefined}
+        line={step.at === "finishing" ? "Connecting your workspaces…" : waiting ? "Finish signing in in your browser." : state.email === null ? "Not signed in." : teams.length === 0 ? "Signed in." : `Signed in. fleetd hosts ${names} for this account.`}
         control={
           step.at === "waiting" ? (
             <Button variant="quiet" onClick={signIn.cancel}>
@@ -148,8 +148,8 @@ export function CloudAccountSettings() {
         title="Sign out of fleetd?"
         description={
           onWeb()
-            ? "This browser stops showing your teams' work until you sign in again. Agents keep running."
-            : `This app drops its key on ${teams.length === 0 ? "your fleetd teams" : names} and stops showing their work. Agents keep running, and your own hubs stay as they are.`
+            ? "This browser stops showing your workspaces' work until you sign in again. Agents keep running."
+            : `This app drops its key on ${teams.length === 0 ? "your fleetd workspaces" : names} and stops showing their work. Agents keep running, and your own workspaces stay as they are.`
         }
         footer={
           <>

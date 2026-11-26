@@ -124,7 +124,7 @@ it("hosted sandboxes connected with no Claude account that reaches them: Connect
     runner: true,
     status: "degraded",
     degradedCause: "claude_login",
-    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the hub's API key or your Claude subscription in Settings",
+    degradedReason: "agents in hosted sandboxes run on a Claude account, and none reaches them. Fix: connect the workspace's API key or your Claude subscription in Settings",
     lastSeenAt: "2026-11-18T00:00:00Z",
     nodeVersion: "1.0.0",
   };
@@ -160,7 +160,7 @@ it("hosted sandboxes that don't get ready within the wait say why, the fix and T
     await act(() => new Promise((r) => setTimeout(r, 120)));
     expect(screen()).toBe("setup.machine.hosted.not-ready");
     expect(host.querySelector("[role=alert]")?.textContent).toBe("fleetd's computers didn't get ready.");
-    expect(host.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Team › Machines.");
+    expect(host.textContent).toContain("If it keeps failing, check fleetd's computers in Settings › Workspace › Machines.");
     expect(host.textContent).not.toContain("runner");
     const again = [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === "Try again");
     if (again === undefined) throw new Error(`no Try again in: ${host.textContent}`);

@@ -200,7 +200,7 @@ test("a person's screen: placed and started on the runner, theirs to drive, ende
   const out = (await opened) as { output: { session: { openedBy: unknown; control: string } } };
   expect(out.output.session).toMatchObject({ openedBy: { personId: "p_me", name: "Sam" }, control: "human" });
   const ended = await t.tools.call(t.hub, person, "screen_end", { sessionId: S5 });
-  expect(ended).toMatchObject({ output: { next: "It closes on its machine; its recording goes to the hub." } });
+  expect(ended).toMatchObject({ output: { next: "It closes on its machine; its recording goes to the workspace." } });
   // Nobody else ends it, and an agent opens none.
   expect(await t.tools.call(t.hub, caller("operate"), "screen_open", { projectRef: { machineId: "devbox", projectId: "p1" }, machineId: "box2" })).toMatchObject({
     error: { error: { code: "forbidden" } },
@@ -523,7 +523,7 @@ test("a PR with no build there is refused before anything starts, in plain words
   });
 });
 
-test("a PR's build is read with the hub's App-aware gh, as pr_list's PRs are", async () => {
+test("a PR's build is read with the workspace's App-aware gh, as pr_list's PRs are", async () => {
   setup();
   const { builds } = await import("../src/hub/machine_roles/builds.ts");
   const { AppGh, repoOf } = await import("../src/hub/github_app/gh.ts");

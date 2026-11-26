@@ -7,10 +7,10 @@ import { placesOf } from "../setup/steps";
 describe("a fleetd cloud team's Settings group in the apps' lines", () => {
   it("is Team in a bot's max agents link and the setup steps' Open, and Hub on a self-hosted hub", () => {
     const a = { machineCap: 4 } as Parameters<typeof holdsLink>[0];
-    expect(holdsLink(a, "devbox", undefined, true).text).toBe("devbox's max in Team › Machines");
-    expect(holdsLink(a, "devbox").text).toBe("devbox's max in Hub › Machines");
+    expect(holdsLink(a, "devbox", undefined, true).text).toBe("devbox's max in Workspace › Machines");
+    expect(holdsLink(a, "devbox").text).toBe("devbox's max in Workspace › Machines");
     const step = { id: "machines", place: "machines" } as Parameters<typeof placesOf>[0];
-    expect(placesOf(step, false, true).map((p) => p.label)).toEqual(["Open Team › Machines"]);
-    expect(placesOf(step).map((p) => p.label)).toEqual(["Open Hub › Machines"]);
+    expect(placesOf(step, false, true).map((p) => p.label)).toEqual(["Open Workspace › Machines"]);
+    expect(placesOf(step).map((p) => p.label)).toEqual(["Open Workspace › Machines"]);
   });
 });

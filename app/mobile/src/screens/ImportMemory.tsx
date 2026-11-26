@@ -156,7 +156,7 @@ export function ImportMemory({ navigation }: SettingsProps<"ImportMemory">) {
         ) : s.phase.t === "failed" && lostAnswer(s.phase.error) ? (
           // The answer never came, but the hub may have written the entries: not "Not added".
           <Text style={[type.footnote, styles.noProject, { color: t.secondary }]} accessibilityRole="alert">
-            The link to the hub dropped before it answered, so it may still have added these. Check your memory in the desktop app; adding again skips what's already there.
+            The link to the workspace dropped before it answered, so it may still have added these. Check your memory in the desktop app; adding again skips what's already there.
           </Text>
         ) : (
           <Problem text={s.phase.t === "failed" ? `Not added: ${errorWords(s.phase.error)}` : undefined} />

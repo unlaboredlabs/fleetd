@@ -26,11 +26,11 @@ export function GithubSettings() {
   const cloud = useHub().cloud === true;
   const read = useToolQuery("github_app_get", noInput, { enabled: live });
   const note = (line: string, tone: "quiet" | "danger" = "quiet") => <SettingsRow reveal="github" mark="off" title="GitHub" hint={HINT} line={line} lineTone={tone} />;
-  if (!live) return note("Not connected. Connect to a hub to connect your GitHub.");
-  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This hub opens PRs with each machine's own gh login. Update fleetd on the hub to connect your own GitHub.");
+  if (!live) return note("Not connected. Connect to a workspace to connect your GitHub.");
+  if (read.error instanceof CallError && lacksTool(read.error.error)) return note("This workspace opens PRs with each machine's own gh login. Update fleetd on the workspace to connect your own GitHub.");
   if (read.isLoadingError) return note(errorText(read.error), "danger");
   if (read.data === undefined) return note("Loading…");
-  if (read.data.app === undefined) return note(cloud ? "GitHub isn't set up on this service." : `This hub has no GitHub App yet. An admin creates it in ${settingsPath(false, "Setup")}.`);
+  if (read.data.app === undefined) return note(cloud ? "GitHub isn't set up on this service." : `This workspace has no GitHub App yet. An admin creates it in ${settingsPath(false, "Setup")}.`);
   return <Account info={read.data} />;
 }
 
@@ -69,7 +69,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
       mark={me === undefined ? "off" : lapsed ? "needs" : "ready"}
       markLabel={me === undefined ? "GitHub: not connected" : lapsed ? "GitHub: connect again" : "GitHub: connected"}
       title="GitHub"
-      hint={`${HINT} You sign in through the hub's App, ${info.app?.name ?? ""}. The hub keeps the token and renews it, and never shows it. GitHub drops a connection that was revoked there or unused for six months.`}
+      hint={`${HINT} You sign in through the workspace's App, ${info.app?.name ?? ""}. The workspace keeps the token and renews it, and never shows it. GitHub drops a connection that was revoked there or unused for six months.`}
       lineTone={me !== undefined && lapsed ? "warning" : "quiet"}
       line={
         me === undefined ? (
@@ -101,7 +101,7 @@ function Account({ info }: { info: GithubAppGetOutput }) {
       {removing ? (
         <ConfirmRemove
           title="Disconnect your GitHub?"
-          description="The hub revokes its token at GitHub and forgets it. Your orders' agents can't use GitHub, and new writers are refused, until you connect again."
+          description="The workspace revokes its token at GitHub and forgets it. Your orders' agents can't use GitHub, and new writers are refused, until you connect again."
           action="Disconnect"
           onRemove={() => hubCall("github_disconnect", {}).then(() => refetch(["github_app_get"]))}
           onClose={() => setRemoving(false)}

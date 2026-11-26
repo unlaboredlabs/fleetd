@@ -108,7 +108,7 @@ describe("a cloud team's invites by email", () => {
       // A self-hosted hub (not at a team address): refused here, the team never asked.
       expect(await cloud.invite("own", { email: "finn@example.com", role: "member" })).toEqual({
         ok: false,
-        failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." },
+        failure: { code: "", message: "That workspace isn't one of your fleetd cloud workspaces." },
       });
       // A build without the cloud's values asks nobody.
       const off = realCloud(null, hubs, dir, true, () => Promise.resolve());
@@ -143,7 +143,7 @@ describe("a cloud team's invites by email", () => {
       expect(removed).toEqual([]);
       expect(await cloud.deleteTeam("hub", " acme ")).toEqual({ ok: true });
       expect([fake.deleted, removed]).toEqual([["acme"], ["hub"]]);
-      expect(await cloud.deleteTeam("own", "acme")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
+      expect(await cloud.deleteTeam("own", "acme")).toEqual({ ok: false, failure: { code: "", message: "That workspace isn't one of your fleetd cloud workspaces." } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -181,7 +181,7 @@ describe("a cloud team's invites by email", () => {
       });
       expect(connected).toHaveLength(2);
       // A self-hosted hub asks nobody.
-      expect(await cloud.newWorkspace("own", "x")).toEqual({ ok: false, failure: { code: "", message: "That hub isn't one of your fleetd cloud teams." } });
+      expect(await cloud.newWorkspace("own", "x")).toEqual({ ok: false, failure: { code: "", message: "That workspace isn't one of your fleetd cloud workspaces." } });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

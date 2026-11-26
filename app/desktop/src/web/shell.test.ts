@@ -20,7 +20,7 @@ const ACME = "3f2b9c1e00004000";
 /** The cloud's answer to a member's rename (fleetd-cloud accounts: only an owner or admin renames a team). */
 const memberRename = (path: string, init?: RequestInit) =>
   path.endsWith("/accounts/v1/team") && init?.method === "POST"
-    ? Response.json({ code: "forbidden", message: "Only an owner or admin renames the team.", fix: "Ask an owner or admin of this team." }, { status: 403 })
+    ? Response.json({ code: "forbidden", message: "Only an owner or admin renames the workspace.", fix: "Ask an owner or admin of this workspace." }, { status: 403 })
     : new Response(null, { status: 404 });
 
 interface Call {
@@ -245,7 +245,7 @@ describe("the web shell", () => {
     const down = refusing(() => Response.json({ code: "unavailable", message: "fleetd cloud couldn't finish this just now.", fix: "Try again in a minute." }, { status: 503 }));
     expect(await down.api.hubs.update(ACME, { label: "Acme Inc", color: null })).toEqual({
       ok: false,
-      message: "The team wasn't renamed: fleetd cloud couldn't finish this just now. Try again in a minute.",
+      message: "The workspace wasn't renamed: fleetd cloud couldn't finish this just now. Try again in a minute.",
     });
     expect((await down.api.hubs.list())[0]?.label).toBe("acme");
     expect(down.stored.has("fleetd.web.teams")).toBe(false);
@@ -255,7 +255,7 @@ describe("the web shell", () => {
     });
     expect(await offline.api.hubs.update(ACME, { label: "Acme Inc", color: null })).toEqual({
       ok: false,
-      message: "The team wasn't renamed: Can't reach fleetd cloud. Check your connection, then try again.",
+      message: "The workspace wasn't renamed: Can't reach fleetd cloud. Check your connection, then try again.",
     });
     expect((await offline.api.hubs.list())[0]?.label).toBe("acme");
   });
@@ -372,10 +372,10 @@ describe("the web shell", () => {
 
   it("deletes a team for its owner on this origin with the cookie, then goes to the start; a refusal stays, in the team's words", async () => {
     const team = SESSION.teams[0]?.id ?? "";
-    const refused = setup(() => json({ code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." }, 409));
+    const refused = setup(() => json({ code: "running", message: "An agent is running in this workspace.", fix: "Stop them, then delete the workspace." }, 409));
     expect(await refused.api.cloud.deleteTeam(ACME, "acme")).toEqual({
       ok: false,
-      failure: { code: "running", message: "An agent is running in this team.", fix: "Stop them, then delete the team." },
+      failure: { code: "running", message: "An agent is running in this workspace.", fix: "Stop them, then delete the workspace." },
     });
     expect(refused.went).toEqual([]);
     const { api, calls, went } = setup(() => json({ deleted: "acme" }));

@@ -122,7 +122,7 @@ export default defineGroup({
     state(base("typical"), "computer-nowhere", "A bot's Computer on a machine that builds no images: its setup alone, no image row.", () => ({ state: "none" })),
     runsOn(base("typical"), "computer-runs-on", "A bot's Computer: Runs on is fleetd's computers · 4 vCPU / 8 GB, one pick of provider and size.", { kind: "boat", cpu: 4, memGb: 8 }, sized("boat", "fleetd's computers", [[2, 4], [4, 8], [8, 16], [16, 32]])),
     runsOn(base("typical"), "computer-runs-on-gone", "A bot's Computer: its pick's provider was disconnected, so its agents wait and the row says why.", { kind: "boat", cpu: 8, memGb: 16 }, [
-      { kind: "boat", cpu: 8, memGb: 16, label: "fleetd's computers · 8 vCPU / 16 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Hub › Machines" },
+      { kind: "boat", cpu: 8, memGb: 16, label: "fleetd's computers · 8 vCPU / 16 GB", unavailable: "fleetd's computers aren't connected: an admin connects them in Settings › Workspace › Machines" },
     ]),
     (() => {
       const f = Fixture.from(base("typical"), "computer-two", "A bot with two repos: each its own Computer; api has no commands, so no image.");

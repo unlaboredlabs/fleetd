@@ -8,7 +8,7 @@ import { appLine, hostedLine, hubLine, linkMark, machinesLine, menuLines, offers
 const HUB = "https://devbox.example.ts.net:4790";
 const NOW = Date.parse("2026-10-19T09:03:07.195Z");
 const live: HubState = { phase: "live", hub: HUB, protocol: 1 };
-const down: HubState = { phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", fix: "Start the hub", retryAt: 0 };
+const down: HubState = { phase: "retrying", hub: HUB, reason: "Nothing is listening at devbox:4790", fix: "Start the workspace", retryAt: 0 };
 
 const machine = (name: string, status: MenuMachine["status"] = "online"): MenuMachine => ({ machineId: name, name, status });
 const quiet = (kind: Quiet["kind"], note?: Partial<NonNullable<Quiet["note"]>>): Quiet => ({
@@ -44,14 +44,14 @@ describe("the hub's line", () => {
     expect(menu({ hub: down })[0]).toMatchObject({ mark: "warning", does: { to: "retry" } });
     expect(read({ hub: { phase: "refused", hub: HUB, message: "This key was revoked" }, label: "Acme" })).toEqual(["Acme refused the key · Pair again"]);
     expect(menu({ hub: { phase: "refused", hub: HUB, message: "" } })[0]).toMatchObject({ mark: "danger", does: { to: "pair" } });
-    expect(read({ hub: { phase: "unpaired" } })).toEqual(["Not paired with a hub · Pair"]);
+    expect(read({ hub: { phase: "unpaired" } })).toEqual(["Not paired with a workspace · Pair"]);
     expect(read({ hub: { phase: "unpaired" }, label: "Acme" })).toEqual(["Acme isn't paired · Pair"]);
   });
 
   it("is calm on the first dial, and out of reach in the same words from the second on", () => {
     expect(menu({ hub: { phase: "connecting", hub: HUB, attempt: 1 } })).toEqual([{ key: "hub", mark: "quiet", text: "Connecting to devbox…", name: "devbox", does: { to: "hubs" } }]);
     expect(read({ hub: { phase: "connecting", hub: HUB, attempt: 2 } })).toEqual(["Can't reach devbox · Trying…"]);
-    expect(read({ hub: { phase: "connecting", hub: "", attempt: 1 } })).toEqual(["Connecting to the hub…"]);
+    expect(read({ hub: { phase: "connecting", hub: "", attempt: 1 } })).toEqual(["Connecting to the workspace…"]);
   });
 
   it("keeps its name through a restart, its dot opened to a ring; an update's turns to Retry after 30 s and an outage after 2 minutes", () => {
@@ -77,7 +77,7 @@ describe("the hub's line", () => {
   });
 
   it("marks the hub's name in its words, the one part a long name may cut short; never the words that say what is wrong", () => {
-    const label = "Acme Robotics shared build hub, Berlin 2"; // 40 characters, the longest a label can be
+    const label = "Acme Robotics shared build workspace, Berlin 2"; // 40 characters, the longest a label can be
     const states: HubState[] = [live, down, { phase: "refused", hub: HUB, message: "" }, { phase: "unpaired" }, { phase: "connecting", hub: HUB, attempt: 1 }, { phase: "connecting", hub: HUB, attempt: 3 }, { ...down, restarting: NOW - 40_000, updatingTo: "0.9.3" }];
     for (const hub of states) {
       const [line] = menu({ hub, label });
@@ -113,7 +113,7 @@ describe("an update that needs someone", () => {
   });
 
   it("leaves one going on or just in to the hub's line", () => {
-    expect(updateLine(quiet("updating", { title: "Updating the hub…" }))).toBeNull();
+    expect(updateLine(quiet("updating", { title: "Updating the workspace…" }))).toBeNull();
     expect(updateLine(quiet("updated", { title: "Updated" }))).toBeNull();
     expect(updateLine(quiet("restarting"))).toBeNull();
   });

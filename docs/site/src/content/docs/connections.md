@@ -39,8 +39,8 @@ You can connect Paper or Notion with more than one account, for example a person
 Each account gets its own row and is counted on its own in **Connected**. Each one signs in, takes its own **Bots**
 and is disconnected separately. Disconnecting one leaves the others connected.
 
-Paper and Notion only accept an https sign-in address. If your hub has no https address, sign in from the hub machine
-itself. See [Troubleshooting](/docs/troubleshooting#hub).
+Paper and Notion only accept an https sign-in address. If your workspace has no https address, sign in from the workspace's
+machine itself. See [Troubleshooting](/docs/troubleshooting#workspace).
 
 ## Connect Tailscale {#tailscale}
 
@@ -70,7 +70,7 @@ in needed** and each bot's chat says so once. Press **Sign in** on the row to si
 
 ## What agents may do without asking {#policy}
 
-The hub decides each tool call, not the lead.
+The workspace decides each tool call, not the lead.
 
 - **Reads** run without asking: tools whose names only read, such as `get_page` or `list_events`, and tools you
   marked as reading. A read whose input holds a link goes by the approval mode instead.
@@ -103,6 +103,6 @@ To cut access off completely, also revoke the key where you created it.
 ## Where credentials are kept {#credentials}
 
 - **Keys**: sealed for each machine. Only the machine that runs the agent can read them.
-- **Sign-ins**: sealed by the hub, which renews them. Agents reach the service through fleetd, never with the token
+- **Sign-ins**: sealed by the workspace, which renews them. Agents reach the service through fleetd, never with the token
   itself.
 - **Chats, transcripts and memory**: never. A call that holds something like a key is refused.

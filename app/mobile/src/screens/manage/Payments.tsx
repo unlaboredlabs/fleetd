@@ -137,7 +137,7 @@ export function Payments({ route }: ChatInfoProps<"Payments">) {
       ) : vaultCards !== null && !vaultCards.ok ? (
         <Problem text={`Couldn't list the cards: ${errorWords(vaultCards.error)}`} />
       ) : vaultCards !== null ? (
-        <ListSection header="Cards" footer="The team's cards in the vault.">
+        <ListSection header="Cards" footer="The workspace's cards in the vault.">
           {[...vaultCards.value.map((c) => ({ value: `vault:${c.itemId}`, title: c.label, detail: rowLine(c) })), { value: NO_CARD, title: "No card", detail: undefined }].map((o) => (
             <CheckRow key={o.value} title={o.title} detail={o.detail} checked={o.value === (card ?? NO_CARD)} disabled={!live || saving !== null} onPress={() => void pick(o.value)} />
           ))}

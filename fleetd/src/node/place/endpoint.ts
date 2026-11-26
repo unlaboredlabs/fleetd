@@ -144,7 +144,7 @@ export async function unreached(e: Endpoint, at: string, tailnet: boolean, resol
   try {
     host = parse(e.url).host;
   } catch {}
-  const said = `a sandbox at ${at} couldn't reach the hub's Claude account at ${host}`;
+  const said = `a sandbox at ${at} couldn't reach the workspace's Claude account at ${host}`;
   const hint = await hostedHint(e.url, tailnet, resolve);
   return `${said}: ${hint ?? "it didn't answer from there. Check that it is up, then try again"}`;
 }

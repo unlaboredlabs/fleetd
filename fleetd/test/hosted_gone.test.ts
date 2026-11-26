@@ -68,7 +68,7 @@ const lines = (db: HubDb, p: string) =>
     .filter((m) => m.author === "system")
     .map((m) => m.text);
 
-test("a hub upgrades with its sandbox keys, Tailscale state and hosted node gone, its bots and their files kept", () => {
+test("a workspace upgrades with its sandbox keys, Tailscale state and hosted node gone, its bots and their files kept", () => {
   const t = upgraded();
   try {
     expect(t.db.drift).toEqual([]);
@@ -91,7 +91,7 @@ test("each bot that had a VM, a hosted sandbox or lived in one hears it once in 
     expect(lines(t.db, "shop")).toEqual(["fleetd no longer runs agents in VMs on your computers: this bot's agents run directly on devbox again, as before."]);
     expect(lines(t.db, "api")).toEqual(["fleetd no longer supports hosted sandboxes with a key of your own: this bot's agents run on devbox from now on."]);
     expect(lines(t.db, "notes")).toEqual([
-      `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine. Add its repo on one of your computers to keep working on it.`,
+      `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the workspace's machine. Add its repo on one of your computers to keep working on it.`,
     ]);
     expect(lines(t.db, "plain")).toEqual([]);
     // Once: the hub's next start says nothing again, even with the rows marked unsaid.
@@ -111,7 +111,7 @@ test("a message to a bot that lived in the hosted sandboxes is answered at once 
     const r = { machineId: "hosted", projectId: "notes" };
     const out = await t.tools.call(t.hub, admin, "chat_send", { projectRef: r, text: "carry on", clientRequestId: "c1" });
     expect(message(out)).toMatchObject({
-      message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the hub's machine.`,
+      message: `This bot ran in a hosted sandbox with a key of your own, which fleetd no longer supports. Its files are in ${t.files} on the workspace's machine.`,
       fix: "Add its repo on one of your computers to keep working on it.",
     });
     await expect(sendAsAgent(t.hub, r, "lead:devbox/shop", "hello", "req1")).rejects.toThrow("which fleetd no longer supports");
@@ -125,19 +125,19 @@ test("a message to a bot that lived in the hosted sandboxes is answered at once 
 test("hosted stays reserved: no code is made for it and no computer joins as it, an old code included", async () => {
   const t = testHub();
   const out = await t.tools.call(t.hub, admin, "machine_join", { machineId: "hosted", rejoin: true });
-  expect(message(out)?.message).toBe('"hosted" was the hub\'s hosted sandboxes, which fleetd no longer runs: nothing joins as it.');
+  expect(message(out)?.message).toBe('"hosted" was the workspace\'s hosted sandboxes, which fleetd no longer runs: nothing joins as it.');
   expect(() => t.hub.auth.nodes.createEnrollToken("hosted", "test")).toThrow("nothing joins as it");
   expect(() => createEnrollToken(t.hub.db, "hosted")).toThrow("nothing joins as it");
   const old = "fle_oldhostedcode";
   t.hub.db.conn.query("INSERT INTO enroll_tokens (hash, machine_id, expires_ms) VALUES (?, ?, ?)").run(sha256(old), "hosted", t.clock.now() + 60_000);
-  expect(() => t.hub.auth.nodes.enrollNode(old, "hosted", KEY)).toThrow("hosted was the hub's hosted sandboxes");
+  expect(() => t.hub.auth.nodes.enrollNode(old, "hosted", KEY)).toThrow("hosted was the workspace's hosted sandboxes");
   expect(t.hub.auth.nodes.nodePubKey("hosted")).toBeUndefined();
   const code = t.hub.auth.nodes.createEnrollToken("devbox", "test").token;
   expect(t.hub.auth.nodes.enrollNode(code, "devbox", KEY)).toBe("devbox");
   t.done();
 });
 
-test("the hub serves none of fleetd cloud's own tools: the apps read their absence and show none of it", async () => {
+test("the workspace serves none of fleetd cloud's own tools: the apps read their absence and show none of it", async () => {
   const t = testHub();
   for (const tool of ["sandbox_get", "sandbox_connect", "project_image_rebuild"]) {
     expect(await t.tools.call(t.hub, admin, tool, {})).toEqual({ error: { kind: "unknown" } });

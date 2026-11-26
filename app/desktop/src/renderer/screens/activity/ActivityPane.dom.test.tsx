@@ -213,7 +213,7 @@ it("stops asking for an older page that keeps failing, and offers Retry", async 
   const older = [ev(3, "task.started", { taskId: "T12" }, "T12 started (high): Receipt dates", 60 * 30)];
   let down = true;
   await mount((input) =>
-    input.before === undefined ? page(FIRST, true) : down ? { ok: false, error: { code: "failed", message: "The hub couldn't read its event log" } } : page(older),
+    input.before === undefined ? page(FIRST, true) : down ? { ok: false, error: { code: "failed", message: "The workspace couldn't read its event log" } } : page(older),
   );
   // The read's own retries, then nothing more however long it waits.
   await act(() => vi.advanceTimersByTimeAsync(30_000));
@@ -238,5 +238,5 @@ it("says when nothing has happened, and when the hub can't list activity", async
   act(() => root.unmount());
   root = createRoot(host);
   await mount(() => ({ ok: false, error: { code: "not_found", message: "No tool events_list." } }));
-  expect(host.textContent).toContain("This hub is older than the app");
+  expect(host.textContent).toContain("This workspace is older than the app");
 });

@@ -55,10 +55,10 @@ import { moveKeptProfiles } from "./own_homes.ts";
 import { uploads } from "./uploads.ts";
 import { settingsPath } from "../shared/settings_path.ts";
 
-export const NODE_USAGE = `  node join --hub <url> (--token <token> | --token-file <file|->) --machine <id>
+export const NODE_USAGE = `  node join --workspace <url> (--token <token> | --token-file <file|->) --machine <id>
             [--home <dir>] [--enroll-only] [--claude-config-dir <dir>]
-             enroll this machine with the hub, then keep its link up (node home default ~/.fleetd/node);
-             --token-file - reads the token from stdin; --enroll-only exits once the hub has accepted this
+             enroll this machine with the workspace, then keep its link up (node home default ~/.fleetd/node);
+             --token-file - reads the token from stdin; --enroll-only exits once the workspace has accepted this
              node; sessions use your own claude setup (~/.claude) unless --claude-config-dir names a
              dedicated one
   node run [--home <dir>]
@@ -249,7 +249,7 @@ export async function nodeCommand(argv: string[]): Promise<number> {
     if (typeof flags["token-file"] === "string")
       token = (flags["token-file"] === "-" ? await new Response(Bun.stdin.stream()).text() : readFileSync(flags["token-file"], "utf8")).trim();
     if (typeof flags.hub !== "string" || !token || typeof flags.machine !== "string")
-      return fail("node join needs --hub, --token (or --token-file) and --machine");
+      return fail("node join needs --workspace, --token (or --token-file) and --machine");
     return join_({
       hub: flags.hub,
       token,
@@ -350,7 +350,7 @@ export async function enrolled(home: string, retry: boolean, signal?: AbortSigna
         if (config?.enrolled) return config;
         error = config?.removed
           ? `${config.machineId} was removed from ${config.hub}: it joins again with a new code (fleetd init --join, or Set up this Mac in the app)`
-          : `this node has not joined a hub (no enrolled config in ${home}): run fleetd node join first`;
+          : `this node has not joined a workspace (no enrolled config in ${home}): run fleetd node join first`;
       } catch {
         error = `node config in ${home} is unreadable`;
       }
@@ -510,7 +510,7 @@ export async function startNode(
         console.warn(`cannot mark the node enrolled in its config: ${String(error)}`);
       }
       const as = renamed ? ` as ${machineId}` : "";
-      console.log(`${new Date().toISOString()} INFO enrolled with the hub${as}; later starts use \`fleetd node run\``);
+      console.log(`${new Date().toISOString()} INFO enrolled with the workspace${as}; later starts use \`fleetd node run\``);
       if (exitWhenEnrolled || renamed) resolveDone(0);
     };
 
@@ -613,7 +613,7 @@ export async function startNode(
     try {
       writeConfig(home, movedConfig(config, ask.hub));
     } catch (error) {
-      return answer(false, `enrolled at the new hub, but node.json couldn't be written: ${String((error as Error).message)}`);
+      return answer(false, `enrolled at the new workspace, but node.json couldn't be written: ${String((error as Error).message)}`);
     }
     console.log(`${new Date().toISOString()} INFO enrolled with ${ask.hub}; starting again there`);
     answer(true, `enrolled with ${ask.hub}`);
@@ -625,7 +625,7 @@ export async function startNode(
   const nodeUpdate = async (frame: NodeAction, ctx: LinkContext) => {
     const failed = (f: Error & { stage?: string }) =>
       ({ t: "node_action_result", id: frame.id, ok: false, message: f.message.slice(0, 500), stage: f.stage ?? "install" }) as const;
-    if (!frame.update) return ctx.send(failed(Object.assign(new Error(`the hub named no build to ${frame.action === "fetch" ? "fetch" : "update to"}`), { stage: "download" })));
+    if (!frame.update) return ctx.send(failed(Object.assign(new Error(`the workspace named no build to ${frame.action === "fetch" ? "fetch" : "update to"}`), { stage: "download" })));
     if (frame.action === "fetch") {
       ctx.send({ t: "node_action_result", id: frame.id, ok: true, message: "fetching" });
       return void runFetch(frame.update, home).catch(logFailed("fetch"));
@@ -703,7 +703,7 @@ export async function startNode(
       } else resolveDone(0);
     },
     (error) => {
-      process.stderr.write(`fleetd: the link to the hub failed: ${String((error as Error)?.message ?? error)}\n`);
+      process.stderr.write(`fleetd: the link to the workspace failed: ${String((error as Error)?.message ?? error)}\n`);
       resolveDone(1);
     },
   );

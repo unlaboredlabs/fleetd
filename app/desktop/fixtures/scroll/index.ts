@@ -146,7 +146,7 @@ const busy = (base: Fixture, name: string, note: string, opts: { arrive: boolean
   if (opts.restart !== undefined) {
     // The link drops (not a planned restart, which says nothing for its first 30 s) and comes back unable to resume.
     const { at: from, down } = opts.restart;
-    f.later(from, "state", { phase: "retrying", hub: HUB, reason: "The hub closed the connection", retryAt: Date.parse(at(f.now, from + down)) });
+    f.later(from, "state", { phase: "retrying", hub: HUB, reason: "The workspace closed the connection", retryAt: Date.parse(at(f.now, from + down)) });
     f.later(from + down - 200, "state", { phase: "connecting", hub: HUB, attempt: 1 });
     f.later(from + down, "state", { phase: "live", hub: HUB, protocol: PROTOCOL });
     f.later(from + down, "snapshot", { ...f.snapshot, cursor: event++ });
@@ -157,7 +157,7 @@ const busy = (base: Fixture, name: string, note: string, opts: { arrive: boolean
 
 export default defineGroup({
   fixtures: (base) => [
-    busy(base("chat-long"), "scroll-busy", "A busy bot's long chat: pictures, image blocks and code in its history, older pages answering after 300 ms; new messages, edits and agents' lines arrive, and the hub restarts at 30 s.", { arrive: true, restart: { at: RESTART_AT_MS, down: RESTART_DOWN_MS } }),
+    busy(base("chat-long"), "scroll-busy", "A busy bot's long chat: pictures, image blocks and code in its history, older pages answering after 300 ms; new messages, edits and agents' lines arrive, and the workspace restarts at 30 s.", { arrive: true, restart: { at: RESTART_AT_MS, down: RESTART_DOWN_MS } }),
     busy(base("chat-long"), "scroll-still", "The busy chat's history alone: pictures, image blocks and code, older pages answering after 300 ms, nothing arriving.", { arrive: false }),
     busy(base("chat-long"), "scroll-drop", "The busy chat's history; the link drops 9 s in and comes back 3 s later unable to resume, every read made again.", { arrive: false, restart: { at: DROP_AT_MS, down: DROP_DOWN_MS } }),
   ],

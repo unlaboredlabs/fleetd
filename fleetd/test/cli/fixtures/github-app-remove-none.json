@@ -1,5 +1,5 @@
 {
   "code": 1,
   "stdout": "",
-  "stderr": "fleetd: this hub has no GitHub App\n"
+  "stderr": "fleetd: this workspace has no GitHub App\n"
 }

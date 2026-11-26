@@ -536,8 +536,8 @@ export function sweep(hub: Hub): number {
     const m = steer.thread.machineId;
     const [stage, why]: [SteerStage, string] =
       steer.stage === "delivered"
-        ? ["unacknowledged", `no reply came back from ${m}: its node restarted, or is older than this hub`]
-        : ["failed", `${m}'s node lost it before the agent took it in: it restarted, or is older than this hub`];
+        ? ["unacknowledged", `no reply came back from ${m}: its node restarted, or is older than this workspace`]
+        : ["failed", `${m}'s node lost it before the agent took it in: it restarted, or is older than this workspace`];
     const done: Steer = { ...steer, stage, detail: why };
     try {
       steers.put(hub.db, done);

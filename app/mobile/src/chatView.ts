@@ -129,9 +129,9 @@ export const sendNote = (item: Pick<ChatItem, "state" | "error">): string | unde
     case "reconnecting":
       return undefined;
     case "unanswered":
-      return "Not sent: the hub didn't answer.";
+      return "Not sent: the workspace didn't answer.";
     case "failed":
-      return `Not sent: ${item.error?.message ?? "the hub refused it."}`;
+      return `Not sent: ${item.error?.message ?? "the workspace refused it."}`;
     default:
       return undefined;
   }
@@ -150,9 +150,9 @@ export const sendWait = (item: Pick<ChatItem, "state" | "at">, nowMs: number): {
     item.state === "pending"
       ? "Sending…"
       : item.state === "queued"
-        ? "Not connected: it goes when the hub is back."
+        ? "Not connected: it goes when the workspace is back."
         : item.state === "reconnecting"
-          ? "The link dropped: it goes again when the hub is back."
+          ? "The link dropped: it goes again when the workspace is back."
           : undefined;
   return words === undefined ? undefined : { words, inMs: Math.max(0, msOf(item.at) + SLOW_SEND_MS - nowMs) };
 };

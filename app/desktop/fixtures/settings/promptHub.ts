@@ -177,7 +177,7 @@ export class PromptHub {
   }
 
   answer(tool: string, input: Record<string, unknown>): Answer {
-    if (this.offline) return { ok: false, error: { code: "disconnected", message: "The hub connection dropped." } };
+    if (this.offline) return { ok: false, error: { code: "disconnected", message: "The workspace connection dropped." } };
     const project = input["projectRef"] as ProjectRef | undefined;
     const key = keyOf(project);
     const find = (): Prompt | null => this.prompts.find((p) => p.id === input["id"]) ?? null;
@@ -213,7 +213,7 @@ export class PromptHub {
         return { ok: true, output: { ref: refOf(p.id, text), warnings } };
       }
       default:
-        return { ok: false, error: { code: "not_found", message: `The fixture hub has no ${tool}.` } };
+        return { ok: false, error: { code: "not_found", message: `The fixture workspace has no ${tool}.` } };
     }
   }
 

@@ -16,7 +16,7 @@ import { settingsPath } from "../../shared/settings_path.ts";
 const MAX_FAILURES = 5;
 const FAILURE_WINDOW_MS = 60_000;
 const MAX_DEVICE_NAME = 64;
-const NEW_CODE_FIX = "Run `fleetd pair` on the hub for a new code, or ask whoever invited you for a new invite.";
+const NEW_CODE_FIX = "Run `fleetd pair` on the workspace's machine for a new code, or ask whoever invited you for a new invite.";
 const NEW_MAC_CODE_FIX = "On your main machine, open Add machine › A Mac for agents for a new code, then type it here.";
 
 export type PairErrorCode = "pair_code_invalid" | "pair_code_expired" | "pair_rate_limited" | "invalid" | "mac_other_computer";
@@ -67,7 +67,7 @@ export const pairError = (status: number, code: PairErrorCode, message: string, 
 export function storeFailed(error: unknown): Response {
   console.error("pairing failed:", error);
   return json(
-    { code: "internal", message: "the hub could not record the pairing", fix: "Check the hub's log, then run `fleetd pair` again." },
+    { code: "internal", message: "the workspace could not record the pairing", fix: "Check the workspace's log, then run `fleetd pair` again." },
     500,
   );
 }
@@ -147,14 +147,14 @@ export const pair: Route = async (req, { hub, ip }) => {
     announce(
       hub,
       { ...change("joined", info.person, undefined), inviteId: redeemed.inviteId, keyId: info.keyId },
-      `${info.person.name} joined the hub on ${name}`,
+      `${info.person.name} joined the workspace on ${name}`,
     );
   }
   try {
     events(hub).append({
       at: isoMs(now),
       type: "key.paired",
-      summary: `${name} paired with the hub`,
+      summary: `${name} paired with the workspace`,
       data: { keyId: info.keyId, deviceName: name, personId: info.person?.personId ?? null, inviteId: redeemed.inviteId ?? null },
     });
   } catch (error) {
@@ -211,13 +211,13 @@ export const macPair: Route = async (req, { hub, ip }) => {
     }
     return error.kind === "expired"
       ? pairError(401, "pair_code_expired", "that code expired", NEW_MAC_CODE_FIX)
-      : pairError(401, "pair_code_invalid", "that code isn't open on this hub", NEW_MAC_CODE_FIX);
+      : pairError(401, "pair_code_invalid", "that code isn't open on this workspace", NEW_MAC_CODE_FIX);
   }
   if ("refused" in redeemed) {
     return pairError(
       409,
       "mac_other_computer",
-      "this hub's agents' Mac is another computer",
+      "this workspace's agents' Mac is another computer",
       `To make this Mac the agents' Mac instead, remove the old one on your main machine (${settingsPath()} › ` +
         "Machines › the Mac › Remove), then type this code again.",
     );

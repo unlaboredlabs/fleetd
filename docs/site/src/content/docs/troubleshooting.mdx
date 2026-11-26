@@ -3,19 +3,17 @@ title: Troubleshooting
 description: Run fleetd doctor, then find what it reported and how to fix it.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-
 Find what's wrong with `fleetd doctor` and fix it.
 
 ## Run the doctor {#doctor}
 
-On the hub:
+On the workspace:
 
 ```sh
 fleetd doctor
 ```
 
-It checks the hub and every machine. Setup steps still to do come first, then each other problem. Most lines end
+It checks the workspace and every machine. Setup steps still to do come first, then each other problem. Most lines end
 with `Fix:` and the command to run, on the machine the line names.
 
 - ✗ a failure: fix it.
@@ -23,25 +21,25 @@ with `Fix:` and the command to run, on the machine the line names.
 - – not checked yet, or a step not needed yet.
 - ✓ done.
 
-## The hub {#hub}
+## The workspace {#workspace}
 
-### The hub doesn't answer
+### The workspace doesn't answer
 
 ```console capture=doctor-no-hub
 $ fleetd doctor
-✗  doctor nothing answers at http://127.0.0.1:4778: the hub isn't running. Fix: fleetd init (it starts the hub and repairs its setup)
+✗  doctor nothing answers at http://127.0.0.1:4778: the workspace isn't running. Fix: fleetd init (it starts the workspace and repairs its setup)
 [exit 4]
 ```
 
-Run `fleetd init`: it starts the hub and repairs its setup. If it still doesn't answer, [restart the hub](#restart)
+Run `fleetd init`: it starts the workspace and repairs its setup. If it still doesn't answer, [restart the workspace](#restart)
 and read its log, `~/.fleetd/hub/hub.log`.
 
-If it says *something else answers*, another program took the hub's port. Its fix line names the command that shows
+If it says *something else answers*, another program took the workspace's port. Its fix line names the command that shows
 which; stop that program, then run `fleetd init`.
 
-### The hub's address isn't HTTPS
+### The workspace's address isn't HTTPS
 
-Plain HTTP is fine on this machine and on a tailnet. Anywhere else, serve the hub over HTTPS. With Tailscale:
+Plain HTTP is fine on this machine and on a tailnet. Anywhere else, serve the workspace over HTTPS. With Tailscale:
 
 ```sh
 tailscale serve --bg 4790
@@ -50,12 +48,12 @@ fleetd init --url https://<that address>
 
 ### GitHub isn't set up
 
-"gh is not logged in on the hub" means the hub has no GitHub App yet and `gh` is logged out. Create the App in
-Settings › Hub › Setup › GitHub (see [GitHub](/docs/github)), or run `gh auth login` on the hub.
+"gh is not logged in on the workspace" means the workspace has no GitHub App yet and `gh` is logged out. Create the App in
+Settings › Workspace › Setup › GitHub (see [GitHub](/docs/github)), or run `gh auth login` on the workspace.
 
 ### A key or token failed its test
 
-The hub's Claude API key, someone's Claude subscription or a 1Password token was revoked, ran out of credit or
+The workspace's Claude API key, someone's Claude subscription or a 1Password token was revoked, ran out of credit or
 expired. Paste it again in the place the line names, then press **Test**.
 
 A line saying a key "isn't on" a machine means that machine was offline when the key was saved. Save it again while
@@ -103,12 +101,12 @@ Running agents keep going in every case. See [Machines](/docs/machines#guard).
 
 ### No git identity on a machine
 
-Commits need an author. Run `fleetd machine add <id>` on the hub to set it up again, or `fleetd machine add --local`
-for the hub's own machine.
+Commits need an author. Run `fleetd machine add <id>` on the workspace to set it up again, or `fleetd machine add --local`
+for the workspace's own machine.
 
 ### The service stops when you log out (Linux)
 
-`fleetd doctor` names a one-time `sudo` command that keeps the hub or node running without a login. Run it once on
+`fleetd doctor` names a one-time `sudo` command that keeps the workspace or node running without a login. Run it once on
 that machine. See [Machines](/docs/machines#service-manager).
 
 ### The app doesn't open on Linux
@@ -126,30 +124,16 @@ The node keeps its machine awake while agents run, but not between jobs. To stop
 
 ## Restart a service {#restart}
 
-<Tabs syncKey="os">
-<TabItem label="macOS">
-
 ```sh
-launchctl kickstart -k gui/$(id -u)/sh.fleetd.hub     # the hub
-launchctl kickstart -k gui/$(id -u)/sh.fleetd.node    # a node, on that machine
+fleetd workspace restart    # the workspace, on its machine
+fleetd node restart         # a node, on that machine
 ```
-
-</TabItem>
-<TabItem label="Linux">
-
-```sh
-systemctl --user restart fleetd-hub.service     # the hub
-systemctl --user restart fleetd-node.service    # a node, on that machine
-```
-
-</TabItem>
-</Tabs>
 
 Running agents carry on through either restart.
 
 ### Logs
 
-- Hub: `~/.fleetd/hub/hub.log`
+- Workspace: `~/.fleetd/hub/hub.log`
 - Node: `~/.fleetd/logs/node.log`
 - Desktop app: `~/Library/Logs/fleetd/app.log` on macOS, `~/.local/state/fleetd/app.log` on Linux. **Help › Copy
   Diagnostics** copies what a bug report needs.
