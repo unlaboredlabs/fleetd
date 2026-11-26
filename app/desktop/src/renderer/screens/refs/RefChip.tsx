@@ -3,6 +3,7 @@
 // under its title), a decision opening the bot's decisions. One whose name can't be known (gone, unreadable now, or a
 // kind with no name) says its plain word ("an agent"). The id is only in its tooltip and its right-click menu.
 import type { ReactElement } from "react";
+import type { OrderCard } from "../../../shared/contracts";
 import { useData, useHasData, useToolQuery } from "../../src/data/react";
 import { ContextMenu, ContextMenuCopy, ContextMenuItem, ContextMenuSeparator, cx, Tooltip, type RenderRef } from "../../ui";
 import { REF_NOUN, refWord, type Ref } from "../../../shared/refs";
@@ -20,16 +21,26 @@ interface Named {
 const NO_TASK = { taskId: "" };
 const NO_ORDER = { workstreamId: "" };
 
+/** Whether a row or lane is the agent `id` (a task id, which is also its lane's id). */
+const isAgent = (id: string) => (a: { readonly taskId?: string | undefined; readonly laneId: string }) => a.taskId === id || a.laneId === id;
+
+/** The open order whose card lists the agent, if one does. */
+const cardOf = (orders: Readonly<Record<string, OrderCard>>, id: string): OrderCard | undefined => Object.values(orders).find((c) => c.lanes.some(isAgent(id)));
+
 /** An agent's or an order's title and project, live: the store's while it is at work, else the hub's read of it. */
 function useNamed(r: Ref): Named {
   const agent = r.kind === "agent";
   const order = r.kind === "order";
-  const row = useData((d) => (agent ? d.agents?.find((a) => a.taskId === r.id) : undefined));
+  const row = useData((d) => (agent ? d.agents?.find(isAgent(r.id)) : undefined));
+  // An agent at work is on its order's card too, whether or not the agents list was read.
+  const working = useData((d) => (agent && d.orders !== undefined ? cardOf(d.orders, r.id) : undefined));
+  const lane = working?.lanes.find(isAgent(r.id));
   const card = useData((d) => (order ? d.orders?.[r.id] : undefined));
   const boardRead = useData((d) => d.orders !== undefined);
-  const task = useToolQuery("task_get", agent ? { taskId: r.id } : NO_TASK, { enabled: agent && row === undefined });
+  const task = useToolQuery("task_get", agent ? { taskId: r.id } : NO_TASK, { enabled: agent && row === undefined && lane === undefined });
   const opened = useToolQuery("order_get", order ? { workstreamId: r.id } : NO_ORDER, { enabled: order && boardRead && card === undefined });
   if (row !== undefined) return { title: row.title, project: row.projectRef };
+  if (lane !== undefined && working !== undefined) return { title: lane.title, project: working.projectRef };
   if (card !== undefined) return { title: card.title, project: card.projectRef };
   const t = task.data?.task;
   if (agent && t !== undefined) return { title: t.title, project: t.projectRef };
