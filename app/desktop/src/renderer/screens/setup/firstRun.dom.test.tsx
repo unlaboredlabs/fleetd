@@ -6,7 +6,8 @@
 // alone.
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { BILLING_SAMPLES } from "../../../shared/billing.samples";
 import type { HubFrame } from "../../../shared/hub";
 import { createDataLayer, type HubApi } from "../../src/data/queries";
 import { HubScope } from "../../src/data/react";
@@ -86,6 +87,17 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.unstubAllGlobals();
+});
+
+// First: Where agents run, once open on a hub, stays open for the page (ConnectComputer `opened`).
+it("a team on a plan with no computer of its own can run its agents on fleetd's computers: Get started, never Connect a computer", async () => {
+  vi.stubGlobal("fleetd", { platform: "linux", cloud: { billing: () => Promise.resolve({ ok: true, billing: { ...BILLING_SAMPLES.plan, providedOn: true } }) } });
+  const stop = await render({ cloud: true });
+  await act(() => new Promise((r) => setTimeout(r, 0)));
+  expect(screen()).not.toBe("setup.machine");
+  expect(host.textContent).toContain("Add a bot");
+  stop();
 });
 
 it("a team of the person's own opens on Connect a computer", async () => {

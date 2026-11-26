@@ -31,7 +31,7 @@ import {
   type StartView,
   type TailscaleStep,
 } from "./model";
-import { startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
+import { skipHere, startScreen, takeGithubReturn, useKept, writeKept } from "./kept";
 import type { StartActions } from "./StartPage";
 import { specOf } from "../../../shared/providers";
 import { hostedProblem, runnerNeedsClaude, useWaitedOut } from "../setup/hostedWait";
@@ -500,6 +500,7 @@ export function useStart(
       });
     },
     onSkip: () => {
+      skipHere(hub.id);
       writeKept(hub.id, { later: true });
       // Kept with the person too, so another browser or device doesn't open on Get started again.
       void window.fleetd.cloud.startLater?.(hub.id);

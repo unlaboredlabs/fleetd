@@ -18,6 +18,14 @@ describe("a cloud team's first run", () => {
     expect(firstRunShown({ cloud: true }, { projects: undefined, admin: true })).toBe(false);
   });
 
+  it("a cloud team paired with a code (Settings › Devices on the web) shows it to its owner alone (W917)", () => {
+    const coded = { projects: {}, admin: true, leftOut: ["hub_update"] };
+    expect(firstRunShown({}, { ...coded, meRole: "owner" })).toBe(true);
+    expect(firstRunShown({}, { ...coded, meRole: "admin" })).toBe(false);
+    // A self-hosted hub leaves nothing out.
+    expect(firstRunShown({}, { ...coded, leftOut: [], meRole: "owner" })).toBe(false);
+  });
+
   it("a workspace born with no plan, no machine and no Claude: where agents run first, its own machine free beside fleetd's computers", () => {
     const steps = firstRunSteps(readBilling(BILLING_SAMPLES.none), accounts());
     expect(steps.map((s) => [s.id, s.title, s.done])).toEqual([

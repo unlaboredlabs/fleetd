@@ -14,7 +14,7 @@ import { HubScope } from "../../src/data/react";
 import { UiProvider } from "../../ui";
 import { resetServes } from "../admin/role";
 import { FirstRun } from "../setup/FirstRun";
-import { readKept, resetReturn, takeGithubReturn } from "./kept";
+import { forgetSkips, readKept, resetReturn, takeGithubReturn } from "./kept";
 import { StartScreen } from "./StartScreen";
 import { HOSTED_WAIT } from "../setup/hostedWait";
 import { BILLING_SAMPLES } from "../../../shared/billing.samples";
@@ -240,6 +240,7 @@ const click = async (name: string) => {
 beforeEach(() => {
   resetServes();
   resetReturn();
+  forgetSkips();
   joinHeld = null;
   sealed = [];
   hubKey = false;
@@ -269,17 +270,60 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("a fresh team's first run in the web app opens Get started, and Skip for now leaves it for the app", async () => {
+it("a fresh team's first run in the web app opens Get started, and Skip for now leaves it for the app once the team can run something", async () => {
   const stop = await render({}, "first-run");
   // With one team the hash names no hub (navigation.ts).
   expect(window.location.hash).toBe("#/start");
   stop();
   act(() => root.unmount());
   host.remove();
+  window.history.replaceState(null, "", "/");
   window.localStorage.setItem("fleetd.start.sam", JSON.stringify({ later: true }));
-  const again = await render({}, "first-run");
-  expect(screen()).not.toBe("setup.machine");
+  const again = await render({ machines: [machine()] }, "first-run");
+  expect(window.location.hash).not.toContain("start");
+  expect(host.textContent).toContain("Add a bot");
   again();
+});
+
+// W917: a workspace skipped once (in this browser, or with the person on another device) opened on the empty home on
+// every load after, though nothing could run there.
+it("a team with no computer and no plan opens on Get started however often it was skipped before; with a plan or a computer, home", async () => {
+  billing = BILLING_SAMPLES.none;
+  window.localStorage.setItem("fleetd.start.sam", JSON.stringify({ later: true }));
+  let stop = await render({}, "first-run");
+  expect(window.location.hash).toBe("#/start");
+  expect(host.textContent).not.toContain("Add a bot");
+  stop();
+  for (const team of [{ billing: { ...BILLING_SAMPLES.plan, providedOn: true } }, { billing: BILLING_SAMPLES.none, machines: [machine()] }]) {
+    act(() => root.unmount());
+    host.remove();
+    window.history.replaceState(null, "", "/");
+    billing = team.billing;
+    stop = await render({ machines: team.machines ?? [] }, "first-run");
+    expect(window.location.hash).not.toContain("start");
+    expect(host.textContent).toContain("Add a bot");
+    stop();
+  }
+});
+
+it("Skip for now on a team that can't run anything yet holds until the page loads again", async () => {
+  billing = BILLING_SAMPLES.none;
+  let stop = await render({});
+  await click("Skip for now");
+  expect(window.location.hash).not.toContain("start");
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  stop = await render({}, "first-run");
+  expect(window.location.hash).not.toContain("start");
+  expect(host.textContent).toContain("Add a bot");
+  stop();
+  act(() => root.unmount());
+  host.remove();
+  forgetSkips();
+  stop = await render({}, "first-run");
+  expect(window.location.hash).toBe("#/start");
+  stop();
 });
 
 it("a fresh team's first run opened at Settings (Stripe's way back to Billing) stays there, Get started behind it", async () => {

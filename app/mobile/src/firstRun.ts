@@ -24,9 +24,20 @@ export interface FirstRunStep {
   readonly done: boolean;
 }
 
-/** The first run shows on a cloud team with no bots yet, to an owner or admin; never on a team they were invited to. */
-export const firstRunShown = (hub: Pick<KeptHub, "cloud" | "invited">, s: { readonly projects: Readonly<Record<string, unknown>> | undefined; readonly admin?: boolean | undefined }): boolean =>
-  hub.cloud === true && hub.invited !== true && s.admin === true && s.projects !== undefined && Object.keys(s.projects).length === 0;
+/**
+ * The first run shows on a cloud team with no bots yet, to an owner or admin; never on a team they were invited to. A
+ * team paired with a code (Settings › Devices on the web), which no sign-in marked, is the cloud's when its hub leaves
+ * tools out (shownHub), and shows it to its owner alone, as the desktop does.
+ */
+export const firstRunShown = (
+  hub: Pick<KeptHub, "cloud" | "invited">,
+  s: { readonly projects: Readonly<Record<string, unknown>> | undefined; readonly admin?: boolean | undefined; readonly leftOut?: readonly string[]; readonly meRole?: string | undefined },
+): boolean =>
+  (hub.cloud === true || ((s.leftOut?.length ?? 0) > 0 && s.meRole === "owner")) &&
+  hub.invited !== true &&
+  s.admin === true &&
+  s.projects !== undefined &&
+  Object.keys(s.projects).length === 0;
 
 /** Whether the team's agents have a way into Claude: its API key, or a teammate's subscription. */
 export const claudeConnected = (accounts: ClaudeAccountsGetOutput | undefined): boolean =>
