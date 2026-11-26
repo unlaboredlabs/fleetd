@@ -69,13 +69,13 @@ export function enrolledAs(theirs: string): Unauthorized {
 export function codeRefusal(row: { machine_id: string; expires_ms: number; used_ms: number | null } | undefined, machineId: string, now: number): Unauthorized {
   const m = machineId;
   let why: string;
-  if (!row) why = "unknown, replaced or revoked enrollment token";
-  else if (row.used_ms !== null) why = "enrollment token was already used";
-  else if (row.expires_ms <= now) why = "enrollment token expired";
+  if (!row) why = "this code is unknown: a newer one replaced it or it was taken back";
+  else if (row.used_ms !== null) why = "this code was already used";
+  else if (row.expires_ms <= now) why = "this code expired";
   else {
     // A name typed in by hand for a code made for another: the code still works.
     const machine = row.machine_id;
-    const why = `enrollment token is for machine ${machine}, not ${m}`;
+    const why = `this code is for machine ${machine}, not ${m}`;
     return refusal([
       [why, `join as ${machine} (--machine-id ${machine}), or on the workspace's machine run fleetd pair --worker ${m} for a code for ${m}`],
       [why, `join as ${machine} (--machine-id ${machine})`],

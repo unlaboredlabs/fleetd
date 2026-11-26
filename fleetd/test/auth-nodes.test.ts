@@ -39,10 +39,10 @@ test("enroll codes: one open per machine, burned once, and each refusal says how
     return "accepted";
   };
   expect(refusal(() => nodes.enrollNode(first.token, "devbox", "k1"))).toBe(
-    "unknown, replaced or revoked enrollment token. Fix: fleetd pair --worker devbox on the workspace's machine",
+    "this code is unknown: a newer one replaced it or it was taken back. Fix: fleetd pair --worker devbox on the workspace's machine",
   );
   expect(refusal(() => nodes.enrollNode(second.token, "laptop", "k1"))).toBe(
-    "enrollment token is for machine devbox, not laptop. Fix: join as devbox (--machine-id devbox)",
+    "this code is for machine devbox, not laptop. Fix: join as devbox (--machine-id devbox)",
   );
   expect(refusal(() => nodes.enrollNode(second.token, "devbox", "k1", "fp"))).toBe("accepted");
   expect(nodes.nodePubKey("devbox")).toBe("k1");
@@ -58,7 +58,7 @@ test("enroll codes: one open per machine, burned once, and each refusal says how
   );
   now += 16 * 60_000;
   expect(refusal(() => nodes.enrollNode(again.token, "devbox", "k1"))).toBe(
-    "enrollment token expired. Fix: on the workspace's machine, run fleetd pair --worker devbox for a new code",
+    "this code expired. Fix: on the workspace's machine, run fleetd pair --worker devbox for a new code",
   );
   expect(nodes.revokeNode("devbox")).toBe(true);
   expect(nodes.nodePubKey("devbox")).toBeUndefined();
@@ -82,7 +82,7 @@ test("a nameless code enrolls the computer under the name it asks for, made uniq
   expect(nodes.enrollNode(first, "laptop", "k1", "fp1")).toBe("laptop");
   expect(nodes.nodePubKey("laptop")).toBe("k1");
   expect(refusal(() => nodes.enrollNode(first, "laptop", "k9", "fp9"))).toBe(
-    "enrollment token was already used. Fix: ask the workspace's admin for a new join line",
+    "this code was already used. Fix: ask the workspace's admin for a new join line",
   );
   // Another computer by that name gets the next free one.
   expect(nodes.enrollNode(second, "laptop", "k2", "fp2")).toBe("laptop-2");
@@ -102,7 +102,7 @@ test("a nameless code enrolls the computer under the name it asks for, made uniq
   // A code minted for a name still admits only that name.
   const named = nodes.createEnrollToken("builder-1", "test").token;
   expect(refusal(() => nodes.enrollNode(named, "laptop-3", "k8", "fp8"))).toBe(
-    "enrollment token is for machine builder-1, not laptop-3. Fix: join as builder-1 (--machine-id builder-1)",
+    "this code is for machine builder-1, not laptop-3. Fix: join as builder-1 (--machine-id builder-1)",
   );
 });
 

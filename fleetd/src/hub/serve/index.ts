@@ -1,8 +1,9 @@
 // `fleetd workspace start` (`hub start` before): parses its flags, opens the database in `--home`, starts
 // every module's loops and serves HTTP until SIGTERM/SIGINT.
 import { isLiveHubHome, liveHubRefusal } from "../../cli/common.ts";
+import { listeners } from "../../cli/setup/shared.ts";
 import { refreshOwnUnit } from "../../cli/setup/units.ts";
-import { readFileSync } from "node:fs";
+import { closeSync, ftruncateSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { startAll } from "./loops.ts";
 import { registerAll } from "./areas.ts";
@@ -14,6 +15,7 @@ import { serve, stop } from "../http/index.ts";
 import { link } from "../link/index.ts";
 import { HubDb } from "../store/db.ts";
 import { MigrationFailed } from "../store/migrations.ts";
+import { tryLock } from "../../node/flock.ts";
 import { protect } from "../../node/oom.ts";
 import { people } from "../people/store.ts";
 import { WORKSPACE_USAGE } from "../../cli/usages.ts";
@@ -128,6 +130,46 @@ export function stampLogs(): void {
   }
 }
 
+/** How long a start waits for the workspace before it on the same home to let go of it (a service restart's). */
+export const HOME_HELD_WAIT_MS = 15_000;
+
+/**
+ * One workspace per home: a flock on `<home>/workspace.lock`, held for the process's life (the fd stays open), with the
+ * holder's pid and address written in it for the refusal. A second start on a running workspace's home would migrate
+ * and write its database beside it. Waits `waitMs` for one that is stopping. The fd, or the refusal's words.
+ */
+export async function holdHome(home: string, listen: string, waitMs = HOME_HELD_WAIT_MS): Promise<number | string> {
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  const file = join(home, "workspace.lock");
+  const fd = openSync(file, "a+", 0o600);
+  for (const until = Date.now() + waitMs; ; ) {
+    if (tryLock(fd)) break;
+    if (Date.now() >= until) {
+      closeSync(fd);
+      let holder = "";
+      try {
+        holder = readFileSync(file, "utf8").trim();
+      } catch {}
+      const [pid, at] = holder.split(" ");
+      const who = pid === undefined || pid === "" ? "" : ` (pid ${pid}${at === undefined ? "" : `, at ${at}`})`;
+      return `a workspace already runs on ${home}${who}. Stop it first (fleetd workspace stop), or give this one a home of its own (--home <dir>).`;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  ftruncateSync(fd, 0);
+  writeSync(fd, `${process.pid} ${listen}\n`, 0);
+  return fd;
+}
+
+/** Listening on `listen` failed: who holds it, and what to do, in a sentence; undefined for any other failure. */
+export function listenRefusal(error: unknown, listen: Listen): string | undefined {
+  if ((error as { code?: unknown } | null)?.code !== "EADDRINUSE") return undefined;
+  const held = listeners(listen.port).filter((l) => l.pid !== process.pid);
+  const by = held.length === 0 ? "another program" : held.map((l) => `${l.name || "a program"} (pid ${l.pid})`).join(", ");
+  const host = listen.host.includes(":") ? `[${listen.host}]` : listen.host;
+  return `${host}:${listen.port} is in use by ${by}. Stop it, or start the workspace on another port (--listen ${host}:<free port>).`;
+}
+
 /** `fleetd hub start <argv>`: 2 on bad flags, 0 after SIGTERM/SIGINT, 1 on a failure. */
 export async function hubStart(argv: string[]): Promise<number> {
   const options = parseHubArgs(argv);
@@ -139,6 +181,21 @@ export async function hubStart(argv: string[]): Promise<number> {
   // A second hub on the live one's home from an agent's session would migrate and run its database beside it.
   if (isLiveHubHome(home)) {
     process.stderr.write(`fleetd: ${liveHubRefusal("Starting a workspace on the live workspace's home")}\n`);
+    return 1;
+  }
+  // The address checked before the home or its database is made: a taken port leaves nothing behind.
+  try {
+    Bun.serve({ hostname: options.listen.host, port: options.listen.port, reusePort: false, fetch: () => new Response() }).stop(true);
+  } catch (error) {
+    const said = listenRefusal(error, options.listen);
+    if (said !== undefined) {
+      process.stderr.write(`fleetd: ${said}\n`);
+      return 1;
+    }
+  }
+  const held = await holdHome(home, `${options.listen.host}:${options.listen.port}`);
+  if (typeof held === "string") {
+    process.stderr.write(`fleetd: ${held}\n`);
     return 1;
   }
   stampLogs();
@@ -153,7 +210,16 @@ export async function hubStart(argv: string[]): Promise<number> {
     return 1;
   }
   const { hub, tools } = built;
-  const server = serve(hub, tools);
+  let server: ReturnType<typeof serve>;
+  try {
+    server = serve(hub, tools);
+  } catch (error) {
+    const said = listenRefusal(error, options.listen);
+    if (said === undefined) throw error;
+    hub.db.close();
+    process.stderr.write(`fleetd: ${said}\n`);
+    return 1;
+  }
   // On stderr as the Rust hub's, which what starts a hub reads it from, and an INFO line all the same.
   console.error(`${new Date().toISOString()} INFO fleetd workspace: home ${home}, listening on ${options.listen.host}:${server.port}`);
   startAll(hub);

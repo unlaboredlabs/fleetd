@@ -4,7 +4,7 @@
 import type { HubEvent, ThreadRef } from "../../shared/contracts.ts";
 import type { Hub } from "../api/hub.ts";
 import { executors } from "../executor/index.ts";
-import { threadOnAntigravity } from "../executor/sessions.ts";
+import { runnerFix, threadOnAntigravity } from "../executor/sessions.ts";
 import { runnerProblem } from "../link/server.ts";
 import { events, type NewEvent } from "../store/events.ts";
 import { isoMs } from "../store/time.ts";
@@ -369,6 +369,21 @@ type ExecutorSend = {
 };
 
 /**
+ * Why a linked machine's runner can't take a write, in one plain sentence (the apps show a held message's first), and
+ * what to run there: "Claude isn't signed in on devbox", never the node's request or Claude's raw API error.
+ */
+export function runnerRefusal(m: string, info: { login?: string; problem?: string; proxy?: unknown }): WriteError | undefined {
+  const problem = runnerProblem(info);
+  if (problem === undefined) return undefined;
+  // The node's own fix names where the key is set ("replace the key in ~/.fleetd/claude.env"), when it says one.
+  const nodeFix = /Fix: (.+?)\.?$/u.exec(problem)?.[1];
+  const fix = nodeFix === undefined ? runnerFix(info as never, m) : `On ${m}: ${nodeFix}.`;
+  if (info.login === "logged_out") return new WriteError("NodeRequestFailed", `Claude isn't signed in on ${m}`, fix);
+  const said = (/^.+?[.!?](?=\s|$)/u.exec(problem)?.[0] ?? problem).replace(/[.\s]+$/u, "");
+  return new WriteError("NodeRequestFailed", `Claude can't run on ${m}: ${said}`, fix);
+}
+
+/**
  * The queue's writer over the hub's executor (queue/ports.rs `impl ThreadWriter for Executors`): a machine takes
  * writes once it is ready (live, and announced online), a linked one whose runner can't run refuses in the runner's
  * words, and a send goes through the executor's `sendWith`. Until the executor has `sendWith`, no machine reads as
@@ -391,9 +406,7 @@ export function executorWriter(hub: Hub): ThreadWriter {
       // Only while linked: a machine that is away waits in the queue whatever its runner said last.
       if (!ex().isConnected(m) || agy(m, threadId)) return undefined;
       const info = ex().cachedRunner(m);
-      const problem = info ? runnerProblem(info as never) : undefined;
-      // TODO(hub-work): the fix line (executor/providers.rs `runner_fix`) once the providers' guides are ported.
-      return problem === undefined ? undefined : new WriteError("NodeRequestFailed", `the node on ${m} refused or failed the send request: ${problem}`);
+      return info ? runnerRefusal(m, info as never) : undefined;
     },
     sendWith: async (target, message, clientRequestId, opts) => {
       const sendWith = send();

@@ -71,6 +71,9 @@ export function serve(hub: Hub, tools: Registry, port = hub.config.listen.port):
   return Bun.serve<SocketData>({
     hostname: hub.config.listen.host,
     port,
+    // Never a port shared with another process: Bun sets SO_REUSEPORT by default on Linux, and a second workspace on a
+    // taken port then started without a word, the kernel handing each connection to one or the other.
+    reusePort: false,
     // Never Bun's development error page (stack, source, cwd) to a client: anything that escapes a route is `failed`.
     development: false,
     error: onError,

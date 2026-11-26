@@ -138,9 +138,9 @@ test("a key's refusals, and an enroll code's", () => {
   // Removing them revokes the key too; they're told they were removed.
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: 5, person_removed: 1 })?.fix).toBe("Ask one of its owners or admins to invite you again.");
   expect(keyRefusal({ prefix: "fld_abc", revoked_ms: null, person_removed: 0 })).toBeUndefined();
-  expect(codeRefusal(undefined, "devbox", 10).reason()).toBe("unknown, replaced or revoked enrollment token. Fix: fleetd pair --worker devbox on the workspace's machine");
-  expect(codeRefusal({ machine_id: NAMELESS, expires_ms: 5, used_ms: null }, "devbox", 10).reason()).toBe("enrollment token expired. Fix: ask the workspace's admin for a new join line");
-  expect(codeRefusal({ machine_id: "box", expires_ms: 50, used_ms: null }, "devbox", 10).message).toBe("enrollment token is for machine box, not devbox");
+  expect(codeRefusal(undefined, "devbox", 10).reason()).toBe("this code is unknown: a newer one replaced it or it was taken back. Fix: fleetd pair --worker devbox on the workspace's machine");
+  expect(codeRefusal({ machine_id: NAMELESS, expires_ms: 5, used_ms: null }, "devbox", 10).reason()).toBe("this code expired. Fix: ask the workspace's admin for a new join line");
+  expect(codeRefusal({ machine_id: "box", expires_ms: 50, used_ms: null }, "devbox", 10).message).toBe("this code is for machine box, not devbox");
   expect([suffixed("devbox", 2), suffixed("a".repeat(31) + "-", 3)]).toEqual(["devbox-2", `${"a".repeat(30)}-3`]);
 });
 
