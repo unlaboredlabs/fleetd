@@ -17,7 +17,7 @@ export function RememberedUndo({ project, message }: { project: ProjectRef; mess
   if (message.remembered === undefined) return null;
   if (message.remembered.undone) {
     return (
-      <Text size="xs" tone="quiet">
+      <Text size="xs" tone="quiet" className={s.undone}>
         Undone
       </Text>
     );
@@ -101,7 +101,7 @@ function Change({ item, busy, onUndo }: { item: RememberedItem; busy: boolean; o
         {open && item.reason !== undefined ? <InlineText size="xs" tone="quiet" text={`Why: ${item.reason}`} /> : null}
       </button>
       {item.undone ? (
-        <span className={s.changeUndo}>Undone</span>
+        <span className={cx(s.changeUndo, s.undone)}>Undone</span>
       ) : (
         <Button size="sm" variant="link" className={s.changeUndo} disabled={busy} onClick={onUndo}>
           Undo

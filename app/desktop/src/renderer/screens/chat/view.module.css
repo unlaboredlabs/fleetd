@@ -471,6 +471,11 @@
   color: var(--faint);
   font-variant-numeric: tabular-nums;
 }
+/* Undone, where Undo was: one word, as wide as it needs beside a line that fills the row, never "Undo" over "ne". */
+.undone {
+  flex: none;
+  white-space: nowrap;
+}
 /* A memory refresh's changes, opened under its line: one row each, left-aligned. */
 .changes {
   display: flex;

@@ -11,6 +11,7 @@ import { navigate } from "../shell/navigation";
 import type { SettingsTab } from "../shell/routes";
 import type { ProjectRef } from "./slots";
 import { InlineText } from "./text";
+import s from "./view.module.css";
 
 /** The project's settings page that shows what a change of this kind changed: its own page for all but these. */
 const PAGES: Record<string, SettingsTab> = { instructions: "instructions", env: "project-vault" };
@@ -36,7 +37,7 @@ export function SetupChangedLine({ project, message, changed }: { project: Proje
         Open
       </Button>
       {changed.undone ? (
-        <Text size="xs" tone="quiet">
+        <Text size="xs" tone="quiet" className={s.undone}>
           Undone
         </Text>
       ) : (
