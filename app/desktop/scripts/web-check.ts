@@ -21,7 +21,8 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
  * everyday cut, the markdown parser and the chat's cards of other screens came after it too, 373 KB / 29 once the
  * hub's frames and the session were read without zod and Medium and SemiBold came after the chat (W793), 383 KB / 22
  * once the app's shared modules came as one chunk and the icons chunk held only the first chat's (scripts/
- * firstLoadChunks.ts). A change that needs more moves what the first chat doesn't draw out of it (a chunk loaded on
+ * firstLoadChunks.ts), 359 KB / 20 once New bot's flow, Get started's model and the chart card came after the chat. A
+ * change that needs more moves what the first chat doesn't draw out of it (a chunk loaded on
  * use, or once the chat has shown: ui/lib/idle.ts), rather than raising these.
  */
 const FIRST_LOAD_KB = 390;

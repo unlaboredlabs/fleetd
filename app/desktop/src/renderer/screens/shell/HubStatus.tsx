@@ -5,9 +5,10 @@
 // one row in the menu under your name (AppItem). The most pressing thing off also marks the switcher (linkMark,
 // useWorkMark).
 import { ArrowUp } from "lucide-react";
+import { Suspense, type ReactNode } from "react";
 import { useData, useDataLayer, useHub, useSeveralHubs, useToolQuery } from "../../src/data/react";
 import { selectMachines } from "../../src/data/selectors";
-import { Dot, MenuItem } from "../../ui";
+import { Dot, MenuItem, preloadable, preloadWhenIdle } from "../../ui";
 import { useHubState } from "./hubFeed";
 import { useServes, useSettledAdministers } from "../admin/role";
 import { revealNext } from "../settings/reveal";
@@ -16,7 +17,6 @@ import { useQuiet, useUpdateAct, useUpdateStatus } from "../updates";
 import { useAppUpdate } from "../updates/state";
 import { navigate } from "./navigation";
 import { startScreen } from "../start/kept";
-import { useStartLeft } from "../start/state";
 import { appLine, hostedLine, machinesLine, menuLines, setupLine, updateLine, updateToLine, workMark, type HubMark, type LineDoes, type LineMark, type MenuLine, type MenuMachine } from "./youMenu";
 import h from "./hubStatus.module.css";
 import { onWeb } from "../../src/web";
@@ -145,15 +145,35 @@ export const useWorkMark = (): HubMark | null => {
 };
 
 /**
+ * How many of Get started's steps are left, for a line below: Get started's whole model (start/state) comes as a chunk
+ * of its own, the desktop's at once, the web's once the chat has shown. Until it comes the count is 0.
+ */
+const StartLeft = preloadable(() =>
+  import("../start/state").then(({ useStartLeft }) => function StartLeft({ children }: { children: (left: number) => ReactNode }) {
+    return children(useStartLeft());
+  }),
+);
+if (onWeb()) preloadWhenIdle(StartLeft);
+else StartLeft.preload().catch(() => undefined);
+
+/**
  * The hub in scope's lines under its name in the hub switcher: what is off with it, each with the one thing to do. The
  * hub's own line shows only when it has something to do (Retry, Pair) or to say (Updating…, Updated, Reconnecting…):
  * all well or connecting, its name above says enough.
  */
 export function HubLines() {
+  const lines = (startLeft: number) => <Lines startLeft={startLeft} />;
+  return (
+    <Suspense fallback={lines(0)}>
+      <StartLeft>{lines}</StartLeft>
+    </Suspense>
+  );
+}
+
+function Lines({ startLeft }: { startLeft: number }) {
   const hub = useHubState();
   const work = useWork();
   const quiet = useQuiet(hub, false);
-  const startLeft = useStartLeft();
   // Small and cheap: read on every render, against the clock.
   // eslint-disable-next-line react-hooks/purity
   const lines = menuLines({ hub, quiet, ...work, startLeft, now: Date.now() }).filter((l) => !(l.key === "hub" && l.action === undefined && l.aside === undefined));
