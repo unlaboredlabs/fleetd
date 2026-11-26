@@ -3098,9 +3098,11 @@ export type EnvVarSet = {
 export type ErrorCode = "machine_offline" | "not_found" | "forbidden" | "invalid" | "failed";
 
 /** A refusal an app acts on. */
-export type KnownErrorReason = "no_project" | "same_repo_there";
+export type KnownErrorReason = "no_project" | "same_repo_there" | "needs_https";
 /** `project_repo_add` of a url whose folder already holds that repo, used by no bot: add it as it is (`useExisting`) or as a separate copy (`copy`). */
 export const SAME_REPO_THERE = "same_repo_there" satisfies KnownErrorReason;
+/** `mcp_oauth_start` of a service that takes only an https sign-in address, from a workspace without one: the app offers `https_address_add`. */
+export const NEEDS_HTTPS = "needs_https" satisfies KnownErrorReason;
 /** KnownErrorReason, or a value from a newer hub. */
 export type ErrorReason = KnownErrorReason | (string & {});
 
@@ -7977,6 +7979,28 @@ export type TailnetDisconnectInput = { [key: string]: unknown };
 
 export type TailnetGetInput = { [key: string]: unknown };
 
+/**
+ * Where a connection's sign-in sends the browser back to a self-hosted workspace: its https address when it has one, else
+ * fleetd's return page (`returnPage`, on by default), which forwards the browser to the workspace's own address.
+ */
+export type SignIns = {
+  /** The workspace's https address: its https `--url`, or a Tailscale Serve front. Sign-ins come back here when set. */
+  https?: string;
+  /** Whether sign-ins come back through fleetd's return page while the workspace has no https address. */
+  returnPage: boolean;
+  /** fleetd's return page, `https://accounts.fleetd.dev/oauth/return` unless the workspace runs with its own. */
+  returnPageUrl: string;
+};
+
+export type SignInsGetInput = { [key: string]: unknown };
+
+export type SignInsSetInput = {
+  /** Whether sign-ins come back through fleetd's return page while the workspace has no https address. */
+  returnPage: boolean;
+};
+
+export type HttpsAddressAddInput = { [key: string]: unknown };
+
 export type Role = "read" | "operate" | "admin";
 
 /** Landed changes per route. */
@@ -11361,6 +11385,7 @@ export interface ToolMap {
   github_app_test: { input: GithubAppTestInput; output: GithubAppTestOutput };
   github_connect: { input: GithubConnectInput; output: GithubConnectOutput };
   github_disconnect: { input: GithubDisconnectInput; output: GithubDisconnectOutput };
+  https_address_add: { input: HttpsAddressAddInput; output: SignIns };
   hub_info: { input: HubInfoInput; output: HubInfoOutput };
   hub_move_cancel: { input: HubMoveCancelInput; output: HubMoveOutput };
   hub_move_resume: { input: HubMoveResumeInput; output: HubMoveOutput };
@@ -11475,6 +11500,8 @@ export interface ToolMap {
   share_port: { input: SharePortInput; output: SharePortOutput };
   sidebar_order_get: { input: SidebarOrderGetInput; output: SidebarOrderGetOutput };
   sidebar_order_set: { input: SidebarOrderSetInput; output: SidebarOrderSetOutput };
+  sign_ins_get: { input: SignInsGetInput; output: SignIns };
+  sign_ins_set: { input: SignInsSetInput; output: SignIns };
   skill_delete: { input: SkillDeleteInput; output: SkillDeleteOutput };
   skill_get: { input: SkillGetInput; output: SkillGetOutput };
   skill_install: { input: SkillInstallInput; output: SkillInstallOutput };

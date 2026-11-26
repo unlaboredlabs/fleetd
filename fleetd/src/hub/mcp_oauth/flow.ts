@@ -29,6 +29,13 @@ export class TokenError extends Error {
   }
 }
 
+/** The service takes only an https or loopback callback, and the workspace offered a plain-http one. */
+export class NeedsHttps extends Error {
+  constructor(readonly host: string) {
+    super(`${host} takes only an https sign-in address`);
+  }
+}
+
 /** The client as the token endpoint sees it. */
 export type Client = { id: string; secret?: string; auth?: string };
 
@@ -349,11 +356,8 @@ export async function register(d: Discovered, redirect: string, net: Net): Promi
   if (!answer.ok) {
     const [error, words] = said(answer.status, out);
     // OAuth 2.1 and RFC 8252 let a service refuse a plain-http redirect anywhere but this machine, a tailnet's too.
-    const hint =
-      error === "invalid_redirect_uri" && plainHttpAway(redirect)
-        ? ": it takes only an https or loopback callback, so give the workspace an https address (`tailscale serve --bg <port>` gives one) and sign in again"
-        : "";
-    throw new Error(`${host} wouldn't register fleetd as an app (${words})${hint}`);
+    if (error === "invalid_redirect_uri" && plainHttpAway(redirect)) throw new NeedsHttps(host);
+    throw new Error(`${host} wouldn't register fleetd as an app (${words})`);
   }
   const clientId = str(out.client_id);
   if (!clientId) throw new Error(`${host} registered fleetd but sent no client id`);

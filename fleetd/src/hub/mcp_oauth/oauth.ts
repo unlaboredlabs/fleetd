@@ -15,6 +15,7 @@ export {
   type Http,
   hostOf,
   type Net,
+  NeedsHttps,
   pkce,
   PROTOCOL_VERSION,
   type Registered,
