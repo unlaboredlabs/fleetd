@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { cpuList, HELD, install, machineCpus, machineHere, parseCpuList, slotCpus, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
+import { HELD, install, machineHere, slotsFit, slotsHere, waitingLine } from "../../src/node/heavy_slots.ts";
 
 const SRC = join(import.meta.dir, "../../src/main.ts");
 const ROOT = join(import.meta.dir, "../../..");
@@ -204,53 +204,6 @@ describe("the slots", () => {
       await a.proc.exited;
     }, SLOW);
   }
-});
-
-describe("each slot's own CPUs", () => {
-  const range = (lo: number, hi: number) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
-  test("past the build slots' jobs, an equal share each, no two slots sharing one", () => {
-    // The devbox: 32 CPUs, 3 build slots of 2 jobs, 6 slots: 4 each, from CPU 6 on, CPUs 30 and 31 left over.
-    const devbox = range(0, 31);
-    const slots = range(0, 5).map((i) => slotCpus(devbox, 6, 6, i));
-    expect(slots[0]).toEqual([6, 7, 8, 9]);
-    expect(slots[5]).toEqual([26, 27, 28, 29]);
-    expect(new Set(slots.flat()).size).toBe(24);
-    // Fewer slots (memory fits fewer), each gets more: 16 CPUs, 2 build jobs, 2 slots.
-    expect(slotCpus(range(0, 15), 2, 2, 1)).toEqual(range(9, 15));
-    // Slots set past the CPUs (node.json) wrap around, one CPU each.
-    expect(slotCpus(range(0, 7), 6, 3, 2)).toEqual([6]);
-    // Builds that fill the machine leave the slots every CPU.
-    expect(slotCpus(range(0, 3), 4, 1, 0)).toEqual(range(0, 3));
-  });
-  test("Linux's CPU lists, read and written", () => {
-    expect(parseCpuList("0-3,8,10-11\n")).toEqual([0, 1, 2, 3, 8, 10, 11]);
-    expect(parseCpuList("")).toBeUndefined();
-    expect(parseCpuList("3-1")).toBeUndefined();
-    expect(cpuList([0, 1, 2, 3, 8, 10, 11])).toBe("0-3,8,10-11");
-    expect(cpuList([5])).toBe("5");
-  });
-
-  // What a run fans out to stays on its slot's CPUs: two runs at once each see only their own, disjoint, and the
-  // CPU count tools size themselves by (nproc) is the slot's. Before, each saw all 32 of the devbox's.
-  test.if(process.platform === "linux" && Bun.which("taskset") !== null)("a run and its children are held to their slot's CPUs", async () => {
-    const m = machine(2);
-    const probe = join(m.home, "probe");
-    writeFileSync(probe, `#!/bin/sh\nsh -c 'echo "cpus $1 $(grep Cpus_allowed_list /proc/self/status | cut -f2) $(nproc)"' _ "$1" >>"$HOME_DIR/cpus"\nexec "$HOME_DIR/check" "$1"\n`);
-    chmodSync(probe, 0o755);
-    const a = m.run("a", [probe, "a"]);
-    const b = m.run("b", [probe, "b"]);
-    await until("a and b start", () => m.started().length === 2);
-    m.release("a");
-    m.release("b");
-    expect([await a.proc.exited, await b.proc.exited]).toEqual([0, 0]);
-    const seen = readFileSync(join(m.home, "cpus"), "utf8").trim().split("\n").map((l) => l.split(" "));
-    const machineHas = machineCpus()!;
-    const here = machineHere(m.home);
-    const want = [0, 1].map((i) => cpuList(slotCpus(machineHas, here.buildSlots * here.buildJobs, 2, i))).sort();
-    expect(seen.map(([, , list]) => list).sort()).toEqual(want);
-    for (const [, , list, nproc] of seen) expect(Number(nproc)).toBe(parseCpuList(list!)!.length);
-    expect(Number(seen[0]![3])).toBeLessThan(machineHas.length);
-  }, SLOW);
 });
 
 describe("runs that take no slot", () => {

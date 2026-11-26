@@ -183,9 +183,7 @@ Agents on one machine share its CPUs, memory and disk:
   slot runs its jobs, at 4 test workers a run; memory at 8 GB a run; ephemeral ports at 4,000 a run (at least one). A
   32-core, 60 GB Linux machine gets 6. With every slot in use the run waits its turn, first come first served, and
   says so, so many agents checking at once can't overload the machine or fail each other's tests on ports and
-  timeouts. On Linux each run, and everything it starts, is held to its slot's own CPUs (6 slots of 4 on that
-  machine), so a run that starts more workers than it was counted for slows only itself. An agent's own small test
-  runs never wait. Set `heavySlots` to change it.
+  timeouts. An agent's own small test runs never wait. Set `heavySlots` to change it.
 - **Memory cap** (Linux): each agent runs in its own scope, so one runaway process is killed without taking the
   machine down.
 - **Scratch space**: each agent's `TMPDIR` is on disk, never in `/tmp`.
