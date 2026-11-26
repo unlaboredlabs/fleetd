@@ -79,7 +79,7 @@
 
     <h2 id="hosting">Where fleetd cloud runs</h2>
     <p>fleetd cloud is one service, the same for every workspace, on three servers at Hetzner in Nuremberg, Germany. The database is Postgres at PlanetScale, on AWS in Frankfurt, Germany, with no copy in another region. Files, server logs and backups are in Cloudflare R2, in its EU jurisdiction. Every provider, what it gets and where, is on <a href="/subprocessors">Subprocessors</a>.</p>
-    <p>There is one region, the EU, for every workspace. You can’t pick another.</p>
+    <p>The servers, database and files are in the EU for every workspace, and you can’t pick another region. Some providers process data outside the EU (see <a href="/subprocessors">Subprocessors</a>), and so can a sleeping computer’s saved disk (<a href="#computers">Where agents run</a>).</p>
 
     <h2 id="servers">The servers</h2>
     <ul>
@@ -133,7 +133,7 @@
 
     <h2 id="computers">Where agents run</h2>
     <ul>
-      <li><b>On fleetd’s computers</b>, each bot gets a computer of its own, which no other bot or workspace shares. Before a computer goes to sleep, the logins fleetd put on it are removed, and a computer asleep too long is deleted. fleetd’s computers are run by a supplier in the EU (France and Germany).</li>
+      <li><b>On fleetd’s computers</b>, each bot gets a computer of its own, which no other bot or workspace shares. Before a computer goes to sleep, the logins fleetd put on it are removed, and a computer asleep too long is deleted. fleetd’s computers are run by a supplier, on machines in the EU (Germany, Finland and France). A sleeping computer’s saved disk, with the bot’s files and checkout, can be stored outside the EU.</li>
       <li><b>On your own machines</b>, agents run as your own user, directly on the machine, with no sandbox. They can reach what that user can. Use a machine or user set aside for agents if that matters to you.</li>
     </ul>
 
