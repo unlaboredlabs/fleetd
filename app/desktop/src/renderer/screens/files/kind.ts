@@ -1,7 +1,7 @@
 // How a file sent in the chat shows inside fleetd (FileView): by its type and, for the text the workspace takes as
 // text/plain (notes, data, code), by its name. What fleetd can't show opens in this computer's own app. Pure.
 import { kindOf } from "../../../shared/files";
-import { langForPath, type CodeLang } from "../../ui/markdown/highlighter";
+import type { CodeLang } from "../../ui/markdown/highlighter";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -17,6 +17,36 @@ export type FileShow =
   /** Word, PowerPoint, a zip: this computer's app for its type. */
   | { readonly as: "app" };
 
+/**
+ * Code by its extension, as the highlighter names its grammars (ui/markdown/highlighter.ts's langForPath, which a
+ * test holds this to): a table of its own, so a file card in the first chat doesn't load the highlighter's.
+ */
+export const CODE: Readonly<Record<string, CodeLang>> = {
+  ts: "typescript",
+  mts: "typescript",
+  cts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  mjs: "javascript",
+  cjs: "javascript",
+  jsx: "jsx",
+  rs: "rust",
+  sh: "shellscript",
+  bash: "shellscript",
+  zsh: "shellscript",
+  toml: "toml",
+  yaml: "yaml",
+  yml: "yaml",
+  py: "python",
+  go: "go",
+  css: "css",
+  html: "html",
+  htm: "html",
+  sql: "sql",
+  diff: "diff",
+  patch: "diff",
+};
+
 const extensionOf = (name: string): string => (name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
 
 export const showOf = (name: string, mime: string): FileShow => {
@@ -29,8 +59,8 @@ export const showOf = (name: string, mime: string): FileShow => {
   if (ext === "tsv") return { as: "table", sep: "\t" };
   if (ext === "md" || ext === "markdown") return { as: "markdown" };
   if (ext === "json" || ext === "geojson") return { as: "json" };
-  const lang = langForPath(name);
-  return lang === null ? { as: "text" } : { as: "code", lang };
+  const lang = CODE[ext];
+  return lang === undefined ? { as: "text" } : { as: "code", lang };
 };
 
 /** Whether fleetd shows the file itself: Open then opens it in the panel, not in another app. */

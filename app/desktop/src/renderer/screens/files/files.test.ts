@@ -5,7 +5,8 @@ import { toBase64 } from "../../../shared/base64";
 import type { Call } from "../../../shared/contracts";
 import { parseDelimited, toTsv } from "./csv";
 import { hasHeader, letters, rangeName, selectedText, summary } from "./grid";
-import { showOf, showsInside } from "./kind";
+import { langForPath } from "../../ui/markdown/highlighter";
+import { CODE, showOf, showsInside } from "./kind";
 import { fileSource } from "./source";
 import { columnOf, excelDate, isDateCode, openWorkbook, percentDecimals, readSheet, xmlText } from "./xlsx";
 import { entryText, zipEntries, type Ranged } from "./zip";
@@ -25,6 +26,11 @@ describe("showOf", () => {
     expect(showOf("chart.png", "image/png")).toEqual({ as: "image" });
     expect(showsInside("notes.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(false);
     expect(showsInside("all.zip", "application/zip")).toBe(false);
+  });
+  it("names code's language as the highlighter does", () => {
+    for (const [ext, lang] of Object.entries(CODE)) expect(langForPath(`a.${ext}`)).toBe(lang);
+    // And it knows every extension the highlighter does that the workspace takes as text.
+    for (const ext of ["py", "js", "ts", "rs", "go", "sql", "yaml", "yml", "toml"]) expect(CODE[ext]).toBe(langForPath(`a.${ext}`));
   });
 });
 

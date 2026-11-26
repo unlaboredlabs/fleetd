@@ -17,7 +17,7 @@ import { wakeShown } from "../../../shared/wake";
 import { useWake } from "./wake";
 import { WakeRow } from "./WakeRow";
 import { MessageView, useEnter } from "./Bubble";
-import { ChatShotsContext } from "./ImageViewer";
+import { ChatShotsContext } from "./viewing";
 import { chatShots } from "./shots";
 import { useGlide } from "./glide";
 import { useBubbleActions } from "./actions";

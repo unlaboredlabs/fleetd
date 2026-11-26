@@ -5,7 +5,7 @@
 // right-click menu, copy or save it, as in the message (picture.tsx).
 import { Dialog as D } from "radix-ui";
 import { ChevronLeft, ChevronRight, Copy, Download, Minus, Plus, X } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { PREVIEW_SIDE } from "../../../shared/transfer";
 import { useToolQuery } from "../../src/data/react";
 import { Button, Text, Tooltip } from "../../ui";
@@ -13,17 +13,6 @@ import { PictureMenu, usePicture } from "./picture";
 import { stepShot, type Shot } from "./shots";
 import type { ProjectRef } from "./slots";
 import v from "./viewer.module.css";
-
-/** Opens the viewer on one of the message's images; undefined where no viewer is (a block shown outside the chat). */
-export const ImageViewerContext = createContext<((attachmentId: string) => void) | undefined>(undefined);
-
-export const useOpenImage = (): ((attachmentId: string) => void) | undefined => useContext(ImageViewerContext);
-
-/**
- * Every picture in the chat, in order, for the viewer to step through, asked as it opens (ChatList gives it); undefined
- * outside a chat.
- */
-export const ChatShotsContext = createContext<(() => readonly Shot[]) | undefined>(undefined);
 
 /** How far the picture zooms past fitting the window, and the steps + and − take. */
 const MAX_ZOOM = 8;

@@ -13,7 +13,8 @@ import { live, project as PROJECT, snapshot } from "../../src/data/fixtures.test
 import { TooltipProvider } from "../../ui/primitives/Tooltip";
 import { BubbleActionsContext, type BubbleActions } from "./actions";
 import { MessageView } from "./Bubble";
-import { ChatShotsContext, held, zoomAbout } from "./ImageViewer";
+import { held, zoomAbout } from "./ImageViewer";
+import { ChatShotsContext } from "./viewing";
 import { chatShots } from "./shots";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
