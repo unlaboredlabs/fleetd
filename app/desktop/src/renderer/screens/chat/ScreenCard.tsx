@@ -123,15 +123,13 @@ export function ScreenCard({ project, sessionId, inChat = [] }: { project: Proje
 /** A file the screen's browser downloaded: its name and size, and Send to chat, which posts it as the lead's file card. */
 function DownloadRow({ sessionId, download: d }: { sessionId: string; download: ScreenDownload }) {
   const layer = useDataLayer();
-  const [sending, setSending] = useState(false);
+  const [step, setStep] = useState<"send" | "sending" | "sent">("send");
   const send = () => {
-    setSending(true);
+    setStep("sending");
     void layer.call("browser_download_send", { sessionId, name: d.name }).then((out) => {
-      // Sent, it leaves the list as its message comes in; until then it says it is on its way.
-      if (!out.ok) {
-        setSending(false);
-        toast({ title: `Couldn’t send ${d.name}`, description: out.error.message, key: `download:${sessionId}:${d.name}` });
-      }
+      // Sent, it leaves the list as its message comes in; until then it says it went.
+      setStep(out.ok ? "sent" : "send");
+      if (!out.ok) toast({ title: `Couldn’t send ${d.name}`, description: out.error.message, key: `download:${sessionId}:${d.name}` });
     });
   };
   return (
@@ -141,8 +139,8 @@ function DownloadRow({ sessionId, download: d }: { sessionId: string; download: 
       <Text size="xs" tone="quiet" tabular>
         {fmtBytes(d.bytes)}
       </Text>
-      <Button variant="link" disabled={sending} onClick={send} aria-label={`Send ${d.name} to the chat`}>
-        {sending ? "Sending…" : "Send to chat"}
+      <Button variant="link" disabled={step !== "send"} onClick={send} aria-label={`Send ${d.name} to the chat`}>
+        {step === "sending" ? "Sending…" : step === "sent" ? "Sent" : "Send to chat"}
       </Button>
     </li>
   );

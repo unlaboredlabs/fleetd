@@ -2,6 +2,7 @@
 // and the web; where each card stands among the rows is screenRows.ts): what the card says (whose screen, its state, what it does now or why it asks, how long it ran) and which one button it
 // has (Watch, Take over, Replay), and the strip over the composer while one asks for you. ScreenCard.tsx draws them.
 // Pure, so it is unit-tested.
+import { safeName } from "../../../shared/files";
 import { parseMs } from "../live/format";
 import { durationOf, fmtDuration, isLive, nowLine, type BrowserSession } from "../sessions/model";
 
@@ -92,11 +93,16 @@ export const DOWNLOADS_KEPT_MS = 24 * 60 * 60_000;
 
 /**
  * An ended screen's downloads to offer: the ones the chat doesn't have yet (`inChat`, by name: the agent sent it, or a
- * person did), while its machine still keeps them.
+ * person did), while its machine still keeps them. A file goes in the chat under the hub's safe form of its name, maybe
+ * with an extension of its type after it ("report (1).pdf" is "report _1_.pdf"): a download is known by that.
  */
 export const unsent = <D extends { readonly name: string }>(downloads: readonly D[], inChat: readonly string[], x: Pick<BrowserSession, "endedAt">, now: number): readonly D[] => {
   const ended = parseMs(x.endedAt);
   if (ended !== undefined && now - ended >= DOWNLOADS_KEPT_MS) return [];
   const there = new Set(inChat);
-  return downloads.filter((d) => !there.has(d.name));
+  const sent = (name: string) => {
+    const kept = safeName(name);
+    return there.has(name) || there.has(kept) || inChat.some((n) => n.startsWith(`${kept}.`));
+  };
+  return downloads.filter((d) => !sent(d.name));
 };

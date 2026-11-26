@@ -53,6 +53,25 @@ test("a download the agent's agent-browser saved elsewhere is copied into the se
   expect(d.list()).toEqual([{ name: "report.csv", bytes: 8, at: AT.toISOString() }]);
 });
 
+test("a download Chrome saved under its id (after agent-browser's `download`) is listed by the name the page gave it", () => {
+  const h = home();
+  const dir = downloadsDir(h, "B1");
+  const theirs = join(h, "agent-browser");
+  mkdirSync(theirs, { recursive: true });
+  const guid = "5ae63e72-8aaa-4c1e-9d55-1f0b2c3d4e5f";
+  writeFileSync(join(theirs, guid), "%PDF-1.7 b");
+  const d = new Downloads(dir, () => AT);
+  d.began({ guid, suggestedFilename: "b.pdf" });
+  expect(d.progress({ guid, state: "completed", filePath: join(theirs, guid) })).toBe(true);
+  // Another id than its own, as a later plain click's file is named: the page's name all the same.
+  const other = "a4dfe250-1234-4abc-8def-0123456789ab";
+  writeFileSync(join(theirs, other), "%PDF-1.7 a");
+  d.began({ guid: "g2", suggestedFilename: "a.pdf" });
+  expect(d.progress({ guid: "g2", state: "completed", filePath: join(theirs, other) })).toBe(true);
+  expect(d.list().map((x) => x.name)).toEqual(["b.pdf", "a.pdf"]);
+  expect(readFileSync(join(dir, "b.pdf"), "utf8")).toBe("%PDF-1.7 b");
+});
+
 test("a download's path is only a plain name in its session's own folder", () => {
   const h = home();
   expect(downloadPath(h, "B1", "dummy.pdf")).toBe(join(downloadsDir(h, "B1"), "dummy.pdf"));

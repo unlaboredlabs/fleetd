@@ -24,6 +24,9 @@ export const downloadPath = (home: string, sessionId: string, name: string): str
   return join(downloadsDir(home, sessionId), name);
 };
 
+/** A file Chrome named by its download's id rather than its own name. */
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 /** One download as Chrome tells of it: its name, then where it was saved and how big it was. */
 type Pending = { name: string };
 
@@ -64,7 +67,10 @@ export class Downloads {
     if (state !== "completed" || this.done.length >= DOWNLOADS_MAX) return false;
     // Where Chrome saved it: our folder, or the one the agent's agent-browser named (copied here, so it can be sent).
     const saved = typeof params.filePath === "string" && params.filePath !== "" ? params.filePath : join(this.dir, pending.name);
-    const name = this.unique(basename(saved) || pending.name);
+    // Saved under its id (agent-browser's `download` switches Chrome to that for the rest of the session): its own name
+    // is the one the page gave it.
+    const savedAs = basename(saved);
+    const name = this.unique(savedAs === "" || savedAs === guid || GUID.test(savedAs) ? pending.name : savedAs);
     const here = join(this.dir, name);
     try {
       if (saved !== here) {

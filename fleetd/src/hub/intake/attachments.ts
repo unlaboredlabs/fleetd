@@ -10,6 +10,7 @@
 //
 // Unlike the Rust hub, a file in pieces is never read into memory whole: the last piece is appended on disk, and the
 // file is hashed, checked and re-encoded as text chunk by chunk on its way into place.
+import { safeName } from "../../../../app/desktop/src/shared/files.ts";
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { appendFile, open, rm } from "node:fs/promises";
@@ -74,12 +75,9 @@ function size(bytes: number): string {
   return `${bytes} B`;
 }
 
-/** A file name safe to write under the attachments directory: no separators, no leading dot. */
-export function safeName(name: string): string {
-  const cleaned = [...name].map((c) => (/^[\p{Alphabetic}\p{N}]$/u.test(c) || c === "." || c === "-" || c === "_" || c === " " ? c : "_")).join("");
-  const trimmed = cleaned.trim().replace(/^\.+/, "");
-  return trimmed === "" ? "file" : [...trimmed].slice(0, 100).join("");
-}
+/** A file name safe to write under the attachments directory: no separators, no leading dot. The apps read it too, to
+ * know a file the chat holds by the name it went in under (app/desktop/src/shared/files.ts). */
+export { safeName };
 
 /** Whether a grant on every machine gives the caller at least `role` (grants.rs `allows_everywhere`). */
 const allowsEverywhere = (caller: Caller, role: Role) =>

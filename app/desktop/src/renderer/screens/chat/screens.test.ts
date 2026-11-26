@@ -100,6 +100,11 @@ describe("an ended screen's downloads", () => {
     expect(unsent(files, [], ended, Date.parse(at(19, 10)))).toEqual(files);
   });
 
+  it("knows one the chat has under the hub's safe form of its name, with an extension it added", () => {
+    const named = [{ name: "dummy (2).pdf" }, { name: "notes" }, { name: "report.csv" }];
+    expect(unsent(named, ["dummy _2_.pdf", "notes.txt"], ended, Date.parse(at(19, 10)))).toEqual([{ name: "report.csv" }]);
+  });
+
   it("offers none once its machine no longer keeps them, a day after it ended", () => {
     expect(unsent(files, [], ended, Date.parse(at(19, 9)) + DOWNLOADS_KEPT_MS)).toEqual([]);
   });

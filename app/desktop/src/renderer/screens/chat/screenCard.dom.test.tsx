@@ -166,5 +166,7 @@ it("once ended, lists what its browser downloaded that the chat doesn't have, ea
   act(() => send?.click());
   await settle();
   expect(sent).toEqual([{ sessionId: "bs-done", name: "dummy.pdf" }]);
-  expect(list?.textContent).toContain("Sending…");
+  // Sent: it says so, until its message comes in and takes it off the list.
+  expect(send?.textContent).toBe("Sent");
+  expect(send?.disabled).toBe(true);
 });
