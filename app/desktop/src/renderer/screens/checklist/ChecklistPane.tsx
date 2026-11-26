@@ -8,12 +8,13 @@ import { Circle, CircleCheck, CircleDot, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TodoItem, TodoState } from "../../../shared/contracts";
 import { useData, useDataLayer, useToolQuery } from "../../src/data/react";
-import { selectLiveAgent, selectNotLive } from "../../src/data/selectors";
+import { selectNotLive } from "../../src/data/selectors";
 import { projectKey } from "../../src/data/store";
-import { Button, ContextMenu, ContextMenuItem, ContextMenuSeparator, Dot, Text, Tooltip } from "../../ui";
+import { Button, ContextMenu, ContextMenuItem, ContextMenuSeparator, Dot, RefText, Text, Tooltip } from "../../ui";
 import { AskedRows, useAskedWork } from "../asked/AskedRows";
 import { askRows } from "../asked/askedModel";
 import { FoldLine, GroupLabel, ListNote, PanelEmpty, useFold } from "../panel/folds";
+import { RefChip } from "../refs/RefChip";
 import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
 import { groupItems, openItems, progressOf, prOf, type ChecklistGroup } from "./model";
 import { removeItems, useShown } from "./removal";
@@ -230,10 +231,16 @@ function Row({ item, project, onDelete }: { item: TodoItem; project: ProjectKey;
       <li className={s.row} data-state={item.state} data-item={item.id}>
         <Icon className={s.mark} role="img" aria-label={word} />
         <div className={s.main}>
-          <span className={s.text}>{item.text}</span>
+          <span className={s.text}>
+            <RefText text={item.text} />
+          </span>
           {pr !== null || taskId !== undefined ? (
             <span className={s.links}>
-              {taskId !== undefined ? <AgentLink project={project} laneId={taskId} /> : null}
+              {taskId !== undefined ? (
+                <span className={s.agent}>
+                  <RefChip of={{ id: taskId, kind: "agent", opens: false }} project={project} />
+                </span>
+              ) : null}
               {pr !== null ? (
                 <a className={s.link} href={toHash(panelRoute(project, { tab: "prs", pr }))}>
                   PR #{pr.number}
@@ -249,15 +256,5 @@ function Row({ item, project, onDelete }: { item: TodoItem; project: ProjectKey;
         </Tooltip>
       </li>
     </ContextMenu>
-  );
-}
-
-/** The agent on an item, by its title while it is at work; its id only in the tooltip. */
-function AgentLink({ project, laneId }: { project: ProjectKey; laneId: string }) {
-  const agent = useData(selectLiveAgent(`${projectKey(project)}/${laneId}`));
-  return (
-    <a className={s.link} href={toHash(panelRoute(project, { tab: "agents", agent: laneId }))} title={laneId}>
-      {agent === undefined ? "The agent" : <span className={s.agent}>{agent.row.title}</span>}
-    </a>
   );
 }

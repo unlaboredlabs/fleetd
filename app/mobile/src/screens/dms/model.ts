@@ -92,7 +92,7 @@ export const glyphOf = (m: Pick<AgentMessage, "to">): DmGlyph => {
 };
 
 /** For VoiceOver: a row read out as a sentence. */
-export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.taskId} to ${isNote(m) ? "the bot" : m.to.map((r) => r.taskId).join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
+export const rowLabel = (m: AgentMessage, when: string): string => `From ${m.from.title ?? "an agent"} to ${isNote(m) ? "the bot" : m.to.map((r) => r.title ?? "an agent").join(", ")}, ${when}. ${sentence(opening(m.text))} ${rowOutcome(m)}.`;
 
 /** Words ending as a sentence does, once. */
 const sentence = (s: string): string => (/[.!?…]$/u.test(s) ? s : `${s}.`);

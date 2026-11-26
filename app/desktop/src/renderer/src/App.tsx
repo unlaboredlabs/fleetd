@@ -1,6 +1,8 @@
 import { lazy, Suspense, useSyncExternalStore } from "react";
+import { renderRef } from "../screens/refs/RefChip";
 import { Shell } from "../screens/shell/Shell";
 import { parseHash } from "../screens/shell/routes";
+import { RefsContext } from "../ui";
 import { HubScope, useHubs } from "./data/react";
 import { onWeb } from "./web";
 
@@ -30,8 +32,15 @@ const onOwnWindowChange = (changed: () => void) => {
 const useOwnWindow = () => useSyncExternalStore(onOwnWindowChange, () => ownWindow);
 const opened = parseHash(window.location.hash);
 
-// main.tsx wraps this in the hubs' data layers and the design system's providers.
-export const App = () => {
+// main.tsx wraps this in the hubs' data layers and the design system's providers. Every id in words a person reads
+// shows as its chip (screens/refs).
+export const App = () => (
+  <RefsContext.Provider value={renderRef}>
+    <Windows />
+  </RefsContext.Provider>
+);
+
+const Windows = () => {
   const hubs = useHubs();
   const own = useOwnWindow();
   if (own === "menubar") {

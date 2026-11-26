@@ -131,7 +131,13 @@ it("opens a row in place to its words, a receipt per recipient, and the lead's c
   act(() => rows()[0]?.click());
   expect(rows()[0]?.getAttribute("aria-expanded")).toBe("true");
   const receipts = host.querySelector("[aria-label='What became of it']");
-  expect([...(receipts?.querySelectorAll("dt") ?? [])].map((d) => d.textContent)).toEqual(["T2573", "T2577", "T2576", "T2574", "Lead"]);
+  expect([...(receipts?.querySelectorAll("dt") ?? [])].map((d) => d.textContent)).toEqual([
+    "Quiet update states on the phone",
+    "A stopping workspace closes node links as a restart",
+    "Agents’ tool calls ride through a restart",
+    "Automatic updates install when a build is ready",
+    "Lead",
+  ]);
   expect(receipts?.textContent).toContain("read it at its next step");
   expect(receipts?.textContent).toContain("isn’t running: held for its next run");
   expect(receipts?.textContent).toContain("had a copy with its next wake");
@@ -165,6 +171,6 @@ it("shows a note to the bot as sent to the bot, with what its agents do with it"
   expect(rows()[0]?.textContent).toContain("note");
   act(() => rows()[0]?.click());
   const receipts = host.querySelector("[aria-label='What became of it']");
-  expect([...(receipts?.querySelectorAll("dt") ?? [])].map((d) => d.textContent)).toEqual(["T2573", "The bot", "Lead"]);
+  expect([...(receipts?.querySelectorAll("dt") ?? [])].map((d) => d.textContent)).toEqual(["Quiet update states on the phone", "The bot", "Lead"]);
   expect(receipts?.textContent).toContain("nobody was woken");
 });

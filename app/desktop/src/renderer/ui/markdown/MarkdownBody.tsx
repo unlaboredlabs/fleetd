@@ -7,13 +7,16 @@ import { ContextMenu, ContextMenuCopy, ContextMenuItem } from "../primitives/Con
 import { toast } from "../primitives/Toast";
 import { markdownBlocks } from "./blocks";
 import { BLOCK_FENCE } from "../../../shared/contracts";
+import { refOf, splitRefs, type Ref } from "../../../shared/refs";
+import { RefMark } from "../text/Refs";
 import { Code, InlineCode, Unshown } from "./Code";
 import s from "./Markdown.module.css";
 
-/** A markdown tree's node, as far as `softBreaks` reads it. */
+/** A markdown tree's node, as far as `softBreaks` and `refLinks` read it. */
 interface Node {
   type: string;
   value?: string;
+  url?: string;
   children?: Node[];
 }
 
@@ -35,8 +38,41 @@ const softBreaks = () => (tree: Node) => {
   walk(tree);
 };
 
-const REMARK = [remarkGfm];
-const REMARK_BREAKS = [remarkGfm, softBreaks];
+/** A ref link's address: `#ref=T12`, `#ref=T12&opens` where it opens a sentence. Never a route: `a` draws it. */
+const REF_HREF = "#ref=";
+const refLink = (r: Ref): Node => ({ type: "link", url: `${REF_HREF}${r.id}${r.opens ? "&opens" : ""}`, children: [{ type: "text", value: r.id }] });
+
+/**
+ * fleetd's ids in the words (T12, W3: shared/refs) as ref links, which `a` draws as the app's chips; an inline code span
+ * that is one id alone too. Links keep their words, and code blocks are never text nodes.
+ */
+const refLinks = () => (tree: Node) => {
+  const walk = (node: Node): void => {
+    if (node.children === undefined || node.type === "link" || node.type === "linkReference") return;
+    node.children = node.children.flatMap((child): Node[] => {
+      const kind = child.type === "inlineCode" && child.value !== undefined ? refOf(child.value) : undefined;
+      if (kind !== undefined) return [refLink({ id: (child.value ?? "").trim(), kind, opens: false })];
+      if (child.type !== "text" || child.value === undefined) {
+        walk(child);
+        return [child];
+      }
+      const runs = splitRefs(child.value);
+      if (runs.length === 1 && typeof runs[0] === "string") return [child];
+      return runs.map((r): Node => (typeof r === "string" ? { type: "text", value: r } : refLink(r)));
+    });
+  };
+  walk(tree);
+};
+
+/** A ref link's id back, from its address. */
+const refOfHref = (href: string): Ref | undefined => {
+  const [id = "", flag] = href.slice(REF_HREF.length).split("&");
+  const kind = refOf(id);
+  return kind === undefined ? undefined : { id, kind, opens: flag === "opens" };
+};
+
+const REMARK = [remarkGfm, refLinks];
+const REMARK_BREAKS = [remarkGfm, softBreaks, refLinks];
 
 const openLink = (href: string): void => {
   void window.fleetd.openExternal(href).then((outcome) => {
@@ -106,8 +142,12 @@ const pre =
 const COMPONENTS: Components = {
   pre: pre(false),
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
-  // An app route stays in the app.
-  a: ({ href, children }) => (href?.startsWith("#/") ? <AppLink href={href}>{children}</AppLink> : <ExternalLink href={href}>{children}</ExternalLink>),
+  // An app route stays in the app; a ref link is the app's chip for the id.
+  a: ({ href, children }) => {
+    const ref = href?.startsWith(REF_HREF) === true ? refOfHref(href) : undefined;
+    if (ref !== undefined) return <RefMark of={ref} />;
+    return href?.startsWith("#/") ? <AppLink href={href}>{children}</AppLink> : <ExternalLink href={href}>{children}</ExternalLink>;
+  },
   // No remote content: an image becomes its alt text as a link.
   img: ({ src, alt }) => <ExternalLink href={typeof src === "string" ? src : undefined}>{alt || "image"}</ExternalLink>,
   table: ({ children }) => (

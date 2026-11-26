@@ -58,8 +58,8 @@ describe("a bot's DMs between agents", () => {
   });
 
   it("reads a row out as one sentence", () => {
-    expect(rowLabel(dm("M1", [to("T2577", "delivered")], "Rebased."), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Delivered.");
-    expect(rowLabel(dm("M1", [to("T2577", "not_woken")], "Rebased"), "23:04")).toBe("From T2573 to T2577, 23:04. Rebased. Didn't wake it.");
+    expect(rowLabel(dm("M1", [to("T2577", "delivered")], "Rebased."), "23:04")).toBe("From Phone redials fast on restart to an agent, 23:04. Rebased. Delivered.");
+    expect(rowLabel(dm("M1", [to("T2577", "not_woken")], "Rebased"), "23:04")).toBe("From Phone redials fast on restart to an agent, 23:04. Rebased. Didn't wake it.");
   });
 
   it("labels a note to the bot as sent to the bot, with no recipient's outcome", () => {
@@ -68,7 +68,7 @@ describe("a bot's DMs between agents", () => {
     expect(route(note)).toBe("T2573 → the bot");
     expect(rowOutcome(note)).toBe("Note to the bot");
     expect(glyphOf(note)).toBe("delivered");
-    expect(rowLabel(note, "23:04")).toBe("From T2573 to the bot, 23:04. Moving the cloud pin in #404. Note to the bot.");
+    expect(rowLabel(note, "23:04")).toBe("From Phone redials fast on restart to the bot, 23:04. Moving the cloud pin in #404. Note to the bot.");
   });
 
   it("counts them on the Info row once there are any", () => {

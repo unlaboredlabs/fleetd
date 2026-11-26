@@ -1,16 +1,17 @@
 // Activity › DMs: every DM between the project's agents, newest first, one line each (sender → recipients, the
 // opening words, what became of it, the time) under its day's name. A line opens in place to the full words and a
-// receipt per recipient, ending with the lead's quiet copy; a note to the bot reads "T2573 → the bot", and what its
+// receipt per recipient, ending with the lead's quiet copy; a note to the bot reads "<its sender> → the bot", and what its
 // agents do with it. "Any agent" narrows it to one agent's DMs. Read-only for
 // everyone, members and admins alike: a DM is the log, never edited or deleted.
 import { Ban, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "../../src/data/react";
-import { Button, EmptyState, Select, Text, Truncate, VirtualList, cx } from "../../ui";
+import { Button, EmptyState, RefText, Select, Text, Truncate, VirtualList, cx } from "../../ui";
 import { dayLabel } from "../chat/model";
 import { shortClock } from "../chat/format";
 import { useNow } from "../live/clock";
-import { panelRoute, toHash, type ProjectKey } from "../shell/routes";
+import { RefChip } from "../refs/RefChip";
+import type { ProjectKey } from "../shell/routes";
 import { useDmLog, type DmLog as Log } from "./hooks";
 import { isNote, logReceipt, NOTE_RECEIPT, notWoken, opening, route, rowState, type AgentMessage } from "./model";
 import s from "./dms.module.css";
@@ -79,7 +80,7 @@ export function DmLog({ project }: { project: ProjectKey }) {
             aria-label="Whose DMs"
             value={agent}
             onValueChange={setAgent}
-            options={[{ value: ANY, label: "Any agent" }, ...known.map((a) => ({ value: a.taskId, label: a.title === "" ? a.taskId : `${a.taskId} · ${a.title}`, textValue: a.taskId }))]}
+            options={[{ value: ANY, label: "Any agent" }, ...known.map((a) => ({ value: a.taskId, label: a.title === "" ? "An agent" : a.title, textValue: a.title === "" ? a.taskId : a.title }))]}
           />
         )}
       </div>
@@ -102,7 +103,7 @@ export function DmLog({ project }: { project: ProjectKey }) {
       ) : items === undefined ? (
         <div aria-busy="true" aria-label="Loading the DMs" />
       ) : items.length === 0 ? (
-        <EmptyState title={agent === ANY ? "No DMs yet" : `No DMs for ${agent}`}>
+        <EmptyState title={agent === ANY ? "No DMs yet" : `No DMs for ${known.find((a) => a.taskId === agent)?.title || "this agent"}`}>
           When this bot’s agents tell each other something, every message shows here with what became of it.
         </EmptyState>
       ) : (
@@ -155,10 +156,10 @@ function DmRow({ dm, project, open, onToggle }: { dm: AgentMessage; project: Pro
         </span>
         <span className={s.state}>
           <Text size="xs" tone={state.text.startsWith("not sent") ? "danger" : state.strong ? "default" : "quiet"} strong={state.strong}>
-            {state.text}
+            <RefText text={state.text} inRow />
           </Text>
         </span>
-        <Text size="xs" tone="faint" tabular>
+        <Text size="xs" tone="faint" tabular className={s.clock}>
           {shortClock(dm.sentAt)}
         </Text>
         <Chevron className={s.icon} size={14} aria-hidden />
@@ -166,7 +167,7 @@ function DmRow({ dm, project, open, onToggle }: { dm: AgentMessage; project: Pro
       {open ? (
         <div className={s.full} id={fullId}>
           <Text as="p" size="md" preserveLines className={s.words}>
-            {dm.text}
+            <RefText text={dm.text} />
           </Text>
           <dl className={s.receipts} aria-label="What became of it">
             <dt>
@@ -202,7 +203,7 @@ function Recipient({ project, t, sentAt }: { project: ProjectKey; t: AgentMessag
         <AgentLink project={project} taskId={t.taskId} title={t.title} />
       </dt>
       <dd className={cx(guard && s.guard, t.outcome === "refused" && s.failed)} data-outcome={t.outcome}>
-        {logReceipt(t)}
+        <RefText text={logReceipt(t)} />
       </dd>
       <dd className={s.time}>{shortClock(t.at ?? sentAt)}</dd>
     </>
@@ -210,9 +211,7 @@ function Recipient({ project, t, sentAt }: { project: ProjectKey; t: AgentMessag
 }
 
 const AgentLink = ({ project, taskId, title }: { project: ProjectKey; taskId: string; title: string | undefined }) => (
-  <a href={toHash(panelRoute(project, { tab: "agents", agent: taskId }))} title={title ?? taskId}>
-    {taskId}
-  </a>
+  <RefChip of={{ id: taskId, kind: "agent", opens: false }} title={title} project={project} />
 );
 
 /** The log's foot: loads the next page as it scrolls into view, or says the log ends here. */

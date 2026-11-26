@@ -16,6 +16,7 @@ export { Text, textClass, type TextProps, type TextSize, type TextTone, type Tex
 export { Truncate, type TruncateProps } from "./text/Truncate";
 export { isCut, observeSize } from "./text/observeSize";
 export { IdChip, type IdChipProps } from "./text/IdChip";
+export { RefMark, RefsContext, RefText, type RenderRef } from "./text/Refs";
 export { humanizeKey } from "./text/humanize";
 
 export { Button, Kbd, type ButtonProps, type ButtonVariant, type ButtonSize } from "./primitives/Button";

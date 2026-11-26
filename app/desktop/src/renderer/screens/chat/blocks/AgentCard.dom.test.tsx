@@ -116,7 +116,7 @@ it("follows the task as it ends a turn and its Monitor wakes it again", async ()
 
 it("says plainly when the hub has no such task", async () => {
   await mount("T9999");
-  expect(card()).toContain("Agent T9999");
+  expect(card()).toContain("An agent");
   expect(card()).toContain("This workspace has no such task.");
   expect(card()).not.toContain("Not running now");
 });

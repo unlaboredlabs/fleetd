@@ -131,7 +131,7 @@ function Row({ m, coverage, orderTitle, orderHref }: { m: MetricsMerge } & Pick<
   const route = knownRoute(m.route);
   const href = orderHref(m);
   // An order off the board (done before the last day) is named by its number.
-  const order = m.workstreamId === undefined ? undefined : (orderTitle(m.workstreamId) ?? `Order ${m.workstreamId}`);
+  const order = m.workstreamId === undefined ? undefined : (orderTitle(m.workstreamId) ?? "An order");
   const lines = m.additions === undefined && m.deletions === undefined ? "—" : `+${m.additions ?? 0} −${m.deletions ?? 0}`;
   return (
     <tr>
